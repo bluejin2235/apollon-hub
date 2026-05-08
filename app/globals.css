@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(79, 118, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 85% 5%, rgba(45, 71, 175, 0.22), transparent 24%),
+    linear-gradient(180deg, #090b15 0%, #04050b 100%);
+}
+
+.apollon-card {
+  @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 backdrop-blur;
+}
