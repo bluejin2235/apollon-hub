@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -46,6 +46,15 @@ export default function SettingsPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [search, setSearch] = useState("");
   const [loadingTeam, setLoadingTeam] = useState(true);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteDepartment, setInviteDepartment] = useState("");
+  const [inviteRole, setInviteRole] = useState<Role>("멤버");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [invitedTemporaryPassword, setInvitedTemporaryPassword] = useState("");
 
   const canManageTeam = profileRole === "슈퍼관리자";
 
@@ -110,6 +119,94 @@ export default function SettingsPage() {
       );
     });
   }, [search, teamMembers]);
+
+  const resetInviteModalState = () => {
+    setInviteName("");
+    setInviteEmail("");
+    setInviteDepartment("");
+    setInviteRole("멤버");
+    setInviteMessage("");
+    setInviteError("");
+    setInvitedTemporaryPassword("");
+  };
+
+  const handleOpenInviteModal = () => {
+    resetInviteModalState();
+    setInviteModalOpen(true);
+  };
+
+  const handleCloseInviteModal = () => {
+    setInviteModalOpen(false);
+    resetInviteModalState();
+  };
+
+  const handleCopyTemporaryPassword = async () => {
+    if (!invitedTemporaryPassword) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(invitedTemporaryPassword);
+    setInviteMessage("임시 비밀번호를 복사했습니다.");
+  };
+
+  const handleInviteMember = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setInviteError("");
+    setInviteMessage("");
+    setInviteLoading(true);
+
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setInviteError("인증 세션이 만료되었습니다. 다시 로그인해주세요.");
+        return;
+      }
+
+      const response = await fetch("/api/team/invite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          name: inviteName,
+          email: inviteEmail,
+          department: inviteDepartment,
+          role: inviteRole
+        })
+      });
+
+      const result = (await response.json()) as {
+        error?: string;
+        temporaryPassword?: string;
+        profile?: TeamMember;
+      };
+
+      if (!response.ok || !result.profile || !result.temporaryPassword) {
+        setInviteError(result.error ?? "팀원 초대에 실패했습니다.");
+        return;
+      }
+
+      setTeamMembers((previous) => {
+        const withoutInvited = previous.filter((member) => member.email !== result.profile?.email);
+        return [...withoutInvited, result.profile as TeamMember].sort((a, b) =>
+          a.created_at && b.created_at ? a.created_at.localeCompare(b.created_at) : 0
+        );
+      });
+
+      setInvitedTemporaryPassword(result.temporaryPassword);
+      setInviteMessage("팀원 초대가 완료되었습니다. 임시 비밀번호를 전달해주세요.");
+      setTeamMessage("새 팀원을 초대했습니다.");
+    } catch (error) {
+      console.error("Team invite failed", error);
+      setInviteError("초대 처리 중 오류가 발생했습니다.");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   const handleProfileSave = async () => {
     if (!profileId) {
@@ -228,22 +325,34 @@ export default function SettingsPage() {
           <p className="mt-2 text-slate-300">프로필 및 계정 설정을 관리하세요.</p>
         </div>
 
-        <nav className="mb-7 inline-flex rounded-xl border border-slate-800/80 bg-slate-900/70 p-1">
-          {tabs.map((tab) => (
+        <div className="mb-7 flex items-center justify-between">
+          <nav className="inline-flex rounded-xl border border-slate-800/80 bg-slate-900/70 p-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`rounded-lg px-4 py-2 text-sm transition ${
+                  activeTab === tab.key
+                    ? "bg-slate-100 text-slate-900"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {activeTab === "team" && canManageTeam ? (
             <button
-              key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
-              className={`rounded-lg px-4 py-2 text-sm transition ${
-                activeTab === tab.key
-                  ? "bg-slate-100 text-slate-900"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
+              onClick={handleOpenInviteModal}
+              className="rounded-lg bg-apollon-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-apollon-400"
             >
-              {tab.label}
+              + 팀원 추가
             </button>
-          ))}
-        </nav>
+          ) : null}
+        </div>
 
         {activeTab === "profile" ? (
           <section className="apollon-card p-6 md:p-8">
@@ -361,15 +470,17 @@ export default function SettingsPage() {
                   placeholder="이름, 이메일, 부서로 검색..."
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-white placeholder:text-slate-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40 md:max-w-xl"
                 />
-                <span
-                  className={`rounded-lg px-3 py-1 text-sm ${
-                    canManageTeam
-                      ? "bg-emerald-500/20 text-emerald-200"
-                      : "bg-amber-500/20 text-amber-200"
-                  }`}
-                >
-                  {canManageTeam ? "슈퍼관리자 접근 권한" : "읽기 전용"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-lg px-3 py-1 text-sm ${
+                      canManageTeam
+                        ? "bg-emerald-500/20 text-emerald-200"
+                        : "bg-amber-500/20 text-amber-200"
+                    }`}
+                  >
+                    {canManageTeam ? "슈퍼관리자 접근 권한" : "읽기 전용"}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -434,6 +545,108 @@ export default function SettingsPage() {
           </section>
         ) : null}
       </div>
+
+      {inviteModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="apollon-card w-full max-w-lg p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">팀원 초대</h2>
+              <button
+                type="button"
+                onClick={handleCloseInviteModal}
+                className="rounded-md px-2 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+              >
+                닫기
+              </button>
+            </div>
+
+            <form onSubmit={handleInviteMember} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">이름</label>
+                <input
+                  value={inviteName}
+                  onChange={(event) => setInviteName(event.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">이메일</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">부서</label>
+                <input
+                  value={inviteDepartment}
+                  onChange={(event) => setInviteDepartment(event.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">권한</label>
+                <select
+                  value={inviteRole}
+                  onChange={(event) => setInviteRole(event.target.value as Role)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                >
+                  {roleOptions.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {inviteError ? (
+                <p className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
+                  {inviteError}
+                </p>
+              ) : null}
+              {inviteMessage ? (
+                <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-300">
+                  {inviteMessage}
+                </p>
+              ) : null}
+
+              {invitedTemporaryPassword ? (
+                <div className="rounded-xl border border-apollon-500/40 bg-apollon-950/30 p-3">
+                  <p className="text-xs text-slate-300">임시 비밀번호</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <code className="rounded bg-slate-900 px-2 py-1 text-sm text-apollon-200">
+                      {invitedTemporaryPassword}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyTemporaryPassword()}
+                      className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 transition hover:border-apollon-400 hover:text-white"
+                    >
+                      복사
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={inviteLoading}
+                className="w-full rounded-xl bg-apollon-500 px-4 py-3 font-semibold text-white transition hover:bg-apollon-400 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {inviteLoading ? "초대 처리 중..." : "초대 보내기"}
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
