@@ -13,7 +13,9 @@ import {
   type ProfileLite,
   type Restaurant,
   type RestaurantCategory,
-  type Review
+  type Review,
+  reviewRevisitPositive,
+  reviewStarsScore
 } from "@/lib/restaurants/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -34,9 +36,9 @@ function buildReviewAgg(reviews: Review[]): Map<string, ReviewAgg> {
   const map = new Map<string, ReviewAgg>();
   for (const rv of reviews) {
     const cur = map.get(rv.restaurant_id) ?? { sum: 0, n: 0, revisit: 0 };
-    cur.sum += rv.rating;
+    cur.sum += reviewStarsScore(rv);
     cur.n += 1;
-    if (rv.revisit) cur.revisit += 1;
+    if (reviewRevisitPositive(rv)) cur.revisit += 1;
     map.set(rv.restaurant_id, cur);
   }
   return map;

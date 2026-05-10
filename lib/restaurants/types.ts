@@ -67,6 +67,8 @@ export type Restaurant = {
   created_at: string;
   food_type: string[] | null;
   atmosphere_tags: string[] | null;
+  tagline?: string | null;
+  menu_image_paths?: string[] | null;
 };
 
 export type Review = {
@@ -78,7 +80,35 @@ export type Review = {
   visit_date: string | null;
   revisit: boolean;
   created_at: string;
+  star_rating?: number | null;
+  keyword_tags?: string[] | null;
+  image_paths?: string[] | null;
+  revisit_intent?: "again" | "meh" | "never" | null;
 };
+
+export type RestaurantImageRow = {
+  id: string;
+  restaurant_id: string;
+  storage_path: string;
+  uploaded_by: string | null;
+  created_at: string;
+};
+
+/** 표시용 별점 (0.5 단위), 레거시 정수 rating 호환 */
+export function reviewStarsScore(rv: Review): number {
+  const sr = rv.star_rating;
+  if (sr != null && sr >= 2 && sr <= 10) {
+    return sr / 2;
+  }
+  return rv.rating;
+}
+
+/** 재방문 긍정 여부 (목록·추천용) */
+export function reviewRevisitPositive(rv: Review): boolean {
+  if (rv.revisit_intent === "again") return true;
+  if (rv.revisit_intent === "never" || rv.revisit_intent === "meh") return false;
+  return Boolean(rv.revisit);
+}
 
 export type ProfileLite = {
   id: string;
