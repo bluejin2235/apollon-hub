@@ -141,24 +141,24 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4" role="dialog" aria-modal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-500/45 px-4 backdrop-blur-[2px]" role="dialog" aria-modal>
       <div className="apollon-card w-full max-w-lg p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">팀원 수정</h2>
+          <h2 className="text-xl font-semibold text-slate-900">팀원 수정</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            className="rounded-md px-2 py-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           >
             닫기
           </button>
         </div>
 
-        <p className="mb-4 truncate text-sm text-slate-400">{member.email}</p>
+        <p className="mb-4 truncate text-sm text-slate-600">{member.email}</p>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">이름</label>
+            <label className="mb-2 block text-sm font-medium text-slate-700">이름</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -168,7 +168,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">부서</label>
+            <label className="mb-2 block text-sm font-medium text-slate-700">부서</label>
             <input
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
@@ -178,7 +178,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">권한</label>
+            <label className="mb-2 block text-sm font-medium text-slate-700">권한</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
@@ -193,7 +193,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-300">상태</label>
+            <label className="mb-2 block text-sm font-medium text-slate-700">상태</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as Status)}
@@ -207,8 +207,8 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
             </select>
           </div>
 
-          <div className="rounded-xl border border-slate-700/80 bg-slate-900/60 p-4">
-            <p className="mb-3 text-sm font-medium text-slate-200">비밀번호 재설정 (선택)</p>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="mb-3 text-sm font-medium text-slate-800">비밀번호 재설정 (선택)</p>
             <p className="mb-3 text-xs text-slate-500">입력 시 Supabase Auth 비밀번호가 즉시 변경됩니다.</p>
             <div className="space-y-3">
               <div>
@@ -236,10 +236,10 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
           </div>
 
           {error ? (
-            <p className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">{error}</p>
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
           ) : null}
           {message ? (
-            <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-300">
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
               {message}
             </p>
           ) : null}
@@ -248,7 +248,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-800"
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
             >
               취소
             </button>

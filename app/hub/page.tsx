@@ -5,7 +5,7 @@ import { PortalHeader } from "@/components/portal/portal-header";
 import ServiceCard from "@/components/service-card";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { formatPortalProfileSummary } from "@/lib/portal/profile";
+import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { portalServices } from "@/lib/services";
 
 export default function ServiceHubPage() {
@@ -15,18 +15,15 @@ export default function ServiceHubPage() {
     return <PortalAuthChecking />;
   }
 
-  const summary = profile ? formatPortalProfileSummary(profile) : "- / -";
+  const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
 
   return (
     <main className="min-h-screen">
       <PortalHeader
-        profileSummary={summary}
+        userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
         hubTitleVariant="text"
         zIndexClass="z-10"
-        profileChipClassName="text-sm text-slate-100"
-        actionsRowClassName="flex items-center gap-6 text-sm"
-        actionsInnerWrapClassName="flex items-center gap-2 text-sm"
       />
 
       <div className="pb-10 pt-16">

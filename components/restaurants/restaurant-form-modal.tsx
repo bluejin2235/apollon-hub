@@ -21,11 +21,66 @@ type Props = {
 
 type KakaoSearchApiBody = KakaoKeywordSearchResponse & { error?: string; detail?: string; status?: number };
 
+type MenuRow = { name: string; price: string };
+
 function toggle<T extends string>(list: T[], v: T): T[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
 
+function formatMenuAndPriceRange(rows: MenuRow[]): { menu: string | null; price_range: string | null } {
+  const filled = rows
+    .map((r) => ({
+      name: r.name.trim(),
+      price: r.price.trim().replace(/,/g, "")
+    }))
+    .filter((r) => r.name.length > 0);
+
+  if (filled.length === 0) {
+    return { menu: null, price_range: null };
+  }
+
+  const parts = filled.map((r) => {
+    if (!r.price) return r.name;
+    const n = Number(r.price);
+    const priceStr = Number.isFinite(n) && n >= 0 ? `${n.toLocaleString("ko-KR")}원` : `${r.price}원`;
+    return `${r.name} (${priceStr})`;
+  });
+
+  const nums = filled
+    .map((r) => Number(r.price))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  let price_range: string | null = null;
+  if (nums.length > 0) {
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+    price_range =
+      min === max
+        ? `${min.toLocaleString("ko-KR")}원대`
+        : `${min.toLocaleString("ko-KR")}~${max.toLocaleString("ko-KR")}원`;
+  }
+
+  return { menu: parts.join(" · "), price_range };
+}
+
+function IconChevronLeft(props: { className?: string }) {
+  return (
+    <svg className={props.className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
+function IconClose(props: { className?: string }) {
+  return (
+    <svg className={props.className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
 export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
+  const [step, setStep] = useState<1 | 2>(1);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<KakaoKeywordPlace[]>([]);
@@ -33,20 +88,19 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
   const [category, setCategory] = useState<RestaurantCategory>("점심");
   const [foodTypes, setFoodTypes] = useState<FoodTypeOption[]>([]);
   const [tags, setTags] = useState<AtmosphereTagOption[]>([]);
-  const [menu, setMenu] = useState("");
-  const [priceRange, setPriceRange] = useState("");
+  const [menuRows, setMenuRows] = useState<MenuRow[]>([{ name: "", price: "" }]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
   const reset = useCallback(() => {
+    setStep(1);
     setQuery("");
     setResults([]);
     setPick(null);
     setCategory("점심");
     setFoodTypes([]);
     setTags([]);
-    setMenu("");
-    setPriceRange("");
+    setMenuRows([{ name: "", price: "" }]);
     setMsg("");
   }, []);
 
@@ -94,6 +148,36 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     }
   };
 
+  const selectPlace = (doc: KakaoKeywordPlace) => {
+    setPick(doc);
+    setStep(2);
+    setMsg("");
+  };
+
+  const goBack = () => {
+    if (step === 2) {
+      setStep(1);
+      setMsg("");
+    } else {
+      onClose();
+    }
+  };
+
+  const addMenuRow = () => {
+    setMenuRows((prev) => [...prev, { name: "", price: "" }]);
+  };
+
+  const removeMenuRow = (index: number) => {
+    setMenuRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const updateMenuRow = (index: number, field: keyof MenuRow, value: string) => {
+    if (field === "price") {
+      value = value.replace(/[^\d]/g, "");
+    }
+    setMenuRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!pick) {
@@ -122,14 +206,15 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
         return;
       }
       const addr = pickDisplayAddress(pick);
+      const { menu, price_range } = formatMenuAndPriceRange(menuRows);
       const { error } = await supabase.from("restaurants").insert({
         name: pick.place_name,
         category,
         address: addr || pick.place_name,
         lat,
         lng,
-        menu: menu.trim() || null,
-        price_range: priceRange.trim() || null,
+        menu,
+        price_range,
         description: null,
         is_entertainment: false,
         registered_by: prof.id,
@@ -152,64 +237,96 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     }
   };
 
+  const tagBase =
+    "inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1";
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-xl font-semibold text-slate-900">맛집 등록</h2>
-          <button type="button" className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={onClose}>
-            닫기
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-500/45 p-4 backdrop-blur-[2px]" role="dialog" aria-modal>
+      <div className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+        {/* 헤더 */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={goBack}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+              aria-label={step === 2 ? "이전 단계" : "닫기"}
+            >
+              <IconChevronLeft className="h-5 w-5" />
+            </button>
+            <h2 className="text-lg font-bold text-blue-600">맛집 등록</h2>
+          </div>
+          <button
+            type="button"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            onClick={onClose}
+            aria-label="닫기"
+          >
+            <IconClose className="h-5 w-5" />
           </button>
         </div>
-        <p className="mt-1 text-sm text-slate-500">카카오 장소 검색 후 카테고리·태그를 선택해 저장합니다.</p>
 
-        <form className="mt-6 space-y-5" onSubmit={submit}>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">장소 검색</label>
-            <div className="flex gap-2">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="예: 성수 맛집"
-              />
-              <button
-                type="button"
-                onClick={() => void search()}
-                disabled={searching}
-                className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-              >
-                {searching ? "검색…" : "검색"}
-              </button>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          {step === 1 ? (
+            <div className="space-y-4">
+              <h3 className="text-base font-bold text-slate-900">장소 검색</h3>
+              <div className="flex gap-2">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void search();
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="장소명, 주소, 지역명으로 검색"
+                />
+                <button
+                  type="button"
+                  onClick={() => void search()}
+                  disabled={searching}
+                  className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {searching ? "검색…" : "검색"}
+                </button>
+              </div>
+
+              {results.length > 0 ? (
+                <ul className="max-h-[min(320px,45vh)] overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                  {results.map((doc) => {
+                    const selected = pick?.id === doc.id;
+                    return (
+                      <li key={doc.id} className="border-b border-slate-100 last:border-b-0">
+                        <button
+                          type="button"
+                          className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
+                            selected ? "bg-blue-50" : ""
+                          }`}
+                          onClick={() => selectPlace(doc)}
+                        >
+                          <span className="block text-sm font-bold text-slate-900">{doc.place_name}</span>
+                          <span className="mt-0.5 block text-xs text-slate-500">{pickDisplayAddress(doc)}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+
+              {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
             </div>
-            {results.length > 0 ? (
-              <ul className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200">
-                {results.map((doc) => (
-                  <li key={doc.id}>
-                    <button
-                      type="button"
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${pick?.id === doc.id ? "bg-blue-50 font-medium text-blue-800" : "text-slate-800"}`}
-                      onClick={() => setPick(doc)}
-                    >
-                      {doc.place_name}
-                      <span className="block text-xs text-slate-500">{pickDisplayAddress(doc)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-
-          {pick ? (
-            <>
+          ) : (
+            <form id="restaurant-register-form" className="space-y-6" onSubmit={submit}>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">카테고리</label>
+                <label className="mb-2 block text-sm font-bold text-slate-900">카테고리</label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as RestaurantCategory)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   {RESTAURANT_CATEGORY_META.map((c) => (
                     <option key={c.key} value={c.key}>
@@ -218,76 +335,131 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                   ))}
                 </select>
               </div>
+
               <div>
-                <p className="mb-2 text-sm font-medium text-slate-700">음식 종류 (다중)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {FOOD_TYPE_OPTIONS.map((ft) => (
-                    <button
-                      key={ft}
-                      type="button"
-                      onClick={() => setFoodTypes((prev) => toggle(prev, ft))}
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                        foodTypes.includes(ft) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {ft}
-                    </button>
-                  ))}
+                <p className="mb-3 text-sm font-bold text-slate-900">음식 종류 (다중 선택)</p>
+                <div className="flex flex-wrap gap-2">
+                  {FOOD_TYPE_OPTIONS.map((ft) => {
+                    const on = foodTypes.includes(ft);
+                    return (
+                      <button
+                        key={ft}
+                        type="button"
+                        onClick={() => setFoodTypes((prev) => toggle(prev, ft))}
+                        className={
+                          on
+                            ? `${tagBase} border-blue-600 bg-blue-600 text-white`
+                            : `${tagBase} border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200`
+                        }
+                      >
+                        {on ? <span aria-hidden>✓</span> : null}
+                        {ft}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
               <div>
-                <p className="mb-2 text-sm font-medium text-slate-700">분위기·특징 (다중)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {ATMOSPHERE_TAG_OPTIONS.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTags((prev) => toggle(prev, t))}
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                        tags.includes(t) ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
+                <p className="mb-3 text-sm font-bold text-slate-900">분위기 · 특징 (다중 선택)</p>
+                <div className="flex flex-wrap gap-2">
+                  {ATMOSPHERE_TAG_OPTIONS.map((t) => {
+                    const on = tags.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTags((prev) => toggle(prev, t))}
+                        className={
+                          on
+                            ? `${tagBase} border-blue-600 bg-blue-600 text-white`
+                            : `${tagBase} border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200`
+                        }
+                      >
+                        {on ? <span aria-hidden>✓</span> : null}
+                        {t}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">대표 메뉴 (선택)</label>
-                <input
-                  value={menu}
-                  onChange={(e) => setMenu(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                  placeholder="예: 돼지갈비"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">가격대 (선택)</label>
-                <input
-                  value={priceRange}
-                  onChange={(e) => setPriceRange(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                  placeholder="예: 1만5천원대"
-                />
-              </div>
-            </>
-          ) : null}
 
-          {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
+              <div>
+                <p className="mb-3 text-sm font-bold text-slate-900">대표 메뉴</p>
+                <div className="space-y-3">
+                  {menuRows.map((row, index) => (
+                    <div key={index} className="flex flex-wrap items-center gap-2">
+                      <input
+                        value={row.name}
+                        onChange={(e) => updateMenuRow(index, "name", e.target.value)}
+                        className="min-w-[8rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="예시 : 김치찌개"
+                      />
+                      <input
+                        value={row.price}
+                        onChange={(e) => updateMenuRow(index, "price", e.target.value)}
+                        inputMode="numeric"
+                        className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="가격 : 15000"
+                      />
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={addMenuRow}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          aria-label="메뉴 행 추가"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeMenuRow(index)}
+                          disabled={menuRows.length <= 1}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="이 메뉴 행 삭제"
+                        >
+                          −
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addMenuRow}
+                  className="mt-3 w-full rounded-lg border-2 border-blue-600 bg-white py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  + 메뉴 추가
+                </button>
+              </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={onClose}>
-              취소
+              {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
+            </form>
+          )}
+        </div>
+
+        {step === 2 ? (
+          <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => {
+                setStep(1);
+                setMsg("");
+              }}
+            >
+              이전
             </button>
             <button
               type="submit"
+              form="restaurant-register-form"
               disabled={!pick || saving}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
             >
               {saving ? "저장 중…" : "등록"}
             </button>
           </div>
-        </form>
+        ) : null}
       </div>
     </div>
   );

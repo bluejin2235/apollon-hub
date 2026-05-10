@@ -25,7 +25,9 @@ export function LicenseSidebarNav({ pathname }: { pathname: string }) {
             key={item.href}
             href={item.href}
             className={`rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-              active ? "bg-apollon-500/25 text-white ring-1 ring-apollon-500/50" : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+              active
+                ? "bg-apollon-500/15 text-apollon-800 ring-1 ring-apollon-500/40"
+                : "text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
             }`}
           >
             {item.label}
@@ -46,7 +48,7 @@ export function LicenseMobileNav({ pathname }: { pathname: string }) {
             key={item.href}
             href={item.href}
             className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium ${
-              active ? "bg-apollon-500 text-white" : "bg-slate-800 text-slate-300"
+              active ? "bg-apollon-500 text-white" : "bg-slate-200 text-slate-700"
             }`}
           >
             {item.label}

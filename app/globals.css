@@ -3,26 +3,42 @@
 @tailwind utilities;
 
 @layer base {
-  /* Dark page + color-scheme: dark; keep text fields readable */
+  :root {
+    color-scheme: light;
+  }
+
+  /* Light-only: form controls stay readable and never inherit a dark canvas */
   input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="image"]):not([type="range"]):not([type="color"]):not([type="submit"]):not([type="button"]):not([type="reset"]),
   textarea,
   select {
     @apply bg-white text-gray-900 placeholder:text-gray-500;
   }
+
+  html {
+    @apply antialiased;
+    background-color: #ffffff !important;
+    color: #111827;
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen antialiased;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #111827;
+    color-scheme: light;
+  }
 }
 
-:root {
-  color-scheme: dark;
-}
-
+/*
+ * Keep the document chrome white. Prevents a stray utility (e.g. bg-slate-950) on a
+ * wrapper from painting the whole viewport dark when children don’t cover the full height.
+ */
+html,
 body {
-  @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(79, 118, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 85% 5%, rgba(45, 71, 175, 0.22), transparent 24%),
-    linear-gradient(180deg, #090b15 0%, #04050b 100%);
+  background-color: #ffffff !important;
 }
 
 .apollon-card {
-  @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 backdrop-blur;
+  @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
 }

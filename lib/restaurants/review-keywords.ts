@@ -59,6 +59,30 @@ export function keywordLabel(id: string): string {
   return id;
 }
 
+/** 리뷰 키워드 행 표시용 이모지 (시안·그룹 기준) */
+export function keywordEmoji(id: string): string {
+  const map: Record<string, string> = {
+    taste_delicious: "😋",
+    taste_fresh: "🥬",
+    taste_portion: "🍚",
+    taste_special: "✨",
+    taste_value: "🧡",
+    space_interior: "🏠",
+    space_wide: "📐",
+    space_clean: "✨",
+    space_photo: "📸",
+    svc_kind: "💗",
+    svc_solo: "🙋",
+    svc_group: "👨‍👩‍👧",
+    svc_talk: "💬"
+  };
+  if (map[id]) return map[id];
+  for (const g of REVIEW_KEYWORD_GROUPS) {
+    if (g.keywords.some((k) => k.id === id)) return g.emoji;
+  }
+  return "•";
+}
+
 export type RevisitIntent = "again" | "meh" | "never";
 
 export const REVISIT_OPTIONS: { id: RevisitIntent; label: string; icon: string }[] = [

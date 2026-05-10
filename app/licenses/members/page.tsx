@@ -33,18 +33,18 @@ export default function LicensesMembersPage() {
   }, [licenses]);
 
   if (loading) {
-    return <p className="text-slate-300">불러오는 중...</p>;
+    return <p className="text-slate-600">불러오는 중...</p>;
   }
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-white">멤버별 라이선스</h1>
-        <p className="mt-1 text-sm text-slate-400">담당자 기준으로 할당된 서비스 수를 확인합니다.</p>
+        <h1 className="text-2xl font-bold text-slate-900">멤버별 라이선스</h1>
+        <p className="mt-1 text-sm text-slate-600">담당자 기준으로 할당된 서비스 수를 확인합니다.</p>
       </header>
-      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
-        <table className="min-w-full text-left text-sm text-slate-200">
-          <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full text-left text-sm text-slate-800">
+          <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">이름</th>
               <th className="px-4 py-3">부서</th>
@@ -54,12 +54,12 @@ export default function LicensesMembersPage() {
           </thead>
           <tbody>
             {profiles.map((p) => (
-              <tr key={p.id} className="border-b border-slate-800/80">
-                <td className="px-4 py-3 font-medium text-white">{p.name}</td>
+              <tr key={p.id} className="border-b border-slate-100">
+                <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
                 <td className="px-4 py-3">{p.department}</td>
                 <td className="px-4 py-3">{counts.get(p.id) ?? 0}</td>
                 <td className="px-4 py-3 text-right">
-                  <Link href={`/licenses/members/${p.id}`} className="text-apollon-300 hover:underline">
+                  <Link href={`/licenses/members/${p.id}`} className="text-apollon-600 hover:underline">
                     상세
                   </Link>
                 </td>

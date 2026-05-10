@@ -169,5 +169,5 @@ export function KakaoMapPanel({ restaurants, selectedId, focusNonce = 0, onMarke
     }
   }, [selectedId, focusNonce, restaurants]);
 
-  return <div ref={containerRef} className="h-full min-h-[360px] w-full rounded-xl border border-slate-200 bg-slate-100 shadow-inner" />;
+  return <div ref={containerRef} className="h-full min-h-[360px] w-full rounded-xl border border-slate-200 bg-white shadow-inner" />;
 }

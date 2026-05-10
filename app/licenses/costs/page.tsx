@@ -33,27 +33,27 @@ export default function LicensesCostsPage() {
   }, [licenses]);
 
   if (loading) {
-    return <p className="text-slate-300">불러오는 중...</p>;
+    return <p className="text-slate-600">불러오는 중...</p>;
   }
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-white">비용 현황</h1>
-        <p className="mt-1 text-sm text-slate-400">카테고리별 월 구독·영구 구매 금액 요약입니다.</p>
+        <h1 className="text-2xl font-bold text-slate-900">비용 현황</h1>
+        <p className="mt-1 text-sm text-slate-600">카테고리별 월 구독·영구 구매 금액 요약입니다.</p>
       </header>
       <div className="grid gap-4 md:grid-cols-2">
         {byCategory.map(([cat, v]) => (
-          <div key={cat} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-lg font-semibold text-white">{cat}</h2>
+          <div key={cat} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <h2 className="text-lg font-semibold text-slate-900">{cat}</h2>
             <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-slate-700">
                 <dt>구독(월간·연간) 월 환산 합</dt>
-                <dd className="font-medium text-apollon-300">{formatCurrency(v.monthly)}</dd>
+                <dd className="font-medium text-apollon-600">{formatCurrency(v.monthly)}</dd>
               </div>
-              <div className="flex justify-between text-slate-300">
+              <div className="flex justify-between text-slate-700">
                 <dt>영구 구매 합</dt>
-                <dd className="font-medium text-emerald-300">{formatCurrency(v.perpetual)}</dd>
+                <dd className="font-medium text-emerald-700">{formatCurrency(v.perpetual)}</dd>
               </div>
             </dl>
           </div>

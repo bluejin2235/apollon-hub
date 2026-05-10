@@ -13,7 +13,7 @@ export type UseRequirePortalSessionOptions = {
   profileSelect?: string;
 };
 
-const defaultSelect = "id, email, name, department";
+const defaultSelect = "id, email, name, department, role";
 
 /** 세션 로드 + 프로필 조회 전체 상한 (getUser/토큰 갱신 무한 대기 방지) */
 const PORTAL_AUTH_READY_MS = 25_000;

@@ -175,12 +175,32 @@ drop policy if exists "menu_images_insert_authenticated" on storage.objects;
 create policy "menu_images_insert_authenticated"
   on storage.objects for insert to authenticated with check (bucket_id = 'menu-images');
 
+drop policy if exists "menu_images_update_authenticated" on storage.objects;
+create policy "menu_images_update_authenticated"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'menu-images')
+  with check (bucket_id = 'menu-images');
+
+drop policy if exists "menu_images_delete_authenticated" on storage.objects;
+create policy "menu_images_delete_authenticated"
+  on storage.objects for delete to authenticated using (bucket_id = 'menu-images');
+
 drop policy if exists "review_images_select" on storage.objects;
 create policy "review_images_select" on storage.objects for select using (bucket_id = 'review-images');
 
 drop policy if exists "review_images_insert_authenticated" on storage.objects;
 create policy "review_images_insert_authenticated"
   on storage.objects for insert to authenticated with check (bucket_id = 'review-images');
+
+drop policy if exists "review_images_update_authenticated" on storage.objects;
+create policy "review_images_update_authenticated"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'review-images')
+  with check (bucket_id = 'review-images');
+
+drop policy if exists "review_images_delete_authenticated" on storage.objects;
+create policy "review_images_delete_authenticated"
+  on storage.objects for delete to authenticated using (bucket_id = 'review-images');
 
 -- restaurant_images 행 RLS
 alter table public.restaurant_images enable row level security;

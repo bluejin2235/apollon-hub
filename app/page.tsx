@@ -82,15 +82,15 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-screen place-items-center">
       <section className="apollon-card w-full max-w-md p-8 shadow-glow">
-        <p className="text-sm font-medium tracking-wide text-apollon-300">APOLLON OS</p>
-        <h1 className="mt-3 text-3xl font-bold text-white">팀 포털 로그인</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="text-sm font-medium tracking-wide text-apollon-600">APOLLON OS</p>
+        <h1 className="mt-3 text-3xl font-bold text-slate-900">팀 포털 로그인</h1>
+        <p className="mt-2 text-sm text-slate-600">
           단일 계정으로 내부 서비스에 접근하세요.
         </p>
 
         <form onSubmit={handleLogin} className="mt-8 space-y-4">
           <div>
-            <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-200">
+            <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
               이메일
             </label>
             <input
@@ -120,7 +120,7 @@ export default function LoginPage() {
           </div>
 
           {errorMessage ? (
-            <p className="rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
               {errorMessage}
             </p>
           ) : null}

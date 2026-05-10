@@ -31,18 +31,18 @@ export default function LicensesListPage() {
   }, [profiles]);
 
   if (loading) {
-    return <p className="text-slate-300">불러오는 중...</p>;
+    return <p className="text-slate-600">불러오는 중...</p>;
   }
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-white">전체 라이선스</h1>
-        <p className="mt-1 text-sm text-slate-400">등록된 모든 서비스 라이선스입니다.</p>
+        <h1 className="text-2xl font-bold text-slate-900">전체 라이선스</h1>
+        <p className="mt-1 text-sm text-slate-600">등록된 모든 서비스 라이선스입니다.</p>
       </header>
-      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
-        <table className="min-w-full text-left text-sm text-slate-200">
-          <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full text-left text-sm text-slate-800">
+          <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">이름</th>
               <th className="px-4 py-3">플랜</th>
@@ -56,9 +56,9 @@ export default function LicensesListPage() {
             {licenses.map((row) => {
               const a = row.assignee_id ? assigneeMap.get(row.assignee_id) : null;
               return (
-                <tr key={row.id} className="border-b border-slate-800/80">
+                <tr key={row.id} className="border-b border-slate-100">
                   <td className="px-4 py-3">
-                    <Link href={`/licenses/${row.id}`} className="font-medium text-apollon-300 hover:underline">
+                    <Link href={`/licenses/${row.id}`} className="font-medium text-apollon-600 hover:underline">
                       {row.name}
                     </Link>
                   </td>

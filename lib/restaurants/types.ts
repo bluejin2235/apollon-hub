@@ -4,41 +4,57 @@ export type RestaurantCategory =
   | "카페·디저트"
   | "회식·저녁"
   | "배달"
-  | "접대·비즈니스";
+  | "비즈니스";
 
 export const RESTAURANT_CATEGORY_META: { key: RestaurantCategory; label: string; markerColor: string; badgeClass: string }[] = [
   { key: "점심", label: "점심", markerColor: "#2563eb", badgeClass: "bg-blue-600 text-white" },
   { key: "카페·디저트", label: "카페·디저트", markerColor: "#7c3aed", badgeClass: "bg-violet-600 text-white" },
   { key: "회식·저녁", label: "회식·저녁", markerColor: "#059669", badgeClass: "bg-emerald-600 text-white" },
   { key: "배달", label: "배달", markerColor: "#d97706", badgeClass: "bg-amber-600 text-white" },
-  { key: "접대·비즈니스", label: "접대·비즈니스", markerColor: "#db2777", badgeClass: "bg-pink-600 text-white" }
+  { key: "비즈니스", label: "비즈니스", markerColor: "#db2777", badgeClass: "bg-pink-600 text-white" }
 ];
 
+/** 예전 DB/코드 값 → 현재 카테고리 */
+const LEGACY_CATEGORY_TO_CURRENT: Record<string, RestaurantCategory> = {
+  "접대·비즈니스": "비즈니스"
+};
+
+export function normalizeRestaurantCategory(category: string): RestaurantCategory {
+  if (RESTAURANT_CATEGORY_META.some((c) => c.key === category)) {
+    return category as RestaurantCategory;
+  }
+  const mapped = LEGACY_CATEGORY_TO_CURRENT[category];
+  if (mapped) return mapped;
+  return "점심";
+}
+
 export function categoryMarkerColor(category: string): string {
-  const row = RESTAURANT_CATEGORY_META.find((c) => c.key === category);
+  const row = RESTAURANT_CATEGORY_META.find((c) => c.key === normalizeRestaurantCategory(category));
   return row?.markerColor ?? "#64748b";
 }
 
 export function categoryBadgeClass(category: string): string {
-  const row = RESTAURANT_CATEGORY_META.find((c) => c.key === category);
+  const row = RESTAURANT_CATEGORY_META.find((c) => c.key === normalizeRestaurantCategory(category));
   return row?.badgeClass ?? "bg-slate-500 text-white";
 }
 
 /** 음식 종류 필터 (다중 선택) */
 export const FOOD_TYPE_OPTIONS = [
-  "고깃집",
-  "일식",
-  "횟집",
+  "한식",
   "중식",
-  "양식",
+  "일식",
   "이탈리안",
-  "프렌치",
-  "태국음식",
-  "베트남음식",
+  "태국식",
+  "베트남식",
+  "고깃집",
+  "횟집",
+  "양식",
   "국물요리",
-  "해산물",
   "면요리",
   "브런치",
+  "디저트",
+  "베이커리",
+  "티룸",
   "분식",
   "부페",
   "패스트푸드",
@@ -47,8 +63,33 @@ export const FOOD_TYPE_OPTIONS = [
 
 export type FoodTypeOption = (typeof FOOD_TYPE_OPTIONS)[number];
 
+/** DB 등에 남아 있을 수 있는 예전 음식 종류 라벨 */
+export const FOOD_TYPE_LEGACY_ALIASES: Record<string, FoodTypeOption> = {
+  태국음식: "태국식",
+  베트남음식: "베트남식"
+};
+
+export function normalizeFoodTypeValue(v: string): string {
+  const trimmed = v.trim();
+  if ((FOOD_TYPE_OPTIONS as readonly string[]).includes(trimmed)) return trimmed;
+  return FOOD_TYPE_LEGACY_ALIASES[trimmed] ?? trimmed;
+}
+
+export function normalizeFoodTypeList(arr: string[] | null | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of arr ?? []) {
+    const n = normalizeFoodTypeValue(raw);
+    if (!seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
+}
+
 /** 분위기 & 특징 (다중 선택) */
-export const ATMOSPHERE_TAG_OPTIONS = ["분위기좋은", "조용한", "단체석", "주차", "접대가능"] as const;
+export const ATMOSPHERE_TAG_OPTIONS = ["분위기좋은", "조용한", "단체석", "주차", "애견"] as const;
 
 export type AtmosphereTagOption = (typeof ATMOSPHERE_TAG_OPTIONS)[number];
 

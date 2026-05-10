@@ -5,23 +5,23 @@ import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { formatPortalProfileSummary } from "@/lib/portal/profile";
+import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 
 export function RestaurantsShell({ children }: { children: ReactNode }) {
   const { status, profile } = useRequirePortalSession();
 
   if (status === "checking") {
-    return <PortalAuthChecking />;
+    return <PortalAuthChecking light />;
   }
 
-  const summary = profile ? formatPortalProfileSummary(profile) : "- / -";
+  const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
 
   return (
     <div className="min-h-screen">
-      <PortalHeader profileSummary={summary} onLogout={() => void signOutAndRedirectToLogin()} />
+      <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
-      <div className="min-h-[calc(100vh-3.5rem)] w-full bg-slate-50 text-slate-900">
-        <div className="w-full pb-16 pt-6">{children}</div>
+      <div className="min-h-[calc(100vh-3.5rem)] w-full bg-white text-gray-900">
+        <div className="mx-auto w-full max-w-7xl pb-16 pt-6">{children}</div>
       </div>
     </div>
   );

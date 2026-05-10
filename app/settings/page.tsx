@@ -6,7 +6,7 @@ import { PortalHeader } from "@/components/portal/portal-header";
 import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/team-member-edit-modal";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { formatPortalProfileSummary } from "@/lib/portal/profile";
+import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
 type TabKey = "profile" | "password" | "team";
@@ -265,22 +265,20 @@ export default function SettingsPage() {
   return (
     <main className="min-h-screen">
       <PortalHeader
-        profileSummary={formatPortalProfileSummary(sessionProfile)}
+        userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
         onLogout={handleLogout}
         zIndexClass="z-10"
-        profileChipClassName="rounded-md bg-white/10 px-2 py-1 text-slate-100"
         showSettingsLink={false}
-        actionsRowClassName="flex items-center gap-2 text-sm"
       />
 
       <div className="pb-10 pt-10">
         <div className="mb-7">
-          <h1 className="text-3xl font-bold text-white">설정</h1>
-          <p className="mt-2 text-slate-300">프로필 및 계정 설정을 관리하세요.</p>
+          <h1 className="text-3xl font-bold text-slate-900">설정</h1>
+          <p className="mt-2 text-slate-600">프로필 및 계정 설정을 관리하세요.</p>
         </div>
 
         <div className="mb-7 flex items-center justify-between">
-          <nav className="inline-flex rounded-xl border border-slate-800/80 bg-slate-900/70 p-1">
+          <nav className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -288,8 +286,8 @@ export default function SettingsPage() {
                 onClick={() => setActiveTab(tab.key)}
                 className={`rounded-lg px-4 py-2 text-sm transition ${
                   activeTab === tab.key
-                    ? "bg-slate-100 text-slate-900"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
                 }`}
               >
                 {tab.label}
@@ -310,19 +308,19 @@ export default function SettingsPage() {
 
         {activeTab === "profile" ? (
           <section className="apollon-card p-6 md:p-8">
-            <div className="mb-6 flex items-center gap-4 border-b border-slate-800 pb-6">
+            <div className="mb-6 flex items-center gap-4 border-b border-slate-200 pb-6">
               <div className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-apollon-500 text-2xl font-bold text-white">
                 {profileName.slice(0, 1) || "A"}
               </div>
               <div>
-                <p className="text-2xl font-semibold text-white">{profileName || "-"}</p>
-                <p className="text-slate-400">{profileEmail || "-"}</p>
+                <p className="text-2xl font-semibold text-slate-900">{profileName || "-"}</p>
+                <p className="text-slate-600">{profileEmail || "-"}</p>
               </div>
             </div>
 
             <div className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">이름</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">이름</label>
                 <input
                   value={profileName}
                   onChange={(event) => setProfileName(event.target.value)}
@@ -330,21 +328,21 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">부서</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">부서</label>
                 <input
                   value={profileDepartment}
                   onChange={(event) => setProfileDepartment(event.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3">
-                <p className="text-xs text-slate-400">역할</p>
-                <p className="mt-1 inline-flex rounded-md bg-violet-500/20 px-2 py-1 text-sm font-medium text-violet-200">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs text-slate-500">역할</p>
+                <p className="mt-1 inline-flex rounded-md bg-violet-100 px-2 py-1 text-sm font-medium text-violet-800">
                   {profileRole}
                 </p>
               </div>
               {profileMessage ? (
-                <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-300">
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                   {profileMessage}
                 </p>
               ) : null}
@@ -361,14 +359,14 @@ export default function SettingsPage() {
 
         {activeTab === "password" ? (
           <section className="apollon-card p-6 md:p-8">
-            <div className="mb-6 border-b border-slate-800 pb-6">
-              <h2 className="text-2xl font-semibold text-white">비밀번호 변경</h2>
-              <p className="mt-2 text-slate-400">보안을 위해 주기적으로 비밀번호를 변경해주세요.</p>
+            <div className="mb-6 border-b border-slate-200 pb-6">
+              <h2 className="text-2xl font-semibold text-slate-900">비밀번호 변경</h2>
+              <p className="mt-2 text-slate-600">보안을 위해 주기적으로 비밀번호를 변경해주세요.</p>
             </div>
 
             <div className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">현재 비밀번호</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">현재 비밀번호</label>
                 <input
                   type="password"
                   value={currentPassword}
@@ -377,7 +375,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">새 비밀번호</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">새 비밀번호</label>
                 <input
                   type="password"
                   value={newPassword}
@@ -387,7 +385,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   새 비밀번호 확인
                 </label>
                 <input
@@ -399,7 +397,7 @@ export default function SettingsPage() {
                 />
               </div>
               {passwordMessage ? (
-                <p className="rounded-xl border border-sky-500/40 bg-sky-950/30 px-3 py-2 text-sm text-sky-300">
+                <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
                   {passwordMessage}
                 </p>
               ) : null}
@@ -428,8 +426,8 @@ export default function SettingsPage() {
                   <span
                     className={`rounded-lg px-3 py-1 text-sm ${
                       canManageTeam
-                        ? "bg-emerald-500/20 text-emerald-200"
-                        : "bg-amber-500/20 text-amber-200"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-900"
                     }`}
                   >
                     {canManageTeam ? "슈퍼관리자 접근 권한" : "읽기 전용"}
@@ -439,18 +437,18 @@ export default function SettingsPage() {
             </div>
 
             {!canManageTeam ? (
-              <p className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 팀원 관리는 슈퍼관리자만 접근 가능합니다.
               </p>
             ) : null}
 
             {teamMessage ? (
-              <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-300">
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 {teamMessage}
               </p>
             ) : null}
 
-            {loadingTeam ? <p className="text-slate-300">팀원 목록을 불러오는 중...</p> : null}
+            {loadingTeam ? <p className="text-slate-600">팀원 목록을 불러오는 중...</p> : null}
 
             {filteredMembers.map((member) => (
               <article
@@ -458,15 +456,15 @@ export default function SettingsPage() {
                 className="apollon-card flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-lg font-semibold text-white">{member.name}</p>
-                  <p className="truncate text-sm text-slate-400">
+                  <p className="text-lg font-semibold text-slate-900">{member.name}</p>
+                  <p className="truncate text-sm text-slate-600">
                     {member.email} · {member.department}
                   </p>
                   <p className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-md bg-violet-500/20 px-2 py-0.5 font-medium text-violet-200">
+                    <span className="rounded-md bg-violet-100 px-2 py-0.5 font-medium text-violet-800">
                       {member.role}
                     </span>
-                    <span className="rounded-md bg-slate-700/80 px-2 py-0.5 font-medium text-slate-200">
+                    <span className="rounded-md bg-slate-200 px-2 py-0.5 font-medium text-slate-800">
                       {member.status}
                     </span>
                   </p>
@@ -476,7 +474,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setEditMember(member)}
-                    className="shrink-0 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-apollon-400 hover:text-white"
+                    className="shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition hover:border-apollon-400 hover:bg-slate-50"
                   >
                     수정
                   </button>
@@ -496,14 +494,14 @@ export default function SettingsPage() {
       ) : null}
 
       {inviteModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-500/45 px-4 backdrop-blur-[2px]">
           <div className="apollon-card w-full max-w-lg p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">팀원 초대</h2>
+              <h2 className="text-xl font-semibold text-slate-900">팀원 초대</h2>
               <button
                 type="button"
                 onClick={handleCloseInviteModal}
-                className="rounded-md px-2 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                className="rounded-md px-2 py-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
               >
                 닫기
               </button>
@@ -511,7 +509,7 @@ export default function SettingsPage() {
 
             <form onSubmit={handleInviteMember} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">이름</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">이름</label>
                 <input
                   value={inviteName}
                   onChange={(event) => setInviteName(event.target.value)}
@@ -521,7 +519,7 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">이메일</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">이메일</label>
                 <input
                   type="email"
                   value={inviteEmail}
@@ -532,7 +530,7 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">부서</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">부서</label>
                 <input
                   value={inviteDepartment}
                   onChange={(event) => setInviteDepartment(event.target.value)}
@@ -542,7 +540,7 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">권한</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">권한</label>
                 <select
                   value={inviteRole}
                   onChange={(event) => setInviteRole(event.target.value as Role)}
@@ -557,27 +555,27 @@ export default function SettingsPage() {
               </div>
 
               {inviteError ? (
-                <p className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                   {inviteError}
                 </p>
               ) : null}
               {inviteMessage ? (
-                <p className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-300">
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                   {inviteMessage}
                 </p>
               ) : null}
 
               {invitedTemporaryPassword ? (
-                <div className="rounded-xl border border-apollon-500/40 bg-apollon-950/30 p-3">
-                  <p className="text-xs text-slate-300">임시 비밀번호</p>
+                <div className="rounded-xl border border-apollon-200 bg-apollon-50 p-3">
+                  <p className="text-xs text-slate-600">임시 비밀번호</p>
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <code className="rounded bg-slate-900 px-2 py-1 text-sm text-apollon-200">
+                    <code className="rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-apollon-800">
                       {invitedTemporaryPassword}
                     </code>
                     <button
                       type="button"
                       onClick={() => void handleCopyTemporaryPassword()}
-                      className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 transition hover:border-apollon-400 hover:text-white"
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 transition hover:border-apollon-400 hover:bg-white"
                     >
                       복사
                     </button>

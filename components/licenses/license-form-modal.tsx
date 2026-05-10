@@ -143,14 +143,14 @@ export function LicenseFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 px-4 py-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-500/45 px-4 py-8 backdrop-blur-[2px]">
       <div className="apollon-card max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
+          <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            className="rounded-md px-2 py-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           >
             닫기
           </button>
@@ -159,7 +159,7 @@ export function LicenseFormModal({
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">서비스 이름</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">서비스 이름</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -168,7 +168,7 @@ export function LicenseFormModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">상세 상품명</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">상세 상품명</label>
               <input
                 value={planName}
                 onChange={(e) => setPlanName(e.target.value)}
@@ -177,7 +177,7 @@ export function LicenseFormModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">카테고리</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">카테고리</label>
               <input
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
@@ -186,7 +186,7 @@ export function LicenseFormModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">통화</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">통화</label>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
@@ -200,7 +200,7 @@ export function LicenseFormModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">비용</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">비용</label>
               <input
                 type="number"
                 step="0.01"
@@ -211,7 +211,7 @@ export function LicenseFormModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">계약 유형</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">계약 유형</label>
               <select
                 value={contractType}
                 onChange={(e) => setContractType(e.target.value as ContractType)}
@@ -225,7 +225,7 @@ export function LicenseFormModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">서비스 시작일</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">서비스 시작일</label>
               <input
                 type="date"
                 value={startDate}
@@ -234,7 +234,7 @@ export function LicenseFormModal({
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
                 서비스 사용목적 <span className="text-rose-400">*</span>
               </label>
               <textarea
@@ -247,7 +247,7 @@ export function LicenseFormModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">상태</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">상태</label>
               <div className="flex gap-2">
                 {statusOptions.map((s) => (
                   <button
@@ -256,8 +256,8 @@ export function LicenseFormModal({
                     onClick={() => setStatus(s)}
                     className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
                       status === s
-                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200"
-                        : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-600"
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-800"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300"
                     }`}
                   >
                     {s}
@@ -266,7 +266,7 @@ export function LicenseFormModal({
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-300">라이선스 수량</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">라이선스 수량</label>
               <input
                 type="number"
                 min={1}
@@ -278,7 +278,7 @@ export function LicenseFormModal({
               <p className="mt-1 text-xs text-slate-500">비워두면 라이선스 수량 제한 없음</p>
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">결제방법</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">결제방법</label>
               <div className="flex gap-2">
                 {paymentOptions.map((p) => (
                   <button
@@ -287,8 +287,8 @@ export function LicenseFormModal({
                     onClick={() => setPaymentMethod(p)}
                     className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
                       paymentMethod === p
-                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200"
-                        : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-600"
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-800"
+                        : "border-slate-200 bg-slate-100 text-slate-600 hover:border-slate-300"
                     }`}
                   >
                     {p}
@@ -297,7 +297,7 @@ export function LicenseFormModal({
               </div>
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">카드 소지자</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">카드 소지자</label>
               <select
                 value={cardHolderId}
                 onChange={(e) => setCardHolderId(e.target.value)}
@@ -312,7 +312,7 @@ export function LicenseFormModal({
               </select>
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">웹사이트 URL</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">웹사이트 URL</label>
               <input
                 value={websiteUrl}
                 onChange={(e) => setWebsiteUrl(e.target.value)}
@@ -321,7 +321,7 @@ export function LicenseFormModal({
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-slate-300">메모</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">메모</label>
               <textarea
                 value={memo}
                 onChange={(e) => setMemo(e.target.value)}
@@ -332,7 +332,7 @@ export function LicenseFormModal({
           </div>
 
           {error ? (
-            <p className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
               {error}
             </p>
           ) : null}
@@ -341,7 +341,7 @@ export function LicenseFormModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-600 bg-slate-900 py-3 font-semibold text-slate-200 transition hover:bg-slate-800"
+              className="flex-1 rounded-xl border border-slate-300 bg-white py-3 font-semibold text-slate-800 transition hover:bg-slate-50"
             >
               취소
             </button>

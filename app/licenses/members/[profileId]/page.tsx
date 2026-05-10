@@ -34,13 +34,16 @@ export default function LicensesMemberDetailPage() {
   );
 
   if (loading) {
-    return <p className="text-slate-300">불러오는 중...</p>;
+    return <p className="text-slate-600">불러오는 중...</p>;
   }
 
   if (!profile) {
     return (
-      <p className="text-slate-400">
-        프로필을 찾을 수 없습니다. <Link href="/licenses/members" className="text-apollon-300 hover:underline">목록</Link>
+      <p className="text-slate-600">
+        프로필을 찾을 수 없습니다.{" "}
+        <Link href="/licenses/members" className="text-apollon-600 hover:underline">
+          목록
+        </Link>
       </p>
     );
   }
@@ -48,18 +51,18 @@ export default function LicensesMemberDetailPage() {
   return (
     <div className="space-y-6">
       <header>
-        <Link href="/licenses/members" className="text-sm text-apollon-300 hover:underline">
+        <Link href="/licenses/members" className="text-sm text-apollon-600 hover:underline">
           ← 멤버별 라이선스
         </Link>
-        <h1 className="mt-2 text-2xl font-bold text-white">{profile.name}</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">{profile.name}</h1>
+        <p className="mt-1 text-sm text-slate-600">
           {profile.department} · {profile.email}
         </p>
-        <p className="mt-2 text-sm text-slate-300">담당 서비스 월 비용 합계: {formatCurrency(totalMonthly)}</p>
+        <p className="mt-2 text-sm text-slate-700">담당 서비스 월 비용 합계: {formatCurrency(totalMonthly)}</p>
       </header>
-      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/50">
-        <table className="min-w-full text-left text-sm text-slate-200">
-          <thead className="border-b border-slate-800 text-xs uppercase text-slate-500">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full text-left text-sm text-slate-800">
+          <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-4 py-3">서비스</th>
               <th className="px-4 py-3">상태</th>
@@ -68,9 +71,9 @@ export default function LicensesMemberDetailPage() {
           </thead>
           <tbody>
             {licenses.map((row) => (
-              <tr key={row.id} className="border-b border-slate-800/80">
+              <tr key={row.id} className="border-b border-slate-100">
                 <td className="px-4 py-3">
-                  <Link href={`/licenses/${row.id}`} className="font-medium text-apollon-300 hover:underline">
+                  <Link href={`/licenses/${row.id}`} className="font-medium text-apollon-600 hover:underline">
                     {row.name}
                   </Link>
                 </td>
