@@ -34,7 +34,7 @@ export function LicenseFormModal({
     license?.start_date ? license.start_date.slice(0, 10) : ""
   );
   const [purpose, setPurpose] = useState(license?.purpose ?? "");
-  const [status, setStatus] = useState<LicenseStatus>(license?.status ?? "활성");
+  const [status, setStatus] = useState<LicenseStatus>(license?.status === "비활성" ? "비활성" : "활성");
   const [licenseCount, setLicenseCount] = useState(
     license?.license_count != null ? String(license.license_count) : ""
   );

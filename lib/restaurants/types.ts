@@ -97,10 +97,14 @@ export type RestaurantImageRow = {
 /** 표시용 별점 (0.5 단위), 레거시 정수 rating 호환 */
 export function reviewStarsScore(rv: Review): number {
   const sr = rv.star_rating;
-  if (sr != null && sr >= 2 && sr <= 10) {
+  if (typeof sr === "number" && Number.isFinite(sr) && sr >= 2 && sr <= 10) {
     return sr / 2;
   }
-  return rv.rating;
+  const r = rv.rating;
+  if (typeof r === "number" && Number.isFinite(r)) {
+    return r;
+  }
+  return 0;
 }
 
 /** 재방문 긍정 여부 (목록·추천용) */
