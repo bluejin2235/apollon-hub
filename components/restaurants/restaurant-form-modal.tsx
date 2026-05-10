@@ -19,6 +19,8 @@ type Props = {
   onSaved: () => void;
 };
 
+type KakaoSearchApiBody = KakaoKeywordSearchResponse & { error?: string; detail?: string; status?: number };
+
 function toggle<T extends string>(list: T[], v: T): T[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
 }
@@ -60,17 +62,32 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     setSearching(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/kakao/search?query=${encodeURIComponent(q)}`);
-      const body = (await res.json()) as KakaoKeywordSearchResponse & { error?: string };
+      const res = await fetch(`/api/kakao/search?query=${encodeURIComponent(q)}`, { cache: "no-store" });
+      const raw = await res.text();
+      let body: KakaoSearchApiBody | null = null;
+      try {
+        body = raw ? (JSON.parse(raw) as KakaoSearchApiBody) : null;
+      } catch {
+        setMsg(
+          res.ok
+            ? "검색 응답을 해석하지 못했습니다. 잠시 후 다시 시도해주세요."
+            : `검색 요청 실패 (HTTP ${res.status}). 배포 보호·프록시 응답이 HTML인 경우가 있습니다.`
+        );
+        setResults([]);
+        console.error("[restaurant-form] /api/kakao/search non-JSON body", res.status, raw.slice(0, 300));
+        return;
+      }
       if (!res.ok) {
-        setMsg(body.error ?? "검색 실패");
+        const base = body?.error ?? "검색 실패";
+        const extra = body?.detail ? ` — ${body.detail.slice(0, 180)}` : "";
+        setMsg(base + extra);
         setResults([]);
         return;
       }
-      setResults(body.documents ?? []);
+      setResults(body?.documents ?? []);
     } catch (e) {
       console.error(e);
-      setMsg("검색 중 오류가 발생했습니다.");
+      setMsg("검색 요청에 실패했습니다. 네트워크를 확인하거나 잠시 후 다시 시도해주세요.");
       setResults([]);
     } finally {
       setSearching(false);
@@ -155,7 +172,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-black placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="예: 성수 맛집"
               />
               <button
