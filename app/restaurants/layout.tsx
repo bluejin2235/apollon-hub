@@ -10,7 +10,7 @@ export default function RestaurantsLayout({ children }: { children: ReactNode })
       {kakaoMapKey ? (
         <Script
           id="kakao-maps-sdk"
-          src={`//dapi.kakao.com/v2/maps/sdk.js?autoload=false&libraries=services&appkey=${encodeURIComponent(kakaoMapKey)}`}
+          src={`https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&libraries=services&appkey=${encodeURIComponent(kakaoMapKey)}`}
           strategy="afterInteractive"
         />
       ) : null}
