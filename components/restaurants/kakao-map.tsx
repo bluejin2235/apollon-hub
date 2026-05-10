@@ -28,6 +28,10 @@ type Maps = {
   Point: new (x: number, y: number) => unknown;
 };
 
+type KakaoMapInstance = InstanceType<Maps["Map"]>;
+type KakaoMarkerInstance = InstanceType<Maps["Marker"]>;
+type KakaoInfoWindowInstance = InstanceType<Maps["InfoWindow"]>;
+
 function maps(): Maps {
   const m = (window as unknown as { kakao?: { maps: Maps } }).kakao?.maps;
   if (!m) throw new Error("kakao.maps 없음");
@@ -63,9 +67,9 @@ function escHtml(s: string): string {
 
 export function KakaoMapPanel({ restaurants, selectedId, focusNonce = 0, onMarkerClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapInst = useRef<Maps["Map"] | null>(null);
-  const markers = useRef<Map<string, InstanceType<Maps["Marker"]>>>(new Map());
-  const infoRef = useRef<InstanceType<Maps["InfoWindow"]> | null>(null);
+  const mapInst = useRef<KakaoMapInstance | null>(null);
+  const markers = useRef<Map<string, KakaoMarkerInstance>>(new Map());
+  const infoRef = useRef<KakaoInfoWindowInstance | null>(null);
 
   const fitBounds = useCallback((list: Restaurant[]) => {
     const M = maps();
