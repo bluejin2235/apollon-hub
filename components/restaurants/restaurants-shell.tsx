@@ -21,7 +21,7 @@ export function RestaurantsShell({ children }: { children: ReactNode }) {
       <PortalHeader profileSummary={summary} onLogout={() => void signOutAndRedirectToLogin()} />
 
       <div className="min-h-[calc(100vh-3.5rem)] w-full bg-slate-50 text-slate-900">
-        <div className="mx-auto w-full max-w-none px-4 pb-16 pt-6 md:px-6">{children}</div>
+        <div className="w-full pb-16 pt-6">{children}</div>
       </div>
     </div>
   );

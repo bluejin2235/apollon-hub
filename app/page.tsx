@@ -80,7 +80,7 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="grid min-h-screen place-items-center px-4">
+    <main className="grid min-h-screen place-items-center">
       <section className="apollon-card w-full max-w-md p-8 shadow-glow">
         <p className="text-sm font-medium tracking-wide text-apollon-300">APOLLON OS</p>
         <h1 className="mt-3 text-3xl font-bold text-white">팀 포털 로그인</h1>

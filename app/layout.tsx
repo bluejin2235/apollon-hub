@@ -20,7 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className={notoSansKr.className}>{children}</body>
+      <body className={notoSansKr.className}>
+        <div className="mx-auto w-full max-w-7xl px-6">{children}</div>
+      </body>
     </html>
   );
 }

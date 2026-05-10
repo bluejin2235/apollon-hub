@@ -25,7 +25,7 @@ export function PortalHeader({
   profileSummary,
   onLogout,
   hubTitleVariant = "link",
-  maxWidthClass = "max-w-[1600px]",
+  maxWidthClass = "w-full",
   zIndexClass = "z-20",
   profileChipClassName = "hidden rounded-md bg-white/10 px-2 py-1 text-slate-100 sm:inline",
   showSettingsLink = true,
@@ -54,7 +54,7 @@ export function PortalHeader({
 
   return (
     <header className={`${headerBar} ${zIndexClass}`}>
-      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between px-4 md:px-6`}>
+      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between`}>
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-md bg-apollon-500/90 text-center text-sm font-bold leading-7 text-white">A</div>
           {hubTitleVariant === "link" ? (

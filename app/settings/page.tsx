@@ -267,14 +267,13 @@ export default function SettingsPage() {
       <PortalHeader
         profileSummary={formatPortalProfileSummary(sessionProfile)}
         onLogout={handleLogout}
-        maxWidthClass="max-w-[1400px]"
         zIndexClass="z-10"
         profileChipClassName="rounded-md bg-white/10 px-2 py-1 text-slate-100"
         showSettingsLink={false}
         actionsRowClassName="flex items-center gap-2 text-sm"
       />
 
-      <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-10 md:px-8">
+      <div className="pb-10 pt-10">
         <div className="mb-7">
           <h1 className="text-3xl font-bold text-white">설정</h1>
           <p className="mt-2 text-slate-300">프로필 및 계정 설정을 관리하세요.</p>

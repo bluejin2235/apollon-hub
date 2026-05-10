@@ -23,15 +23,14 @@ export default function ServiceHubPage() {
         profileSummary={summary}
         onLogout={() => void signOutAndRedirectToLogin()}
         hubTitleVariant="text"
-        maxWidthClass="max-w-[1400px]"
         zIndexClass="z-10"
         profileChipClassName="text-sm text-slate-100"
         actionsRowClassName="flex items-center gap-6 text-sm"
         actionsInnerWrapClassName="flex items-center gap-2 text-sm"
       />
 
-      <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-16 md:px-8">
-        <section className="mx-auto grid max-w-4xl gap-4 md:grid-cols-2 xl:max-w-5xl">
+      <div className="pb-10 pt-16">
+        <section className="grid gap-4 md:grid-cols-2">
           {portalServices.map((service) => (
             <ServiceCard
               key={service.title}
