@@ -769,9 +769,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
 
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-base font-bold text-slate-900">사진 ({photoWallItems.length}장)</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              메뉴 이미지(menu-images)가 먼저 오고, 이어서 리뷰에 첨부된 사진이 표시됩니다.
-            </p>
             {photoWallItems.length > 0 ? (
               <>
                 <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
