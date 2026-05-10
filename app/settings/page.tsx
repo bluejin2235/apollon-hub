@@ -1,23 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
+import { PortalHeader } from "@/components/portal/portal-header";
+import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/team-member-edit-modal";
+import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
+import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { formatPortalProfileSummary } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
 type TabKey = "profile" | "password" | "team";
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
-type Status = "근무" | "휴직" | "퇴사";
-
-type TeamMember = {
-  id: string;
-  name: string;
-  email: string;
-  department: string;
-  role: Role;
-  status: Status;
-  created_at?: string;
-};
 
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "profile", label: "프로필" },
@@ -26,11 +19,10 @@ const tabs: Array<{ key: TabKey; label: string }> = [
 ];
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
-const statusOptions: Status[] = ["근무", "휴직", "퇴사"];
-
 export default function SettingsPage() {
-  const router = useRouter();
-  const [authState, setAuthState] = useState<"checking" | "ready">("checking");
+  const { status, profile: sessionProfile } = useRequirePortalSession({
+    profileSelect: "id, email, name, department, role"
+  });
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
   const [profileId, setProfileId] = useState<string | null>(null);
   const [profileEmail, setProfileEmail] = useState("");
@@ -43,7 +35,8 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
+  const [editMember, setEditMember] = useState<TeamMemberRow | null>(null);
   const [search, setSearch] = useState("");
   const [loadingTeam, setLoadingTeam] = useState(true);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -59,50 +52,45 @@ export default function SettingsPage() {
   const canManageTeam = profileRole === "슈퍼관리자";
 
   useEffect(() => {
-    const loadData = async () => {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
+    if (status !== "ready" || !sessionProfile) {
+      return;
+    }
+    setProfileId(sessionProfile.id);
+    setProfileEmail(sessionProfile.email);
+    setProfileName(sessionProfile.name);
+    setProfileDepartment(sessionProfile.department);
+    setProfileRole(sessionProfile.role as Role);
+  }, [status, sessionProfile]);
 
-      if (!session?.user?.email) {
-        router.replace("/");
-        return;
-      }
+  useEffect(() => {
+    if (status !== "ready" || !sessionProfile?.id) {
+      return;
+    }
+    let cancelled = false;
+    setLoadingTeam(true);
 
-      const { data: currentProfile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, email, name, department, role")
-        .eq("email", session.user.email)
-        .single();
-
-      if (profileError || !currentProfile) {
-        await supabase.auth.signOut();
-        router.replace("/");
-        return;
-      }
-
-      setProfileId(currentProfile.id);
-      setProfileEmail(currentProfile.email);
-      setProfileName(currentProfile.name);
-      setProfileDepartment(currentProfile.department);
-      setProfileRole(currentProfile.role as Role);
-
+    const loadMembers = async () => {
       const { data: members } = await supabase
         .from("profiles")
         .select("id, name, email, department, role, status, created_at")
         .order("created_at", { ascending: true });
 
-      setTeamMembers((members ?? []) as TeamMember[]);
+      if (cancelled) {
+        return;
+      }
+      setTeamMembers((members ?? []) as TeamMemberRow[]);
       setLoadingTeam(false);
-      setAuthState("ready");
     };
 
-    void loadData();
-  }, [router]);
+    void loadMembers();
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.replace("/");
+    return () => {
+      cancelled = true;
+    };
+  }, [status, sessionProfile?.id]);
+
+  const handleLogout = () => {
+    void signOutAndRedirectToLogin();
   };
 
   const filteredMembers = useMemo(() => {
@@ -182,7 +170,7 @@ export default function SettingsPage() {
       const result = (await response.json()) as {
         error?: string;
         temporaryPassword?: string;
-        profile?: TeamMember;
+        profile?: TeamMemberRow;
       };
 
       if (!response.ok || !result.profile || !result.temporaryPassword) {
@@ -192,7 +180,7 @@ export default function SettingsPage() {
 
       setTeamMembers((previous) => {
         const withoutInvited = previous.filter((member) => member.email !== result.profile?.email);
-        return [...withoutInvited, result.profile as TeamMember].sort((a, b) =>
+        return [...withoutInvited, result.profile as TeamMemberRow].sort((a, b) =>
           a.created_at && b.created_at ? a.created_at.localeCompare(b.created_at) : 0
         );
       });
@@ -260,64 +248,31 @@ export default function SettingsPage() {
     setPasswordMessage("비밀번호를 변경했습니다.");
   };
 
-  const handleMemberRoleChange = async (memberId: string, role: Role) => {
-    if (!canManageTeam) {
-      return;
+  const handleEditMemberSaved = (updated: TeamMemberRow) => {
+    setTeamMembers((previous) => previous.map((member) => (member.id === updated.id ? updated : member)));
+    setTeamMessage("팀원 정보를 저장했습니다.");
+    if (updated.id === profileId) {
+      setProfileName(updated.name);
+      setProfileDepartment(updated.department);
+      setProfileRole(updated.role);
     }
-
-    await supabase.from("profiles").update({ role }).eq("id", memberId);
-    setTeamMembers((previous) =>
-      previous.map((member) => (member.id === memberId ? { ...member, role } : member))
-    );
-    setTeamMessage("팀원 권한을 업데이트했습니다.");
   };
 
-  const handleMemberStatusChange = async (memberId: string, status: Status) => {
-    if (!canManageTeam) {
-      return;
-    }
-
-    await supabase.from("profiles").update({ status }).eq("id", memberId);
-    setTeamMembers((previous) =>
-      previous.map((member) => (member.id === memberId ? { ...member, status } : member))
-    );
-    setTeamMessage("팀원 상태를 업데이트했습니다.");
-  };
-
-  if (authState === "checking") {
-    return (
-      <main className="flex min-h-screen items-center justify-center text-slate-300">
-        인증 상태를 확인하는 중...
-      </main>
-    );
+  if (status === "checking" || !sessionProfile) {
+    return <PortalAuthChecking />;
   }
 
   return (
     <main className="min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-apollon-500/30 bg-cyan-900/85 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-4 md:px-6">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-apollon-500/90 text-center text-sm font-bold leading-7 text-white">
-              A
-            </div>
-            <Link href="/hub" className="text-xl font-medium text-white">
-              Apollon Hub
-            </Link>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="rounded-md bg-white/10 px-2 py-1 text-slate-100">
-              {profileName || "-"} / {profileDepartment || "-"}
-            </span>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-md px-3 py-1.5 text-slate-100 transition hover:bg-white/10 hover:text-white"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
+      <PortalHeader
+        profileSummary={formatPortalProfileSummary(sessionProfile)}
+        onLogout={handleLogout}
+        maxWidthClass="max-w-[1400px]"
+        zIndexClass="z-10"
+        profileChipClassName="rounded-md bg-white/10 px-2 py-1 text-slate-100"
+        showSettingsLink={false}
+        actionsRowClassName="flex items-center gap-2 text-sm"
+      />
 
       <div className="mx-auto w-full max-w-6xl px-4 pb-10 pt-10 md:px-8">
         <div className="mb-7">
@@ -503,48 +458,43 @@ export default function SettingsPage() {
                 key={member.id}
                 className="apollon-card flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-lg font-semibold text-white">{member.name}</p>
                   <p className="truncate text-sm text-slate-400">
                     {member.email} · {member.department}
                   </p>
+                  <p className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-md bg-violet-500/20 px-2 py-0.5 font-medium text-violet-200">
+                      {member.role}
+                    </span>
+                    <span className="rounded-md bg-slate-700/80 px-2 py-0.5 font-medium text-slate-200">
+                      {member.status}
+                    </span>
+                  </p>
                 </div>
 
-                <div className="flex flex-col gap-2 text-sm md:flex-row md:items-center">
-                  <select
-                    value={member.role}
-                    disabled={!canManageTeam}
-                    onChange={(event) =>
-                      void handleMemberRoleChange(member.id, event.target.value as Role)
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 disabled:opacity-60"
+                {canManageTeam ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditMember(member)}
+                    className="shrink-0 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-apollon-400 hover:text-white"
                   >
-                    {roleOptions.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={member.status}
-                    disabled={!canManageTeam}
-                    onChange={(event) =>
-                      void handleMemberStatusChange(member.id, event.target.value as Status)
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 disabled:opacity-60"
-                  >
-                    {statusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    수정
+                  </button>
+                ) : null}
               </article>
             ))}
           </section>
         ) : null}
       </div>
+
+      {canManageTeam ? (
+        <TeamMemberEditModal
+          member={editMember}
+          onClose={() => setEditMember(null)}
+          onSaved={handleEditMemberSaved}
+        />
+      ) : null}
 
       {inviteModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">

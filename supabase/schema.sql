@@ -80,3 +80,23 @@ create index if not exists idx_services_assignee_id on public.services (assignee
 create index if not exists idx_restaurants_registered_by on public.restaurants (registered_by);
 create index if not exists idx_reviews_restaurant_id on public.reviews (restaurant_id);
 create index if not exists idx_reviews_reviewer_id on public.reviews (reviewer_id);
+
+-- 아슐랭: 음식 종류·분위기 태그 (다중 선택 저장)
+alter table public.restaurants
+  add column if not exists food_type text[] not null default '{}';
+
+alter table public.restaurants
+  add column if not exists atmosphere_tags text[] not null default '{}';
+
+-- 이번 주 점심 투표 (주 시작일=월요일 기준, 멤버당 1표)
+create table if not exists public.lunch_votes (
+  id uuid primary key default gen_random_uuid(),
+  week_start date not null,
+  restaurant_id uuid not null references public.restaurants (id) on delete cascade,
+  voter_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (week_start, voter_id)
+);
+
+create index if not exists idx_lunch_votes_week on public.lunch_votes (week_start);
+create index if not exists idx_lunch_votes_restaurant on public.lunch_votes (restaurant_id);

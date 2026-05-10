@@ -11,13 +11,13 @@ export const portalServices: PortalService[] = [
     title: "Apollon License Manager",
     description: "라이선스 발급, 관리, 상태 조회를 위한 통합 관리 서비스",
     icon: "🔑",
-    href: "#"
+    href: "/licenses"
   },
   {
-    title: "아폴론 맛집",
+    title: "아슐랭",
     description: "팀 추천 맛집을 공유하고 리뷰를 남기는 사내 커뮤니티",
     icon: "🍱",
-    href: "#"
+    href: "/restaurants"
   },
   {
     title: "새 서비스",
