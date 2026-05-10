@@ -172,7 +172,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-black placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="예: 성수 맛집"
               />
               <button
@@ -209,7 +209,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as RestaurantCategory)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
                 >
                   {RESTAURANT_CATEGORY_META.map((c) => (
                     <option key={c.key} value={c.key}>
@@ -257,7 +257,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                 <input
                   value={menu}
                   onChange={(e) => setMenu(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
                   placeholder="예: 돼지갈비"
                 />
               </div>
@@ -266,7 +266,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                 <input
                   value={priceRange}
                   onChange={(e) => setPriceRange(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
                   placeholder="예: 1만5천원대"
                 />
               </div>

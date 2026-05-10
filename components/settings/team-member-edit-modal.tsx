@@ -163,7 +163,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
             />
           </div>
 
@@ -173,7 +173,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
               required
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
             />
           </div>
 
@@ -182,7 +182,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
             >
               {roleOptions.map((r) => (
                 <option key={r} value={r}>
@@ -197,7 +197,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as Status)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
             >
               {statusOptions.map((s) => (
                 <option key={s} value={s}>
@@ -219,7 +219,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
                   placeholder="변경하지 않으려면 비워두세요"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:border-apollon-400 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none"
                 />
               </div>
               <div>
@@ -229,7 +229,7 @@ export function TeamMemberEditModal({ member, onClose, onSaved }: Props) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-apollon-400 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-apollon-400 focus:outline-none"
                 />
               </div>
             </div>

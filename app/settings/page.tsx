@@ -326,7 +326,7 @@ export default function SettingsPage() {
                 <input
                   value={profileName}
                   onChange={(event) => setProfileName(event.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
               <div>
@@ -334,7 +334,7 @@ export default function SettingsPage() {
                 <input
                   value={profileDepartment}
                   onChange={(event) => setProfileDepartment(event.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3">
@@ -373,7 +373,7 @@ export default function SettingsPage() {
                   type="password"
                   value={currentPassword}
                   onChange={(event) => setCurrentPassword(event.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
               <div>
@@ -383,7 +383,7 @@ export default function SettingsPage() {
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
                   placeholder="최소 6자 이상"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder:text-slate-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
               <div>
@@ -395,7 +395,7 @@ export default function SettingsPage() {
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   placeholder="새 비밀번호를 다시 입력하세요"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder:text-slate-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
               {passwordMessage ? (
@@ -422,7 +422,7 @@ export default function SettingsPage() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="이름, 이메일, 부서로 검색..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-white placeholder:text-slate-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40 md:max-w-xl"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40 md:max-w-xl"
                 />
                 <div className="flex items-center gap-2">
                   <span
@@ -516,7 +516,7 @@ export default function SettingsPage() {
                   value={inviteName}
                   onChange={(event) => setInviteName(event.target.value)}
                   required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
 
@@ -527,7 +527,7 @@ export default function SettingsPage() {
                   value={inviteEmail}
                   onChange={(event) => setInviteEmail(event.target.value)}
                   required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
 
@@ -537,7 +537,7 @@ export default function SettingsPage() {
                   value={inviteDepartment}
                   onChange={(event) => setInviteDepartment(event.target.value)}
                   required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 />
               </div>
 
@@ -546,7 +546,7 @@ export default function SettingsPage() {
                 <select
                   value={inviteRole}
                   onChange={(event) => setInviteRole(event.target.value as Role)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
                 >
                   {roleOptions.map((role) => (
                     <option key={role} value={role}>
