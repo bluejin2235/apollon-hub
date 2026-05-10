@@ -15,9 +15,28 @@ export type UseRequirePortalSessionOptions = {
 
 const defaultSelect = "id, email, name, department";
 
+/** 세션 로드 + 프로필 조회 전체 상한 (getUser/토큰 갱신 무한 대기 방지) */
+const PORTAL_AUTH_READY_MS = 25_000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("portal_auth_timeout")), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 /**
  * Loads Supabase session + current user's profile row; redirects to `/` when unauthenticated
  * and signs out + redirects when the profile row is missing.
+ *
+ * Uses `getSession()` (local session + 필요 시 갱신만) instead of `getUser()`.
+ * `getUser()`는 Web Locks 안에서 Auth 서버 `GET /user`를 호출해 네트워크가 멈추면
+ * 잠금이 오래 잡혀 UI가 "인증 확인 중"에 머무는 경우가 있습니다.
  */
 export function useRequirePortalSession(options: UseRequirePortalSessionOptions = {}) {
   const router = useRouter();
@@ -34,40 +53,51 @@ export function useRequirePortalSession(options: UseRequirePortalSessionOptions 
 
     const run = async () => {
       try {
-        const {
-          data: { user },
-          error: userError
-        } = await supabase.auth.getUser();
+        await withTimeout(
+          (async () => {
+            const {
+              data: { session },
+              error: sessionError
+            } = await supabase.auth.getSession();
 
-        if (cancelled) {
-          return;
-        }
+            if (cancelled) {
+              return;
+            }
 
-        if (userError || !user?.email) {
-          routerRef.current.replace("/");
-          return;
-        }
+            const email = session?.user?.email;
+            if (sessionError || !email) {
+              routerRef.current.replace("/");
+              return;
+            }
 
-        const { data, error } = await supabase
-          .from("profiles")
-          .select(profileSelect)
-          .eq("email", user.email)
-          .single();
+            const { data, error } = await supabase
+              .from("profiles")
+              .select(profileSelect)
+              .eq("email", email)
+              .single();
 
-        if (cancelled) {
-          return;
-        }
+            if (cancelled) {
+              return;
+            }
 
-        if (error || !data) {
-          void signOutAndRedirectToLogin();
-          return;
-        }
+            if (error || !data) {
+              void signOutAndRedirectToLogin();
+              return;
+            }
 
-        setProfile(data as unknown as PortalProfileRow);
-        setStatus("ready");
+            setProfile(data as unknown as PortalProfileRow);
+            setStatus("ready");
+          })(),
+          PORTAL_AUTH_READY_MS
+        );
       } catch (e) {
         console.error("[useRequirePortalSession]", e);
         if (!cancelled) {
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            /* ignore */
+          }
           routerRef.current.replace("/");
         }
       }
