@@ -88,6 +88,10 @@ alter table public.restaurants
 alter table public.restaurants
   add column if not exists atmosphere_tags text[] not null default '{}';
 
+-- 아슐랭: 카테고리 다중 선택 (`category`는 첫 태그와 동기화)
+alter table public.restaurants
+  add column if not exists categories text[] not null default '{}';
+
 -- 이번 주 점심 투표 (주 시작일=월요일 기준, 멤버당 1표)
 create table if not exists public.lunch_votes (
   id uuid primary key default gen_random_uuid(),

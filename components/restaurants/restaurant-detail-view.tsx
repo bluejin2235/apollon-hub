@@ -10,18 +10,24 @@ import {
 import { ReviewWriteModal, reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
 import {
   ATMOSPHERE_TAG_OPTIONS,
-  FOOD_TYPE_OPTIONS,
-  RESTAURANT_CATEGORY_META,
   categoryBadgeClass,
+  categoryFieldsForDb,
+  FOOD_TYPE_OPTIONS,
+  getRestaurantCategories,
+  atmosphereTagDisplayLabel,
+  normalizeAtmosphereTag,
+  normalizeAtmosphereTagList,
   normalizeFoodTypeList,
   normalizeFoodTypeValue,
-  normalizeRestaurantCategory,
+  RESTAURANT_CATEGORY_META,
+  restaurantCategoryDisplayLabel,
   type ProfileLite,
   type Restaurant,
   type RestaurantCategory,
   type Review,
   reviewStarsScore
 } from "@/lib/restaurants/types";
+import { formatMenuAndPriceRange, parseMenuStringToRows, type MenuRow } from "@/lib/restaurants/menu-rows";
 import { keywordEmoji, keywordLabel } from "@/lib/restaurants/review-keywords";
 import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
 import { supabase } from "@/lib/supabase/client";
@@ -134,7 +140,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editBasic, setEditBasic] = useState(false);
-  const [editMemo, setEditMemo] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -148,12 +153,12 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const [eName, setEName] = useState("");
-  const [eCategory, setECategory] = useState<RestaurantCategory>("점심");
+  const [eCategories, setECategories] = useState<RestaurantCategory[]>(["성수점심"]);
   const [eFoodTypes, setEFoodTypes] = useState<string[]>([]);
   const [eTags, setETags] = useState<string[]>([]);
   const [ePrice, setEPrice] = useState("");
   const [eTagline, setETagline] = useState("");
-  const [eMenuText, setEMenuText] = useState("");
+  const [eMenuRows, setEMenuRows] = useState<MenuRow[]>([{ name: "", price: "" }]);
   const [eDescription, setEDescription] = useState("");
 
   const fetchMenuStoragePaths = useCallback(async (reason: string) => {
@@ -211,12 +216,12 @@ export function RestaurantDetailView({ id }: { id: string }) {
     await fetchMenuStoragePaths("page load (load())");
     if (rest) {
       setEName(rest.name);
-      setECategory(normalizeRestaurantCategory(rest.category));
+      setECategories(getRestaurantCategories(rest));
       setEFoodTypes(normalizeFoodTypeList(rest.food_type));
-      setETags([...(rest.atmosphere_tags ?? [])]);
+      setETags(normalizeAtmosphereTagList(rest.atmosphere_tags));
       setEPrice(rest.price_range ?? "");
       setETagline(rest.tagline ?? "");
-      setEMenuText(rest.menu ?? "");
+      setEMenuRows(parseMenuStringToRows(rest.menu));
       setEDescription(rest.description ?? "");
     }
     setLoading(false);
@@ -258,29 +263,51 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const syncEditFromRestaurant = () => {
     if (!restaurant) return;
     setEName(restaurant.name);
-    setECategory(normalizeRestaurantCategory(restaurant.category));
+    setECategories(getRestaurantCategories(restaurant));
     setEFoodTypes(normalizeFoodTypeList(restaurant.food_type));
-    setETags([...(restaurant.atmosphere_tags ?? [])]);
+    setETags(normalizeAtmosphereTagList(restaurant.atmosphere_tags));
     setEPrice(restaurant.price_range ?? "");
     setETagline(restaurant.tagline ?? "");
-    setEMenuText(restaurant.menu ?? "");
+    setEMenuRows(parseMenuStringToRows(restaurant.menu));
     setEDescription(restaurant.description ?? "");
+  };
+
+  const addMenuRow = () => setEMenuRows((prev) => [...prev, { name: "", price: "" }]);
+
+  const removeMenuRow = (index: number) => {
+    setEMenuRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const updateMenuRow = (index: number, field: keyof MenuRow, value: string) => {
+    if (field === "price") {
+      value = value.replace(/[^\d]/g, "");
+    }
+    setEMenuRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
   };
 
   const persistRestaurant = async (): Promise<boolean> => {
     if (!restaurant) return false;
+    if (eCategories.length === 0) {
+      window.alert("카테고리는 1개 이상 선택해주세요.");
+      return false;
+    }
     setSaving(true);
     const desc = eDescription.slice(0, MEMO_MAX);
+    const catRow = categoryFieldsForDb(eCategories);
+    const tagsNorm = normalizeAtmosphereTagList(eTags);
+    const { menu: menuFormatted, price_range: rangeFromMenu } = formatMenuAndPriceRange(eMenuRows);
+    const nextPriceRange = rangeFromMenu ?? (ePrice.trim() || null);
     const { error } = await supabase
       .from("restaurants")
       .update({
         name: eName.trim(),
-        category: eCategory,
+        category: catRow.category,
+        categories: catRow.categories,
         food_type: normalizeFoodTypeList(eFoodTypes),
-        atmosphere_tags: eTags,
-        price_range: ePrice.trim() || null,
+        atmosphere_tags: tagsNorm,
+        price_range: nextPriceRange,
         tagline: eTagline.trim() || null,
-        menu: eMenuText.trim() || null,
+        menu: menuFormatted,
         description: desc.trim() || null
       })
       .eq("id", restaurant.id);
@@ -294,12 +321,13 @@ export function RestaurantDetailView({ id }: { id: string }) {
         ? {
             ...prev,
             name: eName.trim(),
-            category: eCategory,
+            category: catRow.category,
+            categories: catRow.categories,
             food_type: normalizeFoodTypeList(eFoodTypes),
-            atmosphere_tags: eTags,
-            price_range: ePrice.trim() || null,
+            atmosphere_tags: tagsNorm,
+            price_range: nextPriceRange,
             tagline: eTagline.trim() || null,
-            menu: eMenuText.trim() || null,
+            menu: menuFormatted,
             description: desc.trim() || null
           }
         : null
@@ -527,7 +555,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
                   type="button"
                   className="text-sm font-semibold text-blue-600 hover:text-blue-500"
                   onClick={() => {
-                    setEditMemo(false);
                     setEditBasic(true);
                   }}
                 >
@@ -547,18 +574,26 @@ export function RestaurantDetailView({ id }: { id: string }) {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">카테고리</label>
-                  <select
-                    value={eCategory}
-                    onChange={(e) => setECategory(e.target.value as RestaurantCategory)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                  >
+                  <p className="mb-2 text-xs font-semibold text-slate-700">카테고리 (다중 선택)</p>
+                  <div className="flex flex-wrap gap-1.5">
                     {RESTAURANT_CATEGORY_META.map((c) => (
-                      <option key={c.key} value={c.key}>
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() =>
+                          setECategories((p) => {
+                            const next = toggle(p, c.key);
+                            return next.length === 0 ? p : next;
+                          })
+                        }
+                        className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                          eCategories.includes(c.key) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
                         {c.label}
-                      </option>
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
                 <div>
                   <p className="mb-2 text-xs font-semibold text-slate-700">음식 종류</p>
@@ -594,32 +629,67 @@ export function RestaurantDetailView({ id }: { id: string }) {
                     ))}
                   </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">가격대</label>
-                  <input
-                    value={ePrice}
-                    onChange={(e) => setEPrice(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                    placeholder="예: 1만5천원대"
-                  />
+                <div className="hidden" aria-hidden="true">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">가격대</label>
+                    <input
+                      value={ePrice}
+                      onChange={(e) => setEPrice(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
+                      placeholder="예: 1만5천원대"
+                      tabIndex={-1}
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">한 줄 소개</label>
+                    <input
+                      value={eTagline}
+                      onChange={(e) => setETagline(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
+                      tabIndex={-1}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">한 줄 소개</label>
-                  <input
-                    value={eTagline}
-                    onChange={(e) => setETagline(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">대표 메뉴 (텍스트)</label>
-                  <textarea
-                    value={eMenuText}
-                    onChange={(e) => setEMenuText(e.target.value)}
-                    rows={4}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-gray-900"
-                    placeholder="예: 설렁탕 12,000원 · 만두국 13,000원"
-                  />
+                  <p className="mb-3 text-sm font-bold text-slate-900">대표 메뉴</p>
+                  <div className="space-y-3">
+                    {eMenuRows.map((row, index) => (
+                      <div key={index} className="flex flex-wrap items-center gap-2">
+                        <input
+                          value={row.name}
+                          onChange={(e) => updateMenuRow(index, "name", e.target.value)}
+                          className="min-w-[8rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="예시 : 김치찌개"
+                        />
+                        <input
+                          value={row.price}
+                          onChange={(e) => updateMenuRow(index, "price", e.target.value)}
+                          inputMode="numeric"
+                          className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="가격 : 15000"
+                        />
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            onClick={addMenuRow}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                            aria-label="메뉴 행 추가"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeMenuRow(index)}
+                            disabled={eMenuRows.length <= 1}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="이 메뉴 행 삭제"
+                          >
+                            −
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700">소개 메모</label>
@@ -669,9 +739,11 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 <div className="mt-6">
                   <p className="mb-2 text-sm font-bold text-slate-900">카테고리</p>
                   <div className="flex flex-wrap gap-2">
-                    <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${categoryBadgeClass(restaurant.category)}`}>
-                      {normalizeRestaurantCategory(restaurant.category)}
-                    </span>
+                    {getRestaurantCategories(restaurant).map((cat) => (
+                      <span key={cat} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${categoryBadgeClass(cat)}`}>
+                        {restaurantCategoryDisplayLabel(cat)}
+                      </span>
+                    ))}
                     {(restaurant.food_type ?? []).map((ft) => (
                       <span key={ft} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
                         {normalizeFoodTypeValue(ft)}
@@ -682,7 +754,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                         key={t}
                         className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
                       >
-                        {t === "분위기좋은" ? "분위기 좋은" : t}
+                        {atmosphereTagDisplayLabel(normalizeAtmosphereTag(t))}
                       </span>
                     ))}
                   </div>
@@ -705,59 +777,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 </div>
 
                 <div className="mt-6">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-bold text-slate-900">소개 메모</p>
-                    {editMemo ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="text-sm text-slate-500 hover:text-slate-800"
-                          onClick={() => {
-                            setEDescription(restaurant.description ?? "");
-                            setEditMemo(false);
-                          }}
-                        >
-                          취소
-                        </button>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-                          onClick={() =>
-                            void (async () => {
-                              const ok = await persistRestaurant();
-                              if (ok) setEditMemo(false);
-                            })()
-                          }
-                        >
-                          저장
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-sm font-semibold text-blue-600 hover:text-blue-500"
-                        onClick={() => setEditMemo(true)}
-                      >
-                        수정
-                      </button>
-                    )}
-                  </div>
-                  {editMemo ? (
-                    <div className="relative">
-                      <textarea
-                        value={eDescription}
-                        onChange={(e) => setEDescription(e.target.value.slice(0, MEMO_MAX))}
-                        rows={5}
-                        maxLength={MEMO_MAX}
-                        className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 pb-8 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="매장을 소개해 주세요."
-                      />
-                      <span className="pointer-events-none absolute bottom-2 right-3 text-xs text-slate-400">
-                        {eDescription.length} / {MEMO_MAX}
-                      </span>
-                    </div>
-                  ) : (restaurant.description ?? "").trim() ? (
+                  <p className="mb-2 text-sm font-bold text-slate-900">소개 메모</p>
+                  {(restaurant.description ?? "").trim() ? (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{restaurant.description}</p>
                   ) : (
                     <p className="text-sm text-slate-400">—</p>

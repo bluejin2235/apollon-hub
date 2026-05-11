@@ -5,12 +5,14 @@ import type { KakaoKeywordPlace, KakaoKeywordSearchResponse } from "@/lib/kakao/
 import { pickDisplayAddress } from "@/lib/kakao/local-keyword";
 import {
   ATMOSPHERE_TAG_OPTIONS,
+  categoryFieldsForDb,
   FOOD_TYPE_OPTIONS,
   RESTAURANT_CATEGORY_META,
   type AtmosphereTagOption,
   type FoodTypeOption,
   type RestaurantCategory
 } from "@/lib/restaurants/types";
+import { formatMenuAndPriceRange, type MenuRow } from "@/lib/restaurants/menu-rows";
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {
@@ -21,46 +23,8 @@ type Props = {
 
 type KakaoSearchApiBody = KakaoKeywordSearchResponse & { error?: string; detail?: string; status?: number };
 
-type MenuRow = { name: string; price: string };
-
 function toggle<T extends string>(list: T[], v: T): T[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
-}
-
-function formatMenuAndPriceRange(rows: MenuRow[]): { menu: string | null; price_range: string | null } {
-  const filled = rows
-    .map((r) => ({
-      name: r.name.trim(),
-      price: r.price.trim().replace(/,/g, "")
-    }))
-    .filter((r) => r.name.length > 0);
-
-  if (filled.length === 0) {
-    return { menu: null, price_range: null };
-  }
-
-  const parts = filled.map((r) => {
-    if (!r.price) return r.name;
-    const n = Number(r.price);
-    const priceStr = Number.isFinite(n) && n >= 0 ? `${n.toLocaleString("ko-KR")}원` : `${r.price}원`;
-    return `${r.name} (${priceStr})`;
-  });
-
-  const nums = filled
-    .map((r) => Number(r.price))
-    .filter((n) => Number.isFinite(n) && n > 0);
-
-  let price_range: string | null = null;
-  if (nums.length > 0) {
-    const min = Math.min(...nums);
-    const max = Math.max(...nums);
-    price_range =
-      min === max
-        ? `${min.toLocaleString("ko-KR")}원대`
-        : `${min.toLocaleString("ko-KR")}~${max.toLocaleString("ko-KR")}원`;
-  }
-
-  return { menu: parts.join(" · "), price_range };
 }
 
 function IconChevronLeft(props: { className?: string }) {
@@ -85,7 +49,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<KakaoKeywordPlace[]>([]);
   const [pick, setPick] = useState<KakaoKeywordPlace | null>(null);
-  const [category, setCategory] = useState<RestaurantCategory>("점심");
+  const [categories, setCategories] = useState<RestaurantCategory[]>(["성수점심"]);
   const [foodTypes, setFoodTypes] = useState<FoodTypeOption[]>([]);
   const [tags, setTags] = useState<AtmosphereTagOption[]>([]);
   const [menuRows, setMenuRows] = useState<MenuRow[]>([{ name: "", price: "" }]);
@@ -97,7 +61,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     setQuery("");
     setResults([]);
     setPick(null);
-    setCategory("점심");
+    setCategories(["성수점심"]);
     setFoodTypes([]);
     setTags([]);
     setMenuRows([{ name: "", price: "" }]);
@@ -207,9 +171,11 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
       }
       const addr = pickDisplayAddress(pick);
       const { menu, price_range } = formatMenuAndPriceRange(menuRows);
+      const catRow = categoryFieldsForDb(categories);
       const { error } = await supabase.from("restaurants").insert({
         name: pick.place_name,
-        category,
+        category: catRow.category,
+        categories: catRow.categories,
         address: addr || pick.place_name,
         lat,
         lng,
@@ -322,18 +288,32 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
           ) : (
             <form id="restaurant-register-form" className="space-y-6" onSubmit={submit}>
               <div>
-                <label className="mb-2 block text-sm font-bold text-slate-900">카테고리</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as RestaurantCategory)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  {RESTAURANT_CATEGORY_META.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                <p className="mb-3 text-sm font-bold text-slate-900">카테고리 (다중 선택)</p>
+                <div className="flex flex-wrap gap-2">
+                  {RESTAURANT_CATEGORY_META.map((c) => {
+                    const on = categories.includes(c.key);
+                    return (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() =>
+                          setCategories((prev) => {
+                            const next = toggle(prev, c.key);
+                            return next.length === 0 ? prev : next;
+                          })
+                        }
+                        className={
+                          on
+                            ? `${tagBase} border-blue-600 bg-blue-600 text-white`
+                            : `${tagBase} border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200`
+                        }
+                      >
+                        {on ? <span aria-hidden>✓</span> : null}
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
@@ -424,13 +404,6 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                     </div>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={addMenuRow}
-                  className="mt-3 w-full rounded-lg border-2 border-blue-600 bg-white py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50"
-                >
-                  + 메뉴 추가
-                </button>
               </div>
 
               {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}

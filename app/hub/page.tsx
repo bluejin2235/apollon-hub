@@ -26,8 +26,8 @@ export default function ServiceHubPage() {
         zIndexClass="z-10"
       />
 
-      <div className="pb-10 pt-16">
-        <section className="grid gap-4 md:grid-cols-2">
+      <div className="w-full px-4 pb-10 pt-16">
+        <section className="grid grid-cols-2 gap-4">
           {portalServices.map((service) => (
             <ServiceCard
               key={service.title}

@@ -133,7 +133,7 @@ export function KakaoMapPanel({ restaurants, selectedId, focusNonce = 0, onMarke
     restaurants.forEach((r) => {
       if (r.lat == null || r.lng == null) return;
       const pos = new M.LatLng(r.lat, r.lng);
-      const color = categoryMarkerColor(r.category);
+      const color = categoryMarkerColor(r);
       const marker = new M.Marker({ position: pos, map, image: markerIcon(M, color) });
       M.event.addListener(marker, "click", () => {
         onMarkerClick?.(r.id);
@@ -154,19 +154,32 @@ export function KakaoMapPanel({ restaurants, selectedId, focusNonce = 0, onMarke
     const map = mapInst.current;
     const iw = infoRef.current;
     if (!map || !selectedId) return;
-    const marker = markers.current.get(selectedId);
-    if (!marker || !iw) return;
     const r = restaurants.find((x) => x.id === selectedId);
-    const pos = marker.getPosition();
-    map.setCenter(pos);
-    map.setLevel(3);
-    if (r) {
-      const color = categoryMarkerColor(r.category);
+    if (!r || r.lat == null || r.lng == null || Number.isNaN(r.lat) || Number.isNaN(r.lng)) return;
+
+    const M = maps();
+    const lat = Number(r.lat);
+    const lng = Number(r.lng);
+    const center = new M.LatLng(lat, lng);
+
+    const applyFocus = () => {
+      map.relayout();
+      map.setCenter(center);
+      map.setLevel(3);
+    };
+
+    applyFocus();
+    const marker = markers.current.get(selectedId);
+    if (marker && iw) {
+      const color = categoryMarkerColor(r);
       iw.setContent(
         `<div style="padding:8px 10px;font-size:12px;max-width:240px;border-left:3px solid ${color}"><strong>${escHtml(r.name)}</strong><br/><span style="color:#64748b">${escHtml(r.address)}</span></div>`
       );
       iw.open(map, marker);
     }
+
+    const t = window.setTimeout(applyFocus, 80);
+    return () => window.clearTimeout(t);
   }, [selectedId, focusNonce, restaurants]);
 
   return <div ref={containerRef} className="h-full min-h-[360px] w-full rounded-xl border border-slate-200 bg-white shadow-inner" />;

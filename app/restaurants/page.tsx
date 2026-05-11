@@ -11,9 +11,11 @@ import {
   FOOD_TYPE_OPTIONS,
   RESTAURANT_CATEGORY_META,
   categoryBadgeClass,
+  normalizeAtmosphereTag,
   normalizeFoodTypeValue,
-  normalizeRestaurantCategory,
-  type LunchVoteRow,
+  getRestaurantCategories,
+  isRestaurantNewWithinDays,
+  restaurantCategoryDisplayLabel,
   type ProfileLite,
   type Restaurant,
   type RestaurantCategory,
@@ -24,17 +26,6 @@ import {
 import { supabase } from "@/lib/supabase/client";
 
 type ReviewAgg = { sum: number; n: number; revisit: number };
-
-function mondayOfWeekLocal(d = new Date()): string {
-  const c = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const dow = c.getDay();
-  const back = dow === 0 ? 6 : dow - 1;
-  c.setDate(c.getDate() - back);
-  const y = c.getFullYear();
-  const m = String(c.getMonth() + 1).padStart(2, "0");
-  const day = String(c.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function buildReviewAgg(reviews: Review[]): Map<string, ReviewAgg> {
   const map = new Map<string, ReviewAgg>();
@@ -66,14 +57,17 @@ function toggleSet<T extends string>(set: Set<T>, v: T): Set<T> {
 /** 맛집 목록 카드 페이지 크기 (상세 사진/리뷰 페이지네이션과 동일 UI) */
 const LIST_PAGE_SIZE = 4;
 
-const PRICE_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "가격대" },
-  { value: "1만", label: "1만원대" },
-  { value: "1만5천", label: "1만5천원대" },
-  { value: "2만", label: "2만원대" },
-  { value: "3만", label: "3만원대" },
-  { value: "5만", label: "5만원대" }
-];
+const GOURMET_RANK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const GOURMET_REG_POINTS = 3;
+const GOURMET_REVIEW_POINTS = 1;
+
+type GourmetRankRow = {
+  profileId: string;
+  name: string;
+  regCount: number;
+  revCount: number;
+  total: number;
+};
 
 type SortKey = "reco" | "rating" | "recent";
 
@@ -81,58 +75,30 @@ export default function RestaurantsMainPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [profiles, setProfiles] = useState<ProfileLite[]>([]);
-  const [lunchVotes, setLunchVotes] = useState<LunchVoteRow[]>([]);
-  const [galleryByRestaurant, setGalleryByRestaurant] = useState<Map<string, string[]>>(new Map());
-  const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [catFilter, setCatFilter] = useState<Set<RestaurantCategory>>(new Set());
+  const [categorySelect, setCategorySelect] = useState<"" | RestaurantCategory>("");
   const [foodFilter, setFoodFilter] = useState<Set<(typeof FOOD_TYPE_OPTIONS)[number]>>(new Set());
   const [atmosFilter, setAtmosFilter] = useState<Set<(typeof ATMOSPHERE_TAG_OPTIONS)[number]>>(new Set());
-  const [priceKeyword, setPriceKeyword] = useState("");
-  const [sortBy, setSortBy] = useState<SortKey>("reco");
+  const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusNonce, setFocusNonce] = useState(0);
   const [listPage, setListPage] = useState(1);
-  const [voteMsg, setVoteMsg] = useState("");
-
-  const weekStart = useMemo(() => mondayOfWeekLocal(), []);
+  const [randomPickHint, setRandomPickHint] = useState("");
+  /** "오늘 뭐 먹지?"로 고른 맛집을 목록 맨 위로 (필터된 목록에 있을 때만) */
+  const [listBoostId, setListBoostId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-    const email = session?.user?.email;
-    let pid: string | null = null;
-    if (email) {
-      const { data: prof } = await supabase.from("profiles").select("id").eq("email", email).maybeSingle();
-      pid = prof?.id ?? null;
-    }
-    setMyProfileId(pid);
-
-    const [r, rv, p, votes, imgs] = await Promise.all([
+    const [r, rv, p] = await Promise.all([
       supabase.from("restaurants").select("*").order("created_at", { ascending: false }),
       supabase.from("reviews").select("*"),
-      supabase.from("profiles").select("id, email, name, department"),
-      supabase.from("lunch_votes").select("*").eq("week_start", weekStart),
-      supabase.from("restaurant_images").select("restaurant_id, storage_path, created_at").order("created_at", { ascending: true })
+      supabase.from("profiles").select("id, email, name, department")
     ]);
     setRestaurants((r.data ?? []) as Restaurant[]);
     setReviews((rv.data ?? []) as Review[]);
     setProfiles((p.data ?? []) as ProfileLite[]);
-    setLunchVotes((votes.data ?? []) as LunchVoteRow[]);
-
-    const gMap = new Map<string, string[]>();
-    for (const row of imgs.data ?? []) {
-      const rid = row.restaurant_id as string;
-      const path = row.storage_path as string;
-      const arr = gMap.get(rid) ?? [];
-      arr.push(path);
-      gMap.set(rid, arr);
-    }
-    setGalleryByRestaurant(gMap);
-  }, [weekStart]);
+  }, []);
 
   useEffect(() => {
     const run = async () => {
@@ -147,6 +113,44 @@ export default function RestaurantsMainPage() {
     profiles.forEach((x) => m.set(x.id, x));
     return m;
   }, [profiles]);
+
+  /** 최근 30일 맛집 등록·리뷰 기여 정렬 (페이지 데이터 로드 시점 기준) */
+  const gourmetRankBoard = useMemo(() => {
+    const cutoff = Date.now() - GOURMET_RANK_WINDOW_MS;
+    const byId = new Map<string, { reg: number; rev: number }>();
+    const bump = (profileId: string | null | undefined, kind: "reg" | "rev") => {
+      if (!profileId) return;
+      const cur = byId.get(profileId) ?? { reg: 0, rev: 0 };
+      if (kind === "reg") cur.reg += 1;
+      else cur.rev += 1;
+      byId.set(profileId, cur);
+    };
+    for (const r of restaurants) {
+      const t = new Date(r.created_at).getTime();
+      if (Number.isNaN(t) || t < cutoff) continue;
+      bump(r.registered_by, "reg");
+    }
+    for (const rv of reviews) {
+      const t = new Date(rv.created_at).getTime();
+      if (Number.isNaN(t) || t < cutoff) continue;
+      bump(rv.reviewer_id, "rev");
+    }
+    const rows: GourmetRankRow[] = [];
+    for (const [profileId, c] of byId) {
+      const total = c.reg * GOURMET_REG_POINTS + c.rev * GOURMET_REVIEW_POINTS;
+      if (total <= 0) continue;
+      const p = profileMap.get(profileId);
+      const name = p?.name?.trim() || p?.email?.trim() || "멤버";
+      rows.push({ profileId, name, regCount: c.reg, revCount: c.rev, total });
+    }
+    rows.sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      if (b.regCount !== a.regCount) return b.regCount - a.regCount;
+      return b.revCount - a.revCount;
+    });
+    const slots: (GourmetRankRow | null)[] = [rows[0] ?? null, rows[1] ?? null, rows[2] ?? null];
+    return { slots, showWidget: rows.length > 0 };
+  }, [restaurants, reviews, profileMap]);
 
   const reviewAgg = useMemo(() => buildReviewAgg(reviews), [reviews]);
 
@@ -174,38 +178,23 @@ export default function RestaurantsMainPage() {
     return pathById;
   }, [reviews]);
 
-  const lunchRecoPick = useMemo(() => {
-    const pool = restaurants.filter((r) => normalizeRestaurantCategory(r.category) === "점심");
-    if (pool.length === 0) return null;
-    const sorted = [...pool].sort((a, b) => scoreForReco(b.id, reviewAgg) - scoreForReco(a.id, reviewAgg));
-    return sorted[0];
-  }, [restaurants, reviewAgg]);
-
-  const cafeRecoPick = useMemo(() => {
-    const pool = restaurants.filter((r) => normalizeRestaurantCategory(r.category) === "카페·디저트");
-    if (pool.length === 0) return null;
-    const sorted = [...pool].sort((a, b) => scoreForReco(b.id, reviewAgg) - scoreForReco(a.id, reviewAgg));
-    return sorted[0];
-  }, [restaurants, reviewAgg]);
-
   const searchNorm = searchQuery.trim().toLowerCase();
 
   const filtered = useMemo(() => {
     return restaurants.filter((r) => {
-      if (catFilter.size > 0 && !catFilter.has(normalizeRestaurantCategory(r.category))) return false;
+      if (categorySelect) {
+        const rCats = getRestaurantCategories(r);
+        if (!rCats.includes(categorySelect)) return false;
+      }
       const ftsNorm = (r.food_type ?? []).map(normalizeFoodTypeValue);
       if (foodFilter.size > 0) {
         const hit = [...foodFilter].some((f) => ftsNorm.includes(f));
         if (!hit) return false;
       }
-      const atm = r.atmosphere_tags ?? [];
+      const atmNorm = (r.atmosphere_tags ?? []).map(normalizeAtmosphereTag);
       if (atmosFilter.size > 0) {
-        const hit = [...atmosFilter].some((t) => atm.includes(t));
+        const hit = [...atmosFilter].some((t) => atmNorm.includes(t));
         if (!hit) return false;
-      }
-      if (priceKeyword) {
-        const pr = (r.price_range ?? "").toLowerCase();
-        if (!pr.includes(priceKeyword.toLowerCase())) return false;
       }
       if (searchNorm) {
         const blob = [r.name, r.menu, r.address, r.description, r.tagline]
@@ -216,7 +205,7 @@ export default function RestaurantsMainPage() {
       }
       return true;
     });
-  }, [restaurants, catFilter, foodFilter, atmosFilter, priceKeyword, searchNorm]);
+  }, [restaurants, categorySelect, foodFilter, atmosFilter, searchNorm]);
 
   const sortedFiltered = useMemo(() => {
     const list = [...filtered];
@@ -237,31 +226,39 @@ export default function RestaurantsMainPage() {
     return list;
   }, [filtered, sortBy, reviewAgg]);
 
-  const listTotalPages = Math.max(1, Math.ceil(sortedFiltered.length / LIST_PAGE_SIZE));
+  /** 랜덤 추천 시 선택 맛집을 첫 행으로 (동일 집합, 순서만 조정) */
+  const listForDisplay = useMemo(() => {
+    if (!listBoostId) return sortedFiltered;
+    const idx = sortedFiltered.findIndex((r) => r.id === listBoostId);
+    if (idx <= 0) return sortedFiltered;
+    const row = sortedFiltered[idx];
+    return [row, ...sortedFiltered.slice(0, idx), ...sortedFiltered.slice(idx + 1)];
+  }, [sortedFiltered, listBoostId]);
+
+  /** 선택 맛집이 필터 목록에 없을 때도 지도 마커·중앙 이동이 되도록 보강 */
+  const mapRestaurants = useMemo(() => {
+    if (!selectedId) return sortedFiltered;
+    if (sortedFiltered.some((r) => r.id === selectedId)) return sortedFiltered;
+    const extra = restaurants.find((r) => r.id === selectedId);
+    return extra ? [...sortedFiltered, extra] : sortedFiltered;
+  }, [sortedFiltered, selectedId, restaurants]);
+
+  const listTotalPages = Math.max(1, Math.ceil(listForDisplay.length / LIST_PAGE_SIZE));
   const listPageSlice = useMemo(() => {
     const start = (listPage - 1) * LIST_PAGE_SIZE;
-    return sortedFiltered.slice(start, start + LIST_PAGE_SIZE);
-  }, [sortedFiltered, listPage]);
+    return listForDisplay.slice(start, start + LIST_PAGE_SIZE);
+  }, [listForDisplay, listPage]);
 
   useEffect(() => {
     setListPage((p) => Math.min(Math.max(1, p), listTotalPages));
   }, [listTotalPages]);
 
-  const voteCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    lunchVotes.forEach((v) => m.set(v.restaurant_id, (m.get(v.restaurant_id) ?? 0) + 1));
-    return m;
-  }, [lunchVotes]);
-
-  const myVoteRestaurantId = useMemo(() => {
-    if (!myProfileId) return null;
-    return lunchVotes.find((v) => v.voter_id === myProfileId)?.restaurant_id ?? null;
-  }, [lunchVotes, myProfileId]);
-
-  const lunchCandidates = useMemo(
-    () => restaurants.filter((r) => normalizeRestaurantCategory(r.category) === "점심"),
-    [restaurants]
-  );
+  useEffect(() => {
+    if (!listBoostId) return;
+    if (!sortedFiltered.some((r) => r.id === listBoostId)) {
+      setListBoostId(null);
+    }
+  }, [sortedFiltered, listBoostId]);
 
   const selectedRestaurant = useMemo(
     () => (selectedId ? restaurants.find((x) => x.id === selectedId) ?? null : null),
@@ -273,62 +270,81 @@ export default function RestaurantsMainPage() {
     [selectedId, reviews]
   );
 
-  const previewImagePlan = useMemo(() => {
-    if (!selectedRestaurant) return { paths: [] as string[], sources: [] as ("gallery" | "menu")[] };
-    const paths: string[] = [];
-    const sources: ("gallery" | "menu")[] = [];
-    const gal = galleryByRestaurant.get(selectedRestaurant.id) ?? [];
-    for (const p of gal.slice(0, 3)) {
-      paths.push(p);
-      sources.push("gallery");
-    }
-    const menus = selectedRestaurant.menu_image_paths ?? [];
-    for (const p of menus) {
-      if (paths.length >= 5) break;
-      if (!paths.includes(p)) {
-        paths.push(p);
-        sources.push("menu");
+  /** 미리보기 패널: 최신 리뷰 순으로 첨부 사진 최대 3장 (review-images만) */
+  const previewReviewImagePaths = useMemo(() => {
+    const sorted = [...selectedReviews].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const rv of sorted) {
+      for (const raw of rv.image_paths ?? []) {
+        const p = typeof raw === "string" ? raw.trim() : "";
+        if (!p || seen.has(p)) continue;
+        seen.add(p);
+        out.push(p);
+        if (out.length >= 3) return out;
       }
     }
-    return { paths, sources };
-  }, [selectedRestaurant, galleryByRestaurant]);
+    return out;
+  }, [selectedReviews]);
 
-  const focusCard = (id: string) => {
+  const focusCard = useCallback((id: string) => {
+    setListBoostId(null);
+    setRandomPickHint("");
+    const idx = sortedFiltered.findIndex((r) => r.id === id);
+    if (idx >= 0) {
+      setListPage(Math.floor(idx / LIST_PAGE_SIZE) + 1);
+    }
     setSelectedId(id);
     setFocusNonce((n) => n + 1);
-  };
+  }, [sortedFiltered]);
 
-  const castVote = async (restaurantId: string) => {
-    if (!myProfileId) {
-      setVoteMsg("로그인·프로필이 필요합니다.");
+  const onMapMarkerClick = useCallback(
+    (id: string) => {
+      focusCard(id);
+    },
+    [focusCard]
+  );
+
+  const pickRandomSeongsuEatery = useCallback(() => {
+    const pool = restaurants.filter((r) => getRestaurantCategories(r).includes("성수점심"));
+    if (pool.length === 0) {
+      setRandomPickHint("성수/뚝섬 맛집이 아직 없습니다.");
       return;
     }
-    setVoteMsg("");
-    const { error } = await supabase.from("lunch_votes").upsert(
-      { week_start: weekStart, restaurant_id: restaurantId, voter_id: myProfileId },
-      { onConflict: "week_start,voter_id" }
-    );
-    if (error) {
-      console.error(error);
-      setVoteMsg(`투표 저장 실패: ${error.message}`);
-      return;
+    const pick = pool[Math.floor(Math.random() * pool.length)]!;
+    const inList = sortedFiltered.some((r) => r.id === pick.id);
+    if (inList) {
+      setListBoostId(pick.id);
+      setSelectedId(pick.id);
+      setFocusNonce((n) => n + 1);
+      setListPage(1);
+      setRandomPickHint("");
+    } else {
+      setListBoostId(null);
+      focusCard(pick.id);
+      queueMicrotask(() =>
+        setRandomPickHint("현재 필터에는 목록에 안 보여요. 지도와 미리보기에서 확인해 주세요.")
+      );
     }
-    const { data: votes } = await supabase.from("lunch_votes").select("*").eq("week_start", weekStart);
-    setLunchVotes((votes ?? []) as LunchVoteRow[]);
-  };
+  }, [restaurants, sortedFiltered, focusCard]);
 
-  const resetFilters = () => {
+  const resetFilterBar = () => {
     setSearchQuery("");
-    setCatFilter(new Set());
+    setCategorySelect("");
     setFoodFilter(new Set());
     setAtmosFilter(new Set());
-    setPriceKeyword("");
-    setSortBy("reco");
+    setRandomPickHint("");
+    setListBoostId(null);
   };
 
   if (loading) {
     return <p className="py-20 text-center text-gray-600">불러오는 중...</p>;
   }
+
+  const gourmetMonthCaption = `${new Date().getFullYear()}년 ${new Date().getMonth() + 1}월 기준 · 실시간`;
+  const gourmetMedals = ["🥇", "🥈", "🥉"] as const;
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-5 pb-10">
@@ -336,19 +352,9 @@ export default function RestaurantsMainPage() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">아슐랭</h1>
-          <p className="mt-1 text-sm text-slate-500">성수동 기반 · 팀 내부 전용</p>
+          <p className="mt-1 text-sm text-slate-500">아폴론 미식가들이 직접 뽑은 아슐랭 가이드</p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-          >
-            <span className="text-base leading-none" aria-hidden>
-              ↺
-            </span>
-            초기화
-          </button>
           <button
             type="button"
             onClick={() => setModalOpen(true)}
@@ -359,35 +365,107 @@ export default function RestaurantsMainPage() {
         </div>
       </header>
 
+      {gourmetRankBoard.showWidget ? (
+        <section
+          className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+          aria-labelledby="gourmet-rank-heading"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <h2 id="gourmet-rank-heading" className="text-base font-bold tracking-tight text-slate-900">
+                이달의 미식가
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">{gourmetMonthCaption}</p>
+            </div>
+            <p className="shrink-0 text-xs font-medium text-slate-600 sm:pt-0.5 sm:text-right">
+              등록 {GOURMET_REG_POINTS}점 · 리뷰 {GOURMET_REVIEW_POINTS}점
+            </p>
+          </div>
+
+          <ul className="mt-4 grid grid-cols-3 gap-2 sm:gap-3" role="list">
+            {gourmetRankBoard.slots.map((row, i) => {
+              const medal = gourmetMedals[i];
+              const empty = row === null;
+              return (
+                <li
+                  key={empty ? `empty-rank-${i + 1}` : row.profileId}
+                  className={`flex min-w-0 flex-col rounded-lg border px-2.5 py-3 sm:px-3 sm:py-3.5 ${
+                    i === 0
+                      ? "border-amber-200/90 bg-amber-50/50 ring-1 ring-amber-100/80"
+                      : "border-slate-100 bg-slate-50/80"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className="shrink-0 text-lg leading-none sm:text-xl" aria-hidden>
+                      {medal}
+                    </span>
+                    <span className="sr-only">{i + 1}위</span>
+                    <span
+                      className={`min-w-0 truncate text-sm font-semibold sm:text-base ${
+                        empty ? "text-slate-400" : "text-slate-900"
+                      }`}
+                    >
+                      {empty ? "—" : row.name}
+                    </span>
+                  </div>
+                  <p
+                    className={`mt-2 text-lg font-bold tabular-nums sm:text-xl ${
+                      empty ? "text-slate-400" : "text-blue-700"
+                    }`}
+                  >
+                    {empty ? "—" : `${row.total}점`}
+                  </p>
+                  <p className="mt-auto pt-2 text-[10px] leading-snug text-slate-500 sm:text-xs">
+                    {empty
+                      ? "등록 —개 · 리뷰 —개"
+                      : `등록 ${row.regCount}개 · 리뷰 ${row.revCount}개`}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
       {/* 필터 바 */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <div className="relative min-w-[10rem] flex-1 basis-[14rem]">
-            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z" />
-              </svg>
-            </span>
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="맛집, 메뉴, 장소 검색"
-              className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-2.5 text-xs text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+          <div className="flex min-w-0 flex-1 basis-[18rem] items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z" />
+                </svg>
+              </span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="맛집, 메뉴, 장소 검색"
+                className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-2.5 text-xs text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => pickRandomSeongsuEatery()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            >
+              <span aria-hidden>🎲</span>
+              오늘 뭐 먹지?
+            </button>
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
             <select
-              key={`cat-${[...catFilter].sort().join(",")}`}
-              defaultValue=""
+              value={categorySelect}
               onChange={(e) => {
-                const v = e.target.value as RestaurantCategory;
-                if (v) setCatFilter((prev) => new Set([...prev, v]));
+                const v = e.target.value;
+                setCategorySelect(v === "" ? "" : (v as RestaurantCategory));
               }}
-              className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-[7.6rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              aria-label="카테고리"
             >
-              <option value="">카테고리</option>
+              <option value="">전체</option>
               {RESTAURANT_CATEGORY_META.map((c) => (
                 <option key={c.key} value={c.key}>
                   {c.label}
@@ -402,7 +480,7 @@ export default function RestaurantsMainPage() {
                 const v = e.target.value as (typeof FOOD_TYPE_OPTIONS)[number];
                 if (v) setFoodFilter((prev) => new Set([...prev, v]));
               }}
-              className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-[7.6rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">음식 종류</option>
               {FOOD_TYPE_OPTIONS.map((ft) => (
@@ -419,7 +497,7 @@ export default function RestaurantsMainPage() {
                 const v = e.target.value as (typeof ATMOSPHERE_TAG_OPTIONS)[number];
                 if (v) setAtmosFilter((prev) => new Set([...prev, v]));
               }}
-              className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-[7.6rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">분위기</option>
               {ATMOSPHERE_TAG_OPTIONS.map((t) => (
@@ -428,43 +506,39 @@ export default function RestaurantsMainPage() {
                 </option>
               ))}
             </select>
-
-            <select
-              value={priceKeyword}
-              onChange={(e) => setPriceKeyword(e.target.value)}
-              className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            <button
+              type="button"
+              onClick={resetFilterBar}
+              className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-lg leading-none text-slate-600 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              aria-label="검색·필터 초기화"
+              title="검색·필터 초기화"
             >
-              {PRICE_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              <span aria-hidden>↺</span>
+            </button>
           </div>
         </div>
 
-        {(catFilter.size > 0 || foodFilter.size > 0 || atmosFilter.size > 0 || priceKeyword) && (
+        {randomPickHint ? (
+          <p className="mt-2 text-xs text-amber-700" role="status">
+            {randomPickHint}
+          </p>
+        ) : null}
+
+        {(categorySelect || foodFilter.size > 0 || atmosFilter.size > 0) && (
           <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-            {[...catFilter].map((c) => {
-              const label = RESTAURANT_CATEGORY_META.find((x) => x.key === c)?.label ?? c;
-              const cafeIncluded = c === "카페·디저트";
-              return (
-                <span
-                  key={`c-${c}`}
-                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800"
+            {categorySelect ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800">
+                {RESTAURANT_CATEGORY_META.find((x) => x.key === categorySelect)?.label ?? categorySelect}
+                <button
+                  type="button"
+                  className="rounded-full px-0.5 text-slate-500 hover:text-slate-800"
+                  aria-label="카테고리 필터 제거"
+                  onClick={() => setCategorySelect("")}
                 >
-                  {cafeIncluded ? "카페 포함" : label}
-                  <button
-                    type="button"
-                    className="rounded-full px-0.5 text-slate-500 hover:text-slate-800"
-                    aria-label={`${label} 필터 제거`}
-                    onClick={() => setCatFilter((prev) => toggleSet(prev, c))}
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            })}
+                  ×
+                </button>
+              </span>
+            ) : null}
             {[...foodFilter].map((f) => (
               <span
                 key={`f-${f}`}
@@ -497,19 +571,6 @@ export default function RestaurantsMainPage() {
                 </button>
               </span>
             ))}
-            {priceKeyword ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800">
-                {PRICE_OPTIONS.find((p) => p.value === priceKeyword)?.label ?? priceKeyword}
-                <button
-                  type="button"
-                  className="rounded-full px-0.5 text-slate-500 hover:text-slate-800"
-                  aria-label="가격대 필터 제거"
-                  onClick={() => setPriceKeyword("")}
-                >
-                  ×
-                </button>
-              </span>
-            ) : null}
           </div>
         )}
       </section>
@@ -538,9 +599,9 @@ export default function RestaurantsMainPage() {
               const owner = row.registered_by ? profileMap.get(row.registered_by) : null;
               const selected = selectedId === row.id;
               const reviewThumbPath = listCardReviewThumbPathByRestaurant.get(row.id);
-              const isLunchReco = lunchRecoPick?.id === row.id;
-              const isCafeReco = cafeRecoPick?.id === row.id;
               const foodLine = [...(row.food_type ?? [])].slice(0, 4).map(normalizeFoodTypeValue).join(" / ");
+              const rowCats = getRestaurantCategories(row);
+              const catLine = rowCats.map(restaurantCategoryDisplayLabel).join(" · ");
               return (
                 <li key={row.id} className="border-b border-slate-100 last:border-b-0">
                   <div
@@ -563,23 +624,23 @@ export default function RestaurantsMainPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {isLunchReco ? (
-                            <span className="rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800">
-                              점심 추천
+                          {rowCats.map((cat) => (
+                            <span
+                              key={cat}
+                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${categoryBadgeClass(cat)}`}
+                            >
+                              {restaurantCategoryDisplayLabel(cat)}
+                            </span>
+                          ))}
+                          {isRestaurantNewWithinDays(row.created_at) ? (
+                            <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200/90">
+                              신규등록
                             </span>
                           ) : null}
-                          {isCafeReco ? (
-                            <span className="rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">
-                              카페 추천
-                            </span>
-                          ) : null}
-                          <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${categoryBadgeClass(row.category)}`}>
-                            {normalizeRestaurantCategory(row.category)}
-                          </span>
                         </div>
                         <p className="mt-1 font-bold text-slate-900">{row.name}</p>
                         <p className="mt-0.5 line-clamp-1 text-xs text-slate-600">
-                          {[normalizeRestaurantCategory(row.category), foodLine || null].filter(Boolean).join(" · ")}
+                          {[catLine || null, foodLine || null].filter(Boolean).join(" · ")}
                         </p>
                         <p className="mt-1 text-sm text-amber-700">
                           ★ {avgStr} ({agg?.n ?? 0})
@@ -661,84 +722,19 @@ export default function RestaurantsMainPage() {
         <div className="flex min-h-[400px] flex-col lg:min-h-[min(78vh,820px)]">
           <div className="h-[360px] w-full shrink-0 lg:h-0 lg:min-h-[300px] lg:flex-1">
             <KakaoMapPanel
-              restaurants={sortedFiltered}
+              restaurants={mapRestaurants}
               selectedId={selectedId}
               focusNonce={focusNonce}
-              onMarkerClick={(id) => {
-                setSelectedId(id);
-                setFocusNonce((n) => n + 1);
-              }}
+              onMarkerClick={onMapMarkerClick}
             />
           </div>
           <RestaurantPreviewPanel
             restaurant={selectedRestaurant}
             reviews={selectedReviews}
-            imagePaths={previewImagePlan.paths}
-            imageSources={previewImagePlan.sources}
+            reviewImagePaths={previewReviewImagePaths}
           />
         </div>
       </section>
-
-      {/* 보조: 오늘의 추천 · 점심 투표 */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-900">오늘의 추천</h2>
-          <p className="mt-1 text-xs text-slate-500">팀 리뷰·재방문 비율 기준</p>
-          <div className="mt-3 space-y-2 text-sm">
-            {lunchRecoPick ? (
-              <p>
-                <span className="font-semibold text-slate-800">점심:</span>{" "}
-                <button type="button" className="text-blue-600 hover:underline" onClick={() => focusCard(lunchRecoPick.id)}>
-                  {lunchRecoPick.name}
-                </button>
-              </p>
-            ) : (
-              <p className="text-slate-500">점심 후보 없음</p>
-            )}
-            {cafeRecoPick ? (
-              <p>
-                <span className="font-semibold text-slate-800">카페:</span>{" "}
-                <button type="button" className="text-violet-700 hover:underline" onClick={() => focusCard(cafeRecoPick.id)}>
-                  {cafeRecoPick.name}
-                </button>
-              </p>
-            ) : (
-              <p className="text-slate-500">카페 후보 없음</p>
-            )}
-          </div>
-        </section>
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-900">이번 주 점심 투표</h2>
-          <p className="mt-1 text-xs text-slate-500">주 시작 {weekStart} · 멤버당 1표</p>
-          {voteMsg ? <p className="mt-2 text-sm text-rose-600">{voteMsg}</p> : null}
-          {lunchCandidates.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">점심 맛집을 등록하면 투표할 수 있습니다.</p>
-          ) : (
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {lunchCandidates.map((r) => {
-                const cnt = voteCounts.get(r.id) ?? 0;
-                const active = myVoteRestaurantId === r.id;
-                return (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => void castVote(r.id)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                        active
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-blue-300"
-                      }`}
-                    >
-                      {r.name}
-                      <span className={`ml-1 ${active ? "text-blue-100" : "text-slate-500"}`}>{cnt}표</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      </div>
 
       <RestaurantFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={() => void loadAll()} />
     </div>

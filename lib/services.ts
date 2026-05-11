@@ -15,7 +15,7 @@ export const portalServices: PortalService[] = [
   },
   {
     title: "아슐랭",
-    description: "팀 추천 맛집을 공유하고 리뷰를 남기는 사내 커뮤니티",
+    description: "아폴론 미식가들이 직접 뽑은 아슐랭 가이드",
     icon: "🍱",
     href: "/restaurants"
   },

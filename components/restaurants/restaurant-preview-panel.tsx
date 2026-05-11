@@ -2,26 +2,19 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
 import {
   categoryBadgeClass,
+  getRestaurantCategories,
+  isRestaurantNewWithinDays,
+  restaurantCategoryDisplayLabel,
+  normalizeAtmosphereTag,
+  atmosphereTagDisplayLabel,
   normalizeFoodTypeValue,
-  normalizeRestaurantCategory,
   type Restaurant,
   type Review,
   reviewStarsScore
 } from "@/lib/restaurants/types";
-import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
-
-const GALLERY_BUCKET = "restaurant-images";
-const MENU_BUCKET = "menu-images";
-
-function galleryUrl(path: string): string {
-  return storagePublicUrl(GALLERY_BUCKET, path);
-}
-
-function menuUrl(path: string): string {
-  return storagePublicUrl(MENU_BUCKET, path);
-}
 
 function teamReviewSummary(reviews: Review[]): string {
   const texts = reviews
@@ -36,12 +29,13 @@ function teamReviewSummary(reviews: Review[]): string {
 type Props = {
   restaurant: Restaurant | null;
   reviews: Review[];
-  imagePaths: string[];
-  /** 각 path가 갤러리인지 메뉴 이미지인지 (같은 버킷 구분) */
-  imageSources?: ("gallery" | "menu")[];
+  /** 최신 리뷰 첨부 경로(review-images) 최대 3개 */
+  reviewImagePaths: string[];
 };
 
-export function RestaurantPreviewPanel({ restaurant, reviews, imagePaths, imageSources }: Props) {
+const PREVIEW_SLOTS = 3;
+
+export function RestaurantPreviewPanel({ restaurant, reviews, reviewImagePaths }: Props) {
   const { avg, count } = useMemo(() => {
     if (reviews.length === 0) return { avg: 0, count: 0 };
     const sum = reviews.reduce((s, r) => s + reviewStarsScore(r), 0);
@@ -49,13 +43,6 @@ export function RestaurantPreviewPanel({ restaurant, reviews, imagePaths, imageS
   }, [reviews]);
 
   const summary = useMemo(() => teamReviewSummary(reviews), [reviews]);
-
-  const urls = useMemo(() => {
-    return imagePaths.map((p, i) => {
-      const src = imageSources?.[i] === "menu" ? menuUrl(p) : galleryUrl(p);
-      return { src, key: `${i}-${p}` };
-    });
-  }, [imagePaths, imageSources]);
 
   if (!restaurant) {
     return (
@@ -65,73 +52,80 @@ export function RestaurantPreviewPanel({ restaurant, reviews, imagePaths, imageS
     );
   }
 
-  const main = urls[0];
-  const sub1 = urls[1];
-  const sub2 = urls[2];
-
   const foodTags = [...(restaurant.food_type ?? [])].slice(0, 4).map(normalizeFoodTypeValue).join(" · ");
-  const atmosTags = [...(restaurant.atmosphere_tags ?? [])].slice(0, 3).join(" · ");
-  const tagLine = [normalizeRestaurantCategory(restaurant.category), foodTags || null, atmosTags || null]
-    .filter(Boolean)
-    .join(" / ");
+  const atmosTags = [...(restaurant.atmosphere_tags ?? [])]
+    .slice(0, 3)
+    .map((t) => atmosphereTagDisplayLabel(normalizeAtmosphereTag(t)))
+    .join(" · ");
+  const catLine = getRestaurantCategories(restaurant).map(restaurantCategoryDisplayLabel).join(" · ");
+  const tagLine = [catLine || null, foodTags || null, atmosTags || null].filter(Boolean).join(" / ");
+
+  const paths = reviewImagePaths.slice(0, PREVIEW_SLOTS);
+  const hasAnyImage = paths.length > 0;
 
   return (
     <div className="rounded-b-xl border border-t-0 border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="flex shrink-0 gap-2 sm:w-[280px]">
-          <div className="aspect-[4/3] min-h-[120px] flex-1 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-            {main ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={main.src} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">이미지 없음</div>
-            )}
-          </div>
-          <div className="flex w-[72px] flex-col gap-2">
-            {[sub1, sub2].map((u, idx) => (
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        {hasAnyImage ? (
+          Array.from({ length: PREVIEW_SLOTS }, (_, i) => {
+            const path = paths[i];
+            return (
               <div
-                key={u?.key ?? `empty-${idx}`}
-                className="aspect-square w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                key={path ?? `empty-${i}`}
+                className="aspect-[4/3] min-h-[72px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
               >
-                {u ? (
+                {path ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={u.src} alt="" className="h-full w-full object-cover" />
+                  <img src={reviewImagePublicUrl(path)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <div className="h-full w-full bg-slate-50" />
                 )}
               </div>
-            ))}
+            );
+          })
+        ) : (
+          <div className="col-span-3 flex aspect-[4/1] min-h-[72px] items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs text-slate-400">
+            이미지 없음
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="min-w-0 flex-1 space-y-2">
-          <span className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${categoryBadgeClass(restaurant.category)}`}>
-            {normalizeRestaurantCategory(restaurant.category)}
-          </span>
-          <h3 className="text-lg font-bold text-slate-900">{restaurant.name}</h3>
-          {tagLine ? <p className="text-xs text-slate-600">{tagLine}</p> : null}
-          <p className="text-sm text-slate-800">
-            <span className="text-amber-600">★</span>{" "}
-            <span className="font-semibold">{count > 0 ? avg.toFixed(1) : "—"}</span>
-            <span className="text-slate-500"> ({count})</span>
-            {count > 0 ? <span className="text-slate-500"> · 리뷰 {count}개</span> : null}
-            {restaurant.price_range ? (
-              <>
-                <span className="text-slate-400"> · </span>
-                <span>{restaurant.price_range}</span>
-              </>
-            ) : null}
-          </p>
-          <p className="flex items-start gap-1 text-sm text-slate-600">
-            <span className="mt-0.5 text-slate-400" aria-hidden>
-              📍
+      <div className="space-y-2">
+        <span className="flex flex-wrap gap-1">
+          {getRestaurantCategories(restaurant).map((cat) => (
+            <span key={cat} className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${categoryBadgeClass(cat)}`}>
+              {restaurantCategoryDisplayLabel(cat)}
             </span>
-            <span>{restaurant.address}</span>
-          </p>
-          <Link href={`/restaurants/${restaurant.id}`} className="inline-block text-sm font-medium text-blue-600 hover:underline">
-            상세 보기 →
-          </Link>
-        </div>
+          ))}
+          {isRestaurantNewWithinDays(restaurant.created_at) ? (
+            <span className="inline-block rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200/90">
+              신규등록
+            </span>
+          ) : null}
+        </span>
+        <h3 className="text-lg font-bold text-slate-900">{restaurant.name}</h3>
+        {tagLine ? <p className="text-xs text-slate-600">{tagLine}</p> : null}
+        <p className="text-sm text-slate-800">
+          <span className="text-amber-600">★</span>{" "}
+          <span className="font-semibold">{count > 0 ? avg.toFixed(1) : "—"}</span>
+          <span className="text-slate-500"> ({count})</span>
+          {count > 0 ? <span className="text-slate-500"> · 리뷰 {count}개</span> : null}
+          {restaurant.price_range ? (
+            <>
+              <span className="text-slate-400"> · </span>
+              <span>{restaurant.price_range}</span>
+            </>
+          ) : null}
+        </p>
+        <p className="flex items-start gap-1 text-sm text-slate-600">
+          <span className="mt-0.5 text-slate-400" aria-hidden>
+            📍
+          </span>
+          <span>{restaurant.address}</span>
+        </p>
+        <Link href={`/restaurants/${restaurant.id}`} className="inline-block text-sm font-medium text-blue-600 hover:underline">
+          상세 보기 →
+        </Link>
       </div>
 
       <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
