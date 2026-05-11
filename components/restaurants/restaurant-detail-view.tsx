@@ -141,6 +141,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [editBasic, setEditBasic] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  /** 수정 모드일 때 대상 리뷰 (없으면 신규 등록) */
+  const [editingReview, setEditingReview] = useState<Review | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -911,7 +913,10 @@ export function RestaurantDetailView({ id }: { id: string }) {
             <button
               type="button"
               disabled={!myProfileId}
-              onClick={() => setReviewOpen(true)}
+              onClick={() => {
+                setEditingReview(null);
+                setReviewOpen(true);
+              }}
               className="shrink-0 rounded-lg border border-blue-600 bg-white px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               리뷰 등록
@@ -977,9 +982,23 @@ export function RestaurantDetailView({ id }: { id: string }) {
                             ))}
                           </ul>
                         ) : null}
-                        <p className="mt-2 text-xs text-slate-500">
-                          {formatReviewCardDate(rv.created_at)} · {who?.name ?? "멤버"}
-                        </p>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs text-slate-500">
+                            {formatReviewCardDate(rv.created_at)} · {who?.name ?? "멤버"}
+                          </p>
+                          {myProfileId && rv.reviewer_id === myProfileId ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingReview(rv);
+                                setReviewOpen(true);
+                              }}
+                              className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:border-blue-300 hover:bg-blue-50/80"
+                            >
+                              수정
+                            </button>
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}
@@ -1095,11 +1114,16 @@ export function RestaurantDetailView({ id }: { id: string }) {
 
       {myProfileId ? (
         <ReviewWriteModal
+          key={editingReview?.id ?? "new-review"}
           open={reviewOpen}
-          onClose={() => setReviewOpen(false)}
+          onClose={() => {
+            setReviewOpen(false);
+            setEditingReview(null);
+          }}
           restaurantId={restaurant.id}
           restaurantName={restaurant.name}
           profileId={myProfileId}
+          initialReview={editingReview}
           onSaved={(row) => {
             console.log("[Ashuleng review] onSaved", { id: row.id, image_paths: row.image_paths });
             void fetchReviews("after review submit (onSaved)");

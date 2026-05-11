@@ -13,6 +13,8 @@ type Props = {
   restaurantName: string;
   profileId: string;
   onSaved: (row: Review) => void;
+  /** 설정 시 해당 리뷰 수정 모드 (별점·키워드·댓글·사진) */
+  initialReview?: Review | null;
 };
 
 const BUCKET = "review-images";
@@ -27,6 +29,20 @@ const STAR_TENTHS_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 function toggle<T extends string>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+
+function starTenthsFromReview(rv: Review): number {
+  const raw = rv.star_rating;
+  if (typeof raw === "number" && raw >= 2 && raw <= 10) return raw;
+  const leg = rv.rating ?? 4;
+  return Math.min(10, Math.max(2, Math.round(leg * 2)));
+}
+
+function revisitFromReview(rv: Review): RevisitIntent {
+  if (rv.revisit_intent === "again" || rv.revisit_intent === "meh" || rv.revisit_intent === "never") {
+    return rv.revisit_intent;
+  }
+  return rv.revisit ? "again" : "meh";
 }
 
 function IconClose(props: { className?: string }) {
@@ -50,12 +66,21 @@ function IconCamera(props: { className?: string }) {
   );
 }
 
-export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, profileId, onSaved }: Props) {
+export function ReviewWriteModal({
+  open,
+  onClose,
+  restaurantId,
+  restaurantName,
+  profileId,
+  onSaved,
+  initialReview = null
+}: Props) {
   const [starTenths, setStarTenths] = useState<number>(8);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [comment, setComment] = useState("");
-  const [visitDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [revisit] = useState<RevisitIntent>("again");
+  const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [revisit, setRevisit] = useState<RevisitIntent>("again");
+  const [existingPaths, setExistingPaths] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -70,6 +95,9 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
     setStarTenths(8);
     setKeywords([]);
     setComment("");
+    setVisitDate(new Date().toISOString().slice(0, 10));
+    setRevisit("again");
+    setExistingPaths([]);
     setFiles([]);
     setMsg("");
   }, []);
@@ -82,15 +110,35 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
   useEffect(() => {
     if (!open) {
       reset();
+      return;
     }
-  }, [open, reset]);
+    if (initialReview) {
+      setStarTenths(starTenthsFromReview(initialReview));
+      setKeywords([...(initialReview.keyword_tags ?? [])]);
+      setComment(initialReview.comment ?? "");
+      setVisitDate(
+        initialReview.visit_date && initialReview.visit_date.length >= 10
+          ? initialReview.visit_date.slice(0, 10)
+          : new Date().toISOString().slice(0, 10)
+      );
+      setRevisit(revisitFromReview(initialReview));
+      setExistingPaths((initialReview.image_paths ?? []).filter((p): p is string => Boolean(p?.trim())));
+      setFiles([]);
+      setMsg("");
+    } else {
+      reset();
+    }
+  }, [open, initialReview, reset]);
+
+  const totalPhotoCount = existingPaths.length + files.length;
 
   const addFiles = (list: FileList | null) => {
     if (!list?.length) return;
     const incoming = Array.from(list);
     setFiles((prev) => {
-      const next = [...prev, ...incoming].slice(0, MAX_PHOTOS);
-      return next;
+      const room = MAX_PHOTOS - existingPaths.length - prev.length;
+      if (room <= 0) return prev;
+      return [...prev, ...incoming.slice(0, room)];
     });
   };
 
@@ -98,20 +146,33 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const removeExistingPath = (path: string) => {
+    setExistingPaths((prev) => prev.filter((p) => p !== path));
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setMsg("");
     setSaving(true);
+    const isEdit = Boolean(initialReview);
+    if (isEdit && initialReview!.reviewer_id !== profileId) {
+      setMsg("본인이 작성한 리뷰만 수정할 수 있습니다.");
+      setSaving(false);
+      return;
+    }
+
     try {
       console.log(`${REVIEW_DEBUG} submit START`, {
         restaurantId,
         profileId,
+        isEdit,
         fileCount: files.length,
+        existingCount: existingPaths.length,
         starTenths,
         keywordCount: keywords.length
       });
 
-      const paths: string[] = [];
+      const newPaths: string[] = [];
       for (const f of files) {
         const ext = f.name.split(".").pop()?.toLowerCase() || "jpg";
         const name = `${restaurantId}/${crypto.randomUUID()}.${ext}`;
@@ -140,13 +201,61 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
           console.error(`${REVIEW_DEBUG} storage.upload FAILED`, storageRes.error);
           return;
         }
-        paths.push(name);
+        newPaths.push(name);
       }
 
-      console.log(`${REVIEW_DEBUG} all uploads done, paths (storage keys)`, paths);
+      console.log(`${REVIEW_DEBUG} all uploads done, paths (storage keys)`, newPaths);
 
       const legacyRating = Math.min(5, Math.max(1, Math.round(starTenths / 2)));
       const commentTrim = comment.slice(0, COMMENT_MAX).trim();
+      const finalImagePaths = [...existingPaths, ...newPaths];
+
+      if (isEdit) {
+        const updatePayload = {
+          rating: legacyRating,
+          star_rating: starTenths,
+          keyword_tags: keywords,
+          image_paths: finalImagePaths,
+          revisit_intent: revisit,
+          revisit: revisit === "again",
+          comment: commentTrim || null,
+          visit_date: visitDate || null
+        };
+
+        console.log(`${REVIEW_DEBUG} reviews.update payload`, updatePayload, { id: initialReview!.id });
+
+        const updateRes = await supabase
+          .from("reviews")
+          .update(updatePayload)
+          .eq("id", initialReview!.id)
+          .eq("reviewer_id", profileId)
+          .select("*")
+          .maybeSingle();
+
+        console.log(`${REVIEW_DEBUG} reviews.update result`, {
+          data: updateRes.data,
+          error: updateRes.error
+        });
+
+        if (updateRes.error || !updateRes.data) {
+          setMsg(updateRes.error?.message ?? "리뷰 수정에 실패했습니다.");
+          console.error(`${REVIEW_DEBUG} reviews.update FAILED`, updateRes.error);
+          for (const p of newPaths) {
+            void supabase.storage.from(BUCKET).remove([p]);
+          }
+          return;
+        }
+
+        const originalPaths = (initialReview!.image_paths ?? []).filter((p): p is string => Boolean(p?.trim()));
+        const removed = originalPaths.filter((p) => !finalImagePaths.includes(p));
+        if (removed.length > 0) {
+          void supabase.storage.from(BUCKET).remove(removed);
+        }
+
+        onSaved(updateRes.data as Review);
+        handleClose();
+        return;
+      }
 
       const insertPayload = {
         restaurant_id: restaurantId,
@@ -154,7 +263,7 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
         rating: legacyRating,
         star_rating: starTenths,
         keyword_tags: keywords,
-        image_paths: paths,
+        image_paths: finalImagePaths,
         revisit_intent: revisit,
         revisit: revisit === "again",
         comment: commentTrim || null,
@@ -175,7 +284,7 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
       if (insertRes.error || !insertRes.data) {
         setMsg(insertRes.error?.message ?? "리뷰 저장에 실패했습니다.");
         console.error(`${REVIEW_DEBUG} reviews.insert FAILED`, insertRes.error);
-        for (const p of paths) {
+        for (const p of newPaths) {
           void supabase.storage.from(BUCKET).remove([p]);
         }
         return;
@@ -183,7 +292,7 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
 
       const row = insertRes.data as Review;
       console.log(`${REVIEW_DEBUG} saved row image_paths`, row.image_paths);
-      for (const p of paths) {
+      for (const p of newPaths) {
         console.log(`${REVIEW_DEBUG} public URL hint`, reviewImagePublicUrl(p));
       }
 
@@ -209,9 +318,13 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-lg font-bold leading-snug text-slate-900 sm:text-xl">
-                아슐랭 리뷰등록 · {restaurantName}
+                {initialReview ? "아슐랭 리뷰 수정" : "아슐랭 리뷰등록"} · {restaurantName}
               </h2>
-              <p className="mt-1.5 text-sm text-slate-500">이 맛집에 대한 솔직한 경험을 공유해주세요.</p>
+              <p className="mt-1.5 text-sm text-slate-500">
+                {initialReview
+                  ? "별점·키워드·댓글·사진을 수정할 수 있습니다."
+                  : "이 맛집에 대한 솔직한 경험을 공유해주세요."}
+              </p>
             </div>
             <button
               type="button"
@@ -300,8 +413,25 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
               <label className="mb-1 block text-sm font-bold text-slate-900">리뷰사진</label>
               <p className="mb-3 text-xs text-slate-500">사진은 최대 {MAX_PHOTOS}장까지 등록할 수 있어요.</p>
               <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {existingPaths.map((path) => (
+                  <li
+                    key={`ex-${path}`}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={reviewImagePublicUrl(path)} alt="" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeExistingPath(path)}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs font-bold text-white hover:bg-black/70"
+                      aria-label="기존 사진 삭제"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
                 {files.map((_, idx) => (
-                  <li key={idx} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                  <li key={`new-${idx}`} className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={previewUrls[idx]} alt="" className="h-full w-full object-cover" />
                     <button
@@ -314,7 +444,7 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
                     </button>
                   </li>
                 ))}
-                {files.length < MAX_PHOTOS ? (
+                {totalPhotoCount < MAX_PHOTOS ? (
                   <li>
                     <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 transition hover:border-blue-400 hover:bg-blue-50/40">
                       <IconCamera className="h-6 w-6 text-blue-500" />
@@ -351,7 +481,7 @@ export function ReviewWriteModal({ open, onClose, restaurantId, restaurantName, 
               disabled={saving}
               className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
             >
-              {saving ? "저장 중…" : "등록하기"}
+              {saving ? "저장 중…" : initialReview ? "수정 완료" : "등록하기"}
             </button>
           </div>
         </form>
