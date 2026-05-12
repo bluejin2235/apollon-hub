@@ -85,6 +85,7 @@ create index if not exists idx_reviews_reviewer_id on public.reviews (reviewer_i
 alter table public.restaurants
   add column if not exists food_type text[] not null default '{}';
 
+-- atmosphere_tags: 허용 값은 앱 `lib/restaurants/types.ts`의 ATMOSPHERE_TAG_OPTIONS와 동기화 (컬럼은 text[] 제약 없음)
 alter table public.restaurants
   add column if not exists atmosphere_tags text[] not null default '{}';
 

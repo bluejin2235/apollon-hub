@@ -86,8 +86,8 @@ export default function RestaurantsMainPage() {
   const [focusNonce, setFocusNonce] = useState(0);
   const [listPage, setListPage] = useState(1);
   const [randomPickHint, setRandomPickHint] = useState("");
-  /** "오늘 뭐 먹지?"로 고른 맛집을 목록 맨 위로 (필터된 목록에 있을 때만) */
-  const [listBoostId, setListBoostId] = useState<string | null>(null);
+  /** "오늘 뭐 먹지?" 클릭 시 왼쪽 목록을 해당 맛집 1곳만으로 제한 */
+  const [randomPickOnlyId, setRandomPickOnlyId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     const [r, rv, p] = await Promise.all([
@@ -114,7 +114,7 @@ export default function RestaurantsMainPage() {
     return m;
   }, [profiles]);
 
-  /** 최근 30일 맛집 등록·리뷰 기여 정렬 (페이지 데이터 로드 시점 기준) */
+  /** 맛집 등록·리뷰 기여: 달력 월이 아니라 `Date.now()` 기준 최근 30일(롤링)만 집계 */
   const gourmetRankBoard = useMemo(() => {
     const cutoff = Date.now() - GOURMET_RANK_WINDOW_MS;
     const byId = new Map<string, { reg: number; rev: number }>();
@@ -226,22 +226,23 @@ export default function RestaurantsMainPage() {
     return list;
   }, [filtered, sortBy, reviewAgg]);
 
-  /** 랜덤 추천 시 선택 맛집을 첫 행으로 (동일 집합, 순서만 조정) */
   const listForDisplay = useMemo(() => {
-    if (!listBoostId) return sortedFiltered;
-    const idx = sortedFiltered.findIndex((r) => r.id === listBoostId);
-    if (idx <= 0) return sortedFiltered;
-    const row = sortedFiltered[idx];
-    return [row, ...sortedFiltered.slice(0, idx), ...sortedFiltered.slice(idx + 1)];
-  }, [sortedFiltered, listBoostId]);
+    if (!randomPickOnlyId) return sortedFiltered;
+    const row = restaurants.find((r) => r.id === randomPickOnlyId);
+    return row ? [row] : [];
+  }, [sortedFiltered, randomPickOnlyId, restaurants]);
 
-  /** 선택 맛집이 필터 목록에 없을 때도 지도 마커·중앙 이동이 되도록 보강 */
+  /** 랜덤 추천 단일 표시 시 지도도 동일 1곳만 표시; 그 외에는 기존 보강 로직 */
   const mapRestaurants = useMemo(() => {
+    if (randomPickOnlyId) {
+      const row = restaurants.find((r) => r.id === randomPickOnlyId);
+      return row ? [row] : [];
+    }
     if (!selectedId) return sortedFiltered;
     if (sortedFiltered.some((r) => r.id === selectedId)) return sortedFiltered;
     const extra = restaurants.find((r) => r.id === selectedId);
     return extra ? [...sortedFiltered, extra] : sortedFiltered;
-  }, [sortedFiltered, selectedId, restaurants]);
+  }, [sortedFiltered, selectedId, restaurants, randomPickOnlyId]);
 
   const listTotalPages = Math.max(1, Math.ceil(listForDisplay.length / LIST_PAGE_SIZE));
   const listPageSlice = useMemo(() => {
@@ -254,11 +255,11 @@ export default function RestaurantsMainPage() {
   }, [listTotalPages]);
 
   useEffect(() => {
-    if (!listBoostId) return;
-    if (!sortedFiltered.some((r) => r.id === listBoostId)) {
-      setListBoostId(null);
+    if (!randomPickOnlyId) return;
+    if (!restaurants.some((r) => r.id === randomPickOnlyId)) {
+      setRandomPickOnlyId(null);
     }
-  }, [sortedFiltered, listBoostId]);
+  }, [restaurants, randomPickOnlyId]);
 
   const selectedRestaurant = useMemo(
     () => (selectedId ? restaurants.find((x) => x.id === selectedId) ?? null : null),
@@ -290,7 +291,6 @@ export default function RestaurantsMainPage() {
   }, [selectedReviews]);
 
   const focusCard = useCallback((id: string) => {
-    setListBoostId(null);
     setRandomPickHint("");
     const idx = sortedFiltered.findIndex((r) => r.id === id);
     if (idx >= 0) {
@@ -314,21 +314,12 @@ export default function RestaurantsMainPage() {
       return;
     }
     const pick = pool[Math.floor(Math.random() * pool.length)]!;
-    const inList = sortedFiltered.some((r) => r.id === pick.id);
-    if (inList) {
-      setListBoostId(pick.id);
-      setSelectedId(pick.id);
-      setFocusNonce((n) => n + 1);
-      setListPage(1);
-      setRandomPickHint("");
-    } else {
-      setListBoostId(null);
-      focusCard(pick.id);
-      queueMicrotask(() =>
-        setRandomPickHint("현재 필터에는 목록에 안 보여요. 지도와 미리보기에서 확인해 주세요.")
-      );
-    }
-  }, [restaurants, sortedFiltered, focusCard]);
+    setRandomPickOnlyId(pick.id);
+    setSelectedId(pick.id);
+    setFocusNonce((n) => n + 1);
+    setListPage(1);
+    setRandomPickHint("");
+  }, [restaurants]);
 
   const resetFilterBar = () => {
     setSearchQuery("");
@@ -336,14 +327,14 @@ export default function RestaurantsMainPage() {
     setFoodFilter(new Set());
     setAtmosFilter(new Set());
     setRandomPickHint("");
-    setListBoostId(null);
+    setRandomPickOnlyId(null);
   };
 
   if (loading) {
     return <p className="py-20 text-center text-gray-600">불러오는 중...</p>;
   }
 
-  const gourmetMonthCaption = `${new Date().getFullYear()}년 ${new Date().getMonth() + 1}월 기준 · 실시간`;
+  const gourmetRankCaption = "최근 30일 기준";
   const gourmetMedals = ["🥇", "🥈", "🥉"] as const;
 
   return (
@@ -375,7 +366,7 @@ export default function RestaurantsMainPage() {
               <h2 id="gourmet-rank-heading" className="text-base font-bold tracking-tight text-slate-900">
                 이달의 미식가
               </h2>
-              <p className="mt-0.5 text-xs text-slate-500">{gourmetMonthCaption}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{gourmetRankCaption}</p>
             </div>
             <p className="shrink-0 text-xs font-medium text-slate-600 sm:pt-0.5 sm:text-right">
               등록 {GOURMET_REG_POINTS}점 · 리뷰 {GOURMET_REVIEW_POINTS}점
@@ -580,7 +571,7 @@ export default function RestaurantsMainPage() {
         <div className="flex max-h-[min(78vh,820px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-bold text-slate-900">
-              <span className="text-blue-600">{sortedFiltered.length}</span>곳
+              <span className="text-blue-600">{listForDisplay.length}</span>곳
             </p>
             <select
               value={sortBy}
@@ -592,6 +583,11 @@ export default function RestaurantsMainPage() {
               <option value="recent">최근등록순</option>
             </select>
           </div>
+          {randomPickOnlyId && listForDisplay.length > 0 ? (
+            <p className="border-b border-amber-100 bg-amber-50/90 px-4 py-2 text-xs font-semibold text-amber-900 sm:text-sm">
+              🎲 오늘의 추천
+            </p>
+          ) : null}
           <ul className="flex-1 space-y-0 overflow-y-auto">
             {listPageSlice.map((row) => {
               const agg = reviewAgg.get(row.id);
@@ -675,7 +671,7 @@ export default function RestaurantsMainPage() {
               );
             })}
           </ul>
-          {sortedFiltered.length > LIST_PAGE_SIZE ? (
+          {listForDisplay.length > LIST_PAGE_SIZE ? (
             <nav
               className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t border-slate-100 px-2 py-3 text-sm text-slate-600"
               aria-label="맛집 목록 페이지"
@@ -714,8 +710,12 @@ export default function RestaurantsMainPage() {
               </button>
             </nav>
           ) : null}
-          {sortedFiltered.length === 0 ? (
-            <p className="px-4 py-12 text-center text-sm text-slate-500">조건에 맞는 맛집이 없습니다.</p>
+          {listForDisplay.length === 0 ? (
+            <p className="px-4 py-12 text-center text-sm text-slate-500">
+              {sortedFiltered.length === 0 && !randomPickOnlyId
+                ? "조건에 맞는 맛집이 없습니다."
+                : "표시할 맛집이 없습니다."}
+            </p>
           ) : null}
         </div>
 
@@ -726,6 +726,7 @@ export default function RestaurantsMainPage() {
               selectedId={selectedId}
               focusNonce={focusNonce}
               onMarkerClick={onMapMarkerClick}
+              onMapBackgroundClick={() => setSelectedId(null)}
             />
           </div>
           <RestaurantPreviewPanel

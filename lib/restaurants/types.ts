@@ -151,7 +151,9 @@ export const ATMOSPHERE_TAG_OPTIONS = [
   "사진맛집",
   "넓은",
   "주차편리",
-  "애견동반"
+  "애견동반",
+  "비즈니스",
+  "룸"
 ] as const;
 
 export type AtmosphereTagOption = (typeof ATMOSPHERE_TAG_OPTIONS)[number];
