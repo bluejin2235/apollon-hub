@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AshulengBoardDetailModal } from "@/components/restaurants/ashuleng-board-detail-modal";
 import { AshulengPostWriteModal } from "@/components/restaurants/ashuleng-post-write-modal";
+import { isRestaurantNewWithinDays } from "@/lib/restaurants/types";
 import { supabase } from "@/lib/supabase/client";
 
 const PAGE_SIZE = 5;
@@ -238,6 +239,11 @@ export function AshulengBoardSection() {
                           >
                             {row.title}
                           </button>
+                          {isRestaurantNewWithinDays(row.created_at) ? (
+                            <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200/90">
+                              신규
+                            </span>
+                          ) : null}
                           {mine ? (
                             <div className="shrink-0 space-x-1">
                               <button

@@ -5,6 +5,7 @@ import type { KakaoKeywordPlace, KakaoKeywordSearchResponse } from "@/lib/kakao/
 import { pickDisplayAddress } from "@/lib/kakao/local-keyword";
 import {
   ATMOSPHERE_TAG_OPTIONS,
+  atmosphereTagDisplayLabel,
   categoryFieldsForDb,
   FOOD_TYPE_OPTIONS,
   RESTAURANT_CATEGORY_META,
@@ -357,7 +358,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                         }
                       >
                         {on ? <span aria-hidden>✓</span> : null}
-                        {t}
+                        {atmosphereTagDisplayLabel(t)}
                       </button>
                     );
                   })}

@@ -12,6 +12,7 @@ import {
   FOOD_TYPE_OPTIONS,
   RESTAURANT_CATEGORY_META,
   categoryBadgeClass,
+  atmosphereTagDisplayLabel,
   normalizeAtmosphereTag,
   normalizeFoodTypeValue,
   getRestaurantCategories,
@@ -494,7 +495,7 @@ export default function RestaurantsMainPage() {
               <option value="">분위기</option>
               {ATMOSPHERE_TAG_OPTIONS.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {atmosphereTagDisplayLabel(t)}
                 </option>
               ))}
             </select>
@@ -552,11 +553,11 @@ export default function RestaurantsMainPage() {
                 key={`a-${t}`}
                 className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800"
               >
-                {t}
+                {atmosphereTagDisplayLabel(t)}
                 <button
                   type="button"
                   className="rounded-full px-0.5 text-slate-500 hover:text-slate-800"
-                  aria-label={`${t} 필터 제거`}
+                  aria-label={`${atmosphereTagDisplayLabel(t)} 필터 제거`}
                   onClick={() => setAtmosFilter((prev) => toggleSet(prev, t))}
                 >
                   ×

@@ -626,7 +626,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                           eTags.includes(t) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
-                        {t}
+                        {atmosphereTagDisplayLabel(t)}
                       </button>
                     ))}
                   </div>

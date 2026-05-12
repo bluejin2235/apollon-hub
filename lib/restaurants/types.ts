@@ -86,7 +86,7 @@ export function restaurantCategoryDisplayLabel(category: string): string {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** `created_at` 기준 `days`일 이내 등록(포함)이면 true — 신규등록 뱃지 등 */
-export function isRestaurantNewWithinDays(created_at: string, days = 14, now: Date = new Date()): boolean {
+export function isRestaurantNewWithinDays(created_at: string, days = 7, now: Date = new Date()): boolean {
   const t = new Date(created_at).getTime();
   if (Number.isNaN(t)) return false;
   return now.getTime() - t <= days * MS_PER_DAY;
@@ -182,9 +182,11 @@ export function normalizeAtmosphereTagList(arr: string[] | null | undefined): st
   return out;
 }
 
-/** 카드·상세 등 표시용 (띄어쓰기만 보정) */
+/** 카드·상세 등 표시용 (DB 저장값은 그대로, UI 라벨만 변환) */
 export function atmosphereTagDisplayLabel(tag: string): string {
   if (tag === "분위기좋은") return "분위기 좋은";
+  if (tag === "넓은") return "아폴론회식추천";
+  if (tag === "룸") return "룸 있음";
   return tag;
 }
 
