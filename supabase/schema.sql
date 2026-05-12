@@ -218,3 +218,107 @@ create policy "restaurant_images_insert_auth" on public.restaurant_images for in
 
 drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
 create policy "restaurant_images_delete_auth" on public.restaurant_images for delete to authenticated using (true);
+
+-- 아슐랭 게시판 (의견·아이디어 등, 댓글 테이블은 추후 확장)
+create table if not exists public.ashuleng_posts (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text not null default '',
+  author_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ashuleng_posts_created on public.ashuleng_posts (created_at desc);
+create index if not exists idx_ashuleng_posts_author on public.ashuleng_posts (author_id);
+
+alter table public.ashuleng_posts enable row level security;
+
+drop policy if exists "ashuleng_posts_select_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_select_auth"
+  on public.ashuleng_posts for select to authenticated using (true);
+
+drop policy if exists "ashuleng_posts_insert_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_insert_auth"
+  on public.ashuleng_posts for insert to authenticated
+  with check (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  );
+
+drop policy if exists "ashuleng_posts_update_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_update_auth"
+  on public.ashuleng_posts for update to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  );
+
+drop policy if exists "ashuleng_posts_delete_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_delete_auth"
+  on public.ashuleng_posts for delete to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  );
+
+-- 아슐랭 댓글 (게시글 상세 모달)
+create table if not exists public.ashuleng_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.ashuleng_posts (id) on delete cascade,
+  author_id uuid not null references public.profiles (id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ashuleng_comments_post on public.ashuleng_comments (post_id, created_at);
+create index if not exists idx_ashuleng_comments_author on public.ashuleng_comments (author_id);
+
+alter table public.ashuleng_comments enable row level security;
+
+drop policy if exists "ashuleng_comments_select_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_select_auth"
+  on public.ashuleng_comments for select to authenticated using (true);
+
+drop policy if exists "ashuleng_comments_insert_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_insert_auth"
+  on public.ashuleng_comments for insert to authenticated
+  with check (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  );
+
+drop policy if exists "ashuleng_comments_delete_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_delete_auth"
+  on public.ashuleng_comments for delete to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles p
+      inner join auth.users u on lower(u.email) = lower(p.email)
+      where u.id = auth.uid() and p.id = author_id
+    )
+  );

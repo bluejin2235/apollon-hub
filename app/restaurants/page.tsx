@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AshulengBoardSection } from "@/components/restaurants/ashuleng-board-section";
 import { KakaoMapPanel } from "@/components/restaurants/kakao-map";
 import { RestaurantFormModal } from "@/components/restaurants/restaurant-form-modal";
 import { RestaurantPreviewPanel } from "@/components/restaurants/restaurant-preview-panel";
@@ -736,6 +737,8 @@ export default function RestaurantsMainPage() {
           />
         </div>
       </section>
+
+      <AshulengBoardSection />
 
       <RestaurantFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={() => void loadAll()} />
     </div>
