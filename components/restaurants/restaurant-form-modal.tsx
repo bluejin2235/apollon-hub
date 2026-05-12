@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { KakaoKeywordPlace, KakaoKeywordSearchResponse } from "@/lib/kakao/local-keyword";
 import { pickDisplayAddress } from "@/lib/kakao/local-keyword";
 import {
@@ -44,24 +44,37 @@ function IconClose(props: { className?: string }) {
   );
 }
 
+/** DB 저장값과 동일 — 중복 검사·insert 공통 */
+function registerNameAndAddress(doc: KakaoKeywordPlace): { name: string; address: string } {
+  const name = doc.place_name;
+  const address = pickDisplayAddress(doc) || doc.place_name;
+  return { name, address };
+}
+
 export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<KakaoKeywordPlace[]>([]);
   const [pick, setPick] = useState<KakaoKeywordPlace | null>(null);
+  const [isDuplicatePlace, setIsDuplicatePlace] = useState(false);
+  const [duplicateCheckPending, setDuplicateCheckPending] = useState(false);
   const [categories, setCategories] = useState<RestaurantCategory[]>(["성수점심"]);
   const [foodTypes, setFoodTypes] = useState<FoodTypeOption[]>([]);
   const [tags, setTags] = useState<AtmosphereTagOption[]>([]);
   const [menuRows, setMenuRows] = useState<MenuRow[]>([{ name: "", price: "" }]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const duplicateCheckGen = useRef(0);
 
   const reset = useCallback(() => {
+    duplicateCheckGen.current += 1;
     setStep(1);
     setQuery("");
     setResults([]);
     setPick(null);
+    setIsDuplicatePlace(false);
+    setDuplicateCheckPending(false);
     setCategories(["성수점심"]);
     setFoodTypes([]);
     setTags([]);
@@ -113,16 +126,37 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     }
   };
 
-  const selectPlace = (doc: KakaoKeywordPlace) => {
+  const selectPlace = useCallback(async (doc: KakaoKeywordPlace) => {
+    const gen = ++duplicateCheckGen.current;
     setPick(doc);
     setStep(2);
     setMsg("");
-  };
+    setIsDuplicatePlace(false);
+
+    const { name, address } = registerNameAndAddress(doc);
+    setDuplicateCheckPending(true);
+    const { data, error } = await supabase.from("restaurants").select("id").eq("name", name).eq("address", address).limit(1);
+
+    if (gen !== duplicateCheckGen.current) return;
+
+    setDuplicateCheckPending(false);
+
+    if (error) {
+      console.error("[restaurant-form] duplicate check", error);
+      return;
+    }
+    if (data && data.length > 0) {
+      setIsDuplicatePlace(true);
+      setMsg("이미 등록된 맛집입니다");
+    }
+  }, []);
 
   const goBack = () => {
     if (step === 2) {
       setStep(1);
       setMsg("");
+      setIsDuplicatePlace(false);
+      setDuplicateCheckPending(false);
     } else {
       onClose();
     }
@@ -149,6 +183,9 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
       setMsg("장소를 선택해주세요.");
       return;
     }
+    if (isDuplicatePlace || duplicateCheckPending) {
+      return;
+    }
     const lat = Number(pick.y);
     const lng = Number(pick.x);
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
@@ -170,14 +207,14 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
         setMsg("프로필을 찾을 수 없습니다.");
         return;
       }
-      const addr = pickDisplayAddress(pick);
+      const { name: regName, address: regAddress } = registerNameAndAddress(pick);
       const { menu, price_range } = formatMenuAndPriceRange(menuRows);
       const catRow = categoryFieldsForDb(categories);
       const { error } = await supabase.from("restaurants").insert({
-        name: pick.place_name,
+        name: regName,
         category: catRow.category,
         categories: catRow.categories,
-        address: addr || pick.place_name,
+        address: regAddress,
         lat,
         lng,
         menu,
@@ -273,7 +310,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                           className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
                             selected ? "bg-blue-50" : ""
                           }`}
-                          onClick={() => selectPlace(doc)}
+                          onClick={() => void selectPlace(doc)}
                         >
                           <span className="block text-sm font-bold text-slate-900">{doc.place_name}</span>
                           <span className="mt-0.5 block text-xs text-slate-500">{pickDisplayAddress(doc)}</span>
@@ -420,6 +457,8 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
               onClick={() => {
                 setStep(1);
                 setMsg("");
+                setIsDuplicatePlace(false);
+                setDuplicateCheckPending(false);
               }}
             >
               이전
@@ -427,7 +466,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
             <button
               type="submit"
               form="restaurant-register-form"
-              disabled={!pick || saving}
+              disabled={!pick || saving || isDuplicatePlace || duplicateCheckPending}
               className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
             >
               {saving ? "저장 중…" : "등록"}
