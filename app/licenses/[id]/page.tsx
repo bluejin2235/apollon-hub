@@ -10,7 +10,7 @@ import {
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { formatCurrency } from "@/lib/licenses/calc";
+import { computeNextPayment, formatCurrency } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -263,6 +263,23 @@ export default function LicenseDetailPage() {
     ? "bg-emerald-100 text-emerald-700"
     : "bg-slate-100 text-slate-600";
 
+  // 다음 결제일 — 영구 라이선스이거나 payment_day 미설정 시 null.
+  const nextPaymentDate = cost.isPerpetual
+    ? null
+    : computeNextPayment(license.contract_type, license.payment_day, license.payment_month);
+  let nextPaymentLabel: string | null = null;
+  let nextPaymentDiff: number | null = null;
+  if (nextPaymentDate) {
+    const todayNoon = new Date();
+    todayNoon.setHours(12, 0, 0, 0);
+    nextPaymentDiff = Math.round(
+      (nextPaymentDate.getTime() - todayNoon.getTime()) / 86_400_000
+    );
+    nextPaymentLabel = nextPaymentDate.toLocaleDateString("ko-KR");
+  }
+  const nextPaymentColor =
+    nextPaymentDiff != null && nextPaymentDiff <= 7 ? "text-amber-600" : "text-slate-900";
+
   // description / 시작일 / 결제방법 / 사용목적
   const startDateText =
     parseDescField(license.description, "시작일") ?? license.start_date ?? null;
@@ -399,6 +416,26 @@ export default function LicenseDetailPage() {
                   {license.status}
                 </span>
               </div>
+
+              {nextPaymentLabel ? (
+                <div>
+                  <p className="text-xs text-slate-500">다음 결제일</p>
+                  <p className={`mt-1 flex items-center gap-1.5 text-sm font-medium tabular-nums ${nextPaymentColor}`}>
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {nextPaymentLabel}
+                    {nextPaymentDiff != null ? (
+                      <span className="text-xs opacity-80">
+                        ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+              ) : null}
 
               {paymentMethodText || assignee ? (
                 <div className="sm:col-span-2">
