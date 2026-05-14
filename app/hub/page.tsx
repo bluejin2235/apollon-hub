@@ -27,9 +27,7 @@ export default function ServiceHubPage() {
     let cancelled = false;
 
     (async () => {
-      console.log("[hub][debug] services 조회 시작", { selectCols: HUB_SERVICE_COLUMNS });
-
-      const { data, error, status: respStatus, statusText } = await supabase
+      const { data, error } = await supabase
         .from("services")
         .select(HUB_SERVICE_COLUMNS)
         .eq("is_hub_card", true)
@@ -37,63 +35,33 @@ export default function ServiceHubPage() {
         .order("created_at", { ascending: true });
 
       if (cancelled) return;
-
-      console.log("[hub][debug] 쿼리 응답", {
-        httpStatus: respStatus,
-        statusText,
-        errorMessage: error?.message ?? null,
-        errorCode: (error as { code?: string } | null)?.code ?? null,
-        errorDetails: (error as { details?: string } | null)?.details ?? null,
-        errorHint: (error as { hint?: string } | null)?.hint ?? null,
-        rowCount: data?.length ?? 0,
-        rawData: data
-      });
-
       if (error) {
         console.error("[hub] services fetch failed", error);
-        setLoadError(
-          `${error.message}${(error as { code?: string }).code ? ` (code=${(error as { code?: string }).code})` : ""}`
-        );
+        setLoadError(error.message);
         setLoadingServices(false);
         return;
       }
 
-      const rawRows = (data ?? []) as Array<Record<string, unknown>>;
-      const rejected: Array<{ row: unknown; reason: string }> = [];
-      const accepted = rawRows.filter((row) => {
-        const reasons: string[] = [];
-        if (typeof row.name !== "string") reasons.push(`name type=${typeof row.name}`);
-        if (!isHubServiceStatus(row.status))
-          reasons.push(`status invalid (value=${JSON.stringify(row.status)})`);
-        if (!isHubServiceAccessLevel(row.access_level))
-          reasons.push(`access_level invalid (value=${JSON.stringify(row.access_level)})`);
-        if (reasons.length > 0) {
-          rejected.push({ row, reason: reasons.join(", ") });
-          return false;
-        }
-        return true;
-      });
-
-      console.log("[hub][debug] validation 결과", {
-        rawCount: rawRows.length,
-        acceptedCount: accepted.length,
-        rejectedCount: rejected.length,
-        rejected
-      });
-
-      const rows: HubService[] = accepted.map(
-        (row): HubService => ({
-          id: row.id as string,
-          name: row.name as string,
-          description: (row.description as string | null) ?? null,
-          icon: (row.icon as string | null) ?? null,
-          url: (row.url as string | null) ?? null,
-          status: row.status as HubService["status"],
-          access_level: row.access_level as HubService["access_level"],
-          order_index: (row.order_index as number) ?? 0,
-          created_at: row.created_at as string
-        })
-      );
+      const rows: HubService[] = (data ?? [])
+        .filter(
+          (row) =>
+            typeof row.name === "string" &&
+            isHubServiceStatus(row.status) &&
+            isHubServiceAccessLevel(row.access_level)
+        )
+        .map(
+          (row): HubService => ({
+            id: row.id as string,
+            name: row.name as string,
+            description: (row.description as string | null) ?? null,
+            icon: (row.icon as string | null) ?? null,
+            url: (row.url as string | null) ?? null,
+            status: row.status as HubService["status"],
+            access_level: row.access_level as HubService["access_level"],
+            order_index: (row.order_index as number) ?? 0,
+            created_at: row.created_at as string
+          })
+        );
       setServices(rows);
       setLoadError(null);
       setLoadingServices(false);
