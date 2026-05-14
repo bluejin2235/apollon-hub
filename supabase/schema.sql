@@ -322,3 +322,238 @@ create policy "ashuleng_comments_delete_auth"
       where u.id = auth.uid() and p.id = author_id
     )
   );
+
+-- ═════════════════════════════════════════════════════════════
+-- RLS 정책 동기화 (Supabase 대시보드 현재 상태와 일치)
+-- ─────────────────────────────────────────────────────────────
+-- 모든 정책: authenticated 역할 / 조건 (true)
+--   → 로그인된 모든 유저에게 전체 권한 허용. 권한 제어는 애플리케이션 레이어에서 수행.
+-- 이전 ashuleng_posts/comments 의 email-join 정책은 auth.users.id === profiles.id 보장 이후 (true) 로 대체.
+-- 참고: 본 섹션은 위에서 정의된 동일 이름 정책을 다시 drop+create 하여 최종 상태로 통일합니다.
+-- 참고: lunch_votes 는 대시보드 RLS 정책 목록에 없어 본 동기화에서 제외 (필요 시 별도 요청).
+-- ═════════════════════════════════════════════════════════════
+
+-- ── profiles ────────────────────────────────────────────────
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles_select_auth" on public.profiles;
+create policy "profiles_select_auth"
+  on public.profiles for select to authenticated using (true);
+
+drop policy if exists "profiles_update_auth" on public.profiles;
+create policy "profiles_update_auth"
+  on public.profiles for update to authenticated
+  using (true) with check (true);
+
+-- ── restaurants ─────────────────────────────────────────────
+alter table public.restaurants enable row level security;
+
+drop policy if exists "restaurants_select_auth" on public.restaurants;
+create policy "restaurants_select_auth"
+  on public.restaurants for select to authenticated using (true);
+
+drop policy if exists "restaurants_insert_auth" on public.restaurants;
+create policy "restaurants_insert_auth"
+  on public.restaurants for insert to authenticated with check (true);
+
+drop policy if exists "restaurants_update_auth" on public.restaurants;
+create policy "restaurants_update_auth"
+  on public.restaurants for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "restaurants_delete_auth" on public.restaurants;
+create policy "restaurants_delete_auth"
+  on public.restaurants for delete to authenticated using (true);
+
+-- ── reviews ─────────────────────────────────────────────────
+alter table public.reviews enable row level security;
+
+drop policy if exists "reviews_select_auth" on public.reviews;
+create policy "reviews_select_auth"
+  on public.reviews for select to authenticated using (true);
+
+drop policy if exists "reviews_insert_auth" on public.reviews;
+create policy "reviews_insert_auth"
+  on public.reviews for insert to authenticated with check (true);
+
+drop policy if exists "reviews_update_auth" on public.reviews;
+create policy "reviews_update_auth"
+  on public.reviews for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "reviews_delete_auth" on public.reviews;
+create policy "reviews_delete_auth"
+  on public.reviews for delete to authenticated using (true);
+
+-- ── restaurant_images: select/insert/update/delete 4종 통일 ─
+-- (위에서 정의된 select_all/insert_auth/delete_auth 를 새 select_auth + update_auth 로 일관화)
+drop policy if exists "restaurant_images_select_all" on public.restaurant_images;
+
+drop policy if exists "restaurant_images_select_auth" on public.restaurant_images;
+create policy "restaurant_images_select_auth"
+  on public.restaurant_images for select to authenticated using (true);
+
+drop policy if exists "restaurant_images_insert_auth" on public.restaurant_images;
+create policy "restaurant_images_insert_auth"
+  on public.restaurant_images for insert to authenticated with check (true);
+
+drop policy if exists "restaurant_images_update_auth" on public.restaurant_images;
+create policy "restaurant_images_update_auth"
+  on public.restaurant_images for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
+create policy "restaurant_images_delete_auth"
+  on public.restaurant_images for delete to authenticated using (true);
+
+-- ── services ───────────────────────────────────────────────
+alter table public.services enable row level security;
+
+drop policy if exists "services_select_auth" on public.services;
+create policy "services_select_auth"
+  on public.services for select to authenticated using (true);
+
+drop policy if exists "services_insert_auth" on public.services;
+create policy "services_insert_auth"
+  on public.services for insert to authenticated with check (true);
+
+drop policy if exists "services_update_auth" on public.services;
+create policy "services_update_auth"
+  on public.services for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "services_delete_auth" on public.services;
+create policy "services_delete_auth"
+  on public.services for delete to authenticated using (true);
+
+-- ── ashuleng_posts: 위 email-join 정책을 (true) 로 교체 ─────
+drop policy if exists "ashuleng_posts_select_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_select_auth"
+  on public.ashuleng_posts for select to authenticated using (true);
+
+drop policy if exists "ashuleng_posts_insert_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_insert_auth"
+  on public.ashuleng_posts for insert to authenticated with check (true);
+
+drop policy if exists "ashuleng_posts_update_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_update_auth"
+  on public.ashuleng_posts for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "ashuleng_posts_delete_auth" on public.ashuleng_posts;
+create policy "ashuleng_posts_delete_auth"
+  on public.ashuleng_posts for delete to authenticated using (true);
+
+-- ── ashuleng_comments: select / insert / delete (update 정책 없음) ──
+drop policy if exists "ashuleng_comments_select_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_select_auth"
+  on public.ashuleng_comments for select to authenticated using (true);
+
+drop policy if exists "ashuleng_comments_insert_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_insert_auth"
+  on public.ashuleng_comments for insert to authenticated with check (true);
+
+drop policy if exists "ashuleng_comments_delete_auth" on public.ashuleng_comments;
+create policy "ashuleng_comments_delete_auth"
+  on public.ashuleng_comments for delete to authenticated using (true);
+
+-- ── licenses 4종 ───────────────────────────────────────────
+-- 주의: licenses / license_users / license_managers / license_credentials 테이블은
+--      현재 schema.sql 에 `create table` 정의가 없습니다.
+--      Supabase 대시보드에서 별도로 생성된 상태이며, 본 섹션은 그 위 RLS 정책만 동기화합니다.
+--      테이블 정의 동기화는 별도 작업으로 진행 권장.
+
+alter table public.licenses enable row level security;
+
+drop policy if exists "licenses_select_auth" on public.licenses;
+create policy "licenses_select_auth"
+  on public.licenses for select to authenticated using (true);
+
+drop policy if exists "licenses_insert_auth" on public.licenses;
+create policy "licenses_insert_auth"
+  on public.licenses for insert to authenticated with check (true);
+
+drop policy if exists "licenses_update_auth" on public.licenses;
+create policy "licenses_update_auth"
+  on public.licenses for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "licenses_delete_auth" on public.licenses;
+create policy "licenses_delete_auth"
+  on public.licenses for delete to authenticated using (true);
+
+alter table public.license_users enable row level security;
+
+drop policy if exists "license_users_select_auth" on public.license_users;
+create policy "license_users_select_auth"
+  on public.license_users for select to authenticated using (true);
+
+drop policy if exists "license_users_insert_auth" on public.license_users;
+create policy "license_users_insert_auth"
+  on public.license_users for insert to authenticated with check (true);
+
+drop policy if exists "license_users_update_auth" on public.license_users;
+create policy "license_users_update_auth"
+  on public.license_users for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "license_users_delete_auth" on public.license_users;
+create policy "license_users_delete_auth"
+  on public.license_users for delete to authenticated using (true);
+
+alter table public.license_managers enable row level security;
+
+drop policy if exists "license_managers_select_auth" on public.license_managers;
+create policy "license_managers_select_auth"
+  on public.license_managers for select to authenticated using (true);
+
+drop policy if exists "license_managers_insert_auth" on public.license_managers;
+create policy "license_managers_insert_auth"
+  on public.license_managers for insert to authenticated with check (true);
+
+drop policy if exists "license_managers_update_auth" on public.license_managers;
+create policy "license_managers_update_auth"
+  on public.license_managers for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "license_managers_delete_auth" on public.license_managers;
+create policy "license_managers_delete_auth"
+  on public.license_managers for delete to authenticated using (true);
+
+alter table public.license_credentials enable row level security;
+
+drop policy if exists "license_credentials_select_auth" on public.license_credentials;
+create policy "license_credentials_select_auth"
+  on public.license_credentials for select to authenticated using (true);
+
+drop policy if exists "license_credentials_insert_auth" on public.license_credentials;
+create policy "license_credentials_insert_auth"
+  on public.license_credentials for insert to authenticated with check (true);
+
+drop policy if exists "license_credentials_update_auth" on public.license_credentials;
+create policy "license_credentials_update_auth"
+  on public.license_credentials for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "license_credentials_delete_auth" on public.license_credentials;
+create policy "license_credentials_delete_auth"
+  on public.license_credentials for delete to authenticated using (true);
+
+-- ═════════════════════════════════════════════════════════════
+-- GRANT (PostgREST 노출 역할: authenticated, service_role)
+-- ─────────────────────────────────────────────────────────────
+-- 기본 권한 부여. RLS 가 켜진 테이블은 정책 통과 시에만 실제 접근 가능.
+-- service_role 은 일반적으로 RLS 를 bypass 하지만 grant 는 명시적으로 추가.
+-- ═════════════════════════════════════════════════════════════
+
+grant usage on schema public to authenticated, service_role;
+
+grant select, insert, update, delete on all tables in schema public
+  to authenticated, service_role;
+grant usage, select on all sequences in schema public
+  to authenticated, service_role;
+
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated, service_role;
+alter default privileges in schema public
+  grant usage, select on sequences to authenticated, service_role;
