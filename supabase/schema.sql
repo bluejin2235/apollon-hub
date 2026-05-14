@@ -646,6 +646,8 @@ alter table public.license_credentials add column if not exists username text;
 alter table public.license_credentials add column if not exists password text;
 alter table public.license_credentials add column if not exists notes text;
 alter table public.license_credentials add column if not exists created_at timestamptz not null default now();
+-- 인증 정보 유형: '로그인' | 'API 키' | '라이선스'
+alter table public.license_credentials add column if not exists type text not null default '로그인';
 
 create index if not exists idx_license_managers_service on public.license_managers (service_id);
 create index if not exists idx_license_users_service on public.license_users (service_id);

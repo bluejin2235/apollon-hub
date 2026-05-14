@@ -437,16 +437,104 @@ export function ServiceUsersCard({
 
 /* ─────────────────────────────────────────────────────────────────
  * 3) 인증 정보 카드 (license_credentials)
+ *   - 유형: 로그인 / API 키 / 라이선스
+ *   - 권한별 표시:
+ *     · 슈퍼관리자 / 중간관리자(canEdit=true): 보기 토글 + 수정 + 삭제
+ *     · 멤버(canEdit=false): 비밀번호/키는 항상 가림 · 복사 버튼만 노출
  * ────────────────────────────────────────────────────────────── */
+
+const CRED_TYPES = ["로그인", "API 키", "라이선스"] as const;
+type CredentialType = (typeof CRED_TYPES)[number];
 
 type CredentialRow = {
   id: string;
   service_id: string;
+  type: CredentialType | string;
   label: string;
   username: string | null;
   password: string | null;
   notes: string | null;
 };
+
+function isCredentialType(v: unknown): v is CredentialType {
+  return typeof v === "string" && (CRED_TYPES as readonly string[]).includes(v);
+}
+
+/** 유형별 컬러 (뱃지/포커스 링) */
+const TYPE_STYLE: Record<CredentialType, { badge: string; ring: string; text: string }> = {
+  "로그인": {
+    badge: "bg-blue-100 text-blue-700",
+    ring: "focus:border-blue-500 focus:ring-blue-500/40",
+    text: "text-blue-700"
+  },
+  "API 키": {
+    badge: "bg-purple-100 text-purple-700",
+    ring: "focus:border-purple-500 focus:ring-purple-500/40",
+    text: "text-purple-700"
+  },
+  "라이선스": {
+    badge: "bg-emerald-100 text-emerald-700",
+    ring: "focus:border-emerald-500 focus:ring-emerald-500/40",
+    text: "text-emerald-700"
+  }
+};
+
+/** 유형별 필드 라벨 */
+const TYPE_FIELDS: Record<CredentialType, { nameLabel: string; valueLabel: string; namePlaceholder: string; valuePlaceholder: string; nameType: "email" | "text" }> = {
+  "로그인": {
+    nameLabel: "아이디(이메일)",
+    valueLabel: "비밀번호",
+    namePlaceholder: "admin@apollonworks.com",
+    valuePlaceholder: "비밀번호 입력",
+    nameType: "email"
+  },
+  "API 키": {
+    nameLabel: "키 이름",
+    valueLabel: "API 키 값",
+    namePlaceholder: "예: Production API",
+    valuePlaceholder: "API 키 값을 붙여넣기",
+    nameType: "text"
+  },
+  "라이선스": {
+    nameLabel: "라이선스 이름",
+    valueLabel: "라이선스 키",
+    namePlaceholder: "예: Photoshop Pro",
+    valuePlaceholder: "라이선스 키 입력",
+    nameType: "text"
+  }
+};
+
+function valueLabelOf(type: string): string {
+  return isCredentialType(type) ? TYPE_FIELDS[type].valueLabel : "값";
+}
+
+function mask(value: string | null | undefined): string {
+  if (!value) return "";
+  return "•".repeat(Math.min(value.length, 10));
+}
+
+const ICON_EYE = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const ICON_EYE_OFF = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a14.5 14.5 0 0 1-3.4 3.9M6.7 7.2A14.7 14.7 0 0 0 2.5 12s3.5 6 9.5 6a9.7 9.7 0 0 0 4-1M9.9 9.9a3 3 0 1 0 4.2 4.2" />
+  </svg>
+);
+const ICON_COPY = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5" aria-hidden>
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+const ICON_EDIT = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7m-1.4-9.4a2 2 0 1 1 2.8 2.8L11.7 19.5a4 4 0 0 1-1.7 1l-3.3.9.9-3.3a4 4 0 0 1 1-1.7L18.6 3.6Z" />
+  </svg>
+);
 
 export function ServiceCredentialsCard({
   serviceId,
@@ -458,19 +546,24 @@ export function ServiceCredentialsCard({
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
-  const [label, setLabel] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // 폼 상태
+  const [credType, setCredType] = useState<CredentialType>("로그인");
+  const [name, setName] = useState("");
+  const [secret, setSecret] = useState("");
   const [notes, setNotes] = useState("");
+  const [secretVisibleInForm, setSecretVisibleInForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // 목록 상태
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
       .from("license_credentials")
-      .select("id, service_id, label, username, password, notes")
+      .select("id, service_id, type, label, username, password, notes")
       .eq("service_id", serviceId)
       .order("created_at", { ascending: true });
     setRows((data ?? []) as CredentialRow[]);
@@ -482,32 +575,63 @@ export function ServiceCredentialsCard({
   }, [refresh]);
 
   const resetForm = () => {
-    setLabel("");
-    setUsername("");
-    setPassword("");
+    setCredType("로그인");
+    setName("");
+    setSecret("");
     setNotes("");
+    setEditingId(null);
     setErr("");
+    setSecretVisibleInForm(false);
   };
 
-  const handleAdd = async (e: FormEvent) => {
+  const openCreate = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const openEdit = (row: CredentialRow) => {
+    setEditingId(row.id);
+    setCredType(isCredentialType(row.type) ? row.type : "로그인");
+    // 로그인 타입은 username 을 우선, 그 외에는 label 을 name 으로 표시.
+    if (row.type === "로그인") {
+      setName(row.username ?? row.label ?? "");
+    } else {
+      setName(row.label ?? "");
+    }
+    setSecret(row.password ?? "");
+    setNotes(row.notes ?? "");
+    setErr("");
+    setSecretVisibleInForm(false);
+    setFormOpen(true);
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
-    if (!label.trim()) {
-      setErr("라벨을 입력해주세요. (예: Admin 계정)");
+    if (!name.trim()) {
+      setErr(`${TYPE_FIELDS[credType].nameLabel}을(를) 입력해주세요.`);
       return;
     }
     setBusy(true);
-    const { error } = await supabase.from("license_credentials").insert({
+
+    const payload = {
       service_id: serviceId,
-      label: label.trim(),
-      username: username.trim() || null,
-      password: password.trim() || null,
+      type: credType,
+      label: name.trim(),
+      // 로그인은 아이디(이메일)를 username 컬럼에도 저장해 호환성 유지.
+      username: credType === "로그인" ? name.trim() : null,
+      password: secret.trim() || null,
       notes: notes.trim() || null
-    });
+    };
+
+    const op = editingId
+      ? supabase.from("license_credentials").update(payload).eq("id", editingId)
+      : supabase.from("license_credentials").insert(payload);
+    const { error } = await op;
     setBusy(false);
     if (error) {
-      console.error("[license_credentials][insert]", error);
-      setErr(error.message ?? "추가에 실패했습니다.");
+      console.error("[license_credentials][submit]", error);
+      setErr(error.message ?? "저장에 실패했습니다.");
       return;
     }
     setFormOpen(false);
@@ -524,6 +648,20 @@ export function ServiceCredentialsCard({
     await refresh();
   };
 
+  const handleCopy = async (text: string | null, id: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1500);
+    } catch (e) {
+      console.error("[clipboard][writeText]", e);
+    }
+  };
+
+  const fields = TYPE_FIELDS[credType];
+  const style = TYPE_STYLE[credType];
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <header className="mb-4 flex items-center justify-between gap-2">
@@ -531,10 +669,7 @@ export function ServiceCredentialsCard({
         {canEdit ? (
           <button
             type="button"
-            onClick={() => {
-              resetForm();
-              setFormOpen(true);
-            }}
+            onClick={openCreate}
             className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700"
           >
             + 추가
@@ -551,101 +686,180 @@ export function ServiceCredentialsCard({
         </div>
       ) : (
         <ul className="space-y-2">
-          {rows.map((r) => (
-            <li key={r.id} className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">{r.label}</p>
-                  {r.username ? (
-                    <p className="mt-0.5 truncate text-xs text-slate-500">계정: {r.username}</p>
-                  ) : null}
-                  {r.password ? (
-                    <p className="mt-0.5 flex items-center gap-2 truncate text-xs text-slate-500">
-                      <span>비밀번호:</span>
-                      <span className="font-mono">
-                        {revealed[r.id] ? r.password : "•".repeat(Math.min(r.password.length, 8))}
+          {rows.map((r) => {
+            const rType = isCredentialType(r.type) ? r.type : "로그인";
+            const badge = TYPE_STYLE[rType].badge;
+            const valueLabel = valueLabelOf(rType);
+            const isRevealed = canEdit && revealed[r.id];
+            return (
+              <li key={r.id} className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge}`}
+                      >
+                        {rType}
                       </span>
+                      <p className="truncate text-sm font-semibold text-slate-900">{r.label}</p>
+                    </div>
+                    {r.password ? (
+                      <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                        <span className="shrink-0">{valueLabel}:</span>
+                        <span className="font-mono text-slate-700">
+                          {isRevealed ? r.password : mask(r.password)}
+                        </span>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRevealed((prev) => ({ ...prev, [r.id]: !prev[r.id] }))
+                            }
+                            className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
+                            aria-label={isRevealed ? "숨기기" : "보기"}
+                          >
+                            {isRevealed ? ICON_EYE_OFF : ICON_EYE}
+                            <span>{isRevealed ? "숨기기" : "보기"}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void handleCopy(r.password, r.id)}
+                            className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
+                            aria-label="값 복사"
+                          >
+                            {ICON_COPY}
+                            <span>{copiedId === r.id ? "복사됨" : "복사"}</span>
+                          </button>
+                        )}
+                      </p>
+                    ) : null}
+                    {r.notes ? (
+                      <p className="mt-0.5 truncate text-xs text-slate-500">메모: {r.notes}</p>
+                    ) : null}
+                  </div>
+                  {canEdit ? (
+                    <div className="flex shrink-0 items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() =>
-                          setRevealed((prev) => ({ ...prev, [r.id]: !prev[r.id] }))
-                        }
-                        className="text-violet-600 hover:underline"
+                        onClick={() => openEdit(r)}
+                        className="text-slate-400 transition hover:text-slate-700"
+                        aria-label="인증 정보 수정"
+                        title="수정"
                       >
-                        {revealed[r.id] ? "숨기기" : "보기"}
+                        {ICON_EDIT}
                       </button>
-                    </p>
-                  ) : null}
-                  {r.notes ? (
-                    <p className="mt-0.5 truncate text-xs text-slate-500">메모: {r.notes}</p>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(r.id)}
+                        className="text-rose-500 transition hover:text-rose-700"
+                        aria-label="인증 정보 삭제"
+                        title="삭제"
+                      >
+                        {ICON_TRASH}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
-                {canEdit ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleRemove(r.id)}
-                    className="shrink-0 text-rose-500 transition hover:text-rose-700"
-                    aria-label="인증 정보 삭제"
-                  >
-                    {ICON_TRASH}
-                  </button>
-                ) : null}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {formOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
-            onSubmit={(e) => void handleAdd(e)}
+            onSubmit={(e) => void handleSubmit(e)}
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
           >
-            <h3 className="text-lg font-bold text-slate-900">인증 정보 추가</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              {editingId ? "인증 정보 수정" : "인증 정보 추가"}
+            </h3>
+
+            {/* 유형 탭 */}
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {CRED_TYPES.map((t) => {
+                const active = credType === t;
+                const s = TYPE_STYLE[t];
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      setCredType(t);
+                      setErr("");
+                    }}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                      active
+                        ? `${s.badge} border-transparent`
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="mt-4 space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">라벨</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  {fields.nameLabel}
+                </label>
                 <input
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
+                  type={fields.nameType}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   required
-                  placeholder="예: 관리자 계정"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                  placeholder={fields.namePlaceholder}
+                  className={`w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 ${style.ring}`}
                 />
               </div>
+
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">계정 (선택)</label>
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="이메일 또는 아이디"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
-                />
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  {fields.valueLabel}
+                </label>
+                <div className="relative">
+                  <input
+                    type={secretVisibleInForm ? "text" : "password"}
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder={fields.valuePlaceholder}
+                    className={`w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 pr-10 text-sm text-slate-900 focus:outline-none focus:ring-2 ${style.ring}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSecretVisibleInForm((v) => !v)}
+                    className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center rounded p-1 text-slate-400 transition hover:text-slate-700"
+                    aria-label={secretVisibleInForm ? "숨기기" : "보기"}
+                  >
+                    {secretVisibleInForm ? ICON_EYE_OFF : ICON_EYE}
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-700">비밀번호 (선택)</label>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
-                />
-              </div>
+
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-700">메모 (선택)</label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                  placeholder="용도, 만료일 등 자유롭게 작성"
+                  className={`w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 ${style.ring}`}
                 />
               </div>
             </div>
+
             {err ? <p className="mt-2 text-xs text-rose-600">{err}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setFormOpen(false)}
+                onClick={() => {
+                  setFormOpen(false);
+                  resetForm();
+                }}
                 disabled={busy}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
@@ -656,7 +870,7 @@ export function ServiceCredentialsCard({
                 disabled={busy}
                 className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50"
               >
-                {busy ? "저장 중..." : "추가"}
+                {busy ? "저장 중..." : editingId ? "저장" : "추가"}
               </button>
             </div>
           </form>
