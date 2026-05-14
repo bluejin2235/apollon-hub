@@ -586,6 +586,22 @@ alter table public.services alter column plan drop not null;
 alter table public.services alter column category drop not null;
 alter table public.services alter column cost_type drop not null;
 
+-- 라이선스 카드 UI 의 통화/계약 표현용 컬럼.
+--   - cost: 원본 통화 기준 입력 금액 (cost_monthly 는 호환을 위해 동일 값 유지)
+--   - currency: 'KRW' | 'USD' | 'EUR' (기본 'KRW')
+--   - contract_type: '월 구독' | '년 구독' | '영구 라이선스' (cost_type 보다 세부)
+--   - next_payment_date: 다음 결제일 (월/년 구독에서만 사용, 영구 라이선스는 null)
+alter table public.services add column if not exists cost numeric(12, 2);
+alter table public.services add column if not exists currency text default 'KRW';
+alter table public.services add column if not exists contract_type text;
+alter table public.services add column if not exists next_payment_date date;
+-- 반복 결제일 (월/년 구독 전용)
+--   - payment_day:   1~31 (월/년 구독 모두)
+--   - payment_month: 1~12 (년 구독 전용)
+-- next_payment_date 컬럼은 더 이상 사용하지 않고 위 두 컬럼으로부터 다음 결제일을 동적으로 계산.
+alter table public.services add column if not exists payment_day integer;
+alter table public.services add column if not exists payment_month integer;
+
 -- 인덱스
 create index if not exists idx_services_is_hub_card on public.services (is_hub_card);
 create index if not exists idx_services_order_index on public.services (is_hub_card, order_index);

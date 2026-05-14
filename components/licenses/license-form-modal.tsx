@@ -1,7 +1,14 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import type { ContractType, License, LicenseStatus, PaymentMethod, Profile } from "@/lib/licenses/types";
+import type {
+  ContractType,
+  License,
+  LicenseStatus,
+  PaymentMethod,
+  Profile,
+  ServiceCostType
+} from "@/lib/licenses/types";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
@@ -10,6 +17,37 @@ const paymentOptions: PaymentMethod[] = ["법인카드", "계좌이체"];
 const currencyOptions = ["KRW", "USD", "EUR"] as const;
 
 type Mode = "create" | "edit";
+
+/**
+ * 폼의 `contract_type` 을 `services` 테이블의 `cost_type` 로 매핑한다.
+ * - “월 구독” → “월간”
+ * - “년 구독” → “연간”
+ * - “영구 라이선스” → “영구”
+ */
+function mapContractToCostType(c: ContractType): ServiceCostType {
+  if (c === "년 구독") return "연간";
+  if (c === "영구 라이선스") return "영구";
+  return "월간";
+}
+
+/**
+ * 폼의 `purpose` / `memo` / `payment_method` / `start_date` 등 1:1 매핑이 없는
+ * 필드는 `description` 한 줄 묶음으로 보존한다.
+ * 통화/계약유형/원본금액은 별도 컬럼(currency, contract_type, cost)으로 저장됨.
+ */
+function buildServiceDescription(input: {
+  purpose: string;
+  memo: string;
+  paymentMethod: PaymentMethod;
+  startDate: string;
+}): string | null {
+  const lines: string[] = [];
+  if (input.purpose.trim()) lines.push(`사용목적: ${input.purpose.trim()}`);
+  if (input.startDate.trim()) lines.push(`시작일: ${input.startDate.trim()}`);
+  if (input.paymentMethod) lines.push(`결제방법: ${input.paymentMethod}`);
+  if (input.memo.trim()) lines.push(`메모: ${input.memo.trim()}`);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
 
 export function LicenseFormModal({
   mode,
@@ -32,6 +70,12 @@ export function LicenseFormModal({
   const [contractType, setContractType] = useState<ContractType>(license?.contract_type ?? "월 구독");
   const [startDate, setStartDate] = useState(
     license?.start_date ? license.start_date.slice(0, 10) : ""
+  );
+  const [paymentDay, setPaymentDay] = useState(
+    license?.payment_day != null ? String(license.payment_day) : ""
+  );
+  const [paymentMonth, setPaymentMonth] = useState(
+    license?.payment_month != null ? String(license.payment_month) : ""
   );
   const [purpose, setPurpose] = useState(license?.purpose ?? "");
   const [status, setStatus] = useState<LicenseStatus>(license?.status === "비활성" ? "비활성" : "활성");
@@ -81,35 +125,77 @@ export function LicenseFormModal({
       return;
     }
 
-    const payload = {
+    // `services` 테이블 스키마에 맞춰 폼 값을 변환.
+    // - 원본 입력 금액은 `cost` 에 저장하고, `cost_monthly` 도 호환 위해 동일 값 보관
+    //   (FX 환산은 화면에서 처리, 백엔드는 원본 통화 기준 숫자 그대로 보존)
+    // - 통화/계약유형도 별도 컬럼(currency, contract_type) 으로 저장
+    // - 1:1 매핑이 없는 필드(purpose/memo/payment/start_date)는 description 줄단위로 묶음
+    // 결제일 입력 검증 & 정규화.
+    //   - 월 구독: payment_day(1~31)만 사용
+    //   - 년 구독: payment_day(1~31) + payment_month(1~12)
+    //   - 영구 라이선스: 둘 다 null
+    let payDayNum: number | null = null;
+    let payMonthNum: number | null = null;
+    if (contractType === "월 구독" || contractType === "년 구독") {
+      if (paymentDay.trim() !== "") {
+        const n = Number.parseInt(paymentDay, 10);
+        if (Number.isNaN(n) || n < 1 || n > 31) {
+          setError("결제일은 1~31 사이의 숫자여야 합니다.");
+          return;
+        }
+        payDayNum = n;
+      }
+    }
+    if (contractType === "년 구독") {
+      if (paymentMonth.trim() !== "") {
+        const n = Number.parseInt(paymentMonth, 10);
+        if (Number.isNaN(n) || n < 1 || n > 12) {
+          setError("결제 월은 1~12 사이의 숫자여야 합니다.");
+          return;
+        }
+        payMonthNum = n;
+      }
+    }
+
+    const servicePayload = {
       name: trimmedName,
-      plan_name: planName.trim() || null,
-      category: category.trim() || null,
-      currency,
-      cost: costNum,
-      contract_type: contractType,
-      start_date: startDate.trim() || null,
-      purpose: trimmedPurpose,
+      plan: planName.trim() || trimmedName,
+      category: category.trim() || "기타",
       status,
-      license_count: lc,
-      payment_method: paymentMethod,
-      card_holder_id: cardHolderId || null,
-      website_url: websiteUrl.trim() || null,
-      memo: memo.trim() || null
+      cost: costNum,
+      cost_monthly: costNum,
+      currency,
+      contract_type: contractType,
+      cost_type: mapContractToCostType(contractType),
+      // next_payment_date 컬럼은 더 이상 쓰지 않음. payment_day/month 로 동적 계산.
+      next_payment_date: null,
+      payment_day: payDayNum,
+      payment_month: payMonthNum,
+      license_count: lc ?? 0,
+      assignee_id: cardHolderId || null,
+      url: websiteUrl.trim() || null,
+      description: buildServiceDescription({
+        purpose: trimmedPurpose,
+        memo,
+        paymentMethod,
+        startDate
+      }),
+      is_hub_card: false
     };
 
     setLoading(true);
 
     if (mode === "create") {
       const { data, error: insertError } = await supabase
-        .from("licenses")
-        .insert(payload)
+        .from("services")
+        .insert(servicePayload)
         .select()
         .single();
 
       setLoading(false);
 
       if (insertError || !data) {
+        console.error("[license-form-modal] services.insert failed", insertError);
         setError(insertError?.message ?? "추가에 실패했습니다.");
         return;
       }
@@ -125,15 +211,17 @@ export function LicenseFormModal({
     }
 
     const { data, error: updateError } = await supabase
-      .from("licenses")
-      .update(payload)
+      .from("services")
+      .update(servicePayload)
       .eq("id", license.id)
+      .eq("is_hub_card", false)
       .select()
       .single();
 
     setLoading(false);
 
     if (updateError || !data) {
+      console.error("[license-form-modal] services.update failed", updateError);
       setError(updateError?.message ?? "저장에 실패했습니다.");
       return;
     }
@@ -233,6 +321,52 @@ export function LicenseFormModal({
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
               />
             </div>
+            {contractType === "월 구독" ? (
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-slate-700">매월 결제일</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={paymentDay}
+                    onChange={(e) => setPaymentDay(e.target.value)}
+                    placeholder="1 ~ 31"
+                    className="w-32 rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  />
+                  <span className="text-sm text-slate-600">일</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">매월 해당 일자에 자동 결제됩니다. (예: 18 → 매월 18일)</p>
+              </div>
+            ) : null}
+            {contractType === "년 구독" ? (
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-slate-700">매년 결제일</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={paymentMonth}
+                    onChange={(e) => setPaymentMonth(e.target.value)}
+                    placeholder="1 ~ 12"
+                    className="w-28 rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  />
+                  <span className="text-sm text-slate-600">월</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={paymentDay}
+                    onChange={(e) => setPaymentDay(e.target.value)}
+                    placeholder="1 ~ 31"
+                    className="w-28 rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+                  />
+                  <span className="text-sm text-slate-600">일</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">매년 해당 월·일에 자동 결제됩니다. (예: 3월 18일)</p>
+              </div>
+            ) : null}
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 서비스 사용목적 <span className="text-rose-400">*</span>

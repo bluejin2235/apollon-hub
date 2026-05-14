@@ -3,16 +3,21 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { formatCurrency, formatDateKorean } from "@/lib/licenses/calc";
+import { LicenseFormModal } from "@/components/licenses/license-form-modal";
+import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { computeNextPayment, formatCurrency } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { supabase } from "@/lib/supabase/client";
 
 export default function LicenseDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
+  const { profile } = useRequirePortalSession();
   const [license, setLicense] = useState<License | null>(null);
   const [assignee, setAssignee] = useState<Profile | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -36,6 +41,18 @@ export default function LicenseDetailPage() {
     void run();
   }, [id]);
 
+  // 편집 모달에서 담당자 변경을 위해 프로필 전체 로딩.
+  useEffect(() => {
+    const run = async () => {
+      const { data } = await supabase.from("profiles").select("*");
+      setProfiles(((data ?? []) as Profile[]).filter((p) => p.status !== "퇴직"));
+    };
+    void run();
+  }, []);
+
+  const role = profile?.role ?? null;
+  const canEdit = role === "슈퍼관리자" || role === "중간관리자";
+
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
   }
@@ -51,16 +68,48 @@ export default function LicenseDetailPage() {
     );
   }
 
+  // payment_day / payment_month 기반으로 오늘 이후 가장 가까운 결제일을 계산.
+  const nextPaymentDate = computeNextPayment(
+    license.contract_type,
+    license.payment_day,
+    license.payment_month
+  );
+  let nextPaymentLabel: string | null = null;
+  let nextPaymentDiff: number | null = null;
+  if (nextPaymentDate) {
+    const todayNoon = new Date();
+    todayNoon.setHours(12, 0, 0, 0);
+    nextPaymentDiff = Math.round(
+      (nextPaymentDate.getTime() - todayNoon.getTime()) / 86_400_000
+    );
+    nextPaymentLabel = nextPaymentDate.toLocaleDateString("ko-KR");
+  }
+  const renewalColor =
+    nextPaymentDiff != null && nextPaymentDiff <= 7 ? "text-amber-600" : "text-slate-900";
+
   return (
     <div className="space-y-6">
       <Link href="/licenses/list" className="text-sm text-apollon-600 hover:underline">
         ← 전체 라이선스
       </Link>
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <h1 className="text-2xl font-bold text-slate-900">{license.name}</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {license.category} · {license.plan}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{license.name}</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              {license.category} · {license.plan}
+            </p>
+          </div>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="rounded-lg bg-apollon-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-apollon-700"
+            >
+              수정
+            </button>
+          ) : null}
+        </div>
         <dl className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
           <div>
             <dt className="text-slate-500">상태</dt>
@@ -76,16 +125,48 @@ export default function LicenseDetailPage() {
             <dt className="text-slate-500">라이선스 수</dt>
             <dd className="font-medium text-slate-900">{license.license_count}</dd>
           </div>
-          <div>
-            <dt className="text-slate-500">다음 갱신</dt>
-            <dd className="font-medium text-slate-900">{license.next_renewal ? formatDateKorean(license.next_renewal) : "-"}</dd>
-          </div>
+          {nextPaymentLabel ? (
+            <div>
+              <dt className="text-slate-500">다음 결제일</dt>
+              <dd className={`font-medium tabular-nums ${renewalColor}`}>
+                {nextPaymentLabel}
+                {nextPaymentDiff != null ? (
+                  <span className="ml-1.5 text-xs opacity-80">
+                    ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
           <div className="md:col-span-2">
             <dt className="text-slate-500">담당자</dt>
             <dd className="font-medium text-slate-900">{assignee ? `${assignee.name} (${assignee.email})` : "-"}</dd>
           </div>
         </dl>
       </div>
+
+      {editOpen && canEdit ? (
+        <LicenseFormModal
+          mode="edit"
+          license={license}
+          profiles={profiles}
+          onClose={() => setEditOpen(false)}
+          onSaved={(row) => {
+            setLicense(row);
+            if (row.assignee_id) {
+              void supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", row.assignee_id)
+                .maybeSingle()
+                .then(({ data }) => setAssignee((data ?? null) as Profile | null));
+            } else {
+              setAssignee(null);
+            }
+            setEditOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
