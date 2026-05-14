@@ -66,6 +66,27 @@ function IconCamera(props: { className?: string }) {
   );
 }
 
+function IconSpinner(props: { className?: string }) {
+  return (
+    <svg
+      className={`${props.className ?? ""} animate-spin`.trim()}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      />
+    </svg>
+  );
+}
+
+/** 업로드 진행 단계 — UI 텍스트/버튼 상태 분기에 사용 */
+type UploadStage = "idle" | "uploading" | "saving";
+
 export function ReviewWriteModal({
   open,
   onClose,
@@ -83,6 +104,10 @@ export function ReviewWriteModal({
   const [existingPaths, setExistingPaths] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [uploadStage, setUploadStage] = useState<UploadStage>("idle");
+  /** 현재 업로드 중인 사진 번호 (1-based). uploadStage === "uploading" 일 때 유효. */
+  const [uploadCurrent, setUploadCurrent] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
   const [msg, setMsg] = useState("");
 
   const previewUrls = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
@@ -152,11 +177,20 @@ export function ReviewWriteModal({
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (saving) return; // 모바일에서 중복 탭 방어
     setMsg("");
     setSaving(true);
+    // 사진이 있으면 “업로드 중”, 없으면 곧장 “저장 중”
+    const totalFiles = files.length;
+    setUploadTotal(totalFiles);
+    setUploadCurrent(0);
+    setUploadStage(totalFiles > 0 ? "uploading" : "saving");
     const isEdit = Boolean(initialReview);
     if (isEdit && initialReview!.reviewer_id !== profileId) {
       setMsg("본인이 작성한 리뷰만 수정할 수 있습니다.");
+      setUploadStage("idle");
+      setUploadCurrent(0);
+      setUploadTotal(0);
       setSaving(false);
       return;
     }
@@ -173,7 +207,10 @@ export function ReviewWriteModal({
       });
 
       const newPaths: string[] = [];
-      for (const f of files) {
+      for (let i = 0; i < files.length; i += 1) {
+        const f = files[i];
+        // “(1/3)” 표기는 곧 업로드를 시작할 사진 번호 (1-based)
+        setUploadCurrent(i + 1);
         const ext = f.name.split(".").pop()?.toLowerCase() || "jpg";
         const name = `${restaurantId}/${crypto.randomUUID()}.${ext}`;
         console.log(`${REVIEW_DEBUG} storage.upload attempt`, {
@@ -181,7 +218,9 @@ export function ReviewWriteModal({
           path: name,
           fileName: f.name,
           size: f.size,
-          contentType: f.type || null
+          contentType: f.type || null,
+          index: i + 1,
+          total: files.length
         });
 
         const storageRes = await supabase.storage.from(BUCKET).upload(name, f, {
@@ -205,6 +244,8 @@ export function ReviewWriteModal({
       }
 
       console.log(`${REVIEW_DEBUG} all uploads done, paths (storage keys)`, newPaths);
+      // 모든 사진 업로드 완료 → DB 저장 단계로 표시 전환
+      setUploadStage("saving");
 
       const legacyRating = Math.min(5, Math.max(1, Math.round(starTenths / 2)));
       const commentTrim = comment.slice(0, COMMENT_MAX).trim();
@@ -303,6 +344,9 @@ export function ReviewWriteModal({
       setMsg("처리 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
+      setUploadStage("idle");
+      setUploadCurrent(0);
+      setUploadTotal(0);
     }
   };
 
@@ -328,8 +372,9 @@ export function ReviewWriteModal({
             </div>
             <button
               type="button"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={handleClose}
+              disabled={saving}
               aria-label="닫기"
             >
               <IconClose className="h-5 w-5" />
@@ -446,13 +491,20 @@ export function ReviewWriteModal({
                 ))}
                 {totalPhotoCount < MAX_PHOTOS ? (
                   <li>
-                    <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 transition hover:border-blue-400 hover:bg-blue-50/40">
+                    <label
+                      className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 transition ${
+                        saving
+                          ? "cursor-not-allowed opacity-50"
+                          : "cursor-pointer hover:border-blue-400 hover:bg-blue-50/40"
+                      }`}
+                    >
                       <IconCamera className="h-6 w-6 text-blue-500" />
                       <span className="px-1 text-center text-[11px] font-semibold text-blue-600 sm:text-xs">사진 추가</span>
                       <input
                         type="file"
                         accept="image/*"
                         multiple
+                        disabled={saving}
                         className="hidden"
                         onChange={(e) => {
                           addFiles(e.target.files);
@@ -471,17 +523,26 @@ export function ReviewWriteModal({
           <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 bg-white pt-4">
             <button
               type="button"
-              className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={handleClose}
+              disabled={saving}
             >
               이전
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
+              aria-busy={saving}
+              className="inline-flex min-w-[8rem] items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-blue-400 disabled:opacity-90"
             >
-              {saving ? "저장 중…" : initialReview ? "수정 완료" : "등록하기"}
+              {saving ? <IconSpinner className="h-4 w-4 text-white" /> : null}
+              {uploadStage === "uploading"
+                ? `사진 업로드 중... (${uploadCurrent}/${uploadTotal})`
+                : uploadStage === "saving"
+                  ? "저장 중..."
+                  : initialReview
+                    ? "수정 완료"
+                    : "등록하기"}
             </button>
           </div>
         </form>
