@@ -1,23 +1,142 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
+import {
+  ServiceCredentialsCard,
+  ServiceManagersCard,
+  ServiceUsersCard
+} from "@/components/licenses/license-detail-cards";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeNextPayment, formatCurrency } from "@/lib/licenses/calc";
+import { formatCurrency } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
+import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
+
+/* ──────────────── 카테고리 → 컬러 팔레트 (목록 카드와 동일 매핑) ──────────────── */
+
+type CategoryPalette = {
+  iconBg: string;
+  iconText: string;
+  pill: string;
+};
+
+const PALETTE_PURPLE: CategoryPalette = {
+  iconBg: "bg-violet-100",
+  iconText: "text-violet-700",
+  pill: "bg-violet-100 text-violet-700"
+};
+const PALETTE_BLUE: CategoryPalette = {
+  iconBg: "bg-blue-100",
+  iconText: "text-blue-700",
+  pill: "bg-blue-100 text-blue-700"
+};
+const PALETTE_GREEN: CategoryPalette = {
+  iconBg: "bg-emerald-100",
+  iconText: "text-emerald-700",
+  pill: "bg-emerald-100 text-emerald-700"
+};
+const PALETTE_ORANGE: CategoryPalette = {
+  iconBg: "bg-orange-100",
+  iconText: "text-orange-700",
+  pill: "bg-orange-100 text-orange-700"
+};
+const PALETTE_ROSE: CategoryPalette = {
+  iconBg: "bg-rose-100",
+  iconText: "text-rose-700",
+  pill: "bg-rose-100 text-rose-700"
+};
+const PALETTE_SLATE: CategoryPalette = {
+  iconBg: "bg-slate-200",
+  iconText: "text-slate-600",
+  pill: "bg-slate-100 text-slate-600"
+};
+
+function categoryPalette(category: string | null | undefined): CategoryPalette {
+  const c = (category ?? "").trim();
+  if (!c) return PALETTE_ROSE;
+  if (c.includes("디자인")) return PALETTE_PURPLE;
+  if (c.includes("개발")) return PALETTE_BLUE;
+  if (c.includes("마케팅")) return PALETTE_ORANGE;
+  if (c.includes("기획") || c.includes("공통") || c.includes("협업")) return PALETTE_GREEN;
+  return PALETTE_ROSE;
+}
+
+/* ──────────────── 헬퍼 ──────────────── */
+
+function firstInitial(name: string | null | undefined): string {
+  const t = (name ?? "").trim();
+  if (!t) return "?";
+  const arr = Array.from(t);
+  return (arr[0] ?? "?").toUpperCase();
+}
+
+function formatOriginalCurrency(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0
+    }).format(amount);
+  } catch {
+    return `${currency} ${Math.round(amount).toLocaleString("en-US")}`;
+  }
+}
+
+/** description 컬럼에 'KEY: value' 줄로 묶여있는 메타를 한 줄씩 파싱. */
+function parseDescField(description: string | null | undefined, key: string): string | null {
+  if (!description) return null;
+  const re = new RegExp(`^${key}:\\s*(.+)$`, "m");
+  const m = description.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function formatDateKorean(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("ko-KR");
+}
+
+function formatDateTimeKorean(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toLocaleDateString("ko-KR")} ${d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/* ──────────────── 페이지 ──────────────── */
 
 export default function LicenseDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
   const { profile } = useRequirePortalSession();
+  const rates = useKrwRates();
   const [license, setLicense] = useState<License | null>(null);
   const [assignee, setAssignee] = useState<Profile | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteErr, setDeleteErr] = useState("");
+  const [userCount, setUserCount] = useState(0);
+
+  const reloadAssignee = useCallback(async (assigneeId: string | null) => {
+    if (!assigneeId) {
+      setAssignee(null);
+      return;
+    }
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", assigneeId)
+      .maybeSingle();
+    setAssignee((data ?? null) as Profile | null);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -30,18 +149,12 @@ export default function LicenseDetailPage() {
         .maybeSingle();
       const lic = (row ?? null) as License | null;
       setLicense(lic);
-      if (lic?.assignee_id) {
-        const { data: p } = await supabase.from("profiles").select("*").eq("id", lic.assignee_id).maybeSingle();
-        setAssignee((p ?? null) as Profile | null);
-      } else {
-        setAssignee(null);
-      }
+      await reloadAssignee(lic?.assignee_id ?? null);
       setLoading(false);
     };
     void run();
-  }, [id]);
+  }, [id, reloadAssignee]);
 
-  // 편집 모달에서 담당자 변경을 위해 프로필 전체 로딩.
   useEffect(() => {
     const run = async () => {
       const { data } = await supabase.from("profiles").select("*");
@@ -53,11 +166,85 @@ export default function LicenseDetailPage() {
   const role = profile?.role ?? null;
   const canEdit = role === "슈퍼관리자" || role === "중간관리자";
 
+  const handleDelete = async () => {
+    if (!license) return;
+    setDeleteBusy(true);
+    setDeleteErr("");
+    const { error } = await supabase.from("services").delete().eq("id", license.id);
+    setDeleteBusy(false);
+    if (error) {
+      console.error("[services][delete]", error);
+      setDeleteErr(error.message ?? "삭제에 실패했습니다.");
+      return;
+    }
+    router.push("/licenses/list");
+  };
+
+  // 비용 계산 메모이즈
+  const cost = useMemo(() => {
+    if (!license) return null;
+    const currency = ((license.currency ?? "KRW") as string).toUpperCase();
+    const isKrw = currency === "KRW";
+    const costMonthlyNum = Number(license.cost_monthly ?? 0);
+    const costNum = Number(license.cost ?? 0);
+    const rawCost = isKrw
+      ? costMonthlyNum > 0
+        ? costMonthlyNum
+        : costNum
+      : costNum > 0
+        ? costNum
+        : costMonthlyNum;
+    const fxRate =
+      currency === "USD"
+        ? rates?.USD ?? null
+        : currency === "EUR"
+          ? rates?.EUR ?? null
+          : null;
+    const licenseCount = Math.max(1, license.license_count || 1);
+    const isYearly = license.contract_type === "년 구독";
+    const isPerpetual = license.contract_type === "영구 라이선스";
+
+    const monthlyTotalOrig = isYearly ? rawCost / 12 : rawCost;
+    const monthlyTotalKrw = isKrw
+      ? monthlyTotalOrig
+      : fxRate != null
+        ? monthlyTotalOrig * fxRate
+        : null;
+    const annualTotalOrig = isYearly ? rawCost : rawCost * 12;
+    const annualTotalKrw = isKrw
+      ? annualTotalOrig
+      : fxRate != null
+        ? annualTotalOrig * fxRate
+        : null;
+    const perUnitMonthlyOrig = monthlyTotalOrig / licenseCount;
+    const perUnitMonthlyKrw =
+      monthlyTotalKrw != null ? monthlyTotalKrw / licenseCount : null;
+    const fxRateFormatted =
+      fxRate != null ? Math.round(fxRate).toLocaleString("ko-KR") : null;
+
+    return {
+      currency,
+      isKrw,
+      isYearly,
+      isPerpetual,
+      fxRate,
+      fxRateFormatted,
+      licenseCount,
+      rawCost,
+      monthlyTotalOrig,
+      monthlyTotalKrw,
+      annualTotalOrig,
+      annualTotalKrw,
+      perUnitMonthlyOrig,
+      perUnitMonthlyKrw
+    };
+  }, [license, rates]);
+
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
   }
 
-  if (!license) {
+  if (!license || !cost) {
     return (
       <p className="text-slate-600">
         라이선스를 찾을 수 없습니다.{" "}
@@ -68,83 +255,289 @@ export default function LicenseDetailPage() {
     );
   }
 
-  // payment_day / payment_month 기반으로 오늘 이후 가장 가까운 결제일을 계산.
-  const nextPaymentDate = computeNextPayment(
-    license.contract_type,
-    license.payment_day,
-    license.payment_month
-  );
-  let nextPaymentLabel: string | null = null;
-  let nextPaymentDiff: number | null = null;
-  if (nextPaymentDate) {
-    const todayNoon = new Date();
-    todayNoon.setHours(12, 0, 0, 0);
-    nextPaymentDiff = Math.round(
-      (nextPaymentDate.getTime() - todayNoon.getTime()) / 86_400_000
-    );
-    nextPaymentLabel = nextPaymentDate.toLocaleDateString("ko-KR");
-  }
-  const renewalColor =
-    nextPaymentDiff != null && nextPaymentDiff <= 7 ? "text-amber-600" : "text-slate-900";
+  const palette = categoryPalette(license.category);
+
+  // 상태 뱃지
+  const statusActive = license.status !== "비활성";
+  const statusBadge = statusActive
+    ? "bg-emerald-100 text-emerald-700"
+    : "bg-slate-100 text-slate-600";
+
+  // description / 시작일 / 결제방법 / 사용목적
+  const startDateText =
+    parseDescField(license.description, "시작일") ?? license.start_date ?? null;
+  const startDateLabel = formatDateKorean(startDateText);
+  const paymentMethodText =
+    parseDescField(license.description, "결제방법") ?? license.payment_method ?? null;
+  const purposeText =
+    (license.purpose && license.purpose.trim()) ||
+    parseDescField(license.description, "사용목적") ||
+    "";
+
+  const capacity = license.license_count > 0 ? license.license_count : 0;
+  const overflow = capacity > 0 && userCount > capacity;
+  const overflowCount = overflow ? userCount - capacity : 0;
+
+  const usedRatio =
+    capacity > 0 ? Math.min(100, (userCount / capacity) * 100) : userCount > 0 ? 100 : 0;
+  const overflowRatio =
+    capacity > 0 && userCount > capacity
+      ? Math.min(100, ((userCount - capacity) / capacity) * 100)
+      : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Link href="/licenses/list" className="text-sm text-apollon-600 hover:underline">
-        ← 전체 라이선스
+        ← 서비스 목록으로
       </Link>
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{license.name}</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              {license.category} · {license.plan}
-            </p>
+
+      {/* 헤더 */}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div
+            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-2xl font-bold ${palette.iconBg} ${palette.iconText}`}
+            aria-hidden
+          >
+            {firstInitial(license.name)}
           </div>
-          {canEdit ? (
+          <div>
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-2xl font-bold text-slate-900">{license.name}</h1>
+              {license.plan ? (
+                <span className="text-sm font-medium text-slate-600">{license.plan}</span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 text-sm text-slate-500">{license.category}</p>
+          </div>
+        </div>
+        {canEdit ? (
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setEditOpen(true)}
-              className="rounded-lg bg-apollon-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-apollon-700"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7m-1.4-9.4a2 2 0 1 1 2.8 2.8L11.7 19.5a4 4 0 0 1-1.7 1l-3.3.9.9-3.3a4 4 0 0 1 1-1.7L18.6 3.6Z" />
+              </svg>
               수정
             </button>
-          ) : null}
-        </div>
-        <dl className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
-          <div>
-            <dt className="text-slate-500">상태</dt>
-            <dd className="font-medium text-slate-900">{license.status}</dd>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteOpen(true);
+                setDeleteErr("");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6h12Z" />
+              </svg>
+              삭제
+            </button>
           </div>
-          <div>
-            <dt className="text-slate-500">비용</dt>
-            <dd className="font-medium text-slate-900">
-              {formatCurrency(Number(license.cost_monthly))} ({license.cost_type})
-            </dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">라이선스 수</dt>
-            <dd className="font-medium text-slate-900">{license.license_count}</dd>
-          </div>
-          {nextPaymentLabel ? (
-            <div>
-              <dt className="text-slate-500">다음 결제일</dt>
-              <dd className={`font-medium tabular-nums ${renewalColor}`}>
-                {nextPaymentLabel}
-                {nextPaymentDiff != null ? (
-                  <span className="ml-1.5 text-xs opacity-80">
-                    ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
-                  </span>
+        ) : null}
+      </header>
+
+      {/* 본문 그리드 */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* 좌측 영역 */}
+        <main className="space-y-4 lg:col-span-2">
+          {/* ① 서비스 정보 */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900">서비스 정보</h2>
+            <div className="mt-4 grid gap-6 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-slate-500">월간비용</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                  {cost.monthlyTotalKrw != null
+                    ? formatCurrency(cost.monthlyTotalKrw)
+                    : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
+                </p>
+                {!cost.isKrw ? (
+                  <>
+                    <p className="mt-1 text-xs tabular-nums text-slate-500">
+                      {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                    </p>
+                    {cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
+                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                        (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
+                        {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                      </p>
+                    ) : null}
+                  </>
                 ) : null}
-              </dd>
+              </div>
+
+              <div>
+                <p className="text-xs text-slate-500">계약 유형</p>
+                <p className="mt-1 text-lg font-semibold text-slate-900">
+                  {license.contract_type ?? license.cost_type}
+                </p>
+              </div>
+
+              {startDateLabel ? (
+                <div>
+                  <p className="text-xs text-slate-500">서비스 시작일</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {startDateLabel}
+                  </p>
+                </div>
+              ) : null}
+
+              <div>
+                <p className="text-xs text-slate-500">상태</p>
+                <span
+                  className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge}`}
+                >
+                  {license.status}
+                </span>
+              </div>
+
+              {paymentMethodText || assignee ? (
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-slate-500">결제방법</p>
+                  <p className="mt-1 flex items-center gap-2 text-sm">
+                    {paymentMethodText ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                        {paymentMethodText}
+                      </span>
+                    ) : null}
+                    {assignee ? <span className="text-slate-500">({assignee.name})</span> : null}
+                  </p>
+                </div>
+              ) : null}
             </div>
+          </section>
+
+          {/* ② 서비스 담당자 */}
+          <ServiceManagersCard serviceId={license.id} profiles={profiles} canEdit={canEdit} />
+
+          {/* ③ 서비스 사용목적 */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900">서비스 사용목적</h2>
+            <div className="mt-4">
+              {purposeText ? (
+                <p className="whitespace-pre-wrap text-sm text-slate-700">{purposeText}</p>
+              ) : (
+                <p className="rounded-xl bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
+                  사용목적이 입력되지 않았습니다
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* ④ 라이선스 사용자 */}
+          <ServiceUsersCard
+            serviceId={license.id}
+            profiles={profiles}
+            capacity={capacity}
+            canEdit={canEdit}
+            onCountChange={setUserCount}
+          />
+
+          {/* ⑤ 인증 정보 */}
+          <ServiceCredentialsCard serviceId={license.id} canEdit={canEdit} />
+        </main>
+
+        {/* 우측 영역 */}
+        <aside className="space-y-4">
+          {/* 연간 비용 */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900">
+              {cost.isPerpetual ? "총 비용" : "연간 비용"}
+            </h2>
+            <div className="mt-3">
+              <p className="text-3xl font-bold tabular-nums text-slate-900">
+                {cost.annualTotalKrw != null
+                  ? formatCurrency(cost.annualTotalKrw)
+                  : formatOriginalCurrency(cost.annualTotalOrig, cost.currency)}
+              </p>
+              {!cost.isKrw && !cost.isPerpetual && cost.perUnitMonthlyKrw != null ? (
+                <p className="mt-2 text-xs tabular-nums text-slate-500">
+                  {formatCurrency(cost.perUnitMonthlyKrw)} × {cost.licenseCount}개 × 12개월
+                </p>
+              ) : null}
+              {!cost.isKrw ? (
+                <p className="mt-1 text-xs tabular-nums text-slate-400">
+                  {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                </p>
+              ) : null}
+              {!cost.isKrw && cost.fxRateFormatted ? (
+                <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                  (적용환율 {cost.fxRateFormatted}원기준)
+                </p>
+              ) : null}
+              {cost.isPerpetual ? (
+                <p className="mt-2 text-xs text-slate-500">영구 라이선스 · 1회 결제</p>
+              ) : null}
+            </div>
+          </section>
+
+          {/* 라이선스 현황 */}
+          {capacity > 0 ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-base font-bold text-slate-900">라이선스 현황</h2>
+              <div className="mt-3 flex items-baseline justify-center gap-1">
+                <span
+                  className={`text-5xl font-bold tabular-nums ${overflow ? "text-rose-500" : "text-violet-600"}`}
+                >
+                  {userCount}
+                </span>
+                <span className="text-xl font-semibold text-slate-400">/{capacity}</span>
+              </div>
+              <p className="mt-1 text-center text-xs text-slate-500">사용 중</p>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                {overflow ? (
+                  <div className="h-full w-full bg-rose-500" style={{ width: `${100}%` }} />
+                ) : (
+                  <div
+                    className="h-full bg-violet-500"
+                    style={{ width: `${usedRatio}%` }}
+                  />
+                )}
+              </div>
+              {overflow ? (
+                <p className="mt-2 text-center text-xs font-medium text-rose-500">
+                  {overflowCount}명 초과 · 공동사용 중 (비용 {userCount}명 분배)
+                </p>
+              ) : null}
+              {/* overflowRatio 변수 미사용 경고 방지를 위한 데이터 attribute (CSS 미사용) */}
+              <span className="hidden" data-overflow-ratio={overflowRatio} />
+            </section>
           ) : null}
-          <div className="md:col-span-2">
-            <dt className="text-slate-500">담당자</dt>
-            <dd className="font-medium text-slate-900">{assignee ? `${assignee.name} (${assignee.email})` : "-"}</dd>
-          </div>
-        </dl>
+
+          {/* 추가 정보 */}
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900">추가 정보</h2>
+            <dl className="mt-3 space-y-3 text-xs">
+              <div>
+                <dt className="text-slate-500">최초 등록일</dt>
+                <dd className="mt-0.5 font-medium text-slate-900">
+                  {formatDateTimeKorean(license.created_at) ?? "-"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">최종 수정일</dt>
+                <dd className="mt-0.5 font-medium text-slate-900">
+                  {formatDateTimeKorean(license.updated_at) ?? "-"}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-4 border-t border-slate-100 pt-3 text-[11px] leading-snug text-slate-400">
+              해당 라이선스 서비스관리는 서비스 담당자 및 사이트 관리자에게 문의
+            </p>
+          </section>
+        </aside>
       </div>
 
+      {/* 편집 모달 */}
       {editOpen && canEdit ? (
         <LicenseFormModal
           mode="edit"
@@ -153,19 +546,43 @@ export default function LicenseDetailPage() {
           onClose={() => setEditOpen(false)}
           onSaved={(row) => {
             setLicense(row);
-            if (row.assignee_id) {
-              void supabase
-                .from("profiles")
-                .select("*")
-                .eq("id", row.assignee_id)
-                .maybeSingle()
-                .then(({ data }) => setAssignee((data ?? null) as Profile | null));
-            } else {
-              setAssignee(null);
-            }
+            void reloadAssignee(row.assignee_id ?? null);
             setEditOpen(false);
           }}
         />
+      ) : null}
+
+      {/* 삭제 확인 모달 */}
+      {deleteOpen && canEdit ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">서비스 삭제</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{license.name}</span>{" "}
+              서비스를 삭제하시겠습니까? <br />
+              <span className="text-rose-500">담당자/사용자/인증 정보도 함께 삭제되며 이 작업은 되돌릴 수 없습니다.</span>
+            </p>
+            {deleteErr ? <p className="mt-2 text-xs text-rose-600">{deleteErr}</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleteBusy}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={deleteBusy}
+                className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleteBusy ? "삭제 중..." : "삭제"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -332,12 +332,20 @@ export default function LicensesListPage() {
             }
             const planSecondary =
               (row.plan_name && row.plan_name.trim()) || (row.plan && row.plan.trim()) || "";
-            const rawCost =
-              typeof row.cost === "number" && row.cost > 0
-                ? row.cost
-                : Number(row.cost_monthly ?? 0);
             const currency = ((row.currency ?? "KRW") as string).toUpperCase();
             const isKrw = currency === "KRW";
+            // 비용 source 우선순위 (스펙):
+            //   - KRW: cost_monthly 우선, 비어있으면 cost
+            //   - USD/EUR: cost(원본 금액) 우선, 비어있으면 cost_monthly 폴백
+            const costMonthlyNum = Number(row.cost_monthly ?? 0);
+            const costNum = Number(row.cost ?? 0);
+            const rawCost = isKrw
+              ? costMonthlyNum > 0
+                ? costMonthlyNum
+                : costNum
+              : costNum > 0
+                ? costNum
+                : costMonthlyNum;
             const fxRate =
               currency === "USD"
                 ? rates?.USD ?? null

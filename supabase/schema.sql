@@ -601,6 +601,55 @@ alter table public.services add column if not exists next_payment_date date;
 -- next_payment_date 컬럼은 더 이상 사용하지 않고 위 두 컬럼으로부터 다음 결제일을 동적으로 계산.
 alter table public.services add column if not exists payment_day integer;
 alter table public.services add column if not exists payment_month integer;
+-- 최종 수정일 트래킹 (라이선스 상세페이지 '추가 정보' 카드에서 노출)
+alter table public.services add column if not exists updated_at timestamptz not null default now();
+
+-- ═════════════════════════════════════════════════════════════
+-- 라이선스 상세 페이지 보조 테이블
+-- ─────────────────────────────────────────────────────────────
+-- service_id 컬럼이 빠진 기존 테이블이 있을 수 있어 alter add column 으로 보강.
+-- 정의가 없는 환경에서는 create table if not exists 가 신규 생성.
+-- ═════════════════════════════════════════════════════════════
+
+create table if not exists public.license_managers (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid references public.services (id) on delete cascade,
+  profile_id uuid references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.license_managers add column if not exists service_id uuid references public.services (id) on delete cascade;
+alter table public.license_managers add column if not exists profile_id uuid references public.profiles (id) on delete cascade;
+alter table public.license_managers add column if not exists created_at timestamptz not null default now();
+
+create table if not exists public.license_users (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid references public.services (id) on delete cascade,
+  profile_id uuid references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.license_users add column if not exists service_id uuid references public.services (id) on delete cascade;
+alter table public.license_users add column if not exists profile_id uuid references public.profiles (id) on delete cascade;
+alter table public.license_users add column if not exists created_at timestamptz not null default now();
+
+create table if not exists public.license_credentials (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid references public.services (id) on delete cascade,
+  label text not null,
+  username text,
+  password text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+alter table public.license_credentials add column if not exists service_id uuid references public.services (id) on delete cascade;
+alter table public.license_credentials add column if not exists label text;
+alter table public.license_credentials add column if not exists username text;
+alter table public.license_credentials add column if not exists password text;
+alter table public.license_credentials add column if not exists notes text;
+alter table public.license_credentials add column if not exists created_at timestamptz not null default now();
+
+create index if not exists idx_license_managers_service on public.license_managers (service_id);
+create index if not exists idx_license_users_service on public.license_users (service_id);
+create index if not exists idx_license_credentials_service on public.license_credentials (service_id);
 
 -- 인덱스
 create index if not exists idx_services_is_hub_card on public.services (is_hub_card);

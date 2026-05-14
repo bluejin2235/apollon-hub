@@ -26,6 +26,7 @@ export type License = {
   next_renewal: string | null;
   assignee_id: string | null;
   created_at: string;
+  updated_at?: string | null;
 
   plan_name?: string | null;
   currency?: string;
@@ -43,6 +44,8 @@ export type License = {
   card_holder_id?: string | null;
   website_url?: string | null;
   memo?: string | null;
+  /** `services.description` (시작일/결제방법/메모 등이 한 줄씩 묶여있는 자유 텍스트) */
+  description?: string | null;
 };
 
 export type Profile = {
