@@ -33,6 +33,7 @@ import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
 import { supabase } from "@/lib/supabase/client";
 
 const MENU_BUCKET = "menu-images";
+const REVIEW_BUCKET = "review-images";
 const MEMO_MAX = 300;
 const PHOTO_PAGE_SIZE = 10;
 const REVIEW_PAGE_SIZE = 5;
@@ -130,6 +131,25 @@ function IconPin(props: { className?: string }) {
   );
 }
 
+function IconTrash(props: { className?: string }) {
+  return (
+    <svg
+      className={props.className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"
+      />
+    </svg>
+  );
+}
+
 export function RestaurantDetailView({ id }: { id: string }) {
   const router = useRouter();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
@@ -147,6 +167,10 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
+  /** 삭제 확인 대상 리뷰. null 이면 모달 닫힘. */
+  const [deletingReview, setDeletingReview] = useState<Review | null>(null);
+  const [reviewDeleteBusy, setReviewDeleteBusy] = useState(false);
+  const [reviewDeleteErr, setReviewDeleteErr] = useState("");
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuUploadMsg, setMenuUploadMsg] = useState("");
   const [photoPage, setPhotoPage] = useState(1);
@@ -348,6 +372,48 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setDeleteModalOpen(false);
     router.push("/restaurants");
   };
+
+  /**
+   * 본인 리뷰 삭제:
+   * 1) reviews 테이블에서 row 삭제 (RLS 또는 reviewer_id 일치 조건으로 본인만 가능)
+   * 2) 성공 시 review-images 버킷에서 첨부 파일들 best-effort 제거
+   *    (스토리지 제거가 실패해도 DB 는 이미 지워졌으므로 UI 갱신은 진행)
+   */
+  const confirmDeleteReview = useCallback(async () => {
+    const target = deletingReview;
+    if (!target || !myProfileId) return;
+    if (target.reviewer_id !== myProfileId) {
+      setReviewDeleteErr("본인이 작성한 리뷰만 삭제할 수 있습니다.");
+      return;
+    }
+    setReviewDeleteErr("");
+    setReviewDeleteBusy(true);
+
+    const { error } = await supabase
+      .from("reviews")
+      .delete()
+      .eq("id", target.id)
+      .eq("reviewer_id", myProfileId);
+
+    if (error) {
+      console.error("[Ashuleng review] delete failed", error);
+      setReviewDeleteErr(error.message || "리뷰 삭제에 실패했습니다.");
+      setReviewDeleteBusy(false);
+      return;
+    }
+
+    const paths = (target.image_paths ?? []).filter((p): p is string => Boolean(p?.trim()));
+    if (paths.length > 0) {
+      const { error: storageErr } = await supabase.storage.from(REVIEW_BUCKET).remove(paths);
+      if (storageErr) {
+        console.error("[Ashuleng review] storage cleanup failed", storageErr);
+      }
+    }
+
+    setReviewDeleteBusy(false);
+    setDeletingReview(null);
+    await fetchReviews("after review delete");
+  }, [deletingReview, myProfileId, fetchReviews]);
 
   const uploadMenuImages = async (fileList: FileList | null) => {
     if (!fileList?.length || !restaurant) return;
@@ -983,16 +1049,30 @@ export function RestaurantDetailView({ id }: { id: string }) {
                             {formatReviewCardDate(rv.created_at)} · {who?.name ?? "멤버"}
                           </p>
                           {myProfileId && rv.reviewer_id === myProfileId ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingReview(rv);
-                                setReviewOpen(true);
-                              }}
-                              className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:border-blue-300 hover:bg-blue-50/80"
-                            >
-                              수정
-                            </button>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingReview(rv);
+                                  setReviewOpen(true);
+                                }}
+                                className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-700 shadow-sm hover:border-blue-300 hover:bg-blue-50/80"
+                              >
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReviewDeleteErr("");
+                                  setDeletingReview(rv);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-500 shadow-sm transition hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                                aria-label="이 리뷰 삭제"
+                              >
+                                <IconTrash className="h-3.5 w-3.5" />
+                                삭제
+                              </button>
+                            </div>
                           ) : null}
                         </div>
                       </li>
@@ -1094,6 +1174,58 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 onClick={() => void confirmDeleteRestaurant()}
               >
                 {deleteBusy ? "삭제 중…" : "삭제"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deletingReview ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-500/45 p-4 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-review-title"
+          onClick={() => {
+            if (!reviewDeleteBusy) setDeletingReview(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-review-title" className="text-base font-bold text-slate-900">
+              리뷰 삭제
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-700">
+              리뷰를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </p>
+            {reviewDeleteErr ? (
+              <p className="mt-3 text-sm text-rose-600">{reviewDeleteErr}</p>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={reviewDeleteBusy}
+                className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setDeletingReview(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={reviewDeleteBusy}
+                aria-busy={reviewDeleteBusy}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-400 disabled:opacity-90"
+                onClick={() => void confirmDeleteReview()}
+              >
+                {reviewDeleteBusy ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                ) : null}
+                {reviewDeleteBusy ? "삭제 중..." : "삭제"}
               </button>
             </div>
           </div>
