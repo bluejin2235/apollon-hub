@@ -7,6 +7,7 @@ import { KakaoMapPanel } from "@/components/restaurants/kakao-map";
 import { RestaurantFormModal } from "@/components/restaurants/restaurant-form-modal";
 import { RestaurantPreviewPanel } from "@/components/restaurants/restaurant-preview-panel";
 import { reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
+import { CrosshairIcon } from "@/components/icons/crosshair-icon";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   FOOD_TYPE_OPTIONS,
@@ -25,6 +26,7 @@ import {
   reviewRevisitPositive,
   reviewStarsScore
 } from "@/lib/restaurants/types";
+import { formatDistance, haversineDistanceMeters, useGeolocation } from "@/lib/geo";
 import { supabase } from "@/lib/supabase/client";
 
 type ReviewAgg = { sum: number; n: number; revisit: number };
@@ -71,7 +73,7 @@ type GourmetRankRow = {
   total: number;
 };
 
-type SortKey = "reco" | "rating" | "recent";
+type SortKey = "reco" | "rating" | "recent" | "nearby";
 
 export default function RestaurantsMainPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -84,6 +86,9 @@ export default function RestaurantsMainPage() {
   const [foodFilter, setFoodFilter] = useState<Set<(typeof FOOD_TYPE_OPTIONS)[number]>>(new Set());
   const [atmosFilter, setAtmosFilter] = useState<Set<(typeof ATMOSPHERE_TAG_OPTIONS)[number]>>(new Set());
   const [sortBy, setSortBy] = useState<SortKey>("recent");
+  const { state: geoState, request: requestGeo, clear: clearGeo } = useGeolocation();
+  /** 마지막으로 사용자가 “정렬” 드롭다운에서 직접 선택한 값. 위치 정렬 해제 시 이 값으로 복귀. */
+  const [lastDropdownSort, setLastDropdownSort] = useState<Exclude<SortKey, "nearby">>("recent");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusNonce, setFocusNonce] = useState(0);
   const [listPage, setListPage] = useState(1);
@@ -209,9 +214,30 @@ export default function RestaurantsMainPage() {
     });
   }, [restaurants, categorySelect, foodFilter, atmosFilter, searchNorm]);
 
+  /** 위치 권한 보유 시 각 맛집까지의 거리(m) 맵. 좌표가 없으면 제외. */
+  const distanceMap = useMemo(() => {
+    if (!geoState.coords) return null;
+    const m = new Map<string, number>();
+    for (const r of restaurants) {
+      if (typeof r.lat !== "number" || typeof r.lng !== "number") continue;
+      if (Number.isNaN(r.lat) || Number.isNaN(r.lng)) continue;
+      m.set(r.id, haversineDistanceMeters(geoState.coords, { lat: r.lat, lng: r.lng }));
+    }
+    return m;
+  }, [geoState.coords, restaurants]);
+
   const sortedFiltered = useMemo(() => {
     const list = [...filtered];
-    if (sortBy === "recent") {
+    if (sortBy === "nearby" && distanceMap) {
+      list.sort((a, b) => {
+        const da = distanceMap.get(a.id);
+        const db = distanceMap.get(b.id);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da - db;
+      });
+    } else if (sortBy === "recent") {
       list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     } else if (sortBy === "rating") {
       list.sort((a, b) => {
@@ -226,7 +252,7 @@ export default function RestaurantsMainPage() {
       list.sort((a, b) => scoreForReco(b.id, reviewAgg) - scoreForReco(a.id, reviewAgg));
     }
     return list;
-  }, [filtered, sortBy, reviewAgg]);
+  }, [filtered, sortBy, reviewAgg, distanceMap]);
 
   const listForDisplay = useMemo(() => {
     if (!randomPickOnlyId) return sortedFiltered;
@@ -331,6 +357,23 @@ export default function RestaurantsMainPage() {
     setRandomPickHint("");
     setRandomPickOnlyId(null);
   };
+
+  /** 위치 활성/비활성 토글: 활성화 시 nearby 정렬로 전환, 비활성화 시 직전 정렬로 복귀. */
+  const toggleNearby = useCallback(() => {
+    if (geoState.coords) {
+      clearGeo();
+      setSortBy(lastDropdownSort);
+    } else {
+      requestGeo();
+    }
+  }, [geoState.coords, lastDropdownSort, clearGeo, requestGeo]);
+
+  // 좌표가 새로 들어오면 자동으로 nearby 모드로 전환
+  useEffect(() => {
+    if (geoState.coords && sortBy !== "nearby") {
+      setSortBy("nearby");
+    }
+  }, [geoState.coords, sortBy]);
 
   if (loading) {
     return <p className="py-20 text-center text-gray-600">불러오는 중...</p>;
@@ -508,8 +551,41 @@ export default function RestaurantsMainPage() {
             >
               <span aria-hidden>↺</span>
             </button>
+            <button
+              type="button"
+              onClick={toggleNearby}
+              disabled={geoState.status === "loading"}
+              aria-pressed={Boolean(geoState.coords)}
+              className={`flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                geoState.coords
+                  ? "border-blue-600 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+              aria-label={
+                geoState.coords ? "위치 기반 정렬 해제" : "현재 위치 기반으로 가까운 순 정렬"
+              }
+              title={
+                geoState.coords ? "위치 기반 정렬 해제" : "현재 위치 기반으로 가까운 순 정렬"
+              }
+            >
+              <CrosshairIcon className="h-4 w-4" />
+            </button>
           </div>
         </div>
+
+        {geoState.status === "loading" ? (
+          <p className="mt-2 text-xs text-slate-500" role="status">
+            현재 위치 확인 중…
+          </p>
+        ) : geoState.errorMessage ? (
+          <p className="mt-2 text-xs text-rose-600" role="status">
+            {geoState.errorMessage}
+          </p>
+        ) : geoState.coords ? (
+          <p className="mt-2 text-xs text-blue-700" role="status">
+            📍 현재 위치 기준 가까운 순으로 정렬 중입니다.
+          </p>
+        ) : null}
 
         {randomPickHint ? (
           <p className="mt-2 text-xs text-amber-700" role="status">
@@ -577,12 +653,20 @@ export default function RestaurantsMainPage() {
             </p>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortKey)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onChange={(e) => {
+                const v = e.target.value as SortKey;
+                if (v === "nearby") return;
+                setSortBy(v);
+                setLastDropdownSort(v);
+              }}
+              disabled={sortBy === "nearby"}
+              title={sortBy === "nearby" ? "위치 기반 정렬 중 — 위치 버튼을 다시 눌러 해제" : undefined}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             >
               <option value="reco">추천순</option>
               <option value="rating">평점순</option>
               <option value="recent">최근등록순</option>
+              {sortBy === "nearby" ? <option value="nearby">가까운순 (📍)</option> : null}
             </select>
           </div>
           {randomPickOnlyId && listForDisplay.length > 0 ? (
@@ -645,6 +729,11 @@ export default function RestaurantsMainPage() {
                           {row.price_range ? <span className="text-slate-600"> · {row.price_range}</span> : null}
                         </p>
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">📍 {row.address}</p>
+                        {distanceMap?.has(row.id) ? (
+                          <p className="mt-0.5 text-xs font-medium text-blue-700">
+                            🚶 {formatDistance(distanceMap.get(row.id) ?? 0)}
+                          </p>
+                        ) : null}
                         <p className="mt-1 text-[10px] text-slate-400">등록 {owner?.name ?? "—"}</p>
                       </div>
                     </button>

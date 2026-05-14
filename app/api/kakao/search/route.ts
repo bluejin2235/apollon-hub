@@ -34,14 +34,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "KAKAO_REST_API_KEY가 설정되지 않았습니다." }, { status: 500 });
     }
 
-    const query = request.nextUrl.searchParams.get("query")?.trim() ?? "";
+    const sp = request.nextUrl.searchParams;
+    const query = sp.get("query")?.trim() ?? "";
     if (!query) {
       return NextResponse.json({ error: "query 파라미터가 필요합니다." }, { status: 400 });
     }
 
+    // 선택 파라미터(클라이언트에서 page/size/location/sort 추가 전달 가능)
+    const rawSize = Number.parseInt(sp.get("size") ?? "", 10);
+    const size = Number.isFinite(rawSize) && rawSize >= 1 && rawSize <= 15 ? rawSize : 15;
+
+    const rawPage = Number.parseInt(sp.get("page") ?? "", 10);
+    const page = Number.isFinite(rawPage) && rawPage >= 1 && rawPage <= 45 ? rawPage : 1;
+
+    const x = sp.get("x")?.trim() ?? "";
+    const y = sp.get("y")?.trim() ?? "";
+    const rawRadius = Number.parseInt(sp.get("radius") ?? "", 10);
+    const radius =
+      Number.isFinite(rawRadius) && rawRadius >= 1 && rawRadius <= 20000 ? rawRadius : 20000;
+
+    const sortParam = sp.get("sort")?.trim() ?? "";
+    const sort = sortParam === "distance" || sortParam === "accuracy" ? sortParam : null;
+
     const url = new URL(KAKAO_KEYWORD_URL);
     url.searchParams.set("query", query);
-    url.searchParams.set("size", "15");
+    url.searchParams.set("size", String(size));
+    url.searchParams.set("page", String(page));
+    if (x && y) {
+      // 카카오 로컬: x=경도(lng), y=위도(lat). 좌표 기반 distance 정렬을 켜기 위해 함께 전달.
+      url.searchParams.set("x", x);
+      url.searchParams.set("y", y);
+      url.searchParams.set("radius", String(radius));
+      url.searchParams.set("sort", sort ?? "distance");
+    } else if (sort) {
+      url.searchParams.set("sort", sort);
+    }
 
     let res: Response;
     try {

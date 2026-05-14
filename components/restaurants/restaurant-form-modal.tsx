@@ -1,8 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KakaoKeywordPlace, KakaoKeywordSearchResponse } from "@/lib/kakao/local-keyword";
 import { pickDisplayAddress } from "@/lib/kakao/local-keyword";
+import { formatDistance, useGeolocation } from "@/lib/geo";
+import { CrosshairIcon } from "@/components/icons/crosshair-icon";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   atmosphereTagDisplayLabel,
@@ -51,11 +53,21 @@ function registerNameAndAddress(doc: KakaoKeywordPlace): { name: string; address
   return { name, address };
 }
 
+/** 검색 1페이지 당 결과 수. 카카오 size 와 동일하게 유지. */
+const SEARCH_PAGE_SIZE = 5;
+/** 카카오 로컬 API page 파라미터의 최대값. */
+const KAKAO_MAX_PAGE = 45;
+
 export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [query, setQuery] = useState("");
+  /** 현재 표시 중인 결과를 만들어낸 검색어. 페이지 이동 시 이 값으로 재요청. */
+  const [activeQuery, setActiveQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<KakaoKeywordPlace[]>([]);
+  const [searchPage, setSearchPage] = useState(1);
+  const [pageableCount, setPageableCount] = useState(0);
+  const [isEnd, setIsEnd] = useState(true);
   const [pick, setPick] = useState<KakaoKeywordPlace | null>(null);
   const [isDuplicatePlace, setIsDuplicatePlace] = useState(false);
   const [duplicateCheckPending, setDuplicateCheckPending] = useState(false);
@@ -66,12 +78,19 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const duplicateCheckGen = useRef(0);
+  const searchGen = useRef(0);
+  const { state: geoState, request: requestGeo, clear: clearGeo } = useGeolocation();
 
   const reset = useCallback(() => {
     duplicateCheckGen.current += 1;
+    searchGen.current += 1;
     setStep(1);
     setQuery("");
+    setActiveQuery("");
     setResults([]);
+    setSearchPage(1);
+    setPageableCount(0);
+    setIsEnd(true);
     setPick(null);
     setIsDuplicatePlace(false);
     setDuplicateCheckPending(false);
@@ -80,7 +99,8 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     setTags([]);
     setMenuRows([{ name: "", price: "" }]);
     setMsg("");
-  }, []);
+    clearGeo();
+  }, [clearGeo]);
 
   useEffect(() => {
     if (!open) {
@@ -88,43 +108,120 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
     }
   }, [open, reset]);
 
-  const search = async () => {
-    const q = query.trim();
-    if (!q) return;
-    setSearching(true);
-    setMsg("");
-    try {
-      const res = await fetch(`/api/kakao/search?query=${encodeURIComponent(q)}`, { cache: "no-store" });
-      const raw = await res.text();
-      let body: KakaoSearchApiBody | null = null;
+  const runSearch = useCallback(
+    async (q: string, page: number) => {
+      const trimmed = q.trim();
+      if (!trimmed) return;
+      const gen = ++searchGen.current;
+      setSearching(true);
+      setMsg("");
       try {
-        body = raw ? (JSON.parse(raw) as KakaoSearchApiBody) : null;
-      } catch {
-        setMsg(
-          res.ok
-            ? "검색 응답을 해석하지 못했습니다. 잠시 후 다시 시도해주세요."
-            : `검색 요청 실패 (HTTP ${res.status}). 배포 보호·프록시 응답이 HTML인 경우가 있습니다.`
-        );
+        const params = new URLSearchParams();
+        params.set("query", trimmed);
+        params.set("page", String(page));
+        params.set("size", String(SEARCH_PAGE_SIZE));
+        if (geoState.coords) {
+          // 카카오 로컬: x=경도, y=위도. distance 정렬은 서버 라우트에서 좌표 동반 시 자동 적용.
+          params.set("x", String(geoState.coords.lng));
+          params.set("y", String(geoState.coords.lat));
+        }
+        const res = await fetch(`/api/kakao/search?${params.toString()}`, { cache: "no-store" });
+        const raw = await res.text();
+        if (gen !== searchGen.current) return;
+
+        let body: KakaoSearchApiBody | null = null;
+        try {
+          body = raw ? (JSON.parse(raw) as KakaoSearchApiBody) : null;
+        } catch {
+          setMsg(
+            res.ok
+              ? "검색 응답을 해석하지 못했습니다. 잠시 후 다시 시도해주세요."
+              : `검색 요청 실패 (HTTP ${res.status}). 배포 보호·프록시 응답이 HTML인 경우가 있습니다.`
+          );
+          setResults([]);
+          setPageableCount(0);
+          setIsEnd(true);
+          console.error("[restaurant-form] /api/kakao/search non-JSON body", res.status, raw.slice(0, 300));
+          return;
+        }
+        if (!res.ok) {
+          const base = body?.error ?? "검색 실패";
+          const extra = body?.detail ? ` — ${body.detail.slice(0, 180)}` : "";
+          setMsg(base + extra);
+          setResults([]);
+          setPageableCount(0);
+          setIsEnd(true);
+          return;
+        }
+        setResults(body?.documents ?? []);
+        setPageableCount(body?.meta?.pageable_count ?? body?.meta?.total_count ?? 0);
+        setIsEnd(body?.meta?.is_end ?? true);
+        setActiveQuery(trimmed);
+        setSearchPage(page);
+      } catch (e) {
+        if (gen !== searchGen.current) return;
+        console.error(e);
+        setMsg("검색 요청에 실패했습니다. 네트워크를 확인하거나 잠시 후 다시 시도해주세요.");
         setResults([]);
-        console.error("[restaurant-form] /api/kakao/search non-JSON body", res.status, raw.slice(0, 300));
-        return;
+        setPageableCount(0);
+        setIsEnd(true);
+      } finally {
+        if (gen === searchGen.current) {
+          setSearching(false);
+        }
       }
-      if (!res.ok) {
-        const base = body?.error ?? "검색 실패";
-        const extra = body?.detail ? ` — ${body.detail.slice(0, 180)}` : "";
-        setMsg(base + extra);
-        setResults([]);
-        return;
-      }
-      setResults(body?.documents ?? []);
-    } catch (e) {
-      console.error(e);
-      setMsg("검색 요청에 실패했습니다. 네트워크를 확인하거나 잠시 후 다시 시도해주세요.");
-      setResults([]);
-    } finally {
-      setSearching(false);
+    },
+    [geoState.coords]
+  );
+
+  const search = useCallback(() => {
+    void runSearch(query, 1);
+  }, [runSearch, query]);
+
+  /** 페이지 버튼에서 사용. 활성 검색어 기준 페이지 이동. */
+  const goToSearchPage = useCallback(
+    (page: number) => {
+      if (page < 1 || page > KAKAO_MAX_PAGE) return;
+      if (!activeQuery) return;
+      void runSearch(activeQuery, page);
+    },
+    [runSearch, activeQuery]
+  );
+
+  /** 페이지네이션 표시용: 카카오는 size*page <= pageable_count 인 페이지까지만 유효. */
+  const totalSearchPages = useMemo(() => {
+    if (!pageableCount || pageableCount <= 0) return 0;
+    return Math.min(KAKAO_MAX_PAGE, Math.ceil(pageableCount / SEARCH_PAGE_SIZE));
+  }, [pageableCount]);
+
+  /** 현재 페이지 기준 ±2 윈도우. 1·끝 페이지는 항상 표시. */
+  const pageWindow = useMemo(() => {
+    if (totalSearchPages <= 0) return [] as number[];
+    const span = 2;
+    const start = Math.max(1, searchPage - span);
+    const end = Math.min(totalSearchPages, searchPage + span);
+    const out: number[] = [];
+    for (let p = start; p <= end; p += 1) out.push(p);
+    return out;
+  }, [totalSearchPages, searchPage]);
+
+  /** 내 위치 토글: 활성/비활성. 활성 상태에서 검색어가 있다면 즉시 1페이지로 재검색. */
+  const toggleGeo = useCallback(() => {
+    if (geoState.coords) {
+      clearGeo();
+      if (activeQuery) void runSearch(activeQuery, 1);
+    } else {
+      requestGeo();
     }
-  };
+  }, [geoState.coords, clearGeo, requestGeo, activeQuery, runSearch]);
+
+  // 위치 새로 획득 시 활성 검색어가 있으면 자동으로 distance 기반 재검색
+  useEffect(() => {
+    if (!geoState.coords) return;
+    if (!activeQuery) return;
+    void runSearch(activeQuery, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geoState.coords]);
 
   const selectPlace = useCallback(async (doc: KakaoKeywordPlace) => {
     const gen = ++duplicateCheckGen.current;
@@ -286,7 +383,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      void search();
+                      search();
                     }
                   }}
                   className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -294,34 +391,110 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
                 />
                 <button
                   type="button"
-                  onClick={() => void search()}
+                  onClick={() => search()}
                   disabled={searching}
                   className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
                 >
                   {searching ? "검색…" : "검색"}
                 </button>
+                <button
+                  type="button"
+                  onClick={toggleGeo}
+                  disabled={geoState.status === "loading"}
+                  aria-pressed={Boolean(geoState.coords)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    geoState.coords
+                      ? "border-blue-600 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  title={
+                    geoState.coords
+                      ? "내 위치 기반 정렬 해제"
+                      : "내 위치 기반으로 가까운 순 검색"
+                  }
+                >
+                  <CrosshairIcon className="h-4 w-4" />
+                  <span>내 위치</span>
+                </button>
               </div>
+
+              {geoState.status === "loading" ? (
+                <p className="text-xs text-slate-500">현재 위치 확인 중…</p>
+              ) : geoState.errorMessage ? (
+                <p className="text-xs text-rose-600">{geoState.errorMessage}</p>
+              ) : geoState.coords ? (
+                <p className="text-xs text-blue-700">📍 내 위치 기준 가까운 순으로 검색합니다.</p>
+              ) : null}
 
               {results.length > 0 ? (
                 <ul className="max-h-[min(320px,45vh)] overflow-y-auto rounded-lg border border-slate-200 bg-white">
                   {results.map((doc) => {
                     const selected = pick?.id === doc.id;
+                    const distMeters = doc.distance ? Number.parseInt(doc.distance, 10) : NaN;
                     return (
                       <li key={doc.id} className="border-b border-slate-100 last:border-b-0">
                         <button
                           type="button"
-                          className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
+                          className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 ${
                             selected ? "bg-blue-50" : ""
                           }`}
                           onClick={() => void selectPlace(doc)}
                         >
-                          <span className="block text-sm font-bold text-slate-900">{doc.place_name}</span>
-                          <span className="mt-0.5 block text-xs text-slate-500">{pickDisplayAddress(doc)}</span>
+                          <div className="min-w-0 flex-1">
+                            <span className="block text-sm font-bold text-slate-900">{doc.place_name}</span>
+                            <span className="mt-0.5 block text-xs text-slate-500">{pickDisplayAddress(doc)}</span>
+                          </div>
+                          {Number.isFinite(distMeters) ? (
+                            <span className="shrink-0 self-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                              {formatDistance(distMeters)}
+                            </span>
+                          ) : null}
                         </button>
                       </li>
                     );
                   })}
                 </ul>
+              ) : null}
+
+              {totalSearchPages > 1 ? (
+                <nav
+                  className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-slate-600"
+                  aria-label="검색 결과 페이지"
+                >
+                  <button
+                    type="button"
+                    onClick={() => goToSearchPage(searchPage - 1)}
+                    disabled={searching || searchPage <= 1}
+                    className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="이전 페이지"
+                  >
+                    {"<"}
+                  </button>
+                  {pageWindow.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => goToSearchPage(p)}
+                      disabled={searching}
+                      className={`min-w-[1.25rem] px-0.5 py-0.5 tabular-nums ${
+                        p === searchPage
+                          ? "font-bold text-slate-900 underline decoration-slate-900 decoration-2 underline-offset-4"
+                          : "font-normal hover:text-slate-900"
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => goToSearchPage(searchPage + 1)}
+                    disabled={searching || searchPage >= totalSearchPages || isEnd}
+                    className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="다음 페이지"
+                  >
+                    {">"}
+                  </button>
+                </nav>
               ) : null}
 
               {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
