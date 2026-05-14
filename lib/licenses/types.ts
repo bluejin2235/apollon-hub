@@ -43,6 +43,8 @@ export type License = {
   payment_method?: PaymentMethod;
   card_holder_id?: string | null;
   website_url?: string | null;
+  /** `services.url` (services 테이블 실제 컬럼명, website_url 과 동일 의미) */
+  url?: string | null;
   memo?: string | null;
   /** `services.description` (시작일/결제방법/메모 등이 한 줄씩 묶여있는 자유 텍스트) */
   description?: string | null;

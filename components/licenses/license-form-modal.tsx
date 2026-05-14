@@ -49,6 +49,21 @@ function buildServiceDescription(input: {
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
+/** description 한 줄 묶음에서 KEY 라인 값을 추출. (예: "사용목적: ABC") */
+function parseDescField(
+  description: string | null | undefined,
+  key: string
+): string | null {
+  if (!description) return null;
+  const re = new RegExp(`^${key}:\\s*(.+)$`, "m");
+  const m = description.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function isPaymentMethod(v: unknown): v is PaymentMethod {
+  return v === "법인카드" || v === "계좌이체";
+}
+
 export function LicenseFormModal({
   mode,
   license,
@@ -62,14 +77,47 @@ export function LicenseFormModal({
   onClose: () => void;
   onSaved: (license: License) => void;
 }) {
+  // ─── edit 모드 프리필 ────────────────────────────────────────
+  // `services` 테이블에는 purpose/start_date/memo/payment_method/card_holder_id/plan_name/website_url
+  // 컬럼이 실제로 존재하지 않고 description / assignee_id / plan / url 등에 저장된다.
+  // 폼이 빈값으로 열리면 저장 시 description 이 재생성되며 기존 데이터가 사라지므로,
+  // 모든 입력 필드는 다음 우선순위로 폴백 체인 적용:
+  //   ① 가상 필드(license.purpose 등) — 신규 데이터 / 외부 채움 호환
+  //   ② description 의 동일 키 라인 — buildServiceDescription 으로 저장된 케이스
+  //   ③ 실제 services 컬럼(plan / url / assignee_id) — 신규 컬럼 직접 사용 케이스
+  const parsedPurpose = parseDescField(license?.description, "사용목적");
+  const parsedStartDate = parseDescField(license?.description, "시작일");
+  const parsedPaymentMethod = parseDescField(license?.description, "결제방법");
+  const parsedMemo = parseDescField(license?.description, "메모");
+
+  const initialPaymentMethod: PaymentMethod = isPaymentMethod(license?.payment_method)
+    ? license!.payment_method!
+    : isPaymentMethod(parsedPaymentMethod)
+      ? parsedPaymentMethod
+      : "법인카드";
+
   const [name, setName] = useState(license?.name ?? "");
-  const [planName, setPlanName] = useState(license?.plan_name ?? "");
+  const [planName, setPlanName] = useState(
+    (license?.plan_name && license.plan_name.trim()) ||
+      (license?.plan && license.plan.trim()) ||
+      ""
+  );
   const [category, setCategory] = useState(license?.category ?? "");
   const [currency, setCurrency] = useState(license?.currency ?? "KRW");
-  const [cost, setCost] = useState(license?.cost != null ? String(license.cost) : "");
+  const [cost, setCost] = useState(
+    license?.cost != null && license.cost > 0
+      ? String(license.cost)
+      : license?.cost_monthly != null && Number(license.cost_monthly) > 0
+        ? String(license.cost_monthly)
+        : ""
+  );
   const [contractType, setContractType] = useState<ContractType>(license?.contract_type ?? "월 구독");
   const [startDate, setStartDate] = useState(
-    license?.start_date ? license.start_date.slice(0, 10) : ""
+    license?.start_date
+      ? license.start_date.slice(0, 10)
+      : parsedStartDate
+        ? parsedStartDate.slice(0, 10)
+        : ""
   );
   const [paymentDay, setPaymentDay] = useState(
     license?.payment_day != null ? String(license.payment_day) : ""
@@ -77,15 +125,23 @@ export function LicenseFormModal({
   const [paymentMonth, setPaymentMonth] = useState(
     license?.payment_month != null ? String(license.payment_month) : ""
   );
-  const [purpose, setPurpose] = useState(license?.purpose ?? "");
+  const [purpose, setPurpose] = useState(
+    (license?.purpose && license.purpose.trim()) || parsedPurpose || ""
+  );
   const [status, setStatus] = useState<LicenseStatus>(license?.status === "비활성" ? "비활성" : "활성");
   const [licenseCount, setLicenseCount] = useState(
     license?.license_count != null ? String(license.license_count) : ""
   );
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(license?.payment_method ?? "법인카드");
-  const [cardHolderId, setCardHolderId] = useState(license?.card_holder_id ?? "");
-  const [websiteUrl, setWebsiteUrl] = useState(license?.website_url ?? "");
-  const [memo, setMemo] = useState(license?.memo ?? "");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialPaymentMethod);
+  const [cardHolderId, setCardHolderId] = useState(
+    license?.card_holder_id ?? license?.assignee_id ?? ""
+  );
+  const [websiteUrl, setWebsiteUrl] = useState(
+    (license?.website_url && license.website_url.trim()) || license?.url || ""
+  );
+  const [memo, setMemo] = useState(
+    (license?.memo && license.memo.trim()) || parsedMemo || ""
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -180,7 +236,9 @@ export function LicenseFormModal({
         paymentMethod,
         startDate
       }),
-      is_hub_card: false
+      is_hub_card: false,
+      // 트리거가 없으므로 update 시 명시적으로 갱신 (insert 시는 default now() 가 적용).
+      updated_at: new Date().toISOString()
     };
 
     setLoading(true);
