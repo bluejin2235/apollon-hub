@@ -19,7 +19,12 @@ export default function LicensesMemberDetailPage() {
     const run = async () => {
       const [{ data: p }, { data: l }] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", profileId).maybeSingle(),
-        supabase.from("services").select("*").eq("assignee_id", profileId).order("name", { ascending: true })
+        supabase
+          .from("services")
+          .select("*")
+          .eq("assignee_id", profileId)
+          .eq("is_hub_card", false)
+          .order("name", { ascending: true })
       ]);
       setProfile((p ?? null) as Profile | null);
       setLicenses((l ?? []) as License[]);

@@ -17,7 +17,12 @@ export default function LicenseDetailPage() {
   useEffect(() => {
     if (!id) return;
     const run = async () => {
-      const { data: row } = await supabase.from("services").select("*").eq("id", id).maybeSingle();
+      const { data: row } = await supabase
+        .from("services")
+        .select("*")
+        .eq("id", id)
+        .eq("is_hub_card", false)
+        .maybeSingle();
       const lic = (row ?? null) as License | null;
       setLicense(lic);
       if (lic?.assignee_id) {

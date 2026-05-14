@@ -11,7 +11,11 @@ export default function LicensesCostsPage() {
 
   useEffect(() => {
     const run = async () => {
-      const { data } = await supabase.from("services").select("*").order("category", { ascending: true });
+      const { data } = await supabase
+        .from("services")
+        .select("*")
+        .eq("is_hub_card", false)
+        .order("category", { ascending: true });
       setLicenses((data ?? []) as License[]);
       setLoading(false);
     };

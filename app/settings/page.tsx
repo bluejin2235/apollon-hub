@@ -3,20 +3,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
+import { ServiceManagementTab } from "@/components/settings/service-management-tab";
 import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/team-member-edit-modal";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
-type TabKey = "profile" | "password" | "team";
+type TabKey = "profile" | "password" | "team" | "services";
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
-
-const tabs: Array<{ key: TabKey; label: string }> = [
-  { key: "profile", label: "프로필" },
-  { key: "password", label: "비밀번호" },
-  { key: "team", label: "팀원 관리" }
-];
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
 export default function SettingsPage() {
@@ -50,6 +45,19 @@ export default function SettingsPage() {
   const [invitedTemporaryPassword, setInvitedTemporaryPassword] = useState("");
 
   const canManageTeam = profileRole === "슈퍼관리자";
+  const canManageServices = profileRole === "슈퍼관리자";
+
+  const tabs = useMemo<Array<{ key: TabKey; label: string }>>(() => {
+    const base: Array<{ key: TabKey; label: string }> = [
+      { key: "profile", label: "프로필" },
+      { key: "password", label: "비밀번호" },
+      { key: "team", label: "팀원 관리" }
+    ];
+    if (canManageServices) {
+      base.push({ key: "services", label: "서비스 관리" });
+    }
+    return base;
+  }, [canManageServices]);
 
   useEffect(() => {
     if (status !== "ready" || !sessionProfile) {
@@ -450,6 +458,7 @@ export default function SettingsPage() {
 
             {loadingTeam ? <p className="text-slate-600">팀원 목록을 불러오는 중...</p> : null}
 
+            {/* 팀원 카드 목록 시작 */}
             {filteredMembers.map((member) => (
               <article
                 key={member.id}
@@ -482,6 +491,10 @@ export default function SettingsPage() {
               </article>
             ))}
           </section>
+        ) : null}
+
+        {activeTab === "services" ? (
+          <ServiceManagementTab canManage={canManageServices} />
         ) : null}
       </div>
 

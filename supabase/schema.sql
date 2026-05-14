@@ -557,3 +557,53 @@ alter default privileges in schema public
   grant select, insert, update, delete on tables to authenticated, service_role;
 alter default privileges in schema public
   grant usage, select on sequences to authenticated, service_role;
+
+-- ═════════════════════════════════════════════════════════════
+-- Hub 서비스 카드 관리 (services 테이블 확장)
+-- ─────────────────────────────────────────────────────────────
+-- 기존 services 테이블은 라이선스 관리(/licenses)의 read 측에서 사용 중.
+-- 같은 테이블에 hub 카드 행도 보관하기 위해 디스크리미네이터 `is_hub_card` 를 추가.
+--   - 라이선스 행: is_hub_card = false (기본값), 모든 라이선스 컬럼 사용
+--   - 허브 카드 행: is_hub_card = true, plan/category/cost_type 등 라이선스 컬럼은 null
+-- ═════════════════════════════════════════════════════════════
+
+-- 허브 카드용 컬럼 추가
+alter table public.services add column if not exists description text;
+alter table public.services add column if not exists icon text;
+alter table public.services add column if not exists url text;
+alter table public.services add column if not exists access_level text not null default '전체';
+alter table public.services add column if not exists order_index integer not null default 0;
+alter table public.services add column if not exists is_hub_card boolean not null default false;
+
+-- access_level 값 제약
+alter table public.services drop constraint if exists services_access_level_check;
+alter table public.services
+  add constraint services_access_level_check
+  check (access_level in ('전체', '슈퍼관리자', '중간관리자'));
+
+-- 라이선스 컬럼들은 허브 카드 행에서는 의미 없으므로 nullable 화
+alter table public.services alter column plan drop not null;
+alter table public.services alter column category drop not null;
+alter table public.services alter column cost_type drop not null;
+
+-- 인덱스
+create index if not exists idx_services_is_hub_card on public.services (is_hub_card);
+create index if not exists idx_services_order_index on public.services (is_hub_card, order_index);
+
+-- Seed: 라이선스매니저, 아슐랭 (멱등)
+delete from public.services
+  where is_hub_card = true
+    and name in ('Apollon License Manager', '아슐랭');
+
+insert into public.services (
+  name, description, icon, url, status, access_level, order_index, is_hub_card,
+  plan, category, cost_type, cost_monthly, license_count
+) values
+  ('Apollon License Manager',
+   '라이선스 발급, 관리, 상태 조회를 위한 통합 관리 서비스',
+   '🔑', '/licenses', '활성', '전체', 0, true,
+   null, null, null, 0, 0),
+  ('아슐랭',
+   '아폴론 미식가들이 직접 뽑은 아슐랭 가이드',
+   '🍱', '/restaurants', '활성', '전체', 1, true,
+   null, null, null, 0, 0);

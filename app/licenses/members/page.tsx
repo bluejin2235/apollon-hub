@@ -13,7 +13,7 @@ export default function LicensesMembersPage() {
   useEffect(() => {
     const run = async () => {
       const [l, p] = await Promise.all([
-        supabase.from("services").select("*"),
+        supabase.from("services").select("*").eq("is_hub_card", false),
         supabase.from("profiles").select("id, email, name, department, role, status, created_at").order("name", { ascending: true })
       ]);
       setLicenses((l.data ?? []) as License[]);
