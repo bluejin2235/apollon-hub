@@ -30,7 +30,8 @@ export function LicensesShell({ children }: { children: ReactNode }) {
           <LicenseSidebarNav pathname={pathname} />
         </aside>
 
-        <div className="min-w-0 flex-1 py-8">
+        {/* 콘텐츠: 사이드바 border-r 와 카드 좌측이 맞붙어 보이지 않도록 좌우 여백 부여. */}
+        <div className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">
           <LicenseMobileNav pathname={pathname} />
           {children}
         </div>
