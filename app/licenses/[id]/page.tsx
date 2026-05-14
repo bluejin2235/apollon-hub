@@ -125,15 +125,17 @@ export default function LicenseDetailPage() {
   const [deleteErr, setDeleteErr] = useState("");
   const [userCount, setUserCount] = useState(0);
 
-  const reloadAssignee = useCallback(async (assigneeId: string | null) => {
-    if (!assigneeId) {
+  // 카드 소지자 = `card_holder_id` 우선, 없으면 `assignee_id` (LicenseFormModal 이 현재 assignee_id 에 저장 중).
+  const reloadCardHolder = useCallback(async (lic: License | null) => {
+    const holderId = lic?.card_holder_id ?? lic?.assignee_id ?? null;
+    if (!holderId) {
       setAssignee(null);
       return;
     }
     const { data } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", assigneeId)
+      .eq("id", holderId)
       .maybeSingle();
     setAssignee((data ?? null) as Profile | null);
   }, []);
@@ -149,11 +151,11 @@ export default function LicenseDetailPage() {
         .maybeSingle();
       const lic = (row ?? null) as License | null;
       setLicense(lic);
-      await reloadAssignee(lic?.assignee_id ?? null);
+      await reloadCardHolder(lic);
       setLoading(false);
     };
     void run();
-  }, [id, reloadAssignee]);
+  }, [id, reloadCardHolder]);
 
   useEffect(() => {
     const run = async () => {
@@ -437,16 +439,15 @@ export default function LicenseDetailPage() {
                 </div>
               ) : null}
 
-              {paymentMethodText || assignee ? (
+              {paymentMethodText ? (
                 <div className="sm:col-span-2">
                   <p className="text-xs text-slate-500">결제방법</p>
-                  <p className="mt-1 flex items-center gap-2 text-sm">
-                    {paymentMethodText ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                        {paymentMethodText}
-                      </span>
-                    ) : null}
-                    {assignee ? <span className="text-slate-500">({assignee.name})</span> : null}
+                  <p className="mt-1 text-sm">
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                      {paymentMethodText === "법인카드" && assignee?.name
+                        ? `${paymentMethodText} (${assignee.name})`
+                        : paymentMethodText}
+                    </span>
                   </p>
                 </div>
               ) : null}
@@ -583,7 +584,7 @@ export default function LicenseDetailPage() {
           onClose={() => setEditOpen(false)}
           onSaved={(row) => {
             setLicense(row);
-            void reloadAssignee(row.assignee_id ?? null);
+            void reloadCardHolder(row);
             setEditOpen(false);
           }}
         />
