@@ -24,10 +24,8 @@ type CommentRow = {
 type Props = {
   open: boolean;
   post: Post;
-  /** Supabase auth user id */
+  /** Supabase auth user id (== `profiles.id`, `ashuleng_posts.author_id` 와 비교용) */
   authUserId: string | null;
-  /** `profiles.id` (이메일로 조회) */
-  authProfileId: string | null;
   onClose: () => void;
   onRefresh: () => Promise<void> | void;
   onRequestEdit: () => void;
@@ -50,7 +48,6 @@ export function AshulengBoardDetailModal({
   open,
   post,
   authUserId,
-  authProfileId,
   onClose,
   onRefresh,
   onRequestEdit,
@@ -114,11 +111,10 @@ export function AshulengBoardDetailModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const isPostAuthor =
-    (authUserId != null && post.author_id === authUserId) || (authProfileId != null && post.author_id === authProfileId);
+  const isPostAuthor = authUserId != null && post.author_id === authUserId;
 
   const submitComment = useCallback(async () => {
-    if (!authProfileId) {
+    if (!authUserId) {
       setMsg("로그인이 필요합니다.");
       return;
     }
@@ -131,7 +127,7 @@ export function AshulengBoardDetailModal({
     setMsg("");
     const { error } = await supabase.from("ashuleng_comments").insert({
       post_id: post.id,
-      author_id: authProfileId,
+      author_id: authUserId,
       content
     });
     setSaving(false);
@@ -143,18 +139,18 @@ export function AshulengBoardDetailModal({
     setNewComment("");
     await loadComments();
     await onRefresh();
-  }, [authProfileId, loadComments, newComment, onRefresh, post.id]);
+  }, [authUserId, loadComments, newComment, onRefresh, post.id]);
 
   const deleteComment = useCallback(
     async (commentId: string) => {
-      if (!authProfileId) return;
+      if (!authUserId) return;
       const ok = window.confirm("댓글을 삭제할까요?");
       if (!ok) return;
       const { error } = await supabase
         .from("ashuleng_comments")
         .delete()
         .eq("id", commentId)
-        .eq("author_id", authProfileId);
+        .eq("author_id", authUserId);
       if (error) {
         window.alert(`댓글 삭제 실패: ${error.message}`);
         return;
@@ -162,7 +158,7 @@ export function AshulengBoardDetailModal({
       await loadComments();
       await onRefresh();
     },
-    [authProfileId, loadComments, onRefresh]
+    [authUserId, loadComments, onRefresh]
   );
 
   if (!open) return null;
@@ -214,9 +210,7 @@ export function AshulengBoardDetailModal({
                 <p className="text-sm text-slate-500">첫 댓글을 남겨 보세요.</p>
               ) : (
                 comments.map((c) => {
-                  const mine =
-                    (authUserId != null && c.author_id === authUserId) ||
-                    (authProfileId != null && c.author_id === authProfileId);
+                  const mine = authUserId != null && c.author_id === authUserId;
                   return (
                     <div key={c.id} className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2.5">
                       <div className="flex items-center justify-between gap-2">

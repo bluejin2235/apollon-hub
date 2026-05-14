@@ -42,7 +42,7 @@ export default function LoginPage() {
         password
       });
 
-      if (signInError || !signInData.user?.email) {
+      if (signInError || !signInData.user?.id) {
         console.error("Supabase signInWithPassword failed", {
           error: signInError,
           email
@@ -53,20 +53,32 @@ export default function LoginPage() {
         return;
       }
 
-      // 로그인 성공 즉시 profiles 정보를 조회합니다.
-      const { error: profileError } = await supabase
+      // auth.users.id === profiles.id 보장. id 기반 조회.
+      const { data: profileRow, error: profileError } = await supabase
         .from("profiles")
         .select("id, email, name, department, role, status")
-        .eq("email", signInData.user.email)
-        .single();
+        .eq("id", signInData.user.id)
+        .maybeSingle();
 
       if (profileError) {
         console.error("Supabase profiles fetch failed after sign-in", {
           error: profileError,
-          userEmail: signInData.user.email
+          userId: signInData.user.id
         });
         await supabase.auth.signOut();
         setErrorMessage(`프로필 조회 실패: ${profileError.message}`);
+        return;
+      }
+
+      if (!profileRow) {
+        console.error("Supabase profiles 0 rows after sign-in", {
+          userId: signInData.user.id,
+          userEmail: signInData.user.email
+        });
+        await supabase.auth.signOut();
+        setErrorMessage(
+          "프로필 정보를 찾을 수 없습니다. 관리자에게 문의해 주세요."
+        );
         return;
       }
 

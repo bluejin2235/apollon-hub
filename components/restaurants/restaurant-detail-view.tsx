@@ -199,12 +199,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
     const {
       data: { user }
     } = await supabase.auth.getUser();
-    let pid: string | null = null;
-    if (user?.email) {
-      const { data: prof } = await supabase.from("profiles").select("id").eq("email", user.email).maybeSingle();
-      pid = prof?.id ?? null;
-    }
-    setMyProfileId(pid);
+    // auth.users.id === profiles.id 보장: user.id 를 그대로 profiles.id 로 사용.
+    setMyProfileId(user?.id ?? null);
 
     const [{ data: r }, { data: rv }, { data: p }] = await Promise.all([
       supabase.from("restaurants").select("*").eq("id", id).maybeSingle(),

@@ -198,15 +198,11 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
       const {
         data: { user }
       } = await supabase.auth.getUser();
-      if (!user?.email) {
+      if (!user?.id) {
         setMsg("로그인이 필요합니다.");
         return;
       }
-      const { data: prof } = await supabase.from("profiles").select("id").eq("email", user.email).single();
-      if (!prof?.id) {
-        setMsg("프로필을 찾을 수 없습니다.");
-        return;
-      }
+      // auth.users.id === profiles.id 보장: user.id 를 그대로 profiles.id (registered_by) 로 사용.
       const { name: regName, address: regAddress } = registerNameAndAddress(pick);
       const { menu, price_range } = formatMenuAndPriceRange(menuRows);
       const catRow = categoryFieldsForDb(categories);
@@ -221,12 +217,19 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
         price_range,
         description: null,
         is_entertainment: false,
-        registered_by: prof.id,
+        registered_by: user.id,
         food_type: foodTypes.length ? foodTypes : [],
         atmosphere_tags: tags.length ? tags : []
       });
       if (error) {
-        console.error(error);
+        console.error(
+          "등록 에러 상세:",
+          JSON.stringify(error),
+          error?.message,
+          error?.code,
+          error?.details,
+          error?.hint
+        );
         setMsg(`저장 실패: ${error.message}`);
         return;
       }
@@ -234,7 +237,7 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
       onClose();
       reset();
     } catch (err) {
-      console.error(err);
+      console.error("등록 예외 상세:", JSON.stringify(err), err);
       setMsg("저장 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);

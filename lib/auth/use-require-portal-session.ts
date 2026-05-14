@@ -64,17 +64,18 @@ export function useRequirePortalSession(options: UseRequirePortalSessionOptions 
               return;
             }
 
-            const email = session?.user?.email;
-            if (sessionError || !email) {
+            const userId = session?.user?.id;
+            if (sessionError || !userId) {
               routerRef.current.replace("/");
               return;
             }
 
+            // auth.users.id === profiles.id 보장. id 기반 조회.
             const { data, error } = await supabase
               .from("profiles")
               .select(profileSelect)
-              .eq("email", email)
-              .single();
+              .eq("id", userId)
+              .maybeSingle();
 
             if (cancelled) {
               return;

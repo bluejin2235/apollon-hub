@@ -30,13 +30,8 @@ function formatPostTime(iso: string): string {
   });
 }
 
-function isCurrentUserPostAuthor(authorId: string, authUserId: string | null, authProfileId: string | null): boolean {
-  return (authUserId != null && authorId === authUserId) || (authProfileId != null && authorId === authProfileId);
-}
-
 export function AshulengBoardSection() {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
-  const [authProfileId, setAuthProfileId] = useState<string | null>(null);
   const [posts, setPosts] = useState<PostRow[]>([]);
   const [total, setTotal] = useState(0);
   const [boardPage, setBoardPage] = useState(1);
@@ -54,15 +49,9 @@ export function AshulengBoardSection() {
       const {
         data: { session }
       } = await supabase.auth.getSession();
-      const uid = session?.user?.id ?? null;
-      const email = session?.user?.email;
-      if (!cancelled) setAuthUserId(uid);
-      if (!email) {
-        if (!cancelled) setAuthProfileId(null);
-        return;
-      }
-      const { data: prof } = await supabase.from("profiles").select("id").eq("email", email).maybeSingle();
-      if (!cancelled) setAuthProfileId(prof?.id ?? null);
+      if (cancelled) return;
+      // auth.users.id === profiles.id 보장: session.user.id 를 그대로 사용 (profiles 조회 생략)
+      setAuthUserId(session?.user?.id ?? null);
     })();
     return () => {
       cancelled = true;
@@ -138,7 +127,7 @@ export function AshulengBoardSection() {
     setBoardPage((p) => Math.min(Math.max(1, p), totalPages));
   }, [totalPages]);
 
-  const canWrite = Boolean(authProfileId);
+  const canWrite = Boolean(authUserId);
 
   const emptyHint = useMemo(() => {
     if (loading || loadError) return null;
@@ -226,7 +215,7 @@ export function AshulengBoardSection() {
                 </tr>
               ) : (
                 posts.map((row) => {
-                  const mine = isCurrentUserPostAuthor(row.author_id, authUserId, authProfileId);
+                  const mine = authUserId != null && row.author_id === authUserId;
                   return (
                     <tr key={row.id} className="hover:bg-slate-50/80">
                       <td className="max-w-0 px-3 py-3 sm:px-4">
@@ -323,10 +312,10 @@ export function AshulengBoardSection() {
         ) : null}
       </section>
 
-      {authProfileId ? (
+      {authUserId ? (
         <AshulengPostWriteModal
           open={writeOpen}
-          authorProfileId={authProfileId}
+          authorId={authUserId}
           editingPost={
             editingPost
               ? { id: editingPost.id, title: editingPost.title, content: editingPost.content, author_id: editingPost.author_id }
@@ -348,7 +337,6 @@ export function AshulengBoardSection() {
           open={Boolean(detailPost)}
           post={detailPost}
           authUserId={authUserId}
-          authProfileId={authProfileId}
           onClose={() => setDetailPost(null)}
           onRefresh={refreshList}
           onRequestEdit={() => {

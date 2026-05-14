@@ -5,14 +5,14 @@ import { supabase } from "@/lib/supabase/client";
 
 type Props = {
   open: boolean;
-  /** `profiles.id` — ashuleng_posts.author_id FK 대상 */
-  authorProfileId: string;
+  /** `ashuleng_posts.author_id` (== auth.users.id == profiles.id) */
+  authorId: string;
   editingPost?: { id: string; title: string; content: string; author_id: string } | null;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 };
 
-export function AshulengPostWriteModal({ open, authorProfileId, editingPost = null, onClose, onSaved }: Props) {
+export function AshulengPostWriteModal({ open, authorId, editingPost = null, onClose, onSaved }: Props) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
@@ -58,7 +58,7 @@ export function AshulengPostWriteModal({ open, authorProfileId, editingPost = nu
             .eq("id", editingPost!.id)
             .eq("author_id", editingPost!.author_id)
         ).error
-      : (await supabase.from("ashuleng_posts").insert({ title: t, content: c, author_id: authorProfileId })).error;
+      : (await supabase.from("ashuleng_posts").insert({ title: t, content: c, author_id: authorId })).error;
 
     setSaving(false);
     if (error) {
@@ -69,7 +69,7 @@ export function AshulengPostWriteModal({ open, authorProfileId, editingPost = nu
 
     await onSaved();
     onClose();
-  }, [authorProfileId, content, editingPost, isEdit, onClose, onSaved, title]);
+  }, [authorId, content, editingPost, isEdit, onClose, onSaved, title]);
 
   const submitLabel = useMemo(() => (saving ? (isEdit ? "수정 중…" : "등록 중…") : isEdit ? "수정" : "등록"), [isEdit, saving]);
 
