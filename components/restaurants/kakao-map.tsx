@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadKakaoMapsSdk } from "@/lib/kakao/load-maps-sdk";
 import type { Restaurant } from "@/lib/restaurants/types";
 import { categoryMarkerColor } from "@/lib/restaurants/types";
@@ -133,11 +133,21 @@ export function KakaoMapPanel({
   const onMapBackgroundClickRef = useRef(onMapBackgroundClick);
   onMapBackgroundClickRef.current = onMapBackgroundClick;
 
+  const [mapReady, setMapReady] = useState(false);
+
+  /**
+   * 마커들이 모두 보이도록 지도 범위/센터를 조정한다.
+   * - 0개: 성수동 폴백 (level 5)
+   * - 1개: 해당 위치 setCenter + level 3
+   * - 2개 이상: LatLngBounds.extend → map.setBounds (자동 줌/센터)
+   */
   const fitBounds = useCallback((list: Restaurant[]) => {
     const M = maps();
     const map = mapInst.current;
     if (!map) return;
-    const withCoords = list.filter((r) => r.lat != null && r.lng != null && !Number.isNaN(r.lat) && !Number.isNaN(r.lng));
+    const withCoords = list.filter(
+      (r) => r.lat != null && r.lng != null && !Number.isNaN(r.lat) && !Number.isNaN(r.lng)
+    );
     if (withCoords.length === 0) {
       map.setCenter(new M.LatLng(SEONGSU.lat, SEONGSU.lng));
       map.setLevel(5);
@@ -146,7 +156,7 @@ export function KakaoMapPanel({
     if (withCoords.length === 1) {
       const r = withCoords[0];
       map.setCenter(new M.LatLng(r.lat as number, r.lng as number));
-      map.setLevel(4);
+      map.setLevel(3);
       return;
     }
     const bounds = new M.LatLngBounds();
@@ -186,6 +196,9 @@ export function KakaoMapPanel({
         M.event.addListener(map, "click", onMapClick);
 
         window.setTimeout(() => map.relayout(), 120);
+        // 비동기 SDK 로드가 끝난 뒤에야 mapInst.current 가 채워지기 때문에,
+        // 별도 state 로 “맵 준비” 신호를 보내 마커/fitBounds effect 가 재실행되도록 한다.
+        setMapReady(true);
       } catch (e) {
         console.error(e);
       }
@@ -210,10 +223,12 @@ export function KakaoMapPanel({
       snap.forEach((m) => m.setMap(null));
       snap.clear();
       mapInst.current = null;
+      setMapReady(false);
     };
   }, []);
 
   useEffect(() => {
+    if (!mapReady) return;
     const map = mapInst.current;
     if (!map) return;
     const M = maps();
@@ -232,8 +247,16 @@ export function KakaoMapPanel({
       markers.current.set(r.id, marker);
     });
 
-    fitBounds(restaurants);
-  }, [restaurants, fitBounds, onMarkerClick]);
+    // 컨테이너가 막 마운트된 직후엔 사이즈가 0 일 수 있어 setBounds 가 잘못 계산된다.
+    // relayout → fitBounds 를 즉시 + 150ms 후 1회 더 적용해 레이아웃이 정착한 뒤에도 보정.
+    const applyFit = () => {
+      map.relayout();
+      fitBounds(restaurants);
+    };
+    applyFit();
+    const t = window.setTimeout(applyFit, 150);
+    return () => window.clearTimeout(t);
+  }, [restaurants, fitBounds, onMarkerClick, mapReady]);
 
   useEffect(() => {
     const map = mapInst.current;
