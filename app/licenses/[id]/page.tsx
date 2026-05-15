@@ -274,8 +274,10 @@ export default function LicenseDetailPage() {
     const monthlyTotalOrig = isPerpetual
       ? perpetualPerUnitOrig
       : isYearly
-        ? rawCost / 12
-        : rawCost;
+        ? // 년 구독: DB `cost`/`rawCost` = 좌석당 연간 금액 → 전체 월 = (연/12) × 수량
+          (rawCost / 12) * licenseCount
+        : // 월 구독: rawCost = 개당 월 비용 → 전체 월 = 개당 × 수량
+          rawCost * licenseCount;
     const monthlyTotalKrw = isPerpetual
       ? perpetualPerUnitKrw
       : isKrw
@@ -286,8 +288,10 @@ export default function LicenseDetailPage() {
     const annualTotalOrig = isPerpetual
       ? perpetualTotalOrig
       : isYearly
-        ? rawCost
-        : rawCost * 12;
+        ? // 좌석당 연간 × 수량
+          rawCost * licenseCount
+        : // 월 구독: 전체 월 × 12
+          monthlyTotalOrig * 12;
     const annualTotalKrw = isPerpetual
       ? perpetualTotalKrw
       : isKrw
@@ -295,7 +299,12 @@ export default function LicenseDetailPage() {
         : fxRate != null
           ? annualTotalOrig * fxRate
           : null;
-    const perUnitMonthlyOrig = isPerpetual ? perpetualPerUnitOrig : monthlyTotalOrig / licenseCount;
+    const perUnitMonthlyOrig = isPerpetual
+      ? perpetualPerUnitOrig
+      : isYearly
+        ? rawCost / 12
+        : // 월 구독: 개당 월 = rawCost
+          rawCost;
     const perUnitMonthlyKrw = isPerpetual
       ? perpetualPerUnitKrw
       : monthlyTotalKrw != null
@@ -489,7 +498,7 @@ export default function LicenseDetailPage() {
                         </p>
                       ) : null}
                     </>
-                  ) : (
+                  ) : cost.isYearly ? (
                     <>
                       <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
                         {cost.monthlyTotalKrw != null
@@ -508,6 +517,25 @@ export default function LicenseDetailPage() {
                             </p>
                           ) : null}
                         </>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                        {cost.monthlyTotalKrw != null
+                          ? formatCurrency(cost.monthlyTotalKrw)
+                          : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
+                      </p>
+                      <p className="mt-1 text-xs tabular-nums text-slate-500">
+                        {cost.isKrw
+                          ? `${formatCurrency(cost.perUnitMonthlyOrig)}/월 × ${cost.licenseCount}개`
+                          : `${formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × ${cost.licenseCount}개`}
+                      </p>
+                      {!cost.isKrw && cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
+                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                          (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
+                          {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                        </p>
                       ) : null}
                     </>
                   )}
@@ -732,9 +760,15 @@ export default function LicenseDetailPage() {
                 </>
               ) : (
                 <>
-                  {!cost.isKrw && cost.perUnitMonthlyKrw != null ? (
+                  {!cost.isPerpetual && cost.perUnitMonthlyKrw != null ? (
                     <p className="mt-2 text-xs tabular-nums text-slate-500">
                       {formatCurrency(cost.perUnitMonthlyKrw)} × {cost.licenseCount}개 × 12개월
+                      {cost.annualTotalKrw != null ? (
+                        <span className="text-slate-600">
+                          {" "}
+                          = {formatCurrency(cost.annualTotalKrw)}
+                        </span>
+                      ) : null}
                     </p>
                   ) : null}
                   {!cost.isKrw ? (

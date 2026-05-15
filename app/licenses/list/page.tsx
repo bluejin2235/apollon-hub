@@ -309,7 +309,7 @@ export default function LicensesListPage() {
           조건에 맞는 라이선스가 없습니다.
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((row) => {
             const inactive = row.status === "비활성";
             const style = inactive ? INACTIVE_STYLE : categoryStyle(row.category);
@@ -356,7 +356,7 @@ export default function LicensesListPage() {
               <li key={row.id}>
                 <Link
                   href={`/licenses/${row.id}`}
-                  className={`group flex h-full flex-col rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                  className={`group flex h-full flex-col rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                     style.cardBg
                   } ${style.cardBorder} ${inactive ? "opacity-60" : ""}`}
                 >
@@ -369,7 +369,7 @@ export default function LicensesListPage() {
                       {firstInitial(row.name)}
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="truncate text-base font-bold text-slate-900 group-hover:text-blue-700">
+                      <p className="truncate text-sm font-semibold text-slate-900 group-hover:text-blue-700">
                         {row.name}
                       </p>
                       {planSecondary ? (
@@ -380,11 +380,11 @@ export default function LicensesListPage() {
 
                   {/* 카테고리 + 상태 */}
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-medium text-slate-600">
+                    <span className="truncate text-[11px] font-medium text-slate-600">
                       {(row.category && row.category.trim()) || "카테고리 미분류"}
                     </span>
                     <span
-                      className={`shrink-0 text-xs font-semibold ${
+                      className={`shrink-0 text-[11px] font-semibold ${
                         inactive ? "text-slate-500" : "text-emerald-700"
                       }`}
                     >
@@ -396,26 +396,26 @@ export default function LicensesListPage() {
                   <div className="mt-3 flex items-end justify-between gap-3">
                     <div className="min-w-0">
                       {krwAmount != null ? (
-                        <p className="text-2xl font-bold tabular-nums text-slate-900">
+                        <p className="text-xl font-bold tabular-nums text-slate-900">
                           {formatCurrency(krwAmount)}
                           {suffix ? (
-                            <span className="ml-0.5 text-base font-semibold text-slate-500">
+                            <span className="ml-0.5 text-sm font-semibold text-slate-500">
                               {suffix}
                             </span>
                           ) : null}
                         </p>
                       ) : (
-                        <p className="text-2xl font-bold tabular-nums text-slate-900">
+                        <p className="text-xl font-bold tabular-nums text-slate-900">
                           {formatOriginalCurrency(rawCost, currency)}
                           {suffix ? (
-                            <span className="ml-0.5 text-base font-semibold text-slate-500">
+                            <span className="ml-0.5 text-sm font-semibold text-slate-500">
                               {suffix}
                             </span>
                           ) : null}
                         </p>
                       )}
                       {hasForeign && krwAmount != null ? (
-                        <p className="mt-0.5 text-xs tabular-nums text-slate-500">
+                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
                           {formatOriginalCurrency(rawCost, currency)}
                           {suffix}
                         </p>
@@ -430,19 +430,19 @@ export default function LicensesListPage() {
 
                   {/* 메타 */}
                   <div className="mt-auto pt-4">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-700 tabular-nums">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-700 tabular-nums">
                         {row.license_count > 0 ? `${row.license_count}개 라이선스` : "무제한"}
                       </span>
-                      <span className="truncate font-medium text-slate-700">
+                      <span className="truncate text-xs font-medium text-slate-700">
                         {assignee?.name ?? "—"}
                       </span>
                     </div>
                     {nextPaymentLabel ? (
-                      <div className="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2 text-xs">
+                      <div className="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2 text-[11px]">
                         <span className="text-slate-500">다음 결제일</span>
                         <span
-                          className={`font-medium tabular-nums ${
+                          className={`text-[11px] font-medium tabular-nums ${
                             nextPaymentDiff != null && nextPaymentDiff <= 7
                               ? "text-amber-600"
                               : "text-slate-700"
