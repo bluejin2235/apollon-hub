@@ -10,7 +10,7 @@ import {
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeLicenseNextRenewal, formatCurrency } from "@/lib/licenses/calc";
+import { computeLicenseNextRenewal, formatCurrency, resolveUiContractType } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -93,6 +93,30 @@ function parseDescField(description: string | null | undefined, key: string): st
   return m ? m[1].trim() : null;
 }
 
+/** `메모:` 줄부터 다음 `키:` 형태 메타 줄 전까지(여러 줄) 추출 */
+function parseDescMemoBlock(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const lines = description.split("\n");
+  const nextFieldRe = /^(사용목적|결제방법|메모|시작일):\s/;
+  const start = lines.findIndex((l) => l.startsWith("메모:"));
+  if (start < 0) return null;
+  const first = lines[start].replace(/^메모:\s*/, "");
+  const parts: string[] = [first];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (nextFieldRe.test(lines[i])) break;
+    parts.push(lines[i]);
+  }
+  const joined = parts.join("\n").trim();
+  return joined || null;
+}
+
+function hrefForWebsiteUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "#";
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t}`;
+}
+
 function formatDateKorean(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso);
@@ -143,6 +167,7 @@ export default function LicenseDetailPage() {
   useEffect(() => {
     if (!id) return;
     const run = async () => {
+      // `select("*")` — services 전 컬럼(계약·결제·날짜·url·description 등). RLS로 허용된 열만 내려옴.
       const { data: row } = await supabase
         .from("services")
         .select("*")
@@ -204,8 +229,9 @@ export default function LicenseDetailPage() {
           : null;
     /** 월/년 구독: 비용 분배·환율 보조용 좌석 수 (최소 1) */
     const licenseCount = Math.max(1, license.license_count || 1);
-    const isYearly = license.contract_type === "년 구독";
-    const isPerpetual = license.contract_type === "영구 라이선스";
+    const uiContract = resolveUiContractType(license);
+    const isYearly = uiContract === "년 구독";
+    const isPerpetual = uiContract === "영구 라이선스";
 
     // 영구 라이선스: 기본은 `cost` = 개당 1회 구매가, 총액 = 개당 × license_count.
     // 예외: 폼/수동 입력으로 `cost` 에 총액, `cost_monthly` 에 개당이 들어간 경우
@@ -346,9 +372,14 @@ export default function LicenseDetailPage() {
   const endDateLabel = formatDateKorean(endDateText);
   const purchaseDateText = license.purchase_date ?? null;
   const purchaseDateLabel = formatDateKorean(purchaseDateText);
-  const isYearlyContract = license.contract_type === "년 구독";
+  const uiContractType = resolveUiContractType(license);
+  const isYearlyContract = uiContractType === "년 구독";
   const paymentMethodText =
     parseDescField(license.description, "결제방법") ?? license.payment_method ?? null;
+  const websiteUrlRaw =
+    (license.url && license.url.trim()) || (license.website_url && license.website_url.trim()) || "";
+  const memoText =
+    (license.memo && license.memo.trim()) || parseDescMemoBlock(license.description) || "";
   const purposeText =
     (license.purpose && license.purpose.trim()) ||
     parseDescField(license.description, "사용목적") ||
@@ -364,6 +395,9 @@ export default function LicenseDetailPage() {
     capacity > 0 && userCount > capacity
       ? Math.min(100, ((userCount - capacity) / capacity) * 100)
       : 0;
+
+  const hasPaymentRow = Boolean(nextPaymentLabel || paymentMethodText);
+  const hasUrlOrMemoFooter = Boolean(websiteUrlRaw || memoText);
 
   return (
     <div className="space-y-4">
@@ -426,164 +460,210 @@ export default function LicenseDetailPage() {
           {/* ① 서비스 정보 */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-base font-bold text-slate-900">서비스 정보</h2>
-            <div className="mt-4 grid gap-6 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-slate-500">
-                  {cost.isPerpetual ? "구매 비용" : "월간비용"}
-                </p>
-                {cost.isPerpetual ? (
-                  <>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                      {cost.perpetualTotalKrw != null
-                        ? formatCurrency(cost.perpetualTotalKrw)
-                        : formatOriginalCurrency(cost.perpetualTotalOrig, cost.currency)}
-                    </p>
-                    {cost.seatCount > 0 ? (
-                      <p className="mt-1 text-xs tabular-nums text-slate-500">
-                        {cost.isKrw
-                          ? `${formatCurrency(cost.perpetualPerUnitOrig)} × ${cost.seatCount}개`
-                          : `${formatOriginalCurrency(cost.perpetualPerUnitOrig, cost.currency)} × ${cost.seatCount}개`}
+            <div className="mt-4 min-w-0">
+              {/* 상단: 고정 2열 × 최대 3행 (긴 텍스트와 분리) */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-6">
+                {/* 행 1: 비용 | 계약 유형 */}
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">
+                    {cost.isPerpetual ? "구매 비용" : "월간비용"}
+                  </p>
+                  {cost.isPerpetual ? (
+                    <>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                        {cost.perpetualTotalKrw != null
+                          ? formatCurrency(cost.perpetualTotalKrw)
+                          : formatOriginalCurrency(cost.perpetualTotalOrig, cost.currency)}
                       </p>
-                    ) : null}
-                    {!cost.isKrw && cost.fxRateFormatted && cost.perpetualPerUnitKrw != null && cost.seatCount > 0 ? (
-                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
-                        (적용환율 {cost.fxRateFormatted}원기준 개당{" "}
-                        {Math.round(cost.perpetualPerUnitKrw).toLocaleString("ko-KR")}원 × {cost.seatCount}개)
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                      {cost.monthlyTotalKrw != null
-                        ? formatCurrency(cost.monthlyTotalKrw)
-                        : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
-                    </p>
-                    {!cost.isKrw ? (
-                      <>
+                      {cost.seatCount > 0 ? (
                         <p className="mt-1 text-xs tabular-nums text-slate-500">
-                          {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                          {cost.isKrw
+                            ? `${formatCurrency(cost.perpetualPerUnitOrig)} × ${cost.seatCount}개`
+                            : `${formatOriginalCurrency(cost.perpetualPerUnitOrig, cost.currency)} × ${cost.seatCount}개`}
                         </p>
-                        {cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
-                          <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
-                            (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
-                            {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                      ) : null}
+                      {!cost.isKrw && cost.fxRateFormatted && cost.perpetualPerUnitKrw != null && cost.seatCount > 0 ? (
+                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                          (적용환율 {cost.fxRateFormatted}원기준 개당{" "}
+                          {Math.round(cost.perpetualPerUnitKrw).toLocaleString("ko-KR")}원 × {cost.seatCount}개)
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                        {cost.monthlyTotalKrw != null
+                          ? formatCurrency(cost.monthlyTotalKrw)
+                          : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
+                      </p>
+                      {!cost.isKrw ? (
+                        <>
+                          <p className="mt-1 text-xs tabular-nums text-slate-500">
+                            {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
                           </p>
-                        ) : null}
-                      </>
-                    ) : null}
+                          {cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
+                            <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                              (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
+                              {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                            </p>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">계약 유형</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {uiContractType}
+                  </p>
+                </div>
+
+                {/* 행 2: 구매일·시작일·종료일(갱신) 묶음 | 상태 */}
+                <div className="min-w-0 space-y-4">
+                  {cost.isPerpetual && purchaseDateLabel ? (
+                    <div>
+                      <p className="text-xs text-slate-500">구매일</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                        <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {purchaseDateLabel}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {!cost.isPerpetual && isYearlyContract && startDateLabel ? (
+                    <div>
+                      <p className="text-xs text-slate-500">서비스 시작일</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                        <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {startDateLabel}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {!cost.isPerpetual && isYearlyContract && endDateLabel ? (
+                    <div>
+                      <p className="text-xs text-slate-500">라이선스 종료일 (갱신일)</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                        <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {endDateLabel}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {!cost.isPerpetual && !isYearlyContract && startDateLabel ? (
+                    <div>
+                      <p className="text-xs text-slate-500">서비스 시작일</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                        <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {startDateLabel}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">상태</p>
+                  <span
+                    className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge}`}
+                  >
+                    {license.status}
+                  </span>
+                </div>
+
+                {/* 행 3: 다음 결제일 | 결제방법 (둘 다 없으면 행 생략) */}
+                {hasPaymentRow ? (
+                  <>
+                    <div className="min-w-0">
+                      {nextPaymentLabel ? (
+                        <>
+                          <p className="text-xs text-slate-500">다음 결제일</p>
+                          <p className={`mt-1 flex flex-wrap items-center gap-1.5 text-sm font-medium tabular-nums ${nextPaymentColor}`}>
+                            <svg className="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                              <line x1="16" y1="2" x2="16" y2="6" />
+                              <line x1="8" y1="2" x2="8" y2="6" />
+                              <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                            {nextPaymentLabel}
+                            {nextPaymentDiff != null ? (
+                              <span className="text-xs opacity-80">
+                                ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
+                              </span>
+                            ) : null}
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
+                      {paymentMethodText ? (
+                        <>
+                          <p className="text-xs text-slate-500">결제방법</p>
+                          <p className="mt-1 text-sm">
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                              {paymentMethodText === "법인카드" && assignee?.name
+                                ? `${paymentMethodText} (${assignee.name})`
+                                : paymentMethodText}
+                            </span>
+                          </p>
+                        </>
+                      ) : null}
+                    </div>
                   </>
-                )}
+                ) : null}
               </div>
 
-              <div>
-                <p className="text-xs text-slate-500">계약 유형</p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">
-                  {license.contract_type ?? license.cost_type}
-                </p>
+              {/* 하단: URL·메모 전체 너비 (상단 2열 그리드와 격리, 구분선은 항상) */}
+              <div
+                className={`mt-6 border-t border-slate-100 ${hasUrlOrMemoFooter ? "space-y-6 pt-6" : ""}`}
+              >
+                {websiteUrlRaw ? (
+                  <div className="w-full min-w-0">
+                    <p className="text-xs text-slate-500">웹사이트 URL</p>
+                    <p className="mt-1 text-sm">
+                      <a
+                        href={hrefForWebsiteUrl(websiteUrlRaw)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex max-w-full items-start gap-1.5 break-all font-medium text-apollon-600 underline decoration-apollon-600/30 underline-offset-2 hover:text-apollon-700 hover:decoration-apollon-700/40"
+                      >
+                        <span aria-hidden className="shrink-0">
+                          🌐
+                        </span>
+                        <span className="min-w-0 break-all">{websiteUrlRaw}</span>
+                      </a>
+                    </p>
+                  </div>
+                ) : null}
+
+                {memoText ? (
+                  <div className="w-full min-w-0">
+                    <p className="text-xs text-slate-500">메모</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{memoText}</p>
+                  </div>
+                ) : null}
               </div>
-
-              {cost.isPerpetual && purchaseDateLabel ? (
-                <div>
-                  <p className="text-xs text-slate-500">구매일</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {purchaseDateLabel}
-                  </p>
-                </div>
-              ) : null}
-
-              {!cost.isPerpetual && isYearlyContract && startDateLabel ? (
-                <div>
-                  <p className="text-xs text-slate-500">서비스 시작일</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {startDateLabel}
-                  </p>
-                </div>
-              ) : null}
-
-              {!cost.isPerpetual && isYearlyContract && endDateLabel ? (
-                <div>
-                  <p className="text-xs text-slate-500">라이선스 종료일 (갱신일)</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {endDateLabel}
-                  </p>
-                </div>
-              ) : null}
-
-              {!cost.isPerpetual && !isYearlyContract && startDateLabel ? (
-                <div>
-                  <p className="text-xs text-slate-500">서비스 시작일</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
-                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {startDateLabel}
-                  </p>
-                </div>
-              ) : null}
-
-              <div>
-                <p className="text-xs text-slate-500">상태</p>
-                <span
-                  className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge}`}
-                >
-                  {license.status}
-                </span>
-              </div>
-
-              {nextPaymentLabel ? (
-                <div>
-                  <p className="text-xs text-slate-500">다음 결제일</p>
-                  <p className={`mt-1 flex items-center gap-1.5 text-sm font-medium tabular-nums ${nextPaymentColor}`}>
-                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                    {nextPaymentLabel}
-                    {nextPaymentDiff != null ? (
-                      <span className="text-xs opacity-80">
-                        ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
-                      </span>
-                    ) : null}
-                  </p>
-                </div>
-              ) : null}
-
-              {paymentMethodText ? (
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-slate-500">결제방법</p>
-                  <p className="mt-1 text-sm">
-                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                      {paymentMethodText === "법인카드" && assignee?.name
-                        ? `${paymentMethodText} (${assignee.name})`
-                        : paymentMethodText}
-                    </span>
-                  </p>
-                </div>
-              ) : null}
             </div>
           </section>
 

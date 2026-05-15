@@ -1,4 +1,26 @@
-import type { License, Profile } from "@/lib/licenses/types";
+import type { ContractType, License, Profile } from "@/lib/licenses/types";
+
+/**
+ * 상세·목록·다음 결제일 계산에서 쓰는 계약 유형.
+ * - 신규: `contract_type` 이 "월 구독" | "년 구독" | "영구 라이선스"
+ * - 레거시: `contract_type` 비어 있고 `cost_type` 만 "월간" | "연간" | "영구" 인 행이 있음 → 동일 UI로 매핑
+ */
+export function resolveUiContractType(l: Pick<License, "contract_type" | "cost_type">): ContractType {
+  const ct = (l.contract_type ?? "").trim();
+  if (ct === "월 구독" || ct === "년 구독" || ct === "영구 라이선스") {
+    return ct;
+  }
+  switch (l.cost_type) {
+    case "월간":
+      return "월 구독";
+    case "연간":
+      return "년 구독";
+    case "영구":
+      return "영구 라이선스";
+    default:
+      return "월 구독";
+  }
+}
 
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("ko-KR", { style: "currency", currency: "KRW", maximumFractionDigits: 0 }).format(
@@ -110,14 +132,15 @@ export function nextOccurrenceFromAnnualEndDate(
 
 /** 목록·상세·대시보드 공통: 다음 갱신/결제일 */
 export function computeLicenseNextRenewal(
-  l: Pick<License, "contract_type" | "payment_day" | "payment_month" | "end_date">,
+  l: Pick<License, "contract_type" | "cost_type" | "payment_day" | "payment_month" | "end_date">,
   reference: Date = new Date()
 ): Date | null {
-  if (l.contract_type === "년 구독" && l.end_date) {
+  const ui = resolveUiContractType(l);
+  if (ui === "년 구독" && l.end_date) {
     const fromEnd = nextOccurrenceFromAnnualEndDate(l.end_date, reference);
     if (fromEnd) return fromEnd;
   }
-  return computeNextPayment(l.contract_type, l.payment_day, l.payment_month, reference);
+  return computeNextPayment(ui, l.payment_day, l.payment_month, reference);
 }
 
 /** Date → 'YYYY-MM-DD' (로컬 기준). 다른 ISO 변환과 안전하게 비교하기 위함. */

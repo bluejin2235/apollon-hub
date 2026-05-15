@@ -9,6 +9,7 @@ import type {
   Profile,
   ServiceCostType
 } from "@/lib/licenses/types";
+import { resolveUiContractType } from "@/lib/licenses/calc";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
@@ -64,7 +65,7 @@ function addOneYearToIsoDate(iso: string): string {
 function initialYearlyEndDate(license: License | null): string {
   if (!license) return "";
   if (license.end_date) return license.end_date.slice(0, 10);
-  if (license.contract_type === "년 구독" && license.start_date) {
+  if (resolveUiContractType(license) === "년 구독" && license.start_date) {
     return addOneYearToIsoDate(license.start_date.slice(0, 10));
   }
   return "";
@@ -132,7 +133,9 @@ export function LicenseFormModal({
         ? String(license.cost_monthly)
         : ""
   );
-  const [contractType, setContractType] = useState<ContractType>(license?.contract_type ?? "월 구독");
+  const [contractType, setContractType] = useState<ContractType>(
+    license ? resolveUiContractType(license) : "월 구독"
+  );
   const [purchaseDate, setPurchaseDate] = useState(
     license?.purchase_date ? license.purchase_date.slice(0, 10) : ""
   );
@@ -241,6 +244,7 @@ export function LicenseFormModal({
     }
 
     const servicePayload = {
+      // services 직접 컬럼 (purpose / payment_method / memo / card_holder_id 컬럼 없음)
       name: trimmedName,
       plan: planName.trim() || trimmedName,
       category: category.trim() || "기타",

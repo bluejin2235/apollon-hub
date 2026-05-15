@@ -21,6 +21,7 @@ export type License = {
   category: string;
   status: string;
   cost_monthly: number;
+  /** services DB: 월간/연간/영구. 레거시는 contract_type 없이 이 필드만 채워진 경우가 있음 */
   cost_type: ServiceCostType;
   license_count: number;
   next_renewal: string | null;
@@ -31,6 +32,7 @@ export type License = {
   plan_name?: string | null;
   currency?: string;
   cost?: number;
+  /** services.contract_type — 폼 저장 시 채움. 비어 있으면 cost_type 으로 UI 추론(resolveUiContractType) */
   contract_type?: ContractType;
   /** 라이선스(서비스) 시작일 */
   start_date?: string | null;

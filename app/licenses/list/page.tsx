@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeLicenseNextRenewal, formatCurrency } from "@/lib/licenses/calc";
+import { computeLicenseNextRenewal, formatCurrency, resolveUiContractType } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -349,7 +349,7 @@ export default function LicensesListPage() {
                   ? rates?.EUR ?? null
                   : null;
             const krwAmount = isKrw ? rawCost : fxRate != null ? rawCost * fxRate : null;
-            const suffix = costSuffix(row.contract_type, row.cost_type);
+            const suffix = costSuffix(resolveUiContractType(row), row.cost_type);
             const hasForeign = !isKrw && (currency === "USD" || currency === "EUR");
 
             return (
@@ -424,7 +424,7 @@ export default function LicensesListPage() {
                     <span
                       className={`shrink-0 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold ${style.pillBg} ${style.pillText}`}
                     >
-                      {row.cost_type}
+                      {resolveUiContractType(row)}
                     </span>
                   </div>
 

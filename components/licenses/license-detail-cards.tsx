@@ -480,13 +480,13 @@ const TYPE_STYLE: Record<CredentialType, { badge: string; ring: string; text: st
 };
 
 /** 유형별 필드 라벨 */
-const TYPE_FIELDS: Record<CredentialType, { nameLabel: string; valueLabel: string; namePlaceholder: string; valuePlaceholder: string; nameType: "email" | "text" }> = {
+const TYPE_FIELDS: Record<CredentialType, { nameLabel: string; valueLabel: string; namePlaceholder: string; valuePlaceholder: string; nameType: "text" }> = {
   "로그인": {
-    nameLabel: "아이디(이메일)",
+    nameLabel: "아이디",
     valueLabel: "비밀번호",
-    namePlaceholder: "admin@apollonworks.com",
+    namePlaceholder: "아이디",
     valuePlaceholder: "비밀번호 입력",
-    nameType: "email"
+    nameType: "text"
   },
   "API 키": {
     nameLabel: "키 이름",
@@ -618,7 +618,7 @@ export function ServiceCredentialsCard({
       service_id: serviceId,
       type: credType,
       label: name.trim(),
-      // 로그인은 아이디(이메일)를 username 컬럼에도 저장해 호환성 유지.
+      // 로그인은 아이디를 username 컬럼에도 저장해 호환성 유지.
       username: credType === "로그인" ? name.trim() : null,
       password: secret.trim() || null,
       notes: notes.trim() || null
