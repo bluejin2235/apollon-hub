@@ -4,7 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeLicenseNextRenewal, formatCurrency, resolveUiContractType } from "@/lib/licenses/calc";
+import {
+  computeLicenseCostBreakdown,
+  computeLicenseNextRenewal,
+  formatCurrency,
+  licenseCostSortValue,
+  licenseCostSuffix,
+  licenseListCardCostSublineParts,
+  licenseListCardPrimaryKrwAmount,
+  licenseListCardPrimaryOrigAmount,
+  licenseListCostBadgeLabel
+} from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -24,96 +34,211 @@ type CategoryStyle = {
   pillText: string;
 };
 
-const PURPLE_STYLE: CategoryStyle = {
-  cardBg: "bg-purple-50",
-  cardBorder: "border-purple-200",
-  iconBg: "bg-purple-200",
-  iconText: "text-purple-800",
-  pillBg: "bg-purple-100",
-  pillText: "text-purple-800"
-};
-
-const BLUE_STYLE: CategoryStyle = {
-  cardBg: "bg-blue-50",
-  cardBorder: "border-blue-200",
-  iconBg: "bg-blue-200",
-  iconText: "text-blue-800",
-  pillBg: "bg-blue-100",
-  pillText: "text-blue-800"
-};
-
-const GREEN_STYLE: CategoryStyle = {
-  cardBg: "bg-emerald-50",
-  cardBorder: "border-emerald-200",
-  iconBg: "bg-emerald-200",
-  iconText: "text-emerald-800",
-  pillBg: "bg-emerald-100",
-  pillText: "text-emerald-800"
-};
-
-const ORANGE_STYLE: CategoryStyle = {
-  cardBg: "bg-orange-50",
-  cardBorder: "border-orange-200",
-  iconBg: "bg-orange-200",
-  iconText: "text-orange-800",
-  pillBg: "bg-orange-100",
-  pillText: "text-orange-800"
-};
-
-/** 기타/전사/공 등 매칭 안 되는 카테고리 폴백 — 연한 분홍 */
-const PINK_STYLE: CategoryStyle = {
-  cardBg: "bg-rose-50",
-  cardBorder: "border-rose-200",
-  iconBg: "bg-rose-200",
-  iconText: "text-rose-800",
-  pillBg: "bg-rose-100",
-  pillText: "text-rose-800"
-};
-
+/** 비활성 카드 — 카테고리 색 무시, 슬레이트 톤만 사용 */
 const INACTIVE_STYLE: CategoryStyle = {
   cardBg: "bg-slate-50",
   cardBorder: "border-slate-200",
   iconBg: "bg-slate-200",
-  iconText: "text-slate-500",
+  iconText: "text-slate-400",
   pillBg: "bg-slate-100",
-  pillText: "text-slate-500"
+  pillText: "text-slate-400"
 };
 
-/**
- * 카테고리 문자열 → 카드 팔레트.
- * - 디자인 → 보라
- * - 개발 → 파랑
- * - 기획/공통/협업 → 초록
- * - 마케팅 → 주황
- * - 그 외 (전사/공/기타/빈값) → 분홍 폴백
- */
-function categoryStyle(category: string | null | undefined): CategoryStyle {
-  const c = (category ?? "").trim();
-  if (!c) return PINK_STYLE;
-  if (c.includes("디자인")) return PURPLE_STYLE;
-  if (c.includes("개발")) return BLUE_STYLE;
-  if (c.includes("마케팅")) return ORANGE_STYLE;
-  if (c.includes("기획") || c.includes("공통") || c.includes("협업")) return GREEN_STYLE;
-  return PINK_STYLE;
+/** 명시 카테고리 (exact match, 현재 데이터 기준) */
+const EXPLICIT_CATEGORY_STYLES: Record<string, CategoryStyle> = {
+  "전사/공통": {
+    cardBg: "bg-blue-50",
+    cardBorder: "border-blue-200",
+    iconBg: "bg-blue-200",
+    iconText: "text-blue-700",
+    pillBg: "bg-blue-100",
+    pillText: "text-blue-700"
+  },
+  "기획/공통": {
+    cardBg: "bg-emerald-50",
+    cardBorder: "border-emerald-200",
+    iconBg: "bg-emerald-200",
+    iconText: "text-emerald-700",
+    pillBg: "bg-emerald-100",
+    pillText: "text-emerald-700"
+  },
+  "디자인/공통": {
+    cardBg: "bg-purple-50",
+    cardBorder: "border-purple-200",
+    iconBg: "bg-purple-200",
+    iconText: "text-purple-700",
+    pillBg: "bg-purple-100",
+    pillText: "text-purple-700"
+  },
+  "디자인/공간": {
+    cardBg: "bg-indigo-50",
+    cardBorder: "border-indigo-200",
+    iconBg: "bg-indigo-200",
+    iconText: "text-indigo-700",
+    pillBg: "bg-indigo-100",
+    pillText: "text-indigo-700"
+  },
+  "디자인/비주얼": {
+    cardBg: "bg-violet-50",
+    cardBorder: "border-violet-200",
+    iconBg: "bg-violet-200",
+    iconText: "text-violet-700",
+    pillBg: "bg-violet-100",
+    pillText: "text-violet-700"
+  },
+  "디자인/비주얼,공간": {
+    cardBg: "bg-fuchsia-50",
+    cardBorder: "border-fuchsia-200",
+    iconBg: "bg-fuchsia-200",
+    iconText: "text-fuchsia-700",
+    pillBg: "bg-fuchsia-100",
+    pillText: "text-fuchsia-700"
+  },
+  "개발/공통": {
+    cardBg: "bg-cyan-50",
+    cardBorder: "border-cyan-200",
+    iconBg: "bg-cyan-200",
+    iconText: "text-cyan-700",
+    pillBg: "bg-cyan-100",
+    pillText: "text-cyan-700"
+  },
+  "마케팅/공통": {
+    cardBg: "bg-orange-50",
+    cardBorder: "border-orange-200",
+    iconBg: "bg-orange-200",
+    iconText: "text-orange-700",
+    pillBg: "bg-orange-100",
+    pillText: "text-orange-700"
+  },
+  "콘텐츠/공통": {
+    cardBg: "bg-amber-50",
+    cardBorder: "border-amber-200",
+    iconBg: "bg-amber-200",
+    iconText: "text-amber-700",
+    pillBg: "bg-amber-100",
+    pillText: "text-amber-700"
+  },
+  "공간/공통": {
+    cardBg: "bg-teal-50",
+    cardBorder: "border-teal-200",
+    iconBg: "bg-teal-200",
+    iconText: "text-teal-700",
+    pillBg: "bg-teal-100",
+    pillText: "text-teal-700"
+  },
+  "전사/공": {
+    cardBg: "bg-sky-50",
+    cardBorder: "border-sky-200",
+    iconBg: "bg-sky-200",
+    iconText: "text-sky-700",
+    pillBg: "bg-sky-100",
+    pillText: "text-sky-700"
+  }
+};
+
+/** 신규 카테고리 — 동일 문자열은 항상 동일 색 (해시 % 길이) */
+const AUTO_CATEGORY_PALETTES: CategoryStyle[] = [
+  {
+    cardBg: "bg-rose-50",
+    cardBorder: "border-rose-200",
+    iconBg: "bg-rose-200",
+    iconText: "text-rose-700",
+    pillBg: "bg-rose-100",
+    pillText: "text-rose-700"
+  },
+  {
+    cardBg: "bg-pink-50",
+    cardBorder: "border-pink-200",
+    iconBg: "bg-pink-200",
+    iconText: "text-pink-700",
+    pillBg: "bg-pink-100",
+    pillText: "text-pink-700"
+  },
+  {
+    cardBg: "bg-lime-50",
+    cardBorder: "border-lime-200",
+    iconBg: "bg-lime-200",
+    iconText: "text-lime-700",
+    pillBg: "bg-lime-100",
+    pillText: "text-lime-700"
+  },
+  {
+    cardBg: "bg-emerald-50",
+    cardBorder: "border-emerald-200",
+    iconBg: "bg-emerald-200",
+    iconText: "text-emerald-700",
+    pillBg: "bg-emerald-100",
+    pillText: "text-emerald-700"
+  },
+  {
+    cardBg: "bg-cyan-50",
+    cardBorder: "border-cyan-200",
+    iconBg: "bg-cyan-200",
+    iconText: "text-cyan-700",
+    pillBg: "bg-cyan-100",
+    pillText: "text-cyan-700"
+  },
+  {
+    cardBg: "bg-sky-50",
+    cardBorder: "border-sky-200",
+    iconBg: "bg-sky-200",
+    iconText: "text-sky-700",
+    pillBg: "bg-sky-100",
+    pillText: "text-sky-700"
+  },
+  {
+    cardBg: "bg-violet-50",
+    cardBorder: "border-violet-200",
+    iconBg: "bg-violet-200",
+    iconText: "text-violet-700",
+    pillBg: "bg-violet-100",
+    pillText: "text-violet-700"
+  },
+  {
+    cardBg: "bg-fuchsia-50",
+    cardBorder: "border-fuchsia-200",
+    iconBg: "bg-fuchsia-200",
+    iconText: "text-fuchsia-700",
+    pillBg: "bg-fuchsia-100",
+    pillText: "text-fuchsia-700"
+  },
+  {
+    cardBg: "bg-amber-50",
+    cardBorder: "border-amber-200",
+    iconBg: "bg-amber-200",
+    iconText: "text-amber-700",
+    pillBg: "bg-amber-100",
+    pillText: "text-amber-700"
+  },
+  {
+    cardBg: "bg-orange-50",
+    cardBorder: "border-orange-200",
+    iconBg: "bg-orange-200",
+    iconText: "text-orange-700",
+    pillBg: "bg-orange-100",
+    pillText: "text-orange-700"
+  }
+];
+
+function hashCategoryKey(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
 }
 
 /**
- * 계약 유형 → 가격 뒤 suffix.
- * - "월 구독" / "월간" → "/월"
- * - "년 구독" / "연간" → "/년"
- * - "영구 라이선스" / "영구" → "" (표시 안 함)
+ * 활성 카드: 카테고리 exact match → 명시 팔레트, 없으면 해시 자동 배색.
  */
-function costSuffix(
-  contractType: string | null | undefined,
-  costType: License["cost_type"] | null | undefined
-): string {
-  const c = (contractType ?? "").trim();
-  if (c === "월 구독") return "/월";
-  if (c === "년 구독") return "/년";
-  if (c === "영구 라이선스") return "";
-  if (costType === "월간") return "/월";
-  if (costType === "연간") return "/년";
-  return "";
+function categoryStyleActive(category: string | null | undefined): CategoryStyle {
+  const c = (category ?? "").trim();
+  if (EXPLICIT_CATEGORY_STYLES[c]) {
+    return EXPLICIT_CATEGORY_STYLES[c];
+  }
+  const key = c || "__empty__";
+  const idx = hashCategoryKey(key) % AUTO_CATEGORY_PALETTES.length;
+  return AUTO_CATEGORY_PALETTES[idx];
 }
 
 /** USD/EUR 등 원본 통화 포맷팅 (소수점 없는 정수 단위) */
@@ -212,14 +337,14 @@ export default function LicensesListPage() {
     if (sortBy === "name") {
       list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
     } else if (sortBy === "cost") {
-      list.sort((a, b) => Number(b.cost_monthly ?? 0) - Number(a.cost_monthly ?? 0));
+      list.sort((a, b) => licenseCostSortValue(b, rates) - licenseCostSortValue(a, rates));
     } else {
       list.sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     }
     return list;
-  }, [filtered, sortBy]);
+  }, [filtered, sortBy, rates]);
 
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
@@ -312,7 +437,7 @@ export default function LicensesListPage() {
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((row) => {
             const inactive = row.status === "비활성";
-            const style = inactive ? INACTIVE_STYLE : categoryStyle(row.category);
+            const style = inactive ? INACTIVE_STYLE : categoryStyleActive(row.category);
             const assignee = row.assignee_id ? assigneeMap.get(row.assignee_id) ?? null : null;
             // payment_day / payment_month 기반으로 오늘 이후 가장 가까운 결제일 계산.
             const nextPaymentDate = computeLicenseNextRenewal(row);
@@ -329,28 +454,19 @@ export default function LicensesListPage() {
             const planSecondary =
               (row.plan_name && row.plan_name.trim()) || (row.plan && row.plan.trim()) || "";
             const currency = ((row.currency ?? "KRW") as string).toUpperCase();
-            const isKrw = currency === "KRW";
-            // 비용 source 우선순위 (스펙):
-            //   - KRW: cost_monthly 우선, 비어있으면 cost
-            //   - USD/EUR: cost(원본 금액) 우선, 비어있으면 cost_monthly 폴백
-            const costMonthlyNum = Number(row.cost_monthly ?? 0);
-            const costNum = Number(row.cost ?? 0);
-            const rawCost = isKrw
-              ? costMonthlyNum > 0
-                ? costMonthlyNum
-                : costNum
-              : costNum > 0
-                ? costNum
-                : costMonthlyNum;
-            const fxRate =
-              currency === "USD"
-                ? rates?.USD ?? null
-                : currency === "EUR"
-                  ? rates?.EUR ?? null
+            const bc = computeLicenseCostBreakdown(row, rates);
+            const primaryKrw = licenseListCardPrimaryKrwAmount(bc);
+            const primaryOrig = licenseListCardPrimaryOrigAmount(bc);
+            const suffix = licenseCostSuffix(bc.uiContract);
+            const badgeLabel = licenseListCostBadgeLabel(bc.uiContract);
+            const sub = licenseListCardCostSublineParts(bc);
+            const hasForeign = !bc.isKrw && (currency === "USD" || currency === "EUR");
+            const sublineText =
+              sub.show && sub.krwPerPart != null && bc.isKrw
+                ? `${formatCurrency(sub.krwPerPart)}${sub.suffix ?? ""} × ${sub.krwCount}개`
+                : sub.show && sub.origPerPart != null && sub.origCount != null
+                  ? `${formatOriginalCurrency(sub.origPerPart, currency)}${sub.suffix ?? ""} × ${sub.origCount}개`
                   : null;
-            const krwAmount = isKrw ? rawCost : fxRate != null ? rawCost * fxRate : null;
-            const suffix = costSuffix(resolveUiContractType(row), row.cost_type);
-            const hasForeign = !isKrw && (currency === "USD" || currency === "EUR");
 
             return (
               <li key={row.id}>
@@ -369,23 +485,37 @@ export default function LicensesListPage() {
                       {firstInitial(row.name)}
                     </div>
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="truncate text-sm font-semibold text-slate-900 group-hover:text-blue-700">
+                      <p
+                        className={`truncate text-sm font-semibold ${
+                          inactive ? "text-slate-400" : "text-slate-900 group-hover:text-blue-700"
+                        }`}
+                      >
                         {row.name}
                       </p>
                       {planSecondary ? (
-                        <p className="mt-0.5 truncate text-xs text-slate-500">{planSecondary}</p>
+                        <p
+                          className={`mt-0.5 truncate text-xs ${
+                            inactive ? "text-slate-400" : "text-slate-500"
+                          }`}
+                        >
+                          {planSecondary}
+                        </p>
                       ) : null}
                     </div>
                   </div>
 
                   {/* 카테고리 + 상태 */}
                   <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="truncate text-[11px] font-medium text-slate-600">
+                    <span
+                      className={`truncate text-[11px] font-medium ${
+                        inactive ? "text-slate-400" : "text-slate-600"
+                      }`}
+                    >
                       {(row.category && row.category.trim()) || "카테고리 미분류"}
                     </span>
                     <span
                       className={`shrink-0 text-[11px] font-semibold ${
-                        inactive ? "text-slate-500" : "text-emerald-700"
+                        inactive ? "text-slate-400" : "text-emerald-700"
                       }`}
                     >
                       {row.status}
@@ -395,28 +525,57 @@ export default function LicensesListPage() {
                   {/* 비용 + 계약유형 pill */}
                   <div className="mt-3 flex items-end justify-between gap-3">
                     <div className="min-w-0">
-                      {krwAmount != null ? (
-                        <p className="text-xl font-bold tabular-nums text-slate-900">
-                          {formatCurrency(krwAmount)}
+                      {primaryKrw != null ? (
+                        <p
+                          className={`text-xl font-bold tabular-nums ${
+                            inactive ? "text-slate-400" : "text-slate-900"
+                          }`}
+                        >
+                          {formatCurrency(primaryKrw)}
                           {suffix ? (
-                            <span className="ml-0.5 text-sm font-semibold text-slate-500">
+                            <span
+                              className={`ml-0.5 text-sm font-semibold ${
+                                inactive ? "text-slate-400" : "text-slate-500"
+                              }`}
+                            >
                               {suffix}
                             </span>
                           ) : null}
                         </p>
                       ) : (
-                        <p className="text-xl font-bold tabular-nums text-slate-900">
-                          {formatOriginalCurrency(rawCost, currency)}
+                        <p
+                          className={`text-xl font-bold tabular-nums ${
+                            inactive ? "text-slate-400" : "text-slate-900"
+                          }`}
+                        >
+                          {formatOriginalCurrency(primaryOrig, currency)}
                           {suffix ? (
-                            <span className="ml-0.5 text-sm font-semibold text-slate-500">
+                            <span
+                              className={`ml-0.5 text-sm font-semibold ${
+                                inactive ? "text-slate-400" : "text-slate-500"
+                              }`}
+                            >
                               {suffix}
                             </span>
                           ) : null}
                         </p>
                       )}
-                      {hasForeign && krwAmount != null ? (
-                        <p className="mt-0.5 text-[11px] tabular-nums text-slate-500">
-                          {formatOriginalCurrency(rawCost, currency)}
+                      {sublineText ? (
+                        <p
+                          className={`mt-0.5 text-[11px] tabular-nums ${
+                            inactive ? "text-slate-400" : "text-slate-500"
+                          }`}
+                        >
+                          {sublineText}
+                        </p>
+                      ) : null}
+                      {hasForeign && primaryKrw != null ? (
+                        <p
+                          className={`mt-0.5 text-[11px] tabular-nums ${
+                            inactive ? "text-slate-400" : "text-slate-500"
+                          }`}
+                        >
+                          {formatOriginalCurrency(bc.rawCost, currency)}
                           {suffix}
                         </p>
                       ) : null}
@@ -424,33 +583,47 @@ export default function LicensesListPage() {
                     <span
                       className={`shrink-0 self-start rounded-full px-2.5 py-1 text-[11px] font-semibold ${style.pillBg} ${style.pillText}`}
                     >
-                      {resolveUiContractType(row)}
+                      {badgeLabel}
                     </span>
                   </div>
 
                   {/* 메타 */}
                   <div className="mt-auto pt-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-slate-700 tabular-nums">
+                      <span
+                        className={`text-xs font-medium tabular-nums ${
+                          inactive ? "text-slate-400" : "text-slate-700"
+                        }`}
+                      >
                         {row.license_count > 0 ? `${row.license_count}개 라이선스` : "무제한"}
                       </span>
-                      <span className="truncate text-xs font-medium text-slate-700">
+                      <span
+                        className={`truncate text-xs font-medium ${
+                          inactive ? "text-slate-400" : "text-slate-700"
+                        }`}
+                      >
                         {assignee?.name ?? "—"}
                       </span>
                     </div>
                     {nextPaymentLabel ? (
                       <div className="mt-2 flex items-center justify-between border-t border-slate-200/60 pt-2 text-[11px]">
-                        <span className="text-slate-500">다음 결제일</span>
+                        <span className={inactive ? "text-slate-400" : "text-slate-500"}>다음 결제일</span>
                         <span
                           className={`text-[11px] font-medium tabular-nums ${
-                            nextPaymentDiff != null && nextPaymentDiff <= 7
-                              ? "text-amber-600"
-                              : "text-slate-700"
+                            inactive
+                              ? "text-slate-400"
+                              : nextPaymentDiff != null && nextPaymentDiff <= 7
+                                ? "text-amber-600"
+                                : "text-slate-700"
                           }`}
                         >
                           {nextPaymentLabel}
                           {nextPaymentDiff != null ? (
-                            <span className="ml-1.5 text-[11px] font-medium opacity-80">
+                            <span
+                              className={`ml-1.5 text-[11px] font-medium ${
+                                inactive ? "text-slate-400 opacity-80" : "opacity-80"
+                              }`}
+                            >
                               ({nextPaymentDiff === 0 ? "오늘" : `${nextPaymentDiff}일 후`})
                             </span>
                           ) : null}

@@ -667,6 +667,69 @@ delete from public.services
   where is_hub_card = true
     and name in ('Apollon License Manager', '아슐랭');
 
+-- ═════════════════════════════════════════════════════════════
+-- 라이선스 비용 이력 · 월별 스냅샷
+-- ═════════════════════════════════════════════════════════════
+
+create table if not exists public.service_cost_history (
+  id uuid primary key default gen_random_uuid(),
+  service_id uuid references public.services (id) on delete cascade,
+  cost numeric(12, 2),
+  cost_monthly numeric(12, 2),
+  currency text default 'KRW',
+  license_count integer,
+  contract_type text,
+  active_member_count integer,
+  recorded_at timestamptz not null default now(),
+  recorded_month text not null
+);
+
+create index if not exists idx_service_cost_history_service on public.service_cost_history (service_id);
+create index if not exists idx_service_cost_history_month on public.service_cost_history (recorded_month);
+
+create table if not exists public.monthly_cost_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  snapshot_month text not null unique,
+  total_subscription_krw numeric(12, 2),
+  total_permanent_krw numeric(12, 2),
+  active_member_count integer,
+  per_member_cost_krw numeric(12, 2),
+  category_breakdown jsonb,
+  license_breakdown jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_monthly_cost_snapshots_month on public.monthly_cost_snapshots (snapshot_month);
+
+alter table public.service_cost_history enable row level security;
+
+drop policy if exists "service_cost_history_select_auth" on public.service_cost_history;
+create policy "service_cost_history_select_auth"
+  on public.service_cost_history for select to authenticated using (true);
+
+drop policy if exists "service_cost_history_insert_auth" on public.service_cost_history;
+create policy "service_cost_history_insert_auth"
+  on public.service_cost_history for insert to authenticated with check (true);
+
+drop policy if exists "service_cost_history_update_auth" on public.service_cost_history;
+create policy "service_cost_history_update_auth"
+  on public.service_cost_history for update to authenticated
+  using (true) with check (true);
+
+drop policy if exists "service_cost_history_delete_auth" on public.service_cost_history;
+create policy "service_cost_history_delete_auth"
+  on public.service_cost_history for delete to authenticated using (true);
+
+alter table public.monthly_cost_snapshots enable row level security;
+
+drop policy if exists "monthly_cost_snapshots_select_auth" on public.monthly_cost_snapshots;
+create policy "monthly_cost_snapshots_select_auth"
+  on public.monthly_cost_snapshots for select to authenticated using (true);
+
+drop policy if exists "monthly_cost_snapshots_insert_service" on public.monthly_cost_snapshots;
+create policy "monthly_cost_snapshots_insert_service"
+  on public.monthly_cost_snapshots for insert to service_role with check (true);
+
 insert into public.services (
   name, description, icon, url, status, access_level, order_index, is_hub_card,
   plan, category, cost_type, cost_monthly, license_count

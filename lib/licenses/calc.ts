@@ -1,5 +1,8 @@
 import type { ContractType, License, Profile } from "@/lib/licenses/types";
 
+/** `useKrwRates()` 등에서 넘기는 USD/EUR→KRW 환율 (원화 정수/실수) */
+export type LicenseFxRates = { USD?: number | null; EUR?: number | null } | null | undefined;
+
 /**
  * 상세·목록·다음 결제일 계산에서 쓰는 계약 유형.
  * - 신규: `contract_type` 이 "월 구독" | "년 구독" | "영구 라이선스"
@@ -20,6 +23,260 @@ export function resolveUiContractType(l: Pick<License, "contract_type" | "cost_t
     default:
       return "월 구독";
   }
+}
+
+/**
+ * 상세 페이지 `cost` useMemo · 목록 카드 비용과 동일한 산출.
+ * - KRW: `cost_monthly` 우선, 없으면 `cost`
+ * - USD/EUR: `cost` 우선, 없으면 `cost_monthly`
+ */
+export function licenseCurrencyRawCost(l: Pick<License, "currency" | "cost" | "cost_monthly">): number {
+  const currency = ((l.currency ?? "KRW") as string).toUpperCase();
+  const isKrw = currency === "KRW";
+  const costMonthlyNum = Number(l.cost_monthly ?? 0);
+  const costNum = Number(l.cost ?? 0);
+  if (isKrw) {
+    return costMonthlyNum > 0 ? costMonthlyNum : costNum;
+  }
+  return costNum > 0 ? costNum : costMonthlyNum;
+}
+
+export type LicenseCostBreakdown = {
+  currency: string;
+  isKrw: boolean;
+  uiContract: ContractType;
+  isYearly: boolean;
+  isPerpetual: boolean;
+  isMonthly: boolean;
+  rawCost: number;
+  licenseCount: number;
+  seatCount: number;
+  perpetualPerUnitOrig: number;
+  perpetualTotalOrig: number;
+  perpetualPerUnitKrw: number | null;
+  perpetualTotalKrw: number | null;
+  monthlyTotalOrig: number;
+  monthlyTotalKrw: number | null;
+  annualTotalOrig: number;
+  annualTotalKrw: number | null;
+  perUnitMonthlyOrig: number;
+  perUnitMonthlyKrw: number | null;
+  fxRate: number | null;
+  fxRateFormatted: string | null;
+};
+
+/**
+ * 라이선스 상세·목록 공통 비용 모델 (원화/외화, 월·년·영구).
+ */
+export function computeLicenseCostBreakdown(
+  license: Pick<
+    License,
+    | "currency"
+    | "cost"
+    | "cost_monthly"
+    | "license_count"
+    | "contract_type"
+    | "cost_type"
+  >,
+  rates: LicenseFxRates
+): LicenseCostBreakdown {
+  const currency = ((license.currency ?? "KRW") as string).toUpperCase();
+  const isKrw = currency === "KRW";
+  const costMonthlyNum = Number(license.cost_monthly ?? 0);
+  const costNum = Number(license.cost ?? 0);
+  const rawCost = licenseCurrencyRawCost(license);
+  const fxRate =
+    currency === "USD" ? (rates?.USD ?? null) : currency === "EUR" ? (rates?.EUR ?? null) : null;
+
+  const licenseCount = Math.max(1, license.license_count || 1);
+  const uiContract = resolveUiContractType(license);
+  const isYearly = uiContract === "년 구독";
+  const isPerpetual = uiContract === "영구 라이선스";
+  const isMonthly = uiContract === "월 구독";
+
+  const seatCount = Math.max(0, license.license_count ?? 0);
+  let perpetualPerUnitOrig: number;
+  let perpetualTotalOrig: number;
+  if (isPerpetual && seatCount > 0) {
+    const cn = costNum;
+    const cm = costMonthlyNum;
+    const looksLikeTotalWithPerSeatMonthly =
+      cn > 0 &&
+      cm > 0 &&
+      Math.abs(cn - cm * seatCount) < 0.01 &&
+      Math.abs(cn - cm) > 0.01;
+    if (looksLikeTotalWithPerSeatMonthly) {
+      perpetualTotalOrig = cn;
+      perpetualPerUnitOrig = cm;
+    } else {
+      perpetualPerUnitOrig = rawCost;
+      perpetualTotalOrig = perpetualPerUnitOrig * seatCount;
+    }
+  } else {
+    perpetualPerUnitOrig = rawCost;
+    perpetualTotalOrig = seatCount > 0 ? perpetualPerUnitOrig * seatCount : perpetualPerUnitOrig;
+  }
+  const perpetualPerUnitKrw = isKrw
+    ? perpetualPerUnitOrig
+    : fxRate != null
+      ? perpetualPerUnitOrig * fxRate
+      : null;
+  const perpetualTotalKrw =
+    perpetualPerUnitKrw != null
+      ? seatCount > 0
+        ? perpetualPerUnitKrw * seatCount
+        : perpetualPerUnitKrw
+      : null;
+
+  const monthlyTotalOrig = isPerpetual
+    ? perpetualPerUnitOrig
+    : isYearly
+      ? (rawCost / 12) * licenseCount
+      : rawCost * licenseCount;
+  const monthlyTotalKrw = isPerpetual
+    ? perpetualPerUnitKrw
+    : isKrw
+      ? monthlyTotalOrig
+      : fxRate != null
+        ? monthlyTotalOrig * fxRate
+        : null;
+  const annualTotalOrig = isPerpetual
+    ? perpetualTotalOrig
+    : isYearly
+      ? rawCost * licenseCount
+      : monthlyTotalOrig * 12;
+  const annualTotalKrw = isPerpetual
+    ? perpetualTotalKrw
+    : isKrw
+      ? annualTotalOrig
+      : fxRate != null
+        ? annualTotalOrig * fxRate
+        : null;
+  const perUnitMonthlyOrig = isPerpetual
+    ? perpetualPerUnitOrig
+    : isYearly
+      ? rawCost / 12
+      : rawCost;
+  const perUnitMonthlyKrw =
+    isPerpetual ? perpetualPerUnitKrw : monthlyTotalKrw != null ? monthlyTotalKrw / licenseCount : null;
+  const fxRateFormatted = fxRate != null ? Math.round(fxRate).toLocaleString("ko-KR") : null;
+
+  return {
+    currency,
+    isKrw,
+    uiContract,
+    isYearly,
+    isPerpetual,
+    isMonthly,
+    rawCost,
+    licenseCount,
+    seatCount,
+    perpetualPerUnitOrig,
+    perpetualTotalOrig,
+    perpetualPerUnitKrw,
+    perpetualTotalKrw,
+    monthlyTotalOrig,
+    monthlyTotalKrw,
+    annualTotalOrig,
+    annualTotalKrw,
+    perUnitMonthlyOrig,
+    perUnitMonthlyKrw,
+    fxRate,
+    fxRateFormatted
+  };
+}
+
+/** 목록 카드 pill: DB `cost_type` 스타일 라벨 */
+export function licenseListCostBadgeLabel(ui: ContractType): string {
+  if (ui === "영구 라이선스") return "영구 라이선스";
+  if (ui === "년 구독") return "연간";
+  return "월간";
+}
+
+/** 목록·상세 가격 접미사 (/월, /년) */
+export function licenseCostSuffix(ui: ContractType): string {
+  if (ui === "월 구독") return "/월";
+  if (ui === "년 구독") return "/년";
+  return "";
+}
+
+/** 비용 높은순 정렬용 단일 스칼라 (KRW 우선, 없으면 원본 월간 상당) */
+export function licenseCostSortValue(license: License, rates: LicenseFxRates): number {
+  const b = computeLicenseCostBreakdown(license, rates);
+  if (b.isPerpetual) return b.perpetualTotalKrw ?? b.perpetualTotalOrig;
+  if (b.isYearly) return b.annualTotalKrw ?? b.annualTotalOrig;
+  return b.monthlyTotalKrw ?? b.monthlyTotalOrig;
+}
+
+/**
+ * 목록 카드 첫 줄 금액 (원화 표시 숫자). 외화일 때 KRW 환산값.
+ * - 영구: 총 구매
+ * - 월: 전체 월 합산
+ * - 년: 연간 총액 (좌석당 연간 × 수량)
+ */
+export function licenseListCardPrimaryKrwAmount(b: LicenseCostBreakdown): number | null {
+  if (b.isPerpetual) return b.perpetualTotalKrw;
+  if (b.isYearly) return b.annualTotalKrw;
+  return b.monthlyTotalKrw;
+}
+
+/** 목록 카드 첫 줄 원본 통화 금액 (외화 큰 숫자용) */
+export function licenseListCardPrimaryOrigAmount(b: LicenseCostBreakdown): number {
+  if (b.isPerpetual) return b.perpetualTotalOrig;
+  if (b.isYearly) return b.annualTotalOrig;
+  return b.monthlyTotalOrig;
+}
+
+/**
+ * 상세·목록 카드 보조 한 줄 (HTML 아님, 포맷은 호출측).
+ * - 영구·수량≥2: 개당×개수
+ * - 월: 개당/월 × 수량
+ * - 년: 개당 연 /년 × 수량 (rawCost = 좌석당 연간)
+ */
+export function licenseListCardCostSublineParts(b: LicenseCostBreakdown): {
+  show: boolean;
+  /** 원화일 때 각각 formatCurrency 로 이어붙이기 */
+  krwPerPart: number | null;
+  krwCount: number | null;
+  /** 외화: perUnit 원본 + 개수 */
+  origPerPart: number | null;
+  origCount: number | null;
+  suffix: "/월" | "/년" | null;
+} {
+  if (b.isPerpetual) {
+    if (b.licenseCount < 2) {
+      return { show: false, krwPerPart: null, krwCount: null, origPerPart: null, origCount: null, suffix: null };
+    }
+    return {
+      show: true,
+      krwPerPart: b.perpetualPerUnitKrw,
+      krwCount: b.seatCount,
+      origPerPart: b.perpetualPerUnitOrig,
+      origCount: b.seatCount,
+      suffix: null
+    };
+  }
+  if (b.isMonthly) {
+    return {
+      show: true,
+      krwPerPart: b.isKrw ? b.perUnitMonthlyOrig : b.perUnitMonthlyKrw,
+      krwCount: b.licenseCount,
+      origPerPart: b.perUnitMonthlyOrig,
+      origCount: b.licenseCount,
+      suffix: "/월"
+    };
+  }
+  // 년 구독: 좌석당 연간(rawCost) × 수량
+  const krwAnnualPerSeat =
+    b.isKrw ? b.rawCost : b.fxRate != null ? b.rawCost * b.fxRate : null;
+  return {
+    show: true,
+    krwPerPart: krwAnnualPerSeat,
+    krwCount: b.licenseCount,
+    origPerPart: b.rawCost,
+    origCount: b.licenseCount,
+    suffix: "/년"
+  };
 }
 
 export function formatCurrency(value: number): string {

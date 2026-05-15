@@ -9,7 +9,11 @@ import type {
   Profile,
   ServiceCostType
 } from "@/lib/licenses/types";
-import { resolveUiContractType } from "@/lib/licenses/calc";
+import { activeProfiles, resolveUiContractType } from "@/lib/licenses/calc";
+import {
+  insertServiceCostHistory,
+  shouldRecordCostHistory
+} from "@/lib/licenses/service-cost-history";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
@@ -290,7 +294,13 @@ export function LicenseFormModal({
         return;
       }
 
-      onSaved(data as License);
+      const saved = data as License;
+      await insertServiceCostHistory(
+        supabase,
+        saved,
+        activeProfiles(profiles).length
+      );
+      onSaved(saved);
       onClose();
       return;
     }
@@ -316,7 +326,17 @@ export function LicenseFormModal({
       return;
     }
 
-    onSaved(data as License);
+    const saved = data as License;
+    if (
+      shouldRecordCostHistory(license, {
+        cost: costNum,
+        license_count: lc ?? 0,
+        contract_type: contractType
+      })
+    ) {
+      await insertServiceCostHistory(supabase, saved, activeProfiles(profiles).length);
+    }
+    onSaved(saved);
     onClose();
   };
 

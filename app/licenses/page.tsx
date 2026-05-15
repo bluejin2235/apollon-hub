@@ -2,24 +2,132 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import {
   activeProfiles,
-  aggregateByCategory,
-  categoryChartColors,
-  daysUntil,
+  computeLicenseCostBreakdown,
+  computeLicenseNextRenewal,
   formatCurrency,
   formatDateKorean,
-  nextRenewalDate,
-  totalActiveSubscriptionMonthly,
-  totalPerpetualPurchase
+  resolveUiContractType
 } from "@/lib/licenses/calc";
+import { getCategoryColorHex } from "@/lib/licenses/category-colors";
 import type { License, Profile } from "@/lib/licenses/types";
+import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
+
+function isActiveService(l: License): boolean {
+  return l.status === "활성";
+}
+
+function monthlyKrwForDashboard(
+  b: ReturnType<typeof computeLicenseCostBreakdown>
+): number {
+  if (b.monthlyTotalKrw != null) return b.monthlyTotalKrw;
+  if (b.isKrw && !b.isPerpetual) return b.monthlyTotalOrig;
+  return 0;
+}
+
+function annualSubscriptionKrwForDashboard(
+  b: ReturnType<typeof computeLicenseCostBreakdown>
+): number {
+  if (b.isPerpetual) return 0;
+  if (b.annualTotalKrw != null) return b.annualTotalKrw;
+  if (b.isKrw) return b.annualTotalOrig;
+  return 0;
+}
+
+function perpetualTotalKrwForDashboard(
+  b: ReturnType<typeof computeLicenseCostBreakdown>
+): number {
+  if (!b.isPerpetual) return 0;
+  if (b.perpetualTotalKrw != null) return b.perpetualTotalKrw;
+  if (b.isKrw) return b.perpetualTotalOrig;
+  return 0;
+}
+
+type CategoryRow = {
+  key: string;
+  serviceCount: number;
+  subscriptionMonthlyKrw: number;
+  perpetualKrw: number;
+  color: string;
+};
+
+function IconSubscriptionPurple({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+      />
+    </svg>
+  );
+}
+
+function IconShieldGray({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+      />
+    </svg>
+  );
+}
+
+function IconCubeGreen({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+      />
+    </svg>
+  );
+}
+
+function IconUsersPurple({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+      />
+    </svg>
+  );
+}
+
+function IconCalendarOrange({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+      />
+    </svg>
+  );
+}
+
+function IconEmptyBox({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V7a2 2 0 00-2-2H6L4 7v13a2 2 0 002 2h14" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 13h6" />
+    </svg>
+  );
+}
 
 export default function LicensesDashboardPage() {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const rates = useKrwRates();
 
   useEffect(() => {
     const run = async () => {
@@ -38,17 +146,130 @@ export default function LicensesDashboardPage() {
     void run();
   }, []);
 
-  const assigneeMap = useMemo(() => {
-    const m = new Map<string, Profile>();
-    profiles.forEach((p) => m.set(p.id, p));
-    return m;
-  }, [profiles]);
+  const teamActive = useMemo(() => activeProfiles(profiles), [profiles]);
 
-  const active = useMemo(() => activeProfiles(profiles), [profiles]);
-  const byCat = useMemo(() => aggregateByCategory(licenses), [licenses]);
-  const renewal = nextRenewalDate(licenses);
-  const subMonthly = totalActiveSubscriptionMonthly(licenses);
-  const perpetual = totalPerpetualPurchase(licenses);
+  const metrics = useMemo(() => {
+    let subscriptionMonthlySum = 0;
+    let annualSubscriptionSum = 0;
+    let perpetualPurchaseSum = 0;
+    let perpetualServiceCount = 0;
+
+    for (const l of licenses) {
+      if (!isActiveService(l)) continue;
+      const b = computeLicenseCostBreakdown(l, rates);
+      if (b.isPerpetual) {
+        perpetualPurchaseSum += perpetualTotalKrwForDashboard(b);
+        perpetualServiceCount += 1;
+      } else {
+        subscriptionMonthlySum += monthlyKrwForDashboard(b);
+        annualSubscriptionSum += annualSubscriptionKrwForDashboard(b);
+      }
+    }
+
+    return {
+      subscriptionMonthlySum,
+      annualSubscriptionSum,
+      perpetualPurchaseSum,
+      perpetualServiceCount
+    };
+  }, [licenses, rates]);
+
+  const serviceTotals = useMemo(() => {
+    let sub = 0;
+    let perp = 0;
+    for (const l of licenses) {
+      const ui = resolveUiContractType(l);
+      if (ui === "영구 라이선스") perp += 1;
+      else sub += 1;
+    }
+    return { total: licenses.length, sub, perp };
+  }, [licenses]);
+
+  const { sortedCategoryRows, totalSubscriptionMonthlyForShare } = useMemo(() => {
+    const map = new Map<
+      string,
+      { serviceCount: number; subscriptionMonthlyKrw: number; perpetualKrw: number }
+    >();
+
+    for (const l of licenses) {
+      const key = (l.category ?? "").trim() || "카테고리 미분류";
+      if (!map.has(key)) {
+        map.set(key, { serviceCount: 0, subscriptionMonthlyKrw: 0, perpetualKrw: 0 });
+      }
+      const row = map.get(key)!;
+      row.serviceCount += 1;
+
+      if (!isActiveService(l)) continue;
+
+      const b = computeLicenseCostBreakdown(l, rates);
+      if (b.isPerpetual) {
+        row.perpetualKrw += perpetualTotalKrwForDashboard(b);
+      } else {
+        row.subscriptionMonthlyKrw += monthlyKrwForDashboard(b);
+      }
+    }
+
+    const totalSubscriptionMonthlyForShare = [...map.values()].reduce(
+      (s, r) => s + r.subscriptionMonthlyKrw,
+      0
+    );
+
+    const sortedCategoryRows: CategoryRow[] = [...map.entries()]
+      .map(([key, v]) => ({
+        key,
+        serviceCount: v.serviceCount,
+        subscriptionMonthlyKrw: v.subscriptionMonthlyKrw,
+        perpetualKrw: v.perpetualKrw,
+        color: getCategoryColorHex(key)
+      }))
+      .sort((a, b) => {
+        if (b.subscriptionMonthlyKrw !== a.subscriptionMonthlyKrw) {
+          return b.subscriptionMonthlyKrw - a.subscriptionMonthlyKrw;
+        }
+        return a.key.localeCompare(b.key, "ko");
+      });
+
+    return { sortedCategoryRows, totalSubscriptionMonthlyForShare };
+  }, [licenses, rates]);
+
+  const renewalItems = useMemo(() => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const items: { id: string; name: string; date: Date; daysLeft: number }[] = [];
+
+    for (const l of licenses) {
+      if (!isActiveService(l)) continue;
+      if (resolveUiContractType(l) === "영구 라이선스") continue;
+      const d = computeLicenseNextRenewal(l);
+      if (!d) continue;
+      const daysLeft = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+      if (daysLeft < 0 || daysLeft > 30) continue;
+      items.push({ id: l.id, name: l.name, date: d, daysLeft });
+    }
+
+    items.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return items;
+  }, [licenses]);
+
+  const chartData = useMemo(() => {
+    return sortedCategoryRows
+      .filter((r) => r.subscriptionMonthlyKrw > 0)
+      .map((r) => ({
+        name: r.key,
+        value: r.subscriptionMonthlyKrw,
+        fill: r.color
+      }));
+  }, [sortedCategoryRows]);
+
+  const totalPerpetualKrwAcrossCategories = useMemo(
+    () => sortedCategoryRows.reduce((s, r) => s + r.perpetualKrw, 0),
+    [sortedCategoryRows]
+  );
+
+  const totalServicesInCategories = useMemo(
+    () => sortedCategoryRows.reduce((s, r) => s + r.serviceCount, 0),
+    [sortedCategoryRows]
+  );
 
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
@@ -56,95 +277,260 @@ export default function LicensesDashboardPage() {
 
   return (
     <div className="space-y-8">
-      <header className="border-b border-slate-200 pb-6">
-        <h1 className="text-2xl font-bold text-slate-900">라이선스 대시보드</h1>
-        <p className="mt-1 text-sm text-slate-600">팀 서비스 비용과 만료 일정을 한눈에 확인하세요.</p>
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">라이선스 대시보드</h1>
+          <p className="mt-1 text-sm text-slate-600">팀 서비스 비용과 갱신 일정을 한눈에 확인하세요.</p>
+        </div>
+        <Link href="/licenses/list" className="text-sm font-medium text-blue-600 hover:underline">
+          라이선스 목록 →
+        </Link>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">활성 프로필</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">{active.length}</p>
-          <p className="mt-1 text-xs text-slate-500">상태가 &quot;근무&quot;인 팀원</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">구독 월 비용 합계</p>
-          <p className="mt-2 text-3xl font-semibold text-apollon-600">{formatCurrency(subMonthly)}</p>
-          <p className="mt-1 text-xs text-slate-500">월간·연간 과금 항목</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">영구 구매 합계</p>
-          <p className="mt-2 text-3xl font-semibold text-emerald-700">{formatCurrency(perpetual)}</p>
-          <p className="mt-1 text-xs text-slate-500">영구 라이선스</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">다가오는 갱신</p>
-          <p className="mt-2 text-xl font-semibold text-slate-900">{renewal ? formatDateKorean(renewal) : "-"}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {renewal && daysUntil(renewal) !== null ? `${daysUntil(renewal)}일 남음` : "예정 없음"}
+      {/* 요약 4카드 */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
+            <IconSubscriptionPurple className="h-6 w-6" />
+          </div>
+          <p className="text-xs font-medium text-slate-600">구독 월비용</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+            {formatCurrency(metrics.subscriptionMonthlySum)}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            연간 {formatCurrency(metrics.annualSubscriptionSum)}
           </p>
         </div>
+
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/80 p-5 transition-shadow hover:shadow-md">
+          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-slate-200/80 text-slate-600">
+            <IconShieldGray className="h-6 w-6" />
+          </div>
+          <p className="text-xs font-medium text-slate-600">영구 라이선스</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+            {formatCurrency(metrics.perpetualPurchaseSum)}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            총 구매비용 · {metrics.perpetualServiceCount}개 서비스
+          </p>
+        </div>
+
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-emerald-100 text-emerald-600">
+            <IconCubeGreen className="h-6 w-6" />
+          </div>
+          <p className="text-xs font-medium text-slate-600">서비스</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+            {serviceTotals.total}개
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            구독 {serviceTotals.sub} · 영구 {serviceTotals.perp}
+          </p>
+        </div>
+
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
+            <IconUsersPurple className="h-6 w-6" />
+          </div>
+          <p className="text-xs font-medium text-slate-600">팀원</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">{teamActive.length}명</p>
+        </div>
       </section>
 
+      {/* 카테고리별 비용 분석 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">카테고리별 라이선스 수</h2>
-        <ul className="mt-4 space-y-2">
-          {Object.entries(byCat).map(([cat, count]) => (
-            <li key={cat} className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2 text-slate-700">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryChartColors[cat] ?? "#94a3b8" }} />
-                {cat}
-              </span>
-              <span className="font-medium text-slate-900">{count}</span>
-            </li>
-          ))}
-          {Object.keys(byCat).length === 0 ? <li className="text-sm text-slate-500">등록된 서비스가 없습니다.</li> : null}
-        </ul>
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-slate-900">카테고리별 비용 분석</h2>
+          <p className="mt-0.5 text-sm text-slate-500">구독 서비스 기준 월비용</p>
+        </div>
+
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
+          <div className="min-w-0 flex-1">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[30%]" />
+                <col className="w-[15%]" />
+                <col className="w-[25%]" />
+                <col className="w-[20%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+                  <th className="pb-3 pr-2 align-bottom">카테고리</th>
+                  <th className="pb-3 pr-2 text-right align-bottom">서비스 수</th>
+                  <th className="pb-3 pr-2 text-right align-bottom">월비용 (구독)</th>
+                  <th className="pb-3 pr-2 text-right align-bottom">영구 라이선스</th>
+                  <th className="pb-3 text-right align-bottom">비중</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sortedCategoryRows.map((row) => {
+                  const pct =
+                    totalSubscriptionMonthlyForShare > 0
+                      ? (row.subscriptionMonthlyKrw / totalSubscriptionMonthlyForShare) * 100
+                      : 0;
+                  return (
+                    <tr key={row.key} className="text-slate-800">
+                      <td className="py-3 pr-2 align-top">
+                        <span className="flex items-start gap-2 break-words">
+                          <span
+                            className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: row.color }}
+                          />
+                          <span className="min-w-0 break-words">{row.key}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 pr-2 text-right align-top tabular-nums">{row.serviceCount}개</td>
+                      <td className="break-words py-3 pr-2 text-right align-top font-medium tabular-nums text-slate-900">
+                        {row.subscriptionMonthlyKrw > 0 ? formatCurrency(row.subscriptionMonthlyKrw) : "—"}
+                      </td>
+                      <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
+                        {row.perpetualKrw > 0 ? formatCurrency(row.perpetualKrw) : "—"}
+                      </td>
+                      <td className="py-3 text-right align-top tabular-nums text-slate-700">
+                        {totalSubscriptionMonthlyForShare > 0 ? `${pct.toFixed(1)}%` : "0%"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="border-t border-slate-200 font-semibold text-slate-900">
+                  <td className="py-3 pr-2 align-top">합계</td>
+                  <td className="py-3 pr-2 text-right align-top tabular-nums">{totalServicesInCategories}개</td>
+                  <td className="break-words py-3 pr-2 text-right align-top tabular-nums text-indigo-600">
+                    {formatCurrency(totalSubscriptionMonthlyForShare)}
+                  </td>
+                  <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
+                    {totalPerpetualKrwAcrossCategories > 0
+                      ? formatCurrency(totalPerpetualKrwAcrossCategories)
+                      : "—"}
+                  </td>
+                  <td className="py-3 text-right align-top">100%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mx-auto w-full shrink-0 lg:mx-0 lg:w-[280px] xl:w-[300px]">
+            {chartData.length === 0 ? (
+              <div className="flex h-[280px] items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-500">
+                표시할 구독 월비용 비중이 없습니다
+              </div>
+            ) : (
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={chartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="45%"
+                      innerRadius={56}
+                      outerRadius={88}
+                      paddingAngle={1}
+                    >
+                      {chartData.map((entry, i) => (
+                        <Cell key={`c-${i}`} fill={entry.fill} stroke="white" strokeWidth={1} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => [
+                        formatCurrency(typeof value === "number" ? value : Number(value)),
+                        "월비용"
+                      ]}
+                      contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0" }}
+                    />
+                    <Legend
+                      layout="horizontal"
+                      verticalAlign="bottom"
+                      content={() => {
+                        const totalVal = chartData.reduce((s, d) => s + d.value, 0);
+                        if (!chartData.length) return null;
+                        const mid = Math.ceil(chartData.length / 2);
+                        const left = chartData.slice(0, mid);
+                        const right = chartData.slice(mid);
+                        const legendRow = (d: (typeof chartData)[0]) => {
+                          const pctRounded = totalVal > 0 ? Math.round((d.value / totalVal) * 100) : 0;
+                          return (
+                            <span
+                              key={d.name}
+                              className="flex min-w-0 items-center gap-2 text-[11px] text-slate-700"
+                            >
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: d.fill }}
+                              />
+                              <span className="truncate">
+                                {d.name} {pctRounded}%
+                              </span>
+                            </span>
+                          );
+                        };
+                        return (
+                          <div className="flex justify-center gap-6 pt-2 text-left">
+                            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                              {left.map(legendRow)}
+                            </div>
+                            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                              {right.map(legendRow)}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
+      {/* 1개월 내 갱신 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">최근 서비스</h2>
-          <Link href="/licenses/list" className="text-sm font-medium text-apollon-600 hover:underline">
-            전체 목록 →
-          </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+              <IconCalendarOrange className="h-5 w-5" />
+            </span>
+            <h2 className="text-base font-semibold text-slate-900">1개월 내 갱신 예정 서비스</h2>
+          </div>
+          <span className="text-sm font-medium text-slate-600">{renewalItems.length}건</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm text-slate-800">
-            <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2 pr-4">서비스</th>
-                <th className="py-2 pr-4">카테고리</th>
-                <th className="py-2 pr-4">상태</th>
-                <th className="py-2 pr-4">비용</th>
-                <th className="py-2 pr-4">담당</th>
-              </tr>
-            </thead>
-            <tbody>
-              {licenses.slice(0, 8).map((row) => {
-                const assignee = row.assignee_id ? assigneeMap.get(row.assignee_id) : null;
-                return (
-                  <tr key={row.id} className="border-b border-slate-100">
-                    <td className="py-3 pr-4 font-medium text-slate-900">
-                      <Link href={`/licenses/${row.id}`} className="hover:text-apollon-600 hover:underline">
-                        {row.name}
-                      </Link>
-                    </td>
-                    <td className="py-3 pr-4">{row.category}</td>
-                    <td className="py-3 pr-4">{row.status}</td>
-                    <td className="py-3 pr-4">
-                      {formatCurrency(Number(row.cost_monthly))}
-                      <span className="text-xs text-slate-500"> · {row.cost_type}</span>
-                    </td>
-                    <td className="py-3 pr-4">{assignee?.name ?? "-"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {licenses.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">등록된 서비스가 없습니다.</p> : null}
-        </div>
+
+        {renewalItems.length === 0 ? (
+          <div className="mt-8 flex flex-col items-center justify-center py-8 text-center">
+            <IconEmptyBox className="h-14 w-14 text-slate-300" />
+            <p className="mt-3 text-sm text-slate-500">1개월 내 갱신 예정 서비스가 없습니다</p>
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-slate-100">
+            {renewalItems.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-1">
+                <Link
+                  href={`/licenses/${item.id}`}
+                  className="min-w-0 flex-1 truncate font-medium text-slate-900 hover:text-blue-600 hover:underline"
+                >
+                  {item.name}
+                </Link>
+                <div className="flex shrink-0 items-center gap-4 text-sm">
+                  <span className="tabular-nums text-slate-600">{formatDateKorean(toIsoDate(item.date))}</span>
+                  <span className="font-medium tabular-nums text-slate-700">
+                    {item.daysLeft === 0 ? "D-Day" : `D-${item.daysLeft}`}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
