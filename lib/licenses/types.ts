@@ -32,7 +32,12 @@ export type License = {
   currency?: string;
   cost?: number;
   contract_type?: ContractType;
+  /** 라이선스(서비스) 시작일 */
   start_date?: string | null;
+  /** 구매일 (년 구독·영구) */
+  purchase_date?: string | null;
+  /** 라이선스 종료일 = 갱신일 (년 구독, 다음 결제일 앵커) */
+  end_date?: string | null;
   /** @deprecated payment_day / payment_month 로 계산. 레거시 컬럼. */
   next_payment_date?: string | null;
   /** 반복 결제일 (월/년 구독 모두). 1~31 */

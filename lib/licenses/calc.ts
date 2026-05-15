@@ -88,6 +88,38 @@ export function computeNextPayment(
   return null;
 }
 
+/**
+ * `end_date`(갱신일) 월·일을 매년 반복하는 앵커로 보고, 오늘 이후 가장 가까운 날짜.
+ */
+export function nextOccurrenceFromAnnualEndDate(
+  endDateIso: string | null | undefined,
+  reference: Date = new Date()
+): Date | null {
+  if (!endDateIso || endDateIso.length < 10) return null;
+  const anchor = new Date(`${endDateIso.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(anchor.getTime())) return null;
+  const today = new Date(reference);
+  today.setHours(12, 0, 0, 0);
+  let d = new Date(anchor);
+  for (let i = 0; i < 80; i++) {
+    if (d.getTime() >= today.getTime()) return d;
+    d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  }
+  return null;
+}
+
+/** 목록·상세·대시보드 공통: 다음 갱신/결제일 */
+export function computeLicenseNextRenewal(
+  l: Pick<License, "contract_type" | "payment_day" | "payment_month" | "end_date">,
+  reference: Date = new Date()
+): Date | null {
+  if (l.contract_type === "년 구독" && l.end_date) {
+    const fromEnd = nextOccurrenceFromAnnualEndDate(l.end_date, reference);
+    if (fromEnd) return fromEnd;
+  }
+  return computeNextPayment(l.contract_type, l.payment_day, l.payment_month, reference);
+}
+
 /** Date → 'YYYY-MM-DD' (로컬 기준). 다른 ISO 변환과 안전하게 비교하기 위함. */
 function toIsoDate(d: Date): string {
   const y = d.getFullYear();
@@ -97,10 +129,9 @@ function toIsoDate(d: Date): string {
 }
 
 export function nextRenewalDate(licenses: License[]): string | null {
-  // payment_day / payment_month 기반 계산이 1순위. 둘 다 없으면 레거시 컬럼 폴백.
   const dates: string[] = [];
   for (const l of licenses) {
-    const computed = computeNextPayment(l.contract_type, l.payment_day, l.payment_month);
+    const computed = computeLicenseNextRenewal(l);
     if (computed) {
       dates.push(toIsoDate(computed));
       continue;

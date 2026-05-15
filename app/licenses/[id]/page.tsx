@@ -10,7 +10,7 @@ import {
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeNextPayment, formatCurrency } from "@/lib/licenses/calc";
+import { computeLicenseNextRenewal, formatCurrency } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -202,25 +202,79 @@ export default function LicenseDetailPage() {
         : currency === "EUR"
           ? rates?.EUR ?? null
           : null;
+    /** 월/년 구독: 비용 분배·환율 보조용 좌석 수 (최소 1) */
     const licenseCount = Math.max(1, license.license_count || 1);
     const isYearly = license.contract_type === "년 구독";
     const isPerpetual = license.contract_type === "영구 라이선스";
 
-    const monthlyTotalOrig = isYearly ? rawCost / 12 : rawCost;
-    const monthlyTotalKrw = isKrw
-      ? monthlyTotalOrig
+    // 영구 라이선스: 기본은 `cost` = 개당 1회 구매가, 총액 = 개당 × license_count.
+    // 예외: 폼/수동 입력으로 `cost` 에 총액, `cost_monthly` 에 개당이 들어간 경우
+    //       (cost ≈ cost_monthly × seatCount 이고 둘이 다름) → 총액=cost, 개당=cost_monthly.
+    const seatCount = Math.max(0, license.license_count ?? 0);
+    let perpetualPerUnitOrig: number;
+    let perpetualTotalOrig: number;
+    if (isPerpetual && seatCount > 0) {
+      const cn = costNum;
+      const cm = costMonthlyNum;
+      const looksLikeTotalWithPerSeatMonthly =
+        cn > 0 &&
+        cm > 0 &&
+        Math.abs(cn - cm * seatCount) < 0.01 &&
+        Math.abs(cn - cm) > 0.01;
+      if (looksLikeTotalWithPerSeatMonthly) {
+        perpetualTotalOrig = cn;
+        perpetualPerUnitOrig = cm;
+      } else {
+        perpetualPerUnitOrig = rawCost;
+        perpetualTotalOrig = perpetualPerUnitOrig * seatCount;
+      }
+    } else {
+      perpetualPerUnitOrig = rawCost;
+      perpetualTotalOrig =
+        seatCount > 0 ? perpetualPerUnitOrig * seatCount : perpetualPerUnitOrig;
+    }
+    const perpetualPerUnitKrw = isKrw
+      ? perpetualPerUnitOrig
       : fxRate != null
-        ? monthlyTotalOrig * fxRate
+        ? perpetualPerUnitOrig * fxRate
         : null;
-    const annualTotalOrig = isYearly ? rawCost : rawCost * 12;
-    const annualTotalKrw = isKrw
-      ? annualTotalOrig
-      : fxRate != null
-        ? annualTotalOrig * fxRate
+    const perpetualTotalKrw =
+      perpetualPerUnitKrw != null
+        ? seatCount > 0
+          ? perpetualPerUnitKrw * seatCount
+          : perpetualPerUnitKrw
         : null;
-    const perUnitMonthlyOrig = monthlyTotalOrig / licenseCount;
-    const perUnitMonthlyKrw =
-      monthlyTotalKrw != null ? monthlyTotalKrw / licenseCount : null;
+
+    const monthlyTotalOrig = isPerpetual
+      ? perpetualPerUnitOrig
+      : isYearly
+        ? rawCost / 12
+        : rawCost;
+    const monthlyTotalKrw = isPerpetual
+      ? perpetualPerUnitKrw
+      : isKrw
+        ? monthlyTotalOrig
+        : fxRate != null
+          ? monthlyTotalOrig * fxRate
+          : null;
+    const annualTotalOrig = isPerpetual
+      ? perpetualTotalOrig
+      : isYearly
+        ? rawCost
+        : rawCost * 12;
+    const annualTotalKrw = isPerpetual
+      ? perpetualTotalKrw
+      : isKrw
+        ? annualTotalOrig
+        : fxRate != null
+          ? annualTotalOrig * fxRate
+          : null;
+    const perUnitMonthlyOrig = isPerpetual ? perpetualPerUnitOrig : monthlyTotalOrig / licenseCount;
+    const perUnitMonthlyKrw = isPerpetual
+      ? perpetualPerUnitKrw
+      : monthlyTotalKrw != null
+        ? monthlyTotalKrw / licenseCount
+        : null;
     const fxRateFormatted =
       fxRate != null ? Math.round(fxRate).toLocaleString("ko-KR") : null;
 
@@ -232,7 +286,12 @@ export default function LicenseDetailPage() {
       fxRate,
       fxRateFormatted,
       licenseCount,
+      seatCount,
       rawCost,
+      perpetualPerUnitOrig,
+      perpetualTotalOrig,
+      perpetualPerUnitKrw,
+      perpetualTotalKrw,
       monthlyTotalOrig,
       monthlyTotalKrw,
       annualTotalOrig,
@@ -265,10 +324,8 @@ export default function LicenseDetailPage() {
     ? "bg-emerald-100 text-emerald-700"
     : "bg-slate-100 text-slate-600";
 
-  // 다음 결제일 — 영구 라이선스이거나 payment_day 미설정 시 null.
-  const nextPaymentDate = cost.isPerpetual
-    ? null
-    : computeNextPayment(license.contract_type, license.payment_day, license.payment_month);
+  // 다음 결제일 — 영구는 없음. 년 구독은 end_date, 월 구독은 payment_day.
+  const nextPaymentDate = cost.isPerpetual ? null : computeLicenseNextRenewal(license);
   let nextPaymentLabel: string | null = null;
   let nextPaymentDiff: number | null = null;
   if (nextPaymentDate) {
@@ -282,10 +339,14 @@ export default function LicenseDetailPage() {
   const nextPaymentColor =
     nextPaymentDiff != null && nextPaymentDiff <= 7 ? "text-amber-600" : "text-slate-900";
 
-  // description / 시작일 / 결제방법 / 사용목적
-  const startDateText =
-    parseDescField(license.description, "시작일") ?? license.start_date ?? null;
+  // description / 시작일 / 결제방법 / 사용목적 (시작일은 DB 컬럼 우선)
+  const startDateText = license.start_date ?? parseDescField(license.description, "시작일") ?? null;
   const startDateLabel = formatDateKorean(startDateText);
+  const endDateText = license.end_date ?? null;
+  const endDateLabel = formatDateKorean(endDateText);
+  const purchaseDateText = license.purchase_date ?? null;
+  const purchaseDateLabel = formatDateKorean(purchaseDateText);
+  const isYearlyContract = license.contract_type === "년 구독";
   const paymentMethodText =
     parseDescField(license.description, "결제방법") ?? license.payment_method ?? null;
   const purposeText =
@@ -367,25 +428,52 @@ export default function LicenseDetailPage() {
             <h2 className="text-base font-bold text-slate-900">서비스 정보</h2>
             <div className="mt-4 grid gap-6 sm:grid-cols-2">
               <div>
-                <p className="text-xs text-slate-500">월간비용</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                  {cost.monthlyTotalKrw != null
-                    ? formatCurrency(cost.monthlyTotalKrw)
-                    : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
+                <p className="text-xs text-slate-500">
+                  {cost.isPerpetual ? "구매 비용" : "월간비용"}
                 </p>
-                {!cost.isKrw ? (
+                {cost.isPerpetual ? (
                   <>
-                    <p className="mt-1 text-xs tabular-nums text-slate-500">
-                      {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                      {cost.perpetualTotalKrw != null
+                        ? formatCurrency(cost.perpetualTotalKrw)
+                        : formatOriginalCurrency(cost.perpetualTotalOrig, cost.currency)}
                     </p>
-                    {cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
+                    {cost.seatCount > 0 ? (
+                      <p className="mt-1 text-xs tabular-nums text-slate-500">
+                        {cost.isKrw
+                          ? `${formatCurrency(cost.perpetualPerUnitOrig)} × ${cost.seatCount}개`
+                          : `${formatOriginalCurrency(cost.perpetualPerUnitOrig, cost.currency)} × ${cost.seatCount}개`}
+                      </p>
+                    ) : null}
+                    {!cost.isKrw && cost.fxRateFormatted && cost.perpetualPerUnitKrw != null && cost.seatCount > 0 ? (
                       <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
-                        (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
-                        {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                        (적용환율 {cost.fxRateFormatted}원기준 개당{" "}
+                        {Math.round(cost.perpetualPerUnitKrw).toLocaleString("ko-KR")}원 × {cost.seatCount}개)
                       </p>
                     ) : null}
                   </>
-                ) : null}
+                ) : (
+                  <>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                      {cost.monthlyTotalKrw != null
+                        ? formatCurrency(cost.monthlyTotalKrw)
+                        : formatOriginalCurrency(cost.monthlyTotalOrig, cost.currency)}
+                    </p>
+                    {!cost.isKrw ? (
+                      <>
+                        <p className="mt-1 text-xs tabular-nums text-slate-500">
+                          {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                        </p>
+                        {cost.fxRateFormatted && cost.perUnitMonthlyKrw != null ? (
+                          <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                            (적용환율 {cost.fxRateFormatted}원기준 개당 월{" "}
+                            {Math.round(cost.perUnitMonthlyKrw).toLocaleString("ko-KR")}원)
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </>
+                )}
               </div>
 
               <div>
@@ -395,7 +483,52 @@ export default function LicenseDetailPage() {
                 </p>
               </div>
 
-              {startDateLabel ? (
+              {cost.isPerpetual && purchaseDateLabel ? (
+                <div>
+                  <p className="text-xs text-slate-500">구매일</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {purchaseDateLabel}
+                  </p>
+                </div>
+              ) : null}
+
+              {!cost.isPerpetual && isYearlyContract && startDateLabel ? (
+                <div>
+                  <p className="text-xs text-slate-500">서비스 시작일</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {startDateLabel}
+                  </p>
+                </div>
+              ) : null}
+
+              {!cost.isPerpetual && isYearlyContract && endDateLabel ? (
+                <div>
+                  <p className="text-xs text-slate-500">라이선스 종료일 (갱신일)</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
+                    <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {endDateLabel}
+                  </p>
+                </div>
+              ) : null}
+
+              {!cost.isPerpetual && !isYearlyContract && startDateLabel ? (
                 <div>
                   <p className="text-xs text-slate-500">서비스 시작일</p>
                   <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-900">
@@ -489,32 +622,53 @@ export default function LicenseDetailPage() {
           {/* 연간 비용 */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-base font-bold text-slate-900">
-              {cost.isPerpetual ? "총 비용" : "연간 비용"}
+              {cost.isPerpetual ? "총 구매 비용" : "연간 비용"}
             </h2>
             <div className="mt-3">
               <p className="text-3xl font-bold tabular-nums text-slate-900">
-                {cost.annualTotalKrw != null
-                  ? formatCurrency(cost.annualTotalKrw)
-                  : formatOriginalCurrency(cost.annualTotalOrig, cost.currency)}
+                {cost.isPerpetual
+                  ? cost.perpetualTotalKrw != null
+                    ? formatCurrency(cost.perpetualTotalKrw)
+                    : formatOriginalCurrency(cost.perpetualTotalOrig, cost.currency)
+                  : cost.annualTotalKrw != null
+                    ? formatCurrency(cost.annualTotalKrw)
+                    : formatOriginalCurrency(cost.annualTotalOrig, cost.currency)}
               </p>
-              {!cost.isKrw && !cost.isPerpetual && cost.perUnitMonthlyKrw != null ? (
-                <p className="mt-2 text-xs tabular-nums text-slate-500">
-                  {formatCurrency(cost.perUnitMonthlyKrw)} × {cost.licenseCount}개 × 12개월
-                </p>
-              ) : null}
-              {!cost.isKrw ? (
-                <p className="mt-1 text-xs tabular-nums text-slate-400">
-                  {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
-                </p>
-              ) : null}
-              {!cost.isKrw && cost.fxRateFormatted ? (
-                <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
-                  (적용환율 {cost.fxRateFormatted}원기준)
-                </p>
-              ) : null}
               {cost.isPerpetual ? (
-                <p className="mt-2 text-xs text-slate-500">영구 라이선스 · 1회 결제</p>
-              ) : null}
+                <>
+                  {cost.seatCount > 0 ? (
+                    <p className="mt-2 text-xs tabular-nums text-slate-500">
+                      {cost.isKrw
+                        ? `${formatCurrency(cost.perpetualPerUnitOrig)} × ${cost.seatCount}개`
+                        : `${formatOriginalCurrency(cost.perpetualPerUnitOrig, cost.currency)} × ${cost.seatCount}개`}
+                    </p>
+                  ) : null}
+                  {!cost.isKrw && cost.fxRateFormatted && cost.perpetualPerUnitKrw != null && cost.seatCount > 0 ? (
+                    <p className="mt-1 text-[11px] tabular-nums text-slate-400">
+                      (적용환율 {cost.fxRateFormatted}원기준)
+                    </p>
+                  ) : null}
+                  <p className="mt-2 text-xs text-slate-500">영구 라이선스 · 1회 결제</p>
+                </>
+              ) : (
+                <>
+                  {!cost.isKrw && cost.perUnitMonthlyKrw != null ? (
+                    <p className="mt-2 text-xs tabular-nums text-slate-500">
+                      {formatCurrency(cost.perUnitMonthlyKrw)} × {cost.licenseCount}개 × 12개월
+                    </p>
+                  ) : null}
+                  {!cost.isKrw ? (
+                    <p className="mt-1 text-xs tabular-nums text-slate-400">
+                      {formatOriginalCurrency(cost.perUnitMonthlyOrig, cost.currency)}/월 × {cost.licenseCount}개
+                    </p>
+                  ) : null}
+                  {!cost.isKrw && cost.fxRateFormatted ? (
+                    <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                      (적용환율 {cost.fxRateFormatted}원기준)
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           </section>
 

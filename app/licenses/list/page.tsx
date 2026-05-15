@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
-import { computeNextPayment, formatCurrency } from "@/lib/licenses/calc";
+import { computeLicenseNextRenewal, formatCurrency } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -315,11 +315,7 @@ export default function LicensesListPage() {
             const style = inactive ? INACTIVE_STYLE : categoryStyle(row.category);
             const assignee = row.assignee_id ? assigneeMap.get(row.assignee_id) ?? null : null;
             // payment_day / payment_month 기반으로 오늘 이후 가장 가까운 결제일 계산.
-            const nextPaymentDate = computeNextPayment(
-              row.contract_type,
-              row.payment_day,
-              row.payment_month
-            );
+            const nextPaymentDate = computeLicenseNextRenewal(row);
             let nextPaymentLabel: string | null = null;
             let nextPaymentDiff: number | null = null;
             if (nextPaymentDate) {

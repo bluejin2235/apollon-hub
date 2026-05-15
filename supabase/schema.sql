@@ -601,6 +601,11 @@ alter table public.services add column if not exists next_payment_date date;
 -- next_payment_date 컬럼은 더 이상 사용하지 않고 위 두 컬럼으로부터 다음 결제일을 동적으로 계산.
 alter table public.services add column if not exists payment_day integer;
 alter table public.services add column if not exists payment_month integer;
+-- 년 구독: 구매일 / 라이선스 시작·종료(갱신일). 월 구독: start_date. 영구: purchase_date.
+-- 년 구독 시 다음 갱신일은 end_date 기준(연간 앵커)으로 계산하며 payment_month/day 는 사용하지 않음.
+alter table public.services add column if not exists purchase_date date;
+alter table public.services add column if not exists start_date date;
+alter table public.services add column if not exists end_date date;
 -- 최종 수정일 트래킹 (라이선스 상세페이지 '추가 정보' 카드에서 노출)
 alter table public.services add column if not exists updated_at timestamptz not null default now();
 
