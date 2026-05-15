@@ -15,6 +15,7 @@ import {
 import { formatCurrency } from "@/lib/licenses/calc";
 import {
   buildMonthRows,
+  canCompareMonthOverMonth,
   COST_METRIC_LABELS,
   currentYearMonth,
   listMonthsInRange,
@@ -22,7 +23,6 @@ import {
   shiftMonth,
   type CostContractFilter,
   type CostMetricKey,
-  type MonthlyCostSnapshotRow
 } from "@/lib/licenses/cost-analytics";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
@@ -58,7 +58,6 @@ export default function LicensesCostsPage() {
 
   const [services, setServices] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [snapshots, setSnapshots] = useState<MonthlyCostSnapshotRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState<PeriodPreset>("6m");
@@ -81,25 +80,6 @@ export default function LicensesCostsPage() {
       ]);
       setServices((sRes.data ?? []) as License[]);
       setProfiles((pRes.data ?? []) as Profile[]);
-
-      const endYm = period === "custom" ? customEnd : currentYm;
-      const startYm =
-        period === "custom"
-          ? customStart
-          : period === "3m"
-            ? shiftMonth(endYm, -2)
-            : period === "1y"
-              ? shiftMonth(endYm, -11)
-              : shiftMonth(endYm, -5);
-
-      const { data: snapData } = await supabase
-        .from("monthly_cost_snapshots")
-        .select("*")
-        .gte("snapshot_month", startYm)
-        .lte("snapshot_month", endYm)
-        .order("snapshot_month", { ascending: true });
-
-      setSnapshots((snapData ?? []) as MonthlyCostSnapshotRow[]);
       setLoading(false);
     };
     void run();
@@ -140,12 +120,6 @@ export default function LicensesCostsPage() {
     [category, serviceId, contractType]
   );
 
-  const snapshotsByMonth = useMemo(() => {
-    const m = new Map<string, MonthlyCostSnapshotRow>();
-    for (const s of snapshots) m.set(s.snapshot_month, s);
-    return m;
-  }, [snapshots]);
-
   const monthRows = useMemo(
     () =>
       buildMonthRows({
@@ -154,10 +128,9 @@ export default function LicensesCostsPage() {
         services,
         profiles,
         rates,
-        filters,
-        snapshotsByMonth
+        filters
       }),
-    [range.months, currentYm, services, profiles, rates, filters, snapshotsByMonth]
+    [range.months, currentYm, services, profiles, rates, filters]
   );
 
   const summary = useMemo(() => {
@@ -412,7 +385,21 @@ export default function LicensesCostsPage() {
                     typeof v === "number" ? `${Math.round(v / 10000)}만` : String(v)
                   }
                 />
-                <YAxis yAxisId="count" orientation="right" hide={!metrics.includes("members")} />
+                <YAxis
+                  yAxisId="perp"
+                  orientation="right"
+                  hide={!metrics.includes("perpetual")}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) =>
+                    typeof v === "number" ? `${Math.round(v / 10000)}만` : String(v)
+                  }
+                />
+                <YAxis
+                  yAxisId="count"
+                  orientation="right"
+                  hide={!metrics.includes("members") || metrics.includes("perpetual")}
+                  tick={{ fontSize: 11 }}
+                />
                 <Tooltip
                   formatter={(value, name) => {
                     const n = typeof value === "number" ? value : Number(value);
@@ -491,20 +478,21 @@ export default function LicensesCostsPage() {
                 {metrics.includes("perpetual") ? (
                   chartMode === "line" ? (
                     <Line
-                      yAxisId="krw"
+                      yAxisId="perp"
                       type="monotone"
                       dataKey="perpetual"
                       name={COST_METRIC_LABELS.perpetual}
                       stroke="#64748b"
                       strokeWidth={2}
+                      connectNulls={false}
                     />
                   ) : (
                     <Bar
-                      yAxisId="krw"
+                      yAxisId="perp"
                       dataKey="perpetual"
                       name={COST_METRIC_LABELS.perpetual}
                       fill="#94a3b8"
-                      stackId={chartMode === "stack" ? "a" : undefined}
+                      radius={[4, 4, 0, 0]}
                     />
                   )
                 ) : null}
@@ -559,7 +547,10 @@ export default function LicensesCostsPage() {
             </ResponsiveContainer>
           )}
         </div>
-        <p className="mt-2 text-xs text-slate-500">현재월 막대는 진한 테두리로 표시됩니다.</p>
+        <p className="mt-2 text-xs text-slate-500">
+          구독(좌측 축)과 영구구매(우측 축)는 별도 스케일입니다. 영구구매는 구매 발생 월에만 막대가 표시됩니다.
+          현재월 구독 막대는 진한 테두리로 표시됩니다.
+        </p>
       </section>
 
       {/* ④ 테이블 */}
@@ -578,7 +569,10 @@ export default function LicensesCostsPage() {
           <tbody className="divide-y divide-slate-100">
             {monthRows.map((row, idx) => {
               const prev = idx > 0 ? monthRows[idx - 1] : null;
-              const change = pctChange(row.subscriptionKrw, prev?.subscriptionKrw ?? null);
+              const comparable = canCompareMonthOverMonth(idx);
+              const change = comparable
+                ? pctChange(row.subscriptionKrw, prev?.subscriptionKrw ?? null)
+                : null;
               return (
                 <tr
                   key={row.month}
@@ -604,14 +598,14 @@ export default function LicensesCostsPage() {
                   </td>
                   <td
                     className={`px-4 py-3 text-right tabular-nums ${
-                      change != null && change > 0
+                      comparable && change != null && change > 0
                         ? "text-rose-600"
-                        : change != null && change < 0
+                        : comparable && change != null && change < 0
                           ? "text-emerald-600"
                           : "text-slate-500"
                     }`}
                   >
-                    {formatPct(change)}
+                    {comparable ? formatPct(change) : "—"}
                   </td>
                 </tr>
               );
