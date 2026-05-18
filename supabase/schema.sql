@@ -457,6 +457,61 @@ drop policy if exists "ashuleng_comments_delete_auth" on public.ashuleng_comment
 create policy "ashuleng_comments_delete_auth"
   on public.ashuleng_comments for delete to authenticated using (true);
 
+-- Hub 게시판 (허브 메인 하단)
+create table if not exists public.hub_posts (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text not null default '',
+  author_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_hub_posts_created on public.hub_posts (created_at desc);
+create index if not exists idx_hub_posts_author on public.hub_posts (author_id);
+
+alter table public.hub_posts enable row level security;
+
+drop policy if exists "hub_posts_select_auth" on public.hub_posts;
+create policy "hub_posts_select_auth"
+  on public.hub_posts for select to authenticated using (true);
+
+drop policy if exists "hub_posts_insert_auth" on public.hub_posts;
+create policy "hub_posts_insert_auth"
+  on public.hub_posts for insert to authenticated with check (true);
+
+drop policy if exists "hub_posts_update_auth" on public.hub_posts;
+create policy "hub_posts_update_auth"
+  on public.hub_posts for update to authenticated using (true) with check (true);
+
+drop policy if exists "hub_posts_delete_auth" on public.hub_posts;
+create policy "hub_posts_delete_auth"
+  on public.hub_posts for delete to authenticated using (true);
+
+create table if not exists public.hub_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.hub_posts (id) on delete cascade,
+  author_id uuid not null references public.profiles (id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_hub_comments_post on public.hub_comments (post_id, created_at);
+create index if not exists idx_hub_comments_author on public.hub_comments (author_id);
+
+alter table public.hub_comments enable row level security;
+
+drop policy if exists "hub_comments_select_auth" on public.hub_comments;
+create policy "hub_comments_select_auth"
+  on public.hub_comments for select to authenticated using (true);
+
+drop policy if exists "hub_comments_insert_auth" on public.hub_comments;
+create policy "hub_comments_insert_auth"
+  on public.hub_comments for insert to authenticated with check (true);
+
+drop policy if exists "hub_comments_delete_auth" on public.hub_comments;
+create policy "hub_comments_delete_auth"
+  on public.hub_comments for delete to authenticated using (true);
+
 -- ── licenses 4종 ───────────────────────────────────────────
 -- 주의: licenses / license_users / license_managers / license_credentials 테이블은
 --      현재 schema.sql 에 `create table` 정의가 없습니다.
