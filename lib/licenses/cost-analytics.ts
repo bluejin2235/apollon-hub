@@ -15,6 +15,9 @@ export type CostMetricKey =
   | "perMember"
   | "byCategory";
 
+/** 비용 현황 표시·집계 최소 월 (이전 데이터 미표시) */
+export const COST_ANALYTICS_MIN_MONTH = "2026-04";
+
 export const COST_METRIC_LABELS: Record<CostMetricKey, string> = {
   subscription: "월 구독 합계",
   perpetual: "월 영구구매 합계",
@@ -249,6 +252,11 @@ export function buildMonthRows(params: {
 export function monthLabel(ym: string): string {
   const [y, m] = ym.split("-");
   return `${y}년 ${Number(m)}월`;
+}
+
+/** 조회 시작월을 최소 월(2026-04) 이상으로 보정 */
+export function clampCostRangeStart(startYm: string): string {
+  return startYm < COST_ANALYTICS_MIN_MONTH ? COST_ANALYTICS_MIN_MONTH : startYm;
 }
 
 export function listMonthsInRange(startYm: string, endYm: string): string[] {
