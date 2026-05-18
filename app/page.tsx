@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { APP_TITLE } from "@/lib/portal/app-title";
 import { supabase } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -94,7 +95,7 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-screen place-items-center">
       <section className="apollon-card w-full max-w-md p-8 shadow-glow">
-        <p className="text-sm font-medium tracking-wide text-apollon-600">APOLLON OS</p>
+        <p className="text-sm font-medium tracking-wide text-apollon-600">{APP_TITLE}</p>
         <h1 className="mt-3 text-3xl font-bold text-slate-900">팀 포털 로그인</h1>
         <p className="mt-2 text-sm text-slate-600">
           단일 계정으로 내부 서비스에 접근하세요.

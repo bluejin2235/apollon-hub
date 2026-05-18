@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_KR } from "next/font/google";
+import { APP_TITLE } from "@/lib/portal/app-title";
 import "./globals.css";
 
 const notoSansKr = Noto_Sans_KR({
@@ -9,7 +10,7 @@ const notoSansKr = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: "Apollon OS",
+  title: APP_TITLE,
   description: "아폴론 팀 내부 서비스를 위한 통합 포털"
 };
 

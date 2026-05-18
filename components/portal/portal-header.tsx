@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { APP_TITLE } from "@/lib/portal/app-title";
 
 export type PortalHeaderProps = {
   /** `이름 / 부서 / 권한` 한 줄 */
@@ -62,7 +63,7 @@ export function PortalHeader({
   showSettingsLink = true
 }: PortalHeaderProps) {
   const title = (
-    <span className="text-base font-bold uppercase tracking-wide text-gray-900 sm:text-[0.95rem]">APOLLON HUB</span>
+    <span className="text-base font-bold uppercase tracking-wide text-gray-900 sm:text-[0.95rem]">{APP_TITLE}</span>
   );
 
   return (

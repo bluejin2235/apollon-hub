@@ -1,4 +1,4 @@
-# Apollon OS
+# APOLLON HUB
 
 Next.js + Tailwind CSS + Supabase 기반의 팀 내부 포털 프로젝트입니다.
 
