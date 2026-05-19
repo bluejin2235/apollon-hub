@@ -512,6 +512,53 @@ drop policy if exists "hub_comments_delete_auth" on public.hub_comments;
 create policy "hub_comments_delete_auth"
   on public.hub_comments for delete to authenticated using (true);
 
+-- 아르테 API 사용량 (CSV 업로드)
+create table if not exists public.api_usage (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null check (provider in ('anthropic', 'openai')),
+  date date not null,
+  model text not null,
+  api_key_label text not null default '',
+  input_tokens bigint not null default 0,
+  output_tokens bigint not null default 0,
+  input_cost_usd numeric(10, 6) not null default 0,
+  output_cost_usd numeric(10, 6) not null default 0,
+  cost_usd numeric(10, 6) not null default 0,
+  uploaded_by uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_api_usage_date on public.api_usage (date desc);
+create index if not exists idx_api_usage_provider_date on public.api_usage (provider, date);
+
+alter table public.api_usage add column if not exists api_key_label text;
+alter table public.api_usage add column if not exists input_cost_usd numeric(10, 6) default 0;
+alter table public.api_usage add column if not exists output_cost_usd numeric(10, 6) default 0;
+
+alter table public.api_usage add column if not exists uploaded_by uuid references public.profiles (id) on delete set null;
+
+alter table public.api_usage drop constraint if exists api_usage_unique_record;
+alter table public.api_usage add constraint api_usage_unique_record
+  unique (provider, date, model, api_key_label);
+
+alter table public.api_usage enable row level security;
+
+drop policy if exists "api_usage_select_auth" on public.api_usage;
+create policy "api_usage_select_auth"
+  on public.api_usage for select to authenticated using (true);
+
+drop policy if exists "api_usage_insert_auth" on public.api_usage;
+create policy "api_usage_insert_auth"
+  on public.api_usage for insert to authenticated with check (true);
+
+drop policy if exists "api_usage_update_auth" on public.api_usage;
+create policy "api_usage_update_auth"
+  on public.api_usage for update to authenticated using (true) with check (true);
+
+drop policy if exists "api_usage_delete_auth" on public.api_usage;
+create policy "api_usage_delete_auth"
+  on public.api_usage for delete to authenticated using (true);
+
 -- ── licenses 4종 ───────────────────────────────────────────
 -- 주의: licenses / license_users / license_managers / license_credentials 테이블은
 --      현재 schema.sql 에 `create table` 정의가 없습니다.
