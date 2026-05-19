@@ -61,7 +61,7 @@ function toggleSet<T extends string>(set: Set<T>, v: T): Set<T> {
 /** 맛집 목록 카드 페이지 크기 (상세 사진/리뷰 페이지네이션과 동일 UI) */
 const LIST_PAGE_SIZE = 4;
 
-const GOURMET_RANK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const GOURMET_RANK_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
 const GOURMET_REG_POINTS = 3;
 const GOURMET_REVIEW_POINTS = 1;
 
@@ -121,7 +121,7 @@ export default function RestaurantsMainPage() {
     return m;
   }, [profiles]);
 
-  /** 맛집 등록·리뷰 기여: 달력 월이 아니라 `Date.now()` 기준 최근 30일(롤링)만 집계 */
+  /** 맛집 등록·리뷰 기여: 달력 월이 아니라 `Date.now()` 기준 최근 15일(롤링)만 집계 */
   const gourmetRankBoard = useMemo(() => {
     const cutoff = Date.now() - GOURMET_RANK_WINDOW_MS;
     const byId = new Map<string, { reg: number; rev: number }>();
@@ -379,7 +379,7 @@ export default function RestaurantsMainPage() {
     return <p className="py-20 text-center text-gray-600">불러오는 중...</p>;
   }
 
-  const gourmetRankCaption = "최근 30일 기준";
+  const gourmetRankCaption = "최근 15일 기준";
   const gourmetMedals = ["🥇", "🥈", "🥉"] as const;
 
   return (
