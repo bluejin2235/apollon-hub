@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { PortalNotifications } from "@/components/portal/portal-notifications";
 import { APP_TITLE } from "@/lib/portal/app-title";
 
 export type PortalHeaderProps = {
   /** `이름 / 부서 / 권한` 한 줄 */
   userInfoLine: string;
+  /** 알림 뱃지·드롭다운 (비품 관리 등) */
+  userId?: string;
   onLogout: () => void;
   /** Hub page uses a non-link title; shells link back to `/hub` */
   hubTitleVariant?: "link" | "text";
@@ -56,6 +59,7 @@ function IconLogout(props: { className?: string }) {
 
 export function PortalHeader({
   userInfoLine,
+  userId,
   onLogout,
   hubTitleVariant = "link",
   maxWidthClass = "w-full",
@@ -87,6 +91,8 @@ export function PortalHeader({
           >
             {userInfoLine}
           </span>
+
+          {userId ? <PortalNotifications userId={userId} /> : null}
 
           {showSettingsLink ? (
             <Link

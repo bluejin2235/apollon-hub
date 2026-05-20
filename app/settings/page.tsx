@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
+import { MyLoansTab } from "@/components/settings/my-loans-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
 import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/team-member-edit-modal";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
@@ -10,7 +11,7 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
-type TabKey = "profile" | "password" | "team" | "services";
+type TabKey = "profile" | "password" | "team" | "loans" | "services";
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
@@ -51,6 +52,7 @@ export default function SettingsPage() {
     const base: Array<{ key: TabKey; label: string }> = [
       { key: "profile", label: "프로필" },
       { key: "password", label: "비밀번호" },
+      { key: "loans", label: "내 대출 현황" },
       { key: "team", label: "팀원 관리" }
     ];
     if (canManageServices) {
@@ -274,6 +276,7 @@ export default function SettingsPage() {
     <main className="min-h-screen">
       <PortalHeader
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
+        userId={sessionProfile.id}
         onLogout={handleLogout}
         zIndexClass="z-10"
         showSettingsLink={false}
@@ -492,6 +495,8 @@ export default function SettingsPage() {
             ))}
           </section>
         ) : null}
+
+        {activeTab === "loans" ? <MyLoansTab userId={sessionProfile.id} /> : null}
 
         {activeTab === "services" ? (
           <ServiceManagementTab canManage={canManageServices} />

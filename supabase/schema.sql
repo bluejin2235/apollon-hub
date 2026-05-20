@@ -844,3 +844,69 @@ insert into public.services (
    '아폴론 미식가들이 직접 뽑은 아슐랭 가이드',
    '🍱', '/restaurants', '활성', '전체', 1, true,
    null, null, null, 0, 0);
+
+-- ── 비품 관리 (supplies) ─────────────────────────────────────
+-- 테이블은 Supabase에 생성된 상태를 전제로 RLS만 동기화합니다.
+
+alter table public.supplies enable row level security;
+alter table public.supply_loans enable row level security;
+alter table public.supply_items enable row level security;
+alter table public.supply_notifications enable row level security;
+
+drop policy if exists "supplies_select_auth" on public.supplies;
+create policy "supplies_select_auth"
+  on public.supplies for select to authenticated using (true);
+
+drop policy if exists "supplies_insert_auth" on public.supplies;
+create policy "supplies_insert_auth"
+  on public.supplies for insert to authenticated with check (true);
+
+drop policy if exists "supplies_update_auth" on public.supplies;
+create policy "supplies_update_auth"
+  on public.supplies for update to authenticated using (true) with check (true);
+
+drop policy if exists "supplies_delete_auth" on public.supplies;
+create policy "supplies_delete_auth"
+  on public.supplies for delete to authenticated using (true);
+
+drop policy if exists "supply_loans_select_auth" on public.supply_loans;
+create policy "supply_loans_select_auth"
+  on public.supply_loans for select to authenticated using (true);
+
+drop policy if exists "supply_loans_insert_auth" on public.supply_loans;
+create policy "supply_loans_insert_auth"
+  on public.supply_loans for insert to authenticated with check (true);
+
+drop policy if exists "supply_loans_update_auth" on public.supply_loans;
+create policy "supply_loans_update_auth"
+  on public.supply_loans for update to authenticated using (true) with check (true);
+
+drop policy if exists "supply_items_select_auth" on public.supply_items;
+create policy "supply_items_select_auth"
+  on public.supply_items for select to authenticated using (true);
+
+drop policy if exists "supply_items_insert_auth" on public.supply_items;
+create policy "supply_items_insert_auth"
+  on public.supply_items for insert to authenticated with check (true);
+
+drop policy if exists "supply_items_update_auth" on public.supply_items;
+create policy "supply_items_update_auth"
+  on public.supply_items for update to authenticated using (true) with check (true);
+
+drop policy if exists "supply_items_delete_auth" on public.supply_items;
+create policy "supply_items_delete_auth"
+  on public.supply_items for delete to authenticated using (true);
+
+drop policy if exists "supply_notifications_select_auth" on public.supply_notifications;
+create policy "supply_notifications_select_auth"
+  on public.supply_notifications for select to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists "supply_notifications_insert_auth" on public.supply_notifications;
+create policy "supply_notifications_insert_auth"
+  on public.supply_notifications for insert to authenticated with check (true);
+
+drop policy if exists "supply_notifications_update_auth" on public.supply_notifications;
+create policy "supply_notifications_update_auth"
+  on public.supply_notifications for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
