@@ -18,14 +18,14 @@ const headerBar = "sticky top-0 border-b border-slate-200 bg-white";
 
 function LogoMark() {
   return (
-    <div
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-gray-900"
+    <img
+      src="/logo.png"
+      alt="Apollon Logo"
+      width={28}
+      height={28}
+      className="shrink-0"
       aria-hidden
-    >
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-        <path d="M12 4.5 20 18H4L12 4.5z" />
-      </svg>
-    </div>
+    />
   );
 }
 
