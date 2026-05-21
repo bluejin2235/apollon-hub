@@ -20,7 +20,6 @@ export function SuppliesShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <PortalHeader
         userInfoLine={userInfoLine}
-        userId={profile?.id}
         onLogout={() => void signOutAndRedirectToLogin()}
       />
       <div className="min-h-[calc(100vh-3.5rem)] w-full bg-white text-gray-900">

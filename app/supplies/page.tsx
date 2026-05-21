@@ -1,72 +1,58 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MyLoansWidget } from "@/components/supplies/my-loans-widget";
 import { SupplyCard } from "@/components/supplies/supply-card";
-import { SupplyFormModal } from "@/components/supplies/supply-form-modal";
-import { syncOverdueLoans } from "@/lib/supplies/operations";
-import { isSuperAdmin, matchesZoneFilter, statusFilterToSupplyStatus } from "@/lib/supplies/utils";
+import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
 import {
-  STATUS_FILTERS,
-  ZONE_FILTERS,
-  type ProfileLite,
-  type StatusFilterLabel,
-  type SupplyCardData,
-  type SupplyWithManager,
-  type ZoneFilter
-} from "@/lib/supplies/types";
+  getSlotsForZone,
+  getSupplyZones,
+  mapSupplyRow,
+  SUPPLY_LOCATION_SELECT,
+  zoneSelectLabel
+} from "@/lib/supplies/locations";
+import { isSupplyManager } from "@/lib/supplies/utils";
+import type { ProfileLite, SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
 
 export default function SuppliesPage() {
   const { status, profile } = useRequirePortalSession();
-  const [supplies, setSupplies] = useState<SupplyWithManager[]>([]);
-  const [dueBySupplyId, setDueBySupplyId] = useState<Map<string, string>>(new Map());
+  const [supplies, setSupplies] = useState<SupplyWithRelations[]>([]);
+  const [locations, setLocations] = useState<SupplyLocation[]>([]);
   const [managers, setManagers] = useState<ProfileLite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [zone, setZone] = useState<ZoneFilter>("전체");
-  const [statusFilter, setStatusFilter] = useState<StatusFilterLabel>("전체");
   const [search, setSearch] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [zoneFilter, setZoneFilter] = useState<string>("전체");
+  const [slotFilter, setSlotFilter] = useState<string>("전체");
+  const [registerOpen, setRegisterOpen] = useState(false);
 
-  const isAdmin = isSuperAdmin(profile?.role);
-  const userId = profile?.id ?? "";
+  const canRegister = isSupplyManager(profile?.role);
+  const zones = useMemo(() => getSupplyZones(locations), [locations]);
+  const slotsInZone = useMemo(
+    () => (zoneFilter === "전체" ? [] : getSlotsForZone(locations, zoneFilter)),
+    [locations, zoneFilter]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
-    await syncOverdueLoans();
-
-    const [supRes, loanRes, profRes] = await Promise.all([
+    const [supRes, locRes, profRes] = await Promise.all([
       supabase
         .from("supplies")
-        .select("*, manager:profiles!manager_id(id, name, email)")
-        .order("code", { ascending: true }),
+        .select(`*, location:supply_locations(${SUPPLY_LOCATION_SELECT}), manager:profiles!manager_id(id, name, email)`)
+        .order("created_at", { ascending: false }),
       supabase
-        .from("supply_loans")
-        .select("supply_id, due_date")
-        .in("status", ["active", "overdue"])
-        .is("returned_at", null),
-      supabase.from("profiles").select("id, name, email").order("name", { ascending: true })
+        .from("supply_locations")
+        .select(SUPPLY_LOCATION_SELECT)
+        .eq("is_active", true)
+        .order("zone_code")
+        .order("slot_code"),
+      supabase.from("profiles").select("id, name, email").order("name")
     ]);
 
-    const rows = (supRes.data ?? []).map((r) => {
-      const mgr = r.manager as { id: string; name: string | null; email?: string | null } | null;
-      const { manager: _m, ...rest } = r;
-      return {
-        ...rest,
-        manager: mgr ? { id: mgr.id, name: mgr.name, email: mgr.email } : null
-      } as SupplyWithManager;
-    });
-
-    const dueMap = new Map<string, string>();
-    for (const loan of loanRes.data ?? []) {
-      if (!dueMap.has(loan.supply_id)) dueMap.set(loan.supply_id, loan.due_date);
-    }
+    const rows = (supRes.data ?? []).map((r) => mapSupplyRow(r as Record<string, unknown>));
 
     setSupplies(rows);
-    setDueBySupplyId(dueMap);
+    setLocations((locRes.data ?? []) as SupplyLocation[]);
     setManagers((profRes.data ?? []) as ProfileLite[]);
     setLoading(false);
   }, []);
@@ -74,24 +60,21 @@ export default function SuppliesPage() {
   useEffect(() => {
     if (status !== "ready") return;
     void load();
-  }, [status, load, refreshKey]);
+  }, [status, load]);
 
-  const cards: SupplyCardData[] = useMemo(() => {
+  const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
-    const statusKey = statusFilterToSupplyStatus(statusFilter);
-
-    return supplies
-      .filter((s) => matchesZoneFilter(s.category, zone))
-      .filter((s) => (statusKey ? s.status === statusKey : true))
-      .filter((s) => {
-        if (!kw) return true;
-        return s.name.toLowerCase().includes(kw) || s.code.toLowerCase().includes(kw);
-      })
-      .map((s) => ({
-        ...s,
-        activeDueDate: s.status === "borrowed" ? dueBySupplyId.get(s.id) ?? null : null
-      }));
-  }, [supplies, zone, statusFilter, search, dueBySupplyId]);
+    return supplies.filter((s) => {
+      if (zoneFilter !== "전체" && s.location?.zone_code !== zoneFilter) return false;
+      if (slotFilter !== "전체" && s.location_id !== slotFilter) return false;
+      if (!kw) return true;
+      return (
+        s.name.toLowerCase().includes(kw) ||
+        s.code.toLowerCase().includes(kw) ||
+        (s.location?.slot_code?.toLowerCase().includes(kw) ?? false)
+      );
+    });
+  }, [supplies, search, zoneFilter, slotFilter]);
 
   if (status !== "ready") return null;
 
@@ -100,89 +83,80 @@ export default function SuppliesPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">비품 관리</h1>
-          <p className="mt-1 text-sm text-slate-600">사내 비품 대출·반납을 관리합니다.</p>
+          <p className="mt-1 text-sm text-slate-600">비품 등록, 대출, 반납을 관리합니다.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {isAdmin ? (
-            <>
-              <Link
-                href="/supplies/admin"
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                관리자
-              </Link>
-              <button
-                type="button"
-                onClick={() => setFormOpen(true)}
-                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
-              >
-                비품 등록
-              </button>
-            </>
-          ) : null}
-        </div>
+        {canRegister ? (
+          <button
+            type="button"
+            onClick={() => setRegisterOpen(true)}
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
+          >
+            비품 등록
+          </button>
+        ) : null}
       </div>
 
-      {userId ? <MyLoansWidget userId={userId} onReturned={() => setRefreshKey((k) => k + 1)} /> : null}
-
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {ZONE_FILTERS.map((z) => (
-              <button
-                key={z}
-                type="button"
-                onClick={() => setZone(z)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  zone === z ? "bg-violet-600 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {z}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="물품명, 코드 검색"
-            className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm lg:w-56"
+            placeholder="물품명, 코드(A01_001) 검색"
+            className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {STATUS_FILTERS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                statusFilter === s ? "bg-slate-800 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+          <select
+            value={zoneFilter}
+            onChange={(e) => {
+              setZoneFilter(e.target.value);
+              setSlotFilter("전체");
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            aria-label="대분류 구역"
+          >
+            <option value="전체">전체 대분류</option>
+            {zones.map((z) => (
+              <option key={z.zone_code} value={z.zone_code}>
+                {zoneSelectLabel(z)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={slotFilter}
+            onChange={(e) => setSlotFilter(e.target.value)}
+            disabled={zoneFilter === "전체"}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+            aria-label="세부 위치"
+          >
+            <option value="전체">전체 위치</option>
+            {slotsInZone.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.slot_code}
+              </option>
+            ))}
+          </select>
         </div>
       </section>
 
       {loading ? (
         <p className="text-sm text-slate-500">불러오는 중…</p>
-      ) : cards.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">
-          조건에 맞는 비품이 없습니다.
+          등록된 비품이 없습니다.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {cards.map((s) => (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          {filtered.map((s) => (
             <SupplyCard key={s.id} supply={s} />
           ))}
         </div>
       )}
 
-      <SupplyFormModal
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => setRefreshKey((k) => k + 1)}
+      <SupplyRegisterModal
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+        onSaved={() => void load()}
+        locations={locations}
         managers={managers}
       />
     </div>

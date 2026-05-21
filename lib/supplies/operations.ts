@@ -1,189 +1,174 @@
-import { addDays, formatISO } from "date-fns";
-import { deriveSupplyStatus } from "@/lib/supplies/utils";
 import type { Supply } from "@/lib/supplies/types";
 import { supabase } from "@/lib/supabase/client";
 
-const SUPPLIES_BUCKET = "supplies";
+/** 비품 INSERT RLS 디버깅 — 브라우저 콘솔 확인용 */
+export async function logSupplyInsertAuthDebug(): Promise<void> {
+  const {
+    data: { session },
+    error: sessionError
+  } = await supabase.auth.getSession();
 
-export async function syncOverdueLoans(): Promise<void> {
-  const today = formatISO(new Date(), { representation: "date" });
-  await supabase
-    .from("supply_loans")
-    .update({ status: "overdue" })
-    .eq("status", "active")
-    .lt("due_date", today)
-    .is("returned_at", null);
+  const authUserId = session?.user?.id ?? null;
+  const authEmail = session?.user?.email ?? null;
+
+  let profile: { id: string; role: string; email: string; name: string } | null = null;
+  let profileError: string | null = null;
+
+  if (authUserId) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, role, email, name")
+      .eq("id", authUserId)
+      .maybeSingle();
+
+    if (error) {
+      profileError = error.message;
+    } else if (data) {
+      profile = {
+        id: data.id as string,
+        role: String(data.role),
+        email: data.email as string,
+        name: data.name as string
+      };
+    }
+  }
+
+  const { data: isManager, error: rpcError } = await supabase.rpc("is_supply_manager");
+
+  console.group("[supplies] INSERT auth debug (등록 직전)");
+  console.log("auth.uid (session user id):", authUserId);
+  console.log("auth email:", authEmail);
+  if (sessionError) console.log("session error:", sessionError.message);
+  if (profileError) console.log("profiles 조회 error:", profileError);
+  console.log("profiles row:", profile);
+  console.log("profiles.role (raw):", profile?.role ?? "(없음)");
+  console.log("profiles.role type:", profile ? typeof profile.role : "n/a");
+  console.log("auth.uid === profiles.id:", authUserId != null && profile != null ? authUserId === profile.id : false);
+  console.log("is_supply_manager() RPC:", isManager, typeof isManager);
+  if (rpcError) console.log("is_supply_manager RPC error:", rpcError.message, rpcError);
+  console.log("클라이언트 기대 관리자 role:", profile?.role === "슈퍼관리자" || profile?.role === "중간관리자");
+  console.groupEnd();
 }
 
-export async function createSupplyNotification(params: {
-  userId: string;
-  supplyLoanId: string;
-  type: string;
-  message: string;
-}): Promise<void> {
-  const { error } = await supabase.from("supply_notifications").insert({
-    user_id: params.userId,
-    supply_loan_id: params.supplyLoanId,
-    type: params.type,
-    message: params.message,
-    is_read: false
-  });
-  if (error) console.error("[supplies] notification", error);
+export async function createSupply(params: {
+  name: string;
+  locationId: string;
+  quantity: number;
+  managerId: string | null;
+  description: string | null;
+  components: string | null;
+  imagePaths: string[];
+}): Promise<{ id: string | null; error: string | null }> {
+  await logSupplyInsertAuthDebug();
+
+  const { data, error } = await supabase
+    .from("supplies")
+    .insert({
+      name: params.name.trim(),
+      location_id: params.locationId,
+      quantity: params.quantity,
+      manager_id: params.managerId,
+      description: params.description?.trim() || null,
+      components: params.components?.trim() || null,
+      image_paths: params.imagePaths,
+      status: "available"
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    console.error("[supplies] create", error);
+    return { id: null, error: error?.message ?? "등록 실패" };
+  }
+  return { id: data.id as string, error: null };
 }
 
 export async function borrowSupply(params: {
-  supply: Supply;
+  supplyId: string;
   borrowerId: string;
   purpose: string;
   dueDate: string;
 }): Promise<{ error: string | null }> {
-  const { supply, borrowerId, purpose, dueDate } = params;
-  if (supply.status === "maintenance") return { error: "점검 중인 비품은 대출할 수 없습니다." };
-  if (supply.available_qty <= 0) return { error: "대출 가능 수량이 없습니다." };
-
-  const { data: existing } = await supabase
-    .from("supply_loans")
-    .select("id")
-    .eq("supply_id", supply.id)
-    .eq("borrower_id", borrowerId)
-    .in("status", ["active", "overdue"])
-    .limit(1);
-
-  if (existing?.length) return { error: "이미 이 비품을 대출 중입니다." };
-
-  const { data: loan, error: loanErr } = await supabase
-    .from("supply_loans")
-    .insert({
-      supply_id: supply.id,
-      borrower_id: borrowerId,
-      purpose: purpose.trim(),
-      due_date: dueDate,
-      status: "active"
-    })
-    .select("id")
-    .single();
-
-  if (loanErr || !loan) {
-    console.error("[supplies] borrow", loanErr);
-    return { error: loanErr?.message ?? "대출 신청에 실패했습니다." };
-  }
-
-  const newAvailable = Math.max(0, supply.available_qty - 1);
-  const newStatus = deriveSupplyStatus(newAvailable, supply.quantity, supply.status);
-
-  const { error: supplyErr } = await supabase
+  const { data: supply, error: sErr } = await supabase
     .from("supplies")
-    .update({ available_qty: newAvailable, status: newStatus })
-    .eq("id", supply.id);
+    .select("id, status")
+    .eq("id", params.supplyId)
+    .maybeSingle();
 
-  if (supplyErr) {
-    console.error("[supplies] supply update", supplyErr);
-    return { error: supplyErr.message };
-  }
+  if (sErr || !supply) return { error: "비품을 찾을 수 없습니다." };
+  if (supply.status !== "available") return { error: "대출할 수 없는 상태입니다." };
 
-  if (supply.manager_id) {
-    await createSupplyNotification({
-      userId: supply.manager_id,
-      supplyLoanId: loan.id,
-      type: "loan_created",
-      message: `${supply.name}(${supply.code}) 대출 신청이 등록되었습니다.`
-    });
-  }
-
-  await createSupplyNotification({
-    userId: borrowerId,
-    supplyLoanId: loan.id,
-    type: "loan_confirmed",
-    message: `${supply.name} 대출이 완료되었습니다. 반납예정일: ${dueDate}`
+  const { error: loanErr } = await supabase.from("supply_loans").insert({
+    supply_id: params.supplyId,
+    borrower_id: params.borrowerId,
+    purpose: params.purpose.trim(),
+    due_date: params.dueDate,
+    status: "active"
   });
 
+  if (loanErr) {
+    console.error("[supplies] borrow", loanErr);
+    return { error: loanErr.message };
+  }
+
+  const { error: upErr } = await supabase
+    .from("supplies")
+    .update({ status: "borrowed" })
+    .eq("id", params.supplyId);
+
+  if (upErr) return { error: upErr.message };
   return { error: null };
 }
 
-export async function uploadReturnImage(loanId: string, file: File): Promise<{ url: string | null; error: string | null }> {
-  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  const path = `returns/${loanId}/${Date.now()}.${ext}`;
-  const { error: upErr } = await supabase.storage.from(SUPPLIES_BUCKET).upload(path, file, { upsert: false });
-  if (upErr) {
-    console.error("[supplies] return upload", upErr);
-    return { url: null, error: upErr.message };
-  }
-  const { data } = supabase.storage.from(SUPPLIES_BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl, error: null };
-}
-
-export async function returnSupplyLoan(params: {
+export async function returnSupply(params: {
   loanId: string;
-  returnImageUrl: string;
-  note?: string | null;
+  supplyId: string;
+  returnImagePath: string;
+  returnNote: string | null;
 }): Promise<{ error: string | null }> {
-  const { loanId, returnImageUrl, note } = params;
-
-  const { data: loan, error: loanFetchErr } = await supabase
-    .from("supply_loans")
-    .select("*, supply:supplies(*)")
-    .eq("id", loanId)
-    .single();
-
-  if (loanFetchErr || !loan) {
-    return { error: loanFetchErr?.message ?? "대출 정보를 찾을 수 없습니다." };
-  }
-
-  if (loan.returned_at) return { error: null };
-
-  const supply = loan.supply as Supply | null;
-  if (!supply) return { error: "비품 정보를 찾을 수 없습니다." };
-
   const now = new Date().toISOString();
   const { error: loanErr } = await supabase
     .from("supply_loans")
     .update({
-      returned_at: now,
       status: "returned",
-      return_image_url: returnImageUrl,
-      note: note?.trim() || null
+      return_image_path: params.returnImagePath,
+      return_note: params.returnNote?.trim() || null,
+      returned_at: now
     })
-    .eq("id", loanId);
+    .eq("id", params.loanId);
 
   if (loanErr) return { error: loanErr.message };
 
-  const newAvailable = Math.min(supply.quantity, supply.available_qty + 1);
-  const newStatus = deriveSupplyStatus(newAvailable, supply.quantity, supply.status);
-
-  const { error: supplyErr } = await supabase
+  const { error: sErr } = await supabase
     .from("supplies")
-    .update({ available_qty: newAvailable, status: newStatus })
-    .eq("id", supply.id);
+    .update({ status: "available" })
+    .eq("id", params.supplyId);
 
-  if (supplyErr) return { error: supplyErr.message };
+  if (sErr) return { error: sErr.message };
   return { error: null };
 }
 
-export async function uploadSupplyImage(supplyId: string, file: File): Promise<{ url: string | null; error: string | null }> {
-  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  const path = `${supplyId}/${Date.now()}.${ext}`;
-  const { error: upErr } = await supabase.storage.from(SUPPLIES_BUCKET).upload(path, file, { upsert: true });
-  if (upErr) {
-    console.error("[supplies] upload", upErr);
-    return { url: null, error: upErr.message };
-  }
-  const { data } = supabase.storage.from(SUPPLIES_BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl, error: null };
-}
-
 export async function deleteSupply(supplyId: string): Promise<{ error: string | null }> {
-  const { error: loansErr } = await supabase
-    .from("supply_loans")
-    .delete()
-    .eq("supply_id", supplyId);
-  if (loansErr) return { error: loansErr.message };
-
-  await supabase.from("supply_items").delete().eq("supply_id", supplyId);
-
   const { error } = await supabase.from("supplies").delete().eq("id", supplyId);
-  return { error: error?.message ?? null };
+
+  if (error) {
+    console.error("[supplies] delete", error);
+    return { error: error.message };
+  }
+  return { error: null };
 }
 
-export function defaultDueDate(days = 7): string {
-  return formatISO(addDays(new Date(), days), { representation: "date" });
+export async function getActiveLoanForUser(
+  supplyId: string,
+  userId: string
+): Promise<{ id: string; purpose: string; due_date: string; borrowed_at: string } | null> {
+  const { data } = await supabase
+    .from("supply_loans")
+    .select("id, purpose, due_date, borrowed_at")
+    .eq("supply_id", supplyId)
+    .eq("borrower_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  return data as { id: string; purpose: string; due_date: string; borrowed_at: string } | null;
 }
