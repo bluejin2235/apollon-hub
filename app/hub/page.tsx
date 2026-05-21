@@ -84,7 +84,6 @@ export default function ServiceHubPage() {
     <main className="min-h-screen">
       <PortalHeader
         userInfoLine={userInfoLine}
-        userId={profile?.id}
         onLogout={() => void signOutAndRedirectToLogin()}
         hubTitleVariant="text"
         zIndexClass="z-10"

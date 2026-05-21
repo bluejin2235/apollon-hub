@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Profile } from "@/lib/licenses/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -438,9 +438,8 @@ export function ServiceUsersCard({
 /* ─────────────────────────────────────────────────────────────────
  * 3) 인증 정보 카드 (license_credentials)
  *   - 유형: 로그인 / API 키 / 라이선스
- *   - 권한별 표시:
- *     · 슈퍼관리자 / 중간관리자(canEdit=true): 보기 토글 + 수정 + 삭제
- *     · 멤버(canEdit=false): 비밀번호/키는 항상 가림 · 복사 버튼만 노출
+ *   - 비밀번호/키: 기본 마스킹(••••••••) · 보기 클릭 시 5초간 표시 후 자동 마스킹
+ *   - canEdit: 수정·삭제 가능 (RLS: 슈퍼관리자 또는 서비스 담당자만 행 접근)
  * ────────────────────────────────────────────────────────────── */
 
 const CRED_TYPES = ["로그인", "API 키", "라이선스"] as const;
@@ -508,10 +507,13 @@ function valueLabelOf(type: string): string {
   return isCredentialType(type) ? TYPE_FIELDS[type].valueLabel : "값";
 }
 
-function mask(value: string | null | undefined): string {
-  if (!value) return "";
-  return "•".repeat(Math.min(value.length, 10));
+const MASKED_SECRET = "••••••••";
+
+function maskSecret(_value: string | null | undefined): string {
+  return MASKED_SECRET;
 }
+
+const REVEAL_AUTO_HIDE_MS = 5000;
 
 const ICON_EYE = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5" aria-hidden>
@@ -558,6 +560,43 @@ export function ServiceCredentialsCard({
   // 목록 상태
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const revealTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    const timers = revealTimersRef.current;
+    return () => {
+      Object.values(timers).forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
+  const hideSecret = useCallback((id: string) => {
+    const t = revealTimersRef.current[id];
+    if (t) {
+      clearTimeout(t);
+      delete revealTimersRef.current[id];
+    }
+    setRevealed((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const toggleRevealSecret = useCallback((id: string) => {
+    setRevealed((prev) => {
+      if (prev[id]) {
+        hideSecret(id);
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      const existing = revealTimersRef.current[id];
+      if (existing) clearTimeout(existing);
+      revealTimersRef.current[id] = setTimeout(() => hideSecret(id), REVEAL_AUTO_HIDE_MS);
+      return { ...prev, [id]: true };
+    });
+  }, [hideSecret]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -690,7 +729,7 @@ export function ServiceCredentialsCard({
             const rType = isCredentialType(r.type) ? r.type : "로그인";
             const badge = TYPE_STYLE[rType].badge;
             const valueLabel = valueLabelOf(rType);
-            const isRevealed = canEdit && revealed[r.id];
+            const isRevealed = Boolean(revealed[r.id]);
             return (
               <li key={r.id} className="rounded-xl bg-slate-50 px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
@@ -707,31 +746,26 @@ export function ServiceCredentialsCard({
                       <p className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                         <span className="shrink-0">{valueLabel}:</span>
                         <span className="font-mono text-slate-700">
-                          {isRevealed ? r.password : mask(r.password)}
+                          {isRevealed ? r.password : maskSecret(r.password)}
                         </span>
-                        {canEdit ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setRevealed((prev) => ({ ...prev, [r.id]: !prev[r.id] }))
-                            }
-                            className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
-                            aria-label={isRevealed ? "숨기기" : "보기"}
-                          >
-                            {isRevealed ? ICON_EYE_OFF : ICON_EYE}
-                            <span>{isRevealed ? "숨기기" : "보기"}</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => void handleCopy(r.password, r.id)}
-                            className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
-                            aria-label="값 복사"
-                          >
-                            {ICON_COPY}
-                            <span>{copiedId === r.id ? "복사됨" : "복사"}</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleRevealSecret(r.id)}
+                          className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
+                          aria-label={isRevealed ? "숨기기" : "보기"}
+                        >
+                          {isRevealed ? ICON_EYE_OFF : ICON_EYE}
+                          <span>{isRevealed ? "숨기기" : "보기"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleCopy(r.password, r.id)}
+                          className="inline-flex items-center gap-1 text-violet-600 transition hover:text-violet-800"
+                          aria-label="값 복사"
+                        >
+                          {ICON_COPY}
+                          <span>{copiedId === r.id ? "복사됨" : "복사"}</span>
+                        </button>
                       </p>
                     ) : null}
                     {r.notes ? (

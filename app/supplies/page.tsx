@@ -21,6 +21,7 @@ export default function SuppliesPage() {
   const [locations, setLocations] = useState<SupplyLocation[]>([]);
   const [managers, setManagers] = useState<ProfileLite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [zoneFilter, setZoneFilter] = useState<string>("전체");
   const [slotFilter, setSlotFilter] = useState<string>("전체");
@@ -35,26 +36,51 @@ export default function SuppliesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [supRes, locRes, profRes] = await Promise.all([
-      supabase
-        .from("supplies")
-        .select(`*, location:supply_locations(${SUPPLY_LOCATION_SELECT}), manager:profiles!manager_id(id, name, email)`)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("supply_locations")
-        .select(SUPPLY_LOCATION_SELECT)
-        .eq("is_active", true)
-        .order("zone_code")
-        .order("slot_code"),
-      supabase.from("profiles").select("id, name, email").order("name")
-    ]);
+    setLoadError(null);
 
-    const rows = (supRes.data ?? []).map((r) => mapSupplyRow(r as Record<string, unknown>));
+    try {
+      const [supRes, locRes, profRes] = await Promise.all([
+        supabase
+          .from("supplies")
+          .select(`*, location:supply_locations(${SUPPLY_LOCATION_SELECT}), manager:profiles!manager_id(id, name, email)`)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("supply_locations")
+          .select(SUPPLY_LOCATION_SELECT)
+          .eq("is_active", true)
+          .order("zone_code")
+          .order("slot_code"),
+        supabase.from("profiles").select("id, name, email").order("name")
+      ]);
 
-    setSupplies(rows);
-    setLocations((locRes.data ?? []) as SupplyLocation[]);
-    setManagers((profRes.data ?? []) as ProfileLite[]);
-    setLoading(false);
+      const errors: string[] = [];
+      if (supRes.error) errors.push(`비품 목록: ${supRes.error.message}`);
+      if (locRes.error) errors.push(`보관 위치: ${locRes.error.message}`);
+      if (profRes.error) errors.push(`담당자 목록: ${profRes.error.message}`);
+
+      if (errors.length > 0) {
+        console.error("[supplies/page] load", { supRes, locRes, profRes });
+        setLoadError(errors.join(" · "));
+        setSupplies([]);
+        setLocations([]);
+        setManagers([]);
+        return;
+      }
+
+      const rows = (supRes.data ?? []).map((r) => mapSupplyRow(r as Record<string, unknown>));
+
+      setSupplies(rows);
+      setLocations((locRes.data ?? []) as SupplyLocation[]);
+      setManagers((profRes.data ?? []) as ProfileLite[]);
+    } catch (e) {
+      console.error("[supplies/page] load", e);
+      setLoadError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.");
+      setSupplies([]);
+      setLocations([]);
+      setManagers([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -70,7 +96,7 @@ export default function SuppliesPage() {
       if (!kw) return true;
       return (
         s.name.toLowerCase().includes(kw) ||
-        s.code.toLowerCase().includes(kw) ||
+        (s.code ?? "").toLowerCase().includes(kw) ||
         (s.location?.slot_code?.toLowerCase().includes(kw) ?? false)
       );
     });
@@ -140,9 +166,24 @@ export default function SuppliesPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">불러오는 중…</p>
+      ) : loadError ? (
+        <div
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-10 text-center"
+          role="alert"
+        >
+          <p className="text-sm font-medium text-rose-800">데이터를 불러오지 못했습니다</p>
+          <p className="mt-2 text-sm text-rose-700">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="mt-4 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500"
+          >
+            다시 시도
+          </button>
+        </div>
       ) : filtered.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">
-          등록된 비품이 없습니다.
+          {supplies.length === 0 ? "등록된 비품이 없습니다." : "조건에 맞는 비품이 없습니다."}
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">

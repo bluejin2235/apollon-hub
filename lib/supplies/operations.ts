@@ -1,8 +1,10 @@
 import type { Supply } from "@/lib/supplies/types";
 import { supabase } from "@/lib/supabase/client";
 
-/** 비품 INSERT RLS 디버깅 — 브라우저 콘솔 확인용 */
+/** 비품 INSERT RLS 디버깅 — 개발 환경에서만 브라우저 콘솔 출력 */
 export async function logSupplyInsertAuthDebug(): Promise<void> {
+  if (process.env.NODE_ENV !== "development") return;
+
   const {
     data: { session },
     error: sessionError

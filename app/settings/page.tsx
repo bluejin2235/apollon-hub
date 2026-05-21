@@ -276,7 +276,6 @@ export default function SettingsPage() {
     <main className="min-h-screen">
       <PortalHeader
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
-        userId={sessionProfile.id}
         onLogout={handleLogout}
         zIndexClass="z-10"
         showSettingsLink={false}
