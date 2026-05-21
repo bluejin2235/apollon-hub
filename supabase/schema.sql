@@ -845,68 +845,45 @@ insert into public.services (
    '🍱', '/restaurants', '활성', '전체', 1, true,
    null, null, null, 0, 0);
 
--- ── 비품 관리 (supplies) ─────────────────────────────────────
--- 테이블은 Supabase에 생성된 상태를 전제로 RLS만 동기화합니다.
+-- ── 비품 관리 (물품창고) — 전체 정의는 supabase/migrations/supplies_warehouse.sql 참고
 
+create table if not exists public.supply_locations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.supplies (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null,
+  name text not null,
+  location_id uuid references public.supply_locations (id) on delete set null,
+  quantity integer not null default 1,
+  manager_id uuid references public.profiles (id) on delete set null,
+  description text,
+  components text,
+  image_paths text[] not null default '{}',
+  status text not null default 'available'
+    check (status in ('available', 'borrowed', 'unavailable')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.supply_loans (
+  id uuid primary key default gen_random_uuid(),
+  supply_id uuid not null references public.supplies (id) on delete cascade,
+  borrower_id uuid not null references public.profiles (id) on delete cascade,
+  purpose text not null,
+  due_date date not null,
+  status text not null default 'active'
+    check (status in ('active', 'returned')),
+  return_image_path text,
+  return_note text,
+  borrowed_at timestamptz not null default now(),
+  returned_at timestamptz
+);
+
+alter table public.supply_locations enable row level security;
 alter table public.supplies enable row level security;
 alter table public.supply_loans enable row level security;
-alter table public.supply_items enable row level security;
-alter table public.supply_notifications enable row level security;
 
-drop policy if exists "supplies_select_auth" on public.supplies;
-create policy "supplies_select_auth"
-  on public.supplies for select to authenticated using (true);
-
-drop policy if exists "supplies_insert_auth" on public.supplies;
-create policy "supplies_insert_auth"
-  on public.supplies for insert to authenticated with check (true);
-
-drop policy if exists "supplies_update_auth" on public.supplies;
-create policy "supplies_update_auth"
-  on public.supplies for update to authenticated using (true) with check (true);
-
-drop policy if exists "supplies_delete_auth" on public.supplies;
-create policy "supplies_delete_auth"
-  on public.supplies for delete to authenticated using (true);
-
-drop policy if exists "supply_loans_select_auth" on public.supply_loans;
-create policy "supply_loans_select_auth"
-  on public.supply_loans for select to authenticated using (true);
-
-drop policy if exists "supply_loans_insert_auth" on public.supply_loans;
-create policy "supply_loans_insert_auth"
-  on public.supply_loans for insert to authenticated with check (true);
-
-drop policy if exists "supply_loans_update_auth" on public.supply_loans;
-create policy "supply_loans_update_auth"
-  on public.supply_loans for update to authenticated using (true) with check (true);
-
-drop policy if exists "supply_items_select_auth" on public.supply_items;
-create policy "supply_items_select_auth"
-  on public.supply_items for select to authenticated using (true);
-
-drop policy if exists "supply_items_insert_auth" on public.supply_items;
-create policy "supply_items_insert_auth"
-  on public.supply_items for insert to authenticated with check (true);
-
-drop policy if exists "supply_items_update_auth" on public.supply_items;
-create policy "supply_items_update_auth"
-  on public.supply_items for update to authenticated using (true) with check (true);
-
-drop policy if exists "supply_items_delete_auth" on public.supply_items;
-create policy "supply_items_delete_auth"
-  on public.supply_items for delete to authenticated using (true);
-
-drop policy if exists "supply_notifications_select_auth" on public.supply_notifications;
-create policy "supply_notifications_select_auth"
-  on public.supply_notifications for select to authenticated
-  using (user_id = auth.uid());
-
-drop policy if exists "supply_notifications_insert_auth" on public.supply_notifications;
-create policy "supply_notifications_insert_auth"
-  on public.supply_notifications for insert to authenticated with check (true);
-
-drop policy if exists "supply_notifications_update_auth" on public.supply_notifications;
-create policy "supply_notifications_update_auth"
-  on public.supply_notifications for update to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- RLS 정책·함수·허브 카드: migrations/supplies_warehouse.sql 실행

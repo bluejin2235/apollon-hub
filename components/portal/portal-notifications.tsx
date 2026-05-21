@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatSupplyDateTime } from "@/lib/supplies/utils";
-import type { SupplyNotification } from "@/lib/supplies/types";
+type SupplyNotification = {
+  id: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+};
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {
@@ -38,7 +43,8 @@ export function PortalNotifications({ userId }: Props) {
       .limit(30);
 
     if (error) {
-      console.error("[notifications]", error);
+      // 테이블 미생성 시 무시
+      if (error.code !== "42P01") console.error("[notifications]", error);
       setItems([]);
     } else {
       setItems((data ?? []) as SupplyNotification[]);
@@ -48,17 +54,21 @@ export function PortalNotifications({ userId }: Props) {
 
   useEffect(() => {
     void load();
-    const channel = supabase
-      .channel(`supply_notifications:${userId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "supply_notifications", filter: `user_id=eq.${userId}` },
-        () => void load()
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
+    try {
+      const channel = supabase
+        .channel(`supply_notifications:${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "supply_notifications", filter: `user_id=eq.${userId}` },
+          () => void load()
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    } catch {
+      return undefined;
+    }
   }, [userId, load]);
 
   useEffect(() => {
