@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
 import { SupplyToast } from "@/components/supplies/toast";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
 import { isMobileDevice } from "@/lib/supplies/device";
@@ -10,6 +11,7 @@ import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/li
 import { deleteSupply } from "@/lib/supplies/operations";
 import {
   canDeleteSupply,
+  canPrintSupplyLabel,
   formatSupplyDate,
   formatSupplyDateTime,
   imagePublicUrls,
@@ -140,17 +142,14 @@ export default function SupplyDetailPage() {
   const myActiveLoan =
     profile?.id && loans.find((l) => l.borrower_id === profile.id && l.status === "active");
   const showDelete = canDeleteSupply(profile?.role, profile?.id, supply.manager_id);
+  const showPrintLabel = canPrintSupplyLabel(profile?.role, profile?.id, supply.manager_id);
   const hasZoneSidebar = Boolean(supply.location?.zone_code);
 
   const actionButtons = (
     <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        title="내일 구현 예정"
-      >
-        QR 라벨 출력
-      </button>
+      {showPrintLabel && profile?.id ? (
+        <SupplyPrintLabelButton supply={supply} requestedBy={profile.id} onToast={setToast} />
+      ) : null}
       {supply.status === "available" ? (
         <button
           type="button"

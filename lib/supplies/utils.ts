@@ -75,6 +75,23 @@ export function canDeleteSupply(
   userId: string | null | undefined,
   managerId: string | null | undefined
 ): boolean {
+  return canManageSupply(role, userId, managerId);
+}
+
+/** QR 라벨 출력 권한 (삭제와 동일) */
+export function canPrintSupplyLabel(
+  role: string | null | undefined,
+  userId: string | null | undefined,
+  managerId: string | null | undefined
+): boolean {
+  return canManageSupply(role, userId, managerId);
+}
+
+function canManageSupply(
+  role: string | null | undefined,
+  userId: string | null | undefined,
+  managerId: string | null | undefined
+): boolean {
   if (!userId) return false;
   if (isSupplyManager(role)) return true;
   return managerId != null && managerId === userId;
