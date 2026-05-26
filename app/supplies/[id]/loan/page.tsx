@@ -6,7 +6,8 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QrScanner } from "@/components/supplies/qr-scanner";
 import { SupplyInfoCard } from "@/components/supplies/supply-info-card";
 import { SupplyToast } from "@/components/supplies/toast";
-import { isMobileDevice } from "@/lib/supplies/device";
+// DEBUG: QR 스캐너 PC 디버깅 후 복구 예정
+// import { isMobileDevice } from "@/lib/supplies/device";
 import { mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
 import { borrowSupply } from "@/lib/supplies/operations";
 import { parseSupplyIdFromQr, supplyIdsMatch } from "@/lib/supplies/qr";
@@ -30,11 +31,11 @@ export default function SupplyLoanPage() {
   const [purpose, setPurpose] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [mobile, setMobile] = useState(false);
-
-  useEffect(() => {
-    setMobile(isMobileDevice());
-  }, []);
+  // DEBUG: PC 접근 차단 임시 해제 — 디버깅 후 복구 예정
+  // const [mobile, setMobile] = useState(false);
+  // useEffect(() => {
+  //   setMobile(isMobileDevice());
+  // }, []);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -109,17 +110,18 @@ export default function SupplyLoanPage() {
 
   if (status !== "ready") return null;
 
-  if (!mobile) {
-    return (
-      <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-lg font-semibold text-slate-900">모바일에서만 사용 가능합니다</p>
-        <p className="mt-2 text-sm text-slate-600">대출 신청은 스마트폰에서 QR 스캔 후 진행해 주세요.</p>
-        <Link href={supplyDetailPath(id)} className="mt-6 inline-block text-sm font-medium text-violet-600 hover:underline">
-          비품 상세로
-        </Link>
-      </div>
-    );
-  }
+  // DEBUG: PC 접근 차단 임시 해제 — 디버깅 후 복구 예정
+  // if (!mobile) {
+  //   return (
+  //     <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+  //       <p className="text-lg font-semibold text-slate-900">모바일에서만 사용 가능합니다</p>
+  //       <p className="mt-2 text-sm text-slate-600">대출 신청은 스마트폰에서 QR 스캔 후 진행해 주세요.</p>
+  //       <Link href={supplyDetailPath(id)} className="mt-6 inline-block text-sm font-medium text-violet-600 hover:underline">
+  //         비품 상세로
+  //       </Link>
+  //     </div>
+  //   );
+  // }
 
   if (!supply) {
     return <p className="text-sm text-slate-500">비품을 찾을 수 없습니다.</p>;
