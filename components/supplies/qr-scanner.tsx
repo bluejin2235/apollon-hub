@@ -1,7 +1,7 @@
 "use client";
 
 import { Html5Qrcode } from "html5-qrcode";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -18,6 +18,24 @@ type Props = {
   /** false면 카메라 중지 (재스캔 시 key 변경 권장) */
   active?: boolean;
 };
+
+function scanLog(appendDebugLog: (message: string) => void, message: string) {
+  console.log(message);
+  appendDebugLog(message);
+}
+
+function DebugLogPanel({ debugLog }: { debugLog: string[] }) {
+  if (debugLog.length === 0) return null;
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg bg-slate-950 p-2">
+      {debugLog.map((log, i) => (
+        <p key={i} className="font-mono text-xs text-yellow-300">
+          {log}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 function supportsBarcodeDetector(): boolean {
   return typeof window !== "undefined" && "BarcodeDetector" in window;
@@ -49,10 +67,12 @@ function ScannerOverlay({ starting }: { starting: boolean }) {
 
 function NativeBarcodeScanner({
   onScan,
-  active
+  active,
+  appendDebugLog
 }: {
   onScan: (decodedText: string) => void;
   active: boolean;
+  appendDebugLog: (message: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,6 +82,8 @@ function NativeBarcodeScanner({
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  const appendDebugLogRef = useRef(appendDebugLog);
+  appendDebugLogRef.current = appendDebugLog;
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -94,7 +116,7 @@ function NativeBarcodeScanner({
 
     const start = async () => {
       try {
-        console.log("[qr-scanner] BarcodeDetector 사용");
+        scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
 
         const Detector = window.BarcodeDetector;
         if (!Detector) {
@@ -147,7 +169,7 @@ function NativeBarcodeScanner({
               const text = codes[0]?.rawValue;
               if (!text || handledRef.current) return;
               handledRef.current = true;
-              console.log("[qr-scanner] 인식 성공:", text);
+              scanLog(appendDebugLogRef.current, `[qr-scanner] 인식 성공: ${text}`);
               cleanup();
               onScanRef.current(text);
             })
@@ -175,7 +197,7 @@ function NativeBarcodeScanner({
   }, [active]);
 
   return (
-    <div className="space-y-3">
+    <>
       <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
         <ScannerOverlay starting={starting} />
         <video
@@ -192,23 +214,27 @@ function NativeBarcodeScanner({
           {error}
         </p>
       ) : null}
-    </div>
+    </>
   );
 }
 
 function Html5QrcodeFallback({
   onScan,
   active,
-  readerId
+  readerId,
+  appendDebugLog
 }: {
   onScan: (decodedText: string) => void;
   active: boolean;
   readerId: string;
+  appendDebugLog: (message: string) => void;
 }) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  const appendDebugLogRef = useRef(appendDebugLog);
+  appendDebugLogRef.current = appendDebugLog;
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -228,7 +254,7 @@ function Html5QrcodeFallback({
 
     const start = async () => {
       try {
-        console.log("[qr-scanner] html5-qrcode 폴백");
+        scanLog(appendDebugLogRef.current, "[qr-scanner] html5-qrcode 폴백");
 
         const cameras = await Html5Qrcode.getCameras();
         const cameraId = pickRearCamera(cameras);
@@ -247,7 +273,7 @@ function Html5QrcodeFallback({
             }
           },
           (decodedText) => {
-            console.log("[qr-scanner] 인식 성공:", decodedText);
+            scanLog(appendDebugLogRef.current, `[qr-scanner] 인식 성공: ${decodedText}`);
             if (handledRef.current) return;
             handledRef.current = true;
             void scanner
@@ -283,7 +309,7 @@ function Html5QrcodeFallback({
   }, [active, readerId]);
 
   return (
-    <div className="space-y-3">
+    <>
       <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
         <ScannerOverlay starting={starting} />
         <div id={readerId} className="min-h-[300px] w-full [&_video]:object-cover" />
@@ -293,13 +319,22 @@ function Html5QrcodeFallback({
           {error}
         </p>
       ) : null}
-    </div>
+    </>
   );
 }
 
 export function QrScanner({ onScan, active = true }: Props) {
   const readerId = useId().replace(/:/g, "");
   const useNative = supportsBarcodeDetector();
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+
+  const appendDebugLog = useCallback((message: string) => {
+    setDebugLog((prev) => [...prev, message]);
+  }, []);
+
+  useEffect(() => {
+    if (active) setDebugLog([]);
+  }, [active, readerId]);
 
   if (!active) {
     return (
@@ -309,9 +344,19 @@ export function QrScanner({ onScan, active = true }: Props) {
     );
   }
 
-  if (useNative) {
-    return <NativeBarcodeScanner onScan={onScan} active={active} />;
-  }
-
-  return <Html5QrcodeFallback onScan={onScan} active={active} readerId={readerId} />;
+  return (
+    <div className="space-y-3">
+      {useNative ? (
+        <NativeBarcodeScanner onScan={onScan} active={active} appendDebugLog={appendDebugLog} />
+      ) : (
+        <Html5QrcodeFallback
+          onScan={onScan}
+          active={active}
+          readerId={readerId}
+          appendDebugLog={appendDebugLog}
+        />
+      )}
+      <DebugLogPanel debugLog={debugLog} />
+    </div>
+  );
 }
