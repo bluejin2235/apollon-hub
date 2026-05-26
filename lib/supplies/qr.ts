@@ -1,15 +1,31 @@
 const SUPPLY_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** QR에 넣을 비품 식별자 (라벨 인쇄·스캔용) */
+/** QR에 넣을 비품 식별 URL (라벨 인쇄·모바일 카메라 직접 인식용) */
 export function formatSupplyQrPayload(supplyId: string): string {
-  return `https://apollon-hub.vercel.app/supplies/${supplyId}/loan`;
+  return `https://apollon-hub.vercel.app/s/${supplyId}`;
+}
+
+function extractSupplyIdFromPath(pathname: string): string | null {
+  const shortMatch = pathname.match(/\/s\/([0-9a-f-]{36})/i);
+  if (shortMatch && SUPPLY_UUID_RE.test(shortMatch[1])) {
+    return shortMatch[1].toLowerCase();
+  }
+
+  const suppliesMatch = pathname.match(/\/supplies\/([0-9a-f-]{36})/i);
+  if (suppliesMatch && SUPPLY_UUID_RE.test(suppliesMatch[1])) {
+    return suppliesMatch[1].toLowerCase();
+  }
+
+  return null;
 }
 
 /**
  * 스캔 문자열에서 비품 UUID 추출.
  * - supply:{uuid}
  * - {uuid}
+ * - https://.../s/{uuid}
+ * - /s/{uuid}
  * - https://.../supplies/{uuid}
  * - /supplies/{uuid}
  */
@@ -24,17 +40,12 @@ export function parseSupplyIdFromQr(raw: string): string | null {
 
   if (SUPPLY_UUID_RE.test(trimmed)) return trimmed.toLowerCase();
 
-  const pathMatch = trimmed.match(/\/supplies\/([0-9a-f-]{36})/i);
-  if (pathMatch && SUPPLY_UUID_RE.test(pathMatch[1])) {
-    return pathMatch[1].toLowerCase();
-  }
+  const pathMatch = extractSupplyIdFromPath(trimmed);
+  if (pathMatch) return pathMatch;
 
   try {
     const url = new URL(trimmed);
-    const urlMatch = url.pathname.match(/\/supplies\/([0-9a-f-]{36})/i);
-    if (urlMatch && SUPPLY_UUID_RE.test(urlMatch[1])) {
-      return urlMatch[1].toLowerCase();
-    }
+    return extractSupplyIdFromPath(url.pathname);
   } catch {
     /* not a URL */
   }
