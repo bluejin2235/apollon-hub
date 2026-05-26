@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { SupplyLoanDetailModal } from "@/components/supplies/supply-loan-detail-modal";
 import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
 import { SupplyToast } from "@/components/supplies/toast";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
@@ -39,6 +40,7 @@ export default function SupplyDetailPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [selectedLoan, setSelectedLoan] = useState<SupplyLoanWithRelations | null>(null);
   const [zoneSupplies, setZoneSupplies] = useState<ZoneSupplyListItem[]>([]);
 
   const load = useCallback(async () => {
@@ -138,7 +140,18 @@ export default function SupplyDetailPage() {
   }
 
   const badge = supplyStatusBadge(supply.status);
-  const images = imagePublicUrls(supply.image_paths);
+  const supplyImages = imagePublicUrls(supply.image_paths);
+  const latestReturnLoan = loans
+    .filter((l) => l.status === "returned" && l.return_image_path)
+    .sort(
+      (a, b) =>
+        new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime()
+    )[0];
+  const latestReturnImageUrl = latestReturnLoan?.return_image_path
+    ? imagePublicUrls([latestReturnLoan.return_image_path])[0]
+    : null;
+  const showReturnMainImage = Boolean(latestReturnImageUrl);
+  const galleryImages = showReturnMainImage ? [latestReturnImageUrl!] : supplyImages;
   const myActiveLoan =
     profile?.id && loans.find((l) => l.borrower_id === profile.id && l.status === "active");
   const showDelete = canDeleteSupply(profile?.role, profile?.id, supply.manager_id);
@@ -216,15 +229,22 @@ export default function SupplyDetailPage() {
         ) : null}
 
         <div className={`space-y-6 ${hasZoneSidebar ? "lg:col-span-2" : "lg:col-span-3"}`}>
-          {images.length > 0 ? (
+          {galleryImages.length > 0 ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={images[galleryIdx]} alt="" className="max-h-48 w-full object-contain lg:max-h-52" />
+                <img
+                  src={galleryImages[galleryIdx]}
+                  alt=""
+                  className="max-h-48 w-full object-contain lg:max-h-52"
+                />
               </div>
-              {images.length > 1 ? (
+              {showReturnMainImage ? (
+                <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
+              ) : null}
+              {!showReturnMainImage && galleryImages.length > 1 ? (
                 <div className="mt-3 flex gap-2 overflow-x-auto">
-                  {images.map((url, i) => (
+                  {galleryImages.map((url, i) => (
                     <button
                       key={url}
                       type="button"
@@ -299,7 +319,19 @@ export default function SupplyDetailPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loans.map((loan) => (
-                    <tr key={loan.id}>
+                    <tr
+                      key={loan.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedLoan(loan)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedLoan(loan);
+                        }
+                      }}
+                      className="cursor-pointer transition hover:bg-violet-50/60"
+                    >
                       <td className="px-3 py-2">{loan.borrower?.name?.trim() || "—"}</td>
                       <td className="max-w-[120px] truncate px-3 py-2 lg:max-w-[140px]" title={loan.purpose}>
                         {loan.purpose}
@@ -321,6 +353,10 @@ export default function SupplyDetailPage() {
       </div>
 
       <SupplyToast message={toast} onClose={() => setToast(null)} />
+
+      {selectedLoan ? (
+        <SupplyLoanDetailModal loan={selectedLoan} onClose={() => setSelectedLoan(null)} />
+      ) : null}
 
       {deleteModalOpen ? (
         <div
