@@ -45,10 +45,19 @@ export function QrScanner({ onScan, active = true }: Props) {
         await scanner.start(
           cameraId,
           {
-            fps: 10,
+            fps: 30,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               const edge = Math.min(viewfinderWidth, viewfinderHeight) * 0.72;
               return { width: edge, height: edge };
+            },
+            aspectRatio: 1.0,
+            videoConstraints: {
+              facingMode: { ideal: "environment" },
+              focusMode: "continuous",
+              advanced: [{ zoom: 2 }]
+            },
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
             }
           },
           (decodedText) => {
