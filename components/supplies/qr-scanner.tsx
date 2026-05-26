@@ -34,7 +34,10 @@ export function QrScanner({ onScan, active = true }: Props) {
     setError(null);
     setStarting(true);
 
-    const scanner = new Html5Qrcode(readerId);
+    const scanner = new Html5Qrcode(readerId, {
+      verbose: false,
+      useBarCodeDetectorIfSupported: true
+    });
     scannerRef.current = scanner;
 
     const start = async () => {
@@ -52,12 +55,7 @@ export function QrScanner({ onScan, active = true }: Props) {
             },
             aspectRatio: 1.0,
             videoConstraints: {
-              facingMode: { ideal: "environment" },
-              focusMode: "continuous",
-              advanced: [{ zoom: 2 }]
-            },
-            experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true
+              facingMode: { ideal: "environment" }
             }
           },
           (decodedText) => {
