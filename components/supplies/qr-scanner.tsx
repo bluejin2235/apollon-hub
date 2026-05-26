@@ -25,14 +25,23 @@ function scanLog(appendDebugLog: (message: string) => void, message: string) {
 }
 
 function DebugLogPanel({ debugLog }: { debugLog: string[] }) {
-  if (debugLog.length === 0) return null;
   return (
-    <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg bg-slate-950 p-2">
-      {debugLog.map((log, i) => (
-        <p key={i} className="font-mono text-xs text-yellow-300">
-          {log}
-        </p>
-      ))}
+    <div
+      className="fixed inset-x-0 bottom-0 z-[100] max-h-[40vh] overflow-y-auto bg-black px-4 py-4"
+      role="log"
+      aria-live="polite"
+    >
+      {debugLog.length === 0 ? (
+        <p className="font-mono text-sm text-yellow-300">[qr-scanner] 로그 대기 중…</p>
+      ) : (
+        <div className="space-y-2">
+          {debugLog.map((log, i) => (
+            <p key={i} className="font-mono text-sm text-yellow-300">
+              {log}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -345,18 +354,20 @@ export function QrScanner({ onScan, active = true }: Props) {
   }
 
   return (
-    <div className="space-y-3">
-      {useNative ? (
-        <NativeBarcodeScanner onScan={onScan} active={active} appendDebugLog={appendDebugLog} />
-      ) : (
-        <Html5QrcodeFallback
-          onScan={onScan}
-          active={active}
-          readerId={readerId}
-          appendDebugLog={appendDebugLog}
-        />
-      )}
+    <>
+      <div className="space-y-3 pb-44">
+        {useNative ? (
+          <NativeBarcodeScanner onScan={onScan} active={active} appendDebugLog={appendDebugLog} />
+        ) : (
+          <Html5QrcodeFallback
+            onScan={onScan}
+            active={active}
+            readerId={readerId}
+            appendDebugLog={appendDebugLog}
+          />
+        )}
+      </div>
       <DebugLogPanel debugLog={debugLog} />
-    </div>
+    </>
   );
 }
