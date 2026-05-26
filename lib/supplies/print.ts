@@ -4,9 +4,9 @@ import { printLabelLog } from "@/lib/supplies/print-debug";
 import { formatSupplyQrPayload } from "@/lib/supplies/qr";
 import type { SupplyWithRelations } from "@/lib/supplies/types";
 
-/** 18mm 테이프: 세로(높이)=테이프 폭, 가로(너비)=인쇄 진행 방향 */
+/** 18mm 테이프 × 32mm 길이 (135 DPI: 96×170px, lbx 이미지 28mm) */
 const LABEL_HEIGHT = 96;
-const MIN_LABEL_WIDTH = LABEL_HEIGHT + 8;
+const LABEL_WIDTH = 170;
 const H_PAD = 4;
 const V_PAD = 3;
 const TEXT_GAP = 5;
@@ -37,7 +37,7 @@ export type PrintJob = {
 
 /**
  * QR(왼쪽) + 비품명·코드(오른쪽) 가로 라벨 PNG.
- * width > height 보장 (18mm 테이프 기준).
+ * 170×96px 고정 (32mm × 18mm @ 135 DPI).
  */
 export async function generateQrLabelImage(
   supply: Pick<SupplyWithRelations, "id" | "name" | "code">
@@ -49,37 +49,18 @@ export async function generateQrLabelImage(
   const qrSize = LABEL_HEIGHT - V_PAD * 2;
   const name = supply.name.length > 24 ? `${supply.name.slice(0, 23)}…` : supply.name;
 
-  const measure = document.createElement("canvas").getContext("2d");
-  if (!measure) throw new Error("Canvas 2D context를 사용할 수 없습니다.");
-
-  measure.font = NAME_FONT;
-  const nameWidth = measure.measureText(name).width;
-  measure.font = CODE_FONT;
-  const codeWidth = measure.measureText(supply.code).width;
-  const textWidth = Math.ceil(Math.max(nameWidth, codeWidth));
-
-  const labelWidth = Math.max(
-    MIN_LABEL_WIDTH,
-    H_PAD + qrSize + TEXT_GAP + textWidth + H_PAD
-  );
-  const labelHeight = LABEL_HEIGHT;
-
-  if (labelWidth <= labelHeight) {
-    throw new Error(`라벨 가로 크기 오류: width=${labelWidth}, height=${labelHeight}`);
-  }
-
   const qrX = H_PAD;
   const qrY = V_PAD;
   const textX = H_PAD + qrSize + TEXT_GAP;
 
   const canvas = document.createElement("canvas");
-  canvas.width = labelWidth;
-  canvas.height = labelHeight;
+  canvas.width = LABEL_WIDTH;
+  canvas.height = LABEL_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context를 사용할 수 없습니다.");
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, labelWidth, labelHeight);
+  ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
 
   const qrPayload = formatSupplyQrPayload(supply.id);
   const qrCanvas = document.createElement("canvas");
@@ -102,9 +83,8 @@ export async function generateQrLabelImage(
 
   const dataUrl = canvas.toDataURL("image/png");
   printLabelLog("generateQrLabelImage 완료", {
-    labelWidth,
-    labelHeight,
-    landscape: labelWidth > labelHeight,
+    labelWidth: LABEL_WIDTH,
+    labelHeight: LABEL_HEIGHT,
     imageBytesApprox: Math.round((dataUrl.length * 3) / 4)
   });
   return dataUrl;
