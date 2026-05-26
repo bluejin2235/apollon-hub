@@ -3,7 +3,7 @@ const SUPPLY_UUID_RE =
 
 /** QR에 넣을 비품 식별자 (라벨 인쇄·스캔용) */
 export function formatSupplyQrPayload(supplyId: string): string {
-  return `supply:${supplyId}`;
+  return `https://apollon-hub.vercel.app/supplies/${supplyId}/loan`;
 }
 
 /**
