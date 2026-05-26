@@ -4,14 +4,144 @@ import { printLabelLog } from "@/lib/supplies/print-debug";
 import { formatSupplyQrPayload } from "@/lib/supplies/qr";
 import type { SupplyWithRelations } from "@/lib/supplies/types";
 
-/** 18mm 테이프 × 32mm 길이 (135 DPI: 96×170px, lbx 이미지 28mm) */
+/** 18mm 테이프 높이 × 가로 라벨 (135 DPI: 96×200px) */
 const LABEL_HEIGHT = 96;
-const LABEL_WIDTH = 170;
+const LABEL_WIDTH = 200;
 const H_PAD = 4;
 const V_PAD = 3;
 const TEXT_GAP = 5;
-const NAME_FONT = "bold 13px system-ui, sans-serif";
-const CODE_FONT = "11px system-ui, sans-serif";
+const NAME_FONT = "bold 18px system-ui, sans-serif";
+const CODE_FONT = "bold 16px system-ui, sans-serif";
+const NAME_LINE_HEIGHT = 20;
+const CODE_LINE_HEIGHT = 18;
+const MAX_NAME_LINES = 3;
+
+function isCjkCharacter(char: string): boolean {
+  if (!char) return false;
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0x1100 && code <= 0x11ff) ||
+    (code >= 0x3040 && code <= 0x30ff) ||
+    (code >= 0x4e00 && code <= 0x9fff)
+  );
+}
+
+/** 한글·CJK는 글자 단위, 영문·숫자는 단어 단위로 줄바꿈 단위 생성 */
+function tokenizeForWrap(text: string): string[] {
+  const units: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (isCjkCharacter(ch)) {
+      units.push(ch);
+      i += 1;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      units.push(ch);
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < text.length && !isCjkCharacter(text[j]) && !/\s/.test(text[j])) {
+      j += 1;
+    }
+    units.push(text.slice(i, j));
+    i = j;
+  }
+  return units;
+}
+
+function joinWrapUnit(line: string, unit: string): string {
+  if (/\s/.test(unit)) {
+    return line.endsWith(" ") ? line : `${line} `;
+  }
+  if (!line) return unit;
+  const last = line[line.length - 1];
+  if (isCjkCharacter(last) && unit.length === 1 && isCjkCharacter(unit)) {
+    return line + unit;
+  }
+  return `${line} ${unit}`;
+}
+
+function fitLineWithEllipsis(ctx: CanvasRenderingContext2D, line: string, maxWidth: number): string {
+  const ellipsis = "…";
+  if (ctx.measureText(line).width <= maxWidth) return line;
+  let trimmed = line;
+  while (trimmed.length > 0 && ctx.measureText(trimmed + ellipsis).width > maxWidth) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed.length > 0 ? trimmed + ellipsis : ellipsis;
+}
+
+function wrapLabelText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const units = tokenizeForWrap(text.trim());
+  const lines: string[] = [];
+  let current = "";
+  let unitIndex = 0;
+
+  const commitLine = () => {
+    const value = current.trimEnd();
+    if (value) lines.push(value);
+    current = "";
+  };
+
+  while (unitIndex < units.length && lines.length < maxLines) {
+    const unit = units[unitIndex];
+    const candidate = joinWrapUnit(current, unit);
+
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      current = candidate;
+      unitIndex += 1;
+      continue;
+    }
+
+    if (current) {
+      commitLine();
+      continue;
+    }
+
+    if (ctx.measureText(unit).width <= maxWidth) {
+      current = unit;
+      unitIndex += 1;
+      continue;
+    }
+
+    for (const ch of unit) {
+      const next = joinWrapUnit(current, ch);
+      if (ctx.measureText(next).width <= maxWidth) {
+        current = next;
+      } else {
+        commitLine();
+        current = ch;
+      }
+      if (lines.length >= maxLines) break;
+    }
+    unitIndex += 1;
+  }
+
+  const hasRemainingUnits = unitIndex < units.length;
+  const hasPendingLine = current.trimEnd().length > 0;
+
+  if (hasPendingLine && lines.length < maxLines) {
+    lines.push(current.trimEnd());
+  }
+
+  if (lines.length === 0) return [""];
+
+  const truncated = hasRemainingUnits || (hasPendingLine && lines.length >= maxLines);
+  if (truncated) {
+    lines[lines.length - 1] = fitLineWithEllipsis(ctx, lines[lines.length - 1], maxWidth);
+  }
+
+  return lines.slice(0, maxLines);
+}
 
 /** supplyId 단위 동시 requestPrint 1회만 허용 */
 const inFlightPrintBySupply = new Map<
@@ -36,8 +166,8 @@ export type PrintJob = {
 };
 
 /**
- * QR(왼쪽) + 비품명·코드(오른쪽) 가로 라벨 PNG.
- * 170×96px 고정 (32mm × 18mm @ 135 DPI).
+ * QR(왼쪽) + 코드·비품명(오른쪽) 가로 라벨 PNG.
+ * 200×96px 고정 (18mm 높이 @ 135 DPI).
  */
 export async function generateQrLabelImage(
   supply: Pick<SupplyWithRelations, "id" | "name" | "code">
@@ -47,11 +177,10 @@ export async function generateQrLabelImage(
   }
 
   const qrSize = LABEL_HEIGHT - V_PAD * 2;
-  const name = supply.name.length > 24 ? `${supply.name.slice(0, 23)}…` : supply.name;
-
   const qrX = H_PAD;
   const qrY = V_PAD;
   const textX = H_PAD + qrSize + TEXT_GAP;
+  const textMaxWidth = LABEL_WIDTH - textX - H_PAD;
 
   const canvas = document.createElement("canvas");
   canvas.width = LABEL_WIDTH;
@@ -72,14 +201,24 @@ export async function generateQrLabelImage(
 
   ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
 
-  ctx.fillStyle = "#0f172a";
-  ctx.font = NAME_FONT;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(name, textX, Math.round(LABEL_HEIGHT * 0.375));
+  ctx.textBaseline = "top";
 
-  ctx.fillStyle = "#64748b";
   ctx.font = CODE_FONT;
-  ctx.fillText(supply.code, textX, Math.round(LABEL_HEIGHT * 0.6875));
+  ctx.fillStyle = "#0f172a";
+  ctx.fillText(supply.code, textX, V_PAD);
+
+  ctx.font = NAME_FONT;
+  const nameLines = wrapLabelText(ctx, supply.name, textMaxWidth, MAX_NAME_LINES);
+  const nameBlockHeight = nameLines.length * NAME_LINE_HEIGHT;
+  let nameY = LABEL_HEIGHT - V_PAD - nameBlockHeight;
+  const codeBottom = V_PAD + CODE_LINE_HEIGHT;
+  const minNameY = codeBottom + TEXT_GAP;
+  if (nameY < minNameY) nameY = minNameY;
+
+  for (const line of nameLines) {
+    ctx.fillText(line, textX, nameY);
+    nameY += NAME_LINE_HEIGHT;
+  }
 
   const dataUrl = canvas.toDataURL("image/png");
   printLabelLog("generateQrLabelImage 완료", {

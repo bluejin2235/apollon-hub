@@ -165,15 +165,15 @@ async function main() {
   console.log("\n--- Captured console log ---");
   console.log(logText);
 
-  const widthOk = /labelWidth['":\s]*170/.test(logText) || logText.includes('"labelWidth": 170');
+  const widthOk = /labelWidth['":\s]*200/.test(logText) || logText.includes('"labelWidth": 200');
   const heightOk = /labelHeight['":\s]*96/.test(logText) || logText.includes('"labelHeight": 96');
 
   if (widthOk && heightOk) {
-    console.log("\nPASS: labelWidth=170, labelHeight=96");
+    console.log("\nPASS: labelWidth=200, labelHeight=96");
     process.exit(0);
   }
 
-  console.error("\nFAIL: expected labelWidth=170 and labelHeight=96");
+  console.error("\nFAIL: expected labelWidth=200 and labelHeight=96");
   console.error({ widthOk, heightOk });
   process.exit(1);
 }
