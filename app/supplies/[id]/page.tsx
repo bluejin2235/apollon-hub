@@ -224,12 +224,12 @@ export default function SupplyDetailPage() {
         <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">{supply.name}</h1>
       </header>
 
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
         <div
           className={
             hasZoneSidebar
-              ? "flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_1fr_1fr] lg:items-start lg:gap-6"
-              : "flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6"
+              ? "flex flex-col gap-4 lg:grid lg:grid-cols-[12rem_1fr_1fr] lg:items-start lg:gap-4"
+              : "flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4"
           }
         >
           {hasZoneSidebar && supply.location ? (
