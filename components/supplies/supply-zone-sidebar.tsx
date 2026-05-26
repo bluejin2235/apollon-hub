@@ -27,7 +27,7 @@ export function SupplyZoneSidebar({ zoneCode, zoneName, currentId, items }: Prop
   }, [currentId]);
 
   return (
-    <aside className="hidden min-h-0 lg:block lg:col-span-1">
+    <aside className="hidden min-h-0 lg:block">
       <div className="flex h-[calc(100vh-14rem)] min-h-[320px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="shrink-0 border-b border-slate-100 px-3 py-3">
           <p className="text-xs font-semibold text-slate-500">
