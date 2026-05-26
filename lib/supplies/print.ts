@@ -67,7 +67,7 @@ export async function generateQrLabelImage(
   await QRCode.toCanvas(qrCanvas, qrPayload, {
     width: qrSize,
     margin: 0,
-    errorCorrectionLevel: "M"
+    errorCorrectionLevel: "L"
   });
 
   ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
