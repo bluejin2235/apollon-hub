@@ -3,6 +3,16 @@
 import { Html5Qrcode } from "html5-qrcode";
 import { useEffect, useId, useRef, useState } from "react";
 
+declare global {
+  interface Window {
+    BarcodeDetector?: new (options?: { formats?: string[] }) => {
+      detect: (source: CanvasImageSource) => Promise<Array<{ rawValue: string }>>;
+    };
+  }
+}
+
+type BarcodeDetector = InstanceType<NonNullable<Window["BarcodeDetector"]>>;
+
 type Props = {
   onScan: (decodedText: string) => void;
   /** false면 카메라 중지 (재스캔 시 key 변경 권장) */
