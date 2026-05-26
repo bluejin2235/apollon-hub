@@ -9,6 +9,10 @@ type Props = {
   active?: boolean;
 };
 
+function supportsBarcodeDetector(): boolean {
+  return typeof window !== "undefined" && "BarcodeDetector" in window;
+}
+
 function pickRearCamera(cameras: { id: string; label: string }[]): string {
   if (cameras.length === 0) {
     throw new Error("카메라를 찾을 수 없습니다.");
@@ -17,8 +21,180 @@ function pickRearCamera(cameras: { id: string; label: string }[]): string {
   return (back ?? cameras[cameras.length - 1]).id;
 }
 
-export function QrScanner({ onScan, active = true }: Props) {
-  const readerId = useId().replace(/:/g, "");
+function ScannerOverlay({ starting }: { starting: boolean }) {
+  return (
+    <>
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6">
+        <div className="aspect-square w-full max-w-[260px] rounded-xl border-2 border-violet-400 shadow-[0_0_24px_rgba(139,92,246,0.35)]" />
+        <p className="text-center text-xs font-medium text-white/90">QR 코드를 사각형 안에 맞춰 주세요</p>
+      </div>
+      {starting ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/70 text-sm text-white">
+          카메라 준비 중…
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function NativeBarcodeScanner({
+  onScan,
+  active
+}: {
+  onScan: (decodedText: string) => void;
+  active: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<BarcodeDetector | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const handledRef = useRef(false);
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
+
+  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(true);
+
+  useEffect(() => {
+    if (!active) return;
+
+    handledRef.current = false;
+    setError(null);
+    setStarting(true);
+
+    const cleanup = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      const stream = streamRef.current;
+      streamRef.current = null;
+      if (stream) {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+      }
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = null;
+      }
+      detectorRef.current = null;
+    };
+
+    const start = async () => {
+      try {
+        console.log("[qr-scanner] BarcodeDetector 사용");
+
+        const Detector = window.BarcodeDetector;
+        if (!Detector) {
+          throw new Error("BarcodeDetector를 사용할 수 없습니다.");
+        }
+
+        const detector = new Detector({ formats: ["qr_code"] });
+        detectorRef.current = detector;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false
+        });
+        streamRef.current = stream;
+
+        const video = videoRef.current;
+        if (!video) {
+          throw new Error("비디오 요소를 찾을 수 없습니다.");
+        }
+
+        video.srcObject = stream;
+        video.playsInline = true;
+        await video.play();
+
+        setStarting(false);
+
+        intervalRef.current = setInterval(() => {
+          if (handledRef.current || !videoRef.current || !canvasRef.current) return;
+
+          const v = videoRef.current;
+          const canvas = canvasRef.current;
+          if (v.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+          const w = v.videoWidth;
+          const h = v.videoHeight;
+          if (!w || !h) return;
+
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(v, 0, 0, w, h);
+
+          void detector
+            .detect(canvas)
+            .then((codes) => {
+              const text = codes[0]?.rawValue;
+              if (!text || handledRef.current) return;
+              handledRef.current = true;
+              console.log("[qr-scanner] 인식 성공:", text);
+              cleanup();
+              onScanRef.current(text);
+            })
+            .catch(() => {
+              /* 프레임마다 미인식 — 무시 */
+            });
+        }, 100);
+      } catch (e) {
+        setStarting(false);
+        cleanup();
+        if (e instanceof DOMException && e.name === "NotAllowedError") {
+          setError("카메라 권한이 필요합니다. 브라우저 설정에서 카메라를 허용해 주세요.");
+          return;
+        }
+        setError(e instanceof Error ? e.message : "카메라를 시작할 수 없습니다.");
+      }
+    };
+
+    void start();
+
+    return () => {
+      handledRef.current = true;
+      cleanup();
+    };
+  }, [active]);
+
+  return (
+    <div className="space-y-3">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
+        <ScannerOverlay starting={starting} />
+        <video
+          ref={videoRef}
+          className="min-h-[300px] w-full object-cover"
+          muted
+          playsInline
+          autoPlay
+        />
+        <canvas ref={canvasRef} className="hidden" aria-hidden />
+      </div>
+      {error ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Html5QrcodeFallback({
+  onScan,
+  active,
+  readerId
+}: {
+  onScan: (decodedText: string) => void;
+  active: boolean;
+  readerId: string;
+}) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
@@ -42,6 +218,8 @@ export function QrScanner({ onScan, active = true }: Props) {
 
     const start = async () => {
       try {
+        console.log("[qr-scanner] html5-qrcode 폴백");
+
         const cameras = await Html5Qrcode.getCameras();
         const cameraId = pickRearCamera(cameras);
 
@@ -68,10 +246,8 @@ export function QrScanner({ onScan, active = true }: Props) {
               .catch(() => {})
               .finally(() => onScanRef.current(decodedText));
           },
-          (errorMessage) => {
-            if (Math.random() < 0.05) {
-              console.log("[qr-scanner] 미인식:", errorMessage);
-            }
+          () => {
+            /* 프레임마다 미인식 — 무시 */
           }
         );
         setStarting(false);
@@ -99,16 +275,8 @@ export function QrScanner({ onScan, active = true }: Props) {
   return (
     <div className="space-y-3">
       <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900">
-        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-6">
-          <div className="aspect-square w-full max-w-[260px] rounded-xl border-2 border-violet-400 shadow-[0_0_24px_rgba(139,92,246,0.35)]" />
-          <p className="text-center text-xs font-medium text-white/90">QR 코드를 사각형 안에 맞춰 주세요</p>
-        </div>
+        <ScannerOverlay starting={starting} />
         <div id={readerId} className="min-h-[300px] w-full [&_video]:object-cover" />
-        {starting ? (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/70 text-sm text-white">
-            카메라 준비 중…
-          </div>
-        ) : null}
       </div>
       {error ? (
         <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
@@ -117,4 +285,23 @@ export function QrScanner({ onScan, active = true }: Props) {
       ) : null}
     </div>
   );
+}
+
+export function QrScanner({ onScan, active = true }: Props) {
+  const readerId = useId().replace(/:/g, "");
+  const useNative = supportsBarcodeDetector();
+
+  if (!active) {
+    return (
+      <div className="space-y-3">
+        <div className="relative min-h-[300px] overflow-hidden rounded-2xl border border-slate-700 bg-slate-900" />
+      </div>
+    );
+  }
+
+  if (useNative) {
+    return <NativeBarcodeScanner onScan={onScan} active={active} />;
+  }
+
+  return <Html5QrcodeFallback onScan={onScan} active={active} readerId={readerId} />;
 }
