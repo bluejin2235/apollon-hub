@@ -59,6 +59,7 @@ export function QrScanner({ onScan, active = true }: Props) {
             }
           },
           (decodedText) => {
+            console.log("[qr-scanner] 인식 성공:", decodedText);
             if (handledRef.current) return;
             handledRef.current = true;
             void scanner
@@ -67,8 +68,10 @@ export function QrScanner({ onScan, active = true }: Props) {
               .catch(() => {})
               .finally(() => onScanRef.current(decodedText));
           },
-          () => {
-            /* 프레임마다 미인식 — 무시 */
+          (errorMessage) => {
+            if (Math.random() < 0.05) {
+              console.log("[qr-scanner] 미인식:", errorMessage);
+            }
           }
         );
         setStarting(false);
