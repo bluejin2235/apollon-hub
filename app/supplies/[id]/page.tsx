@@ -94,7 +94,13 @@ export default function SupplyDetailPage() {
       .eq("supply_id", id)
       .order("borrowed_at", { ascending: false });
 
-    setLoans((loanRows ?? []) as SupplyLoanWithRelations[]);
+    const loadedLoans = (loanRows ?? []) as SupplyLoanWithRelations[];
+    setLoans(loadedLoans);
+    console.log("[supply-detail] loans loaded", {
+      supplyId: id,
+      count: loadedLoans.length,
+      loans: loadedLoans
+    });
     setLoading(false);
   }, [id]);
 
@@ -218,92 +224,94 @@ export default function SupplyDetailPage() {
         <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">{supply.name}</h1>
       </header>
 
-      <div
-        className={
-          hasZoneSidebar
-            ? "flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_1fr_1fr] lg:items-start lg:gap-6"
-            : "flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6"
-        }
-      >
-        {hasZoneSidebar && supply.location ? (
-          <SupplyZoneSidebar
-            zoneCode={supply.location.zone_code}
-            zoneName={supply.location.zone_name}
-            currentId={supply.id}
-            items={zoneSupplies}
-          />
-        ) : null}
+      <div className="flex flex-col gap-6">
+        <div
+          className={
+            hasZoneSidebar
+              ? "flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_1fr_1fr] lg:items-start lg:gap-6"
+              : "flex flex-col gap-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6"
+          }
+        >
+          {hasZoneSidebar && supply.location ? (
+            <SupplyZoneSidebar
+              zoneCode={supply.location.zone_code}
+              zoneName={supply.location.zone_name}
+              currentId={supply.id}
+              items={zoneSupplies}
+            />
+          ) : null}
 
-        {galleryImages.length > 0 ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={galleryImages[galleryIdx]}
-                alt=""
-                className="max-h-48 w-full object-contain lg:max-h-52"
-              />
-            </div>
-            {showReturnMainImage ? (
-              <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
-            ) : null}
-            {!showReturnMainImage && galleryImages.length > 1 ? (
-              <div className="mt-3 flex gap-2 overflow-x-auto">
-                {galleryImages.map((url, i) => (
-                  <button
-                    key={url}
-                    type="button"
-                    onClick={() => setGalleryIdx(i)}
-                    className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                  </button>
-                ))}
+          {galleryImages.length > 0 ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={galleryImages[galleryIdx]}
+                  alt=""
+                  className="max-h-48 w-full object-contain lg:max-h-52"
+                />
               </div>
-            ) : null}
+              {showReturnMainImage ? (
+                <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
+              ) : null}
+              {!showReturnMainImage && galleryImages.length > 1 ? (
+                <div className="mt-3 flex gap-2 overflow-x-auto">
+                  {galleryImages.map((url, i) => (
+                    <button
+                      key={url}
+                      type="button"
+                      onClick={() => setGalleryIdx(i)}
+                      className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
+              <div>
+                <dt className="text-slate-500">구역</dt>
+                <dd className="font-medium text-slate-900">{formatSupplyLocation(supply.location)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">수량</dt>
+                <dd className="font-medium text-slate-900">{supply.quantity}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">담당자</dt>
+                <dd className="font-medium text-slate-900">{supply.manager?.name?.trim() || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">상태</dt>
+                <dd>
+                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                </dd>
+              </div>
+              {supply.description ? (
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <dt className="text-slate-500">설명</dt>
+                  <dd className="text-slate-800">{supply.description}</dd>
+                </div>
+              ) : null}
+              {supply.components ? (
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <dt className="text-slate-500">구성품</dt>
+                  <dd className="whitespace-pre-wrap text-slate-800">{supply.components}</dd>
+                </div>
+              ) : null}
+            </dl>
           </section>
-        ) : null}
+        </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-1">
-            <div>
-              <dt className="text-slate-500">구역</dt>
-              <dd className="font-medium text-slate-900">{formatSupplyLocation(supply.location)}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">수량</dt>
-              <dd className="font-medium text-slate-900">{supply.quantity}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">담당자</dt>
-              <dd className="font-medium text-slate-900">{supply.manager?.name?.trim() || "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">상태</dt>
-              <dd>
-                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}>
-                  {badge.label}
-                </span>
-              </dd>
-            </div>
-            {supply.description ? (
-              <div className="sm:col-span-2 lg:col-span-1">
-                <dt className="text-slate-500">설명</dt>
-                <dd className="text-slate-800">{supply.description}</dd>
-              </div>
-            ) : null}
-            {supply.components ? (
-              <div className="sm:col-span-2 lg:col-span-1">
-                <dt className="text-slate-500">구성품</dt>
-                <dd className="whitespace-pre-wrap text-slate-800">{supply.components}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-full">
+        <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">대출 이력</h2>
           {loans.length === 0 ? (
             <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
