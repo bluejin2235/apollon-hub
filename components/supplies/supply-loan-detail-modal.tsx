@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  formatSupplyDate,
-  formatSupplyDateTime,
-  imagePublicUrls,
-  loanStatusLabel
-} from "@/lib/supplies/utils";
+import { formatSupplyDateTime, imagePublicUrls, loanStatusLabel } from "@/lib/supplies/utils";
 import type { SupplyLoanWithRelations } from "@/lib/supplies/types";
 
 type Props = {
@@ -53,7 +48,7 @@ export function SupplyLoanDetailModal({ loan, onClose }: Props) {
             <dd className="font-medium text-slate-900">{loanStatusLabel(loan.status)}</dd>
           </div>
           <div className="sm:col-span-2">
-            <dt className="text-slate-500">목적</dt>
+            <dt className="text-slate-500">대출목적</dt>
             <dd className="whitespace-pre-wrap text-slate-800">{loan.purpose}</dd>
           </div>
           <div>
@@ -61,10 +56,6 @@ export function SupplyLoanDetailModal({ loan, onClose }: Props) {
             <dd className="text-slate-800">{formatSupplyDateTime(loan.borrowed_at)}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">반납예정</dt>
-            <dd className="text-slate-800">{formatSupplyDate(loan.due_date)}</dd>
-          </div>
-          <div className="sm:col-span-2">
             <dt className="text-slate-500">반납일</dt>
             <dd className="text-slate-800">
               {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}

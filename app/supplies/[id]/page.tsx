@@ -13,7 +13,6 @@ import { deleteSupply } from "@/lib/supplies/operations";
 import {
   canDeleteSupply,
   canPrintSupplyLabel,
-  formatSupplyDate,
   formatSupplyDateTime,
   imagePublicUrls,
   loanStatusLabel,
@@ -318,9 +317,9 @@ export default function SupplyDetailPage() {
                     <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                       <tr>
                         <th className="px-3 py-2">대출자</th>
-                        <th className="px-3 py-2">목적</th>
+                        <th className="px-3 py-2">대출목적</th>
                         <th className="px-3 py-2">대출일</th>
-                        <th className="px-3 py-2">반납예정</th>
+                        <th className="px-3 py-2">반납일</th>
                         <th className="px-3 py-2">상태</th>
                         <th className="px-3 py-2">반납 특이사항</th>
                       </tr>
@@ -348,7 +347,7 @@ export default function SupplyDetailPage() {
                             {formatSupplyDateTime(loan.borrowed_at)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                            {formatSupplyDate(loan.due_date)}
+                            {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
                           </td>
                           <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
                           <td
@@ -451,9 +450,9 @@ export default function SupplyDetailPage() {
                   <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                     <tr>
                       <th className="px-3 py-2">대출자</th>
-                      <th className="px-3 py-2">목적</th>
+                      <th className="px-3 py-2">대출목적</th>
                       <th className="px-3 py-2">대출일</th>
-                      <th className="px-3 py-2">반납예정</th>
+                      <th className="px-3 py-2">반납일</th>
                       <th className="px-3 py-2">상태</th>
                       <th className="px-3 py-2">반납 특이사항</th>
                     </tr>
@@ -481,7 +480,7 @@ export default function SupplyDetailPage() {
                           {formatSupplyDateTime(loan.borrowed_at)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                          {formatSupplyDate(loan.due_date)}
+                          {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
                         </td>
                         <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
                         <td
