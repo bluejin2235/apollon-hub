@@ -265,9 +265,12 @@ function Html5QrcodeFallback({
       try {
         scanLog(appendDebugLogRef.current, "[qr-scanner] html5-qrcode 폴백");
 
+        scanLog(appendDebugLogRef.current, "html5-qrcode getCameras 호출");
         const cameras = await Html5Qrcode.getCameras();
         const cameraId = pickRearCamera(cameras);
+        scanLog(appendDebugLogRef.current, `html5-qrcode 카메라 ID 선택: ${cameraId}`);
 
+        scanLog(appendDebugLogRef.current, "html5-qrcode start 호출");
         await scanner.start(
           cameraId,
           {
@@ -282,7 +285,7 @@ function Html5QrcodeFallback({
             }
           },
           (decodedText) => {
-            scanLog(appendDebugLogRef.current, `[qr-scanner] 인식 성공: ${decodedText}`);
+            scanLog(appendDebugLogRef.current, `html5-qrcode 인식 성공: ${decodedText}`);
             if (handledRef.current) return;
             handledRef.current = true;
             void scanner
@@ -291,13 +294,19 @@ function Html5QrcodeFallback({
               .catch(() => {})
               .finally(() => onScanRef.current(decodedText));
           },
-          () => {
-            /* 프레임마다 미인식 — 무시 */
+          (errorMessage) => {
+            if (Math.random() < 0.05) {
+              scanLog(appendDebugLogRef.current, `html5-qrcode 미인식: ${errorMessage}`);
+            }
           }
         );
+        scanLog(appendDebugLogRef.current, "html5-qrcode start 완료");
         setStarting(false);
       } catch (e) {
         setStarting(false);
+        console.error("[qr-scanner] html5-qrcode fallback start failed", e);
+        const failMessage = e instanceof Error ? e.message : String(e);
+        scanLog(appendDebugLogRef.current, `html5-qrcode 시작 실패: ${failMessage}`);
         if (e instanceof DOMException && e.name === "NotAllowedError") {
           setError("카메라 권한이 필요합니다. 브라우저 설정에서 카메라를 허용해 주세요.");
           return;
