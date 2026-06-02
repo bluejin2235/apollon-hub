@@ -30,6 +30,7 @@ import {
 import { formatMenuAndPriceRange, parseMenuStringToRows, type MenuRow } from "@/lib/restaurants/menu-rows";
 import { keywordEmoji, keywordLabel } from "@/lib/restaurants/review-keywords";
 import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
+import { useCanManageRestaurant } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
 const MENU_BUCKET = "menu-images";
@@ -167,6 +168,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
+  const canManageResult = useCanManageRestaurant(restaurant?.registered_by);
+  const canManage = canManageResult ?? false;
   /** 삭제 확인 대상 리뷰. null 이면 모달 닫힘. */
   const [deletingReview, setDeletingReview] = useState<Review | null>(null);
   const [reviewDeleteBusy, setReviewDeleteBusy] = useState(false);
@@ -614,7 +617,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                     저장
                   </button>
                 </div>
-              ) : (
+              ) : canManage ? (
                 <button
                   type="button"
                   className="text-sm font-semibold text-blue-600 hover:text-blue-500"
@@ -624,7 +627,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 >
                   수정
                 </button>
-              )}
+              ) : null}
             </div>
 
             {editBasic ? (
@@ -1122,18 +1125,20 @@ export function RestaurantDetailView({ id }: { id: string }) {
             )}
           </div>
         </section>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              setDeleteErr("");
-              setDeleteModalOpen(true);
-            }}
-            className="text-xs font-medium text-slate-400 no-underline decoration-transparent outline-none transition-colors hover:text-red-600 focus-visible:text-red-600 active:text-red-600"
-          >
-            맛집 삭제
-          </button>
-        </div>
+        {canManage ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteErr("");
+                setDeleteModalOpen(true);
+              }}
+              className="text-xs font-medium text-slate-400 no-underline decoration-transparent outline-none transition-colors hover:text-red-600 focus-visible:text-red-600 active:text-red-600"
+            >
+              맛집 삭제
+            </button>
+          </div>
+        ) : null}
         </div>
       </div>
 

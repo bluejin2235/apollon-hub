@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
-import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { useCanCreateLicense } from "@/lib/services/use-service-permissions";
 import {
   computeLicenseCostBreakdown,
   computeLicenseNextRenewal,
@@ -266,7 +266,6 @@ type StatusFilter = "전체" | "활성" | "비활성";
 type SortKey = "recent" | "name" | "cost";
 
 export default function LicensesListPage() {
-  const { profile } = useRequirePortalSession();
   const rates = useKrwRates();
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -301,8 +300,8 @@ export default function LicensesListPage() {
     return m;
   }, [profiles]);
 
-  const role = profile?.role ?? "";
-  const canCreate = role === "슈퍼관리자" || role === "중간관리자";
+  const canCreateResult = useCanCreateLicense();
+  const canCreate = canCreateResult ?? false;
 
   /** 데이터에 실제 존재하는 카테고리만 옵션으로 노출 */
   const categoryOptions = useMemo(() => {

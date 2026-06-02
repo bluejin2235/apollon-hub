@@ -11,8 +11,6 @@ import { isMobileDevice } from "@/lib/supplies/device";
 import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
 import { deleteSupply } from "@/lib/supplies/operations";
 import {
-  canDeleteSupply,
-  canPrintSupplyLabel,
   formatSupplyDateTime,
   imagePublicUrls,
   loanStatusLabel,
@@ -22,6 +20,7 @@ import {
   supplyStatusBadge
 } from "@/lib/supplies/utils";
 import type { SupplyLoanWithRelations, SupplyWithRelations } from "@/lib/supplies/types";
+import { useCanManageSupply } from "@/lib/services/use-service-permissions";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
 
@@ -41,6 +40,8 @@ export default function SupplyDetailPage() {
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<SupplyLoanWithRelations | null>(null);
   const [zoneSupplies, setZoneSupplies] = useState<ZoneSupplyListItem[]>([]);
+
+  const canManageResult = useCanManageSupply(supply?.manager_id);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -159,8 +160,8 @@ export default function SupplyDetailPage() {
   const galleryImages = showReturnMainImage ? [latestReturnImageUrl!] : supplyImages;
   const myActiveLoan =
     profile?.id && loans.find((l) => l.borrower_id === profile.id && l.status === "active");
-  const showDelete = canDeleteSupply(profile?.role, profile?.id, supply.manager_id);
-  const showPrintLabel = canPrintSupplyLabel(profile?.role, profile?.id, supply.manager_id);
+  const showDelete = canManageResult ?? false;
+  const showPrintLabel = canManageResult ?? false;
   const hasZoneSidebar = Boolean(supply.location?.zone_code);
 
   const actionButtons = (

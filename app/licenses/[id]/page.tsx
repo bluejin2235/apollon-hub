@@ -9,7 +9,7 @@ import {
   ServiceManagersCard,
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
-import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { useCanManageLicense } from "@/lib/services/use-service-permissions";
 import { computeLicenseNextRenewal, formatCurrency, computeLicenseCostBreakdown } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
@@ -137,7 +137,6 @@ export default function LicenseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
-  const { profile } = useRequirePortalSession();
   const rates = useKrwRates();
   const [license, setLicense] = useState<License | null>(null);
   const [assignee, setAssignee] = useState<Profile | null>(null);
@@ -190,8 +189,8 @@ export default function LicenseDetailPage() {
     void run();
   }, []);
 
-  const role = profile?.role ?? null;
-  const canEdit = role === "슈퍼관리자" || role === "중간관리자";
+  const canEditResult = useCanManageLicense(license?.id);
+  const canEdit = canEditResult ?? false;
 
   const handleDelete = async () => {
     if (!license) return;

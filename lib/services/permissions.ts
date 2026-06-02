@@ -133,6 +133,19 @@ export async function canManageLicense(
   return false;
 }
 
+/**
+ * 라이선스 생성 권한.
+ * 슈퍼관리자 OR 라이선스매니저 서비스 중간관리자.
+ */
+export async function canCreateLicense(
+  userProfile: PortalProfileRow | null | undefined
+): Promise<boolean> {
+  if (!userProfile?.id) return false;
+  if (isSuperAdmin(userProfile)) return true;
+  if (await isMiddleAdmin(userProfile.id, SERVICE_URL.LICENSE_MANAGER)) return true;
+  return false;
+}
+
 /** 비품 등록 권한: 인증된 멤버이면 누구나 가능. */
 export function canCreateSupply(userProfile: PortalProfileRow | null | undefined): boolean {
   return Boolean(userProfile?.id);
