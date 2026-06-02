@@ -10,7 +10,7 @@ import {
   SUPPLY_LOCATION_SELECT,
   zoneSelectLabel
 } from "@/lib/supplies/locations";
-import { isSupplyManager } from "@/lib/supplies/utils";
+import { canCreateSupply } from "@/lib/services/permissions";
 import type { ProfileLite, SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
@@ -27,7 +27,7 @@ export default function SuppliesPage() {
   const [slotFilter, setSlotFilter] = useState<string>("전체");
   const [registerOpen, setRegisterOpen] = useState(false);
 
-  const canRegister = isSupplyManager(profile?.role);
+  const canRegister = canCreateSupply(profile);
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
   const slotsInZone = useMemo(
     () => (zoneFilter === "전체" ? [] : getSlotsForZone(locations, zoneFilter)),
