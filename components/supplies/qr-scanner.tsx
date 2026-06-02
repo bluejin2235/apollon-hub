@@ -196,10 +196,7 @@ function NativeBarcodeScanner({
         const constraints: MediaStreamConstraints = {
           video: {
             facingMode: { ideal: "environment" },
-            // @ts-expect-error - focusMode는 비표준 속성이라 타입 정의에 없음
-            focusMode: "continuous",
-            // @ts-expect-error - advanced 안의 focusMode도 동일
-            advanced: [{ focusMode: "continuous" }]
+            advanced: [{ focusMode: "continuous" } as ExtendedConstraintSet]
           } as MediaTrackConstraints,
           audio: false
         };
@@ -326,10 +323,7 @@ function JsQrScanner({
         const constraints: MediaStreamConstraints = {
           video: {
             facingMode: { ideal: "environment" },
-            // @ts-expect-error - focusMode는 비표준 속성이라 타입 정의에 없음
-            focusMode: "continuous",
-            // @ts-expect-error - advanced 안의 focusMode도 동일
-            advanced: [{ focusMode: "continuous" }]
+            advanced: [{ focusMode: "continuous" } as ExtendedConstraintSet]
           } as MediaTrackConstraints,
           audio: false
         };
