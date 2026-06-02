@@ -12,6 +12,11 @@
 .DS_Store
 *.pem
 *.pptx
+Thumbs.db
+public/Thumbs.db
+
+# Figma Make 작업용 추출물 (코드와 무관)
+design-system-export/
 
 # debug
 npm-debug.log*
