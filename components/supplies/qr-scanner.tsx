@@ -19,6 +19,14 @@ type Props = {
   active?: boolean;
 };
 
+interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
+  focusMode?: string[];
+}
+
+interface ExtendedConstraintSet extends MediaTrackConstraintSet {
+  focusMode?: string;
+}
+
 function scanLog(appendDebugLog: (message: string) => void, message: string) {
   console.log(message);
   appendDebugLog(message);
@@ -114,17 +122,18 @@ async function tryApplyContinuousFocus(stream: MediaStream) {
   const [videoTrack] = stream.getVideoTracks();
   if (!videoTrack) return;
 
-  const capabilities = (videoTrack as any).getCapabilities?.() || {};
+  const capabilities =
+    (videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined) || {};
   console.log("[qr-scanner] 카메라 capabilities:", capabilities);
 
-  const constraintsToApply: any = {};
+  const constraintsToApply: ExtendedConstraintSet = {};
   if (capabilities.focusMode?.includes("continuous")) {
     constraintsToApply.focusMode = "continuous";
   }
 
   if (Object.keys(constraintsToApply).length > 0) {
     try {
-      await (videoTrack as any).applyConstraints({ advanced: [constraintsToApply] });
+      await videoTrack.applyConstraints({ advanced: [constraintsToApply] });
       console.log("[qr-scanner] applyConstraints 성공:", constraintsToApply);
     } catch (e) {
       console.warn("[qr-scanner] applyConstraints 실패:", e);
