@@ -48,9 +48,17 @@ export default function LoginPage() {
           error: signInError,
           email
         });
-        setErrorMessage(
-          `로그인 실패: ${signInError?.message ?? "인증 정보를 확인할 수 없습니다."}`
-        );
+
+        const rawMessage = signInError?.message ?? "";
+        const isInvalidCredentials = /invalid login credentials/i.test(rawMessage);
+
+        if (isInvalidCredentials) {
+          setErrorMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
+        } else {
+          setErrorMessage(
+            `로그인 실패: ${rawMessage || "인증 정보를 확인할 수 없습니다."}`
+          );
+        }
         return;
       }
 
