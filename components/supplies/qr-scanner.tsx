@@ -110,6 +110,28 @@ function stopMediaStream(stream: MediaStream | null, video: HTMLVideoElement | n
   }
 }
 
+async function tryApplyContinuousFocus(stream: MediaStream) {
+  const [videoTrack] = stream.getVideoTracks();
+  if (!videoTrack) return;
+
+  const capabilities = (videoTrack as any).getCapabilities?.() || {};
+  console.log("[qr-scanner] 카메라 capabilities:", capabilities);
+
+  const constraintsToApply: any = {};
+  if (capabilities.focusMode?.includes("continuous")) {
+    constraintsToApply.focusMode = "continuous";
+  }
+
+  if (Object.keys(constraintsToApply).length > 0) {
+    try {
+      await (videoTrack as any).applyConstraints({ advanced: [constraintsToApply] });
+      console.log("[qr-scanner] applyConstraints 성공:", constraintsToApply);
+    } catch (e) {
+      console.warn("[qr-scanner] applyConstraints 실패:", e);
+    }
+  }
+}
+
 function NativeBarcodeScanner({
   onScan,
   active,
@@ -162,11 +184,19 @@ function NativeBarcodeScanner({
         const detector = new Detector({ formats: ["qr_code"] });
         detectorRef.current = detector;
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+        const constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            // @ts-expect-error - focusMode는 비표준 속성이라 타입 정의에 없음
+            focusMode: "continuous",
+            // @ts-expect-error - advanced 안의 focusMode도 동일
+            advanced: [{ focusMode: "continuous" }]
+          } as MediaTrackConstraints,
           audio: false
-        });
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
+        await tryApplyContinuousFocus(stream);
 
         const video = videoRef.current;
         if (!video) {
@@ -284,11 +314,19 @@ function JsQrScanner({
       try {
         scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+        const constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            // @ts-expect-error - focusMode는 비표준 속성이라 타입 정의에 없음
+            focusMode: "continuous",
+            // @ts-expect-error - advanced 안의 focusMode도 동일
+            advanced: [{ focusMode: "continuous" }]
+          } as MediaTrackConstraints,
           audio: false
-        });
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
+        await tryApplyContinuousFocus(stream);
 
         const video = videoRef.current;
         if (!video) {
