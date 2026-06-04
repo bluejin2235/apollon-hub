@@ -19,14 +19,6 @@ type Props = {
   active?: boolean;
 };
 
-interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
-  zoom?: { min: number; max: number; step: number };
-}
-
-interface ExtendedConstraintSet extends MediaTrackConstraintSet {
-  zoom?: number;
-}
-
 function scanLog(appendDebugLog: (message: string) => void, message: string) {
   console.log(message);
   appendDebugLog(message);
@@ -118,44 +110,6 @@ function stopMediaStream(stream: MediaStream | null, video: HTMLVideoElement | n
   }
 }
 
-async function tryApplyZoom(
-  stream: MediaStream,
-  targetZoom: number = 2.0,
-  appendDebugLog?: (message: string) => void
-): Promise<void> {
-  const log = (message: string) => {
-    console.log(message);
-    if (appendDebugLog) appendDebugLog(message);
-  };
-
-  const [videoTrack] = stream.getVideoTracks();
-  if (!videoTrack) {
-    log("[qr-scanner] videoTrack 없음");
-    return;
-  }
-
-  const capabilities = videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined;
-  log("[qr-scanner] capabilities: " + JSON.stringify(capabilities));
-
-  if (!capabilities?.zoom) {
-    log("[qr-scanner] 줌 미지원");
-    return;
-  }
-
-  log("[qr-scanner] 줌 capabilities: " + JSON.stringify(capabilities.zoom));
-
-  const zoom = Math.min(targetZoom, capabilities.zoom.max);
-
-  try {
-    const constraints: ExtendedConstraintSet = { zoom };
-    await videoTrack.applyConstraints({ advanced: [constraints] });
-    log("[qr-scanner] 줌 적용 성공: " + zoom);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    log("[qr-scanner] 줌 적용 실패: " + msg);
-  }
-}
-
 function NativeBarcodeScanner({
   onScan,
   active,
@@ -196,13 +150,9 @@ function NativeBarcodeScanner({
       detectorRef.current = null;
     };
 
-    let branchLogTimer: ReturnType<typeof setTimeout> | undefined;
-
     const start = async () => {
       try {
-        branchLogTimer = setTimeout(() => {
-          scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
-        }, 0);
+        scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
 
         const Detector = window.BarcodeDetector;
         if (!Detector) {
@@ -213,23 +163,10 @@ function NativeBarcodeScanner({
         detectorRef.current = detector;
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
+          video: { facingMode: { ideal: "environment" } },
           audio: false
         });
         streamRef.current = stream;
-        const [nativeVideoTrack] = stream.getVideoTracks();
-        if (nativeVideoTrack) {
-          const settings = nativeVideoTrack.getSettings();
-          scanLog(
-            appendDebugLogRef.current,
-            `[qr-scanner] 적용된 video 설정: ${settings.width}x${settings.height}`
-          );
-        }
-        await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
         if (!video) {
@@ -290,7 +227,6 @@ function NativeBarcodeScanner({
     void start();
 
     return () => {
-      if (branchLogTimer !== undefined) clearTimeout(branchLogTimer);
       handledRef.current = true;
       cleanup();
     };
@@ -319,9 +255,6 @@ function JsQrScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const attemptsRef = useRef(0);
-  const sizeLoggedRef = useRef(false);
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
@@ -335,8 +268,6 @@ function JsQrScanner({
     if (!active) return;
 
     handledRef.current = false;
-    attemptsRef.current = 0;
-    sizeLoggedRef.current = false;
     setError(null);
     setStarting(true);
 
@@ -345,40 +276,19 @@ function JsQrScanner({
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-        statsIntervalRef.current = null;
-      }
       stopMediaStream(streamRef.current, videoRef.current);
       streamRef.current = null;
     };
 
-    let branchLogTimer: ReturnType<typeof setTimeout> | undefined;
-
     const start = async () => {
       try {
-        branchLogTimer = setTimeout(() => {
-          scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
-        }, 0);
+        scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
+          video: { facingMode: { ideal: "environment" } },
           audio: false
         });
         streamRef.current = stream;
-        const [jsQrVideoTrack] = stream.getVideoTracks();
-        if (jsQrVideoTrack) {
-          const settings = jsQrVideoTrack.getSettings();
-          scanLog(
-            appendDebugLogRef.current,
-            `[qr-scanner] 적용된 video 설정: ${settings.width}x${settings.height}`
-          );
-        }
-        await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
         if (!video) {
@@ -391,14 +301,6 @@ function JsQrScanner({
 
         scanLog(appendDebugLogRef.current, "[qr-scanner] 카메라 시작 완료");
         setStarting(false);
-
-        statsIntervalRef.current = setInterval(() => {
-          scanLog(
-            appendDebugLogRef.current,
-            `[qr-scanner] 최근 5초 jsQR 시도: ${attemptsRef.current}회`
-          );
-          attemptsRef.current = 0;
-        }, 5000);
 
         intervalRef.current = setInterval(() => {
           if (handledRef.current || !videoRef.current || !canvasRef.current) return;
@@ -419,16 +321,6 @@ function JsQrScanner({
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
           if (!ctx) return;
           ctx.drawImage(v, 0, 0, w, h);
-
-          attemptsRef.current += 1;
-
-          if (!sizeLoggedRef.current) {
-            sizeLoggedRef.current = true;
-            scanLog(
-              appendDebugLogRef.current,
-              `[qr-scanner] canvas 크기: ${canvas.width}x${canvas.height}, video 크기: ${v.videoWidth}x${v.videoHeight}`
-            );
-          }
 
           const imageData = ctx.getImageData(0, 0, w, h);
           const result = jsQR(imageData.data, imageData.width, imageData.height);
@@ -454,7 +346,6 @@ function JsQrScanner({
     void start();
 
     return () => {
-      if (branchLogTimer !== undefined) clearTimeout(branchLogTimer);
       handledRef.current = true;
       cleanup();
     };
@@ -481,19 +372,6 @@ export function QrScanner({ onScan, active = true }: Props) {
   useEffect(() => {
     if (active) setDebugLog([]);
   }, [active]);
-
-  useEffect(() => {
-    if (!active) return;
-    const timer = setTimeout(() => {
-      const useNativeMsg = `[qr-scanner] useNative: ${useNative}`;
-      const detectorMsg = `[qr-scanner] BarcodeDetector 존재: ${typeof window.BarcodeDetector !== "undefined"}`;
-      console.log(useNativeMsg);
-      console.log(detectorMsg);
-      appendDebugLog(useNativeMsg);
-      appendDebugLog(detectorMsg);
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [active, useNative, appendDebugLog]);
 
   if (!active) {
     return (
