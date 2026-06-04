@@ -213,10 +213,22 @@ function NativeBarcodeScanner({
         detectorRef.current = detector;
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
           audio: false
         });
         streamRef.current = stream;
+        const [nativeVideoTrack] = stream.getVideoTracks();
+        if (nativeVideoTrack) {
+          const settings = nativeVideoTrack.getSettings();
+          scanLog(
+            appendDebugLogRef.current,
+            `[qr-scanner] 적용된 video 설정: ${settings.width}x${settings.height}`
+          );
+        }
         await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
@@ -350,10 +362,22 @@ function JsQrScanner({
         }, 0);
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
           audio: false
         });
         streamRef.current = stream;
+        const [jsQrVideoTrack] = stream.getVideoTracks();
+        if (jsQrVideoTrack) {
+          const settings = jsQrVideoTrack.getSettings();
+          scanLog(
+            appendDebugLogRef.current,
+            `[qr-scanner] 적용된 video 설정: ${settings.width}x${settings.height}`
+          );
+        }
         await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
