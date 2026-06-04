@@ -307,6 +307,9 @@ function JsQrScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const attemptsRef = useRef(0);
+  const sizeLoggedRef = useRef(false);
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
@@ -320,6 +323,8 @@ function JsQrScanner({
     if (!active) return;
 
     handledRef.current = false;
+    attemptsRef.current = 0;
+    sizeLoggedRef.current = false;
     setError(null);
     setStarting(true);
 
@@ -327,6 +332,10 @@ function JsQrScanner({
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
       }
       stopMediaStream(streamRef.current, videoRef.current);
       streamRef.current = null;
@@ -359,6 +368,14 @@ function JsQrScanner({
         scanLog(appendDebugLogRef.current, "[qr-scanner] 카메라 시작 완료");
         setStarting(false);
 
+        statsIntervalRef.current = setInterval(() => {
+          scanLog(
+            appendDebugLogRef.current,
+            `[qr-scanner] 최근 5초 jsQR 시도: ${attemptsRef.current}회`
+          );
+          attemptsRef.current = 0;
+        }, 5000);
+
         intervalRef.current = setInterval(() => {
           if (handledRef.current || !videoRef.current || !canvasRef.current) return;
 
@@ -378,6 +395,16 @@ function JsQrScanner({
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
           if (!ctx) return;
           ctx.drawImage(v, 0, 0, w, h);
+
+          attemptsRef.current += 1;
+
+          if (!sizeLoggedRef.current) {
+            sizeLoggedRef.current = true;
+            scanLog(
+              appendDebugLogRef.current,
+              `[qr-scanner] canvas 크기: ${canvas.width}x${canvas.height}, video 크기: ${v.videoWidth}x${v.videoHeight}`
+            );
+          }
 
           const imageData = ctx.getImageData(0, 0, w, h);
           const result = jsQR(imageData.data, imageData.width, imageData.height);
