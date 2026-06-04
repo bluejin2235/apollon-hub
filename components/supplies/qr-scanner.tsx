@@ -196,9 +196,13 @@ function NativeBarcodeScanner({
       detectorRef.current = null;
     };
 
+    let branchLogTimer: ReturnType<typeof setTimeout> | undefined;
+
     const start = async () => {
       try {
-        scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
+        branchLogTimer = setTimeout(() => {
+          scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
+        }, 0);
 
         const Detector = window.BarcodeDetector;
         if (!Detector) {
@@ -274,6 +278,7 @@ function NativeBarcodeScanner({
     void start();
 
     return () => {
+      if (branchLogTimer !== undefined) clearTimeout(branchLogTimer);
       handledRef.current = true;
       cleanup();
     };
@@ -327,9 +332,13 @@ function JsQrScanner({
       streamRef.current = null;
     };
 
+    let branchLogTimer: ReturnType<typeof setTimeout> | undefined;
+
     const start = async () => {
       try {
-        scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
+        branchLogTimer = setTimeout(() => {
+          scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
+        }, 0);
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" } },
@@ -394,6 +403,7 @@ function JsQrScanner({
     void start();
 
     return () => {
+      if (branchLogTimer !== undefined) clearTimeout(branchLogTimer);
       handledRef.current = true;
       cleanup();
     };
@@ -420,6 +430,19 @@ export function QrScanner({ onScan, active = true }: Props) {
   useEffect(() => {
     if (active) setDebugLog([]);
   }, [active]);
+
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => {
+      const useNativeMsg = `[qr-scanner] useNative: ${useNative}`;
+      const detectorMsg = `[qr-scanner] BarcodeDetector 존재: ${typeof window.BarcodeDetector !== "undefined"}`;
+      console.log(useNativeMsg);
+      console.log(detectorMsg);
+      appendDebugLog(useNativeMsg);
+      appendDebugLog(detectorMsg);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [active, useNative, appendDebugLog]);
 
   if (!active) {
     return (
