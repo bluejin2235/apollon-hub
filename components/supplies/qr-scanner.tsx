@@ -118,28 +118,41 @@ function stopMediaStream(stream: MediaStream | null, video: HTMLVideoElement | n
   }
 }
 
-async function tryApplyZoom(stream: MediaStream, targetZoom: number = 2.0): Promise<void> {
+async function tryApplyZoom(
+  stream: MediaStream,
+  targetZoom: number = 2.0,
+  appendDebugLog?: (message: string) => void
+): Promise<void> {
+  const log = (message: string) => {
+    console.log(message);
+    if (appendDebugLog) appendDebugLog(message);
+  };
+
   const [videoTrack] = stream.getVideoTracks();
-  if (!videoTrack) return;
-
-  const capabilities = videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined;
-  console.log("[qr-scanner] 카메라 capabilities:", capabilities);
-
-  if (!capabilities?.zoom) {
-    console.log("[qr-scanner] 줌 미지원");
+  if (!videoTrack) {
+    log("[qr-scanner] videoTrack 없음");
     return;
   }
 
-  console.log("[qr-scanner] 줌 capabilities:", capabilities.zoom);
+  const capabilities = videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined;
+  log("[qr-scanner] capabilities: " + JSON.stringify(capabilities));
+
+  if (!capabilities?.zoom) {
+    log("[qr-scanner] 줌 미지원");
+    return;
+  }
+
+  log("[qr-scanner] 줌 capabilities: " + JSON.stringify(capabilities.zoom));
 
   const zoom = Math.min(targetZoom, capabilities.zoom.max);
 
   try {
     const constraints: ExtendedConstraintSet = { zoom };
     await videoTrack.applyConstraints({ advanced: [constraints] });
-    console.log("[qr-scanner] 줌 적용 성공:", zoom);
+    log("[qr-scanner] 줌 적용 성공: " + zoom);
   } catch (e) {
-    console.warn("[qr-scanner] 줌 적용 실패:", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    log("[qr-scanner] 줌 적용 실패: " + msg);
   }
 }
 
@@ -200,7 +213,7 @@ function NativeBarcodeScanner({
           audio: false
         });
         streamRef.current = stream;
-        await tryApplyZoom(stream, 2.0);
+        await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
         if (!video) {
@@ -323,7 +336,7 @@ function JsQrScanner({
           audio: false
         });
         streamRef.current = stream;
-        await tryApplyZoom(stream, 2.0);
+        await tryApplyZoom(stream, 2.0, appendDebugLogRef.current);
 
         const video = videoRef.current;
         if (!video) {
