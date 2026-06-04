@@ -62,7 +62,12 @@ export default function SupplyLoanPage() {
         setScanKey((k) => k + 1);
         return;
       }
-      if (!supplyIdsMatch(scannedId, id)) {
+      if (!supply) {
+        setToast("비품 정보를 불러오는 중입니다. 잠시 후 다시 스캔해 주세요.");
+        setScanKey((k) => k + 1);
+        return;
+      }
+      if (!supplyIdsMatch(scannedId, { id: supply.id, code: supply.code })) {
         setToast("다른 비품의 QR입니다. 다시 스캔해 주세요.");
         setScanKey((k) => k + 1);
         return;
@@ -70,7 +75,7 @@ export default function SupplyLoanPage() {
       setToast(null);
       setStep("verified");
     },
-    [id]
+    [supply]
   );
 
   const handleRescan = () => {

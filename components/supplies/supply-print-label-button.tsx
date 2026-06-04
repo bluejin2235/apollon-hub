@@ -135,7 +135,7 @@ export function SupplyPrintLabelButton({ supply, requestedBy, onToast }: Props) 
 
     try {
       const imageBase64 = await generateQrLabelImage(supply);
-      const qrData = formatSupplyQrPayload(supply.id);
+      const qrData = formatSupplyQrPayload(supply.code);
       printLabelLog("라벨 이미지 생성 완료 → printing", { qrData });
 
       setUiState("printing");

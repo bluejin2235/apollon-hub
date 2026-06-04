@@ -191,7 +191,7 @@ export async function generateQrLabelImage(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, LABEL_WIDTH, LABEL_HEIGHT);
 
-  const qrPayload = formatSupplyQrPayload(supply.id);
+  const qrPayload = formatSupplyQrPayload(supply.code);
   const qrCanvas = document.createElement("canvas");
   await QRCode.toCanvas(qrCanvas, qrPayload, {
     width: qrSize,
