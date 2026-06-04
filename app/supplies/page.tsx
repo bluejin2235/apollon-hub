@@ -11,7 +11,7 @@ import {
   zoneSelectLabel
 } from "@/lib/supplies/locations";
 import { canCreateSupply } from "@/lib/services/permissions";
-import type { ProfileLite, SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
+import type { SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
 
@@ -19,7 +19,6 @@ export default function SuppliesPage() {
   const { status, profile } = useRequirePortalSession();
   const [supplies, setSupplies] = useState<SupplyWithRelations[]>([]);
   const [locations, setLocations] = useState<SupplyLocation[]>([]);
-  const [managers, setManagers] = useState<ProfileLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -39,7 +38,7 @@ export default function SuppliesPage() {
     setLoadError(null);
 
     try {
-      const [supRes, locRes, profRes] = await Promise.all([
+      const [supRes, locRes] = await Promise.all([
         supabase
           .from("supplies")
           .select(`*, location:supply_locations(${SUPPLY_LOCATION_SELECT}), manager:profiles!manager_id(id, name, email)`)
@@ -49,21 +48,18 @@ export default function SuppliesPage() {
           .select(SUPPLY_LOCATION_SELECT)
           .eq("is_active", true)
           .order("zone_code")
-          .order("slot_code"),
-        supabase.from("profiles").select("id, name, email").order("name")
+          .order("slot_code")
       ]);
 
       const errors: string[] = [];
       if (supRes.error) errors.push(`비품 목록: ${supRes.error.message}`);
       if (locRes.error) errors.push(`보관 위치: ${locRes.error.message}`);
-      if (profRes.error) errors.push(`담당자 목록: ${profRes.error.message}`);
 
       if (errors.length > 0) {
-        console.error("[supplies/page] load", { supRes, locRes, profRes });
+        console.error("[supplies/page] load", { supRes, locRes });
         setLoadError(errors.join(" · "));
         setSupplies([]);
         setLocations([]);
-        setManagers([]);
         return;
       }
 
@@ -71,13 +67,11 @@ export default function SuppliesPage() {
 
       setSupplies(rows);
       setLocations((locRes.data ?? []) as SupplyLocation[]);
-      setManagers((profRes.data ?? []) as ProfileLite[]);
     } catch (e) {
       console.error("[supplies/page] load", e);
       setLoadError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.");
       setSupplies([]);
       setLocations([]);
-      setManagers([]);
     } finally {
       setLoading(false);
     }
@@ -193,13 +187,15 @@ export default function SuppliesPage() {
         </div>
       )}
 
-      <SupplyRegisterModal
-        open={registerOpen}
-        onClose={() => setRegisterOpen(false)}
-        onSaved={() => void load()}
-        locations={locations}
-        managers={managers}
-      />
+      {profile?.id ? (
+        <SupplyRegisterModal
+          open={registerOpen}
+          onClose={() => setRegisterOpen(false)}
+          onSaved={() => void load()}
+          locations={locations}
+          currentUserId={profile.id}
+        />
+      ) : null}
     </div>
   );
 }

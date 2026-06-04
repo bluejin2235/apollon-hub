@@ -85,6 +85,33 @@ export async function createSupply(params: {
   return { id: data.id as string, error: null };
 }
 
+export async function updateSupply(params: {
+  supplyId: string;
+  name: string;
+  locationId: string;
+  quantity: number;
+  managerId: string | null;
+  description: string | null;
+  components: string | null;
+}): Promise<{ code: string | null; error: string | null }> {
+  const { data, error } = await supabase.rpc("update_supply_details", {
+    p_supply_id: params.supplyId,
+    p_name: params.name.trim(),
+    p_location_id: params.locationId,
+    p_quantity: params.quantity,
+    p_manager_id: params.managerId,
+    p_description: params.description?.trim() || null,
+    p_components: params.components?.trim() || null
+  });
+
+  if (error) {
+    console.error("[supplies] update", error);
+    return { code: null, error: error.message };
+  }
+
+  return { code: data as string, error: null };
+}
+
 export async function borrowSupply(params: {
   supplyId: string;
   borrowerId: string;

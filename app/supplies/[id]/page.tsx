@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { SupplyLoanDetailModal } from "@/components/supplies/supply-loan-detail-modal";
 import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
+import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
 import { SupplyToast } from "@/components/supplies/toast";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
@@ -23,6 +24,8 @@ import {
 } from "@/lib/supplies/utils";
 import type {
   PrintJobWithRequester,
+  ProfileLite,
+  SupplyLocation,
   SupplyLoanWithRelations,
   SupplyWithRelations
 } from "@/lib/supplies/types";
@@ -48,6 +51,9 @@ export default function SupplyDetailPage() {
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<SupplyLoanWithRelations | null>(null);
   const [zoneSupplies, setZoneSupplies] = useState<ZoneSupplyListItem[]>([]);
+  const [locations, setLocations] = useState<SupplyLocation[]>([]);
+  const [managers, setManagers] = useState<ProfileLite[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
 
   const canManageResult = useCanManageSupply(supply?.manager_id);
 
@@ -67,6 +73,8 @@ export default function SupplyDetailPage() {
       setZoneSupplies([]);
       setLoans([]);
       setPrintJobs([]);
+      setLocations([]);
+      setManagers([]);
       setLoading(false);
       return;
     }
@@ -114,6 +122,19 @@ export default function SupplyDetailPage() {
       .order("created_at", { ascending: false });
 
     setPrintJobs((printRows ?? []) as unknown as PrintJobWithRequester[]);
+
+    const [{ data: allLocs }, { data: profRows }] = await Promise.all([
+      supabase
+        .from("supply_locations")
+        .select(SUPPLY_LOCATION_SELECT)
+        .eq("is_active", true)
+        .order("zone_code")
+        .order("slot_code"),
+      supabase.from("profiles").select("id, name, email").order("name")
+    ]);
+
+    setLocations((allLocs ?? []) as SupplyLocation[]);
+    setManagers((profRows ?? []) as ProfileLite[]);
     setLoading(false);
   }, [id]);
 
@@ -175,6 +196,7 @@ export default function SupplyDetailPage() {
     profile?.id && loans.find((l) => l.borrower_id === profile.id && l.status === "active");
   const showDelete = canManageResult ?? false;
   const showPrintLabel = canManageResult ?? false;
+  const showEdit = canManageResult ?? false;
   const hasZoneSidebar = Boolean(supply.location?.zone_code);
 
   const printJobRequesterName = (job: PrintJobWithRequester) => {
@@ -337,6 +359,15 @@ export default function SupplyDetailPage() {
         >
           반납하기
         </Link>
+      ) : null}
+      {showEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          수정
+        </button>
       ) : null}
       {showDelete ? (
         <button
@@ -530,6 +561,22 @@ export default function SupplyDetailPage() {
 
       {selectedLoan ? (
         <SupplyLoanDetailModal loan={selectedLoan} onClose={() => setSelectedLoan(null)} />
+      ) : null}
+
+      {profile?.id ? (
+        <SupplyRegisterModal
+          open={editOpen}
+          mode="edit"
+          initialSupply={supply}
+          managers={managers}
+          locations={locations}
+          currentUserId={profile.id}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false);
+            void load();
+          }}
+        />
       ) : null}
 
       {deleteModalOpen ? (

@@ -1,16 +1,17 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createSupply } from "@/lib/supplies/operations";
+import { createSupply, updateSupply } from "@/lib/supplies/operations";
 import {
   getSlotsForZone,
   getSupplyZones,
   zoneSelectLabel
 } from "@/lib/supplies/locations";
 import { uploadSupplyImages } from "@/lib/supplies/storage";
-import type { ProfileLite, SupplyLocation } from "@/lib/supplies/types";
+import type { ProfileLite, SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import {
   emptyComponentRow,
+  parseComponents,
   serializeComponents,
   type ComponentRow
 } from "@/lib/supplies/utils";
@@ -57,10 +58,23 @@ type Props = {
   onClose: () => void;
   onSaved: () => void;
   locations: SupplyLocation[];
-  managers: ProfileLite[];
+  currentUserId: string;
+  mode?: "create" | "edit";
+  initialSupply?: SupplyWithRelations | null;
+  managers?: ProfileLite[];
 };
 
-export function SupplyRegisterModal({ open, onClose, onSaved, locations, managers }: Props) {
+export function SupplyRegisterModal({
+  open,
+  onClose,
+  onSaved,
+  locations,
+  currentUserId,
+  mode = "create",
+  initialSupply = null,
+  managers = []
+}: Props) {
+  const isEdit = mode === "edit";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [zoneCode, setZoneCode] = useState("");
@@ -83,13 +97,30 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
 
   useEffect(() => {
     if (!open) return;
+
+    if (isEdit && initialSupply) {
+      setName(initialSupply.name);
+      setZoneCode(initialSupply.location?.zone_code ?? "");
+      setLocationId(initialSupply.location_id ?? "");
+      setQuantity(initialSupply.quantity);
+      setManagerId(initialSupply.manager_id ?? "");
+      setDescription(initialSupply.description ?? "");
+      setComponentRows(parseComponents(initialSupply.components));
+      setFiles([]);
+      setPreviews([]);
+      setError(null);
+      setShowMap(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     const firstZone = zones[0]?.zone_code ?? "";
     const firstSlots = firstZone ? getSlotsForZone(locations, firstZone) : [];
     setName("");
     setZoneCode(firstZone);
     setLocationId(firstSlots[0]?.id ?? "");
     setQuantity(1);
-    setManagerId(managers[0]?.id ?? "");
+    setManagerId("");
     setDescription("");
     setComponentRows([emptyComponentRow()]);
     setFiles([]);
@@ -97,7 +128,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
     setError(null);
     setShowMap(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, [open, locations, managers, zones]);
+  }, [open, locations, zones, isEdit, initialSupply]);
 
   useEffect(() => {
     if (!zoneCode) return;
@@ -151,7 +182,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
       setError("보관 구역(대분류·세부 위치)을 선택해 주세요.");
       return;
     }
-    if (files.length === 0) {
+    if (!isEdit && files.length === 0) {
       setError("사진을 1장 이상 등록해 주세요.");
       return;
     }
@@ -161,11 +192,39 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
 
     const componentsStr = serializeComponents(componentRows);
 
+    if (isEdit) {
+      if (!initialSupply) {
+        setSaving(false);
+        setError("비품 정보를 불러올 수 없습니다.");
+        return;
+      }
+
+      const { error: updateErr } = await updateSupply({
+        supplyId: initialSupply.id,
+        name,
+        locationId,
+        quantity,
+        managerId: managerId || null,
+        description: description || null,
+        components: componentsStr
+      });
+
+      setSaving(false);
+      if (updateErr) {
+        setError(updateErr);
+        return;
+      }
+
+      onSaved();
+      onClose();
+      return;
+    }
+
     const { id, error: createErr } = await createSupply({
       name,
       locationId,
       quantity,
-      managerId: managerId || null,
+      managerId: currentUserId,
       description: description || null,
       components: componentsStr,
       imagePaths: []
@@ -199,8 +258,10 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" role="dialog" aria-modal>
       <div className="my-8 w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-slate-900">비품 등록</h2>
-        <p className="mt-1 text-xs text-slate-500">비품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
+        <h2 className="text-lg font-bold text-slate-900">{isEdit ? "비품 수정" : "비품 등록"}</h2>
+        {!isEdit ? (
+          <p className="mt-1 text-xs text-slate-500">비품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
+        ) : null}
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           <div>
             <button
@@ -238,35 +299,40 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
               비품 보관위치 <span className="text-rose-600">*</span>
             </span>
             <div className="mt-1 grid grid-cols-2 gap-3">
-            <select
-              value={zoneCode}
-              onChange={(e) => setZoneCode(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              required
-              aria-label="대분류"
-            >
-              {zones.map((z) => (
-                <option key={z.zone_code} value={z.zone_code}>
-                  {zoneSelectLabel(z)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              required
-              disabled={slots.length === 0}
-              aria-label="세부 위치"
-            >
-              {slots.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.slot_code}
-                  {loc.slot_label ? ` — ${loc.slot_label}` : ""}
-                </option>
-              ))}
-            </select>
+              <select
+                value={zoneCode}
+                onChange={(e) => setZoneCode(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+                aria-label="대분류"
+              >
+                {zones.map((z) => (
+                  <option key={z.zone_code} value={z.zone_code}>
+                    {zoneSelectLabel(z)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+                disabled={slots.length === 0}
+                aria-label="세부 위치"
+              >
+                {slots.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.slot_code}
+                    {loc.slot_label ? ` — ${loc.slot_label}` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
+            {isEdit ? (
+              <p className="mt-1 text-xs text-rose-600">
+                ⚠️ 위치를 변경하면 비품 코드가 새로 발급됩니다. 기존 QR 라벨을 제거하고 새 QR을 출력해 부착하세요.
+              </p>
+            ) : null}
           </div>
 
           <label className="block text-sm font-medium text-slate-700">
@@ -279,68 +345,83 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-medium text-slate-700">
+          {isEdit ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-sm font-medium text-slate-700">
+                수량
+                <input
+                  type="number"
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="text-sm font-medium text-slate-700">
+                담당자
+                <select
+                  value={managerId}
+                  onChange={(e) => setManagerId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">—</option>
+                  {managers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name ?? m.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <label className="block text-sm font-medium text-slate-700">
               수량
               <input
                 type="number"
                 min={1}
                 value={quantity}
                 onChange={(e) => setQuantity(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full max-w-[8rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </label>
-            <label className="text-sm font-medium text-slate-700">
-              관리담당자
-              <select
-                value={managerId}
-                onChange={(e) => setManagerId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="">—</option>
-                {managers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name ?? m.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          )}
 
-          <div>
-            <span className="text-sm font-medium text-slate-700">
-              사진 <span className="text-rose-600">*</span>
-            </span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="mt-1 w-full text-sm"
-              onChange={(e) => {
-                appendFiles(Array.from(e.target.files ?? []));
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-            />
-            {previews.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {previews.map((url, index) => (
-                  <div key={`${url}-${index}`} className="relative h-16 w-16 shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="h-full w-full rounded-lg border object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeFileAt(index)}
-                      className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-xs text-white shadow hover:bg-rose-600"
-                      aria-label="사진 삭제"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          {!isEdit ? (
+            <div>
+              <span className="text-sm font-medium text-slate-700">
+                사진 <span className="text-rose-600">*</span>
+              </span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="mt-1 w-full text-sm"
+                onChange={(e) => {
+                  appendFiles(Array.from(e.target.files ?? []));
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+              {previews.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {previews.map((url, index) => (
+                    <div key={`${url}-${index}`} className="relative h-16 w-16 shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-full w-full rounded-lg border object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeFileAt(index)}
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-xs text-white shadow hover:bg-rose-600"
+                        aria-label="사진 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className="block text-sm font-medium text-slate-700">
             설명
@@ -406,7 +487,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
               disabled={saving}
               className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {saving ? "저장 중…" : "등록"}
+              {saving ? "저장 중…" : isEdit ? "저장" : "등록"}
             </button>
           </div>
         </form>
