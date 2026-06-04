@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SupplyLoanDetailModal } from "@/components/supplies/supply-loan-detail-modal";
 import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
 import { SupplyToast } from "@/components/supplies/toast";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
@@ -40,6 +41,7 @@ export default function SupplyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [galleryIdx, setGalleryIdx] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
@@ -181,6 +183,49 @@ export default function SupplyDetailPage() {
     return requester.name?.trim() || "—";
   };
 
+  const gallerySection =
+    galleryImages.length > 0 ? (
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            className="block w-full cursor-pointer transition hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 rounded-xl"
+            aria-label="이미지 크게 보기"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={galleryImages[galleryIdx]}
+              alt=""
+              className="max-h-48 w-full object-contain lg:max-h-52"
+            />
+          </button>
+        </div>
+        {showReturnMainImage ? (
+          <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
+        ) : null}
+        {!showReturnMainImage && galleryImages.length > 1 ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto">
+            {galleryImages.map((url, i) => (
+              <button
+                key={url}
+                type="button"
+                onClick={() => {
+                  setGalleryIdx(i);
+                  setLightboxOpen(true);
+                }}
+                className={`h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 transition hover:opacity-90 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
+                aria-label={`이미지 ${i + 1} 보기`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    ) : null;
+
   const printJobHistorySection = (
     <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-base font-semibold text-slate-900">QR 라벨 출력 이력</h2>
@@ -283,36 +328,7 @@ export default function SupplyDetailPage() {
           />
           <div className="min-w-0 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              {galleryImages.length > 0 ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={galleryImages[galleryIdx]}
-                      alt=""
-                      className="max-h-48 w-full object-contain lg:max-h-52"
-                    />
-                  </div>
-                  {showReturnMainImage ? (
-                    <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
-                  ) : null}
-                  {!showReturnMainImage && galleryImages.length > 1 ? (
-                    <div className="mt-3 flex gap-2 overflow-x-auto">
-                      {galleryImages.map((url, i) => (
-                        <button
-                          key={url}
-                          type="button"
-                          onClick={() => setGalleryIdx(i)}
-                          className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={url} alt="" className="h-full w-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
+              {gallerySection}
 
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
@@ -420,36 +436,7 @@ export default function SupplyDetailPage() {
       ) : (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            {galleryImages.length > 0 ? (
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={galleryImages[galleryIdx]}
-                    alt=""
-                    className="max-h-48 w-full object-contain lg:max-h-52"
-                  />
-                </div>
-                {showReturnMainImage ? (
-                  <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
-                ) : null}
-                {!showReturnMainImage && galleryImages.length > 1 ? (
-                  <div className="mt-3 flex gap-2 overflow-x-auto">
-                    {galleryImages.map((url, i) => (
-                      <button
-                        key={url}
-                        type="button"
-                        onClick={() => setGalleryIdx(i)}
-                        className={`h-12 w-12 shrink-0 overflow-hidden rounded-lg border-2 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt="" className="h-full w-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
+            {gallerySection}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
@@ -554,6 +541,14 @@ export default function SupplyDetailPage() {
       )}
 
       <SupplyToast message={toast} onClose={() => setToast(null)} />
+
+      <ImageLightbox
+        images={galleryImages}
+        index={galleryIdx}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        onIndexChange={setGalleryIdx}
+      />
 
       {selectedLoan ? (
         <SupplyLoanDetailModal loan={selectedLoan} onClose={() => setSelectedLoan(null)} />
