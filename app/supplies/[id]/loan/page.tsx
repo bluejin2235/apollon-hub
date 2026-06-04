@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QrScanner } from "@/components/supplies/qr-scanner";
 import { SupplyInfoCard } from "@/components/supplies/supply-info-card";
+import { SupplyScanConfirmModal } from "@/components/supplies/supply-scan-confirm-modal";
 import { SupplyToast } from "@/components/supplies/toast";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
@@ -25,6 +26,7 @@ export default function SupplyLoanPage() {
 
   const [supply, setSupply] = useState<SupplyWithRelations | null>(null);
   const [step, setStep] = useState<LoanStep>("scanning");
+  const [scanConfirmOpen, setScanConfirmOpen] = useState(false);
   const [scanKey, setScanKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [purpose, setPurpose] = useState("");
@@ -73,13 +75,14 @@ export default function SupplyLoanPage() {
         return;
       }
       setToast(null);
-      setStep("verified");
+      setScanConfirmOpen(true);
     },
     [supply]
   );
 
   const handleRescan = () => {
     setError(null);
+    setScanConfirmOpen(false);
     setStep("scanning");
     setScanKey((k) => k + 1);
   };
@@ -141,7 +144,19 @@ export default function SupplyLoanPage() {
         <div className="space-y-4">
           <p className="text-sm text-slate-600">비품에 부착된 QR 코드를 스캔해 주세요.</p>
           <SupplyInfoCard supply={supply} />
-          <QrScanner key={scanKey} active onScan={handleQrScan} />
+          <QrScanner key={scanKey} active={!scanConfirmOpen} onScan={handleQrScan} />
+          <SupplyScanConfirmModal
+            open={scanConfirmOpen}
+            supply={supply}
+            onConfirm={() => {
+              setScanConfirmOpen(false);
+              setStep("verified");
+            }}
+            onRescan={() => {
+              setScanConfirmOpen(false);
+              setScanKey((k) => k + 1);
+            }}
+          />
         </div>
       ) : (
         <div className="space-y-4">
