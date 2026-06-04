@@ -16,6 +16,42 @@ import {
 } from "@/lib/supplies/utils";
 import { supabase } from "@/lib/supabase/client";
 
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronUpIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m18 15-6-6-6 6" />
+    </svg>
+  );
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -37,6 +73,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
   const [previews, setPreviews] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
 
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
   const slots = useMemo(
@@ -58,6 +95,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
     setFiles([]);
     setPreviews([]);
     setError(null);
+    setShowMap(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [open, locations, managers, zones]);
 
@@ -164,6 +202,37 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
         <h2 className="text-lg font-bold text-slate-900">비품 등록</h2>
         <p className="mt-1 text-xs text-slate-500">비품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowMap((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 hover:text-violet-900"
+              aria-expanded={showMap}
+            >
+              {showMap ? (
+                <>
+                  <ChevronUpIcon className="h-3.5 w-3.5" />
+                  위치 안내 접기
+                </>
+              ) : (
+                <>
+                  <ChevronDownIcon className="h-3.5 w-3.5" />
+                  📍 보관 위치 안내 보기
+                </>
+              )}
+            </button>
+            {showMap ? (
+              <div className="my-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/warehouse-map.png"
+                  alt="창고 보관 위치 배치도"
+                  className="h-auto w-full rounded-lg border border-slate-200"
+                />
+              </div>
+            ) : null}
+          </div>
+
           <div>
             <span className="text-sm font-medium text-slate-700">
               비품 보관위치 <span className="text-rose-600">*</span>
