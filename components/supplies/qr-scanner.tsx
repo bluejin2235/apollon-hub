@@ -20,11 +20,11 @@ type Props = {
 };
 
 interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
-  focusMode?: string[];
+  zoom?: { min: number; max: number; step: number };
 }
 
 interface ExtendedConstraintSet extends MediaTrackConstraintSet {
-  focusMode?: string;
+  zoom?: number;
 }
 
 function scanLog(appendDebugLog: (message: string) => void, message: string) {
@@ -118,26 +118,28 @@ function stopMediaStream(stream: MediaStream | null, video: HTMLVideoElement | n
   }
 }
 
-async function tryApplyContinuousFocus(stream: MediaStream) {
+async function tryApplyZoom(stream: MediaStream, targetZoom: number = 2.0): Promise<void> {
   const [videoTrack] = stream.getVideoTracks();
   if (!videoTrack) return;
 
-  const capabilities =
-    (videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined) || {};
+  const capabilities = videoTrack.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined;
   console.log("[qr-scanner] 카메라 capabilities:", capabilities);
 
-  const constraintsToApply: ExtendedConstraintSet = {};
-  if (capabilities.focusMode?.includes("continuous")) {
-    constraintsToApply.focusMode = "continuous";
+  if (!capabilities?.zoom) {
+    console.log("[qr-scanner] 줌 미지원");
+    return;
   }
 
-  if (Object.keys(constraintsToApply).length > 0) {
-    try {
-      await videoTrack.applyConstraints({ advanced: [constraintsToApply] });
-      console.log("[qr-scanner] applyConstraints 성공:", constraintsToApply);
-    } catch (e) {
-      console.warn("[qr-scanner] applyConstraints 실패:", e);
-    }
+  console.log("[qr-scanner] 줌 capabilities:", capabilities.zoom);
+
+  const zoom = Math.min(targetZoom, capabilities.zoom.max);
+
+  try {
+    const constraints: ExtendedConstraintSet = { zoom };
+    await videoTrack.applyConstraints({ advanced: [constraints] });
+    console.log("[qr-scanner] 줌 적용 성공:", zoom);
+  } catch (e) {
+    console.warn("[qr-scanner] 줌 적용 실패:", e);
   }
 }
 
@@ -193,16 +195,12 @@ function NativeBarcodeScanner({
         const detector = new Detector({ formats: ["qr_code"] });
         detectorRef.current = detector;
 
-        const constraints: MediaStreamConstraints = {
-          video: {
-            facingMode: { ideal: "environment" },
-            advanced: [{ focusMode: "continuous" } as ExtendedConstraintSet]
-          } as MediaTrackConstraints,
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
           audio: false
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         streamRef.current = stream;
-        await tryApplyContinuousFocus(stream);
+        await tryApplyZoom(stream, 2.0);
 
         const video = videoRef.current;
         if (!video) {
@@ -320,16 +318,12 @@ function JsQrScanner({
       try {
         scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
 
-        const constraints: MediaStreamConstraints = {
-          video: {
-            facingMode: { ideal: "environment" },
-            advanced: [{ focusMode: "continuous" } as ExtendedConstraintSet]
-          } as MediaTrackConstraints,
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
           audio: false
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         streamRef.current = stream;
-        await tryApplyContinuousFocus(stream);
+        await tryApplyZoom(stream, 2.0);
 
         const video = videoRef.current;
         if (!video) {
