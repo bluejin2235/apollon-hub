@@ -15,6 +15,7 @@ import {
   formatSupplyDateTime,
   imagePublicUrls,
   loanStatusLabel,
+  parseComponents,
   supplyDetailPath,
   supplyLoanPath,
   supplyReturnPath,
@@ -226,6 +227,57 @@ export default function SupplyDetailPage() {
       </section>
     ) : null;
 
+  const statusLabel = badge.label;
+  const componentRows = parseComponents(supply.components).filter((row) => row.name.trim().length > 0);
+
+  const supplyInfoSection = (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-slate-900">
+        <li>
+          <span className="font-medium text-slate-500">구역</span> : {formatSupplyLocation(supply.location)}
+        </li>
+        <li>
+          <span className="font-medium text-slate-500">수량</span> : {supply.quantity}
+        </li>
+        <li>
+          <span className="font-medium text-slate-500">담당자</span> : {supply.manager?.name?.trim() || "—"}
+        </li>
+        <li>
+          <span className="font-medium text-slate-500">상태</span> : {statusLabel}
+        </li>
+        <li>
+          <span className="font-medium text-slate-500">설명</span> : {supply.description?.trim() || "—"}
+        </li>
+        <li>
+          <span className="font-medium text-slate-500">구성품</span>
+          {componentRows.length === 0 ? (
+            <p className="mt-1 text-xs text-slate-500">구성품 없음</p>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[200px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs font-medium text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">품명</th>
+                    <th className="px-3 py-2 text-right">수량</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {componentRows.map((row, i) => (
+                    <tr key={`${row.name}-${row.qty}-${i}`}>
+                      <td className="px-3 py-2">{row.name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </li>
+      </ul>
+    </section>
+  );
+
   const printJobHistorySection = (
     <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-base font-semibold text-slate-900">QR 라벨 출력 이력</h2>
@@ -330,45 +382,7 @@ export default function SupplyDetailPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               {gallerySection}
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
-                <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="text-slate-500">구역</dt>
-                    <dd className="font-medium text-slate-900">{formatSupplyLocation(supply.location)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">수량</dt>
-                    <dd className="font-medium text-slate-900">{supply.quantity}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">담당자</dt>
-                    <dd className="font-medium text-slate-900">{supply.manager?.name?.trim() || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">상태</dt>
-                    <dd>
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}
-                      >
-                        {badge.label}
-                      </span>
-                    </dd>
-                  </div>
-                  {supply.description ? (
-                    <div className="sm:col-span-2">
-                      <dt className="text-slate-500">설명</dt>
-                      <dd className="text-slate-800">{supply.description}</dd>
-                    </div>
-                  ) : null}
-                  {supply.components ? (
-                    <div className="sm:col-span-2">
-                      <dt className="text-slate-500">구성품</dt>
-                      <dd className="whitespace-pre-wrap text-slate-800">{supply.components}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </section>
+              {supplyInfoSection}
             </div>
 
             <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -438,43 +452,7 @@ export default function SupplyDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {gallerySection}
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
-              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-slate-500">구역</dt>
-                  <dd className="font-medium text-slate-900">{formatSupplyLocation(supply.location)}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">수량</dt>
-                  <dd className="font-medium text-slate-900">{supply.quantity}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">담당자</dt>
-                  <dd className="font-medium text-slate-900">{supply.manager?.name?.trim() || "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">상태</dt>
-                  <dd>
-                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}>
-                      {badge.label}
-                    </span>
-                  </dd>
-                </div>
-                {supply.description ? (
-                  <div className="sm:col-span-2">
-                    <dt className="text-slate-500">설명</dt>
-                    <dd className="text-slate-800">{supply.description}</dd>
-                  </div>
-                ) : null}
-                {supply.components ? (
-                  <div className="sm:col-span-2">
-                    <dt className="text-slate-500">구성품</dt>
-                    <dd className="whitespace-pre-wrap text-slate-800">{supply.components}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            </section>
+            {supplyInfoSection}
           </div>
 
           <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
