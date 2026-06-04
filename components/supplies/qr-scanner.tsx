@@ -19,6 +19,14 @@ type Props = {
   active?: boolean;
 };
 
+interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
+  zoom?: { min: number; max: number; step: number };
+}
+
+interface ExtendedConstraintSet extends MediaTrackConstraintSet {
+  zoom?: number;
+}
+
 function scanLog(appendDebugLog: (message: string) => void, message: string) {
   console.log(message);
   appendDebugLog(message);
@@ -110,6 +118,27 @@ function stopMediaStream(stream: MediaStream | null, video: HTMLVideoElement | n
   }
 }
 
+async function tryApplyZoom(stream: MediaStream, targetZoom: number = 2.0): Promise<void> {
+  const [track] = stream.getVideoTracks();
+  if (!track) return;
+
+  const caps = track.getCapabilities?.() as ExtendedMediaTrackCapabilities | undefined;
+  if (!caps?.zoom) {
+    console.log("[qr] zoom not supported");
+    return;
+  }
+
+  const zoom = Math.min(targetZoom, caps.zoom.max);
+
+  try {
+    const constraints: ExtendedConstraintSet = { zoom };
+    await track.applyConstraints({ advanced: [constraints] });
+    console.log("[qr] zoom applied:", zoom);
+  } catch {
+    /* 줌 실패해도 스캔 계속 */
+  }
+}
+
 function NativeBarcodeScanner({
   onScan,
   active,
@@ -175,6 +204,7 @@ function NativeBarcodeScanner({
 
         video.srcObject = stream;
         video.playsInline = true;
+        await tryApplyZoom(stream, 2.0);
         await video.play();
 
         setStarting(false);
@@ -297,6 +327,7 @@ function JsQrScanner({
 
         video.srcObject = stream;
         video.playsInline = true;
+        await tryApplyZoom(stream, 2.0);
         await video.play();
 
         scanLog(appendDebugLogRef.current, "[qr-scanner] 카메라 시작 완료");
