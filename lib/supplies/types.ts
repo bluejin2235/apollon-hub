@@ -48,3 +48,9 @@ export type SupplyLoan = {
 export type SupplyLoanWithRelations = SupplyLoan & {
   borrower?: ProfileLite | null;
 };
+
+export type PrintJobWithRequester = {
+  id: string;
+  created_at: string;
+  requester: { name: string | null } | null;
+};

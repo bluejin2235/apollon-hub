@@ -19,7 +19,11 @@ import {
   supplyReturnPath,
   supplyStatusBadge
 } from "@/lib/supplies/utils";
-import type { SupplyLoanWithRelations, SupplyWithRelations } from "@/lib/supplies/types";
+import type {
+  PrintJobWithRequester,
+  SupplyLoanWithRelations,
+  SupplyWithRelations
+} from "@/lib/supplies/types";
 import { useCanManageSupply } from "@/lib/services/use-service-permissions";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
@@ -32,6 +36,7 @@ export default function SupplyDetailPage() {
 
   const [supply, setSupply] = useState<SupplyWithRelations | null>(null);
   const [loans, setLoans] = useState<SupplyLoanWithRelations[]>([]);
+  const [printJobs, setPrintJobs] = useState<PrintJobWithRequester[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [galleryIdx, setGalleryIdx] = useState(0);
@@ -57,6 +62,8 @@ export default function SupplyDetailPage() {
     if (error || !sup) {
       setSupply(null);
       setZoneSupplies([]);
+      setLoans([]);
+      setPrintJobs([]);
       setLoading(false);
       return;
     }
@@ -96,11 +103,14 @@ export default function SupplyDetailPage() {
 
     const loadedLoans = (loanRows ?? []) as SupplyLoanWithRelations[];
     setLoans(loadedLoans);
-    console.log("[supply-detail] loans loaded", {
-      supplyId: id,
-      count: loadedLoans.length,
-      loans: loadedLoans
-    });
+
+    const { data: printRows } = await supabase
+      .from("print_jobs")
+      .select("id, created_at, requester:profiles!requested_by(name)")
+      .eq("supply_id", id)
+      .order("created_at", { ascending: false });
+
+    setPrintJobs((printRows ?? []) as unknown as PrintJobWithRequester[]);
     setLoading(false);
   }, [id]);
 
@@ -163,6 +173,45 @@ export default function SupplyDetailPage() {
   const showDelete = canManageResult ?? false;
   const showPrintLabel = canManageResult ?? false;
   const hasZoneSidebar = Boolean(supply.location?.zone_code);
+
+  const printJobRequesterName = (job: PrintJobWithRequester) => {
+    const requester = job.requester;
+    if (!requester) return "—";
+    if (Array.isArray(requester)) return requester[0]?.name?.trim() || "—";
+    return requester.name?.trim() || "—";
+  };
+
+  const printJobHistorySection = (
+    <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">QR 라벨 출력 이력</h2>
+      {printJobs.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+          출력 이력이 없습니다.
+        </div>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[320px] text-left text-sm lg:min-w-0">
+            <thead className="bg-slate-50 text-xs font-medium text-slate-500">
+              <tr>
+                <th className="px-3 py-2">출력자</th>
+                <th className="px-3 py-2">출력일시</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {printJobs.map((job) => (
+                <tr key={job.id}>
+                  <td className="px-3 py-2">{printJobRequesterName(job)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                    {formatSupplyDateTime(job.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 
   const actionButtons = (
     <div className="flex flex-wrap gap-2">
@@ -364,6 +413,8 @@ export default function SupplyDetailPage() {
                 </div>
               )}
             </section>
+
+            {printJobHistorySection}
           </div>
         </div>
       ) : (
@@ -497,6 +548,8 @@ export default function SupplyDetailPage() {
               </div>
             )}
           </section>
+
+          {printJobHistorySection}
         </div>
       )}
 
