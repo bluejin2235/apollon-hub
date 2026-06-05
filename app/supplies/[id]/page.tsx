@@ -382,9 +382,9 @@ export default function SupplyDetailPage() {
                       <td className="px-3 py-2 text-right tabular-nums text-slate-600">
                         {supply.status === "available"
                           ? row.qty
-                          : supply.status === "borrowed" || supply.status === "unavailable"
-                            ? 0
-                            : "—"}
+                          : supply.status === "partially_borrowed"
+                            ? availableQty
+                            : 0}
                       </td>
                     </tr>
                   ))}
@@ -435,18 +435,13 @@ export default function SupplyDetailPage() {
         <SupplyPrintLabelButton supply={supply} requestedBy={profile.id} onToast={setToast} />
       ) : null}
       {supply.status === "available" || supply.status === "partially_borrowed" ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleBorrowClick}
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
-          >
-            대출 신청
-          </button>
-          {supply.status === "partially_borrowed" ? (
-            <span className="text-xs text-slate-500">({availableQty}개 대출 가능)</span>
-          ) : null}
-        </div>
+        <button
+          type="button"
+          onClick={handleBorrowClick}
+          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
+        >
+          대출 신청
+        </button>
       ) : null}
       {myActiveLoan ? (
         <Link
