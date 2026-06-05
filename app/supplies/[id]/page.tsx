@@ -327,10 +327,7 @@ export default function SupplyDetailPage() {
       </section>
     ) : null;
 
-  const statusLabel =
-    supply.status === "partially_borrowed"
-      ? `일부대출중 (대출가능: ${availableQty}개)`
-      : badge.label;
+  const statusLabel = badge.label;
   const componentRows = parseComponents(supply.components).filter((row) => row.name.trim().length > 0);
 
   const supplyInfoSection = (

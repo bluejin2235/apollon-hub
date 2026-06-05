@@ -79,7 +79,6 @@ export function SupplyRegisterModal({
   const [name, setName] = useState("");
   const [zoneCode, setZoneCode] = useState("");
   const [locationId, setLocationId] = useState("");
-  const [quantity, setQuantity] = useState(1);
   const [managerId, setManagerId] = useState("");
   const [description, setDescription] = useState("");
   const [componentRows, setComponentRows] = useState<ComponentRow[]>([emptyComponentRow()]);
@@ -102,7 +101,6 @@ export function SupplyRegisterModal({
       setName(initialSupply.name);
       setZoneCode(initialSupply.location?.zone_code ?? "");
       setLocationId(initialSupply.location_id ?? "");
-      setQuantity(initialSupply.quantity);
       setManagerId(initialSupply.manager_id ?? "");
       setDescription(initialSupply.description ?? "");
       setComponentRows(parseComponents(initialSupply.components));
@@ -119,7 +117,6 @@ export function SupplyRegisterModal({
     setName("");
     setZoneCode(firstZone);
     setLocationId(firstSlots[0]?.id ?? "");
-    setQuantity(1);
     setManagerId("");
     setDescription("");
     setComponentRows([emptyComponentRow()]);
@@ -203,7 +200,7 @@ export function SupplyRegisterModal({
         supplyId: initialSupply.id,
         name,
         locationId,
-        quantity,
+        quantity: 1,
         managerId: managerId || null,
         description: description || null,
         components: componentsStr
@@ -223,7 +220,7 @@ export function SupplyRegisterModal({
     const { id, error: createErr } = await createSupply({
       name,
       locationId,
-      quantity,
+      quantity: 1,
       managerId: currentUserId,
       description: description || null,
       components: componentsStr,
@@ -346,45 +343,22 @@ export function SupplyRegisterModal({
           </label>
 
           {isEdit ? (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm font-medium text-slate-700">
-                수량
-                <input
-                  type="number"
-                  min={1}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="text-sm font-medium text-slate-700">
-                담당자
-                <select
-                  value={managerId}
-                  onChange={(e) => setManagerId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                >
-                  <option value="">—</option>
-                  {managers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name ?? m.email}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : (
             <label className="block text-sm font-medium text-slate-700">
-              수량
-              <input
-                type="number"
-                min={1}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="mt-1 w-full max-w-[8rem] rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
+              담당자
+              <select
+                value={managerId}
+                onChange={(e) => setManagerId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">—</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name ?? m.email}
+                  </option>
+                ))}
+              </select>
             </label>
-          )}
+          ) : null}
 
           {!isEdit ? (
             <div>
