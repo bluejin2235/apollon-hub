@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { parseComponents } from "@/lib/supplies/utils";
 
 async function sumActiveLoanQuantity(
   supplyId: string
@@ -192,9 +193,32 @@ export async function returnSupply(params: {
   const supplyId = (loan.supply_id as string) || params.supplyId;
 
   if (returnQty < loanQty) {
+    const returnCompMap: Record<string, number> = {};
+    if (returnComponents) {
+      parseComponents(returnComponents).forEach(({ name, qty }) => {
+        if (name.trim()) returnCompMap[name] = qty;
+      });
+    }
+
+    const existingComponents = parseComponents(loan.loan_components as string | null);
+    const updatedComponents = existingComponents
+      .map((row) => ({
+        name: row.name,
+        qty: row.qty - (returnCompMap[row.name] ?? 0)
+      }))
+      .filter((row) => row.name.trim() && row.qty > 0);
+
+    const updatedComponentsStr =
+      updatedComponents.length > 0
+        ? updatedComponents.map((r) => `${r.name}:${r.qty}`).join(",")
+        : null;
+
     const { error: reduceErr } = await supabase
       .from("supply_loans")
-      .update({ loan_quantity: loanQty - returnQty })
+      .update({
+        loan_quantity: loanQty - returnQty,
+        loan_components: updatedComponentsStr
+      })
       .eq("id", params.loanId);
 
     if (reduceErr) return { error: reduceErr.message };
