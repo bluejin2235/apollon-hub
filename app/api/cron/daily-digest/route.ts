@@ -193,6 +193,9 @@ export async function GET(request: NextRequest) {
     registererName: joinName(row.registerer as ProfileJoin)
   }));
 
+  console.log("[daily-digest] suppliesRes.data sample:",
+    JSON.stringify(suppliesRes.data?.slice(0, 2)));
+
   const supplies = (suppliesRes.data ?? []).map((row) => ({
     name: String(row.name ?? ""),
     code: String(row.code ?? ""),
