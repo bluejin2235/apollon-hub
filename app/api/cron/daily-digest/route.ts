@@ -45,8 +45,10 @@ function buildDigestHtml(params: {
   dateLabelKst: string;
   posts: { title: string; authorName: string }[];
   restaurants: { name: string; category: string; registererName: string }[];
+  supplies: { name: string; code: string; managerName: string }[];
+  licenses: { name: string; category: string; assigneeName: string }[];
 }): string {
-  const { dateLabelKst, posts, restaurants } = params;
+  const { dateLabelKst, posts, restaurants, supplies, licenses } = params;
   const parts: string[] = [
     "<h2>아폴론 Hub 일간 소식</h2>",
     `<p>${escapeHtml(dateLabelKst)} 기준</p>`
@@ -67,6 +69,26 @@ function buildDigestHtml(params: {
     for (const r of restaurants) {
       parts.push(
         `<li>${escapeHtml(r.registererName)} 등록: ${escapeHtml(r.name)} (${escapeHtml(r.category)})</li>`
+      );
+    }
+    parts.push("</ul>");
+  }
+
+  if (supplies.length > 0) {
+    parts.push(`<h3>새 물품 ${supplies.length}건</h3>`, "<ul>");
+    for (const s of supplies) {
+      parts.push(
+        `<li>${escapeHtml(s.managerName)} 등록: ${escapeHtml(s.name)} (${escapeHtml(s.code)})</li>`
+      );
+    }
+    parts.push("</ul>");
+  }
+
+  if (licenses.length > 0) {
+    parts.push(`<h3>새 라이선스 ${licenses.length}건</h3>`, "<ul>");
+    for (const l of licenses) {
+      parts.push(
+        `<li>${escapeHtml(l.assigneeName)} 등록: ${escapeHtml(l.name)} (${escapeHtml(l.category)})</li>`
       );
     }
     parts.push("</ul>");
@@ -110,7 +132,7 @@ export async function GET(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  const [postsRes, restaurantsRes, profilesRes] = await Promise.all([
+  const [postsRes, restaurantsRes, profilesRes, suppliesRes, licensesRes] = await Promise.all([
     supabase
       .from("hub_posts")
       .select("id, title, author:profiles!author_id(name)")
@@ -123,7 +145,20 @@ export async function GET(request: NextRequest) {
       .gte("created_at", startIso)
       .lt("created_at", endIso)
       .order("created_at", { ascending: false }),
-    supabase.from("profiles").select("email, name").eq("status", "근무")
+    supabase.from("profiles").select("email, name").eq("status", "근무"),
+    supabase
+      .from("supplies")
+      .select("id, name, code, manager:profiles!manager_id(name)")
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("services")
+      .select("id, name, category, assignee:profiles!assignee_id(name)")
+      .eq("is_hub_card", false)
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: false })
   ]);
 
   if (postsRes.error) {
@@ -138,6 +173,14 @@ export async function GET(request: NextRequest) {
     console.error("[daily-digest] profiles fetch failed", profilesRes.error);
     return NextResponse.json({ error: profilesRes.error.message }, { status: 500 });
   }
+  if (suppliesRes.error) {
+    console.error("[daily-digest] supplies fetch failed", suppliesRes.error);
+    return NextResponse.json({ error: suppliesRes.error.message }, { status: 500 });
+  }
+  if (licensesRes.error) {
+    console.error("[daily-digest] licenses fetch failed", licensesRes.error);
+    return NextResponse.json({ error: licensesRes.error.message }, { status: 500 });
+  }
 
   const posts = (postsRes.data ?? []).map((row) => ({
     title: String(row.title ?? ""),
@@ -150,12 +193,31 @@ export async function GET(request: NextRequest) {
     registererName: joinName(row.registerer as ProfileJoin)
   }));
 
-  if (posts.length === 0 && restaurants.length === 0) {
-    console.log("[daily-digest] skipped — no posts or restaurants in window");
+  const supplies = (suppliesRes.data ?? []).map((row) => ({
+    name: String(row.name ?? ""),
+    code: String(row.code ?? ""),
+    managerName: joinName(row.manager as ProfileJoin)
+  }));
+
+  const licenses = (licensesRes.data ?? []).map((row) => ({
+    name: String(row.name ?? ""),
+    category: String(row.category ?? ""),
+    assigneeName: joinName(row.assignee as ProfileJoin)
+  }));
+
+  if (
+    posts.length === 0 &&
+    restaurants.length === 0 &&
+    supplies.length === 0 &&
+    licenses.length === 0
+  ) {
+    console.log("[daily-digest] skipped — no digest content in window");
     return NextResponse.json({
       success: true,
       posts: 0,
       restaurants: 0,
+      supplies: 0,
+      licenses: 0,
       recipients: 0,
       skipped: true
     });
@@ -175,12 +237,14 @@ export async function GET(request: NextRequest) {
       success: true,
       posts: posts.length,
       restaurants: restaurants.length,
+      supplies: supplies.length,
+      licenses: licenses.length,
       recipients: 0,
       skipped: true
     });
   }
 
-  const html = buildDigestHtml({ dateLabelKst, posts, restaurants });
+  const html = buildDigestHtml({ dateLabelKst, posts, restaurants, supplies, licenses });
   const subject = `[아폴론 Hub] 오늘의 소식 — ${dateLabelKst}`;
 
   const resend = new Resend(resendApiKey);
@@ -200,6 +264,8 @@ export async function GET(request: NextRequest) {
     messageId: data?.id,
     posts: posts.length,
     restaurants: restaurants.length,
+    supplies: supplies.length,
+    licenses: licenses.length,
     recipients: recipients.length
   });
 
@@ -207,6 +273,8 @@ export async function GET(request: NextRequest) {
     success: true,
     posts: posts.length,
     restaurants: restaurants.length,
+    supplies: supplies.length,
+    licenses: licenses.length,
     recipients: recipients.length
   });
 }
