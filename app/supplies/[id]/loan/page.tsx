@@ -58,7 +58,14 @@ export default function SupplyLoanPage() {
     setAvailableQty(avail);
 
     const parsed = parseComponents(mapped.components).filter((row) => row.name.trim().length > 0);
-    setLoanComponentRows(parsed.map((row) => ({ name: row.name, qty: row.qty, selected: true })));
+    const multi = parsed.length >= 2;
+    setLoanComponentRows(
+      parsed.map((row) => ({
+        name: row.name,
+        qty: multi ? row.qty : avail > 0 ? avail : row.qty,
+        selected: false
+      }))
+    );
   }, [id]);
 
   useEffect(() => {
@@ -112,10 +119,16 @@ export default function SupplyLoanPage() {
       return;
     }
 
+    const selectedRows = loanComponentRows.filter(
+      (r) => r.selected && r.name.trim() && r.qty > 0
+    );
+    if (loanComponentRows.length > 0 && selectedRows.length === 0) {
+      setError("대출할 구성품을 선택해 주세요.");
+      return;
+    }
+
     const resolvedLoanQuantity =
-      loanComponentRows
-        .filter((r) => r.selected && r.name.trim() && r.qty > 0)
-        .reduce((sum, r) => sum + r.qty, 0) || availableQty;
+      selectedRows.reduce((sum, r) => sum + r.qty, 0) || availableQty;
 
     if (resolvedLoanQuantity < 1) {
       setError("대출 수량을 입력해 주세요.");
@@ -128,10 +141,7 @@ export default function SupplyLoanPage() {
 
     const hasComponents = loanComponentRows.some((r) => r.name.trim().length > 0);
     const selectedComponents = hasComponents
-      ? loanComponentRows
-          .filter((r) => r.selected && r.name.trim() && r.qty > 0)
-          .map((r) => `${r.name}:${r.qty}`)
-          .join(",")
+      ? selectedRows.map((r) => `${r.name}:${r.qty}`).join(",")
       : "";
 
     setStep("submitting");
@@ -172,13 +182,15 @@ export default function SupplyLoanPage() {
 
   const canBorrow =
     supply.status === "available" || supply.status === "partially_borrowed";
+  const selectedRows = loanComponentRows.filter(
+    (r) => r.selected && r.name.trim() && r.qty > 0
+  );
   const resolvedLoanQuantity =
-    loanComponentRows
-      .filter((r) => r.selected && r.name.trim() && r.qty > 0)
-      .reduce((sum, r) => sum + r.qty, 0) || availableQty;
+    selectedRows.reduce((sum, r) => sum + r.qty, 0) || availableQty;
   const submitDisabled =
     step === "submitting" ||
     !canBorrow ||
+    (loanComponentRows.length > 0 && selectedRows.length === 0) ||
     resolvedLoanQuantity < 1 ||
     resolvedLoanQuantity > availableQty;
 
@@ -207,7 +219,7 @@ export default function SupplyLoanPage() {
                 rows.map((r) => ({
                   name: r.name,
                   qty: multi ? r.qty : availableQty > 0 ? availableQty : r.qty,
-                  selected: true
+                  selected: false
                 }))
               );
             }}
@@ -237,7 +249,21 @@ export default function SupplyLoanPage() {
           >
             {loanComponentRows.length > 0 && loanComponentRows[0].name ? (
               <div>
-                <p className="mb-2 text-sm font-medium text-slate-700">대출 구성품</p>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-medium text-slate-700">대출 구성품</p>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={loanComponentRows.every((r) => r.selected)}
+                      onChange={(e) => {
+                        setLoanComponentRows(
+                          loanComponentRows.map((r) => ({ ...r, selected: e.target.checked }))
+                        );
+                      }}
+                    />
+                    전체 선택
+                  </label>
+                </div>
                 <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
                   {loanComponentRows.map((row, i) => (
                     <div key={i} className="flex items-center justify-between px-3 py-2">
@@ -253,19 +279,26 @@ export default function SupplyLoanPage() {
                         />
                         {row.name}
                       </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={row.qty}
-                        value={row.selected ? row.qty : 0}
-                        disabled={!row.selected}
-                        onChange={(e) => {
-                          const next = [...loanComponentRows];
-                          next[i] = { ...next[i], qty: Number(e.target.value) };
-                          setLoanComponentRows(next);
-                        }}
-                        className="w-16 rounded border border-slate-200 px-2 py-1 text-right text-sm disabled:opacity-40"
-                      />
+                      <div className="flex items-center gap-1">
+                        {!row.selected ? (
+                          <span className="w-16 text-right text-sm text-slate-400">
+                            {row.qty}개
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            min={1}
+                            max={row.qty}
+                            value={row.qty}
+                            onChange={(e) => {
+                              const next = [...loanComponentRows];
+                              next[i] = { ...next[i], qty: Number(e.target.value) };
+                              setLoanComponentRows(next);
+                            }}
+                            className="w-16 rounded border border-slate-200 px-2 py-1 text-right text-sm"
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
