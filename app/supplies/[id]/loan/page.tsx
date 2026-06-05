@@ -186,10 +186,12 @@ export default function SupplyLoanPage() {
     (r) => r.selected && r.name.trim() && r.qty > 0
   );
   const resolvedLoanQuantity =
-    selectedRows.reduce((sum, r) => sum + r.qty, 0) || availableQty;
+    selectedRows.reduce((sum, r) => sum + r.qty, 0);
   const submitDisabled =
     step === "submitting" ||
-    !canBorrow ||
+    !purpose.trim() ||
+    !dueDate ||
+    (supply?.status === "unavailable" || supply?.status === "borrowed") ||
     (loanComponentRows.length > 0 && selectedRows.length === 0) ||
     resolvedLoanQuantity < 1 ||
     resolvedLoanQuantity > availableQty;
