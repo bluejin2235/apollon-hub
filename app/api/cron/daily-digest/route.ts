@@ -41,6 +41,26 @@ function getKstDigestWindow(): { startIso: string; endIso: string; dateLabelKst:
   };
 }
 
+function buildItemCard(mainText: string, subText: string): string {
+  return `<div style="background: rgba(230,204,190,0.15); border: 0.5px solid #E6CCBE; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-size: 14px; color: #5A5353; font-weight: 500;">${escapeHtml(mainText)}</span>
+      <span style="font-size: 11px; color: #776274;">${escapeHtml(subText)}</span>
+    </div>`;
+}
+
+function buildSection(icon: string, title: string, cardsHtml: string): string {
+  return `<div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+        <span style="color: #A07178; font-size: 18px;">${icon}</span>
+        <span style="font-size: 14px; font-weight: 500; color: #5A5353;">${title}</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+const SECTION_DIVIDER =
+  '<div style="border-top: 0.5px solid #E6CCBE; margin: 16px 0;"></div>';
+
 function buildDigestHtml(params: {
   dateLabelKst: string;
   posts: { title: string; authorName: string }[];
@@ -49,53 +69,58 @@ function buildDigestHtml(params: {
   licenses: { name: string; category: string; assigneeName: string }[];
 }): string {
   const { dateLabelKst, posts, restaurants, supplies, licenses } = params;
-  const parts: string[] = [
-    "<h2>아폴론 Hub 일간 소식</h2>",
-    `<p>${escapeHtml(dateLabelKst)} 기준</p>`
-  ];
+
+  const sections: string[] = [];
 
   if (posts.length > 0) {
-    parts.push(`<h3>게시판 새 글 ${posts.length}건</h3>`, "<ul>");
-    for (const post of posts) {
-      parts.push(
-        `<li>${escapeHtml(post.authorName)}: ${escapeHtml(post.title)}</li>`
-      );
-    }
-    parts.push("</ul>");
+    const cards = posts
+      .map((post) => buildItemCard(post.title, post.authorName))
+      .join("\n");
+    sections.push(buildSection("📋", `Hub 게시판 새 글 ${posts.length}건`, cards));
   }
 
   if (restaurants.length > 0) {
-    parts.push(`<h3>새 맛집 ${restaurants.length}건</h3>`, "<ul>");
-    for (const r of restaurants) {
-      parts.push(
-        `<li>${escapeHtml(r.registererName)} 등록: ${escapeHtml(r.name)} (${escapeHtml(r.category)})</li>`
-      );
-    }
-    parts.push("</ul>");
+    const cards = restaurants
+      .map((r) => buildItemCard(r.name, `${r.category} · ${r.registererName}`))
+      .join("\n");
+    sections.push(buildSection("🍽", `아슐랭 신규맛집 ${restaurants.length}건 등록`, cards));
   }
 
   if (supplies.length > 0) {
-    parts.push(`<h3>새 물품 ${supplies.length}건</h3>`, "<ul>");
-    for (const s of supplies) {
-      parts.push(
-        `<li>${escapeHtml(s.managerName)} 등록: ${escapeHtml(s.name)} (${escapeHtml(s.code)})</li>`
-      );
-    }
-    parts.push("</ul>");
+    const cards = supplies
+      .map((s) => buildItemCard(s.name, `${s.code} · ${s.managerName}`))
+      .join("\n");
+    sections.push(buildSection("📦", `물품관리 신규 ${supplies.length}건 등록`, cards));
   }
 
   if (licenses.length > 0) {
-    parts.push(`<h3>새 라이선스 ${licenses.length}건</h3>`, "<ul>");
-    for (const l of licenses) {
-      parts.push(
-        `<li>${escapeHtml(l.assigneeName)} 등록: ${escapeHtml(l.name)} (${escapeHtml(l.category)})</li>`
-      );
-    }
-    parts.push("</ul>");
+    const cards = licenses
+      .map((l) => buildItemCard(l.name, `${l.category} · ${l.assigneeName}`))
+      .join("\n");
+    sections.push(buildSection("🔑", `라이선스 신규 ${licenses.length}건 등록`, cards));
   }
 
-  parts.push('<p><a href="https://apollon-hub.vercel.app/hub">Hub 바로가기</a></p>');
-  return parts.join("\n");
+  const bodySections = sections.join(`\n${SECTION_DIVIDER}\n`);
+
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e0d8d4;">
+  <div style="background: #5A5353; padding: 28px 32px;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+      <div style="width: 28px; height: 28px; background: #A07178; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #E6CCBE;">A</div>
+      <span style="color: #E6CCBE; font-size: 12px; font-weight: 500; letter-spacing: 0.05em;">APOLLON HUB</span>
+    </div>
+    <h1 style="color: #ffffff; font-size: 20px; font-weight: 500; margin: 0 0 4px;">아폴론 Hub 일간 소식</h1>
+    <p style="color: #C8CC92; font-size: 13px; margin: 0;">${escapeHtml(dateLabelKst)} 기준</p>
+  </div>
+  <div style="padding: 24px 32px; background: #ffffff;">
+    ${bodySections}
+    <div style="text-align: center; margin-top: 24px;">
+      <a href="https://apollon-hub.vercel.app/hub" style="display: inline-block; background: #5A5353; color: #E6CCBE; font-size: 14px; font-weight: 500; padding: 12px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;">Hub 바로가기</a>
+    </div>
+  </div>
+  <div style="padding: 16px 32px; background: rgba(160,113,120,0.1); border-top: 0.5px solid #E6CCBE; text-align: center;">
+    <p style="font-size: 12px; color: #776274; margin: 0;">아폴론이머시브웍스 · hub@apollonworks.com</p>
+  </div>
+</div>`;
 }
 
 export async function GET(request: NextRequest) {
