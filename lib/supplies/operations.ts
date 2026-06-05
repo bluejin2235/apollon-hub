@@ -267,30 +267,32 @@ export async function deleteSupply(supplyId: string): Promise<{ error: string | 
 export async function getActiveLoanForUser(
   supplyId: string,
   userId: string
-): Promise<{
-  id: string;
-  purpose: string;
-  due_date: string;
-  borrowed_at: string;
-  loan_quantity: number;
-  loan_components: string | null;
-} | null> {
-  const { data } = await supabase
+): Promise<
+  Array<{
+    id: string;
+    purpose: string;
+    due_date: string;
+    borrowed_at: string;
+    loan_quantity: number;
+    loan_components: string | null;
+  }>
+> {
+  const { data, error } = await supabase
     .from("supply_loans")
     .select("id, purpose, due_date, borrowed_at, loan_quantity, loan_components")
     .eq("supply_id", supplyId)
     .eq("borrower_id", userId)
     .eq("status", "active")
-    .maybeSingle();
+    .order("borrowed_at", { ascending: true });
 
-  if (!data) return null;
+  if (error || !data) return [];
 
-  return {
-    id: data.id as string,
-    purpose: data.purpose as string,
-    due_date: data.due_date as string,
-    borrowed_at: data.borrowed_at as string,
-    loan_quantity: Number(data.loan_quantity) || 1,
-    loan_components: (data.loan_components as string | null) ?? null
-  };
+  return data.map((row) => ({
+    id: row.id as string,
+    purpose: row.purpose as string,
+    due_date: row.due_date as string,
+    borrowed_at: row.borrowed_at as string,
+    loan_quantity: Number(row.loan_quantity) || 1,
+    loan_components: (row.loan_components as string | null) ?? null
+  }));
 }
