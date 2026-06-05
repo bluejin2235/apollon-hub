@@ -34,7 +34,6 @@ export default function SupplyLoanPage() {
   const [error, setError] = useState<string | null>(null);
   const [mobile, setMobile] = useState(false);
   const [availableQty, setAvailableQty] = useState<number>(0);
-  const [loanQuantity, setLoanQuantity] = useState<number>(1);
   const [loanComponentRows, setLoanComponentRows] = useState<
     { name: string; qty: number; selected: boolean }[]
   >([]);
@@ -113,10 +112,10 @@ export default function SupplyLoanPage() {
       return;
     }
 
-    const qtyRaw = (e.currentTarget.elements.namedItem("loanQuantity") as HTMLInputElement | null)?.value;
-    const parsedQty = parseInt(qtyRaw ?? String(loanQuantity), 10);
     const resolvedLoanQuantity =
-      Number.isFinite(parsedQty) && parsedQty >= 1 ? parsedQty : Math.max(1, Math.floor(Number(loanQuantity)) || 1);
+      loanComponentRows
+        .filter((r) => r.selected && r.name.trim() && r.qty > 0)
+        .reduce((sum, r) => sum + r.qty, 0) || availableQty;
 
     if (resolvedLoanQuantity < 1) {
       setError("대출 수량을 입력해 주세요.");
@@ -173,11 +172,15 @@ export default function SupplyLoanPage() {
 
   const canBorrow =
     supply.status === "available" || supply.status === "partially_borrowed";
+  const resolvedLoanQuantity =
+    loanComponentRows
+      .filter((r) => r.selected && r.name.trim() && r.qty > 0)
+      .reduce((sum, r) => sum + r.qty, 0) || availableQty;
   const submitDisabled =
     step === "submitting" ||
     !canBorrow ||
-    loanQuantity < 1 ||
-    loanQuantity > availableQty;
+    resolvedLoanQuantity < 1 ||
+    resolvedLoanQuantity > availableQty;
 
   return (
     <div className="mx-auto max-w-md space-y-6">
@@ -198,7 +201,15 @@ export default function SupplyLoanPage() {
             onConfirm={() => {
               setScanConfirmOpen(false);
               setStep("verified");
-              setLoanQuantity(availableQty > 0 ? availableQty : 1);
+              const rows = parseComponents(supply.components).filter((r) => r.name.trim().length > 0);
+              const multi = rows.length >= 2;
+              setLoanComponentRows(
+                rows.map((r) => ({
+                  name: r.name,
+                  qty: multi ? r.qty : availableQty > 0 ? availableQty : r.qty,
+                  selected: true
+                }))
+              );
             }}
             onRescan={() => {
               setScanConfirmOpen(false);
@@ -224,27 +235,6 @@ export default function SupplyLoanPage() {
             onSubmit={(e) => void handleSubmit(e)}
             className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
-            <div>
-              <label className="text-sm font-medium text-slate-700">
-                대출 수량
-                <span className="ml-2 text-xs text-slate-500">
-                  (대출 가능: {availableQty}개 / 전체: {supply.quantity}개)
-                </span>
-              </label>
-              <input
-                name="loanQuantity"
-                type="number"
-                min={1}
-                max={availableQty}
-                value={loanQuantity}
-                onChange={(e) => {
-                  const next = parseInt(e.target.value, 10);
-                  setLoanQuantity(Number.isFinite(next) ? next : 0);
-                }}
-                className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </div>
-
             {loanComponentRows.length > 0 && loanComponentRows[0].name ? (
               <div>
                 <p className="mb-2 text-sm font-medium text-slate-700">대출 구성품</p>
