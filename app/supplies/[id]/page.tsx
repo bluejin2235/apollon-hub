@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SupplyLoanDetailModal } from "@/components/supplies/supply-loan-detail-modal";
 import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
 import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
 import { SupplyToast } from "@/components/supplies/toast";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
+import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
 import { deleteSupply } from "@/lib/supplies/operations";
@@ -45,6 +46,7 @@ export default function SupplyDetailPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [galleryIdx, setGalleryIdx] = useState(0);
+  const [imageTab, setImageTab] = useState<"return" | "register">("register");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -54,8 +56,24 @@ export default function SupplyDetailPage() {
   const [locations, setLocations] = useState<SupplyLocation[]>([]);
   const [managers, setManagers] = useState<ProfileLite[]>([]);
   const [editOpen, setEditOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const canManageResult = useCanManageSupply(supply?.manager_id);
+
+  const latestReturnLoan = useMemo(
+    () =>
+      loans
+        .filter((l) => l.status === "returned" && l.return_image_path)
+        .sort(
+          (a, b) =>
+            new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime()
+        )[0],
+    [loans]
+  );
+
+  useEffect(() => {
+    setImageTab(latestReturnLoan?.return_image_path ? "return" : "register");
+  }, [latestReturnLoan]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -181,17 +199,14 @@ export default function SupplyDetailPage() {
 
   const badge = supplyStatusBadge(supply.status);
   const supplyImages = imagePublicUrls(supply.image_paths);
-  const latestReturnLoan = loans
-    .filter((l) => l.status === "returned" && l.return_image_path)
-    .sort(
-      (a, b) =>
-        new Date(b.returned_at ?? 0).getTime() - new Date(a.returned_at ?? 0).getTime()
-    )[0];
   const latestReturnImageUrl = latestReturnLoan?.return_image_path
     ? imagePublicUrls([latestReturnLoan.return_image_path])[0]
     : null;
-  const showReturnMainImage = Boolean(latestReturnImageUrl);
-  const galleryImages = showReturnMainImage ? [latestReturnImageUrl!] : supplyImages;
+  const hasReturnImage = Boolean(latestReturnLoan?.return_image_path);
+  const galleryImages =
+    imageTab === "return" && latestReturnLoan?.return_image_path && latestReturnImageUrl
+      ? [latestReturnImageUrl]
+      : supplyImages;
   const myActiveLoan =
     profile?.id && loans.find((l) => l.borrower_id === profile.id && l.status === "active");
   const showDelete = canManageResult ?? false;
@@ -207,45 +222,83 @@ export default function SupplyDetailPage() {
   };
 
   const gallerySection =
-    galleryImages.length > 0 ? (
+    supplyImages.length > 0 || hasReturnImage ? (
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
-          <button
-            type="button"
-            onClick={() => setLightboxOpen(true)}
-            className="block w-full cursor-pointer transition hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 rounded-xl"
-            aria-label="이미지 크게 보기"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={galleryImages[galleryIdx]}
-              alt=""
-              className="max-h-48 w-full object-contain lg:max-h-52"
-            />
-          </button>
-        </div>
-        {showReturnMainImage ? (
-          <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
-        ) : null}
-        {!showReturnMainImage && galleryImages.length > 1 ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto">
-            {galleryImages.map((url, i) => (
-              <button
-                key={url}
-                type="button"
-                onClick={() => {
-                  setGalleryIdx(i);
-                  setLightboxOpen(true);
-                }}
-                className={`h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 transition hover:opacity-90 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
-                aria-label={`이미지 ${i + 1} 보기`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="h-full w-full object-cover" />
-              </button>
-            ))}
+        {hasReturnImage ? (
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setImageTab("return");
+                setGalleryIdx(0);
+              }}
+              className={
+                imageTab === "return"
+                  ? "rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white"
+                  : "rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              }
+            >
+              최종 반납 이미지
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImageTab("register");
+                setGalleryIdx(0);
+              }}
+              className={
+                imageTab === "register"
+                  ? "rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white"
+                  : "rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              }
+            >
+              등록 이미지
+            </button>
           </div>
         ) : null}
+        {galleryImages.length > 0 ? (
+          <>
+            <div className="flex max-h-48 w-full items-center justify-center overflow-hidden rounded-xl bg-slate-100 lg:max-h-52">
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                className="block w-full cursor-pointer rounded-xl transition hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                aria-label="이미지 크게 보기"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={galleryImages[galleryIdx]}
+                  alt=""
+                  className="max-h-48 w-full object-contain lg:max-h-52"
+                />
+              </button>
+            </div>
+            {imageTab === "return" ? (
+              <p className="mt-2 text-center text-xs font-medium text-slate-500">최종 반납시 촬영 이미지</p>
+            ) : null}
+            {imageTab === "register" && supplyImages.length > 1 ? (
+              <div className="mt-3 flex gap-2 overflow-x-auto">
+                {supplyImages.map((url, i) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => {
+                      setGalleryIdx(i);
+                      setLightboxOpen(true);
+                    }}
+                    className={`h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 transition hover:opacity-90 ${i === galleryIdx ? "border-violet-500" : "border-slate-200"}`}
+                    aria-label={`이미지 ${i + 1} 보기`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <p className="py-8 text-center text-sm text-slate-500">등록 이미지 없음</p>
+        )}
       </section>
     ) : null;
 
@@ -254,7 +307,16 @@ export default function SupplyDetailPage() {
 
   const supplyInfoSection = (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">물품 정보</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-slate-900">물품 정보</h2>
+        <button
+          type="button"
+          onClick={() => setMapOpen(true)}
+          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+        >
+          📍 보관위치 안내
+        </button>
+      </div>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-slate-900">
         <li>
           <span className="font-medium text-slate-500">구역</span> : {formatSupplyLocation(supply.location)}
@@ -621,6 +683,8 @@ export default function SupplyDetailPage() {
           </div>
         </div>
       ) : null}
+
+      <WarehouseMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
     </div>
   );
 }

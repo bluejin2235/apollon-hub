@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SupplyCard } from "@/components/supplies/supply-card";
 import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
+import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
 import {
   getSlotsForZone,
   getSupplyZones,
@@ -25,6 +26,7 @@ export default function SuppliesPage() {
   const [zoneFilter, setZoneFilter] = useState<string>("전체");
   const [slotFilter, setSlotFilter] = useState<string>("전체");
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const canRegister = canCreateSupply(profile);
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
@@ -155,6 +157,13 @@ export default function SuppliesPage() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setMapOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            📍 보관위치 안내
+          </button>
         </div>
       </section>
 
@@ -196,6 +205,8 @@ export default function SuppliesPage() {
           currentUserId={profile.id}
         />
       ) : null}
+
+      <WarehouseMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
     </div>
   );
 }
