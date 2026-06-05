@@ -197,28 +197,7 @@ export default function SupplyReturnPage() {
       return;
     }
 
-    const remaining = loans.filter((l) => l.id !== loan.id);
-    if (remaining.length === 0) {
-      router.push(supplyDetailPath(supply.id));
-      return;
-    }
-
-    setLoans(remaining);
-    setSubmittingLoanId(null);
-    setReturnQuantities((prev) => {
-      const { [loan.id]: _, ...rest } = prev;
-      return rest;
-    });
-    setReturnFiles((prev) => {
-      const { [loan.id]: _, ...rest } = prev;
-      return rest;
-    });
-    setReturnPreviews((prev) => {
-      const oldUrl = prev[loan.id];
-      if (oldUrl) URL.revokeObjectURL(oldUrl);
-      const { [loan.id]: _, ...rest } = prev;
-      return rest;
-    });
+    router.push(supplyDetailPath(supply.id));
   };
 
   const handleSubmit = async (e: FormEvent) => {
