@@ -198,7 +198,7 @@ export default function SupplyLoanPage() {
             onConfirm={() => {
               setScanConfirmOpen(false);
               setStep("verified");
-              setLoanQuantity(1);
+              setLoanQuantity(availableQty > 0 ? availableQty : 1);
             }}
             onRescan={() => {
               setScanConfirmOpen(false);
