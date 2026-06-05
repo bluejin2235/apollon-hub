@@ -1,4 +1,4 @@
-export type SupplyStatus = "available" | "borrowed" | "unavailable";
+export type SupplyStatus = "available" | "borrowed" | "unavailable" | "partially_borrowed";
 export type LoanStatus = "active" | "returned";
 
 export type ProfileLite = { id: string; name: string | null; email?: string | null };
@@ -43,6 +43,8 @@ export type SupplyLoan = {
   return_note: string | null;
   borrowed_at: string;
   returned_at: string | null;
+  loan_quantity: number;
+  loan_components: string | null;
 };
 
 export type SupplyLoanWithRelations = SupplyLoan & {

@@ -45,8 +45,13 @@ export default function ShortSupplyPage() {
         return;
       }
 
-      if (supply.status === "available") {
+      if (supply.status === "available" || supply.status === "partially_borrowed") {
         router.replace(`/supplies/${supply.id}/loan`);
+        return;
+      }
+
+      if (supply.status === "borrowed" || supply.status === "unavailable") {
+        setPageState("blocked");
         return;
       }
 

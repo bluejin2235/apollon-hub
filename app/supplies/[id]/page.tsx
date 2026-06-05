@@ -12,8 +12,9 @@ import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplie
 import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
-import { deleteSupply } from "@/lib/supplies/operations";
+import { deleteSupply, getAvailableQuantity } from "@/lib/supplies/operations";
 import {
+  formatSupplyDate,
   formatSupplyDateTime,
   imagePublicUrls,
   loanStatusLabel,
@@ -57,6 +58,7 @@ export default function SupplyDetailPage() {
   const [managers, setManagers] = useState<ProfileLite[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [availableQty, setAvailableQty] = useState(0);
 
   const canManageResult = useCanManageSupply(supply?.manager_id);
 
@@ -93,12 +95,14 @@ export default function SupplyDetailPage() {
       setPrintJobs([]);
       setLocations([]);
       setManagers([]);
+      setAvailableQty(0);
       setLoading(false);
       return;
     }
 
     const mapped = mapSupplyRow(sup as Record<string, unknown>);
     setSupply(mapped);
+    setAvailableQty(await getAvailableQuantity(id));
 
     const zoneCode = mapped.location?.zone_code;
     if (zoneCode) {
@@ -221,6 +225,27 @@ export default function SupplyDetailPage() {
     return requester.name?.trim() || "—";
   };
 
+  const formatLoanComponentsLabel = (raw: string | null | undefined) => {
+    if (!raw?.trim()) return null;
+    const label = parseComponents(raw)
+      .filter((row) => row.name.trim().length > 0)
+      .map((row) => `${row.name}×${row.qty}`)
+      .join(", ");
+    return label || null;
+  };
+
+  const loanQuantityCell = (loan: SupplyLoanWithRelations) => {
+    const componentsLabel = formatLoanComponentsLabel(loan.loan_components);
+    return (
+      <td className="px-3 py-2">
+        <div>{loan.loan_quantity ?? 1}</div>
+        {componentsLabel ? (
+          <p className="mt-0.5 text-xs text-slate-500">{componentsLabel}</p>
+        ) : null}
+      </td>
+    );
+  };
+
   const gallerySection =
     supplyImages.length > 0 || hasReturnImage ? (
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -302,7 +327,10 @@ export default function SupplyDetailPage() {
       </section>
     ) : null;
 
-  const statusLabel = badge.label;
+  const statusLabel =
+    supply.status === "partially_borrowed"
+      ? `${badge.label} (가능: ${availableQty}개)`
+      : badge.label;
   const componentRows = parseComponents(supply.components).filter((row) => row.name.trim().length > 0);
 
   const supplyInfoSection = (
@@ -399,14 +427,19 @@ export default function SupplyDetailPage() {
       {showPrintLabel && profile?.id ? (
         <SupplyPrintLabelButton supply={supply} requestedBy={profile.id} onToast={setToast} />
       ) : null}
-      {supply.status === "available" ? (
-        <button
-          type="button"
-          onClick={handleBorrowClick}
-          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
-        >
-          대출 신청
-        </button>
+      {supply.status === "available" || supply.status === "partially_borrowed" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleBorrowClick}
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
+          >
+            대출 신청
+          </button>
+          {supply.status === "partially_borrowed" ? (
+            <span className="text-xs text-slate-500">({availableQty}개 대출 가능)</span>
+          ) : null}
+        </div>
       ) : null}
       {myActiveLoan ? (
         <Link
@@ -490,11 +523,11 @@ export default function SupplyDetailPage() {
                     <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                       <tr>
                         <th className="px-3 py-2">대출자</th>
-                        <th className="px-3 py-2">대출목적</th>
+                        <th className="px-3 py-2">수량</th>
+                        <th className="px-3 py-2">목적</th>
                         <th className="px-3 py-2">대출일</th>
-                        <th className="px-3 py-2">반납일</th>
+                        <th className="px-3 py-2">반납예정</th>
                         <th className="px-3 py-2">상태</th>
-                        <th className="px-3 py-2">반납 특이사항</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -513,6 +546,7 @@ export default function SupplyDetailPage() {
                           className="cursor-pointer transition hover:bg-violet-50/60"
                         >
                           <td className="px-3 py-2">{loan.borrower?.name?.trim() || "—"}</td>
+                          {loanQuantityCell(loan)}
                           <td className="max-w-[120px] truncate px-3 py-2 lg:max-w-none" title={loan.purpose}>
                             {loan.purpose}
                           </td>
@@ -520,15 +554,9 @@ export default function SupplyDetailPage() {
                             {formatSupplyDateTime(loan.borrowed_at)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                            {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
+                            {formatSupplyDate(loan.due_date)}
                           </td>
                           <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
-                          <td
-                            className="max-w-[160px] truncate px-3 py-2 text-slate-600 lg:max-w-none"
-                            title={loan.return_note ?? undefined}
-                          >
-                            {loan.status === "returned" && loan.return_note ? loan.return_note : ""}
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -560,11 +588,11 @@ export default function SupplyDetailPage() {
                   <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                     <tr>
                       <th className="px-3 py-2">대출자</th>
-                      <th className="px-3 py-2">대출목적</th>
+                      <th className="px-3 py-2">수량</th>
+                      <th className="px-3 py-2">목적</th>
                       <th className="px-3 py-2">대출일</th>
-                      <th className="px-3 py-2">반납일</th>
+                      <th className="px-3 py-2">반납예정</th>
                       <th className="px-3 py-2">상태</th>
-                      <th className="px-3 py-2">반납 특이사항</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -583,6 +611,7 @@ export default function SupplyDetailPage() {
                         className="cursor-pointer transition hover:bg-violet-50/60"
                       >
                         <td className="px-3 py-2">{loan.borrower?.name?.trim() || "—"}</td>
+                        {loanQuantityCell(loan)}
                         <td className="max-w-[120px] truncate px-3 py-2 sm:max-w-none" title={loan.purpose}>
                           {loan.purpose}
                         </td>
@@ -590,15 +619,9 @@ export default function SupplyDetailPage() {
                           {formatSupplyDateTime(loan.borrowed_at)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                          {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
+                          {formatSupplyDate(loan.due_date)}
                         </td>
                         <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
-                        <td
-                          className="max-w-[160px] truncate px-3 py-2 text-slate-600 sm:max-w-none"
-                          title={loan.return_note ?? undefined}
-                        >
-                          {loan.status === "returned" && loan.return_note ? loan.return_note : ""}
-                        </td>
                       </tr>
                     ))}
                   </tbody>

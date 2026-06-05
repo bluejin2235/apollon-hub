@@ -6,6 +6,7 @@ import type { SupplyWithRelations } from "@/lib/supplies/types";
 type Props = {
   open: boolean;
   supply: SupplyWithRelations;
+  availableQty?: number;
   onConfirm: () => void;
   onRescan: () => void;
 };
@@ -29,7 +30,13 @@ function CheckCircleIcon({ className }: { className?: string }) {
   );
 }
 
-export function SupplyScanConfirmModal({ open, supply, onConfirm, onRescan }: Props) {
+export function SupplyScanConfirmModal({
+  open,
+  supply,
+  availableQty,
+  onConfirm,
+  onRescan
+}: Props) {
   if (!open) return null;
 
   return (
@@ -49,6 +56,11 @@ export function SupplyScanConfirmModal({ open, supply, onConfirm, onRescan }: Pr
 
         <div className="mt-4">
           <SupplyInfoCard supply={supply} />
+          {supply.status === "partially_borrowed" ? (
+            <p className="mt-2 text-center text-xs font-medium text-blue-700">
+              부분대출가능 ({availableQty ?? "—"}개 남음)
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-6 flex gap-3">

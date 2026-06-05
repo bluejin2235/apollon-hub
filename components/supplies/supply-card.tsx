@@ -34,6 +34,9 @@ export function SupplyCard({ supply }: Props) {
         <p className="text-xs font-medium text-slate-500">{supply.code}</p>
         <h3 className="mt-0.5 line-clamp-2 font-semibold text-slate-900 group-hover:text-violet-700">{supply.name}</h3>
         <p className="mt-1 text-sm text-slate-600">{formatSupplyLocation(supply.location)}</p>
+        {supply.quantity > 1 ? (
+          <p className="mt-1 text-xs text-slate-400">전체 {supply.quantity}개</p>
+        ) : null}
         <p className="mt-2 text-xs text-slate-500">담당 {supply.manager?.name?.trim() || "—"}</p>
       </div>
     </Link>

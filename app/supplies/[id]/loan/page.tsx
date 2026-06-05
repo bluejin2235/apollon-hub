@@ -9,9 +9,9 @@ import { SupplyScanConfirmModal } from "@/components/supplies/supply-scan-confir
 import { SupplyToast } from "@/components/supplies/toast";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
-import { borrowSupply } from "@/lib/supplies/operations";
+import { borrowSupply, getAvailableQuantity } from "@/lib/supplies/operations";
 import { parseSupplyIdFromQr, supplyIdsMatch } from "@/lib/supplies/qr";
-import { supplyDetailPath } from "@/lib/supplies/utils";
+import { parseComponents, supplyDetailPath } from "@/lib/supplies/utils";
 import type { SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
@@ -33,6 +33,11 @@ export default function SupplyLoanPage() {
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mobile, setMobile] = useState(false);
+  const [availableQty, setAvailableQty] = useState<number>(0);
+  const [loanQuantity, setLoanQuantity] = useState<number>(1);
+  const [loanComponentRows, setLoanComponentRows] = useState<
+    { name: string; qty: number; selected: boolean }[]
+  >([]);
 
   useEffect(() => {
     setMobile(isMobileDevice());
@@ -45,7 +50,17 @@ export default function SupplyLoanPage() {
       .eq("id", id)
       .maybeSingle();
 
-    if (data) setSupply(mapSupplyRow(data as Record<string, unknown>));
+    if (!data) return;
+
+    const mapped = mapSupplyRow(data as Record<string, unknown>);
+    setSupply(mapped);
+
+    const avail = await getAvailableQuantity(id);
+    setAvailableQty(avail);
+
+    const parsed = parseComponents(mapped.components).filter((row) => row.name.trim().length > 0);
+    setLoanComponentRows(parsed.map((row) => ({ name: row.name, qty: row.qty, selected: true })));
+    setLoanQuantity(Math.min(avail > 0 ? avail : 1, mapped.quantity));
   }, [id]);
 
   useEffect(() => {
@@ -99,13 +114,20 @@ export default function SupplyLoanPage() {
       return;
     }
 
+    const selectedComponents = loanComponentRows
+      .filter((r) => r.selected && r.name && r.qty > 0)
+      .map((r) => `${r.name}:${r.qty}`)
+      .join(",");
+
     setStep("submitting");
     setError(null);
     const { error: err } = await borrowSupply({
       supplyId: supply.id,
       borrowerId: profile.id,
       purpose,
-      dueDate
+      dueDate,
+      loanQuantity,
+      loanComponents: selectedComponents || null
     });
     if (err) {
       setStep("verified");
@@ -133,6 +155,14 @@ export default function SupplyLoanPage() {
     return <p className="text-sm text-slate-500">물품을 찾을 수 없습니다.</p>;
   }
 
+  const canBorrow =
+    supply.status === "available" || supply.status === "partially_borrowed";
+  const submitDisabled =
+    step === "submitting" ||
+    !canBorrow ||
+    loanQuantity < 1 ||
+    loanQuantity > availableQty;
+
   return (
     <div className="mx-auto max-w-md space-y-6">
       <Link href={supplyDetailPath(id)} className="text-sm font-medium text-violet-600 hover:underline">
@@ -148,6 +178,7 @@ export default function SupplyLoanPage() {
           <SupplyScanConfirmModal
             open={scanConfirmOpen}
             supply={supply}
+            availableQty={availableQty}
             onConfirm={() => {
               setScanConfirmOpen(false);
               setStep("verified");
@@ -176,6 +207,60 @@ export default function SupplyLoanPage() {
             onSubmit={(e) => void handleSubmit(e)}
             className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                대출 수량
+                <span className="ml-2 text-xs text-slate-500">
+                  (대출 가능: {availableQty}개 / 전체: {supply.quantity}개)
+                </span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={availableQty}
+                value={loanQuantity}
+                onChange={(e) => setLoanQuantity(Number(e.target.value))}
+                className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            {loanComponentRows.length > 0 && loanComponentRows[0].name ? (
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">대출 구성품</p>
+                <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                  {loanComponentRows.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={row.selected}
+                          onChange={(e) => {
+                            const next = [...loanComponentRows];
+                            next[i] = { ...next[i], selected: e.target.checked };
+                            setLoanComponentRows(next);
+                          }}
+                        />
+                        {row.name}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={row.qty}
+                        value={row.selected ? row.qty : 0}
+                        disabled={!row.selected}
+                        onChange={(e) => {
+                          const next = [...loanComponentRows];
+                          next[i] = { ...next[i], qty: Number(e.target.value) };
+                          setLoanComponentRows(next);
+                        }}
+                        className="w-16 rounded border border-slate-200 px-2 py-1 text-right text-sm disabled:opacity-40"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <label className="block text-sm font-medium text-slate-700">
               사용 목적 <span className="text-rose-600">*</span>
               <textarea
@@ -200,12 +285,12 @@ export default function SupplyLoanPage() {
             {error ? <p className="text-sm text-rose-600">{error}</p> : null}
             <button
               type="submit"
-              disabled={step === "submitting" || supply.status !== "available"}
+              disabled={submitDisabled}
               className="w-full rounded-lg bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
             >
               {step === "submitting" ? "처리 중…" : "대출 신청 완료"}
             </button>
-            {supply.status !== "available" ? (
+            {!canBorrow ? (
               <p className="text-center text-xs text-amber-700">현재 대출할 수 없는 상태입니다.</p>
             ) : null}
           </form>

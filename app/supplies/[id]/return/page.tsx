@@ -9,7 +9,7 @@ import { SupplyScanConfirmModal } from "@/components/supplies/supply-scan-confir
 import { SupplyToast } from "@/components/supplies/toast";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
-import { getActiveLoanForUser, returnSupply } from "@/lib/supplies/operations";
+import { getActiveLoanForUser, getAvailableQuantity, returnSupply } from "@/lib/supplies/operations";
 import { parseSupplyIdFromQr, supplyIdsMatch } from "@/lib/supplies/qr";
 import { uploadReturnImage } from "@/lib/supplies/storage";
 import { formatSupplyDate, formatSupplyDateTime, supplyDetailPath } from "@/lib/supplies/utils";
@@ -26,7 +26,14 @@ export default function SupplyReturnPage() {
   const { status, profile } = useRequirePortalSession();
 
   const [supply, setSupply] = useState<SupplyWithRelations | null>(null);
-  const [loan, setLoan] = useState<{ id: string; purpose: string; due_date: string; borrowed_at: string } | null>(null);
+  const [loan, setLoan] = useState<{
+    id: string;
+    purpose: string;
+    due_date: string;
+    borrowed_at: string;
+    loan_quantity: number;
+  } | null>(null);
+  const [returnQuantity, setReturnQuantity] = useState<number>(1);
   const [step, setStep] = useState<ReturnStep>("scanning");
   const [scanConfirmOpen, setScanConfirmOpen] = useState(false);
   const [scanKey, setScanKey] = useState(0);
@@ -36,6 +43,7 @@ export default function SupplyReturnPage() {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mobile, setMobile] = useState(false);
+  const [availableQty, setAvailableQty] = useState(0);
 
   useEffect(() => {
     setMobile(isMobileDevice());
@@ -58,13 +66,19 @@ export default function SupplyReturnPage() {
       .eq("id", id)
       .maybeSingle();
 
-    if (data) setSupply(mapSupplyRow(data as Record<string, unknown>));
+    if (data) {
+      setSupply(mapSupplyRow(data as Record<string, unknown>));
+      setAvailableQty(await getAvailableQuantity(id));
+    }
   }, [id]);
 
   useEffect(() => {
     if (status !== "ready" || !profile?.id) return;
     void load();
-    void getActiveLoanForUser(id, profile.id).then(setLoan);
+    void getActiveLoanForUser(id, profile.id).then((activeLoan) => {
+      setLoan(activeLoan);
+      if (activeLoan) setReturnQuantity(activeLoan.loan_quantity ?? 1);
+    });
   }, [status, profile?.id, id, load]);
 
   const handleQrScan = useCallback(
@@ -116,7 +130,8 @@ export default function SupplyReturnPage() {
       loanId: loan.id,
       supplyId: supply.id,
       returnImagePath: path,
-      returnNote: note
+      returnNote: note,
+      returnQuantity
     });
 
     if (retErr) {
@@ -171,6 +186,7 @@ export default function SupplyReturnPage() {
           <SupplyScanConfirmModal
             open={scanConfirmOpen}
             supply={supply}
+            availableQty={availableQty}
             onConfirm={() => {
               setScanConfirmOpen(false);
               setStep("verified");
@@ -207,6 +223,22 @@ export default function SupplyReturnPage() {
             onSubmit={(e) => void handleSubmit(e)}
             className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                반납 수량
+                <span className="ml-2 text-xs text-slate-500">
+                  (대출 수량: {loan.loan_quantity ?? 1}개)
+                </span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={loan.loan_quantity ?? 1}
+                value={returnQuantity}
+                onChange={(e) => setReturnQuantity(Number(e.target.value))}
+                className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
             <label className="block text-sm font-medium text-slate-700">
               반납 사진 <span className="text-rose-600">*</span>
               <input
