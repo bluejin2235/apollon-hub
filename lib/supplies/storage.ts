@@ -27,8 +27,3 @@ export async function uploadReturnImage(supplyId: string, loanId: string, file: 
   }
   return { path, error: null };
 }
-
-export function publicImageUrl(storagePath: string): string {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  return data.publicUrl;
-}

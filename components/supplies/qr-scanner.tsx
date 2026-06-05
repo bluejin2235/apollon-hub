@@ -1,7 +1,7 @@
 "use client";
 
 import jsQR from "jsqr";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 declare global {
   interface Window {
@@ -25,33 +25,6 @@ interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
 
 interface ExtendedConstraintSet extends MediaTrackConstraintSet {
   zoom?: number;
-}
-
-function scanLog(appendDebugLog: (message: string) => void, message: string) {
-  console.log(message);
-  appendDebugLog(message);
-}
-
-function DebugLogPanel({ debugLog }: { debugLog: string[] }) {
-  return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-[100] max-h-[40vh] overflow-y-auto bg-black px-4 py-4"
-      role="log"
-      aria-live="polite"
-    >
-      {debugLog.length === 0 ? (
-        <p className="font-mono text-sm text-yellow-300">[qr-scanner] 로그 대기 중…</p>
-      ) : (
-        <div className="space-y-2">
-          {debugLog.map((log, i) => (
-            <p key={i} className="font-mono text-sm text-yellow-300">
-              {log}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function supportsBarcodeDetector(): boolean {
@@ -141,12 +114,10 @@ async function tryApplyZoom(stream: MediaStream, targetZoom: number = 2.0): Prom
 
 function NativeBarcodeScanner({
   onScan,
-  active,
-  appendDebugLog
+  active
 }: {
   onScan: (decodedText: string) => void;
   active: boolean;
-  appendDebugLog: (message: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -156,8 +127,6 @@ function NativeBarcodeScanner({
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
-  const appendDebugLogRef = useRef(appendDebugLog);
-  appendDebugLogRef.current = appendDebugLog;
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -181,8 +150,6 @@ function NativeBarcodeScanner({
 
     const start = async () => {
       try {
-        scanLog(appendDebugLogRef.current, "[qr-scanner] BarcodeDetector 사용");
-
         const Detector = window.BarcodeDetector;
         if (!Detector) {
           throw new Error("BarcodeDetector를 사용할 수 없습니다.");
@@ -235,7 +202,6 @@ function NativeBarcodeScanner({
               const text = codes[0]?.rawValue;
               if (!text || handledRef.current) return;
               handledRef.current = true;
-              scanLog(appendDebugLogRef.current, `[qr-scanner] 인식 성공: ${text}`);
               cleanup();
               onScanRef.current(text);
             })
@@ -274,12 +240,10 @@ function NativeBarcodeScanner({
 
 function JsQrScanner({
   onScan,
-  active,
-  appendDebugLog
+  active
 }: {
   onScan: (decodedText: string) => void;
   active: boolean;
-  appendDebugLog: (message: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -288,8 +252,6 @@ function JsQrScanner({
   const handledRef = useRef(false);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
-  const appendDebugLogRef = useRef(appendDebugLog);
-  appendDebugLogRef.current = appendDebugLog;
 
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -312,8 +274,6 @@ function JsQrScanner({
 
     const start = async () => {
       try {
-        scanLog(appendDebugLogRef.current, "[qr-scanner] jsQR 사용");
-
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" } },
           audio: false
@@ -330,7 +290,6 @@ function JsQrScanner({
         await tryApplyZoom(stream, 2.0);
         await video.play();
 
-        scanLog(appendDebugLogRef.current, "[qr-scanner] 카메라 시작 완료");
         setStarting(false);
 
         intervalRef.current = setInterval(() => {
@@ -358,7 +317,6 @@ function JsQrScanner({
           if (!result?.data || handledRef.current) return;
 
           handledRef.current = true;
-          scanLog(appendDebugLogRef.current, `[qr-scanner] 인식 성공: ${result.data}`);
           cleanup();
           onScanRef.current(result.data);
         }, 100);
@@ -394,15 +352,6 @@ function JsQrScanner({
 
 export function QrScanner({ onScan, active = true }: Props) {
   const useNative = supportsBarcodeDetector();
-  const [debugLog, setDebugLog] = useState<string[]>([]);
-
-  const appendDebugLog = useCallback((message: string) => {
-    setDebugLog((prev) => [...prev, message]);
-  }, []);
-
-  useEffect(() => {
-    if (active) setDebugLog([]);
-  }, [active]);
 
   if (!active) {
     return (
@@ -413,15 +362,12 @@ export function QrScanner({ onScan, active = true }: Props) {
   }
 
   return (
-    <>
-      <div className="space-y-3 pb-44">
-        {useNative ? (
-          <NativeBarcodeScanner onScan={onScan} active={active} appendDebugLog={appendDebugLog} />
-        ) : (
-          <JsQrScanner onScan={onScan} active={active} appendDebugLog={appendDebugLog} />
-        )}
-      </div>
-      <DebugLogPanel debugLog={debugLog} />
-    </>
+    <div className="space-y-3">
+      {useNative ? (
+        <NativeBarcodeScanner onScan={onScan} active={active} />
+      ) : (
+        <JsQrScanner onScan={onScan} active={active} />
+      )}
+    </div>
   );
 }

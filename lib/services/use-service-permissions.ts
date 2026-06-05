@@ -49,13 +49,6 @@ export function useCanManageSupply(supplyManagerId: string | null | undefined): 
   const { status, profile } = useRequirePortalSession();
   const [result, setResult] = useState<boolean | null>(null);
 
-  console.log("[useCanManageSupply] 입력:", {
-    profileId: profile?.id,
-    profileRole: profile?.role,
-    supplyManagerId,
-    status
-  });
-
   useEffect(() => {
     if (status !== "ready") {
       setResult(null);
@@ -66,7 +59,6 @@ export function useCanManageSupply(supplyManagerId: string | null | undefined): 
     void (async () => {
       const ok = await canManageSupply(profile, supplyManagerId);
       if (!cancelled) {
-        console.log("[useCanManageSupply] 결과:", ok);
         setResult(ok);
       }
     })();

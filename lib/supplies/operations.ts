@@ -1,56 +1,4 @@
-import type { Supply } from "@/lib/supplies/types";
 import { supabase } from "@/lib/supabase/client";
-
-/** 비품 INSERT RLS 디버깅 — 개발 환경에서만 브라우저 콘솔 출력 */
-export async function logSupplyInsertAuthDebug(): Promise<void> {
-  if (process.env.NODE_ENV !== "development") return;
-
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession();
-
-  const authUserId = session?.user?.id ?? null;
-  const authEmail = session?.user?.email ?? null;
-
-  let profile: { id: string; role: string; email: string; name: string } | null = null;
-  let profileError: string | null = null;
-
-  if (authUserId) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, role, email, name")
-      .eq("id", authUserId)
-      .maybeSingle();
-
-    if (error) {
-      profileError = error.message;
-    } else if (data) {
-      profile = {
-        id: data.id as string,
-        role: String(data.role),
-        email: data.email as string,
-        name: data.name as string
-      };
-    }
-  }
-
-  const { data: isManager, error: rpcError } = await supabase.rpc("is_supply_manager");
-
-  console.group("[supplies] INSERT auth debug (등록 직전)");
-  console.log("auth.uid (session user id):", authUserId);
-  console.log("auth email:", authEmail);
-  if (sessionError) console.log("session error:", sessionError.message);
-  if (profileError) console.log("profiles 조회 error:", profileError);
-  console.log("profiles row:", profile);
-  console.log("profiles.role (raw):", profile?.role ?? "(없음)");
-  console.log("profiles.role type:", profile ? typeof profile.role : "n/a");
-  console.log("auth.uid === profiles.id:", authUserId != null && profile != null ? authUserId === profile.id : false);
-  console.log("is_supply_manager() RPC:", isManager, typeof isManager);
-  if (rpcError) console.log("is_supply_manager RPC error:", rpcError.message, rpcError);
-  console.log("클라이언트 기대 관리자 role:", profile?.role === "슈퍼관리자" || profile?.role === "중간관리자");
-  console.groupEnd();
-}
 
 export async function createSupply(params: {
   name: string;
@@ -61,8 +9,6 @@ export async function createSupply(params: {
   components: string | null;
   imagePaths: string[];
 }): Promise<{ id: string | null; error: string | null }> {
-  await logSupplyInsertAuthDebug();
-
   const { data, error } = await supabase
     .from("supplies")
     .insert({

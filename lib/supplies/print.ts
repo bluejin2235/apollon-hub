@@ -288,45 +288,6 @@ export async function requestPrint(
   }
 }
 
-/** Supabase print_jobs 최근 N건 (브라우저 콘솔 디버그용) */
-export async function debugFetchRecentPrintJobs(limit = 5) {
-  const { data, error } = await supabase
-    .from("print_jobs")
-    .select("id, supply_id, status, error_message, created_at, processed_at, requested_by")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  printLabelLog("최근 print_jobs 조회", {
-    error: error?.message ?? null,
-    rows: data
-  });
-  return { data, error };
-}
-
-/** 특정 job 행 조회 (브라우저 콘솔 디버그용) */
-export async function debugFetchPrintJob(jobId: string) {
-  const { data, error } = await supabase
-    .from("print_jobs")
-    .select("*")
-    .eq("id", jobId)
-    .maybeSingle();
-
-  printLabelLog("print_job 단건 조회", {
-    jobId,
-    error: error?.message ?? null,
-    row: data
-      ? {
-          id: data.id,
-          status: data.status,
-          error_message: data.error_message,
-          processed_at: data.processed_at,
-          created_at: data.created_at
-        }
-      : null
-  });
-  return { data, error };
-}
-
 /** 특정 작업의 상태 변경 Realtime 구독. 반환값은 unsubscribe 함수 */
 export function watchPrintJob(jobId: string, callback: (job: PrintJob) => void): () => void {
   printLabelLog("watchPrintJob 구독 시작", { jobId });

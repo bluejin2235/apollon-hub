@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  debugFetchPrintJob,
-  debugFetchRecentPrintJobs,
   generateQrLabelImage,
   requestPrint,
   watchPrintJob,
@@ -147,17 +145,14 @@ export function SupplyPrintLabelButton({ supply, requestedBy, onToast }: Props) 
 
       if (error || !jobId) {
         printLabelLog("requestPrint 실패 (UI)", { error, jobId });
-        await debugFetchRecentPrintJobs(3);
         finishError(error ?? "인쇄 요청에 실패했습니다.");
         return;
       }
 
       printLabelLog("requestPrint 성공 (UI), Realtime 대기", { jobId });
-      await debugFetchPrintJob(jobId);
 
       unsubRef.current = watchPrintJob(jobId, (job) => {
         if (isTerminalStatus(job.status)) {
-          void debugFetchPrintJob(jobId);
           handleJobUpdate(job.status, job.error_message, "realtime");
         } else {
           printLabelLog("watchPrintJob 중간 상태", { jobId, status: job.status });
@@ -168,9 +163,7 @@ export function SupplyPrintLabelButton({ supply, requestedBy, onToast }: Props) 
 
       timeoutRef.current = setTimeout(() => {
         printLabelLog("30초 타임아웃", { jobId });
-        void debugFetchPrintJob(jobId).then(() =>
-          finishError("인쇄 시간이 초과되었습니다. 프린터 브리지가 실행 중인지 확인해 주세요.")
-        );
+        finishError("인쇄 시간이 초과되었습니다. 프린터 브리지가 실행 중인지 확인해 주세요.");
       }, PRINT_TIMEOUT_MS);
     } catch (e) {
       const message = e instanceof Error ? e.message : "라벨 생성에 실패했습니다.";

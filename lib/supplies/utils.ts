@@ -65,38 +65,6 @@ function formatKoreanDateTime(d: Date): string {
   return `${y}. ${m}. ${day}. ${h}:${min}`;
 }
 
-export function isSupplyManager(role: string | null | undefined): boolean {
-  return role === "슈퍼관리자" || role === "중간관리자";
-}
-
-/** 슈퍼/중간관리자 또는 해당 비품 담당자(manager_id) */
-export function canDeleteSupply(
-  role: string | null | undefined,
-  userId: string | null | undefined,
-  managerId: string | null | undefined
-): boolean {
-  return canManageSupply(role, userId, managerId);
-}
-
-/** QR 라벨 출력 권한 (삭제와 동일) */
-export function canPrintSupplyLabel(
-  role: string | null | undefined,
-  userId: string | null | undefined,
-  managerId: string | null | undefined
-): boolean {
-  return canManageSupply(role, userId, managerId);
-}
-
-function canManageSupply(
-  role: string | null | undefined,
-  userId: string | null | undefined,
-  managerId: string | null | undefined
-): boolean {
-  if (!userId) return false;
-  if (isSupplyManager(role)) return true;
-  return managerId != null && managerId === userId;
-}
-
 export function formatSupplyDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
