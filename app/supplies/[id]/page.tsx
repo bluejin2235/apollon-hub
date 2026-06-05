@@ -73,6 +73,18 @@ export default function SupplyDetailPage() {
     [loans]
   );
 
+  const activeLoanComponentMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    loans
+      .filter((l) => l.status === "active" && l.loan_components)
+      .forEach((l) => {
+        parseComponents(l.loan_components).forEach(({ name, qty }) => {
+          if (name.trim()) map[name] = (map[name] ?? 0) + qty;
+        });
+      });
+    return map;
+  }, [loans]);
+
   useEffect(() => {
     setImageTab(latestReturnLoan?.return_image_path ? "return" : "register");
   }, [latestReturnLoan]);
@@ -225,23 +237,24 @@ export default function SupplyDetailPage() {
     return requester.name?.trim() || "—";
   };
 
-  const formatLoanComponentsLabel = (raw: string | null | undefined) => {
-    if (!raw?.trim()) return null;
-    const label = parseComponents(raw)
-      .filter((row) => row.name.trim().length > 0)
-      .map((row) => `${row.name}×${row.qty}`)
-      .join(", ");
-    return label || null;
-  };
-
   const loanQuantityCell = (loan: SupplyLoanWithRelations) => {
-    const componentsLabel = formatLoanComponentsLabel(loan.loan_components);
+    if (loan.loan_components) {
+      const rows = parseComponents(loan.loan_components).filter(
+        (r) => r.name.trim() && r.qty > 0
+      );
+      return (
+        <td className="px-3 py-2 text-sm text-slate-700">
+          {rows.map((r, i) => (
+            <div key={i}>
+              {r.name} {r.qty}개
+            </div>
+          ))}
+        </td>
+      );
+    }
     return (
-      <td className="px-3 py-2">
-        <div>{loan.loan_quantity ?? 1}</div>
-        {componentsLabel ? (
-          <p className="mt-0.5 text-xs text-slate-500">{componentsLabel}</p>
-        ) : null}
+      <td className="px-3 py-2 text-sm text-slate-700">
+        {loan.loan_quantity ?? 1}개
       </td>
     );
   };
@@ -377,11 +390,10 @@ export default function SupplyDetailPage() {
                         {row.qty}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-slate-600">
-                        {supply.status === "available"
-                          ? row.qty
-                          : supply.status === "partially_borrowed"
-                            ? availableQty
-                            : 0}
+                        {(() => {
+                          const borrowed = activeLoanComponentMap[row.name] ?? 0;
+                          return Math.max(0, row.qty - borrowed);
+                        })()}
                       </td>
                     </tr>
                   ))}
@@ -522,7 +534,7 @@ export default function SupplyDetailPage() {
                     <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                       <tr>
                         <th className="px-3 py-2">대출자</th>
-                        <th className="px-3 py-2">대출수량</th>
+                        <th className="px-3 py-2">대출정보</th>
                         <th className="px-3 py-2">목적</th>
                         <th className="px-3 py-2">대출일</th>
                         <th className="px-3 py-2">반납예정일</th>
@@ -591,7 +603,7 @@ export default function SupplyDetailPage() {
                   <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                     <tr>
                       <th className="px-3 py-2">대출자</th>
-                      <th className="px-3 py-2">대출수량</th>
+                      <th className="px-3 py-2">대출정보</th>
                       <th className="px-3 py-2">목적</th>
                       <th className="px-3 py-2">대출일</th>
                       <th className="px-3 py-2">반납예정일</th>
