@@ -188,6 +188,10 @@ export function SupplyRegisterModal({
     setError(null);
 
     const componentsStr = serializeComponents(componentRows);
+    const totalQty =
+      componentRows
+        .filter((r) => r.name.trim() && r.qty > 0)
+        .reduce((sum, r) => sum + r.qty, 0) || 1;
 
     if (isEdit) {
       if (!initialSupply) {
@@ -200,7 +204,7 @@ export function SupplyRegisterModal({
         supplyId: initialSupply.id,
         name,
         locationId,
-        quantity: 1,
+        quantity: totalQty,
         managerId: managerId || null,
         description: description || null,
         components: componentsStr
@@ -220,7 +224,7 @@ export function SupplyRegisterModal({
     const { id, error: createErr } = await createSupply({
       name,
       locationId,
-      quantity: 1,
+      quantity: totalQty,
       managerId: currentUserId,
       description: description || null,
       components: componentsStr,
