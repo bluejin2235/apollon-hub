@@ -12,7 +12,7 @@ import { formatSupplyLocation, mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/li
 import { getActiveLoanForUser, getAvailableQuantity, returnSupply } from "@/lib/supplies/operations";
 import { parseSupplyIdFromQr, supplyIdsMatch } from "@/lib/supplies/qr";
 import { uploadReturnImage } from "@/lib/supplies/storage";
-import { formatSupplyDate, formatSupplyDateTime, parseComponents, supplyDetailPath } from "@/lib/supplies/utils";
+import { parseComponents, supplyDetailPath } from "@/lib/supplies/utils";
 import type { SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
@@ -28,13 +28,63 @@ type ActiveLoan = {
   loan_components: string | null;
 };
 
-function formatLoanComponentsLabel(raw: string | null | undefined) {
-  if (!raw?.trim()) return null;
-  const label = parseComponents(raw)
-    .filter((row) => row.name.trim().length > 0)
-    .map((row) => `${row.name}×${row.qty}`)
-    .join(", ");
-  return label || null;
+type ReturnComponentRow = {
+  name: string;
+  qty: number;
+  selected: boolean;
+  maxQty: number;
+};
+
+function buildReturnOps(
+  loans: ActiveLoan[],
+  selectedRows: { name: string; qty: number }[]
+): Array<{ loanId: string; returnQuantity: number; returnComponents: string | null }> {
+  const remaining = new Map(selectedRows.map((r) => [r.name, r.qty]));
+  const sorted = [...loans].sort(
+    (a, b) => new Date(a.borrowed_at).getTime() - new Date(b.borrowed_at).getTime()
+  );
+  const ops: Array<{ loanId: string; returnQuantity: number; returnComponents: string | null }> =
+    [];
+
+  for (const loan of sorted) {
+    const parts = parseComponents(loan.loan_components).filter(
+      (r) => r.name.trim() && r.qty > 0
+    );
+
+    if (parts.length === 0) {
+      const totalRemaining = [...remaining.values()].reduce((s, v) => s + v, 0);
+      if (totalRemaining <= 0) continue;
+      const retQty = Math.min(loan.loan_quantity ?? 1, totalRemaining);
+      const firstKey = remaining.keys().next().value;
+      if (firstKey) {
+        remaining.set(firstKey, (remaining.get(firstKey) ?? 0) - retQty);
+      }
+      ops.push({ loanId: loan.id, returnQuantity: retQty, returnComponents: null });
+      continue;
+    }
+
+    const loanParts: string[] = [];
+    let loanReturnQty = 0;
+    for (const part of parts) {
+      const avail = remaining.get(part.name) ?? 0;
+      if (avail <= 0) continue;
+      const take = Math.min(part.qty, avail);
+      if (take > 0) {
+        loanParts.push(`${part.name}:${take}`);
+        remaining.set(part.name, avail - take);
+        loanReturnQty += take;
+      }
+    }
+    if (loanReturnQty > 0) {
+      ops.push({
+        loanId: loan.id,
+        returnQuantity: loanReturnQty,
+        returnComponents: loanParts.join(",") || null
+      });
+    }
+  }
+
+  return ops;
 }
 
 export default function SupplyReturnPage() {
@@ -45,12 +95,8 @@ export default function SupplyReturnPage() {
 
   const [supply, setSupply] = useState<SupplyWithRelations | null>(null);
   const [loans, setLoans] = useState<ActiveLoan[]>([]);
-  const [returnQuantities, setReturnQuantities] = useState<Record<string, number>>({});
-  const [returnFiles, setReturnFiles] = useState<Record<string, File | null>>({});
-  const [returnPreviews, setReturnPreviews] = useState<Record<string, string>>({});
-  const [returnQuantity, setReturnQuantity] = useState<number>(1);
+  const [returnComponentRows, setReturnComponentRows] = useState<ReturnComponentRow[]>([]);
   const [step, setStep] = useState<ReturnStep>("scanning");
-  const [submittingLoanId, setSubmittingLoanId] = useState<string | null>(null);
   const [scanConfirmOpen, setScanConfirmOpen] = useState(false);
   const [scanKey, setScanKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -75,23 +121,33 @@ export default function SupplyReturnPage() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  useEffect(() => {
-    const urls = returnPreviews;
-    return () => {
-      Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [returnPreviews]);
-
   const loadLoans = useCallback(async (userId: string) => {
     const activeLoans = await getActiveLoanForUser(id, userId);
     setLoans(activeLoans);
-    const qtyMap: Record<string, number> = {};
+
+    const componentMap: Record<string, number> = {};
     for (const loan of activeLoans) {
-      qtyMap[loan.id] = loan.loan_quantity ?? 1;
+      parseComponents(loan.loan_components)
+        .filter((r) => r.name.trim() && r.qty > 0)
+        .forEach((r) => {
+          componentMap[r.name] = (componentMap[r.name] ?? 0) + r.qty;
+        });
     }
-    setReturnQuantities(qtyMap);
-    if (activeLoans.length === 1) {
-      setReturnQuantity(activeLoans[0].loan_quantity ?? 1);
+
+    if (Object.keys(componentMap).length === 0 && activeLoans.length > 0) {
+      const totalQty = activeLoans.reduce((s, l) => s + (l.loan_quantity ?? 1), 0);
+      setReturnComponentRows([
+        { name: "반납 수량", qty: totalQty, maxQty: totalQty, selected: true }
+      ]);
+    } else {
+      setReturnComponentRows(
+        Object.entries(componentMap).map(([name, qty]) => ({
+          name,
+          qty,
+          maxQty: qty,
+          selected: true
+        }))
+      );
     }
   }, [id]);
 
@@ -145,89 +201,58 @@ export default function SupplyReturnPage() {
     setScanKey((k) => k + 1);
   };
 
-  const handleLoanFileChange = (loanId: string, nextFile: File | null) => {
-    setReturnFiles((prev) => ({ ...prev, [loanId]: nextFile }));
-    setReturnPreviews((prev) => {
-      const oldUrl = prev[loanId];
-      if (oldUrl) URL.revokeObjectURL(oldUrl);
-      if (!nextFile) {
-        const { [loanId]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [loanId]: URL.createObjectURL(nextFile) };
-    });
-  };
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file || !supply || loans.length === 0) return;
 
-  const handleReturnLoan = async (loan: ActiveLoan) => {
-    if (!supply) return;
-
-    const qty = returnQuantities[loan.id] ?? loan.loan_quantity;
-    const loanFile = returnFiles[loan.id];
-
-    if (!loanFile) {
-      setError("반납 사진을 촬영해 주세요.");
+    const selectedRows = returnComponentRows.filter(
+      (r) => r.selected && r.name.trim() && r.qty > 0
+    );
+    if (returnComponentRows.length > 0 && selectedRows.length === 0) {
+      setError("반납할 구성품을 선택해 주세요.");
       return;
     }
-    if (qty < 1 || qty > loan.loan_quantity) {
+
+    const returnOps = buildReturnOps(loans, selectedRows);
+    if (returnOps.length === 0) {
       setError("반납 수량을 확인해 주세요.");
       return;
     }
 
-    setSubmittingLoanId(loan.id);
-    setError(null);
-
-    const { path, error: upErr } = await uploadReturnImage(supply.id, loan.id, loanFile);
-    if (upErr || !path) {
-      setSubmittingLoanId(null);
-      setError(upErr ?? "사진 업로드 실패");
-      return;
-    }
-
-    const { error: retErr } = await returnSupply({
-      loanId: loan.id,
-      supplyId: supply.id,
-      returnImagePath: path,
-      returnNote: null,
-      returnQuantity: qty
-    });
-
-    if (retErr) {
-      setSubmittingLoanId(null);
-      setError(retErr);
-      return;
-    }
-
-    router.push(supplyDetailPath(supply.id));
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    const loan = loans[0];
-    if (!file || !loan || !supply) return;
-
     setStep("submitting");
     setError(null);
 
-    const { path, error: upErr } = await uploadReturnImage(supply.id, loan.id, file);
+    const sortedLoans = [...loans].sort(
+      (a, b) => new Date(a.borrowed_at).getTime() - new Date(b.borrowed_at).getTime()
+    );
+    const { path, error: upErr } = await uploadReturnImage(
+      supply.id,
+      sortedLoans[0].id,
+      file
+    );
     if (upErr || !path) {
       setStep("verified");
       setError(upErr ?? "사진 업로드 실패");
       return;
     }
 
-    const { error: retErr } = await returnSupply({
-      loanId: loan.id,
-      supplyId: supply.id,
-      returnImagePath: path,
-      returnNote: note,
-      returnQuantity
-    });
+    for (const op of returnOps) {
+      const { error: retErr } = await returnSupply({
+        loanId: op.loanId,
+        supplyId: supply.id,
+        returnImagePath: path,
+        returnNote: note,
+        returnQuantity: op.returnQuantity,
+        returnComponents: op.returnComponents
+      });
 
-    if (retErr) {
-      setStep("verified");
-      setError(retErr);
-      return;
+      if (retErr) {
+        setStep("verified");
+        setError(retErr);
+        return;
+      }
     }
+
     router.push(supplyDetailPath(supply.id));
   };
 
@@ -259,7 +284,6 @@ export default function SupplyReturnPage() {
   }
 
   const locationLabel = formatSupplyLocation(supply.location);
-  const singleLoan = loans.length === 1 ? loans[0] : null;
 
   return (
     <div className="mx-auto max-w-md space-y-6">
@@ -294,7 +318,7 @@ export default function SupplyReturnPage() {
             <button
               type="button"
               onClick={handleRescan}
-              disabled={step === "submitting" || submittingLoanId !== null}
+              disabled={step === "submitting"}
               className="text-sm font-medium text-violet-600 hover:text-violet-800 disabled:opacity-50"
             >
               다시 스캔
@@ -305,143 +329,108 @@ export default function SupplyReturnPage() {
             물품을 보관 위치(<span className="font-semibold">{locationLabel}</span>)에 반납 후 사진을 촬영해 주세요.
           </p>
 
-          {singleLoan ? (
-            <>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-                <p className="text-slate-600">목적: {singleLoan.purpose}</p>
-                <p className="text-slate-600">대출: {formatSupplyDateTime(singleLoan.borrowed_at)}</p>
-                <p className="text-slate-600">반납예정: {formatSupplyDate(singleLoan.due_date)}</p>
-                {formatLoanComponentsLabel(singleLoan.loan_components) ? (
-                  <p className="text-slate-600">
-                    구성품: {formatLoanComponentsLabel(singleLoan.loan_components)}
-                  </p>
-                ) : null}
-              </div>
-              <form
-                onSubmit={(e) => void handleSubmit(e)}
-                className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div>
-                  <label className="text-sm font-medium text-slate-700">
-                    반납 수량
-                    <span className="ml-2 text-xs text-slate-500">
-                      (대출 수량: {singleLoan.loan_quantity ?? 1}개)
-                    </span>
+          <form
+            onSubmit={(e) => void handleSubmit(e)}
+            className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            {returnComponentRows.length > 0 ? (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-medium text-slate-700">반납 구성품</p>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={returnComponentRows.every((r) => r.selected)}
+                      onChange={(e) => {
+                        setReturnComponentRows(
+                          returnComponentRows.map((r) => ({ ...r, selected: e.target.checked }))
+                        );
+                      }}
+                    />
+                    전체 선택
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={singleLoan.loan_quantity ?? 1}
-                    value={returnQuantity}
-                    onChange={(e) => setReturnQuantity(Number(e.target.value))}
-                    className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
                 </div>
-                <label className="block text-sm font-medium text-slate-700">
-                  반납 사진 <span className="text-rose-600">*</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="mt-1 w-full text-sm"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {preview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={preview} alt="" className="max-h-48 w-full rounded-lg border object-contain" />
-                ) : null}
-                <label className="block text-sm font-medium text-slate-700">
-                  특이사항
-                  <textarea
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    rows={2}
-                    placeholder="파손, 분실 등"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-                <button
-                  type="submit"
-                  disabled={!file || step === "submitting"}
-                  className="w-full rounded-lg bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {step === "submitting" ? "처리 중…" : "반납 완료"}
-                </button>
-              </form>
-            </>
-          ) : (
-            <div className="space-y-4">
-              {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-              {loans.map((loan) => {
-                const componentsLabel = formatLoanComponentsLabel(loan.loan_components);
-                const loanPreview = returnPreviews[loan.id];
-                const loanFile = returnFiles[loan.id];
-                const qty = returnQuantities[loan.id] ?? loan.loan_quantity;
-                const isSubmitting = submittingLoanId === loan.id;
-
-                return (
-                  <div
-                    key={loan.id}
-                    className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                  >
-                    <div className="text-sm text-slate-600">
-                      <p>대출일: {formatSupplyDateTime(loan.borrowed_at)}</p>
-                      <p>대출수량: {loan.loan_quantity ?? 1}개</p>
-                      {componentsLabel ? <p>구성품: {componentsLabel}</p> : null}
-                      <p>반납예정: {formatSupplyDate(loan.due_date)}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-slate-700">
-                        반납 수량
-                        <span className="ml-2 text-xs text-slate-500">
-                          (대출 수량: {loan.loan_quantity ?? 1}개)
-                        </span>
+                <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                  {returnComponentRows.map((row, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={row.selected}
+                          onChange={(e) => {
+                            const next = [...returnComponentRows];
+                            next[i] = { ...next[i], selected: e.target.checked };
+                            setReturnComponentRows(next);
+                          }}
+                        />
+                        {row.name}
                       </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={loan.loan_quantity ?? 1}
-                        value={qty}
-                        onChange={(e) =>
-                          setReturnQuantities((prev) => ({
-                            ...prev,
-                            [loan.id]: Number(e.target.value)
-                          }))
-                        }
-                        disabled={isSubmitting}
-                        className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
-                      />
+                      <div className="flex items-center gap-1">
+                        {!row.selected ? (
+                          <span className="w-16 text-right text-sm text-slate-400">
+                            {row.maxQty}개
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            min={1}
+                            max={row.maxQty}
+                            value={row.qty}
+                            onChange={(e) => {
+                              const next = [...returnComponentRows];
+                              next[i] = { ...next[i], qty: Number(e.target.value) };
+                              setReturnComponentRows(next);
+                            }}
+                            className="w-16 rounded border border-slate-200 px-2 py-1 text-right text-sm"
+                          />
+                        )}
+                      </div>
                     </div>
-                    <label className="block text-sm font-medium text-slate-700">
-                      반납 사진 <span className="text-rose-600">*</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="mt-1 w-full text-sm"
-                        disabled={isSubmitting}
-                        onChange={(e) => handleLoanFileChange(loan.id, e.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                    {loanPreview ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={loanPreview} alt="" className="max-h-48 w-full rounded-lg border object-contain" />
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void handleReturnLoan(loan)}
-                      disabled={!loanFile || isSubmitting || qty < 1 || qty > loan.loan_quantity}
-                      className="w-full rounded-lg bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isSubmitting ? "처리 중…" : "반납 완료"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <label className="block text-sm font-medium text-slate-700">
+              반납 사진 <span className="text-rose-600">*</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="mt-1 block w-full text-sm"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="" className="max-h-48 w-full rounded-lg border object-contain" />
+            ) : null}
+
+            <label className="block text-sm font-medium text-slate-700">
+              특이사항
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder="파손, 분실 등"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+            <button
+              type="submit"
+              disabled={
+                !file ||
+                step === "submitting" ||
+                (returnComponentRows.length > 0 && returnComponentRows.every((r) => !r.selected))
+              }
+              className="w-full rounded-lg bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {step === "submitting" ? "처리 중…" : "반납 완료"}
+            </button>
+          </form>
         </div>
       )}
 
