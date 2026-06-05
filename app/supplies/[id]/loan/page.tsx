@@ -60,7 +60,6 @@ export default function SupplyLoanPage() {
 
     const parsed = parseComponents(mapped.components).filter((row) => row.name.trim().length > 0);
     setLoanComponentRows(parsed.map((row) => ({ name: row.name, qty: row.qty, selected: true })));
-    setLoanQuantity(Math.min(avail > 0 ? avail : 1, mapped.quantity));
   }, [id]);
 
   useEffect(() => {
@@ -102,7 +101,7 @@ export default function SupplyLoanPage() {
     setScanKey((k) => k + 1);
   };
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!profile?.id || !supply) return;
     if (!purpose.trim()) {
@@ -114,10 +113,27 @@ export default function SupplyLoanPage() {
       return;
     }
 
-    const selectedComponents = loanComponentRows
-      .filter((r) => r.selected && r.name && r.qty > 0)
-      .map((r) => `${r.name}:${r.qty}`)
-      .join(",");
+    const qtyRaw = (e.currentTarget.elements.namedItem("loanQuantity") as HTMLInputElement | null)?.value;
+    const parsedQty = parseInt(qtyRaw ?? String(loanQuantity), 10);
+    const resolvedLoanQuantity =
+      Number.isFinite(parsedQty) && parsedQty >= 1 ? parsedQty : Math.max(1, Math.floor(Number(loanQuantity)) || 1);
+
+    if (resolvedLoanQuantity < 1) {
+      setError("대출 수량을 입력해 주세요.");
+      return;
+    }
+    if (resolvedLoanQuantity > availableQty) {
+      setError(`대출 가능 수량(${availableQty})을 초과했습니다.`);
+      return;
+    }
+
+    const hasComponents = loanComponentRows.some((r) => r.name.trim().length > 0);
+    const selectedComponents = hasComponents
+      ? loanComponentRows
+          .filter((r) => r.selected && r.name.trim() && r.qty > 0)
+          .map((r) => `${r.name}:${r.qty}`)
+          .join(",")
+      : "";
 
     setStep("submitting");
     setError(null);
@@ -126,7 +142,7 @@ export default function SupplyLoanPage() {
       borrowerId: profile.id,
       purpose,
       dueDate,
-      loanQuantity,
+      loanQuantity: resolvedLoanQuantity,
       loanComponents: selectedComponents || null
     });
     if (err) {
@@ -182,6 +198,7 @@ export default function SupplyLoanPage() {
             onConfirm={() => {
               setScanConfirmOpen(false);
               setStep("verified");
+              setLoanQuantity(1);
             }}
             onRescan={() => {
               setScanConfirmOpen(false);
@@ -215,11 +232,15 @@ export default function SupplyLoanPage() {
                 </span>
               </label>
               <input
+                name="loanQuantity"
                 type="number"
                 min={1}
                 max={availableQty}
                 value={loanQuantity}
-                onChange={(e) => setLoanQuantity(Number(e.target.value))}
+                onChange={(e) => {
+                  const next = parseInt(e.target.value, 10);
+                  setLoanQuantity(Number.isFinite(next) ? next : 0);
+                }}
                 className="mt-1 w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
