@@ -70,7 +70,7 @@ export async function borrowSupply(params: {
     .eq("id", params.supplyId)
     .maybeSingle();
 
-  if (sErr || !supply) return { error: "비품을 찾을 수 없습니다." };
+  if (sErr || !supply) return { error: "물품을 찾을 수 없습니다." };
   if (supply.status !== "available") return { error: "대출할 수 없는 상태입니다." };
 
   const { error: loanErr } = await supabase.from("supply_loans").insert({

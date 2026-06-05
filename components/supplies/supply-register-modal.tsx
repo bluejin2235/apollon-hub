@@ -195,7 +195,7 @@ export function SupplyRegisterModal({
     if (isEdit) {
       if (!initialSupply) {
         setSaving(false);
-        setError("비품 정보를 불러올 수 없습니다.");
+        setError("물품 정보를 불러올 수 없습니다.");
         return;
       }
 
@@ -258,9 +258,9 @@ export function SupplyRegisterModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" role="dialog" aria-modal>
       <div className="my-8 w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-slate-900">{isEdit ? "비품 수정" : "비품 등록"}</h2>
+        <h2 className="text-lg font-bold text-slate-900">{isEdit ? "물품 수정" : "물품 등록"}</h2>
         {!isEdit ? (
-          <p className="mt-1 text-xs text-slate-500">비품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
+          <p className="mt-1 text-xs text-slate-500">물품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
         ) : null}
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           <div>
@@ -296,7 +296,7 @@ export function SupplyRegisterModal({
 
           <div>
             <span className="text-sm font-medium text-slate-700">
-              비품 보관위치 <span className="text-rose-600">*</span>
+              물품 보관위치 <span className="text-rose-600">*</span>
             </span>
             <div className="mt-1 grid grid-cols-2 gap-3">
               <select
@@ -330,7 +330,7 @@ export function SupplyRegisterModal({
             </div>
             {isEdit ? (
               <p className="mt-1 text-xs text-rose-600">
-                ⚠️ 위치를 변경하면 비품 코드가 새로 발급됩니다. 기존 QR 라벨을 제거하고 새 QR을 출력해 부착하세요.
+                ⚠️ 위치를 변경하면 물품 코드가 새로 발급됩니다. 기존 QR 라벨을 제거하고 새 QR을 출력해 부착하세요.
               </p>
             ) : null}
           </div>

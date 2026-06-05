@@ -80,14 +80,14 @@ export default function ShortSupplyPage() {
       <section className="apollon-card w-full max-w-md p-8 text-center shadow-glow">
         <h1 className="text-xl font-bold text-slate-900">대출할 수 없습니다</h1>
         <p className="mt-3 text-sm text-slate-600">
-          비품을 찾을 수 없거나 현재 대출할 수 없는 상태입니다.
+          물품을 찾을 수 없거나 현재 대출할 수 없는 상태입니다.
         </p>
         <button
           type="button"
           onClick={() => router.push("/supplies")}
           className="mt-8 w-full rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
         >
-          비품 목록으로
+          물품 목록으로
         </button>
       </section>
     </main>

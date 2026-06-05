@@ -71,17 +71,17 @@ export default function SupplyReturnPage() {
     (decodedText: string) => {
       const scannedId = parseSupplyIdFromQr(decodedText);
       if (!scannedId) {
-        setToast("올바른 비품 QR 코드가 아닙니다. 다시 스캔해 주세요.");
+        setToast("올바른 물품 QR 코드가 아닙니다. 다시 스캔해 주세요.");
         setScanKey((k) => k + 1);
         return;
       }
       if (!supply) {
-        setToast("비품 정보를 불러오는 중입니다. 잠시 후 다시 스캔해 주세요.");
+        setToast("물품 정보를 불러오는 중입니다. 잠시 후 다시 스캔해 주세요.");
         setScanKey((k) => k + 1);
         return;
       }
       if (!supplyIdsMatch(scannedId, { id: supply.id, code: supply.code })) {
-        setToast("다른 비품의 QR입니다. 다시 스캔해 주세요.");
+        setToast("다른 물품의 QR입니다. 다시 스캔해 주세요.");
         setScanKey((k) => k + 1);
         return;
       }
@@ -135,13 +135,13 @@ export default function SupplyReturnPage() {
         <p className="text-lg font-semibold text-slate-900">모바일에서만 사용 가능합니다</p>
         <p className="mt-2 text-sm text-slate-600">반납 처리는 스마트폰에서 QR 스캔 후 진행해 주세요.</p>
         <Link href={supplyDetailPath(id)} className="mt-6 inline-block text-sm font-medium text-violet-600 hover:underline">
-          비품 상세로
+          물품 상세로
         </Link>
       </div>
     );
   }
 
-  if (!supply) return <p className="text-sm text-slate-500">비품을 찾을 수 없습니다.</p>;
+  if (!supply) return <p className="text-sm text-slate-500">물품을 찾을 수 없습니다.</p>;
 
   if (!loan) {
     return (
@@ -165,7 +165,7 @@ export default function SupplyReturnPage() {
 
       {step === "scanning" ? (
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">반납할 비품의 QR 코드를 스캔해 주세요.</p>
+          <p className="text-sm text-slate-600">반납할 물품의 QR 코드를 스캔해 주세요.</p>
           <SupplyInfoCard supply={supply} />
           <QrScanner key={scanKey} active={!scanConfirmOpen} onScan={handleQrScan} />
           <SupplyScanConfirmModal

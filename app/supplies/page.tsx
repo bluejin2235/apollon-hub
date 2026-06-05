@@ -52,7 +52,7 @@ export default function SuppliesPage() {
       ]);
 
       const errors: string[] = [];
-      if (supRes.error) errors.push(`비품 목록: ${supRes.error.message}`);
+      if (supRes.error) errors.push(`물품 목록: ${supRes.error.message}`);
       if (locRes.error) errors.push(`보관 위치: ${locRes.error.message}`);
 
       if (errors.length > 0) {
@@ -102,8 +102,8 @@ export default function SuppliesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">비품 관리</h1>
-          <p className="mt-1 text-sm text-slate-600">비품 등록, 대출, 반납을 관리합니다.</p>
+          <h1 className="text-2xl font-bold text-slate-900">물품 관리</h1>
+          <p className="mt-1 text-sm text-slate-600">물품 등록, 대출, 반납을 관리합니다.</p>
         </div>
         {canRegister ? (
           <button
@@ -111,7 +111,7 @@ export default function SuppliesPage() {
             onClick={() => setRegisterOpen(true)}
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500"
           >
-            비품 등록
+            물품 등록
           </button>
         ) : null}
       </div>
@@ -177,7 +177,7 @@ export default function SuppliesPage() {
         </div>
       ) : filtered.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">
-          {supplies.length === 0 ? "등록된 비품이 없습니다." : "조건에 맞는 비품이 없습니다."}
+          {supplies.length === 0 ? "등록된 물품이 없습니다." : "조건에 맞는 물품이 없습니다."}
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">

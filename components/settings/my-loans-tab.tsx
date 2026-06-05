@@ -48,7 +48,7 @@ export function MyLoansTab({ userId }: Props) {
       <section>
         <h2 className="text-lg font-semibold text-slate-900">현재 대출 중</h2>
         {active.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">대출 중인 비품이 없습니다.</p>
+          <p className="mt-3 text-sm text-slate-500">대출 중인 물품이 없습니다.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {active.map((loan) => (
@@ -58,7 +58,7 @@ export function MyLoansTab({ userId }: Props) {
                     href={loan.supply?.id ? supplyDetailPath(loan.supply.id) : "#"}
                     className="font-medium text-violet-700 hover:underline"
                   >
-                    {loan.supply?.name ?? "비품"}
+                    {loan.supply?.name ?? "물품"}
                   </Link>
                   <p className="mt-0.5 text-xs text-slate-500">반납예정 {formatSupplyDate(loan.due_date)}</p>
                 </div>

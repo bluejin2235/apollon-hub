@@ -33,11 +33,11 @@ export function SupplyZoneSidebar({ zoneCode, zoneName, currentId, items }: Prop
           <p className="text-xs font-semibold text-slate-500">
             {zoneCode}. {zoneName}
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">같은 구역 비품 {items.length}건</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">같은 구역 물품 {items.length}건</p>
         </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto" aria-label="같은 구역 비품 목록">
+        <nav className="min-h-0 flex-1 overflow-y-auto" aria-label="같은 구역 물품 목록">
           {items.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-slate-500">등록된 비품이 없습니다.</p>
+            <p className="px-3 py-6 text-center text-xs text-slate-500">등록된 물품이 없습니다.</p>
           ) : (
             <ul>
               {items.map((item) => {

@@ -166,7 +166,7 @@ export type PrintJob = {
 };
 
 /**
- * QR(왼쪽) + 코드·비품명(오른쪽) 가로 라벨 PNG.
+ * QR(왼쪽) + 코드·물품명(오른쪽) 가로 라벨 PNG.
  * 200×96px 고정 (18mm 높이 @ 135 DPI).
  */
 export async function generateQrLabelImage(

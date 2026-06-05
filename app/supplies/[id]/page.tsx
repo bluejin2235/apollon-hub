@@ -171,7 +171,7 @@ export default function SupplyDetailPage() {
   if (!supply) {
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center">
-        <p className="text-slate-600">비품을 찾을 수 없습니다.</p>
+        <p className="text-slate-600">물품을 찾을 수 없습니다.</p>
         <Link href="/supplies" className="mt-4 inline-block text-sm font-medium text-violet-600 hover:underline">
           목록으로
         </Link>
@@ -254,7 +254,7 @@ export default function SupplyDetailPage() {
 
   const supplyInfoSection = (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">비품 정보</h2>
+      <h2 className="text-base font-semibold text-slate-900">물품 정보</h2>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-slate-900">
         <li>
           <span className="font-medium text-slate-500">구역</span> : {formatSupplyLocation(supply.location)}
@@ -387,7 +387,7 @@ export default function SupplyDetailPage() {
   return (
     <div className="space-y-6">
       <Link href="/supplies" className="text-sm font-medium text-violet-600 hover:underline">
-        ← 비품 목록
+        ← 물품 목록
       </Link>
 
       <header className="space-y-3 border-b border-slate-200 pb-6">
@@ -594,10 +594,10 @@ export default function SupplyDetailPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="delete-supply-title" className="text-lg font-bold text-slate-900">
-              비품 삭제
+              물품 삭제
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-700">
-              이 비품을 삭제하면 대출 기록을 포함한 모든 데이터가 영구 삭제됩니다. 정말 삭제하시겠습니까?
+              이 물품을 삭제하면 대출 기록을 포함한 모든 데이터가 영구 삭제됩니다. 정말 삭제하시겠습니까?
             </p>
             {deleteErr ? <p className="mt-3 text-sm text-rose-600">{deleteErr}</p> : null}
             <div className="mt-6 flex justify-end gap-2">
