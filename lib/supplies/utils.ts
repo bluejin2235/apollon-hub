@@ -94,7 +94,7 @@ export function supplyStatusBadge(status: SupplyStatus): { label: string; classN
     case "borrowed":
       return { label: "대출중", className: "bg-amber-100 text-amber-800" };
     case "partially_borrowed":
-      return { label: "부분대출가능", className: "bg-blue-100 text-blue-800" };
+      return { label: "일부대출중", className: "bg-blue-100 text-blue-800" };
     case "unavailable":
       return { label: "사용불가", className: "bg-rose-100 text-rose-800" };
     default:

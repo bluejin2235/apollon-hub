@@ -329,7 +329,7 @@ export default function SupplyDetailPage() {
 
   const statusLabel =
     supply.status === "partially_borrowed"
-      ? `${badge.label} (가능: ${availableQty}개)`
+      ? `일부대출중 (대출가능: ${availableQty}개)`
       : badge.label;
   const componentRows = parseComponents(supply.components).filter((row) => row.name.trim().length > 0);
 
@@ -350,9 +350,6 @@ export default function SupplyDetailPage() {
           <span className="font-medium text-slate-500">구역</span> : {formatSupplyLocation(supply.location)}
         </li>
         <li>
-          <span className="font-medium text-slate-500">수량</span> : {supply.quantity}
-        </li>
-        <li>
           <span className="font-medium text-slate-500">담당자</span> : {supply.manager?.name?.trim() || "—"}
         </li>
         <li>
@@ -371,14 +368,24 @@ export default function SupplyDetailPage() {
                 <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                   <tr>
                     <th className="px-3 py-2">품명</th>
-                    <th className="px-3 py-2 text-right">수량</th>
+                    <th className="px-3 py-2 text-right">총수량</th>
+                    <th className="px-3 py-2 text-right">대출가능</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {componentRows.map((row, i) => (
                     <tr key={`${row.name}-${row.qty}-${i}`}>
                       <td className="px-3 py-2">{row.name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">{row.qty}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                        {row.qty}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                        {supply.status === "available"
+                          ? row.qty
+                          : supply.status === "borrowed" || supply.status === "unavailable"
+                            ? 0
+                            : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -523,10 +530,11 @@ export default function SupplyDetailPage() {
                     <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                       <tr>
                         <th className="px-3 py-2">대출자</th>
-                        <th className="px-3 py-2">수량</th>
+                        <th className="px-3 py-2">대출수량</th>
                         <th className="px-3 py-2">목적</th>
                         <th className="px-3 py-2">대출일</th>
-                        <th className="px-3 py-2">반납예정</th>
+                        <th className="px-3 py-2">반납예정일</th>
+                        <th className="px-3 py-2">최종반납일</th>
                         <th className="px-3 py-2">상태</th>
                       </tr>
                     </thead>
@@ -555,6 +563,9 @@ export default function SupplyDetailPage() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                             {formatSupplyDate(loan.due_date)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                            {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
                           </td>
                           <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
                         </tr>
@@ -588,10 +599,11 @@ export default function SupplyDetailPage() {
                   <thead className="bg-slate-50 text-xs font-medium text-slate-500">
                     <tr>
                       <th className="px-3 py-2">대출자</th>
-                      <th className="px-3 py-2">수량</th>
+                      <th className="px-3 py-2">대출수량</th>
                       <th className="px-3 py-2">목적</th>
                       <th className="px-3 py-2">대출일</th>
-                      <th className="px-3 py-2">반납예정</th>
+                      <th className="px-3 py-2">반납예정일</th>
+                      <th className="px-3 py-2">최종반납일</th>
                       <th className="px-3 py-2">상태</th>
                     </tr>
                   </thead>
@@ -620,6 +632,9 @@ export default function SupplyDetailPage() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                           {formatSupplyDate(loan.due_date)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                          {loan.returned_at ? formatSupplyDateTime(loan.returned_at) : "—"}
                         </td>
                         <td className="px-3 py-2">{loanStatusLabel(loan.status)}</td>
                       </tr>
