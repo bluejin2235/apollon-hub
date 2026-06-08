@@ -9,7 +9,11 @@ import { SupplyScanConfirmModal } from "@/components/supplies/supply-scan-confir
 import { SupplyToast } from "@/components/supplies/toast";
 import { isMobileDevice } from "@/lib/supplies/device";
 import { mapSupplyRow, SUPPLY_LOCATION_SELECT } from "@/lib/supplies/locations";
-import { borrowSupply, getAvailableQuantity } from "@/lib/supplies/operations";
+import {
+  borrowSupply,
+  getActiveLoanComponentMap,
+  getAvailableQuantity
+} from "@/lib/supplies/operations";
 import { parseSupplyIdFromQr, supplyIdsMatch } from "@/lib/supplies/qr";
 import { parseComponents, supplyDetailPath } from "@/lib/supplies/utils";
 import type { SupplyWithRelations } from "@/lib/supplies/types";
@@ -34,6 +38,9 @@ export default function SupplyLoanPage() {
   const [error, setError] = useState<string | null>(null);
   const [mobile, setMobile] = useState(false);
   const [availableQty, setAvailableQty] = useState<number>(0);
+  const [activeLoanComponentMap, setActiveLoanComponentMap] = useState<Record<string, number>>(
+    {}
+  );
   const [loanComponentRows, setLoanComponentRows] = useState<
     { name: string; qty: number; selected: boolean }[]
   >([]);
@@ -57,12 +64,15 @@ export default function SupplyLoanPage() {
     const avail = await getAvailableQuantity(id);
     setAvailableQty(avail);
 
+    const compMap = await getActiveLoanComponentMap(id);
+    setActiveLoanComponentMap(compMap);
+
     const parsed = parseComponents(mapped.components).filter((row) => row.name.trim().length > 0);
-    const multi = parsed.length >= 2;
+
     setLoanComponentRows(
       parsed.map((row) => ({
         name: row.name,
-        qty: multi ? row.qty : avail > 0 ? avail : row.qty,
+        qty: Math.max(0, row.qty - (compMap[row.name] ?? 0)),
         selected: false
       }))
     );
@@ -216,11 +226,10 @@ export default function SupplyLoanPage() {
               setScanConfirmOpen(false);
               setStep("verified");
               const rows = parseComponents(supply.components).filter((r) => r.name.trim().length > 0);
-              const multi = rows.length >= 2;
               setLoanComponentRows(
                 rows.map((r) => ({
                   name: r.name,
-                  qty: multi ? r.qty : availableQty > 0 ? availableQty : r.qty,
+                  qty: Math.max(0, r.qty - (activeLoanComponentMap[r.name] ?? 0)),
                   selected: false
                 }))
               );

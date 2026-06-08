@@ -43,6 +43,26 @@ export async function getAvailableQuantity(supplyId: string): Promise<number> {
   return Math.max(0, Number(supply.quantity) - sum);
 }
 
+export async function getActiveLoanComponentMap(
+  supplyId: string
+): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from("supply_loans")
+    .select("loan_components")
+    .eq("supply_id", supplyId)
+    .eq("status", "active");
+
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    parseComponents((row as { loan_components?: string | null }).loan_components)
+      .filter((r) => r.name.trim() && r.qty > 0)
+      .forEach(({ name, qty }) => {
+        map[name] = (map[name] ?? 0) + qty;
+      });
+  }
+  return map;
+}
+
 export async function createSupply(params: {
   name: string;
   locationId: string;
