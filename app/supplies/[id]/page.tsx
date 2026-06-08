@@ -363,6 +363,10 @@ export default function SupplyDetailPage() {
           <span className="font-medium text-slate-500">담당자</span> : {supply.manager?.name?.trim() || "—"}
         </li>
         <li>
+          <span className="font-medium text-slate-500">유형</span> :{" "}
+          {supply.is_loanable ? "대출물품" : "관리물품"}
+        </li>
+        <li>
           <span className="font-medium text-slate-500">상태</span> : {statusLabel}
         </li>
         <li>

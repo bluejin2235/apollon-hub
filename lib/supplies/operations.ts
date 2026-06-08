@@ -71,6 +71,7 @@ export async function createSupply(params: {
   description: string | null;
   components: string | null;
   imagePaths: string[];
+  is_loanable?: boolean;
 }): Promise<{ id: string | null; error: string | null }> {
   const { data, error } = await supabase
     .from("supplies")
@@ -82,7 +83,8 @@ export async function createSupply(params: {
       description: params.description?.trim() || null,
       components: params.components?.trim() || null,
       image_paths: params.imagePaths,
-      status: "available"
+      status: "available",
+      is_loanable: params.is_loanable ?? false
     })
     .select("id")
     .single();
@@ -102,6 +104,7 @@ export async function updateSupply(params: {
   managerId: string | null;
   description: string | null;
   components: string | null;
+  is_loanable?: boolean;
 }): Promise<{ code: string | null; error: string | null }> {
   const { data, error } = await supabase.rpc("update_supply_details", {
     p_supply_id: params.supplyId,
@@ -116,6 +119,16 @@ export async function updateSupply(params: {
   if (error) {
     console.error("[supplies] update", error);
     return { code: null, error: error.message };
+  }
+
+  const { error: loanableErr } = await supabase
+    .from("supplies")
+    .update({ is_loanable: params.is_loanable ?? false })
+    .eq("id", params.supplyId);
+
+  if (loanableErr) {
+    console.error("[supplies] update is_loanable", loanableErr);
+    return { code: null, error: loanableErr.message };
   }
 
   return { code: data as string, error: null };

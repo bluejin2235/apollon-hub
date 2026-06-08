@@ -24,6 +24,7 @@ export type Supply = {
   components: string | null;
   image_paths: string[];
   status: SupplyStatus;
+  is_loanable: boolean;
   created_at: string;
 };
 

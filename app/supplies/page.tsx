@@ -27,6 +27,7 @@ export default function SuppliesPage() {
   const [slotFilter, setSlotFilter] = useState<string>("전체");
   const [registerOpen, setRegisterOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"loanable" | "managed">("loanable");
 
   const canRegister = canCreateSupply(profile);
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
@@ -87,6 +88,7 @@ export default function SuppliesPage() {
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase();
     return supplies.filter((s) => {
+      if (activeTab === "loanable" ? !s.is_loanable : s.is_loanable) return false;
       if (zoneFilter !== "전체" && s.location?.zone_code !== zoneFilter) return false;
       if (slotFilter !== "전체" && s.location_id !== slotFilter) return false;
       if (!kw) return true;
@@ -96,7 +98,7 @@ export default function SuppliesPage() {
         (s.location?.slot_code?.toLowerCase().includes(kw) ?? false)
       );
     });
-  }, [supplies, search, zoneFilter, slotFilter]);
+  }, [supplies, search, zoneFilter, slotFilter, activeTab]);
 
   if (status !== "ready") return null;
 
@@ -116,6 +118,31 @@ export default function SuppliesPage() {
             물품 등록
           </button>
         ) : null}
+      </div>
+
+      <div className="mb-4 flex border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab("loanable")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
+            activeTab === "loanable"
+              ? "border-violet-600 text-violet-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          대출물품
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("managed")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
+            activeTab === "managed"
+              ? "border-violet-600 text-violet-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          관리물품
+        </button>
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

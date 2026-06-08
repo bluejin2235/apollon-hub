@@ -77,6 +77,7 @@ export function SupplyRegisterModal({
   const isEdit = mode === "edit";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
+  const [isLoanable, setIsLoanable] = useState(false);
   const [zoneCode, setZoneCode] = useState("");
   const [locationId, setLocationId] = useState("");
   const [managerId, setManagerId] = useState("");
@@ -99,6 +100,7 @@ export function SupplyRegisterModal({
 
     if (isEdit && initialSupply) {
       setName(initialSupply.name);
+      setIsLoanable(initialSupply.is_loanable ?? false);
       setZoneCode(initialSupply.location?.zone_code ?? "");
       setLocationId(initialSupply.location_id ?? "");
       setManagerId(initialSupply.manager_id ?? "");
@@ -115,6 +117,7 @@ export function SupplyRegisterModal({
     const firstZone = zones[0]?.zone_code ?? "";
     const firstSlots = firstZone ? getSlotsForZone(locations, firstZone) : [];
     setName("");
+    setIsLoanable(false);
     setZoneCode(firstZone);
     setLocationId(firstSlots[0]?.id ?? "");
     setManagerId("");
@@ -207,7 +210,8 @@ export function SupplyRegisterModal({
         quantity: totalQty,
         managerId: managerId || null,
         description: description || null,
-        components: componentsStr
+        components: componentsStr,
+        is_loanable: isLoanable
       });
 
       setSaving(false);
@@ -228,7 +232,8 @@ export function SupplyRegisterModal({
       managerId: currentUserId,
       description: description || null,
       components: componentsStr,
-      imagePaths: []
+      imagePaths: [],
+      is_loanable: isLoanable
     });
 
     if (createErr || !id) {
@@ -345,6 +350,34 @@ export function SupplyRegisterModal({
               required
             />
           </label>
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-700">물품 유형</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLoanable(false)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  !isLoanable
+                    ? "border-violet-600 bg-violet-50 text-violet-700"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                관리물품
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsLoanable(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  isLoanable
+                    ? "border-violet-600 bg-violet-50 text-violet-700"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                대출물품
+              </button>
+            </div>
+          </div>
 
           {isEdit ? (
             <label className="block text-sm font-medium text-slate-700">
