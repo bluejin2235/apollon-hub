@@ -366,9 +366,11 @@ export default function SupplyDetailPage() {
           <span className="font-medium text-slate-500">유형</span> :{" "}
           {supply.is_loanable ? "대출물품" : "관리물품"}
         </li>
-        <li>
-          <span className="font-medium text-slate-500">상태</span> : {statusLabel}
-        </li>
+        {supply.is_loanable ? (
+          <li>
+            <span className="font-medium text-slate-500">상태</span> : {statusLabel}
+          </li>
+        ) : null}
         <li>
           <span className="font-medium text-slate-500">설명</span> : {supply.description?.trim() || "—"}
         </li>
@@ -447,7 +449,8 @@ export default function SupplyDetailPage() {
       {showPrintLabel && profile?.id ? (
         <SupplyPrintLabelButton supply={supply} requestedBy={profile.id} onToast={setToast} />
       ) : null}
-      {supply.status === "available" || supply.status === "partially_borrowed" ? (
+      {supply.is_loanable &&
+      (supply.status === "available" || supply.status === "partially_borrowed") ? (
         <button
           type="button"
           onClick={handleBorrowClick}
@@ -456,7 +459,7 @@ export default function SupplyDetailPage() {
           대출 신청
         </button>
       ) : null}
-      {myActiveLoan ? (
+      {supply.is_loanable && myActiveLoan ? (
         <Link
           href={isMobileDevice() ? supplyReturnPath(supply.id) : supplyDetailPath(supply.id)}
           onClick={(e) => {
@@ -526,6 +529,7 @@ export default function SupplyDetailPage() {
               {supplyInfoSection}
             </div>
 
+            {supply.is_loanable ? (
             <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-base font-semibold text-slate-900">대출 이력</h2>
               {loans.length === 0 ? (
@@ -583,6 +587,7 @@ export default function SupplyDetailPage() {
                 </div>
               )}
             </section>
+            ) : null}
 
             {printJobHistorySection}
           </div>
@@ -595,6 +600,7 @@ export default function SupplyDetailPage() {
             {supplyInfoSection}
           </div>
 
+          {supply.is_loanable ? (
           <section className="w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-semibold text-slate-900">대출 이력</h2>
             {loans.length === 0 ? (
@@ -652,6 +658,7 @@ export default function SupplyDetailPage() {
               </div>
             )}
           </section>
+          ) : null}
 
           {printJobHistorySection}
         </div>
