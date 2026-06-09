@@ -21,23 +21,55 @@ function joinName(profile: ProfileJoin): string {
   return name || "—";
 }
 
-/** 어제 KST 00:00 ~ 오늘 KST 00:00 (UTC = KST - 9h) */
-function getKstDigestWindow(): { startIso: string; endIso: string; dateLabelKst: string } {
+function formatKstDateLabel(utcMs: number): string {
+  const kst = new Date(utcMs + KST_OFFSET_MS);
+  return `${kst.getUTCFullYear()}년 ${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
+}
+
+/**
+ * KST 09:00 cron 기준:
+ * - 토/일: skip (발송 안 함)
+ * - 월요일: 금~일(3일) 합산
+ * - 화~금: 어제 KST 00:00 ~ 오늘 KST 00:00 (UTC = KST - 9h)
+ */
+function getKstDigestWindow(): {
+  startIso: string;
+  endIso: string;
+  dateLabelKst: string;
+  skip: boolean;
+} {
   const kstNow = new Date(Date.now() + KST_OFFSET_MS);
   const y = kstNow.getUTCFullYear();
   const m = kstNow.getUTCMonth();
   const d = kstNow.getUTCDate();
+  const dayOfWeek = kstNow.getUTCDay(); // 0=일, 1=월, ..., 6=토
 
   const todayKstMidnightUtcMs = Date.UTC(y, m, d) - KST_OFFSET_MS;
-  const yesterdayKstMidnightUtcMs = todayKstMidnightUtcMs - 24 * 60 * 60 * 1000;
 
-  const yesterdayKst = new Date(yesterdayKstMidnightUtcMs + KST_OFFSET_MS);
-  const dateLabelKst = `${yesterdayKst.getUTCFullYear()}년 ${yesterdayKst.getUTCMonth() + 1}월 ${yesterdayKst.getUTCDate()}일`;
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return { skip: true, startIso: "", endIso: "", dateLabelKst: "" };
+  }
 
+  if (dayOfWeek === 1) {
+    const startKstMidnightUtcMs = todayKstMidnightUtcMs - 3 * 24 * 60 * 60 * 1000;
+    const friLabel = formatKstDateLabel(startKstMidnightUtcMs);
+    const sunLabel = formatKstDateLabel(todayKstMidnightUtcMs - 24 * 60 * 60 * 1000);
+    const dateLabelKst = friLabel === sunLabel ? friLabel : `${friLabel} ~ ${sunLabel}`;
+
+    return {
+      skip: false,
+      startIso: new Date(startKstMidnightUtcMs).toISOString(),
+      endIso: new Date(todayKstMidnightUtcMs).toISOString(),
+      dateLabelKst
+    };
+  }
+
+  const startKstMidnightUtcMs = todayKstMidnightUtcMs - 24 * 60 * 60 * 1000;
   return {
-    startIso: new Date(yesterdayKstMidnightUtcMs).toISOString(),
+    skip: false,
+    startIso: new Date(startKstMidnightUtcMs).toISOString(),
     endIso: new Date(todayKstMidnightUtcMs).toISOString(),
-    dateLabelKst
+    dateLabelKst: formatKstDateLabel(startKstMidnightUtcMs)
   };
 }
 
@@ -101,6 +133,16 @@ function buildDigestHtml(params: {
   }
 
   const bodySections = sections.join(`\n${SECTION_DIVIDER}\n`);
+  const allEmpty =
+    posts.length === 0 &&
+    restaurants.length === 0 &&
+    supplies.length === 0 &&
+    licenses.length === 0;
+  const emptyMessage = allEmpty
+    ? `<p style="color: #776274; font-size: 14px; text-align: center; padding: 20px 0;">
+    어제의 새로운 소식이 없습니다.
+  </p>`
+    : "";
 
   return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e0d8d4;">
   <div style="background: #5A5353; padding: 28px 32px;">
@@ -113,6 +155,7 @@ function buildDigestHtml(params: {
   </div>
   <div style="padding: 24px 32px; background: #ffffff;">
     ${bodySections}
+    ${emptyMessage}
     <div style="text-align: center; margin-top: 24px;">
       <a href="https://apollon-hub.vercel.app/hub" style="display: inline-block; background: #5A5353; color: #E6CCBE; font-size: 14px; font-weight: 500; padding: 12px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;">Hub 바로가기</a>
     </div>
@@ -150,7 +193,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Resend environment variables missing" }, { status: 500 });
   }
 
-  const { startIso, endIso, dateLabelKst } = getKstDigestWindow();
+  const { startIso, endIso, dateLabelKst, skip } = getKstDigestWindow();
+  if (skip) {
+    console.log("[daily-digest] skipped — weekend (no send on Sat/Sun KST)");
+    return NextResponse.json({ success: true, skipped: true, reason: "weekend" });
+  }
   console.log("[daily-digest] window", { startIso, endIso, dateLabelKst });
 
   const supabase = createClient(supabaseUrl, secretKey, {
@@ -229,24 +276,6 @@ export async function GET(request: NextRequest) {
     category: String(row.category ?? ""),
     assigneeName: joinName(row.assignee as ProfileJoin)
   }));
-
-  if (
-    posts.length === 0 &&
-    restaurants.length === 0 &&
-    supplies.length === 0 &&
-    licenses.length === 0
-  ) {
-    console.log("[daily-digest] skipped — no digest content in window");
-    return NextResponse.json({
-      success: true,
-      posts: 0,
-      restaurants: 0,
-      supplies: 0,
-      licenses: 0,
-      recipients: 0,
-      skipped: true
-    });
-  }
 
   const recipients = ["ms@apollonworks.com"];
   // TODO: 테스트 완료 후 아래 주석 해제하고 위 고정 이메일 제거
