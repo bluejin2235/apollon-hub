@@ -62,8 +62,29 @@ export function CreditRecordsTab() {
   const [records, setRecords] = useState<CreditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const range = resolveDateRange(period, customStart, customEnd);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, role")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      setCurrentUserName(profile?.name?.trim() || null);
+      setIsSuperAdmin(profile?.role === "슈퍼관리자");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +104,16 @@ export function CreditRecordsTab() {
   }, [range.start, range.end]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("이 내역을 삭제하시겠습니까?")) return;
+    const { error } = await supabase.from("credit_records").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    void load();
+  };
 
   const services = ["all", ...Array.from(new Set(records.map((r) => r.service_name)))];
   const filtered = serviceFilter === "all" ? records : records.filter((r) => r.service_name === serviceFilter);
@@ -144,13 +175,15 @@ export function CreditRecordsTab() {
               <p className="mt-2 text-xs text-slate-500">{range.start} ~ {range.end}</p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowModal(true)}
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
-          >
-            + 충전 등록
-          </button>
+          {isSuperAdmin ? (
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+            >
+              + 충전 등록
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -230,6 +263,7 @@ export function CreditRecordsTab() {
                 <th className="px-5 py-3">등록자</th>
                 <th className="px-5 py-3 text-center">영수증</th>
                 <th className="px-5 py-3 text-right">금액</th>
+                {isSuperAdmin ? <th className="px-5 py-3 text-center">관리</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -247,17 +281,21 @@ export function CreditRecordsTab() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600">{r.paid_at}</td>
-                    <td className="px-5 py-3 text-slate-600">{r.registrar_name ?? "—"}</td>
+                    <td className="px-5 py-3 text-slate-600">{r.registrar_name ?? currentUserName ?? "—"}</td>
                     <td className="px-5 py-3 text-center">
                       {r.image_path ? (
-                        <a
-                          href={supabase.storage.from("credit-images").getPublicUrl(r.image_path).data.publicUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const { data } = await supabase.storage
+                              .from("credit-images")
+                              .createSignedUrl(r.image_path!, 60);
+                            if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                          }}
                           className="text-violet-600 hover:underline"
                         >
                           보기
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -265,6 +303,17 @@ export function CreditRecordsTab() {
                     <td className="px-5 py-3 text-right font-medium tabular-nums text-slate-900">
                       {r.amount_krw.toLocaleString("ko-KR", { style: "currency", currency: "KRW" })}
                     </td>
+                    {isSuperAdmin ? (
+                      <td className="px-5 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(r.id)}
+                          className="text-sm text-rose-600 hover:underline"
+                        >
+                          삭제
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}

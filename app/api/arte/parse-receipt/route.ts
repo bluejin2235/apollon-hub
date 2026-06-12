@@ -53,11 +53,12 @@ export async function POST(req: NextRequest) {
 {
   "service_name": "서비스명 (예: Hailuo, Kling, OpenAI, Anthropic)",
   "payment_type": "크레딧 또는 초과결제 또는 기타",
-  "amount_krw": "금액 숫자만 (원화로, 콤마 없이, 예: 45000)",
+  "amount": "금액 숫자만 (콤마 없이, 예: 50.00 또는 45000)",
+  "currency": "USD 또는 KRW",
   "paid_at": "결제날짜 YYYY-MM-DD 형식",
   "memo": "간단한 메모 (없으면 빈 문자열)"
 }
-금액이 달러면 1500을 곱해서 원화로 변환해줘.
+금액은 원래 통화 그대로 반환해줘. 달러를 원화로 변환하지 말고 currency 필드로 구분해줘.
 확실하지 않은 필드는 빈 문자열로 반환해줘.`
             }
           ]

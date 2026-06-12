@@ -1,5 +1,6 @@
 "use client";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { fetchUsdKrwRateForDate, formatKrw } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {
@@ -10,12 +11,50 @@ type Props = {
 type ParsedInfo = {
   service_name: string;
   payment_type: string;
+  amount: string;
+  currency: string;
   amount_krw: string;
+  usd_krw_rate: number | null;
   paid_at: string;
   memo: string;
 };
 
+type ParseReceiptResponse = {
+  service_name?: string;
+  payment_type?: string;
+  amount?: string;
+  currency?: string;
+  amount_krw?: string;
+  paid_at?: string;
+  memo?: string;
+};
+
 const PAYMENT_TYPES = ["크레딧", "초과결제", "기타"];
+const CURRENCIES = ["KRW", "USD"] as const;
+
+const emptyForm = (): ParsedInfo => ({
+  service_name: "",
+  payment_type: "크레딧",
+  amount: "",
+  currency: "KRW",
+  amount_krw: "",
+  usd_krw_rate: null,
+  paid_at: new Date().toISOString().slice(0, 10),
+  memo: ""
+});
+
+async function convertAmountToKrw(
+  amount: string,
+  currency: string,
+  paidAt: string
+): Promise<{ amount_krw: string; usd_krw_rate: number | null }> {
+  const num = parseFloat(amount.replace(/,/g, "")) || 0;
+  if (currency === "USD") {
+    const rate = await fetchUsdKrwRateForDate(paidAt);
+    return { amount_krw: String(Math.round(num * rate)), usd_krw_rate: rate };
+  }
+  return { amount_krw: String(Math.round(num)), usd_krw_rate: null };
+}
 
 export function CreditRegisterModal({ onClose, onSaved }: Props) {
   const [step, setStep] = useState<"upload" | "confirm">("upload");
@@ -24,15 +63,24 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [form, setForm] = useState<ParsedInfo>({
-    service_name: "",
-    payment_type: "크레딧",
-    amount_krw: "",
-    paid_at: new Date().toISOString().slice(0, 10),
-    memo: ""
-  });
+  const [form, setForm] = useState<ParsedInfo>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [converting, setConverting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const applyConversion = useCallback(async (next: ParsedInfo) => {
+    if (!next.amount.trim()) {
+      setForm({ ...next, amount_krw: "", usd_krw_rate: null });
+      return;
+    }
+    setConverting(true);
+    try {
+      const converted = await convertAmountToKrw(next.amount, next.currency, next.paid_at);
+      setForm({ ...next, ...converted });
+    } finally {
+      setConverting(false);
+    }
+  }, []);
 
   const handleFileChange = (file: File) => {
     setImageFile(file);
@@ -59,15 +107,35 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
         body: JSON.stringify({ storagePath: path, mediaType: imageFile.type })
       });
       if (!res.ok) throw new Error("분석 실패");
-      const parsed = (await res.json()) as Partial<ParsedInfo>;
-      setForm((prev) => ({
-        ...prev,
-        service_name: parsed.service_name ?? prev.service_name,
-        payment_type: parsed.payment_type ?? prev.payment_type,
-        amount_krw: parsed.amount_krw ?? prev.amount_krw,
-        paid_at: parsed.paid_at ?? prev.paid_at,
-        memo: parsed.memo ?? prev.memo
-      }));
+      const parsed = (await res.json()) as ParseReceiptResponse;
+
+      const currency =
+        parsed.currency === "USD" || parsed.currency === "KRW"
+          ? parsed.currency
+          : parsed.amount_krw
+            ? "KRW"
+            : "KRW";
+      const amount = parsed.amount ?? parsed.amount_krw ?? "";
+      const paidAt = parsed.paid_at || form.paid_at;
+
+      const next: ParsedInfo = {
+        ...form,
+        service_name: parsed.service_name ?? form.service_name,
+        payment_type: parsed.payment_type ?? form.payment_type,
+        amount,
+        currency,
+        paid_at: paidAt,
+        memo: parsed.memo ?? form.memo,
+        amount_krw: "",
+        usd_krw_rate: null
+      };
+
+      if (amount) {
+        const converted = await convertAmountToKrw(amount, currency, paidAt);
+        setForm({ ...next, ...converted });
+      } else {
+        setForm(next);
+      }
       setStep("confirm");
     } catch {
       setParseError("이미지 분석에 실패했습니다. 수동으로 입력해 주세요.");
@@ -78,7 +146,29 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   };
 
   const handleSave = async () => {
-    if (!form.service_name || !form.amount_krw || !form.paid_at) return;
+    if (!form.service_name || !form.amount || !form.paid_at || !form.amount_krw) return;
+
+    const amountKrw = Number(form.amount_krw.replace(/,/g, ""));
+    const { data: duplicates, error: dupError } = await supabase
+      .from("credit_records")
+      .select("id")
+      .eq("service_name", form.service_name)
+      .eq("amount_krw", amountKrw)
+      .eq("paid_at", form.paid_at);
+
+    if (dupError) {
+      console.error(dupError);
+      return;
+    }
+
+    if ((duplicates?.length ?? 0) > 0) {
+      const amountLabel = amountKrw.toLocaleString("ko-KR", { style: "currency", currency: "KRW" });
+      const confirmed = window.confirm(
+        `동일한 등록 내역이 이미 있습니다.\n(서비스: ${form.service_name}, 금액: ${amountLabel}, 날짜: ${form.paid_at})\n그래도 등록하시겠습니까?`
+      );
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -94,7 +184,10 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
       const { error } = await supabase.from("credit_records").insert({
         service_name: form.service_name,
         payment_type: form.payment_type,
-        amount_krw: Number(form.amount_krw.replace(/,/g, "")),
+        amount_krw: amountKrw,
+        amount_usd: form.currency === "USD" ? parseFloat(form.amount.replace(/,/g, "")) : null,
+        usd_krw_rate: form.usd_krw_rate,
+        currency: form.currency,
         paid_at: form.paid_at,
         memo: form.memo || null,
         image_path,
@@ -110,6 +203,11 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   };
 
   const skipToManual = () => setStep("confirm");
+
+  const krwPreview =
+    form.currency === "USD" && form.amount_krw && form.usd_krw_rate
+      ? `≈ ${formatKrw(Number(form.amount_krw))} (1$ = ${form.usd_krw_rate.toLocaleString("ko-KR")}원 기준)`
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -223,22 +321,47 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
                   {PAYMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="mb-1 block text-xs text-slate-500">결제 금액 (원)</label>
-                <input
-                  type="text"
-                  value={form.amount_krw}
-                  onChange={(e) => setForm((p) => ({ ...p, amount_krw: e.target.value }))}
-                  placeholder="예: 45000"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-slate-500">결제 금액</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={form.amount}
+                    onChange={(e) => {
+                      const next = { ...form, amount: e.target.value };
+                      void applyConversion(next);
+                    }}
+                    placeholder={form.currency === "USD" ? "예: 50.00" : "예: 45000"}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                  <select
+                    value={form.currency}
+                    onChange={(e) => {
+                      const next = { ...form, currency: e.target.value };
+                      void applyConversion(next);
+                    }}
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-2 text-sm"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                {form.currency === "USD" && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    {converting ? "환율 계산 중…" : krwPreview ?? "금액을 입력하면 원화 환산액이 표시됩니다."}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">결제 날짜</label>
                 <input
                   type="date"
                   value={form.paid_at}
-                  onChange={(e) => setForm((p) => ({ ...p, paid_at: e.target.value }))}
+                  onChange={(e) => {
+                    const next = { ...form, paid_at: e.target.value };
+                    void applyConversion(next);
+                  }}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 />
               </div>
@@ -260,7 +383,7 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
               <button
                 type="button"
                 onClick={() => void handleSave()}
-                disabled={saving || !form.service_name || !form.amount_krw}
+                disabled={saving || converting || !form.service_name || !form.amount || !form.amount_krw}
                 className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {saving ? "저장 중…" : "등록 완료"}

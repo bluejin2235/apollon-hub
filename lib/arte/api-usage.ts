@@ -391,7 +391,9 @@ export type DailyCostPoint = {
 
 export type ModelCostRow = {
   model: string;
+  date: string;
   provider: ApiUsageProvider;
+  api_key_label: string;
   input_cost_usd: number;
   output_cost_usd: number;
   cost_usd: number;
@@ -456,10 +458,12 @@ export function aggregateUsageDashboard(
 
   const modelMap = new Map<string, ModelCostRow>();
   for (const r of filtered) {
-    const key = `${r.provider}\0${r.model}`;
+    const key = `${r.provider}\0${r.model}\0${r.api_key_label}`;
     const prev = modelMap.get(key) ?? {
       model: r.model,
+      date: r.date,
       provider: r.provider,
+      api_key_label: r.api_key_label,
       input_cost_usd: 0,
       output_cost_usd: 0,
       cost_usd: 0,
@@ -468,6 +472,7 @@ export function aggregateUsageDashboard(
     prev.input_cost_usd += Number(r.input_cost_usd);
     prev.output_cost_usd += Number(r.output_cost_usd);
     prev.cost_usd += Number(r.cost_usd);
+    if (r.date > prev.date) prev.date = r.date;
     modelMap.set(key, prev);
   }
 

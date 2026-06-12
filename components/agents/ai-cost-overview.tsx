@@ -64,15 +64,20 @@ function resolveDateRange(preset: PeriodPreset, customStart: string, customEnd: 
   return { start: customStart, end: customEnd };
 }
 
-function getChartMonthKeys(today = new Date()): { key: string; label: string }[] {
-  const pad = (n: number) => String(n).padStart(2, "0");
+function getMonthKeysInRange(start: string, end: string): { key: string; label: string }[] {
   const keys: { key: string; label: string }[] = [];
-  for (let i = 2; i >= 0; i -= 1) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    keys.push({
-      key: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
-      label: `${d.getMonth() + 1}월`
-    });
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  let y = sy;
+  let m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    keys.push({ key, label: `${m}월` });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
   }
   return keys;
 }
@@ -108,13 +113,13 @@ export function AiCostOverview({ onTabChange }: Props) {
     () => resolveDateRange(period, customStart, customEnd),
     [period, customStart, customEnd]
   );
-  const chartMonths = useMemo(() => getChartMonthKeys(), []);
+  const chartMonths = useMemo(
+    () => getMonthKeysInRange(range.start, range.end),
+    [range.start, range.end]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
-    const chartStart = `${chartMonths[0]?.key ?? ""}-01`;
-    const queryStart = range.start < chartStart ? range.start : chartStart;
-    const queryEnd = range.end > todayIso ? range.end : todayIso;
 
     const [
       { data: userData },
@@ -127,14 +132,14 @@ export function AiCostOverview({ onTabChange }: Props) {
       supabase
         .from("api_usage")
         .select("*")
-        .gte("date", queryStart)
-        .lte("date", queryEnd)
+        .gte("date", range.start)
+        .lte("date", range.end)
         .order("date", { ascending: true }),
       supabase
         .from("credit_records")
         .select("id, service_name, payment_type, amount_krw, paid_at, registered_by, registrar:profiles!registered_by(name)")
-        .gte("paid_at", queryStart)
-        .lte("paid_at", queryEnd)
+        .gte("paid_at", range.start)
+        .lte("paid_at", range.end)
         .order("paid_at", { ascending: false })
     ]);
 
@@ -157,20 +162,14 @@ export function AiCostOverview({ onTabChange }: Props) {
       }))
     );
     setLoading(false);
-  }, [range.start, range.end, chartMonths, todayIso]);
+  }, [range.start, range.end]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const periodApiRows = useMemo(
-    () => apiRows.filter((r) => r.date >= range.start && r.date <= range.end),
-    [apiRows, range.start, range.end]
-  );
-  const periodCreditRows = useMemo(
-    () => creditRows.filter((r) => r.paid_at >= range.start && r.paid_at <= range.end),
-    [creditRows, range.start, range.end]
-  );
+  const periodApiRows = apiRows;
+  const periodCreditRows = creditRows;
 
   const apiCostUsd = periodApiRows.reduce((s, r) => s + Number(r.cost_usd), 0);
   const apiCostKrw = apiCostUsd * usdKrw;
@@ -210,12 +209,12 @@ export function AiCostOverview({ onTabChange }: Props) {
     const apiByMonth = new Map<string, number>();
     const creditByMonth = new Map<string, number>();
 
-    for (const r of apiRows) {
+    for (const r of periodApiRows) {
       const key = monthKeyFromDate(r.date);
       if (!chartKeys.has(key)) continue;
       apiByMonth.set(key, (apiByMonth.get(key) ?? 0) + Number(r.cost_usd) * usdKrw);
     }
-    for (const r of creditRows) {
+    for (const r of periodCreditRows) {
       const key = monthKeyFromDate(r.paid_at);
       if (!chartKeys.has(key)) continue;
       creditByMonth.set(key, (creditByMonth.get(key) ?? 0) + r.amount_krw);
@@ -226,7 +225,7 @@ export function AiCostOverview({ onTabChange }: Props) {
       apiKrw: Math.round(apiByMonth.get(m.key) ?? 0),
       creditKrw: Math.round(creditByMonth.get(m.key) ?? 0)
     }));
-  }, [apiRows, creditRows, chartMonths, usdKrw]);
+  }, [periodApiRows, periodCreditRows, chartMonths, usdKrw]);
 
   const recentCredits = periodCreditRows.slice(0, 3);
 
@@ -282,22 +281,6 @@ export function AiCostOverview({ onTabChange }: Props) {
         )}
       </section>
 
-      {/* 안내 배너 */}
-      <div className="flex items-start gap-3 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-800">
-        <svg
-          className="mt-0.5 h-4 w-4 shrink-0 text-violet-600"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden
-        >
-          <rect x="5" y="11" width="14" height="10" rx="2" />
-          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-        </svg>
-        <p>팀 전체 비용만 공개됩니다. 팀원별 상세 내역은 본인만 확인할 수 있습니다.</p>
-      </div>
-
       {loading ? (
         <p className="text-sm text-slate-500">불러오는 중…</p>
       ) : (
@@ -333,7 +316,7 @@ export function AiCostOverview({ onTabChange }: Props) {
           {/* 월별 비용 추이 */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-base font-semibold text-slate-900">월별 비용 추이</h2>
-            <p className="mt-1 text-xs text-slate-500">최근 3개월 · API(보라) / 크레딧(주황)</p>
+            <p className="mt-1 text-xs text-slate-500">{range.start} ~ {range.end} · API(보라) / 크레딧(주황)</p>
             <div className="mt-4 h-[280px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>

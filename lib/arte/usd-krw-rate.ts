@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
 export const USD_KRW_FALLBACK = 1380;
 
@@ -31,6 +32,29 @@ async function fetchUsdKrwRate(): Promise<number> {
   const krw = body.rates?.KRW;
   if (typeof krw !== "number" || !Number.isFinite(krw)) throw new Error("KRW 환율 없음");
   return krw;
+}
+
+/** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → fallback) */
+export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
+  const month = dateIso.slice(0, 7);
+  const { data } = await supabase
+    .from("usd_krw_rates")
+    .select("rate")
+    .lte("month", month)
+    .order("month", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (data?.rate != null && Number.isFinite(Number(data.rate))) {
+    return Number(data.rate);
+  }
+
+  try {
+    return await fetchUsdKrwRate();
+  } catch (e) {
+    console.error("[arte] fetchUsdKrwRateForDate fallback", e);
+    return USD_KRW_FALLBACK;
+  }
 }
 
 /** 전달 평균 환율(USD→KRW, open.er-api.com, 실패 시 1380) */

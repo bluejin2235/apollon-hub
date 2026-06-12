@@ -9,11 +9,13 @@ import {
   resolveUsageDateRange,
   type ApiUsageDbRow,
   type ApiUsageProvider,
+  type ModelCostRow,
   type ProviderFilter,
   type ProviderUploadMeta,
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
 import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
+import { ApiUsageUpload } from "@/components/agents/api-usage-upload";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -29,6 +31,61 @@ const PROVIDER_FILTERS: { value: ProviderFilter; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" }
 ];
+
+type SortKey =
+  | "model"
+  | "date"
+  | "provider"
+  | "api_key_label"
+  | "input_cost_usd"
+  | "output_cost_usd"
+  | "cost_usd"
+  | "share_pct"
+  | null;
+type SortDir = "asc" | "desc";
+type ActiveSortKey = Exclude<SortKey, null>;
+
+function formatProviderLabel(provider: ApiUsageProvider): string {
+  return provider === "openai" ? "OpenAI" : "Anthropic";
+}
+
+function formatModelUsageDate(date: string): string {
+  const [y, m, d] = date.split("-");
+  return `${y.slice(2)}/${m}/${d}`;
+}
+
+function SortableTh({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+  className = ""
+}: {
+  label: string;
+  column: ActiveSortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: ActiveSortKey) => void;
+  className?: string;
+}) {
+  const alignEnd = className.includes("text-right");
+  return (
+    <th
+      className={`cursor-pointer select-none px-5 py-3 ${className}`}
+      onClick={() => onSort(column)}
+    >
+      <span className={`inline-flex items-center gap-1 ${alignEnd ? "w-full justify-end" : ""}`}>
+        {label}
+        {sortKey === column ? (
+          <span>{sortDir === "asc" ? "↑" : "↓"}</span>
+        ) : (
+          <span className="text-slate-300">↕</span>
+        )}
+      </span>
+    </th>
+  );
+}
 
 type UploadMetaRow = {
   provider: string;
@@ -123,13 +180,32 @@ export function ApiUsageDashboard() {
   });
   const [customEnd, setCustomEnd] = useState(todayIso);
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const [rows, setRows] = useState<ApiUsageDbRow[]>([]);
   const [uploadMeta, setUploadMeta] = useState<ProviderUploadMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const { usdKrw, monthLabel } = useUsdKrwForUsage();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id ?? "")
+        .single();
+      if (cancelled) return;
+      setIsSuperAdmin(profileData?.role === "슈퍼관리자");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const range = useMemo(
     () => resolveUsageDateRange(period, customStart, customEnd),
@@ -170,7 +246,55 @@ export function ApiUsageDashboard() {
     void load();
   }, [load]);
 
-  const agg = useMemo(() => aggregateUsageDashboard(rows, range), [rows, range]);
+  const agg = useMemo(
+    () => aggregateUsageDashboard(rows, range),
+    [rows, range.start, range.end]
+  );
+
+  const handleSort = (key: ActiveSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedByModel = useMemo(() => {
+    if (!sortKey) return agg.byModel;
+    return [...agg.byModel].sort((a, b) => {
+      let cmp: number;
+      if (sortKey === "input_cost_usd" || sortKey === "output_cost_usd" || sortKey === "cost_usd" || sortKey === "share_pct") {
+        cmp = a[sortKey] - b[sortKey];
+      } else if (sortKey === "provider") {
+        cmp = a.provider.localeCompare(b.provider, "ko", { sensitivity: "base" });
+      } else if (sortKey === "model") {
+        cmp = a.model.localeCompare(b.model, "ko", { sensitivity: "base" });
+      } else if (sortKey === "date") {
+        cmp = a.date.localeCompare(b.date);
+      } else if (sortKey === "api_key_label") {
+        cmp = a.api_key_label.localeCompare(b.api_key_label, "ko", { sensitivity: "base" });
+      } else {
+        cmp = 0;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [agg.byModel, sortKey, sortDir]);
+
+  const handleDelete = async (row: ModelCostRow) => {
+    if (!window.confirm("이 항목을 삭제하시겠습니까?")) return;
+    const { error } = await supabase
+      .from("api_usage")
+      .delete()
+      .eq("date", row.date)
+      .eq("provider", row.provider)
+      .eq("model", row.model);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    void load();
+  };
 
   const periodLabel =
     agg.date_min && agg.date_max
@@ -362,33 +486,92 @@ export function ApiUsageDashboard() {
 
           <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-base font-semibold text-slate-900">모델별 비용</h2>
+              <h2 className="text-base font-semibold text-slate-900">API별 상세 사용량</h2>
             </div>
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[800px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
-                  <th className="px-5 py-3">모델명</th>
-                  <th className="px-5 py-3">Provider</th>
-                  <th className="px-5 py-3 text-right">Input 비용</th>
-                  <th className="px-5 py-3 text-right">Output 비용</th>
-                  <th className="px-5 py-3 text-right">합계</th>
-                  <th className="px-5 py-3 text-right">비중</th>
+                  <SortableTh
+                    label="모델명"
+                    column="model"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="사용일"
+                    column="date"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="Provider"
+                    column="provider"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="API 키"
+                    column="api_key_label"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="Input 비용"
+                    column="input_cost_usd"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  />
+                  <SortableTh
+                    label="Output 비용"
+                    column="output_cost_usd"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  />
+                  <SortableTh
+                    label="합계"
+                    column="cost_usd"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  />
+                  <SortableTh
+                    label="비중"
+                    column="share_pct"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
+                  />
+                  {isSuperAdmin ? <th className="px-5 py-3 text-center">삭제</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {agg.byModel.length === 0 ? (
+                {sortedByModel.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
+                    <td colSpan={isSuperAdmin ? 9 : 8} className="px-5 py-10 text-center text-slate-500">
                       모델별 데이터가 없습니다.
                     </td>
                   </tr>
                 ) : (
-                  agg.byModel.map((row) => (
-                    <tr key={`${row.provider}-${row.model}`}>
+                  sortedByModel.map((row) => (
+                    <tr key={`${row.provider}-${row.model}-${row.api_key_label}`}>
                       <td className="max-w-[200px] truncate px-5 py-3 font-medium" title={row.model}>
                         {row.model}
                       </td>
-                      <td className="px-5 py-3 capitalize text-slate-600">{row.provider}</td>
+                      <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-600" title={row.date}>
+                        {formatModelUsageDate(row.date)}
+                      </td>
+                      <td className="px-5 py-3 text-slate-600">{formatProviderLabel(row.provider)}</td>
+                      <td className="px-5 py-3 text-slate-600">{row.api_key_label || "—"}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.input_cost_usd)}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.output_cost_usd)}</td>
                       <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">
@@ -397,6 +580,17 @@ export function ApiUsageDashboard() {
                       <td className="px-5 py-3 text-right tabular-nums text-slate-600">
                         {row.share_pct.toFixed(1)}%
                       </td>
+                      {isSuperAdmin ? (
+                        <td className="px-5 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(row)}
+                            className="text-sm text-rose-500 hover:text-rose-700"
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))
                 )}
@@ -421,6 +615,13 @@ export function ApiUsageDashboard() {
             </ul>
           </section>
         </>
+      ) : null}
+
+      {isSuperAdmin ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-sm font-semibold text-slate-900">CSV 업로드</h2>
+          <ApiUsageUpload onSaved={() => void load()} />
+        </section>
       ) : null}
     </div>
   );
