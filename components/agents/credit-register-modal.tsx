@@ -56,12 +56,62 @@ async function convertAmountToKrw(
   return { amount_krw: String(Math.round(num)), usd_krw_rate: null };
 }
 
+async function resizeImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1200;
+      let { width, height } = img;
+      if (width <= MAX && height <= MAX) {
+        URL.revokeObjectURL(url);
+        resolve(file);
+        return;
+      }
+      if (width > height) {
+        height = Math.round((height * MAX) / width);
+        width = MAX;
+      } else {
+        width = Math.round((width * MAX) / height);
+        height = MAX;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          resolve(
+            new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+              type: "image/jpeg",
+              lastModified: Date.now()
+            })
+          );
+        },
+        "image/jpeg",
+        0.85
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+
 export function CreditRegisterModal({ onClose, onSaved }: Props) {
   const [step, setStep] = useState<"upload" | "confirm">("upload");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-  const [parsing, setParsing] = useState(false);
+  const [parsing, setParsing] = useState<string | false>(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [form, setForm] = useState<ParsedInfo>(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -82,15 +132,16 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
     }
   }, []);
 
-  const handleFileChange = (file: File) => {
-    setImageFile(file);
+  const handleFileChange = async (file: File) => {
+    const resized = await resizeImage(file);
+    setImageFile(resized);
     setStoragePath(null);
-    setImagePreviewUrl(URL.createObjectURL(file));
+    setImagePreviewUrl(URL.createObjectURL(resized));
   };
 
   const handleAnalyze = async () => {
     if (!imageFile) return;
-    setParsing(true);
+    setParsing("업로드 중... (1/2)");
     setParseError(null);
     try {
       const ext = imageFile.name.split(".").pop() ?? "jpg";
@@ -101,6 +152,7 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
       if (uploadError) throw uploadError;
       setStoragePath(path);
 
+      setParsing("AI 분석 중... (2/2)");
       const res = await fetch("/api/arte/parse-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -280,7 +332,7 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
               onDrop={(e) => {
                 e.preventDefault();
                 const file = e.dataTransfer.files[0];
-                if (file) handleFileChange(file);
+                if (file) void handleFileChange(file);
               }}
             >
               {imagePreviewUrl ? (
@@ -299,17 +351,17 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
               type="file"
               accept="image/*,.pdf"
               className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileChange(f); }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileChange(f); }}
             />
             {imageFile && (
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => void handleAnalyze()}
-                  disabled={parsing}
+                  disabled={!!parsing}
                   className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
                 >
-                  {parsing ? "분석 중…" : "AI로 정보 읽기"}
+                  {parsing || "AI로 정보 읽기"}
                 </button>
               </div>
             )}
