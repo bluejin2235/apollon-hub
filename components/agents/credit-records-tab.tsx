@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { resolveUsageDateRange, type UsagePeriodPreset } from "@/lib/arte/api-usage";
 import { supabase } from "@/lib/supabase/client";
 import { CreditRegisterModal } from "@/components/agents/credit-register-modal";
@@ -19,6 +20,61 @@ type CreditRecord = {
 
 type PeriodPreset = UsagePeriodPreset;
 
+type CreditSortKey = "service_name" | "payment_type" | "paid_at" | "registrar_name" | "amount_krw" | null;
+type CreditSortDir = "asc" | "desc";
+type ActiveCreditSortKey = Exclude<CreditSortKey, null>;
+
+function getMonthKeysInRange(start: string, end: string): { key: string; label: string }[] {
+  const keys: { key: string; label: string }[] = [];
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  let y = sy;
+  let m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    keys.push({ key, label: `${m}월` });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return keys;
+}
+
+function SortableTh({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+  className = ""
+}: {
+  label: string;
+  column: ActiveCreditSortKey;
+  sortKey: CreditSortKey;
+  sortDir: CreditSortDir;
+  onSort: (key: ActiveCreditSortKey) => void;
+  className?: string;
+}) {
+  const alignEnd = className.includes("text-right");
+  return (
+    <th
+      className={`cursor-pointer select-none px-5 py-3 ${className}`}
+      onClick={() => onSort(column)}
+    >
+      <span className={`inline-flex items-center gap-1 ${alignEnd ? "w-full justify-end" : ""}`}>
+        {label}
+        {sortKey === column ? (
+          <span>{sortDir === "asc" ? "↑" : "↓"}</span>
+        ) : (
+          <span className="text-slate-300">↕</span>
+        )}
+      </span>
+    </th>
+  );
+}
+
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
   { value: "last_30days", label: "최근 1달" },
   { value: "last_3m", label: "최근 3개월" },
@@ -29,12 +85,14 @@ const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
 
 export function CreditRecordsTab() {
   const today = new Date().toISOString().slice(0, 10);
-  const [period, setPeriod] = useState<PeriodPreset>("last_30days");
+  const [period, setPeriod] = useState<PeriodPreset>("last_6m");
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10);
   });
   const [customEnd, setCustomEnd] = useState(today);
   const [serviceFilter, setServiceFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<CreditSortKey>(null);
+  const [sortDir, setSortDir] = useState<CreditSortDir>("asc");
   const [records, setRecords] = useState<CreditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -101,6 +159,52 @@ export function CreditRecordsTab() {
       return map;
     }, new Map<string, number>())
   ).sort((a, b) => b[1] - a[1]);
+
+  const monthlyChartData = useMemo(() => {
+    const months = getMonthKeysInRange(range.start, range.end);
+    const byMonth = new Map(months.map((m) => [m.key, 0]));
+    for (const r of filtered) {
+      const key = r.paid_at.slice(0, 7);
+      if (byMonth.has(key)) byMonth.set(key, (byMonth.get(key) ?? 0) + r.amount_krw);
+    }
+    return months.map(({ key, label }) => ({
+      label,
+      amount: byMonth.get(key) ?? 0
+    }));
+  }, [filtered, range.start, range.end]);
+
+  const handleSort = (key: ActiveCreditSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedRecords = useMemo(() => {
+    const base = [...filtered];
+    if (!sortKey) {
+      return base.sort((a, b) => b.paid_at.localeCompare(a.paid_at));
+    }
+    return base.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "amount_krw") {
+        cmp = a.amount_krw - b.amount_krw;
+      } else if (sortKey === "paid_at") {
+        cmp = a.paid_at.localeCompare(b.paid_at);
+      } else if (sortKey === "service_name") {
+        cmp = a.service_name.localeCompare(b.service_name, "ko", { sensitivity: "base" });
+      } else if (sortKey === "payment_type") {
+        cmp = a.payment_type.localeCompare(b.payment_type, "ko", { sensitivity: "base" });
+      } else {
+        const an = a.registrar_name ?? currentUserName ?? "";
+        const bn = b.registrar_name ?? currentUserName ?? "";
+        cmp = an.localeCompare(bn, "ko", { sensitivity: "base" });
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortKey, sortDir, currentUserName]);
 
   const paymentTypeLabel = (t: string) => {
     if (t === "크레딧") return { text: "크레딧", bg: "bg-emerald-50", color: "text-emerald-700" };
@@ -190,6 +294,39 @@ export function CreditRecordsTab() {
         </div>
       </section>
 
+      {/* 월별 충전 비용 */}
+      {!loading ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold text-slate-900">월별 충전 비용</h2>
+          <div className="h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthlyChartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) =>
+                    typeof v === "number"
+                      ? `₩${v >= 10000 ? `${Math.round(v / 10000)}만` : v.toLocaleString("ko-KR")}`
+                      : String(v)
+                  }
+                />
+                <Tooltip
+                  formatter={(value, _name, item) => {
+                    const label = String((item?.payload as { label?: string })?.label ?? "");
+                    const amount = Number(value);
+                    return [
+                      `${label}: ${amount.toLocaleString("ko-KR", { style: "currency", currency: "KRW" })}`
+                    ];
+                  }}
+                  labelFormatter={() => ""}
+                />
+                <Bar dataKey="amount" fill="#EF9F27" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
+
       {/* 서비스별 집계 */}
       {byService.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -218,14 +355,14 @@ export function CreditRecordsTab() {
         </section>
       )}
 
-      {/* 등록 내역 */}
+      {/* 결제 내역 */}
       <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-900">등록 내역</h2>
+          <h2 className="text-base font-semibold text-slate-900">결제 내역</h2>
         </div>
         {loading ? (
           <p className="px-5 py-8 text-center text-sm text-slate-500">불러오는 중…</p>
-        ) : filtered.length === 0 ? (
+        ) : sortedRecords.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-slate-500">
             등록된 내역이 없습니다. 충전 등록 버튼으로 추가해 주세요.
           </p>
@@ -233,17 +370,48 @@ export function CreditRecordsTab() {
           <table className="w-full min-w-[600px] text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
-                <th className="px-5 py-3">서비스 · 메모</th>
-                <th className="px-5 py-3">유형</th>
-                <th className="px-5 py-3">날짜</th>
-                <th className="px-5 py-3">등록자</th>
+                <SortableTh
+                  label="서비스 · 메모"
+                  column="service_name"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="유형"
+                  column="payment_type"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="날짜"
+                  column="paid_at"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="등록자"
+                  column="registrar_name"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
                 <th className="px-5 py-3 text-center">영수증</th>
-                <th className="px-5 py-3 text-right">금액</th>
+                <SortableTh
+                  label="금액"
+                  column="amount_krw"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                  className="text-right"
+                />
                 {isSuperAdmin ? <th className="px-5 py-3 text-center">관리</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((r) => {
+              {sortedRecords.map((r) => {
                 const tag = paymentTypeLabel(r.payment_type);
                 return (
                   <tr key={r.id}>

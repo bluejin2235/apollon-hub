@@ -71,7 +71,7 @@ function paymentTypeLabel(t: string) {
 
 export function AiCostOverview({ onTabChange }: Props) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [period, setPeriod] = useState<UsagePeriodPreset>("last_30days");
+  const [period, setPeriod] = useState<UsagePeriodPreset>("last_6m");
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date();
     d.setDate(1);
