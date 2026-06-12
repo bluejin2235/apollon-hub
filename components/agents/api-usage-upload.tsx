@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
+  buildApiUsageUpsertPayload,
   extractCsvDateRange,
   formatCsvEmptyRangeMessage,
   formatUsd,
@@ -87,19 +88,9 @@ export function ApiUsageUpload({ onSaved }: Props) {
     const uploadedBy = session?.user?.id ?? null;
     const uploadedAt = new Date().toISOString();
 
-    const payload = preview.map((r) => ({
-      provider: r.provider,
-      date: r.date,
-      model: r.model,
-      api_key_label: r.api_key_label,
-      input_tokens: r.input_tokens,
-      output_tokens: r.output_tokens,
-      input_cost_usd: r.input_cost_usd,
-      output_cost_usd: r.output_cost_usd,
-      cost_usd: r.cost_usd,
-      uploaded_by: uploadedBy,
-      created_at: uploadedAt
-    }));
+    const payload = preview.map((r) =>
+      buildApiUsageUpsertPayload(r, { uploaded_by: uploadedBy, created_at: uploadedAt })
+    );
 
     const { error } = await supabase.from("api_usage").upsert(payload, {
       onConflict: "provider,date,model,api_key_label"

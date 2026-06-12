@@ -15,7 +15,8 @@ export type ApiUsageRow = {
   num_requests: number;
 };
 
-export type ApiUsageDbRow = ApiUsageRow & {
+export type ApiUsageDbRow = Omit<ApiUsageRow, "num_requests"> & {
+  num_requests: number | null;
   id?: string;
   created_at?: string;
   uploaded_by?: string | null;
@@ -319,6 +320,27 @@ export function parseUsageCsv(provider: ApiUsageProvider, text: string): ApiUsag
   return provider === "anthropic" ? parseAnthropicCsv(text) : parseOpenAiCsv(text);
 }
 
+/** CSV 파싱 결과 → api_usage upsert payload */
+export function buildApiUsageUpsertPayload(
+  row: ApiUsageRow,
+  meta: { uploaded_by: string | null; created_at: string }
+) {
+  return {
+    provider: row.provider,
+    date: row.date,
+    model: row.model,
+    api_key_label: row.api_key_label,
+    input_tokens: row.input_tokens,
+    output_tokens: row.output_tokens,
+    input_cost_usd: row.input_cost_usd,
+    output_cost_usd: row.output_cost_usd,
+    cost_usd: row.cost_usd,
+    num_requests: row.num_requests,
+    uploaded_by: meta.uploaded_by,
+    created_at: meta.created_at
+  };
+}
+
 /** CSV 전체 행에서 날짜 범위 추출 (모델 유무와 무관, 빈 사용량 파일용) */
 export function extractCsvDateRange(
   provider: ApiUsageProvider,
@@ -405,7 +427,7 @@ export function aggregateUsageDashboard(
   const total_requests =
     filtered.length === 0
       ? null
-      : filtered.reduce((s, r) => s + Number(r.num_requests ?? 0), 0);
+      : filtered.reduce((sum, r) => sum + (r.num_requests ?? 0), 0);
 
   const dates = filtered.map((r) => r.date).sort();
   const date_min = dates[0] ?? null;
