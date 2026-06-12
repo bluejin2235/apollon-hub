@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { resolveUsageDateRange, type UsagePeriodPreset } from "@/lib/arte/api-usage";
 import { supabase } from "@/lib/supabase/client";
 import { CreditRegisterModal } from "@/components/agents/credit-register-modal";
 
@@ -16,40 +17,15 @@ type CreditRecord = {
   registrar_name?: string | null;
 };
 
-type PeriodPreset = "last_30days" | "this_month" | "last_month" | "last_3m" | "custom";
+type PeriodPreset = UsagePeriodPreset;
 
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
   { value: "last_30days", label: "최근 1달" },
-  { value: "this_month", label: "이번 달" },
-  { value: "last_month", label: "지난 달" },
   { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
   { value: "custom", label: "직접 선택" }
 ];
-
-function resolveDateRange(preset: PeriodPreset, customStart: string, customEnd: string) {
-  const today = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  if (preset === "last_30days") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 30);
-    return { start: fmt(start), end: fmt(today) };
-  }
-  if (preset === "this_month") {
-    return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end: fmt(today) };
-  }
-  if (preset === "last_month") {
-    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const last = new Date(today.getFullYear(), today.getMonth(), 0);
-    return { start: fmt(first), end: fmt(last) };
-  }
-  if (preset === "last_3m") {
-    const start = new Date(today);
-    start.setMonth(start.getMonth() - 3);
-    return { start: fmt(start), end: fmt(today) };
-  }
-  return { start: customStart, end: customEnd };
-}
 
 export function CreditRecordsTab() {
   const today = new Date().toISOString().slice(0, 10);
@@ -65,7 +41,7 @@ export function CreditRecordsTab() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
-  const range = resolveDateRange(period, customStart, customEnd);
+  const range = resolveUsageDateRange(period, customStart, customEnd);
 
   useEffect(() => {
     let cancelled = false;

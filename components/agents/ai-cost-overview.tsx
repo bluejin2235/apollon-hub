@@ -11,11 +11,21 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import type { ApiUsageDbRow } from "@/lib/arte/api-usage";
+import {
+  resolveUsageDateRange,
+  type ApiUsageDbRow,
+  type UsagePeriodPreset
+} from "@/lib/arte/api-usage";
 import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
-type PeriodPreset = "last_30days" | "this_month" | "last_month" | "last_3m" | "custom";
+const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
+  { value: "last_30days", label: "최근 1달" },
+  { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
+  { value: "custom", label: "직접 선택" }
+];
 
 type CreditRecordRow = {
   id: string;
@@ -30,39 +40,6 @@ type CreditRecordRow = {
 type Props = {
   onTabChange: (tab: "usage" | "credits") => void;
 };
-
-const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
-  { value: "last_30days", label: "최근 1달" },
-  { value: "this_month", label: "이번 달" },
-  { value: "last_month", label: "지난 달" },
-  { value: "last_3m", label: "최근 3개월" },
-  { value: "custom", label: "직접 선택" }
-];
-
-function resolveDateRange(preset: PeriodPreset, customStart: string, customEnd: string) {
-  const today = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  if (preset === "last_30days") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 30);
-    return { start: fmt(start), end: fmt(today) };
-  }
-  if (preset === "this_month") {
-    return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end: fmt(today) };
-  }
-  if (preset === "last_month") {
-    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const last = new Date(today.getFullYear(), today.getMonth(), 0);
-    return { start: fmt(first), end: fmt(last) };
-  }
-  if (preset === "last_3m") {
-    const start = new Date(today);
-    start.setMonth(start.getMonth() - 3);
-    return { start: fmt(start), end: fmt(today) };
-  }
-  return { start: customStart, end: customEnd };
-}
 
 function getMonthKeysInRange(start: string, end: string): { key: string; label: string }[] {
   const keys: { key: string; label: string }[] = [];
@@ -94,7 +71,7 @@ function paymentTypeLabel(t: string) {
 
 export function AiCostOverview({ onTabChange }: Props) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [period, setPeriod] = useState<PeriodPreset>("last_30days");
+  const [period, setPeriod] = useState<UsagePeriodPreset>("last_30days");
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -110,7 +87,7 @@ export function AiCostOverview({ onTabChange }: Props) {
 
   const { usdKrw, monthLabel } = useUsdKrwForUsage();
   const range = useMemo(
-    () => resolveDateRange(period, customStart, customEnd),
+    () => resolveUsageDateRange(period, customStart, customEnd),
     [period, customStart, customEnd]
   );
   const chartMonths = useMemo(

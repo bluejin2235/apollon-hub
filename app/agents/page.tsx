@@ -19,8 +19,8 @@ const MAIN_TABS: { id: MainTab; label: string }[] = [
 
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: "overview", label: "Dashboard" },
-  { id: "usage", label: "API 사용량" },
-  { id: "credits", label: "Credit 추가결제" }
+  { id: "usage", label: "API사용량내역" },
+  { id: "credits", label: "Credit결제내역" }
 ];
 
 export default function AgentsPage() {

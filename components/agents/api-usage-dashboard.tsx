@@ -9,6 +9,7 @@ import {
   resolveUsageDateRange,
   type ApiUsageDbRow,
   type ApiUsageProvider,
+  type DailyCostPoint,
   type ModelCostRow,
   type ProviderFilter,
   type ProviderUploadMeta,
@@ -20,9 +21,9 @@ import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
   { value: "last_30days", label: "최근 1달" },
-  { value: "this_month", label: "이번 달" },
-  { value: "last_month", label: "지난 달" },
   { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
   { value: "custom", label: "직접 선택" }
 ];
 
@@ -37,6 +38,7 @@ type SortKey =
   | "date"
   | "provider"
   | "api_key_label"
+  | "num_requests"
   | "input_cost_usd"
   | "output_cost_usd"
   | "cost_usd"
@@ -266,6 +268,8 @@ export function ApiUsageDashboard() {
       let cmp: number;
       if (sortKey === "input_cost_usd" || sortKey === "output_cost_usd" || sortKey === "cost_usd" || sortKey === "share_pct") {
         cmp = a[sortKey] - b[sortKey];
+      } else if (sortKey === "num_requests") {
+        cmp = (a.num_requests ?? -1) - (b.num_requests ?? -1);
       } else if (sortKey === "provider") {
         cmp = a.provider.localeCompare(b.provider, "ko", { sensitivity: "base" });
       } else if (sortKey === "model") {
@@ -461,18 +465,24 @@ export function ApiUsageDashboard() {
                       }
                     />
                     <Tooltip
+                      labelFormatter={(label) => String(label)}
                       formatter={(value, _name, item) => {
                         const dataKey = String(item?.dataKey ?? "");
+                        const payload = item?.payload as DailyCostPoint | undefined;
+                        const requests =
+                          dataKey === "anthropic"
+                            ? payload?.requests_anthropic ?? 0
+                            : dataKey === "openai"
+                              ? payload?.requests_openai ?? 0
+                              : 0;
                         const label =
                           dataKey === "anthropic"
                             ? "Anthropic"
                             : dataKey === "openai"
                               ? "OpenAI"
                               : String(_name);
-                        return [
-                          formatUsd(typeof value === "number" ? value : Number(value)),
-                          label
-                        ];
+                        const cost = formatUsd(typeof value === "number" ? value : Number(value));
+                        return [`${cost} (${requests.toLocaleString("ko-KR")}회)`, label];
                       }}
                     />
                     <Legend />
@@ -488,7 +498,7 @@ export function ApiUsageDashboard() {
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-base font-semibold text-slate-900">API별 상세 사용량</h2>
             </div>
-            <table className="w-full min-w-[800px] text-sm">
+            <table className="w-full min-w-[880px] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
                   <SortableTh
@@ -518,6 +528,14 @@ export function ApiUsageDashboard() {
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="호출 횟수"
+                    column="num_requests"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    className="text-right"
                   />
                   <SortableTh
                     label="Input 비용"
@@ -557,7 +575,7 @@ export function ApiUsageDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {sortedByModel.length === 0 ? (
                   <tr>
-                    <td colSpan={isSuperAdmin ? 9 : 8} className="px-5 py-10 text-center text-slate-500">
+                    <td colSpan={isSuperAdmin ? 10 : 9} className="px-5 py-10 text-center text-slate-500">
                       모델별 데이터가 없습니다.
                     </td>
                   </tr>
@@ -572,6 +590,9 @@ export function ApiUsageDashboard() {
                       </td>
                       <td className="px-5 py-3 text-slate-600">{formatProviderLabel(row.provider)}</td>
                       <td className="px-5 py-3 text-slate-600">{row.api_key_label || "—"}</td>
+                      <td className="px-5 py-3 text-right tabular-nums text-slate-600">
+                        {row.num_requests != null ? `${row.num_requests.toLocaleString("ko-KR")}회` : "—"}
+                      </td>
                       <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.input_cost_usd)}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.output_cost_usd)}</td>
                       <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">

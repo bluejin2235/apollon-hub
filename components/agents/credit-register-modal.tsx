@@ -171,7 +171,19 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
 
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const [{ data: { user } }, { data: { session } }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.auth.getSession()
+      ]);
+      let registeredByName = "—";
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("name")
+          .eq("id", user.id)
+          .maybeSingle();
+        registeredByName = profile?.name?.trim() || "—";
+      }
       let image_path: string | null = storagePath;
       if (!image_path && imageFile) {
         const ext = imageFile.name.split(".").pop() ?? "jpg";
@@ -181,11 +193,12 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
           .upload(path, imageFile);
         if (!uploadError) image_path = path;
       }
+      const amountUsd = form.currency === "USD" ? parseFloat(form.amount.replace(/,/g, "")) : null;
       const { error } = await supabase.from("credit_records").insert({
         service_name: form.service_name,
         payment_type: form.payment_type,
         amount_krw: amountKrw,
-        amount_usd: form.currency === "USD" ? parseFloat(form.amount.replace(/,/g, "")) : null,
+        amount_usd: amountUsd,
         usd_krw_rate: form.usd_krw_rate,
         currency: form.currency,
         paid_at: form.paid_at,
@@ -194,6 +207,30 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
         registered_by: user?.id ?? null
       });
       if (error) throw error;
+
+      if (session?.access_token) {
+        void fetch("/api/arte/notify-credit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            service_name: form.service_name,
+            payment_type: form.payment_type,
+            amount_krw: amountKrw,
+            amount_usd: amountUsd,
+            usd_krw_rate: form.usd_krw_rate,
+            currency: form.currency,
+            paid_at: form.paid_at,
+            memo: form.memo || null,
+            registered_by_name: registeredByName
+          })
+        }).catch((notifyError) => {
+          console.error("[notify-credit]", notifyError);
+        });
+      }
+
       onSaved();
     } catch (e) {
       console.error(e);

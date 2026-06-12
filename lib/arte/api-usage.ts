@@ -54,9 +54,9 @@ export function formatProviderUploadMeta(meta: ProviderUploadMeta): string {
 
 export type UsagePeriodPreset =
   | "last_30days"
-  | "this_month"
-  | "last_month"
   | "last_3m"
+  | "last_6m"
+  | "last_1y"
   | "custom";
 
 export type ProviderFilter = "all" | ApiUsageProvider;
@@ -95,8 +95,6 @@ export function resolveUsageDateRange(
   customEnd: string,
   today = new Date()
 ): { start: string; end: string } {
-  const y = today.getFullYear();
-  const m = today.getMonth();
   const pad = (n: number) => String(n).padStart(2, "0");
   const toIso = (d: Date) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -107,14 +105,22 @@ export function resolveUsageDateRange(
     start.setDate(start.getDate() - 30);
     return { start: toIso(start), end: toIso(today) };
   }
-  if (preset === "this_month") return { start: toIso(new Date(y, m, 1)), end: toIso(today) };
-  if (preset === "last_month") {
-    return { start: toIso(new Date(y, m - 1, 1)), end: toIso(new Date(y, m, 0)) };
+  if (preset === "last_3m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 3);
+    return { start: toIso(start), end: toIso(today) };
   }
-  const start = new Date(today);
-  start.setMonth(start.getMonth() - 2);
-  start.setDate(1);
-  return { start: toIso(start), end: toIso(today) };
+  if (preset === "last_6m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 6);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  if (preset === "last_1y") {
+    const start = new Date(today);
+    start.setFullYear(start.getFullYear() - 1);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  return { start: customStart, end: customEnd };
 }
 
 /** RFC4180-ish CSV 파서 */
@@ -387,6 +393,8 @@ export type DailyCostPoint = {
   anthropic: number;
   openai: number;
   total: number;
+  requests_anthropic: number;
+  requests_openai: number;
 };
 
 export type ModelCostRow = {
@@ -394,6 +402,7 @@ export type ModelCostRow = {
   date: string;
   provider: ApiUsageProvider;
   api_key_label: string;
+  num_requests: number | null;
   input_cost_usd: number;
   output_cost_usd: number;
   cost_usd: number;
@@ -435,11 +444,24 @@ export function aggregateUsageDashboard(
   const date_min = dates[0] ?? null;
   const date_max = dates[dates.length - 1] ?? null;
 
-  const dailyMap = new Map<string, { anthropic: number; openai: number }>();
+  const dailyMap = new Map<
+    string,
+    { anthropic: number; openai: number; requests_anthropic: number; requests_openai: number }
+  >();
   for (const r of filtered) {
-    const d = dailyMap.get(r.date) ?? { anthropic: 0, openai: 0 };
-    if (r.provider === "anthropic") d.anthropic += Number(r.cost_usd);
-    else d.openai += Number(r.cost_usd);
+    const d = dailyMap.get(r.date) ?? {
+      anthropic: 0,
+      openai: 0,
+      requests_anthropic: 0,
+      requests_openai: 0
+    };
+    if (r.provider === "anthropic") {
+      d.anthropic += Number(r.cost_usd);
+      d.requests_anthropic += r.num_requests ?? 0;
+    } else {
+      d.openai += Number(r.cost_usd);
+      d.requests_openai += r.num_requests ?? 0;
+    }
     dailyMap.set(r.date, d);
   }
 
@@ -452,7 +474,9 @@ export function aggregateUsageDashboard(
         label: `${Number(m)}/${Number(day)}`,
         anthropic: roundUsd(v.anthropic),
         openai: roundUsd(v.openai),
-        total: roundUsd(v.anthropic + v.openai)
+        total: roundUsd(v.anthropic + v.openai),
+        requests_anthropic: v.requests_anthropic,
+        requests_openai: v.requests_openai
       };
     });
 
@@ -464,6 +488,7 @@ export function aggregateUsageDashboard(
       date: r.date,
       provider: r.provider,
       api_key_label: r.api_key_label,
+      num_requests: null,
       input_cost_usd: 0,
       output_cost_usd: 0,
       cost_usd: 0,
@@ -472,6 +497,9 @@ export function aggregateUsageDashboard(
     prev.input_cost_usd += Number(r.input_cost_usd);
     prev.output_cost_usd += Number(r.output_cost_usd);
     prev.cost_usd += Number(r.cost_usd);
+    if (r.num_requests != null) {
+      prev.num_requests = (prev.num_requests ?? 0) + r.num_requests;
+    }
     if (r.date > prev.date) prev.date = r.date;
     modelMap.set(key, prev);
   }
