@@ -288,10 +288,19 @@ export function ApiUsageDashboard() {
                       }
                     />
                     <Tooltip
-                      formatter={(value, name) => [
-                        formatUsd(typeof value === "number" ? value : Number(value)),
-                        name === "anthropic" ? "Anthropic" : "OpenAI"
-                      ]}
+                      formatter={(value, _name, item) => {
+                        const dataKey = String(item?.dataKey ?? "");
+                        const label =
+                          dataKey === "anthropic"
+                            ? "Anthropic"
+                            : dataKey === "openai"
+                              ? "OpenAI"
+                              : String(_name);
+                        return [
+                          formatUsd(typeof value === "number" ? value : Number(value)),
+                          label
+                        ];
+                      }}
                     />
                     <Legend />
                     <Bar dataKey="anthropic" name="Anthropic" stackId="cost" fill="#7c3aed" />
