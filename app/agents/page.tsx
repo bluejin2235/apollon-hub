@@ -1,19 +1,19 @@
 "use client";
-
 import { useState } from "react";
 import { AgentListTab } from "@/components/agents/agent-list-tab";
-import { OpenAiUsageTab } from "@/components/agents/openai-usage-tab";
+import { ApiUsageDashboard } from "@/components/agents/api-usage-dashboard";
+import { CreditRecordsTab } from "@/components/agents/credit-records-tab";
 
-type AgentsTab = "usage" | "list";
+type AgentsTab = "usage" | "credits" | "list";
 
 const TABS: { id: AgentsTab; label: string }[] = [
   { id: "usage", label: "API 사용량" },
+  { id: "credits", label: "크레딧 · 추가 결제" },
   { id: "list", label: "에이전트 목록" }
 ];
 
 export default function AgentsPage() {
   const [tab, setTab] = useState<AgentsTab>("usage");
-
   return (
     <div className="space-y-6">
       <header>
@@ -22,11 +22,7 @@ export default function AgentsPage() {
           팀 AI 에이전트와 API 사용량(CSV 업로드)을 관리합니다.
         </p>
       </header>
-
-      <nav
-        className="flex flex-wrap gap-1 border-b border-slate-200"
-        aria-label="아르테 메뉴"
-      >
+      <nav className="flex flex-wrap gap-1 border-b border-slate-200" aria-label="아르테 메뉴">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -42,8 +38,9 @@ export default function AgentsPage() {
           </button>
         ))}
       </nav>
-
-      {tab === "usage" ? <OpenAiUsageTab /> : <AgentListTab />}
+      {tab === "usage" && <ApiUsageDashboard />}
+      {tab === "credits" && <CreditRecordsTab />}
+      {tab === "list" && <AgentListTab />}
     </div>
   );
 }
