@@ -5,7 +5,6 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import {
   aggregateUsageDashboard,
   formatProviderUploadMeta,
-  formatTokenCount,
   formatUsd,
   resolveUsageDateRange,
   type ApiUsageDbRow,
@@ -41,14 +40,21 @@ async function fetchUploadMeta(): Promise<ProviderUploadMeta[]> {
   const empty = (provider: ApiUsageProvider): ProviderUploadMeta => ({
     provider,
     created_at: null,
-    uploader_name: null
+    uploader_name: null,
+    data_start: null,
+    data_end: null
   });
 
-  const { data: metaData, error: metaError } = await supabase
-    .from("api_usage")
-    .select("provider, created_at, uploaded_by")
-    .not("uploaded_by", "is", null)
-    .order("created_at", { ascending: false });
+  const [metaRes, dateRes] = await Promise.all([
+    supabase
+      .from("api_usage")
+      .select("provider, created_at, uploaded_by")
+      .not("uploaded_by", "is", null)
+      .order("created_at", { ascending: false }),
+    supabase.from("api_usage").select("provider, date")
+  ]);
+
+  const { data: metaData, error: metaError } = metaRes;
 
   if (metaError) {
     console.error("[api_usage] upload meta", metaError);
@@ -78,12 +84,29 @@ async function fetchUploadMeta(): Promise<ProviderUploadMeta[]> {
     }
   }
 
+  const dateRangeByProvider: Record<string, { min: string; max: string }> = {};
+  if (!dateRes.error) {
+    for (const row of dateRes.data ?? []) {
+      const p = row.provider as string;
+      const d = row.date as string;
+      const prev = dateRangeByProvider[p];
+      if (!prev) dateRangeByProvider[p] = { min: d, max: d };
+      else {
+        if (d < prev.min) prev.min = d;
+        if (d > prev.max) prev.max = d;
+      }
+    }
+  }
+
   const toMeta = (provider: ApiUsageProvider, row?: UploadMetaRow): ProviderUploadMeta => {
     if (!row) return empty(provider);
+    const range = dateRangeByProvider[provider];
     return {
       provider,
       created_at: row.created_at,
-      uploader_name: nameMap[row.uploaded_by] ?? null
+      uploader_name: nameMap[row.uploaded_by] ?? null,
+      data_start: range?.min ?? null,
+      data_end: range?.max ?? null
     };
   };
 
@@ -257,11 +280,16 @@ export function ApiUsageDashboard() {
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">총 토큰 수</p>
+              <p className="text-xs font-medium text-slate-500">총 API 호출 횟수</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
-                {agg.total_tokens == null ? "—" : formatTokenCount(agg.total_tokens)}
+                {agg.total_requests != null ? agg.total_requests.toLocaleString("ko-KR") + "회" : "—"}
               </p>
-              <p className="mt-1 text-xs text-slate-500">OpenAI 데이터만 집계</p>
+              <p className="mt-1 text-xs text-slate-500">
+                호출당 평균{" "}
+                {agg.total_requests && agg.total_requests > 0
+                  ? formatKrw(totalKrw / agg.total_requests)
+                  : "—"}
+              </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">업로드된 데이터 기간</p>
@@ -271,6 +299,27 @@ export function ApiUsageDashboard() {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-base font-semibold text-slate-900">일별 비용</h2>
+            <div className="mt-2 mb-4 flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">적용된 데이터 기간</span>
+              {anthropicMeta?.created_at && (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
+                  Anthropic&nbsp;
+                  {anthropicMeta.data_start && anthropicMeta.data_end
+                    ? `${anthropicMeta.data_start} ~ ${anthropicMeta.data_end}`
+                    : periodLabel}
+                </span>
+              )}
+              {openaiMeta?.created_at && (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                  OpenAI&nbsp;
+                  {openaiMeta.data_start && openaiMeta.data_end
+                    ? `${openaiMeta.data_start} ~ ${openaiMeta.data_end}`
+                    : periodLabel}
+                </span>
+              )}
+            </div>
             <div className="mt-4 h-[320px] w-full">
               {agg.daily.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-slate-500">
@@ -288,10 +337,19 @@ export function ApiUsageDashboard() {
                       }
                     />
                     <Tooltip
-                      formatter={(value, name) => [
-                        formatUsd(typeof value === "number" ? value : Number(value)),
-                        name === "anthropic" ? "Anthropic" : "OpenAI"
-                      ]}
+                      formatter={(value, _name, item) => {
+                        const dataKey = String(item?.dataKey ?? "");
+                        const label =
+                          dataKey === "anthropic"
+                            ? "Anthropic"
+                            : dataKey === "openai"
+                              ? "OpenAI"
+                              : String(_name);
+                        return [
+                          formatUsd(typeof value === "number" ? value : Number(value)),
+                          label
+                        ];
+                      }}
                     />
                     <Legend />
                     <Bar dataKey="anthropic" name="Anthropic" stackId="cost" fill="#7c3aed" />

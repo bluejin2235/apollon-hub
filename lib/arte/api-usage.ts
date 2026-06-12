@@ -12,6 +12,7 @@ export type ApiUsageRow = {
   input_cost_usd: number;
   output_cost_usd: number;
   cost_usd: number;
+  num_requests: number;
 };
 
 export type ApiUsageDbRow = ApiUsageRow & {
@@ -25,6 +26,8 @@ export type ProviderUploadMeta = {
   provider: ApiUsageProvider;
   created_at: string | null;
   uploader_name: string | null;
+  data_start: string | null;
+  data_end: string | null;
 };
 
 export function formatUploadTimestamp(iso: string | null): string {
@@ -240,8 +243,13 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
         output_tokens: 0,
         input_cost_usd: 0,
         output_cost_usd: 0,
-        cost_usd: 0
+        cost_usd: 0,
+        num_requests: 0
       } satisfies Agg);
+
+    if (tokenType === "input_no_cache" || tokenType === "input") {
+      prev.num_requests += 1;
+    }
 
     if (tokenType === "output") {
       prev.output_cost_usd += cost;
@@ -289,9 +297,11 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
         output_tokens: 0,
         input_cost_usd: 0,
         output_cost_usd: 0,
-        cost_usd: 0
+        cost_usd: 0,
+        num_requests: 0
       } satisfies Agg);
 
+    prev.num_requests += Math.round(toNum(row.num_model_requests));
     prev.input_tokens += inputTokens;
     prev.output_tokens += outputTokens;
 
@@ -370,6 +380,7 @@ export type DashboardAggregate = {
   rows: ApiUsageDbRow[];
   total_cost_usd: number;
   total_tokens: number | null;
+  total_requests: number | null;
   date_min: string | null;
   date_max: string | null;
   daily: DailyCostPoint[];
@@ -390,6 +401,11 @@ export function aggregateUsageDashboard(
       : filtered.some((r) => r.provider === "anthropic")
         ? null
         : 0;
+
+  const total_requests =
+    filtered.length === 0
+      ? null
+      : filtered.reduce((s, r) => s + Number(r.num_requests ?? 0), 0);
 
   const dates = filtered.map((r) => r.date).sort();
   const date_min = dates[0] ?? null;
@@ -447,6 +463,7 @@ export function aggregateUsageDashboard(
     rows: filtered,
     total_cost_usd: roundUsd(total_cost_usd),
     total_tokens,
+    total_requests,
     date_min,
     date_max,
     daily,
