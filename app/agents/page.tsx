@@ -1,19 +1,21 @@
 "use client";
 import { useState } from "react";
 import { AgentListTab } from "@/components/agents/agent-list-tab";
+import { AiCostOverview } from "@/components/agents/ai-cost-overview";
 import { ApiUsageDashboard } from "@/components/agents/api-usage-dashboard";
 import { CreditRecordsTab } from "@/components/agents/credit-records-tab";
 
-type AgentsTab = "usage" | "credits" | "list";
+type AgentsTab = "overview" | "usage" | "credits" | "list";
 
 const TABS: { id: AgentsTab; label: string }[] = [
+  { id: "overview", label: "AI 비용 현황" },
   { id: "usage", label: "API 사용량" },
   { id: "credits", label: "크레딧 · 추가 결제" },
   { id: "list", label: "에이전트 목록" }
 ];
 
 export default function AgentsPage() {
-  const [tab, setTab] = useState<AgentsTab>("usage");
+  const [tab, setTab] = useState<AgentsTab>("overview");
   return (
     <div className="space-y-6">
       <header>
@@ -38,6 +40,9 @@ export default function AgentsPage() {
           </button>
         ))}
       </nav>
+      {tab === "overview" && (
+        <AiCostOverview onTabChange={(t) => setTab(t)} />
+      )}
       {tab === "usage" && <ApiUsageDashboard />}
       {tab === "credits" && <CreditRecordsTab />}
       {tab === "list" && <AgentListTab />}
