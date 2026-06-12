@@ -15,7 +15,7 @@ import type { ApiUsageDbRow } from "@/lib/arte/api-usage";
 import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
-type PeriodPreset = "this_month" | "last_month" | "last_3m" | "custom";
+type PeriodPreset = "last_30days" | "this_month" | "last_month" | "last_3m" | "custom";
 
 type CreditRecordRow = {
   id: string;
@@ -32,6 +32,7 @@ type Props = {
 };
 
 const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
+  { value: "last_30days", label: "최근 1달" },
   { value: "this_month", label: "이번 달" },
   { value: "last_month", label: "지난 달" },
   { value: "last_3m", label: "최근 3개월" },
@@ -42,6 +43,11 @@ function resolveDateRange(preset: PeriodPreset, customStart: string, customEnd: 
   const today = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (preset === "last_30days") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 30);
+    return { start: fmt(start), end: fmt(today) };
+  }
   if (preset === "this_month") {
     return { start: fmt(new Date(today.getFullYear(), today.getMonth(), 1)), end: fmt(today) };
   }
@@ -83,7 +89,7 @@ function paymentTypeLabel(t: string) {
 
 export function AiCostOverview({ onTabChange }: Props) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [period, setPeriod] = useState<PeriodPreset>("this_month");
+  const [period, setPeriod] = useState<PeriodPreset>("last_30days");
   const [customStart, setCustomStart] = useState(() => {
     const d = new Date();
     d.setDate(1);
