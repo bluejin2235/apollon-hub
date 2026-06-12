@@ -1,3 +1,5 @@
+// 필요 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -5,10 +7,26 @@ const client = new Anthropic();
 
 export async function POST(req: NextRequest) {
   try {
-    const { base64, mediaType } = (await req.json()) as {
-      base64: string;
+    const { storagePath, mediaType } = (await req.json()) as {
+      storagePath: string;
       mediaType: string;
     };
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[parse-receipt] Supabase env vars missing");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    const { data, error } = await supabase.storage.from("credit-images").download(storagePath);
+    if (error || !data) throw new Error("이미지 다운로드 실패");
+    const arrayBuffer = await data.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
 
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     const safeMediaType = allowedTypes.includes(mediaType) ? mediaType : "image/jpeg";

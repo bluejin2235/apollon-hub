@@ -20,6 +20,7 @@ const PAYMENT_TYPES = ["크레딧", "초과결제", "기타"];
 export function CreditRegisterModal({ onClose, onSaved }: Props) {
   const [step, setStep] = useState<"upload" | "confirm">("upload");
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
 
   const handleFileChange = (file: File) => {
     setImageFile(file);
+    setStoragePath(null);
     setImagePreviewUrl(URL.createObjectURL(file));
   };
 
@@ -43,16 +45,18 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
     setParsing(true);
     setParseError(null);
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(imageFile);
-      });
+      const ext = imageFile.name.split(".").pop() ?? "jpg";
+      const path = `temp/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("credit-images")
+        .upload(path, imageFile);
+      if (uploadError) throw uploadError;
+      setStoragePath(path);
+
       const res = await fetch("/api/arte/parse-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base64, mediaType: imageFile.type })
+        body: JSON.stringify({ storagePath: path, mediaType: imageFile.type })
       });
       if (!res.ok) throw new Error("분석 실패");
       const parsed = (await res.json()) as Partial<ParsedInfo>;
@@ -78,10 +82,10 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      let image_path: string | null = null;
-      if (imageFile) {
+      let image_path: string | null = storagePath;
+      if (!image_path && imageFile) {
         const ext = imageFile.name.split(".").pop() ?? "jpg";
-        const path = `receipts/${Date.now()}.${ext}`;
+        const path = `temp/${Date.now()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("credit-images")
           .upload(path, imageFile);
