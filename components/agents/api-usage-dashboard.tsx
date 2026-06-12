@@ -638,12 +638,10 @@ export function ApiUsageDashboard() {
         </>
       ) : null}
 
-      {isSuperAdmin ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900">CSV 업로드</h2>
-          <ApiUsageUpload onSaved={() => void load()} />
-        </section>
-      ) : null}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-sm font-semibold text-slate-900">CSV 업로드</h2>
+        <ApiUsageUpload onSaved={() => void load()} />
+      </section>
     </div>
   );
 }

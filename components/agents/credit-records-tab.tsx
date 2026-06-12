@@ -255,15 +255,13 @@ export function CreditRecordsTab() {
               <p className="mt-2 text-xs text-slate-500">{range.start} ~ {range.end}</p>
             )}
           </div>
-          {isSuperAdmin ? (
-            <button
-              type="button"
-              onClick={() => setShowModal(true)}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
-            >
-              + 충전 등록
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            + 충전 등록
+          </button>
         </div>
       </section>
 
