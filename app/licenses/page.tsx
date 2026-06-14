@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Cell, Legend, Pie, PieChart, Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   activeProfiles,
   computeLicenseCostBreakdown,
@@ -53,6 +53,124 @@ type CategoryRow = {
   perpetualKrw: number;
   color: string;
 };
+
+type LicensePeriodPreset = "last_3m" | "last_6m" | "last_1y" | "custom";
+
+type CostHistoryRow = {
+  service_id: string;
+  cost_monthly: number;
+  cost_monthly_krw: number | null;
+  currency: string;
+  contract_type: string | null;
+  active_member_count: number | null;
+  category: string | null;
+  recorded_at: string;
+  recorded_month: string;
+};
+
+type MonthlyTrendPoint = {
+  monthKey: string;
+  label: string;
+  subscriptionTotal: number;
+  perPersonCost: number;
+  memberCount: number;
+  byCategory: Record<string, number>;
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  "전사/공통": "#7F77DD",
+  "디자인/공통": "#A07178",
+  "디자인/비주얼": "#EF9F27",
+  "디자인/공간": "#1D9E75",
+  "기획/공통": "#534AB7",
+  "기획/공간": "#D4537E",
+  "공통": "#888780",
+  "미분류": "#CBD5E1"
+};
+
+const PERIOD_OPTIONS: { value: LicensePeriodPreset; label: string }[] = [
+  { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
+  { value: "custom", label: "직접 선택" }
+];
+
+function resolveLicenseDateRange(
+  preset: LicensePeriodPreset,
+  customStart: string,
+  customEnd: string,
+  today = new Date()
+): { start: string; end: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === "custom") return { start: customStart, end: customEnd };
+  if (preset === "last_3m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 3);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  if (preset === "last_6m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 6);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  const start = new Date(today);
+  start.setFullYear(start.getFullYear() - 1);
+  return { start: toIso(start), end: toIso(today) };
+}
+
+function getMonthKeysInRange(start: string, end: string): { key: string; label: string }[] {
+  const keys: { key: string; label: string }[] = [];
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  let y = sy;
+  let m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    keys.push({ key, label: `${m}월` });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return keys;
+}
+
+function CategoryTrendTooltip({
+  active,
+  payload,
+  label
+}: {
+  active?: boolean;
+  payload?: { name?: string; value?: number; color?: string }[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((sum, entry) => sum + Number(entry.value ?? 0), 0);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+      <p className="font-medium text-slate-900">{label}</p>
+      <div className="mt-1 space-y-0.5">
+        {payload
+          .filter((entry) => Number(entry.value ?? 0) > 0)
+          .map((entry) => (
+            <p key={entry.name} className="text-slate-600">
+              <span
+                className="mr-1.5 inline-block h-2 w-2 rounded-sm"
+                style={{ backgroundColor: entry.color }}
+              />
+              {entry.name}: {formatCurrency(Number(entry.value))}
+            </p>
+          ))}
+      </div>
+      <p className="mt-1 border-t border-slate-100 pt-1 font-medium text-slate-900">
+        합계: {formatCurrency(total)}
+      </p>
+    </div>
+  );
+}
 
 function IconSubscriptionPurple({ className }: { className?: string }) {
   return (
@@ -124,20 +242,42 @@ function IconEmptyBox({ className }: { className?: string }) {
 }
 
 export default function LicensesDashboardPage() {
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [period, setPeriod] = useState<LicensePeriodPreset>("last_6m");
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(todayIso);
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [costHistory, setCostHistory] = useState<CostHistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const fetchedRef = useRef(false);
   const rates = useKrwRates();
 
+  const range = useMemo(
+    () => resolveLicenseDateRange(period, customStart, customEnd),
+    [period, customStart, customEnd]
+  );
+
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
     const run = async () => {
+      setLoading(true);
       const [l, p] = await Promise.all([
         supabase
           .from("services")
           .select("*")
           .eq("is_hub_card", false)
           .order("created_at", { ascending: false }),
-        supabase.from("profiles").select("id, email, name, department, role, status, created_at").order("created_at", { ascending: true })
+        supabase
+          .from("profiles")
+          .select("id, email, name, department, role, status, created_at")
+          .order("created_at", { ascending: true })
       ]);
       setLicenses((l.data ?? []) as License[]);
       setProfiles((p.data ?? []) as Profile[]);
@@ -145,6 +285,27 @@ export default function LicensesDashboardPage() {
     };
     void run();
   }, []);
+
+  useEffect(() => {
+    const run = async () => {
+      const { data, error } = await supabase
+        .from("service_cost_history")
+        .select(
+          "service_id, cost_monthly, cost_monthly_krw, currency, contract_type, active_member_count, category, recorded_at, recorded_month"
+        )
+        .gte("recorded_at", `${range.start}T00:00:00+00:00`)
+        .lte("recorded_at", `${range.end}T23:59:59+00:00`)
+        .order("recorded_at", { ascending: true });
+
+      if (error) {
+        console.error("[costHistory] fetch error", error);
+        return;
+      }
+      console.warn("[costHistory] fetched", data?.length, "rows");
+      setCostHistory((data ?? []) as CostHistoryRow[]);
+    };
+    void run();
+  }, [range.start, range.end]);
 
   const teamActive = useMemo(() => activeProfiles(profiles), [profiles]);
 
@@ -271,6 +432,77 @@ export default function LicensesDashboardPage() {
     [sortedCategoryRows]
   );
 
+  const monthlyTrendData = useMemo((): MonthlyTrendPoint[] => {
+    const months = getMonthKeysInRange(range.start, range.end);
+
+    // recorded_month별 service_id별 최신 행만 유지
+    const byMonth = new Map<string, Map<string, CostHistoryRow>>();
+    for (const row of costHistory) {
+      if (!byMonth.has(row.recorded_month)) {
+        byMonth.set(row.recorded_month, new Map());
+      }
+      const serviceMap = byMonth.get(row.recorded_month)!;
+      const prev = serviceMap.get(row.service_id);
+      if (!prev || row.recorded_at > prev.recorded_at) {
+        serviceMap.set(row.service_id, row);
+      }
+    }
+
+    return months.map(({ key, label }) => {
+      const serviceMap = byMonth.get(key);
+      let subscriptionTotal = 0;
+      const memberCounts: number[] = [];
+      const byCategory: Record<string, number> = {};
+
+      if (serviceMap) {
+        for (const row of serviceMap.values()) {
+          if (row.active_member_count != null && row.active_member_count > 0) {
+            memberCounts.push(row.active_member_count);
+          }
+          if (row.contract_type === "영구 라이선스") continue;
+
+          const krw = row.cost_monthly_krw != null
+            ? Number(row.cost_monthly_krw)
+            : (() => {
+                const monthly = Number(row.cost_monthly);
+                const cur = (row.currency ?? "KRW").toUpperCase();
+                const usdKrw = rates?.USD ?? 1525;
+                const eurKrw = rates?.EUR ?? 1690;
+                if (cur === "USD") return monthly * usdKrw;
+                if (cur === "EUR") return monthly * eurKrw;
+                return monthly;
+              })();
+
+          const monthlyKrw = row.contract_type === "년 구독"
+            ? Math.round(krw / 12)
+            : krw;
+
+          subscriptionTotal += monthlyKrw;
+          const cat = row.category ?? "미분류";
+          byCategory[cat] = (byCategory[cat] ?? 0) + monthlyKrw;
+        }
+      } // serviceMap 없으면 subscriptionTotal = 0 그대로 유지
+
+      const memberCount = memberCounts.length > 0
+        ? Math.round(memberCounts.reduce((s, n) => s + n, 0) / memberCounts.length)
+        : (teamActive.length > 0 ? teamActive.length : 12);
+
+      const perPersonCost = memberCount > 0
+        ? Math.round(subscriptionTotal / memberCount)
+        : 0;
+
+      return { monthKey: key, label, subscriptionTotal, perPersonCost, memberCount, byCategory };
+    });
+  }, [costHistory, teamActive, rates, range.start, range.end]);
+
+  const categories = useMemo(
+    () =>
+      Array.from(new Set(costHistory.map((r) => r.category ?? "미분류"))).sort(),
+    [costHistory]
+  );
+
+  const hasTrendData = monthlyTrendData.some((d) => d.subscriptionTotal > 0);
+
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
   }
@@ -286,6 +518,92 @@ export default function LicensesDashboardPage() {
           라이선스 목록 →
         </Link>
       </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-900">조회 기간</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setPeriod(opt.value)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                period === opt.value
+                  ? "bg-violet-600 text-white"
+                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {period === "custom" && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              시작
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              종료
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart}
+                max={todayIso}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+          </div>
+        )}
+        {period !== "custom" && (
+          <p className="mt-2 text-xs text-slate-500">
+            {range.start} ~ {range.end}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold text-slate-900">월별 비용 추이</h2>
+        <div className="h-[220px] w-full">
+          {!hasTrendData ? (
+            <p className="flex h-full items-center justify-center text-sm text-slate-500">
+              해당 기간 이력 데이터가 없습니다.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthlyTrendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) =>
+                    typeof v === "number"
+                      ? `₩${v >= 10000 ? `${Math.round(v / 10000)}만` : v.toLocaleString("ko-KR")}`
+                      : String(v)
+                  }
+                />
+                <Tooltip content={<CategoryTrendTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {categories.map((cat) => (
+                  <Bar
+                    key={cat}
+                    dataKey={`byCategory.${cat}`}
+                    name={cat}
+                    stackId="cost"
+                    fill={CATEGORY_COLORS[cat] ?? "#CBD5E1"}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </section>
 
       {/* 요약 4카드 */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
