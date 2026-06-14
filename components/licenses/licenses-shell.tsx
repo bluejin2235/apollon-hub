@@ -26,7 +26,7 @@ export function LicensesShell({ children }: { children: ReactNode }) {
       <div className="flex w-full gap-0 pb-12 pt-0">
         <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">
           <p className="text-xs font-semibold uppercase tracking-wider text-apollon-600">License</p>
-          <h2 className="mt-1 text-lg font-bold text-slate-900">Apollon License Manager</h2>
+          <h2 className="mt-1 text-lg font-bold text-slate-900">License Manager</h2>
           <LicenseSidebarNav pathname={pathname} />
         </aside>
 

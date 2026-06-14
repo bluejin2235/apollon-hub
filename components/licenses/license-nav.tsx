@@ -12,7 +12,8 @@ export const LICENSE_NAV: LicenseNavItem[] = [
   { href: "/licenses", label: "대시보드", match: (p) => p === "/licenses" },
   { href: "/licenses/list", label: "전체 라이선스", match: (p) => p.startsWith("/licenses/list") },
   { href: "/licenses/members", label: "멤버별 라이선스", match: (p) => p.startsWith("/licenses/members") },
-  { href: "/licenses/costs", label: "비용현황", match: (p) => p.startsWith("/licenses/costs") }
+  { href: "/licenses/costs", label: "비용현황", match: (p) => p.startsWith("/licenses/costs") },
+  { href: "/licenses/categories", label: "카테고리 관리", match: (p) => p.startsWith("/licenses/categories") }
 ];
 
 export function LicenseSidebarNav({ pathname }: { pathname: string }) {

@@ -520,8 +520,8 @@ export default function LicensesDashboardPage() {
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">조회 기간</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <h2 className="text-base font-semibold text-slate-900">월별 구독 라이선스 비용 추이</h2>
+        <div className="mt-4 flex flex-wrap gap-2">
           {PERIOD_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -567,11 +567,7 @@ export default function LicensesDashboardPage() {
             {range.start} ~ {range.end}
           </p>
         )}
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-base font-semibold text-slate-900">월별 비용 추이</h2>
-        <div className="h-[220px] w-full">
+        <div className="mt-5 h-[220px] w-full">
           {!hasTrendData ? (
             <p className="flex h-full items-center justify-center text-sm text-slate-500">
               해당 기간 이력 데이터가 없습니다.
@@ -605,64 +601,65 @@ export default function LicensesDashboardPage() {
         </div>
       </section>
 
-      {/* 요약 4카드 */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
-          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
-            <IconSubscriptionPurple className="h-6 w-6" />
-          </div>
-          <p className="text-xs font-medium text-slate-600">구독 월비용</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
-            {formatCurrency(metrics.subscriptionMonthlySum)}
-          </p>
-          <p className="mt-2 text-sm text-slate-500">
-            연간 {formatCurrency(metrics.annualSubscriptionSum)}
-          </p>
-        </div>
-
-        <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/80 p-5 transition-shadow hover:shadow-md">
-          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-slate-200/80 text-slate-600">
-            <IconShieldGray className="h-6 w-6" />
-          </div>
-          <p className="text-xs font-medium text-slate-600">영구 라이선스</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
-            {formatCurrency(metrics.perpetualPurchaseSum)}
-          </p>
-          <p className="mt-2 text-sm text-slate-500">
-            총 구매비용 · {metrics.perpetualServiceCount}개 서비스
-          </p>
-        </div>
-
-        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
-          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-emerald-100 text-emerald-600">
-            <IconCubeGreen className="h-6 w-6" />
-          </div>
-          <p className="text-xs font-medium text-slate-600">서비스</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
-            {serviceTotals.total}개
-          </p>
-          <p className="mt-2 text-sm text-slate-500">
-            구독 {serviceTotals.sub} · 영구 {serviceTotals.perp}
-          </p>
-        </div>
-
-        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
-          <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
-            <IconUsersPurple className="h-6 w-6" />
-          </div>
-          <p className="text-xs font-medium text-slate-600">팀원</p>
-          <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">{teamActive.length}명</p>
-        </div>
-      </section>
-
-      {/* 카테고리별 비용 분석 */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-slate-900">카테고리별 비용 분석</h2>
+        <h2 className="text-base font-semibold text-slate-900">이달 구독 비용</h2>
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+            <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
+              <IconSubscriptionPurple className="h-6 w-6" />
+            </div>
+            <p className="text-xs font-medium text-slate-600">구독 월비용</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+              {formatCurrency(metrics.subscriptionMonthlySum)}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              연간 {formatCurrency(metrics.annualSubscriptionSum)}
+            </p>
+          </div>
+
+          <div className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50/80 p-5 transition-shadow hover:shadow-md">
+            <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-slate-200/80 text-slate-600">
+              <IconShieldGray className="h-6 w-6" />
+            </div>
+            <p className="text-xs font-medium text-slate-600">영구 라이선스</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+              {formatCurrency(metrics.perpetualPurchaseSum)}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              총 구매비용 · {metrics.perpetualServiceCount}개 서비스
+            </p>
+          </div>
+
+          <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+            <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-emerald-100 text-emerald-600">
+              <IconCubeGreen className="h-6 w-6" />
+            </div>
+            <p className="text-xs font-medium text-slate-600">서비스</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">
+              {serviceTotals.total}개
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              구독 {serviceTotals.sub} · 영구 {serviceTotals.perp}
+            </p>
+          </div>
+
+          <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+            <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
+              <IconUsersPurple className="h-6 w-6" />
+            </div>
+            <p className="text-xs font-medium text-slate-600">팀원</p>
+            <p className="mt-2 text-3xl font-bold tabular-nums leading-none text-slate-900">{teamActive.length}명</p>
+          </div>
+        </div>
+
+        <div className="my-6 border-t border-slate-200" />
+
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">카테고리별 비용 분석</h3>
           <p className="mt-0.5 text-sm text-slate-500">구독 서비스 기준 월비용</p>
         </div>
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
           <div className="min-w-0 flex-1">
             <table className="w-full table-fixed text-sm">
               <colgroup>

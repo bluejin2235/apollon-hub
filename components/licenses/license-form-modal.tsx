@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   ContractType,
   License,
@@ -14,6 +14,7 @@ import {
   insertServiceCostHistory,
   shouldRecordCostHistory
 } from "@/lib/licenses/service-cost-history";
+import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
@@ -129,6 +130,7 @@ export function LicenseFormModal({
       ""
   );
   const [category, setCategory] = useState(license?.category ?? "");
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const [currency, setCurrency] = useState(license?.currency ?? "KRW");
   const [cost, setCost] = useState(
     license?.cost != null && license.cost > 0
@@ -173,6 +175,7 @@ export function LicenseFormModal({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const rates = useKrwRates();
 
   const title = mode === "create" ? "새 서비스 추가" : "서비스 수정";
 
@@ -180,6 +183,38 @@ export function LicenseFormModal({
     () => [...profiles].sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [profiles]
   );
+
+  useEffect(() => {
+    const run = async () => {
+      const { data } = await supabase
+        .from("services")
+        .select("category")
+        .eq("is_hub_card", false)
+        .not("category", "is", null)
+        .order("category", { ascending: true });
+
+      const unique = Array.from(
+        new Set(
+          (data ?? [])
+            .map((row) => row.category)
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        )
+      ).sort((a, b) => a.localeCompare(b, "ko"));
+
+      setCategoryOptions(unique);
+    };
+    void run();
+  }, []);
+
+  const categorySelectOptions = useMemo(() => {
+    const options = [...categoryOptions];
+    const current = category.trim();
+    if (current && !options.includes(current)) {
+      options.push(current);
+      options.sort((a, b) => a.localeCompare(b, "ko"));
+    }
+    return options;
+  }, [categoryOptions, category]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -298,7 +333,9 @@ export function LicenseFormModal({
       await insertServiceCostHistory(
         supabase,
         saved,
-        activeProfiles(profiles).length
+        activeProfiles(profiles).length,
+        rates?.USD,
+        rates?.EUR
       );
       onSaved(saved);
       onClose();
@@ -334,7 +371,13 @@ export function LicenseFormModal({
         contract_type: contractType
       })
     ) {
-      await insertServiceCostHistory(supabase, saved, activeProfiles(profiles).length);
+      await insertServiceCostHistory(
+        supabase,
+        saved,
+        activeProfiles(profiles).length,
+        rates?.USD,
+        rates?.EUR
+      );
     }
     onSaved(saved);
     onClose();
@@ -376,12 +419,18 @@ export function LicenseFormModal({
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">카테고리</label>
-              <input
+              <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="예: 기획/공통"
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
-              />
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              >
+                <option value="">선택하세요</option>
+                {categorySelectOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">통화</label>
