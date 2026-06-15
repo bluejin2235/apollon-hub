@@ -91,6 +91,247 @@ function isPaymentMethod(v: unknown): v is PaymentMethod {
   return v === "법인카드" || v === "계좌이체";
 }
 
+type LicenseNotifyChange = {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+};
+
+function formatNotifyCost(amount: number, currency: string): string {
+  const cur = currency?.trim() || "KRW";
+  if (cur === "USD") {
+    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  }
+  if (cur === "EUR") {
+    return `€${amount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  }
+  return `₩${amount.toLocaleString("ko-KR")}`;
+}
+
+function formatNotifyLicenseCount(count: number): string {
+  return count > 0 ? String(count) : "무제한";
+}
+
+function isoDateSlice(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  return value.slice(0, 10);
+}
+
+function formatNotifyDate(value: string | null | undefined): string {
+  const d = isoDateSlice(value);
+  return d || "—";
+}
+
+function formatNotifyPaymentDay(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${value}일`;
+}
+
+function resolveLicensePaymentMethod(license: License): PaymentMethod {
+  if (isPaymentMethod(license.payment_method)) return license.payment_method;
+  const parsed = parseDescField(license.description, "결제방법");
+  if (isPaymentMethod(parsed)) return parsed;
+  return "법인카드";
+}
+
+function resolveLicenseStartDate(license: License): string {
+  if (license.start_date) return isoDateSlice(license.start_date);
+  const parsed = parseDescField(license.description, "시작일");
+  return parsed ? isoDateSlice(parsed) : "";
+}
+
+function resolveLicenseAssigneeId(license: License): string | null {
+  return license.assignee_id ?? license.card_holder_id ?? null;
+}
+
+function profileDisplayName(profileId: string | null | undefined, profiles: Profile[]): string {
+  if (!profileId) return "—";
+  const profile = profiles.find((p) => p.id === profileId);
+  return profile?.name?.trim() || profileId;
+}
+
+function buildLicenseNotifyChanges(
+  license: License,
+  next: {
+    name: string;
+    category: string;
+    contractType: ContractType;
+    status: LicenseStatus;
+    costNum: number;
+    licenseCount: number | null;
+    currency: string;
+    paymentDay: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    assigneeId: string | null;
+    paymentMethod: PaymentMethod;
+  },
+  profiles: Profile[]
+): LicenseNotifyChange[] {
+  const changes: LicenseNotifyChange[] = [];
+  const cur = license.currency ?? "KRW";
+
+  const oldCost = Number(license.cost ?? license.cost_monthly ?? 0);
+  if (oldCost !== next.costNum) {
+    changes.push({
+      field: "cost",
+      label: "비용",
+      before: formatNotifyCost(oldCost, cur),
+      after: formatNotifyCost(next.costNum, next.currency)
+    });
+  }
+
+  const oldCount = license.license_count ?? 0;
+  const newCount = next.licenseCount ?? 0;
+  if (oldCount !== newCount) {
+    changes.push({
+      field: "license_count",
+      label: "라이선스 수",
+      before: formatNotifyLicenseCount(oldCount),
+      after: formatNotifyLicenseCount(newCount)
+    });
+  }
+
+  const oldContract = resolveUiContractType(license);
+  if (oldContract !== next.contractType) {
+    changes.push({
+      field: "contract_type",
+      label: "계약 유형",
+      before: oldContract,
+      after: next.contractType
+    });
+  }
+
+  const oldCategory = (license.category ?? "").trim() || "기타";
+  const newCategory = next.category.trim() || "기타";
+  if (oldCategory !== newCategory) {
+    changes.push({
+      field: "category",
+      label: "카테고리",
+      before: oldCategory,
+      after: newCategory
+    });
+  }
+
+  if (license.name.trim() !== next.name.trim()) {
+    changes.push({
+      field: "name",
+      label: "서비스명",
+      before: license.name.trim(),
+      after: next.name.trim()
+    });
+  }
+
+  const oldStatus: LicenseStatus = license.status === "비활성" ? "비활성" : "활성";
+  if (oldStatus !== next.status) {
+    changes.push({
+      field: "status",
+      label: "상태",
+      before: oldStatus,
+      after: next.status
+    });
+  }
+
+  const oldPaymentDay = license.payment_day ?? null;
+  if (oldPaymentDay !== next.paymentDay) {
+    changes.push({
+      field: "payment_day",
+      label: "결제일",
+      before: formatNotifyPaymentDay(oldPaymentDay),
+      after: formatNotifyPaymentDay(next.paymentDay)
+    });
+  }
+
+  const oldStartDate = resolveLicenseStartDate(license);
+  const newStartDate = isoDateSlice(next.startDate);
+  if (oldStartDate !== newStartDate) {
+    changes.push({
+      field: "start_date",
+      label: "시작일",
+      before: formatNotifyDate(oldStartDate || null),
+      after: formatNotifyDate(newStartDate || null)
+    });
+  }
+
+  const oldNextPaymentDate = isoDateSlice(license.next_payment_date);
+  const newNextPaymentDate = "";
+  if (oldNextPaymentDate !== newNextPaymentDate) {
+    changes.push({
+      field: "next_payment_date",
+      label: "다음 결제일",
+      before: formatNotifyDate(license.next_payment_date),
+      after: "—"
+    });
+  }
+
+  const oldEndDate = isoDateSlice(license.end_date);
+  const newEndDate = isoDateSlice(next.endDate);
+  if (oldEndDate !== newEndDate) {
+    changes.push({
+      field: "end_date",
+      label: "종료일(갱신일)",
+      before: formatNotifyDate(license.end_date),
+      after: formatNotifyDate(next.endDate)
+    });
+  }
+
+  const oldAssigneeId = resolveLicenseAssigneeId(license);
+  const newAssigneeId = next.assigneeId || null;
+  if (oldAssigneeId !== newAssigneeId) {
+    changes.push({
+      field: "assignee_id",
+      label: "서비스 담당자",
+      before: profileDisplayName(oldAssigneeId, profiles),
+      after: profileDisplayName(newAssigneeId, profiles)
+    });
+  }
+
+  // 결제방법: services.payment_method 컬럼 없음 — description 에 "결제방법: …" 로 저장
+  const oldPaymentMethod = resolveLicensePaymentMethod(license);
+  if (oldPaymentMethod !== next.paymentMethod) {
+    changes.push({
+      field: "payment_method",
+      label: "결제방법",
+      before: oldPaymentMethod,
+      after: next.paymentMethod
+    });
+  }
+
+  // 해당 컬럼 없음 — license_managers(라이선스 사용자)는 이 폼에서 수정하지 않음
+  // 해당 컬럼 없음 — license_credentials(인증정보)는 이 폼에서 수정하지 않음
+
+  return changes;
+}
+
+function toNotifyServicePayload(saved: License, contractType: ContractType) {
+  return {
+    id: saved.id,
+    name: saved.name,
+    plan: saved.plan ?? null,
+    category: saved.category ?? null,
+    contract_type: saved.contract_type ?? contractType,
+    cost: Number(saved.cost ?? saved.cost_monthly ?? 0),
+    cost_monthly: Number(saved.cost_monthly ?? saved.cost ?? 0),
+    currency: saved.currency ?? "KRW",
+    license_count: saved.license_count ?? 0,
+    start_date: saved.start_date ? saved.start_date.slice(0, 10) : null
+  };
+}
+
+function sendLicenseNotify(payload: {
+  type: "created" | "updated";
+  service: ReturnType<typeof toNotifyServicePayload>;
+  changes?: LicenseNotifyChange[];
+  actor_id: string;
+}) {
+  fetch("/api/licenses/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(console.error);
+}
+
 export function LicenseFormModal({
   mode,
   license,
@@ -314,6 +555,9 @@ export function LicenseFormModal({
 
     setLoading(true);
 
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData.user?.id ?? null;
+
     if (mode === "create") {
       const { data, error: insertError } = await supabase
         .from("services")
@@ -337,6 +581,13 @@ export function LicenseFormModal({
         rates?.USD,
         rates?.EUR
       );
+      if (currentUserId) {
+        sendLicenseNotify({
+          type: "created",
+          service: toNotifyServicePayload(saved, contractType),
+          actor_id: currentUserId
+        });
+      }
       onSaved(saved);
       onClose();
       return;
@@ -378,6 +629,34 @@ export function LicenseFormModal({
         rates?.USD,
         rates?.EUR
       );
+    }
+    if (currentUserId) {
+      const changes = buildLicenseNotifyChanges(
+        license,
+        {
+          name: trimmedName,
+          category: category.trim() || "기타",
+          contractType,
+          status,
+          costNum,
+          licenseCount: lc,
+          currency,
+          paymentDay: payDayNum,
+          startDate: startDateVal,
+          endDate: endDateVal,
+          assigneeId: cardHolderId || null,
+          paymentMethod
+        },
+        profiles
+      );
+      if (changes.length > 0) {
+        sendLicenseNotify({
+          type: "updated",
+          service: toNotifyServicePayload(saved, contractType),
+          changes,
+          actor_id: currentUserId
+        });
+      }
     }
     onSaved(saved);
     onClose();
