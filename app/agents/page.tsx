@@ -1,31 +1,23 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AgentListTab } from "@/components/agents/agent-list-tab";
 import { AiCostOverview } from "@/components/agents/ai-cost-overview";
 import { ApiUsageDashboard } from "@/components/agents/api-usage-dashboard";
 import { CreditRecordsTab } from "@/components/agents/credit-records-tab";
 import { supabase } from "@/lib/supabase/client";
 
-type MainTab = "ai_cost" | "list";
-type SubTab = "overview" | "usage" | "credits";
+type AgentsTab = "overview" | "usage" | "credits";
 
 type ServiceInfo = { name: string; description: string };
 
-const MAIN_TABS: { id: MainTab; label: string }[] = [
-  { id: "ai_cost", label: "AI 비용 현황" },
-  { id: "list", label: "에이전트 목록" }
-];
-
-const SUB_TABS: { id: SubTab; label: string }[] = [
+const TABS: { id: AgentsTab; label: string }[] = [
   { id: "overview", label: "Dashboard" },
   { id: "usage", label: "API사용량내역" },
   { id: "credits", label: "Credit결제내역" }
 ];
 
 export default function AgentsPage() {
-  const [mainTab, setMainTab] = useState<MainTab>("ai_cost");
-  const [subTab, setSubTab] = useState<SubTab>("overview");
+  const [tab, setTab] = useState<AgentsTab>("overview");
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
 
   useEffect(() => {
@@ -69,55 +61,28 @@ export default function AgentsPage() {
         </p>
       </header>
 
-      <div>
-        <nav className="flex flex-wrap gap-1 border-b border-slate-200" aria-label="아르테 메인 메뉴">
-          {MAIN_TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMainTab(item.id)}
-              className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
-                mainTab === item.id
-                  ? "border-violet-600 text-violet-700"
-                  : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
+      <nav className="flex flex-wrap gap-1 border-b border-slate-200" aria-label="AI 비용 메뉴">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+              tab === item.id
+                ? "border-violet-600 text-violet-700"
+                : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
-        {mainTab === "ai_cost" ? (
-          <nav className="mb-0 mt-0.5 flex flex-wrap gap-1" aria-label="AI 비용 서브 메뉴">
-            {SUB_TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSubTab(item.id)}
-                className={`px-4 py-2 text-[12.1px] transition ${
-                  subTab === item.id
-                    ? "border-b-2 border-violet-700 font-medium text-violet-700"
-                    : "border-none text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        ) : null}
-      </div>
-
-      {mainTab === "ai_cost" && subTab === "overview" ? (
-        <AiCostOverview
-          onTabChange={(t) => {
-            setMainTab("ai_cost");
-            setSubTab(t);
-          }}
-        />
+      {tab === "overview" ? (
+        <AiCostOverview onTabChange={setTab} />
       ) : null}
-      {mainTab === "ai_cost" && subTab === "usage" ? <ApiUsageDashboard /> : null}
-      {mainTab === "ai_cost" && subTab === "credits" ? <CreditRecordsTab /> : null}
-      {mainTab === "list" ? <AgentListTab /> : null}
+      {tab === "usage" ? <ApiUsageDashboard /> : null}
+      {tab === "credits" ? <CreditRecordsTab /> : null}
     </div>
   );
 }
