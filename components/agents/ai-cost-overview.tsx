@@ -69,6 +69,8 @@ function paymentTypeLabel(t: string) {
   return { text: t, bg: "bg-slate-100", color: "text-slate-600" };
 }
 
+const EXCLUDED_TEAM_EMAIL = "apollon@apollonworks.com";
+
 export function AiCostOverview({ onTabChange }: Props) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [period, setPeriod] = useState<UsagePeriodPreset>("last_6m");
@@ -82,7 +84,6 @@ export function AiCostOverview({ onTabChange }: Props) {
   const [apiRows, setApiRows] = useState<ApiUsageDbRow[]>([]);
   const [creditRows, setCreditRows] = useState<CreditRecordRow[]>([]);
   const [teamCount, setTeamCount] = useState(1);
-  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const { usdKrw, monthLabel } = useUsdKrwForUsage();
@@ -98,14 +99,12 @@ export function AiCostOverview({ onTabChange }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
 
-    const [
-      { data: userData },
-      teamRes,
-      apiRes,
-      creditRes
-    ] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("status", "근무"),
+    const [teamRes, apiRes, creditRes] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "근무")
+        .neq("email", EXCLUDED_TEAM_EMAIL),
       supabase
         .from("api_usage")
         .select("*")
@@ -120,7 +119,6 @@ export function AiCostOverview({ onTabChange }: Props) {
         .order("paid_at", { ascending: false })
     ]);
 
-    setUserId(userData.user?.id ?? null);
     setTeamCount(Math.max(teamRes.count ?? 1, 1));
 
     if (apiRes.error) console.error("[ai-cost-overview] api_usage", apiRes.error);
@@ -154,14 +152,7 @@ export function AiCostOverview({ onTabChange }: Props) {
   const creditCostKrw = periodCreditRows.reduce((s, r) => s + r.amount_krw, 0);
   const totalCostKrw = apiCostKrw + creditCostKrw;
 
-  const myApiUsd = userId
-    ? periodApiRows.filter((r) => r.uploaded_by === userId).reduce((s, r) => s + Number(r.cost_usd), 0)
-    : 0;
-  const myCreditKrw = userId
-    ? periodCreditRows.filter((r) => r.registered_by === userId).reduce((s, r) => s + r.amount_krw, 0)
-    : 0;
-  const myCostKrw = myApiUsd * usdKrw + myCreditKrw;
-  const teamAvgKrw = totalCostKrw / teamCount;
+  const perPersonCostKrw = totalCostKrw / teamCount;
 
   const providerStats = useMemo(() => {
     const providers = ["anthropic", "openai"] as const;
@@ -282,11 +273,9 @@ export function AiCostOverview({ onTabChange }: Props) {
               <p className="mt-1 text-xs text-slate-500">{periodCreditRows.length}건 등록</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">내 비용</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(myCostKrw)}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                팀 평균 {formatKrw(teamAvgKrw)} ({teamCount}명)
-              </p>
+              <p className="text-xs font-medium text-slate-500">1인당 비용</p>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(perPersonCostKrw)}</p>
+              <p className="mt-1 text-xs text-slate-500">총비용 ÷ {teamCount}명</p>
             </div>
           </section>
 
