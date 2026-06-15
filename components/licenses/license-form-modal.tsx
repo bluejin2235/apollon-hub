@@ -21,6 +21,13 @@ const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라
 const statusOptions: LicenseStatus[] = ["활성", "비활성"];
 const paymentOptions: PaymentMethod[] = ["법인카드", "계좌이체"];
 const currencyOptions = ["KRW", "USD", "EUR"] as const;
+const EXCLUDED_TEAM_EMAIL = "apollon@apollonworks.com";
+
+type TeamMemberOption = {
+  id: string;
+  name: string;
+  email: string;
+};
 
 type Mode = "create" | "edit";
 
@@ -151,6 +158,47 @@ function profileDisplayName(profileId: string | null | undefined, profiles: Prof
   return profile?.name?.trim() || profileId;
 }
 
+function formatManagerListLabel(ids: string[], members: TeamMemberOption[]): string {
+  if (ids.length === 0) return "—";
+  return ids
+    .map((id) => {
+      const member = members.find((m) => m.id === id);
+      return member?.name?.trim() || id;
+    })
+    .join(", ");
+}
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  if (sortedA.length !== sortedB.length) return false;
+  return sortedA.every((id, index) => id === sortedB[index]);
+}
+
+async function insertLicenseManagers(
+  serviceId: string,
+  profileIds: string[]
+): Promise<{ error: string | null }> {
+  if (profileIds.length === 0) return { error: null };
+
+  const rows = profileIds.map((profile_id) => ({ service_id: serviceId, profile_id }));
+  const { error } = await supabase.from("license_managers").insert(rows);
+  return { error: error?.message ?? null };
+}
+
+async function replaceLicenseManagers(
+  serviceId: string,
+  profileIds: string[]
+): Promise<{ error: string | null }> {
+  const { error: deleteError } = await supabase
+    .from("license_managers")
+    .delete()
+    .eq("service_id", serviceId);
+  if (deleteError) return { error: deleteError.message };
+
+  return insertLicenseManagers(serviceId, profileIds);
+}
+
 function buildLicenseNotifyChanges(
   license: License,
   next: {
@@ -166,8 +214,11 @@ function buildLicenseNotifyChanges(
     endDate: string | null;
     assigneeId: string | null;
     paymentMethod: PaymentMethod;
+    selectedAssignees: string[];
+    initialManagerIds: string[];
   },
-  profiles: Profile[]
+  profiles: Profile[],
+  teamMembers: TeamMemberOption[]
 ): LicenseNotifyChange[] {
   const changes: LicenseNotifyChange[] = [];
   const cur = license.currency ?? "KRW";
@@ -298,7 +349,15 @@ function buildLicenseNotifyChanges(
     });
   }
 
-  // 해당 컬럼 없음 — license_managers(라이선스 사용자)는 이 폼에서 수정하지 않음
+  if (!sameIdSet(next.initialManagerIds, next.selectedAssignees)) {
+    changes.push({
+      field: "license_managers",
+      label: "담당자",
+      before: formatManagerListLabel(next.initialManagerIds, teamMembers),
+      after: formatManagerListLabel(next.selectedAssignees, teamMembers)
+    });
+  }
+
   // 해당 컬럼 없음 — license_credentials(인증정보)는 이 폼에서 수정하지 않음
 
   return changes;
@@ -414,6 +473,9 @@ export function LicenseFormModal({
   const [memo, setMemo] = useState(
     (license?.memo && license.memo.trim()) || parsedMemo || ""
   );
+  const [teamMembers, setTeamMembers] = useState<TeamMemberOption[]>([]);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [initialManagerIds, setInitialManagerIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const rates = useKrwRates();
@@ -424,6 +486,34 @@ export function LicenseFormModal({
     () => [...profiles].sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [profiles]
   );
+
+  useEffect(() => {
+    const run = async () => {
+      const { data: members } = await supabase
+        .from("profiles")
+        .select("id, name, email")
+        .eq("status", "근무")
+        .neq("email", EXCLUDED_TEAM_EMAIL)
+        .order("name", { ascending: true });
+
+      setTeamMembers((members ?? []) as TeamMemberOption[]);
+
+      if (mode === "edit" && license?.id) {
+        const { data: managers } = await supabase
+          .from("license_managers")
+          .select("profile_id")
+          .eq("service_id", license.id);
+
+        const ids = (managers ?? [])
+          .map((row) => String(row.profile_id ?? ""))
+          .filter(Boolean);
+
+        setSelectedAssignees(ids);
+        setInitialManagerIds(ids);
+      }
+    };
+    void run();
+  }, [mode, license?.id]);
 
   useEffect(() => {
     const run = async () => {
@@ -541,7 +631,7 @@ export function LicenseFormModal({
       payment_day: payDayNum,
       payment_month: payMonthNum,
       license_count: lc ?? 0,
-      assignee_id: cardHolderId || null,
+      assignee_id: selectedAssignees[0] || null,
       url: websiteUrl.trim() || null,
       description: buildServiceDescription({
         purpose: trimmedPurpose,
@@ -565,9 +655,8 @@ export function LicenseFormModal({
         .select()
         .single();
 
-      setLoading(false);
-
       if (insertError || !data) {
+        setLoading(false);
         console.error("[license-form-modal] services.insert failed", insertError);
         setError(insertError?.message ?? "추가에 실패했습니다.");
         return;
@@ -581,6 +670,15 @@ export function LicenseFormModal({
         rates?.USD,
         rates?.EUR
       );
+
+      const { error: managersError } = await insertLicenseManagers(saved.id, selectedAssignees);
+      if (managersError) {
+        setLoading(false);
+        console.error("[license-form-modal] license_managers.insert failed", managersError);
+        setError(managersError);
+        return;
+      }
+
       if (currentUserId) {
         sendLicenseNotify({
           type: "created",
@@ -588,6 +686,8 @@ export function LicenseFormModal({
           actor_id: currentUserId
         });
       }
+
+      setLoading(false);
       onSaved(saved);
       onClose();
       return;
@@ -606,9 +706,8 @@ export function LicenseFormModal({
       .select()
       .single();
 
-    setLoading(false);
-
     if (updateError || !data) {
+      setLoading(false);
       console.error("[license-form-modal] services.update failed", updateError);
       setError(updateError?.message ?? "저장에 실패했습니다.");
       return;
@@ -630,6 +729,15 @@ export function LicenseFormModal({
         rates?.EUR
       );
     }
+
+    const { error: managersError } = await replaceLicenseManagers(saved.id, selectedAssignees);
+    if (managersError) {
+      setLoading(false);
+      console.error("[license-form-modal] license_managers sync failed", managersError);
+      setError(managersError);
+      return;
+    }
+
     if (currentUserId) {
       const changes = buildLicenseNotifyChanges(
         license,
@@ -644,10 +752,13 @@ export function LicenseFormModal({
           paymentDay: payDayNum,
           startDate: startDateVal,
           endDate: endDateVal,
-          assigneeId: cardHolderId || null,
-          paymentMethod
+          assigneeId: selectedAssignees[0] || null,
+          paymentMethod,
+          selectedAssignees,
+          initialManagerIds
         },
-        profiles
+        profiles,
+        teamMembers
       );
       if (changes.length > 0) {
         sendLicenseNotify({
@@ -658,6 +769,8 @@ export function LicenseFormModal({
         });
       }
     }
+
+    setLoading(false);
     onSaved(saved);
     onClose();
   };
@@ -910,6 +1023,48 @@ export function LicenseFormModal({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">서비스 담당자</label>
+              <div className="max-h-[200px] overflow-y-auto rounded-xl border border-slate-300 bg-white p-3">
+                {teamMembers.length === 0 ? (
+                  <p className="text-sm text-slate-500">팀원 목록을 불러오는 중…</p>
+                ) : (
+                  <div className="space-y-1">
+                    {teamMembers.map((member) => {
+                      const checked = selectedAssignees.includes(member.id);
+                      return (
+                        <label
+                          key={member.id}
+                          className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAssignees((prev) =>
+                                  prev.includes(member.id) ? prev : [...prev, member.id]
+                                );
+                              } else {
+                                setSelectedAssignees((prev) => prev.filter((id) => id !== member.id));
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-apollon-500 focus:ring-apollon-500/40"
+                          />
+                          <span className="min-w-0 flex-1 text-sm text-slate-800">
+                            <span className="font-medium">{member.name}</span>
+                            <span className="ml-2 text-xs text-slate-500">{member.email}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                첫 번째 선택 담당자가 assignee_id에도 저장됩니다.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-slate-700">웹사이트 URL</label>
