@@ -230,6 +230,18 @@ export function ServiceManagersCard({
 
 type UserRow = { id: string; service_id: string; profile_id: string };
 
+function sendLicenseUserNotify(payload: {
+  type: "user_added" | "user_removed";
+  service_id: string;
+  profile_id: string;
+}) {
+  fetch("/api/licenses/notify-user", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(console.error);
+}
+
 export function ServiceUsersCard({
   serviceId,
   profiles,
@@ -293,17 +305,27 @@ export function ServiceUsersCard({
       setErr(error.message ?? "추가에 실패했습니다.");
       return;
     }
+    sendLicenseUserNotify({
+      type: "user_added",
+      service_id: serviceId,
+      profile_id: selectedId
+    });
     setPickerOpen(false);
     setSelectedId("");
     await refresh();
   };
 
-  const handleRemove = async (rowId: string) => {
+  const handleRemove = async (rowId: string, profileId: string) => {
     const { error } = await supabase.from("license_users").delete().eq("id", rowId);
     if (error) {
       console.error("[license_users][delete]", error);
       return;
     }
+    sendLicenseUserNotify({
+      type: "user_removed",
+      service_id: serviceId,
+      profile_id: profileId
+    });
     await refresh();
   };
 
@@ -370,7 +392,7 @@ export function ServiceUsersCard({
                 {canEdit ? (
                   <button
                     type="button"
-                    onClick={() => void handleRemove(r.id)}
+                    onClick={() => void handleRemove(r.id, r.profile_id)}
                     className="shrink-0 text-rose-500 transition hover:text-rose-700"
                     aria-label="사용자 제거"
                   >
