@@ -150,7 +150,10 @@ function CategoryTrendTooltip({
   if (!active || !payload?.length) return null;
   const total = payload.reduce((sum, entry) => sum + Number(entry.value ?? 0), 0);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+    <div
+      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md"
+      style={{ position: "relative", zIndex: 9999 }}
+    >
       <p className="font-medium text-slate-900">{label}</p>
       <div className="mt-1 space-y-0.5">
         {payload
@@ -584,7 +587,7 @@ export default function LicensesDashboardPage() {
                       : String(v)
                   }
                 />
-                <Tooltip content={<CategoryTrendTooltip />} />
+                <Tooltip content={<CategoryTrendTooltip />} wrapperStyle={{ zIndex: 9999 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {categories.map((cat) => (
                   <Bar
