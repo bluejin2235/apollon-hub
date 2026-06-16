@@ -294,18 +294,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Resend environment variables missing" }, { status: 500 });
   }
 
+  const testProfileId = request.nextUrl.searchParams.get("profile_id")?.trim() || null;
+
   const dateLabel = getKstDateLabel();
   const supabase = createClient(supabaseUrl, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
   const [profilesRes, managersRes, servicesRes, snapshotsRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, email, name")
-      .eq("status", "근무")
-      .neq("email", EXCLUDED_TEAM_EMAIL)
-      .not("email", "is", null),
+    testProfileId
+      ? supabase.from("profiles").select("id, email, name").eq("id", testProfileId).maybeSingle()
+      : supabase
+          .from("profiles")
+          .select("id, email, name")
+          .eq("status", "근무")
+          .neq("email", EXCLUDED_TEAM_EMAIL)
+          .not("email", "is", null),
     supabase.from("license_managers").select("service_id, profile_id"),
     supabase.from("services").select("*").eq("is_hub_card", false).eq("status", "활성"),
     supabase
@@ -329,6 +333,20 @@ export async function GET(request: NextRequest) {
   if (snapshotsRes.error) {
     console.error("[license-digest] license_mail_snapshots fetch failed", snapshotsRes.error);
     return NextResponse.json({ error: snapshotsRes.error.message }, { status: 500 });
+  }
+
+  const targetProfiles: ProfileRow[] = testProfileId
+    ? profilesRes.data
+      ? [profilesRes.data as ProfileRow]
+      : []
+    : ((profilesRes.data ?? []) as ProfileRow[]);
+
+  if (testProfileId && targetProfiles.length === 0) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  if (testProfileId) {
+    console.log("[license-digest] test send — single profile", { profileId: testProfileId });
   }
 
   const serviceMap = new Map<string, License>();
@@ -361,7 +379,7 @@ export async function GET(request: NextRequest) {
   let skipped = 0;
   const errors: { profileId: string; error: string }[] = [];
 
-  for (const profile of (profilesRes.data ?? []) as ProfileRow[]) {
+  for (const profile of targetProfiles) {
     const email = profile.email?.trim().toLowerCase();
     if (!email) {
       skipped += 1;
@@ -426,7 +444,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: errors.length === 0,
     dateLabel,
-    members: (profilesRes.data ?? []).length,
+    testProfileId,
+    members: targetProfiles.length,
     sent,
     skipped,
     errors
