@@ -73,7 +73,12 @@ function isSubscriptionLicense(service: License): boolean {
 
 function serviceMonthlyKrw(service: License): number {
   const breakdown = computeLicenseCostBreakdown(service, LICENSE_DIGEST_FX_RATES);
-  return Math.round(breakdown.monthlyTotalKrw ?? 0);
+  const monthlyTotalKrw = Math.round(breakdown.monthlyTotalKrw ?? 0);
+  const licenseCount = service.license_count ?? 0;
+  if (licenseCount > 0) {
+    return Math.round(monthlyTotalKrw / licenseCount);
+  }
+  return monthlyTotalKrw;
 }
 
 function buildMemberSnapshot(serviceIds: string[], serviceMap: Map<string, License>): MailSnapshot {
