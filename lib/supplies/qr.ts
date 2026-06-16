@@ -16,7 +16,7 @@ export function isSupplyUuid(identifier: string): boolean {
 
 export function formatSupplyQrPayload(code: string): string {
 
-  return `https://apollon-hub.vercel.app/s/${code}`;
+  return `https://hub.apollonworks.com/s/${code}`;
 
 }
 

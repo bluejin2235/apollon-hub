@@ -4,7 +4,7 @@ import { Resend } from "resend";
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const RECIPIENT = "tjlee@apollonworks.com";
-const AGENTS_URL = "https://apollon-hub.vercel.app/agents";
+const AGENTS_URL = "https://hub.apollonworks.com/agents";
 
 type NotifyCreditBody = {
   service_name: string;

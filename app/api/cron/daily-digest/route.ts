@@ -157,7 +157,7 @@ function buildDigestHtml(params: {
     ${bodySections}
     ${emptyMessage}
     <div style="text-align: center; margin-top: 24px;">
-      <a href="https://apollon-hub.vercel.app/hub" style="display: inline-block; background: #5A5353; color: #E6CCBE; font-size: 14px; font-weight: 500; padding: 12px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;">Hub 바로가기</a>
+      <a href="https://hub.apollonworks.com/hub" style="display: inline-block; background: #5A5353; color: #E6CCBE; font-size: 14px; font-weight: 500; padding: 12px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;">Hub 바로가기</a>
     </div>
   </div>
   <div style="padding: 16px 32px; background: rgba(160,113,120,0.1); border-top: 0.5px solid #E6CCBE; text-align: center;">
