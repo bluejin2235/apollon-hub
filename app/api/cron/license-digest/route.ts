@@ -362,65 +362,69 @@ export async function GET(request: NextRequest) {
   const errors: { profileId: string; error: string }[] = [];
 
   for (const profile of (profilesRes.data ?? []) as ProfileRow[]) {
-    const email = profile.email?.trim().toLowerCase();
-    if (!email) {
-      skipped += 1;
-      continue;
-    }
+    try {
+      const email = profile.email?.trim().toLowerCase();
+      if (!email) {
+        skipped += 1;
+        continue;
+      }
 
-    const serviceIds = serviceIdsByProfile.get(profile.id) ?? [];
-    const snapshot = buildMemberSnapshot(serviceIds, serviceMap);
-    const previous = latestSnapshotByProfile.get(profile.id) ?? null;
-    const changes = diffSnapshots(previous, snapshot);
+      const serviceIds = serviceIdsByProfile.get(profile.id) ?? [];
+      const snapshot = buildMemberSnapshot(serviceIds, serviceMap);
+      const previous = latestSnapshotByProfile.get(profile.id) ?? null;
+      const changes = diffSnapshots(previous, snapshot);
 
-    const html = buildLicenseDigestHtml({
-      dateLabel,
-      memberName: profile.name?.trim() || profile.email,
-      profileId: profile.id,
-      snapshot,
-      previous,
-      changes
-    });
-
-    const subject = `[아폴론 Hub] 라이선스 현황 — ${dateLabel}`;
-
-    const { data, error } = await resend.emails.send({
-      from: fromEmail,
-      to: [email],
-      subject,
-      html
-    });
-
-    if (error) {
-      console.error("[license-digest] Resend failed", { profileId: profile.id, error });
-      errors.push({ profileId: profile.id, error: error.message });
-      continue;
-    }
-
-    const { error: insertError } = await supabase.from("license_mail_snapshots").insert({
-      profile_id: profile.id,
-      sent_at: new Date().toISOString(),
-      snapshot
-    });
-
-    if (insertError) {
-      console.error("[license-digest] snapshot insert failed", {
+      const html = buildLicenseDigestHtml({
+        dateLabel,
+        memberName: profile.name?.trim() || profile.email,
         profileId: profile.id,
-        messageId: data?.id,
-        error: insertError
+        snapshot,
+        previous,
+        changes
       });
-      errors.push({ profileId: profile.id, error: insertError.message });
-      continue;
-    }
 
-    sent += 1;
-    console.log("[license-digest] sent", {
-      profileId: profile.id,
-      email,
-      messageId: data?.id,
-      totalMonthlyKrw: snapshot.total_monthly_krw,
-      changes: changes.length
-    });
+      const subject = `[아폴론 Hub] 라이선스 현황 — ${dateLabel}`;
+
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [email],
+        subject,
+        html
+      });
+
+      if (error) {
+        console.error("[license-digest] Resend failed", { profileId: profile.id, error });
+        errors.push({ profileId: profile.id, error: error.message });
+        continue;
+      }
+
+      const { error: insertError } = await supabase.from("license_mail_snapshots").insert({
+        profile_id: profile.id,
+        sent_at: new Date().toISOString(),
+        snapshot
+      });
+
+      if (insertError) {
+        console.error("[license-digest] snapshot insert failed", {
+          profileId: profile.id,
+          messageId: data?.id,
+          error: insertError
+        });
+        errors.push({ profileId: profile.id, error: insertError.message });
+        continue;
+      }
+
+      sent += 1;
+      console.log("[license-digest] sent", {
+        profileId: profile.id,
+        email,
+        messageId: data?.id,
+        totalMonthlyKrw: snapshot.total_monthly_krw,
+        changes: changes.length
+      });
+    } finally {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
   return NextResponse.json({
