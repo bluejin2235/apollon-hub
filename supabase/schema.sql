@@ -113,17 +113,6 @@ alter table public.restaurants
 alter table public.restaurants
   add column if not exists menu_image_paths text[] not null default '{}';
 
--- 매장 갤러리 (Storage 경로만 저장)
-create table if not exists public.restaurant_images (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null references public.restaurants (id) on delete cascade,
-  storage_path text not null,
-  uploaded_by uuid references public.profiles (id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_restaurant_images_restaurant on public.restaurant_images (restaurant_id);
-
 -- 리뷰: 0.5점 단위(2~10), 키워드, 사진, 재방문 의향
 alter table public.reviews
   add column if not exists star_rating smallint;
@@ -160,19 +149,11 @@ alter table public.reviews
 
 -- Storage 버킷 (공개 읽기 — URL로 이미지 표시)
 insert into storage.buckets (id, name, public)
-values ('restaurant-images', 'restaurant-images', true),
-       ('menu-images', 'menu-images', true),
+values ('menu-images', 'menu-images', true),
        ('review-images', 'review-images', true)
 on conflict (id) do update set public = excluded.public;
 
 -- Storage RLS (storage 스키마)
-drop policy if exists "restaurant_images_select" on storage.objects;
-create policy "restaurant_images_select" on storage.objects for select using (bucket_id = 'restaurant-images');
-
-drop policy if exists "restaurant_images_insert_authenticated" on storage.objects;
-create policy "restaurant_images_insert_authenticated"
-  on storage.objects for insert to authenticated with check (bucket_id = 'restaurant-images');
-
 drop policy if exists "menu_images_select" on storage.objects;
 create policy "menu_images_select" on storage.objects for select using (bucket_id = 'menu-images');
 
@@ -206,18 +187,6 @@ create policy "review_images_update_authenticated"
 drop policy if exists "review_images_delete_authenticated" on storage.objects;
 create policy "review_images_delete_authenticated"
   on storage.objects for delete to authenticated using (bucket_id = 'review-images');
-
--- restaurant_images 행 RLS
-alter table public.restaurant_images enable row level security;
-
-drop policy if exists "restaurant_images_select_all" on public.restaurant_images;
-create policy "restaurant_images_select_all" on public.restaurant_images for select using (true);
-
-drop policy if exists "restaurant_images_insert_auth" on public.restaurant_images;
-create policy "restaurant_images_insert_auth" on public.restaurant_images for insert to authenticated with check (true);
-
-drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
-create policy "restaurant_images_delete_auth" on public.restaurant_images for delete to authenticated using (true);
 
 -- 아슐랭 게시판 (의견·아이디어 등, 댓글 테이블은 추후 확장)
 create table if not exists public.ashuleng_posts (
@@ -384,27 +353,6 @@ create policy "reviews_update_auth"
 drop policy if exists "reviews_delete_auth" on public.reviews;
 create policy "reviews_delete_auth"
   on public.reviews for delete to authenticated using (true);
-
--- ── restaurant_images: select/insert/update/delete 4종 통일 ─
--- (위에서 정의된 select_all/insert_auth/delete_auth 를 새 select_auth + update_auth 로 일관화)
-drop policy if exists "restaurant_images_select_all" on public.restaurant_images;
-
-drop policy if exists "restaurant_images_select_auth" on public.restaurant_images;
-create policy "restaurant_images_select_auth"
-  on public.restaurant_images for select to authenticated using (true);
-
-drop policy if exists "restaurant_images_insert_auth" on public.restaurant_images;
-create policy "restaurant_images_insert_auth"
-  on public.restaurant_images for insert to authenticated with check (true);
-
-drop policy if exists "restaurant_images_update_auth" on public.restaurant_images;
-create policy "restaurant_images_update_auth"
-  on public.restaurant_images for update to authenticated
-  using (true) with check (true);
-
-drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
-create policy "restaurant_images_delete_auth"
-  on public.restaurant_images for delete to authenticated using (true);
 
 -- ── services ───────────────────────────────────────────────
 alter table public.services enable row level security;
@@ -789,20 +737,6 @@ create table if not exists public.service_cost_history (
 create index if not exists idx_service_cost_history_service on public.service_cost_history (service_id);
 create index if not exists idx_service_cost_history_month on public.service_cost_history (recorded_month);
 
-create table if not exists public.monthly_cost_snapshots (
-  id uuid primary key default gen_random_uuid(),
-  snapshot_month text not null unique,
-  total_subscription_krw numeric(12, 2),
-  total_permanent_krw numeric(12, 2),
-  active_member_count integer,
-  per_member_cost_krw numeric(12, 2),
-  category_breakdown jsonb,
-  license_breakdown jsonb,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_monthly_cost_snapshots_month on public.monthly_cost_snapshots (snapshot_month);
-
 alter table public.service_cost_history enable row level security;
 
 drop policy if exists "service_cost_history_select_auth" on public.service_cost_history;
@@ -821,16 +755,6 @@ create policy "service_cost_history_update_auth"
 drop policy if exists "service_cost_history_delete_auth" on public.service_cost_history;
 create policy "service_cost_history_delete_auth"
   on public.service_cost_history for delete to authenticated using (true);
-
-alter table public.monthly_cost_snapshots enable row level security;
-
-drop policy if exists "monthly_cost_snapshots_select_auth" on public.monthly_cost_snapshots;
-create policy "monthly_cost_snapshots_select_auth"
-  on public.monthly_cost_snapshots for select to authenticated using (true);
-
-drop policy if exists "monthly_cost_snapshots_insert_service" on public.monthly_cost_snapshots;
-create policy "monthly_cost_snapshots_insert_service"
-  on public.monthly_cost_snapshots for insert to service_role with check (true);
 
 insert into public.services (
   name, description, icon, url, status, access_level, order_index, is_hub_card,

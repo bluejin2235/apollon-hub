@@ -1,4 +1,5 @@
 import type { LoanStatus, SupplyStatus } from "@/lib/supplies/types";
+import { storagePublicUrl } from "@/lib/storage/public-url";
 
 export type ComponentRow = { name: string; qty: number };
 
@@ -120,9 +121,6 @@ export function supplyReturnPath(id: string): string {
 
 export function imagePublicUrls(paths: string[]): string[] {
   if (!paths?.length) return [];
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!base) return paths;
-  return paths.map((p) =>
-    p.startsWith("http") ? p : `${base}/storage/v1/object/public/supply-images/${p}`
-  );
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return paths;
+  return paths.map((p) => (p.startsWith("http") ? p : storagePublicUrl("supply-images", p)));
 }
