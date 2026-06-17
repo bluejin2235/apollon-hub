@@ -31,3 +31,6 @@ pnpm-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+*.xlsx
+*.pdf
