@@ -28,6 +28,20 @@ function monthlyKrwForDashboard(
   return 0;
 }
 
+function getCurrentMonthKey(today = new Date()): string {
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function subscriptionMonthlyKrwForLicense(
+  l: License,
+  rates: Parameters<typeof computeLicenseCostBreakdown>[1],
+  thisMonthPaymentKrwByServiceId: Record<string, number>
+): number {
+  const paidKrw = thisMonthPaymentKrwByServiceId[l.id];
+  if (paidKrw != null) return paidKrw;
+  return monthlyKrwForDashboard(computeLicenseCostBreakdown(l, rates));
+}
+
 function annualSubscriptionKrwForDashboard(
   b: ReturnType<typeof computeLicenseCostBreakdown>
 ): number {
@@ -265,6 +279,9 @@ export default function LicensesDashboardPage() {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [costHistory, setCostHistory] = useState<CostHistoryRow[]>([]);
+  const [thisMonthPaymentKrwByServiceId, setThisMonthPaymentKrwByServiceId] = useState<
+    Record<string, number>
+  >({});
   const [loading, setLoading] = useState(true);
   const fetchedRef = useRef(false);
   const rates = useKrwRates();
@@ -275,32 +292,15 @@ export default function LicensesDashboardPage() {
   );
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-
     const run = async () => {
-      setLoading(true);
-      const [l, p] = await Promise.all([
-        supabase
-          .from("services")
-          .select("*")
-          .eq("is_hub_card", false)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("profiles")
-          .select("id, email, name, department, role, status, created_at")
-          .order("created_at", { ascending: true })
-      ]);
-      setLicenses((l.data ?? []) as License[]);
-      setProfiles((p.data ?? []) as Profile[]);
-      setLoading(false);
-    };
-    void run();
-  }, []);
+      const isInitial = !fetchedRef.current;
+      if (isInitial) {
+        fetchedRef.current = true;
+        setLoading(true);
+      }
 
-  useEffect(() => {
-    const run = async () => {
-      const { data, error } = await supabase
+      const currentMonthKey = getCurrentMonthKey();
+      const costHistoryQuery = supabase
         .from("service_cost_history")
         .select(
           "service_id, cost_monthly, cost_monthly_krw, currency, contract_type, active_member_count, category, recorded_at, recorded_month, record_type"
@@ -308,13 +308,74 @@ export default function LicensesDashboardPage() {
         .gte("recorded_at", `${range.start}T00:00:00+00:00`)
         .lte("recorded_at", `${range.end}T23:59:59+00:00`)
         .order("recorded_at", { ascending: true });
+      const thisMonthPaymentQuery = supabase
+        .from("service_cost_history")
+        .select("service_id, cost_monthly_krw")
+        .eq("recorded_month", currentMonthKey)
+        .eq("record_type", "payment");
 
-      if (error) {
-        console.error("[costHistory] fetch error", error);
+      if (isInitial) {
+        const [l, p, h, payments] = await Promise.all([
+          supabase
+            .from("services")
+            .select("*")
+            .eq("is_hub_card", false)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("profiles")
+            .select("id, email, name, department, role, status, created_at")
+            .order("created_at", { ascending: true }),
+          costHistoryQuery,
+          thisMonthPaymentQuery
+        ]);
+
+        setLicenses((l.data ?? []) as License[]);
+        setProfiles((p.data ?? []) as Profile[]);
+
+        if (h.error) {
+          console.error("[costHistory] fetch error", h.error);
+        } else {
+          console.warn("[costHistory] fetched", h.data?.length, "rows");
+          setCostHistory((h.data ?? []) as CostHistoryRow[]);
+        }
+
+        if (payments.error) {
+          console.error("[thisMonthPayments] fetch error", payments.error);
+          setThisMonthPaymentKrwByServiceId({});
+        } else {
+          const map: Record<string, number> = {};
+          for (const row of payments.data ?? []) {
+            if (row.cost_monthly_krw != null) {
+              map[row.service_id] = Number(row.cost_monthly_krw);
+            }
+          }
+          setThisMonthPaymentKrwByServiceId(map);
+        }
+
+        setLoading(false);
         return;
       }
-      console.warn("[costHistory] fetched", data?.length, "rows");
-      setCostHistory((data ?? []) as CostHistoryRow[]);
+
+      const [h, payments] = await Promise.all([costHistoryQuery, thisMonthPaymentQuery]);
+
+      if (h.error) {
+        console.error("[costHistory] fetch error", h.error);
+      } else {
+        console.warn("[costHistory] fetched", h.data?.length, "rows");
+        setCostHistory((h.data ?? []) as CostHistoryRow[]);
+      }
+
+      if (payments.error) {
+        console.error("[thisMonthPayments] fetch error", payments.error);
+      } else {
+        const map: Record<string, number> = {};
+        for (const row of payments.data ?? []) {
+          if (row.cost_monthly_krw != null) {
+            map[row.service_id] = Number(row.cost_monthly_krw);
+          }
+        }
+        setThisMonthPaymentKrwByServiceId(map);
+      }
     };
     void run();
   }, [range.start, range.end]);
@@ -334,7 +395,11 @@ export default function LicensesDashboardPage() {
         perpetualPurchaseSum += perpetualTotalKrwForDashboard(b);
         perpetualServiceCount += 1;
       } else {
-        subscriptionMonthlySum += monthlyKrwForDashboard(b);
+        subscriptionMonthlySum += subscriptionMonthlyKrwForLicense(
+          l,
+          rates,
+          thisMonthPaymentKrwByServiceId
+        );
         annualSubscriptionSum += annualSubscriptionKrwForDashboard(b);
       }
     }
@@ -345,7 +410,7 @@ export default function LicensesDashboardPage() {
       perpetualPurchaseSum,
       perpetualServiceCount
     };
-  }, [licenses, rates]);
+  }, [licenses, rates, thisMonthPaymentKrwByServiceId]);
 
   const serviceTotals = useMemo(() => {
     let sub = 0;
@@ -378,7 +443,11 @@ export default function LicensesDashboardPage() {
       if (b.isPerpetual) {
         row.perpetualKrw += perpetualTotalKrwForDashboard(b);
       } else {
-        row.subscriptionMonthlyKrw += monthlyKrwForDashboard(b);
+        row.subscriptionMonthlyKrw += subscriptionMonthlyKrwForLicense(
+          l,
+          rates,
+          thisMonthPaymentKrwByServiceId
+        );
       }
     }
 
@@ -403,7 +472,7 @@ export default function LicensesDashboardPage() {
       });
 
     return { sortedCategoryRows, totalSubscriptionMonthlyForShare };
-  }, [licenses, rates]);
+  }, [licenses, rates, thisMonthPaymentKrwByServiceId]);
 
   const renewalItems = useMemo(() => {
     const today = new Date();
