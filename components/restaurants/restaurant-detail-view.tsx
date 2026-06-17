@@ -326,7 +326,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
       .from("restaurants")
       .update({
         name: eName.trim(),
-        category: catRow.category,
         categories: catRow.categories,
         food_type: normalizeFoodTypeList(eFoodTypes),
         atmosphere_tags: tagsNorm,
@@ -346,7 +345,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
         ? {
             ...prev,
             name: eName.trim(),
-            category: catRow.category,
             categories: catRow.categories,
             food_type: normalizeFoodTypeList(eFoodTypes),
             atmosphere_tags: tagsNorm,

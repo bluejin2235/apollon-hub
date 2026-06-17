@@ -300,8 +300,9 @@ export function daysUntil(iso: string | null): number | null {
   return Math.ceil(ms / (1000 * 60 * 60 * 24));
 }
 
-export function isSubscription(costType: License["cost_type"]): boolean {
-  return costType === "월간" || costType === "연간";
+export function isSubscription(l: Pick<License, "contract_type" | "cost_type">): boolean {
+  const ui = resolveUiContractType(l);
+  return ui === "월 구독" || ui === "년 구독";
 }
 
 export function activeProfiles(profiles: Profile[]): Profile[] {
@@ -423,11 +424,11 @@ export function nextRenewalDate(licenses: License[]): string | null {
 }
 
 export function totalActiveSubscriptionMonthly(licenses: License[]): number {
-  return licenses.filter((l) => isSubscription(l.cost_type)).reduce((s, l) => s + Number(l.cost_monthly || 0), 0);
+  return licenses.filter((l) => isSubscription(l)).reduce((s, l) => s + Number(l.cost_monthly || 0), 0);
 }
 
 export function totalPerpetualPurchase(licenses: License[]): number {
   return licenses
-    .filter((l) => l.cost_type === "영구")
+    .filter((l) => resolveUiContractType(l) === "영구 라이선스")
     .reduce((s, l) => s + Number(l.cost_monthly || 0), 0);
 }

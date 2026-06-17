@@ -34,15 +34,14 @@ function toggle<T extends string>(arr: T[], v: T): T[] {
 function starTenthsFromReview(rv: Review): number {
   const raw = rv.star_rating;
   if (typeof raw === "number" && raw >= 2 && raw <= 10) return raw;
-  const leg = rv.rating ?? 4;
-  return Math.min(10, Math.max(2, Math.round(leg * 2)));
+  return 4;
 }
 
 function revisitFromReview(rv: Review): RevisitIntent {
   if (rv.revisit_intent === "again" || rv.revisit_intent === "meh" || rv.revisit_intent === "never") {
     return rv.revisit_intent;
   }
-  return rv.revisit ? "again" : "meh";
+  return "meh";
 }
 
 function IconClose(props: { className?: string }) {
@@ -247,18 +246,15 @@ export function ReviewWriteModal({
       // 모든 사진 업로드 완료 → DB 저장 단계로 표시 전환
       setUploadStage("saving");
 
-      const legacyRating = Math.min(5, Math.max(1, Math.round(starTenths / 2)));
       const commentTrim = comment.slice(0, COMMENT_MAX).trim();
       const finalImagePaths = [...existingPaths, ...newPaths];
 
       if (isEdit) {
         const updatePayload = {
-          rating: legacyRating,
           star_rating: starTenths,
           keyword_tags: keywords,
           image_paths: finalImagePaths,
           revisit_intent: revisit,
-          revisit: revisit === "again",
           comment: commentTrim || null,
           visit_date: visitDate || null
         };
@@ -301,12 +297,10 @@ export function ReviewWriteModal({
       const insertPayload = {
         restaurant_id: restaurantId,
         reviewer_id: profileId,
-        rating: legacyRating,
         star_rating: starTenths,
         keyword_tags: keywords,
         image_paths: finalImagePaths,
         revisit_intent: revisit,
-        revisit: revisit === "again",
         comment: commentTrim || null,
         visit_date: visitDate || null
       };

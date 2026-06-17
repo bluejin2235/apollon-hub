@@ -6,8 +6,7 @@ import type {
   License,
   LicenseStatus,
   PaymentMethod,
-  Profile,
-  ServiceCostType
+  Profile
 } from "@/lib/licenses/types";
 import { activeProfiles, resolveUiContractType } from "@/lib/licenses/calc";
 import {
@@ -30,18 +29,6 @@ type TeamMemberOption = {
 };
 
 type Mode = "create" | "edit";
-
-/**
- * 폼의 `contract_type` 을 `services` 테이블의 `cost_type` 로 매핑한다.
- * - “월 구독” → “월간”
- * - “년 구독” → “연간”
- * - “영구 라이선스” → “영구”
- */
-function mapContractToCostType(c: ContractType): ServiceCostType {
-  if (c === "년 구독") return "연간";
-  if (c === "영구 라이선스") return "영구";
-  return "월간";
-}
 
 /**
  * 폼의 `purpose` / `memo` / `payment_method` / `start_date` 등 1:1 매핑이 없는
@@ -623,7 +610,6 @@ export function LicenseFormModal({
       cost_monthly: costNum,
       currency,
       contract_type: contractType,
-      cost_type: mapContractToCostType(contractType),
       next_payment_date: null,
       purchase_date: purchaseDateVal,
       start_date: startDateVal,

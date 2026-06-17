@@ -17,13 +17,6 @@ begin
   end if;
 end $$;
 
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'service_cost_type') then
-    create type service_cost_type as enum ('월간', '연간', '영구');
-  end if;
-end $$;
-
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
@@ -41,7 +34,6 @@ create table if not exists public.services (
   category text not null,
   status text not null,
   cost_monthly numeric(12, 2) not null default 0,
-  cost_type service_cost_type not null,
   license_count integer not null default 0 check (license_count >= 0),
   next_renewal date,
   assignee_id uuid references public.profiles (id) on delete set null,
@@ -51,7 +43,6 @@ create table if not exists public.services (
 create table if not exists public.restaurants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  category text not null,
   address text not null,
   lat double precision,
   lng double precision,
@@ -67,10 +58,8 @@ create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants (id) on delete cascade,
   reviewer_id uuid not null references public.profiles (id) on delete cascade,
-  rating integer not null check (rating between 1 and 5),
   comment text,
   visit_date date,
-  revisit boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -125,15 +114,6 @@ alter table public.reviews
 
 alter table public.reviews
   add column if not exists revisit_intent text;
-
--- 기존 데이터 보정 (star_rating 없으면 정수 별점×2)
-update public.reviews
-set star_rating = rating * 2
-where star_rating is null and rating is not null;
-
-update public.reviews
-set revisit_intent = case when revisit then 'again' else 'meh' end
-where revisit_intent is null;
 
 alter table public.reviews
   drop constraint if exists reviews_star_rating_check;
@@ -591,7 +571,7 @@ alter default privileges in schema public
 -- 기존 services 테이블은 라이선스 관리(/licenses)의 read 측에서 사용 중.
 -- 같은 테이블에 hub 카드 행도 보관하기 위해 디스크리미네이터 `is_hub_card` 를 추가.
 --   - 라이선스 행: is_hub_card = false (기본값), 모든 라이선스 컬럼 사용
---   - 허브 카드 행: is_hub_card = true, plan/category/cost_type 등 라이선스 컬럼은 null
+--   - 허브 카드 행: is_hub_card = true, plan/category 등 라이선스 컬럼은 null
 -- ═════════════════════════════════════════════════════════════
 
 -- 허브 카드용 컬럼 추가
@@ -611,12 +591,11 @@ alter table public.services
 -- 라이선스 컬럼들은 허브 카드 행에서는 의미 없으므로 nullable 화
 alter table public.services alter column plan drop not null;
 alter table public.services alter column category drop not null;
-alter table public.services alter column cost_type drop not null;
 
 -- 라이선스 카드 UI 의 통화/계약 표현용 컬럼.
 --   - cost: 원본 통화 기준 입력 금액 (cost_monthly 는 호환을 위해 동일 값 유지)
 --   - currency: 'KRW' | 'USD' | 'EUR' (기본 'KRW')
---   - contract_type: '월 구독' | '년 구독' | '영구 라이선스' (cost_type 보다 세부)
+--   - contract_type: '월 구독' | '년 구독' | '영구 라이선스'
 --   - next_payment_date: 다음 결제일 (월/년 구독에서만 사용, 영구 라이선스는 null)
 alter table public.services add column if not exists cost numeric(12, 2);
 alter table public.services add column if not exists currency text default 'KRW';
@@ -737,16 +716,16 @@ create policy "service_cost_history_delete_auth"
 
 insert into public.services (
   name, description, icon, url, status, access_level, order_index, is_hub_card,
-  plan, category, cost_type, cost_monthly, license_count
+  plan, category, cost_monthly, license_count
 ) values
   ('Apollon License Manager',
    '라이선스 발급, 관리, 상태 조회를 위한 통합 관리 서비스',
    '🔑', '/licenses', '활성', '전체', 0, true,
-   null, null, null, 0, 0),
+   null, null, 0, 0),
   ('아슐랭',
    '아폴론 미식가들이 직접 뽑은 아슐랭 가이드',
    '🍱', '/restaurants', '활성', '전체', 1, true,
-   null, null, null, 0, 0);
+   null, null, 0, 0);
 
 -- ── 비품 관리 (물품창고) — 전체 정의는 supabase/migrations/supplies_warehouse.sql 참고
 

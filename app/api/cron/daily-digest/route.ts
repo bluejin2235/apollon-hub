@@ -7,6 +7,7 @@ import {
   KST_OFFSET_MS,
   toKstDateString
 } from "@/lib/mail/hub-email";
+import { restaurantPrimaryCategory } from "@/lib/restaurants/types";
 
 type ProfileJoin = { name: string | null } | { name: string | null }[] | null;
 
@@ -187,7 +188,7 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false }),
     supabase
       .from("restaurants")
-      .select("id, name, category, registerer:profiles!registered_by(name)")
+      .select("id, name, categories, registerer:profiles!registered_by(name)")
       .gte("created_at", startIso)
       .lt("created_at", endIso)
       .order("created_at", { ascending: false }),
@@ -235,7 +236,7 @@ export async function GET(request: NextRequest) {
 
   const restaurants = (restaurantsRes.data ?? []).map((row) => ({
     name: String(row.name ?? ""),
-    category: String(row.category ?? ""),
+    category: restaurantPrimaryCategory({ categories: row.categories ?? [] }),
     registererName: joinName(row.registerer as ProfileJoin)
   }));
 
