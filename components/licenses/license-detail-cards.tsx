@@ -73,6 +73,18 @@ function profileDisplayName(profileMap: Map<string, Profile>, profileId: string)
 
 type ManagerRow = { id: string; service_id: string; profile_id: string };
 
+function sendLicenseManagerNotify(payload: {
+  type: "manager_added" | "manager_removed";
+  service_id: string;
+  profile_id: string;
+}) {
+  fetch("/api/licenses/notify-manager", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(console.error);
+}
+
 export function ServiceManagersCard({
   serviceId,
   profiles,
@@ -139,6 +151,11 @@ export function ServiceManagersCard({
         after: `추가: ${addedName}`
       }
     ]);
+    sendLicenseManagerNotify({
+      type: "manager_added",
+      service_id: serviceId,
+      profile_id: selectedId
+    });
     setPickerOpen(false);
     setSelectedId("");
     await refresh();
@@ -147,6 +164,7 @@ export function ServiceManagersCard({
   const handleRemove = async (rowId: string) => {
     const row = rows.find((r) => r.id === rowId);
     const removedName = row ? profileDisplayName(profileMap, row.profile_id) : "(알 수 없음)";
+    const profileId = row?.profile_id;
     const { error } = await supabase.from("license_managers").delete().eq("id", rowId);
     if (error) {
       console.error("[license_managers][delete]", error);
@@ -160,6 +178,13 @@ export function ServiceManagersCard({
         after: null
       }
     ]);
+    if (profileId) {
+      sendLicenseManagerNotify({
+        type: "manager_removed",
+        service_id: serviceId,
+        profile_id: profileId
+      });
+    }
     await refresh();
   };
 
