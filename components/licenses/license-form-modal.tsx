@@ -13,6 +13,11 @@ import {
   insertServiceCostHistory,
   shouldRecordCostHistory
 } from "@/lib/licenses/service-cost-history";
+import {
+  buildServiceChangeSnapshot,
+  detectChangedFields,
+  insertServiceChangeLog
+} from "@/lib/licenses/service-change-log";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
 
@@ -671,6 +676,12 @@ export function LicenseFormModal({
           service: toNotifyServicePayload(saved, contractType),
           actor_id: currentUserId
         });
+        await insertServiceChangeLog({
+          serviceId: saved.id,
+          changedBy: currentUserId,
+          changeType: "created",
+          changedFields: null
+        });
       }
 
       setLoading(false);
@@ -754,6 +765,15 @@ export function LicenseFormModal({
           actor_id: currentUserId
         });
       }
+      await insertServiceChangeLog({
+        serviceId: saved.id,
+        changedBy: currentUserId,
+        changeType: "updated",
+        changedFields: detectChangedFields(
+          buildServiceChangeSnapshot(license),
+          buildServiceChangeSnapshot(saved)
+        )
+      });
     }
 
     setLoading(false);

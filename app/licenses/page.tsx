@@ -64,18 +64,6 @@ function monthlyKrwFromHistoryRow(
   return row.contract_type === "년 구독" ? Math.round(krw / 12) : krw;
 }
 
-function monthlyKrwForTrendCurrentMonth(
-  l: License,
-  rates: Parameters<typeof computeLicenseCostBreakdown>[1],
-  thisMonthPaymentKrwByServiceId: Record<string, number>,
-  historyRow: CostHistoryRow | undefined
-): number {
-  const paidKrw = thisMonthPaymentKrwByServiceId[l.id];
-  if (paidKrw != null) return paidKrw;
-  if (historyRow) return monthlyKrwFromHistoryRow(historyRow, rates);
-  return monthlyKrwForDashboard(computeLicenseCostBreakdown(l, rates));
-}
-
 function annualSubscriptionKrwForDashboard(
   b: ReturnType<typeof computeLicenseCostBreakdown>
 ): number {
@@ -603,11 +591,10 @@ export default function LicensesDashboardPage() {
           if (resolveUiContractType(l) === "영구 라이선스") continue;
 
           const historyRow = serviceMap?.get(l.id);
-          const monthlyKrw = monthlyKrwForTrendCurrentMonth(
+          const monthlyKrw = subscriptionMonthlyKrwForLicense(
             l,
             rates,
-            thisMonthPaymentKrwByServiceId,
-            historyRow
+            thisMonthPaymentKrwByServiceId
           );
           subscriptionTotal += monthlyKrw;
 

@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Profile } from "@/lib/licenses/types";
+import { insertServiceChangeLog } from "@/lib/licenses/service-change-log";
 import { supabase } from "@/lib/supabase/client";
 
 const ICON_TRASH = (
@@ -40,6 +41,31 @@ const ICON_USERS = (
     <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 0 0-3-3.87M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm10-3a3 3 0 1 1-3-3" />
   </svg>
 );
+
+async function logServiceFieldChange(
+  serviceId: string,
+  changedFields: {
+    field: string;
+    label: string;
+    before: string | null;
+    after: string | null;
+  }[]
+) {
+  const { data: authData } = await supabase.auth.getUser();
+  const userId = authData.user?.id;
+  if (!userId) return;
+
+  await insertServiceChangeLog({
+    serviceId,
+    changedBy: userId,
+    changeType: "updated",
+    changedFields
+  });
+}
+
+function profileDisplayName(profileMap: Map<string, Profile>, profileId: string): string {
+  return profileMap.get(profileId)?.name?.trim() || "(알 수 없음)";
+}
 
 /* ─────────────────────────────────────────────────────────────────
  * 1) 서비스 담당자 카드 (license_managers)
@@ -104,17 +130,36 @@ export function ServiceManagersCard({
       setErr(error.message ?? "추가에 실패했습니다.");
       return;
     }
+    const addedName = profileDisplayName(profileMap, selectedId);
+    await logServiceFieldChange(serviceId, [
+      {
+        field: "license_managers",
+        label: "담당자",
+        before: null,
+        after: `추가: ${addedName}`
+      }
+    ]);
     setPickerOpen(false);
     setSelectedId("");
     await refresh();
   };
 
   const handleRemove = async (rowId: string) => {
+    const row = rows.find((r) => r.id === rowId);
+    const removedName = row ? profileDisplayName(profileMap, row.profile_id) : "(알 수 없음)";
     const { error } = await supabase.from("license_managers").delete().eq("id", rowId);
     if (error) {
       console.error("[license_managers][delete]", error);
       return;
     }
+    await logServiceFieldChange(serviceId, [
+      {
+        field: "license_managers",
+        label: "담당자",
+        before: `삭제: ${removedName}`,
+        after: null
+      }
+    ]);
     await refresh();
   };
 
@@ -305,6 +350,15 @@ export function ServiceUsersCard({
       setErr(error.message ?? "추가에 실패했습니다.");
       return;
     }
+    const addedName = profileDisplayName(profileMap, selectedId);
+    await logServiceFieldChange(serviceId, [
+      {
+        field: "license_users",
+        label: "사용자",
+        before: null,
+        after: `추가: ${addedName}`
+      }
+    ]);
     sendLicenseUserNotify({
       type: "user_added",
       service_id: serviceId,
@@ -316,11 +370,20 @@ export function ServiceUsersCard({
   };
 
   const handleRemove = async (rowId: string, profileId: string) => {
+    const removedName = profileDisplayName(profileMap, profileId);
     const { error } = await supabase.from("license_users").delete().eq("id", rowId);
     if (error) {
       console.error("[license_users][delete]", error);
       return;
     }
+    await logServiceFieldChange(serviceId, [
+      {
+        field: "license_users",
+        label: "사용자",
+        before: `삭제: ${removedName}`,
+        after: null
+      }
+    ]);
     sendLicenseUserNotify({
       type: "user_removed",
       service_id: serviceId,
