@@ -2,14 +2,19 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
+  buildHubEmailShell,
+  buildItemCard,
+  escapeHtml,
+  EXCLUDED_TEAM_EMAIL,
+  toKstDateString
+} from "@/lib/mail/hub-email";
+import {
   computeLicenseCostBreakdown,
   formatCurrency,
   resolveUiContractType
 } from "@/lib/licenses/calc";
 import type { License } from "@/lib/licenses/types";
 
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-const EXCLUDED_TEAM_EMAIL = "apollon@apollonworks.com";
 const HUB_MEMBERS_BASE = "https://hub.apollonworks.com/licenses/members";
 
 /** 고정 환율 — 추후 실시간 환율 API로 교체 가능 */
@@ -41,29 +46,6 @@ type ProfileRow = {
   email: string;
   name: string;
 };
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function buildItemCard(mainText: string, subText: string): string {
-  return `<div style="background: rgba(230,204,190,0.15); border: 0.5px solid #E6CCBE; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-      <span style="font-size: 14px; color: #5A5353; font-weight: 500;">${escapeHtml(mainText)}</span>
-      <span style="font-size: 11px; color: #776274;">${escapeHtml(subText)}</span>
-    </div>`;
-}
-
-function getKstDateLabel(): string {
-  const kst = new Date(Date.now() + KST_OFFSET_MS);
-  const y = kst.getUTCFullYear();
-  const m = kst.getUTCMonth() + 1;
-  const d = kst.getUTCDate();
-  return `${y}년 ${m}월 ${d}일`;
-}
 
 function isSubscriptionLicense(service: License): boolean {
   if (service.status !== "활성") return false;
@@ -235,17 +217,7 @@ function buildLicenseDigestHtml(params: {
 
   const memberUrl = `${HUB_MEMBERS_BASE}/${profileId}`;
 
-  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e0d8d4;">
-  <div style="background: #5A5353; padding: 28px 32px;">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-      <div style="width: 28px; height: 28px; background: #A07178; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #E6CCBE;">A</div>
-      <span style="color: #E6CCBE; font-size: 12px; font-weight: 500; letter-spacing: 0.05em;">APOLLON HUB</span>
-    </div>
-    <h1 style="color: #ffffff; font-size: 20px; font-weight: 500; margin: 0 0 4px;">📋 라이선스 현황 — ${escapeHtml(dateLabel)}</h1>
-    <p style="color: #C8CC92; font-size: 13px; margin: 0;">${escapeHtml(memberName)}님의 이용 중인 라이선스 현황입니다.</p>
-  </div>
-  <div style="padding: 24px 32px; background: #ffffff;">
-    ${summaryCard}
+  const bodyHtml = `${summaryCard}
     ${changesSection}
     <div style="margin-bottom: 12px;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -256,15 +228,14 @@ function buildLicenseDigestHtml(params: {
     </div>
     <p style="margin: 20px 0 0; font-size: 12px; line-height: 1.6; color: #776274;">
       라이선스 정보 변경이 필요한 경우 해당 라이선스 담당자와 논의하여 수정을 요청하세요.
-    </p>
-    <div style="text-align: center; margin-top: 24px;">
-      <a href="${memberUrl}" style="display: inline-block; background: #5A5353; color: #E6CCBE; font-size: 14px; font-weight: 500; padding: 12px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.02em;">내 라이선스 현황 보기</a>
-    </div>
-  </div>
-  <div style="padding: 16px 32px; background: rgba(160,113,120,0.1); border-top: 0.5px solid #E6CCBE; text-align: center;">
-    <p style="font-size: 12px; color: #776274; margin: 0;">아폴론이머시브웍스 · hub@apollonworks.com</p>
-  </div>
-</div>`;
+    </p>`;
+
+  return buildHubEmailShell({
+    title: `📋 라이선스 현황 — ${dateLabel}`,
+    subtitle: `${memberName}님의 이용 중인 라이선스 현황입니다.`,
+    bodyHtml,
+    cta: { href: memberUrl, label: "내 라이선스 현황 보기" }
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -294,7 +265,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Resend environment variables missing" }, { status: 500 });
   }
 
-  const dateLabel = getKstDateLabel();
+  const dateLabel = toKstDateString();
   const supabase = createClient(supabaseUrl, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
@@ -401,7 +372,8 @@ export async function GET(request: NextRequest) {
       const { error: insertError } = await supabase.from("license_mail_snapshots").insert({
         profile_id: profile.id,
         sent_at: new Date().toISOString(),
-        snapshot
+        snapshot,
+        total_monthly_krw: snapshot.total_monthly_krw ?? 0
       });
 
       if (insertError) {

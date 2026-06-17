@@ -1,4 +1,4 @@
-// 필요 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// 필요 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     };
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SECRET_KEY;
     if (!supabaseUrl || !serviceRoleKey) {
       console.error("[parse-receipt] Supabase env vars missing");
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
