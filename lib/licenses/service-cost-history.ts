@@ -88,7 +88,8 @@ export async function insertServiceCostHistory(
     contract_type: resolveUiContractType(service),
     category,
     active_member_count: activeMemberCount,
-    recorded_month: currentRecordedMonth()
+    recorded_month: currentRecordedMonth(),
+    record_type: "change"
   });
   if (error) {
     console.error("[service_cost_history] insert failed", error);

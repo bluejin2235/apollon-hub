@@ -66,7 +66,16 @@ type CostHistoryRow = {
   category: string | null;
   recorded_at: string;
   recorded_month: string;
+  record_type: string | null;
 };
+
+function pickPreferredCostHistoryRow(prev: CostHistoryRow, row: CostHistoryRow): CostHistoryRow {
+  const prevIsPayment = prev.record_type === "payment";
+  const rowIsPayment = row.record_type === "payment";
+  if (rowIsPayment && !prevIsPayment) return row;
+  if (prevIsPayment && !rowIsPayment) return prev;
+  return row.recorded_at > prev.recorded_at ? row : prev;
+}
 
 type MonthlyTrendPoint = {
   monthKey: string;
@@ -294,7 +303,7 @@ export default function LicensesDashboardPage() {
       const { data, error } = await supabase
         .from("service_cost_history")
         .select(
-          "service_id, cost_monthly, cost_monthly_krw, currency, contract_type, active_member_count, category, recorded_at, recorded_month"
+          "service_id, cost_monthly, cost_monthly_krw, currency, contract_type, active_member_count, category, recorded_at, recorded_month, record_type"
         )
         .gte("recorded_at", `${range.start}T00:00:00+00:00`)
         .lte("recorded_at", `${range.end}T23:59:59+00:00`)
@@ -438,7 +447,7 @@ export default function LicensesDashboardPage() {
   const monthlyTrendData = useMemo((): MonthlyTrendPoint[] => {
     const months = getMonthKeysInRange(range.start, range.end);
 
-    // recorded_month별 service_id별 최신 행만 유지
+    // recorded_month별 service_id별: payment 우선, 없으면 최신 change
     const byMonth = new Map<string, Map<string, CostHistoryRow>>();
     for (const row of costHistory) {
       if (!byMonth.has(row.recorded_month)) {
@@ -446,9 +455,7 @@ export default function LicensesDashboardPage() {
       }
       const serviceMap = byMonth.get(row.recorded_month)!;
       const prev = serviceMap.get(row.service_id);
-      if (!prev || row.recorded_at > prev.recorded_at) {
-        serviceMap.set(row.service_id, row);
-      }
+      serviceMap.set(row.service_id, prev ? pickPreferredCostHistoryRow(prev, row) : row);
     }
 
     return months.map(({ key, label }) => {

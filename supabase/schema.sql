@@ -731,7 +731,9 @@ create table if not exists public.service_cost_history (
   contract_type text,
   active_member_count integer,
   recorded_at timestamptz not null default now(),
-  recorded_month text not null
+  recorded_month text not null,
+  record_type text not null default 'change',
+  fx_rate numeric(10, 4) null
 );
 
 create index if not exists idx_service_cost_history_service on public.service_cost_history (service_id);
