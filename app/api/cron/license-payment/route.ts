@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
   const [servicesRes, profilesRes, usdKrw, eurKrw] = await Promise.all([
     supabase
       .from("services")
-      .select("*")
+      .select("id, name, cost, cost_monthly, currency, license_count, contract_type, cost_type, payment_day, payment_month, category")
       .eq("is_hub_card", false)
       .eq("status", "활성")
       .in("contract_type", ["월 구독", "년 구독"]),

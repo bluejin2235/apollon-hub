@@ -192,7 +192,7 @@ async function main() {
     supabase
       .from("services")
       .select(
-        "id, name, status, contract_type, cost, cost_monthly, currency, license_count, payment_day, payment_month, start_date, is_hub_card"
+        "id, name, status, contract_type, cost, cost_monthly, currency, license_count, payment_day, payment_month, start_date, is_hub_card, category"
       )
       .eq("status", "활성")
       .in("contract_type", ["월 구독", "년 구독"])
@@ -255,6 +255,10 @@ async function main() {
 
       const cost = Number(service.cost ?? service.cost_monthly ?? 0);
       const { costMonthlyKrw, fxRate } = computeCostMonthlyKrw(service, usdKrw, eurKrw);
+      const category =
+        service.category != null && String(service.category).trim().length > 0
+          ? String(service.category).trim()
+          : null;
 
       const { error } = await supabase.from("service_cost_history").insert({
         service_id: service.id,
@@ -269,7 +273,7 @@ async function main() {
         recorded_at: toRecordedAtIso(dateStr),
         fx_rate: fxRate,
         active_member_count: ACTIVE_MEMBER_COUNT,
-        category: null
+        category
       });
 
       await sleep(INSERT_DELAY_MS);
