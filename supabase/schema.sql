@@ -507,30 +507,7 @@ drop policy if exists "api_usage_delete_auth" on public.api_usage;
 create policy "api_usage_delete_auth"
   on public.api_usage for delete to authenticated using (true);
 
--- ── licenses 4종 ───────────────────────────────────────────
--- 주의: licenses / license_users / license_managers / license_credentials 테이블은
---      현재 schema.sql 에 `create table` 정의가 없습니다.
---      Supabase 대시보드에서 별도로 생성된 상태이며, 본 섹션은 그 위 RLS 정책만 동기화합니다.
---      테이블 정의 동기화는 별도 작업으로 진행 권장.
-
-alter table public.licenses enable row level security;
-
-drop policy if exists "licenses_select_auth" on public.licenses;
-create policy "licenses_select_auth"
-  on public.licenses for select to authenticated using (true);
-
-drop policy if exists "licenses_insert_auth" on public.licenses;
-create policy "licenses_insert_auth"
-  on public.licenses for insert to authenticated with check (true);
-
-drop policy if exists "licenses_update_auth" on public.licenses;
-create policy "licenses_update_auth"
-  on public.licenses for update to authenticated
-  using (true) with check (true);
-
-drop policy if exists "licenses_delete_auth" on public.licenses;
-create policy "licenses_delete_auth"
-  on public.licenses for delete to authenticated using (true);
+-- ── license_users / license_managers / license_credentials RLS ─
 
 alter table public.license_users enable row level security;
 
