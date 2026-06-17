@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     const [serviceRes, userRes, assigneesRes, superAdminsRes] = await Promise.all([
       supabase
         .from("services")
-        .select("id, name, category, contract_type, cost_type")
+        .select("id, name, category, contract_type")
         .eq("id", serviceId)
         .eq("is_hub_card", false)
         .maybeSingle(),
@@ -185,7 +185,9 @@ export async function POST(request: NextRequest) {
 
     const serviceName = String(serviceRes.data.name ?? "").trim() || "—";
     const category = String(serviceRes.data.category ?? "").trim() || "—";
-    const contractType = resolveUiContractType(serviceRes.data);
+    const contractType = resolveUiContractType({
+      contract_type: serviceRes.data.contract_type
+    } as Parameters<typeof resolveUiContractType>[0]);
     const userName = userRes.data?.name?.trim() || "—";
 
     const managerNames: string[] = [];
