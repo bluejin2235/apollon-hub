@@ -42,6 +42,40 @@ function subscriptionMonthlyKrwForLicense(
   return monthlyKrwForDashboard(computeLicenseCostBreakdown(l, rates));
 }
 
+function monthlyKrwFromHistoryRow(
+  row: CostHistoryRow,
+  rates: Parameters<typeof computeLicenseCostBreakdown>[1]
+): number {
+  if (row.contract_type === "영구 라이선스") return 0;
+
+  const krw =
+    row.cost_monthly_krw != null
+      ? Number(row.cost_monthly_krw)
+      : (() => {
+          const monthly = Number(row.cost_monthly);
+          const cur = (row.currency ?? "KRW").toUpperCase();
+          const usdKrw = rates?.USD ?? 1525;
+          const eurKrw = rates?.EUR ?? 1690;
+          if (cur === "USD") return monthly * usdKrw;
+          if (cur === "EUR") return monthly * eurKrw;
+          return monthly;
+        })();
+
+  return row.contract_type === "년 구독" ? Math.round(krw / 12) : krw;
+}
+
+function monthlyKrwForTrendCurrentMonth(
+  l: License,
+  rates: Parameters<typeof computeLicenseCostBreakdown>[1],
+  thisMonthPaymentKrwByServiceId: Record<string, number>,
+  historyRow: CostHistoryRow | undefined
+): number {
+  const paidKrw = thisMonthPaymentKrwByServiceId[l.id];
+  if (paidKrw != null) return paidKrw;
+  if (historyRow) return monthlyKrwFromHistoryRow(historyRow, rates);
+  return monthlyKrwForDashboard(computeLicenseCostBreakdown(l, rates));
+}
+
 function annualSubscriptionKrwForDashboard(
   b: ReturnType<typeof computeLicenseCostBreakdown>
 ): number {
@@ -100,16 +134,44 @@ type MonthlyTrendPoint = {
   byCategory: Record<string, number>;
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  "전사/공통": "#7F77DD",
+const MANAGED_CHART_CATEGORIES = new Set([
+  "기획/공간",
+  "디자인/공간",
+  "디자인/공통",
+  "디자인/비주얼",
+  "전사/공통"
+]);
+
+const CHART_CATEGORY_ORDER = [
+  "기획/공간",
+  "디자인/공간",
+  "디자인/공통",
+  "디자인/비주얼",
+  "전사/공통",
+  "기타"
+] as const;
+
+const CHART_CATEGORY_COLORS: Record<string, string> = {
+  "기획/공간": "#D4537E",
+  "디자인/공간": "#1D9E75",
   "디자인/공통": "#A07178",
   "디자인/비주얼": "#EF9F27",
-  "디자인/공간": "#1D9E75",
-  "기획/공통": "#534AB7",
-  "기획/공간": "#D4537E",
-  "공통": "#888780",
-  "미분류": "#CBD5E1"
+  "전사/공통": "#7F77DD",
+  "기타": "#CBD5E1"
 };
+
+function resolveTrendChartCategory(
+  historyCategory: string | null | undefined,
+  serviceCategory: string | null | undefined
+): string {
+  const history = (historyCategory ?? "").trim();
+  if (MANAGED_CHART_CATEGORIES.has(history)) return history;
+
+  const service = (serviceCategory ?? "").trim();
+  if (MANAGED_CHART_CATEGORIES.has(service)) return service;
+
+  return "기타";
+}
 
 const PERIOD_OPTIONS: { value: LicensePeriodPreset; label: string }[] = [
   { value: "last_3m", label: "최근 3개월" },
@@ -515,6 +577,8 @@ export default function LicensesDashboardPage() {
 
   const monthlyTrendData = useMemo((): MonthlyTrendPoint[] => {
     const months = getMonthKeysInRange(range.start, range.end);
+    const currentMonthKey = getCurrentMonthKey();
+    const licenseById = new Map(licenses.map((l) => [l.id, l]));
 
     // recorded_month별 service_id별: payment 우선, 없으면 최신 change
     const byMonth = new Map<string, Map<string, CostHistoryRow>>();
@@ -533,52 +597,72 @@ export default function LicensesDashboardPage() {
       const memberCounts: number[] = [];
       const byCategory: Record<string, number> = {};
 
-      if (serviceMap) {
+      if (key === currentMonthKey) {
+        for (const l of licenses) {
+          if (!isActiveService(l)) continue;
+          if (resolveUiContractType(l) === "영구 라이선스") continue;
+
+          const historyRow = serviceMap?.get(l.id);
+          const monthlyKrw = monthlyKrwForTrendCurrentMonth(
+            l,
+            rates,
+            thisMonthPaymentKrwByServiceId,
+            historyRow
+          );
+          subscriptionTotal += monthlyKrw;
+
+          const cat = resolveTrendChartCategory(historyRow?.category ?? null, l.category);
+          byCategory[cat] = (byCategory[cat] ?? 0) + monthlyKrw;
+
+          const mc = historyRow?.active_member_count;
+          if (mc != null && mc > 0) memberCounts.push(mc);
+        }
+      } else if (serviceMap) {
         for (const row of serviceMap.values()) {
           if (row.active_member_count != null && row.active_member_count > 0) {
             memberCounts.push(row.active_member_count);
           }
           if (row.contract_type === "영구 라이선스") continue;
 
-          const krw = row.cost_monthly_krw != null
-            ? Number(row.cost_monthly_krw)
-            : (() => {
-                const monthly = Number(row.cost_monthly);
-                const cur = (row.currency ?? "KRW").toUpperCase();
-                const usdKrw = rates?.USD ?? 1525;
-                const eurKrw = rates?.EUR ?? 1690;
-                if (cur === "USD") return monthly * usdKrw;
-                if (cur === "EUR") return monthly * eurKrw;
-                return monthly;
-              })();
-
-          const monthlyKrw = row.contract_type === "년 구독"
-            ? Math.round(krw / 12)
-            : krw;
-
+          const monthlyKrw = monthlyKrwFromHistoryRow(row, rates);
           subscriptionTotal += monthlyKrw;
-          const cat = row.category ?? "미분류";
+
+          const serviceCategory = licenseById.get(row.service_id)?.category;
+          const cat = resolveTrendChartCategory(row.category, serviceCategory);
           byCategory[cat] = (byCategory[cat] ?? 0) + monthlyKrw;
         }
-      } // serviceMap 없으면 subscriptionTotal = 0 그대로 유지
+      }
 
-      const memberCount = memberCounts.length > 0
-        ? Math.round(memberCounts.reduce((s, n) => s + n, 0) / memberCounts.length)
-        : (teamActive.length > 0 ? teamActive.length : 12);
+      const memberCount =
+        memberCounts.length > 0
+          ? Math.round(memberCounts.reduce((s, n) => s + n, 0) / memberCounts.length)
+          : teamActive.length > 0
+            ? teamActive.length
+            : 12;
 
-      const perPersonCost = memberCount > 0
-        ? Math.round(subscriptionTotal / memberCount)
-        : 0;
+      const perPersonCost = memberCount > 0 ? Math.round(subscriptionTotal / memberCount) : 0;
 
       return { monthKey: key, label, subscriptionTotal, perPersonCost, memberCount, byCategory };
     });
-  }, [costHistory, teamActive, rates, range.start, range.end]);
+  }, [
+    costHistory,
+    licenses,
+    teamActive,
+    rates,
+    range.start,
+    range.end,
+    thisMonthPaymentKrwByServiceId
+  ]);
 
-  const categories = useMemo(
-    () =>
-      Array.from(new Set(costHistory.map((r) => r.category ?? "미분류"))).sort(),
-    [costHistory]
-  );
+  const categories = useMemo(() => {
+    const used = new Set<string>();
+    for (const point of monthlyTrendData) {
+      for (const cat of CHART_CATEGORY_ORDER) {
+        if ((point.byCategory[cat] ?? 0) > 0) used.add(cat);
+      }
+    }
+    return CHART_CATEGORY_ORDER.filter((cat) => used.has(cat));
+  }, [monthlyTrendData]);
 
   const hasTrendData = monthlyTrendData.some((d) => d.subscriptionTotal > 0);
 
@@ -671,7 +755,7 @@ export default function LicensesDashboardPage() {
                     dataKey={`byCategory.${cat}`}
                     name={cat}
                     stackId="cost"
-                    fill={CATEGORY_COLORS[cat] ?? "#CBD5E1"}
+                    fill={CHART_CATEGORY_COLORS[cat] ?? "#CBD5E1"}
                   />
                 ))}
               </BarChart>
