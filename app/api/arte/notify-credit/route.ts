@@ -1,7 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { buildHubEmailShell, buildItemCard, toKstDateTimeString } from "@/lib/mail/hub-email";
+import {
+  buildAmountHighlightCard,
+  buildHubEmailShell,
+  buildInfoTable,
+  EMAIL_HEADER_CREDIT,
+  toKstDateTimeString
+} from "@/lib/mail/hub-email";
 
 const RECIPIENT = "tjlee@apollonworks.com";
 const AGENTS_URL = "https://hub.apollonworks.com/agents";
@@ -33,21 +39,23 @@ function formatAmountSubText(body: NotifyCreditBody): string {
 
 function buildCreditNotifyHtml(body: NotifyCreditBody): string {
   const registeredAtKst = toKstDateTimeString();
-  const cards = [
-    buildItemCard("서비스", body.service_name),
-    buildItemCard("결제 유형", body.payment_type),
-    buildItemCard("금액", formatAmountSubText(body)),
-    buildItemCard("결제일", body.paid_at),
-    ...(body.memo?.trim()
-      ? [buildItemCard("메모", body.memo.trim())]
-      : []),
-    buildItemCard("등록자", body.registered_by_name)
-  ].join("\n");
+  const amountText = formatAmountSubText(body);
+  const table = buildInfoTable([
+    { label: "서비스", value: body.service_name },
+    { label: "결제 유형", value: body.payment_type },
+    { label: "결제일", value: body.paid_at },
+    ...(body.memo?.trim() ? [{ label: "메모", value: body.memo.trim() }] : []),
+    { label: "등록자", value: body.registered_by_name }
+  ]);
+
+  const bodyHtml = `${buildAmountHighlightCard("결제 금액", amountText)}${table}`;
 
   return buildHubEmailShell({
-    title: "💳 크레딧 · 추가 결제 등록 알림",
+    headerBg: EMAIL_HEADER_CREDIT,
+    headerLabel: "아르테 · AI 비용",
+    title: "크레딧 · 추가 결제 등록",
     subtitle: `등록 일시 ${registeredAtKst}`,
-    bodyHtml: cards,
+    bodyHtml,
     cta: { href: AGENTS_URL, label: "크레딧 내역 보기" }
   });
 }

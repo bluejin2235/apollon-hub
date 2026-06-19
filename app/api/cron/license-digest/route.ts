@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
   buildHubEmailShell,
-  buildItemCard,
+  EMAIL_HEADER_LICENSE,
   escapeHtml,
   EXCLUDED_TEAM_EMAIL,
   toKstDateString
@@ -133,67 +133,83 @@ function buildLicenseDigestHtml(params: {
   changes: SnapshotChange[];
 }): string {
   const { dateLabel, memberName, profileId, snapshot, previous, changes } = params;
-  const isFirstSend = previous == null;
 
-  let diffHtml = "";
-  if (isFirstSend) {
-    diffHtml = `<p style="margin: 8px 0 0; font-size: 12px; color: #776274;">첫 발송 기준 데이터입니다.</p>`;
+  const diff = previous != null ? snapshot.total_monthly_krw - previous.total_monthly_krw : null;
+
+  let diffValueHtml: string;
+  if (previous == null) {
+    diffValueHtml = `<p style="margin: 8px 0 0; font-size: 13px; color: #776274;">첫 발송 기준</p>`;
+  } else if (diff === 0) {
+    diffValueHtml = `<p style="margin: 8px 0 0; font-size: 20px; font-weight: 700; color: #5A5353;">변동 없음</p>`;
+  } else if (diff! > 0) {
+    diffValueHtml = `<p style="margin: 8px 0 0; font-size: 20px; font-weight: 700; color: #dc2626;">▲ ${formatCurrency(diff!)}</p>`;
   } else {
-    const diff = snapshot.total_monthly_krw - previous.total_monthly_krw;
-    if (diff > 0) {
-      diffHtml = `<p style="margin: 8px 0 0; font-size: 13px; color: #dc2626; font-weight: 500;">직전 대비: ▲ ${formatCurrency(diff)}</p>`;
-    } else if (diff < 0) {
-      diffHtml = `<p style="margin: 8px 0 0; font-size: 13px; color: #16a34a; font-weight: 500;">직전 대비: ▼ ${formatCurrency(Math.abs(diff))}</p>`;
-    }
+    diffValueHtml = `<p style="margin: 8px 0 0; font-size: 20px; font-weight: 700; color: #16a34a;">▼ ${formatCurrency(Math.abs(diff!))}</p>`;
   }
 
-  const summaryCard = `<div style="background: rgba(230,204,190,0.15); border: 0.5px solid #E6CCBE; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-    <p style="margin: 0; font-size: 13px; color: #776274;">이번 달 총 비용</p>
-    <p style="margin: 6px 0 0; font-size: 24px; font-weight: 700; color: #5A5353;">${formatCurrency(snapshot.total_monthly_krw)}</p>
-    ${diffHtml}
-  </div>`;
+  const metricsHtml = `<table style="width: 100%; border-collapse: separate; border-spacing: 10px 0; margin-bottom: 20px;">
+    <tr>
+      <td style="width: 50%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; vertical-align: top;">
+        <p style="margin: 0; font-size: 12px; color: #776274;">이번 달 총 비용</p>
+        <p style="margin: 8px 0 0; font-size: 22px; font-weight: 700; color: ${EMAIL_HEADER_LICENSE};">${formatCurrency(snapshot.total_monthly_krw)}</p>
+      </td>
+      <td style="width: 50%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; vertical-align: top;">
+        <p style="margin: 0; font-size: 12px; color: #776274;">직전 대비</p>
+        ${diffValueHtml}
+      </td>
+    </tr>
+  </table>`;
 
-  let changesSection = "";
-  if (changes.length > 0) {
-    const changeLines = changes.map((change) => {
-      if (change.kind === "added") {
-        return buildItemCard(
-          `➕ ${change.service.name}`,
-          `신규 추가 (${formatCurrency(change.service.monthly_krw)}/월)`
-        );
-      }
-      if (change.kind === "removed") {
-        return buildItemCard(`➖ ${change.service.name}`, "제거됨");
-      }
-      return buildItemCard(
-        `✏️ ${change.service.name}`,
-        `${formatCurrency(change.before)} → ${formatCurrency(change.after)}`
-      );
-    });
-
-    changesSection = `<div style="margin-bottom: 20px;">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-        <span style="color: #A07178; font-size: 18px;">📌</span>
-        <span style="font-size: 14px; font-weight: 500; color: #5A5353;">변경 요약</span>
-      </div>
-      ${changeLines.join("\n")}
-    </div>
-    <div style="border-top: 0.5px solid #E6CCBE; margin: 16px 0;"></div>`;
+  const changeMap = new Map<string, SnapshotChange>();
+  for (const change of changes) {
+    changeMap.set(change.service.id, change);
   }
+
+  const removedChanges = changes.filter((c) => c.kind === "removed");
+  const removedHtml =
+    removedChanges.length > 0
+      ? `<div style="margin-bottom: 16px; padding: 12px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
+      <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #991b1b;">제거된 라이선스</p>
+      ${removedChanges
+        .map(
+          (c) =>
+            `<p style="margin: 0 0 4px; font-size: 13px; color: #5A5353;">➖ ${escapeHtml(c.service.name)}</p>`
+        )
+        .join("\n")}
+    </div>`
+      : "";
+
+  const noChangesHtml =
+    changes.length === 0
+      ? `<p style="text-align: center; color: #776274; font-size: 13px; padding: 8px 0 16px; margin: 0;">이번 기간 변경된 라이선스가 없습니다.</p>`
+      : "";
 
   const tableRows =
     snapshot.services.length > 0
       ? snapshot.services
-          .map(
-            (service) => `<tr>
-        <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8; color: #5A5353; font-weight: 500;">${escapeHtml(service.name)}</td>
+          .map((service) => {
+            const change = changeMap.get(service.id);
+            let rowStyle = "";
+            let changeCell = `<span style="color: #9ca3af; font-size: 13px;">—</span>`;
+
+            if (change?.kind === "added") {
+              rowStyle = "background: #ecfdf5;";
+              changeCell = `<span style="display: inline-block; background: #16a34a; color: #ffffff; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; margin-right: 6px;">신규</span><span style="color: #16a34a; font-weight: 600; font-size: 13px;">+${formatCurrency(service.monthly_krw)}</span>`;
+            } else if (change?.kind === "cost_changed") {
+              rowStyle = "background: #fef2f2;";
+              changeCell = `<span style="display: inline-block; background: #dc2626; color: #ffffff; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; margin-right: 6px;">변경</span><span style="color: #9ca3af; text-decoration: line-through; font-size: 13px;">${formatCurrency(change.before)}</span> <span style="color: #dc2626; font-weight: 600; font-size: 13px;">${formatCurrency(change.after)}</span>`;
+            }
+
+            return `<tr style="${rowStyle}">
+        <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8; color: #5A5353; font-weight: 500; font-size: 13px;">${escapeHtml(service.name)}</td>
         <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8;">${contractTagHtml(service.contract_type)}</td>
-        <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8; text-align: right; color: #5A5353; font-weight: 500;">${formatCurrency(service.monthly_krw)}</td>
-      </tr>`
-          )
+        <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8; text-align: right; color: #5A5353; font-weight: 500; font-size: 13px;">${formatCurrency(service.monthly_krw)}</td>
+        <td style="padding: 10px 8px; border-bottom: 1px solid #f1ebe8; text-align: right;">${changeCell}</td>
+      </tr>`;
+          })
           .join("\n")
       : `<tr>
-        <td colspan="3" style="padding: 16px 8px; text-align: center; color: #776274;">이용 중인 구독 라이선스가 없습니다.</td>
+        <td colspan="4" style="padding: 16px 8px; text-align: center; color: #776274; font-size: 13px;">이용 중인 구독 라이선스가 없습니다.</td>
       </tr>`;
 
   const tableHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">
@@ -202,6 +218,7 @@ function buildLicenseDigestHtml(params: {
         <th style="padding: 8px; text-align: left; font-size: 11px; color: #776274; font-weight: 600;">서비스명</th>
         <th style="padding: 8px; text-align: left; font-size: 11px; color: #776274; font-weight: 600;">계약유형</th>
         <th style="padding: 8px; text-align: right; font-size: 11px; color: #776274; font-weight: 600;">월비용</th>
+        <th style="padding: 8px; text-align: right; font-size: 11px; color: #776274; font-weight: 600;">변경</th>
       </tr>
     </thead>
     <tbody>
@@ -211,30 +228,34 @@ function buildLicenseDigestHtml(params: {
       <tr style="border-top: 1px solid #E6CCBE;">
         <td colspan="2" style="padding: 12px 8px; font-weight: 600; color: #5A5353;">합계</td>
         <td style="padding: 12px 8px; text-align: right; font-weight: 700; color: #5A5353;">${formatCurrency(snapshot.total_monthly_krw)}</td>
+        <td style="padding: 12px 8px;"></td>
       </tr>
     </tfoot>
   </table>`;
 
+  const actionBox = `<div style="background: rgba(12,71,124,0.06); border: 1px solid rgba(12,71,124,0.15); border-radius: 8px; padding: 16px; margin-top: 20px;">
+    <p style="margin: 0; font-size: 13px; line-height: 1.6; color: #5A5353;">
+      잘못된 라이선스가 있다면 지금 바로 수정해 주세요.<br>
+      방치하면 다음 현황 메일에도 동일하게 반영됩니다.
+    </p>
+  </div>`;
+
   const memberUrl = `${HUB_MEMBERS_BASE}/${profileId}`;
 
-  const bodyHtml = `${summaryCard}
-    ${changesSection}
+  const bodyHtml = `${metricsHtml}${noChangesHtml}${removedHtml}
     <div style="margin-bottom: 12px;">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-        <span style="color: #A07178; font-size: 18px;">🔑</span>
-        <span style="font-size: 14px; font-weight: 500; color: #5A5353;">라이선스 목록</span>
-      </div>
+      <p style="margin: 0 0 12px; font-size: 14px; font-weight: 600; color: #5A5353;">라이선스 목록</p>
       ${tableHtml}
     </div>
-    <p style="margin: 20px 0 0; font-size: 12px; line-height: 1.6; color: #776274;">
-      라이선스 정보 변경이 필요한 경우 해당 라이선스 담당자와 논의하여 수정을 요청하세요.
-    </p>`;
+    ${actionBox}`;
 
   return buildHubEmailShell({
-    title: `📋 라이선스 현황 — ${dateLabel}`,
+    headerBg: EMAIL_HEADER_LICENSE,
+    headerLabel: "LICENSE MANAGER · 2주 결산",
+    title: `라이선스 현황 — ${dateLabel}`,
     subtitle: `${memberName}님의 이용 중인 라이선스 현황입니다.`,
     bodyHtml,
-    cta: { href: memberUrl, label: "내 라이선스 현황 보기" }
+    cta: { href: memberUrl, label: "내 라이선스 확인·수정하기" }
   });
 }
 

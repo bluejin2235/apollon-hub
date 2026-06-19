@@ -2,8 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import {
+  buildDigestItemRow,
   buildHubEmailShell,
-  buildItemCard,
+  EMAIL_HEADER_DIGEST,
+  escapeHtml,
   KST_OFFSET_MS,
   toKstDateString
 } from "@/lib/mail/hub-email";
@@ -69,13 +71,13 @@ function getKstDigestWindow(): {
   };
 }
 
-function buildSection(icon: string, title: string, cardsHtml: string): string {
+function buildSection(sectionLabel: string, title: string, itemsHtml: string): string {
   return `<div style="margin-bottom: 20px;">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-        <span style="color: #A07178; font-size: 18px;">${icon}</span>
-        <span style="font-size: 14px; font-weight: 500; color: #5A5353;">${title}</span>
+      <div style="margin-bottom: 12px;">
+        <span style="display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: ${EMAIL_HEADER_DIGEST}; background: rgba(26,26,46,0.08); padding: 4px 10px; border-radius: 4px; margin-bottom: 6px;">${escapeHtml(sectionLabel)}</span>
+        <div style="font-size: 14px; font-weight: 600; color: #5A5353;">${escapeHtml(title)}</div>
       </div>
-      ${cardsHtml}
+      ${itemsHtml}
     </div>`;
 }
 
@@ -95,30 +97,30 @@ function buildDigestHtml(params: {
 
   if (posts.length > 0) {
     const cards = posts
-      .map((post) => buildItemCard(post.title, post.authorName))
+      .map((post) => buildDigestItemRow(post.title, post.authorName))
       .join("\n");
-    sections.push(buildSection("📋", `Hub 게시판 새 글 ${posts.length}건`, cards));
+    sections.push(buildSection("HUB 게시판", `새 글 ${posts.length}건`, cards));
   }
 
   if (restaurants.length > 0) {
     const cards = restaurants
-      .map((r) => buildItemCard(r.name, `${r.category} · ${r.registererName}`))
+      .map((r) => buildDigestItemRow(r.name, `${r.category} · ${r.registererName}`))
       .join("\n");
-    sections.push(buildSection("🍽", `아슐랭 신규맛집 ${restaurants.length}건 등록`, cards));
+    sections.push(buildSection("아슐랭", `신규 맛집 ${restaurants.length}건`, cards));
   }
 
   if (supplies.length > 0) {
     const cards = supplies
-      .map((s) => buildItemCard(s.name, `${s.code} · ${s.managerName}`))
+      .map((s) => buildDigestItemRow(s.name, `${s.code} · ${s.managerName}`))
       .join("\n");
-    sections.push(buildSection("📦", `물품관리 신규 ${supplies.length}건 등록`, cards));
+    sections.push(buildSection("물품관리", `신규 등록 ${supplies.length}건`, cards));
   }
 
   if (licenses.length > 0) {
     const cards = licenses
-      .map((l) => buildItemCard(l.name, `${l.category} · ${l.assigneeName}`))
+      .map((l) => buildDigestItemRow(l.name, `${l.category} · ${l.assigneeName}`))
       .join("\n");
-    sections.push(buildSection("🔑", `라이선스 신규 ${licenses.length}건 등록`, cards));
+    sections.push(buildSection("라이선스", `신규 등록 ${licenses.length}건`, cards));
   }
 
   const bodySections = sections.join(`\n${SECTION_DIVIDER}\n`);
@@ -134,6 +136,8 @@ function buildDigestHtml(params: {
     : "";
 
   return buildHubEmailShell({
+    headerBg: EMAIL_HEADER_DIGEST,
+    headerLabel: "APOLLON HUB · 일간 소식",
     title: "아폴론 Hub 일간 소식",
     subtitle: `${dateLabelKst} 기준`,
     bodyHtml: `${bodySections}${emptyMessage}`,

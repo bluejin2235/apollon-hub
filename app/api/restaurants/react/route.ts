@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { buildHubEmailShell, buildItemCard } from "@/lib/mail/hub-email";
+import {
+  buildHubEmailShell,
+  buildReactionEmailBody,
+  EMAIL_HEADER_RESTAURANT
+} from "@/lib/mail/hub-email";
 import { isRestaurantReactionEmoji } from "@/lib/restaurants/reactions";
 
 const HUB_RESTAURANTS_BASE = "https://hub.apollonworks.com/restaurants";
@@ -77,13 +81,11 @@ export async function POST(request: NextRequest) {
 
     if (restaurantError) {
       console.error("[restaurants/react] restaurant fetch failed", restaurantError);
-      console.log("[react] skip: restaurantError");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
     const ownerId = (restaurant?.registered_by as string | null) ?? null;
     if (!restaurant || !ownerId) {
-      console.log("[react] skip: no restaurant or ownerId", { restaurant: !!restaurant, ownerId });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -91,7 +93,6 @@ export async function POST(request: NextRequest) {
     const fromEmail = process.env.RESEND_FROM_EMAIL;
     if (!resendApiKey || !fromEmail) {
       console.error("[restaurants/react] Resend env vars missing");
-      console.log("[react] skip: resend env missing");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -102,7 +103,6 @@ export async function POST(request: NextRequest) {
 
     const ownerEmail = ownerProfile?.email?.trim().toLowerCase();
     if (!ownerEmail) {
-      console.log("[react] skip: no ownerEmail", { ownerProfile });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -110,13 +110,16 @@ export async function POST(request: NextRequest) {
     const restaurantName = String(restaurant.name ?? "").trim() || "—";
     const subject = `[아폴론 Hub] 맛집 반응 알림 — ${restaurantName}`;
     const html = buildHubEmailShell({
-      title: `${emoji} 맛집 반응 알림`,
-      subtitle: `${reactorName}님이 ${restaurantName}에 ${emoji} 반응을 남겼습니다.`,
-      bodyHtml: [
-        buildItemCard("맛집", restaurantName),
-        buildItemCard("반응", emoji),
-        buildItemCard("반응자", reactorName)
-      ].join("\n"),
+      headerBg: EMAIL_HEADER_RESTAURANT,
+      headerLabel: "아슐랭",
+      title: "맛집 반응 알림",
+      subtitle: `${reactorName}님이 ${restaurantName}에 반응을 남겼습니다.`,
+      bodyHtml: buildReactionEmailBody({
+        emoji,
+        reactorName,
+        restaurantName,
+        variant: "restaurant"
+      }),
       cta: { href: `${HUB_RESTAURANTS_BASE}/${restaurantId}`, label: "맛집 상세 보기" }
     });
 
@@ -130,7 +133,6 @@ export async function POST(request: NextRequest) {
 
     if (sendError) {
       console.error("[restaurants/react] Resend failed", sendError);
-      console.log("[react] skip: sendError", sendError);
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 

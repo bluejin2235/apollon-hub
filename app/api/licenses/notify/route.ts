@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { buildHubEmailShell, buildItemCard } from "@/lib/mail/hub-email";
+import { buildChangeRow, buildHubEmailShell, buildInfoTable, EMAIL_HEADER_LICENSE } from "@/lib/mail/hub-email";
 
 const HUB_LICENSES_BASE = "https://hub.apollonworks.com/licenses";
 
@@ -57,20 +57,25 @@ function formatDateLabel(iso: string | null): string {
 }
 
 function buildCreatedHtml(service: NotifyBody["service"], assigneeNames: string[], actorName: string): string {
-  const cards = [
-    buildItemCard("서비스명", service.name),
-    buildItemCard("카테고리", service.category?.trim() || "—"),
-    buildItemCard("계약 유형", service.contract_type || "—"),
-    buildItemCard("비용", formatCost(Number(service.cost ?? service.cost_monthly ?? 0), service.currency)),
-    buildItemCard("시작일", formatDateLabel(service.start_date)),
-    buildItemCard("담당자", assigneeNames.length > 0 ? assigneeNames.join(", ") : "—"),
-    buildItemCard("등록자", actorName)
-  ].join("\n");
+  const table = buildInfoTable([
+    { label: "서비스명", value: service.name },
+    { label: "카테고리", value: service.category?.trim() || "—" },
+    { label: "계약 유형", value: service.contract_type || "—" },
+    {
+      label: "비용",
+      value: formatCost(Number(service.cost ?? service.cost_monthly ?? 0), service.currency)
+    },
+    { label: "시작일", value: formatDateLabel(service.start_date) },
+    { label: "담당자", value: assigneeNames.length > 0 ? assigneeNames.join(", ") : "—" },
+    { label: "등록자", value: actorName }
+  ]);
 
   return buildHubEmailShell({
-    title: "🆕 신규 라이선스 등록 알림",
+    headerBg: EMAIL_HEADER_LICENSE,
+    headerLabel: "LICENSE MANAGER",
+    title: "신규 라이선스 등록",
     subtitle: service.name,
-    bodyHtml: cards,
+    bodyHtml: table,
     cta: { href: `${HUB_LICENSES_BASE}/${service.id}`, label: "라이선스 상세 보기" }
   });
 }
@@ -80,16 +85,20 @@ function buildUpdatedHtml(
   changes: LicenseChange[],
   actorName: string
 ): string {
-  const cards = [
-    buildItemCard("서비스명", service.name),
-    ...changes.map((c) => buildItemCard(c.label, `${c.before} → ${c.after}`)),
-    buildItemCard("수정자", actorName)
-  ].join("\n");
+  const changeRows = changes.map((c) => buildChangeRow(c.label, c.before, c.after)).join("\n");
+  const bodyHtml = `${buildInfoTable([{ label: "서비스명", value: service.name }])}
+    <div style="margin-top: 16px;">
+      <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #776274; letter-spacing: 0.03em;">변경 내역</p>
+      ${changeRows}
+    </div>
+    ${buildInfoTable([{ label: "수정자", value: actorName }])}`;
 
   return buildHubEmailShell({
-    title: "✏️ 라이선스 정보 수정 알림",
+    headerBg: EMAIL_HEADER_LICENSE,
+    headerLabel: "LICENSE MANAGER",
+    title: "라이선스 정보 수정",
     subtitle: service.name,
-    bodyHtml: cards,
+    bodyHtml,
     cta: { href: `${HUB_LICENSES_BASE}/${service.id}`, label: "라이선스 상세 보기" }
   });
 }
