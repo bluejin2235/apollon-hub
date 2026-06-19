@@ -6,12 +6,19 @@ import {
   buildHubEmailShell,
   EMAIL_HEADER_DIGEST,
   escapeHtml,
+  EXCLUDED_TEAM_EMAIL,
   KST_OFFSET_MS,
   toKstDateString
 } from "@/lib/mail/hub-email";
 import { restaurantPrimaryCategory } from "@/lib/restaurants/types";
 
 type ProfileJoin = { name: string | null } | { name: string | null }[] | null;
+
+type ProfileRow = {
+  id: string;
+  email: string;
+  name: string | null;
+};
 
 function joinName(profile: ProfileJoin): string {
   if (!profile) return "—";
@@ -196,7 +203,12 @@ export async function GET(request: NextRequest) {
       .gte("created_at", startIso)
       .lt("created_at", endIso)
       .order("created_at", { ascending: false }),
-    supabase.from("profiles").select("email, name").eq("status", "근무"),
+    supabase
+      .from("profiles")
+      .select("id, email, name")
+      .eq("status", "근무")
+      .neq("email", EXCLUDED_TEAM_EMAIL)
+      .not("email", "is", null),
     supabase
       .from("supplies")
       .select("id, name, code, manager:profiles!manager_id(name)")
@@ -256,58 +268,54 @@ export async function GET(request: NextRequest) {
     assigneeName: joinName(row.assignee as ProfileJoin)
   }));
 
-  const recipients = ["ms@apollonworks.com"];
-  // TODO: 테스트 완료 후 아래 주석 해제하고 위 고정 이메일 제거
-  // const recipients = [...new Set(
-  //   (profilesRes.data ?? [])
-  //     .map((p) => p.email?.trim().toLowerCase())
-  //     .filter((email): email is string => Boolean(email))
-  // )];
-
-  if (recipients.length === 0) {
-    console.log("[daily-digest] skipped — no recipient emails");
-    return NextResponse.json({
-      success: true,
-      posts: posts.length,
-      restaurants: restaurants.length,
-      supplies: supplies.length,
-      licenses: licenses.length,
-      recipients: 0,
-      skipped: true
-    });
-  }
-
   const html = buildDigestHtml({ dateLabelKst, posts, restaurants, supplies, licenses });
   const subject = `[아폴론 Hub] 오늘의 소식 — ${dateLabelKst}`;
 
   const resend = new Resend(resendApiKey);
-  const { data, error } = await resend.emails.send({
-    from: fromEmail,
-    to: recipients,
-    subject,
-    html
-  });
+  let sent = 0;
+  let skipped = 0;
+  const errors: { profileId: string; error: string }[] = [];
 
-  if (error) {
-    console.error("[daily-digest] Resend failed", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  for (const profile of (profilesRes.data ?? []) as ProfileRow[]) {
+    try {
+      const email = profile.email?.trim().toLowerCase();
+      if (!email) {
+        skipped += 1;
+        continue;
+      }
+
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [email],
+        subject,
+        html
+      });
+
+      if (error) {
+        console.error("[daily-digest] Resend failed", { profileId: profile.id, error });
+        errors.push({ profileId: profile.id, error: error.message });
+        continue;
+      }
+
+      sent += 1;
+      console.log("[daily-digest] sent", {
+        profileId: profile.id,
+        email,
+        messageId: data?.id,
+        posts: posts.length,
+        restaurants: restaurants.length,
+        supplies: supplies.length,
+        licenses: licenses.length
+      });
+    } finally {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
-  console.log("[daily-digest] sent", {
-    messageId: data?.id,
-    posts: posts.length,
-    restaurants: restaurants.length,
-    supplies: supplies.length,
-    licenses: licenses.length,
-    recipients: recipients.length
-  });
-
   return NextResponse.json({
-    success: true,
-    posts: posts.length,
-    restaurants: restaurants.length,
-    supplies: supplies.length,
-    licenses: licenses.length,
-    recipients: recipients.length
+    success: errors.length === 0,
+    sent,
+    skipped,
+    errors
   });
 }

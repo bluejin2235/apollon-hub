@@ -1178,7 +1178,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
           })()}
 
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-base font-bold text-slate-900">사진 ({photoWallItems.length}장)</h2>
+            <h2 className="mb-4 text-base font-bold text-slate-900">메뉴사진 등록 ({photoWallItems.length}장)</h2>
             {photoWallItems.length > 0 ? (
               <>
                 <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
