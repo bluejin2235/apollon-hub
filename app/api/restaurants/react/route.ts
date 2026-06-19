@@ -77,11 +77,13 @@ export async function POST(request: NextRequest) {
 
     if (restaurantError) {
       console.error("[restaurants/react] restaurant fetch failed", restaurantError);
+      console.log("[react] skip: restaurantError");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
     const ownerId = (restaurant?.registered_by as string | null) ?? null;
-    if (!restaurant || !ownerId || ownerId === user.id) {
+    if (!restaurant || !ownerId) {
+      console.log("[react] skip: no restaurant or ownerId", { restaurant: !!restaurant, ownerId });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
     const fromEmail = process.env.RESEND_FROM_EMAIL;
     if (!resendApiKey || !fromEmail) {
       console.error("[restaurants/react] Resend env vars missing");
+      console.log("[react] skip: resend env missing");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -99,6 +102,7 @@ export async function POST(request: NextRequest) {
 
     const ownerEmail = ownerProfile?.email?.trim().toLowerCase();
     if (!ownerEmail) {
+      console.log("[react] skip: no ownerEmail", { ownerProfile });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -126,6 +130,7 @@ export async function POST(request: NextRequest) {
 
     if (sendError) {
       console.error("[restaurants/react] Resend failed", sendError);
+      console.log("[react] skip: sendError", sendError);
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
