@@ -44,8 +44,8 @@ import { supabase } from "@/lib/supabase/client";
 const MENU_BUCKET = "menu-images";
 const REVIEW_BUCKET = "review-images";
 const MEMO_MAX = 300;
-const PHOTO_PAGE_SIZE = 10;
 const REVIEW_PAGE_SIZE = 5;
+const REVIEW_GALLERY_MAX = 8;
 
 function toggle<T extends string>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
@@ -55,7 +55,7 @@ function menuPublicUrl(path: string): string {
   return storagePublicUrl(MENU_BUCKET, path);
 }
 
-function naverMapSearchUrl(query: string): string {
+function naverMapUrl(query: string): string {
   return `https://map.naver.com/v5/search/${encodeURIComponent(query)}`;
 }
 
@@ -123,23 +123,6 @@ function ReviewCommentClamp({ text }: { text: string }) {
   );
 }
 
-function IconPin(props: { className?: string }) {
-  return (
-    <svg className={props.className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"
-      />
-    </svg>
-  );
-}
-
 function IconTrash(props: { className?: string }) {
   return (
     <svg
@@ -181,15 +164,7 @@ function resolveRestaurantCoords(
   return { lat, lng };
 }
 
-function RestaurantDetailMapEmbed({
-  lat,
-  lng,
-  kakaoMapHref
-}: {
-  lat: number;
-  lng: number;
-  kakaoMapHref: string;
-}) {
+function RestaurantDetailMapEmbed({ lat, lng }: { lat: number; lng: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -214,23 +189,11 @@ function RestaurantDetailMapEmbed({
   }, [lat, lng]);
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div
-        ref={containerRef}
-        className="h-64 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
-        aria-label="맛집 위치 지도"
-      />
-      <div className="mt-3 flex justify-end">
-        <a
-          href={kakaoMapHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
-        >
-          카카오맵에서 보기
-        </a>
-      </div>
-    </section>
+    <div
+      ref={containerRef}
+      className="h-64 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+      aria-label="맛집 위치 지도"
+    />
   );
 }
 
@@ -360,7 +323,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [reviewDeleteErr, setReviewDeleteErr] = useState("");
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuUploadMsg, setMenuUploadMsg] = useState("");
-  const [photoPage, setPhotoPage] = useState(1);
   const [reviewPage, setReviewPage] = useState(1);
   const [lightboxItems, setLightboxItems] = useState<AshulengLightboxItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -718,31 +680,17 @@ export function RestaurantDetailView({ id }: { id: string }) {
     return out;
   }, [reviews]);
 
-  const photoWallItems = useMemo(() => {
-    const seen = new Set<string>();
-    const items: { kind: "menu" | "review"; path: string }[] = [];
-    for (const p of menuStoragePaths) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      items.push({ kind: "menu", path: p });
+  const reviewGalleryVisiblePaths = useMemo(() => {
+    if (reviewPhotoPaths.length > REVIEW_GALLERY_MAX) {
+      return reviewPhotoPaths.slice(0, REVIEW_GALLERY_MAX - 1);
     }
-    for (const p of reviewPhotoPaths) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      items.push({ kind: "review", path: p });
-    }
-    return items;
-  }, [menuStoragePaths, reviewPhotoPaths]);
+    return reviewPhotoPaths.slice(0, REVIEW_GALLERY_MAX);
+  }, [reviewPhotoPaths]);
 
-  const photoTotalPages = Math.max(1, Math.ceil(photoWallItems.length / PHOTO_PAGE_SIZE));
-  const photoPageSlice = useMemo(() => {
-    const start = (photoPage - 1) * PHOTO_PAGE_SIZE;
-    return photoWallItems.slice(start, start + PHOTO_PAGE_SIZE);
-  }, [photoWallItems, photoPage]);
-
-  useEffect(() => {
-    setPhotoPage((p) => Math.min(Math.max(1, p), photoTotalPages));
-  }, [photoTotalPages]);
+  const reviewGalleryOverflow =
+    reviewPhotoPaths.length > REVIEW_GALLERY_MAX
+      ? reviewPhotoPaths.length - (REVIEW_GALLERY_MAX - 1)
+      : 0;
 
   const reviewTotalPages = Math.max(1, Math.ceil(reviews.length / REVIEW_PAGE_SIZE));
   const reviewPageSlice = useMemo(() => {
@@ -754,20 +702,29 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setReviewPage((p) => Math.min(Math.max(1, p), reviewTotalPages));
   }, [reviewTotalPages]);
 
-  const openPhotoWallLightbox = useCallback(
-    (globalIdx: number) => {
-      const items: AshulengLightboxItem[] = photoWallItems.map((item) => ({
-        id: `${item.kind}-${item.path}`,
-        src: item.kind === "menu" ? menuPublicUrl(item.path) : reviewImagePublicUrl(item.path),
-        showMenuBadge: item.kind === "menu"
-      }));
-      if (items.length === 0) return;
-      const idx = Math.min(Math.max(0, globalIdx), items.length - 1);
-      setLightboxItems(items);
-      setLightboxIndex(idx);
-    },
-    [photoWallItems]
-  );
+  const openMenuLightbox = useCallback((startIndex: number) => {
+    if (menuStoragePaths.length === 0) return;
+    const items: AshulengLightboxItem[] = menuStoragePaths.map((path, i) => ({
+      id: `menu-${path}-${i}`,
+      src: menuPublicUrl(path),
+      showMenuBadge: true
+    }));
+    const idx = Math.min(Math.max(0, startIndex), items.length - 1);
+    setLightboxItems(items);
+    setLightboxIndex(idx);
+  }, [menuStoragePaths]);
+
+  const openReviewPhotoGalleryLightbox = useCallback((startIndex: number) => {
+    if (reviewPhotoPaths.length === 0) return;
+    const items: AshulengLightboxItem[] = reviewPhotoPaths.map((path, i) => ({
+      id: `review-gallery-${path}-${i}`,
+      src: reviewImagePublicUrl(path),
+      showMenuBadge: false
+    }));
+    const idx = Math.min(Math.max(0, startIndex), items.length - 1);
+    setLightboxItems(items);
+    setLightboxIndex(idx);
+  }, [reviewPhotoPaths]);
 
   const openReviewImagesLightbox = useCallback((paths: string[], reviewId: string, startIndex: number) => {
     const filtered = paths.filter(Boolean);
@@ -1074,31 +1031,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
               <>
                 <p className="text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">{restaurant.name}</p>
 
-                <div className="mt-5 flex flex-wrap items-start gap-3">
-                  <div className="flex min-w-0 flex-1 gap-2">
-                    <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
-                    <p className="text-sm leading-relaxed text-slate-700">{restaurant.address}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <a
-                      href={naverMapSearchUrl(restaurant.address)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
-                    >
-                      네이버 지도
-                    </a>
-                    <a
-                      href={kakaoMapUrl(restaurant.name, restaurant.lat, restaurant.lng)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
-                    >
-                      카카오맵
-                    </a>
-                  </div>
-                </div>
-
                 <div className="mt-6">
                   <p className="mb-2 text-sm font-bold text-slate-900">카테고리</p>
                   <div className="flex flex-wrap gap-2">
@@ -1138,17 +1070,72 @@ export function RestaurantDetailView({ id }: { id: string }) {
                     <p className="text-sm text-slate-400">등록된 대표 메뉴가 없습니다.</p>
                   )}
                 </div>
-
-                <div className="mt-6">
-                  <p className="mb-2 text-sm font-bold text-slate-900">소개 메모</p>
-                  {(restaurant.description ?? "").trim() ? (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{restaurant.description}</p>
-                  ) : (
-                    <p className="text-sm text-slate-400">—</p>
-                  )}
-                </div>
               </>
             )}
+            {!editBasic ? (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    메뉴사진 ({menuStoragePaths.length}장)
+                  </h3>
+                  {canManage ? (
+                    <label className="inline-flex shrink-0 cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-500">
+                      + 사진 추가
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => void uploadMenuImages(e.target.files)}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+                {menuUploadMsg ? <p className="mb-2 text-sm text-rose-600">{menuUploadMsg}</p> : null}
+                {menuSaving ? <p className="mb-2 text-xs text-slate-500">업로드 중…</p> : null}
+                {menuStoragePaths.length > 0 ? (
+                  <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                    {menuStoragePaths.map((path, idx) => (
+                      <li
+                        key={path}
+                        className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openMenuLightbox(idx)}
+                          className="absolute inset-0 z-0 block h-full w-full cursor-zoom-in text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                          aria-label={`메뉴사진 ${idx + 1} 확대 보기`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={menuPublicUrl(path)}
+                            alt=""
+                            className="pointer-events-none h-full w-full object-contain"
+                          />
+                        </button>
+                        {idx === 0 ? (
+                          <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] bg-black/55 py-1 text-center text-[10px] font-medium text-white sm:text-xs">
+                            대표
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-400">등록된 메뉴사진이 없습니다.</p>
+                )}
+              </div>
+            ) : null}
+            {!editBasic ? (
+              <div className="mt-6">
+                <p className="mb-2 text-sm font-bold text-slate-900">소개 메모</p>
+                {(restaurant.description ?? "").trim() ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{restaurant.description}</p>
+                ) : (
+                  <p className="text-sm text-slate-400">—</p>
+                )}
+              </div>
+            ) : null}
             {!editBasic ? (
               <div className="mt-6 border-t border-slate-100 pt-5">
                 <p className="mb-2 text-sm font-bold text-slate-900">반응</p>
@@ -1169,115 +1156,34 @@ export function RestaurantDetailView({ id }: { id: string }) {
             const coords = resolveRestaurantCoords(restaurant.lat, restaurant.lng);
             if (!coords) return null;
             return (
-              <RestaurantDetailMapEmbed
-                lat={coords.lat}
-                lng={coords.lng}
-                kakaoMapHref={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
-              />
+              <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="mb-4 text-base font-bold text-slate-900">위치정보</h2>
+                <div className="mb-4 flex flex-wrap items-start gap-3">
+                  <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-700">{restaurant.address}</p>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <a
+                      href={naverMapUrl(restaurant.address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
+                    >
+                      네이버 지도
+                    </a>
+                    <a
+                      href={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
+                    >
+                      카카오맵
+                    </a>
+                  </div>
+                </div>
+                <RestaurantDetailMapEmbed lat={coords.lat} lng={coords.lng} />
+              </section>
             );
           })()}
 
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-base font-bold text-slate-900">메뉴사진 등록 ({photoWallItems.length}장)</h2>
-            {photoWallItems.length > 0 ? (
-              <>
-                <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-                  {photoPageSlice.map((item, idx) => {
-                    const globalIdx = (photoPage - 1) * PHOTO_PAGE_SIZE + idx;
-                    return (
-                      <li
-                        key={`${item.kind}-${item.path}`}
-                        className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => openPhotoWallLightbox(globalIdx)}
-                          className="absolute inset-0 z-0 block h-full w-full cursor-zoom-in text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                          aria-label={`사진 ${globalIdx + 1} 확대 보기`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={item.kind === "menu" ? menuPublicUrl(item.path) : reviewImagePublicUrl(item.path)}
-                            alt=""
-                            className={`pointer-events-none h-full w-full ${item.kind === "menu" ? "object-contain" : "object-cover"}`}
-                          />
-                        </button>
-                        {globalIdx === 0 ? (
-                          <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] bg-black/55 py-1 text-center text-[10px] font-medium text-white sm:text-xs">
-                            대표 사진
-                          </span>
-                        ) : null}
-                        {item.kind === "menu" ? (
-                          <span
-                            className="pointer-events-none absolute left-1 top-1 z-[1] rounded bg-red-600/95 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm sm:text-[10px]"
-                            title="메뉴 이미지"
-                          >
-                            메뉴
-                          </span>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {photoWallItems.length > PHOTO_PAGE_SIZE ? (
-                  <nav
-                    className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-slate-600"
-                    aria-label="사진 페이지"
-                  >
-                    <button
-                      type="button"
-                      aria-label="이전 페이지"
-                      disabled={photoPage <= 1}
-                      className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-                      onClick={() => setPhotoPage((p) => Math.max(1, p - 1))}
-                    >
-                      {"<"}
-                    </button>
-                    {Array.from({ length: photoTotalPages }, (_, i) => i + 1).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setPhotoPage(p)}
-                        className={`min-w-[1.25rem] px-0.5 py-0.5 tabular-nums ${
-                          p === photoPage
-                            ? "font-bold text-slate-900 underline decoration-slate-900 decoration-2 underline-offset-4"
-                            : "font-normal hover:text-slate-900"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      aria-label="다음 페이지"
-                      disabled={photoPage >= photoTotalPages}
-                      className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-                      onClick={() => setPhotoPage((p) => Math.min(photoTotalPages, p + 1))}
-                    >
-                      {">"}
-                    </button>
-                  </nav>
-                ) : null}
-              </>
-            ) : (
-              <p className="mb-4 text-sm text-slate-400">등록된 사진이 없습니다.</p>
-            )}
-
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              {menuUploadMsg ? <p className="mb-2 text-sm text-rose-600">{menuUploadMsg}</p> : null}
-              <label className="inline-flex cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                메뉴 이미지 업로드
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => void uploadMenuImages(e.target.files)}
-                />
-              </label>
-              {menuSaving ? <span className="ml-2 text-xs text-slate-500">업로드 중…</span> : null}
-            </div>
-          </section>
         </div>
 
         {/* 우측 */}
@@ -1461,6 +1367,55 @@ export function RestaurantDetailView({ id }: { id: string }) {
               </>
             )}
           </div>
+
+          {reviewPhotoPaths.length > 0 ? (
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-900">리뷰 사진 ({reviewPhotoPaths.length}장)</h3>
+                <button
+                  type="button"
+                  onClick={() => openReviewPhotoGalleryLightbox(0)}
+                  className="shrink-0 text-xs font-semibold text-blue-600 hover:text-blue-500"
+                >
+                  전체 보기
+                </button>
+              </div>
+              <ul className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+                {reviewGalleryVisiblePaths.map((path, idx) => (
+                  <li
+                    key={path}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openReviewPhotoGalleryLightbox(idx)}
+                      className="block h-full w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                      aria-label={`리뷰 사진 ${idx + 1} 확대`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={reviewImagePublicUrl(path)}
+                        alt=""
+                        className="pointer-events-none h-full w-full object-cover"
+                      />
+                    </button>
+                  </li>
+                ))}
+                {reviewGalleryOverflow > 0 ? (
+                  <li className="relative aspect-square overflow-hidden rounded-lg border border-blue-200 bg-blue-600">
+                    <button
+                      type="button"
+                      onClick={() => openReviewPhotoGalleryLightbox(REVIEW_GALLERY_MAX - 1)}
+                      className="flex h-full w-full items-center justify-center text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                      aria-label={`리뷰 사진 ${reviewGalleryOverflow}장 더 보기`}
+                    >
+                      +{reviewGalleryOverflow}
+                    </button>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
         </section>
         {canManage ? (
           <div className="flex justify-end">

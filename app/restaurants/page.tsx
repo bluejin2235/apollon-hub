@@ -751,10 +751,10 @@ export default function RestaurantsMainPage() {
                       selected ? "bg-blue-50/90 ring-1 ring-inset ring-blue-200" : ""
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => focusCard(row.id)}
-                      className="flex min-w-0 flex-1 gap-3 px-3 py-3 text-left sm:px-4 sm:py-4"
+                    <Link
+                      href={`/restaurants/${row.id}`}
+                      prefetch={false}
+                      className="flex min-w-0 flex-1 gap-3 px-3 py-3 text-left no-underline [-webkit-tap-highlight-color:transparent] sm:px-4 sm:py-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
                     >
                       <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 sm:h-24 sm:w-24">
                         {thumbSrc ? (
@@ -796,13 +796,13 @@ export default function RestaurantsMainPage() {
                         ) : null}
                         <p className="mt-1 text-[10px] text-slate-400">등록 {owner?.name ?? "—"}</p>
                       </div>
-                    </button>
-                    <Link
-                      href={`/restaurants/${row.id}`}
-                      prefetch={false}
-                      className="flex shrink-0 items-center justify-center border-l border-slate-100 bg-white px-3 no-underline [-webkit-tap-highlight-color:transparent] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      aria-label={`${row.name} 상세 페이지`}
-                      title="상세"
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => focusCard(row.id)}
+                      className="flex shrink-0 items-center justify-center border-l border-slate-100 bg-white px-3 [-webkit-tap-highlight-color:transparent] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      aria-label={`${row.name} 지도에서 보기`}
+                      title="지도에서 보기"
                     >
                       <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-500 active:bg-blue-700">
                         <svg
@@ -816,7 +816,7 @@ export default function RestaurantsMainPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
                         </svg>
                       </span>
-                    </Link>
+                    </button>
                   </div>
                 </li>
               );
