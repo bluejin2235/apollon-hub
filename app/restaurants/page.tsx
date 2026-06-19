@@ -8,6 +8,7 @@ import { RestaurantFormModal } from "@/components/restaurants/restaurant-form-mo
 import { RestaurantPreviewPanel } from "@/components/restaurants/restaurant-preview-panel";
 import { reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
 import { CrosshairIcon } from "@/components/icons/crosshair-icon";
+import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   FOOD_TYPE_OPTIONS,
@@ -60,6 +61,11 @@ function toggleSet<T extends string>(set: Set<T>, v: T): Set<T> {
 
 /** 맛집 목록 카드 페이지 크기 (상세 사진/리뷰 페이지네이션과 동일 UI) */
 const LIST_PAGE_SIZE = 4;
+const MENU_IMAGES_BUCKET = "menu-images";
+
+function menuImagePublicUrl(path: string): string {
+  return storagePublicUrl(MENU_IMAGES_BUCKET, path);
+}
 
 const GOURMET_RANK_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
 const GOURMET_REG_POINTS = 3;
@@ -161,7 +167,7 @@ export default function RestaurantsMainPage() {
 
   const reviewAgg = useMemo(() => buildReviewAgg(reviews), [reviews]);
 
-  /** 목록 카드 썸네일: 가장 최신 리뷰의 첫 첨부 사진(review-images), 없으면 null */
+  /** 목록 카드 썸네일: 최신 리뷰 첫 첨부 사진, 없으면 menu-images 스토리지 폴백(별도 effect) */
   const listCardReviewThumbPathByRestaurant = useMemo(() => {
     const byRestaurant = new Map<string, Review[]>();
     for (const rv of reviews) {
@@ -184,6 +190,54 @@ export default function RestaurantsMainPage() {
     }
     return pathById;
   }, [reviews]);
+
+  const [listCardMenuThumbPathByRestaurant, setListCardMenuThumbPathByRestaurant] = useState(
+    () => new Map<string, string>()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const missingIds = restaurants
+        .filter((r) => !listCardReviewThumbPathByRestaurant.has(r.id))
+        .map((r) => r.id);
+
+      if (missingIds.length === 0) {
+        setListCardMenuThumbPathByRestaurant(new Map());
+        return;
+      }
+
+      const results = await Promise.all(
+        missingIds.map(async (restaurantId) => {
+          const { data, error } = await supabase.storage.from(MENU_IMAGES_BUCKET).list(restaurantId, {
+            limit: 1000,
+            sortBy: { column: "name", order: "asc" }
+          });
+          if (error || !data?.length) return null;
+
+          const files = data.filter((item) => item.metadata != null);
+          if (files.length === 0) return null;
+
+          const last = files[files.length - 1];
+          return [restaurantId, `${restaurantId}/${last.name}`] as const;
+        })
+      );
+
+      if (cancelled) return;
+
+      const pathById = new Map<string, string>();
+      for (const row of results) {
+        if (row) pathById.set(row[0], row[1]);
+      }
+      setListCardMenuThumbPathByRestaurant(pathById);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurants, listCardReviewThumbPathByRestaurant]);
 
   const searchNorm = searchQuery.trim().toLowerCase();
 
@@ -681,6 +735,12 @@ export default function RestaurantsMainPage() {
               const owner = row.registered_by ? profileMap.get(row.registered_by) : null;
               const selected = selectedId === row.id;
               const reviewThumbPath = listCardReviewThumbPathByRestaurant.get(row.id);
+              const menuThumbPath = listCardMenuThumbPathByRestaurant.get(row.id);
+              const thumbSrc = reviewThumbPath
+                ? reviewImagePublicUrl(reviewThumbPath)
+                : menuThumbPath
+                  ? menuImagePublicUrl(menuThumbPath)
+                  : null;
               const foodLine = [...(row.food_type ?? [])].slice(0, 4).map(normalizeFoodTypeValue).join(" / ");
               const rowCats = getRestaurantCategories(row);
               const catLine = rowCats.map(restaurantCategoryDisplayLabel).join(" · ");
@@ -697,9 +757,9 @@ export default function RestaurantsMainPage() {
                       className="flex min-w-0 flex-1 gap-3 px-3 py-3 text-left sm:px-4 sm:py-4"
                     >
                       <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 sm:h-24 sm:w-24">
-                        {reviewThumbPath ? (
+                        {thumbSrc ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={reviewImagePublicUrl(reviewThumbPath)} alt="" className="h-full w-full object-cover" />
+                          <img src={thumbSrc} alt="" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">이미지 없음</div>
                         )}

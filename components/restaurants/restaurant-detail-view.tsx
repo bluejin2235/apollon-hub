@@ -9,6 +9,13 @@ import {
 } from "@/components/restaurants/ashuleng-image-lightbox";
 import { ReviewWriteModal, reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
 import { SharePageButton } from "@/components/ui/share-page-button";
+import { loadKakaoMapsSdk } from "@/lib/kakao/load-maps-sdk";
+import {
+  RESTAURANT_REACTION_EMOJIS,
+  REVIEW_REACTION_EMOJIS,
+  type RestaurantReactionRow,
+  type ReviewReactionRow
+} from "@/lib/restaurants/reactions";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   categoryBadgeClass,
@@ -152,6 +159,182 @@ function IconTrash(props: { className?: string }) {
   );
 }
 
+type KakaoMapsApi = {
+  Map: new (el: HTMLElement, opts: { center: unknown; level: number }) => {
+    relayout: () => void;
+  };
+  LatLng: new (lat: number, lng: number) => unknown;
+  Marker: new (opts: { position: unknown; map: unknown }) => unknown;
+};
+
+function kakaoMaps(): KakaoMapsApi {
+  const m = (window as unknown as { kakao?: { maps: KakaoMapsApi } }).kakao?.maps;
+  if (!m) throw new Error("kakao.maps 없음");
+  return m;
+}
+
+function resolveRestaurantCoords(
+  lat: number | null,
+  lng: number | null
+): { lat: number; lng: number } | null {
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return { lat, lng };
+}
+
+function RestaurantDetailMapEmbed({
+  lat,
+  lng,
+  kakaoMapHref
+}: {
+  lat: number;
+  lng: number;
+  kakaoMapHref: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await loadKakaoMapsSdk();
+        if (cancelled || !containerRef.current) return;
+        const M = kakaoMaps();
+        const center = new M.LatLng(lat, lng);
+        const map = new M.Map(containerRef.current, { center, level: 4 });
+        new M.Marker({ position: center, map });
+        window.setTimeout(() => map.relayout(), 100);
+      } catch (e) {
+        console.error("[RestaurantDetailMapEmbed] map init failed", e);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [lat, lng]);
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div
+        ref={containerRef}
+        className="h-64 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+        aria-label="맛집 위치 지도"
+      />
+      <div className="mt-3 flex justify-end">
+        <a
+          href={kakaoMapHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
+        >
+          카카오맵에서 보기
+        </a>
+      </div>
+    </section>
+  );
+}
+
+const RESTAURANT_REACTION_LABELS: Record<(typeof RESTAURANT_REACTION_EMOJIS)[number], string> = {
+  "👍": "좋아요",
+  "🔥": "핫플",
+  "😋": "맛있어",
+  "💰": "가성비",
+  "🏆": "강추"
+};
+
+const REVIEW_REACTION_LABELS: Record<(typeof REVIEW_REACTION_EMOJIS)[number], string> = {
+  "👍": "좋아요",
+  "❤️": "공감해요",
+  "😂": "웃겨요",
+  "😮": "놀라워요"
+};
+
+function ReactionBar({
+  emojis,
+  reactions,
+  myProfileId,
+  onToggle,
+  busyEmoji,
+  emojiSizeClass,
+  labels
+}: {
+  emojis: readonly string[];
+  reactions: { profile_id: string; emoji: string }[];
+  myProfileId: string | null;
+  onToggle: (emoji: string) => void;
+  busyEmoji?: string | null;
+  emojiSizeClass: "text-xl" | "text-lg";
+  labels: Record<string, string>;
+}) {
+  const [tooltipEmoji, setTooltipEmoji] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-4">
+      {emojis.map((emoji) => {
+        const count = reactions.filter((r) => r.emoji === emoji).length;
+        const mine =
+          myProfileId != null && reactions.some((r) => r.profile_id === myProfileId && r.emoji === emoji);
+        const label = labels[emoji];
+
+        return (
+          <button
+            key={emoji}
+            type="button"
+            disabled={!myProfileId || busyEmoji === emoji}
+            onClick={() => onToggle(emoji)}
+            onMouseEnter={() => setTooltipEmoji(emoji)}
+            onMouseLeave={() => {
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+              clearLongPressTimer();
+            }}
+            onTouchStart={() => {
+              clearLongPressTimer();
+              longPressTimerRef.current = setTimeout(() => setTooltipEmoji(emoji), 500);
+            }}
+            onTouchEnd={() => {
+              clearLongPressTimer();
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+            }}
+            onTouchCancel={() => {
+              clearLongPressTimer();
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+            }}
+            className="relative inline-flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-pressed={mine}
+            aria-label={label ? `${emoji} ${label}` : emoji}
+          >
+            {tooltipEmoji === emoji && label ? (
+              <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-black px-2 py-[3px] text-[11px] leading-tight text-white">
+                {label}
+                <span
+                  className="absolute left-1/2 top-full -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-black"
+                  aria-hidden
+                />
+              </span>
+            ) : null}
+            <span className={emojiSizeClass} aria-hidden>
+              {emoji}
+            </span>
+            <span
+              className={`tabular-nums text-[13px] ${mine ? "font-medium text-slate-900" : "text-slate-500"}`}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function RestaurantDetailView({ id }: { id: string }) {
   const router = useRouter();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
@@ -181,6 +364,10 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [reviewPage, setReviewPage] = useState(1);
   const [lightboxItems, setLightboxItems] = useState<AshulengLightboxItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [restaurantReactions, setRestaurantReactions] = useState<RestaurantReactionRow[]>([]);
+  const [reviewReactions, setReviewReactions] = useState<ReviewReactionRow[]>([]);
+  const [restaurantReactionBusy, setRestaurantReactionBusy] = useState<string | null>(null);
+  const [reviewReactionBusy, setReviewReactionBusy] = useState<string | null>(null);
 
   const [eName, setEName] = useState("");
   const [eCategories, setECategories] = useState<RestaurantCategory[]>(["성수점심"]);
@@ -207,6 +394,35 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setMenuStoragePaths(paths);
   }, [id]);
 
+  const fetchReactions = useCallback(async (reviewIds: string[]) => {
+    const [{ data: restaurantRows, error: restaurantError }, reviewResult] = await Promise.all([
+      supabase
+        .from("restaurant_reactions")
+        .select("id, restaurant_id, profile_id, emoji")
+        .eq("restaurant_id", id),
+      reviewIds.length > 0
+        ? supabase
+            .from("review_reactions")
+            .select("id, review_id, profile_id, emoji")
+            .in("review_id", reviewIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+
+    if (restaurantError) {
+      console.error("[Ashuleng reactions] restaurant_reactions fetch failed", restaurantError);
+      setRestaurantReactions([]);
+    } else {
+      setRestaurantReactions((restaurantRows ?? []) as RestaurantReactionRow[]);
+    }
+
+    if (reviewResult.error) {
+      console.error("[Ashuleng reactions] review_reactions fetch failed", reviewResult.error);
+      setReviewReactions([]);
+    } else {
+      setReviewReactions((reviewResult.data ?? []) as ReviewReactionRow[]);
+    }
+  }, [id]);
+
   const fetchReviews = useCallback(
     async (reason: string) => {
       const { data, error } = await supabase
@@ -219,8 +435,9 @@ export function RestaurantDetailView({ id }: { id: string }) {
         return;
       }
       setReviews((data ?? []) as Review[]);
+      await fetchReactions(((data ?? []) as Review[]).map((row) => row.id));
     },
-    [id]
+    [id, fetchReactions]
   );
 
   const load = useCallback(async () => {
@@ -236,10 +453,14 @@ export function RestaurantDetailView({ id }: { id: string }) {
       supabase.from("profiles").select("id, email, name, department")
     ]);
     const rest = (r ?? null) as Restaurant | null;
+    const reviewRows = (rv ?? []) as Review[];
     setRestaurant(rest);
-    setReviews((rv ?? []) as Review[]);
+    setReviews(reviewRows);
     setProfiles((p ?? []) as ProfileLite[]);
-    await fetchMenuStoragePaths("page load (load())");
+    await Promise.all([
+      fetchMenuStoragePaths("page load (load())"),
+      fetchReactions(reviewRows.map((row) => row.id))
+    ]);
     if (rest) {
       setEName(rest.name);
       setECategories(getRestaurantCategories(rest));
@@ -251,7 +472,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
       setEDescription(rest.description ?? "");
     }
     setLoading(false);
-  }, [id, fetchMenuStoragePaths]);
+  }, [id, fetchMenuStoragePaths, fetchReactions]);
 
   useEffect(() => {
     void load();
@@ -566,6 +787,79 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setLightboxIndex(0);
   }, []);
 
+  const postReaction = useCallback(async (url: string, body: Record<string, string>) => {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = (await res.json().catch(() => null)) as { error?: string } | null;
+      console.error("[Ashuleng reactions] API failed", err?.error ?? res.status);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const toggleRestaurantReaction = useCallback(
+    async (emoji: string) => {
+      if (!myProfileId || !restaurant) return;
+      setRestaurantReactionBusy(emoji);
+      let snapshot: RestaurantReactionRow[] = [];
+      setRestaurantReactions((prev) => {
+        snapshot = prev;
+        const existing = prev.find((r) => r.profile_id === myProfileId && r.emoji === emoji);
+        if (existing) return prev.filter((r) => r.id !== existing.id);
+        return [
+          ...prev,
+          { id: `optimistic-${emoji}`, restaurant_id: restaurant.id, profile_id: myProfileId, emoji }
+        ];
+      });
+
+      const ok = await postReaction("/api/restaurants/react", {
+        restaurant_id: restaurant.id,
+        emoji
+      });
+      if (!ok) setRestaurantReactions(snapshot);
+      setRestaurantReactionBusy(null);
+    },
+    [myProfileId, postReaction, restaurant]
+  );
+
+  const toggleReviewReaction = useCallback(
+    async (reviewId: string, emoji: string) => {
+      if (!myProfileId) return;
+      const busyKey = `${reviewId}:${emoji}`;
+      setReviewReactionBusy(busyKey);
+      let snapshot: ReviewReactionRow[] = [];
+      setReviewReactions((prev) => {
+        snapshot = prev;
+        const existing = prev.find(
+          (r) => r.review_id === reviewId && r.profile_id === myProfileId && r.emoji === emoji
+        );
+        if (existing) return prev.filter((r) => r.id !== existing.id);
+        return [...prev, { id: `optimistic-${busyKey}`, review_id: reviewId, profile_id: myProfileId, emoji }];
+      });
+
+      const ok = await postReaction("/api/restaurants/review-react", {
+        review_id: reviewId,
+        emoji
+      });
+      if (!ok) setReviewReactions(snapshot);
+      setReviewReactionBusy(null);
+    },
+    [myProfileId, postReaction]
+  );
+
   if (loading) {
     return <p className="py-12 text-center text-slate-500">불러오는 중...</p>;
   }
@@ -855,7 +1149,33 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 </div>
               </>
             )}
+            {!editBasic ? (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <p className="mb-2 text-sm font-bold text-slate-900">반응</p>
+                <ReactionBar
+                  emojis={RESTAURANT_REACTION_EMOJIS}
+                  reactions={restaurantReactions}
+                  myProfileId={myProfileId}
+                  onToggle={(emoji) => void toggleRestaurantReaction(emoji)}
+                  busyEmoji={restaurantReactionBusy}
+                  emojiSizeClass="text-xl"
+                  labels={RESTAURANT_REACTION_LABELS}
+                />
+              </div>
+            ) : null}
           </section>
+
+          {(() => {
+            const coords = resolveRestaurantCoords(restaurant.lat, restaurant.lng);
+            if (!coords) return null;
+            return (
+              <RestaurantDetailMapEmbed
+                lat={coords.lat}
+                lng={coords.lng}
+                kakaoMapHref={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
+              />
+            );
+          })()}
 
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-base font-bold text-slate-900">사진 ({photoWallItems.length}장)</h2>
@@ -1079,6 +1399,21 @@ export function RestaurantDetailView({ id }: { id: string }) {
                               </button>
                             </div>
                           ) : null}
+                        </div>
+                        <div className="mt-3 border-t border-slate-100 pt-2">
+                          <ReactionBar
+                            emojis={REVIEW_REACTION_EMOJIS}
+                            reactions={reviewReactions.filter((r) => r.review_id === rv.id)}
+                            myProfileId={myProfileId}
+                            onToggle={(emoji) => void toggleReviewReaction(rv.id, emoji)}
+                            busyEmoji={
+                              reviewReactionBusy?.startsWith(`${rv.id}:`)
+                                ? reviewReactionBusy.slice(rv.id.length + 1)
+                                : null
+                            }
+                            emojiSizeClass="text-lg"
+                            labels={REVIEW_REACTION_LABELS}
+                          />
                         </div>
                       </li>
                     );
