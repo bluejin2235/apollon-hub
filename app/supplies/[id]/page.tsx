@@ -7,6 +7,7 @@ import { SupplyLoanDetailModal } from "@/components/supplies/supply-loan-detail-
 import { SupplyPrintLabelButton } from "@/components/supplies/supply-print-label-button";
 import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
 import { SupplyToast } from "@/components/supplies/toast";
+import { SharePageButton } from "@/components/ui/share-page-button";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { SupplyZoneSidebar, type ZoneSupplyListItem } from "@/components/supplies/supply-zone-sidebar";
 import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
@@ -446,6 +447,7 @@ export default function SupplyDetailPage() {
 
   const actionButtons = (
     <div className="flex flex-wrap gap-2">
+      <SharePageButton className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" />
       {showPrintLabel && profile?.id ? (
         <SupplyPrintLabelButton supply={supply} requestedBy={profile.id} onToast={setToast} />
       ) : null}

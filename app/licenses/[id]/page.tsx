@@ -9,6 +9,7 @@ import {
   ServiceManagersCard,
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
+import { SharePageButton } from "@/components/ui/share-page-button";
 import { useCanManageLicense } from "@/lib/services/use-service-permissions";
 import { computeLicenseNextRenewal, formatCurrency, computeLicenseCostBreakdown } from "@/lib/licenses/calc";
 import type { ServiceChangedField } from "@/lib/licenses/service-change-log";
@@ -397,8 +398,10 @@ export default function LicenseDetailPage() {
             <p className="mt-0.5 text-sm text-slate-500">{license.category}</p>
           </div>
         </div>
-        {canEdit ? (
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          <SharePageButton />
+          {canEdit ? (
+            <>
             <button
               type="button"
               onClick={() => setEditOpen(true)}
@@ -422,8 +425,9 @@ export default function LicenseDetailPage() {
               </svg>
               삭제
             </button>
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </header>
 
       {/* 본문 그리드 */}

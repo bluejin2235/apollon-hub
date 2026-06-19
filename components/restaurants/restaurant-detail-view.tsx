@@ -8,6 +8,7 @@ import {
   type AshulengLightboxItem
 } from "@/components/restaurants/ashuleng-image-lightbox";
 import { ReviewWriteModal, reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
+import { SharePageButton } from "@/components/ui/share-page-button";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   categoryBadgeClass,
@@ -594,7 +595,9 @@ export function RestaurantDetailView({ id }: { id: string }) {
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center justify-between gap-3">
               <h2 className="text-base font-bold text-slate-900">기본 정보</h2>
-              {editBasic ? (
+              <div className="flex items-center gap-2">
+                <SharePageButton />
+                {editBasic ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -626,6 +629,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                   수정
                 </button>
               ) : null}
+              </div>
             </div>
 
             {editBasic ? (
