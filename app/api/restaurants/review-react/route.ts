@@ -77,12 +77,18 @@ export async function POST(request: NextRequest) {
 
     if (reviewError) {
       console.error("[restaurants/review-react] review fetch failed", reviewError);
+      console.log("[review-react] skip: reviewError");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
     const reviewerId = (review?.reviewer_id as string | null) ?? null;
     const restaurantId = (review?.restaurant_id as string | null) ?? null;
-    if (!review || !reviewerId || reviewerId === user.id || !restaurantId) {
+    if (!review || !reviewerId || !restaurantId) {
+      console.log("[review-react] skip: no review or reviewerId or restaurantId", {
+        review: !!review,
+        reviewerId,
+        restaurantId
+      });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -90,6 +96,7 @@ export async function POST(request: NextRequest) {
     const fromEmail = process.env.RESEND_FROM_EMAIL;
     if (!resendApiKey || !fromEmail) {
       console.error("[restaurants/review-react] Resend env vars missing");
+      console.log("[review-react] skip: resend env missing");
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -101,6 +108,7 @@ export async function POST(request: NextRequest) {
 
     const reviewerEmail = reviewerProfile?.email?.trim().toLowerCase();
     if (!reviewerEmail) {
+      console.log("[review-react] skip: no reviewerEmail", { reviewerProfile });
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
@@ -128,6 +136,7 @@ export async function POST(request: NextRequest) {
 
     if (sendError) {
       console.error("[restaurants/review-react] Resend failed", sendError);
+      console.log("[review-react] skip: sendError", sendError);
       return NextResponse.json({ action: "added", emoji, emailSkipped: true });
     }
 
