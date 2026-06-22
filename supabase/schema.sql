@@ -769,3 +769,109 @@ alter table public.supplies enable row level security;
 alter table public.supply_loans enable row level security;
 
 -- RLS 정책·함수·허브 카드: migrations/supplies_warehouse.sql 실행
+
+-- ── 트렌드 레이더 (주차별 트렌드 공유 채팅) ─────────────────
+
+create table if not exists public.trend_rooms (
+  id uuid primary key default gen_random_uuid(),
+  week_label text not null,
+  week_start date not null,
+  week_end date not null,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_trend_rooms_week_start on public.trend_rooms (week_start desc);
+create index if not exists idx_trend_rooms_archived on public.trend_rooms (is_archived, week_start desc);
+
+create table if not exists public.trend_messages (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.trend_rooms (id) on delete cascade,
+  profile_id uuid references public.profiles (id) on delete set null,
+  content text not null,
+  message_type text not null default 'text'
+    check (message_type in ('text', 'link', 'youtube', 'image', 'ai')),
+  metadata jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_trend_messages_room_created on public.trend_messages (room_id, created_at);
+create index if not exists idx_trend_messages_profile on public.trend_messages (profile_id);
+
+create table if not exists public.trend_analyses (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid not null references public.trend_messages (id) on delete cascade,
+  summary text not null,
+  keywords text[] not null default '{}',
+  relevance_score numeric(5, 2),
+  apollon_insight text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_trend_analyses_message on public.trend_analyses (message_id);
+
+alter table public.trend_rooms enable row level security;
+alter table public.trend_messages enable row level security;
+alter table public.trend_analyses enable row level security;
+
+drop policy if exists "trend_rooms_select_auth" on public.trend_rooms;
+create policy "trend_rooms_select_auth"
+  on public.trend_rooms for select to authenticated using (true);
+
+drop policy if exists "trend_rooms_insert_auth" on public.trend_rooms;
+create policy "trend_rooms_insert_auth"
+  on public.trend_rooms for insert to authenticated with check (true);
+
+drop policy if exists "trend_rooms_update_auth" on public.trend_rooms;
+create policy "trend_rooms_update_auth"
+  on public.trend_rooms for update to authenticated using (true) with check (true);
+
+drop policy if exists "trend_messages_select_auth" on public.trend_messages;
+create policy "trend_messages_select_auth"
+  on public.trend_messages for select to authenticated using (true);
+
+drop policy if exists "trend_messages_insert_auth" on public.trend_messages;
+create policy "trend_messages_insert_auth"
+  on public.trend_messages for insert to authenticated with check (true);
+
+drop policy if exists "trend_analyses_select_auth" on public.trend_analyses;
+create policy "trend_analyses_select_auth"
+  on public.trend_analyses for select to authenticated using (true);
+
+drop policy if exists "trend_analyses_insert_auth" on public.trend_analyses;
+create policy "trend_analyses_insert_auth"
+  on public.trend_analyses for insert to authenticated with check (true);
+
+grant select, insert, update on public.trend_rooms to authenticated;
+grant select, insert on public.trend_messages to authenticated;
+grant select, insert on public.trend_analyses to authenticated;
+grant all on public.trend_rooms to service_role;
+grant all on public.trend_messages to service_role;
+grant all on public.trend_analyses to service_role;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.trend_messages;
+exception
+  when duplicate_object then
+    null;
+end $$;
+
+-- ── 허브 카드: 트렌드 레이더 ─────────────────────────────────
+insert into public.services (
+  name, description, icon, url, status, access_level, order_index, is_hub_card,
+  plan, category, cost_monthly, license_count
+)
+select
+  '트렌드 레이더',
+  'AI와 함께하는 팀 트렌드 공유',
+  '✦',
+  '/research',
+  '활성',
+  '전체',
+  coalesce((select max(order_index) + 1 from public.services where is_hub_card = true), 2),
+  true,
+  null, null, 0, 0
+where not exists (
+  select 1 from public.services s where s.url = '/research' and s.is_hub_card = true
+);

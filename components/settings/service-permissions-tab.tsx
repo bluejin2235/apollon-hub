@@ -8,7 +8,8 @@ const SERVICE_OPTIONS = [
   { url: SERVICE_URL.LICENSE_MANAGER, label: "라이선스매니저" },
   { url: SERVICE_URL.ASHULENG, label: "아슐랭" },
   { url: SERVICE_URL.ARTE, label: "아르테" },
-  { url: SERVICE_URL.SUPPLIES, label: "물품창고" }
+  { url: SERVICE_URL.SUPPLIES, label: "물품창고" },
+  { url: SERVICE_URL.RESEARCH, label: "트렌드 레이더" }
 ] as const;
 
 const MIDDLE_ADMIN_ROLE = "중간관리자";

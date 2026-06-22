@@ -4,7 +4,7 @@ import type { PortalProfileRow } from "@/lib/portal/profile";
 /**
  * 서비스별 권한 체크 헬퍼.
  *
- * - 상위 앱(라이선스매니저/아슐랭/아르테/물품창고)은 `services` 테이블의
+ * - 상위 앱(라이선스매니저/아슐랭/아르테/물품창고/트렌드레이더)은 `services` 테이블의
  *   `is_hub_card = true` 행이며, slug 가 없으므로 `url`(라우트)로 식별한다.
  * - 서비스 단위 "중간관리자" 는 `service_user_roles` 테이블에 저장된다.
  * - 개별 라이선스 담당자는 기존 `license_managers` 테이블을 사용한다.
@@ -15,7 +15,8 @@ export const SERVICE_URL = {
   LICENSE_MANAGER: "/licenses",
   ASHULENG: "/restaurants",
   ARTE: "/agents",
-  SUPPLIES: "/supplies"
+  SUPPLIES: "/supplies",
+  RESEARCH: "/research"
 } as const;
 
 export type ServiceUrl = (typeof SERVICE_URL)[keyof typeof SERVICE_URL];
