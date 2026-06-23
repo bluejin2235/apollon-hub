@@ -810,6 +810,19 @@ create table if not exists public.trend_analyses (
 
 create index if not exists idx_trend_analyses_message on public.trend_analyses (message_id);
 
+insert into storage.buckets (id, name, public)
+values ('trend-uploads', 'trend-uploads', true)
+on conflict (id) do update set public = excluded.public;
+
+create policy "trend_uploads_select" on storage.objects
+  for select to authenticated using (bucket_id = 'trend-uploads');
+
+create policy "trend_uploads_insert" on storage.objects
+  for insert to authenticated with check (bucket_id = 'trend-uploads');
+
+create policy "trend_uploads_delete" on storage.objects
+  for delete to authenticated using (bucket_id = 'trend-uploads');
+
 alter table public.trend_rooms enable row level security;
 alter table public.trend_messages enable row level security;
 alter table public.trend_analyses enable row level security;

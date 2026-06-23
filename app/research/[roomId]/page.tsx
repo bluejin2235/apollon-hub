@@ -19,7 +19,7 @@ export default function ResearchRoomPage() {
   }
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-8rem)] flex-1">
+    <div className="flex h-full min-h-0 flex-1">
       <ChatRoom roomId={roomId} profileId={profile.id} />
     </div>
   );
