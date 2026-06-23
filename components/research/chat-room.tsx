@@ -10,7 +10,8 @@ import {
   useRef,
   useState
 } from "react";
-import { ChatMessage } from "@/components/research/chat-message";
+import { Upload } from "lucide-react";
+import { RoomChatMessage } from "@/components/research/chat-message";
 import { collectParticipants, getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import { storagePublicUrl } from "@/lib/storage/public-url";
 import {
@@ -36,6 +37,17 @@ type UploadMetadata = {
 const UPLOAD_BUCKET = "trend-uploads";
 const SUPER_ADMIN_ROLE = "슈퍼관리자";
 const THINKING_MESSAGE_ID = "thinking";
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+function detectUploadKind(file: File): "image" | "file" | null {
+  if (ALLOWED_IMAGE_TYPES.includes(file.type)) return "image";
+  if (file.type === "application/pdf") return "file";
+  return null;
+}
+
+function dataTransferHasFiles(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes("Files");
+}
 
 const MESSAGE_SELECT = `
   id,
@@ -79,23 +91,6 @@ function formatDateRange(start: string, end: string): string {
     return `${year}.${month}.${day}`;
   };
   return `${fmt(start)} – ${fmt(end)}`;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatMessageTime(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
 }
 
 function IconSettings(props: { className?: string }) {
@@ -156,85 +151,6 @@ function ParticipantAvatars({ messages }: { messages: TrendMessage[] }) {
       <span className="text-xs text-[#676767]">
         {participants.length}명{overflow > 0 ? ` (+${overflow})` : ""}
       </span>
-    </div>
-  );
-}
-
-function UploadMessageBody({ message }: { message: TrendMessage }) {
-  const meta = (message.metadata ?? {}) as UploadMetadata;
-  const url = meta.url ?? message.content;
-  const filename = meta.filename ?? message.content;
-  const filesize = meta.filesize ?? 0;
-
-  if (message.message_type === "image" && url) {
-    return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block">
-        <img
-          src={url}
-          alt={filename}
-          className="max-h-72 max-w-full rounded-xl object-cover"
-          style={{ border: "0.5px solid var(--color-border)" }}
-          loading="lazy"
-        />
-      </a>
-    );
-  }
-
-  if ((message.message_type as string) === "file" && url) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 flex max-w-sm items-center gap-3 rounded-xl px-3.5 py-3 transition hover:opacity-90"
-        style={{
-          background: "var(--color-background-secondary)",
-          border: "0.5px solid var(--color-border)"
-        }}
-      >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-xs font-bold text-red-600">
-          PDF
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-[#0d0d0d]">{filename}</p>
-          {filesize > 0 ? <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatFileSize(filesize)}</p> : null}
-        </div>
-      </a>
-    );
-  }
-
-  return null;
-}
-
-function RoomChatMessage({ message, currentUserId }: { message: TrendMessage; currentUserId: string }) {
-  const isUpload =
-    message.message_type === "image" || (message.message_type as string) === "file";
-
-  if (!isUpload) {
-    return <ChatMessage message={message} currentUserId={currentUserId} />;
-  }
-
-  const senderName = message.profile?.name?.trim() || "알 수 없음";
-  const avatarColors = getProfileAvatarColors(message.profile_id);
-
-  return (
-    <div className="group flex gap-3 px-4 py-4 sm:px-6 hover:bg-[#fafafa]">
-      <div
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-        style={{ backgroundColor: avatarColors.bg, color: avatarColors.text }}
-        aria-hidden
-      >
-        {getInitials(senderName)}
-      </div>
-      <div className="min-w-0 flex-1 pt-0.5">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-semibold text-[#0d0d0d]">{senderName}</span>
-          <time className="text-xs text-[#8e8e8e]" dateTime={message.created_at}>
-            {formatMessageTime(message.created_at)}
-          </time>
-        </div>
-        <UploadMessageBody message={message} />
-      </div>
     </div>
   );
 }
@@ -538,7 +454,9 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const dragCounterRef = useRef(0);
 
   const isSuperAdmin = userRole === SUPER_ADMIN_ROLE;
 
@@ -770,6 +688,44 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     }
   };
 
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (room?.is_archived || uploading || !dataTransferHasFiles(event.dataTransfer)) return;
+    dragCounterRef.current += 1;
+    setIsDragOver(true);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (room?.is_archived || uploading || !dataTransferHasFiles(event.dataTransfer)) return;
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+
+    if (room?.is_archived || uploading) return;
+
+    const files = Array.from(event.dataTransfer.files);
+    for (const file of files) {
+      const kind = detectUploadKind(file);
+      if (kind) {
+        await handleUploadFile(file, kind);
+      }
+    }
+  };
+
   const openRenameModal = () => {
     setRenameValue(room?.week_label ?? "");
     setRenameOpen(true);
@@ -848,13 +804,33 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(event) => void handleDrop(event)}
+      >
+        {isDragOver ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center"
+            style={{
+              background: "rgba(83, 74, 183, 0.15)",
+              border: "2px dashed #534AB7"
+            }}
+          >
+            <Upload className="h-12 w-12 text-[#534AB7]" aria-hidden />
+            <p className="mt-3 text-base font-medium text-[#534AB7]">파일을 여기에 놓으세요</p>
+          </div>
+        ) : null}
+
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6">
             <p className="text-center text-sm text-[#8e8e8e]">아직 메시지가 없습니다. 첫 트렌드를 공유해 보세요.</p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto min-w-0 w-full max-w-3xl">
             {messages.map((message) => (
               <RoomChatMessage key={message.id} message={message} currentUserId={profileId} />
             ))}
@@ -873,6 +849,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         disabled={room?.is_archived}
         uploading={uploading}
       />
+      </div>
 
       {renameOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">

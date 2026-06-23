@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import type { TrendMessage } from "@/lib/research/types";
 
 type ChatMessageProps = {
   message: TrendMessage;
   currentUserId?: string;
+  isThinking?: boolean;
 };
 
 type UploadMetadata = {
@@ -160,7 +162,29 @@ function AvatarCircle({
   );
 }
 
-function BubbleContent({ message, isMine }: { message: TrendMessage; isMine: boolean }) {
+function ThinkingDotsText() {
+  const [dots, setDots] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDots((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  return <span className="break-all">{"생각 중" + ".".repeat(dots)}</span>;
+}
+
+function BubbleContent({
+  message,
+  isMine,
+  isThinking = false
+}: {
+  message: TrendMessage;
+  isMine: boolean;
+  isThinking?: boolean;
+}) {
   const isAi = message.message_type === "ai";
   const textClass = isMine ? "text-[#1a1a1a]" : "text-[#0d0d0d]";
   const meta = (message.metadata ?? {}) as UploadMetadata;
@@ -208,6 +232,15 @@ function BubbleContent({ message, isMine }: { message: TrendMessage; isMine: boo
     return <FilePreviewCard message={message} />;
   }
 
+  if (isThinking) {
+    const textClass = isMine ? "text-[#1a1a1a]" : "text-[#0d0d0d]";
+    return (
+      <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${textClass}`}>
+        <ThinkingDotsText />
+      </p>
+    );
+  }
+
   return (
     <>
       <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${textClass}`}>{message.content}</p>
@@ -216,8 +249,20 @@ function BubbleContent({ message, isMine }: { message: TrendMessage; isMine: boo
   );
 }
 
-export function ChatMessage({ message, currentUserId }: ChatMessageProps) {
+export function RoomChatMessage({
+  message,
+  currentUserId
+}: {
+  message: TrendMessage;
+  currentUserId: string;
+}) {
+  return <ChatMessage message={message} currentUserId={currentUserId} />;
+}
+
+export function ChatMessage({ message, currentUserId, isThinking }: ChatMessageProps) {
   const isAi = message.message_type === "ai";
+  const isThinkingMessage =
+    isThinking ?? (message.metadata as { isThinking?: boolean } | null)?.isThinking === true;
   const isMine = Boolean(currentUserId && message.profile_id === currentUserId && !isAi);
   const senderName = isAi ? "루나 (Luna)" : message.profile?.name?.trim() || "알 수 없음";
   const initials = isAi ? "L" : getInitials(senderName);
@@ -228,16 +273,16 @@ export function ChatMessage({ message, currentUserId }: ChatMessageProps) {
 
   if (isMine) {
     return (
-      <div className="flex justify-end px-4 py-1.5 sm:px-6">
-        <div className="flex max-w-[75%] items-end gap-1.5">
+      <div className="flex min-w-0 justify-end px-4 py-1.5 sm:px-6">
+        <div className="flex min-w-0 max-w-[88%] items-end gap-1.5 sm:max-w-[75%]">
           <time className="mb-1 shrink-0 text-[10px] text-[#8e8e8e]" dateTime={message.created_at}>
             {timeLabel}
           </time>
           <div
-            className="rounded-[18px] rounded-br-[4px] px-[14px] py-[10px]"
+            className="min-w-0 rounded-[18px] rounded-br-[4px] px-[14px] py-[10px]"
             style={{ backgroundColor: "#FEE500" }}
           >
-            <BubbleContent message={message} isMine />
+            <BubbleContent message={message} isMine isThinking={isThinkingMessage} />
           </div>
         </div>
       </div>
@@ -245,19 +290,19 @@ export function ChatMessage({ message, currentUserId }: ChatMessageProps) {
   }
 
   return (
-    <div className="flex justify-start gap-2 px-4 py-1.5 sm:px-6">
+    <div className="flex min-w-0 justify-start gap-2 px-4 py-1.5 sm:px-6">
       <AvatarCircle initials={initials} bg={avatarColors.bg} text={avatarColors.text} />
-      <div className="min-w-0 max-w-[75%]">
+      <div className="min-w-0 max-w-[88%] sm:max-w-[75%]">
         <p className="mb-1 px-1 text-xs font-semibold text-[#0d0d0d]">{senderName}</p>
         <div className="flex items-end gap-1.5">
           <div
-            className="rounded-[18px] rounded-bl-[4px] px-[14px] py-[10px]"
+            className="min-w-0 rounded-[18px] rounded-bl-[4px] px-[14px] py-[10px]"
             style={{
               background: "var(--color-background-primary, #ffffff)",
               border: "0.5px solid var(--color-border-tertiary, rgba(0, 0, 0, 0.12))"
             }}
           >
-            <BubbleContent message={message} isMine={false} />
+            <BubbleContent message={message} isMine={false} isThinking={isThinkingMessage} />
           </div>
           <time className="mb-1 shrink-0 text-[10px] text-[#8e8e8e]" dateTime={message.created_at}>
             {timeLabel}

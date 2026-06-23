@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { SquarePen } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
@@ -10,6 +11,77 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { isCurrentWeekRoom, type TrendRoom } from "@/lib/research/types";
 import { supabase } from "@/lib/supabase/client";
+
+function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getIsoWeekYearAndNumber(date: Date): { isoYear: number; isoWeek: number } {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const isoYear = utc.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const isoWeek = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { isoYear, isoWeek };
+}
+
+function buildCurrentWeekRoomFields(date = new Date()) {
+  const monday = new Date(date);
+  const dow = monday.getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  monday.setDate(monday.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const { isoYear, isoWeek } = getIsoWeekYearAndNumber(date);
+  return {
+    week_label: `${isoYear}-W${String(isoWeek).padStart(2, "0")} 트렌드방`,
+    week_start: formatLocalDate(monday),
+    week_end: formatLocalDate(sunday)
+  };
+}
+
+function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void }) {
+  const router = useRouter();
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    if (creating) return;
+
+    setCreating(true);
+    const { week_label, week_start, week_end } = buildCurrentWeekRoomFields();
+
+    const { data, error } = await supabase
+      .from("trend_rooms")
+      .insert({ week_label, week_start, week_end })
+      .select("*")
+      .single();
+
+    setCreating(false);
+
+    if (error || !data) return;
+
+    const room = data as TrendRoom;
+    onCreated(room);
+    router.push(`/research/${room.id}`);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleCreate()}
+      disabled={creating}
+      aria-label="새 채팅방 만들기"
+      className="rounded-lg p-1.5 text-white transition hover:bg-white/10 disabled:opacity-50"
+    >
+      <SquarePen className="h-4 w-4" aria-hidden />
+    </button>
+  );
+}
 
 function ResearchRoomList({ pathname, rooms }: { pathname: string; rooms: TrendRoom[] }) {
   const activeRoomId = pathname.match(/^\/research\/([^/]+)/)?.[1];
@@ -90,7 +162,10 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
       <div className="flex h-[calc(100vh-3.5rem)] w-full">
         <aside className="hidden w-64 shrink-0 flex-col bg-[#171717] md:flex">
           <div className="flex-1 overflow-y-auto px-3 py-5">
-            <h2 className="px-3 text-base font-semibold text-white">✦ 트렌드 레이더</h2>
+            <div className="flex items-center justify-between px-3">
+              <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
+              <CreateRoomButton onCreated={(room) => setRooms((prev) => [room, ...prev])} />
+            </div>
             <ResearchRoomList pathname={pathname} rooms={sortedRooms} />
           </div>
 
