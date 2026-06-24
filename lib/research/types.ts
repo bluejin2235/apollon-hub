@@ -1,4 +1,4 @@
-export type TrendMessageType = "text" | "link" | "youtube" | "image" | "ai";
+export type TrendMessageType = "text" | "link" | "youtube" | "vimeo" | "image" | "ai";
 
 export type TrendRoom = {
   id: string;
@@ -15,8 +15,10 @@ export type TrendMessageMetadata = {
   description?: string;
   domain?: string;
   youtubeId?: string;
+  vimeoId?: string;
   thumbnailUrl?: string;
   imageUrl?: string;
+  reply_to_id?: string;
 };
 
 export type TrendMessageProfile = {
@@ -33,6 +35,7 @@ export type TrendMessage = {
   metadata: TrendMessageMetadata | null;
   created_at: string;
   profile?: TrendMessageProfile | null;
+  reply_to_id?: string | null;
 };
 
 export type TrendAnalysis = {
@@ -54,6 +57,21 @@ export function extractYoutubeId(text: string): string | null {
   return match?.[1] ?? null;
 }
 
+export function extractVimeoId(text: string): string | null {
+  const patterns = [
+    /(?:https?:\/\/)?(?:www\.)?player\.vimeo\.com\/video\/(\d+)/i,
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(?:channels\/[^/\s]+\/|groups\/[^/\s]+\/videos\/)(\d+)/i,
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  return null;
+}
+
 export function extractFirstUrl(text: string): string | null {
   const match = text.match(URL_REGEX);
   return match?.[0] ?? null;
@@ -61,6 +79,7 @@ export function extractFirstUrl(text: string): string | null {
 
 export function detectMessageType(content: string): TrendMessageType {
   if (extractYoutubeId(content)) return "youtube";
+  if (extractVimeoId(content)) return "vimeo";
   if (URL_REGEX.test(content)) return "link";
   return "text";
 }
@@ -83,6 +102,17 @@ export function buildMessageMetadata(content: string, messageType: TrendMessageT
       youtubeId,
       thumbnailUrl: `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`,
       domain: "youtube.com"
+    };
+  }
+
+  if (messageType === "vimeo") {
+    const vimeoId = extractVimeoId(content);
+    if (!vimeoId) return null;
+    const url = extractFirstUrl(content) ?? `https://vimeo.com/${vimeoId}`;
+    return {
+      url,
+      vimeoId,
+      domain: "vimeo.com"
     };
   }
 

@@ -73,16 +73,32 @@ function mapMessageRow(row: Record<string, unknown>): TrendMessage {
         }
       : null;
 
+  const metadata = (row.metadata as TrendMessage["metadata"]) ?? null;
+  const replyToId =
+    metadata && typeof metadata.reply_to_id === "string" ? metadata.reply_to_id : null;
+
   return {
     id: String(row.id),
     room_id: String(row.room_id),
     profile_id: row.profile_id ? String(row.profile_id) : null,
     content: String(row.content ?? ""),
     message_type: row.message_type as TrendMessage["message_type"],
-    metadata: (row.metadata as TrendMessage["metadata"]) ?? null,
+    metadata,
     created_at: String(row.created_at),
-    profile
+    profile,
+    reply_to_id: replyToId
   };
+}
+
+function getMessageSenderName(message: TrendMessage): string {
+  if (message.message_type === "ai") return "루나 (Luna)";
+  return message.profile?.name?.trim() || "알 수 없음";
+}
+
+function truncatePreview(content: string, max = 30): string {
+  const trimmed = content.replace(/\s+/g, " ").trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max)}...`;
 }
 
 function formatDateRange(start: string, end: string): string {
@@ -230,11 +246,20 @@ function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete }: RoomSettingsMenu
 type RoomChatInputProps = {
   disabled?: boolean;
   uploading?: boolean;
+  replyingTo?: TrendMessage | null;
+  onCancelReply?: () => void;
   onSend: (content: string) => Promise<void>;
   onUploadFile: (file: File, kind: "image" | "file") => Promise<void>;
 };
 
-function RoomChatInput({ disabled = false, uploading = false, onSend, onUploadFile }: RoomChatInputProps) {
+function RoomChatInput({
+  disabled = false,
+  uploading = false,
+  replyingTo = null,
+  onCancelReply,
+  onSend,
+  onUploadFile
+}: RoomChatInputProps) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -291,6 +316,28 @@ function RoomChatInput({ disabled = false, uploading = false, onSend, onUploadFi
   return (
     <div className="shrink-0 bg-white px-4 pb-4 pt-2 sm:px-6">
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+        {replyingTo ? (
+          <div
+            className="mb-2 flex items-start justify-between gap-3 rounded-lg px-3 py-2"
+            style={{
+              background: "var(--color-background-secondary)",
+              borderLeft: "2px solid #534AB7"
+            }}
+          >
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[#0d0d0d]">{getMessageSenderName(replyingTo)}</p>
+              <p className="mt-0.5 truncate text-xs text-[#676767]">{truncatePreview(replyingTo.content)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="shrink-0 rounded p-1 text-[#8e8e8e] transition hover:bg-[#ebebeb] hover:text-[#0d0d0d]"
+              aria-label="답장 취소"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         <div
           className="flex items-end gap-2 rounded-[26px] px-3 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
           style={{ background: "var(--color-background-secondary, #f4f4f4)" }}
@@ -455,10 +502,17 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<TrendMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
 
   const isSuperAdmin = userRole === SUPER_ADMIN_ROLE;
+
+  const messageById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages]);
+
+  const scrollToMessage = useCallback((messageId: string) => {
+    document.querySelector(`[data-message-id="${messageId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     bottomRef.current?.scrollIntoView({ behavior });
@@ -596,7 +650,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const insertMessage = async (payload: {
     content: string;
     message_type: string;
-    metadata: UploadMetadata | ReturnType<typeof buildMessageMetadata>;
+    metadata: UploadMetadata | ReturnType<typeof buildMessageMetadata> | Record<string, unknown> | null;
   }) => {
     const { data, error: insertError } = await supabase
       .from("trend_messages")
@@ -637,8 +691,13 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
 
   const handleSend = async (content: string) => {
     const messageType = detectMessageType(content);
-    const metadata = buildMessageMetadata(content, messageType);
+    const baseMetadata = buildMessageMetadata(content, messageType);
+    const metadata = replyingTo
+      ? { ...(baseMetadata ?? {}), reply_to_id: replyingTo.id }
+      : baseMetadata;
+
     await insertMessage({ content, message_type: messageType, metadata });
+    setReplyingTo(null);
   };
 
   const handleUploadFile = async (file: File, kind: "image" | "file") => {
@@ -831,9 +890,21 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         ) : (
           <div className="mx-auto min-w-0 w-full max-w-3xl">
-            {messages.map((message) => (
-              <RoomChatMessage key={message.id} message={message} currentUserId={profileId} />
-            ))}
+            {messages.map((message) => {
+              const replyId = message.reply_to_id ?? message.metadata?.reply_to_id;
+              const replyToMessage = replyId ? messageById.get(replyId) ?? null : null;
+
+              return (
+                <RoomChatMessage
+                  key={message.id}
+                  message={message}
+                  currentUserId={profileId}
+                  onReply={setReplyingTo}
+                  replyToMessage={replyToMessage}
+                  onScrollToMessage={scrollToMessage}
+                />
+              );
+            })}
           </div>
         )}
         <div ref={bottomRef} />
@@ -848,6 +919,8 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         onUploadFile={handleUploadFile}
         disabled={room?.is_archived}
         uploading={uploading}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
       />
       </div>
 

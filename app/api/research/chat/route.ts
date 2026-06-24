@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { YoutubeTranscript } from "youtube-transcript";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { extractYoutubeId } from "@/lib/research/types";
+import { extractVimeoId, extractYoutubeId } from "@/lib/research/types";
 
 export const runtime = "nodejs";
 
@@ -21,16 +21,19 @@ const LUNA_SYSTEM_PROMPT = `너는 아폴론이머시브웍스의 AI 직원 루�
 7. 나중에 이 대화가 주간 트렌드 리포트 아젠다 소스가 된다는 걸 염두에 두고,
    리포트로 발전시킬 만한 인사이트가 있으면 충분히 설명해.
 
-【답변 형식】
-- --- 구분선 사용 금지.
-- 문단 사이 빈 줄은 최소화해 (한 줄만).
-- 키워드는 맨 마지막에 한 줄로: \`키워드1\` \`키워드2\` \`키워드3\`
-- 이모지는 첫 줄에만 1개.`;
+【답변 형식 지침】
+- --- 구분선 절대 사용 금지
+- 문단 사이 빈 줄 없음 (줄바꿈 1번만)
+- **볼드** 강조는 핵심 단어만 인라인으로
+- 키워드는 맨 마지막 줄에: \`키워드1\` \`키워드2\` \`키워드3\`
+- 이모지는 첫 문장 끝에만 1개`;
 
 const CLAUDE_MODEL = "claude-sonnet-4-6";
 const GEMINI_MODEL = "gemini-2.5-flash";
 const YOUTUBE_NO_TRANSCRIPT_MESSAGE =
   "자막이 없어 직접 분석이 어렵습니다. 영상 내용을 텍스트로 알려주시면 분석해 드릴게요.";
+const VIMEO_NO_TRANSCRIPT_MESSAGE =
+  "Vimeo 영상의 자막이 없어 직접 분석이 어렵습니다. 영상 내용을 텍스트로 알려주시면 분석해 드릴게요.";
 
 type ChatRequestBody = {
   room_id: string;
@@ -114,6 +117,14 @@ function getYoutubeId(metadata: Record<string, unknown> | null | undefined, cont
     getMetadataString(metadata, "youtube_id") ??
     getMetadataString(metadata, "youtubeId") ??
     extractYoutubeId(getMetadataString(metadata, "url") ?? content)
+  );
+}
+
+function getVimeoId(metadata: Record<string, unknown> | null | undefined, content: string): string | null {
+  return (
+    getMetadataString(metadata, "vimeo_id") ??
+    getMetadataString(metadata, "vimeoId") ??
+    extractVimeoId(getMetadataString(metadata, "url") ?? content)
   );
 }
 
@@ -282,6 +293,95 @@ ${transcript.slice(0, 12_000)}`;
   return { content: YOUTUBE_NO_TRANSCRIPT_MESSAGE, ai_model: CLAUDE_MODEL };
 }
 
+type VimeoTextTrack = {
+  language?: string;
+  link?: string;
+};
+
+function parseVttToPlainText(vtt: string): string | null {
+  const lines = vtt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (line === "WEBVTT" || line.startsWith("NOTE")) return false;
+      if (/^\d+$/.test(line)) return false;
+      if (/^\d{2}:\d{2}/.test(line)) return false;
+      return true;
+    });
+
+  const text = lines.join(" ").replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
+async function fetchVimeoTranscriptText(videoId: string): Promise<string | null> {
+  const token = process.env.VIMEO_ACCESS_TOKEN;
+  if (!token) {
+    console.error("[research/chat] VIMEO_ACCESS_TOKEN not configured");
+    return null;
+  }
+
+  try {
+    const response = await fetch(`https://api.vimeo.com/videos/${videoId}/texttracks`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.vimeo.*+json;version=3.4"
+      },
+      signal: AbortSignal.timeout(15_000)
+    });
+
+    if (!response.ok) {
+      console.error("[research/chat] vimeo texttracks failed", response.status);
+      return null;
+    }
+
+    const payload = (await response.json()) as { data?: VimeoTextTrack[] };
+    const tracks = payload.data ?? [];
+    if (tracks.length === 0) return null;
+
+    const byLanguage = (prefix: string) =>
+      tracks.find((track) => track.language?.toLowerCase().startsWith(prefix));
+
+    const track = byLanguage("ko") ?? byLanguage("en") ?? tracks[0];
+    const trackUrl = track?.link;
+    if (!trackUrl) return null;
+
+    const vttResponse = await fetch(trackUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!vttResponse.ok) return null;
+
+    const vtt = await vttResponse.text();
+    return parseVttToPlainText(vtt);
+  } catch (error) {
+    console.error("[research/chat] vimeo transcript fetch failed", error);
+    return null;
+  }
+}
+
+async function analyzeVimeoReply(
+  basePrompt: string,
+  vimeoId: string,
+  vimeoUrl: string
+): Promise<{ content: string; ai_model: string }> {
+  const prompt = `${basePrompt}
+
+Vimeo 영상 ID: ${vimeoId}
+영상 링크: ${vimeoUrl}
+
+이 Vimeo 영상을 분석해줘.`;
+
+  const transcript = await fetchVimeoTranscriptText(vimeoId);
+  if (transcript) {
+    const transcriptPrompt = `${prompt}
+
+Vimeo 자막:
+${transcript.slice(0, 12_000)}`;
+    const content = await callClaudeText(transcriptPrompt);
+    return { content, ai_model: "vimeo + claude-sonnet-4-6" };
+  }
+
+  return { content: VIMEO_NO_TRANSCRIPT_MESSAGE, ai_model: CLAUDE_MODEL };
+}
+
 function buildAnalysisPrompt(
   recentContext: string,
   body: ChatRequestBody
@@ -312,6 +412,17 @@ async function generateLunaReply(
       getMetadataString(metadata, "url") ?? `https://www.youtube.com/watch?v=${youtubeId}`;
 
     return analyzeYoutubeReply(basePrompt, youtubeId, youtubeUrl);
+  }
+
+  if (body.message_type === "vimeo") {
+    const vimeoId = getVimeoId(metadata, body.content);
+    if (!vimeoId) {
+      throw new Error("Vimeo ID를 찾을 수 없습니다.");
+    }
+
+    const vimeoUrl = getMetadataString(metadata, "url") ?? `https://vimeo.com/${vimeoId}`;
+
+    return analyzeVimeoReply(basePrompt, vimeoId, vimeoUrl);
   }
 
   if (body.message_type === "link") {
