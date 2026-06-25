@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
+import { SupplyToast } from "@/components/supplies/toast";
 import {
   createEmptySourceFormValues,
   isSourceFormValid,
@@ -120,7 +121,15 @@ export default function ResearchSourcesPage() {
   const [promptLoading, setPromptLoading] = useState(true);
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const canEditPrompt = isSuperAdmin(profile);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const loadSources = async () => {
     setLoading(true);
@@ -185,6 +194,52 @@ export default function ResearchSourcesPage() {
     }
 
     setError(null);
+  };
+
+  const handleApplyCommonToAll = async () => {
+    if (!canEditPrompt || applyBusy || promptSaving) return;
+    if (
+      !window.confirm("공통 프롬프트를 모든 소스의 개별 프롬프트로 덮어씁니다. 계속하시겠습니까?")
+    ) {
+      return;
+    }
+
+    setApplyBusy(true);
+    setError(null);
+
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        setError("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const response = await fetch("/api/research/sources/apply-common-prompt", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = (await response.json()) as { error?: string; updated_count?: number };
+
+      if (!response.ok) {
+        setError(data.error ?? "개별 프롬프트 적용에 실패했습니다.");
+        return;
+      }
+
+      setToast("모든 소스에 적용됐습니다.");
+    } catch (applyError) {
+      const message =
+        applyError instanceof Error ? applyError.message : "개별 프롬프트 적용에 실패했습니다.";
+      setError(message);
+    } finally {
+      setApplyBusy(false);
+    }
   };
 
   const filteredSources = useMemo(() => {
@@ -261,10 +316,18 @@ export default function ResearchSourcesPage() {
                   <button
                     type="button"
                     onClick={() => void handleSaveCommonPrompt()}
-                    disabled={promptSaving || promptLoading}
+                    disabled={promptSaving || promptLoading || applyBusy}
                     className="rounded-lg bg-[#0d0d0d] px-3.5 py-1.5 text-sm font-medium text-white hover:bg-[#333] disabled:opacity-50"
                   >
                     {promptSaving ? "저장 중…" : "저장"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleApplyCommonToAll()}
+                    disabled={applyBusy || promptLoading || promptSaving}
+                    className="rounded-lg border border-[rgba(0,0,0,0.12)] px-3.5 py-1.5 text-sm font-medium text-[#0d0d0d] hover:bg-[#f4f4f4] disabled:opacity-50"
+                  >
+                    {applyBusy ? "적용 중…" : "모든 개별프롬프트 적용"}
                   </button>
                 </div>
               ) : null}
@@ -327,6 +390,7 @@ export default function ResearchSourcesPage() {
       </div>
 
       <AddSourceModal open={modalOpen} saving={saving} onClose={() => setModalOpen(false)} onSave={handleAddSource} />
+      <SupplyToast message={toast} onClose={() => setToast(null)} />
     </div>
   );
 }
