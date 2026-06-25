@@ -590,7 +590,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { error: analysisError } = await admin.from("trend_analyses").insert({
-      message_id: messageId,
+      message_id: aiMessage.id,
       summary: analysis.summary,
       keywords: analysis.keywords,
       relevance_score: null,
@@ -600,6 +600,17 @@ export async function POST(request: NextRequest) {
     if (analysisError) {
       console.error("[research/chat] analysis insert failed", analysisError);
       return NextResponse.json({ error: analysisError.message }, { status: 500 });
+    }
+
+    const { error: metadataError } = await admin
+      .from("trend_messages")
+      .update({
+        metadata: { ai_model: lunaReply.ai_model, has_analysis: true }
+      })
+      .eq("id", aiMessage.id);
+
+    if (metadataError) {
+      console.error("[research/chat] has_analysis metadata update failed", metadataError);
     }
 
     return NextResponse.json({

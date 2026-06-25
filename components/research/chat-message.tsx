@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client";
 type MessageMetadata = TrendMessage["metadata"] & {
   is_pinned?: boolean;
   is_pinned_notification?: boolean;
+  has_analysis?: boolean;
   ai_model?: string;
   isThinking?: boolean;
   reply_to_id?: string;
@@ -143,13 +144,11 @@ function getReplyToId(message: TrendMessage): string | null {
   return message.reply_to_id ?? meta?.reply_to_id ?? null;
 }
 
-function shouldShowWeeklyPinButton(message: TrendMessage, isThinking: boolean): boolean {
+function shouldShowWeeklyPinButton(message: TrendMessage): boolean {
   const meta = message.metadata as MessageMetadata | null;
   if (message.message_type !== "ai") return false;
   if (meta?.is_pinned_notification === true) return false;
-  if (!meta?.ai_model) return false;
-  if (isThinking) return false;
-  if (message.content.startsWith("생각 중") || message.content.startsWith("📌")) return false;
+  if (meta?.has_analysis !== true) return false;
   return true;
 }
 
@@ -518,7 +517,7 @@ export function ChatMessage({
     ? { bg: "#534AB7", text: "#FFFFFF" }
     : getProfileAvatarColors(message.profile_id);
   const timeLabel = formatBubbleTime(message.created_at);
-  const showPinButton = shouldShowWeeklyPinButton(message, isThinkingMessage);
+  const showPinButton = shouldShowWeeklyPinButton(message);
   const resolvedReplyTo = replyToMessage ?? null;
 
   const handleReplyClick = () => {

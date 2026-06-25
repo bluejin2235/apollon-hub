@@ -810,6 +810,46 @@ create table if not exists public.trend_analyses (
 
 create index if not exists idx_trend_analyses_message on public.trend_analyses (message_id);
 
+create table if not exists public.trend_sources (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  url text not null,
+  type text not null check (type in ('magazine', 'studio')),
+  description text,
+  keywords text[] not null default '{}',
+  is_active boolean not null default true,
+  last_collected_at timestamptz,
+  article_count integer not null default 0,
+  youtube_channel_id text,
+  google_alerts_query text,
+  collect_methods text[] not null default '{}',
+  gpt_prompt text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.trend_settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_trend_sources_type on public.trend_sources (type);
+create index if not exists idx_trend_sources_active on public.trend_sources (is_active, created_at desc);
+
+create table if not exists public.trend_articles (
+  id uuid primary key default gen_random_uuid(),
+  source_id uuid not null references public.trend_sources (id) on delete cascade,
+  title text not null,
+  url text not null,
+  thumbnail_url text,
+  summary text,
+  keywords text[] not null default '{}',
+  collected_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_trend_articles_source_collected on public.trend_articles (source_id, collected_at desc);
+
 insert into storage.buckets (id, name, public)
 values ('trend-uploads', 'trend-uploads', true)
 on conflict (id) do update set public = excluded.public;
@@ -826,6 +866,9 @@ create policy "trend_uploads_delete" on storage.objects
 alter table public.trend_rooms enable row level security;
 alter table public.trend_messages enable row level security;
 alter table public.trend_analyses enable row level security;
+alter table public.trend_sources enable row level security;
+alter table public.trend_articles enable row level security;
+alter table public.trend_settings enable row level security;
 
 drop policy if exists "trend_rooms_select_auth" on public.trend_rooms;
 create policy "trend_rooms_select_auth"
@@ -855,12 +898,62 @@ drop policy if exists "trend_analyses_insert_auth" on public.trend_analyses;
 create policy "trend_analyses_insert_auth"
   on public.trend_analyses for insert to authenticated with check (true);
 
+drop policy if exists "trend_sources_select_auth" on public.trend_sources;
+create policy "trend_sources_select_auth"
+  on public.trend_sources for select to authenticated using (true);
+
+drop policy if exists "trend_sources_insert_auth" on public.trend_sources;
+create policy "trend_sources_insert_auth"
+  on public.trend_sources for insert to authenticated with check (true);
+
+drop policy if exists "trend_sources_update_auth" on public.trend_sources;
+create policy "trend_sources_update_auth"
+  on public.trend_sources for update to authenticated using (true) with check (true);
+
+drop policy if exists "trend_sources_delete_auth" on public.trend_sources;
+create policy "trend_sources_delete_auth"
+  on public.trend_sources for delete to authenticated using (true);
+
+drop policy if exists "trend_articles_select_auth" on public.trend_articles;
+create policy "trend_articles_select_auth"
+  on public.trend_articles for select to authenticated using (true);
+
+drop policy if exists "trend_articles_insert_auth" on public.trend_articles;
+create policy "trend_articles_insert_auth"
+  on public.trend_articles for insert to authenticated with check (true);
+
+drop policy if exists "trend_settings_select_auth" on public.trend_settings;
+create policy "trend_settings_select_auth"
+  on public.trend_settings for select to authenticated using (true);
+
+drop policy if exists "trend_settings_insert_super_admin" on public.trend_settings;
+create policy "trend_settings_insert_super_admin"
+  on public.trend_settings for insert to authenticated
+  with check (public.is_super_admin());
+
+drop policy if exists "trend_settings_update_super_admin" on public.trend_settings;
+create policy "trend_settings_update_super_admin"
+  on public.trend_settings for update to authenticated
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+drop policy if exists "trend_settings_delete_super_admin" on public.trend_settings;
+create policy "trend_settings_delete_super_admin"
+  on public.trend_settings for delete to authenticated
+  using (public.is_super_admin());
+
 grant select, insert, update on public.trend_rooms to authenticated;
 grant select, insert on public.trend_messages to authenticated;
 grant select, insert on public.trend_analyses to authenticated;
+grant select, insert, update, delete on public.trend_sources to authenticated;
+grant select, insert on public.trend_articles to authenticated;
+grant select, insert, update, delete on public.trend_settings to authenticated;
 grant all on public.trend_rooms to service_role;
 grant all on public.trend_messages to service_role;
 grant all on public.trend_analyses to service_role;
+grant all on public.trend_sources to service_role;
+grant all on public.trend_articles to service_role;
+grant all on public.trend_settings to service_role;
 
 do $$
 begin

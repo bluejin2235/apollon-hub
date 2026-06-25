@@ -11,6 +11,7 @@ import {
   useState
 } from "react";
 import { Upload } from "lucide-react";
+import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
 import { collectParticipants, getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import { storagePublicUrl } from "@/lib/storage/public-url";
@@ -174,12 +175,20 @@ function ParticipantAvatars({ messages }: { messages: TrendMessage[] }) {
 type RoomSettingsMenuProps = {
   isSuperAdmin: boolean;
   onRename: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<boolean>;
+  deleteBusy?: boolean;
 };
 
-function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete }: RoomSettingsMenuProps) {
+function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete, deleteBusy = false }: RoomSettingsMenuProps) {
   const [open, setOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmingDelete(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -193,6 +202,14 @@ function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete }: RoomSettingsMenu
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
+
+  const handleDeleteConfirm = async () => {
+    const deleted = await onDelete();
+    if (deleted) {
+      setOpen(false);
+      setConfirmingDelete(false);
+    }
+  };
 
   return (
     <div ref={menuRef} className="relative">
@@ -208,35 +225,58 @@ function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete }: RoomSettingsMenu
 
       {open ? (
         <div className="absolute right-0 top-full z-20 mt-1 min-w-[168px] overflow-hidden rounded-xl border border-[rgba(0,0,0,0.08)] bg-white py-1 shadow-lg">
-          <button
-            type="button"
-            className="block w-full px-4 py-2.5 text-left text-sm text-[#0d0d0d] hover:bg-[#f4f4f4]"
-            onClick={() => {
-              setOpen(false);
-              onRename();
-            }}
-          >
-            채팅방 이름 변경
-          </button>
-          {isSuperAdmin ? (
-            <button
-              type="button"
-              className="block w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
-              onClick={() => {
-                setOpen(false);
-                onDelete();
-              }}
-            >
-              채팅방 삭제
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="block w-full px-4 py-2.5 text-left text-sm text-[#676767] hover:bg-[#f4f4f4]"
-            onClick={() => setOpen(false)}
-          >
-            닫기
-          </button>
+          {confirmingDelete ? (
+            <div className="px-3 py-2.5">
+              <p className="text-sm text-[#0d0d0d]">정말 삭제할까요?</p>
+              <div className="mt-2 flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleteBusy}
+                  className="rounded-md px-2.5 py-1 text-xs text-[#676767] hover:bg-[#f4f4f4] disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteConfirm()}
+                  disabled={deleteBusy}
+                  className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteBusy ? "삭제 중…" : "확인"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="block w-full px-4 py-2.5 text-left text-sm text-[#0d0d0d] hover:bg-[#f4f4f4]"
+                onClick={() => {
+                  setOpen(false);
+                  onRename();
+                }}
+              >
+                채팅방 이름 변경
+              </button>
+              {isSuperAdmin ? (
+                <button
+                  type="button"
+                  className="block w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  채팅방 삭제
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="block w-full px-4 py-2.5 text-left text-sm text-[#676767] hover:bg-[#f4f4f4]"
+                onClick={() => setOpen(false)}
+              >
+                닫기
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </div>
@@ -490,6 +530,7 @@ function requestLunaAnalysis(
 
 export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const router = useRouter();
+  const { onRoomUpdated, removeRoom } = useResearchRooms() ?? {};
   const [room, setRoom] = useState<TrendRoom | null>(null);
   const [messages, setMessages] = useState<TrendMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -498,7 +539,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -810,26 +850,30 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     }
 
     if (data) {
-      setRoom(data as TrendRoom);
+      const updatedRoom = data as TrendRoom;
+      setRoom(updatedRoom);
+      onRoomUpdated?.(updatedRoom);
       setRenameOpen(false);
       setError(null);
     }
   };
 
-  const handleDelete = async () => {
-    if (!room) return;
+  const handleDelete = async (): Promise<boolean> => {
+    if (!room || deleteBusy) return false;
 
     setDeleteBusy(true);
-    const { error: deleteError } = await supabase.from("trend_rooms").delete().eq("id", room.id);
+    const deletedRoomId = room.id;
+    const { error: deleteError } = await supabase.from("trend_rooms").delete().eq("id", deletedRoomId);
     setDeleteBusy(false);
 
     if (deleteError) {
       setError(deleteError.message);
-      setDeleteOpen(false);
-      return;
+      return false;
     }
 
+    removeRoom?.(deletedRoomId);
     router.push("/research");
+    return true;
   };
 
   if (loading) {
@@ -858,7 +902,8 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           <RoomSettingsMenu
             isSuperAdmin={isSuperAdmin}
             onRename={openRenameModal}
-            onDelete={() => setDeleteOpen(true)}
+            onDelete={handleDelete}
+            deleteBusy={deleteBusy}
           />
         </div>
       </header>
@@ -958,34 +1003,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         </div>
       ) : null}
 
-      {deleteOpen ? (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <h2 className="text-base font-semibold text-[#0d0d0d]">채팅방 삭제</h2>
-            <p className="mt-2 text-sm text-[#676767]">
-              &quot;{room?.week_label}&quot; 채팅방을 삭제할까요? 메시지도 함께 삭제되며 되돌릴 수 없습니다.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteOpen(false)}
-                disabled={deleteBusy}
-                className="rounded-lg px-4 py-2 text-sm text-[#676767] hover:bg-[#f4f4f4]"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleteBusy}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {deleteBusy ? "삭제 중…" : "삭제"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

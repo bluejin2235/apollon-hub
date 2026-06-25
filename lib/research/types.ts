@@ -48,6 +48,39 @@ export type TrendAnalysis = {
   created_at: string;
 };
 
+export type TrendSourceType = "magazine" | "studio";
+
+export type TrendCollectMethod = "crawl" | "youtube" | "google_alerts";
+
+export type TrendSource = {
+  id: string;
+  name: string;
+  url: string;
+  type: TrendSourceType;
+  description: string | null;
+  keywords: string[];
+  is_active: boolean;
+  last_collected_at: string | null;
+  article_count: number;
+  created_at: string;
+  youtube_channel_id?: string | null;
+  google_alerts_query?: string | null;
+  collect_methods?: TrendCollectMethod[];
+  gpt_prompt?: string | null;
+};
+
+export type TrendArticle = {
+  id: string;
+  source_id: string;
+  title: string;
+  url: string;
+  thumbnail_url: string | null;
+  summary: string | null;
+  keywords: string[];
+  collected_at: string;
+  created_at: string;
+};
+
 const YOUTUBE_REGEX =
   /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i;
 const URL_REGEX = /https?:\/\/[^\s<>"']+/i;

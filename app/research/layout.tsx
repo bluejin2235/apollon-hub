@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { SquarePen } from "lucide-react";
+import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
@@ -47,13 +48,21 @@ function buildCurrentWeekRoomFields(date = new Date()) {
 
 function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void }) {
   const router = useRouter();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [nameValue, setNameValue] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const handleCreate = async () => {
+  const openModal = () => {
+    setNameValue(buildCurrentWeekRoomFields().week_label);
+    setModalOpen(true);
+  };
+
+  const handleConfirm = async () => {
     if (creating) return;
 
     setCreating(true);
-    const { week_label, week_start, week_end } = buildCurrentWeekRoomFields();
+    const { week_start, week_end } = buildCurrentWeekRoomFields();
+    const week_label = nameValue.trim() || buildCurrentWeekRoomFields().week_label;
 
     const { data, error } = await supabase
       .from("trend_rooms")
@@ -67,24 +76,66 @@ function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void 
 
     const room = data as TrendRoom;
     onCreated(room);
+    setModalOpen(false);
     router.push(`/research/${room.id}`);
   };
 
   return (
-    <button
-      type="button"
-      onClick={() => void handleCreate()}
-      disabled={creating}
-      aria-label="새 채팅방 만들기"
-      className="rounded-lg p-1.5 text-white transition hover:bg-white/10 disabled:opacity-50"
-    >
-      <SquarePen className="h-4 w-4" aria-hidden />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={openModal}
+        disabled={creating}
+        aria-label="새 채팅방 만들기"
+        className="rounded-lg p-1.5 text-white transition hover:bg-white/10 disabled:opacity-50"
+      >
+        <SquarePen className="h-4 w-4" aria-hidden />
+      </button>
+
+      {modalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h2 className="text-base font-semibold text-[#0d0d0d]">새 채팅방 이름을 입력하세요</h2>
+            <input
+              type="text"
+              value={nameValue}
+              onChange={(event) => setNameValue(event.target.value)}
+              className="mt-4 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2.5 text-sm text-[#0d0d0d] focus:border-[#0d0d0d] focus:outline-none"
+              placeholder="채팅방 이름"
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleConfirm();
+              }}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                disabled={creating}
+                className="rounded-lg px-4 py-2 text-sm text-[#676767] hover:bg-[#f4f4f4]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirm()}
+                disabled={creating}
+                className="rounded-lg bg-[#0d0d0d] px-4 py-2 text-sm font-medium text-white hover:bg-[#333] disabled:opacity-50"
+              >
+                {creating ? "생성 중…" : "확인"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 function ResearchRoomList({ pathname, rooms }: { pathname: string; rooms: TrendRoom[] }) {
-  const activeRoomId = pathname.match(/^\/research\/([^/]+)/)?.[1];
+  const activeRoomId = pathname.match(
+    /^\/research\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  )?.[1];
 
   if (rooms.length === 0) {
     return <p className="mt-4 px-3 text-xs text-neutral-500">등록된 채팅방이 없습니다.</p>;
@@ -149,11 +200,28 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
     [rooms]
   );
 
+  const handleRoomUpdated = useCallback((room: TrendRoom) => {
+    setRooms((prev) => prev.map((item) => (item.id === room.id ? room : item)));
+  }, []);
+
+  const handleRemoveRoom = useCallback((roomId: string) => {
+    setRooms((prev) => prev.filter((item) => item.id !== roomId));
+  }, []);
+
+  const roomsContextValue = useMemo(
+    () => ({
+      onRoomUpdated: handleRoomUpdated,
+      removeRoom: handleRemoveRoom
+    }),
+    [handleRoomUpdated, handleRemoveRoom]
+  );
+
   if (status === "checking") {
     return <PortalAuthChecking />;
   }
 
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
+  const isSourcesActive = pathname.startsWith("/research/sources");
 
   return (
     <div className="min-h-screen bg-white">
@@ -170,21 +238,32 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="shrink-0 border-t border-white/10 px-3 py-4">
-            <span className="block cursor-not-allowed rounded-lg px-3 py-2.5 text-sm text-neutral-500">수집 소스</span>
+            <Link
+              href="/research/sources"
+              className={`block rounded-lg px-3 py-2.5 text-sm transition ${
+                isSourcesActive
+                  ? "bg-white/10 font-medium text-white"
+                  : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+              }`}
+            >
+              수집 소스
+            </Link>
           </div>
         </aside>
 
-        <div
-          className="flex min-w-0 flex-1 flex-col bg-white"
-          style={
-            {
-              "--color-background-secondary": "#f4f4f4",
-              "--color-border": "rgba(0, 0, 0, 0.1)"
-            } as React.CSSProperties
-          }
-        >
-          {children}
-        </div>
+        <ResearchRoomsContext.Provider value={roomsContextValue}>
+          <div
+            className="flex min-w-0 flex-1 flex-col bg-white"
+            style={
+              {
+                "--color-background-secondary": "#f4f4f4",
+                "--color-border": "rgba(0, 0, 0, 0.1)"
+              } as React.CSSProperties
+            }
+          >
+            {children}
+          </div>
+        </ResearchRoomsContext.Provider>
       </div>
     </div>
   );
