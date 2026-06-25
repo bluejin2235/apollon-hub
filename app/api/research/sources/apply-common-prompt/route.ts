@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   DEFAULT_GPT_CURATOR_PROMPT,
@@ -6,8 +7,6 @@ import {
 } from "@/lib/research/gpt-curator-prompt";
 
 export const runtime = "nodejs";
-
-const SUPER_ADMIN_ROLE = "슈퍼관리자";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,18 +20,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Supabase environment variables missing" }, { status: 500 });
     }
 
-    const { data: profile, error: profileError } = await admin
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
-    }
-
-    if (profile?.role !== SUPER_ADMIN_ROLE) {
-      return NextResponse.json({ error: "슈퍼관리자만 사용할 수 있습니다." }, { status: 403 });
+    const canManage = await isResearchManagerServer(admin, user.id);
+    if (!canManage) {
+      return NextResponse.json({ error: "트렌드 레이더 관리 권한이 없습니다." }, { status: 403 });
     }
 
     const { data: setting, error: settingError } = await admin

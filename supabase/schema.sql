@@ -863,6 +863,28 @@ create policy "trend_uploads_insert" on storage.objects
 create policy "trend_uploads_delete" on storage.objects
   for delete to authenticated using (bucket_id = 'trend-uploads');
 
+create or replace function public.is_research_manager()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_super_admin()
+    or exists (
+      select 1
+      from public.service_user_roles sur
+      join public.services s on s.id = sur.service_id
+      where sur.profile_id = (select auth.uid())
+        and sur.role = '중간관리자'
+        and s.url = '/research'
+        and s.is_hub_card = true
+    );
+$$;
+
+revoke all on function public.is_research_manager() from public;
+grant execute on function public.is_research_manager() to authenticated;
+
 alter table public.trend_rooms enable row level security;
 alter table public.trend_messages enable row level security;
 alter table public.trend_analyses enable row level security;
@@ -882,6 +904,11 @@ drop policy if exists "trend_rooms_update_auth" on public.trend_rooms;
 create policy "trend_rooms_update_auth"
   on public.trend_rooms for update to authenticated using (true) with check (true);
 
+drop policy if exists "trend_rooms_delete_research_manager" on public.trend_rooms;
+create policy "trend_rooms_delete_research_manager"
+  on public.trend_rooms for delete to authenticated
+  using (public.is_research_manager());
+
 drop policy if exists "trend_messages_select_auth" on public.trend_messages;
 create policy "trend_messages_select_auth"
   on public.trend_messages for select to authenticated using (true);
@@ -889,6 +916,14 @@ create policy "trend_messages_select_auth"
 drop policy if exists "trend_messages_insert_auth" on public.trend_messages;
 create policy "trend_messages_insert_auth"
   on public.trend_messages for insert to authenticated with check (true);
+
+drop policy if exists "trend_messages_delete_allowed" on public.trend_messages;
+create policy "trend_messages_delete_allowed"
+  on public.trend_messages for delete to authenticated
+  using (
+    public.is_research_manager()
+    or profile_id = (select auth.uid())
+  );
 
 drop policy if exists "trend_analyses_select_auth" on public.trend_analyses;
 create policy "trend_analyses_select_auth"
@@ -927,23 +962,26 @@ create policy "trend_settings_select_auth"
   on public.trend_settings for select to authenticated using (true);
 
 drop policy if exists "trend_settings_insert_super_admin" on public.trend_settings;
-create policy "trend_settings_insert_super_admin"
+drop policy if exists "trend_settings_insert_research_manager" on public.trend_settings;
+create policy "trend_settings_insert_research_manager"
   on public.trend_settings for insert to authenticated
-  with check (public.is_super_admin());
+  with check (public.is_research_manager());
 
 drop policy if exists "trend_settings_update_super_admin" on public.trend_settings;
-create policy "trend_settings_update_super_admin"
+drop policy if exists "trend_settings_update_research_manager" on public.trend_settings;
+create policy "trend_settings_update_research_manager"
   on public.trend_settings for update to authenticated
-  using (public.is_super_admin())
-  with check (public.is_super_admin());
+  using (public.is_research_manager())
+  with check (public.is_research_manager());
 
 drop policy if exists "trend_settings_delete_super_admin" on public.trend_settings;
-create policy "trend_settings_delete_super_admin"
+drop policy if exists "trend_settings_delete_research_manager" on public.trend_settings;
+create policy "trend_settings_delete_research_manager"
   on public.trend_settings for delete to authenticated
-  using (public.is_super_admin());
+  using (public.is_research_manager());
 
-grant select, insert, update on public.trend_rooms to authenticated;
-grant select, insert on public.trend_messages to authenticated;
+grant select, insert, update, delete on public.trend_rooms to authenticated;
+grant select, insert, delete on public.trend_messages to authenticated;
 grant select, insert on public.trend_analyses to authenticated;
 grant select, insert, update, delete on public.trend_sources to authenticated;
 grant select, insert on public.trend_articles to authenticated;

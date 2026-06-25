@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import type { TrendSource } from "@/lib/research/types";
 
@@ -300,6 +301,11 @@ export async function POST(request: NextRequest) {
     const admin = getServiceSupabase();
     if (!admin) {
       return NextResponse.json({ error: "Supabase environment variables missing" }, { status: 500 });
+    }
+
+    const canManage = await isResearchManagerServer(admin, user.id);
+    if (!canManage) {
+      return NextResponse.json({ error: "트렌드 레이더 관리 권한이 없습니다." }, { status: 403 });
     }
 
     let body: TestCollectBody;

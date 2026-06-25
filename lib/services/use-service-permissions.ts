@@ -5,6 +5,7 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
   canCreateLicense,
   canManageLicense,
+  canManageResearch,
   canManageRestaurant,
   canManageSupply
 } from "@/lib/services/permissions";
@@ -110,6 +111,30 @@ export function useCanCreateLicense(): boolean | null {
     setResult(null);
     void (async () => {
       const ok = await canCreateLicense(profile);
+      if (!cancelled) setResult(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, profile]);
+
+  return result;
+}
+
+/** 트렌드 레이더 관리 권한 (슈퍼관리자 OR /research 중간관리자). */
+export function useResearchManager(): boolean | null {
+  const { status, profile } = useRequirePortalSession();
+  const [result, setResult] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (status !== "ready") {
+      setResult(null);
+      return;
+    }
+    let cancelled = false;
+    setResult(null);
+    void (async () => {
+      const ok = await canManageResearch(profile);
       if (!cancelled) setResult(ok);
     })();
     return () => {

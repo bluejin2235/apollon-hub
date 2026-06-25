@@ -22,6 +22,7 @@ import {
   type TrendRoom
 } from "@/lib/research/types";
 import { supabase } from "@/lib/supabase/client";
+import { useResearchManager } from "@/lib/services/use-service-permissions";
 
 type ChatRoomProps = {
   roomId: string;
@@ -36,7 +37,6 @@ type UploadMetadata = {
 };
 
 const UPLOAD_BUCKET = "trend-uploads";
-const SUPER_ADMIN_ROLE = "슈퍼관리자";
 const THINKING_MESSAGE_ID = "thinking";
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
@@ -173,13 +173,13 @@ function ParticipantAvatars({ messages }: { messages: TrendMessage[] }) {
 }
 
 type RoomSettingsMenuProps = {
-  isSuperAdmin: boolean;
+  canDeleteRoom: boolean;
   onRename: () => void;
   onDelete: () => Promise<boolean>;
   deleteBusy?: boolean;
 };
 
-function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete, deleteBusy = false }: RoomSettingsMenuProps) {
+function RoomSettingsMenu({ canDeleteRoom, onRename, onDelete, deleteBusy = false }: RoomSettingsMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -259,7 +259,7 @@ function RoomSettingsMenu({ isSuperAdmin, onRename, onDelete, deleteBusy = false
               >
                 채팅방 이름 변경
               </button>
-              {isSuperAdmin ? (
+              {canDeleteRoom ? (
                 <button
                   type="button"
                   className="block w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
@@ -535,7 +535,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [messages, setMessages] = useState<TrendMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const canManageRoom = useResearchManager() === true;
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
@@ -545,8 +545,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [replyingTo, setReplyingTo] = useState<TrendMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
-
-  const isSuperAdmin = userRole === SUPER_ADMIN_ROLE;
 
   const messageById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages]);
 
@@ -591,20 +589,25 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     setMessages((prev) => prev.filter((item) => item.id !== THINKING_MESSAGE_ID));
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const handleDeleteMessage = useCallback(
+    async (message: TrendMessage) => {
+      const isOwn = message.profile_id === profileId;
+      if (!isOwn && !canManageRoom) return false;
+      if (message.id === THINKING_MESSAGE_ID) return false;
+      if (!window.confirm("이 메시지를 삭제할까요?")) return false;
 
-    (async () => {
-      const { data } = await supabase.from("profiles").select("role").eq("id", profileId).maybeSingle();
-      if (!cancelled && data?.role) {
-        setUserRole(String(data.role));
+      const { error: deleteError } = await supabase.from("trend_messages").delete().eq("id", message.id);
+      if (deleteError) {
+        setError(deleteError.message);
+        return false;
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [profileId]);
+      setMessages((prev) => prev.filter((item) => item.id !== message.id));
+      setError(null);
+      return true;
+    },
+    [canManageRoom, profileId]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -900,7 +903,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         <div className="flex items-center gap-2">
           <ParticipantAvatars messages={messages} />
           <RoomSettingsMenu
-            isSuperAdmin={isSuperAdmin}
+            canDeleteRoom={canManageRoom}
             onRename={openRenameModal}
             onDelete={handleDelete}
             deleteBusy={deleteBusy}
@@ -944,6 +947,11 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
                   key={message.id}
                   message={message}
                   currentUserId={profileId}
+                  canDelete={
+                    message.id !== THINKING_MESSAGE_ID &&
+                    (message.profile_id === profileId || canManageRoom)
+                  }
+                  onDelete={handleDeleteMessage}
                   onReply={setReplyingTo}
                   replyToMessage={replyToMessage}
                   onScrollToMessage={scrollToMessage}

@@ -18,7 +18,7 @@ import {
   GPT_CURATOR_PROMPT_KEY
 } from "@/lib/research/gpt-curator-prompt";
 import type { TrendSource, TrendSourceType } from "@/lib/research/types";
-import { isSuperAdmin } from "@/lib/services/permissions";
+import { useResearchManager } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
 type SourceFilter = "all" | TrendSourceType;
@@ -110,7 +110,7 @@ function sourcePayloadToInsert(payload: TrendSourceFormPayload) {
 }
 
 export default function ResearchSourcesPage() {
-  const { status, profile } = useRequirePortalSession();
+  const { status } = useRequirePortalSession();
   const [sources, setSources] = useState<TrendSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +123,8 @@ export default function ResearchSourcesPage() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [applyBusy, setApplyBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const canEditPrompt = isSuperAdmin(profile);
+  const canManage = useResearchManager();
+  const canEditPrompt = canManage === true;
 
   useEffect(() => {
     if (!toast) return;
@@ -276,14 +277,16 @@ export default function ResearchSourcesPage() {
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-semibold text-[#0d0d0d]">위클리 수집 사이트</h1>
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0d0d0d] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#333]"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            사이트 추가
-          </button>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0d0d0d] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#333]"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              사이트 추가
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-5 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">

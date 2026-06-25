@@ -19,7 +19,7 @@ import {
   GPT_CURATOR_PROMPT_KEY
 } from "@/lib/research/gpt-curator-prompt";
 import type { TrendArticle, TrendSource, TrendSourceType } from "@/lib/research/types";
-import { isSuperAdmin } from "@/lib/services/permissions";
+import { useResearchManager } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
 function formatDateTime(iso: string | null): string {
@@ -139,7 +139,7 @@ export default function ResearchSourceDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const sourceId = params.id;
-  const { status, profile } = useRequirePortalSession();
+  const { status } = useRequirePortalSession();
 
   const [source, setSource] = useState<TrendSource | null>(null);
   const [articles, setArticles] = useState<TrendArticle[]>([]);
@@ -160,7 +160,7 @@ export default function ResearchSourceDetailPage() {
   const [dateTo, setDateTo] = useState(() => formatLocalDateInput(new Date()));
   const [collectBusy, setCollectBusy] = useState(false);
   const [collectResult, setCollectResult] = useState<string | null>(null);
-  const canManageSource = isSuperAdmin(profile);
+  const canManageSource = useResearchManager() === true;
   const usesCommonPrompt = source?.gpt_prompt == null && !editingIndividualPrompt;
 
   const loadArticles = useCallback(async () => {
@@ -494,7 +494,11 @@ export default function ResearchSourceDetailPage() {
         <div className="mt-4 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
           <h2 className="text-base font-semibold text-[#0d0d0d]">개별 GPT 프롬프트</h2>
 
-          {usesCommonPrompt ? (
+          {!canManageSource ? (
+            <p className="mt-3 text-sm text-[#676767]">
+              {usesCommonPrompt ? "공통 프롬프트 사용 중" : "개별 프롬프트가 설정되어 있습니다."}
+            </p>
+          ) : usesCommonPrompt ? (
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-[#676767]">공통 프롬프트 사용 중</p>
               <button
@@ -551,6 +555,7 @@ export default function ResearchSourceDetailPage() {
           )}
         </div>
 
+        {canManageSource ? (
         <div className="mt-4 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
           <h2 className="text-base font-semibold text-[#0d0d0d]">수집 테스트</h2>
           <p className="mt-1 text-sm text-[#676767]">선택한 기간 내 아티클을 테스트 수집합니다.</p>
@@ -587,6 +592,7 @@ export default function ResearchSourceDetailPage() {
 
           {collectResult ? <p className="mt-3 text-sm text-[#534AB7]">{collectResult}</p> : null}
         </div>
+        ) : null}
 
         <div className="mt-4 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
           <h2 className="text-base font-semibold text-[#0d0d0d]">최근 수집 아티클</h2>

@@ -18,6 +18,8 @@ type ChatMessageProps = {
   message: TrendMessage;
   currentUserId?: string;
   isThinking?: boolean;
+  canDelete?: boolean;
+  onDelete?: (message: TrendMessage) => Promise<boolean>;
   onReply?: (message: TrendMessage) => void;
   replyToMessage?: TrendMessage | null;
   onScrollToMessage?: (messageId: string) => void;
@@ -182,6 +184,22 @@ function ReplyButton({ onClick }: { onClick: () => void }) {
       aria-label="답장"
     >
       <TablerCornerUpLeftIcon />
+    </button>
+  );
+}
+
+function DeleteButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="mb-1 shrink-0 rounded p-1 text-[#8e8e8e] opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-50"
+      aria-label="삭제"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 10a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7" />
+      </svg>
     </button>
   );
 }
@@ -424,12 +442,16 @@ function BubbleContent({
 export function RoomChatMessage({
   message,
   currentUserId,
+  canDelete,
+  onDelete,
   onReply,
   replyToMessage,
   onScrollToMessage
 }: {
   message: TrendMessage;
   currentUserId: string;
+  canDelete?: boolean;
+  onDelete?: (message: TrendMessage) => Promise<boolean>;
   onReply?: (message: TrendMessage) => void;
   replyToMessage?: TrendMessage | null;
   onScrollToMessage?: (messageId: string) => void;
@@ -438,6 +460,8 @@ export function RoomChatMessage({
     <ChatMessage
       message={message}
       currentUserId={currentUserId}
+      canDelete={canDelete}
+      onDelete={onDelete}
       onReply={onReply}
       replyToMessage={replyToMessage}
       onScrollToMessage={onScrollToMessage}
@@ -449,6 +473,8 @@ export function ChatMessage({
   message,
   currentUserId,
   isThinking,
+  canDelete = false,
+  onDelete,
   onReply,
   replyToMessage,
   onScrollToMessage
@@ -460,6 +486,7 @@ export function ChatMessage({
     (message.metadata as MessageMetadata | null)?.is_pinned === true
   );
   const [pinning, setPinning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setIsPinned((message.metadata as MessageMetadata | null)?.is_pinned === true);
@@ -524,6 +551,12 @@ export function ChatMessage({
     onReply?.(message);
   };
 
+  const handleDeleteClick = () => {
+    if (!onDelete || deleting || isThinkingMessage) return;
+    setDeleting(true);
+    void onDelete(message).finally(() => setDeleting(false));
+  };
+
   const handleReplyPreviewClick = () => {
     const replyId = getReplyToId(message);
     if (replyId) onScrollToMessage?.(replyId);
@@ -548,6 +581,9 @@ export function ChatMessage({
             ) : null}
             <BubbleContent message={message} isMine isThinking={isThinkingMessage} />
           </div>
+          {canDelete && onDelete ? (
+            <DeleteButton onClick={handleDeleteClick} disabled={deleting} />
+          ) : null}
           {onReply ? <ReplyButton onClick={handleReplyClick} /> : null}
         </div>
       </div>
@@ -595,6 +631,9 @@ export function ChatMessage({
               />
             ) : null}
           </div>
+          {canDelete && onDelete ? (
+            <DeleteButton onClick={handleDeleteClick} disabled={deleting} />
+          ) : null}
           {onReply ? <ReplyButton onClick={handleReplyClick} /> : null}
           <time className="mb-1 shrink-0 text-[10px] text-[#8e8e8e]" dateTime={message.created_at}>
             {timeLabel}

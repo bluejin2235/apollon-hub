@@ -168,6 +168,19 @@ export async function canManageSupply(
 }
 
 /**
+ * 트렌드 레이더 관리 권한.
+ * 슈퍼관리자 OR 트렌드 레이더(/research) 서비스 중간관리자.
+ */
+export async function canManageResearch(
+  userProfile: PortalProfileRow | null | undefined
+): Promise<boolean> {
+  if (!userProfile?.id) return false;
+  if (isSuperAdmin(userProfile)) return true;
+  if (await isMiddleAdmin(userProfile.id, SERVICE_URL.RESEARCH)) return true;
+  return false;
+}
+
+/**
  * 맛집 관리 권한.
  * 슈퍼관리자 OR 등록자(registered_by 일치) OR 아슐랭 중간관리자.
  */
