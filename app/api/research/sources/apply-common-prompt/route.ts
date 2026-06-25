@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
     const { data: updatedRows, error: updateError } = await admin
       .from("trend_sources")
       .update({ gpt_prompt: prompt })
+      .not("id", "is", null)
       .select("id");
 
     if (updateError) {
