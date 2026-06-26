@@ -14,10 +14,27 @@ import { restaurantPrimaryCategory } from "@/lib/restaurants/types";
 
 type ProfileJoin = { name: string | null } | { name: string | null }[] | null;
 
+type RestaurantJoin = { name: string | null } | { name: string | null }[] | null;
+
 type ProfileRow = {
   id: string;
   email: string;
   name: string | null;
+};
+
+type ReviewDigestRow = {
+  id: string;
+  star_rating: number | null;
+  restaurant_id: string;
+  restaurant: RestaurantJoin;
+  reviewer: ProfileJoin;
+};
+
+type ReviewDigestGroup = {
+  restaurantName: string;
+  reviewCount: number;
+  reviewerNames: string;
+  averageStarLabel: string;
 };
 
 function joinName(profile: ProfileJoin): string {
@@ -25,6 +42,67 @@ function joinName(profile: ProfileJoin): string {
   const row = Array.isArray(profile) ? profile[0] : profile;
   const name = row?.name?.trim();
   return name || "—";
+}
+
+function joinRestaurantName(restaurant: RestaurantJoin): string {
+  if (!restaurant) return "—";
+  const row = Array.isArray(restaurant) ? restaurant[0] : restaurant;
+  const name = row?.name?.trim();
+  return name || "—";
+}
+
+function starRatingToScore(starRating: number | null): number | null {
+  if (typeof starRating === "number" && Number.isFinite(starRating) && starRating >= 2 && starRating <= 10) {
+    return starRating / 2;
+  }
+  return null;
+}
+
+function formatAverageStarLabel(average: number): string {
+  const rounded = Math.round(average * 2) / 2;
+  const label = rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1);
+  return `★${label}`;
+}
+
+function groupReviewsByRestaurant(rows: ReviewDigestRow[]): ReviewDigestGroup[] {
+  const grouped = new Map<
+    string,
+    { restaurantName: string; reviewerNames: string[]; starScores: number[] }
+  >();
+
+  for (const row of rows) {
+    const restaurantId = row.restaurant_id;
+    const restaurantName = joinRestaurantName(row.restaurant);
+    const reviewerName = joinName(row.reviewer);
+    const starScore = starRatingToScore(row.star_rating);
+
+    const bucket = grouped.get(restaurantId) ?? {
+      restaurantName,
+      reviewerNames: [],
+      starScores: []
+    };
+
+    bucket.reviewerNames.push(reviewerName);
+    if (starScore !== null) {
+      bucket.starScores.push(starScore);
+    }
+
+    grouped.set(restaurantId, bucket);
+  }
+
+  return [...grouped.values()].map((group) => {
+    const average =
+      group.starScores.length > 0
+        ? group.starScores.reduce((sum, score) => sum + score, 0) / group.starScores.length
+        : 0;
+
+    return {
+      restaurantName: group.restaurantName,
+      reviewCount: group.reviewerNames.length,
+      reviewerNames: group.reviewerNames.join(", "),
+      averageStarLabel: formatAverageStarLabel(average)
+    };
+  });
 }
 
 function formatKstDateLabel(utcMs: number): string {
@@ -95,10 +173,12 @@ function buildDigestHtml(params: {
   dateLabelKst: string;
   posts: { title: string; authorName: string }[];
   restaurants: { name: string; category: string; registererName: string }[];
+  reviewGroups: ReviewDigestGroup[];
+  totalReviewCount: number;
   supplies: { name: string; code: string; managerName: string }[];
   licenses: { name: string; category: string; assigneeName: string }[];
 }): string {
-  const { dateLabelKst, posts, restaurants, supplies, licenses } = params;
+  const { dateLabelKst, posts, restaurants, reviewGroups, totalReviewCount, supplies, licenses } = params;
 
   const sections: string[] = [];
 
@@ -114,6 +194,15 @@ function buildDigestHtml(params: {
       .map((r) => buildDigestItemRow(r.name, `${r.category} · ${r.registererName}`))
       .join("\n");
     sections.push(buildSection("아슐랭", `신규 맛집 ${restaurants.length}건`, cards));
+  }
+
+  if (totalReviewCount > 0) {
+    const cards = reviewGroups
+      .map((group) =>
+        buildDigestItemRow(group.restaurantName, `${group.reviewerNames} · ${group.averageStarLabel}`)
+      )
+      .join("\n");
+    sections.push(buildSection("아슐랭", `리뷰 ${totalReviewCount}건`, cards));
   }
 
   if (supplies.length > 0) {
@@ -134,6 +223,7 @@ function buildDigestHtml(params: {
   const allEmpty =
     posts.length === 0 &&
     restaurants.length === 0 &&
+    totalReviewCount === 0 &&
     supplies.length === 0 &&
     licenses.length === 0;
   const emptyMessage = allEmpty
@@ -190,7 +280,7 @@ export async function GET(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  const [postsRes, restaurantsRes, profilesRes, suppliesRes, licensesRes] = await Promise.all([
+  const [postsRes, restaurantsRes, reviewsRes, profilesRes, suppliesRes, licensesRes] = await Promise.all([
     supabase
       .from("hub_posts")
       .select("id, title, author:profiles!author_id(name)")
@@ -200,6 +290,14 @@ export async function GET(request: NextRequest) {
     supabase
       .from("restaurants")
       .select("id, name, categories, registerer:profiles!registered_by(name)")
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("reviews")
+      .select(
+        "id, star_rating, restaurant_id, restaurant:restaurants!restaurant_id(name), reviewer:profiles!reviewer_id(name)"
+      )
       .gte("created_at", startIso)
       .lt("created_at", endIso)
       .order("created_at", { ascending: false }),
@@ -232,6 +330,10 @@ export async function GET(request: NextRequest) {
     console.error("[daily-digest] restaurants fetch failed", restaurantsRes.error);
     return NextResponse.json({ error: restaurantsRes.error.message }, { status: 500 });
   }
+  if (reviewsRes.error) {
+    console.error("[daily-digest] reviews fetch failed", reviewsRes.error);
+    return NextResponse.json({ error: reviewsRes.error.message }, { status: 500 });
+  }
   if (profilesRes.error) {
     console.error("[daily-digest] profiles fetch failed", profilesRes.error);
     return NextResponse.json({ error: profilesRes.error.message }, { status: 500 });
@@ -256,6 +358,10 @@ export async function GET(request: NextRequest) {
     registererName: joinName(row.registerer as ProfileJoin)
   }));
 
+  const reviewRows = (reviewsRes.data ?? []) as ReviewDigestRow[];
+  const reviewGroups = groupReviewsByRestaurant(reviewRows);
+  const totalReviewCount = reviewRows.length;
+
   const supplies = (suppliesRes.data ?? []).map((row) => ({
     name: String(row.name ?? ""),
     code: String(row.code ?? ""),
@@ -268,7 +374,15 @@ export async function GET(request: NextRequest) {
     assigneeName: joinName(row.assignee as ProfileJoin)
   }));
 
-  const html = buildDigestHtml({ dateLabelKst, posts, restaurants, supplies, licenses });
+  const html = buildDigestHtml({
+    dateLabelKst,
+    posts,
+    restaurants,
+    reviewGroups,
+    totalReviewCount,
+    supplies,
+    licenses
+  });
   const subject = `[아폴론 Hub] 오늘의 소식 — ${dateLabelKst}`;
 
   const resend = new Resend(resendApiKey);
@@ -304,6 +418,7 @@ export async function GET(request: NextRequest) {
         messageId: data?.id,
         posts: posts.length,
         restaurants: restaurants.length,
+        reviews: totalReviewCount,
         supplies: supplies.length,
         licenses: licenses.length
       });
