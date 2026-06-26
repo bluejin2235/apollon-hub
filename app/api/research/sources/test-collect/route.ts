@@ -42,6 +42,85 @@ function dateRangeFromStrings(dateFrom: string, dateTo: string): DateRange | nul
   return { from, to };
 }
 
+const URL_VALIDATION_TIMEOUT_MS = 5_000;
+const URL_VALIDATION_CONCURRENCY = 3;
+
+async function validateArticleUrl(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: AbortSignal.timeout(URL_VALIDATION_TIMEOUT_MS),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ApollonHub/1.0)"
+      }
+    });
+
+    const ok = response.status >= 200 && response.status < 300;
+    if (!ok) {
+      console.log(
+        `[research/sources/test-collect] URL validation failed: ${url} status=${response.status}`
+      );
+    }
+    return ok;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.log(`[research/sources/test-collect] URL validation error: ${url} ${detail}`);
+    return false;
+  }
+}
+
+async function filterArticlesByValidUrls(articles: CollectedArticle[]): Promise<{
+  valid: CollectedArticle[];
+  urlValidationFailed: number;
+}> {
+  if (articles.length === 0) {
+    return { valid: [], urlValidationFailed: 0 };
+  }
+
+  console.log("[research/sources/test-collect] === URL validation start ===", articles.length);
+
+  const validationResults = new Array<boolean>(articles.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= articles.length) break;
+
+      const article = articles[index];
+      validationResults[index] = await validateArticleUrl(article.url);
+    }
+  }
+
+  const workerCount = Math.min(URL_VALIDATION_CONCURRENCY, articles.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  const valid: CollectedArticle[] = [];
+  let urlValidationFailed = 0;
+
+  for (const [index, article] of articles.entries()) {
+    if (validationResults[index]) {
+      valid.push(article);
+    } else {
+      urlValidationFailed += 1;
+    }
+  }
+
+  console.log(
+    "[research/sources/test-collect] === URL validation done ===",
+    `${articles.length} -> ${valid.length} (${urlValidationFailed} failed)`
+  );
+
+  return { valid, urlValidationFailed };
+}
+
+function buildCollectResultMessage(collected: number, skipped: number, urlValidationFailed: number): string {
+  const suffix = urlValidationFailed > 0 ? " (URL 검증 실패 포함)" : "";
+  return `${collected}건 추가, ${skipped}건 스킵${suffix}`;
+}
+
 function matchKeywords(title: string, description: string, keywords: string[]): string[] {
   const text = (title + " " + description).toLowerCase();
   return keywords.filter((kw) => text.includes(kw.toLowerCase()));
@@ -368,6 +447,8 @@ export async function POST(request: NextRequest) {
     const collectedItems = await collectArticlesViaWebSearch(siteUrl, range);
     console.log("[research/sources/test-collect] === collectedItems count ===", collectedItems.length);
 
+    const { valid: validatedItems, urlValidationFailed } = await filterArticlesByValidUrls(collectedItems);
+
     const { data: existingRows, error: existingError } = await admin
       .from("trend_articles")
       .select("url")
@@ -381,10 +462,10 @@ export async function POST(request: NextRequest) {
     console.log("[research/sources/test-collect] === existing urls in DB ===", existingUrls.size);
 
     let collected = 0;
-    let skipped = 0;
+    let skipped = urlValidationFailed;
     const seenInBatch = new Set<string>();
 
-    for (const [index, item] of collectedItems.entries()) {
+    for (const [index, item] of validatedItems.entries()) {
       if (existingUrls.has(item.url) || seenInBatch.has(item.url)) {
         console.log(`[research/sources/test-collect] INSERT skip[${index}] duplicate url:`, item.url);
         skipped += 1;
@@ -435,12 +516,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    console.log("[research/sources/test-collect] === DONE ===", { collected, skipped, method: "web-search" });
+    console.log("[research/sources/test-collect] === DONE ===", {
+      collected,
+      skipped,
+      urlValidationFailed,
+      method: "web-search"
+    });
+
+    const message = buildCollectResultMessage(collected, skipped, urlValidationFailed);
 
     return NextResponse.json({
       success: true,
       collected,
       skipped,
+      url_validation_failed: urlValidationFailed,
+      message,
       method: "web-search"
     });
   } catch (error) {

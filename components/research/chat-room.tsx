@@ -24,6 +24,7 @@ import {
   type TrendRoom
 } from "@/lib/research/types";
 import { containsSnsLink } from "@/lib/research/sns-link";
+import { getTrendRoomWeekLabel } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 
@@ -875,7 +876,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   };
 
   const openRenameModal = () => {
-    setRenameValue(room?.week_label ?? "");
+    setRenameValue(room ? getTrendRoomWeekLabel(room) : "");
     setRenameOpen(true);
   };
 
@@ -941,7 +942,9 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4 sm:px-6">
         <div>
-          <h1 className="text-base font-semibold text-[#0d0d0d]">{room?.week_label ?? "트렌드 공유"}</h1>
+          <h1 className="text-base font-semibold text-[#0d0d0d]">
+            {room ? getTrendRoomWeekLabel(room) : "트렌드 공유"}
+          </h1>
           {room ? (
             <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatDateRange(room.week_start, room.week_end)}</p>
           ) : null}

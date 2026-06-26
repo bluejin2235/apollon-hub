@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { SquarePen } from "lucide-react";
+import { Send, SquarePen } from "lucide-react";
 import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
@@ -11,6 +11,7 @@ import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { isCurrentWeekRoom, type TrendRoom } from "@/lib/research/types";
+import { formatWeekLabel, getTrendRoomWeekLabel } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
 
 function formatLocalDate(date: Date): string {
@@ -18,16 +19,6 @@ function formatLocalDate(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
-}
-
-function getIsoWeekYearAndNumber(date: Date): { isoYear: number; isoWeek: number } {
-  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - day);
-  const isoYear = utc.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const isoWeek = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return { isoYear, isoWeek };
 }
 
 function buildCurrentWeekRoomFields(date = new Date()) {
@@ -38,9 +29,8 @@ function buildCurrentWeekRoomFields(date = new Date()) {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
-  const { isoYear, isoWeek } = getIsoWeekYearAndNumber(date);
   return {
-    week_label: `${isoYear}-W${String(isoWeek).padStart(2, "0")} 트렌드방`,
+    week_label: formatWeekLabel(monday),
     week_start: formatLocalDate(monday),
     week_end: formatLocalDate(sunday)
   };
@@ -162,7 +152,7 @@ function ResearchRoomList({ pathname, rooms }: { pathname: string; rooms: TrendR
               <span className="h-1.5 w-1.5 shrink-0" aria-hidden />
             )}
             <span className={`truncate ${isCurrent && !isActive ? "font-medium text-white" : isPast ? "text-neutral-500" : ""}`}>
-              {room.week_label}
+              {getTrendRoomWeekLabel(room)}
             </span>
           </Link>
         );
@@ -222,6 +212,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
 
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
   const isSourcesActive = pathname.startsWith("/research/sources");
+  const isPublishingActive = pathname.startsWith("/research/publishing");
 
   return (
     <div className="min-h-screen bg-white">
@@ -238,16 +229,29 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="shrink-0 border-t border-white/10 px-3 py-4">
-            <Link
-              href="/research/sources"
-              className={`block rounded-lg px-3 py-2.5 text-sm transition ${
-                isSourcesActive
-                  ? "bg-white/10 font-medium text-white"
-                  : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-              }`}
-            >
-              수집 소스
-            </Link>
+            <nav className="flex flex-col gap-0.5">
+              <Link
+                href="/research/sources"
+                className={`block rounded-lg px-3 py-2.5 text-sm transition ${
+                  isSourcesActive
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                수집사이트 설정
+              </Link>
+              <Link
+                href="/research/publishing"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
+                  isPublishingActive
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                <Send className="h-4 w-4 shrink-0" aria-hidden />
+                Publishing
+              </Link>
+            </nav>
           </div>
         </aside>
 

@@ -378,6 +378,8 @@ export default function ResearchSourceDetailPage() {
         error?: string;
         collected?: number;
         skipped?: number;
+        url_validation_failed?: number;
+        message?: string;
         method?: string;
       };
 
@@ -386,9 +388,7 @@ export default function ResearchSourceDetailPage() {
         return;
       }
 
-      setCollectResult(
-        `수집 완료: ${data.collected ?? 0}건 추가, ${data.skipped ?? 0}건 스킵 (${data.method ?? "-"})`
-      );
+      setCollectResult(`수집 완료: ${data.message ?? `${data.collected ?? 0}건 추가, ${data.skipped ?? 0}건 스킵`}`);
 
       const { data: refreshedSource } = await supabase
         .from("trend_sources")
