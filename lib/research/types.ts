@@ -1,4 +1,12 @@
-export type TrendMessageType = "text" | "link" | "youtube" | "vimeo" | "image" | "ai";
+export type TrendMessageType =
+  | "text"
+  | "link"
+  | "youtube"
+  | "vimeo"
+  | "image"
+  | "file"
+  | "ai"
+  | "sns_memo";
 
 export type TrendRoom = {
   id: string;
@@ -19,6 +27,12 @@ export type TrendMessageMetadata = {
   thumbnailUrl?: string;
   imageUrl?: string;
   reply_to_id?: string;
+  is_sns_guidance?: boolean;
+  sns_url?: string;
+  sns_memo_saved?: boolean;
+  sns_memo_message_id?: string;
+  for_ai_message_id?: string;
+  trigger_message_id?: string;
 };
 
 export type TrendMessageProfile = {

@@ -13,6 +13,8 @@ import {
 import { Upload } from "lucide-react";
 import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
+import { LunaPromptModal } from "@/components/research/luna-prompt-modal";
+import { SupplyToast } from "@/components/supplies/toast";
 import { collectParticipants, getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import { storagePublicUrl } from "@/lib/storage/public-url";
 import {
@@ -21,6 +23,7 @@ import {
   type TrendMessage,
   type TrendRoom
 } from "@/lib/research/types";
+import { containsSnsLink } from "@/lib/research/sns-link";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 
@@ -174,12 +177,21 @@ function ParticipantAvatars({ messages }: { messages: TrendMessage[] }) {
 
 type RoomSettingsMenuProps = {
   canDeleteRoom: boolean;
+  canEditPrompt: boolean;
   onRename: () => void;
+  onEditPrompt: () => void;
   onDelete: () => Promise<boolean>;
   deleteBusy?: boolean;
 };
 
-function RoomSettingsMenu({ canDeleteRoom, onRename, onDelete, deleteBusy = false }: RoomSettingsMenuProps) {
+function RoomSettingsMenu({
+  canDeleteRoom,
+  canEditPrompt,
+  onRename,
+  onEditPrompt,
+  onDelete,
+  deleteBusy = false
+}: RoomSettingsMenuProps) {
   const [open, setOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -259,6 +271,18 @@ function RoomSettingsMenu({ canDeleteRoom, onRename, onDelete, deleteBusy = fals
               >
                 채팅방 이름 변경
               </button>
+              {canEditPrompt ? (
+                <button
+                  type="button"
+                  className="block w-full px-4 py-2.5 text-left text-sm text-[#0d0d0d] hover:bg-[#f4f4f4]"
+                  onClick={() => {
+                    setOpen(false);
+                    onEditPrompt();
+                  }}
+                >
+                  AI 프롬프트 수정
+                </button>
+              ) : null}
               {canDeleteRoom ? (
                 <button
                   type="button"
@@ -480,13 +504,14 @@ function requestLunaAnalysis(
     content: string;
     message_type: string;
     metadata: UploadMetadata | ReturnType<typeof buildMessageMetadata> | null;
+    isSnsLink?: boolean;
   },
   callbacks?: {
     onStart?: () => void;
     onComplete?: () => void;
   }
 ) {
-  if (payload.message_type === "ai") return;
+  if (payload.message_type === "ai" || payload.message_type === "sns_memo") return;
 
   callbacks?.onStart?.();
 
@@ -512,7 +537,8 @@ function requestLunaAnalysis(
           message_id: payload.message_id,
           content: payload.content,
           message_type: payload.message_type,
-          metadata: payload.metadata
+          metadata: payload.metadata,
+          isSnsLink: payload.isSnsLink === true
         })
       });
 
@@ -540,13 +566,32 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [promptModalOpen, setPromptModalOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [replyingTo, setReplyingTo] = useState<TrendMessage | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const messageById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages]);
+
+  const snsMemoAiMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages) {
+      const forAiId = message.metadata?.for_ai_message_id;
+      if (message.message_type === "sns_memo" && typeof forAiId === "string") {
+        ids.add(forAiId);
+      }
+    }
+    return ids;
+  }, [messages]);
 
   const scrollToMessage = useCallback((messageId: string) => {
     document.querySelector(`[data-message-id="${messageId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -722,7 +767,8 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           message_id: message.id,
           content: message.content,
           message_type: message.message_type,
-          metadata: message.metadata
+          metadata: message.metadata,
+          isSnsLink: containsSnsLink(message.content)
         },
         {
           onStart: addThinkingMessage,
@@ -904,7 +950,9 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           <ParticipantAvatars messages={messages} />
           <RoomSettingsMenu
             canDeleteRoom={canManageRoom}
+            canEditPrompt={canManageRoom}
             onRename={openRenameModal}
+            onEditPrompt={() => setPromptModalOpen(true)}
             onDelete={handleDelete}
             deleteBusy={deleteBusy}
           />
@@ -946,7 +994,11 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
                 <RoomChatMessage
                   key={message.id}
                   message={message}
+                  roomId={roomId}
                   currentUserId={profileId}
+                  snsMemoSaved={
+                    message.metadata?.sns_memo_saved === true || snsMemoAiMessageIds.has(message.id)
+                  }
                   canDelete={
                     message.id !== THINKING_MESSAGE_ID &&
                     (message.profile_id === profileId || canManageRoom)
@@ -1010,6 +1062,13 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         </div>
       ) : null}
+
+      <LunaPromptModal
+        open={promptModalOpen}
+        onClose={() => setPromptModalOpen(false)}
+        onSaved={() => setToast("저장됐습니다.")}
+      />
+      <SupplyToast message={toast} onClose={() => setToast(null)} />
 
     </div>
   );

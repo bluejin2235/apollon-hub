@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import type { TrendMessage } from "@/lib/research/types";
 import { supabase } from "@/lib/supabase/client";
@@ -12,11 +12,16 @@ type MessageMetadata = TrendMessage["metadata"] & {
   ai_model?: string;
   isThinking?: boolean;
   reply_to_id?: string;
+  is_sns_guidance?: boolean;
+  sns_url?: string;
+  sns_memo_saved?: boolean;
 };
 
 type ChatMessageProps = {
   message: TrendMessage;
+  roomId?: string;
   currentUserId?: string;
+  snsMemoSaved?: boolean;
   isThinking?: boolean;
   canDelete?: boolean;
   onDelete?: (message: TrendMessage) => Promise<boolean>;
@@ -370,6 +375,162 @@ function ThinkingDotsText() {
   return <span className="break-all">{"생각 중" + ".".repeat(dots)}</span>;
 }
 
+function renderLunaMarkdownLine(line: string, lineKey: number): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /\*\*(.+?)\*\*|(`[^`]+`)/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let tokenIndex = 0;
+
+  while ((match = pattern.exec(line)) !== null) {
+    if (match.index > last) {
+      nodes.push(line.slice(last, match.index));
+    }
+
+    if (match[1] !== undefined) {
+      nodes.push(
+        <strong key={`${lineKey}-${tokenIndex++}`} className="font-semibold">
+          {match[1]}
+        </strong>
+      );
+    } else if (match[2]) {
+      nodes.push(
+        <span
+          key={`${lineKey}-${tokenIndex++}`}
+          className="mx-0.5 inline-block rounded-md bg-[#534AB7]/10 px-1.5 py-0.5 text-[13px] font-medium text-[#534AB7]"
+        >
+          {match[2].slice(1, -1)}
+        </span>
+      );
+    }
+
+    last = match.index + match[0].length;
+  }
+
+  if (last < line.length) {
+    nodes.push(line.slice(last));
+  }
+
+  return nodes;
+}
+
+function LunaMarkdownText({ content, className }: { content: string; className: string }) {
+  const lines = content.split("\n");
+
+  return (
+    <p className={className}>
+      {lines.map((line, lineIndex) => (
+        <Fragment key={lineIndex}>
+          {renderLunaMarkdownLine(line, lineIndex)}
+          {lineIndex < lines.length - 1 ? <br /> : null}
+        </Fragment>
+      ))}
+    </p>
+  );
+}
+
+const SNS_MEMO_SELECT = `
+  id,
+  room_id,
+  profile_id,
+  content,
+  message_type,
+  metadata,
+  created_at,
+  profile:profiles!profile_id (id, name)
+`;
+
+function SnsMemoInput({
+  lunaMessage,
+  roomId,
+  currentUserId,
+  snsUrl
+}: {
+  lunaMessage: TrendMessage;
+  roomId: string;
+  currentUserId: string;
+  snsUrl: string;
+}) {
+  const [memo, setMemo] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (saved) return null;
+
+  const handleSave = async () => {
+    const trimmed = memo.trim();
+    if (!trimmed || saving) return;
+
+    setSaving(true);
+    setError(null);
+
+    const { data, error: insertError } = await supabase
+      .from("trend_messages")
+      .insert({
+        room_id: roomId,
+        profile_id: currentUserId,
+        content: trimmed,
+        message_type: "sns_memo",
+        metadata: { url: snsUrl, for_ai_message_id: lunaMessage.id }
+      })
+      .select(SNS_MEMO_SELECT)
+      .single();
+
+    if (insertError || !data) {
+      setError(insertError?.message ?? "메모 저장에 실패했습니다.");
+      setSaving(false);
+      return;
+    }
+
+    const existingMeta = (lunaMessage.metadata ?? {}) as Record<string, unknown>;
+    const { error: updateError } = await supabase
+      .from("trend_messages")
+      .update({
+        metadata: {
+          ...existingMeta,
+          sns_memo_saved: true,
+          sns_memo_message_id: data.id
+        }
+      })
+      .eq("id", lunaMessage.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      setSaving(false);
+      return;
+    }
+
+    setSaved(true);
+    setSaving(false);
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border border-[rgba(83,74,183,0.2)] bg-[#FAFAFF] px-3 py-2.5">
+      <textarea
+        value={memo}
+        onChange={(event) => setMemo(event.target.value)}
+        placeholder="이 링크에 대해 간단히 메모해주세요 (2줄 이내)"
+        maxLength={200}
+        rows={2}
+        disabled={saving}
+        className="w-full resize-none rounded-lg border border-[rgba(0,0,0,0.1)] bg-white px-2.5 py-2 text-sm text-[#0d0d0d] placeholder:text-[#8e8e8e] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+      />
+      {error ? <p className="mt-1.5 text-xs text-red-600">{error}</p> : null}
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !memo.trim()}
+          className="rounded-lg bg-[#534AB7] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#453da0] disabled:opacity-50"
+        >
+          {saving ? "저장 중…" : "메모 저장"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BubbleContent({
   message,
   isMine,
@@ -426,22 +587,30 @@ function BubbleContent({
   }
 
   if (isThinking) {
-    const textClass = isMine ? "text-[#1a1a1a]" : "text-[#0d0d0d]";
+    const thinkingClass = isMine ? "text-[#1a1a1a]" : "text-[#0d0d0d]";
     return (
-      <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${textClass}`}>
+      <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${thinkingClass}`}>
         <ThinkingDotsText />
       </p>
     );
   }
 
+  const textBodyClass = `break-words text-[15px] leading-relaxed ${textClass}`;
+
+  if (message.message_type === "ai") {
+    return <LunaMarkdownText content={message.content} className={textBodyClass} />;
+  }
+
   return (
-    <p className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${textClass}`}>{message.content}</p>
+    <p className={`whitespace-pre-wrap ${textBodyClass}`}>{message.content}</p>
   );
 }
 
 export function RoomChatMessage({
   message,
+  roomId,
   currentUserId,
+  snsMemoSaved = false,
   canDelete,
   onDelete,
   onReply,
@@ -449,7 +618,9 @@ export function RoomChatMessage({
   onScrollToMessage
 }: {
   message: TrendMessage;
+  roomId: string;
   currentUserId: string;
+  snsMemoSaved?: boolean;
   canDelete?: boolean;
   onDelete?: (message: TrendMessage) => Promise<boolean>;
   onReply?: (message: TrendMessage) => void;
@@ -459,7 +630,9 @@ export function RoomChatMessage({
   return (
     <ChatMessage
       message={message}
+      roomId={roomId}
       currentUserId={currentUserId}
+      snsMemoSaved={snsMemoSaved}
       canDelete={canDelete}
       onDelete={onDelete}
       onReply={onReply}
@@ -471,7 +644,9 @@ export function RoomChatMessage({
 
 export function ChatMessage({
   message,
+  roomId,
   currentUserId,
+  snsMemoSaved = false,
   isThinking,
   canDelete = false,
   onDelete,
@@ -480,8 +655,8 @@ export function ChatMessage({
   onScrollToMessage
 }: ChatMessageProps) {
   const isAi = message.message_type === "ai";
-  const isThinkingMessage =
-    isThinking ?? (message.metadata as MessageMetadata | null)?.isThinking === true;
+  const meta = message.metadata as MessageMetadata | null;
+  const isThinkingMessage = isThinking ?? meta?.isThinking === true;
   const [isPinned, setIsPinned] = useState(
     (message.metadata as MessageMetadata | null)?.is_pinned === true
   );
@@ -546,6 +721,13 @@ export function ChatMessage({
   const timeLabel = formatBubbleTime(message.created_at);
   const showPinButton = shouldShowWeeklyPinButton(message);
   const resolvedReplyTo = replyToMessage ?? null;
+  const showSnsMemoInput =
+    isAi &&
+    !isThinkingMessage &&
+    !snsMemoSaved &&
+    meta?.is_sns_guidance === true &&
+    Boolean(meta.sns_url) &&
+    Boolean(roomId && currentUserId);
 
   const handleReplyClick = () => {
     onReply?.(message);
@@ -607,6 +789,14 @@ export function ChatMessage({
               📌 위클리 후보
             </span>
           ) : null}
+          {message.message_type === "sns_memo" ? (
+            <span
+              className="rounded-full px-2 py-0.5 font-medium"
+              style={{ background: "#EEEDFE", color: "#3C3489", fontSize: "11px" }}
+            >
+              SNS 메모
+            </span>
+          ) : null}
         </p>
         <div className="flex items-end gap-1.5">
           <div
@@ -639,6 +829,14 @@ export function ChatMessage({
             {timeLabel}
           </time>
         </div>
+        {showSnsMemoInput && roomId && currentUserId && meta?.sns_url ? (
+          <SnsMemoInput
+            lunaMessage={message}
+            roomId={roomId}
+            currentUserId={currentUserId}
+            snsUrl={meta.sns_url}
+          />
+        ) : null}
       </div>
     </div>
   );

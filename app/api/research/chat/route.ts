@@ -3,30 +3,11 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { YoutubeTranscript } from "youtube-transcript";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { extractVimeoId, extractYoutubeId } from "@/lib/research/types";
+import { resolveLunaSystemPrompt } from "@/lib/research/luna-system-prompt";
+import { extractSnsUrl, SNS_LUNA_REPLY } from "@/lib/research/sns-link";
+import { extractFirstUrl, extractVimeoId, extractYoutubeId } from "@/lib/research/types";
 
 export const runtime = "nodejs";
-
-const LUNA_SYSTEM_PROMPT = `너는 아폴론이머시브웍스의 AI 직원 루나(Luna)야.
-아폴론은 미디어 아키텍처 전문 스튜디오로 'We Make Beloved Digital Landmarks'가 미션이야.
-주요 작업: 미디어 파사드, 전시 공간, 리테일 랜드마크, 인터랙티브 설치.
-
-【답변 원칙】
-1. 채팅 대화처럼 자연스럽게 답해. 보고서 형식 금지.
-2. 아폴론과 관련성이 높으면 → 깊이 분석하고 실제 적용 가능성을 구체적으로 설명해.
-3. 아폴론과 관련성이 낮으면 → 억지로 연결하지 말고 솔직하게 짧게 답해.
-4. 흥미로운 트렌드면 → 팀원에게 질문을 던져 대화를 이어가.
-5. 키워드는 정말 핵심적인 것만 2~3개, 자연스럽게 마지막에.
-6. 길이는 내용에 따라 유연하게. 짧아도 되고 길어도 돼.
-7. 나중에 이 대화가 주간 트렌드 리포트 아젠다 소스가 된다는 걸 염두에 두고,
-   리포트로 발전시킬 만한 인사이트가 있으면 충분히 설명해.
-
-【답변 형식 지침】
-- --- 구분선 절대 사용 금지
-- 문단 사이 빈 줄 없음 (줄바꿈 1번만)
-- **볼드** 강조는 핵심 단어만 인라인으로
-- 키워드는 맨 마지막 줄에: \`키워드1\` \`키워드2\` \`키워드3\`
-- 이모지는 첫 문장 끝에만 1개`;
 
 const CLAUDE_MODEL = "claude-sonnet-4-6";
 const GEMINI_MODEL = "gemini-2.5-flash";
@@ -41,6 +22,7 @@ type ChatRequestBody = {
   content: string;
   message_type: string;
   metadata?: Record<string, unknown> | null;
+  isSnsLink?: boolean;
 };
 
 type RecentMessageRow = {
@@ -180,7 +162,7 @@ async function fetchBinaryFromUrl(url: string): Promise<{ base64: string; mediaT
   return { base64: buffer.toString("base64"), mediaType };
 }
 
-async function callClaudeText(prompt: string): Promise<string> {
+async function callClaudeText(prompt: string, systemPrompt: string): Promise<string> {
   const client = getAnthropicClient();
   if (!client) {
     throw new Error("Claude API key is not configured");
@@ -189,7 +171,7 @@ async function callClaudeText(prompt: string): Promise<string> {
   const message = await client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 1_500,
-    system: LUNA_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: "user", content: prompt }]
   });
 
@@ -203,7 +185,7 @@ async function callClaudeText(prompt: string): Promise<string> {
 
 type ClaudeContentBlock = Anthropic.Messages.ContentBlockParam;
 
-async function callClaudeWithBlocks(blocks: ClaudeContentBlock[]): Promise<string> {
+async function callClaudeWithBlocks(blocks: ClaudeContentBlock[], systemPrompt: string): Promise<string> {
   const client = getAnthropicClient();
   if (!client) {
     throw new Error("Claude API key is not configured");
@@ -212,7 +194,7 @@ async function callClaudeWithBlocks(blocks: ClaudeContentBlock[]): Promise<strin
   const message = await client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 1_500,
-    system: LUNA_SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [{ role: "user", content: blocks }]
   });
 
@@ -224,7 +206,7 @@ async function callClaudeWithBlocks(blocks: ClaudeContentBlock[]): Promise<strin
   return text;
 }
 
-async function callGeminiYoutube(prompt: string, youtubeUrl: string): Promise<string> {
+async function callGeminiYoutube(prompt: string, youtubeUrl: string, systemPrompt: string): Promise<string> {
   const apiKey = process.env.hubtrendchat_geminai;
   if (!apiKey) throw new Error("Gemini API key not configured");
 
@@ -240,7 +222,7 @@ async function callGeminiYoutube(prompt: string, youtubeUrl: string): Promise<st
         ]
       }
     ],
-    config: { systemInstruction: LUNA_SYSTEM_PROMPT }
+    config: { systemInstruction: systemPrompt }
   });
   const text = response.text?.trim();
   if (!text) throw new Error("Gemini returned empty response");
@@ -264,7 +246,8 @@ async function fetchYoutubeTranscriptText(videoId: string): Promise<string | nul
 async function analyzeYoutubeReply(
   basePrompt: string,
   youtubeId: string,
-  youtubeUrl: string
+  youtubeUrl: string,
+  systemPrompt: string
 ): Promise<{ content: string; ai_model: string }> {
   const prompt = `${basePrompt}
 
@@ -274,7 +257,7 @@ async function analyzeYoutubeReply(
 이 유튜브 영상을 분석해줘.`;
 
   try {
-    const content = await callGeminiYoutube(prompt, youtubeUrl);
+    const content = await callGeminiYoutube(prompt, youtubeUrl, systemPrompt);
     return { content, ai_model: GEMINI_MODEL };
   } catch (error) {
     console.error("[research/chat] Gemini failed, falling back to transcript + Claude", error);
@@ -286,7 +269,7 @@ async function analyzeYoutubeReply(
 
 유튜브 자막:
 ${transcript.slice(0, 12_000)}`;
-    const content = await callClaudeText(transcriptPrompt);
+    const content = await callClaudeText(transcriptPrompt, systemPrompt);
     return { content, ai_model: "youtube-transcript + claude-sonnet-4-6" };
   }
 
@@ -360,7 +343,8 @@ async function fetchVimeoTranscriptText(videoId: string): Promise<string | null>
 async function analyzeVimeoReply(
   basePrompt: string,
   vimeoId: string,
-  vimeoUrl: string
+  vimeoUrl: string,
+  systemPrompt: string
 ): Promise<{ content: string; ai_model: string }> {
   const prompt = `${basePrompt}
 
@@ -375,7 +359,7 @@ Vimeo 영상 ID: ${vimeoId}
 
 Vimeo 자막:
 ${transcript.slice(0, 12_000)}`;
-    const content = await callClaudeText(transcriptPrompt);
+    const content = await callClaudeText(transcriptPrompt, systemPrompt);
     return { content, ai_model: "vimeo + claude-sonnet-4-6" };
   }
 
@@ -397,7 +381,8 @@ ${recentContext}
 
 async function generateLunaReply(
   recentContext: string,
-  body: ChatRequestBody
+  body: ChatRequestBody,
+  systemPrompt: string
 ): Promise<{ content: string; ai_model: string }> {
   const basePrompt = buildAnalysisPrompt(recentContext, body);
   const metadata = body.metadata ?? null;
@@ -411,7 +396,7 @@ async function generateLunaReply(
     const youtubeUrl =
       getMetadataString(metadata, "url") ?? `https://www.youtube.com/watch?v=${youtubeId}`;
 
-    return analyzeYoutubeReply(basePrompt, youtubeId, youtubeUrl);
+    return analyzeYoutubeReply(basePrompt, youtubeId, youtubeUrl, systemPrompt);
   }
 
   if (body.message_type === "vimeo") {
@@ -422,7 +407,7 @@ async function generateLunaReply(
 
     const vimeoUrl = getMetadataString(metadata, "url") ?? `https://vimeo.com/${vimeoId}`;
 
-    return analyzeVimeoReply(basePrompt, vimeoId, vimeoUrl);
+    return analyzeVimeoReply(basePrompt, vimeoId, vimeoUrl, systemPrompt);
   }
 
   if (body.message_type === "link") {
@@ -435,7 +420,7 @@ async function generateLunaReply(
 페이지 내용 요약:
 ${pageText}`;
 
-    const content = await callClaudeText(prompt);
+    const content = await callClaudeText(prompt, systemPrompt);
     return { content, ai_model: CLAUDE_MODEL };
   }
 
@@ -464,7 +449,7 @@ ${pageText}`;
 
 첨부된 이미지를 분석해줘.`
       }
-    ]);
+    ], systemPrompt);
     return { content, ai_model: CLAUDE_MODEL };
   }
 
@@ -494,11 +479,11 @@ ${pageText}`;
 
 이 문서를 분석해줘.`
       }
-    ]);
+    ], systemPrompt);
     return { content, ai_model: CLAUDE_MODEL };
   }
 
-  const content = await callClaudeText(basePrompt);
+  const content = await callClaudeText(basePrompt, systemPrompt);
   return { content, ai_model: CLAUDE_MODEL };
 }
 
@@ -563,23 +548,46 @@ export async function POST(request: NextRequest) {
       [...(recentRows ?? [])].reverse() as RecentMessageRow[]
     );
 
-    const lunaReply = await generateLunaReply(recentContext, {
-      ...body,
-      room_id: roomId,
-      message_id: messageId,
-      content
-    });
+    const isSnsLink = body.isSnsLink === true;
 
-    const analysis = buildAnalysisFields(lunaReply.content);
+    const lunaReply = isSnsLink
+      ? {
+          content: SNS_LUNA_REPLY,
+          ai_model: "sns-guidance"
+        }
+      : await generateLunaReply(
+          recentContext,
+          {
+            ...body,
+            room_id: roomId,
+            message_id: messageId,
+            content
+          },
+          await resolveLunaSystemPrompt(admin)
+        );
+
+    const snsUrl = isSnsLink
+      ? extractSnsUrl(content) ??
+        getMetadataString(body.metadata ?? null, "url") ??
+        extractFirstUrl(content) ??
+        content
+      : null;
 
     const { data: aiMessage, error: insertMessageError } = await admin
       .from("trend_messages")
       .insert({
         room_id: roomId,
         profile_id: null,
-        content: analysis.content,
+        content: lunaReply.content,
         message_type: "ai",
-        metadata: { ai_model: lunaReply.ai_model }
+        metadata: isSnsLink
+          ? {
+              ai_model: lunaReply.ai_model,
+              is_sns_guidance: true,
+              sns_url: snsUrl,
+              trigger_message_id: messageId
+            }
+          : { ai_model: lunaReply.ai_model }
       })
       .select("id")
       .single();
@@ -589,28 +597,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: insertMessageError?.message ?? "Failed to save AI message" }, { status: 500 });
     }
 
-    const { error: analysisError } = await admin.from("trend_analyses").insert({
-      message_id: aiMessage.id,
-      summary: analysis.summary,
-      keywords: analysis.keywords,
-      relevance_score: null,
-      apollon_insight: analysis.apollon_insight
-    });
+    if (!isSnsLink) {
+      const analysis = buildAnalysisFields(lunaReply.content);
 
-    if (analysisError) {
-      console.error("[research/chat] analysis insert failed", analysisError);
-      return NextResponse.json({ error: analysisError.message }, { status: 500 });
-    }
+      const { error: analysisError } = await admin.from("trend_analyses").insert({
+        message_id: aiMessage.id,
+        summary: analysis.summary,
+        keywords: analysis.keywords,
+        relevance_score: null,
+        apollon_insight: analysis.apollon_insight
+      });
 
-    const { error: metadataError } = await admin
-      .from("trend_messages")
-      .update({
-        metadata: { ai_model: lunaReply.ai_model, has_analysis: true }
-      })
-      .eq("id", aiMessage.id);
+      if (analysisError) {
+        console.error("[research/chat] analysis insert failed", analysisError);
+        return NextResponse.json({ error: analysisError.message }, { status: 500 });
+      }
 
-    if (metadataError) {
-      console.error("[research/chat] has_analysis metadata update failed", metadataError);
+      const { error: metadataError } = await admin
+        .from("trend_messages")
+        .update({
+          metadata: { ai_model: lunaReply.ai_model, has_analysis: true }
+        })
+        .eq("id", aiMessage.id);
+
+      if (metadataError) {
+        console.error("[research/chat] has_analysis metadata update failed", metadataError);
+      }
     }
 
     return NextResponse.json({

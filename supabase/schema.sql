@@ -790,7 +790,7 @@ create table if not exists public.trend_messages (
   profile_id uuid references public.profiles (id) on delete set null,
   content text not null,
   message_type text not null default 'text'
-    check (message_type in ('text', 'link', 'youtube', 'image', 'ai')),
+    check (message_type in ('text', 'link', 'youtube', 'vimeo', 'image', 'file', 'ai', 'sns_memo')),
   metadata jsonb,
   created_at timestamptz not null default now()
 );
