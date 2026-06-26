@@ -5,8 +5,7 @@ const SNS_HOSTS = ["instagram.com", "instagr.am", "facebook.com", "fb.com", "fb.
 const URL_REGEX = /https?:\/\/[^\s<>"']+/gi;
 
 export const SNS_LUNA_REPLY = `인스타그램/페이스북 링크는 직접 열어볼 수 없어서 내용 분석은 어려워요.
-링크는 저장해두을게요 — 위클리 리포트 작업 때 편집장이 직접 확인하고 선별할 수 있어요. 📎
-어떤 내용인지 간단히 메모해주시면 나중에 큐레이팅할 때 도움이 돼요!`;
+링크는 저장해둘게요 — 어떤 내용인지 간단히 메모해주시면 나중에 큐레이팅할 때 도움이 돼요!`;
 
 function hostnameFromUrl(url: string): string | null {
   try {
