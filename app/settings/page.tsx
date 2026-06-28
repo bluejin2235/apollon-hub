@@ -282,7 +282,7 @@ export default function SettingsPage() {
         showSettingsLink={false}
       />
 
-      <div className="pb-10 pt-10">
+      <div className="pb-10 pt-14">
         <div className="mb-7">
           <h1 className="text-3xl font-bold text-slate-900">설정</h1>
           <p className="mt-2 text-slate-600">프로필 및 계정 설정을 관리하세요.</p>

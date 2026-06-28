@@ -323,7 +323,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
       <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
       <div
-        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden md:h-[calc(100vh-3.5rem)] md:overflow-visible ${MOBILE_BOTTOM_TAB_PADDING}`}
+        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] md:overflow-visible ${MOBILE_BOTTOM_TAB_PADDING}`}
       >
         <div className="flex min-h-0 flex-1 overflow-hidden md:overflow-visible">
         <aside className="hidden w-64 shrink-0 flex-col bg-[#171717] md:flex">

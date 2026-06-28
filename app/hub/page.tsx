@@ -88,7 +88,7 @@ export default function ServiceHubPage() {
         hubTitleVariant="text"
       />
 
-      <div className="w-full px-4 pb-10 pt-16">
+      <div className="w-full px-4 pb-10 pt-14">
         {loadError ? (
           <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             서비스를 불러오지 못했습니다. ({loadError})

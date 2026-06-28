@@ -14,7 +14,7 @@ export type PortalHeaderProps = {
   showSettingsLink?: boolean;
 };
 
-const headerBar = "sticky top-0 z-50 shrink-0 border-b border-slate-200 bg-white";
+const headerBar = "fixed top-0 left-0 right-0 z-50 w-full border-b border-slate-200 bg-white";
 
 function LogoMark() {
   return (
@@ -58,7 +58,7 @@ export function PortalHeader({
   userInfoLine,
   onLogout,
   hubTitleVariant = "link",
-  maxWidthClass = "w-full",
+  maxWidthClass = "max-w-7xl",
   zIndexClass = "z-50",
   showSettingsLink = true
 }: PortalHeaderProps) {
@@ -68,7 +68,7 @@ export function PortalHeader({
 
   return (
     <header className={`${headerBar} ${zIndexClass}`}>
-      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-0`}>
+      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-4 sm:px-6`}>
         <div className="flex min-w-0 items-center gap-3">
           <LogoMark />
           {hubTitleVariant === "link" ? (
