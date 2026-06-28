@@ -14,7 +14,7 @@ export type PortalHeaderProps = {
   showSettingsLink?: boolean;
 };
 
-const headerBar = "sticky top-0 border-b border-slate-200 bg-white";
+const headerBar = "sticky top-0 z-50 shrink-0 border-b border-slate-200 bg-white";
 
 function LogoMark() {
   return (
@@ -59,7 +59,7 @@ export function PortalHeader({
   onLogout,
   hubTitleVariant = "link",
   maxWidthClass = "w-full",
-  zIndexClass = "z-20",
+  zIndexClass = "z-50",
   showSettingsLink = true
 }: PortalHeaderProps) {
   const title = (

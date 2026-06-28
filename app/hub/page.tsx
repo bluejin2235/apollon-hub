@@ -86,7 +86,6 @@ export default function ServiceHubPage() {
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
         hubTitleVariant="text"
-        zIndexClass="z-10"
       />
 
       <div className="w-full px-4 pb-10 pt-16">

@@ -279,7 +279,6 @@ export default function SettingsPage() {
       <PortalHeader
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
         onLogout={handleLogout}
-        zIndexClass="z-10"
         showSettingsLink={false}
       />
 

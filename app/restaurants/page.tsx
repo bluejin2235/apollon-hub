@@ -699,8 +699,8 @@ export default function RestaurantsMainPage() {
       </section>
 
       {/* 리스트 + 지도/미리보기 */}
-      <section className="grid min-h-[520px] grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-        <div className="flex max-h-[min(78vh,820px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-bold text-slate-900">
               <span className="text-blue-600">{listForDisplay.length}</span>곳
@@ -728,7 +728,7 @@ export default function RestaurantsMainPage() {
               🎲 오늘의 추천
             </p>
           ) : null}
-          <ul className="flex-1 space-y-0 overflow-y-auto">
+          <ul className="space-y-0">
             {listPageSlice.map((row) => {
               const agg = reviewAgg.get(row.id);
               const avgStr = agg && agg.n > 0 ? (agg.sum / agg.n).toFixed(1) : "—";
@@ -870,8 +870,8 @@ export default function RestaurantsMainPage() {
           ) : null}
         </div>
 
-        <div className="flex min-h-[400px] flex-col lg:min-h-[min(78vh,820px)]">
-          <div className="h-[360px] w-full shrink-0 lg:h-0 lg:min-h-[300px] lg:flex-1">
+        <div className="flex flex-col">
+          <div className="min-h-[360px] w-full lg:min-h-[400px]">
             <KakaoMapPanel
               restaurants={mapRestaurants}
               selectedId={selectedId}
