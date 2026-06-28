@@ -88,14 +88,14 @@ export default function ServiceHubPage() {
         hubTitleVariant="text"
       />
 
-      <div className="w-full px-4 pb-10 pt-14">
+      <div className="w-full pb-10 pt-14">
         {loadError ? (
           <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             서비스를 불러오지 못했습니다. ({loadError})
           </p>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-4">
+        <section className="grid grid-cols-2 items-stretch gap-4 pt-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {loadingServices && services.length === 0 ? (
             <p className="col-span-full text-sm text-slate-500">서비스 불러오는 중…</p>
           ) : services.length === 0 ? (
@@ -106,15 +106,16 @@ export default function ServiceHubPage() {
             services.map((svc) => {
               const restricted = !canAccessHubService(svc.access_level, role);
               return (
-                <ServiceCard
-                  key={svc.id}
-                  title={svc.name}
-                  description={svc.description ?? ""}
-                  icon={svc.icon ?? "✨"}
-                  href={svc.url ?? undefined}
-                  status={svc.status}
-                  accessRestricted={restricted}
-                />
+                <div key={svc.id} className="min-h-0 h-full">
+                  <ServiceCard
+                    title={svc.name}
+                    description={svc.description ?? ""}
+                    icon={svc.icon ?? "✨"}
+                    href={svc.url ?? undefined}
+                    status={svc.status}
+                    accessRestricted={restricted}
+                  />
+                </div>
               );
             })
           )}

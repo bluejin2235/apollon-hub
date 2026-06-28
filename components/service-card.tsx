@@ -13,6 +13,11 @@ type ServiceCardProps = {
 
 type Badge = { label: string; cls: string } | null;
 
+const cardBaseClass =
+  "apollon-card flex h-full flex-col p-4 transition duration-200 hover:border-slate-300 hover:bg-slate-50";
+
+const textKeepAllClass = "break-keep [word-break:keep-all]";
+
 function getBadge(status: HubServiceStatus | undefined, accessRestricted: boolean): Badge {
   if (accessRestricted) {
     return {
@@ -45,37 +50,40 @@ export default function ServiceCard({
   const badge = getBadge(status, accessRestricted);
 
   const titleRow = (
-    <div className="mb-3 flex items-center gap-3">
-      <span className="text-2xl shrink-0" aria-hidden>
+    <div className="mb-3 flex items-start gap-3">
+      <span className="shrink-0 text-2xl" aria-hidden>
         {icon}
       </span>
-      <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-      {badge ? (
-        <span
-          className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}
-        >
-          {badge.label}
-        </span>
-      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className={`text-base font-semibold text-slate-900 ${textKeepAllClass}`}>{title}</h3>
+          {badge ? (
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}>
+              {badge.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 
+  const body = (
+    <>
+      {titleRow}
+      <p className={`text-sm leading-relaxed text-slate-600 ${textKeepAllClass}`}>{description}</p>
+    </>
+  );
+
   if (disabled) {
-    return (
-      <div className="apollon-card p-6 opacity-90 transition duration-200 hover:border-slate-300 hover:bg-slate-50">
-        {titleRow}
-        <p className="text-sm text-slate-600">{description}</p>
-      </div>
-    );
+    return <div className={`${cardBaseClass} opacity-90`}>{body}</div>;
   }
 
   return (
     <a
       href={href}
-      className="apollon-card block p-6 transition duration-200 hover:-translate-y-0.5 hover:border-apollon-300/80 hover:bg-slate-50 hover:shadow-md"
+      className={`${cardBaseClass} hover:border-apollon-300/80 hover:shadow-md`}
     >
-      {titleRow}
-      <p className="text-sm text-slate-600">{description}</p>
+      {body}
     </a>
   );
 }

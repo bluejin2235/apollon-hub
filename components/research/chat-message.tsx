@@ -37,6 +37,9 @@ type UploadMetadata = {
   imageUrl?: string;
 };
 
+/** 사용자·AI(루나) 말풍선 공통 최대 너비 */
+const BUBBLE_MAX_WIDTH_CLASS = "max-w-[95%] sm:max-w-[88%]";
+
 function formatBubbleTime(iso: string): string {
   const date = new Date(iso);
   return date.toLocaleString("ko-KR", {
@@ -750,7 +753,7 @@ export function ChatMessage({
         data-message-id={message.id}
         className="group relative flex min-w-0 justify-end px-4 py-1.5 sm:px-6"
       >
-        <div className="flex min-w-0 max-w-[92%] items-end gap-1.5 sm:max-w-[80%]">
+        <div className={`flex min-w-0 ${BUBBLE_MAX_WIDTH_CLASS} items-end gap-1.5`}>
           <time className="mb-1 shrink-0 text-[10px] text-[#8e8e8e]" dateTime={message.created_at}>
             {timeLabel}
           </time>
@@ -778,7 +781,7 @@ export function ChatMessage({
       className="group relative flex min-w-0 justify-start gap-2 px-4 py-1.5 sm:px-6"
     >
       <AvatarCircle initials={initials} bg={avatarColors.bg} text={avatarColors.text} />
-      <div className="min-w-0 max-w-[92%] sm:max-w-[80%]">
+      <div className={`min-w-0 ${BUBBLE_MAX_WIDTH_CLASS}`}>
         <p className="mb-1 flex flex-wrap items-center gap-1.5 px-1">
           <span className="text-xs font-semibold text-[#0d0d0d]">{senderName}</span>
           {isAi && isPinned ? (
