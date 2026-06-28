@@ -8,8 +8,15 @@ import { supabase } from "@/lib/supabase/client";
 export default function ResearchPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean | null>(null);
 
   useEffect(() => {
+    setIsMobile(window.matchMedia("(max-width: 767px)").matches);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile !== false) return;
+
     let cancelled = false;
 
     (async () => {
@@ -41,7 +48,19 @@ export default function ResearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [isMobile, router]);
+
+  if (isMobile === true) {
+    return null;
+  }
+
+  if (isMobile === null) {
+    return (
+      <div className="hidden flex-1 items-center justify-center text-sm text-slate-500 md:flex">
+        채팅방으로 이동하는 중…
+      </div>
+    );
+  }
 
   if (error) {
     return (

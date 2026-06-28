@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { Send, SquarePen } from "lucide-react";
+import { MessageCircle, Send, Settings, SquarePen } from "lucide-react";
 import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
+import { MobileBottomTabBar, MOBILE_BOTTOM_TAB_PADDING, type MobileBottomTabItem } from "@/components/mobile/bottom-tab-bar";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
@@ -36,7 +37,13 @@ function buildCurrentWeekRoomFields(date = new Date()) {
   };
 }
 
-function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void }) {
+function CreateRoomButton({
+  onCreated,
+  variant = "sidebar"
+}: {
+  onCreated: (room: TrendRoom) => void;
+  variant?: "sidebar" | "mobile";
+}) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [nameValue, setNameValue] = useState("");
@@ -77,7 +84,11 @@ function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void 
         onClick={openModal}
         disabled={creating}
         aria-label="새 채팅방 만들기"
-        className="rounded-lg p-1.5 text-white transition hover:bg-white/10 disabled:opacity-50"
+        className={
+          variant === "mobile"
+            ? "rounded-lg p-1.5 text-[#534AB7] transition hover:bg-[#534AB7]/10 disabled:opacity-50"
+            : "rounded-lg p-1.5 text-white transition hover:bg-white/10 disabled:opacity-50"
+        }
       >
         <SquarePen className="h-4 w-4" aria-hidden />
       </button>
@@ -122,21 +133,58 @@ function CreateRoomButton({ onCreated }: { onCreated: (room: TrendRoom) => void 
   );
 }
 
-function ResearchRoomList({ pathname, rooms }: { pathname: string; rooms: TrendRoom[] }) {
+function isResearchChatSection(pathname: string): boolean {
+  return !pathname.startsWith("/research/sources") && !pathname.startsWith("/research/publishing");
+}
+
+function ResearchRoomList({
+  pathname,
+  rooms,
+  variant = "sidebar"
+}: {
+  pathname: string;
+  rooms: TrendRoom[];
+  variant?: "sidebar" | "mobile";
+}) {
   const activeRoomId = pathname.match(
     /^\/research\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
   )?.[1];
 
   if (rooms.length === 0) {
-    return <p className="mt-4 px-3 text-xs text-neutral-500">등록된 채팅방이 없습니다.</p>;
+    const emptyClass =
+      variant === "mobile"
+        ? "mt-4 px-3 text-sm text-neutral-500"
+        : "mt-4 px-3 text-xs text-neutral-500";
+    return <p className={emptyClass}>등록된 채팅방이 없습니다.</p>;
   }
 
   return (
-    <nav className="mt-6 flex flex-col gap-0.5">
+    <nav className={variant === "mobile" ? "flex flex-col gap-1" : "mt-6 flex flex-col gap-0.5"}>
       {rooms.map((room) => {
         const isCurrent = isCurrentWeekRoom(room);
         const isActive = activeRoomId === room.id;
         const isPast = room.is_archived || !isCurrent;
+
+        if (variant === "mobile") {
+          return (
+            <Link
+              key={room.id}
+              href={`/research/${room.id}`}
+              className={`flex items-center gap-3 rounded-xl px-4 py-3.5 text-sm transition ${
+                isActive ? "bg-[#534AB7]/10 text-[#534AB7]" : "text-[#0d0d0d] hover:bg-neutral-100"
+              }`}
+            >
+              {isCurrent ? (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+              ) : (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-neutral-300" aria-hidden />
+              )}
+              <span className={`min-w-0 flex-1 truncate ${isCurrent && !isActive ? "font-semibold" : ""}`}>
+                {getTrendRoomWeekLabel(room)}
+              </span>
+            </Link>
+          );
+        }
 
         return (
           <Link
@@ -159,6 +207,57 @@ function ResearchRoomList({ pathname, rooms }: { pathname: string; rooms: TrendR
       })}
     </nav>
   );
+}
+
+function MobileResearchRoomList({
+  pathname,
+  rooms,
+  onCreated
+}: {
+  pathname: string;
+  rooms: TrendRoom[];
+  onCreated: (room: TrendRoom) => void;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col md:hidden">
+      <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4">
+        <h2 className="text-base font-semibold text-[#0d0d0d]">✦ 트렌드 레이더</h2>
+        <CreateRoomButton onCreated={onCreated} variant="mobile" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        <ResearchRoomList pathname={pathname} rooms={rooms} variant="mobile" />
+      </div>
+    </div>
+  );
+}
+
+function ResearchMobileBottomNav({ pathname }: { pathname: string }) {
+  const isChatActive = isResearchChatSection(pathname);
+  const isSourcesActive = pathname.startsWith("/research/sources");
+  const isPublishingActive = pathname.startsWith("/research/publishing");
+
+  const items: MobileBottomTabItem[] = [
+    {
+      href: "/research",
+      label: "채팅방",
+      icon: <MessageCircle aria-hidden />,
+      active: isChatActive
+    },
+    {
+      href: "/research/sources",
+      label: "수집사이트 설정",
+      icon: <Settings aria-hidden />,
+      active: isSourcesActive
+    },
+    {
+      href: "/research/publishing",
+      label: "Publishing",
+      icon: <Send aria-hidden />,
+      active: isPublishingActive
+    }
+  ];
+
+  return <MobileBottomTabBar items={items} variant="dark" />;
 }
 
 export default function ResearchLayout({ children }: { children: ReactNode }) {
@@ -213,12 +312,22 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
   const isSourcesActive = pathname.startsWith("/research/sources");
   const isPublishingActive = pathname.startsWith("/research/publishing");
+  const showMobileRoomList = pathname === "/research";
+  const isRoomDetail = /^\/research\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
+    pathname
+  );
+  const mobileScrollLocked = showMobileRoomList || isRoomDetail;
 
   return (
-    <div className="min-h-screen bg-white">
-      <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
+    <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-white md:h-auto md:max-h-none md:min-h-screen md:overflow-visible">
+      <div className="sticky top-0 z-20 shrink-0">
+        <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
+      </div>
 
-      <div className="flex h-[calc(100vh-3.5rem)] w-full">
+      <div
+        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden md:h-[calc(100vh-3.5rem)] md:overflow-visible ${MOBILE_BOTTOM_TAB_PADDING}`}
+      >
+        <div className="flex min-h-0 flex-1 overflow-hidden md:overflow-visible">
         <aside className="hidden w-64 shrink-0 flex-col bg-[#171717] md:flex">
           <div className="flex-1 overflow-y-auto px-3 py-5">
             <div className="flex items-center justify-between px-3">
@@ -257,7 +366,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
 
         <ResearchRoomsContext.Provider value={roomsContextValue}>
           <div
-            className="flex min-w-0 flex-1 flex-col bg-white"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:overflow-visible"
             style={
               {
                 "--color-background-secondary": "#f4f4f4",
@@ -265,10 +374,27 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
               } as React.CSSProperties
             }
           >
-            {children}
+            {showMobileRoomList ? (
+              <MobileResearchRoomList
+                pathname={pathname}
+                rooms={sortedRooms}
+                onCreated={(room) => setRooms((prev) => [room, ...prev])}
+              />
+            ) : (
+              <div
+                className={`flex min-h-0 min-w-0 flex-1 flex-col md:overflow-visible ${
+                  mobileScrollLocked ? "overflow-hidden" : "overflow-y-auto overscroll-contain"
+                }`}
+              >
+                {children}
+              </div>
+            )}
           </div>
         </ResearchRoomsContext.Provider>
+        </div>
       </div>
+
+      <ResearchMobileBottomNav pathname={pathname} />
     </div>
   );
 }

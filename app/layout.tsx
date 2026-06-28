@@ -39,7 +39,7 @@ export default function RootLayout({
     gtag('config', 'G-3MKLHC3LS4');
   `}
         </Script>
-        <div className="mx-auto w-full max-w-7xl bg-white px-6">{children}</div>
+        <div className="mx-auto w-full max-w-7xl overflow-x-hidden bg-white px-4 sm:px-6">{children}</div>
       </body>
     </html>
   );

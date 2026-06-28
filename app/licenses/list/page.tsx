@@ -355,7 +355,7 @@ export default function LicensesListPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">전체 라이선스</h1>
+          <h1 className="text-2xl font-bold text-slate-900">라이선스별</h1>
           <p className="mt-1 text-sm text-slate-600">등록된 모든 서비스 라이선스입니다.</p>
         </div>
         {canCreate ? (

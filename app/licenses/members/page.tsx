@@ -39,7 +39,7 @@ export default function LicensesMembersPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-900">멤버별 라이선스</h1>
+        <h1 className="text-2xl font-bold text-slate-900">멤버별</h1>
         <p className="mt-1 text-sm text-slate-600">담당자 기준으로 할당된 서비스 수를 확인합니다.</p>
       </header>
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">

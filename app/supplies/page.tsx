@@ -1,8 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { SupplyCard } from "@/components/supplies/supply-card";
 import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
+import {
+  parseSuppliesTabKey,
+  SUPPLIES_NAV,
+  SuppliesMobileBottomNav,
+  suppliesTabKeyToId
+} from "@/components/supplies/supplies-nav";
 import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
 import {
   getSlotsForZone,
@@ -17,6 +24,10 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
 
 export default function SuppliesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabKey = parseSuppliesTabKey(searchParams.get("tab"));
+  const activeTab = suppliesTabKeyToId(tabKey);
   const { status, profile } = useRequirePortalSession();
   const [supplies, setSupplies] = useState<SupplyWithRelations[]>([]);
   const [locations, setLocations] = useState<SupplyLocation[]>([]);
@@ -27,7 +38,10 @@ export default function SuppliesPage() {
   const [slotFilter, setSlotFilter] = useState<string>("전체");
   const [registerOpen, setRegisterOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"loanable" | "managed">("loanable");
+
+  const navigateTab = (nextTabKey: "loan" | "manage") => {
+    router.push(`/supplies?tab=${nextTabKey}`);
+  };
 
   const canRegister = canCreateSupply(profile);
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
@@ -120,29 +134,21 @@ export default function SuppliesPage() {
         ) : null}
       </div>
 
-      <div className="mb-4 flex border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => setActiveTab("loanable")}
-          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
-            activeTab === "loanable"
-              ? "border-violet-600 text-violet-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          대출물품
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("managed")}
-          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
-            activeTab === "managed"
-              ? "border-violet-600 text-violet-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          관리물품
-        </button>
+      <div className="mb-4 hidden border-b border-slate-200 md:flex">
+        {SUPPLIES_NAV.map((item) => (
+          <button
+            key={item.tabKey}
+            type="button"
+            onClick={() => navigateTab(item.tabKey)}
+            className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
+              tabKey === item.tabKey
+                ? "border-violet-600 text-violet-700"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -234,6 +240,8 @@ export default function SuppliesPage() {
       ) : null}
 
       <WarehouseMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
+
+      <SuppliesMobileBottomNav activeTabKey={tabKey} />
     </div>
   );
 }

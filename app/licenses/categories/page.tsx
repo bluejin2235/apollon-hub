@@ -216,7 +216,7 @@ export default function LicenseCategoriesPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">카테고리 관리</h1>
+          <h1 className="text-2xl font-bold text-slate-900">카테고리 설정</h1>
           <p className="mt-1 text-sm text-slate-600">라이선스 서비스 카테고리를 관리합니다.</p>
         </div>
         {canManage ? (

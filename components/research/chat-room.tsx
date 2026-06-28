@@ -10,7 +10,8 @@ import {
   useRef,
   useState
 } from "react";
-import { Upload } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
+import Link from "next/link";
 import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
 import { LunaPromptModal } from "@/components/research/luna-prompt-modal";
@@ -939,15 +940,24 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <header className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4 sm:px-6">
-        <div>
-          <h1 className="text-base font-semibold text-[#0d0d0d]">
-            {room ? getTrendRoomWeekLabel(room) : "트렌드 공유"}
-          </h1>
-          {room ? (
-            <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatDateRange(room.week_start, room.week_end)}</p>
-          ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Link
+            href="/research"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#0d0d0d] transition hover:bg-[#f4f4f4] md:hidden"
+            aria-label="채팅방 목록으로"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden />
+          </Link>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold text-[#0d0d0d]">
+              {room ? getTrendRoomWeekLabel(room) : "트렌드 공유"}
+            </h1>
+            {room ? (
+              <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatDateRange(room.week_start, room.week_end)}</p>
+            ) : null}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <ParticipantAvatars messages={messages} />
@@ -963,7 +973,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
       </header>
 
       <div
-        className="relative flex min-h-0 flex-1 flex-col"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -982,9 +992,9 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain md:overscroll-auto">
         {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-6">
+          <div className="flex min-h-[12rem] items-center justify-center px-6">
             <p className="text-center text-sm text-[#8e8e8e]">아직 메시지가 없습니다. 첫 트렌드를 공유해 보세요.</p>
           </div>
         ) : (
