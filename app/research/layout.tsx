@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { FileText, MessageCircle, Send, Settings, SquarePen } from "lucide-react";
 import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
@@ -28,6 +29,11 @@ function CreateRoomButton({
   const [nameValue, setNameValue] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [portalMounted, setPortalMounted] = useState(false);
+
+  useEffect(() => {
+    setPortalMounted(true);
+  }, []);
 
   const openModal = () => {
     setNameValue(buildCurrentWeekRoomFields().week_label);
@@ -78,6 +84,52 @@ function CreateRoomButton({
     }
   };
 
+  const modal =
+    modalOpen && portalMounted ? (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-room-title"
+      >
+        <div className="relative z-[61] w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <h2 id="create-room-title" className="text-base font-semibold text-[#0d0d0d]">
+            새 채팅방 이름을 입력하세요
+          </h2>
+          <input
+            type="text"
+            value={nameValue}
+            onChange={(event) => setNameValue(event.target.value)}
+            className="mt-4 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2.5 text-sm text-[#0d0d0d] focus:border-[#0d0d0d] focus:outline-none"
+            placeholder="채팅방 이름"
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleConfirm();
+            }}
+          />
+          {createError ? <p className="mt-2 text-sm text-red-600">{createError}</p> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              disabled={creating}
+              className="rounded-lg px-4 py-2 text-sm text-[#676767] hover:bg-[#f4f4f4]"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={creating}
+              className="rounded-lg bg-[#0d0d0d] px-4 py-2 text-sm font-medium text-white hover:bg-[#333] disabled:opacity-50"
+            >
+              {creating ? "생성 중…" : "확인"}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   return (
     <>
       <button
@@ -94,43 +146,7 @@ function CreateRoomButton({
         <SquarePen className="h-4 w-4" aria-hidden />
       </button>
 
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <h2 className="text-base font-semibold text-[#0d0d0d]">새 채팅방 이름을 입력하세요</h2>
-            <input
-              type="text"
-              value={nameValue}
-              onChange={(event) => setNameValue(event.target.value)}
-              className="mt-4 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2.5 text-sm text-[#0d0d0d] focus:border-[#0d0d0d] focus:outline-none"
-              placeholder="채팅방 이름"
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void handleConfirm();
-              }}
-            />
-            {createError ? <p className="mt-2 text-sm text-red-600">{createError}</p> : null}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                disabled={creating}
-                className="rounded-lg px-4 py-2 text-sm text-[#676767] hover:bg-[#f4f4f4]"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleConfirm()}
-                disabled={creating}
-                className="rounded-lg bg-[#0d0d0d] px-4 py-2 text-sm font-medium text-white hover:bg-[#333] disabled:opacity-50"
-              >
-                {creating ? "생성 중…" : "확인"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {modal ? createPortal(modal, document.body) : null}
     </>
   );
 }
