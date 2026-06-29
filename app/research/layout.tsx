@@ -12,30 +12,9 @@ import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { isCurrentWeekRoom, type TrendRoom } from "@/lib/research/types";
-import { formatWeekLabel, getTrendRoomWeekLabel } from "@/lib/research/week-label";
+import { buildCurrentWeekRoomFields } from "@/lib/research/room-create";
+import { getTrendRoomWeekLabel } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
-
-function formatLocalDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function buildCurrentWeekRoomFields(date = new Date()) {
-  const monday = new Date(date);
-  const dow = monday.getDay();
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  monday.setDate(monday.getDate() + mondayOffset);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-
-  return {
-    week_label: formatWeekLabel(monday),
-    week_start: formatLocalDate(monday),
-    week_end: formatLocalDate(sunday)
-  };
-}
 
 function CreateRoomButton({
   onCreated,
@@ -48,9 +27,11 @@ function CreateRoomButton({
   const [modalOpen, setModalOpen] = useState(false);
   const [nameValue, setNameValue] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const openModal = () => {
     setNameValue(buildCurrentWeekRoomFields().week_label);
+    setCreateError(null);
     setModalOpen(true);
   };
 
@@ -58,23 +39,43 @@ function CreateRoomButton({
     if (creating) return;
 
     setCreating(true);
-    const { week_start, week_end } = buildCurrentWeekRoomFields();
-    const week_label = nameValue.trim() || buildCurrentWeekRoomFields().week_label;
+    setCreateError(null);
 
-    const { data, error } = await supabase
-      .from("trend_rooms")
-      .insert({ week_label, week_start, week_end })
-      .select("*")
-      .single();
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-    setCreating(false);
+      if (!token) {
+        setCreateError("로그인 세션이 없습니다.");
+        return;
+      }
 
-    if (error || !data) return;
+      const response = await fetch("/api/research/rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ week_label: nameValue.trim() || undefined })
+      });
 
-    const room = data as TrendRoom;
-    onCreated(room);
-    setModalOpen(false);
-    router.push(`/research/${room.id}`);
+      const data = (await response.json()) as { room?: TrendRoom; error?: string };
+
+      if (!response.ok || !data.room) {
+        setCreateError(data.error ?? "채팅방 생성에 실패했습니다.");
+        return;
+      }
+
+      onCreated(data.room);
+      setModalOpen(false);
+      router.push(`/research/${data.room.id}`);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "채팅방 생성에 실패했습니다.");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -108,6 +109,7 @@ function CreateRoomButton({
                 if (event.key === "Enter") void handleConfirm();
               }}
             />
+            {createError ? <p className="mt-2 text-sm text-red-600">{createError}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
@@ -212,17 +214,19 @@ function ResearchRoomList({
 function MobileResearchRoomList({
   pathname,
   rooms,
-  onCreated
+  onCreated,
+  canCreateRoom
 }: {
   pathname: string;
   rooms: TrendRoom[];
   onCreated: (room: TrendRoom) => void;
+  canCreateRoom: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col md:hidden">
       <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4">
         <h2 className="text-base font-semibold text-[#0d0d0d]">✦ 트렌드 레이더</h2>
-        <CreateRoomButton onCreated={onCreated} variant="mobile" />
+        {canCreateRoom ? <CreateRoomButton onCreated={onCreated} variant="mobile" /> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <ResearchRoomList pathname={pathname} rooms={rooms} variant="mobile" />
@@ -328,6 +332,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
     pathname
   );
   const mobileScrollLocked = showMobileRoomList || isRoomDetail;
+  const canCreateRoom = Boolean(profile?.id);
 
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-white md:h-auto md:max-h-none md:min-h-screen md:overflow-visible">
@@ -341,7 +346,9 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
             <div className="flex items-center justify-between px-3">
               <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
-              <CreateRoomButton onCreated={(room) => setRooms((prev) => [room, ...prev])} />
+              {canCreateRoom ? (
+                <CreateRoomButton onCreated={(room) => setRooms((prev) => [room, ...prev])} />
+              ) : null}
             </div>
             <ResearchRoomList pathname={pathname} rooms={sortedRooms} />
           </div>
@@ -410,6 +417,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
                 pathname={pathname}
                 rooms={sortedRooms}
                 onCreated={(room) => setRooms((prev) => [room, ...prev])}
+                canCreateRoom={canCreateRoom}
               />
             ) : (
               <div

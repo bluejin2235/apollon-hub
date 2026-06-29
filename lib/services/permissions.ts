@@ -152,6 +152,11 @@ export function canCreateSupply(userProfile: PortalProfileRow | null | undefined
   return Boolean(userProfile?.id);
 }
 
+/** 트렌드 레이더 채팅방 생성 권한: 인증된 멤버이면 누구나 가능. */
+export function canCreateResearchRoom(userProfile: PortalProfileRow | null | undefined): boolean {
+  return Boolean(userProfile?.id);
+}
+
 /**
  * 비품 관리(수정/삭제 등) 권한.
  * 슈퍼관리자 OR 비품담당자(manager_id 일치) OR 물품창고 중간관리자.
