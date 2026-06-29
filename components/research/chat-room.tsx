@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
 import { SupplyToast } from "@/components/supplies/toast";
-import { collectParticipants, getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import { storagePublicUrl } from "@/lib/storage/public-url";
 import {
   buildMessageMetadata,
@@ -24,7 +23,7 @@ import {
   type TrendRoom
 } from "@/lib/research/types";
 import { containsSnsLink } from "@/lib/research/sns-link";
-import { getTrendRoomWeekLabel } from "@/lib/research/week-label";
+import { getTrendRoomDisplayName } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 
@@ -140,39 +139,6 @@ function IconPlus(props: { className?: string }) {
     <svg className={props.className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
     </svg>
-  );
-}
-
-function ParticipantAvatars({ messages }: { messages: TrendMessage[] }) {
-  const participants = useMemo(() => collectParticipants(messages), [messages]);
-  const visible = participants.slice(0, 5);
-  const overflow = participants.length - visible.length;
-
-  if (participants.length === 0) {
-    return <span className="text-xs text-[#8e8e8e]">참여자 없음</span>;
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex -space-x-2">
-        {visible.map((participant) => {
-          const colors = getProfileAvatarColors(participant.id);
-          return (
-            <div
-              key={participant.id}
-              title={participant.name}
-              className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-[11px] font-semibold"
-              style={{ backgroundColor: colors.bg, color: colors.text }}
-            >
-              {getInitials(participant.name)}
-            </div>
-          );
-        })}
-      </div>
-      <span className="text-xs text-[#676767]">
-        {participants.length}명{overflow > 0 ? ` (+${overflow})` : ""}
-      </span>
-    </div>
   );
 }
 
@@ -875,7 +841,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   };
 
   const openRenameModal = () => {
-    setRenameValue(room ? getTrendRoomWeekLabel(room) : "");
+    setRenameValue(room ? getTrendRoomDisplayName(room) : "");
     setRenameOpen(true);
   };
 
@@ -886,7 +852,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     setRenameBusy(true);
     const { data, error: updateError } = await supabase
       .from("trend_rooms")
-      .update({ week_label: trimmed })
+      .update({ week_label: trimmed, name: trimmed })
       .eq("id", room.id)
       .select("*")
       .single();
@@ -950,7 +916,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </Link>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold text-[#0d0d0d]">
-              {room ? getTrendRoomWeekLabel(room) : "트렌드 공유"}
+              {room ? getTrendRoomDisplayName(room) : "트렌드 공유"}
             </h1>
             {room ? (
               <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatDateRange(room.week_start, room.week_end)}</p>
@@ -958,7 +924,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <ParticipantAvatars messages={messages} />
           <RoomSettingsMenu
             canDeleteRoom={canManageRoom}
             canEditPrompt={canManageRoom}

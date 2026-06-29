@@ -8,6 +8,8 @@ export type TrendMessageType =
   | "ai"
   | "sns_memo";
 
+export type TrendRoomType = "personal" | "public";
+
 export type TrendRoom = {
   id: string;
   week_label: string;
@@ -15,7 +17,28 @@ export type TrendRoom = {
   week_end: string;
   is_archived: boolean;
   created_at: string;
+  room_type?: TrendRoomType | "group";
+  owner_id?: string | null;
+  name?: string;
 };
+
+export function resolveTrendRoomType(room: Pick<TrendRoom, "room_type">): TrendRoomType {
+  if (room.room_type === "personal") return "personal";
+  return "public";
+}
+
+export function isPersonalTrendRoom(room: Pick<TrendRoom, "room_type" | "owner_id">): boolean {
+  return resolveTrendRoomType(room) === "personal";
+}
+
+export function isPublicTrendRoom(room: Pick<TrendRoom, "room_type">): boolean {
+  return resolveTrendRoomType(room) === "public";
+}
+
+/** @deprecated `isPublicTrendRoom` 사용 */
+export function isGroupTrendRoom(room: Pick<TrendRoom, "room_type">): boolean {
+  return isPublicTrendRoom(room);
+}
 
 export type TrendMessageMetadata = {
   url?: string;

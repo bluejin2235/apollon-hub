@@ -26,6 +26,8 @@ export const CHAT_SELECTION_PROMPT_KEY = P2_TREND_PROMPT_KEY;
 
 export const P4_EDITOR_PROMPT_KEY = "p4_editor_prompt";
 
+export const P1_1_ARTICLE_PROMPT_KEY = "p1_1_article_prompt";
+
 /** @deprecated `p4_editor_prompt` 이전 키 */
 export const LEGACY_EDITOR_PROMPT_KEY = "editor_prompt";
 
@@ -44,17 +46,43 @@ export const DEFAULT_P4_EDITOR_PROMPT =
 /** @deprecated `DEFAULT_P4_EDITOR_PROMPT` 사용 */
 export const DEFAULT_EDITOR_PROMPT = DEFAULT_P4_EDITOR_PROMPT;
 
+export const DEFAULT_P1_1_PROMPT = `너는 아폴론이머시브웍스의 트렌드 큐레이터야.
+
+아래는 이번 주 팀 채팅방 대화 전체야.
+팀원이 공유한 링크와 루나(AI)의 분석 내용을 함께 읽고, 아티클 후보 목록을 JSON 배열로 만들어줘.
+
+[추출 기준]
+- 위클리 후보(is_pinned: true)를 최우선으로 포함
+- 링크가 있는 메시지 중 아폴론 사업(미디어 아키텍처, 인터랙티브 설치, 몰입형 경험, 브랜드 공간)과 관련된 것만 선별
+- 루나의 분석 내용을 summary로 활용
+- 인스타그램/페이스북처럼 분석 불가한 링크는 팀원 메모나 텍스트 기반으로 요약
+- 중복 URL 제거
+- 최대 20개
+
+[출력 형식]
+다른 설명 없이 JSON 배열만 응답해:
+[
+  {
+    "title": "아티클 제목",
+    "url": "https://...",
+    "summary": "루나 분석 또는 팀원 메모 기반 요약 2-3문장",
+    "is_pinned": true/false
+  }
+]`;
+
 export type ResearchPromptKey =
   | typeof P1_LUNA_PROMPT_KEY
   | typeof P2_TREND_PROMPT_KEY
   | typeof P3_COLLECT_PROMPT_KEY
-  | typeof P4_EDITOR_PROMPT_KEY;
+  | typeof P4_EDITOR_PROMPT_KEY
+  | typeof P1_1_ARTICLE_PROMPT_KEY;
 
 export const RESEARCH_PROMPT_KEYS: ResearchPromptKey[] = [
   P1_LUNA_PROMPT_KEY,
   P2_TREND_PROMPT_KEY,
   P3_COLLECT_PROMPT_KEY,
-  P4_EDITOR_PROMPT_KEY
+  P4_EDITOR_PROMPT_KEY,
+  P1_1_ARTICLE_PROMPT_KEY
 ];
 
 export function isResearchPromptKey(value: string): value is ResearchPromptKey {
@@ -75,6 +103,8 @@ export function getDefaultPromptValue(key: ResearchPromptKey): string {
       return DEFAULT_P3_COLLECT_PROMPT;
     case P4_EDITOR_PROMPT_KEY:
       return DEFAULT_P4_EDITOR_PROMPT;
+    case P1_1_ARTICLE_PROMPT_KEY:
+      return DEFAULT_P1_1_PROMPT;
     default:
       return "";
   }
@@ -91,7 +121,8 @@ const STORAGE_KEYS = [
   LEGACY_COMMON_GPT_PROMPT_KEY,
   LEGACY_GPT_CURATOR_PROMPT_KEY,
   P4_EDITOR_PROMPT_KEY,
-  LEGACY_EDITOR_PROMPT_KEY
+  LEGACY_EDITOR_PROMPT_KEY,
+  P1_1_ARTICLE_PROMPT_KEY
 ] as const;
 
 function pickFirst(byKey: Map<string, string>, keys: readonly string[], fallback: string): string {
@@ -134,6 +165,11 @@ export async function resolveResearchPrompts(admin: SupabaseClient): Promise<Res
       byKey,
       [P4_EDITOR_PROMPT_KEY, LEGACY_EDITOR_PROMPT_KEY],
       DEFAULT_P4_EDITOR_PROMPT
+    ),
+    [P1_1_ARTICLE_PROMPT_KEY]: pickFirst(
+      byKey,
+      [P1_1_ARTICLE_PROMPT_KEY],
+      DEFAULT_P1_1_PROMPT
     )
   };
 }

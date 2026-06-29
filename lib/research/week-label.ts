@@ -25,3 +25,13 @@ export function getTrendRoomWeekLabel(room: { week_label: string; week_start: st
   }
   return trimmed;
 }
+
+export function getTrendRoomDisplayName(room: {
+  name?: string | null;
+  week_label: string;
+  week_start: string;
+}): string {
+  const name = room.name?.trim();
+  if (name) return name;
+  return getTrendRoomWeekLabel(room);
+}

@@ -12,9 +12,9 @@ import { MobileBottomTabBar, MOBILE_BOTTOM_TAB_PADDING, type MobileBottomTabItem
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
-import { isCurrentWeekRoom, type TrendRoom } from "@/lib/research/types";
-import { buildCurrentWeekRoomFields } from "@/lib/research/room-create";
-import { getTrendRoomWeekLabel } from "@/lib/research/week-label";
+import { isCurrentWeekRoom, isPublicTrendRoom, type TrendRoom, type TrendRoomType } from "@/lib/research/types";
+import { buildCurrentWeekRoomFields, PERSONAL_ROOM_DEFAULT_NAME } from "@/lib/research/room-create";
+import { getTrendRoomDisplayName } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
 
 function CreateRoomButton({
@@ -27,6 +27,7 @@ function CreateRoomButton({
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [nameValue, setNameValue] = useState("");
+  const [roomType, setRoomType] = useState<TrendRoomType>("public");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [portalMounted, setPortalMounted] = useState(false);
@@ -36,9 +37,19 @@ function CreateRoomButton({
   }, []);
 
   const openModal = () => {
+    setRoomType("public");
     setNameValue(buildCurrentWeekRoomFields().week_label);
     setCreateError(null);
     setModalOpen(true);
+  };
+
+  const handleRoomTypeChange = (nextType: TrendRoomType) => {
+    setRoomType(nextType);
+    if (nextType === "personal") {
+      setNameValue(PERSONAL_ROOM_DEFAULT_NAME);
+    } else {
+      setNameValue(buildCurrentWeekRoomFields().week_label);
+    }
   };
 
   const handleConfirm = async () => {
@@ -64,7 +75,10 @@ function CreateRoomButton({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ week_label: nameValue.trim() || undefined })
+        body: JSON.stringify({
+          name: nameValue.trim() || undefined,
+          room_type: roomType
+        })
       });
 
       const data = (await response.json()) as { room?: TrendRoom; error?: string };
@@ -94,14 +108,39 @@ function CreateRoomButton({
       >
         <div className="relative z-[61] w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
           <h2 id="create-room-title" className="text-base font-semibold text-[#0d0d0d]">
-            새 채팅방 이름을 입력하세요
+            새 채팅방 만들기
           </h2>
+          <p className="mt-1 text-sm text-[#676767]">방 유형을 선택하고 이름을 입력하세요.</p>
+          <div className="mt-4 flex gap-2">
+            {(
+              [
+                { value: "personal" as const, label: "개인방" },
+                { value: "public" as const, label: "공개방" }
+              ] as const
+            ).map((option) => {
+              const selected = roomType === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleRoomTypeChange(option.value)}
+                  className={`flex-1 rounded-xl border px-4 py-2 text-sm font-medium transition ${
+                    selected
+                      ? "border-[#534AB7] bg-[#534AB7]/10 text-[#534AB7]"
+                      : "border-[rgba(0,0,0,0.12)] text-[#676767] hover:border-[rgba(0,0,0,0.2)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
           <input
             type="text"
             value={nameValue}
             onChange={(event) => setNameValue(event.target.value)}
             className="mt-4 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2.5 text-sm text-[#0d0d0d] focus:border-[#0d0d0d] focus:outline-none"
-            placeholder="채팅방 이름"
+            placeholder={roomType === "personal" ? "개인방 이름" : "공개방 이름"}
             autoFocus
             onKeyDown={(event) => {
               if (event.key === "Enter") void handleConfirm();
@@ -136,7 +175,7 @@ function CreateRoomButton({
         type="button"
         onClick={openModal}
         disabled={creating}
-        aria-label="새 채팅방 만들기"
+        aria-label="새 공개방 만들기"
         className={
           variant === "mobile"
             ? "rounded-lg p-1.5 text-[#534AB7] transition hover:bg-[#534AB7]/10 disabled:opacity-50"
@@ -158,11 +197,13 @@ function isResearchChatSection(pathname: string): boolean {
 function ResearchRoomList({
   pathname,
   rooms,
-  variant = "sidebar"
+  variant = "sidebar",
+  showWeekIndicator = true
 }: {
   pathname: string;
   rooms: TrendRoom[];
   variant?: "sidebar" | "mobile";
+  showWeekIndicator?: boolean;
 }) {
   const activeRoomId = pathname.match(
     /^\/research\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
@@ -179,9 +220,9 @@ function ResearchRoomList({
   return (
     <nav className={variant === "mobile" ? "flex flex-col gap-1" : "mt-6 flex flex-col gap-0.5"}>
       {rooms.map((room) => {
-        const isCurrent = isCurrentWeekRoom(room);
+        const isCurrent = showWeekIndicator && isPublicTrendRoom(room) && isCurrentWeekRoom(room);
         const isActive = activeRoomId === room.id;
-        const isPast = room.is_archived || !isCurrent;
+        const isPast = showWeekIndicator && (room.is_archived || !isCurrentWeekRoom(room));
 
         if (variant === "mobile") {
           return (
@@ -192,13 +233,17 @@ function ResearchRoomList({
                 isActive ? "bg-[#534AB7]/10 text-[#534AB7]" : "text-[#0d0d0d] hover:bg-neutral-100"
               }`}
             >
-              {isCurrent ? (
-                <span className="h-2 w-2 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+              {showWeekIndicator ? (
+                isCurrent ? (
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+                ) : (
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-neutral-300" aria-hidden />
+                )
               ) : (
-                <span className="h-2 w-2 shrink-0 rounded-full bg-neutral-300" aria-hidden />
+                <span className="h-2 w-2 shrink-0" aria-hidden />
               )}
               <span className={`min-w-0 flex-1 truncate ${isCurrent && !isActive ? "font-semibold" : ""}`}>
-                {getTrendRoomWeekLabel(room)}
+                {getTrendRoomDisplayName(room)}
               </span>
             </Link>
           );
@@ -212,13 +257,19 @@ function ResearchRoomList({
               isActive ? "bg-white/10 text-white" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
             }`}
           >
-            {isCurrent ? (
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" aria-hidden />
+            {showWeekIndicator ? (
+              isCurrent ? (
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" aria-hidden />
+              ) : (
+                <span className="h-1.5 w-1.5 shrink-0" aria-hidden />
+              )
             ) : (
               <span className="h-1.5 w-1.5 shrink-0" aria-hidden />
             )}
-            <span className={`truncate ${isCurrent && !isActive ? "font-medium text-white" : isPast ? "text-neutral-500" : ""}`}>
-              {getTrendRoomWeekLabel(room)}
+            <span
+              className={`truncate ${isCurrent && !isActive ? "font-medium text-white" : isPast ? "text-neutral-500" : ""}`}
+            >
+              {getTrendRoomDisplayName(room)}
             </span>
           </Link>
         );
@@ -227,14 +278,65 @@ function ResearchRoomList({
   );
 }
 
+function sectionLabelClass(variant: "sidebar" | "mobile"): string {
+  return variant === "mobile"
+    ? "px-3 pt-4 text-xs font-semibold uppercase tracking-wide text-[#8e8e8e] first:pt-0"
+    : "px-3 pt-4 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 first:pt-0";
+}
+
+function ResearchRoomSections({
+  pathname,
+  personalRooms,
+  publicRooms,
+  variant = "sidebar"
+}: {
+  pathname: string;
+  personalRooms: TrendRoom[];
+  publicRooms: TrendRoom[];
+  variant?: "sidebar" | "mobile";
+}) {
+  const hasPersonal = personalRooms.length > 0;
+  const hasPublic = publicRooms.length > 0;
+
+  if (!hasPersonal && !hasPublic) {
+    const emptyClass =
+      variant === "mobile" ? "mt-4 px-3 text-sm text-neutral-500" : "mt-4 px-3 text-xs text-neutral-500";
+    return <p className={emptyClass}>등록된 채팅방이 없습니다.</p>;
+  }
+
+  return (
+    <div className={variant === "mobile" ? "flex flex-col" : "mt-6 flex flex-col"}>
+      {hasPersonal ? (
+        <section>
+          <p className={sectionLabelClass(variant)}>개인</p>
+          <ResearchRoomList
+            pathname={pathname}
+            rooms={personalRooms}
+            variant={variant}
+            showWeekIndicator={false}
+          />
+        </section>
+      ) : null}
+      {hasPublic ? (
+        <section>
+          <p className={sectionLabelClass(variant)}>공개방</p>
+          <ResearchRoomList pathname={pathname} rooms={publicRooms} variant={variant} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function MobileResearchRoomList({
   pathname,
-  rooms,
+  personalRooms,
+  publicRooms,
   onCreated,
   canCreateRoom
 }: {
   pathname: string;
-  rooms: TrendRoom[];
+  personalRooms: TrendRoom[];
+  publicRooms: TrendRoom[];
   onCreated: (room: TrendRoom) => void;
   canCreateRoom: boolean;
 }) {
@@ -245,7 +347,12 @@ function MobileResearchRoomList({
         {canCreateRoom ? <CreateRoomButton onCreated={onCreated} variant="mobile" /> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <ResearchRoomList pathname={pathname} rooms={rooms} variant="mobile" />
+        <ResearchRoomSections
+          pathname={pathname}
+          personalRooms={personalRooms}
+          publicRooms={publicRooms}
+          variant="mobile"
+        />
       </div>
     </div>
   );
@@ -293,29 +400,71 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
   const { status, profile } = useRequirePortalSession();
   const [rooms, setRooms] = useState<TrendRoom[]>([]);
 
-  useEffect(() => {
-    if (status !== "ready") return;
-    let cancelled = false;
+  const loadRooms = useCallback(async () => {
+    if (!profile?.id) return;
 
-    (async () => {
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) return;
+
+      const personalResponse = await fetch("/api/research/rooms", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const personalData = (await personalResponse.json()) as { room?: TrendRoom; error?: string };
+
       const { data, error } = await supabase
         .from("trend_rooms")
         .select("*")
         .order("week_start", { ascending: false });
 
-      if (cancelled || error) return;
-      setRooms((data ?? []) as TrendRoom[]);
-    })();
+      if (error) return;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
+      let merged = (data ?? []) as TrendRoom[];
+
+      if (personalResponse.ok && personalData.room) {
+        const personalRoom = personalData.room;
+        const existingIndex = merged.findIndex((room) => room.id === personalRoom.id);
+        if (existingIndex >= 0) {
+          merged = merged.map((room, index) => (index === existingIndex ? personalRoom : room));
+        } else {
+          merged = [personalRoom, ...merged];
+        }
+      }
+
+      setRooms(merged);
+    } catch {
+      // 목록 갱신 실패 시 기존 state 유지
+    }
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (status !== "ready" || !profile?.id) return;
+    void loadRooms();
+  }, [status, profile?.id, loadRooms]);
 
   const sortedRooms = useMemo(
     () => [...rooms].sort((a, b) => new Date(b.week_start).getTime() - new Date(a.week_start).getTime()),
     [rooms]
   );
+
+  const personalRooms = useMemo(() => {
+    if (!profile?.id) return [];
+    return sortedRooms.filter(
+      (room) => room.room_type === "personal" && room.owner_id === profile.id
+    );
+  }, [sortedRooms, profile?.id]);
+
+  const publicRooms = useMemo(() => {
+    return sortedRooms.filter((room) => isPublicTrendRoom(room));
+  }, [sortedRooms]);
+
+  const handleRoomCreated = useCallback((room: TrendRoom) => {
+    setRooms((prev) => [room, ...prev.filter((item) => item.id !== room.id)]);
+  }, []);
 
   const handleRoomUpdated = useCallback((room: TrendRoom) => {
     setRooms((prev) => prev.map((item) => (item.id === room.id ? room : item)));
@@ -363,10 +512,14 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center justify-between px-3">
               <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
               {canCreateRoom ? (
-                <CreateRoomButton onCreated={(room) => setRooms((prev) => [room, ...prev])} />
+                <CreateRoomButton onCreated={handleRoomCreated} />
               ) : null}
             </div>
-            <ResearchRoomList pathname={pathname} rooms={sortedRooms} />
+            <ResearchRoomSections
+              pathname={pathname}
+              personalRooms={personalRooms}
+              publicRooms={publicRooms}
+            />
           </div>
 
           <div className="shrink-0 border-t border-white/10 px-3 py-4">
@@ -431,8 +584,9 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
             {showMobileRoomList ? (
               <MobileResearchRoomList
                 pathname={pathname}
-                rooms={sortedRooms}
-                onCreated={(room) => setRooms((prev) => [room, ...prev])}
+                personalRooms={personalRooms}
+                publicRooms={publicRooms}
+                onCreated={handleRoomCreated}
                 canCreateRoom={canCreateRoom}
               />
             ) : (

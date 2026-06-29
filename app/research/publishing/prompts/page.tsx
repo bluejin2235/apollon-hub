@@ -7,6 +7,7 @@ import { SupplyToast } from "@/components/supplies/toast";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
   getDefaultPromptValue,
+  P1_1_ARTICLE_PROMPT_KEY,
   P1_LUNA_PROMPT_KEY,
   P2_TREND_PROMPT_KEY,
   P3_COLLECT_PROMPT_KEY,
@@ -80,7 +81,8 @@ const EMPTY_PROMPTS: ResearchPromptsResponse = {
   [P1_LUNA_PROMPT_KEY]: getDefaultPromptValue(P1_LUNA_PROMPT_KEY),
   [P2_TREND_PROMPT_KEY]: getDefaultPromptValue(P2_TREND_PROMPT_KEY),
   [P3_COLLECT_PROMPT_KEY]: getDefaultPromptValue(P3_COLLECT_PROMPT_KEY),
-  [P4_EDITOR_PROMPT_KEY]: getDefaultPromptValue(P4_EDITOR_PROMPT_KEY)
+  [P4_EDITOR_PROMPT_KEY]: getDefaultPromptValue(P4_EDITOR_PROMPT_KEY),
+  [P1_1_ARTICLE_PROMPT_KEY]: getDefaultPromptValue(P1_1_ARTICLE_PROMPT_KEY)
 };
 
 export default function ResearchPublishingPromptsPage() {
@@ -218,6 +220,20 @@ export default function ResearchPublishingPromptsPage() {
                 setPrompts((prev) => ({ ...prev, [P1_LUNA_PROMPT_KEY]: value }))
               }
               onSave={() => void handleSave(P1_LUNA_PROMPT_KEY)}
+            />
+
+            <PromptSection
+              title="P1-1 채팅방 아티클 추출 프롬프트"
+              description="위클리 파이프라인에서 채팅방 대화를 분석해 아티클 후보를 추출하는 프롬프트"
+              promptKey={P1_1_ARTICLE_PROMPT_KEY}
+              value={prompts[P1_1_ARTICLE_PROMPT_KEY]}
+              loading={loading}
+              saving={savingKey === P1_1_ARTICLE_PROMPT_KEY}
+              canEdit={canEdit}
+              onChange={(value) =>
+                setPrompts((prev) => ({ ...prev, [P1_1_ARTICLE_PROMPT_KEY]: value }))
+              }
+              onSave={() => void handleSave(P1_1_ARTICLE_PROMPT_KEY)}
             />
 
             <PromptSection
