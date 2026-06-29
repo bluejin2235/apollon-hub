@@ -3,16 +3,35 @@ import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   buildPublishingTriggerBody,
+  publishingPeriodToDays,
   type PublishingPeriod
 } from "@/lib/research/publishing";
 
 const N8N_WEBHOOK_URL = "https://apollonworks.app.n8n.cloud/webhook/trend-weekly-trigger";
 
 type TriggerBody = {
+  days?: number;
   period?: PublishingPeriod;
   start_date?: string;
   end_date?: string;
 };
+
+function resolveTriggerDays(body: TriggerBody): number | null {
+  if (typeof body.days === "number" && Number.isInteger(body.days) && body.days > 0) {
+    return body.days;
+  }
+
+  const period = body.period;
+  if (period !== "1week" && period !== "2week" && period !== "custom") {
+    return null;
+  }
+
+  return publishingPeriodToDays(
+    period,
+    body.start_date?.trim() ?? "",
+    body.end_date?.trim() ?? ""
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,19 +57,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const period = body.period ?? "1week";
-    if (period !== "1week" && period !== "2week" && period !== "custom") {
-      return NextResponse.json({ error: "Invalid period" }, { status: 400 });
+    const days = resolveTriggerDays(body);
+    if (days === null) {
+      return NextResponse.json({ error: "유효하지 않은 수집기간입니다." }, { status: 400 });
     }
 
-    const startDate = body.start_date?.trim() ?? "";
-    const endDate = body.end_date?.trim() ?? "";
-
-    if (period === "custom" && (!startDate || !endDate)) {
-      return NextResponse.json({ error: "기간설정 시 시작일과 종료일이 필요합니다." }, { status: 400 });
-    }
-
-    const webhookBody = buildPublishingTriggerBody(period, startDate, endDate);
+    const webhookBody = buildPublishingTriggerBody(days);
 
     const response = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",

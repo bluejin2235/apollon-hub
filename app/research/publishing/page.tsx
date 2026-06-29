@@ -14,6 +14,7 @@ import {
   PUBLISHING_SCHEDULE_KEY,
   PUBLISHING_WEEKDAY_OPTIONS,
   parsePublishingSchedule,
+  publishingPeriodToDays,
   serializePublishingSchedule,
   type PublishingPeriod,
   type PublishingSchedule,
@@ -182,6 +183,12 @@ export default function ResearchPublishingPage() {
       return;
     }
 
+    const days = publishingPeriodToDays(immediatePeriod, immediateStartDate, immediateEndDate);
+    if (days === null) {
+      setError("유효하지 않은 수집기간입니다.");
+      return;
+    }
+
     setTriggerBusy(true);
     setError(null);
 
@@ -202,11 +209,7 @@ export default function ResearchPublishingPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          period: immediatePeriod,
-          start_date: immediatePeriod === "custom" ? immediateStartDate : "",
-          end_date: immediatePeriod === "custom" ? immediateEndDate : ""
-        })
+        body: JSON.stringify({ days })
       });
 
       const data = (await response.json()) as { error?: string };

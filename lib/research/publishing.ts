@@ -99,22 +99,26 @@ export function serializePublishingSchedule(schedule: PublishingSchedule): strin
   return JSON.stringify(payload);
 }
 
-export function buildPublishingTriggerBody(
+export function publishingPeriodToDays(
   period: PublishingPeriod,
   startDate: string,
   endDate: string
-): { period: PublishingPeriod; start_date: string; end_date: string } {
-  if (period === "custom") {
-    return {
-      period,
-      start_date: startDate,
-      end_date: endDate
-    };
+): number | null {
+  if (period === "1week") return 7;
+  if (period === "2week") return 14;
+
+  if (!startDate || !endDate) return null;
+
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return null;
   }
 
-  return {
-    period,
-    start_date: "",
-    end_date: ""
-  };
+  const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  return diffDays > 0 ? diffDays : null;
+}
+
+export function buildPublishingTriggerBody(days: number): { days: number } {
+  return { days };
 }
