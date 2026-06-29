@@ -1,8 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const LUNA_SYSTEM_PROMPT_KEY = "luna_system_prompt";
+export const P1_LUNA_PROMPT_KEY = "p1_luna_prompt";
 
-export const DEFAULT_LUNA_SYSTEM_PROMPT = `너는 아폴론이머시브웍스의 AI 직원 루나(Luna)야.
+/** @deprecated `p1_luna_prompt` 이전 키 */
+export const LEGACY_LUNA_SYSTEM_PROMPT_KEY = "luna_system_prompt";
+
+/** @deprecated `P1_LUNA_PROMPT_KEY` 사용 */
+export const LUNA_SYSTEM_PROMPT_KEY = P1_LUNA_PROMPT_KEY;
+
+export const DEFAULT_P1_LUNA_PROMPT = `너는 아폴론이머시브웍스의 AI 직원 루나(Luna)야.
 아폴론은 미디어 아키텍처 전문 스튜디오로 'We Make Beloved Digital Landmarks'가 미션이야.
 주요 작업: 미디어파사드, 전시 공간, 리테일 랜드마크, 인터랙티브 설치, 브랜드 공간 경험.
 
@@ -21,19 +27,23 @@ export const DEFAULT_LUNA_SYSTEM_PROMPT = `너는 아폴론이머시브웍스의
 - 길이는 내용에 따라 유연하게
 - instagram.com, facebook.com 링크가 오면 분석 불가 안내 + 메모 요청 문구로만 짧게 답해. 다른 분석 시도 금지.`;
 
+/** @deprecated `DEFAULT_P1_LUNA_PROMPT` 사용 */
+export const DEFAULT_LUNA_SYSTEM_PROMPT = DEFAULT_P1_LUNA_PROMPT;
+
 /** trend_settings에서 루나 시스템 프롬프트 조회. 없으면 기본값. */
 export async function resolveLunaSystemPrompt(admin: SupabaseClient): Promise<string> {
   const { data, error } = await admin
     .from("trend_settings")
-    .select("value")
-    .eq("key", LUNA_SYSTEM_PROMPT_KEY)
-    .maybeSingle();
+    .select("key, value")
+    .in("key", [P1_LUNA_PROMPT_KEY, LEGACY_LUNA_SYSTEM_PROMPT_KEY]);
 
   if (error) {
     console.error("[luna-system-prompt] fetch failed", error);
-    return DEFAULT_LUNA_SYSTEM_PROMPT;
+    return DEFAULT_P1_LUNA_PROMPT;
   }
 
-  const value = data?.value?.trim();
-  return value || DEFAULT_LUNA_SYSTEM_PROMPT;
+  const byKey = new Map((data ?? []).map((row) => [row.key as string, row.value as string]));
+  const value =
+    byKey.get(P1_LUNA_PROMPT_KEY)?.trim() || byKey.get(LEGACY_LUNA_SYSTEM_PROMPT_KEY)?.trim();
+  return value || DEFAULT_P1_LUNA_PROMPT;
 }

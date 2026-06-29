@@ -14,8 +14,9 @@ import {
 } from "@/components/research/trend-source-form-fields";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
-  DEFAULT_GPT_CURATOR_PROMPT,
-  GPT_CURATOR_PROMPT_KEY
+  DEFAULT_P3_COLLECT_PROMPT,
+  P3_COLLECT_PROMPT_KEY,
+  P3_COLLECT_PROMPT_READ_KEYS
 } from "@/lib/research/gpt-curator-prompt";
 import type { TrendSource, TrendSourceType } from "@/lib/research/types";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
@@ -117,7 +118,7 @@ export default function ResearchSourcesPage() {
   const [filter, setFilter] = useState<SourceFilter>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [commonPrompt, setCommonPrompt] = useState(DEFAULT_GPT_CURATOR_PROMPT);
+  const [commonPrompt, setCommonPrompt] = useState(DEFAULT_P3_COLLECT_PROMPT);
   const [promptLoading, setPromptLoading] = useState(true);
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -162,14 +163,22 @@ export default function ResearchSourcesPage() {
       setPromptLoading(true);
       const { data, error: promptError } = await supabase
         .from("trend_settings")
-        .select("value")
-        .eq("key", GPT_CURATOR_PROMPT_KEY)
-        .maybeSingle();
+        .select("key, value")
+        .in("key", [...P3_COLLECT_PROMPT_READ_KEYS]);
 
       if (promptError) {
         setError(promptError.message);
       } else {
-        setCommonPrompt(data?.value ?? DEFAULT_GPT_CURATOR_PROMPT);
+        const byKey = new Map((data ?? []).map((row) => [row.key as string, row.value as string]));
+        let value = DEFAULT_P3_COLLECT_PROMPT;
+        for (const key of P3_COLLECT_PROMPT_READ_KEYS) {
+          const found = byKey.get(key)?.trim();
+          if (found) {
+            value = found;
+            break;
+          }
+        }
+        setCommonPrompt(value);
       }
       setPromptLoading(false);
     })();
@@ -181,7 +190,7 @@ export default function ResearchSourcesPage() {
     setPromptSaving(true);
     const { error: saveError } = await supabase.from("trend_settings").upsert(
       {
-        key: GPT_CURATOR_PROMPT_KEY,
+        key: P3_COLLECT_PROMPT_KEY,
         value: commonPrompt,
         updated_at: new Date().toISOString()
       },

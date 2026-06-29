@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import {
-  DEFAULT_GPT_CURATOR_PROMPT,
-  GPT_CURATOR_PROMPT_KEY
-} from "@/lib/research/gpt-curator-prompt";
+import { fetchCommonGptPromptSetting } from "@/lib/research/gpt-curator-prompt";
 
 export const runtime = "nodejs";
 
@@ -25,17 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "트렌드 레이더 관리 권한이 없습니다." }, { status: 403 });
     }
 
-    const { data: setting, error: settingError } = await admin
-      .from("trend_settings")
-      .select("value")
-      .eq("key", GPT_CURATOR_PROMPT_KEY)
-      .maybeSingle();
-
-    if (settingError) {
-      return NextResponse.json({ error: settingError.message }, { status: 500 });
-    }
-
-    const prompt = setting?.value?.trim() || DEFAULT_GPT_CURATOR_PROMPT;
+    const prompt = await fetchCommonGptPromptSetting(admin);
 
     const { data: updatedRows, error: updateError } = await admin
       .from("trend_sources")

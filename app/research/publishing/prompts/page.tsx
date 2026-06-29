@@ -6,14 +6,14 @@ import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { SupplyToast } from "@/components/supplies/toast";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
-  CHAT_SELECTION_PROMPT_KEY,
-  COMMON_GPT_PROMPT_KEY,
-  EDITOR_PROMPT_KEY,
   getDefaultPromptValue,
+  P1_LUNA_PROMPT_KEY,
+  P2_TREND_PROMPT_KEY,
+  P3_COLLECT_PROMPT_KEY,
+  P4_EDITOR_PROMPT_KEY,
   type ResearchPromptKey,
   type ResearchPromptsResponse
 } from "@/lib/research/prompt-settings";
-import { LUNA_SYSTEM_PROMPT_KEY } from "@/lib/research/luna-system-prompt";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
@@ -77,10 +77,10 @@ function PromptSection({
 }
 
 const EMPTY_PROMPTS: ResearchPromptsResponse = {
-  [LUNA_SYSTEM_PROMPT_KEY]: getDefaultPromptValue(LUNA_SYSTEM_PROMPT_KEY),
-  [COMMON_GPT_PROMPT_KEY]: getDefaultPromptValue(COMMON_GPT_PROMPT_KEY),
-  [CHAT_SELECTION_PROMPT_KEY]: getDefaultPromptValue(CHAT_SELECTION_PROMPT_KEY),
-  [EDITOR_PROMPT_KEY]: getDefaultPromptValue(EDITOR_PROMPT_KEY)
+  [P1_LUNA_PROMPT_KEY]: getDefaultPromptValue(P1_LUNA_PROMPT_KEY),
+  [P2_TREND_PROMPT_KEY]: getDefaultPromptValue(P2_TREND_PROMPT_KEY),
+  [P3_COLLECT_PROMPT_KEY]: getDefaultPromptValue(P3_COLLECT_PROMPT_KEY),
+  [P4_EDITOR_PROMPT_KEY]: getDefaultPromptValue(P4_EDITOR_PROMPT_KEY)
 };
 
 export default function ResearchPublishingPromptsPage() {
@@ -207,58 +207,58 @@ export default function ResearchPublishingPromptsPage() {
         ) : (
           <div className="mt-6 flex flex-col gap-5">
             <PromptSection
-              title="루나 프롬프트"
+              title="P1 채팅방 루나 프롬프트"
               description="채팅방에서 링크/영상을 분석할 때 루나가 사용하는 기준"
-              promptKey={LUNA_SYSTEM_PROMPT_KEY}
-              value={prompts[LUNA_SYSTEM_PROMPT_KEY]}
+              promptKey={P1_LUNA_PROMPT_KEY}
+              value={prompts[P1_LUNA_PROMPT_KEY]}
               loading={loading}
-              saving={savingKey === LUNA_SYSTEM_PROMPT_KEY}
+              saving={savingKey === P1_LUNA_PROMPT_KEY}
               canEdit={canEdit}
               onChange={(value) =>
-                setPrompts((prev) => ({ ...prev, [LUNA_SYSTEM_PROMPT_KEY]: value }))
+                setPrompts((prev) => ({ ...prev, [P1_LUNA_PROMPT_KEY]: value }))
               }
-              onSave={() => void handleSave(LUNA_SYSTEM_PROMPT_KEY)}
+              onSave={() => void handleSave(P1_LUNA_PROMPT_KEY)}
             />
 
             <PromptSection
-              title="채팅방 선별 프롬프트"
+              title="P2 채팅방 트렌드 프롬프트"
               description="이번 주 채팅방 대화에서 아젠다/키워드를 추출하는 기준"
-              promptKey={CHAT_SELECTION_PROMPT_KEY}
-              value={prompts[CHAT_SELECTION_PROMPT_KEY]}
+              promptKey={P2_TREND_PROMPT_KEY}
+              value={prompts[P2_TREND_PROMPT_KEY]}
               loading={loading}
-              saving={savingKey === CHAT_SELECTION_PROMPT_KEY}
+              saving={savingKey === P2_TREND_PROMPT_KEY}
               canEdit={canEdit}
               onChange={(value) =>
-                setPrompts((prev) => ({ ...prev, [CHAT_SELECTION_PROMPT_KEY]: value }))
+                setPrompts((prev) => ({ ...prev, [P2_TREND_PROMPT_KEY]: value }))
               }
-              onSave={() => void handleSave(CHAT_SELECTION_PROMPT_KEY)}
+              onSave={() => void handleSave(P2_TREND_PROMPT_KEY)}
             />
 
             <PromptSection
-              title="수집사이트 공통 프롬프트"
+              title="P3 트렌드 수집 프롬프트"
               description="모든 수집사이트 GPT 웹검색에 공통 적용되는 기준"
-              promptKey={COMMON_GPT_PROMPT_KEY}
-              value={prompts[COMMON_GPT_PROMPT_KEY]}
+              promptKey={P3_COLLECT_PROMPT_KEY}
+              value={prompts[P3_COLLECT_PROMPT_KEY]}
               loading={loading}
-              saving={savingKey === COMMON_GPT_PROMPT_KEY}
+              saving={savingKey === P3_COLLECT_PROMPT_KEY}
               canEdit={canEdit}
               onChange={(value) =>
-                setPrompts((prev) => ({ ...prev, [COMMON_GPT_PROMPT_KEY]: value }))
+                setPrompts((prev) => ({ ...prev, [P3_COLLECT_PROMPT_KEY]: value }))
               }
-              onSave={() => void handleSave(COMMON_GPT_PROMPT_KEY)}
+              onSave={() => void handleSave(P3_COLLECT_PROMPT_KEY)}
               footerLink={{ href: "/research/sources", label: "개별 사이트 프롬프트 설정 →" }}
             />
 
             <PromptSection
-              title="AI 편집장 프롬프트"
+              title="P4 AI 편집장 프롬프트"
               description="전체 후보 중 최종 아티클을 선정하는 기준"
-              promptKey={EDITOR_PROMPT_KEY}
-              value={prompts[EDITOR_PROMPT_KEY]}
+              promptKey={P4_EDITOR_PROMPT_KEY}
+              value={prompts[P4_EDITOR_PROMPT_KEY]}
               loading={loading}
-              saving={savingKey === EDITOR_PROMPT_KEY}
+              saving={savingKey === P4_EDITOR_PROMPT_KEY}
               canEdit={canEdit}
-              onChange={(value) => setPrompts((prev) => ({ ...prev, [EDITOR_PROMPT_KEY]: value }))}
-              onSave={() => void handleSave(EDITOR_PROMPT_KEY)}
+              onChange={(value) => setPrompts((prev) => ({ ...prev, [P4_EDITOR_PROMPT_KEY]: value }))}
+              onSave={() => void handleSave(P4_EDITOR_PROMPT_KEY)}
             />
           </div>
         )}

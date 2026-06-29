@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { resolveCommonGptPrompt } from "@/lib/research/gpt-curator-prompt";
 import type { TrendSource } from "@/lib/research/types";
 
 export const runtime = "nodejs";
 
-const WEB_SEARCH_SYSTEM_PROMPT = `너는 미디어 아키텍처 스튜디오 아폴론이머시브웍스의 트렌드 리서처야.
+const WEB_SEARCH_SYSTEM_PROMPT_FALLBACK = `너는 미디어 아키텍처 스튜디오 아폴론이머시브웍스의 트렌드 리서처야.
 주어진 사이트에서 아폴론이 참고할 만한 최신 기사를 찾아서 JSON 배열로만 반환해.
 아폴론의 관심 분야: 미디어 아키텍처, 미디어파사드, 인터랙티브 설치, 몰입형 경험, 전시/뮤지엄 공간, 리테일 경험 디자인, 공공공간 디지털 설치, AI/기술 활용 공간 경험.
 제외: 패션, 뷰티, 식품, 자동차, 스포츠, 디지털 요소 없는 단순 건축.
@@ -270,7 +271,11 @@ function filterArticlesByDateRange(articles: CollectedArticle[], dateRange: Date
   return filtered;
 }
 
-async function collectArticlesViaWebSearch(siteUrl: string, dateRange: DateRange | null): Promise<CollectedArticle[]> {
+async function collectArticlesViaWebSearch(
+  siteUrl: string,
+  dateRange: DateRange | null,
+  systemPrompt: string
+): Promise<CollectedArticle[]> {
   const apiKey = process.env.hubtrendchat_chatgpt;
   if (!apiKey) {
     throw new Error("ChatGPT API key is not configured");
@@ -286,13 +291,13 @@ async function collectArticlesViaWebSearch(siteUrl: string, dateRange: DateRange
 
   const requestBody = {
     model: "gpt-4o",
-    instructions: WEB_SEARCH_SYSTEM_PROMPT,
+    instructions: systemPrompt,
     tools: [{ type: "web_search_preview" }],
     input: userPrompt
   };
   console.log("[research/sources/test-collect] request body preview:", {
     model: requestBody.model,
-    instructionsLength: WEB_SEARCH_SYSTEM_PROMPT.length,
+    instructionsLength: systemPrompt.length,
     input: userPrompt,
     tools: requestBody.tools
   });
@@ -433,6 +438,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "사이트 URL이 설정되지 않았습니다." }, { status: 400 });
     }
 
+    const systemPrompt =
+      (await resolveCommonGptPrompt(admin, source.gpt_prompt)) || WEB_SEARCH_SYSTEM_PROMPT_FALLBACK;
+
     const siteUrl = normalizeSiteUrl(rawSiteUrl);
     console.log("[research/sources/test-collect] === START ===", {
       sourceId,
@@ -444,7 +452,7 @@ export async function POST(request: NextRequest) {
       dateTo: dateTo ?? null
     });
 
-    const collectedItems = await collectArticlesViaWebSearch(siteUrl, range);
+    const collectedItems = await collectArticlesViaWebSearch(siteUrl, range, systemPrompt);
     console.log("[research/sources/test-collect] === collectedItems count ===", collectedItems.length);
 
     const { valid: validatedItems, urlValidationFailed } = await filterArticlesByValidUrls(collectedItems);

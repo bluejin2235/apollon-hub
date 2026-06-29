@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
-  LUNA_SYSTEM_PROMPT_KEY,
+  P1_LUNA_PROMPT_KEY,
+  LEGACY_LUNA_SYSTEM_PROMPT_KEY,
   resolveLunaSystemPrompt
 } from "@/lib/research/luna-system-prompt";
 
@@ -25,16 +26,17 @@ export async function GET(request: NextRequest) {
     }
 
     const prompt = await resolveLunaSystemPrompt(admin);
-    const { data: row } = await admin
+    const { data: rows } = await admin
       .from("trend_settings")
-      .select("value")
-      .eq("key", LUNA_SYSTEM_PROMPT_KEY)
-      .maybeSingle();
+      .select("key, value")
+      .in("key", [P1_LUNA_PROMPT_KEY, LEGACY_LUNA_SYSTEM_PROMPT_KEY]);
+
+    const hasCustom = (rows ?? []).some((row) => (row.value as string)?.trim());
 
     return NextResponse.json({
-      key: LUNA_SYSTEM_PROMPT_KEY,
+      key: P1_LUNA_PROMPT_KEY,
       value: prompt,
-      is_default: !row?.value?.trim()
+      is_default: !hasCustom
     });
   } catch (error) {
     console.error("[research/prompt] GET", error);
@@ -74,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     const { error: saveError } = await admin.from("trend_settings").upsert(
       {
-        key: LUNA_SYSTEM_PROMPT_KEY,
+        key: P1_LUNA_PROMPT_KEY,
         value,
         updated_at: new Date().toISOString()
       },
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: saveError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, key: LUNA_SYSTEM_PROMPT_KEY });
+    return NextResponse.json({ success: true, key: P1_LUNA_PROMPT_KEY });
   } catch (error) {
     console.error("[research/prompt] POST", error);
     const message = error instanceof Error ? error.message : "Internal server error";
