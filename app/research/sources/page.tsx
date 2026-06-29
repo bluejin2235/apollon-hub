@@ -334,6 +334,13 @@ export default function ResearchSourcesPage() {
                   </button>
                 </div>
               ) : null}
+              <p className="mt-4 text-sm text-[#676767]">
+                전체 프롬프트 관리는{" "}
+                <Link href="/research/publishing/prompts" className="font-medium text-[#534AB7] hover:underline">
+                  Publishing &gt; 프롬프트 관리
+                </Link>
+                에서 할 수 있습니다.
+              </p>
             </>
           ) : null}
         </div>

@@ -24,14 +24,14 @@ export function LicensesShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
-      <div className={`flex w-full gap-0 pt-14 ${MOBILE_BOTTOM_TAB_PADDING}`}>
-        <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">
+      <div className={`flex h-[calc(100vh-3.5rem)] w-full pt-14 ${MOBILE_BOTTOM_TAB_PADDING}`}>
+        <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">
           <p className="text-xs font-semibold uppercase tracking-wider text-apollon-600">License</p>
           <h2 className="mt-1 text-lg font-bold text-slate-900">License Manager</h2>
           <LicenseSidebarNav pathname={pathname} />
         </aside>
 
-        <div className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
           {children}
         </div>
       </div>

@@ -14,7 +14,6 @@ import { ArrowLeft, Upload } from "lucide-react";
 import Link from "next/link";
 import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
-import { LunaPromptModal } from "@/components/research/luna-prompt-modal";
 import { SupplyToast } from "@/components/supplies/toast";
 import { collectParticipants, getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
 import { storagePublicUrl } from "@/lib/storage/public-url";
@@ -568,7 +567,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -965,7 +963,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
             canDeleteRoom={canManageRoom}
             canEditPrompt={canManageRoom}
             onRename={openRenameModal}
-            onEditPrompt={() => setPromptModalOpen(true)}
+            onEditPrompt={() => router.push("/research/publishing/prompts")}
             onDelete={handleDelete}
             deleteBusy={deleteBusy}
           />
@@ -1076,11 +1074,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         </div>
       ) : null}
 
-      <LunaPromptModal
-        open={promptModalOpen}
-        onClose={() => setPromptModalOpen(false)}
-        onSaved={() => setToast("저장됐습니다.")}
-      />
       <SupplyToast message={toast} onClose={() => setToast(null)} />
 
     </div>

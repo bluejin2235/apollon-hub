@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { MessageCircle, Send, Settings, SquarePen } from "lucide-react";
+import { FileText, MessageCircle, Send, Settings, SquarePen } from "lucide-react";
 import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
@@ -234,7 +234,9 @@ function MobileResearchRoomList({
 function ResearchMobileBottomNav({ pathname }: { pathname: string }) {
   const isChatActive = isResearchChatSection(pathname);
   const isSourcesActive = pathname.startsWith("/research/sources");
-  const isPublishingActive = pathname.startsWith("/research/publishing");
+  const isPromptsActive = pathname.startsWith("/research/publishing/prompts");
+  const isPublishingActive =
+    pathname.startsWith("/research/publishing") && !isPromptsActive;
 
   const items: MobileBottomTabItem[] = [
     {
@@ -254,6 +256,12 @@ function ResearchMobileBottomNav({ pathname }: { pathname: string }) {
       label: "Publishing",
       icon: <Send aria-hidden />,
       active: isPublishingActive
+    },
+    {
+      href: "/research/publishing/prompts",
+      label: "프롬프트 관리",
+      icon: <FileText aria-hidden />,
+      active: isPromptsActive
     }
   ];
 
@@ -310,8 +318,11 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
   }
 
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
+  const isChatActive = isResearchChatSection(pathname);
   const isSourcesActive = pathname.startsWith("/research/sources");
-  const isPublishingActive = pathname.startsWith("/research/publishing");
+  const isPromptsActive = pathname.startsWith("/research/publishing/prompts");
+  const isPublishingActive =
+    pathname.startsWith("/research/publishing") && !isPromptsActive;
   const showMobileRoomList = pathname === "/research";
   const isRoomDetail = /^\/research\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
     pathname
@@ -323,11 +334,11 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
       <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
       <div
-        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] md:overflow-visible ${MOBILE_BOTTOM_TAB_PADDING}`}
+        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] ${MOBILE_BOTTOM_TAB_PADDING}`}
       >
-        <div className="flex min-h-0 flex-1 overflow-hidden md:overflow-visible">
-        <aside className="hidden w-64 shrink-0 flex-col bg-[#171717] md:flex">
-          <div className="flex-1 overflow-y-auto px-3 py-5">
+        <div className="flex min-h-0 flex-1 overflow-hidden md:h-[calc(100vh-3.5rem)]">
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 flex-col overflow-hidden bg-[#171717] md:flex">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
             <div className="flex items-center justify-between px-3">
               <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
               <CreateRoomButton onCreated={(room) => setRooms((prev) => [room, ...prev])} />
@@ -337,6 +348,17 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
 
           <div className="shrink-0 border-t border-white/10 px-3 py-4">
             <nav className="flex flex-col gap-0.5">
+              <Link
+                href="/research"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
+                  isChatActive
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
+                채팅방
+              </Link>
               <Link
                 href="/research/sources"
                 className={`block rounded-lg px-3 py-2.5 text-sm transition ${
@@ -358,13 +380,24 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
                 <Send className="h-4 w-4 shrink-0" aria-hidden />
                 Publishing
               </Link>
+              <Link
+                href="/research/publishing/prompts"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
+                  isPromptsActive
+                    ? "bg-white/10 font-medium text-white"
+                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                프롬프트 관리
+              </Link>
             </nav>
           </div>
         </aside>
 
         <ResearchRoomsContext.Provider value={roomsContextValue}>
           <div
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:overflow-visible"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:h-[calc(100vh-3.5rem)] md:overflow-y-auto"
             style={
               {
                 "--color-background-secondary": "#f4f4f4",
@@ -380,7 +413,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
               />
             ) : (
               <div
-                className={`flex min-h-0 min-w-0 flex-1 flex-col md:overflow-visible ${
+                className={`flex min-h-0 min-w-0 flex-1 flex-col ${
                   mobileScrollLocked ? "overflow-hidden" : "overflow-y-auto overscroll-contain"
                 }`}
               >

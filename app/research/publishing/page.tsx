@@ -243,8 +243,8 @@ export default function ResearchPublishingPage() {
         <p className="mt-1 text-sm text-[#676767]">트렌드 레이더 위클리 Publishing을 예약하거나 즉시 실행합니다.</p>
 
         <div className="mt-6 flex flex-col gap-5">
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
-            <h2 className="text-base font-semibold text-[#534AB7]">예약 Publishing 설정</h2>
+          <section id="schedule" className="scroll-mt-24 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
+            <h2 className="text-base font-semibold text-[#534AB7]">예약 발송</h2>
 
             <div className="mt-5">
               <PeriodPicker
@@ -311,7 +311,7 @@ export default function ResearchPublishingPage() {
             </button>
           </section>
 
-          <section className="rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
+          <section id="trigger" className="scroll-mt-24 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
             <h2 className="text-base font-semibold text-[#534AB7]">즉시 발송</h2>
             <p className="mt-1 text-sm text-[#676767]">선택한 수집기간으로 Publishing을 바로 실행합니다.</p>
 
