@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
-  buildPublishingTriggerBody,
-  publishingPeriodToDays,
-  type PublishingPeriod
+  normalizePublishingPeriod,
+  publishingPeriodToDays
 } from "@/lib/research/publishing";
 
 const N8N_WEBHOOK_URL = "https://apollonworks.app.n8n.cloud/webhook/trend-weekly-trigger";
 
 type TriggerBody = {
   days?: number;
-  period?: PublishingPeriod;
+  period?: string;
   start_date?: string;
   end_date?: string;
 };
@@ -21,11 +20,7 @@ function resolveTriggerDays(body: TriggerBody): number | null {
     return body.days;
   }
 
-  const period = body.period;
-  if (period !== "1week" && period !== "2week" && period !== "custom") {
-    return null;
-  }
-
+  const period = normalizePublishingPeriod(body.period);
   return publishingPeriodToDays(
     period,
     body.start_date?.trim() ?? "",
@@ -62,7 +57,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "유효하지 않은 수집기간입니다." }, { status: 400 });
     }
 
-    const webhookBody = buildPublishingTriggerBody(days);
+    const webhookBody = { days };
 
     const response = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",

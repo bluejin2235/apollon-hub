@@ -2,6 +2,18 @@ export const PUBLISHING_SCHEDULE_KEY = "publishing_schedule";
 
 export type PublishingPeriod = "1week" | "2week" | "custom";
 
+/** API/웹훅 입력 period 정규화 (2weeks → 2week) */
+export function normalizePublishingPeriod(
+  period: string | undefined | null,
+  fallback: PublishingPeriod = "1week"
+): PublishingPeriod {
+  const value = period?.trim().toLowerCase();
+  if (value === "1week" || value === "1weeks") return "1week";
+  if (value === "2week" || value === "2weeks") return "2week";
+  if (value === "custom") return "custom";
+  return fallback;
+}
+
 export type PublishingWeekday =
   | "monday"
   | "tuesday"
@@ -117,8 +129,4 @@ export function publishingPeriodToDays(
 
   const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
   return diffDays > 0 ? diffDays : null;
-}
-
-export function buildPublishingTriggerBody(days: number): { days: number } {
-  return { days };
 }
