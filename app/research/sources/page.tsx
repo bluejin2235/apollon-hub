@@ -67,7 +67,7 @@ function AddSourceModal({ open, saving, onClose, onSave }: AddSourceModalProps) 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
-        <h2 className="text-base font-semibold text-[#0d0d0d]">사이트 추가</h2>
+        <h2 className="text-base font-semibold text-[#0d0d0d]">채널 추가</h2>
 
         <div className="mt-4">
           <TrendSourceFormFields values={values} onChange={setValues} />
@@ -96,6 +96,39 @@ function AddSourceModal({ open, saving, onClose, onSave }: AddSourceModalProps) 
   );
 }
 
+function SourceTypeGuideCard() {
+  return (
+    <div className="mt-10 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-[#f9f9fb] p-4">
+      <ul className="space-y-2">
+        <li className="flex gap-2 text-sm leading-relaxed">
+          <span className="shrink-0 text-[var(--text-secondary,#676767)]" aria-hidden>
+            •
+          </span>
+          <span>
+            <span className="font-medium text-[#0d0d0d]">매거진</span>
+            <span className="text-[var(--text-secondary,#676767)]">
+              {" "}
+              : 사이트 내 발행일 기준으로 기간 내 글을 찾아요.
+            </span>
+          </span>
+        </li>
+        <li className="flex gap-2 text-sm leading-relaxed">
+          <span className="shrink-0 text-[var(--text-secondary,#676767)]" aria-hidden>
+            •
+          </span>
+          <span>
+            <span className="font-medium text-[#0d0d0d]">스튜디오</span>
+            <span className="text-[var(--text-secondary,#676767)]">
+              {" "}
+              : 스튜디오명과 키워드로 웹 전체에서 최근 뉴스, 수상, 인터뷰를 찾아요.
+            </span>
+          </span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 function sourcePayloadToInsert(payload: TrendSourceFormPayload) {
   return {
     url: payload.url,
@@ -106,7 +139,7 @@ function sourcePayloadToInsert(payload: TrendSourceFormPayload) {
     collect_methods: payload.collect_methods,
     youtube_channel_id: payload.youtube_channel_id,
     google_alerts_query: payload.google_alerts_query,
-    is_active: true
+    is_active: payload.is_active ?? true
   };
 }
 
@@ -268,7 +301,7 @@ export default function ResearchSourcesPage() {
     setSaving(false);
 
     if (insertError || !data) {
-      setError(insertError?.message ?? "사이트 추가에 실패했습니다.");
+      setError(insertError?.message ?? "채널 추가에 실패했습니다.");
       return;
     }
 
@@ -285,15 +318,18 @@ export default function ResearchSourcesPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold text-[#0d0d0d]">위클리 수집 사이트</h1>
+          <div>
+            <h1 className="text-xl font-semibold text-[#0d0d0d]">트렌드 구독함</h1>
+            <p className="mt-1 text-sm text-[#676767]">등록한 채널에서 자동으로 트렌드를 수집해요.</p>
+          </div>
           {canManage ? (
             <button
               type="button"
               onClick={() => setModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0d0d0d] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#333]"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#0d0d0d] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#333]"
             >
               <Plus className="h-4 w-4" aria-hidden />
-              사이트 추가
+              채널 추가
             </button>
           ) : null}
         </div>
@@ -313,7 +349,7 @@ export default function ResearchSourcesPage() {
           {promptExpanded ? (
             <>
               <p className="mt-1 text-sm text-[#676767]">
-                개별 프롬프트가 없는 수집 소스에 적용되는 기본 큐레이션 프롬프트입니다.
+                개별 프롬프트가 없는 트렌드 구독함 채널에 적용되는 기본 큐레이션 프롬프트입니다.
               </p>
               <textarea
                 value={commonPrompt}
@@ -372,9 +408,9 @@ export default function ResearchSourcesPage() {
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
         {loading ? (
-          <p className="mt-10 text-center text-sm text-[#8e8e8e]">수집 소스를 불러오는 중…</p>
+          <p className="mt-10 text-center text-sm text-[#8e8e8e]">트렌드 구독함을 불러오는 중…</p>
         ) : filteredSources.length === 0 ? (
-          <p className="mt-10 text-center text-sm text-[#8e8e8e]">등록된 수집 사이트가 없습니다.</p>
+          <p className="mt-10 text-center text-sm text-[#8e8e8e]">등록된 채널이 없습니다.</p>
         ) : (
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {filteredSources.map((source) => (
@@ -406,6 +442,8 @@ export default function ResearchSourcesPage() {
             지금 수집 (준비 중)
           </button>
         </div>
+
+        <SourceTypeGuideCard />
       </div>
 
       <AddSourceModal open={modalOpen} saving={saving} onClose={() => setModalOpen(false)} onSave={handleAddSource} />

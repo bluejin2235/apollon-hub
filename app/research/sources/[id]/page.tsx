@@ -93,7 +93,7 @@ function EditSourceModal({ open, saving, source, onClose, onSave }: EditSourceMo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
-        <h2 className="text-base font-semibold text-[#0d0d0d]">사이트 수정</h2>
+        <h2 className="text-base font-semibold text-[#0d0d0d]">채널 수정</h2>
 
         <div className="mt-4">
           <TrendSourceFormFields values={values} onChange={setValues} showActiveToggle />
@@ -110,7 +110,7 @@ function EditSourceModal({ open, saving, source, onClose, onSave }: EditSourceMo
           </button>
           <button
             type="button"
-            onClick={() => void onSave(sourceFormValuesToPayload(values))}
+            onClick={() => void onSave(sourceFormValuesToPayload(values, source))}
             disabled={saving || !isSourceFormValid(values)}
             className="rounded-lg bg-[#0d0d0d] px-4 py-2 text-sm font-medium text-white hover:bg-[#333] disabled:opacity-50"
           >
@@ -225,7 +225,7 @@ export default function ResearchSourceDetailPage() {
       }
 
       if (!sourceData) {
-        setError("수집 소스를 찾을 수 없습니다.");
+        setError("트렌드 구독함 채널을 찾을 수 없습니다.");
         setLoading(false);
         return;
       }
@@ -330,7 +330,7 @@ export default function ResearchSourceDetailPage() {
 
   const handleDelete = async () => {
     if (!source || deleteBusy) return;
-    if (!window.confirm(`"${source.name}" 수집 소스를 삭제할까요?`)) return;
+    if (!window.confirm(`"${source.name}" 채널을 삭제할까요?`)) return;
 
     setDeleteBusy(true);
     const { error: deleteError } = await supabase.from("trend_sources").delete().eq("id", source.id);
@@ -420,7 +420,7 @@ export default function ResearchSourceDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-[#8e8e8e]">수집 소스를 불러오는 중…</div>
+      <div className="flex flex-1 items-center justify-center text-sm text-[#8e8e8e]">채널을 불러오는 중…</div>
     );
   }
 
@@ -445,7 +445,7 @@ export default function ResearchSourceDetailPage() {
           className="inline-flex items-center gap-1.5 text-sm text-[#676767] transition hover:text-[#0d0d0d]"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          수집 소스 목록
+          트렌드 구독함
         </Link>
 
         <div className="mt-4 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">

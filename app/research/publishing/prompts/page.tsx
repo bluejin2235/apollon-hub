@@ -252,7 +252,7 @@ export default function ResearchPublishingPromptsPage() {
 
             <PromptSection
               title="P3 트렌드 수집 프롬프트"
-              description="모든 수집사이트 GPT 웹검색에 공통 적용되는 기준"
+              description="트렌드 구독함 GPT 웹검색에 공통 적용되는 기준"
               promptKey={P3_COLLECT_PROMPT_KEY}
               value={prompts[P3_COLLECT_PROMPT_KEY]}
               loading={loading}
