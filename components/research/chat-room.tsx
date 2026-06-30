@@ -24,6 +24,11 @@ import {
 } from "@/lib/research/types";
 import { containsSnsLink } from "@/lib/research/sns-link";
 import { getTrendRoomDisplayName } from "@/lib/research/week-label";
+import {
+  mapTrendMessageRow,
+  MESSAGE_PAGE_DEFAULT_LIMIT,
+  TREND_MESSAGE_SELECT
+} from "@/lib/research/trend-message-map";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 
@@ -41,6 +46,9 @@ type UploadMetadata = {
 
 const UPLOAD_BUCKET = "trend-uploads";
 const THINKING_MESSAGE_ID = "thinking";
+const MESSAGES_PAGE_SIZE = MESSAGE_PAGE_DEFAULT_LIMIT;
+const MESSAGE_SELECT = TREND_MESSAGE_SELECT;
+const mapMessageRow = mapTrendMessageRow;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 function detectUploadKind(file: File): "image" | "file" | null {
@@ -53,44 +61,38 @@ function dataTransferHasFiles(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes("Files");
 }
 
-const MESSAGE_SELECT = `
-  id,
-  room_id,
-  profile_id,
-  content,
-  message_type,
-  metadata,
-  created_at,
-  profile:profiles!profile_id (
-    id,
-    name
-  )
-`;
+function getOldestPersistedMessage(messages: TrendMessage[]): TrendMessage | null {
+  return messages.find((message) => message.id !== THINKING_MESSAGE_ID) ?? null;
+}
 
-function mapMessageRow(row: Record<string, unknown>): TrendMessage {
-  const profileRaw = row.profile;
-  const profile =
-    profileRaw && typeof profileRaw === "object" && !Array.isArray(profileRaw)
-      ? {
-          id: String((profileRaw as { id: unknown }).id),
-          name: String((profileRaw as { name: unknown }).name ?? "")
-        }
-      : null;
+async function fetchMessagesPage(
+  roomId: string,
+  token: string,
+  before?: string
+): Promise<{ messages: TrendMessage[]; has_more: boolean }> {
+  const params = new URLSearchParams({
+    room_id: roomId,
+    limit: String(MESSAGES_PAGE_SIZE)
+  });
+  if (before) params.set("before", before);
 
-  const metadata = (row.metadata as TrendMessage["metadata"]) ?? null;
-  const replyToId =
-    metadata && typeof metadata.reply_to_id === "string" ? metadata.reply_to_id : null;
+  const response = await fetch(`/api/research/messages?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = (await response.json()) as {
+    messages?: TrendMessage[];
+    has_more?: boolean;
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(data.error ?? "메시지를 불러오지 못했습니다.");
+  }
 
   return {
-    id: String(row.id),
-    room_id: String(row.room_id),
-    profile_id: row.profile_id ? String(row.profile_id) : null,
-    content: String(row.content ?? ""),
-    message_type: row.message_type as TrendMessage["message_type"],
-    metadata,
-    created_at: String(row.created_at),
-    profile,
-    reply_to_id: replyToId
+    messages: data.messages ?? [],
+    has_more: data.has_more === true
   };
 }
 
@@ -430,7 +432,7 @@ function RoomChatInput({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={uploading ? "파일 업로드 중…" : "메시지를 입력하세요…"}
+            placeholder={uploading ? "파일 업로드 중…" : "링크, 영상, 기사를 던져주세요. 루나가 분석할게요."}
             rows={1}
             disabled={inputDisabled}
             className="max-h-40 min-h-[24px] flex-1 resize-none bg-transparent text-[15px] leading-relaxed text-[#0d0d0d] placeholder:text-[#8e8e8e] focus:outline-none disabled:opacity-60"
@@ -537,7 +539,13 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [replyingTo, setReplyingTo] = useState<TrendMessage | null>(null);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const scrollRestoreHeightRef = useRef<number | null>(null);
+  const messagesLoadKindRef = useRef<"initial" | "prepend" | "append" | null>("initial");
   const dragCounterRef = useRef(0);
 
   useEffect(() => {
@@ -583,6 +591,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
       const withoutThinking =
         message.message_type === "ai" ? prev.filter((item) => item.id !== THINKING_MESSAGE_ID) : prev;
       if (withoutThinking.some((item) => item.id === message.id)) return withoutThinking;
+      messagesLoadKindRef.current = "append";
       return [...withoutThinking, message].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
@@ -592,6 +601,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const addThinkingMessage = useCallback(() => {
     setMessages((prev) => {
       if (prev.some((item) => item.id === THINKING_MESSAGE_ID)) return prev;
+      messagesLoadKindRef.current = "append";
       return [...prev, createThinkingMessage(roomId)];
     });
   }, [roomId]);
@@ -620,39 +630,104 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
     [canManageRoom, profileId]
   );
 
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlder || !hasMoreOlder) return;
+
+    const oldest = getOldestPersistedMessage(messages);
+    if (!oldest) return;
+
+    const scrollEl = messagesScrollRef.current;
+    if (scrollEl) {
+      scrollRestoreHeightRef.current = scrollEl.scrollHeight;
+    }
+
+    setLoadingOlder(true);
+    setError(null);
+
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setError("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const { messages: olderMessages, has_more } = await fetchMessagesPage(roomId, token, oldest.id);
+      messagesLoadKindRef.current = "prepend";
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const merged = [...olderMessages.filter((item) => !existingIds.has(item.id)), ...prev];
+        return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+      setHasMoreOlder(has_more);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "이전 대화를 불러오지 못했습니다.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [hasMoreOlder, loadingOlder, messages, roomId]);
+
+  const handleMessagesScroll = useCallback(() => {
+    const scrollEl = messagesScrollRef.current;
+    if (!scrollEl) return;
+
+    const distanceFromBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 80;
+
+    if (scrollEl.scrollTop < 80 && hasMoreOlder && !loadingOlder) {
+      void loadOlderMessages();
+    }
+  }, [hasMoreOlder, loadOlderMessages, loadingOlder]);
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setError(null);
+      setHasMoreOlder(false);
+      messagesLoadKindRef.current = "initial";
+      shouldStickToBottomRef.current = true;
 
-      const [roomResult, messagesResult] = await Promise.all([
-        supabase.from("trend_rooms").select("*").eq("id", roomId).maybeSingle(),
-        supabase.from("trend_messages").select(MESSAGE_SELECT).eq("room_id", roomId).order("created_at", {
-          ascending: true
-        })
-      ]);
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (cancelled) return;
-
-      if (roomResult.error || !roomResult.data) {
-        setError(roomResult.error?.message ?? "채팅방을 찾을 수 없습니다.");
-        setLoading(false);
+      if (!token) {
+        if (!cancelled) {
+          setError("로그인 세션이 없습니다.");
+          setLoading(false);
+        }
         return;
       }
 
-      if (messagesResult.error) {
-        setError(messagesResult.error.message);
+      try {
+        const [roomResult, messagesResult] = await Promise.all([
+          supabase.from("trend_rooms").select("*").eq("id", roomId).maybeSingle(),
+          fetchMessagesPage(roomId, token)
+        ]);
+
+        if (cancelled) return;
+
+        if (roomResult.error || !roomResult.data) {
+          setError(roomResult.error?.message ?? "채팅방을 찾을 수 없습니다.");
+          setLoading(false);
+          return;
+        }
+
+        setRoom(roomResult.data as TrendRoom);
+        setMessages(messagesResult.messages);
+        setHasMoreOlder(messagesResult.has_more);
         setLoading(false);
-        return;
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "채팅방을 불러오지 못했습니다.");
+          setLoading(false);
+        }
       }
-
-      const rows = (messagesResult.data ?? []).map((row) => mapMessageRow(row as Record<string, unknown>));
-
-      setRoom(roomResult.data as TrendRoom);
-      setMessages(rows);
-      setLoading(false);
     })();
 
     return () => {
@@ -661,14 +736,29 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   }, [roomId]);
 
   useEffect(() => {
-    if (!loading) {
-      scrollToBottom("auto");
-    }
-  }, [loading, scrollToBottom]);
+    if (loading) return;
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages.length, scrollToBottom]);
+    const scrollEl = messagesScrollRef.current;
+    const loadKind = messagesLoadKindRef.current;
+
+    if (loadKind === "initial") {
+      scrollToBottom("auto");
+      messagesLoadKindRef.current = null;
+      return;
+    }
+
+    if (loadKind === "prepend" && scrollEl && scrollRestoreHeightRef.current !== null) {
+      scrollEl.scrollTop = scrollEl.scrollHeight - scrollRestoreHeightRef.current;
+      scrollRestoreHeightRef.current = null;
+      messagesLoadKindRef.current = null;
+      return;
+    }
+
+    if (loadKind === "append" && shouldStickToBottomRef.current) {
+      scrollToBottom();
+      messagesLoadKindRef.current = null;
+    }
+  }, [loading, messages, scrollToBottom]);
 
   useEffect(() => {
     const channel = supabase
@@ -955,7 +1045,34 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain md:overscroll-auto">
+        <div
+          ref={messagesScrollRef}
+          onScroll={handleMessagesScroll}
+          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain md:overscroll-auto"
+        >
+        {!loading && messages.length > 0 ? (
+          <div className="sticky top-0 z-[1] bg-white/95 px-4 py-3 backdrop-blur-sm">
+            {loadingOlder ? (
+              <div className="flex items-center justify-center gap-2 text-xs text-[#8e8e8e]">
+                <span
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-[#534AB7]/30 border-t-[#534AB7]"
+                  aria-hidden
+                />
+                이전 대화 불러오는 중…
+              </div>
+            ) : hasMoreOlder ? (
+              <button
+                type="button"
+                onClick={() => void loadOlderMessages()}
+                className="mx-auto block text-xs font-medium text-[#534AB7] transition hover:text-[#3f378f]"
+              >
+                이전 대화 불러오기
+              </button>
+            ) : (
+              <p className="text-center text-xs text-[#8e8e8e]">처음 대화입니다</p>
+            )}
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <div className="flex min-h-[12rem] items-center justify-center px-6">
             <p className="text-center text-sm text-[#8e8e8e]">아직 메시지가 없습니다. 첫 트렌드를 공유해 보세요.</p>

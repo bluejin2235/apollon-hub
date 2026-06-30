@@ -55,7 +55,7 @@ export function ChatInput({ disabled = false, onSend }: ChatInputProps) {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="메시지를 입력하세요…"
+            placeholder="링크, 영상, 기사를 던져주세요. 루나가 분석할게요."
             rows={1}
             disabled={disabled || sending}
             className="max-h-40 min-h-[24px] flex-1 resize-none bg-transparent text-[15px] leading-relaxed text-[#0d0d0d] placeholder:text-[#8e8e8e] focus:outline-none disabled:opacity-60"
