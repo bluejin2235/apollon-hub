@@ -249,7 +249,7 @@ function ResearchRoomList({
               key={room.id}
               href={`/research/${room.id}`}
               className={`flex items-center gap-3 rounded-xl px-4 py-3.5 text-sm transition ${
-                isActive ? "bg-[#534AB7]/10 text-[#534AB7]" : "text-[#0d0d0d] hover:bg-neutral-100"
+                isActive ? "bg-[#534AB7]/70 font-medium text-white" : "text-[#0d0d0d] hover:bg-neutral-100"
               }`}
             >
               {showLeadingDot ? (
@@ -266,8 +266,10 @@ function ResearchRoomList({
           <Link
             key={room.id}
             href={`/research/${room.id}`}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-white transition ${
-              isActive ? "bg-white/10" : "hover:bg-white/5"
+            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
+              isActive
+                ? "bg-[#534AB7]/70 font-medium text-white"
+                : "text-white hover:bg-white/5"
             }`}
           >
             {showLeadingDot ? (
@@ -496,11 +498,6 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
   }
 
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
-  const isCollectionActive = isResearchChatSection(pathname);
-  const isSourcesActive = pathname.startsWith("/research/sources");
-  const isPromptsActive = pathname.startsWith("/research/publishing/prompts");
-  const isPublishingActive =
-    pathname.startsWith("/research/publishing") && !isPromptsActive;
   const showMobileRoomList = pathname === "/research";
   const isRoomDetail = /^\/research\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
     pathname
@@ -524,13 +521,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
                 <CreateRoomButton onCreated={handleRoomCreated} />
               ) : null}
             </div>
-            <div
-              className={`mt-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
-                isCollectionActive
-                  ? "bg-white/10 font-medium text-white"
-                  : "text-neutral-400"
-              }`}
-            >
+            <div className="mt-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400">
               <IconInbox className="h-4 w-4 shrink-0" />
               트렌드 수집함
             </div>
@@ -548,11 +539,7 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
             <nav className="flex flex-col gap-0.5">
               <Link
                 href="/research/sources"
-                className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
-                  isSourcesActive
-                    ? "bg-white/10 font-medium text-white"
-                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                }`}
+                className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
               >
                 <Settings className="h-4 w-4 shrink-0" aria-hidden />
                 트렌드 구독함
@@ -561,22 +548,14 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
                 <>
                   <Link
                     href="/research/publishing"
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
-                      isPublishingActive
-                        ? "bg-white/10 font-medium text-white"
-                        : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                    }`}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
                   >
                     <Send className="h-4 w-4 shrink-0" aria-hidden />
                     Publishing
                   </Link>
                   <Link
                     href="/research/publishing/prompts"
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
-                      isPromptsActive
-                        ? "bg-white/10 font-medium text-white"
-                        : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                    }`}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
                   >
                     <FileText className="h-4 w-4 shrink-0" aria-hidden />
                     프롬프트 관리

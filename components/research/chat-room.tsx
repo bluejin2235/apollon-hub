@@ -29,6 +29,7 @@ import {
   MESSAGE_PAGE_DEFAULT_LIMIT,
   TREND_MESSAGE_SELECT
 } from "@/lib/research/trend-message-map";
+import { isOwnTrendMessage } from "@/lib/research/message-ownership";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 
@@ -528,6 +529,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const { onRoomUpdated, removeRoom } = useResearchRooms() ?? {};
   const [room, setRoom] = useState<TrendRoom | null>(null);
   const [messages, setMessages] = useState<TrendMessage[]>([]);
+  const [viewerId, setViewerId] = useState(profileId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const canManageRoom = useResearchManager() === true;
@@ -547,6 +549,25 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const scrollRestoreHeightRef = useRef<number | null>(null);
   const messagesLoadKindRef = useRef<"initial" | "prepend" | "append" | null>("initial");
   const dragCounterRef = useRef(0);
+
+  useEffect(() => {
+    setViewerId(profileId);
+  }, [profileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      const sessionUserId = data.session?.user?.id;
+      if (!cancelled && sessionUserId) {
+        setViewerId(sessionUserId);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -612,7 +633,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
 
   const handleDeleteMessage = useCallback(
     async (message: TrendMessage) => {
-      const isOwn = message.profile_id === profileId;
+      const isOwn = isOwnTrendMessage(message, viewerId);
       if (!isOwn && !canManageRoom) return false;
       if (message.id === THINKING_MESSAGE_ID) return false;
       if (!window.confirm("이 메시지를 삭제할까요?")) return false;
@@ -627,7 +648,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
       setError(null);
       return true;
     },
-    [canManageRoom, profileId]
+    [canManageRoom, viewerId]
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -800,7 +821,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
       .from("trend_messages")
       .insert({
         room_id: roomId,
-        profile_id: profileId,
+        profile_id: viewerId,
         content: payload.content,
         message_type: payload.message_type,
         metadata: payload.metadata
@@ -1088,13 +1109,13 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
                   key={message.id}
                   message={message}
                   roomId={roomId}
-                  currentUserId={profileId}
+                  currentUserId={viewerId}
                   snsMemoSaved={
                     message.metadata?.sns_memo_saved === true || snsMemoAiMessageIds.has(message.id)
                   }
                   canDelete={
                     message.id !== THINKING_MESSAGE_ID &&
-                    (message.profile_id === profileId || canManageRoom)
+                    (isOwnTrendMessage(message, viewerId) || canManageRoom)
                   }
                   onDelete={handleDeleteMessage}
                   onReply={setReplyingTo}

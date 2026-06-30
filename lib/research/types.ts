@@ -56,6 +56,11 @@ export type TrendMessageMetadata = {
   sns_memo_message_id?: string;
   for_ai_message_id?: string;
   trigger_message_id?: string;
+  ai_model?: string;
+  has_analysis?: boolean;
+  is_pinned?: boolean;
+  is_pinned_notification?: boolean;
+  isThinking?: boolean;
 };
 
 export type TrendMessageProfile = {

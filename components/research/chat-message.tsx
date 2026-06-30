@@ -2,13 +2,13 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { getInitials, getProfileAvatarColors } from "@/lib/research/avatar";
+import { isOwnTrendMessage, shouldShowWeeklyPinButton } from "@/lib/research/message-ownership";
 import type { TrendMessage } from "@/lib/research/types";
 import { supabase } from "@/lib/supabase/client";
 
 type MessageMetadata = TrendMessage["metadata"] & {
   is_pinned?: boolean;
   is_pinned_notification?: boolean;
-  has_analysis?: boolean;
   ai_model?: string;
   isThinking?: boolean;
   reply_to_id?: string;
@@ -152,14 +152,6 @@ function truncatePreview(content: string, max = 30): string {
 function getReplyToId(message: TrendMessage): string | null {
   const meta = message.metadata as MessageMetadata | null;
   return message.reply_to_id ?? meta?.reply_to_id ?? null;
-}
-
-function shouldShowWeeklyPinButton(message: TrendMessage): boolean {
-  const meta = message.metadata as MessageMetadata | null;
-  if (message.message_type !== "ai") return false;
-  if (meta?.is_pinned_notification === true) return false;
-  if (meta?.has_analysis !== true) return false;
-  return true;
 }
 
 function TablerCornerUpLeftIcon({ className }: { className?: string }) {
@@ -715,7 +707,7 @@ export function ChatMessage({
     }
   };
 
-  const isMine = Boolean(currentUserId && message.profile_id === currentUserId && !isAi);
+  const isMine = isOwnTrendMessage(message, currentUserId);
   const senderName = getMessageSenderName(message);
   const initials = isAi ? "L" : getInitials(senderName);
   const avatarColors = isAi

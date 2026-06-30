@@ -16,22 +16,30 @@ export const TREND_MESSAGE_SELECT = `
 
 export function mapTrendMessageRow(row: Record<string, unknown>): TrendMessage {
   const profileRaw = row.profile;
-  const profile =
-    profileRaw && typeof profileRaw === "object" && !Array.isArray(profileRaw)
-      ? {
-          id: String((profileRaw as { id: unknown }).id),
-          name: String((profileRaw as { name: unknown }).name ?? "")
-        }
-      : null;
+  let profile: TrendMessage["profile"] = null;
+
+  if (Array.isArray(profileRaw) && profileRaw[0] && typeof profileRaw[0] === "object") {
+    const first = profileRaw[0] as { id: unknown; name: unknown };
+    profile = {
+      id: String(first.id),
+      name: String(first.name ?? "")
+    };
+  } else if (profileRaw && typeof profileRaw === "object" && !Array.isArray(profileRaw)) {
+    profile = {
+      id: String((profileRaw as { id: unknown }).id),
+      name: String((profileRaw as { name: unknown }).name ?? "")
+    };
+  }
 
   const metadata = (row.metadata as TrendMessage["metadata"]) ?? null;
   const replyToId =
     metadata && typeof metadata.reply_to_id === "string" ? metadata.reply_to_id : null;
+  const profileIdRaw = row.profile_id ? String(row.profile_id) : profile?.id ?? null;
 
   return {
     id: String(row.id),
     room_id: String(row.room_id),
-    profile_id: row.profile_id ? String(row.profile_id) : null,
+    profile_id: profileIdRaw,
     content: String(row.content ?? ""),
     message_type: row.message_type as TrendMessage["message_type"],
     metadata,
