@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import {
   aggregateUsageDashboard,
   formatProviderUploadMeta,
-  formatUsd,
+  formatTokenLocale,
   resolveUsageDateRange,
   type ApiUsageDbRow,
   type ApiUsageProvider,
@@ -15,8 +15,6 @@ import {
   type ProviderUploadMeta,
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
-import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
-import { ApiUsageUpload } from "@/components/agents/api-usage-upload";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -39,10 +37,9 @@ type SortKey =
   | "provider"
   | "api_key_label"
   | "num_requests"
-  | "input_cost_usd"
-  | "output_cost_usd"
-  | "cost_usd"
-  | "share_pct"
+  | "input_tokens"
+  | "output_tokens"
+  | "total_tokens"
   | null;
 type SortDir = "asc" | "desc";
 type ActiveSortKey = Exclude<SortKey, null>;
@@ -53,7 +50,7 @@ function formatProviderLabel(provider: ApiUsageProvider): string {
 
 function formatModelUsageDate(date: string): string {
   const [y, m, d] = date.split("-");
-  return `${y.slice(2)}/${m}/${d}`;
+  return `${y.slice(2)}.${m}.${d}`;
 }
 
 function SortableTh({
@@ -172,7 +169,7 @@ async function fetchUploadMeta(): Promise<ProviderUploadMeta[]> {
   return [toMeta("openai", openaiRow), toMeta("anthropic", anthropicRow)];
 }
 
-export function ApiUsageDashboard() {
+export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [period, setPeriod] = useState<UsagePeriodPreset>("last_6m");
   const [customStart, setCustomStart] = useState(() => {
@@ -190,8 +187,6 @@ export function ApiUsageDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-
-  const { usdKrw, monthLabel } = useUsdKrwForUsage();
 
   useEffect(() => {
     let cancelled = false;
@@ -246,7 +241,7 @@ export function ApiUsageDashboard() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const agg = useMemo(
     () => aggregateUsageDashboard(rows, range),
@@ -266,8 +261,10 @@ export function ApiUsageDashboard() {
     if (!sortKey) return agg.byModel;
     return [...agg.byModel].sort((a, b) => {
       let cmp: number;
-      if (sortKey === "input_cost_usd" || sortKey === "output_cost_usd" || sortKey === "cost_usd" || sortKey === "share_pct") {
-        cmp = a[sortKey] - b[sortKey];
+      if (sortKey === "input_tokens" || sortKey === "output_tokens" || sortKey === "total_tokens") {
+        const tokenVal = (row: ModelCostRow, key: "input_tokens" | "output_tokens" | "total_tokens") =>
+          key === "total_tokens" ? row.input_tokens + row.output_tokens : row[key];
+        cmp = tokenVal(a, sortKey) - tokenVal(b, sortKey);
       } else if (sortKey === "num_requests") {
         cmp = (a.num_requests ?? -1) - (b.num_requests ?? -1);
       } else if (sortKey === "provider") {
@@ -307,7 +304,6 @@ export function ApiUsageDashboard() {
         : `${agg.date_min} ~ ${agg.date_max}`
       : "—";
 
-  const totalKrw = agg.total_cost_usd * usdKrw;
   const openaiMeta = uploadMeta.find((m) => m.provider === "openai");
   const anthropicMeta = uploadMeta.find((m) => m.provider === "anthropic");
 
@@ -400,23 +396,15 @@ export function ApiUsageDashboard() {
         <>
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">총 비용</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(totalKrw)}</p>
-              <p className="mt-1 text-sm tabular-nums text-slate-400">{formatUsd(agg.total_cost_usd)}</p>
-              <p className="mt-2 text-[11px] text-slate-400">
-                환율 기준: 1$ = {usdKrw.toLocaleString("ko-KR")}원 ({monthLabel})
+              <p className="text-xs font-medium text-slate-500">총 토큰 사용량</p>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+                {agg.total_tokens != null ? `${formatTokenLocale(agg.total_tokens)} 토큰` : "—"}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">총 API 호출 횟수</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
                 {agg.total_requests != null ? agg.total_requests.toLocaleString("ko-KR") + "회" : "—"}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                호출당 평균{" "}
-                {agg.total_requests && agg.total_requests > 0
-                  ? formatKrw(totalKrw / agg.total_requests)
-                  : "—"}
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -426,7 +414,7 @@ export function ApiUsageDashboard() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-slate-900">일별 비용</h2>
+            <h2 className="text-base font-semibold text-slate-900">일별 토큰 사용량</h2>
             <div className="mt-2 mb-4 flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
               <span className="font-medium text-slate-700">적용된 데이터 기간</span>
               {anthropicMeta?.created_at && (
@@ -461,7 +449,7 @@ export function ApiUsageDashboard() {
                     <YAxis
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) =>
-                        typeof v === "number" ? `$${v < 1 ? v.toFixed(2) : v.toFixed(0)}` : String(v)
+                        typeof v === "number" ? v.toLocaleString("ko-KR") : String(v)
                       }
                     />
                     <Tooltip
@@ -481,13 +469,17 @@ export function ApiUsageDashboard() {
                             : dataKey === "openai"
                               ? "OpenAI"
                               : String(_name);
-                        const cost = formatUsd(typeof value === "number" ? value : Number(value));
-                        return [`${cost} (${requests.toLocaleString("ko-KR")}회)`, label];
+                        const tokens =
+                          typeof value === "number" ? value : Number(value);
+                        return [
+                          `${tokens.toLocaleString("ko-KR")} 토큰 (${requests.toLocaleString("ko-KR")}회)`,
+                          label
+                        ];
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="anthropic" name="Anthropic" stackId="cost" fill="#7c3aed" />
-                    <Bar dataKey="openai" name="OpenAI" stackId="cost" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="anthropic" name="Anthropic" stackId="tokens" fill="#7c3aed" />
+                    <Bar dataKey="openai" name="OpenAI" stackId="tokens" fill="#10b981" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -538,32 +530,24 @@ export function ApiUsageDashboard() {
                     className="text-right"
                   />
                   <SortableTh
-                    label="Input 비용"
-                    column="input_cost_usd"
+                    label="Input 토큰"
+                    column="input_tokens"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
                     className="text-right"
                   />
                   <SortableTh
-                    label="Output 비용"
-                    column="output_cost_usd"
+                    label="Output 토큰"
+                    column="output_tokens"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
                     className="text-right"
                   />
                   <SortableTh
-                    label="합계"
-                    column="cost_usd"
-                    sortKey={sortKey}
-                    sortDir={sortDir}
-                    onSort={handleSort}
-                    className="text-right"
-                  />
-                  <SortableTh
-                    label="비중"
-                    column="share_pct"
+                    label="총 토큰"
+                    column="total_tokens"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
@@ -575,13 +559,13 @@ export function ApiUsageDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {sortedByModel.length === 0 ? (
                   <tr>
-                    <td colSpan={isSuperAdmin ? 10 : 9} className="px-5 py-10 text-center text-slate-500">
+                    <td colSpan={isSuperAdmin ? 9 : 8} className="px-5 py-10 text-center text-slate-500">
                       모델별 데이터가 없습니다.
                     </td>
                   </tr>
                 ) : (
                   sortedByModel.map((row) => (
-                    <tr key={`${row.provider}-${row.model}-${row.api_key_label}`}>
+                    <tr key={`${row.provider}-${row.model}-${row.api_key_label}-${row.date}`}>
                       <td className="max-w-[200px] truncate px-5 py-3 font-medium" title={row.model}>
                         {row.model}
                       </td>
@@ -593,13 +577,10 @@ export function ApiUsageDashboard() {
                       <td className="px-5 py-3 text-right tabular-nums text-slate-600">
                         {row.num_requests != null ? `${row.num_requests.toLocaleString("ko-KR")}회` : "—"}
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.input_cost_usd)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums">{formatUsd(row.output_cost_usd)}</td>
+                      <td className="px-5 py-3 text-right tabular-nums">{formatTokenLocale(row.input_tokens)}</td>
+                      <td className="px-5 py-3 text-right tabular-nums">{formatTokenLocale(row.output_tokens)}</td>
                       <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">
-                        {formatUsd(row.cost_usd)}
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-slate-600">
-                        {row.share_pct.toFixed(1)}%
+                        {formatTokenLocale(row.input_tokens + row.output_tokens)}
                       </td>
                       {isSuperAdmin ? (
                         <td className="px-5 py-3 text-center">
@@ -637,11 +618,6 @@ export function ApiUsageDashboard() {
           </section>
         </>
       ) : null}
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">CSV 업로드</h2>
-        <ApiUsageUpload onSaved={() => void load()} />
-      </section>
     </div>
   );
 }

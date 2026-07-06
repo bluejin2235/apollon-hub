@@ -10,6 +10,7 @@ import {
   type ApiUsageProvider,
   type ApiUsageRow
 } from "@/lib/arte/api-usage";
+import { fetchOpenAiKeyNameLookup } from "@/lib/arte/openai-key-name-map";
 import { supabase } from "@/lib/supabase/client";
 
 const PROVIDERS: { id: ApiUsageProvider; label: string }[] = [
@@ -19,9 +20,10 @@ const PROVIDERS: { id: ApiUsageProvider; label: string }[] = [
 
 type Props = {
   onSaved?: () => void;
+  variant?: "page" | "modal";
 };
 
-export function ApiUsageUpload({ onSaved }: Props) {
+export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [provider, setProvider] = useState<ApiUsageProvider>("openai");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -45,7 +47,11 @@ export function ApiUsageUpload({ onSaved }: Props) {
       setFileName(file.name);
       try {
         const text = await file.text();
-        const rows = parseUsageCsv(provider, text);
+        let openAiKeyNameMap: Record<string, string> | undefined;
+        if (provider === "openai") {
+          openAiKeyNameMap = await fetchOpenAiKeyNameLookup();
+        }
+        const rows = parseUsageCsv(provider, text, { openAiKeyNameMap });
         if (rows.length === 0) {
           const range = extractCsvDateRange(provider, text);
           setPreview(null);
@@ -61,6 +67,8 @@ export function ApiUsageUpload({ onSaved }: Props) {
         setEmptyRange(null);
         setPreview(rows);
       } catch (e) {
+        setPreview(null);
+        setEmptyRange(null);
         setParseError(e instanceof Error ? e.message : "CSV 파싱 실패");
       }
     },
@@ -110,12 +118,28 @@ export function ApiUsageUpload({ onSaved }: Props) {
   }, [preview, onSaved]);
 
   const previewTotal = preview?.reduce((s, r) => s + r.cost_usd, 0) ?? 0;
+  const sectionClass =
+    variant === "modal"
+      ? "space-y-4"
+      : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
+  const dropSectionClass =
+    variant === "modal"
+      ? `rounded-xl border-2 border-dashed p-8 text-center transition ${
+          dragOver
+            ? "border-violet-400 bg-violet-50/50"
+            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
+        }`
+      : `rounded-2xl border-2 border-dashed p-8 text-center transition ${
+          dragOver
+            ? "border-violet-400 bg-violet-50/50"
+            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
+        }`;
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">출처 선택</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
+      <section className={sectionClass}>
+        {variant === "page" ? <h2 className="text-sm font-semibold text-slate-900">출처 선택</h2> : null}
+        <div className={variant === "page" ? "mt-3 flex flex-wrap gap-2" : "flex flex-wrap gap-2"}>
           {PROVIDERS.map((p) => (
             <button
               key={p.id}
@@ -140,11 +164,7 @@ export function ApiUsageUpload({ onSaved }: Props) {
       </section>
 
       <section
-        className={`rounded-2xl border-2 border-dashed p-8 text-center transition ${
-          dragOver
-            ? "border-violet-400 bg-violet-50/50"
-            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
-        }`}
+        className={dropSectionClass}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -196,8 +216,8 @@ export function ApiUsageUpload({ onSaved }: Props) {
       ) : null}
 
       {preview ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">파싱 미리보기</h2>
+        <section className={variant === "modal" ? "space-y-3" : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"}>
+          {variant === "page" ? <h2 className="text-sm font-semibold text-slate-900">파싱 미리보기</h2> : null}
           <p className="mt-2 text-sm text-slate-600">
             저장 예정 <span className="font-semibold text-slate-900">{preview.length}건</span>
             {" · "}

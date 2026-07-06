@@ -89,6 +89,12 @@ export function formatTokenCount(n: number): string {
   return String(Math.round(n));
 }
 
+/** 토큰 수 천 단위 콤마 (예: 1,234,567) */
+export function formatTokenLocale(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Math.round(n).toLocaleString("ko-KR");
+}
+
 export function resolveUsageDateRange(
   preset: UsagePeriodPreset,
   customStart: string,
@@ -190,21 +196,40 @@ function toNum(v: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeDateFromAnthropic(raw: string): string | null {
-  const s = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
+function normalizeAnthropicDate(dateStr: string): string | null {
+  const s = dateStr.trim();
+  if (!s) return null;
+  // usage_date_utc는 UTC 기준 날짜 → KST 변환
+  const d = new Date(s + "T00:00:00+00:00");
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function isOpenAiDayGranularity(rows: Record<string, string>[]): boolean {
+  // 실제 데이터가 있는 행만 필터링 (빈 행 제외)
+  const dataRows = rows.filter(
+    (r) =>
+      r.start_time_iso?.trim() &&
+      r.num_model_requests &&
+      parseFloat(r.num_model_requests) > 0
+  );
+  if (dataRows.length === 0) return false;
+  return dataRows.every((r) => {
+    const iso = r.start_time_iso.trim();
+    // T00:00:00으로 끝나는 경우만 Day 기준
+    return /T00:00:00(\+00:00|Z)?$/.test(iso);
+  });
 }
 
 function normalizeDateFromOpenAi(iso: string): string | null {
   const s = iso.trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  // UTC → KST(+9) 변환 후 날짜 추출
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
 }
 
 function openAiPricing(model: string): { input: number; output: number } {
@@ -230,7 +255,7 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
   const map = new Map<string, Agg>();
 
   for (const row of rows) {
-    const date = normalizeDateFromAnthropic(row.usage_date_utc ?? "");
+    const date = normalizeAnthropicDate(row.usage_date_utc ?? "");
     const model = (row.model ?? "").trim();
     if (!date || !model) continue;
 
@@ -273,10 +298,16 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.model.localeCompare(b.model));
 }
 
-export function parseOpenAiCsv(text: string): ApiUsageRow[] {
+export function parseOpenAiCsv(text: string, keyNameMap?: Record<string, string>): ApiUsageRow[] {
   const { headers, rows } = parseCsvText(text);
   if (!headers.includes("start_time_iso") && !headers.includes("end_time_iso")) {
     throw new Error("OpenAI CSV 형식이 아닙니다. start_time_iso(또는 end_time_iso) 컬럼이 필요합니다.");
+  }
+
+  if (isOpenAiDayGranularity(rows)) {
+    throw new Error(
+      "OpenAI CSV는 시간(Hour) 단위로보낸 파일만 업로드할 수 있어요.\nOpenAI 대시보드 → Usage → Export 시 Granularity를 'Hour'로 선택해주세요."
+    );
   }
 
   const map = new Map<string, Agg>();
@@ -288,7 +319,10 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
     const date = normalizeDateFromOpenAi(row.start_time_iso ?? row.start_time ?? "");
     if (!date) continue;
 
-    const apiKey = (row.api_key_id ?? "").trim() || "—";
+    const rawTrackingId = (row.api_key_id ?? "").trim();
+    const apiKey = rawTrackingId
+      ? (keyNameMap?.[rawTrackingId] ?? rawTrackingId)
+      : "—";
     const inputTokens = Math.round(toNum(row.input_tokens));
     const outputTokens = Math.round(toNum(row.output_tokens));
 
@@ -322,8 +356,14 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.model.localeCompare(b.model));
 }
 
-export function parseUsageCsv(provider: ApiUsageProvider, text: string): ApiUsageRow[] {
-  return provider === "anthropic" ? parseAnthropicCsv(text) : parseOpenAiCsv(text);
+export function parseUsageCsv(
+  provider: ApiUsageProvider,
+  text: string,
+  options?: { openAiKeyNameMap?: Record<string, string> }
+): ApiUsageRow[] {
+  return provider === "anthropic"
+    ? parseAnthropicCsv(text)
+    : parseOpenAiCsv(text, options?.openAiKeyNameMap);
 }
 
 /** CSV 파싱 결과 → api_usage upsert payload */
@@ -374,7 +414,7 @@ export function extractCsvDateRange(
   if (!headers.includes("usage_date_utc")) return null;
   const dates: string[] = [];
   for (const row of rows) {
-    const d = normalizeDateFromAnthropic(row.usage_date_utc ?? "");
+    const d = normalizeAnthropicDate(row.usage_date_utc ?? "");
     if (d) dates.push(d);
   }
   if (dates.length === 0) return null;
@@ -403,15 +443,12 @@ export type ModelCostRow = {
   provider: ApiUsageProvider;
   api_key_label: string;
   num_requests: number | null;
-  input_cost_usd: number;
-  output_cost_usd: number;
-  cost_usd: number;
-  share_pct: number;
+  input_tokens: number;
+  output_tokens: number;
 };
 
 export type DashboardAggregate = {
   rows: ApiUsageDbRow[];
-  total_cost_usd: number;
   total_tokens: number | null;
   total_requests: number | null;
   date_min: string | null;
@@ -426,14 +463,10 @@ export function aggregateUsageDashboard(
 ): DashboardAggregate {
   const filtered = rows.filter((r) => r.date >= range.start && r.date <= range.end);
 
-  const total_cost_usd = filtered.reduce((s, r) => s + Number(r.cost_usd), 0);
-  const openaiRows = filtered.filter((r) => r.provider === "openai");
   const total_tokens =
-    openaiRows.length > 0
-      ? openaiRows.reduce((s, r) => s + Number(r.input_tokens) + Number(r.output_tokens), 0)
-      : filtered.some((r) => r.provider === "anthropic")
-        ? null
-        : 0;
+    filtered.length === 0
+      ? null
+      : filtered.reduce((s, r) => s + Number(r.input_tokens) + Number(r.output_tokens), 0);
 
   const total_requests =
     filtered.length === 0
@@ -449,6 +482,7 @@ export function aggregateUsageDashboard(
     { anthropic: number; openai: number; requests_anthropic: number; requests_openai: number }
   >();
   for (const r of filtered) {
+    const tokens = Number(r.input_tokens) + Number(r.output_tokens);
     const d = dailyMap.get(r.date) ?? {
       anthropic: 0,
       openai: 0,
@@ -456,10 +490,10 @@ export function aggregateUsageDashboard(
       requests_openai: 0
     };
     if (r.provider === "anthropic") {
-      d.anthropic += Number(r.cost_usd);
+      d.anthropic += tokens;
       d.requests_anthropic += r.num_requests ?? 0;
     } else {
-      d.openai += Number(r.cost_usd);
+      d.openai += tokens;
       d.requests_openai += r.num_requests ?? 0;
     }
     dailyMap.set(r.date, d);
@@ -471,10 +505,10 @@ export function aggregateUsageDashboard(
       const [, m, day] = date.split("-");
       return {
         date,
-        label: `${Number(m)}/${Number(day)}`,
-        anthropic: roundUsd(v.anthropic),
-        openai: roundUsd(v.openai),
-        total: roundUsd(v.anthropic + v.openai),
+        label: `${m}.${day}`,
+        anthropic: v.anthropic,
+        openai: v.openai,
+        total: v.anthropic + v.openai,
         requests_anthropic: v.requests_anthropic,
         requests_openai: v.requests_openai
       };
@@ -482,41 +516,30 @@ export function aggregateUsageDashboard(
 
   const modelMap = new Map<string, ModelCostRow>();
   for (const r of filtered) {
-    const key = `${r.provider}\0${r.model}\0${r.api_key_label}`;
+    const key = `${r.provider}\0${r.model}\0${r.api_key_label}\0${r.date}`;
     const prev = modelMap.get(key) ?? {
       model: r.model,
       date: r.date,
       provider: r.provider,
       api_key_label: r.api_key_label,
       num_requests: null,
-      input_cost_usd: 0,
-      output_cost_usd: 0,
-      cost_usd: 0,
-      share_pct: 0
+      input_tokens: 0,
+      output_tokens: 0
     };
-    prev.input_cost_usd += Number(r.input_cost_usd);
-    prev.output_cost_usd += Number(r.output_cost_usd);
-    prev.cost_usd += Number(r.cost_usd);
+    prev.input_tokens += Number(r.input_tokens);
+    prev.output_tokens += Number(r.output_tokens);
     if (r.num_requests != null) {
       prev.num_requests = (prev.num_requests ?? 0) + r.num_requests;
     }
-    if (r.date > prev.date) prev.date = r.date;
     modelMap.set(key, prev);
   }
 
-  const byModel = [...modelMap.values()]
-    .map((m) => ({
-      ...m,
-      input_cost_usd: roundUsd(m.input_cost_usd),
-      output_cost_usd: roundUsd(m.output_cost_usd),
-      cost_usd: roundUsd(m.cost_usd),
-      share_pct: total_cost_usd > 0 ? (m.cost_usd / total_cost_usd) * 100 : 0
-    }))
-    .sort((a, b) => b.cost_usd - a.cost_usd);
+  const byModel = [...modelMap.values()].sort(
+    (a, b) => b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens)
+  );
 
   return {
     rows: filtered,
-    total_cost_usd: roundUsd(total_cost_usd),
     total_tokens,
     total_requests,
     date_min,

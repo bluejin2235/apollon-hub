@@ -26,6 +26,8 @@ export const CHAT_SELECTION_PROMPT_KEY = P2_TREND_PROMPT_KEY;
 
 export const P4_EDITOR_PROMPT_KEY = "p4_editor_prompt";
 
+export const P5_REPORT_PROMPT_KEY = "p5_report_prompt";
+
 export const P1_1_ARTICLE_PROMPT_KEY = "p1_1_article_prompt";
 
 /** @deprecated `p4_editor_prompt` 이전 키 */
@@ -42,6 +44,9 @@ export const DEFAULT_CHAT_SELECTION_PROMPT = DEFAULT_P2_TREND_PROMPT;
 
 export const DEFAULT_P4_EDITOR_PROMPT =
   "너는 아폴론이머시브웍스의 AI 편집장이야. 아폴론은 미디어 아키텍처 전문 스튜디오로 We Make Beloved Digital Landmarks가 미션이야. 채팅방 아젠다와 수집사이트 아티클 전체 후보 중에서 아폴론이 실제로 참고하고 영감받을 만한 것 최대 15개를 선정해줘. 선정 기준: 아폴론 프로젝트와 직접 연관성, 새로운 기술/공간 경험 트렌드, 클라이언트 제안서 활용 가능성.";
+
+export const DEFAULT_P5_REPORT_PROMPT =
+  "선정된 아티클을 노션 상세 리포트 페이지 형식으로 변환해줘. 출처, 요약, 아폴론 인사이트, 키워드를 포함해.";
 
 /** @deprecated `DEFAULT_P4_EDITOR_PROMPT` 사용 */
 export const DEFAULT_EDITOR_PROMPT = DEFAULT_P4_EDITOR_PROMPT;
@@ -75,6 +80,7 @@ export type ResearchPromptKey =
   | typeof P2_TREND_PROMPT_KEY
   | typeof P3_COLLECT_PROMPT_KEY
   | typeof P4_EDITOR_PROMPT_KEY
+  | typeof P5_REPORT_PROMPT_KEY
   | typeof P1_1_ARTICLE_PROMPT_KEY;
 
 export const RESEARCH_PROMPT_KEYS: ResearchPromptKey[] = [
@@ -82,6 +88,7 @@ export const RESEARCH_PROMPT_KEYS: ResearchPromptKey[] = [
   P2_TREND_PROMPT_KEY,
   P3_COLLECT_PROMPT_KEY,
   P4_EDITOR_PROMPT_KEY,
+  P5_REPORT_PROMPT_KEY,
   P1_1_ARTICLE_PROMPT_KEY
 ];
 
@@ -103,6 +110,8 @@ export function getDefaultPromptValue(key: ResearchPromptKey): string {
       return DEFAULT_P3_COLLECT_PROMPT;
     case P4_EDITOR_PROMPT_KEY:
       return DEFAULT_P4_EDITOR_PROMPT;
+    case P5_REPORT_PROMPT_KEY:
+      return DEFAULT_P5_REPORT_PROMPT;
     case P1_1_ARTICLE_PROMPT_KEY:
       return DEFAULT_P1_1_PROMPT;
     default:
@@ -122,6 +131,7 @@ const STORAGE_KEYS = [
   LEGACY_GPT_CURATOR_PROMPT_KEY,
   P4_EDITOR_PROMPT_KEY,
   LEGACY_EDITOR_PROMPT_KEY,
+  P5_REPORT_PROMPT_KEY,
   P1_1_ARTICLE_PROMPT_KEY
 ] as const;
 
@@ -166,6 +176,7 @@ export async function resolveResearchPrompts(admin: SupabaseClient): Promise<Res
       [P4_EDITOR_PROMPT_KEY, LEGACY_EDITOR_PROMPT_KEY],
       DEFAULT_P4_EDITOR_PROMPT
     ),
+    [P5_REPORT_PROMPT_KEY]: pickFirst(byKey, [P5_REPORT_PROMPT_KEY], DEFAULT_P5_REPORT_PROMPT),
     [P1_1_ARTICLE_PROMPT_KEY]: pickFirst(
       byKey,
       [P1_1_ARTICLE_PROMPT_KEY],

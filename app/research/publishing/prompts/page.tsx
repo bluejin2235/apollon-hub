@@ -12,6 +12,7 @@ import {
   P2_TREND_PROMPT_KEY,
   P3_COLLECT_PROMPT_KEY,
   P4_EDITOR_PROMPT_KEY,
+  P5_REPORT_PROMPT_KEY,
   type ResearchPromptKey,
   type ResearchPromptsResponse
 } from "@/lib/research/prompt-settings";
@@ -82,6 +83,7 @@ const EMPTY_PROMPTS: ResearchPromptsResponse = {
   [P2_TREND_PROMPT_KEY]: getDefaultPromptValue(P2_TREND_PROMPT_KEY),
   [P3_COLLECT_PROMPT_KEY]: getDefaultPromptValue(P3_COLLECT_PROMPT_KEY),
   [P4_EDITOR_PROMPT_KEY]: getDefaultPromptValue(P4_EDITOR_PROMPT_KEY),
+  [P5_REPORT_PROMPT_KEY]: getDefaultPromptValue(P5_REPORT_PROMPT_KEY),
   [P1_1_ARTICLE_PROMPT_KEY]: getDefaultPromptValue(P1_1_ARTICLE_PROMPT_KEY)
 };
 
@@ -275,6 +277,20 @@ export default function ResearchPublishingPromptsPage() {
               canEdit={canEdit}
               onChange={(value) => setPrompts((prev) => ({ ...prev, [P4_EDITOR_PROMPT_KEY]: value }))}
               onSave={() => void handleSave(P4_EDITOR_PROMPT_KEY)}
+            />
+
+            <PromptSection
+              title="P5 트렌드 리포트"
+              description="선정된 아티클을 노션 상세 리포트 페이지로 변환하는 프롬프트. 출처, 요약, 아폴론 인사이트, 키워드를 생성해요."
+              promptKey={P5_REPORT_PROMPT_KEY}
+              value={prompts[P5_REPORT_PROMPT_KEY]}
+              loading={loading}
+              saving={savingKey === P5_REPORT_PROMPT_KEY}
+              canEdit={canEdit}
+              onChange={(value) =>
+                setPrompts((prev) => ({ ...prev, [P5_REPORT_PROMPT_KEY]: value }))
+              }
+              onSave={() => void handleSave(P5_REPORT_PROMPT_KEY)}
             />
           </div>
         )}
