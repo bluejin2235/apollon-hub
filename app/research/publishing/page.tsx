@@ -51,6 +51,9 @@ type EditorCandidateArticle = {
   source_name: string | null;
   source_type: string | null;
   title: string | null;
+  reasons: string | null;
+  url: string | null;
+  image_url: string | null;
   summary: string | null;
   keywords: string[] | null;
   is_selected: boolean | null;
@@ -64,6 +67,32 @@ function formatKeywordTags(keywords: string[] | null | undefined): string {
     .filter(Boolean)
     .map((keyword) => `#${keyword}`)
     .join("  ");
+}
+
+function parseReasonBullets(reasons: string): string[] {
+  return reasons
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[•·\-]\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function ArticleCardImageColumn({ src }: { src: string }) {
+  const [hidden, setHidden] = useState(false);
+
+  if (hidden) return null;
+
+  return (
+    <div className="w-full shrink-0 basis-full sm:w-[240px] sm:basis-auto">
+      <img
+        src={src}
+        alt=""
+        onError={() => setHidden(true)}
+        className="h-auto w-full rounded-lg"
+      />
+    </div>
+  );
 }
 
 function aggregateEditorBatches(rows: EditorCandidateRow[]): EditorBatchSummary[] {
@@ -714,6 +743,10 @@ export default function ResearchPublishingPage() {
                         .filter((part) => part?.trim())
                         .join(" · ");
                       const keywordTags = formatKeywordTags(article.keywords);
+                      const reasonBullets = article.reasons?.trim()
+                        ? parseReasonBullets(article.reasons)
+                        : [];
+                      const imageUrl = article.image_url?.trim() ?? "";
 
                       return (
                         <article
@@ -737,9 +770,40 @@ export default function ResearchPublishingPage() {
                               {sourceLabel ? (
                                 <p className="text-xs text-[#8e8e8e]">{sourceLabel}</p>
                               ) : null}
-                              <h3 className="mt-1 text-sm font-semibold text-[#0d0d0d]">
+                              <h3 className="mt-1 text-base font-medium text-[#0d0d0d]">
                                 {article.title?.trim() || "제목 없음"}
                               </h3>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-4">
+                            <div className="min-w-0 flex-1 basis-0">
+                              {reasonBullets.length > 0 ? (
+                                <ul
+                                  className="list-disc space-y-2 pl-5"
+                                  style={{
+                                    color: "var(--text-secondary)",
+                                    fontSize: 13,
+                                    lineHeight: 1.65
+                                  }}
+                                >
+                                  {reasonBullets.map((reason, index) => (
+                                    <li key={`${article.id}-reason-${index}`}>{reason}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {article.url?.trim() ? (
+                                <a
+                                  href={article.url.trim()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`inline-block text-sm font-medium text-[#534AB7] hover:underline ${
+                                    reasonBullets.length > 0 ? "mt-2" : ""
+                                  }`}
+                                >
+                                  원본 보기 ↗
+                                </a>
+                              ) : null}
                               {article.summary?.trim() ? (
                                 <p className="mt-2 text-sm leading-relaxed text-[#676767]">
                                   {article.summary}
@@ -749,6 +813,7 @@ export default function ResearchPublishingPage() {
                                 <p className="mt-2 text-xs text-[#534AB7]">{keywordTags}</p>
                               ) : null}
                             </div>
+                            {imageUrl ? <ArticleCardImageColumn src={imageUrl} /> : null}
                           </div>
                         </article>
                       );
