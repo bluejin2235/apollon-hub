@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { SupplyToast } from "@/components/supplies/toast";
@@ -59,6 +60,299 @@ type EditorCandidateArticle = {
   is_selected: boolean | null;
   created_at: string;
 };
+
+type EditorSentArticleAnalysis = {
+  id: string;
+  title: string | null;
+  url: string | null;
+  image_url: string | null;
+  images: unknown;
+  reasons: string | null;
+  source_name: string | null;
+  published_date: string | null;
+  tavily_raw: unknown;
+  claude_raw: string | null;
+  summary: string | null;
+  insight: string | null;
+  verified_sources: unknown;
+  keywords: string[] | null;
+  p5_prompt_snapshot: string | null;
+};
+
+const ANALYSIS_SELECT_FIELDS =
+  "id, title, url, image_url, images, reasons, source_name, published_date, tavily_raw, claude_raw, summary, insight, verified_sources, keywords, p5_prompt_snapshot";
+
+const ANALYSIS_URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+
+const analysisLinkClassName =
+  "text-[#534AB7] underline underline-offset-2 hover:text-[#3f3799]";
+
+function splitAnalysisUrlSuffix(url: string): { href: string; suffix: string } {
+  let href = url;
+  let suffix = "";
+
+  while (href.length > 0 && /[.,;:!?)}\]"']$/.test(href)) {
+    const last = href.slice(-1);
+    if (last === ")" && (href.match(/\(/g)?.length ?? 0) < (href.match(/\)/g)?.length ?? 0)) {
+      break;
+    }
+    suffix = last + suffix;
+    href = href.slice(0, -1);
+  }
+
+  return { href, suffix };
+}
+
+function linkifyAnalysisText(text: string): ReactNode {
+  const parts = text.split(ANALYSIS_URL_REGEX);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, index) => {
+    if (index % 2 === 0) {
+      return part.length > 0 ? <span key={`text-${index}`}>{part}</span> : null;
+    }
+
+    const { href, suffix } = splitAnalysisUrlSuffix(part);
+    if (!/^https?:\/\//i.test(href)) {
+      return <span key={`raw-${index}`}>{part}</span>;
+    }
+
+    return (
+      <span key={`link-${index}`}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={analysisLinkClassName}
+        >
+          {href}
+        </a>
+        {suffix}
+      </span>
+    );
+  });
+}
+
+function formatAnalysisFieldValue(value: unknown): string {
+  if (value == null || value === "") return "—";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function formatSupabaseAnalysisCell(article: EditorSentArticleAnalysis): string {
+  return [
+    `title: ${formatAnalysisFieldValue(article.title)}`,
+    `url: ${formatAnalysisFieldValue(article.url)}`,
+    `image_url: ${formatAnalysisFieldValue(article.image_url)}`,
+    `images: ${formatAnalysisFieldValue(article.images)}`,
+    `reasons: ${formatAnalysisFieldValue(article.reasons)}`,
+    `source_name: ${formatAnalysisFieldValue(article.source_name)}`,
+    `published_date: ${formatAnalysisFieldValue(article.published_date)}`
+  ].join("\n");
+}
+
+function formatTavilyAnalysisCell(raw: unknown): string {
+  if (raw == null) return "—";
+
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return raw;
+    }
+  }
+
+  const results = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { results?: unknown }).results)
+      ? (parsed as { results: unknown[] }).results
+      : null;
+
+  if (!results || results.length === 0) {
+    return formatAnalysisFieldValue(parsed);
+  }
+
+  return results
+    .map((item, index) => {
+      const row = item as Record<string, unknown>;
+      const title = row.title != null ? String(row.title) : "—";
+      const url = row.url != null ? String(row.url) : "—";
+      const content = row.content != null ? String(row.content) : "—";
+      return `[${index + 1}] ${title}\nURL: ${url}\n${content}`;
+    })
+    .join("\n\n---\n\n");
+}
+
+function formatClaudeAnalysisCell(article: EditorSentArticleAnalysis): string {
+  if (article.claude_raw?.trim()) {
+    return article.claude_raw.trim();
+  }
+
+  const parts: string[] = [];
+  if (article.summary?.trim()) parts.push(`summary:\n${article.summary.trim()}`);
+  if (article.insight?.trim()) parts.push(`insight:\n${article.insight.trim()}`);
+  if (article.verified_sources != null) {
+    parts.push(`verified_sources:\n${formatAnalysisFieldValue(article.verified_sources)}`);
+  }
+  if (article.keywords?.length) {
+    parts.push(`keywords:\n${formatKeywordTags(article.keywords)}`);
+  }
+
+  return parts.length > 0 ? parts.join("\n\n") : "—";
+}
+
+function AnalysisTableCell({ children }: { children: string }) {
+  return (
+    <div className="rounded-lg border border-[rgba(0,0,0,0.08)] bg-[#fafafa] p-3">
+      <div className="whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-[#676767]">
+        {linkifyAnalysisText(children)}
+      </div>
+    </div>
+  );
+}
+
+function EditorAnalysisDataModal({
+  open,
+  batchLabel,
+  articles,
+  loading,
+  onClose
+}: {
+  open: boolean;
+  batchLabel: string;
+  articles: EditorSentArticleAnalysis[];
+  loading: boolean;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const [p5PromptExpanded, setP5PromptExpanded] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) setP5PromptExpanded(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || loading) return;
+    console.log(articles.map((a) => ({ title: a.title, has_p5: !!a.p5_prompt_snapshot })));
+  }, [open, loading, articles]);
+
+  const p5PromptSnapshot = articles[0]?.p5_prompt_snapshot?.trim() ?? "";
+
+  if (!open || !mounted) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-[2.5vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editor-analysis-modal-title"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-[95vh] w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-5 py-4">
+          <div>
+            <h2 id="editor-analysis-modal-title" className="text-base font-semibold text-[#0d0d0d]">
+              분석데이터
+            </h2>
+            <p className="mt-1 text-sm text-[#676767]">{batchLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#676767] transition hover:bg-[#f4f4f4] hover:text-[#0d0d0d]"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto px-5 py-4">
+          {loading ? (
+            <p className="py-10 text-center text-sm text-[#8e8e8e]">불러오는 중…</p>
+          ) : articles.length === 0 ? (
+            <p className="py-10 text-center text-sm text-[#8e8e8e]">발송된 아티클이 없습니다.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <section className="mb-4 min-w-[1160px]">
+                <button
+                  type="button"
+                  onClick={() => setP5PromptExpanded((prev) => !prev)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-[rgba(0,0,0,0.08)] bg-[#fafafa] px-4 py-3 text-left text-sm font-medium text-[#0d0d0d] transition hover:bg-[#f4f4f4]"
+                  aria-expanded={p5PromptExpanded}
+                >
+                  <span>리포트 생성 시 사용된 P5 프롬프트</span>
+                  <span className="shrink-0 text-xs font-normal text-[#676767]">
+                    {p5PromptExpanded ? "접기 ▲" : "펼치기 ▼"}
+                  </span>
+                </button>
+                {p5PromptExpanded ? (
+                  <div className="mt-2 rounded-lg border border-[rgba(0,0,0,0.08)] bg-[#fafafa] p-4">
+                    <pre className="whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-[#676767]">
+                      {p5PromptSnapshot || "—"}
+                    </pre>
+                  </div>
+                ) : null}
+              </section>
+
+              <table className="w-full min-w-[1160px] table-fixed text-sm">
+                <colgroup>
+                  <col style={{ width: 200 }} />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-[rgba(0,0,0,0.08)] bg-[#fafafa] text-left text-xs font-medium text-[#676767]">
+                    <th className="w-[200px] px-3 py-3 align-top">아티클</th>
+                    <th className="px-3 py-3 align-top">슈파베이스 자료</th>
+                    <th className="px-3 py-3 align-top">Tavily 자료</th>
+                    <th className="px-3 py-3 align-top">클로드 리포트</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[rgba(0,0,0,0.06)]">
+                  {articles.map((article) => (
+                    <tr key={article.id} className="align-top">
+                      <td className="w-[200px] max-w-[200px] px-3 py-3 align-top">
+                        <p className="break-words text-sm font-semibold leading-snug text-[#0d0d0d]">
+                          {article.title?.trim() || "—"}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <AnalysisTableCell>{formatSupabaseAnalysisCell(article)}</AnalysisTableCell>
+                      </td>
+                      <td className="px-3 py-3">
+                        <AnalysisTableCell>
+                          {formatTavilyAnalysisCell(article.tavily_raw)}
+                        </AnalysisTableCell>
+                      </td>
+                      <td className="px-3 py-3">
+                        <AnalysisTableCell>{formatClaudeAnalysisCell(article)}</AnalysisTableCell>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 function formatKeywordTags(keywords: string[] | null | undefined): string {
   if (!keywords?.length) return "";
@@ -223,6 +517,10 @@ export default function ResearchPublishingPage() {
   const [batchDetailLoading, setBatchDetailLoading] = useState(false);
   const [togglingArticleId, setTogglingArticleId] = useState<string | null>(null);
   const [sendBatchBusy, setSendBatchBusy] = useState(false);
+  const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
+  const [analysisModalLabel, setAnalysisModalLabel] = useState("");
+  const [analysisArticles, setAnalysisArticles] = useState<EditorSentArticleAnalysis[]>([]);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -394,6 +692,30 @@ export default function ResearchPublishingPage() {
       );
       window.alert(updateError.message);
     }
+  };
+
+  const openAnalysisModal = async (batch: EditorBatchSummary) => {
+    setAnalysisModalLabel(batch.batch_label);
+    setAnalysisModalOpen(true);
+    setAnalysisLoading(true);
+    setAnalysisArticles([]);
+
+    const { data, error: fetchError } = await supabase
+      .from("trend_editor_candidates")
+      .select(ANALYSIS_SELECT_FIELDS)
+      .eq("batch_id", batch.batch_id)
+      .eq("is_sent", true)
+      .order("created_at", { ascending: true });
+
+    setAnalysisLoading(false);
+
+    if (fetchError) {
+      window.alert(fetchError.message);
+      setAnalysisModalOpen(false);
+      return;
+    }
+
+    setAnalysisArticles((data ?? []) as EditorSentArticleAnalysis[]);
   };
 
   const handleSendBatchMail = async () => {
@@ -836,6 +1158,7 @@ export default function ResearchPublishingPage() {
                           <th className="px-5 py-3 text-right">후보</th>
                           <th className="px-5 py-3 text-right">선정</th>
                           <th className="px-5 py-3 text-right">상태</th>
+                          <th className="px-5 py-3 text-right">분석데이터</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[rgba(0,0,0,0.06)]">
@@ -861,6 +1184,22 @@ export default function ResearchPublishingPage() {
                                 <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
                                   미발송
                                 </span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              {batch.isSent ? (
+                                <button
+                                  type="button"
+                                  className="text-sm text-[#534AB7] underline underline-offset-2 hover:text-[#3f3799]"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void openAnalysisModal(batch);
+                                  }}
+                                >
+                                  보기
+                                </button>
+                              ) : (
+                                <span className="text-sm text-[#8e8e8e]">-</span>
                               )}
                             </td>
                           </tr>
@@ -916,6 +1255,14 @@ export default function ResearchPublishingPage() {
 
         {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
       </div>
+
+      <EditorAnalysisDataModal
+        open={analysisModalOpen}
+        batchLabel={analysisModalLabel}
+        articles={analysisArticles}
+        loading={analysisLoading}
+        onClose={() => setAnalysisModalOpen(false)}
+      />
 
       <SupplyToast message={toast} onClose={() => setToast(null)} />
     </div>
