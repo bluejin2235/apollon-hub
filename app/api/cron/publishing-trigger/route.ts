@@ -41,8 +41,13 @@ export async function GET(request: NextRequest) {
   const nowKst = new Date(Date.now() + KST_OFFSET_MS);
   const currentDay = nowKst.getUTCDay();
   const currentHour = nowKst.getUTCHours();
+  const currentMinute = nowKst.getUTCMinutes();
 
-  if (currentDay !== WEEKDAY_INDEX[schedule.day] || currentHour !== schedule.hour) {
+  if (
+    currentDay !== WEEKDAY_INDEX[schedule.day] ||
+    currentHour !== schedule.hour ||
+    currentMinute !== (schedule.minute ?? 0)
+  ) {
     return NextResponse.json({ skipped: true, reason: "scheduled time not matched" });
   }
 

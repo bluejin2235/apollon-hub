@@ -11,6 +11,7 @@ import {
   DEFAULT_PUBLISHING_SCHEDULE,
   formatPublishingScheduleSummary,
   PUBLISHING_HOUR_OPTIONS,
+  PUBLISHING_MINUTE_OPTIONS,
   PUBLISHING_PERIOD_OPTIONS,
   PUBLISHING_SCHEDULE_KEY,
   PUBLISHING_WEEKDAY_OPTIONS,
@@ -961,7 +962,24 @@ export default function ResearchPublishingPage() {
                     >
                       {PUBLISHING_HOUR_OPTIONS.map((hour) => (
                         <option key={hour} value={hour}>
-                          {hour}:00
+                          {String(hour).padStart(2, "0")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block flex-1">
+                    <span className="text-xs font-medium text-[#676767]">분</span>
+                    <select
+                      value={schedule.minute}
+                      onChange={(event) =>
+                        setSchedule((prev) => ({ ...prev, minute: Number(event.target.value) }))
+                      }
+                      disabled={scheduleLoading}
+                      className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+                    >
+                      {PUBLISHING_MINUTE_OPTIONS.map((minute) => (
+                        <option key={minute} value={minute}>
+                          {String(minute).padStart(2, "0")}
                         </option>
                       ))}
                     </select>

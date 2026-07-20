@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/publishing-trigger",
-      "schedule": "0 * * * *"
+      "schedule": "*/10 * * * *"
     }
   ]
 }
