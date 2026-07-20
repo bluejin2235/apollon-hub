@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/license-payment",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-trigger",
+      "schedule": "0 * * * *"
     }
   ]
 }
