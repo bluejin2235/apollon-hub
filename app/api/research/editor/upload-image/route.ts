@@ -5,8 +5,15 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 const BUCKET = "trend-editor-images";
 
 function sanitizeFilename(filename: string): string {
-  const base = filename.trim().replace(/[/\\]/g, "_").replace(/\s+/g, "-");
-  return base.length > 0 ? base.slice(0, 120) : "image";
+  const trimmed = filename.trim();
+  const extMatch = trimmed.match(/(\.[a-zA-Z0-9]{1,8})$/);
+  const ext = extMatch?.[1]?.toLowerCase() ?? "";
+  const stem = (extMatch ? trimmed.slice(0, -ext.length) : trimmed)
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "");
+  const safeStem = stem.length > 0 ? stem.slice(0, 80) : "image";
+  return `${safeStem}${ext || ".jpg"}`;
 }
 
 export async function POST(request: NextRequest) {
