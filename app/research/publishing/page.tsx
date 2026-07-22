@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
@@ -56,6 +56,12 @@ type EditorCandidateArticle = {
   reasons: string | null;
   url: string | null;
   image_url: string | null;
+  images: string[] | null;
+  selected_image_url: string | null;
+  editor_uploaded_images: string[] | null;
+  hidden_images: string[] | null;
+  video_urls: string[] | null;
+  editor_insight: string | null;
   summary: string | null;
   keywords: string[] | null;
   is_selected: boolean | null;
@@ -373,20 +379,432 @@ function parseReasonBullets(reasons: string): string[] {
     .filter(Boolean);
 }
 
-function ArticleCardImageColumn({ src }: { src: string }) {
-  const [hidden, setHidden] = useState(false);
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
-  if (hidden) return null;
+function collectArticleImageUrls(article: EditorCandidateArticle): string[] {
+  const hidden = new Set(normalizeStringArray(article.hidden_images));
+  const merged = [
+    ...normalizeStringArray(article.images),
+    ...normalizeStringArray(article.editor_uploaded_images)
+  ].filter((url) => !hidden.has(url));
+  return [...new Set(merged)];
+}
+
+async function getAccessToken(): Promise<string | null> {
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+}
+
+function EditorArticleCard({
+  article,
+  toggling,
+  onToggleSelected,
+  onArticlePatch,
+  onErrorToast
+}: {
+  article: EditorCandidateArticle;
+  toggling: boolean;
+  onToggleSelected: () => void;
+  onArticlePatch: (articleId: string, patch: Partial<EditorCandidateArticle>) => void;
+  onErrorToast: (message: string) => void;
+}) {
+  const isSelected = Boolean(article.is_selected);
+  const sourceLabel = [article.source_name, article.source_type]
+    .filter((part) => part?.trim())
+    .join(" · ");
+  const reasonBullets = article.reasons?.trim() ? parseReasonBullets(article.reasons) : [];
+  const imageUrls = collectArticleImageUrls(article);
+  const uploadedImages = normalizeStringArray(article.editor_uploaded_images);
+  const collectedImages = normalizeStringArray(article.images);
+  const hiddenImages = normalizeStringArray(article.hidden_images);
+  const videoUrls = normalizeStringArray(article.video_urls);
+  const selectedImageUrl = article.selected_image_url?.trim() || null;
+  const displayRepresentativeUrl = selectedImageUrl ?? imageUrls[0] ?? null;
+
+  const [insightDraft, setInsightDraft] = useState(article.editor_insight ?? "");
+  const [videoInput, setVideoInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [savingMedia, setSavingMedia] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setInsightDraft(article.editor_insight ?? "");
+  }, [article.id, article.editor_insight]);
+
+  const persistMedia = async (
+    patch: Partial<
+      Pick<
+        EditorCandidateArticle,
+        | "selected_image_url"
+        | "editor_uploaded_images"
+        | "hidden_images"
+        | "video_urls"
+        | "editor_insight"
+      >
+    >,
+    previous: Partial<EditorCandidateArticle>
+  ) => {
+    onArticlePatch(article.id, patch);
+    setSavingMedia(true);
+
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        onArticlePatch(article.id, previous);
+        onErrorToast("로그인 세션이 없습니다.");
+        return false;
+      }
+
+      const response = await fetch("/api/research/editor/update-media", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ candidateId: article.id, ...patch })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        onArticlePatch(article.id, previous);
+        onErrorToast(payload?.error || "저장에 실패했습니다.");
+        return false;
+      }
+
+      return true;
+    } catch {
+      onArticlePatch(article.id, previous);
+      onErrorToast("저장에 실패했습니다.");
+      return false;
+    } finally {
+      setSavingMedia(false);
+    }
+  };
+
+  const handleSelectImage = (url: string) => {
+    if (savingMedia || selectedImageUrl === url) return;
+    void persistMedia(
+      { selected_image_url: url },
+      { selected_image_url: article.selected_image_url }
+    );
+  };
+
+  const handleRemoveImage = (url: string, event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (savingMedia) return;
+
+    const patch: Partial<
+      Pick<EditorCandidateArticle, "selected_image_url" | "editor_uploaded_images" | "hidden_images">
+    > = {};
+    const previous: Partial<EditorCandidateArticle> = {
+      selected_image_url: article.selected_image_url,
+      editor_uploaded_images: article.editor_uploaded_images,
+      hidden_images: article.hidden_images
+    };
+
+    if (uploadedImages.includes(url)) {
+      patch.editor_uploaded_images = uploadedImages.filter((item) => item !== url);
+    } else if (collectedImages.includes(url)) {
+      patch.hidden_images = [...new Set([...hiddenImages, url])];
+    } else {
+      return;
+    }
+
+    if (selectedImageUrl === url) {
+      patch.selected_image_url = null;
+    }
+
+    void persistMedia(patch, previous);
+  };
+
+  const handleUploadImage = async (file: File) => {
+    if (uploading || savingMedia) return;
+
+    setUploading(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        onErrorToast("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("candidateId", article.id);
+
+      const uploadResponse = await fetch("/api/research/editor/upload-image", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (!uploadResponse.ok) {
+        const payload = (await uploadResponse.json().catch(() => null)) as { error?: string } | null;
+        onErrorToast(payload?.error || "이미지 업로드에 실패했습니다.");
+        return;
+      }
+
+      const payload = (await uploadResponse.json()) as { url?: string };
+      const url = payload.url?.trim();
+      if (!url) {
+        onErrorToast("업로드 URL을 받지 못했습니다.");
+        return;
+      }
+
+      const nextUploaded = [...uploadedImages, url];
+      const ok = await persistMedia(
+        {
+          editor_uploaded_images: nextUploaded,
+          selected_image_url: selectedImageUrl ?? url
+        },
+        {
+          editor_uploaded_images: article.editor_uploaded_images,
+          selected_image_url: article.selected_image_url
+        }
+      );
+
+      if (!ok) return;
+    } catch {
+      onErrorToast("이미지 업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleAddVideo = () => {
+    const url = videoInput.trim();
+    if (!url || savingMedia) return;
+    if (videoUrls.includes(url)) {
+      setVideoInput("");
+      return;
+    }
+
+    const nextVideos = [...videoUrls, url];
+    setVideoInput("");
+    void persistMedia({ video_urls: nextVideos }, { video_urls: article.video_urls });
+  };
+
+  const handleRemoveVideo = (url: string) => {
+    if (savingMedia) return;
+    const nextVideos = videoUrls.filter((item) => item !== url);
+    void persistMedia({ video_urls: nextVideos }, { video_urls: article.video_urls });
+  };
+
+  const handleInsightBlur = () => {
+    const nextInsight = insightDraft;
+    const previousInsight = article.editor_insight ?? "";
+    if (nextInsight === previousInsight || savingMedia) return;
+    void persistMedia({ editor_insight: nextInsight }, { editor_insight: article.editor_insight });
+  };
 
   return (
-    <div className="w-full shrink-0 basis-full sm:w-[240px] sm:basis-auto">
-      <img
-        src={src}
-        alt=""
-        onError={() => setHidden(true)}
-        className="h-auto w-full rounded-lg"
-      />
-    </div>
+    <article
+      className={`rounded-xl bg-white p-4 transition ${
+        isSelected ? "border-2 border-[#534AB7]" : "border border-[rgba(0,0,0,0.08)]"
+      }`}
+    >
+      <div className="flex gap-3">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          disabled={toggling}
+          onChange={onToggleSelected}
+          className="mt-1 h-4 w-4 shrink-0 accent-[#534AB7]"
+          aria-label={`${article.title ?? "아티클"} 선정`}
+        />
+        <div className="min-w-0 flex-1">
+          {sourceLabel ? <p className="text-xs text-[#8e8e8e]">{sourceLabel}</p> : null}
+          <h3 className="mt-1 text-base font-medium text-[#0d0d0d]">
+            {article.title?.trim() || "제목 없음"}
+          </h3>
+          {article.url?.trim() ? (
+            <a
+              href={article.url.trim()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-sm font-medium text-[#534AB7] hover:underline"
+            >
+              원본 보기 ↗
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="mt-4">
+        <h4 className="text-sm font-semibold text-[#0d0d0d]">📷 수집된 이미지</h4>
+        {imageUrls.length === 0 ? (
+          <p className="mt-2 text-sm text-[#8e8e8e]">수집된 이미지 없음</p>
+        ) : (
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {imageUrls.map((url) => {
+              const isRepresentative = displayRepresentativeUrl === url;
+              return (
+                <div
+                  key={url}
+                  className={`relative aspect-square overflow-hidden rounded-lg border-2 transition ${
+                    isRepresentative
+                      ? "border-[#534AB7]"
+                      : "border-transparent hover:border-[rgba(83,74,183,0.35)]"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSelectImage(url)}
+                    disabled={savingMedia}
+                    className="absolute inset-0"
+                    aria-label={isRepresentative ? "대표 이미지" : "대표 이미지로 선택"}
+                  >
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                  {isRepresentative ? (
+                    <span className="pointer-events-none absolute left-1.5 top-1.5 z-[1] rounded bg-[#534AB7] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      대표
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={(event) => handleRemoveImage(url, event)}
+                    disabled={savingMedia}
+                    className="absolute right-1.5 top-1.5 z-[1] flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white transition hover:bg-black/75 disabled:opacity-50"
+                    aria-label="이미지 삭제"
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || savingMedia}
+              className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-[rgba(0,0,0,0.18)] text-2xl text-[#8e8e8e] transition hover:border-[#534AB7] hover:text-[#534AB7] disabled:opacity-50"
+              aria-label="이미지 업로드"
+            >
+              {uploading ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : "+"}
+            </button>
+          </div>
+        )}
+        {imageUrls.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading || savingMedia}
+            className="mt-2 inline-flex items-center gap-2 rounded-lg border border-dashed border-[rgba(0,0,0,0.18)] px-3 py-2 text-sm text-[#676767] transition hover:border-[#534AB7] hover:text-[#534AB7] disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            + 이미지 업로드
+          </button>
+        ) : null}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleUploadImage(file);
+          }}
+        />
+      </section>
+
+      <section className="mt-4">
+        <h4 className="text-sm font-semibold text-[#0d0d0d]">🎬 관련 영상</h4>
+        {videoUrls.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {videoUrls.map((url) => (
+              <span
+                key={url}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#f4f4f4] px-2.5 py-1 text-xs text-[#0d0d0d]"
+              >
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 truncate text-[#534AB7] hover:underline"
+                  title={url}
+                >
+                  {url}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveVideo(url)}
+                  disabled={savingMedia}
+                  className="shrink-0 text-[#8e8e8e] hover:text-[#0d0d0d] disabled:opacity-50"
+                  aria-label="영상 URL 삭제"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="url"
+            value={videoInput}
+            onChange={(event) => setVideoInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handleAddVideo();
+              }
+            }}
+            placeholder="영상 URL 입력"
+            className="min-w-0 flex-1 rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={handleAddVideo}
+            disabled={!videoInput.trim() || savingMedia}
+            className="rounded-xl bg-[#534AB7] px-4 py-2 text-sm font-medium text-white hover:bg-[#453da0] disabled:opacity-50"
+          >
+            추가
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-4">
+        <h4 className="text-sm font-semibold text-[#0d0d0d]">🌙 루나가 선정한 이유</h4>
+        {reasonBullets.length > 0 ? (
+          <ul
+            className="mt-2 list-disc space-y-2 pl-5"
+            style={{
+              color: "var(--text-secondary)",
+              fontSize: 13,
+              lineHeight: 1.65
+            }}
+          >
+            {reasonBullets.map((reason, index) => (
+              <li key={`${article.id}-reason-${index}`}>{reason}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-[#8e8e8e]">선정이유가 없습니다.</p>
+        )}
+      </section>
+
+      <section className="mt-4">
+        <h4 className="text-sm font-semibold text-[#0d0d0d]">✍️ 편집장 코멘트</h4>
+        <textarea
+          value={insightDraft}
+          onChange={(event) => setInsightDraft(event.target.value)}
+          onBlur={handleInsightBlur}
+          rows={3}
+          placeholder="추가로 남기고 싶은 관점을 적어보세요..."
+          className="mt-2 w-full resize-y rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm leading-relaxed text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none"
+        />
+      </section>
+    </article>
   );
 }
 
@@ -691,7 +1109,56 @@ export default function ResearchPublishingPage() {
           };
         })
       );
-      window.alert(updateError.message);
+      setToast(updateError.message);
+    }
+  };
+
+  const handleArticlePatch = useCallback((articleId: string, patch: Partial<EditorCandidateArticle>) => {
+    setBatchArticles((prev) =>
+      prev.map((item) => (item.id === articleId ? { ...item, ...patch } : item))
+    );
+  }, []);
+
+  const handleBulkSelectArticles = async (nextSelected: boolean) => {
+    if (togglingArticleId || !selectedBatchId || batchArticles.length === 0) return;
+
+    const targets = batchArticles.filter((article) => Boolean(article.is_selected) !== nextSelected);
+    if (targets.length === 0) return;
+
+    const previousArticles = batchArticles;
+    const previousBatches = editorBatches;
+    const targetIds = targets.map((article) => article.id);
+
+    setTogglingArticleId("__bulk__");
+    setBatchArticles((prev) =>
+      prev.map((item) =>
+        targetIds.includes(item.id) ? { ...item, is_selected: nextSelected } : item
+      )
+    );
+    setEditorBatches((prev) =>
+      prev.map((batch) => {
+        if (batch.batch_id !== selectedBatchId) return batch;
+        const nextCount = nextSelected
+          ? batchArticles.length
+          : Math.max(0, batch.selectedCount - targets.length);
+        return {
+          ...batch,
+          selectedCount: nextSelected ? batchArticles.length : nextCount
+        };
+      })
+    );
+
+    const { error: updateError } = await supabase
+      .from("trend_editor_candidates")
+      .update({ is_selected: nextSelected })
+      .in("id", targetIds);
+
+    setTogglingArticleId(null);
+
+    if (updateError) {
+      setBatchArticles(previousArticles);
+      setEditorBatches(previousBatches);
+      setToast(updateError.message);
     }
   };
 
@@ -886,7 +1353,7 @@ export default function ResearchPublishingPage() {
         <p className="mt-1 text-sm text-[#676767]">
           {activeTab === "publishing"
             ? "트렌드 레이더 위클리 Publishing을 예약하거나 즉시 실행합니다."
-            : "발행 회차별로 AI편집장이 선별한 아티클을 검토하고 발송합니다."}
+            : "발행 회차별로 루나 편집장이 선별한 아티클을 검토하고 발송합니다."}
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2">
@@ -910,7 +1377,7 @@ export default function ResearchPublishingPage() {
                 : "border-[rgba(0,0,0,0.12)] text-[#676767] hover:border-[rgba(0,0,0,0.2)]"
             }`}
           >
-            AI편집장
+            루나편집장
           </button>
         </div>
 
@@ -1051,10 +1518,40 @@ export default function ResearchPublishingPage() {
                         ← 목록으로
                       </button>
                       <h2 className="mt-3 text-lg font-semibold text-[#0d0d0d]">{batchDetailLabel}</h2>
-                      <p className="mt-1 text-sm text-[#676767]">
-                        AI편집장 선별 {batchArticles.length.toLocaleString("ko-KR")}건 · 선정{" "}
-                        {batchSelectedCount.toLocaleString("ko-KR")}건
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-sm text-[#676767]">
+                          루나편집장 선별 {batchArticles.length.toLocaleString("ko-KR")}건 · 선정{" "}
+                          {batchSelectedCount.toLocaleString("ko-KR")}건
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void handleBulkSelectArticles(true)}
+                            disabled={
+                              batchDetailLoading ||
+                              batchArticles.length === 0 ||
+                              togglingArticleId !== null ||
+                              batchSelectedCount === batchArticles.length
+                            }
+                            className="rounded-lg border border-[rgba(0,0,0,0.14)] px-2.5 py-1 text-xs font-medium text-[#676767] transition hover:border-[#534AB7] hover:text-[#534AB7] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            전체 선택
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleBulkSelectArticles(false)}
+                            disabled={
+                              batchDetailLoading ||
+                              batchArticles.length === 0 ||
+                              togglingArticleId !== null ||
+                              batchSelectedCount === 0
+                            }
+                            className="rounded-lg border border-[rgba(0,0,0,0.14)] px-2.5 py-1 text-xs font-medium text-[#676767] transition hover:border-[#534AB7] hover:text-[#534AB7] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            전체 해제
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -1077,87 +1574,16 @@ export default function ResearchPublishingPage() {
                   </p>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {batchArticles.map((article) => {
-                      const isSelected = Boolean(article.is_selected);
-                      const sourceLabel = [article.source_name, article.source_type]
-                        .filter((part) => part?.trim())
-                        .join(" · ");
-                      const keywordTags = formatKeywordTags(article.keywords);
-                      const reasonBullets = article.reasons?.trim()
-                        ? parseReasonBullets(article.reasons)
-                        : [];
-                      const imageUrl = article.image_url?.trim() ?? "";
-
-                      return (
-                        <article
-                          key={article.id}
-                          className={`rounded-xl bg-white p-4 transition ${
-                            isSelected
-                              ? "border-2 border-[#534AB7]"
-                              : "border border-[rgba(0,0,0,0.08)]"
-                          }`}
-                        >
-                          <div className="flex gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              disabled={togglingArticleId === article.id}
-                              onChange={() => void handleToggleArticleSelected(article)}
-                              className="mt-1 h-4 w-4 shrink-0 accent-[#534AB7]"
-                              aria-label={`${article.title ?? "아티클"} 선정`}
-                            />
-                            <div className="min-w-0 flex-1">
-                              {sourceLabel ? (
-                                <p className="text-xs text-[#8e8e8e]">{sourceLabel}</p>
-                              ) : null}
-                              <h3 className="mt-1 text-base font-medium text-[#0d0d0d]">
-                                {article.title?.trim() || "제목 없음"}
-                              </h3>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap gap-4">
-                            <div className="min-w-0 flex-1 basis-0">
-                              {reasonBullets.length > 0 ? (
-                                <ul
-                                  className="list-disc space-y-2 pl-5"
-                                  style={{
-                                    color: "var(--text-secondary)",
-                                    fontSize: 13,
-                                    lineHeight: 1.65
-                                  }}
-                                >
-                                  {reasonBullets.map((reason, index) => (
-                                    <li key={`${article.id}-reason-${index}`}>{reason}</li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                              {article.url?.trim() ? (
-                                <a
-                                  href={article.url.trim()}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className={`inline-block text-sm font-medium text-[#534AB7] hover:underline ${
-                                    reasonBullets.length > 0 ? "mt-2" : ""
-                                  }`}
-                                >
-                                  원본 보기 ↗
-                                </a>
-                              ) : null}
-                              {article.summary?.trim() ? (
-                                <p className="mt-2 text-sm leading-relaxed text-[#676767]">
-                                  {article.summary}
-                                </p>
-                              ) : null}
-                              {keywordTags ? (
-                                <p className="mt-2 text-xs text-[#534AB7]">{keywordTags}</p>
-                              ) : null}
-                            </div>
-                            {imageUrl ? <ArticleCardImageColumn src={imageUrl} /> : null}
-                          </div>
-                        </article>
-                      );
-                    })}
+                    {batchArticles.map((article) => (
+                      <EditorArticleCard
+                        key={article.id}
+                        article={article}
+                        toggling={togglingArticleId === article.id}
+                        onToggleSelected={() => void handleToggleArticleSelected(article)}
+                        onArticlePatch={handleArticlePatch}
+                        onErrorToast={setToast}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
