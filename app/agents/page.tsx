@@ -16,6 +16,8 @@ import {
 import { ApiUsageDashboard } from "@/components/agents/api-usage-dashboard";
 import { CreditRecordsTab } from "@/components/agents/credit-records-tab";
 import { OpenAiKeyNameMapModal } from "@/components/agents/openai-key-name-map-modal";
+import { MiddleAdminNotice } from "@/components/services/middle-admin-notice";
+import { SERVICE_URL } from "@/lib/services/permissions";
 import { supabase } from "@/lib/supabase/client";
 
 type ServiceInfo = { name: string; description: string };
@@ -123,6 +125,8 @@ export default function AgentsPage() {
         ) : null}
         {tab === "usage" ? <ApiUsageDashboard refreshKey={usageRefreshKey} /> : null}
         {tab === "credits" ? <CreditRecordsTab /> : null}
+
+        <MiddleAdminNotice serviceUrl={SERVICE_URL.ARTE} />
       </div>
 
       <ApiUsageUploadModal

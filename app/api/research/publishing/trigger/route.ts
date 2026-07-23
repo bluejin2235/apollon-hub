@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isResearchManagerServer } from "@/lib/auth/check-research-manager";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
+  normalizePublishingPart,
   normalizePublishingPeriod,
   publishingPeriodToDays
 } from "@/lib/research/publishing";
@@ -13,6 +14,7 @@ type TriggerBody = {
   period?: string;
   start_date?: string;
   end_date?: string;
+  part?: string;
 };
 
 function resolveTriggerDays(body: TriggerBody): number | null {
@@ -52,12 +54,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
+    const part = normalizePublishingPart(body.part);
+    if (!part) {
+      return NextResponse.json({ error: "유효하지 않은 파트입니다." }, { status: 400 });
+    }
+
     const days = resolveTriggerDays(body);
     if (days === null) {
       return NextResponse.json({ error: "유효하지 않은 수집기간입니다." }, { status: 400 });
     }
 
-    const webhookBody = { days };
+    const webhookBody = { days, part };
 
     const response = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",
@@ -72,7 +79,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Publishing 실행에 실패했습니다. (${response.status})` }, { status: 502 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, part, days });
   } catch (error) {
     console.error("[research/publishing/trigger]", error);
     const message = error instanceof Error ? error.message : "Internal server error";

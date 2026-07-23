@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getServiceIdByUrl, SERVICE_URL } from "@/lib/services/permissions";
+import { Info } from "lucide-react";
+import { MIDDLE_ADMIN_DESCRIPTIONS } from "@/lib/services/permission-descriptions";
+import { getServiceIdByUrl, SERVICE_URL, type ServiceUrl } from "@/lib/services/permissions";
 import { supabase } from "@/lib/supabase/client";
 
 const SERVICE_OPTIONS = [
@@ -31,7 +33,7 @@ type AssignmentRow = {
 };
 
 export function ServicePermissionsTab({ canManage }: { canManage: boolean }) {
-  const [selectedUrl, setSelectedUrl] = useState<string>(SERVICE_URL.LICENSE_MANAGER);
+  const [selectedUrl, setSelectedUrl] = useState<ServiceUrl>(SERVICE_URL.LICENSE_MANAGER);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [allProfiles, setAllProfiles] = useState<ProfileRow[]>([]);
@@ -205,6 +207,16 @@ export function ServicePermissionsTab({ canManage }: { canManage: boolean }) {
             </button>
           ))}
         </nav>
+
+        <div className="mt-4 flex gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-700">중간관리자 권한 안내</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              {MIDDLE_ADMIN_DESCRIPTIONS[selectedUrl]}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="apollon-card flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">

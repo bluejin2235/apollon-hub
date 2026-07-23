@@ -2,6 +2,8 @@ export const PUBLISHING_SCHEDULE_KEY = "publishing_schedule";
 
 export type PublishingPeriod = "1week" | "2week" | "custom";
 
+export type PublishingPart = "content" | "space";
+
 /** API/웹훅 입력 period 정규화 (2weeks → 2week) */
 export function normalizePublishingPeriod(
   period: string | undefined | null,
@@ -12,6 +14,14 @@ export function normalizePublishingPeriod(
   if (value === "2week" || value === "2weeks") return "2week";
   if (value === "custom") return "custom";
   return fallback;
+}
+
+export function normalizePublishingPart(
+  part: string | undefined | null
+): PublishingPart | null {
+  const value = part?.trim().toLowerCase();
+  if (value === "content" || value === "space") return value;
+  return null;
 }
 
 export type PublishingWeekday =
@@ -30,12 +40,30 @@ export type PublishingSchedule = {
   end_date?: string;
 };
 
+export type PublishingScheduleRow = {
+  id: string;
+  part: PublishingPart;
+  period: PublishingPeriod;
+  start_date: string | null;
+  end_date: string | null;
+  day: PublishingWeekday;
+  hour: number;
+  minute: number;
+  is_active: boolean | null;
+  created_at: string | null;
+};
+
 export const DEFAULT_PUBLISHING_SCHEDULE: PublishingSchedule = {
   day: "friday",
   hour: 23,
   minute: 0,
   period: "1week"
 };
+
+export const PUBLISHING_PART_OPTIONS: { value: PublishingPart; label: string }[] = [
+  { value: "content", label: "콘텐츠파트" },
+  { value: "space", label: "공간파트" }
+];
 
 export const PUBLISHING_PERIOD_OPTIONS: { value: PublishingPeriod; label: string }[] = [
   { value: "1week", label: "1주일" },
@@ -67,9 +95,53 @@ const VALID_WEEKDAYS = new Set<string>(PUBLISHING_WEEKDAY_OPTIONS.map((option) =
 const VALID_PERIODS = new Set<string>(PUBLISHING_PERIOD_OPTIONS.map((option) => option.value));
 
 export function formatPublishingScheduleSummary(schedule: PublishingSchedule): string {
-  const dayLabel = WEEKDAY_LABELS[schedule.day];
+  const dayLabel = WEEKDAY_LABELS[schedule.day] ?? schedule.day;
   const timeLabel = `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
   return `매주 ${dayLabel} ${timeLabel} 자동 실행 중`;
+}
+
+export function formatPublishingPartLabel(part: PublishingPart): string {
+  return part === "content" ? "콘텐츠" : "공간";
+}
+
+export function normalizePublishingWeekday(day: string | null | undefined): PublishingWeekday {
+  return typeof day === "string" && VALID_WEEKDAYS.has(day)
+    ? (day as PublishingWeekday)
+    : DEFAULT_PUBLISHING_SCHEDULE.day;
+}
+
+export function normalizeScheduleRow(row: Record<string, unknown>): PublishingScheduleRow | null {
+  const id = typeof row.id === "string" ? row.id : null;
+  const part = normalizePublishingPart(typeof row.part === "string" ? row.part : null);
+  if (!id || !part) return null;
+
+  const period =
+    typeof row.period === "string" && VALID_PERIODS.has(row.period)
+      ? (row.period as PublishingPeriod)
+      : DEFAULT_PUBLISHING_SCHEDULE.period;
+  const day = normalizePublishingWeekday(typeof row.day === "string" ? row.day : null);
+  const hour =
+    typeof row.hour === "number" && Number.isInteger(row.hour) && row.hour >= 0 && row.hour <= 23
+      ? row.hour
+      : DEFAULT_PUBLISHING_SCHEDULE.hour;
+  const minute =
+    typeof row.minute === "number" &&
+    PUBLISHING_MINUTE_OPTIONS.includes(row.minute as (typeof PUBLISHING_MINUTE_OPTIONS)[number])
+      ? row.minute
+      : DEFAULT_PUBLISHING_SCHEDULE.minute;
+
+  return {
+    id,
+    part,
+    period,
+    start_date: typeof row.start_date === "string" ? row.start_date : null,
+    end_date: typeof row.end_date === "string" ? row.end_date : null,
+    day,
+    hour,
+    minute,
+    is_active: typeof row.is_active === "boolean" ? row.is_active : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : null
+  };
 }
 
 export function parsePublishingSchedule(value: string | null | undefined): PublishingSchedule {

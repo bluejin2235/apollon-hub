@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
-  PUBLISHING_SCHEDULE_KEY,
-  parsePublishingSchedule,
-  publishingPeriodToDays
+  normalizeScheduleRow,
+  publishingPeriodToDays,
+  type PublishingScheduleRow
 } from "@/lib/research/publishing";
 import { KST_OFFSET_MS } from "@/lib/mail/hub-email";
 
@@ -30,56 +30,81 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Supabase environment variables missing" }, { status: 500 });
   }
 
-  const { data } = await admin
-    .from("trend_settings")
-    .select("value")
-    .eq("key", PUBLISHING_SCHEDULE_KEY)
-    .maybeSingle();
+  const { data, error } = await admin
+    .from("publishing_schedules")
+    .select("*")
+    .eq("is_active", true);
 
-  const schedule = parsePublishingSchedule(data?.value ?? null);
+  if (error) {
+    console.error("[publishing-trigger] schedule fetch failed", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const schedules = (data ?? [])
+    .map((row) => normalizeScheduleRow(row as Record<string, unknown>))
+    .filter((row): row is PublishingScheduleRow => row !== null);
 
   const nowKst = new Date(Date.now() + KST_OFFSET_MS);
   const currentDay = nowKst.getUTCDay();
   const currentHour = nowKst.getUTCHours();
   const currentMinute = nowKst.getUTCMinutes();
 
-  if (
-    currentDay !== WEEKDAY_INDEX[schedule.day] ||
-    currentHour !== schedule.hour ||
-    currentMinute !== (schedule.minute ?? 0)
-  ) {
+  const matching = schedules.filter(
+    (schedule) =>
+      WEEKDAY_INDEX[schedule.day] === currentDay &&
+      schedule.hour === currentHour &&
+      schedule.minute === currentMinute
+  );
+
+  if (matching.length === 0) {
     return NextResponse.json({ skipped: true, reason: "scheduled time not matched" });
   }
 
-  const days = publishingPeriodToDays(
-    schedule.period,
-    schedule.start_date ?? "",
-    schedule.end_date ?? ""
-  );
+  const results: { id: string; part: string; days: number; ok: boolean }[] = [];
 
-  if (days === null) {
-    console.error("[publishing-trigger] invalid schedule period", schedule);
-    return NextResponse.json({ error: "Invalid schedule period" }, { status: 400 });
-  }
+  for (const schedule of matching) {
+    const days = publishingPeriodToDays(
+      schedule.period,
+      schedule.start_date ?? "",
+      schedule.end_date ?? ""
+    );
 
-  try {
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days }),
-      signal: AbortSignal.timeout(60_000)
-    });
-
-    if (!response.ok) {
-      const detail = await response.text();
-      console.error("[publishing-trigger] webhook failed", response.status, detail.slice(0, 500));
-      return NextResponse.json({ error: `Webhook failed (${response.status})` }, { status: 502 });
+    if (days === null) {
+      console.error("[publishing-trigger] invalid schedule period", schedule);
+      results.push({ id: schedule.id, part: schedule.part, days: 0, ok: false });
+      continue;
     }
 
-    return NextResponse.json({ success: true, days });
-  } catch (error) {
-    console.error("[publishing-trigger]", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    try {
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, part: schedule.part }),
+        signal: AbortSignal.timeout(60_000)
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        console.error(
+          "[publishing-trigger] webhook failed",
+          schedule.id,
+          response.status,
+          detail.slice(0, 500)
+        );
+        results.push({ id: schedule.id, part: schedule.part, days, ok: false });
+        continue;
+      }
+
+      results.push({ id: schedule.id, part: schedule.part, days, ok: true });
+    } catch (triggerError) {
+      console.error("[publishing-trigger]", schedule.id, triggerError);
+      results.push({ id: schedule.id, part: schedule.part, days, ok: false });
+    }
   }
+
+  const allOk = results.every((result) => result.ok);
+  return NextResponse.json(
+    { success: allOk, triggered: results },
+    { status: allOk ? 200 : 502 }
+  );
 }

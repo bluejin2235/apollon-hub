@@ -14,6 +14,7 @@ import type { PortalProfileRow } from "@/lib/portal/profile";
 export const SERVICE_URL = {
   LICENSE_MANAGER: "/licenses",
   ASHULENG: "/restaurants",
+  /** 아르테: 중간관리자 역할은 지정 가능하나 기능 권한 로직에는 미연결. MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.ARTE]도 같이 업데이트할 것. */
   ARTE: "/agents",
   SUPPLIES: "/supplies",
   RESEARCH: "/research"
@@ -122,6 +123,9 @@ export async function isLicenseManager(
 /**
  * 라이선스 관리 권한.
  * 슈퍼관리자 OR 라이선스매니저 서비스 중간관리자 OR 해당 license_managers 담당자.
+ * 개별 라이선스 수정·삭제는 license_managers 테이블의 담당자 지정과 별도로, 슈퍼관리자·라이선스매니저 중간관리자도 가능.
+ * 이 설명 문구도 같이 업데이트할 것: MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.LICENSE_MANAGER]
+ * (`lib/services/permission-descriptions.ts`)
  */
 export async function canManageLicense(
   userProfile: PortalProfileRow | null | undefined,
@@ -136,15 +140,14 @@ export async function canManageLicense(
 
 /**
  * 라이선스 생성 권한.
- * 슈퍼관리자 OR 라이선스매니저 서비스 중간관리자.
+ * 인증된 멤버라면 누구나 가능.
+ * 이 설명 문구도 같이 업데이트할 것: MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.LICENSE_MANAGER]
+ * (`lib/services/permission-descriptions.ts`)
  */
-export async function canCreateLicense(
+export function canCreateLicense(
   userProfile: PortalProfileRow | null | undefined
-): Promise<boolean> {
-  if (!userProfile?.id) return false;
-  if (isSuperAdmin(userProfile)) return true;
-  if (await isMiddleAdmin(userProfile.id, SERVICE_URL.LICENSE_MANAGER)) return true;
-  return false;
+): boolean {
+  return Boolean(userProfile?.id);
 }
 
 /** 비품 등록 권한: 인증된 멤버이면 누구나 가능. */
@@ -160,6 +163,8 @@ export function canCreateResearchRoom(userProfile: PortalProfileRow | null | und
 /**
  * 비품 관리(수정/삭제 등) 권한.
  * 슈퍼관리자 OR 비품담당자(manager_id 일치) OR 물품창고 중간관리자.
+ * 이 설명 문구도 같이 업데이트할 것: MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.SUPPLIES]
+ * (`lib/services/permission-descriptions.ts`)
  */
 export async function canManageSupply(
   userProfile: PortalProfileRow | null | undefined,
@@ -175,6 +180,8 @@ export async function canManageSupply(
 /**
  * 트렌드 레이더 관리 권한.
  * 슈퍼관리자 OR 트렌드 레이더(/research) 서비스 중간관리자.
+ * 이 설명 문구도 같이 업데이트할 것: MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.RESEARCH]
+ * (`lib/services/permission-descriptions.ts`)
  */
 export async function canManageResearch(
   userProfile: PortalProfileRow | null | undefined
@@ -188,6 +195,8 @@ export async function canManageResearch(
 /**
  * 맛집 관리 권한.
  * 슈퍼관리자 OR 등록자(registered_by 일치) OR 아슐랭 중간관리자.
+ * 이 설명 문구도 같이 업데이트할 것: MIDDLE_ADMIN_DESCRIPTIONS[SERVICE_URL.ASHULENG]
+ * (`lib/services/permission-descriptions.ts`)
  */
 export async function canManageRestaurant(
   userProfile: PortalProfileRow | null | undefined,

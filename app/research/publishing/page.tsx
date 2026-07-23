@@ -9,17 +9,19 @@ import { SupplyToast } from "@/components/supplies/toast";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
   DEFAULT_PUBLISHING_SCHEDULE,
+  formatPublishingPartLabel,
   formatPublishingScheduleSummary,
+  normalizeScheduleRow,
   PUBLISHING_HOUR_OPTIONS,
   PUBLISHING_MINUTE_OPTIONS,
+  PUBLISHING_PART_OPTIONS,
   PUBLISHING_PERIOD_OPTIONS,
-  PUBLISHING_SCHEDULE_KEY,
   PUBLISHING_WEEKDAY_OPTIONS,
-  parsePublishingSchedule,
   publishingPeriodToDays,
-  serializePublishingSchedule,
+  type PublishingPart,
   type PublishingPeriod,
   type PublishingSchedule,
+  type PublishingScheduleRow,
   type PublishingWeekday
 } from "@/lib/research/publishing";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
@@ -911,6 +913,44 @@ function PeriodPicker({
   );
 }
 
+function PartToggle({
+  value,
+  onChange,
+  disabled
+}: {
+  value: PublishingPart;
+  onChange: (part: PublishingPart) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-[#0d0d0d]">파트</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {PUBLISHING_PART_OPTIONS.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(option.value)}
+              className={`rounded-xl border px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
+                selected
+                  ? option.value === "content"
+                    ? "border-[#534AB7] bg-[#534AB7] text-white"
+                    : "border-[#676767] bg-[#e8e8e8] text-[#676767]"
+                  : "border-[rgba(0,0,0,0.12)] text-[#676767] hover:border-[rgba(0,0,0,0.2)]"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ResearchPublishingPage() {
   const router = useRouter();
   const { status } = useRequirePortalSession();
@@ -918,11 +958,14 @@ export default function ResearchPublishingPage() {
 
   const [activeTab, setActiveTab] = useState<PageTab>("publishing");
 
-  const [schedule, setSchedule] = useState<PublishingSchedule>(DEFAULT_PUBLISHING_SCHEDULE);
-  const [savedSchedule, setSavedSchedule] = useState<PublishingSchedule>(DEFAULT_PUBLISHING_SCHEDULE);
+  const [activeSchedules, setActiveSchedules] = useState<PublishingScheduleRow[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [schedulePart, setSchedulePart] = useState<PublishingPart>("content");
+  const [schedule, setSchedule] = useState<PublishingSchedule>(DEFAULT_PUBLISHING_SCHEDULE);
 
+  const [immediatePart, setImmediatePart] = useState<PublishingPart>("content");
   const [immediatePeriod, setImmediatePeriod] = useState<PublishingPeriod>("1week");
   const [immediateStartDate, setImmediateStartDate] = useState("");
   const [immediateEndDate, setImmediateEndDate] = useState("");
@@ -956,29 +999,40 @@ export default function ResearchPublishingPage() {
     }
   }, [canManage, router]);
 
+  const resetScheduleForm = useCallback(() => {
+    setEditingScheduleId(null);
+    setSchedulePart("content");
+    setSchedule({ ...DEFAULT_PUBLISHING_SCHEDULE });
+  }, []);
+
+  const loadActiveSchedules = useCallback(async () => {
+    setScheduleLoading(true);
+    setError(null);
+
+    const { data, error: fetchError } = await supabase
+      .from("publishing_schedules")
+      .select("*")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+
+    setScheduleLoading(false);
+
+    if (fetchError) {
+      setError(fetchError.message);
+      setActiveSchedules([]);
+      return;
+    }
+
+    const rows = (data ?? [])
+      .map((row) => normalizeScheduleRow(row as Record<string, unknown>))
+      .filter((row): row is PublishingScheduleRow => row !== null);
+    setActiveSchedules(rows);
+  }, []);
+
   useEffect(() => {
     if (status !== "ready" || canManage !== true) return;
-
-    void (async () => {
-      setScheduleLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from("trend_settings")
-        .select("value")
-        .eq("key", PUBLISHING_SCHEDULE_KEY)
-        .maybeSingle();
-
-      if (fetchError) {
-        setError(fetchError.message);
-        setScheduleLoading(false);
-        return;
-      }
-
-      const parsed = parsePublishingSchedule(data?.value);
-      setSchedule(parsed);
-      setSavedSchedule(parsed);
-      setScheduleLoading(false);
-    })();
-  }, [status, canManage]);
+    void loadActiveSchedules();
+  }, [status, canManage, loadActiveSchedules]);
 
   const loadEditorBatches = useCallback(async () => {
     setEditorLoading(true);
@@ -1251,6 +1305,42 @@ export default function ResearchPublishingPage() {
     }
   }, [editorPage, editorTotalPages]);
 
+  const handleEditSchedule = (row: PublishingScheduleRow) => {
+    setEditingScheduleId(row.id);
+    setSchedulePart(row.part);
+    setSchedule({
+      day: row.day,
+      hour: row.hour,
+      minute: row.minute,
+      period: row.period,
+      start_date: row.start_date ?? "",
+      end_date: row.end_date ?? ""
+    });
+  };
+
+  const handleDeleteSchedule = async (row: PublishingScheduleRow) => {
+    const confirmed = window.confirm("이 예약 스케줄을 삭제할까요?");
+    if (!confirmed) return;
+
+    const { error: deleteError } = await supabase
+      .from("publishing_schedules")
+      .update({ is_active: false })
+      .eq("id", row.id);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      setToast("삭제에 실패했습니다.");
+      return;
+    }
+
+    if (editingScheduleId === row.id) {
+      resetScheduleForm();
+    }
+
+    setToast("예약 스케줄이 삭제되었습니다.");
+    void loadActiveSchedules();
+  };
+
   const handleSaveSchedule = async () => {
     if (scheduleSaving) return;
 
@@ -1262,24 +1352,33 @@ export default function ResearchPublishingPage() {
     setScheduleSaving(true);
     setError(null);
 
-    const { error: saveError } = await supabase.from("trend_settings").upsert(
-      {
-        key: PUBLISHING_SCHEDULE_KEY,
-        value: serializePublishingSchedule(schedule),
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: "key" }
-    );
+    const wasEditing = Boolean(editingScheduleId);
+    const payload = {
+      part: schedulePart,
+      period: schedule.period,
+      start_date: schedule.period === "custom" ? schedule.start_date ?? null : null,
+      end_date: schedule.period === "custom" ? schedule.end_date ?? null : null,
+      day: schedule.day,
+      hour: schedule.hour,
+      minute: schedule.minute,
+      is_active: true
+    };
+
+    const { error: saveError } = editingScheduleId
+      ? await supabase.from("publishing_schedules").update(payload).eq("id", editingScheduleId)
+      : await supabase.from("publishing_schedules").insert(payload);
 
     setScheduleSaving(false);
 
     if (saveError) {
       setError(saveError.message);
+      setToast("저장에 실패했습니다.");
       return;
     }
 
-    setSavedSchedule(schedule);
-    setToast("예약 설정이 저장되었습니다.");
+    resetScheduleForm();
+    setToast(wasEditing ? "예약 설정이 수정되었습니다." : "예약 설정이 저장되었습니다.");
+    void loadActiveSchedules();
   };
 
   const handleTriggerNow = async () => {
@@ -1316,7 +1415,7 @@ export default function ResearchPublishingPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ days })
+        body: JSON.stringify({ days, part: immediatePart })
       });
 
       const data = (await response.json()) as { error?: string };
@@ -1385,92 +1484,179 @@ export default function ResearchPublishingPage() {
           <div className="mt-6 flex flex-col gap-5">
             <section id="schedule" className="scroll-mt-24 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
               <h2 className="text-base font-semibold text-[#534AB7]">예약 발송</h2>
+              <p className="mt-1 text-sm text-[#676767]">파트별 자동 실행 스케줄을 등록하고 관리합니다.</p>
 
-              <div className="mt-5">
-                <PeriodPicker
-                  period={schedule.period}
-                  startDate={schedule.start_date ?? ""}
-                  endDate={schedule.end_date ?? ""}
-                  onPeriodChange={(period) => setSchedule((prev) => ({ ...prev, period }))}
-                  onStartDateChange={(start_date) => setSchedule((prev) => ({ ...prev, start_date }))}
-                  onEndDateChange={(end_date) => setSchedule((prev) => ({ ...prev, end_date }))}
-                />
+              <div className="mt-5 space-y-3">
+                {scheduleLoading ? (
+                  <p className="text-sm text-[#8e8e8e]">스케줄을 불러오는 중…</p>
+                ) : activeSchedules.length === 0 ? (
+                  <p className="rounded-xl bg-[#fafafa] px-4 py-3 text-sm text-[#8e8e8e]">
+                    등록된 예약 스케줄이 없습니다.
+                  </p>
+                ) : (
+                  activeSchedules.map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex flex-col gap-3 rounded-xl border border-[rgba(0,0,0,0.08)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-semibold ${
+                            row.part === "content"
+                              ? "bg-[#534AB7] text-white"
+                              : "bg-[#e8e8e8] text-[#676767]"
+                          }`}
+                        >
+                          {formatPublishingPartLabel(row.part)}
+                        </span>
+                        <p className="text-sm text-[#0d0d0d]">
+                          {formatPublishingScheduleSummary({
+                            day: row.day,
+                            hour: row.hour,
+                            minute: row.minute,
+                            period: row.period,
+                            start_date: row.start_date ?? undefined,
+                            end_date: row.end_date ?? undefined
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditSchedule(row)}
+                          disabled={scheduleSaving}
+                          className="rounded-lg border border-[rgba(0,0,0,0.14)] px-2.5 py-1 text-xs font-medium text-[#676767] transition hover:border-[#534AB7] hover:text-[#534AB7] disabled:opacity-50"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteSchedule(row)}
+                          disabled={scheduleSaving}
+                          className="rounded-lg border border-[rgba(0,0,0,0.14)] px-2.5 py-1 text-xs font-medium text-[#676767] transition hover:border-red-500 hover:text-red-600 disabled:opacity-50"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
-              <div className="mt-5">
-                <p className="text-sm font-medium text-[#0d0d0d]">시작시점</p>
-                <div className="mt-2 flex flex-col gap-3 sm:flex-row">
-                  <label className="block flex-1">
-                    <span className="text-xs font-medium text-[#676767]">요일</span>
-                    <select
-                      value={schedule.day}
-                      onChange={(event) =>
-                        setSchedule((prev) => ({ ...prev, day: event.target.value as PublishingWeekday }))
-                      }
-                      disabled={scheduleLoading}
-                      className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+              <div className="mt-6 border-t border-[rgba(0,0,0,0.06)] pt-5">
+                <p className="text-sm font-medium text-[#0d0d0d]">
+                  {editingScheduleId ? "스케줄 수정" : "스케줄 추가"}
+                </p>
+
+                <div className="mt-4">
+                  <PartToggle
+                    value={schedulePart}
+                    onChange={setSchedulePart}
+                    disabled={scheduleLoading || scheduleSaving}
+                  />
+                </div>
+
+                <div className="mt-5">
+                  <PeriodPicker
+                    period={schedule.period}
+                    startDate={schedule.start_date ?? ""}
+                    endDate={schedule.end_date ?? ""}
+                    onPeriodChange={(period) => setSchedule((prev) => ({ ...prev, period }))}
+                    onStartDateChange={(start_date) => setSchedule((prev) => ({ ...prev, start_date }))}
+                    onEndDateChange={(end_date) => setSchedule((prev) => ({ ...prev, end_date }))}
+                  />
+                </div>
+
+                <div className="mt-5">
+                  <p className="text-sm font-medium text-[#0d0d0d]">시작시점</p>
+                  <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+                    <label className="block flex-1">
+                      <span className="text-xs font-medium text-[#676767]">요일</span>
+                      <select
+                        value={schedule.day}
+                        onChange={(event) =>
+                          setSchedule((prev) => ({
+                            ...prev,
+                            day: event.target.value as PublishingWeekday
+                          }))
+                        }
+                        disabled={scheduleLoading || scheduleSaving}
+                        className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+                      >
+                        {PUBLISHING_WEEKDAY_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}요일
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block flex-1">
+                      <span className="text-xs font-medium text-[#676767]">시간</span>
+                      <select
+                        value={schedule.hour}
+                        onChange={(event) =>
+                          setSchedule((prev) => ({ ...prev, hour: Number(event.target.value) }))
+                        }
+                        disabled={scheduleLoading || scheduleSaving}
+                        className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+                      >
+                        {PUBLISHING_HOUR_OPTIONS.map((hour) => (
+                          <option key={hour} value={hour}>
+                            {String(hour).padStart(2, "0")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block flex-1">
+                      <span className="text-xs font-medium text-[#676767]">분</span>
+                      <select
+                        value={schedule.minute}
+                        onChange={(event) =>
+                          setSchedule((prev) => ({ ...prev, minute: Number(event.target.value) }))
+                        }
+                        disabled={scheduleLoading || scheduleSaving}
+                        className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
+                      >
+                        {PUBLISHING_MINUTE_OPTIONS.map((minute) => (
+                          <option key={minute} value={minute}>
+                            {String(minute).padStart(2, "0")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveSchedule()}
+                    disabled={scheduleSaving || scheduleLoading}
+                    className="rounded-xl bg-[#534AB7] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#453da0] disabled:opacity-50"
+                  >
+                    {scheduleSaving ? "저장 중…" : editingScheduleId ? "수정 저장" : "저장"}
+                  </button>
+                  {editingScheduleId ? (
+                    <button
+                      type="button"
+                      onClick={resetScheduleForm}
+                      disabled={scheduleSaving}
+                      className="rounded-xl border border-[rgba(0,0,0,0.14)] px-5 py-2.5 text-sm font-medium text-[#676767] hover:border-[#534AB7] hover:text-[#534AB7] disabled:opacity-50"
                     >
-                      {PUBLISHING_WEEKDAY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}요일
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block flex-1">
-                    <span className="text-xs font-medium text-[#676767]">시간</span>
-                    <select
-                      value={schedule.hour}
-                      onChange={(event) =>
-                        setSchedule((prev) => ({ ...prev, hour: Number(event.target.value) }))
-                      }
-                      disabled={scheduleLoading}
-                      className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
-                    >
-                      {PUBLISHING_HOUR_OPTIONS.map((hour) => (
-                        <option key={hour} value={hour}>
-                          {String(hour).padStart(2, "0")}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block flex-1">
-                    <span className="text-xs font-medium text-[#676767]">분</span>
-                    <select
-                      value={schedule.minute}
-                      onChange={(event) =>
-                        setSchedule((prev) => ({ ...prev, minute: Number(event.target.value) }))
-                      }
-                      disabled={scheduleLoading}
-                      className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
-                    >
-                      {PUBLISHING_MINUTE_OPTIONS.map((minute) => (
-                        <option key={minute} value={minute}>
-                          {String(minute).padStart(2, "0")}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      취소
+                    </button>
+                  ) : null}
                 </div>
               </div>
-
-              <p className="mt-5 rounded-xl bg-[#534AB7]/5 px-4 py-3 text-sm text-[#534AB7]">
-                현재: {formatPublishingScheduleSummary(savedSchedule)}
-              </p>
-
-              <button
-                type="button"
-                onClick={() => void handleSaveSchedule()}
-                disabled={scheduleSaving || scheduleLoading}
-                className="mt-5 rounded-xl bg-[#534AB7] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#453da0] disabled:opacity-50"
-              >
-                {scheduleSaving ? "저장 중…" : "저장"}
-              </button>
             </section>
 
             <section id="trigger" className="scroll-mt-24 rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
               <h2 className="text-base font-semibold text-[#534AB7]">즉시 발송</h2>
-              <p className="mt-1 text-sm text-[#676767]">선택한 수집기간으로 Publishing을 바로 실행합니다.</p>
+              <p className="mt-1 text-sm text-[#676767]">선택한 파트와 수집기간으로 Publishing을 바로 실행합니다.</p>
+
+              <div className="mt-5">
+                <PartToggle value={immediatePart} onChange={setImmediatePart} disabled={triggerBusy} />
+              </div>
 
               <div className="mt-5">
                 <PeriodPicker
