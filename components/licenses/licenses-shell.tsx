@@ -31,7 +31,7 @@ export function LicensesShell({ children }: { children: ReactNode }) {
           <LicenseSidebarNav pathname={pathname} />
         </aside>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-8 pb-0 sm:px-6 lg:px-8">
           {children}
         </div>
       </div>

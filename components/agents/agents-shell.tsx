@@ -22,7 +22,7 @@ function AgentsShellContent({ children }: { children: ReactNode }) {
         <AgentsSidebarNav activeTabKey={activeTabKey} />
       </aside>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-white px-4 py-8 text-gray-900 sm:px-6 lg:px-8">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-white px-4 pt-8 pb-0 text-gray-900 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-7xl pb-20 md:pb-0">
             {children}
           </div>
