@@ -833,7 +833,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
   }
 
   return (
-    <div className="min-h-0 bg-white pb-16 pt-1">
+    <div className="min-h-0 bg-white pt-1">
       <div className="mb-6">
         <Link href="/restaurants" className="text-sm text-slate-500 hover:text-slate-800">
           ← 맛집 목록
