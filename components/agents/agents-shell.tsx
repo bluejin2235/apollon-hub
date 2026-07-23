@@ -15,7 +15,7 @@ function AgentsShellContent({ children }: { children: ReactNode }) {
   const activeTabKey = parseAgentsTabKey(searchParams.get("tab"));
 
   return (
-    <div className={`flex h-[calc(100vh-3.5rem)] w-full pt-14 ${MOBILE_BOTTOM_TAB_PADDING}`}>
+    <div className={`flex h-screen w-full pt-14 ${MOBILE_BOTTOM_TAB_PADDING}`}>
       <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">
         <p className="text-xs font-semibold uppercase tracking-wider text-violet-600">Agents</p>
         <h2 className="mt-1 text-lg font-bold text-slate-900">AI 비용 관리</h2>
