@@ -17,8 +17,6 @@ import { buildCurrentWeekRoomFields, PERSONAL_ROOM_DEFAULT_NAME } from "@/lib/re
 import { getTrendRoomDisplayName } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
-import { MiddleAdminNotice } from "@/components/services/middle-admin-notice";
-import { SERVICE_URL } from "@/lib/services/permissions";
 
 function CreateRoomButton({
   onCreated,
@@ -494,9 +492,6 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
     [handleRoomUpdated, handleRemoveRoom]
   );
   const canManageResearch = useResearchManager() === true;
-  const showMiddleAdminNotice =
-    (pathname.startsWith("/research/sources") || pathname.startsWith("/research/publishing")) &&
-    !pathname.startsWith("/research/publishing/prompts");
 
   if (status === "checking") {
     return <PortalAuthChecking />;
@@ -596,11 +591,6 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
                 }`}
               >
                 {children}
-                {showMiddleAdminNotice ? (
-                  <div className="shrink-0 px-4 pb-6 sm:px-6">
-                    <MiddleAdminNotice serviceUrl={SERVICE_URL.RESEARCH} />
-                  </div>
-                ) : null}
               </div>
             )}
           </div>

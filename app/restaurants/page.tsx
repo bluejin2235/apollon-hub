@@ -29,8 +29,6 @@ import {
 } from "@/lib/restaurants/types";
 import { formatDistance, haversineDistanceMeters, useGeolocation } from "@/lib/geo";
 import { supabase } from "@/lib/supabase/client";
-import { MiddleAdminNotice } from "@/components/services/middle-admin-notice";
-import { SERVICE_URL } from "@/lib/services/permissions";
 
 type ReviewAgg = { sum: number; n: number; revisit: number };
 
@@ -893,8 +891,6 @@ export default function RestaurantsMainPage() {
       <AshulengBoardSection />
 
       <RestaurantFormModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={() => void loadAll()} />
-
-      <MiddleAdminNotice serviceUrl={SERVICE_URL.ASHULENG} />
     </div>
   );
 }

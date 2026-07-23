@@ -15,8 +15,6 @@ import { getCategoryColorHex } from "@/lib/licenses/category-colors";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
-import { MiddleAdminNotice } from "@/components/services/middle-admin-notice";
-import { SERVICE_URL } from "@/lib/services/permissions";
 
 function isActiveService(l: License): boolean {
   return l.status === "활성";
@@ -991,8 +989,6 @@ export default function LicensesDashboardPage() {
           </ul>
         )}
       </section>
-
-      <MiddleAdminNotice serviceUrl={SERVICE_URL.LICENSE_MANAGER} />
     </div>
   );
 }

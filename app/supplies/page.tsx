@@ -18,8 +18,7 @@ import {
   SUPPLY_LOCATION_SELECT,
   zoneSelectLabel
 } from "@/lib/supplies/locations";
-import { canCreateSupply, SERVICE_URL } from "@/lib/services/permissions";
-import { MiddleAdminNotice } from "@/components/services/middle-admin-notice";
+import { canCreateSupply } from "@/lib/services/permissions";
 import type { SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
@@ -241,8 +240,6 @@ export default function SuppliesPage() {
       ) : null}
 
       <WarehouseMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
-
-      <MiddleAdminNotice serviceUrl={SERVICE_URL.SUPPLIES} />
 
       <SuppliesMobileBottomNav activeTabKey={tabKey} />
     </div>
