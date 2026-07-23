@@ -6,11 +6,13 @@ import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { SupplyToast } from "@/components/supplies/toast";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import {
   DEFAULT_PUBLISHING_SCHEDULE,
   formatPublishingPartLabel,
   formatPublishingScheduleSummary,
+  normalizePublishingPart,
   normalizeScheduleRow,
   PUBLISHING_HOUR_OPTIONS,
   PUBLISHING_MINUTE_OPTIONS,
@@ -37,6 +39,8 @@ type EditorCandidateRow = {
   published_at: string | null;
   is_selected: boolean | null;
   is_sent: boolean | null;
+  part: string | null;
+  sent_by: string | null;
 };
 
 type EditorBatchSummary = {
@@ -46,6 +50,9 @@ type EditorBatchSummary = {
   candidateCount: number;
   selectedCount: number;
   isSent: boolean;
+  part: PublishingPart | null;
+  sentBy: string | null;
+  sentByName: string | null;
 };
 
 type EditorCandidateArticle = {
@@ -435,6 +442,8 @@ function EditorArticleCard({
   const [videoInput, setVideoInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [savingMedia, setSavingMedia] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -499,10 +508,8 @@ function EditorArticleCard({
     );
   };
 
-  const handleRemoveImage = (url: string, event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (savingMedia) return;
+  const removeImage = (url: string): boolean => {
+    if (savingMedia) return false;
 
     const patch: Partial<
       Pick<EditorCandidateArticle, "selected_image_url" | "editor_uploaded_images" | "hidden_images">
@@ -518,7 +525,7 @@ function EditorArticleCard({
     } else if (collectedImages.includes(url)) {
       patch.hidden_images = [...new Set([...hiddenImages, url])];
     } else {
-      return;
+      return false;
     }
 
     if (selectedImageUrl === url) {
@@ -526,7 +533,33 @@ function EditorArticleCard({
     }
 
     void persistMedia(patch, previous);
+    return true;
   };
+
+  const handleRemoveImage = (url: string, event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeImage(url);
+  };
+
+  const handleLightboxDelete = () => {
+    const url = imageUrls[lightboxIndex];
+    if (!url) return;
+    const remaining = imageUrls.length - 1;
+    if (!removeImage(url)) return;
+    if (remaining <= 0) {
+      setLightboxOpen(false);
+      setLightboxIndex(0);
+      return;
+    }
+    if (lightboxIndex >= remaining) {
+      setLightboxIndex(remaining - 1);
+    }
+  };
+
+  const lightboxCurrentUrl = imageUrls[lightboxIndex] ?? null;
+  const lightboxIsRepresentative =
+    Boolean(lightboxCurrentUrl) && displayRepresentativeUrl === lightboxCurrentUrl;
 
   const handleUploadImage = async (file: File) => {
     if (uploading || savingMedia) return;
@@ -610,6 +643,7 @@ function EditorArticleCard({
   };
 
   return (
+    <>
     <article
       className={`rounded-xl bg-white p-4 transition ${
         isSelected ? "border-2 border-[#534AB7]" : "border border-[rgba(0,0,0,0.08)]"
@@ -648,7 +682,7 @@ function EditorArticleCard({
           <p className="mt-2 text-sm text-[#8e8e8e]">수집된 이미지 없음</p>
         ) : (
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {imageUrls.map((url) => {
+            {imageUrls.map((url, index) => {
               const isRepresentative = displayRepresentativeUrl === url;
               return (
                 <div
@@ -661,18 +695,33 @@ function EditorArticleCard({
                 >
                   <button
                     type="button"
-                    onClick={() => handleSelectImage(url)}
-                    disabled={savingMedia}
+                    onClick={() => {
+                      setLightboxIndex(index);
+                      setLightboxOpen(true);
+                    }}
                     className="absolute inset-0"
-                    aria-label={isRepresentative ? "대표 이미지" : "대표 이미지로 선택"}
+                    aria-label="이미지 확대 보기"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} alt="" className="h-full w-full object-cover" />
                   </button>
                   {isRepresentative ? (
                     <span className="pointer-events-none absolute left-1.5 top-1.5 z-[1] rounded bg-[#534AB7] px-1.5 py-0.5 text-[10px] font-semibold text-white">
                       대표
                     </span>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSelectImage(url);
+                      }}
+                      disabled={savingMedia}
+                      className="absolute bottom-1.5 left-1.5 z-[1] rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white transition hover:bg-black/75 disabled:opacity-50"
+                    >
+                      대표로 지정
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(event) => handleRemoveImage(url, event)}
@@ -807,6 +856,124 @@ function EditorArticleCard({
         />
       </section>
     </article>
+    <ImageLightbox
+      images={imageUrls}
+      index={lightboxIndex}
+      open={lightboxOpen}
+      onClose={() => setLightboxOpen(false)}
+      onIndexChange={setLightboxIndex}
+      variant="light"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={handleLightboxDelete}
+            disabled={savingMedia || !lightboxCurrentUrl}
+            className="rounded-xl border border-[rgba(0,0,0,0.14)] bg-white px-4 py-2 text-sm font-medium text-[#b42318] transition hover:bg-[#fff5f5] disabled:opacity-50"
+          >
+            삭제
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!lightboxCurrentUrl) return;
+              handleSelectImage(lightboxCurrentUrl);
+            }}
+            disabled={savingMedia || !lightboxCurrentUrl || lightboxIsRepresentative}
+            className={`rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
+              lightboxIsRepresentative
+                ? "bg-[#534AB7]/15 text-[#534AB7]"
+                : "bg-[#534AB7] text-white hover:bg-[#453da0]"
+            }`}
+          >
+            {lightboxIsRepresentative ? "대표이미지" : "대표이미지로 설정"}
+          </button>
+        </>
+      }
+    />
+    </>
+  );
+}
+
+function EditorNewsletterMailModal({
+  open,
+  batchLabel,
+  html,
+  loading,
+  error,
+  onClose
+}: {
+  open: boolean;
+  batchLabel: string;
+  html: string | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open || !mounted) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-[2.5vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editor-newsletter-mail-modal-title"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-[95vh] w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-5 py-4">
+          <div>
+            <h2 id="editor-newsletter-mail-modal-title" className="text-base font-semibold text-[#0d0d0d]">
+              발송메일
+            </h2>
+            <p className="mt-1 text-sm text-[#676767]">{batchLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-[#676767] transition hover:bg-[#f4f4f4] hover:text-[#0d0d0d]"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 bg-[#fafafa] p-4">
+          {loading ? (
+            <p className="py-10 text-center text-sm text-[#8e8e8e]">불러오는 중…</p>
+          ) : error ? (
+            <p className="py-10 text-center text-sm text-red-600">{error}</p>
+          ) : html?.trim() ? (
+            <iframe
+              title={`${batchLabel} 발송메일`}
+              srcDoc={html}
+              className="h-full w-full rounded-xl border border-[rgba(0,0,0,0.08)] bg-white"
+              sandbox=""
+            />
+          ) : (
+            <p className="py-10 text-center text-sm text-[#8e8e8e]">저장된 발송메일이 없습니다.</p>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -815,6 +982,7 @@ function aggregateEditorBatches(rows: EditorCandidateRow[]): EditorBatchSummary[
 
   for (const row of rows) {
     const prev = map.get(row.batch_id);
+    const rowPart = normalizePublishingPart(row.part);
     if (!prev) {
       map.set(row.batch_id, {
         batch_id: row.batch_id,
@@ -822,7 +990,10 @@ function aggregateEditorBatches(rows: EditorCandidateRow[]): EditorBatchSummary[
         published_at: row.published_at,
         candidateCount: 1,
         selectedCount: row.is_selected ? 1 : 0,
-        isSent: Boolean(row.is_sent)
+        isSent: Boolean(row.is_sent),
+        part: rowPart,
+        sentBy: row.sent_by?.trim() || null,
+        sentByName: null
       });
       continue;
     }
@@ -831,6 +1002,8 @@ function aggregateEditorBatches(rows: EditorCandidateRow[]): EditorBatchSummary[
     if (row.is_selected) prev.selectedCount += 1;
     if (row.is_sent) prev.isSent = true;
     if (row.batch_label?.trim()) prev.batch_label = row.batch_label.trim();
+    if (!prev.part && rowPart) prev.part = rowPart;
+    if (!prev.sentBy && row.sent_by?.trim()) prev.sentBy = row.sent_by.trim();
     if (
       row.published_at &&
       (!prev.published_at || row.published_at > prev.published_at)
@@ -983,6 +1156,11 @@ export default function ResearchPublishingPage() {
   const [analysisModalLabel, setAnalysisModalLabel] = useState("");
   const [analysisArticles, setAnalysisArticles] = useState<EditorSentArticleAnalysis[]>([]);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [mailModalOpen, setMailModalOpen] = useState(false);
+  const [mailModalLabel, setMailModalLabel] = useState("");
+  const [mailHtml, setMailHtml] = useState<string | null>(null);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailError, setMailError] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -1040,17 +1218,47 @@ export default function ResearchPublishingPage() {
 
     const { data, error: fetchError } = await supabase
       .from("trend_editor_candidates")
-      .select("batch_id, batch_label, published_at, is_selected, is_sent");
-
-    setEditorLoading(false);
+      .select("batch_id, batch_label, published_at, is_selected, is_sent, part, sent_by");
 
     if (fetchError) {
+      setEditorLoading(false);
       setError(fetchError.message);
       setEditorBatches([]);
       return;
     }
 
-    setEditorBatches(aggregateEditorBatches((data ?? []) as EditorCandidateRow[]));
+    const batches = aggregateEditorBatches((data ?? []) as EditorCandidateRow[]);
+    const senderIds = [
+      ...new Set(
+        batches
+          .map((batch) => (batch.isSent ? batch.sentBy : null))
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
+
+    if (senderIds.length > 0) {
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .in("id", senderIds);
+
+      if (!profileError && profiles) {
+        const nameById = new Map(
+          profiles.map((profile) => [
+            profile.id as string,
+            typeof profile.name === "string" ? profile.name.trim() : ""
+          ])
+        );
+        for (const batch of batches) {
+          if (!batch.sentBy) continue;
+          const name = nameById.get(batch.sentBy);
+          batch.sentByName = name || null;
+        }
+      }
+    }
+
+    setEditorLoading(false);
+    setEditorBatches(batches);
   }, []);
 
   useEffect(() => {
@@ -1238,6 +1446,33 @@ export default function ResearchPublishingPage() {
     }
 
     setAnalysisArticles((data ?? []) as EditorSentArticleAnalysis[]);
+  };
+
+  const openMailModal = async (batch: EditorBatchSummary) => {
+    setMailModalLabel(batch.batch_label);
+    setMailModalOpen(true);
+    setMailLoading(true);
+    setMailHtml(null);
+    setMailError(null);
+
+    const { data, error: fetchError } = await supabase
+      .from("trend_newsletter_archive")
+      .select("html, part")
+      .eq("batch_id", batch.batch_id);
+
+    setMailLoading(false);
+
+    if (fetchError) {
+      setMailError(fetchError.message);
+      return;
+    }
+
+    const rows = (data ?? []) as Array<{ html: string | null; part: string | null }>;
+    const matched =
+      (batch.part
+        ? rows.find((row) => normalizePublishingPart(row.part) === batch.part)
+        : null) ?? rows[0];
+    setMailHtml(typeof matched?.html === "string" ? matched.html : null);
   };
 
   const handleSendBatchMail = async () => {
@@ -1785,10 +2020,12 @@ export default function ResearchPublishingPage() {
                       <thead>
                         <tr className="border-b border-[rgba(0,0,0,0.08)] bg-[#fafafa] text-left text-xs font-medium text-[#676767]">
                           <th className="px-5 py-3">발행 회차</th>
+                          <th className="px-5 py-3">파트</th>
                           <th className="px-5 py-3 text-right">후보</th>
                           <th className="px-5 py-3 text-right">선정</th>
                           <th className="px-5 py-3 text-right">상태</th>
                           <th className="px-5 py-3 text-right">분석데이터</th>
+                          <th className="px-5 py-3 text-right">발송메일</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[rgba(0,0,0,0.06)]">
@@ -1798,7 +2035,25 @@ export default function ResearchPublishingPage() {
                             onClick={() => setSelectedBatchId(batch.batch_id)}
                             className="cursor-pointer transition hover:bg-[#534AB7]/5"
                           >
-                            <td className="px-5 py-3 font-medium text-[#0d0d0d]">{batch.batch_label}</td>
+                            <td className="px-5 py-3 font-medium text-[#0d0d0d]">
+                              {batch.batch_label}
+                              {batch.part ? ` ${formatPublishingPartLabel(batch.part)}` : ""}
+                            </td>
+                            <td className="px-5 py-3">
+                              {batch.part ? (
+                                <span
+                                  className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-semibold ${
+                                    batch.part === "content"
+                                      ? "bg-[#534AB7] text-white"
+                                      : "bg-[#e8e8e8] text-[#676767]"
+                                  }`}
+                                >
+                                  {formatPublishingPartLabel(batch.part)}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-[#8e8e8e]">-</span>
+                              )}
+                            </td>
                             <td className="px-5 py-3 text-right tabular-nums text-[#676767]">
                               {batch.candidateCount.toLocaleString("ko-KR")}
                             </td>
@@ -1807,8 +2062,15 @@ export default function ResearchPublishingPage() {
                             </td>
                             <td className="px-5 py-3 text-right">
                               {batch.isSent ? (
-                                <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                                  발송완료
+                                <span className="inline-flex items-center justify-end gap-1.5">
+                                  <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                                    발송완료
+                                  </span>
+                                  {batch.sentByName ? (
+                                    <span className="text-[11px] font-normal text-[#8e8e8e]">
+                                      · {batch.sentByName}
+                                    </span>
+                                  ) : null}
                                 </span>
                               ) : (
                                 <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
@@ -1824,6 +2086,22 @@ export default function ResearchPublishingPage() {
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void openAnalysisModal(batch);
+                                  }}
+                                >
+                                  보기
+                                </button>
+                              ) : (
+                                <span className="text-sm text-[#8e8e8e]">-</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              {batch.isSent ? (
+                                <button
+                                  type="button"
+                                  className="text-sm text-[#534AB7] underline underline-offset-2 hover:text-[#3f3799]"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void openMailModal(batch);
                                   }}
                                 >
                                   보기
@@ -1892,6 +2170,15 @@ export default function ResearchPublishingPage() {
         articles={analysisArticles}
         loading={analysisLoading}
         onClose={() => setAnalysisModalOpen(false)}
+      />
+
+      <EditorNewsletterMailModal
+        open={mailModalOpen}
+        batchLabel={mailModalLabel}
+        html={mailHtml}
+        loading={mailLoading}
+        error={mailError}
+        onClose={() => setMailModalOpen(false)}
       />
 
       <SupplyToast message={toast} onClose={() => setToast(null)} />

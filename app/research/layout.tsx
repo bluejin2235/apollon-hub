@@ -495,7 +495,8 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
   );
   const canManageResearch = useResearchManager() === true;
   const showMiddleAdminNotice =
-    pathname.startsWith("/research/sources") || pathname.startsWith("/research/publishing");
+    (pathname.startsWith("/research/sources") || pathname.startsWith("/research/publishing")) &&
+    !pathname.startsWith("/research/publishing/prompts");
 
   if (status === "checking") {
     return <PortalAuthChecking />;

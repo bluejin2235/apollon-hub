@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { SupplyToast } from "@/components/supplies/toast";
@@ -24,10 +25,14 @@ import {
   type ResearchPromptKey,
   type ResearchPromptsResponse
 } from "@/lib/research/prompt-settings";
+import { getServiceIdByUrl, SERVICE_URL } from "@/lib/services/permissions";
 import { useResearchManager } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
 type TrendPart = "content" | "space";
+
+const MIDDLE_ADMIN_ROLE = "중간관리자";
+const SUPER_ADMIN_ROLE = "슈퍼관리자";
 
 type ProfileOption = {
   id: string;
@@ -94,7 +99,7 @@ function PromptSection({
 }
 
 function PartEditorCard({
-  part,
+  description,
   profiles,
   selectedUserId,
   loading,
@@ -103,7 +108,7 @@ function PartEditorCard({
   onChange,
   onSave
 }: {
-  part: TrendPart;
+  description: string;
   profiles: ProfileOption[];
   selectedUserId: string;
   loading: boolean;
@@ -115,33 +120,37 @@ function PartEditorCard({
   return (
     <section className="rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-5">
       <h3 className="text-sm font-semibold text-[#0d0d0d]">담당 편집장</h3>
-      <p className="mt-1 text-sm text-[#676767]">
-        {part === "content" ? "콘텐츠파트" : "공간파트"} 프롬프트·발행을 담당할 편집장을 지정합니다.
-      </p>
+      <p className="mt-1 text-sm leading-relaxed text-[#676767]">{description}</p>
       <label className="mt-4 block">
         <span className="text-xs font-medium text-[#676767]">편집장</span>
         <select
           value={selectedUserId}
           onChange={(event) => onChange(event.target.value)}
-          disabled={!canEdit || loading || saving}
+          disabled={!canEdit || loading || saving || profiles.length === 0}
           className="mt-1 w-full rounded-xl border border-[rgba(0,0,0,0.12)] px-3 py-2 text-sm text-[#0d0d0d] focus:border-[#534AB7] focus:outline-none disabled:opacity-60"
         >
-          <option value="">선택하세요</option>
-          {profiles.map((profile) => {
-            const label = profile.name?.trim() || profile.email?.trim() || profile.id;
-            return (
-              <option key={profile.id} value={profile.id}>
-                {label}
-              </option>
-            );
-          })}
+          {profiles.length === 0 ? (
+            <option value="">지정된 중간관리자 없음</option>
+          ) : (
+            <>
+              <option value="">선택하세요</option>
+              {profiles.map((profile) => {
+                const label = profile.name?.trim() || profile.email?.trim() || profile.id;
+                return (
+                  <option key={profile.id} value={profile.id}>
+                    {label}
+                  </option>
+                );
+              })}
+            </>
+          )}
         </select>
       </label>
       {canEdit ? (
         <button
           type="button"
           onClick={onSave}
-          disabled={loading || saving || !selectedUserId}
+          disabled={loading || saving || !selectedUserId || profiles.length === 0}
           className="mt-4 rounded-xl bg-[#534AB7] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#453da0] disabled:opacity-50"
         >
           {saving ? "저장 중…" : "저장"}
@@ -229,6 +238,7 @@ const SPACE_PROMPT_CARDS: {
 ];
 
 export default function ResearchPublishingPromptsPage() {
+  const router = useRouter();
   const { status } = useRequirePortalSession();
   const canManage = useResearchManager();
 
@@ -236,6 +246,7 @@ export default function ResearchPublishingPromptsPage() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<ResearchPromptKey | null>(null);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [superAdminNames, setSuperAdminNames] = useState("슈퍼관리자");
   const [contentEditorId, setContentEditorId] = useState("");
   const [spaceEditorId, setSpaceEditorId] = useState("");
   const [savingPart, setSavingPart] = useState<TrendPart | null>(null);
@@ -247,6 +258,12 @@ export default function ResearchPublishingPromptsPage() {
     const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (canManage === false) {
+      router.replace("/research");
+    }
+  }, [canManage, router]);
 
   const loadPrompts = useCallback(async () => {
     setLoading(true);
@@ -264,13 +281,27 @@ export default function ResearchPublishingPromptsPage() {
         return;
       }
 
-      const [promptsResponse, profilesResult, editorsResult] = await Promise.all([
-        fetch("/api/research/prompts", {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        supabase.from("profiles").select("id, name, email").order("name", { ascending: true }),
-        supabase.from("trend_part_editors").select("part, editor_user_id")
-      ]);
+      const researchServiceId = await getServiceIdByUrl(SERVICE_URL.RESEARCH);
+
+      const [promptsResponse, editorsResult, superAdminsResult, middleAdminRolesResult] =
+        await Promise.all([
+          fetch("/api/research/prompts", {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          supabase.from("trend_part_editors").select("part, editor_user_id"),
+          supabase
+            .from("profiles")
+            .select("id, name, email")
+            .eq("role", SUPER_ADMIN_ROLE)
+            .order("name", { ascending: true }),
+          researchServiceId
+            ? supabase
+                .from("service_user_roles")
+                .select("profile_id")
+                .eq("service_id", researchServiceId)
+                .eq("role", MIDDLE_ADMIN_ROLE)
+            : Promise.resolve({ data: [] as { profile_id: string }[], error: null })
+        ]);
 
       const data = (await promptsResponse.json()) as {
         prompts?: ResearchPromptsResponse;
@@ -283,11 +314,60 @@ export default function ResearchPublishingPromptsPage() {
         return;
       }
 
-      if (profilesResult.error) {
-        setError(profilesResult.error.message);
+      const superAdminProfiles = !superAdminsResult.error
+        ? ((superAdminsResult.data ?? []) as ProfileOption[])
+        : [];
+
+      if (superAdminsResult.error) {
+        setError(superAdminsResult.error.message);
+        setSuperAdminNames("슈퍼관리자");
       } else {
-        setProfiles((profilesResult.data ?? []) as ProfileOption[]);
+        const names = superAdminProfiles
+          .map((row) => row.name?.trim() ?? "")
+          .filter(Boolean);
+        setSuperAdminNames(names.length > 0 ? names.join(", ") : "슈퍼관리자");
       }
+
+      let middleAdminProfiles: ProfileOption[] = [];
+      if (middleAdminRolesResult.error) {
+        setError(middleAdminRolesResult.error.message);
+      } else {
+        const profileIds = [
+          ...new Set(
+            (middleAdminRolesResult.data ?? [])
+              .map((row) => row.profile_id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          )
+        ];
+
+        if (profileIds.length > 0) {
+          const { data: middleRows, error: profilesError } = await supabase
+            .from("profiles")
+            .select("id, name, email")
+            .in("id", profileIds)
+            .order("name", { ascending: true });
+
+          if (profilesError) {
+            setError(profilesError.message);
+          } else {
+            middleAdminProfiles = (middleRows ?? []) as ProfileOption[];
+          }
+        }
+      }
+
+      const mergedById = new Map<string, ProfileOption>();
+      for (const profile of [...superAdminProfiles, ...middleAdminProfiles]) {
+        if (!profile.id || mergedById.has(profile.id)) continue;
+        mergedById.set(profile.id, profile);
+      }
+      setProfiles(
+        [...mergedById.values()].sort((a, b) =>
+          (a.name?.trim() || a.email || a.id).localeCompare(
+            b.name?.trim() || b.email || b.id,
+            "ko"
+          )
+        )
+      );
 
       if (editorsResult.error) {
         setError(editorsResult.error.message);
@@ -306,9 +386,9 @@ export default function ResearchPublishingPromptsPage() {
   }, []);
 
   useEffect(() => {
-    if (status !== "ready") return;
+    if (status !== "ready" || canManage !== true) return;
     void loadPrompts();
-  }, [status, loadPrompts]);
+  }, [status, canManage, loadPrompts]);
 
   const handleSave = async (key: ResearchPromptKey) => {
     if (savingKey || !canManage) return;
@@ -390,11 +470,15 @@ export default function ResearchPublishingPromptsPage() {
     setToast("담당 편집장이 저장됐습니다.");
   };
 
-  if (status === "checking") {
+  if (status === "checking" || canManage === null) {
     return <PortalAuthChecking />;
   }
 
-  const canEdit = canManage === true;
+  if (canManage === false) {
+    return <PortalAuthChecking />;
+  }
+
+  const canEdit = true;
 
   const renderPromptCards = (
     cards: typeof CONTENT_PROMPT_CARDS
@@ -460,7 +544,7 @@ export default function ResearchPublishingPromptsPage() {
                 </span>
                 {renderPromptCards(CONTENT_PROMPT_CARDS)}
                 <PartEditorCard
-                  part="content"
+                  description={`콘텐츠파트 프롬프트·발행을 담당할 편집장을 지정합니다. 편집장은 트렌드레이더 중간관리자 이상만 가능합니다. 중간관리자는 슈퍼관리자(${superAdminNames})에게 요청하세요.`}
                   profiles={profiles}
                   selectedUserId={contentEditorId}
                   loading={loading}
@@ -477,7 +561,7 @@ export default function ResearchPublishingPromptsPage() {
                 </span>
                 {renderPromptCards(SPACE_PROMPT_CARDS)}
                 <PartEditorCard
-                  part="space"
+                  description={`공간파트 프롬프트·발행을 담당할 편집장을 지정합니다. 편집장은 트렌드레이더 중간관리자 이상만 가능합니다. 중간관리자는 슈퍼관리자(${superAdminNames})에게 요청하세요.`}
                   profiles={profiles}
                   selectedUserId={spaceEditorId}
                   loading={loading}
