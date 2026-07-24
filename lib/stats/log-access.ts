@@ -7,7 +7,15 @@ const ACCESS_LOGGED_KEY = "access_logged";
 
 function detectDevice(): "mobile" | "pc" {
   if (typeof navigator === "undefined") return "pc";
-  return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "mobile" : "pc";
+  const ua = navigator.userAgent;
+  const uaMobile = /Mobi|Android|iPhone|iPod/i.test(ua);
+  const iPadDesktop =
+    navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1;
+  const coarseSmall =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(pointer: coarse)").matches &&
+    window.innerWidth < 1024;
+  return uaMobile || iPadDesktop || coarseSmall ? "mobile" : "pc";
 }
 
 function getOrCreateSessionId(): string {
