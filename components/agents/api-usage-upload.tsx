@@ -10,6 +10,7 @@ import {
   type ApiUsageProvider,
   type ApiUsageRow
 } from "@/lib/arte/api-usage";
+import { applyApiKeyAlias, fetchApiKeyAliasLookup } from "@/lib/arte/api-key-aliases";
 import { fetchOpenAiKeyNameLookup } from "@/lib/arte/openai-key-name-map";
 import { supabase } from "@/lib/supabase/client";
 
@@ -52,7 +53,13 @@ export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
           openAiKeyNameMap = await fetchOpenAiKeyNameLookup();
         }
         const rows = parseUsageCsv(provider, text, { openAiKeyNameMap });
-        if (rows.length === 0) {
+        const aliasLookup = await fetchApiKeyAliasLookup();
+        const normalized = rows.map((row) => ({
+          ...row,
+          api_key_label: applyApiKeyAlias(row.api_key_label, aliasLookup),
+          workspace_name: row.workspace_name ?? null
+        }));
+        if (normalized.length === 0) {
           const range = extractCsvDateRange(provider, text);
           setPreview(null);
           setParseError(null);
@@ -65,7 +72,7 @@ export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
           return;
         }
         setEmptyRange(null);
-        setPreview(rows);
+        setPreview(normalized);
       } catch (e) {
         setPreview(null);
         setEmptyRange(null);
@@ -101,7 +108,7 @@ export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
     );
 
     const { error } = await supabase.from("api_usage").upsert(payload, {
-      onConflict: "provider,date,model,api_key_label"
+      onConflict: "provider,date,model,api_key_label,workspace_name"
     });
 
     setSaving(false);

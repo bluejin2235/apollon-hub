@@ -12,14 +12,15 @@ export type ApiUsageRow = {
   input_cost_usd: number;
   output_cost_usd: number;
   cost_usd: number;
-  num_requests: number;
+  num_requests: number | null;
+  workspace_name?: string | null;
 };
 
-export type ApiUsageDbRow = Omit<ApiUsageRow, "num_requests"> & {
-  num_requests: number | null;
+export type ApiUsageDbRow = ApiUsageRow & {
   id?: string;
   created_at?: string;
   uploaded_by?: string | null;
+  total_tokens?: number | null;
   profiles?: { name: string | null } | null;
 };
 
@@ -63,6 +64,10 @@ export type ProviderFilter = "all" | ApiUsageProvider;
 
 const ANTHROPIC_INPUT_TYPES = new Set([
   "input_no_cache",
+  "input",
+  "cache_read",
+  "cache_write",
+  // legacy Anthropic export labels
   "input_cache_read",
   "input_cache_write"
 ]);
@@ -77,9 +82,7 @@ const OPENAI_DEFAULT_PRICING = { input: 2.5, output: 10.0 };
 
 export function formatUsd(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  if (value === 0) return "$0.00";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 export function formatTokenCount(n: number): string {
@@ -276,22 +279,19 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
         input_cost_usd: 0,
         output_cost_usd: 0,
         cost_usd: 0,
-        num_requests: 0
+        num_requests: null,
+        workspace_name: null
       } satisfies Agg);
 
-    if (tokenType === "input_no_cache" || tokenType === "input") {
-      prev.num_requests += 1;
-    }
+    prev.cost_usd = roundUsd(prev.cost_usd + cost);
 
     if (tokenType === "output") {
-      prev.output_cost_usd += cost;
+      prev.output_cost_usd = roundUsd(prev.output_cost_usd + cost);
     } else if (ANTHROPIC_INPUT_TYPES.has(tokenType)) {
-      prev.input_cost_usd += cost;
-    } else if (tokenType) {
-      prev.input_cost_usd += cost;
+      prev.input_cost_usd = roundUsd(prev.input_cost_usd + cost);
     }
+    // token_type '--' 및 기타 → cost_usd에만 반영
 
-    prev.cost_usd = roundUsd(prev.input_cost_usd + prev.output_cost_usd);
     map.set(key, prev);
   }
 
@@ -339,10 +339,11 @@ export function parseOpenAiCsv(text: string, keyNameMap?: Record<string, string>
         input_cost_usd: 0,
         output_cost_usd: 0,
         cost_usd: 0,
-        num_requests: 0
+        num_requests: 0,
+        workspace_name: null
       } satisfies Agg);
 
-    prev.num_requests += Math.round(toNum(row.num_model_requests));
+    prev.num_requests = (prev.num_requests ?? 0) + Math.round(toNum(row.num_model_requests));
     prev.input_tokens += inputTokens;
     prev.output_tokens += outputTokens;
 
@@ -376,8 +377,10 @@ export function buildApiUsageUpsertPayload(
     date: row.date,
     model: row.model,
     api_key_label: row.api_key_label,
+    workspace_name: row.workspace_name ?? null,
     input_tokens: row.input_tokens,
     output_tokens: row.output_tokens,
+    total_tokens: 0,
     input_cost_usd: row.input_cost_usd,
     output_cost_usd: row.output_cost_usd,
     cost_usd: row.cost_usd,
@@ -443,8 +446,9 @@ export type ModelCostRow = {
   provider: ApiUsageProvider;
   api_key_label: string;
   num_requests: number | null;
-  input_tokens: number;
-  output_tokens: number;
+  cost_usd: number;
+  input_cost_usd: number;
+  output_cost_usd: number;
 };
 
 export type DashboardAggregate = {
@@ -523,20 +527,24 @@ export function aggregateUsageDashboard(
       provider: r.provider,
       api_key_label: r.api_key_label,
       num_requests: null,
-      input_tokens: 0,
-      output_tokens: 0
+      cost_usd: 0,
+      input_cost_usd: 0,
+      output_cost_usd: 0
     };
-    prev.input_tokens += Number(r.input_tokens);
-    prev.output_tokens += Number(r.output_tokens);
+    prev.cost_usd = roundUsd(prev.cost_usd + Number(r.cost_usd));
+    prev.input_cost_usd = roundUsd(prev.input_cost_usd + Number(r.input_cost_usd));
+    prev.output_cost_usd = roundUsd(prev.output_cost_usd + Number(r.output_cost_usd));
     if (r.num_requests != null) {
       prev.num_requests = (prev.num_requests ?? 0) + r.num_requests;
     }
     modelMap.set(key, prev);
   }
 
-  const byModel = [...modelMap.values()].sort(
-    (a, b) => b.input_tokens + b.output_tokens - (a.input_tokens + a.output_tokens)
-  );
+  const byModel = [...modelMap.values()].sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate !== 0) return byDate;
+    return b.cost_usd - a.cost_usd;
+  });
 
   return {
     rows: filtered,

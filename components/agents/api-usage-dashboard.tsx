@@ -6,6 +6,7 @@ import {
   aggregateUsageDashboard,
   formatProviderUploadMeta,
   formatTokenLocale,
+  formatUsd,
   resolveUsageDateRange,
   type ApiUsageDbRow,
   type ApiUsageProvider,
@@ -15,6 +16,7 @@ import {
   type ProviderUploadMeta,
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
+import { fetchUsdKrwRateForDate, formatKrw } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -37,12 +39,19 @@ type SortKey =
   | "provider"
   | "api_key_label"
   | "num_requests"
-  | "input_tokens"
-  | "output_tokens"
-  | "total_tokens"
+  | "cost_usd"
+  | "cost_krw"
   | null;
 type SortDir = "asc" | "desc";
 type ActiveSortKey = Exclude<SortKey, null>;
+
+function formatRequestCount(row: Pick<ModelCostRow, "provider" | "num_requests">): string {
+  if (row.provider === "anthropic") return "-";
+  if (row.provider === "openai" && row.num_requests != null && row.num_requests > 0) {
+    return row.num_requests.toLocaleString("ko-KR");
+  }
+  return "-";
+}
 
 function formatProviderLabel(provider: ApiUsageProvider): string {
   return provider === "openai" ? "OpenAI" : "Anthropic";
@@ -179,14 +188,15 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   });
   const [customEnd, setCustomEnd] = useState(todayIso);
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [rows, setRows] = useState<ApiUsageDbRow[]>([]);
   const [uploadMeta, setUploadMeta] = useState<ProviderUploadMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [rateByDate, setRateByDate] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -248,12 +258,41 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
     [rows, range.start, range.end]
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    const dates = [...new Set(agg.byModel.map((r) => r.date))];
+    if (dates.length === 0) {
+      setRateByDate({});
+      return;
+    }
+
+    (async () => {
+      const next: Record<string, number> = {};
+      const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
+      const monthRate = new Map<string, number>();
+      await Promise.all(
+        months.map(async (month) => {
+          const rate = await fetchUsdKrwRateForDate(`${month}-01`);
+          monthRate.set(month, rate);
+        })
+      );
+      for (const date of dates) {
+        next[date] = monthRate.get(date.slice(0, 7)) ?? (await fetchUsdKrwRateForDate(date));
+      }
+      if (!cancelled) setRateByDate(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agg.byModel]);
+
   const handleSort = (key: ActiveSortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir("asc");
+      setSortDir(key === "date" || key === "cost_usd" || key === "cost_krw" ? "desc" : "asc");
     }
   };
 
@@ -261,12 +300,14 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
     if (!sortKey) return agg.byModel;
     return [...agg.byModel].sort((a, b) => {
       let cmp: number;
-      if (sortKey === "input_tokens" || sortKey === "output_tokens" || sortKey === "total_tokens") {
-        const tokenVal = (row: ModelCostRow, key: "input_tokens" | "output_tokens" | "total_tokens") =>
-          key === "total_tokens" ? row.input_tokens + row.output_tokens : row[key];
-        cmp = tokenVal(a, sortKey) - tokenVal(b, sortKey);
-      } else if (sortKey === "num_requests") {
+      if (sortKey === "num_requests") {
         cmp = (a.num_requests ?? -1) - (b.num_requests ?? -1);
+      } else if (sortKey === "cost_usd") {
+        cmp = a.cost_usd - b.cost_usd;
+      } else if (sortKey === "cost_krw") {
+        const aKrw = a.cost_usd * (rateByDate[a.date] ?? 0);
+        const bKrw = b.cost_usd * (rateByDate[b.date] ?? 0);
+        cmp = aKrw - bKrw;
       } else if (sortKey === "provider") {
         cmp = a.provider.localeCompare(b.provider, "ko", { sensitivity: "base" });
       } else if (sortKey === "model") {
@@ -280,7 +321,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [agg.byModel, sortKey, sortDir]);
+  }, [agg.byModel, sortKey, sortDir, rateByDate]);
 
   const handleDelete = async (row: ModelCostRow) => {
     if (!window.confirm("이 항목을 삭제하시겠습니까?")) return;
@@ -289,7 +330,8 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       .delete()
       .eq("date", row.date)
       .eq("provider", row.provider)
-      .eq("model", row.model);
+      .eq("model", row.model)
+      .eq("api_key_label", row.api_key_label);
     if (error) {
       console.error(error);
       return;
@@ -494,13 +536,6 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
                   <SortableTh
-                    label="모델명"
-                    column="model"
-                    sortKey={sortKey}
-                    sortDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableTh
                     label="사용일"
                     column="date"
                     sortKey={sortKey}
@@ -515,14 +550,21 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                     onSort={handleSort}
                   />
                   <SortableTh
-                    label="API 키"
+                    label="모델"
+                    column="model"
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="API키"
                     column="api_key_label"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
                   />
                   <SortableTh
-                    label="호출 횟수"
+                    label="호출수"
                     column="num_requests"
                     sortKey={sortKey}
                     sortDir={sortDir}
@@ -530,24 +572,16 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                     className="text-right"
                   />
                   <SortableTh
-                    label="Input 토큰"
-                    column="input_tokens"
+                    label="비용(USD)"
+                    column="cost_usd"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
                     className="text-right"
                   />
                   <SortableTh
-                    label="Output 토큰"
-                    column="output_tokens"
-                    sortKey={sortKey}
-                    sortDir={sortDir}
-                    onSort={handleSort}
-                    className="text-right"
-                  />
-                  <SortableTh
-                    label="총 토큰"
-                    column="total_tokens"
+                    label="비용(KRW)"
+                    column="cost_krw"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onSort={handleSort}
@@ -559,45 +593,56 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
               <tbody className="divide-y divide-slate-100">
                 {sortedByModel.length === 0 ? (
                   <tr>
-                    <td colSpan={isSuperAdmin ? 9 : 8} className="px-5 py-10 text-center text-slate-500">
+                    <td colSpan={isSuperAdmin ? 8 : 7} className="px-5 py-10 text-center text-slate-500">
                       모델별 데이터가 없습니다.
                     </td>
                   </tr>
                 ) : (
-                  sortedByModel.map((row) => (
-                    <tr key={`${row.provider}-${row.model}-${row.api_key_label}-${row.date}`}>
-                      <td className="max-w-[200px] truncate px-5 py-3 font-medium" title={row.model}>
-                        {row.model}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-600" title={row.date}>
-                        {formatModelUsageDate(row.date)}
-                      </td>
-                      <td className="px-5 py-3 text-slate-600">{formatProviderLabel(row.provider)}</td>
-                      <td className="px-5 py-3 text-slate-600">{row.api_key_label || "—"}</td>
-                      <td className="px-5 py-3 text-right tabular-nums text-slate-600">
-                        {row.num_requests != null ? `${row.num_requests.toLocaleString("ko-KR")}회` : "—"}
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums">{formatTokenLocale(row.input_tokens)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums">{formatTokenLocale(row.output_tokens)}</td>
-                      <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">
-                        {formatTokenLocale(row.input_tokens + row.output_tokens)}
-                      </td>
-                      {isSuperAdmin ? (
-                        <td className="px-5 py-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(row)}
-                            className="text-sm text-rose-500 hover:text-rose-700"
-                          >
-                            삭제
-                          </button>
+                  sortedByModel.map((row) => {
+                    const rate = rateByDate[row.date];
+                    const krw = rate != null ? row.cost_usd * rate : null;
+                    return (
+                      <tr key={`${row.provider}-${row.model}-${row.api_key_label}-${row.date}`}>
+                        <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-600" title={row.date}>
+                          {formatModelUsageDate(row.date)}
                         </td>
-                      ) : null}
-                    </tr>
-                  ))
+                        <td className="px-5 py-3 text-slate-600">{formatProviderLabel(row.provider)}</td>
+                        <td className="max-w-[200px] truncate px-5 py-3 font-medium" title={row.model}>
+                          {row.model}
+                        </td>
+                        <td className="px-5 py-3 text-slate-600">{row.api_key_label || "—"}</td>
+                        <td className="px-5 py-3 text-right tabular-nums text-slate-600">
+                          {formatRequestCount(row)}
+                        </td>
+                        <td
+                          className="px-5 py-3 text-right tabular-nums text-slate-700"
+                          title="실제 청구 금액 (할인/크레딧 적용 후)"
+                        >
+                          {formatUsd(row.cost_usd)}
+                        </td>
+                        <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">
+                          {krw != null ? formatKrw(krw) : "—"}
+                        </td>
+                        {isSuperAdmin ? (
+                          <td className="px-5 py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(row)}
+                              className="text-sm text-rose-500 hover:text-rose-700"
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
+            <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+              비용(USD): 실제 청구 금액 (할인/크레딧 적용 후)
+            </p>
           </section>
 
           <section className="rounded-xl bg-slate-100 px-5 py-4 text-sm text-slate-700">
