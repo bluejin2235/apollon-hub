@@ -497,18 +497,20 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       {!loading && !error ? (
         <>
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-slate-900">일별 비용 (원)</h2>
-              <p
-                className="shrink-0 tabular-nums"
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "var(--text-primary)"
-                }}
-              >
-                ₩{Math.round(periodTotalCostKrw).toLocaleString("ko-KR")}
-              </p>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}
+            >
+              <span>일별 비용 (원)</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>API 총사용비용</span>
+                <span style={{ fontSize: "22px", fontWeight: 700, color: "#534AB7" }}>
+                  ₩{Math.round(periodTotalCostKrw).toLocaleString("ko-KR")}
+                </span>
+              </div>
             </div>
             <div className="mt-4 h-[320px] w-full">
               {dailyKrwChart.length === 0 ? (
