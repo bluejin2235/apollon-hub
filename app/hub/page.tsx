@@ -402,25 +402,27 @@ export default function ServiceHubPage() {
             className="px-5 pb-0 pt-6 sm:px-6"
             style={{ background: "linear-gradient(135deg,#1e1c2e 0%,#16151f 100%)" }}
           >
-            <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              {/* 시간·인사 */}
               <div>
-                <div
-                  className="font-medium tracking-tight text-white"
-                  style={{ fontSize: 36, lineHeight: 1 }}
-                >
+                <div className="text-2xl font-medium tracking-tight text-white md:text-4xl" style={{ lineHeight: 1 }}>
                   {clock}
                 </div>
-                <div className="mt-1 text-sm" style={{ color: "#8f8fa6" }}>
+                <div
+                  className="mt-1 whitespace-nowrap text-xs md:text-sm"
+                  style={{ color: "#8f8fa6" }}
+                >
                   {todayLabel()}
                 </div>
-                <div className="mt-3 text-sm font-medium" style={{ color: "#AFA9EC" }}>
+                <div className="mt-2 text-xs font-medium md:text-sm" style={{ color: "#AFA9EC" }}>
                   안녕하세요, {profile?.name ?? ""}님 👋
                 </div>
               </div>
 
+              {/* 날씨 — 모바일: full width, PC: 고정폭 */}
               <div
-                className="flex-shrink-0 rounded-xl"
-                style={{ background: "rgba(255,255,255,0.06)", padding: "14px 18px", minWidth: 280 }}
+                className="w-full rounded-xl md:w-auto md:flex-shrink-0"
+                style={{ background: "rgba(255,255,255,0.06)", padding: "14px 18px" }}
               >
                 <div className="mb-3 text-xs" style={{ color: "#6b6b82" }}>
                   <i
@@ -429,12 +431,12 @@ export default function ServiceHubPage() {
                   />
                   성동구 성수2가3동
                 </div>
-                <div className="flex items-stretch gap-0">
-                  <div className="flex-1 pr-4">
+                <div className="flex min-w-0 items-stretch gap-0">
+                  <div className="min-w-0 flex-1 pr-3 sm:pr-4">
                     <div className="mb-2 text-xs" style={{ color: "#8f8fa6" }}>
                       현재 {weather?.today.date || "—"}
                     </div>
-                    <div className="mb-1 flex items-center gap-2">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span style={{ fontSize: 20 }}>
                         {weather ? weatherIcon(weather.today.condition) : "⛅"}
                       </span>
@@ -458,13 +460,13 @@ export default function ServiceHubPage() {
                     </div>
                   </div>
 
-                  <div style={{ width: 1, background: "rgba(255,255,255,0.1)" }} />
+                  <div className="shrink-0" style={{ width: 1, background: "rgba(255,255,255,0.1)" }} />
 
-                  <div className="flex-1 pl-4">
+                  <div className="min-w-0 flex-1 pl-3 sm:pl-4">
                     <div className="mb-2 text-xs" style={{ color: "#8f8fa6" }}>
                       내일 {weather?.tomorrow.date || "—"}
                     </div>
-                    <div className="mb-2 flex items-end gap-3">
+                    <div className="mb-2 flex flex-wrap items-end gap-2 sm:gap-3">
                       <div>
                         <div className="text-xs" style={{ color: "#8f8fa6" }}>
                           최저
@@ -489,11 +491,11 @@ export default function ServiceHubPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="mb-1 text-xs" style={{ color: "#7baff0" }}>
+                    <div className="mb-1 break-words text-xs" style={{ color: "#7baff0" }}>
                       🌦 오전 {weather?.tomorrow.amDesc ?? "—"}{" "}
                       {weather?.tomorrow.amRain != null ? `☂ ${weather.tomorrow.amRain}%` : ""}
                     </div>
-                    <div className="text-xs" style={{ color: "#7baff0" }}>
+                    <div className="break-words text-xs" style={{ color: "#7baff0" }}>
                       🌦 오후 {weather?.tomorrow.pmDesc ?? "—"}{" "}
                       {weather?.tomorrow.pmRain != null ? `☂ ${weather.tomorrow.pmRain}%` : ""}
                     </div>
