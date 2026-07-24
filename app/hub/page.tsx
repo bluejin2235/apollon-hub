@@ -224,6 +224,7 @@ export default function ServiceHubPage() {
   const { status, profile } = useRequirePortalSession();
 
   const [clock, setClock] = useState(clockStr());
+  const [lunaRoomHref, setLunaRoomHref] = useState("/research");
   const [weather, setWeather] = useState<{ today: WeatherDay; tomorrow: WeatherDay } | null>(null);
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [posts, setPosts] = useState<HubPostRow[]>([]);
@@ -260,6 +261,60 @@ export default function ServiceHubPage() {
     fetchTodayStats(profile.id)
       .then(setStats)
       .catch(() => {});
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setLunaRoomHref("/research");
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      // 개인방(나와 루나): room_type = personal + owner_id = 나
+      const { data: personalRooms, error: roomsError } = await supabase
+        .from("trend_rooms")
+        .select("id")
+        .eq("room_type", "personal")
+        .eq("owner_id", profile.id);
+
+      if (cancelled) return;
+      if (roomsError) {
+        console.error("[hub] personal rooms", roomsError);
+        setLunaRoomHref("/research");
+        return;
+      }
+
+      const roomIds = (personalRooms ?? []).map((r) => r.id as string).filter(Boolean);
+      if (roomIds.length === 0) {
+        setLunaRoomHref("/research");
+        return;
+      }
+
+      const { data: lastMsg, error: msgError } = await supabase
+        .from("trend_messages")
+        .select("room_id")
+        .eq("profile_id", profile.id)
+        .in("room_id", roomIds)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (msgError) {
+        console.error("[hub] last luna message", msgError);
+        setLunaRoomHref("/research");
+        return;
+      }
+
+      const roomId = lastMsg?.room_id as string | undefined;
+      setLunaRoomHref(roomId ? `/research/${roomId}` : "/research");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [profile?.id]);
 
   const loadPosts = useCallback(async () => {
@@ -439,7 +494,7 @@ export default function ServiceHubPage() {
 
             <div className="flex gap-2 overflow-x-auto pb-5">
               <Link
-                href="/research"
+                href={lunaRoomHref}
                 className="flex flex-shrink-0 flex-col rounded-xl"
                 style={{
                   background: "rgba(83,74,183,0.28)",
