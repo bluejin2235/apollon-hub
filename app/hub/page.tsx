@@ -618,9 +618,10 @@ export default function ServiceHubPage() {
                 MY TODAY
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div
-                  className="col-span-2 rounded-xl p-3"
-                  style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
+                <Link
+                  href={`/licenses/members/${profile?.id ?? ""}`}
+                  className="col-span-2 block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  style={{ background: C.surface2 }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -667,11 +668,12 @@ export default function ServiceHubPage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </Link>
 
-                <div
-                  className="rounded-xl p-3"
-                  style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
+                <Link
+                  href="/agents"
+                  className="block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  style={{ background: C.surface2 }}
                 >
                   <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
                     <i
@@ -686,7 +688,7 @@ export default function ServiceHubPage() {
                   <div className="mt-1 text-xs" style={{ color: C.textMuted }}>
                     Anthropic + OpenAI
                   </div>
-                </div>
+                </Link>
 
                 <div
                   className="rounded-xl p-3"
@@ -710,9 +712,10 @@ export default function ServiceHubPage() {
                   </div>
                 </div>
 
-                <div
-                  className="rounded-xl p-3"
-                  style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
+                <Link
+                  href={lunaRoomHref}
+                  className="block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  style={{ background: C.surface2 }}
                 >
                   <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
                     <i
@@ -735,7 +738,7 @@ export default function ServiceHubPage() {
                   <div className="mt-1 text-xs" style={{ color: C.textMuted }}>
                     지난 7일 메시지
                   </div>
-                </div>
+                </Link>
 
                 <div
                   className="rounded-xl p-3"
