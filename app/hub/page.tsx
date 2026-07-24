@@ -330,10 +330,11 @@ export default function ServiceHubPage() {
       />
 
       <div className="pb-10 pt-14">
-        <div className="relative left-1/2 w-screen max-w-[100vw] -translate-x-1/2 bg-[#0f0e18]">
-          {/* ── 히어로 다크 영역 (상단 라운드 없음) ── */}
+        {/* 루트 layout max-w-7xl 컨테이너 폭에 맞춤 (풀블리드 제거) */}
+        <div className="w-full bg-[#0f0e18]">
+          {/* ── 히어로 다크 영역 ── */}
           <div
-            className="rounded-t-none px-6 pb-0 pt-6"
+            className="px-5 pb-0 pt-6 sm:px-6"
             style={{ background: "linear-gradient(135deg,#1e1c2e 0%,#16151f 100%)" }}
           >
             <div className="mb-6 flex items-start justify-between gap-4">

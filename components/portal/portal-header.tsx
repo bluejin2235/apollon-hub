@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { PortalStatsTracker } from "@/components/portal/portal-stats-tracker";
 import { APP_TITLE } from "@/lib/portal/app-title";
@@ -17,9 +17,6 @@ export type PortalHeaderProps = {
 };
 
 const headerBar = "fixed top-0 left-0 right-0 z-50 w-full border-b border-slate-200 bg-white";
-
-/** 추후 실연동 전 하드코딩 배지 */
-const NOTIFICATION_BADGE_COUNT = 5;
 
 function LogoMark() {
   return (
@@ -60,9 +57,6 @@ function IconLogout(props: { className?: string }) {
 }
 
 function HeaderNotifications() {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (document.getElementById("tabler-icons-css")) return;
     const link = document.createElement("link");
@@ -73,51 +67,15 @@ function HeaderNotifications() {
     document.head.appendChild(link);
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-gray-900 transition hover:border-slate-400 hover:bg-slate-50"
-        aria-label="알림"
-        title="알림"
-        aria-expanded={open}
-      >
-        <i className="ti ti-bell text-lg leading-none" aria-hidden />
-        {NOTIFICATION_BADGE_COUNT > 0 ? (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-none text-white">
-            {NOTIFICATION_BADGE_COUNT}
-          </span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div
-          className="absolute right-0 top-full z-[60] mt-2 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-lg"
-          role="dialog"
-          aria-label="알림"
-        >
-          <p className="text-sm font-semibold text-slate-900">알림</p>
-          <p className="mt-3 text-sm text-slate-500">알림 기능 준비 중</p>
-        </div>
-      ) : null}
-    </div>
+    <button
+      type="button"
+      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-gray-900 transition hover:border-slate-400 hover:bg-slate-50"
+      aria-label="알림"
+      title="알림"
+    >
+      <i className="ti ti-bell text-lg leading-none" aria-hidden />
+    </button>
   );
 }
 
