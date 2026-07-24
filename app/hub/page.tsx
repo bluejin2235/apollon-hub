@@ -184,7 +184,7 @@ function formatKrw(n: number) {
 
 function clockStr() {
   const n = new Date();
-  return `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`;
+  return `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}:${String(n.getSeconds()).padStart(2, "0")}`;
 }
 
 function todayLabel() {
@@ -245,7 +245,7 @@ export default function ServiceHubPage() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => setClock(clockStr()), 60000);
+    const t = setInterval(() => setClock(clockStr()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -330,7 +330,8 @@ export default function ServiceHubPage() {
       />
 
       <div className="pb-10 pt-14">
-        <div className="overflow-hidden rounded-2xl bg-[#0f0e18]">
+        {/* 히어로+본문: 상단 라운드 없이 뷰포트 좌우 풀블리드 */}
+        <div className="relative left-1/2 w-screen max-w-[100vw] -translate-x-1/2 bg-[#0f0e18]">
           {/* ── 히어로 다크 영역 ── */}
           <div
             className="px-6 pb-0 pt-6"
