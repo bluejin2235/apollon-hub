@@ -366,9 +366,11 @@ export function parseUsageCsv(
   text: string,
   options?: { openAiKeyNameMap?: Record<string, string> }
 ): ApiUsageRow[] {
-  return provider === "anthropic"
-    ? parseAnthropicCsv(text)
-    : parseOpenAiCsv(text, options?.openAiKeyNameMap);
+  const rows =
+    provider === "anthropic"
+      ? parseAnthropicCsv(text)
+      : parseOpenAiCsv(text, options?.openAiKeyNameMap);
+  return rows.filter((r) => !r.api_key_label?.includes("bluejin2"));
 }
 
 /** CSV 파싱 결과 → api_usage upsert payload */
