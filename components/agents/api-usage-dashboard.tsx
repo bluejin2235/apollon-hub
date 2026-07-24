@@ -389,6 +389,11 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
     [agg.daily]
   );
 
+  const periodTotalCostKrw = useMemo(
+    () => agg.rows.reduce((sum, row) => sum + (Number(row.cost_krw) || 0), 0),
+    [agg.rows]
+  );
+
   const modelShare = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of agg.byModel) {
@@ -492,7 +497,19 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       {!loading && !error ? (
         <>
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-slate-900">일별 비용 (원)</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-slate-900">일별 비용 (원)</h2>
+              <p
+                className="shrink-0 tabular-nums"
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--text-primary)"
+                }}
+              >
+                ₩{Math.round(periodTotalCostKrw).toLocaleString("ko-KR")}
+              </p>
+            </div>
             <div className="mt-4 h-[320px] w-full">
               {dailyKrwChart.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-slate-500">
