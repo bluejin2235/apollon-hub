@@ -34,7 +34,7 @@ async function fetchUsdKrwRate(): Promise<number> {
   return krw;
 }
 
-/** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → fallback) */
+/** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → credit_records → fallback) */
 export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
   const month = dateIso.slice(0, 7);
   const { data } = await supabase
@@ -52,9 +52,33 @@ export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
   try {
     return await fetchUsdKrwRate();
   } catch (e) {
-    console.error("[arte] fetchUsdKrwRateForDate fallback", e);
-    return USD_KRW_FALLBACK;
+    console.error("[arte] fetchUsdKrwRateForDate API failed", e);
   }
+
+  const creditRate = await fetchLatestCreditUsdKrwRate();
+  if (creditRate != null) return creditRate;
+
+  return USD_KRW_FALLBACK;
+}
+
+/** credit_records 의 가장 최근 usd_krw_rate */
+export async function fetchLatestCreditUsdKrwRate(): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("credit_records")
+    .select("usd_krw_rate")
+    .not("usd_krw_rate", "is", null)
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[arte] credit_records usd_krw_rate", error);
+    return null;
+  }
+  if (data?.usd_krw_rate != null && Number.isFinite(Number(data.usd_krw_rate))) {
+    return Number(data.usd_krw_rate);
+  }
+  return null;
 }
 
 /** 전달 평균 환율(USD→KRW, open.er-api.com, 실패 시 1380) */

@@ -1,16 +1,26 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import {
   aggregateUsageDashboard,
   formatProviderUploadMeta,
-  formatTokenLocale,
   formatUsd,
   resolveUsageDateRange,
   type ApiUsageDbRow,
   type ApiUsageProvider,
-  type DailyCostPoint,
   type ModelCostRow,
   type ProviderFilter,
   type ProviderUploadMeta,
@@ -33,6 +43,17 @@ const PROVIDER_FILTERS: { value: ProviderFilter; label: string }[] = [
   { value: "openai", label: "OpenAI" }
 ];
 
+const DONUT_COLORS = [
+  "#2a78d6",
+  "#eb6834",
+  "#1baf7a",
+  "#eda100",
+  "#e87ba4",
+  "#4a3aa7",
+  "#008300",
+  "#e34948"
+];
+
 type SortKey =
   | "model"
   | "date"
@@ -44,6 +65,8 @@ type SortKey =
   | null;
 type SortDir = "asc" | "desc";
 type ActiveSortKey = Exclude<SortKey, null>;
+
+type ShareSlice = { name: string; value: number; pct: number };
 
 function formatRequestCount(row: Pick<ModelCostRow, "provider" | "num_requests">): string {
   if (row.provider === "anthropic") return "-";
@@ -60,6 +83,43 @@ function formatProviderLabel(provider: ApiUsageProvider): string {
 function formatModelUsageDate(date: string): string {
   const [y, m, d] = date.split("-");
   return `${y.slice(2)}.${m}.${d}`;
+}
+
+function formatYAxisKrw(v: number): string {
+  if (!Number.isFinite(v)) return "";
+  if (Math.abs(v) >= 1_000_000) return `₩${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000) return `₩${Math.round(v / 1_000)}k`;
+  return `₩${Math.round(v)}`;
+}
+
+function buildShareSlices(
+  entries: { name: string; value: number }[],
+  maxItems = 6
+): ShareSlice[] {
+  const sorted = [...entries]
+    .filter((e) => e.value > 0 && e.name.trim())
+    .sort((a, b) => b.value - a.value);
+  if (sorted.length === 0) return [];
+
+  const capped =
+    sorted.length <= maxItems
+      ? sorted
+      : [
+          ...sorted.slice(0, maxItems),
+          {
+            name: "기타",
+            value: sorted.slice(maxItems).reduce((s, e) => s + e.value, 0)
+          }
+        ];
+
+  const total = capped.reduce((s, e) => s + e.value, 0);
+  if (total <= 0) return [];
+
+  return capped.map((e) => ({
+    name: e.name,
+    value: e.value,
+    pct: Math.round((e.value / total) * 100)
+  }));
 }
 
 function SortableTh({
@@ -349,78 +409,114 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const openaiMeta = uploadMeta.find((m) => m.provider === "openai");
   const anthropicMeta = uploadMeta.find((m) => m.provider === "anthropic");
 
+  const dailyKrwChart = useMemo(
+    () =>
+      agg.daily.map((d) => {
+        const rate = rateByDate[d.date] ?? 0;
+        const anthropic = Math.round(d.anthropic * rate);
+        const openai = Math.round(d.openai * rate);
+        return {
+          date: d.date,
+          label: d.label,
+          anthropic,
+          openai,
+          total: anthropic + openai
+        };
+      }),
+    [agg.daily, rateByDate]
+  );
+
+  const modelShare = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of agg.byModel) {
+      const rate = rateByDate[row.date] ?? 0;
+      const krw = row.cost_usd * rate;
+      map.set(row.model, (map.get(row.model) ?? 0) + krw);
+    }
+    return buildShareSlices(
+      [...map.entries()].map(([name, value]) => ({ name, value: Math.round(value) }))
+    );
+  }, [agg.byModel, rateByDate]);
+
+  const apiKeyShare = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of agg.byModel) {
+      const rate = rateByDate[row.date] ?? 0;
+      const krw = row.cost_usd * rate;
+      const key = row.api_key_label?.trim() || "—";
+      map.set(key, (map.get(key) ?? 0) + krw);
+    }
+    return buildShareSlices(
+      [...map.entries()].map(([name, value]) => ({ name, value: Math.round(value) }))
+    );
+  }, [agg.byModel, rateByDate]);
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">조회 기간</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {PERIOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setPeriod(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    period === opt.value
-                      ? "bg-violet-600 text-white"
-                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            {period === "custom" ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  시작
-                  <input
-                    type="date"
-                    value={customStart}
-                    max={customEnd}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  종료
-                  <input
-                    type="date"
-                    value={customEnd}
-                    min={customStart}
-                    max={todayIso}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-slate-500">
-                {range.start} ~ {range.end}
-              </p>
-            )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setPeriod(opt.value)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  period === opt.value
+                    ? "bg-violet-600 text-white"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-          <div>
-            <p className="mb-2 text-xs font-medium text-slate-500">출처</p>
-            <div className="flex flex-wrap gap-2">
-              {PROVIDER_FILTERS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setProviderFilter(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    providerFilter === opt.value
-                      ? "bg-slate-800 text-white"
-                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-2">
+            {PROVIDER_FILTERS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setProviderFilter(opt.value)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  providerFilter === opt.value
+                    ? "bg-slate-800 text-white"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
+        {period === "custom" ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              시작
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              종료
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart}
+                max={todayIso}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">
+            {range.start} ~ {range.end}
+          </p>
+        )}
       </section>
 
       {error ? (
@@ -436,96 +532,44 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
 
       {!loading && !error ? (
         <>
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">총 토큰 사용량</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
-                {agg.total_tokens != null ? `${formatTokenLocale(agg.total_tokens)} 토큰` : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">총 API 호출 횟수</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
-                {agg.total_requests != null ? agg.total_requests.toLocaleString("ko-KR") + "회" : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">업로드된 데이터 기간</p>
-              <p className="mt-2 text-lg font-bold text-slate-900">{periodLabel}</p>
-            </div>
-          </section>
-
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-slate-900">일별 토큰 사용량</h2>
-            <div className="mt-2 mb-4 flex flex-wrap gap-x-4 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              <span className="font-medium text-slate-700">적용된 데이터 기간</span>
-              {anthropicMeta?.created_at && (
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
-                  Anthropic&nbsp;
-                  {anthropicMeta.data_start && anthropicMeta.data_end
-                    ? `${anthropicMeta.data_start} ~ ${anthropicMeta.data_end}`
-                    : periodLabel}
-                </span>
-              )}
-              {openaiMeta?.created_at && (
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                  OpenAI&nbsp;
-                  {openaiMeta.data_start && openaiMeta.data_end
-                    ? `${openaiMeta.data_start} ~ ${openaiMeta.data_end}`
-                    : periodLabel}
-                </span>
-              )}
-            </div>
+            <h2 className="text-base font-semibold text-slate-900">일별 비용 (원)</h2>
             <div className="mt-4 h-[320px] w-full">
-              {agg.daily.length === 0 ? (
+              {dailyKrwChart.length === 0 ? (
                 <p className="flex h-full items-center justify-center text-sm text-slate-500">
-                  해당 기간 데이터가 없습니다. 데이터 업로드 탭에서 CSV를 등록해 주세요.
+                  해당 기간 데이터가 없습니다. CSV를 등록해 주세요.
                 </p>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={agg.daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <BarChart data={dailyKrwChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) =>
-                        typeof v === "number" ? v.toLocaleString("ko-KR") : String(v)
-                      }
-                    />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatYAxisKrw(Number(v))} />
                     <Tooltip
                       labelFormatter={(label) => String(label)}
                       formatter={(value, _name, item) => {
                         const dataKey = String(item?.dataKey ?? "");
-                        const payload = item?.payload as DailyCostPoint | undefined;
-                        const requests =
-                          dataKey === "anthropic"
-                            ? payload?.requests_anthropic ?? 0
-                            : dataKey === "openai"
-                              ? payload?.requests_openai ?? 0
-                              : 0;
                         const label =
                           dataKey === "anthropic"
                             ? "Anthropic"
                             : dataKey === "openai"
                               ? "OpenAI"
                               : String(_name);
-                        const tokens =
-                          typeof value === "number" ? value : Number(value);
-                        return [
-                          `${tokens.toLocaleString("ko-KR")} 토큰 (${requests.toLocaleString("ko-KR")}회)`,
-                          label
-                        ];
+                        return [formatKrw(typeof value === "number" ? value : Number(value)), label];
                       }}
                     />
                     <Legend />
-                    <Bar dataKey="anthropic" name="Anthropic" stackId="tokens" fill="#7c3aed" />
-                    <Bar dataKey="openai" name="OpenAI" stackId="tokens" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="anthropic" name="Anthropic" stackId="cost" fill="#534AB7" />
+                    <Bar dataKey="openai" name="OpenAI" stackId="cost" fill="#1D9E75" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <CostShareDonut title="모델별 비용 비중" slices={modelShare} />
+            <CostShareDonut title="API키별 비용 비중" slices={apiKeyShare} />
           </section>
 
           <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -660,9 +704,68 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                 {anthropicMeta ? formatProviderUploadMeta(anthropicMeta) : "업데이트 기록 없음"}
               </li>
             </ul>
+            {periodLabel !== "—" ? (
+              <p className="mt-2 text-xs text-slate-500">업로드된 데이터 기간: {periodLabel}</p>
+            ) : null}
           </section>
         </>
       ) : null}
     </div>
+  );
+}
+
+function CostShareDonut({ title, slices }: { title: string; slices: ShareSlice[] }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+      {slices.length === 0 ? (
+        <p className="mt-8 text-center text-sm text-slate-500">표시할 데이터가 없습니다.</p>
+      ) : (
+        <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div className="h-[200px] w-full max-w-[220px] shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={slices}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={85}
+                  paddingAngle={2}
+                >
+                  {slices.map((slice, idx) => (
+                    <Cell key={slice.name} fill={DONUT_COLORS[idx % DONUT_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [
+                    formatKrw(typeof value === "number" ? value : Number(value)),
+                    String(name)
+                  ]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="min-w-0 flex-1 space-y-2 text-sm">
+            {slices.map((slice, idx) => (
+              <li key={slice.name} className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2 text-slate-700">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ backgroundColor: DONUT_COLORS[idx % DONUT_COLORS.length] }}
+                  />
+                  <span className="truncate" title={slice.name}>
+                    {slice.name}
+                  </span>
+                </span>
+                <span className="shrink-0 tabular-nums text-slate-600">{slice.pct}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

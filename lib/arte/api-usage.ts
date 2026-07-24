@@ -433,11 +433,10 @@ export function formatCsvEmptyRangeMessage(range: { min: string; max: string }):
 export type DailyCostPoint = {
   date: string;
   label: string;
+  /** provider별 cost_usd 합 */
   anthropic: number;
   openai: number;
   total: number;
-  requests_anthropic: number;
-  requests_openai: number;
 };
 
 export type ModelCostRow = {
@@ -453,8 +452,6 @@ export type ModelCostRow = {
 
 export type DashboardAggregate = {
   rows: ApiUsageDbRow[];
-  total_tokens: number | null;
-  total_requests: number | null;
   date_min: string | null;
   date_max: string | null;
   daily: DailyCostPoint[];
@@ -467,39 +464,16 @@ export function aggregateUsageDashboard(
 ): DashboardAggregate {
   const filtered = rows.filter((r) => r.date >= range.start && r.date <= range.end);
 
-  const total_tokens =
-    filtered.length === 0
-      ? null
-      : filtered.reduce((s, r) => s + Number(r.input_tokens) + Number(r.output_tokens), 0);
-
-  const total_requests =
-    filtered.length === 0
-      ? null
-      : filtered.reduce((sum, r) => sum + (r.num_requests ?? 0), 0);
-
   const dates = filtered.map((r) => r.date).sort();
   const date_min = dates[0] ?? null;
   const date_max = dates[dates.length - 1] ?? null;
 
-  const dailyMap = new Map<
-    string,
-    { anthropic: number; openai: number; requests_anthropic: number; requests_openai: number }
-  >();
+  const dailyMap = new Map<string, { anthropic: number; openai: number }>();
   for (const r of filtered) {
-    const tokens = Number(r.input_tokens) + Number(r.output_tokens);
-    const d = dailyMap.get(r.date) ?? {
-      anthropic: 0,
-      openai: 0,
-      requests_anthropic: 0,
-      requests_openai: 0
-    };
-    if (r.provider === "anthropic") {
-      d.anthropic += tokens;
-      d.requests_anthropic += r.num_requests ?? 0;
-    } else {
-      d.openai += tokens;
-      d.requests_openai += r.num_requests ?? 0;
-    }
+    const cost = Number(r.cost_usd) || 0;
+    const d = dailyMap.get(r.date) ?? { anthropic: 0, openai: 0 };
+    if (r.provider === "anthropic") d.anthropic += cost;
+    else d.openai += cost;
     dailyMap.set(r.date, d);
   }
 
@@ -507,14 +481,14 @@ export function aggregateUsageDashboard(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => {
       const [, m, day] = date.split("-");
+      const anthropic = roundUsd(v.anthropic);
+      const openai = roundUsd(v.openai);
       return {
         date,
         label: `${m}.${day}`,
-        anthropic: v.anthropic,
-        openai: v.openai,
-        total: v.anthropic + v.openai,
-        requests_anthropic: v.requests_anthropic,
-        requests_openai: v.requests_openai
+        anthropic,
+        openai,
+        total: roundUsd(anthropic + openai)
       };
     });
 
@@ -548,8 +522,6 @@ export function aggregateUsageDashboard(
 
   return {
     rows: filtered,
-    total_tokens,
-    total_requests,
     date_min,
     date_max,
     daily,
