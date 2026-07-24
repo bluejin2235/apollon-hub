@@ -16,7 +16,7 @@ import {
   type ApiUsageDbRow,
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
-import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
+import { formatKrw } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -86,7 +86,6 @@ export function AiCostOverview({ onTabChange }: Props) {
   const [teamCount, setTeamCount] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const { usdKrw } = useUsdKrwForUsage();
   const range = useMemo(
     () => resolveUsageDateRange(period, customStart, customEnd),
     [period, customStart, customEnd]
@@ -146,8 +145,7 @@ export function AiCostOverview({ onTabChange }: Props) {
   const periodApiRows = apiRows;
   const periodCreditRows = creditRows;
 
-  const apiCostUsd = periodApiRows.reduce((s, r) => s + Number(r.cost_usd), 0);
-  const apiCostKrw = apiCostUsd * usdKrw;
+  const apiCostKrw = periodApiRows.reduce((s, r) => s + (Number(r.cost_krw) || 0), 0);
   const creditCostKrw = periodCreditRows.reduce((s, r) => s + r.amount_krw, 0);
   const totalCostKrw = apiCostKrw + creditCostKrw;
 
@@ -157,14 +155,14 @@ export function AiCostOverview({ onTabChange }: Props) {
     const providers = ["anthropic", "openai"] as const;
     return providers.map((provider) => {
       const rows = periodApiRows.filter((r) => r.provider === provider);
-      const costUsd = rows.reduce((s, r) => s + Number(r.cost_usd), 0);
+      const costKrw = rows.reduce((s, r) => s + (Number(r.cost_krw) || 0), 0);
       return {
         provider,
         label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-        costKrw: costUsd * usdKrw
+        costKrw
       };
     });
-  }, [periodApiRows, usdKrw]);
+  }, [periodApiRows]);
 
   const maxProviderCost = Math.max(...providerStats.map((p) => p.costKrw), 1);
 
@@ -176,7 +174,7 @@ export function AiCostOverview({ onTabChange }: Props) {
     for (const r of periodApiRows) {
       const key = monthKeyFromDate(r.date);
       if (!chartKeys.has(key)) continue;
-      apiByMonth.set(key, (apiByMonth.get(key) ?? 0) + Number(r.cost_usd) * usdKrw);
+      apiByMonth.set(key, (apiByMonth.get(key) ?? 0) + (Number(r.cost_krw) || 0));
     }
     for (const r of periodCreditRows) {
       const key = monthKeyFromDate(r.paid_at);
@@ -189,7 +187,7 @@ export function AiCostOverview({ onTabChange }: Props) {
       apiKrw: Math.round(apiByMonth.get(m.key) ?? 0),
       creditKrw: Math.round(creditByMonth.get(m.key) ?? 0)
     }));
-  }, [periodApiRows, periodCreditRows, chartMonths, usdKrw]);
+  }, [periodApiRows, periodCreditRows, chartMonths]);
 
   const recentCredits = periodCreditRows.slice(0, 3);
 
@@ -259,9 +257,6 @@ export function AiCostOverview({ onTabChange }: Props) {
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">API 사용 비용</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-violet-700">{formatKrw(apiCostKrw)}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                환율: $1 = ₩{usdKrw.toLocaleString("ko-KR")} 기준
-              </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">크레딧 충전 비용</p>

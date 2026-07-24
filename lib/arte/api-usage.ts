@@ -14,6 +14,8 @@ export type ApiUsageRow = {
   cost_usd: number;
   num_requests: number | null;
   workspace_name?: string | null;
+  usd_krw_rate?: number | null;
+  cost_krw?: number | null;
 };
 
 export type ApiUsageDbRow = ApiUsageRow & {
@@ -21,6 +23,8 @@ export type ApiUsageDbRow = ApiUsageRow & {
   created_at?: string;
   uploaded_by?: string | null;
   total_tokens?: number | null;
+  usd_krw_rate?: number | null;
+  cost_krw?: number | null;
   profiles?: { name: string | null } | null;
 };
 
@@ -370,8 +374,10 @@ export function parseUsageCsv(
 /** CSV 파싱 결과 → api_usage upsert payload */
 export function buildApiUsageUpsertPayload(
   row: ApiUsageRow,
-  meta: { uploaded_by: string | null; created_at: string }
+  meta: { uploaded_by: string | null; created_at: string; usd_krw_rate: number }
 ) {
+  const usd_krw_rate = meta.usd_krw_rate;
+  const cost_krw = Math.round(Number(row.cost_usd) * usd_krw_rate);
   return {
     provider: row.provider,
     date: row.date,
@@ -384,6 +390,8 @@ export function buildApiUsageUpsertPayload(
     input_cost_usd: row.input_cost_usd,
     output_cost_usd: row.output_cost_usd,
     cost_usd: row.cost_usd,
+    usd_krw_rate,
+    cost_krw,
     num_requests: row.num_requests,
     uploaded_by: meta.uploaded_by,
     created_at: meta.created_at
@@ -433,7 +441,7 @@ export function formatCsvEmptyRangeMessage(range: { min: string; max: string }):
 export type DailyCostPoint = {
   date: string;
   label: string;
-  /** provider별 cost_usd 합 */
+  /** provider별 cost_krw 합 */
   anthropic: number;
   openai: number;
   total: number;
@@ -446,6 +454,7 @@ export type ModelCostRow = {
   api_key_label: string;
   num_requests: number | null;
   cost_usd: number;
+  cost_krw: number;
   input_cost_usd: number;
   output_cost_usd: number;
 };
@@ -470,7 +479,7 @@ export function aggregateUsageDashboard(
 
   const dailyMap = new Map<string, { anthropic: number; openai: number }>();
   for (const r of filtered) {
-    const cost = Number(r.cost_usd) || 0;
+    const cost = Number(r.cost_krw) || 0;
     const d = dailyMap.get(r.date) ?? { anthropic: 0, openai: 0 };
     if (r.provider === "anthropic") d.anthropic += cost;
     else d.openai += cost;
@@ -481,14 +490,14 @@ export function aggregateUsageDashboard(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => {
       const [, m, day] = date.split("-");
-      const anthropic = roundUsd(v.anthropic);
-      const openai = roundUsd(v.openai);
+      const anthropic = Math.round(v.anthropic);
+      const openai = Math.round(v.openai);
       return {
         date,
         label: `${m}.${day}`,
         anthropic,
         openai,
-        total: roundUsd(anthropic + openai)
+        total: anthropic + openai
       };
     });
 
@@ -502,10 +511,12 @@ export function aggregateUsageDashboard(
       api_key_label: r.api_key_label,
       num_requests: null,
       cost_usd: 0,
+      cost_krw: 0,
       input_cost_usd: 0,
       output_cost_usd: 0
     };
     prev.cost_usd = roundUsd(prev.cost_usd + Number(r.cost_usd));
+    prev.cost_krw = Math.round(prev.cost_krw + (Number(r.cost_krw) || 0));
     prev.input_cost_usd = roundUsd(prev.input_cost_usd + Number(r.input_cost_usd));
     prev.output_cost_usd = roundUsd(prev.output_cost_usd + Number(r.output_cost_usd));
     if (r.num_requests != null) {
@@ -517,7 +528,7 @@ export function aggregateUsageDashboard(
   const byModel = [...modelMap.values()].sort((a, b) => {
     const byDate = b.date.localeCompare(a.date);
     if (byDate !== 0) return byDate;
-    return b.cost_usd - a.cost_usd;
+    return b.cost_krw - a.cost_krw;
   });
 
   return {

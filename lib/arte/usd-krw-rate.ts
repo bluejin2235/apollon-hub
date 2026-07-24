@@ -34,6 +34,30 @@ async function fetchUsdKrwRate(): Promise<number> {
   return krw;
 }
 
+/** CSV 업로드용: open.er-api.com 1회 조회, 실패 시 fx_daily_rates 최근 usd_krw */
+export async function fetchLiveUsdKrwRateForUpload(): Promise<number> {
+  try {
+    return await fetchUsdKrwRate();
+  } catch (e) {
+    console.error("[arte] live FX fetch failed, trying fx_daily_rates", e);
+  }
+
+  const { data, error } = await supabase
+    .from("fx_daily_rates")
+    .select("usd_krw")
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[arte] fx_daily_rates fallback", error);
+  } else if (data?.usd_krw != null && Number.isFinite(Number(data.usd_krw))) {
+    return Number(data.usd_krw);
+  }
+
+  return USD_KRW_FALLBACK;
+}
+
 /** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → credit_records → fallback) */
 export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
   const month = dateIso.slice(0, 7);

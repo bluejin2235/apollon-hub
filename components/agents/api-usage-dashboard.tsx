@@ -26,7 +26,7 @@ import {
   type ProviderUploadMeta,
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
-import { fetchUsdKrwRateForDate, formatKrw } from "@/lib/arte/usd-krw-rate";
+import { formatKrw } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -256,7 +256,6 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [rateByDate, setRateByDate] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -318,35 +317,6 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
     [rows, range.start, range.end]
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    const dates = [...new Set(agg.byModel.map((r) => r.date))];
-    if (dates.length === 0) {
-      setRateByDate({});
-      return;
-    }
-
-    (async () => {
-      const next: Record<string, number> = {};
-      const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
-      const monthRate = new Map<string, number>();
-      await Promise.all(
-        months.map(async (month) => {
-          const rate = await fetchUsdKrwRateForDate(`${month}-01`);
-          monthRate.set(month, rate);
-        })
-      );
-      for (const date of dates) {
-        next[date] = monthRate.get(date.slice(0, 7)) ?? (await fetchUsdKrwRateForDate(date));
-      }
-      if (!cancelled) setRateByDate(next);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agg.byModel]);
-
   const handleSort = (key: ActiveSortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -365,9 +335,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       } else if (sortKey === "cost_usd") {
         cmp = a.cost_usd - b.cost_usd;
       } else if (sortKey === "cost_krw") {
-        const aKrw = a.cost_usd * (rateByDate[a.date] ?? 0);
-        const bKrw = b.cost_usd * (rateByDate[b.date] ?? 0);
-        cmp = aKrw - bKrw;
+        cmp = a.cost_krw - b.cost_krw;
       } else if (sortKey === "provider") {
         cmp = a.provider.localeCompare(b.provider, "ko", { sensitivity: "base" });
       } else if (sortKey === "model") {
@@ -381,7 +349,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [agg.byModel, sortKey, sortDir, rateByDate]);
+  }, [agg.byModel, sortKey, sortDir]);
 
   const handleDelete = async (row: ModelCostRow) => {
     if (!window.confirm("이 항목을 삭제하시겠습니까?")) return;
@@ -411,45 +379,36 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
 
   const dailyKrwChart = useMemo(
     () =>
-      agg.daily.map((d) => {
-        const rate = rateByDate[d.date] ?? 0;
-        const anthropic = Math.round(d.anthropic * rate);
-        const openai = Math.round(d.openai * rate);
-        return {
-          date: d.date,
-          label: d.label,
-          anthropic,
-          openai,
-          total: anthropic + openai
-        };
-      }),
-    [agg.daily, rateByDate]
+      agg.daily.map((d) => ({
+        date: d.date,
+        label: d.label,
+        anthropic: d.anthropic,
+        openai: d.openai,
+        total: d.total
+      })),
+    [agg.daily]
   );
 
   const modelShare = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of agg.byModel) {
-      const rate = rateByDate[row.date] ?? 0;
-      const krw = row.cost_usd * rate;
-      map.set(row.model, (map.get(row.model) ?? 0) + krw);
+      map.set(row.model, (map.get(row.model) ?? 0) + row.cost_krw);
     }
     return buildShareSlices(
       [...map.entries()].map(([name, value]) => ({ name, value: Math.round(value) }))
     );
-  }, [agg.byModel, rateByDate]);
+  }, [agg.byModel]);
 
   const apiKeyShare = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of agg.byModel) {
-      const rate = rateByDate[row.date] ?? 0;
-      const krw = row.cost_usd * rate;
       const key = row.api_key_label?.trim() || "—";
-      map.set(key, (map.get(key) ?? 0) + krw);
+      map.set(key, (map.get(key) ?? 0) + row.cost_krw);
     }
     return buildShareSlices(
       [...map.entries()].map(([name, value]) => ({ name, value: Math.round(value) }))
     );
-  }, [agg.byModel, rateByDate]);
+  }, [agg.byModel]);
 
   return (
     <div className="space-y-6">
@@ -643,8 +602,6 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                   </tr>
                 ) : (
                   sortedByModel.map((row) => {
-                    const rate = rateByDate[row.date];
-                    const krw = rate != null ? row.cost_usd * rate : null;
                     return (
                       <tr key={`${row.provider}-${row.model}-${row.api_key_label}-${row.date}`}>
                         <td className="whitespace-nowrap px-5 py-3 tabular-nums text-slate-600" title={row.date}>
@@ -665,7 +622,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                           {formatUsd(row.cost_usd)}
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums font-medium text-violet-700">
-                          {krw != null ? formatKrw(krw) : "—"}
+                          {formatKrw(row.cost_krw)}
                         </td>
                         {isSuperAdmin ? (
                           <td className="px-5 py-3 text-center">
