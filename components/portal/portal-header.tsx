@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PortalStatsTracker } from "@/components/portal/portal-stats-tracker";
 import { APP_TITLE } from "@/lib/portal/app-title";
 
 export type PortalHeaderProps = {
@@ -68,6 +69,7 @@ export function PortalHeader({
 
   return (
     <header className={`${headerBar} ${zIndexClass}`}>
+      <PortalStatsTracker />
       <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-4 sm:px-6`}>
         <div className="flex min-w-0 items-center gap-3">
           <LogoMark />
