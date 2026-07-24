@@ -86,7 +86,7 @@ export function AiCostOverview({ onTabChange }: Props) {
   const [teamCount, setTeamCount] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const { usdKrw, monthLabel } = useUsdKrwForUsage();
+  const { usdKrw } = useUsdKrwForUsage();
   const range = useMemo(
     () => resolveUsageDateRange(period, customStart, customEnd),
     [period, customStart, customEnd]
@@ -148,7 +148,6 @@ export function AiCostOverview({ onTabChange }: Props) {
 
   const apiCostUsd = periodApiRows.reduce((s, r) => s + Number(r.cost_usd), 0);
   const apiCostKrw = apiCostUsd * usdKrw;
-  const apiRequests = periodApiRows.reduce((s, r) => s + (r.num_requests ?? 0), 0);
   const creditCostKrw = periodCreditRows.reduce((s, r) => s + r.amount_krw, 0);
   const totalCostKrw = apiCostKrw + creditCostKrw;
 
@@ -159,13 +158,10 @@ export function AiCostOverview({ onTabChange }: Props) {
     return providers.map((provider) => {
       const rows = periodApiRows.filter((r) => r.provider === provider);
       const costUsd = rows.reduce((s, r) => s + Number(r.cost_usd), 0);
-      const requests = rows.reduce((s, r) => s + (r.num_requests ?? 0), 0);
       return {
         provider,
         label: provider === "anthropic" ? "Anthropic" : "OpenAI",
-        costKrw: costUsd * usdKrw,
-        requests,
-        avgKrw: requests > 0 ? (costUsd * usdKrw) / requests : 0
+        costKrw: costUsd * usdKrw
       };
     });
   }, [periodApiRows, usdKrw]);
@@ -264,7 +260,7 @@ export function AiCostOverview({ onTabChange }: Props) {
               <p className="text-xs font-medium text-slate-500">API 사용 비용</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-violet-700">{formatKrw(apiCostKrw)}</p>
               <p className="mt-1 text-xs text-slate-500">
-                {apiRequests.toLocaleString("ko-KR")}회 호출 · 환율 {monthLabel}
+                환율: $1 = ₩{usdKrw.toLocaleString("ko-KR")} 기준
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -335,10 +331,7 @@ export function AiCostOverview({ onTabChange }: Props) {
                 <div key={p.provider}>
                   <div className="mb-1.5 flex items-center justify-between text-sm">
                     <span className="font-medium text-slate-800">{p.label}</span>
-                    <span className="tabular-nums text-slate-600">
-                      {formatKrw(p.costKrw)} · {p.requests.toLocaleString("ko-KR")}회 · 호출당{" "}
-                      {p.requests > 0 ? formatKrw(p.avgKrw) : "—"}
-                    </span>
+                    <span className="tabular-nums text-slate-600">{formatKrw(p.costKrw)}</span>
                   </div>
                   <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                     <div
