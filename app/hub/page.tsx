@@ -117,10 +117,19 @@ async function fetchTodayStats(profileId: string): Promise<TodayStats> {
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const [licenseManagers, aiCost, sentReports, myChat, yesterdayVisit, thisMonthCost, lastMonthCost] =
-    await Promise.all([
+  const [
+    licenseManagers,
+    aiCost,
+    creditData,
+    sentReports,
+    myChat,
+    yesterdayVisit,
+    thisMonthCost,
+    lastMonthCost
+  ] = await Promise.all([
       supabase.from("license_managers").select("service_id").eq("profile_id", profileId),
       supabase.from("api_usage").select("cost_krw").gte("date", sevenDaysAgoStr),
+      supabase.from("credit_records").select("amount_krw").gte("paid_at", sevenDaysAgoStr),
       supabase
         .from("trend_editor_candidates")
         .select("id", { count: "exact", head: true })
@@ -154,7 +163,8 @@ async function fetchTodayStats(profileId: string): Promise<TodayStats> {
       .filter((r) => myServiceIds.has(r.service_id))
       .reduce((s, r) => s + (Number(r.cost_monthly_krw) || 0), 0);
 
-  const weekAiCostKrw = (aiCost.data ?? []).reduce((s, r) => s + (Number(r.cost_krw) || 0), 0);
+  const apiCost = (aiCost.data ?? []).reduce((s, r) => s + (Number(r.cost_krw) ?? 0), 0);
+  const creditCost = (creditData.data ?? []).reduce((s, r) => s + (Number(r.amount_krw) ?? 0), 0);
 
   const uniqueYesterday = new Set((yesterdayVisit.data ?? []).map((r) => r.profile_id)).size;
 
@@ -170,7 +180,7 @@ async function fetchTodayStats(profileId: string): Promise<TodayStats> {
     myLicenseCount: myServiceIds.size,
     myLicenseCostKrw: displayCost,
     myLicenseCostLastMonthKrw: lastMonthKrw,
-    weekAiCostKrw: Math.round(weekAiCostKrw),
+    weekAiCostKrw: Math.round(apiCost + creditCost),
     weekSentReports: sentReports.count ?? 0,
     weekMyChat: myChat.count ?? 0,
     yesterdayVisitors: uniqueYesterday
@@ -686,7 +696,7 @@ export default function ServiceHubPage() {
                     ₩{stats ? formatKrw(stats.weekAiCostKrw) : "---"}
                   </div>
                   <div className="mt-1 text-xs" style={{ color: C.textMuted }}>
-                    Anthropic + OpenAI
+                    API 비용 + 크레딧 합계
                   </div>
                 </Link>
 
