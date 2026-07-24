@@ -492,15 +492,14 @@ export default function ServiceHubPage() {
               </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-5">
+            <div className="grid grid-cols-3 md:grid-cols-7 gap-2 pb-5">
               <Link
                 href={lunaRoomHref}
-                className="flex flex-shrink-0 flex-col rounded-xl"
+                className="col-span-3 md:col-span-1 flex flex-col rounded-xl"
                 style={{
                   background: "rgba(83,74,183,0.28)",
                   border: "0.5px solid rgba(83,74,183,0.5)",
                   padding: "12px 14px",
-                  minWidth: 110,
                   textDecoration: "none"
                 }}
               >
@@ -517,12 +516,11 @@ export default function ServiceHubPage() {
                 <Link
                   key={s.href}
                   href={s.href}
-                  className="flex flex-shrink-0 flex-col rounded-xl"
+                  className="flex flex-col rounded-xl"
                   style={{
                     background: "rgba(255,255,255,0.05)",
                     border: "0.5px solid rgba(255,255,255,0.09)",
                     padding: "12px 14px",
-                    minWidth: 100,
                     textDecoration: "none"
                   }}
                 >
