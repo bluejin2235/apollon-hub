@@ -65,6 +65,10 @@ function cellValue(member: UsageMember, col: Col): number {
   return member.pageviews[col.service] ?? 0;
 }
 
+function formatCell(value: number): string {
+  return value === 0 ? "-" : value.toLocaleString("ko-KR");
+}
+
 export function StatsUsageView({ start, end, registerExport }: Props) {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -175,7 +179,7 @@ export function StatsUsageView({ start, end, registerExport }: Props) {
                           col.kind === "trendChat" ? "font-medium text-[#534AB7]" : ""
                         }`}
                       >
-                        {value.toLocaleString("ko-KR")}
+                        {formatCell(value)}
                       </td>
                     );
                   })}

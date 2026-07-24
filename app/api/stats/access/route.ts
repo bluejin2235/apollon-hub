@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   fetchAllRows,
+  fetchTeamProfiles,
   isNextResponse,
   parseStatsDateRange,
   requireSuperAdmin,
-  toKstDateString,
-  unwrapProfile
+  sortMembersByTotalThenName,
+  toKstDateString
 } from "@/lib/stats/stats-api";
 
 export const runtime = "nodejs";
@@ -14,7 +15,6 @@ type AccessLogRow = {
   profile_id: string;
   device: string | null;
   created_at: string;
-  profiles: { name: string | null; department: string | null } | { name: string | null; department: string | null }[] | null;
 };
 
 type MemberAgg = {
@@ -38,44 +38,52 @@ export async function GET(request: NextRequest) {
     }
 
     const { admin } = auth;
-    const { data: logs, error } = await fetchAllRows<AccessLogRow>((from, to) =>
-      admin
-        .from("access_logs")
-        .select("profile_id, device, created_at, profiles(name, department)")
-        .gte("created_at", range.startIso)
-        .lte("created_at", range.endIso)
-        .order("created_at", { ascending: true })
-        .range(from, to)
-    );
 
-    if (error) {
-      console.error("[stats/access] fetch failed", error);
+    const [profilesRes, logsRes] = await Promise.all([
+      fetchTeamProfiles(admin),
+      fetchAllRows<AccessLogRow>((from, to) =>
+        admin
+          .from("access_logs")
+          .select("profile_id, device, created_at")
+          .gte("created_at", range.startIso)
+          .lte("created_at", range.endIso)
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      )
+    ]);
+
+    if (profilesRes.error) {
+      console.error("[stats/access] profiles fetch failed", profilesRes.error);
+      return NextResponse.json({ error: "멤버 목록 조회에 실패했습니다." }, { status: 500 });
+    }
+    if (logsRes.error) {
+      console.error("[stats/access] fetch failed", logsRes.error);
       return NextResponse.json({ error: "접속 로그 조회에 실패했습니다." }, { status: 500 });
     }
 
     const dailyCounts = new Map<string, number>(range.dates.map((d) => [d, 0]));
     const membersMap = new Map<string, MemberAgg>();
 
-    for (const row of logs) {
+    for (const p of profilesRes.data) {
+      membersMap.set(p.id, {
+        profile_id: p.id,
+        name: p.name,
+        department: p.department,
+        pc: 0,
+        mobile: 0,
+        total: 0
+      });
+    }
+
+    for (const row of logsRes.data) {
       const dateKey = toKstDateString(new Date(row.created_at).getTime());
       if (dailyCounts.has(dateKey)) {
         dailyCounts.set(dateKey, (dailyCounts.get(dateKey) ?? 0) + 1);
       }
 
       if (!row.profile_id) continue;
-      let member = membersMap.get(row.profile_id);
-      if (!member) {
-        const profile = unwrapProfile(row.profiles);
-        member = {
-          profile_id: row.profile_id,
-          name: profile?.name ?? "",
-          department: profile?.department ?? "",
-          pc: 0,
-          mobile: 0,
-          total: 0
-        };
-        membersMap.set(row.profile_id, member);
-      }
+      const member = membersMap.get(row.profile_id);
+      if (!member) continue; // 공용 계정 등 제외 대상
 
       member.total += 1;
       if (row.device === "mobile") member.mobile += 1;
@@ -87,7 +95,7 @@ export async function GET(request: NextRequest) {
       count: dailyCounts.get(date) ?? 0
     }));
 
-    const members = Array.from(membersMap.values()).sort((a, b) => b.total - a.total);
+    const members = sortMembersByTotalThenName(Array.from(membersMap.values()));
 
     return NextResponse.json({ daily, members });
   } catch (e) {

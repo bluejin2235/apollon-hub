@@ -36,6 +36,10 @@ type Props = {
   registerExport: (fn: (() => void) | null) => void;
 };
 
+function formatCell(value: number): string {
+  return value === 0 ? "-" : value.toLocaleString("ko-KR");
+}
+
 export function StatsAccessView({ start, end, registerExport }: Props) {
   const [data, setData] = useState<AccessResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,8 +170,8 @@ export function StatsAccessView({ start, end, registerExport }: Props) {
                 <tr key={m.profile_id} className="text-slate-800">
                   <td className="px-4 py-3 font-medium text-slate-900">{m.name || "-"}</td>
                   <td className="px-4 py-3 text-slate-600">{m.department || "-"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{m.pc.toLocaleString("ko-KR")}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{m.mobile.toLocaleString("ko-KR")}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatCell(m.pc)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatCell(m.mobile)}</td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
                     {m.total.toLocaleString("ko-KR")}
                   </td>

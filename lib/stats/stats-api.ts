@@ -2,11 +2,26 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { KST_OFFSET_MS } from "@/lib/mail/hub-email";
+import { EXCLUDED_TEAM_EMAIL, KST_OFFSET_MS } from "@/lib/mail/hub-email";
 
 const SUPER_ADMIN_ROLE = "슈퍼관리자";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_SIZE = 1000;
+
+/** 사용 통계 고정 서비스 목록 (새 서비스는 여기에 추가) */
+export const ALL_STATS_SERVICES = [
+  "licenses",
+  "restaurants",
+  "supplies",
+  "agents",
+  "research"
+] as const;
+
+export type TeamProfile = {
+  id: string;
+  name: string;
+  department: string;
+};
 
 export type StatsDateRange = {
   start: string;
@@ -148,4 +163,45 @@ export function unwrapProfile(
   if (!profiles) return null;
   if (Array.isArray(profiles)) return profiles[0] ?? null;
   return profiles;
+}
+
+/** 팀원 전체 (공용 계정 제외) */
+export async function fetchTeamProfiles(
+  admin: SupabaseClient
+): Promise<{ data: TeamProfile[]; error: string | null }> {
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id, name, department, email")
+    .neq("email", EXCLUDED_TEAM_EMAIL)
+    .order("name", { ascending: true });
+
+  if (error) return { data: [], error: error.message };
+
+  const profiles: TeamProfile[] = (data ?? []).map((p) => ({
+    id: p.id as string,
+    name: (p.name as string) ?? "",
+    department: (p.department as string) ?? ""
+  }));
+
+  return { data: profiles, error: null };
+}
+
+/** total desc, 동률이면 이름 오름차순 */
+export function sortMembersByTotalThenName<T extends { total: number; name: string }>(
+  members: T[]
+): T[] {
+  return [...members].sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total;
+    return a.name.localeCompare(b.name, "ko");
+  });
+}
+
+/** ALL_STATS_SERVICES 우선 + distinct 추가분 */
+export function mergeStatsServices(fromLogs: Iterable<string>): string[] {
+  const extras = new Set<string>();
+  const fixed = new Set<string>(ALL_STATS_SERVICES);
+  for (const s of fromLogs) {
+    if (s && !fixed.has(s)) extras.add(s);
+  }
+  return [...ALL_STATS_SERVICES, ...Array.from(extras).sort()];
 }
