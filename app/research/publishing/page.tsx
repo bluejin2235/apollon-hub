@@ -1290,7 +1290,16 @@ export default function ResearchPublishingPage() {
       return;
     }
 
-    setBatchArticles((data ?? []) as EditorCandidateArticle[]);
+    const rows = (data ?? []) as EditorCandidateArticle[];
+    const seenUrls = new Set<string>();
+    const deduped = rows.filter((row) => {
+      if (!row.url) return true;
+      if (seenUrls.has(row.url)) return false;
+      seenUrls.add(row.url);
+      return true;
+    });
+
+    setBatchArticles(deduped);
   }, []);
 
   useEffect(() => {
