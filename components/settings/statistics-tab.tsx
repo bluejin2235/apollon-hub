@@ -13,6 +13,8 @@ import {
 type SubTab = "access" | "usage";
 
 const PERIOD_OPTIONS: Array<{ value: StatsPeriodPreset; label: string }> = [
+  { value: "today", label: "오늘" },
+  { value: "yesterday", label: "어제" },
   { value: "last_7", label: "최근 7일" },
   { value: "last_30", label: "최근 30일" },
   { value: "custom", label: "직접 선택" }

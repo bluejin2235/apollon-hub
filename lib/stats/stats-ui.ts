@@ -3,7 +3,7 @@
 import { KST_OFFSET_MS } from "@/lib/mail/hub-email";
 import { supabase } from "@/lib/supabase/client";
 
-export type StatsPeriodPreset = "last_7" | "last_30" | "custom";
+export type StatsPeriodPreset = "today" | "yesterday" | "last_7" | "last_30" | "custom";
 
 export const SERVICE_STATS_LABELS: Record<string, string> = {
   licenses: "라이선스",
@@ -34,6 +34,11 @@ export function resolveStatsPeriod(
   customEnd: string
 ): { start: string; end: string } {
   const end = toKstDateString();
+  if (preset === "today") return { start: end, end };
+  if (preset === "yesterday") {
+    const yesterday = addDaysIso(end, -1);
+    return { start: yesterday, end: yesterday };
+  }
   if (preset === "last_7") return { start: addDaysIso(end, -6), end };
   if (preset === "last_30") return { start: addDaysIso(end, -29), end };
   return {
