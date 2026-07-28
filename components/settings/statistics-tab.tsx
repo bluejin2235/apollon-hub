@@ -23,7 +23,7 @@ const PERIOD_OPTIONS: Array<{ value: StatsPeriodPreset; label: string }> = [
 export function StatisticsTab({ canManage }: { canManage: boolean }) {
   const today = useMemo(() => toKstDateString(), []);
   const [subTab, setSubTab] = useState<SubTab>("access");
-  const [period, setPeriod] = useState<StatsPeriodPreset>("last_30");
+  const [period, setPeriod] = useState<StatsPeriodPreset>("today");
   const [customStart, setCustomStart] = useState(() => {
     const end = toKstDateString();
     const [y, m, d] = end.split("-").map(Number);
