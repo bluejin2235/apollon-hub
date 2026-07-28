@@ -113,21 +113,12 @@ async function fetchTodayStats(profileId: string): Promise<TodayStats> {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
 
-  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
-
-  const [
-    licenseManagers,
-    aiCost,
-    creditData,
-    sentReports,
-    myChat,
-    yesterdayVisit,
-    thisMonthCost,
-    lastMonthCost
-  ] = await Promise.all([
-      supabase.from("license_managers").select("service_id").eq("profile_id", profileId),
+  const [licenseManagers, aiCost, creditData, sentReports, myChat, yesterdayVisit] =
+    await Promise.all([
+      supabase
+        .from("license_managers")
+        .select("service_id, services(cost_monthly, status)")
+        .eq("profile_id", profileId),
       supabase.from("api_usage").select("cost_krw").gte("date", sevenDaysAgoStr),
       supabase.from("credit_records").select("amount_krw").gte("paid_at", sevenDaysAgoStr),
       supabase
@@ -145,41 +136,35 @@ async function fetchTodayStats(profileId: string): Promise<TodayStats> {
         .from("access_logs")
         .select("profile_id")
         .gte("created_at", `${yesterdayStr}T00:00:00.000+09:00`)
-        .lt("created_at", `${todayStr}T00:00:00.000+09:00`),
-      supabase
-        .from("service_cost_history")
-        .select("cost_monthly_krw, service_id")
-        .eq("recorded_month", thisMonth),
-      supabase
-        .from("service_cost_history")
-        .select("cost_monthly_krw, service_id")
-        .eq("recorded_month", lastMonth)
+        .lt("created_at", `${todayStr}T00:00:00.000+09:00`)
     ]);
 
-  const myServiceIds = new Set((licenseManagers.data ?? []).map((r) => r.service_id as string));
+  type ServiceJoin = { cost_monthly: number | null; status: string | null };
+  const licenseRows = (licenseManagers.data ?? []) as {
+    service_id: string;
+    services: ServiceJoin | ServiceJoin[] | null;
+  }[];
 
-  const calcCost = (rows: { cost_monthly_krw: number; service_id: string }[] | null) =>
-    (rows ?? [])
-      .filter((r) => myServiceIds.has(r.service_id))
-      .reduce((s, r) => s + (Number(r.cost_monthly_krw) || 0), 0);
+  const resolveService = (row: (typeof licenseRows)[number]): ServiceJoin | null => {
+    if (!row.services) return null;
+    return Array.isArray(row.services) ? (row.services[0] ?? null) : row.services;
+  };
+
+  const activeLicenses = licenseRows.filter((row) => resolveService(row)?.status === "활성");
+  const myLicenseCount = activeLicenses.length;
+  const myLicenseCostKrw = Math.round(
+    activeLicenses.reduce((sum, row) => sum + (Number(resolveService(row)?.cost_monthly) || 0), 0)
+  );
 
   const apiCost = (aiCost.data ?? []).reduce((s, r) => s + (Number(r.cost_krw) ?? 0), 0);
   const creditCost = (creditData.data ?? []).reduce((s, r) => s + (Number(r.amount_krw) ?? 0), 0);
 
   const uniqueYesterday = new Set((yesterdayVisit.data ?? []).map((r) => r.profile_id)).size;
 
-  const thisMonthKrw = calcCost(
-    thisMonthCost.data as { cost_monthly_krw: number; service_id: string }[] | null
-  );
-  const lastMonthKrw = calcCost(
-    lastMonthCost.data as { cost_monthly_krw: number; service_id: string }[] | null
-  );
-  const displayCost = thisMonthKrw > 0 ? thisMonthKrw : lastMonthKrw;
-
   return {
-    myLicenseCount: myServiceIds.size,
-    myLicenseCostKrw: displayCost,
-    myLicenseCostLastMonthKrw: lastMonthKrw,
+    myLicenseCount,
+    myLicenseCostKrw,
+    myLicenseCostLastMonthKrw: 0,
     weekAiCostKrw: Math.round(apiCost + creditCost),
     weekSentReports: sentReports.count ?? 0,
     weekMyChat: myChat.count ?? 0,
@@ -383,7 +368,6 @@ export default function ServiceHubPage() {
     return <PortalAuthChecking />;
   }
 
-  const diffSign = stats ? stats.myLicenseCostKrw - stats.myLicenseCostLastMonthKrw : null;
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
 
   return (
@@ -635,50 +619,18 @@ export default function ServiceHubPage() {
                   className="col-span-2 block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
                   style={{ background: C.surface2 }}
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="mb-1 text-xs" style={{ color: C.textMuted }}>
-                        <i
-                          className="ti ti-key"
-                          style={{ fontSize: 11, verticalAlign: -1, marginRight: 4 }}
-                        />
-                        내 담당 라이선스
-                      </div>
-                      <div className="text-lg font-medium text-slate-900">
-                        {stats?.myLicenseCount ?? "-"}개 ·{" "}
-                        <span style={{ color: C.textAccent }}>
-                          ₩{stats ? formatKrw(stats.myLicenseCostKrw) : "---"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="mb-1 text-xs" style={{ color: C.textMuted }}>
-                        지난달 대비
-                      </div>
-                      {stats && diffSign != null ? (
-                        <div
-                          className="text-sm font-medium"
-                          style={{
-                            color:
-                              diffSign > 0
-                                ? C.textDanger
-                                : diffSign < 0
-                                  ? C.textSuccess
-                                  : C.textMuted
-                          }}
-                        >
-                          {diffSign > 0
-                            ? `+₩${formatKrw(diffSign)}`
-                            : diffSign < 0
-                              ? `-₩${formatKrw(Math.abs(diffSign))}`
-                              : "변동 없음"}
-                        </div>
-                      ) : (
-                        <div className="text-sm" style={{ color: C.textMuted }}>
-                          집계 중
-                        </div>
-                      )}
-                    </div>
+                  <div className="mb-1 text-xs" style={{ color: C.textMuted }}>
+                    <i
+                      className="ti ti-key"
+                      style={{ fontSize: 11, verticalAlign: -1, marginRight: 4 }}
+                    />
+                    내가 이용 중인 라이선스
+                  </div>
+                  <div className="text-lg font-medium text-slate-900">
+                    {stats?.myLicenseCount ?? "-"}개 ·{" "}
+                    <span style={{ color: C.textAccent }}>
+                      ₩{stats ? formatKrw(stats.myLicenseCostKrw) : "---"}
+                    </span>
                   </div>
                 </Link>
 
@@ -692,7 +644,7 @@ export default function ServiceHubPage() {
                       className="ti ti-cpu"
                       style={{ fontSize: 11, verticalAlign: -1, marginRight: 3 }}
                     />
-                    7일 AI 비용
+                    주간 전사 AI 비용
                   </div>
                   <div className="text-lg font-medium" style={{ color: C.textAccent }}>
                     ₩{stats ? formatKrw(stats.weekAiCostKrw) : "---"}
