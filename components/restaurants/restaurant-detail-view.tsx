@@ -8,6 +8,14 @@ import {
   type AshulengLightboxItem
 } from "@/components/restaurants/ashuleng-image-lightbox";
 import { ReviewWriteModal, reviewImagePublicUrl } from "@/components/restaurants/review-write-modal";
+import { SharePageButton } from "@/components/ui/share-page-button";
+import { loadKakaoMapsSdk } from "@/lib/kakao/load-maps-sdk";
+import {
+  RESTAURANT_REACTION_EMOJIS,
+  REVIEW_REACTION_EMOJIS,
+  type RestaurantReactionRow,
+  type ReviewReactionRow
+} from "@/lib/restaurants/reactions";
 import {
   ATMOSPHERE_TAG_OPTIONS,
   categoryBadgeClass,
@@ -30,13 +38,14 @@ import {
 import { formatMenuAndPriceRange, parseMenuStringToRows, type MenuRow } from "@/lib/restaurants/menu-rows";
 import { keywordEmoji, keywordLabel } from "@/lib/restaurants/review-keywords";
 import { storagePublicUrl } from "@/lib/restaurants/storage-public-url";
+import { useCanManageRestaurant } from "@/lib/services/use-service-permissions";
 import { supabase } from "@/lib/supabase/client";
 
 const MENU_BUCKET = "menu-images";
 const REVIEW_BUCKET = "review-images";
 const MEMO_MAX = 300;
-const PHOTO_PAGE_SIZE = 10;
 const REVIEW_PAGE_SIZE = 5;
+const REVIEW_GALLERY_MAX = 8;
 
 function toggle<T extends string>(arr: T[], v: T): T[] {
   return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
@@ -46,7 +55,7 @@ function menuPublicUrl(path: string): string {
   return storagePublicUrl(MENU_BUCKET, path);
 }
 
-function naverMapSearchUrl(query: string): string {
+function naverMapUrl(query: string): string {
   return `https://map.naver.com/v5/search/${encodeURIComponent(query)}`;
 }
 
@@ -114,23 +123,6 @@ function ReviewCommentClamp({ text }: { text: string }) {
   );
 }
 
-function IconPin(props: { className?: string }) {
-  return (
-    <svg className={props.className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"
-      />
-    </svg>
-  );
-}
-
 function IconTrash(props: { className?: string }) {
   return (
     <svg
@@ -147,6 +139,162 @@ function IconTrash(props: { className?: string }) {
         d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"
       />
     </svg>
+  );
+}
+
+type KakaoMapsApi = {
+  Map: new (el: HTMLElement, opts: { center: unknown; level: number }) => {
+    relayout: () => void;
+  };
+  LatLng: new (lat: number, lng: number) => unknown;
+  Marker: new (opts: { position: unknown; map: unknown }) => unknown;
+};
+
+function kakaoMaps(): KakaoMapsApi {
+  const m = (window as unknown as { kakao?: { maps: KakaoMapsApi } }).kakao?.maps;
+  if (!m) throw new Error("kakao.maps 없음");
+  return m;
+}
+
+function resolveRestaurantCoords(
+  lat: number | null,
+  lng: number | null
+): { lat: number; lng: number } | null {
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return { lat, lng };
+}
+
+function RestaurantDetailMapEmbed({ lat, lng }: { lat: number; lng: number }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await loadKakaoMapsSdk();
+        if (cancelled || !containerRef.current) return;
+        const M = kakaoMaps();
+        const center = new M.LatLng(lat, lng);
+        const map = new M.Map(containerRef.current, { center, level: 4 });
+        new M.Marker({ position: center, map });
+        window.setTimeout(() => map.relayout(), 100);
+      } catch (e) {
+        console.error("[RestaurantDetailMapEmbed] map init failed", e);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [lat, lng]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-64 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+      aria-label="맛집 위치 지도"
+    />
+  );
+}
+
+const RESTAURANT_REACTION_LABELS: Record<(typeof RESTAURANT_REACTION_EMOJIS)[number], string> = {
+  "👍": "좋아요",
+  "🔥": "핫플",
+  "😋": "맛있어",
+  "💰": "가성비",
+  "🏆": "강추"
+};
+
+const REVIEW_REACTION_LABELS: Record<(typeof REVIEW_REACTION_EMOJIS)[number], string> = {
+  "👍": "좋아요",
+  "❤️": "공감해요",
+  "😂": "웃겨요",
+  "😮": "놀라워요"
+};
+
+function ReactionBar({
+  emojis,
+  reactions,
+  myProfileId,
+  onToggle,
+  busyEmoji,
+  emojiSizeClass,
+  labels
+}: {
+  emojis: readonly string[];
+  reactions: { profile_id: string; emoji: string }[];
+  myProfileId: string | null;
+  onToggle: (emoji: string) => void;
+  busyEmoji?: string | null;
+  emojiSizeClass: "text-xl" | "text-lg";
+  labels: Record<string, string>;
+}) {
+  const [tooltipEmoji, setTooltipEmoji] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-4">
+      {emojis.map((emoji) => {
+        const count = reactions.filter((r) => r.emoji === emoji).length;
+        const mine =
+          myProfileId != null && reactions.some((r) => r.profile_id === myProfileId && r.emoji === emoji);
+        const label = labels[emoji];
+
+        return (
+          <button
+            key={emoji}
+            type="button"
+            disabled={!myProfileId || busyEmoji === emoji}
+            onClick={() => onToggle(emoji)}
+            onMouseEnter={() => setTooltipEmoji(emoji)}
+            onMouseLeave={() => {
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+              clearLongPressTimer();
+            }}
+            onTouchStart={() => {
+              clearLongPressTimer();
+              longPressTimerRef.current = setTimeout(() => setTooltipEmoji(emoji), 500);
+            }}
+            onTouchEnd={() => {
+              clearLongPressTimer();
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+            }}
+            onTouchCancel={() => {
+              clearLongPressTimer();
+              setTooltipEmoji((current) => (current === emoji ? null : current));
+            }}
+            className="relative inline-flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-pressed={mine}
+            aria-label={label ? `${emoji} ${label}` : emoji}
+          >
+            {tooltipEmoji === emoji && label ? (
+              <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-black px-2 py-[3px] text-[11px] leading-tight text-white">
+                {label}
+                <span
+                  className="absolute left-1/2 top-full -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-black"
+                  aria-hidden
+                />
+              </span>
+            ) : null}
+            <span className={emojiSizeClass} aria-hidden>
+              {emoji}
+            </span>
+            <span
+              className={`tabular-nums text-[13px] ${mine ? "font-medium text-slate-900" : "text-slate-500"}`}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -167,16 +315,21 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
+  const canManageResult = useCanManageRestaurant(restaurant?.registered_by);
+  const canManage = canManageResult ?? false;
   /** 삭제 확인 대상 리뷰. null 이면 모달 닫힘. */
   const [deletingReview, setDeletingReview] = useState<Review | null>(null);
   const [reviewDeleteBusy, setReviewDeleteBusy] = useState(false);
   const [reviewDeleteErr, setReviewDeleteErr] = useState("");
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuUploadMsg, setMenuUploadMsg] = useState("");
-  const [photoPage, setPhotoPage] = useState(1);
   const [reviewPage, setReviewPage] = useState(1);
   const [lightboxItems, setLightboxItems] = useState<AshulengLightboxItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [restaurantReactions, setRestaurantReactions] = useState<RestaurantReactionRow[]>([]);
+  const [reviewReactions, setReviewReactions] = useState<ReviewReactionRow[]>([]);
+  const [restaurantReactionBusy, setRestaurantReactionBusy] = useState<string | null>(null);
+  const [reviewReactionBusy, setReviewReactionBusy] = useState<string | null>(null);
 
   const [eName, setEName] = useState("");
   const [eCategories, setECategories] = useState<RestaurantCategory[]>(["성수점심"]);
@@ -203,6 +356,35 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setMenuStoragePaths(paths);
   }, [id]);
 
+  const fetchReactions = useCallback(async (reviewIds: string[]) => {
+    const [{ data: restaurantRows, error: restaurantError }, reviewResult] = await Promise.all([
+      supabase
+        .from("restaurant_reactions")
+        .select("id, restaurant_id, profile_id, emoji")
+        .eq("restaurant_id", id),
+      reviewIds.length > 0
+        ? supabase
+            .from("review_reactions")
+            .select("id, review_id, profile_id, emoji")
+            .in("review_id", reviewIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+
+    if (restaurantError) {
+      console.error("[Ashuleng reactions] restaurant_reactions fetch failed", restaurantError);
+      setRestaurantReactions([]);
+    } else {
+      setRestaurantReactions((restaurantRows ?? []) as RestaurantReactionRow[]);
+    }
+
+    if (reviewResult.error) {
+      console.error("[Ashuleng reactions] review_reactions fetch failed", reviewResult.error);
+      setReviewReactions([]);
+    } else {
+      setReviewReactions((reviewResult.data ?? []) as ReviewReactionRow[]);
+    }
+  }, [id]);
+
   const fetchReviews = useCallback(
     async (reason: string) => {
       const { data, error } = await supabase
@@ -215,8 +397,9 @@ export function RestaurantDetailView({ id }: { id: string }) {
         return;
       }
       setReviews((data ?? []) as Review[]);
+      await fetchReactions(((data ?? []) as Review[]).map((row) => row.id));
     },
-    [id]
+    [id, fetchReactions]
   );
 
   const load = useCallback(async () => {
@@ -232,10 +415,14 @@ export function RestaurantDetailView({ id }: { id: string }) {
       supabase.from("profiles").select("id, email, name, department")
     ]);
     const rest = (r ?? null) as Restaurant | null;
+    const reviewRows = (rv ?? []) as Review[];
     setRestaurant(rest);
-    setReviews((rv ?? []) as Review[]);
+    setReviews(reviewRows);
     setProfiles((p ?? []) as ProfileLite[]);
-    await fetchMenuStoragePaths("page load (load())");
+    await Promise.all([
+      fetchMenuStoragePaths("page load (load())"),
+      fetchReactions(reviewRows.map((row) => row.id))
+    ]);
     if (rest) {
       setEName(rest.name);
       setECategories(getRestaurantCategories(rest));
@@ -247,7 +434,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
       setEDescription(rest.description ?? "");
     }
     setLoading(false);
-  }, [id, fetchMenuStoragePaths]);
+  }, [id, fetchMenuStoragePaths, fetchReactions]);
 
   useEffect(() => {
     void load();
@@ -323,7 +510,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
       .from("restaurants")
       .update({
         name: eName.trim(),
-        category: catRow.category,
         categories: catRow.categories,
         food_type: normalizeFoodTypeList(eFoodTypes),
         atmosphere_tags: tagsNorm,
@@ -343,7 +529,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
         ? {
             ...prev,
             name: eName.trim(),
-            category: catRow.category,
             categories: catRow.categories,
             food_type: normalizeFoodTypeList(eFoodTypes),
             atmosphere_tags: tagsNorm,
@@ -495,31 +680,17 @@ export function RestaurantDetailView({ id }: { id: string }) {
     return out;
   }, [reviews]);
 
-  const photoWallItems = useMemo(() => {
-    const seen = new Set<string>();
-    const items: { kind: "menu" | "review"; path: string }[] = [];
-    for (const p of menuStoragePaths) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      items.push({ kind: "menu", path: p });
+  const reviewGalleryVisiblePaths = useMemo(() => {
+    if (reviewPhotoPaths.length > REVIEW_GALLERY_MAX) {
+      return reviewPhotoPaths.slice(0, REVIEW_GALLERY_MAX - 1);
     }
-    for (const p of reviewPhotoPaths) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      items.push({ kind: "review", path: p });
-    }
-    return items;
-  }, [menuStoragePaths, reviewPhotoPaths]);
+    return reviewPhotoPaths.slice(0, REVIEW_GALLERY_MAX);
+  }, [reviewPhotoPaths]);
 
-  const photoTotalPages = Math.max(1, Math.ceil(photoWallItems.length / PHOTO_PAGE_SIZE));
-  const photoPageSlice = useMemo(() => {
-    const start = (photoPage - 1) * PHOTO_PAGE_SIZE;
-    return photoWallItems.slice(start, start + PHOTO_PAGE_SIZE);
-  }, [photoWallItems, photoPage]);
-
-  useEffect(() => {
-    setPhotoPage((p) => Math.min(Math.max(1, p), photoTotalPages));
-  }, [photoTotalPages]);
+  const reviewGalleryOverflow =
+    reviewPhotoPaths.length > REVIEW_GALLERY_MAX
+      ? reviewPhotoPaths.length - (REVIEW_GALLERY_MAX - 1)
+      : 0;
 
   const reviewTotalPages = Math.max(1, Math.ceil(reviews.length / REVIEW_PAGE_SIZE));
   const reviewPageSlice = useMemo(() => {
@@ -531,20 +702,29 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setReviewPage((p) => Math.min(Math.max(1, p), reviewTotalPages));
   }, [reviewTotalPages]);
 
-  const openPhotoWallLightbox = useCallback(
-    (globalIdx: number) => {
-      const items: AshulengLightboxItem[] = photoWallItems.map((item) => ({
-        id: `${item.kind}-${item.path}`,
-        src: item.kind === "menu" ? menuPublicUrl(item.path) : reviewImagePublicUrl(item.path),
-        showMenuBadge: item.kind === "menu"
-      }));
-      if (items.length === 0) return;
-      const idx = Math.min(Math.max(0, globalIdx), items.length - 1);
-      setLightboxItems(items);
-      setLightboxIndex(idx);
-    },
-    [photoWallItems]
-  );
+  const openMenuLightbox = useCallback((startIndex: number) => {
+    if (menuStoragePaths.length === 0) return;
+    const items: AshulengLightboxItem[] = menuStoragePaths.map((path, i) => ({
+      id: `menu-${path}-${i}`,
+      src: menuPublicUrl(path),
+      showMenuBadge: true
+    }));
+    const idx = Math.min(Math.max(0, startIndex), items.length - 1);
+    setLightboxItems(items);
+    setLightboxIndex(idx);
+  }, [menuStoragePaths]);
+
+  const openReviewPhotoGalleryLightbox = useCallback((startIndex: number) => {
+    if (reviewPhotoPaths.length === 0) return;
+    const items: AshulengLightboxItem[] = reviewPhotoPaths.map((path, i) => ({
+      id: `review-gallery-${path}-${i}`,
+      src: reviewImagePublicUrl(path),
+      showMenuBadge: false
+    }));
+    const idx = Math.min(Math.max(0, startIndex), items.length - 1);
+    setLightboxItems(items);
+    setLightboxIndex(idx);
+  }, [reviewPhotoPaths]);
 
   const openReviewImagesLightbox = useCallback((paths: string[], reviewId: string, startIndex: number) => {
     const filtered = paths.filter(Boolean);
@@ -564,6 +744,79 @@ export function RestaurantDetailView({ id }: { id: string }) {
     setLightboxIndex(0);
   }, []);
 
+  const postReaction = useCallback(async (url: string, body: Record<string, string>) => {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      const err = (await res.json().catch(() => null)) as { error?: string } | null;
+      console.error("[Ashuleng reactions] API failed", err?.error ?? res.status);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const toggleRestaurantReaction = useCallback(
+    async (emoji: string) => {
+      if (!myProfileId || !restaurant) return;
+      setRestaurantReactionBusy(emoji);
+      let snapshot: RestaurantReactionRow[] = [];
+      setRestaurantReactions((prev) => {
+        snapshot = prev;
+        const existing = prev.find((r) => r.profile_id === myProfileId && r.emoji === emoji);
+        if (existing) return prev.filter((r) => r.id !== existing.id);
+        return [
+          ...prev,
+          { id: `optimistic-${emoji}`, restaurant_id: restaurant.id, profile_id: myProfileId, emoji }
+        ];
+      });
+
+      const ok = await postReaction("/api/restaurants/react", {
+        restaurant_id: restaurant.id,
+        emoji
+      });
+      if (!ok) setRestaurantReactions(snapshot);
+      setRestaurantReactionBusy(null);
+    },
+    [myProfileId, postReaction, restaurant]
+  );
+
+  const toggleReviewReaction = useCallback(
+    async (reviewId: string, emoji: string) => {
+      if (!myProfileId) return;
+      const busyKey = `${reviewId}:${emoji}`;
+      setReviewReactionBusy(busyKey);
+      let snapshot: ReviewReactionRow[] = [];
+      setReviewReactions((prev) => {
+        snapshot = prev;
+        const existing = prev.find(
+          (r) => r.review_id === reviewId && r.profile_id === myProfileId && r.emoji === emoji
+        );
+        if (existing) return prev.filter((r) => r.id !== existing.id);
+        return [...prev, { id: `optimistic-${busyKey}`, review_id: reviewId, profile_id: myProfileId, emoji }];
+      });
+
+      const ok = await postReaction("/api/restaurants/review-react", {
+        review_id: reviewId,
+        emoji
+      });
+      if (!ok) setReviewReactions(snapshot);
+      setReviewReactionBusy(null);
+    },
+    [myProfileId, postReaction]
+  );
+
   if (loading) {
     return <p className="py-12 text-center text-slate-500">불러오는 중...</p>;
   }
@@ -580,7 +833,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
   }
 
   return (
-    <div className="min-h-0 bg-white pb-16 pt-1">
+    <div className="min-h-0 bg-white pt-1">
       <div className="mb-6">
         <Link href="/restaurants" className="text-sm text-slate-500 hover:text-slate-800">
           ← 맛집 목록
@@ -593,7 +846,9 @@ export function RestaurantDetailView({ id }: { id: string }) {
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center justify-between gap-3">
               <h2 className="text-base font-bold text-slate-900">기본 정보</h2>
-              {editBasic ? (
+              <div className="flex items-center gap-2">
+                <SharePageButton />
+                {editBasic ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -614,7 +869,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
                     저장
                   </button>
                 </div>
-              ) : (
+              ) : canManage ? (
                 <button
                   type="button"
                   className="text-sm font-semibold text-blue-600 hover:text-blue-500"
@@ -624,7 +879,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
                 >
                   수정
                 </button>
-              )}
+              ) : null}
+              </div>
             </div>
 
             {editBasic ? (
@@ -775,31 +1031,6 @@ export function RestaurantDetailView({ id }: { id: string }) {
               <>
                 <p className="text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">{restaurant.name}</p>
 
-                <div className="mt-5 flex flex-wrap items-start gap-3">
-                  <div className="flex min-w-0 flex-1 gap-2">
-                    <IconPin className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
-                    <p className="text-sm leading-relaxed text-slate-700">{restaurant.address}</p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <a
-                      href={naverMapSearchUrl(restaurant.address)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
-                    >
-                      네이버 지도
-                    </a>
-                    <a
-                      href={kakaoMapUrl(restaurant.name, restaurant.lat, restaurant.lng)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
-                    >
-                      카카오맵
-                    </a>
-                  </div>
-                </div>
-
                 <div className="mt-6">
                   <p className="mb-2 text-sm font-bold text-slate-900">카테고리</p>
                   <div className="flex flex-wrap gap-2">
@@ -839,120 +1070,120 @@ export function RestaurantDetailView({ id }: { id: string }) {
                     <p className="text-sm text-slate-400">등록된 대표 메뉴가 없습니다.</p>
                   )}
                 </div>
-
-                <div className="mt-6">
-                  <p className="mb-2 text-sm font-bold text-slate-900">소개 메모</p>
-                  {(restaurant.description ?? "").trim() ? (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{restaurant.description}</p>
-                  ) : (
-                    <p className="text-sm text-slate-400">—</p>
-                  )}
-                </div>
               </>
             )}
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-base font-bold text-slate-900">사진 ({photoWallItems.length}장)</h2>
-            {photoWallItems.length > 0 ? (
-              <>
-                <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-                  {photoPageSlice.map((item, idx) => {
-                    const globalIdx = (photoPage - 1) * PHOTO_PAGE_SIZE + idx;
-                    return (
+            {!editBasic ? (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    메뉴사진 ({menuStoragePaths.length}장)
+                  </h3>
+                  {canManage ? (
+                    <label className="inline-flex shrink-0 cursor-pointer text-xs font-semibold text-blue-600 hover:text-blue-500">
+                      + 사진 추가
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => void uploadMenuImages(e.target.files)}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+                {menuUploadMsg ? <p className="mb-2 text-sm text-rose-600">{menuUploadMsg}</p> : null}
+                {menuSaving ? <p className="mb-2 text-xs text-slate-500">업로드 중…</p> : null}
+                {menuStoragePaths.length > 0 ? (
+                  <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                    {menuStoragePaths.map((path, idx) => (
                       <li
-                        key={`${item.kind}-${item.path}`}
+                        key={path}
                         className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
                       >
                         <button
                           type="button"
-                          onClick={() => openPhotoWallLightbox(globalIdx)}
+                          onClick={() => openMenuLightbox(idx)}
                           className="absolute inset-0 z-0 block h-full w-full cursor-zoom-in text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                          aria-label={`사진 ${globalIdx + 1} 확대 보기`}
+                          aria-label={`메뉴사진 ${idx + 1} 확대 보기`}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={item.kind === "menu" ? menuPublicUrl(item.path) : reviewImagePublicUrl(item.path)}
+                            src={menuPublicUrl(path)}
                             alt=""
-                            className={`pointer-events-none h-full w-full ${item.kind === "menu" ? "object-contain" : "object-cover"}`}
+                            className="pointer-events-none h-full w-full object-contain"
                           />
                         </button>
-                        {globalIdx === 0 ? (
+                        {idx === 0 ? (
                           <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] bg-black/55 py-1 text-center text-[10px] font-medium text-white sm:text-xs">
-                            대표 사진
-                          </span>
-                        ) : null}
-                        {item.kind === "menu" ? (
-                          <span
-                            className="pointer-events-none absolute left-1 top-1 z-[1] rounded bg-red-600/95 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-sm sm:text-[10px]"
-                            title="메뉴 이미지"
-                          >
-                            메뉴
+                            대표
                           </span>
                         ) : null}
                       </li>
-                    );
-                  })}
-                </ul>
-                {photoWallItems.length > PHOTO_PAGE_SIZE ? (
-                  <nav
-                    className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-slate-600"
-                    aria-label="사진 페이지"
-                  >
-                    <button
-                      type="button"
-                      aria-label="이전 페이지"
-                      disabled={photoPage <= 1}
-                      className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-                      onClick={() => setPhotoPage((p) => Math.max(1, p - 1))}
-                    >
-                      {"<"}
-                    </button>
-                    {Array.from({ length: photoTotalPages }, (_, i) => i + 1).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setPhotoPage(p)}
-                        className={`min-w-[1.25rem] px-0.5 py-0.5 tabular-nums ${
-                          p === photoPage
-                            ? "font-bold text-slate-900 underline decoration-slate-900 decoration-2 underline-offset-4"
-                            : "font-normal hover:text-slate-900"
-                        }`}
-                      >
-                        {p}
-                      </button>
                     ))}
-                    <button
-                      type="button"
-                      aria-label="다음 페이지"
-                      disabled={photoPage >= photoTotalPages}
-                      className="px-1 py-0.5 font-medium text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-                      onClick={() => setPhotoPage((p) => Math.min(photoTotalPages, p + 1))}
-                    >
-                      {">"}
-                    </button>
-                  </nav>
-                ) : null}
-              </>
-            ) : (
-              <p className="mb-4 text-sm text-slate-400">등록된 사진이 없습니다.</p>
-            )}
-
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              {menuUploadMsg ? <p className="mb-2 text-sm text-rose-600">{menuUploadMsg}</p> : null}
-              <label className="inline-flex cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                메뉴 이미지 업로드
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => void uploadMenuImages(e.target.files)}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-400">등록된 메뉴사진이 없습니다.</p>
+                )}
+              </div>
+            ) : null}
+            {!editBasic ? (
+              <div className="mt-6">
+                <p className="mb-2 text-sm font-bold text-slate-900">소개 메모</p>
+                {(restaurant.description ?? "").trim() ? (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{restaurant.description}</p>
+                ) : (
+                  <p className="text-sm text-slate-400">—</p>
+                )}
+              </div>
+            ) : null}
+            {!editBasic ? (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <p className="mb-2 text-sm font-bold text-slate-900">반응</p>
+                <ReactionBar
+                  emojis={RESTAURANT_REACTION_EMOJIS}
+                  reactions={restaurantReactions}
+                  myProfileId={myProfileId}
+                  onToggle={(emoji) => void toggleRestaurantReaction(emoji)}
+                  busyEmoji={restaurantReactionBusy}
+                  emojiSizeClass="text-xl"
+                  labels={RESTAURANT_REACTION_LABELS}
                 />
-              </label>
-              {menuSaving ? <span className="ml-2 text-xs text-slate-500">업로드 중…</span> : null}
-            </div>
+              </div>
+            ) : null}
           </section>
+
+          {(() => {
+            const coords = resolveRestaurantCoords(restaurant.lat, restaurant.lng);
+            if (!coords) return null;
+            return (
+              <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="mb-4 text-base font-bold text-slate-900">위치정보</h2>
+                <div className="mb-4 flex flex-wrap items-start gap-3">
+                  <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-700">{restaurant.address}</p>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <a
+                      href={naverMapUrl(restaurant.address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
+                    >
+                      네이버 지도
+                    </a>
+                    <a
+                      href={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
+                    >
+                      카카오맵
+                    </a>
+                  </div>
+                </div>
+                <RestaurantDetailMapEmbed lat={coords.lat} lng={coords.lng} />
+              </section>
+            );
+          })()}
+
         </div>
 
         {/* 우측 */}
@@ -1075,6 +1306,21 @@ export function RestaurantDetailView({ id }: { id: string }) {
                             </div>
                           ) : null}
                         </div>
+                        <div className="mt-3 border-t border-slate-100 pt-2">
+                          <ReactionBar
+                            emojis={REVIEW_REACTION_EMOJIS}
+                            reactions={reviewReactions.filter((r) => r.review_id === rv.id)}
+                            myProfileId={myProfileId}
+                            onToggle={(emoji) => void toggleReviewReaction(rv.id, emoji)}
+                            busyEmoji={
+                              reviewReactionBusy?.startsWith(`${rv.id}:`)
+                                ? reviewReactionBusy.slice(rv.id.length + 1)
+                                : null
+                            }
+                            emojiSizeClass="text-lg"
+                            labels={REVIEW_REACTION_LABELS}
+                          />
+                        </div>
                       </li>
                     );
                   })}
@@ -1121,19 +1367,70 @@ export function RestaurantDetailView({ id }: { id: string }) {
               </>
             )}
           </div>
+
+          {reviewPhotoPaths.length > 0 ? (
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-900">리뷰 사진 ({reviewPhotoPaths.length}장)</h3>
+                <button
+                  type="button"
+                  onClick={() => openReviewPhotoGalleryLightbox(0)}
+                  className="shrink-0 text-xs font-semibold text-blue-600 hover:text-blue-500"
+                >
+                  전체 보기
+                </button>
+              </div>
+              <ul className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+                {reviewGalleryVisiblePaths.map((path, idx) => (
+                  <li
+                    key={path}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openReviewPhotoGalleryLightbox(idx)}
+                      className="block h-full w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                      aria-label={`리뷰 사진 ${idx + 1} 확대`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={reviewImagePublicUrl(path)}
+                        alt=""
+                        className="pointer-events-none h-full w-full object-cover"
+                      />
+                    </button>
+                  </li>
+                ))}
+                {reviewGalleryOverflow > 0 ? (
+                  <li className="relative aspect-square overflow-hidden rounded-lg border border-blue-200 bg-blue-600">
+                    <button
+                      type="button"
+                      onClick={() => openReviewPhotoGalleryLightbox(REVIEW_GALLERY_MAX - 1)}
+                      className="flex h-full w-full items-center justify-center text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                      aria-label={`리뷰 사진 ${reviewGalleryOverflow}장 더 보기`}
+                    >
+                      +{reviewGalleryOverflow}
+                    </button>
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
         </section>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              setDeleteErr("");
-              setDeleteModalOpen(true);
-            }}
-            className="text-xs font-medium text-slate-400 no-underline decoration-transparent outline-none transition-colors hover:text-red-600 focus-visible:text-red-600 active:text-red-600"
-          >
-            맛집 삭제
-          </button>
-        </div>
+        {canManage ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteErr("");
+                setDeleteModalOpen(true);
+              }}
+              className="text-xs font-medium text-slate-400 no-underline decoration-transparent outline-none transition-colors hover:text-red-600 focus-visible:text-red-600 active:text-red-600"
+            >
+              맛집 삭제
+            </button>
+          </div>
+        ) : null}
         </div>
       </div>
 

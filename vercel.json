@@ -2,5 +2,23 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "devCommand": "npm run dev"
+  "devCommand": "npm run dev",
+  "crons": [
+    {
+      "path": "/api/cron/daily-digest",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/license-digest",
+      "schedule": "0 0 1,16 * *"
+    },
+    {
+      "path": "/api/cron/license-payment",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/publishing-trigger",
+      "schedule": "*/10 * * * *"
+    }
+  ]
 }

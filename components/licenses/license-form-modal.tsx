@@ -1,39 +1,39 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   ContractType,
   License,
   LicenseStatus,
   PaymentMethod,
-  Profile,
-  ServiceCostType
+  Profile
 } from "@/lib/licenses/types";
 import { activeProfiles, resolveUiContractType } from "@/lib/licenses/calc";
 import {
   insertServiceCostHistory,
   shouldRecordCostHistory
 } from "@/lib/licenses/service-cost-history";
+import {
+  buildServiceChangeSnapshot,
+  detectChangedFields,
+  insertServiceChangeLog
+} from "@/lib/licenses/service-change-log";
+import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
 const statusOptions: LicenseStatus[] = ["활성", "비활성"];
 const paymentOptions: PaymentMethod[] = ["법인카드", "계좌이체"];
 const currencyOptions = ["KRW", "USD", "EUR"] as const;
+const EXCLUDED_TEAM_EMAIL = "apollon@apollonworks.com";
+
+type TeamMemberOption = {
+  id: string;
+  name: string;
+  email: string;
+};
 
 type Mode = "create" | "edit";
-
-/**
- * 폼의 `contract_type` 을 `services` 테이블의 `cost_type` 로 매핑한다.
- * - “월 구독” → “월간”
- * - “년 구독” → “연간”
- * - “영구 라이선스” → “영구”
- */
-function mapContractToCostType(c: ContractType): ServiceCostType {
-  if (c === "년 구독") return "연간";
-  if (c === "영구 라이선스") return "영구";
-  return "월간";
-}
 
 /**
  * 폼의 `purpose` / `memo` / `payment_method` / `start_date` 등 1:1 매핑이 없는
@@ -90,6 +90,299 @@ function isPaymentMethod(v: unknown): v is PaymentMethod {
   return v === "법인카드" || v === "계좌이체";
 }
 
+type LicenseNotifyChange = {
+  field: string;
+  label: string;
+  before: string;
+  after: string;
+};
+
+function formatNotifyCost(amount: number, currency: string): string {
+  const cur = currency?.trim() || "KRW";
+  if (cur === "USD") {
+    return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  }
+  if (cur === "EUR") {
+    return `€${amount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  }
+  return `₩${amount.toLocaleString("ko-KR")}`;
+}
+
+function formatNotifyLicenseCount(count: number): string {
+  return count > 0 ? String(count) : "무제한";
+}
+
+function isoDateSlice(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  return value.slice(0, 10);
+}
+
+function formatNotifyDate(value: string | null | undefined): string {
+  const d = isoDateSlice(value);
+  return d || "—";
+}
+
+function formatNotifyPaymentDay(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${value}일`;
+}
+
+function resolveLicensePaymentMethod(license: License): PaymentMethod {
+  if (isPaymentMethod(license.payment_method)) return license.payment_method;
+  const parsed = parseDescField(license.description, "결제방법");
+  if (isPaymentMethod(parsed)) return parsed;
+  return "법인카드";
+}
+
+function resolveLicenseStartDate(license: License): string {
+  if (license.start_date) return isoDateSlice(license.start_date);
+  const parsed = parseDescField(license.description, "시작일");
+  return parsed ? isoDateSlice(parsed) : "";
+}
+
+function resolveLicenseAssigneeId(license: License): string | null {
+  return license.assignee_id ?? license.card_holder_id ?? null;
+}
+
+function profileDisplayName(profileId: string | null | undefined, profiles: Profile[]): string {
+  if (!profileId) return "—";
+  const profile = profiles.find((p) => p.id === profileId);
+  return profile?.name?.trim() || profileId;
+}
+
+function formatManagerListLabel(ids: string[], members: TeamMemberOption[]): string {
+  if (ids.length === 0) return "—";
+  return ids
+    .map((id) => {
+      const member = members.find((m) => m.id === id);
+      return member?.name?.trim() || id;
+    })
+    .join(", ");
+}
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  if (sortedA.length !== sortedB.length) return false;
+  return sortedA.every((id, index) => id === sortedB[index]);
+}
+
+async function insertLicenseManagers(
+  serviceId: string,
+  profileIds: string[]
+): Promise<{ error: string | null }> {
+  if (profileIds.length === 0) return { error: null };
+
+  const rows = profileIds.map((profile_id) => ({ service_id: serviceId, profile_id }));
+  const { error } = await supabase.from("license_managers").insert(rows);
+  return { error: error?.message ?? null };
+}
+
+async function replaceLicenseManagers(
+  serviceId: string,
+  profileIds: string[]
+): Promise<{ error: string | null }> {
+  const { error: deleteError } = await supabase
+    .from("license_managers")
+    .delete()
+    .eq("service_id", serviceId);
+  if (deleteError) return { error: deleteError.message };
+
+  return insertLicenseManagers(serviceId, profileIds);
+}
+
+function buildLicenseNotifyChanges(
+  license: License,
+  next: {
+    name: string;
+    category: string;
+    contractType: ContractType;
+    status: LicenseStatus;
+    costNum: number;
+    licenseCount: number | null;
+    currency: string;
+    paymentDay: number | null;
+    startDate: string | null;
+    endDate: string | null;
+    assigneeId: string | null;
+    paymentMethod: PaymentMethod;
+    selectedAssignees: string[];
+    initialManagerIds: string[];
+  },
+  profiles: Profile[],
+  teamMembers: TeamMemberOption[]
+): LicenseNotifyChange[] {
+  const changes: LicenseNotifyChange[] = [];
+  const cur = license.currency ?? "KRW";
+
+  const oldCost = Number(license.cost ?? license.cost_monthly ?? 0);
+  if (oldCost !== next.costNum) {
+    changes.push({
+      field: "cost",
+      label: "비용",
+      before: formatNotifyCost(oldCost, cur),
+      after: formatNotifyCost(next.costNum, next.currency)
+    });
+  }
+
+  const oldCount = license.license_count ?? 0;
+  const newCount = next.licenseCount ?? 0;
+  if (oldCount !== newCount) {
+    changes.push({
+      field: "license_count",
+      label: "라이선스 수",
+      before: formatNotifyLicenseCount(oldCount),
+      after: formatNotifyLicenseCount(newCount)
+    });
+  }
+
+  const oldContract = resolveUiContractType(license);
+  if (oldContract !== next.contractType) {
+    changes.push({
+      field: "contract_type",
+      label: "계약 유형",
+      before: oldContract,
+      after: next.contractType
+    });
+  }
+
+  const oldCategory = (license.category ?? "").trim() || "기타";
+  const newCategory = next.category.trim() || "기타";
+  if (oldCategory !== newCategory) {
+    changes.push({
+      field: "category",
+      label: "카테고리",
+      before: oldCategory,
+      after: newCategory
+    });
+  }
+
+  if (license.name.trim() !== next.name.trim()) {
+    changes.push({
+      field: "name",
+      label: "서비스명",
+      before: license.name.trim(),
+      after: next.name.trim()
+    });
+  }
+
+  const oldStatus: LicenseStatus = license.status === "비활성" ? "비활성" : "활성";
+  if (oldStatus !== next.status) {
+    changes.push({
+      field: "status",
+      label: "상태",
+      before: oldStatus,
+      after: next.status
+    });
+  }
+
+  const oldPaymentDay = license.payment_day ?? null;
+  if (oldPaymentDay !== next.paymentDay) {
+    changes.push({
+      field: "payment_day",
+      label: "결제일",
+      before: formatNotifyPaymentDay(oldPaymentDay),
+      after: formatNotifyPaymentDay(next.paymentDay)
+    });
+  }
+
+  const oldStartDate = resolveLicenseStartDate(license);
+  const newStartDate = isoDateSlice(next.startDate);
+  if (oldStartDate !== newStartDate) {
+    changes.push({
+      field: "start_date",
+      label: "시작일",
+      before: formatNotifyDate(oldStartDate || null),
+      after: formatNotifyDate(newStartDate || null)
+    });
+  }
+
+  const oldNextPaymentDate = isoDateSlice(license.next_payment_date);
+  const newNextPaymentDate = "";
+  if (oldNextPaymentDate !== newNextPaymentDate) {
+    changes.push({
+      field: "next_payment_date",
+      label: "다음 결제일",
+      before: formatNotifyDate(license.next_payment_date),
+      after: "—"
+    });
+  }
+
+  const oldEndDate = isoDateSlice(license.end_date);
+  const newEndDate = isoDateSlice(next.endDate);
+  if (oldEndDate !== newEndDate) {
+    changes.push({
+      field: "end_date",
+      label: "종료일(갱신일)",
+      before: formatNotifyDate(license.end_date),
+      after: formatNotifyDate(next.endDate)
+    });
+  }
+
+  const oldAssigneeId = resolveLicenseAssigneeId(license);
+  const newAssigneeId = next.assigneeId || null;
+  if (oldAssigneeId !== newAssigneeId) {
+    changes.push({
+      field: "assignee_id",
+      label: "서비스 담당자",
+      before: profileDisplayName(oldAssigneeId, profiles),
+      after: profileDisplayName(newAssigneeId, profiles)
+    });
+  }
+
+  // 결제방법: services.payment_method 컬럼 없음 — description 에 "결제방법: …" 로 저장
+  const oldPaymentMethod = resolveLicensePaymentMethod(license);
+  if (oldPaymentMethod !== next.paymentMethod) {
+    changes.push({
+      field: "payment_method",
+      label: "결제방법",
+      before: oldPaymentMethod,
+      after: next.paymentMethod
+    });
+  }
+
+  if (!sameIdSet(next.initialManagerIds, next.selectedAssignees)) {
+    changes.push({
+      field: "license_managers",
+      label: "담당자",
+      before: formatManagerListLabel(next.initialManagerIds, teamMembers),
+      after: formatManagerListLabel(next.selectedAssignees, teamMembers)
+    });
+  }
+
+  // 해당 컬럼 없음 — license_credentials(인증정보)는 이 폼에서 수정하지 않음
+
+  return changes;
+}
+
+function toNotifyServicePayload(saved: License, contractType: ContractType) {
+  return {
+    id: saved.id,
+    name: saved.name,
+    plan: saved.plan ?? null,
+    category: saved.category ?? null,
+    contract_type: saved.contract_type ?? contractType,
+    cost: Number(saved.cost ?? saved.cost_monthly ?? 0),
+    cost_monthly: Number(saved.cost_monthly ?? saved.cost ?? 0),
+    currency: saved.currency ?? "KRW",
+    license_count: saved.license_count ?? 0,
+    start_date: saved.start_date ? saved.start_date.slice(0, 10) : null
+  };
+}
+
+function sendLicenseNotify(payload: {
+  type: "created" | "updated";
+  service: ReturnType<typeof toNotifyServicePayload>;
+  changes?: LicenseNotifyChange[];
+  actor_id: string;
+}) {
+  fetch("/api/licenses/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(console.error);
+}
+
 export function LicenseFormModal({
   mode,
   license,
@@ -129,6 +422,7 @@ export function LicenseFormModal({
       ""
   );
   const [category, setCategory] = useState(license?.category ?? "");
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const [currency, setCurrency] = useState(license?.currency ?? "KRW");
   const [cost, setCost] = useState(
     license?.cost != null && license.cost > 0
@@ -171,8 +465,12 @@ export function LicenseFormModal({
   const [memo, setMemo] = useState(
     (license?.memo && license.memo.trim()) || parsedMemo || ""
   );
+  const [teamMembers, setTeamMembers] = useState<TeamMemberOption[]>([]);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [initialManagerIds, setInitialManagerIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const rates = useKrwRates();
 
   const title = mode === "create" ? "새 서비스 추가" : "서비스 수정";
 
@@ -180,6 +478,66 @@ export function LicenseFormModal({
     () => [...profiles].sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [profiles]
   );
+
+  useEffect(() => {
+    const run = async () => {
+      const { data: members } = await supabase
+        .from("profiles")
+        .select("id, name, email")
+        .eq("status", "근무")
+        .neq("email", EXCLUDED_TEAM_EMAIL)
+        .order("name", { ascending: true });
+
+      setTeamMembers((members ?? []) as TeamMemberOption[]);
+
+      if (mode === "edit" && license?.id) {
+        const { data: managers } = await supabase
+          .from("license_managers")
+          .select("profile_id")
+          .eq("service_id", license.id);
+
+        const ids = (managers ?? [])
+          .map((row) => String(row.profile_id ?? ""))
+          .filter(Boolean);
+
+        setSelectedAssignees(ids);
+        setInitialManagerIds(ids);
+      }
+    };
+    void run();
+  }, [mode, license?.id]);
+
+  useEffect(() => {
+    const run = async () => {
+      const { data } = await supabase
+        .from("services")
+        .select("category")
+        .eq("is_hub_card", false)
+        .not("category", "is", null)
+        .order("category", { ascending: true });
+
+      const unique = Array.from(
+        new Set(
+          (data ?? [])
+            .map((row) => row.category)
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        )
+      ).sort((a, b) => a.localeCompare(b, "ko"));
+
+      setCategoryOptions(unique);
+    };
+    void run();
+  }, []);
+
+  const categorySelectOptions = useMemo(() => {
+    const options = [...categoryOptions];
+    const current = category.trim();
+    if (current && !options.includes(current)) {
+      options.push(current);
+      options.sort((a, b) => a.localeCompare(b, "ko"));
+    }
+    return options;
+  }, [categoryOptions, category]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -257,7 +615,6 @@ export function LicenseFormModal({
       cost_monthly: costNum,
       currency,
       contract_type: contractType,
-      cost_type: mapContractToCostType(contractType),
       next_payment_date: null,
       purchase_date: purchaseDateVal,
       start_date: startDateVal,
@@ -265,7 +622,7 @@ export function LicenseFormModal({
       payment_day: payDayNum,
       payment_month: payMonthNum,
       license_count: lc ?? 0,
-      assignee_id: cardHolderId || null,
+      assignee_id: selectedAssignees[0] || null,
       url: websiteUrl.trim() || null,
       description: buildServiceDescription({
         purpose: trimmedPurpose,
@@ -279,6 +636,9 @@ export function LicenseFormModal({
 
     setLoading(true);
 
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData.user?.id ?? null;
+
     if (mode === "create") {
       const { data, error: insertError } = await supabase
         .from("services")
@@ -286,9 +646,8 @@ export function LicenseFormModal({
         .select()
         .single();
 
-      setLoading(false);
-
       if (insertError || !data) {
+        setLoading(false);
         console.error("[license-form-modal] services.insert failed", insertError);
         setError(insertError?.message ?? "추가에 실패했습니다.");
         return;
@@ -298,8 +657,34 @@ export function LicenseFormModal({
       await insertServiceCostHistory(
         supabase,
         saved,
-        activeProfiles(profiles).length
+        activeProfiles(profiles).length,
+        rates?.USD,
+        rates?.EUR
       );
+
+      const { error: managersError } = await insertLicenseManagers(saved.id, selectedAssignees);
+      if (managersError) {
+        setLoading(false);
+        console.error("[license-form-modal] license_managers.insert failed", managersError);
+        setError(managersError);
+        return;
+      }
+
+      if (currentUserId) {
+        sendLicenseNotify({
+          type: "created",
+          service: toNotifyServicePayload(saved, contractType),
+          actor_id: currentUserId
+        });
+        await insertServiceChangeLog({
+          serviceId: saved.id,
+          changedBy: currentUserId,
+          changeType: "created",
+          changedFields: null
+        });
+      }
+
+      setLoading(false);
       onSaved(saved);
       onClose();
       return;
@@ -318,9 +703,8 @@ export function LicenseFormModal({
       .select()
       .single();
 
-    setLoading(false);
-
     if (updateError || !data) {
+      setLoading(false);
       console.error("[license-form-modal] services.update failed", updateError);
       setError(updateError?.message ?? "저장에 실패했습니다.");
       return;
@@ -334,8 +718,65 @@ export function LicenseFormModal({
         contract_type: contractType
       })
     ) {
-      await insertServiceCostHistory(supabase, saved, activeProfiles(profiles).length);
+      await insertServiceCostHistory(
+        supabase,
+        saved,
+        activeProfiles(profiles).length,
+        rates?.USD,
+        rates?.EUR
+      );
     }
+
+    const { error: managersError } = await replaceLicenseManagers(saved.id, selectedAssignees);
+    if (managersError) {
+      setLoading(false);
+      console.error("[license-form-modal] license_managers sync failed", managersError);
+      setError(managersError);
+      return;
+    }
+
+    if (currentUserId) {
+      const changes = buildLicenseNotifyChanges(
+        license,
+        {
+          name: trimmedName,
+          category: category.trim() || "기타",
+          contractType,
+          status,
+          costNum,
+          licenseCount: lc,
+          currency,
+          paymentDay: payDayNum,
+          startDate: startDateVal,
+          endDate: endDateVal,
+          assigneeId: selectedAssignees[0] || null,
+          paymentMethod,
+          selectedAssignees,
+          initialManagerIds
+        },
+        profiles,
+        teamMembers
+      );
+      if (changes.length > 0) {
+        sendLicenseNotify({
+          type: "updated",
+          service: toNotifyServicePayload(saved, contractType),
+          changes,
+          actor_id: currentUserId
+        });
+      }
+      await insertServiceChangeLog({
+        serviceId: saved.id,
+        changedBy: currentUserId,
+        changeType: "updated",
+        changedFields: detectChangedFields(
+          buildServiceChangeSnapshot(license),
+          buildServiceChangeSnapshot(saved)
+        )
+      });
+    }
+
+    setLoading(false);
     onSaved(saved);
     onClose();
   };
@@ -376,12 +817,18 @@ export function LicenseFormModal({
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">카테고리</label>
-              <input
+              <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="예: 기획/공통"
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-500 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
-              />
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
+              >
+                <option value="">선택하세요</option>
+                {categorySelectOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">통화</label>
@@ -582,6 +1029,48 @@ export function LicenseFormModal({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">서비스 담당자</label>
+              <div className="max-h-[200px] overflow-y-auto rounded-xl border border-slate-300 bg-white p-3">
+                {teamMembers.length === 0 ? (
+                  <p className="text-sm text-slate-500">팀원 목록을 불러오는 중…</p>
+                ) : (
+                  <div className="space-y-1">
+                    {teamMembers.map((member) => {
+                      const checked = selectedAssignees.includes(member.id);
+                      return (
+                        <label
+                          key={member.id}
+                          className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAssignees((prev) =>
+                                  prev.includes(member.id) ? prev : [...prev, member.id]
+                                );
+                              } else {
+                                setSelectedAssignees((prev) => prev.filter((id) => id !== member.id));
+                              }
+                            }}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-apollon-500 focus:ring-apollon-500/40"
+                          />
+                          <span className="min-w-0 flex-1 text-sm text-slate-800">
+                            <span className="font-medium">{member.name}</span>
+                            <span className="ml-2 text-xs text-slate-500">{member.email}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                첫 번째 선택 담당자가 assignee_id에도 저장됩니다.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-slate-700">웹사이트 URL</label>

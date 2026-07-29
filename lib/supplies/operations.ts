@@ -1,53 +1,66 @@
-import type { Supply } from "@/lib/supplies/types";
 import { supabase } from "@/lib/supabase/client";
+import { parseComponents } from "@/lib/supplies/utils";
 
-/** 비품 INSERT RLS 디버깅 — 브라우저 콘솔 확인용 */
-export async function logSupplyInsertAuthDebug(): Promise<void> {
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession();
+async function sumActiveLoanQuantity(
+  supplyId: string
+): Promise<{ sum: number; error: string | null }> {
+  const { data, error } = await supabase
+    .from("supply_loans")
+    .select("loan_quantity")
+    .eq("supply_id", supplyId)
+    .eq("status", "active");
 
-  const authUserId = session?.user?.id ?? null;
-  const authEmail = session?.user?.email ?? null;
+  if (error) return { sum: 0, error: error.message };
 
-  let profile: { id: string; role: string; email: string; name: string } | null = null;
-  let profileError: string | null = null;
+  const sum = (data ?? []).reduce(
+    (acc, row) => acc + (Number((row as { loan_quantity?: number }).loan_quantity) || 0),
+    0
+  );
+  return { sum, error: null };
+}
 
-  if (authUserId) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, role, email, name")
-      .eq("id", authUserId)
-      .maybeSingle();
+function computeSupplyStatus(
+  supplyQuantity: number,
+  activeBorrowedSum: number
+): "available" | "partially_borrowed" | "borrowed" {
+  if (activeBorrowedSum <= 0) return "available";
+  if (activeBorrowedSum >= supplyQuantity) return "borrowed";
+  return "partially_borrowed";
+}
 
-    if (error) {
-      profileError = error.message;
-    } else if (data) {
-      profile = {
-        id: data.id as string,
-        role: String(data.role),
-        email: data.email as string,
-        name: data.name as string
-      };
-    }
+export async function getAvailableQuantity(supplyId: string): Promise<number> {
+  const { data: supply, error } = await supabase
+    .from("supplies")
+    .select("quantity")
+    .eq("id", supplyId)
+    .maybeSingle();
+
+  if (error || !supply) return 0;
+
+  const { sum, error: sumErr } = await sumActiveLoanQuantity(supplyId);
+  if (sumErr) return 0;
+
+  return Math.max(0, Number(supply.quantity) - sum);
+}
+
+export async function getActiveLoanComponentMap(
+  supplyId: string
+): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from("supply_loans")
+    .select("loan_components")
+    .eq("supply_id", supplyId)
+    .eq("status", "active");
+
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    parseComponents((row as { loan_components?: string | null }).loan_components)
+      .filter((r) => r.name.trim() && r.qty > 0)
+      .forEach(({ name, qty }) => {
+        map[name] = (map[name] ?? 0) + qty;
+      });
   }
-
-  const { data: isManager, error: rpcError } = await supabase.rpc("is_supply_manager");
-
-  console.group("[supplies] INSERT auth debug (등록 직전)");
-  console.log("auth.uid (session user id):", authUserId);
-  console.log("auth email:", authEmail);
-  if (sessionError) console.log("session error:", sessionError.message);
-  if (profileError) console.log("profiles 조회 error:", profileError);
-  console.log("profiles row:", profile);
-  console.log("profiles.role (raw):", profile?.role ?? "(없음)");
-  console.log("profiles.role type:", profile ? typeof profile.role : "n/a");
-  console.log("auth.uid === profiles.id:", authUserId != null && profile != null ? authUserId === profile.id : false);
-  console.log("is_supply_manager() RPC:", isManager, typeof isManager);
-  if (rpcError) console.log("is_supply_manager RPC error:", rpcError.message, rpcError);
-  console.log("클라이언트 기대 관리자 role:", profile?.role === "슈퍼관리자" || profile?.role === "중간관리자");
-  console.groupEnd();
+  return map;
 }
 
 export async function createSupply(params: {
@@ -58,9 +71,8 @@ export async function createSupply(params: {
   description: string | null;
   components: string | null;
   imagePaths: string[];
+  is_loanable?: boolean;
 }): Promise<{ id: string | null; error: string | null }> {
-  await logSupplyInsertAuthDebug();
-
   const { data, error } = await supabase
     .from("supplies")
     .insert({
@@ -71,7 +83,8 @@ export async function createSupply(params: {
       description: params.description?.trim() || null,
       components: params.components?.trim() || null,
       image_paths: params.imagePaths,
-      status: "available"
+      status: "available",
+      is_loanable: params.is_loanable ?? false
     })
     .select("id")
     .single();
@@ -83,27 +96,85 @@ export async function createSupply(params: {
   return { id: data.id as string, error: null };
 }
 
+export async function updateSupply(params: {
+  supplyId: string;
+  name: string;
+  locationId: string;
+  quantity: number;
+  managerId: string | null;
+  description: string | null;
+  components: string | null;
+  is_loanable?: boolean;
+}): Promise<{ code: string | null; error: string | null }> {
+  const { data, error } = await supabase.rpc("update_supply_details", {
+    p_supply_id: params.supplyId,
+    p_name: params.name.trim(),
+    p_location_id: params.locationId,
+    p_quantity: params.quantity,
+    p_manager_id: params.managerId,
+    p_description: params.description?.trim() || null,
+    p_components: params.components?.trim() || null
+  });
+
+  if (error) {
+    console.error("[supplies] update", error);
+    return { code: null, error: error.message };
+  }
+
+  const { error: loanableErr } = await supabase
+    .from("supplies")
+    .update({ is_loanable: params.is_loanable ?? false })
+    .eq("id", params.supplyId);
+
+  if (loanableErr) {
+    console.error("[supplies] update is_loanable", loanableErr);
+    return { code: null, error: loanableErr.message };
+  }
+
+  return { code: data as string, error: null };
+}
+
 export async function borrowSupply(params: {
   supplyId: string;
   borrowerId: string;
   purpose: string;
   dueDate: string;
+  loanQuantity?: number;
+  loanComponents?: string | null;
 }): Promise<{ error: string | null }> {
+  const loanQuantity = Math.max(1, params.loanQuantity ?? 1);
+  const loanComponents = params.loanComponents?.trim() || null;
+
   const { data: supply, error: sErr } = await supabase
     .from("supplies")
-    .select("id, status")
+    .select("id, status, quantity")
     .eq("id", params.supplyId)
     .maybeSingle();
 
-  if (sErr || !supply) return { error: "비품을 찾을 수 없습니다." };
-  if (supply.status !== "available") return { error: "대출할 수 없는 상태입니다." };
+  if (sErr || !supply) return { error: "물품을 찾을 수 없습니다." };
+
+  const status = supply.status as string;
+  if (status !== "available" && status !== "partially_borrowed") {
+    return { error: "대출할 수 없는 상태입니다." };
+  }
+
+  const { sum: activeSum, error: sumErr } = await sumActiveLoanQuantity(params.supplyId);
+  if (sumErr) return { error: sumErr };
+
+  const supplyQuantity = Number(supply.quantity) || 0;
+  const availableQty = supplyQuantity - activeSum;
+  if (loanQuantity > availableQty) {
+    return { error: `대출 가능 수량(${availableQty})을 초과했습니다.` };
+  }
 
   const { error: loanErr } = await supabase.from("supply_loans").insert({
     supply_id: params.supplyId,
     borrower_id: params.borrowerId,
     purpose: params.purpose.trim(),
     due_date: params.dueDate,
-    status: "active"
+    status: "active",
+    loan_quantity: loanQuantity,
+    loan_components: loanComponents
   });
 
   if (loanErr) {
@@ -111,9 +182,12 @@ export async function borrowSupply(params: {
     return { error: loanErr.message };
   }
 
+  const nextActiveSum = activeSum + loanQuantity;
+  const nextStatus = computeSupplyStatus(supplyQuantity, nextActiveSum);
+
   const { error: upErr } = await supabase
     .from("supplies")
-    .update({ status: "borrowed" })
+    .update({ status: nextStatus })
     .eq("id", params.supplyId);
 
   if (upErr) return { error: upErr.message };
@@ -125,26 +199,115 @@ export async function returnSupply(params: {
   supplyId: string;
   returnImagePath: string;
   returnNote: string | null;
+  returnQuantity?: number;
+  returnComponents?: string | null;
 }): Promise<{ error: string | null }> {
   const now = new Date().toISOString();
-  const { error: loanErr } = await supabase
+
+  const { data: loan, error: lErr } = await supabase
     .from("supply_loans")
-    .update({
+    .select(
+      "id, supply_id, borrower_id, purpose, due_date, status, loan_quantity, loan_components, borrowed_at"
+    )
+    .eq("id", params.loanId)
+    .maybeSingle();
+
+  if (lErr || !loan) return { error: "대출 기록을 찾을 수 없습니다." };
+  if (loan.status !== "active") return { error: "이미 반납된 대출입니다." };
+
+  const loanQty = Math.max(1, Number(loan.loan_quantity) || 1);
+  const returnQty = Math.max(1, params.returnQuantity ?? loanQty);
+  const returnComponents = params.returnComponents?.trim() || null;
+
+  if (returnQty > loanQty) {
+    return { error: `반납 수량(${returnQty})이 대출 수량(${loanQty})을 초과합니다.` };
+  }
+
+  const supplyId = (loan.supply_id as string) || params.supplyId;
+
+  if (returnQty < loanQty) {
+    const returnCompMap: Record<string, number> = {};
+    if (returnComponents) {
+      parseComponents(returnComponents).forEach(({ name, qty }) => {
+        if (name.trim()) returnCompMap[name] = qty;
+      });
+    }
+
+    const existingComponents = parseComponents(loan.loan_components as string | null);
+    const updatedComponents = existingComponents
+      .map((row) => ({
+        name: row.name,
+        qty: row.qty - (returnCompMap[row.name] ?? 0)
+      }))
+      .filter((row) => row.name.trim() && row.qty > 0);
+
+    const updatedComponentsStr =
+      updatedComponents.length > 0
+        ? updatedComponents.map((r) => `${r.name}:${r.qty}`).join(",")
+        : null;
+
+    const { error: reduceErr } = await supabase
+      .from("supply_loans")
+      .update({
+        loan_quantity: loanQty - returnQty,
+        loan_components: updatedComponentsStr
+      })
+      .eq("id", params.loanId);
+
+    if (reduceErr) return { error: reduceErr.message };
+
+    const { error: insertErr } = await supabase.from("supply_loans").insert({
+      supply_id: loan.supply_id,
+      borrower_id: loan.borrower_id,
+      purpose: loan.purpose,
+      due_date: loan.due_date,
       status: "returned",
+      loan_quantity: returnQty,
+      loan_components: returnComponents,
       return_image_path: params.returnImagePath,
       return_note: params.returnNote?.trim() || null,
+      borrowed_at: loan.borrowed_at as string,
       returned_at: now
-    })
-    .eq("id", params.loanId);
+    });
 
-  if (loanErr) return { error: loanErr.message };
+    if (insertErr) {
+      console.error("[supplies] partial return insert", insertErr);
+      return { error: insertErr.message };
+    }
+  } else {
+    const { error: loanErr } = await supabase
+      .from("supply_loans")
+      .update({
+        status: "returned",
+        return_image_path: params.returnImagePath,
+        return_note: params.returnNote?.trim() || null,
+        returned_at: now,
+        ...(returnComponents ? { loan_components: returnComponents } : {})
+      })
+      .eq("id", params.loanId);
 
-  const { error: sErr } = await supabase
+    if (loanErr) return { error: loanErr.message };
+  }
+
+  const { data: supply, error: sErr } = await supabase
     .from("supplies")
-    .update({ status: "available" })
-    .eq("id", params.supplyId);
+    .select("quantity")
+    .eq("id", supplyId)
+    .maybeSingle();
 
-  if (sErr) return { error: sErr.message };
+  if (sErr || !supply) return { error: "물품을 찾을 수 없습니다." };
+
+  const { sum: activeSum, error: sumErr } = await sumActiveLoanQuantity(supplyId);
+  if (sumErr) return { error: sumErr };
+
+  const nextStatus = computeSupplyStatus(Number(supply.quantity) || 0, activeSum);
+
+  const { error: upErr } = await supabase
+    .from("supplies")
+    .update({ status: nextStatus })
+    .eq("id", supplyId);
+
+  if (upErr) return { error: upErr.message };
   return { error: null };
 }
 
@@ -161,14 +324,32 @@ export async function deleteSupply(supplyId: string): Promise<{ error: string | 
 export async function getActiveLoanForUser(
   supplyId: string,
   userId: string
-): Promise<{ id: string; purpose: string; due_date: string; borrowed_at: string } | null> {
-  const { data } = await supabase
+): Promise<
+  Array<{
+    id: string;
+    purpose: string;
+    due_date: string;
+    borrowed_at: string;
+    loan_quantity: number;
+    loan_components: string | null;
+  }>
+> {
+  const { data, error } = await supabase
     .from("supply_loans")
-    .select("id, purpose, due_date, borrowed_at")
+    .select("id, purpose, due_date, borrowed_at, loan_quantity, loan_components")
     .eq("supply_id", supplyId)
     .eq("borrower_id", userId)
     .eq("status", "active")
-    .maybeSingle();
+    .order("borrowed_at", { ascending: true });
 
-  return data as { id: string; purpose: string; due_date: string; borrowed_at: string } | null;
+  if (error || !data) return [];
+
+  return data.map((row) => ({
+    id: row.id as string,
+    purpose: row.purpose as string,
+    due_date: row.due_date as string,
+    borrowed_at: row.borrowed_at as string,
+    loan_quantity: Number(row.loan_quantity) || 1,
+    loan_components: (row.loan_components as string | null) ?? null
+  }));
 }

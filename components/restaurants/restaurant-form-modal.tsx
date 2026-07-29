@@ -305,7 +305,6 @@ export function RestaurantFormModal({ open, onClose, onSaved }: Props) {
       const catRow = categoryFieldsForDb(categories);
       const { error } = await supabase.from("restaurants").insert({
         name: regName,
-        category: catRow.category,
         categories: catRow.categories,
         address: regAddress,
         lat,

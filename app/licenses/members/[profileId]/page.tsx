@@ -256,7 +256,7 @@ export default function LicensesMemberDetailPage() {
   return (
     <div className="space-y-8">
       <Link href="/licenses/members" className="text-sm font-medium text-violet-600 hover:underline">
-        ← 멤버별 라이선스
+        ← 멤버별
       </Link>
 
       {/* 헤더 */}

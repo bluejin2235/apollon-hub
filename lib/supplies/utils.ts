@@ -1,4 +1,5 @@
 import type { LoanStatus, SupplyStatus } from "@/lib/supplies/types";
+import { storagePublicUrl } from "@/lib/storage/public-url";
 
 export type ComponentRow = { name: string; qty: number };
 
@@ -65,21 +66,6 @@ function formatKoreanDateTime(d: Date): string {
   return `${y}. ${m}. ${day}. ${h}:${min}`;
 }
 
-export function isSupplyManager(role: string | null | undefined): boolean {
-  return role === "슈퍼관리자" || role === "중간관리자";
-}
-
-/** 슈퍼/중간관리자 또는 해당 비품 담당자(manager_id) */
-export function canDeleteSupply(
-  role: string | null | undefined,
-  userId: string | null | undefined,
-  managerId: string | null | undefined
-): boolean {
-  if (!userId) return false;
-  if (isSupplyManager(role)) return true;
-  return managerId != null && managerId === userId;
-}
-
 export function formatSupplyDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
@@ -108,6 +94,8 @@ export function supplyStatusBadge(status: SupplyStatus): { label: string; classN
       return { label: "대출가능", className: "bg-emerald-100 text-emerald-800" };
     case "borrowed":
       return { label: "대출중", className: "bg-amber-100 text-amber-800" };
+    case "partially_borrowed":
+      return { label: "일부대출중", className: "bg-blue-100 text-blue-800" };
     case "unavailable":
       return { label: "사용불가", className: "bg-rose-100 text-rose-800" };
     default:
@@ -133,9 +121,6 @@ export function supplyReturnPath(id: string): string {
 
 export function imagePublicUrls(paths: string[]): string[] {
   if (!paths?.length) return [];
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!base) return paths;
-  return paths.map((p) =>
-    p.startsWith("http") ? p : `${base}/storage/v1/object/public/supply-images/${p}`
-  );
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return paths;
+  return paths.map((p) => (p.startsWith("http") ? p : storagePublicUrl("supply-images", p)));
 }

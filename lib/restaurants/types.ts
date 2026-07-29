@@ -1,4 +1,4 @@
-/** 카테고리 (다중 선택 저장, DB `restaurants.categories` + 호환용 `category`) */
+/** 카테고리 (다중 선택 저장, DB `restaurants.categories`) */
 export type RestaurantCategory = "성수점심" | "음식점" | "카페" | "기타";
 
 export const RESTAURANT_CATEGORY_META: {
@@ -33,8 +33,8 @@ export function normalizeRestaurantCategory(category: string): RestaurantCategor
   return "기타";
 }
 
-/** 표시·필터·지도용: `categories` 배열 우선, 없으면 레거시 `category` */
-export function getRestaurantCategories(r: Pick<Restaurant, "category" | "categories">): RestaurantCategory[] {
+/** 표시·필터·지도용: `categories` 배열 */
+export function getRestaurantCategories(r: Pick<Restaurant, "categories">): RestaurantCategory[] {
   const raw = r.categories;
   if (raw && raw.length > 0) {
     const out: RestaurantCategory[] = [];
@@ -48,21 +48,21 @@ export function getRestaurantCategories(r: Pick<Restaurant, "category" | "catego
     }
     if (out.length > 0) return out;
   }
-  return [normalizeRestaurantCategory(r.category)];
+  return ["기타"];
 }
 
-export function restaurantPrimaryCategory(r: Pick<Restaurant, "category" | "categories">): RestaurantCategory {
+export function restaurantPrimaryCategory(r: Pick<Restaurant, "categories">): RestaurantCategory {
   const cats = getRestaurantCategories(r);
   return cats[0] ?? "기타";
 }
 
-/** 저장 시: `category`는 첫 태그(호환), `categories`는 전체 */
-export function categoryFieldsForDb(categories: RestaurantCategory[]): { category: string; categories: string[] } {
+/** 저장 시 `categories` 배열 */
+export function categoryFieldsForDb(categories: RestaurantCategory[]): { categories: string[] } {
   const list = categories.length > 0 ? categories : ["기타"];
-  return { category: list[0], categories: [...list] };
+  return { categories: [...list] };
 }
 
-export function categoryMarkerColor(categoryOrRestaurant: string | Pick<Restaurant, "category" | "categories">): string {
+export function categoryMarkerColor(categoryOrRestaurant: string | Pick<Restaurant, "categories">): string {
   const key =
     typeof categoryOrRestaurant === "string"
       ? normalizeRestaurantCategory(categoryOrRestaurant)
@@ -193,8 +193,6 @@ export function atmosphereTagDisplayLabel(tag: string): string {
 export type Restaurant = {
   id: string;
   name: string;
-  category: string;
-  /** 다중 카테고리 (비어 있으면 `category`만 사용) */
   categories?: string[] | null;
   address: string;
   lat: number | null;
@@ -215,10 +213,8 @@ export type Review = {
   id: string;
   restaurant_id: string;
   reviewer_id: string;
-  rating: number;
   comment: string | null;
   visit_date: string | null;
-  revisit: boolean;
   created_at: string;
   star_rating?: number | null;
   keyword_tags?: string[] | null;
@@ -234,24 +230,18 @@ export type RestaurantImageRow = {
   created_at: string;
 };
 
-/** 표시용 별점 (0.5 단위), 레거시 정수 rating 호환 */
+/** 표시용 별점 (0.5 단위) */
 export function reviewStarsScore(rv: Review): number {
   const sr = rv.star_rating;
   if (typeof sr === "number" && Number.isFinite(sr) && sr >= 2 && sr <= 10) {
     return sr / 2;
-  }
-  const r = rv.rating;
-  if (typeof r === "number" && Number.isFinite(r)) {
-    return r;
   }
   return 0;
 }
 
 /** 재방문 긍정 여부 (목록·추천용) */
 export function reviewRevisitPositive(rv: Review): boolean {
-  if (rv.revisit_intent === "again") return true;
-  if (rv.revisit_intent === "never" || rv.revisit_intent === "meh") return false;
-  return Boolean(rv.revisit);
+  return rv.revisit_intent === "again";
 }
 
 export type ProfileLite = {

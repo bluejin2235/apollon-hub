@@ -5,13 +5,15 @@ import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { MyLoansTab } from "@/components/settings/my-loans-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
+import { ServicePermissionsTab } from "@/components/settings/service-permissions-tab";
+import { StatisticsTab } from "@/components/settings/statistics-tab";
 import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/team-member-edit-modal";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
-type TabKey = "profile" | "password" | "team" | "loans" | "services";
+type TabKey = "profile" | "password" | "team" | "loans" | "services" | "permissions" | "stats";
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
@@ -57,6 +59,8 @@ export default function SettingsPage() {
     ];
     if (canManageServices) {
       base.push({ key: "services", label: "서비스 관리" });
+      base.push({ key: "permissions", label: "서비스 권한 관리" });
+      base.push({ key: "stats", label: "통계" });
     }
     return base;
   }, [canManageServices]);
@@ -276,13 +280,11 @@ export default function SettingsPage() {
     <main className="min-h-screen">
       <PortalHeader
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
-        userId={sessionProfile.id}
         onLogout={handleLogout}
-        zIndexClass="z-10"
         showSettingsLink={false}
       />
 
-      <div className="pb-10 pt-10">
+      <div className="pb-10 pt-14">
         <div className="mb-7">
           <h1 className="text-3xl font-bold text-slate-900">설정</h1>
           <p className="mt-2 text-slate-600">프로필 및 계정 설정을 관리하세요.</p>
@@ -501,6 +503,12 @@ export default function SettingsPage() {
         {activeTab === "services" ? (
           <ServiceManagementTab canManage={canManageServices} />
         ) : null}
+
+        {activeTab === "permissions" ? (
+          <ServicePermissionsTab canManage={canManageServices} />
+        ) : null}
+
+        {activeTab === "stats" ? <StatisticsTab canManage={canManageServices} /> : null}
       </div>
 
       {canManageTeam ? (

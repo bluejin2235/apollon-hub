@@ -1,35 +1,85 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createSupply } from "@/lib/supplies/operations";
+import { createSupply, updateSupply } from "@/lib/supplies/operations";
 import {
   getSlotsForZone,
   getSupplyZones,
   zoneSelectLabel
 } from "@/lib/supplies/locations";
 import { uploadSupplyImages } from "@/lib/supplies/storage";
-import type { ProfileLite, SupplyLocation } from "@/lib/supplies/types";
+import type { ProfileLite, SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
 import {
   emptyComponentRow,
+  parseComponents,
   serializeComponents,
   type ComponentRow
 } from "@/lib/supplies/utils";
 import { supabase } from "@/lib/supabase/client";
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronUpIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m18 15-6-6-6 6" />
+    </svg>
+  );
+}
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   locations: SupplyLocation[];
-  managers: ProfileLite[];
+  currentUserId: string;
+  mode?: "create" | "edit";
+  initialSupply?: SupplyWithRelations | null;
+  managers?: ProfileLite[];
 };
 
-export function SupplyRegisterModal({ open, onClose, onSaved, locations, managers }: Props) {
+export function SupplyRegisterModal({
+  open,
+  onClose,
+  onSaved,
+  locations,
+  currentUserId,
+  mode = "create",
+  initialSupply = null,
+  managers = []
+}: Props) {
+  const isEdit = mode === "edit";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
+  const [isLoanable, setIsLoanable] = useState(false);
   const [zoneCode, setZoneCode] = useState("");
   const [locationId, setLocationId] = useState("");
-  const [quantity, setQuantity] = useState(1);
   const [managerId, setManagerId] = useState("");
   const [description, setDescription] = useState("");
   const [componentRows, setComponentRows] = useState<ComponentRow[]>([emptyComponentRow()]);
@@ -37,6 +87,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
   const [previews, setPreviews] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
 
   const zones = useMemo(() => getSupplyZones(locations), [locations]);
   const slots = useMemo(
@@ -46,20 +97,38 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
 
   useEffect(() => {
     if (!open) return;
+
+    if (isEdit && initialSupply) {
+      setName(initialSupply.name);
+      setIsLoanable(initialSupply.is_loanable ?? false);
+      setZoneCode(initialSupply.location?.zone_code ?? "");
+      setLocationId(initialSupply.location_id ?? "");
+      setManagerId(initialSupply.manager_id ?? "");
+      setDescription(initialSupply.description ?? "");
+      setComponentRows(parseComponents(initialSupply.components));
+      setFiles([]);
+      setPreviews([]);
+      setError(null);
+      setShowMap(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     const firstZone = zones[0]?.zone_code ?? "";
     const firstSlots = firstZone ? getSlotsForZone(locations, firstZone) : [];
     setName("");
+    setIsLoanable(false);
     setZoneCode(firstZone);
     setLocationId(firstSlots[0]?.id ?? "");
-    setQuantity(1);
-    setManagerId(managers[0]?.id ?? "");
+    setManagerId("");
     setDescription("");
     setComponentRows([emptyComponentRow()]);
     setFiles([]);
     setPreviews([]);
     setError(null);
+    setShowMap(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }, [open, locations, managers, zones]);
+  }, [open, locations, zones, isEdit, initialSupply]);
 
   useEffect(() => {
     if (!zoneCode) return;
@@ -113,7 +182,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
       setError("보관 구역(대분류·세부 위치)을 선택해 주세요.");
       return;
     }
-    if (files.length === 0) {
+    if (!isEdit && files.length === 0) {
       setError("사진을 1장 이상 등록해 주세요.");
       return;
     }
@@ -122,15 +191,49 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
     setError(null);
 
     const componentsStr = serializeComponents(componentRows);
+    const totalQty =
+      componentRows
+        .filter((r) => r.name.trim() && r.qty > 0)
+        .reduce((sum, r) => sum + r.qty, 0) || 1;
+
+    if (isEdit) {
+      if (!initialSupply) {
+        setSaving(false);
+        setError("물품 정보를 불러올 수 없습니다.");
+        return;
+      }
+
+      const { error: updateErr } = await updateSupply({
+        supplyId: initialSupply.id,
+        name,
+        locationId,
+        quantity: totalQty,
+        managerId: managerId || null,
+        description: description || null,
+        components: componentsStr,
+        is_loanable: isLoanable
+      });
+
+      setSaving(false);
+      if (updateErr) {
+        setError(updateErr);
+        return;
+      }
+
+      onSaved();
+      onClose();
+      return;
+    }
 
     const { id, error: createErr } = await createSupply({
       name,
       locationId,
-      quantity,
-      managerId: managerId || null,
+      quantity: totalQty,
+      managerId: currentUserId,
       description: description || null,
       components: componentsStr,
-      imagePaths: []
+      imagePaths: [],
+      is_loanable: isLoanable
     });
 
     if (createErr || !id) {
@@ -161,43 +264,81 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" role="dialog" aria-modal>
       <div className="my-8 w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-slate-900">비품 등록</h2>
-        <p className="mt-1 text-xs text-slate-500">비품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
+        <h2 className="text-lg font-bold text-slate-900">{isEdit ? "물품 수정" : "물품 등록"}</h2>
+        {!isEdit ? (
+          <p className="mt-1 text-xs text-slate-500">물품 코드는 위치 기준 자동 생성됩니다. (예: A01_001)</p>
+        ) : null}
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           <div>
+            <button
+              type="button"
+              onClick={() => setShowMap((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 hover:text-violet-900"
+              aria-expanded={showMap}
+            >
+              {showMap ? (
+                <>
+                  <ChevronUpIcon className="h-3.5 w-3.5" />
+                  위치 안내 접기
+                </>
+              ) : (
+                <>
+                  <ChevronDownIcon className="h-3.5 w-3.5" />
+                  📍 보관 위치 안내 보기
+                </>
+              )}
+            </button>
+            {showMap ? (
+              <div className="my-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/warehouse-map.png"
+                  alt="창고 보관 위치 배치도"
+                  className="h-auto w-full rounded-lg border border-slate-200"
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div>
             <span className="text-sm font-medium text-slate-700">
-              비품 보관위치 <span className="text-rose-600">*</span>
+              물품 보관위치 <span className="text-rose-600">*</span>
             </span>
             <div className="mt-1 grid grid-cols-2 gap-3">
-            <select
-              value={zoneCode}
-              onChange={(e) => setZoneCode(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              required
-              aria-label="대분류"
-            >
-              {zones.map((z) => (
-                <option key={z.zone_code} value={z.zone_code}>
-                  {zoneSelectLabel(z)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              required
-              disabled={slots.length === 0}
-              aria-label="세부 위치"
-            >
-              {slots.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.slot_code}
-                  {loc.slot_label ? ` — ${loc.slot_label}` : ""}
-                </option>
-              ))}
-            </select>
+              <select
+                value={zoneCode}
+                onChange={(e) => setZoneCode(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+                aria-label="대분류"
+              >
+                {zones.map((z) => (
+                  <option key={z.zone_code} value={z.zone_code}>
+                    {zoneSelectLabel(z)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                required
+                disabled={slots.length === 0}
+                aria-label="세부 위치"
+              >
+                {slots.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.slot_code}
+                    {loc.slot_label ? ` — ${loc.slot_label}` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
+            {isEdit ? (
+              <p className="mt-1 text-xs text-rose-600">
+                ⚠️ 위치를 변경하면 물품 코드가 새로 발급됩니다. 기존 QR 라벨을 제거하고 새 QR을 출력해 부착하세요.
+              </p>
+            ) : null}
           </div>
 
           <label className="block text-sm font-medium text-slate-700">
@@ -210,19 +351,37 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-medium text-slate-700">
-              수량
-              <input
-                type="number"
-                min={1}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700">
-              관리담당자
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-700">물품 유형</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLoanable(false)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  !isLoanable
+                    ? "border-violet-600 bg-violet-50 text-violet-700"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                관리물품
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsLoanable(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  isLoanable
+                    ? "border-violet-600 bg-violet-50 text-violet-700"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                대출물품
+              </button>
+            </div>
+          </div>
+
+          {isEdit ? (
+            <label className="block text-sm font-medium text-slate-700">
+              담당자
               <select
                 value={managerId}
                 onChange={(e) => setManagerId(e.target.value)}
@@ -236,42 +395,44 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
                 ))}
               </select>
             </label>
-          </div>
+          ) : null}
 
-          <div>
-            <span className="text-sm font-medium text-slate-700">
-              사진 <span className="text-rose-600">*</span>
-            </span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="mt-1 w-full text-sm"
-              onChange={(e) => {
-                appendFiles(Array.from(e.target.files ?? []));
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-            />
-            {previews.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {previews.map((url, index) => (
-                  <div key={`${url}-${index}`} className="relative h-16 w-16 shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="h-full w-full rounded-lg border object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeFileAt(index)}
-                      className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-xs text-white shadow hover:bg-rose-600"
-                      aria-label="사진 삭제"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          {!isEdit ? (
+            <div>
+              <span className="text-sm font-medium text-slate-700">
+                사진 <span className="text-rose-600">*</span>
+              </span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="mt-1 w-full text-sm"
+                onChange={(e) => {
+                  appendFiles(Array.from(e.target.files ?? []));
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+              {previews.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {previews.map((url, index) => (
+                    <div key={`${url}-${index}`} className="relative h-16 w-16 shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-full w-full rounded-lg border object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeFileAt(index)}
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-xs text-white shadow hover:bg-rose-600"
+                        aria-label="사진 삭제"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className="block text-sm font-medium text-slate-700">
             설명
@@ -337,7 +498,7 @@ export function SupplyRegisterModal({ open, onClose, onSaved, locations, manager
               disabled={saving}
               className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {saving ? "저장 중…" : "등록"}
+              {saving ? "저장 중…" : isEdit ? "저장" : "등록"}
             </button>
           </div>
         </form>

@@ -1,14 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
-import { PortalNotifications } from "@/components/portal/portal-notifications";
+import { PortalStatsTracker } from "@/components/portal/portal-stats-tracker";
 import { APP_TITLE } from "@/lib/portal/app-title";
 
 export type PortalHeaderProps = {
   /** `이름 / 부서 / 권한` 한 줄 */
   userInfoLine: string;
-  /** 알림 뱃지·드롭다운 (비품 관리 등) */
-  userId?: string;
   onLogout: () => void;
   /** Hub page uses a non-link title; shells link back to `/hub` */
   hubTitleVariant?: "link" | "text";
@@ -17,7 +16,7 @@ export type PortalHeaderProps = {
   showSettingsLink?: boolean;
 };
 
-const headerBar = "sticky top-0 border-b border-slate-200 bg-white";
+const headerBar = "fixed top-0 left-0 right-0 z-50 w-full border-b border-slate-200 bg-white";
 
 function LogoMark() {
   return (
@@ -57,13 +56,35 @@ function IconLogout(props: { className?: string }) {
   );
 }
 
+function HeaderNotifications() {
+  useEffect(() => {
+    if (document.getElementById("tabler-icons-css")) return;
+    const link = document.createElement("link");
+    link.id = "tabler-icons-css";
+    link.rel = "stylesheet";
+    link.href =
+      "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css";
+    document.head.appendChild(link);
+  }, []);
+
+  return (
+    <button
+      type="button"
+      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-gray-900 transition hover:border-slate-400 hover:bg-slate-50"
+      aria-label="알림"
+      title="알림"
+    >
+      <i className="ti ti-bell text-lg leading-none" aria-hidden />
+    </button>
+  );
+}
+
 export function PortalHeader({
   userInfoLine,
-  userId,
   onLogout,
   hubTitleVariant = "link",
-  maxWidthClass = "w-full",
-  zIndexClass = "z-20",
+  maxWidthClass = "max-w-7xl",
+  zIndexClass = "z-50",
   showSettingsLink = true
 }: PortalHeaderProps) {
   const title = (
@@ -72,7 +93,8 @@ export function PortalHeader({
 
   return (
     <header className={`${headerBar} ${zIndexClass}`}>
-      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-0`}>
+      <PortalStatsTracker />
+      <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-4 sm:px-6`}>
         <div className="flex min-w-0 items-center gap-3">
           <LogoMark />
           {hubTitleVariant === "link" ? (
@@ -92,7 +114,7 @@ export function PortalHeader({
             {userInfoLine}
           </span>
 
-          {userId ? <PortalNotifications userId={userId} /> : null}
+          <HeaderNotifications />
 
           {showSettingsLink ? (
             <Link

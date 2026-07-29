@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
 export const USD_KRW_FALLBACK = 1380;
 
@@ -31,6 +32,77 @@ async function fetchUsdKrwRate(): Promise<number> {
   const krw = body.rates?.KRW;
   if (typeof krw !== "number" || !Number.isFinite(krw)) throw new Error("KRW 환율 없음");
   return krw;
+}
+
+/** CSV 업로드용: open.er-api.com 1회 조회, 실패 시 fx_daily_rates 최근 usd_krw */
+export async function fetchLiveUsdKrwRateForUpload(): Promise<number> {
+  try {
+    return await fetchUsdKrwRate();
+  } catch (e) {
+    console.error("[arte] live FX fetch failed, trying fx_daily_rates", e);
+  }
+
+  const { data, error } = await supabase
+    .from("fx_daily_rates")
+    .select("usd_krw")
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[arte] fx_daily_rates fallback", error);
+  } else if (data?.usd_krw != null && Number.isFinite(Number(data.usd_krw))) {
+    return Number(data.usd_krw);
+  }
+
+  return USD_KRW_FALLBACK;
+}
+
+/** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → credit_records → fallback) */
+export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
+  const month = dateIso.slice(0, 7);
+  const { data } = await supabase
+    .from("usd_krw_rates")
+    .select("rate")
+    .lte("month", month)
+    .order("month", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (data?.rate != null && Number.isFinite(Number(data.rate))) {
+    return Number(data.rate);
+  }
+
+  try {
+    return await fetchUsdKrwRate();
+  } catch (e) {
+    console.error("[arte] fetchUsdKrwRateForDate API failed", e);
+  }
+
+  const creditRate = await fetchLatestCreditUsdKrwRate();
+  if (creditRate != null) return creditRate;
+
+  return USD_KRW_FALLBACK;
+}
+
+/** credit_records 의 가장 최근 usd_krw_rate */
+export async function fetchLatestCreditUsdKrwRate(): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("credit_records")
+    .select("usd_krw_rate")
+    .not("usd_krw_rate", "is", null)
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[arte] credit_records usd_krw_rate", error);
+    return null;
+  }
+  if (data?.usd_krw_rate != null && Number.isFinite(Number(data.usd_krw_rate))) {
+    return Number(data.usd_krw_rate);
+  }
+  return null;
 }
 
 /** 전달 평균 환율(USD→KRW, open.er-api.com, 실패 시 1380) */

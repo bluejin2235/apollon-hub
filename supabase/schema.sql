@@ -17,13 +17,6 @@ begin
   end if;
 end $$;
 
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'service_cost_type') then
-    create type service_cost_type as enum ('월간', '연간', '영구');
-  end if;
-end $$;
-
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
@@ -41,7 +34,6 @@ create table if not exists public.services (
   category text not null,
   status text not null,
   cost_monthly numeric(12, 2) not null default 0,
-  cost_type service_cost_type not null,
   license_count integer not null default 0 check (license_count >= 0),
   next_renewal date,
   assignee_id uuid references public.profiles (id) on delete set null,
@@ -51,7 +43,6 @@ create table if not exists public.services (
 create table if not exists public.restaurants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  category text not null,
   address text not null,
   lat double precision,
   lng double precision,
@@ -67,10 +58,8 @@ create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants (id) on delete cascade,
   reviewer_id uuid not null references public.profiles (id) on delete cascade,
-  rating integer not null check (rating between 1 and 5),
   comment text,
   visit_date date,
-  revisit boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -113,17 +102,6 @@ alter table public.restaurants
 alter table public.restaurants
   add column if not exists menu_image_paths text[] not null default '{}';
 
--- 매장 갤러리 (Storage 경로만 저장)
-create table if not exists public.restaurant_images (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null references public.restaurants (id) on delete cascade,
-  storage_path text not null,
-  uploaded_by uuid references public.profiles (id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_restaurant_images_restaurant on public.restaurant_images (restaurant_id);
-
 -- 리뷰: 0.5점 단위(2~10), 키워드, 사진, 재방문 의향
 alter table public.reviews
   add column if not exists star_rating smallint;
@@ -136,15 +114,6 @@ alter table public.reviews
 
 alter table public.reviews
   add column if not exists revisit_intent text;
-
--- 기존 데이터 보정 (star_rating 없으면 정수 별점×2)
-update public.reviews
-set star_rating = rating * 2
-where star_rating is null and rating is not null;
-
-update public.reviews
-set revisit_intent = case when revisit then 'again' else 'meh' end
-where revisit_intent is null;
 
 alter table public.reviews
   drop constraint if exists reviews_star_rating_check;
@@ -160,19 +129,11 @@ alter table public.reviews
 
 -- Storage 버킷 (공개 읽기 — URL로 이미지 표시)
 insert into storage.buckets (id, name, public)
-values ('restaurant-images', 'restaurant-images', true),
-       ('menu-images', 'menu-images', true),
+values ('menu-images', 'menu-images', true),
        ('review-images', 'review-images', true)
 on conflict (id) do update set public = excluded.public;
 
 -- Storage RLS (storage 스키마)
-drop policy if exists "restaurant_images_select" on storage.objects;
-create policy "restaurant_images_select" on storage.objects for select using (bucket_id = 'restaurant-images');
-
-drop policy if exists "restaurant_images_insert_authenticated" on storage.objects;
-create policy "restaurant_images_insert_authenticated"
-  on storage.objects for insert to authenticated with check (bucket_id = 'restaurant-images');
-
 drop policy if exists "menu_images_select" on storage.objects;
 create policy "menu_images_select" on storage.objects for select using (bucket_id = 'menu-images');
 
@@ -206,18 +167,6 @@ create policy "review_images_update_authenticated"
 drop policy if exists "review_images_delete_authenticated" on storage.objects;
 create policy "review_images_delete_authenticated"
   on storage.objects for delete to authenticated using (bucket_id = 'review-images');
-
--- restaurant_images 행 RLS
-alter table public.restaurant_images enable row level security;
-
-drop policy if exists "restaurant_images_select_all" on public.restaurant_images;
-create policy "restaurant_images_select_all" on public.restaurant_images for select using (true);
-
-drop policy if exists "restaurant_images_insert_auth" on public.restaurant_images;
-create policy "restaurant_images_insert_auth" on public.restaurant_images for insert to authenticated with check (true);
-
-drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
-create policy "restaurant_images_delete_auth" on public.restaurant_images for delete to authenticated using (true);
 
 -- 아슐랭 게시판 (의견·아이디어 등, 댓글 테이블은 추후 확장)
 create table if not exists public.ashuleng_posts (
@@ -385,27 +334,6 @@ drop policy if exists "reviews_delete_auth" on public.reviews;
 create policy "reviews_delete_auth"
   on public.reviews for delete to authenticated using (true);
 
--- ── restaurant_images: select/insert/update/delete 4종 통일 ─
--- (위에서 정의된 select_all/insert_auth/delete_auth 를 새 select_auth + update_auth 로 일관화)
-drop policy if exists "restaurant_images_select_all" on public.restaurant_images;
-
-drop policy if exists "restaurant_images_select_auth" on public.restaurant_images;
-create policy "restaurant_images_select_auth"
-  on public.restaurant_images for select to authenticated using (true);
-
-drop policy if exists "restaurant_images_insert_auth" on public.restaurant_images;
-create policy "restaurant_images_insert_auth"
-  on public.restaurant_images for insert to authenticated with check (true);
-
-drop policy if exists "restaurant_images_update_auth" on public.restaurant_images;
-create policy "restaurant_images_update_auth"
-  on public.restaurant_images for update to authenticated
-  using (true) with check (true);
-
-drop policy if exists "restaurant_images_delete_auth" on public.restaurant_images;
-create policy "restaurant_images_delete_auth"
-  on public.restaurant_images for delete to authenticated using (true);
-
 -- ── services ───────────────────────────────────────────────
 alter table public.services enable row level security;
 
@@ -559,30 +487,7 @@ drop policy if exists "api_usage_delete_auth" on public.api_usage;
 create policy "api_usage_delete_auth"
   on public.api_usage for delete to authenticated using (true);
 
--- ── licenses 4종 ───────────────────────────────────────────
--- 주의: licenses / license_users / license_managers / license_credentials 테이블은
---      현재 schema.sql 에 `create table` 정의가 없습니다.
---      Supabase 대시보드에서 별도로 생성된 상태이며, 본 섹션은 그 위 RLS 정책만 동기화합니다.
---      테이블 정의 동기화는 별도 작업으로 진행 권장.
-
-alter table public.licenses enable row level security;
-
-drop policy if exists "licenses_select_auth" on public.licenses;
-create policy "licenses_select_auth"
-  on public.licenses for select to authenticated using (true);
-
-drop policy if exists "licenses_insert_auth" on public.licenses;
-create policy "licenses_insert_auth"
-  on public.licenses for insert to authenticated with check (true);
-
-drop policy if exists "licenses_update_auth" on public.licenses;
-create policy "licenses_update_auth"
-  on public.licenses for update to authenticated
-  using (true) with check (true);
-
-drop policy if exists "licenses_delete_auth" on public.licenses;
-create policy "licenses_delete_auth"
-  on public.licenses for delete to authenticated using (true);
+-- ── license_users / license_managers / license_credentials RLS ─
 
 alter table public.license_users enable row level security;
 
@@ -666,7 +571,7 @@ alter default privileges in schema public
 -- 기존 services 테이블은 라이선스 관리(/licenses)의 read 측에서 사용 중.
 -- 같은 테이블에 hub 카드 행도 보관하기 위해 디스크리미네이터 `is_hub_card` 를 추가.
 --   - 라이선스 행: is_hub_card = false (기본값), 모든 라이선스 컬럼 사용
---   - 허브 카드 행: is_hub_card = true, plan/category/cost_type 등 라이선스 컬럼은 null
+--   - 허브 카드 행: is_hub_card = true, plan/category 등 라이선스 컬럼은 null
 -- ═════════════════════════════════════════════════════════════
 
 -- 허브 카드용 컬럼 추가
@@ -686,12 +591,11 @@ alter table public.services
 -- 라이선스 컬럼들은 허브 카드 행에서는 의미 없으므로 nullable 화
 alter table public.services alter column plan drop not null;
 alter table public.services alter column category drop not null;
-alter table public.services alter column cost_type drop not null;
 
 -- 라이선스 카드 UI 의 통화/계약 표현용 컬럼.
 --   - cost: 원본 통화 기준 입력 금액 (cost_monthly 는 호환을 위해 동일 값 유지)
 --   - currency: 'KRW' | 'USD' | 'EUR' (기본 'KRW')
---   - contract_type: '월 구독' | '년 구독' | '영구 라이선스' (cost_type 보다 세부)
+--   - contract_type: '월 구독' | '년 구독' | '영구 라이선스'
 --   - next_payment_date: 다음 결제일 (월/년 구독에서만 사용, 영구 라이선스는 null)
 alter table public.services add column if not exists cost numeric(12, 2);
 alter table public.services add column if not exists currency text default 'KRW';
@@ -783,25 +687,13 @@ create table if not exists public.service_cost_history (
   contract_type text,
   active_member_count integer,
   recorded_at timestamptz not null default now(),
-  recorded_month text not null
+  recorded_month text not null,
+  record_type text not null default 'change',
+  fx_rate numeric(10, 4) null
 );
 
 create index if not exists idx_service_cost_history_service on public.service_cost_history (service_id);
 create index if not exists idx_service_cost_history_month on public.service_cost_history (recorded_month);
-
-create table if not exists public.monthly_cost_snapshots (
-  id uuid primary key default gen_random_uuid(),
-  snapshot_month text not null unique,
-  total_subscription_krw numeric(12, 2),
-  total_permanent_krw numeric(12, 2),
-  active_member_count integer,
-  per_member_cost_krw numeric(12, 2),
-  category_breakdown jsonb,
-  license_breakdown jsonb,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_monthly_cost_snapshots_month on public.monthly_cost_snapshots (snapshot_month);
 
 alter table public.service_cost_history enable row level security;
 
@@ -822,91 +714,308 @@ drop policy if exists "service_cost_history_delete_auth" on public.service_cost_
 create policy "service_cost_history_delete_auth"
   on public.service_cost_history for delete to authenticated using (true);
 
-alter table public.monthly_cost_snapshots enable row level security;
-
-drop policy if exists "monthly_cost_snapshots_select_auth" on public.monthly_cost_snapshots;
-create policy "monthly_cost_snapshots_select_auth"
-  on public.monthly_cost_snapshots for select to authenticated using (true);
-
-drop policy if exists "monthly_cost_snapshots_insert_service" on public.monthly_cost_snapshots;
-create policy "monthly_cost_snapshots_insert_service"
-  on public.monthly_cost_snapshots for insert to service_role with check (true);
-
 insert into public.services (
   name, description, icon, url, status, access_level, order_index, is_hub_card,
-  plan, category, cost_type, cost_monthly, license_count
+  plan, category, cost_monthly, license_count
 ) values
   ('Apollon License Manager',
    '라이선스 발급, 관리, 상태 조회를 위한 통합 관리 서비스',
    '🔑', '/licenses', '활성', '전체', 0, true,
-   null, null, null, 0, 0),
+   null, null, 0, 0),
   ('아슐랭',
    '아폴론 미식가들이 직접 뽑은 아슐랭 가이드',
    '🍱', '/restaurants', '활성', '전체', 1, true,
-   null, null, null, 0, 0);
+   null, null, 0, 0);
 
--- ── 비품 관리 (supplies) ─────────────────────────────────────
--- 테이블은 Supabase에 생성된 상태를 전제로 RLS만 동기화합니다.
+-- ── 비품 관리 (물품창고) — 전체 정의는 supabase/migrations/supplies_warehouse.sql 참고
 
+create table if not exists public.supply_locations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.supplies (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null,
+  name text not null,
+  location_id uuid references public.supply_locations (id) on delete set null,
+  quantity integer not null default 1,
+  manager_id uuid references public.profiles (id) on delete set null,
+  description text,
+  components text,
+  image_paths text[] not null default '{}',
+  status text not null default 'available'
+    check (status in ('available', 'borrowed', 'unavailable')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.supply_loans (
+  id uuid primary key default gen_random_uuid(),
+  supply_id uuid not null references public.supplies (id) on delete cascade,
+  borrower_id uuid not null references public.profiles (id) on delete cascade,
+  purpose text not null,
+  due_date date not null,
+  status text not null default 'active'
+    check (status in ('active', 'returned')),
+  return_image_path text,
+  return_note text,
+  borrowed_at timestamptz not null default now(),
+  returned_at timestamptz
+);
+
+alter table public.supply_locations enable row level security;
 alter table public.supplies enable row level security;
 alter table public.supply_loans enable row level security;
-alter table public.supply_items enable row level security;
-alter table public.supply_notifications enable row level security;
 
-drop policy if exists "supplies_select_auth" on public.supplies;
-create policy "supplies_select_auth"
-  on public.supplies for select to authenticated using (true);
+-- RLS 정책·함수·허브 카드: migrations/supplies_warehouse.sql 실행
 
-drop policy if exists "supplies_insert_auth" on public.supplies;
-create policy "supplies_insert_auth"
-  on public.supplies for insert to authenticated with check (true);
+-- ── 트렌드 레이더 (주차별 트렌드 공유 채팅) ─────────────────
 
-drop policy if exists "supplies_update_auth" on public.supplies;
-create policy "supplies_update_auth"
-  on public.supplies for update to authenticated using (true) with check (true);
+create table if not exists public.trend_rooms (
+  id uuid primary key default gen_random_uuid(),
+  week_label text not null,
+  week_start date not null,
+  week_end date not null,
+  is_archived boolean not null default false,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "supplies_delete_auth" on public.supplies;
-create policy "supplies_delete_auth"
-  on public.supplies for delete to authenticated using (true);
+create index if not exists idx_trend_rooms_week_start on public.trend_rooms (week_start desc);
+create index if not exists idx_trend_rooms_archived on public.trend_rooms (is_archived, week_start desc);
 
-drop policy if exists "supply_loans_select_auth" on public.supply_loans;
-create policy "supply_loans_select_auth"
-  on public.supply_loans for select to authenticated using (true);
+create table if not exists public.trend_messages (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.trend_rooms (id) on delete cascade,
+  profile_id uuid references public.profiles (id) on delete set null,
+  content text not null,
+  message_type text not null default 'text'
+    check (message_type in ('text', 'link', 'youtube', 'vimeo', 'image', 'file', 'ai', 'sns_memo')),
+  metadata jsonb,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "supply_loans_insert_auth" on public.supply_loans;
-create policy "supply_loans_insert_auth"
-  on public.supply_loans for insert to authenticated with check (true);
+create index if not exists idx_trend_messages_room_created on public.trend_messages (room_id, created_at);
+create index if not exists idx_trend_messages_profile on public.trend_messages (profile_id);
 
-drop policy if exists "supply_loans_update_auth" on public.supply_loans;
-create policy "supply_loans_update_auth"
-  on public.supply_loans for update to authenticated using (true) with check (true);
+create table if not exists public.trend_analyses (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid not null references public.trend_messages (id) on delete cascade,
+  summary text not null,
+  keywords text[] not null default '{}',
+  relevance_score numeric(5, 2),
+  apollon_insight text,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "supply_items_select_auth" on public.supply_items;
-create policy "supply_items_select_auth"
-  on public.supply_items for select to authenticated using (true);
+create index if not exists idx_trend_analyses_message on public.trend_analyses (message_id);
 
-drop policy if exists "supply_items_insert_auth" on public.supply_items;
-create policy "supply_items_insert_auth"
-  on public.supply_items for insert to authenticated with check (true);
+create table if not exists public.trend_sources (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  url text not null,
+  type text not null check (type in ('magazine', 'studio')),
+  description text,
+  keywords text[] not null default '{}',
+  is_active boolean not null default true,
+  last_collected_at timestamptz,
+  article_count integer not null default 0,
+  youtube_channel_id text,
+  google_alerts_query text,
+  collect_methods text[] not null default '{}',
+  gpt_prompt text,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "supply_items_update_auth" on public.supply_items;
-create policy "supply_items_update_auth"
-  on public.supply_items for update to authenticated using (true) with check (true);
+create table if not exists public.trend_settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
 
-drop policy if exists "supply_items_delete_auth" on public.supply_items;
-create policy "supply_items_delete_auth"
-  on public.supply_items for delete to authenticated using (true);
+create index if not exists idx_trend_sources_type on public.trend_sources (type);
+create index if not exists idx_trend_sources_active on public.trend_sources (is_active, created_at desc);
 
-drop policy if exists "supply_notifications_select_auth" on public.supply_notifications;
-create policy "supply_notifications_select_auth"
-  on public.supply_notifications for select to authenticated
-  using (user_id = auth.uid());
+create table if not exists public.trend_articles (
+  id uuid primary key default gen_random_uuid(),
+  source_id uuid not null references public.trend_sources (id) on delete cascade,
+  title text not null,
+  url text not null,
+  thumbnail_url text,
+  summary text,
+  keywords text[] not null default '{}',
+  collected_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "supply_notifications_insert_auth" on public.supply_notifications;
-create policy "supply_notifications_insert_auth"
-  on public.supply_notifications for insert to authenticated with check (true);
+create index if not exists idx_trend_articles_source_collected on public.trend_articles (source_id, collected_at desc);
 
-drop policy if exists "supply_notifications_update_auth" on public.supply_notifications;
-create policy "supply_notifications_update_auth"
-  on public.supply_notifications for update to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+insert into storage.buckets (id, name, public)
+values ('trend-uploads', 'trend-uploads', true)
+on conflict (id) do update set public = excluded.public;
+
+create policy "trend_uploads_select" on storage.objects
+  for select to authenticated using (bucket_id = 'trend-uploads');
+
+create policy "trend_uploads_insert" on storage.objects
+  for insert to authenticated with check (bucket_id = 'trend-uploads');
+
+create policy "trend_uploads_delete" on storage.objects
+  for delete to authenticated using (bucket_id = 'trend-uploads');
+
+create or replace function public.is_research_manager()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_super_admin()
+    or exists (
+      select 1
+      from public.service_user_roles sur
+      join public.services s on s.id = sur.service_id
+      where sur.profile_id = (select auth.uid())
+        and sur.role = '중간관리자'
+        and s.url = '/research'
+        and s.is_hub_card = true
+    );
+$$;
+
+revoke all on function public.is_research_manager() from public;
+grant execute on function public.is_research_manager() to authenticated;
+
+alter table public.trend_rooms enable row level security;
+alter table public.trend_messages enable row level security;
+alter table public.trend_analyses enable row level security;
+alter table public.trend_sources enable row level security;
+alter table public.trend_articles enable row level security;
+alter table public.trend_settings enable row level security;
+
+drop policy if exists "trend_rooms_select_auth" on public.trend_rooms;
+create policy "trend_rooms_select_auth"
+  on public.trend_rooms for select to authenticated using (true);
+
+drop policy if exists "trend_rooms_insert_auth" on public.trend_rooms;
+create policy "trend_rooms_insert_auth"
+  on public.trend_rooms for insert to authenticated with check (true);
+
+drop policy if exists "trend_rooms_update_auth" on public.trend_rooms;
+create policy "trend_rooms_update_auth"
+  on public.trend_rooms for update to authenticated using (true) with check (true);
+
+drop policy if exists "trend_rooms_delete_research_manager" on public.trend_rooms;
+create policy "trend_rooms_delete_research_manager"
+  on public.trend_rooms for delete to authenticated
+  using (public.is_research_manager());
+
+drop policy if exists "trend_messages_select_auth" on public.trend_messages;
+create policy "trend_messages_select_auth"
+  on public.trend_messages for select to authenticated using (true);
+
+drop policy if exists "trend_messages_insert_auth" on public.trend_messages;
+create policy "trend_messages_insert_auth"
+  on public.trend_messages for insert to authenticated with check (true);
+
+drop policy if exists "trend_messages_delete_allowed" on public.trend_messages;
+create policy "trend_messages_delete_allowed"
+  on public.trend_messages for delete to authenticated
+  using (
+    public.is_research_manager()
+    or profile_id = (select auth.uid())
+  );
+
+drop policy if exists "trend_analyses_select_auth" on public.trend_analyses;
+create policy "trend_analyses_select_auth"
+  on public.trend_analyses for select to authenticated using (true);
+
+drop policy if exists "trend_analyses_insert_auth" on public.trend_analyses;
+create policy "trend_analyses_insert_auth"
+  on public.trend_analyses for insert to authenticated with check (true);
+
+drop policy if exists "trend_sources_select_auth" on public.trend_sources;
+create policy "trend_sources_select_auth"
+  on public.trend_sources for select to authenticated using (true);
+
+drop policy if exists "trend_sources_insert_auth" on public.trend_sources;
+create policy "trend_sources_insert_auth"
+  on public.trend_sources for insert to authenticated with check (true);
+
+drop policy if exists "trend_sources_update_auth" on public.trend_sources;
+create policy "trend_sources_update_auth"
+  on public.trend_sources for update to authenticated using (true) with check (true);
+
+drop policy if exists "trend_sources_delete_auth" on public.trend_sources;
+create policy "trend_sources_delete_auth"
+  on public.trend_sources for delete to authenticated using (true);
+
+drop policy if exists "trend_articles_select_auth" on public.trend_articles;
+create policy "trend_articles_select_auth"
+  on public.trend_articles for select to authenticated using (true);
+
+drop policy if exists "trend_articles_insert_auth" on public.trend_articles;
+create policy "trend_articles_insert_auth"
+  on public.trend_articles for insert to authenticated with check (true);
+
+drop policy if exists "trend_settings_select_auth" on public.trend_settings;
+create policy "trend_settings_select_auth"
+  on public.trend_settings for select to authenticated using (true);
+
+drop policy if exists "trend_settings_insert_super_admin" on public.trend_settings;
+drop policy if exists "trend_settings_insert_research_manager" on public.trend_settings;
+create policy "trend_settings_insert_research_manager"
+  on public.trend_settings for insert to authenticated
+  with check (public.is_research_manager());
+
+drop policy if exists "trend_settings_update_super_admin" on public.trend_settings;
+drop policy if exists "trend_settings_update_research_manager" on public.trend_settings;
+create policy "trend_settings_update_research_manager"
+  on public.trend_settings for update to authenticated
+  using (public.is_research_manager())
+  with check (public.is_research_manager());
+
+drop policy if exists "trend_settings_delete_super_admin" on public.trend_settings;
+drop policy if exists "trend_settings_delete_research_manager" on public.trend_settings;
+create policy "trend_settings_delete_research_manager"
+  on public.trend_settings for delete to authenticated
+  using (public.is_research_manager());
+
+grant select, insert, update, delete on public.trend_rooms to authenticated;
+grant select, insert, delete on public.trend_messages to authenticated;
+grant select, insert on public.trend_analyses to authenticated;
+grant select, insert, update, delete on public.trend_sources to authenticated;
+grant select, insert on public.trend_articles to authenticated;
+grant select, insert, update, delete on public.trend_settings to authenticated;
+grant all on public.trend_rooms to service_role;
+grant all on public.trend_messages to service_role;
+grant all on public.trend_analyses to service_role;
+grant all on public.trend_sources to service_role;
+grant all on public.trend_articles to service_role;
+grant all on public.trend_settings to service_role;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.trend_messages;
+exception
+  when duplicate_object then
+    null;
+end $$;
+
+-- ── 허브 카드: 트렌드 레이더 ─────────────────────────────────
+insert into public.services (
+  name, description, icon, url, status, access_level, order_index, is_hub_card,
+  plan, category, cost_monthly, license_count
+)
+select
+  '트렌드 레이더',
+  'AI와 함께하는 팀 트렌드 공유',
+  '✦',
+  '/research',
+  '활성',
+  '전체',
+  coalesce((select max(order_index) + 1 from public.services where is_hub_card = true), 2),
+  true,
+  null, null, 0, 0
+where not exists (
+  select 1 from public.services s where s.url = '/research' and s.is_hub_card = true
+);

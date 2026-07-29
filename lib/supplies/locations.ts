@@ -57,6 +57,7 @@ export function mapSupplyRow(row: Record<string, unknown>): SupplyWithRelations 
   return {
     ...(rest as SupplyWithRelations),
     image_paths: ((rest.image_paths as string[]) ?? []) as string[],
+    is_loanable: Boolean(row.is_loanable ?? false),
     location: loc,
     manager: mgrRaw ? { id: mgrRaw.id, name: mgrRaw.name, email: mgrRaw.email } : null
   };

@@ -1,0 +1,211 @@
+export type TrendMessageType =
+  | "text"
+  | "link"
+  | "youtube"
+  | "vimeo"
+  | "image"
+  | "file"
+  | "ai"
+  | "sns_memo";
+
+export type TrendRoomType = "personal" | "public";
+
+export type TrendRoom = {
+  id: string;
+  week_label: string;
+  week_start: string;
+  week_end: string;
+  is_archived: boolean;
+  created_at: string;
+  room_type?: TrendRoomType | "group";
+  owner_id?: string | null;
+  name?: string;
+};
+
+export function resolveTrendRoomType(room: Pick<TrendRoom, "room_type">): TrendRoomType {
+  if (room.room_type === "personal") return "personal";
+  return "public";
+}
+
+export function isPersonalTrendRoom(room: Pick<TrendRoom, "room_type" | "owner_id">): boolean {
+  return resolveTrendRoomType(room) === "personal";
+}
+
+export function isPublicTrendRoom(room: Pick<TrendRoom, "room_type">): boolean {
+  return resolveTrendRoomType(room) === "public";
+}
+
+/** @deprecated `isPublicTrendRoom` 사용 */
+export function isGroupTrendRoom(room: Pick<TrendRoom, "room_type">): boolean {
+  return isPublicTrendRoom(room);
+}
+
+export type TrendMessageMetadata = {
+  url?: string;
+  title?: string;
+  description?: string;
+  domain?: string;
+  youtubeId?: string;
+  vimeoId?: string;
+  thumbnailUrl?: string;
+  imageUrl?: string;
+  reply_to_id?: string;
+  is_sns_guidance?: boolean;
+  sns_url?: string;
+  sns_memo_saved?: boolean;
+  sns_memo_message_id?: string;
+  for_ai_message_id?: string;
+  trigger_message_id?: string;
+  ai_model?: string;
+  has_analysis?: boolean;
+  is_pinned?: boolean;
+  is_pinned_notification?: boolean;
+  isThinking?: boolean;
+};
+
+export type TrendMessageProfile = {
+  id: string;
+  name: string;
+};
+
+export type TrendMessage = {
+  id: string;
+  room_id: string;
+  profile_id: string | null;
+  content: string;
+  message_type: TrendMessageType;
+  metadata: TrendMessageMetadata | null;
+  created_at: string;
+  profile?: TrendMessageProfile | null;
+  reply_to_id?: string | null;
+};
+
+export type TrendAnalysis = {
+  id: string;
+  message_id: string;
+  summary: string;
+  keywords: string[] | null;
+  relevance_score: number | null;
+  apollon_insight: string | null;
+  created_at: string;
+};
+
+export type TrendSourceType = "magazine" | "studio";
+
+export type TrendCollectMethod = "crawl" | "youtube" | "google_alerts";
+
+export type TrendSource = {
+  id: string;
+  name: string;
+  url: string;
+  type: TrendSourceType;
+  description: string | null;
+  keywords: string[];
+  is_active: boolean;
+  last_collected_at: string | null;
+  article_count: number;
+  created_at: string;
+  youtube_channel_id?: string | null;
+  google_alerts_query?: string | null;
+  collect_methods?: TrendCollectMethod[];
+  gpt_prompt?: string | null;
+};
+
+export type TrendArticle = {
+  id: string;
+  source_id: string;
+  title: string;
+  url: string;
+  thumbnail_url: string | null;
+  summary: string | null;
+  keywords: string[];
+  collected_at: string;
+  created_at: string;
+};
+
+const YOUTUBE_REGEX =
+  /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i;
+const URL_REGEX = /https?:\/\/[^\s<>"']+/i;
+
+export function extractYoutubeId(text: string): string | null {
+  const match = text.match(YOUTUBE_REGEX);
+  return match?.[1] ?? null;
+}
+
+export function extractVimeoId(text: string): string | null {
+  const patterns = [
+    /(?:https?:\/\/)?(?:www\.)?player\.vimeo\.com\/video\/(\d+)/i,
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(?:channels\/[^/\s]+\/|groups\/[^/\s]+\/videos\/)(\d+)/i,
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  return null;
+}
+
+export function extractFirstUrl(text: string): string | null {
+  const match = text.match(URL_REGEX);
+  return match?.[0] ?? null;
+}
+
+export function detectMessageType(content: string): TrendMessageType {
+  if (extractYoutubeId(content)) return "youtube";
+  if (extractVimeoId(content)) return "vimeo";
+  if (URL_REGEX.test(content)) return "link";
+  return "text";
+}
+
+function domainFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+export function buildMessageMetadata(content: string, messageType: TrendMessageType): TrendMessageMetadata | null {
+  if (messageType === "youtube") {
+    const youtubeId = extractYoutubeId(content);
+    if (!youtubeId) return null;
+    const url = extractFirstUrl(content) ?? `https://www.youtube.com/watch?v=${youtubeId}`;
+    return {
+      url,
+      youtubeId,
+      thumbnailUrl: `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`,
+      domain: "youtube.com"
+    };
+  }
+
+  if (messageType === "vimeo") {
+    const vimeoId = extractVimeoId(content);
+    if (!vimeoId) return null;
+    const url = extractFirstUrl(content) ?? `https://vimeo.com/${vimeoId}`;
+    return {
+      url,
+      vimeoId,
+      domain: "vimeo.com"
+    };
+  }
+
+  if (messageType === "link") {
+    const url = extractFirstUrl(content);
+    if (!url) return null;
+    return {
+      url,
+      domain: domainFromUrl(url),
+      title: url
+    };
+  }
+
+  return null;
+}
+
+export function isCurrentWeekRoom(room: Pick<TrendRoom, "week_start" | "week_end" | "is_archived">): boolean {
+  if (room.is_archived) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return room.week_start <= today && room.week_end >= today;
+}

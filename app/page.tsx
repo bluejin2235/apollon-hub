@@ -1,12 +1,32 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { APP_TITLE } from "@/lib/portal/app-title";
 import { supabase } from "@/lib/supabase/client";
 
-export default function LoginPage() {
+const POST_LOGIN_FALLBACK = "/hub";
+
+/** 오픈 리다이렉트 방지: "/"로 시작하는 내부 경로만 허용 */
+function resolvePostLoginPath(redirectParam: string | null): string {
+  if (!redirectParam?.trim()) return POST_LOGIN_FALLBACK;
+
+  const path = redirectParam.trim();
+  if (!path.startsWith("/")) return POST_LOGIN_FALLBACK;
+  if (path.startsWith("//")) return POST_LOGIN_FALLBACK;
+  if (/^https?:/i.test(path)) return POST_LOGIN_FALLBACK;
+
+  return path;
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const postLoginPath = useMemo(
+    () => resolvePostLoginPath(searchParams.get("redirect")),
+    [searchParams]
+  );
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,12 +39,12 @@ export default function LoginPage() {
       } = await supabase.auth.getSession();
 
       if (session) {
-        router.replace("/hub");
+        router.replace(postLoginPath);
       }
     };
 
     void checkSession();
-  }, [router]);
+  }, [router, postLoginPath]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,9 +68,17 @@ export default function LoginPage() {
           error: signInError,
           email
         });
-        setErrorMessage(
-          `로그인 실패: ${signInError?.message ?? "인증 정보를 확인할 수 없습니다."}`
-        );
+
+        const rawMessage = signInError?.message ?? "";
+        const isInvalidCredentials = /invalid login credentials/i.test(rawMessage);
+
+        if (isInvalidCredentials) {
+          setErrorMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
+        } else {
+          setErrorMessage(
+            `로그인 실패: ${rawMessage || "인증 정보를 확인할 수 없습니다."}`
+          );
+        }
         return;
       }
 
@@ -83,7 +111,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/hub");
+      router.push(postLoginPath);
     } catch (unexpectedError) {
       console.error("Unexpected login flow error", unexpectedError);
       setErrorMessage("예상치 못한 오류가 발생했습니다. 콘솔 로그를 확인해주세요.");
@@ -148,5 +176,19 @@ export default function LoginPage() {
         </form>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center">
+          <p className="text-sm text-slate-600">로딩 중…</p>
+        </main>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
+  buildApiUsageUpsertPayload,
   extractCsvDateRange,
   formatCsvEmptyRangeMessage,
   formatUsd,
@@ -9,6 +10,9 @@ import {
   type ApiUsageProvider,
   type ApiUsageRow
 } from "@/lib/arte/api-usage";
+import { applyApiKeyAlias, fetchApiKeyAliasLookup } from "@/lib/arte/api-key-aliases";
+import { fetchOpenAiKeyNameLookup } from "@/lib/arte/openai-key-name-map";
+import { fetchLiveUsdKrwRateForUpload } from "@/lib/arte/usd-krw-rate";
 import { supabase } from "@/lib/supabase/client";
 
 const PROVIDERS: { id: ApiUsageProvider; label: string }[] = [
@@ -18,9 +22,10 @@ const PROVIDERS: { id: ApiUsageProvider; label: string }[] = [
 
 type Props = {
   onSaved?: () => void;
+  variant?: "page" | "modal";
 };
 
-export function ApiUsageUpload({ onSaved }: Props) {
+export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [provider, setProvider] = useState<ApiUsageProvider>("openai");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -44,8 +49,18 @@ export function ApiUsageUpload({ onSaved }: Props) {
       setFileName(file.name);
       try {
         const text = await file.text();
-        const rows = parseUsageCsv(provider, text);
-        if (rows.length === 0) {
+        let openAiKeyNameMap: Record<string, string> | undefined;
+        if (provider === "openai") {
+          openAiKeyNameMap = await fetchOpenAiKeyNameLookup();
+        }
+        const rows = parseUsageCsv(provider, text, { openAiKeyNameMap });
+        const aliasLookup = await fetchApiKeyAliasLookup();
+        const normalized = rows.map((row) => ({
+          ...row,
+          api_key_label: applyApiKeyAlias(row.api_key_label, aliasLookup),
+          workspace_name: row.workspace_name ?? null
+        }));
+        if (normalized.length === 0) {
           const range = extractCsvDateRange(provider, text);
           setPreview(null);
           setParseError(null);
@@ -58,8 +73,10 @@ export function ApiUsageUpload({ onSaved }: Props) {
           return;
         }
         setEmptyRange(null);
-        setPreview(rows);
+        setPreview(normalized);
       } catch (e) {
+        setPreview(null);
+        setEmptyRange(null);
         setParseError(e instanceof Error ? e.message : "CSV 파싱 실패");
       }
     },
@@ -86,23 +103,18 @@ export function ApiUsageUpload({ onSaved }: Props) {
     } = await supabase.auth.getSession();
     const uploadedBy = session?.user?.id ?? null;
     const uploadedAt = new Date().toISOString();
+    const usd_krw_rate = await fetchLiveUsdKrwRateForUpload();
 
-    const payload = preview.map((r) => ({
-      provider: r.provider,
-      date: r.date,
-      model: r.model,
-      api_key_label: r.api_key_label,
-      input_tokens: r.input_tokens,
-      output_tokens: r.output_tokens,
-      input_cost_usd: r.input_cost_usd,
-      output_cost_usd: r.output_cost_usd,
-      cost_usd: r.cost_usd,
-      uploaded_by: uploadedBy,
-      created_at: uploadedAt
-    }));
+    const payload = preview.map((r) =>
+      buildApiUsageUpsertPayload(r, {
+        uploaded_by: uploadedBy,
+        created_at: uploadedAt,
+        usd_krw_rate
+      })
+    );
 
     const { error } = await supabase.from("api_usage").upsert(payload, {
-      onConflict: "provider,date,model,api_key_label"
+      onConflict: "provider,date,model,api_key_label,workspace_name"
     });
 
     setSaving(false);
@@ -119,12 +131,28 @@ export function ApiUsageUpload({ onSaved }: Props) {
   }, [preview, onSaved]);
 
   const previewTotal = preview?.reduce((s, r) => s + r.cost_usd, 0) ?? 0;
+  const sectionClass =
+    variant === "modal"
+      ? "space-y-4"
+      : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
+  const dropSectionClass =
+    variant === "modal"
+      ? `rounded-xl border-2 border-dashed p-8 text-center transition ${
+          dragOver
+            ? "border-violet-400 bg-violet-50/50"
+            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
+        }`
+      : `rounded-2xl border-2 border-dashed p-8 text-center transition ${
+          dragOver
+            ? "border-violet-400 bg-violet-50/50"
+            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
+        }`;
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">출처 선택</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
+      <section className={sectionClass}>
+        {variant === "page" ? <h2 className="text-sm font-semibold text-slate-900">출처 선택</h2> : null}
+        <div className={variant === "page" ? "mt-3 flex flex-wrap gap-2" : "flex flex-wrap gap-2"}>
           {PROVIDERS.map((p) => (
             <button
               key={p.id}
@@ -149,11 +177,7 @@ export function ApiUsageUpload({ onSaved }: Props) {
       </section>
 
       <section
-        className={`rounded-2xl border-2 border-dashed p-8 text-center transition ${
-          dragOver
-            ? "border-violet-400 bg-violet-50/50"
-            : "border-slate-200 bg-slate-50/50 hover:border-slate-300"
-        }`}
+        className={dropSectionClass}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -205,8 +229,8 @@ export function ApiUsageUpload({ onSaved }: Props) {
       ) : null}
 
       {preview ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">파싱 미리보기</h2>
+        <section className={variant === "modal" ? "space-y-3" : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"}>
+          {variant === "page" ? <h2 className="text-sm font-semibold text-slate-900">파싱 미리보기</h2> : null}
           <p className="mt-2 text-sm text-slate-600">
             저장 예정 <span className="font-semibold text-slate-900">{preview.length}건</span>
             {" · "}

@@ -1,4 +1,4 @@
-export type SupplyStatus = "available" | "borrowed" | "unavailable";
+export type SupplyStatus = "available" | "borrowed" | "unavailable" | "partially_borrowed";
 export type LoanStatus = "active" | "returned";
 
 export type ProfileLite = { id: string; name: string | null; email?: string | null };
@@ -24,6 +24,7 @@ export type Supply = {
   components: string | null;
   image_paths: string[];
   status: SupplyStatus;
+  is_loanable: boolean;
   created_at: string;
 };
 
@@ -43,8 +44,16 @@ export type SupplyLoan = {
   return_note: string | null;
   borrowed_at: string;
   returned_at: string | null;
+  loan_quantity: number;
+  loan_components: string | null;
 };
 
 export type SupplyLoanWithRelations = SupplyLoan & {
   borrower?: ProfileLite | null;
+};
+
+export type PrintJobWithRequester = {
+  id: string;
+  created_at: string;
+  requester: { name: string | null } | null;
 };

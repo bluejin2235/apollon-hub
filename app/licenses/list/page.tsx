@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
-import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { useCanCreateLicense } from "@/lib/services/use-service-permissions";
 import {
   computeLicenseCostBreakdown,
   computeLicenseNextRenewal,
@@ -270,7 +270,6 @@ function licenseRecentSortMs(row: License): number {
 }
 
 export default function LicensesListPage() {
-  const { profile } = useRequirePortalSession();
   const rates = useKrwRates();
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -305,8 +304,8 @@ export default function LicensesListPage() {
     return m;
   }, [profiles]);
 
-  const role = profile?.role ?? "";
-  const canCreate = role === "슈퍼관리자" || role === "중간관리자";
+  const canCreateResult = useCanCreateLicense();
+  const canCreate = canCreateResult ?? false;
 
   /** 데이터에 실제 존재하는 카테고리만 옵션으로 노출 */
   const categoryOptions = useMemo(() => {
@@ -356,7 +355,7 @@ export default function LicensesListPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">전체 라이선스</h1>
+          <h1 className="text-2xl font-bold text-slate-900">라이선스별</h1>
           <p className="mt-1 text-sm text-slate-600">등록된 모든 서비스 라이선스입니다.</p>
         </div>
         {canCreate ? (

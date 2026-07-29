@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LicenseFormModal } from "@/components/licenses/license-form-modal";
 import {
   ServiceCredentialsCard,
   ServiceManagersCard,
   ServiceUsersCard
 } from "@/components/licenses/license-detail-cards";
-import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { SharePageButton } from "@/components/ui/share-page-button";
+import { useCanManageLicense } from "@/lib/services/use-service-permissions";
 import { computeLicenseNextRenewal, formatCurrency, computeLicenseCostBreakdown } from "@/lib/licenses/calc";
+import type { ServiceChangedField } from "@/lib/licenses/service-change-log";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -131,13 +133,27 @@ function formatDateTimeKorean(iso: string | null | undefined): string | null {
   return `${d.toLocaleDateString("ko-KR")} ${d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
+type ServiceChangeLogRow = {
+  id: string;
+  change_type: "created" | "updated";
+  changed_fields: ServiceChangedField[] | null;
+  created_at: string;
+  changed_by: string;
+};
+
+const CHANGE_LOG_PAGE_SIZE = 5;
+
+function formatChangeFieldsSummary(fields: ServiceChangedField[] | null): string {
+  if (!fields?.length) return "";
+  return fields.map((f) => `${f.label} ${String(f.before)} → ${String(f.after)}`).join(", ");
+}
+
 /* ──────────────── 페이지 ──────────────── */
 
 export default function LicenseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
-  const { profile } = useRequirePortalSession();
   const rates = useKrwRates();
   const [license, setLicense] = useState<License | null>(null);
   const [assignee, setAssignee] = useState<Profile | null>(null);
@@ -148,6 +164,59 @@ export default function LicenseDetailPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState("");
   const [userCount, setUserCount] = useState(0);
+  const [createdLog, setCreatedLog] = useState<ServiceChangeLogRow | null>(null);
+  const [updatedLogs, setUpdatedLogs] = useState<ServiceChangeLogRow[]>([]);
+  const [updatedLogsHasMore, setUpdatedLogsHasMore] = useState(false);
+  const [changeLogsLoading, setChangeLogsLoading] = useState(false);
+  const updatedLogOffsetRef = useRef(0);
+
+  const loadChangeHistory = useCallback(async (appendUpdated: boolean) => {
+    if (!id) return;
+    setChangeLogsLoading(true);
+
+    if (!appendUpdated) {
+      const { data: createdData, error: createdError } = await supabase
+        .from("service_change_logs")
+        .select("id, change_type, changed_fields, created_at, changed_by")
+        .eq("service_id", id)
+        .eq("change_type", "created")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (createdError) {
+        console.error("[service_change_logs] created fetch error", createdError);
+      } else {
+        setCreatedLog((createdData ?? null) as ServiceChangeLogRow | null);
+      }
+      updatedLogOffsetRef.current = 0;
+    }
+
+    const offset = appendUpdated ? updatedLogOffsetRef.current : 0;
+    const { data, error } = await supabase
+      .from("service_change_logs")
+      .select("id, change_type, changed_fields, created_at, changed_by")
+      .eq("service_id", id)
+      .eq("change_type", "updated")
+      .order("created_at", { ascending: false })
+      .range(offset, offset + CHANGE_LOG_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("[service_change_logs] updated fetch error", error);
+      setChangeLogsLoading(false);
+      return;
+    }
+
+    const rows = (data ?? []) as ServiceChangeLogRow[];
+    if (appendUpdated) {
+      setUpdatedLogs((prev) => [...prev, ...rows]);
+    } else {
+      setUpdatedLogs(rows);
+    }
+    updatedLogOffsetRef.current = offset + rows.length;
+    setUpdatedLogsHasMore(rows.length === CHANGE_LOG_PAGE_SIZE);
+    setChangeLogsLoading(false);
+  }, [id]);
 
   // 카드 소지자 = `card_holder_id` 우선, 없으면 `assignee_id` (LicenseFormModal 이 현재 assignee_id 에 저장 중).
   const reloadCardHolder = useCallback(async (lic: License | null) => {
@@ -190,8 +259,22 @@ export default function LicenseDetailPage() {
     void run();
   }, []);
 
-  const role = profile?.role ?? null;
-  const canEdit = role === "슈퍼관리자" || role === "중간관리자";
+  useEffect(() => {
+    if (!id) return;
+    updatedLogOffsetRef.current = 0;
+    void loadChangeHistory(false);
+  }, [id, loadChangeHistory]);
+
+  const canEditResult = useCanManageLicense(license?.id);
+  const canEdit = canEditResult ?? false;
+
+  const profileNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const profile of profiles) {
+      map.set(profile.id, profile.name?.trim() || profile.email);
+    }
+    return map;
+  }, [profiles]);
 
   const handleDelete = async () => {
     if (!license) return;
@@ -283,6 +366,13 @@ export default function LicenseDetailPage() {
   const hasPaymentRow = Boolean(nextPaymentLabel || paymentMethodText);
   const hasUrlOrMemoFooter = Boolean(websiteUrlRaw || memoText);
 
+  const registrationActorName = createdLog
+    ? profileNameById.get(createdLog.changed_by) ?? "알 수 없음"
+    : "알 수 없음";
+  const registrationDateLabel =
+    formatDateTimeKorean(createdLog?.created_at ?? license.created_at) ??
+    license.created_at;
+
   return (
     <div className="space-y-4">
       <Link href="/licenses/list" className="text-sm text-apollon-600 hover:underline">
@@ -308,8 +398,10 @@ export default function LicenseDetailPage() {
             <p className="mt-0.5 text-sm text-slate-500">{license.category}</p>
           </div>
         </div>
-        {canEdit ? (
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          <SharePageButton />
+          {canEdit ? (
+            <>
             <button
               type="button"
               onClick={() => setEditOpen(true)}
@@ -333,8 +425,9 @@ export default function LicenseDetailPage() {
               </svg>
               삭제
             </button>
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </header>
 
       {/* 본문 그리드 */}
@@ -694,26 +787,46 @@ export default function LicenseDetailPage() {
             </section>
           ) : null}
 
-          {/* 추가 정보 */}
+          {/* 변경 이력 */}
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900">추가 정보</h2>
-            <dl className="mt-3 space-y-3 text-xs">
-              <div>
-                <dt className="text-slate-500">최초 등록일</dt>
-                <dd className="mt-0.5 font-medium text-slate-900">
-                  {formatDateTimeKorean(license.created_at) ?? "-"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">최종 수정일</dt>
-                <dd className="mt-0.5 font-medium text-slate-900">
-                  {formatDateTimeKorean(license.updated_at) ?? "-"}
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-4 border-t border-slate-100 pt-3 text-[11px] leading-snug text-slate-400">
-              해당 라이선스 서비스관리는 서비스 담당자 및 사이트 관리자에게 문의
-            </p>
+            <h2 className="text-base font-bold text-slate-900">변경 이력</h2>
+            <ul className="mt-4 space-y-4">
+              {updatedLogs.length === 0 && !changeLogsLoading ? (
+                <li className="text-sm text-slate-500">아직 수정 이력이 없습니다.</li>
+              ) : (
+                updatedLogs.map((log) => {
+                  const actorName = profileNameById.get(log.changed_by) ?? "알 수 없음";
+                  const dateLabel = formatDateTimeKorean(log.created_at) ?? log.created_at;
+                  const summary = formatChangeFieldsSummary(log.changed_fields);
+
+                  return (
+                    <li key={log.id} className="border-b border-slate-100 pb-4 last:border-b-0 last:pb-0">
+                      <p className="text-sm font-medium text-slate-900">✏️ 정보 수정</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {actorName} · {dateLabel}
+                      </p>
+                      {summary ? <p className="mt-2 text-sm text-slate-700">{summary}</p> : null}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+            {updatedLogsHasMore ? (
+              <button
+                type="button"
+                onClick={() => void loadChangeHistory(true)}
+                disabled={changeLogsLoading}
+                className="mt-4 w-full rounded-lg border border-slate-300 bg-white py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {changeLogsLoading ? "불러오는 중..." : "더 보기"}
+              </button>
+            ) : null}
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <p className="text-sm font-medium text-slate-900">🎉 라이선스 등록</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {registrationActorName} · {registrationDateLabel}
+              </p>
+            </div>
           </section>
         </aside>
       </div>
@@ -728,6 +841,7 @@ export default function LicenseDetailPage() {
           onSaved={(row) => {
             setLicense(row);
             void reloadCardHolder(row);
+            void loadChangeHistory(false);
             setEditOpen(false);
           }}
         />

@@ -12,12 +12,19 @@ export type ApiUsageRow = {
   input_cost_usd: number;
   output_cost_usd: number;
   cost_usd: number;
+  num_requests: number | null;
+  workspace_name?: string | null;
+  usd_krw_rate?: number | null;
+  cost_krw?: number | null;
 };
 
 export type ApiUsageDbRow = ApiUsageRow & {
   id?: string;
   created_at?: string;
   uploaded_by?: string | null;
+  total_tokens?: number | null;
+  usd_krw_rate?: number | null;
+  cost_krw?: number | null;
   profiles?: { name: string | null } | null;
 };
 
@@ -25,6 +32,8 @@ export type ProviderUploadMeta = {
   provider: ApiUsageProvider;
   created_at: string | null;
   uploader_name: string | null;
+  data_start: string | null;
+  data_end: string | null;
 };
 
 export function formatUploadTimestamp(iso: string | null): string {
@@ -50,15 +59,19 @@ export function formatProviderUploadMeta(meta: ProviderUploadMeta): string {
 
 export type UsagePeriodPreset =
   | "last_30days"
-  | "this_month"
-  | "last_month"
   | "last_3m"
+  | "last_6m"
+  | "last_1y"
   | "custom";
 
 export type ProviderFilter = "all" | ApiUsageProvider;
 
 const ANTHROPIC_INPUT_TYPES = new Set([
   "input_no_cache",
+  "input",
+  "cache_read",
+  "cache_write",
+  // legacy Anthropic export labels
   "input_cache_read",
   "input_cache_write"
 ]);
@@ -73,9 +86,7 @@ const OPENAI_DEFAULT_PRICING = { input: 2.5, output: 10.0 };
 
 export function formatUsd(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  if (value === 0) return "$0.00";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 export function formatTokenCount(n: number): string {
@@ -85,14 +96,18 @@ export function formatTokenCount(n: number): string {
   return String(Math.round(n));
 }
 
+/** 토큰 수 천 단위 콤마 (예: 1,234,567) */
+export function formatTokenLocale(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return Math.round(n).toLocaleString("ko-KR");
+}
+
 export function resolveUsageDateRange(
   preset: UsagePeriodPreset,
   customStart: string,
   customEnd: string,
   today = new Date()
 ): { start: string; end: string } {
-  const y = today.getFullYear();
-  const m = today.getMonth();
   const pad = (n: number) => String(n).padStart(2, "0");
   const toIso = (d: Date) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -103,14 +118,22 @@ export function resolveUsageDateRange(
     start.setDate(start.getDate() - 30);
     return { start: toIso(start), end: toIso(today) };
   }
-  if (preset === "this_month") return { start: toIso(new Date(y, m, 1)), end: toIso(today) };
-  if (preset === "last_month") {
-    return { start: toIso(new Date(y, m - 1, 1)), end: toIso(new Date(y, m, 0)) };
+  if (preset === "last_3m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 3);
+    return { start: toIso(start), end: toIso(today) };
   }
-  const start = new Date(today);
-  start.setMonth(start.getMonth() - 2);
-  start.setDate(1);
-  return { start: toIso(start), end: toIso(today) };
+  if (preset === "last_6m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 6);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  if (preset === "last_1y") {
+    const start = new Date(today);
+    start.setFullYear(start.getFullYear() - 1);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  return { start: customStart, end: customEnd };
 }
 
 /** RFC4180-ish CSV 파서 */
@@ -180,21 +203,40 @@ function toNum(v: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeDateFromAnthropic(raw: string): string | null {
-  const s = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
+function normalizeAnthropicDate(dateStr: string): string | null {
+  const s = dateStr.trim();
+  if (!s) return null;
+  // usage_date_utc는 UTC 기준 날짜 → KST 변환
+  const d = new Date(s + "T00:00:00+00:00");
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function isOpenAiDayGranularity(rows: Record<string, string>[]): boolean {
+  // 실제 데이터가 있는 행만 필터링 (빈 행 제외)
+  const dataRows = rows.filter(
+    (r) =>
+      r.start_time_iso?.trim() &&
+      r.num_model_requests &&
+      parseFloat(r.num_model_requests) > 0
+  );
+  if (dataRows.length === 0) return false;
+  return dataRows.every((r) => {
+    const iso = r.start_time_iso.trim();
+    // T00:00:00으로 끝나는 경우만 Day 기준
+    return /T00:00:00(\+00:00|Z)?$/.test(iso);
+  });
 }
 
 function normalizeDateFromOpenAi(iso: string): string | null {
   const s = iso.trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  // UTC → KST(+9) 변환 후 날짜 추출
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
 }
 
 function openAiPricing(model: string): { input: number; output: number } {
@@ -220,7 +262,7 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
   const map = new Map<string, Agg>();
 
   for (const row of rows) {
-    const date = normalizeDateFromAnthropic(row.usage_date_utc ?? "");
+    const date = normalizeAnthropicDate(row.usage_date_utc ?? "");
     const model = (row.model ?? "").trim();
     if (!date || !model) continue;
 
@@ -240,28 +282,36 @@ export function parseAnthropicCsv(text: string): ApiUsageRow[] {
         output_tokens: 0,
         input_cost_usd: 0,
         output_cost_usd: 0,
-        cost_usd: 0
+        cost_usd: 0,
+        num_requests: null,
+        workspace_name: null
       } satisfies Agg);
 
-    if (tokenType === "output") {
-      prev.output_cost_usd += cost;
-    } else if (ANTHROPIC_INPUT_TYPES.has(tokenType)) {
-      prev.input_cost_usd += cost;
-    } else if (tokenType) {
-      prev.input_cost_usd += cost;
-    }
+    prev.cost_usd = roundUsd(prev.cost_usd + cost);
 
-    prev.cost_usd = roundUsd(prev.input_cost_usd + prev.output_cost_usd);
+    if (tokenType === "output") {
+      prev.output_cost_usd = roundUsd(prev.output_cost_usd + cost);
+    } else if (ANTHROPIC_INPUT_TYPES.has(tokenType)) {
+      prev.input_cost_usd = roundUsd(prev.input_cost_usd + cost);
+    }
+    // token_type '--' 및 기타 → cost_usd에만 반영
+
     map.set(key, prev);
   }
 
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.model.localeCompare(b.model));
 }
 
-export function parseOpenAiCsv(text: string): ApiUsageRow[] {
+export function parseOpenAiCsv(text: string, keyNameMap?: Record<string, string>): ApiUsageRow[] {
   const { headers, rows } = parseCsvText(text);
   if (!headers.includes("start_time_iso") && !headers.includes("end_time_iso")) {
     throw new Error("OpenAI CSV 형식이 아닙니다. start_time_iso(또는 end_time_iso) 컬럼이 필요합니다.");
+  }
+
+  if (isOpenAiDayGranularity(rows)) {
+    throw new Error(
+      "OpenAI CSV는 시간(Hour) 단위로보낸 파일만 업로드할 수 있어요.\nOpenAI 대시보드 → Usage → Export 시 Granularity를 'Hour'로 선택해주세요."
+    );
   }
 
   const map = new Map<string, Agg>();
@@ -273,7 +323,10 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
     const date = normalizeDateFromOpenAi(row.start_time_iso ?? row.start_time ?? "");
     if (!date) continue;
 
-    const apiKey = (row.api_key_id ?? "").trim() || "—";
+    const rawTrackingId = (row.api_key_id ?? "").trim();
+    const apiKey = rawTrackingId
+      ? (keyNameMap?.[rawTrackingId] ?? rawTrackingId)
+      : "—";
     const inputTokens = Math.round(toNum(row.input_tokens));
     const outputTokens = Math.round(toNum(row.output_tokens));
 
@@ -289,9 +342,12 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
         output_tokens: 0,
         input_cost_usd: 0,
         output_cost_usd: 0,
-        cost_usd: 0
+        cost_usd: 0,
+        num_requests: 0,
+        workspace_name: null
       } satisfies Agg);
 
+    prev.num_requests = (prev.num_requests ?? 0) + Math.round(toNum(row.num_model_requests));
     prev.input_tokens += inputTokens;
     prev.output_tokens += outputTokens;
 
@@ -305,8 +361,43 @@ export function parseOpenAiCsv(text: string): ApiUsageRow[] {
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.model.localeCompare(b.model));
 }
 
-export function parseUsageCsv(provider: ApiUsageProvider, text: string): ApiUsageRow[] {
-  return provider === "anthropic" ? parseAnthropicCsv(text) : parseOpenAiCsv(text);
+export function parseUsageCsv(
+  provider: ApiUsageProvider,
+  text: string,
+  options?: { openAiKeyNameMap?: Record<string, string> }
+): ApiUsageRow[] {
+  const rows =
+    provider === "anthropic"
+      ? parseAnthropicCsv(text)
+      : parseOpenAiCsv(text, options?.openAiKeyNameMap);
+  return rows.filter((r) => !r.api_key_label?.includes("bluejin2"));
+}
+
+/** CSV 파싱 결과 → api_usage upsert payload */
+export function buildApiUsageUpsertPayload(
+  row: ApiUsageRow,
+  meta: { uploaded_by: string | null; created_at: string; usd_krw_rate: number }
+) {
+  const usd_krw_rate = meta.usd_krw_rate;
+  const cost_krw = Math.round(Number(row.cost_usd) * usd_krw_rate);
+  return {
+    provider: row.provider,
+    date: row.date,
+    model: row.model,
+    api_key_label: row.api_key_label,
+    workspace_name: row.workspace_name ?? null,
+    input_tokens: row.input_tokens,
+    output_tokens: row.output_tokens,
+    total_tokens: 0,
+    input_cost_usd: row.input_cost_usd,
+    output_cost_usd: row.output_cost_usd,
+    cost_usd: row.cost_usd,
+    usd_krw_rate,
+    cost_krw,
+    num_requests: row.num_requests,
+    uploaded_by: meta.uploaded_by,
+    created_at: meta.created_at
+  };
 }
 
 /** CSV 전체 행에서 날짜 범위 추출 (모델 유무와 무관, 빈 사용량 파일용) */
@@ -336,7 +427,7 @@ export function extractCsvDateRange(
   if (!headers.includes("usage_date_utc")) return null;
   const dates: string[] = [];
   for (const row of rows) {
-    const d = normalizeDateFromAnthropic(row.usage_date_utc ?? "");
+    const d = normalizeAnthropicDate(row.usage_date_utc ?? "");
     if (d) dates.push(d);
   }
   if (dates.length === 0) return null;
@@ -352,6 +443,7 @@ export function formatCsvEmptyRangeMessage(range: { min: string; max: string }):
 export type DailyCostPoint = {
   date: string;
   label: string;
+  /** provider별 cost_krw 합 */
   anthropic: number;
   openai: number;
   total: number;
@@ -359,17 +451,18 @@ export type DailyCostPoint = {
 
 export type ModelCostRow = {
   model: string;
+  date: string;
   provider: ApiUsageProvider;
+  api_key_label: string;
+  num_requests: number | null;
+  cost_usd: number;
+  cost_krw: number;
   input_cost_usd: number;
   output_cost_usd: number;
-  cost_usd: number;
-  share_pct: number;
 };
 
 export type DashboardAggregate = {
   rows: ApiUsageDbRow[];
-  total_cost_usd: number;
-  total_tokens: number | null;
   date_min: string | null;
   date_max: string | null;
   daily: DailyCostPoint[];
@@ -382,24 +475,16 @@ export function aggregateUsageDashboard(
 ): DashboardAggregate {
   const filtered = rows.filter((r) => r.date >= range.start && r.date <= range.end);
 
-  const total_cost_usd = filtered.reduce((s, r) => s + Number(r.cost_usd), 0);
-  const openaiRows = filtered.filter((r) => r.provider === "openai");
-  const total_tokens =
-    openaiRows.length > 0
-      ? openaiRows.reduce((s, r) => s + Number(r.input_tokens) + Number(r.output_tokens), 0)
-      : filtered.some((r) => r.provider === "anthropic")
-        ? null
-        : 0;
-
   const dates = filtered.map((r) => r.date).sort();
   const date_min = dates[0] ?? null;
   const date_max = dates[dates.length - 1] ?? null;
 
   const dailyMap = new Map<string, { anthropic: number; openai: number }>();
   for (const r of filtered) {
+    const cost = Number(r.cost_krw) || 0;
     const d = dailyMap.get(r.date) ?? { anthropic: 0, openai: 0 };
-    if (r.provider === "anthropic") d.anthropic += Number(r.cost_usd);
-    else d.openai += Number(r.cost_usd);
+    if (r.provider === "anthropic") d.anthropic += cost;
+    else d.openai += cost;
     dailyMap.set(r.date, d);
   }
 
@@ -407,46 +492,49 @@ export function aggregateUsageDashboard(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, v]) => {
       const [, m, day] = date.split("-");
+      const anthropic = Math.round(v.anthropic);
+      const openai = Math.round(v.openai);
       return {
         date,
-        label: `${Number(m)}/${Number(day)}`,
-        anthropic: roundUsd(v.anthropic),
-        openai: roundUsd(v.openai),
-        total: roundUsd(v.anthropic + v.openai)
+        label: `${m}.${day}`,
+        anthropic,
+        openai,
+        total: anthropic + openai
       };
     });
 
   const modelMap = new Map<string, ModelCostRow>();
   for (const r of filtered) {
-    const key = `${r.provider}\0${r.model}`;
+    const key = `${r.provider}\0${r.model}\0${r.api_key_label}\0${r.date}`;
     const prev = modelMap.get(key) ?? {
       model: r.model,
+      date: r.date,
       provider: r.provider,
-      input_cost_usd: 0,
-      output_cost_usd: 0,
+      api_key_label: r.api_key_label,
+      num_requests: null,
       cost_usd: 0,
-      share_pct: 0
+      cost_krw: 0,
+      input_cost_usd: 0,
+      output_cost_usd: 0
     };
-    prev.input_cost_usd += Number(r.input_cost_usd);
-    prev.output_cost_usd += Number(r.output_cost_usd);
-    prev.cost_usd += Number(r.cost_usd);
+    prev.cost_usd = roundUsd(prev.cost_usd + Number(r.cost_usd));
+    prev.cost_krw = Math.round(prev.cost_krw + (Number(r.cost_krw) || 0));
+    prev.input_cost_usd = roundUsd(prev.input_cost_usd + Number(r.input_cost_usd));
+    prev.output_cost_usd = roundUsd(prev.output_cost_usd + Number(r.output_cost_usd));
+    if (r.num_requests != null) {
+      prev.num_requests = (prev.num_requests ?? 0) + r.num_requests;
+    }
     modelMap.set(key, prev);
   }
 
-  const byModel = [...modelMap.values()]
-    .map((m) => ({
-      ...m,
-      input_cost_usd: roundUsd(m.input_cost_usd),
-      output_cost_usd: roundUsd(m.output_cost_usd),
-      cost_usd: roundUsd(m.cost_usd),
-      share_pct: total_cost_usd > 0 ? (m.cost_usd / total_cost_usd) * 100 : 0
-    }))
-    .sort((a, b) => b.cost_usd - a.cost_usd);
+  const byModel = [...modelMap.values()].sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate !== 0) return byDate;
+    return b.cost_krw - a.cost_krw;
+  });
 
   return {
     rows: filtered,
-    total_cost_usd: roundUsd(total_cost_usd),
-    total_tokens,
     date_min,
     date_max,
     daily,

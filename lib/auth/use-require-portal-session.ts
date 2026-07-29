@@ -30,6 +30,16 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+/** 미인증 시 로그인(`/`)으로 내되, 현재 경로를 `redirect` 쿼리로 전달 */
+function loginUrlWithRedirect(): string {
+  if (typeof window === "undefined") return "/";
+
+  const path = `${window.location.pathname}${window.location.search}`;
+  if (path === "/" || path === "") return "/";
+
+  return `/?redirect=${encodeURIComponent(path)}`;
+}
+
 /**
  * Loads Supabase session + current user's profile row; redirects to `/` when unauthenticated
  * and signs out + redirects when the profile row is missing.
@@ -66,7 +76,7 @@ export function useRequirePortalSession(options: UseRequirePortalSessionOptions 
 
             const userId = session?.user?.id;
             if (sessionError || !userId) {
-              routerRef.current.replace("/");
+              routerRef.current.replace(loginUrlWithRedirect());
               return;
             }
 
@@ -99,7 +109,7 @@ export function useRequirePortalSession(options: UseRequirePortalSessionOptions 
           } catch {
             /* ignore */
           }
-          routerRef.current.replace("/");
+          routerRef.current.replace(loginUrlWithRedirect());
         }
       }
     };
