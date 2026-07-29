@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  Bar,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 import {
   activeProfiles,
   computeLicenseCostBreakdown,
@@ -53,6 +65,90 @@ type CategoryRow = {
   perpetualKrw: number;
   color: string;
 };
+
+type LicensePeriodPreset = "last_3m" | "last_6m" | "last_1y" | "custom";
+
+type MonthlyTrendPoint = {
+  monthKey: string;
+  label: string;
+  subscriptionTotal: number;
+  perPersonCost: number;
+  memberCount: number;
+};
+
+const PERIOD_OPTIONS: { value: LicensePeriodPreset; label: string }[] = [
+  { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
+  { value: "custom", label: "직접 선택" }
+];
+
+function resolveLicenseDateRange(
+  preset: LicensePeriodPreset,
+  customStart: string,
+  customEnd: string,
+  today = new Date()
+): { start: string; end: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === "custom") return { start: customStart, end: customEnd };
+  if (preset === "last_3m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 3);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  if (preset === "last_6m") {
+    const start = new Date(today);
+    start.setMonth(start.getMonth() - 6);
+    return { start: toIso(start), end: toIso(today) };
+  }
+  const start = new Date(today);
+  start.setFullYear(start.getFullYear() - 1);
+  return { start: toIso(start), end: toIso(today) };
+}
+
+function getMonthKeysInRange(start: string, end: string): { key: string; label: string }[] {
+  const keys: { key: string; label: string }[] = [];
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  let y = sy;
+  let m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    keys.push({ key, label: `${m}월` });
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return keys;
+}
+
+function formatKrwAxisTick(v: number): string {
+  return `₩${v >= 10000 ? `${Math.round(v / 10000)}만` : v.toLocaleString("ko-KR")}`;
+}
+
+function CostTrendTooltip({
+  active,
+  payload
+}: {
+  active?: boolean;
+  payload?: { payload: MonthlyTrendPoint }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const data = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+      <p className="font-medium text-slate-900">{data.label}</p>
+      <p className="mt-1 text-slate-600">구독 총비용: {formatCurrency(data.subscriptionTotal)}</p>
+      <p className="text-slate-600">
+        인당 비용: {formatCurrency(data.perPersonCost)} ({data.memberCount}명 기준)
+      </p>
+    </div>
+  );
+}
 
 function IconSubscriptionPurple({ className }: { className?: string }) {
   return (
@@ -124,21 +220,39 @@ function IconEmptyBox({ className }: { className?: string }) {
 }
 
 export default function LicensesDashboardPage() {
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [period, setPeriod] = useState<LicensePeriodPreset>("last_6m");
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customEnd, setCustomEnd] = useState(todayIso);
   const [licenses, setLicenses] = useState<License[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const rates = useKrwRates();
 
+  const range = useMemo(
+    () => resolveLicenseDateRange(period, customStart, customEnd),
+    [period, customStart, customEnd]
+  );
+
   useEffect(() => {
     const run = async () => {
+      setLoading(true);
       const [l, p] = await Promise.all([
         supabase
           .from("services")
           .select("*")
           .eq("is_hub_card", false)
           .order("created_at", { ascending: false }),
-        supabase.from("profiles").select("id, email, name, department, role, status, created_at").order("created_at", { ascending: true })
+        supabase
+          .from("profiles")
+          .select("id, email, name, department, role, status, created_at")
+          .order("created_at", { ascending: true })
       ]);
+      console.warn("[licenses] setLicenses called, count:", (l.data ?? []).length);
       setLicenses((l.data ?? []) as License[]);
       setProfiles((p.data ?? []) as Profile[]);
       setLoading(false);
@@ -271,6 +385,39 @@ export default function LicensesDashboardPage() {
     [sortedCategoryRows]
   );
 
+  const monthlyTrendData = useMemo((): MonthlyTrendPoint[] => {
+    const months = getMonthKeysInRange(range.start, range.end);
+
+    if (typeof window !== "undefined") {
+      (window as Window & { __trendData?: unknown }).__trendData = months.map(({ key, label }) => {
+        let subscriptionTotal = 0;
+        for (const l of licenses) {
+          if (!isActiveService(l)) continue;
+          const b = computeLicenseCostBreakdown(l, rates);
+          if (b.isPerpetual) continue;
+          subscriptionTotal += monthlyKrwForDashboard(b);
+        }
+        return { key, label, subscriptionTotal };
+      });
+    }
+
+    return months.map(({ key, label }) => {
+      let subscriptionTotal = 0;
+      for (const l of licenses) {
+        if (!isActiveService(l)) continue;
+        const b = computeLicenseCostBreakdown(l, rates);
+        if (b.isPerpetual) continue;
+        subscriptionTotal += monthlyKrwForDashboard(b);
+      }
+      const memberCount = teamActive.length > 0 ? teamActive.length : 12;
+      const perPersonCost =
+        memberCount > 0 ? Math.round(subscriptionTotal / memberCount) : 0;
+      return { monthKey: key, label, subscriptionTotal, perPersonCost, memberCount };
+    });
+  }, [licenses, rates, teamActive, range.start, range.end]);
+
+  const hasTrendData = monthlyTrendData.some((d) => d.subscriptionTotal > 0);
+
   if (loading) {
     return <p className="text-slate-600">불러오는 중...</p>;
   }
@@ -286,6 +433,102 @@ export default function LicensesDashboardPage() {
           라이선스 목록 →
         </Link>
       </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-900">조회 기간</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setPeriod(opt.value)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                period === opt.value
+                  ? "bg-violet-600 text-white"
+                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {period === "custom" && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              시작
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              종료
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart}
+                max={todayIso}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+          </div>
+        )}
+        {period !== "custom" && (
+          <p className="mt-2 text-xs text-slate-500">
+            {range.start} ~ {range.end}
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold text-slate-900">월별 비용 추이</h2>
+        <div className="h-[240px] w-full">
+          {!hasTrendData ? (
+            <p className="flex h-full items-center justify-center text-sm text-slate-500">
+              해당 기간 이력 데이터가 없습니다.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={monthlyTrendData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => (typeof v === "number" ? formatKrwAxisTick(v) : String(v))}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => (typeof v === "number" ? formatKrwAxisTick(v) : String(v))}
+                />
+                <Tooltip content={<CostTrendTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar
+                  yAxisId="left"
+                  dataKey="subscriptionTotal"
+                  name="월 구독 총비용"
+                  fill="#7F77DD"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="perPersonCost"
+                  name="인당 구독 비용"
+                  stroke="#EF9F27"
+                  strokeWidth={2}
+                  dot={{ r: 4, fill: "#EF9F27" }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </section>
 
       {/* 요약 4카드 */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

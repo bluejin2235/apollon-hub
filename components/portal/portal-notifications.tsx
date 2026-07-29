@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatSupplyDateTime } from "@/lib/supplies/utils";
-import type { SupplyNotification } from "@/lib/supplies/types";
+type SupplyNotification = {
+  id: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+};
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {

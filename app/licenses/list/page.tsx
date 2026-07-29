@@ -265,6 +265,10 @@ function firstInitial(name: string | null | undefined): string {
 type StatusFilter = "전체" | "활성" | "비활성";
 type SortKey = "recent" | "name" | "cost";
 
+function licenseRecentSortMs(row: License): number {
+  return new Date(row.updated_at ?? row.created_at).getTime();
+}
+
 export default function LicensesListPage() {
   const { profile } = useRequirePortalSession();
   const rates = useKrwRates();
@@ -285,7 +289,7 @@ export default function LicensesListPage() {
           .from("services")
           .select("*")
           .eq("is_hub_card", false)
-          .order("created_at", { ascending: false }),
+          .order("updated_at", { ascending: false }),
         supabase.from("profiles").select("id, name, email, department, role, status")
       ]);
       setLicenses((l.data ?? []) as License[]);
@@ -339,9 +343,7 @@ export default function LicensesListPage() {
     } else if (sortBy === "cost") {
       list.sort((a, b) => licenseCostSortValue(b, rates) - licenseCostSortValue(a, rates));
     } else {
-      list.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      list.sort((a, b) => licenseRecentSortMs(b) - licenseRecentSortMs(a));
     }
     return list;
   }, [filtered, sortBy, rates]);
