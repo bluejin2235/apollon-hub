@@ -97,6 +97,7 @@ async function resolvePinCandidateUrl(
 async function registerWeeklyPinAsEditorCandidate(
   admin: SupabaseClient,
   params: {
+    analysisId: string | null;
     roomId: string;
     messageRow: MessageRow;
     summary: string | null;
@@ -105,7 +106,15 @@ async function registerWeeklyPinAsEditorCandidate(
   }
 ): Promise<void> {
   try {
-    const { roomId, messageRow, summary, insight, room } = params;
+    const { analysisId, roomId, messageRow, summary, insight, room } = params;
+
+    console.log("[PIN] registerWeeklyPinAsEditorCandidate 시작", { analysisId, roomId });
+
+    const analysis = { id: analysisId, summary, insight, is_pinned: true };
+    console.log("[PIN] analysis 조회 결과", analysis);
+
+    const message = messageRow;
+    console.log("[PIN] message 조회 결과", message);
 
     const url = await resolvePinCandidateUrl(admin, messageRow, roomId);
 
@@ -123,6 +132,7 @@ async function registerWeeklyPinAsEditorCandidate(
       if (dupCheckError) {
         console.error("[research/pin] duplicate url check failed", dupCheckError);
       } else if (existing) {
+        console.log("[PIN] 중복 URL로 INSERT 건너뜀", { url, existingId: existing.id });
         return;
       }
     }
@@ -133,6 +143,8 @@ async function registerWeeklyPinAsEditorCandidate(
       extractTitleFromContent(messageRow.content) ||
       "루나 위클리 후보";
 
+    console.log("[PIN] 추출된 url", url, "title", title);
+
     const sourceName = room?.name?.trim() || room?.week_label?.trim() || "나와루나";
 
     const now = new Date();
@@ -140,22 +152,28 @@ async function registerWeeklyPinAsEditorCandidate(
     const batchId = `luna_${roomId.slice(0, 8)}_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
     const batchLabel = `루나채팅_${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
 
-    const { error: candidateInsertError } = await admin.from("trend_editor_candidates").insert({
-      batch_id: batchId,
-      batch_label: batchLabel,
-      title,
-      url,
-      summary: summary ?? null,
-      insight: insight ?? null,
-      source_type: "나와루나",
-      source_name: sourceName,
-      part: "content",
-      is_selected: false,
-      is_sent: false
-    });
+    console.log("[PIN] INSERT 시도");
+    const { data, error } = await admin
+      .from("trend_editor_candidates")
+      .insert({
+        batch_id: batchId,
+        batch_label: batchLabel,
+        title,
+        url,
+        summary: summary ?? null,
+        insight: insight ?? null,
+        source_type: "나와루나",
+        source_name: sourceName,
+        part: "content",
+        is_selected: false,
+        is_sent: false
+      })
+      .select();
 
-    if (candidateInsertError) {
-      console.error("[research/pin] editor candidate insert failed", candidateInsertError);
+    console.log("[PIN] INSERT 결과", data, error);
+
+    if (error) {
+      console.error("[research/pin] editor candidate insert failed", error);
     }
   } catch (error) {
     console.error("[research/pin] editor candidate registration failed", error);
@@ -224,9 +242,11 @@ export async function POST(request: NextRequest) {
     let pinned: boolean;
     let analysisSummary: string | null;
     let analysisInsight: string | null;
+    let analysisId: string | null = null;
 
     if (analysis) {
       const analysisRow = analysis as AnalysisRow;
+      analysisId = analysisRow.id;
       pinned = !analysisRow.is_pinned;
       analysisSummary = analysisRow.summary;
       analysisInsight = analysisRow.apollon_insight;
@@ -248,20 +268,26 @@ export async function POST(request: NextRequest) {
       analysisSummary = messageRow.content.trim().slice(0, 2000) || "AI 분석";
       analysisInsight = null;
 
-      const { error: insertError } = await admin.from("trend_analyses").insert({
-        message_id: messageId,
-        summary: analysisSummary,
-        keywords: [],
-        relevance_score: null,
-        apollon_insight: analysisInsight,
-        is_pinned: true,
-        pinned_at: now
-      });
+      const { data: insertedAnalysis, error: insertError } = await admin
+        .from("trend_analyses")
+        .insert({
+          message_id: messageId,
+          summary: analysisSummary,
+          keywords: [],
+          relevance_score: null,
+          apollon_insight: analysisInsight,
+          is_pinned: true,
+          pinned_at: now
+        })
+        .select("id")
+        .maybeSingle();
 
       if (insertError) {
         console.error("[research/pin] analysis insert failed", insertError);
         return NextResponse.json({ error: insertError.message }, { status: 500 });
       }
+
+      analysisId = (insertedAnalysis as { id: string } | null)?.id ?? null;
     }
 
     const existingMeta = messageRow.metadata ?? {};
@@ -289,6 +315,7 @@ export async function POST(request: NextRequest) {
       }
 
       await registerWeeklyPinAsEditorCandidate(admin, {
+        analysisId,
         roomId,
         messageRow,
         summary: analysisSummary,
