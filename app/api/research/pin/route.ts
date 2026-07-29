@@ -36,6 +36,63 @@ const LUNA_PIN_REPLY_CONTENT = "📌 위클리 후보로 등록했어요!";
 /** 동일 URL이 최근 며칠 내 이미 후보로 등록되어 있으면 중복 적재하지 않는다. */
 const DUPLICATE_URL_WINDOW_DAYS = 14;
 
+function extractTitleFromContent(content: string): string | null {
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (firstLine) {
+    const withoutBold = firstLine.replace(/\*\*/g, "").trim();
+    if (withoutBold) return withoutBold;
+  }
+
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 80);
+}
+
+async function resolvePinCandidateUrl(
+  admin: SupabaseClient,
+  messageRow: MessageRow,
+  roomId: string
+): Promise<string | null> {
+  const metadataUrl = messageRow.metadata?.url;
+  if (typeof metadataUrl === "string" && metadataUrl.trim()) {
+    return metadataUrl.trim();
+  }
+
+  const contentUrl = extractFirstUrl(messageRow.content);
+  if (contentUrl) return contentUrl;
+
+  const { data: recentMessages, error: recentError } = await admin
+    .from("trend_messages")
+    .select("message_type, content, metadata, created_at")
+    .eq("room_id", roomId)
+    .neq("id", messageRow.id)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (recentError) {
+    console.error("[research/pin] recent room message lookup failed", recentError);
+    return null;
+  }
+
+  for (const row of recentMessages ?? []) {
+    const meta = (row.metadata ?? null) as Record<string, unknown> | null;
+    const metaUrl = meta?.url;
+    if (typeof metaUrl === "string" && metaUrl.trim()) {
+      return metaUrl.trim();
+    }
+    if (row.message_type === "link") {
+      const linkUrl = extractFirstUrl(typeof row.content === "string" ? row.content : "");
+      if (linkUrl) return linkUrl;
+    }
+  }
+
+  return null;
+}
+
 /** 핀 등록된 루나 채팅 분석을 trend_editor_candidates에 후보로 적재한다. 실패해도 핀 등록 자체는 성공 처리한다. */
 async function registerWeeklyPinAsEditorCandidate(
   admin: SupabaseClient,
@@ -50,36 +107,30 @@ async function registerWeeklyPinAsEditorCandidate(
   try {
     const { roomId, messageRow, summary, insight, room } = params;
 
-    const metadataUrl = messageRow.metadata?.url;
-    const url =
-      (typeof metadataUrl === "string" && metadataUrl.trim()) ||
-      extractFirstUrl(messageRow.content) ||
-      null;
+    const url = await resolvePinCandidateUrl(admin, messageRow, roomId);
 
-    if (!url) {
-      return;
-    }
+    if (url) {
+      const dupWindowStart = new Date(
+        Date.now() - DUPLICATE_URL_WINDOW_DAYS * 24 * 60 * 60 * 1000
+      ).toISOString();
+      const { data: existing, error: dupCheckError } = await admin
+        .from("trend_editor_candidates")
+        .select("id")
+        .eq("url", url)
+        .gte("created_at", dupWindowStart)
+        .maybeSingle();
 
-    const dupWindowStart = new Date(
-      Date.now() - DUPLICATE_URL_WINDOW_DAYS * 24 * 60 * 60 * 1000
-    ).toISOString();
-    const { data: existing, error: dupCheckError } = await admin
-      .from("trend_editor_candidates")
-      .select("id")
-      .eq("url", url)
-      .gte("created_at", dupWindowStart)
-      .maybeSingle();
-
-    if (dupCheckError) {
-      console.error("[research/pin] duplicate url check failed", dupCheckError);
-    } else if (existing) {
-      return;
+      if (dupCheckError) {
+        console.error("[research/pin] duplicate url check failed", dupCheckError);
+      } else if (existing) {
+        return;
+      }
     }
 
     const metadataTitle = messageRow.metadata?.title;
     const title =
       (typeof metadataTitle === "string" && metadataTitle.trim()) ||
-      messageRow.content.trim().slice(0, 120) ||
+      extractTitleFromContent(messageRow.content) ||
       "루나 위클리 후보";
 
     const sourceName = room?.name?.trim() || room?.week_label?.trim() || "나와루나";
