@@ -729,6 +729,17 @@ export default function ServiceHubPage() {
             </div>
           </div>
         </div>
+
+        {profile?.role === "슈퍼관리자" ? (
+          <div className="pt-6 text-center">
+            <Link
+              href="/luna"
+              style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none" }}
+            >
+              007
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       {profile?.id ? (
