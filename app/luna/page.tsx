@@ -39,9 +39,9 @@ const EMPTY_SKILLS: LunaSkillsSelection = {
 };
 
 const DEFAULT_CONNECTORS: LunaConnectorsState = {
-  notion: false,
-  web: false,
-  nas: false
+  notion: true,
+  web: true,
+  nas: true
 };
 
 export default function LunaPage() {
@@ -140,8 +140,14 @@ export default function LunaPage() {
           typeof meta?.model_label === "string" ? meta.model_label : null;
         const durationMs =
           typeof meta?.duration_ms === "number" ? meta.duration_ms : null;
-        const searchRounds =
-          typeof meta?.search_rounds === "number" ? meta.search_rounds : null;
+        const roundsRaw = meta?.search_rounds;
+        let searchRounds: number | null = null;
+        if (typeof roundsRaw === "number" && Number.isFinite(roundsRaw)) {
+          searchRounds = roundsRaw;
+        } else if (typeof roundsRaw === "string" && roundsRaw.trim() !== "") {
+          const n = Number(roundsRaw);
+          if (Number.isFinite(n)) searchRounds = n;
+        }
         const clarify = normalizeClarify(meta?.clarify);
         const mode = meta?.mode === "analysis" ? ("analysis" as const) : null;
         const teams = normalizeAnalysisTeams(meta?.teams);
@@ -314,6 +320,7 @@ export default function LunaPage() {
         let streamSteps: LunaProgressStep[] = [];
         let streamMode: LunaChatMessage["mode"] = null;
         let streamTeams: LunaAnalysisTeam[] = [];
+        let streamSearchRounds: number | null = null;
         let assistantContent = "";
         let assistantVisible = false;
 
@@ -324,6 +331,7 @@ export default function LunaPage() {
                 ? {
                     ...m,
                     steps: streamSteps.length > 0 ? [...streamSteps] : m.steps,
+                    searchRounds: streamSearchRounds ?? m.searchRounds,
                     mode: streamMode ?? m.mode,
                     teams: streamTeams.length > 0 ? [...streamTeams] : m.teams,
                     ...extra
@@ -344,6 +352,7 @@ export default function LunaPage() {
               cards: streamCards,
               notionSources: streamNotionSources,
               steps: streamSteps.length > 0 ? streamSteps : null,
+              searchRounds: streamSearchRounds,
               mode: streamMode,
               teams: streamTeams.length > 0 ? streamTeams : null,
               ...extra
@@ -433,6 +442,12 @@ export default function LunaPage() {
                 if (consumed.teams && consumed.teams.length > 0) {
                   streamTeams = consumed.teams;
                 }
+                if (consumed.searchRounds != null) {
+                  streamSearchRounds = consumed.searchRounds;
+                }
+                if (consumed.steps && consumed.steps.length > 0) {
+                  streamSteps = consumed.steps;
+                }
                 setSearchStatus([]);
                 metaReceived = true;
                 buffer = consumed.buffer;
@@ -450,6 +465,19 @@ export default function LunaPage() {
 
           assistantContent = buffer;
           upsertAssistant(assistantContent);
+        }
+
+        // meta 이후 step 이벤트는 텍스트로 섞이므로, 스트림 종료 시 answer 완료 반영
+        if (assistantVisible && !streamEndedByClarify) {
+          const answerIdx = streamSteps.findIndex((s) => s.key === "answer");
+          if (answerIdx >= 0 && streamSteps[answerIdx]!.status !== "done") {
+            streamSteps[answerIdx] = {
+              ...streamSteps[answerIdx]!,
+              status: "done",
+              label: "정리 완료"
+            };
+          }
+          upsertAssistant(assistantContent, { isThinking: false });
         }
 
         if (!assistantVisible && !streamEndedByClarify) {
