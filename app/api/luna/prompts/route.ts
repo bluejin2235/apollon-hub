@@ -19,7 +19,10 @@ const KIND_ORDER: Record<string, number> = {
 };
 
 const PROMPT_SELECT =
-  "id, level, kind, prompt_key, title, description, purpose, content, is_active, sort_order, owner_id, version, created_at, updated_at";
+  "id, level, kind, prompt_key, group_name, title, description, purpose, content, is_active, sort_order, owner_id, version, created_at, updated_at";
+
+const GROUP_SELECT =
+  "group_key, label, tagline, description, when_runs, sort_order";
 
 function sortPrompts<T extends { level: string; kind: string; sort_order: number; created_at: string }>(
   rows: T[]
@@ -128,7 +131,7 @@ export async function GET(request: NextRequest) {
     const { data: versions, error: verError } = await admin
       .from("luna_prompt_versions")
       .select(
-        "id, target_type, target_id, version, content, change_summary, changed_by, changed_by_luna, created_at"
+        "id, target_type, target_id, version, content, change_summary, changed_by, changed_by_luna, created_at, prediction, verify_run_id, verify_result, verify_note, verified_at"
       )
       .eq("target_type", "prompt")
       .in("target_id", ids)
@@ -163,6 +166,13 @@ export async function GET(request: NextRequest) {
       const targetId = v.target_id as string;
       const editorName =
         typeof v.changed_by === "string" ? nameById.get(v.changed_by) ?? null : null;
+      const verifyRaw = v.verify_result;
+      const verifyResult =
+        verifyRaw === "confirmed" ||
+        verifyRaw === "refuted" ||
+        verifyRaw === "inconclusive"
+          ? verifyRaw
+          : null;
       const row: LunaPromptVersionRow = {
         id: v.id as string,
         target_type: v.target_type as string,
@@ -173,7 +183,16 @@ export async function GET(request: NextRequest) {
         changed_by: (v.changed_by as string | null) ?? null,
         changed_by_luna: Boolean(v.changed_by_luna),
         created_at: v.created_at as string,
-        editor_name: editorName
+        editor_name: editorName,
+        prediction:
+          typeof v.prediction === "string" ? v.prediction : null,
+        verify_run_id:
+          typeof v.verify_run_id === "string" ? v.verify_run_id : null,
+        verify_result: verifyResult,
+        verify_note:
+          typeof v.verify_note === "string" ? v.verify_note : null,
+        verified_at:
+          typeof v.verified_at === "string" ? v.verified_at : null
       };
       const list = versionsByTarget.get(targetId) ?? [];
       list.push(row);
@@ -199,7 +218,20 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  return NextResponse.json({ prompts: enriched });
+  const { data: groupsData, error: groupsError } = await admin
+    .from("luna_prompt_groups")
+    .select(GROUP_SELECT)
+    .order("sort_order", { ascending: true });
+
+  if (groupsError) {
+    console.error("[luna/prompts] GET groups", groupsError);
+    return NextResponse.json({ error: groupsError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    prompts: enriched,
+    groups: groupsData ?? []
+  });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -220,6 +252,7 @@ export async function PATCH(request: NextRequest) {
     sort_order?: number;
     is_active?: boolean;
     change_summary?: string;
+    prediction?: string;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -279,6 +312,11 @@ export async function PATCH(request: NextRequest) {
     typeof body.change_summary === "string" ? body.change_summary.trim() : "";
   if (!changeSummary) {
     return NextResponse.json({ error: "change_summary is required" }, { status: 400 });
+  }
+  const prediction =
+    typeof body.prediction === "string" ? body.prediction.trim() : "";
+  if (!prediction) {
+    return NextResponse.json({ error: "prediction is required" }, { status: 400 });
   }
 
   const nextTitle = hasTitle ? body.title!.trim() : (current.title as string);
@@ -342,6 +380,7 @@ export async function PATCH(request: NextRequest) {
     version: nextVersion,
     content: versionContent,
     change_summary: changeSummary,
+    prediction,
     changed_by: user.id,
     changed_by_luna: false
   });
