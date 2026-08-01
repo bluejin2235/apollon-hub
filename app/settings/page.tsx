@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
+import { LunaSettingsTab } from "@/components/settings/luna-settings-tab";
 import { MyLoansTab } from "@/components/settings/my-loans-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
 import { ServicePermissionsTab } from "@/components/settings/service-permissions-tab";
@@ -13,7 +14,15 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
-type TabKey = "profile" | "password" | "team" | "loans" | "services" | "permissions" | "stats";
+type TabKey =
+  | "profile"
+  | "password"
+  | "team"
+  | "loans"
+  | "services"
+  | "permissions"
+  | "stats"
+  | "luna";
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
@@ -61,6 +70,7 @@ export default function SettingsPage() {
       base.push({ key: "services", label: "서비스 관리" });
       base.push({ key: "permissions", label: "서비스 권한 관리" });
       base.push({ key: "stats", label: "통계" });
+      base.push({ key: "luna", label: "LUNA" });
     }
     return base;
   }, [canManageServices]);
@@ -509,6 +519,8 @@ export default function SettingsPage() {
         ) : null}
 
         {activeTab === "stats" ? <StatisticsTab canManage={canManageServices} /> : null}
+
+        {activeTab === "luna" && canManageServices ? <LunaSettingsTab /> : null}
       </div>
 
       {canManageTeam ? (
