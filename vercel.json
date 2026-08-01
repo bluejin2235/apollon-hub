@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/publishing-trigger",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/luna-knowledge-merge",
+      "schedule": "0 18 * * 0"
     }
   ]
 }
