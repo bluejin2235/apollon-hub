@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
+import { LunaNasTab } from "@/components/settings/luna-nas-tab";
 import type {
   LunaPromptKind,
   LunaPromptRow,
@@ -11,7 +12,7 @@ import type {
 } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
-type LunaSubTab = "prompts" | "eval" | "engine" | "knowledge";
+type LunaSubTab = "prompts" | "eval" | "engine" | "knowledge" | "nas";
 
 type ProfileOption = { id: string; name: string };
 
@@ -508,7 +509,8 @@ export function LunaSettingsTab() {
             { key: "prompts", label: "프롬프트" },
             { key: "eval", label: "회귀 테스트" },
             { key: "engine", label: "엔진" },
-            { key: "knowledge", label: "지식" }
+            { key: "knowledge", label: "지식" },
+            { key: "nas", label: "Work서버" }
           ] as const
         ).map((tab) => (
           <button
@@ -532,8 +534,10 @@ export function LunaSettingsTab() {
         <LunaEvalTab />
       ) : subTab === "engine" ? (
         <LunaEngineTab />
-      ) : (
+      ) : subTab === "knowledge" ? (
         <LunaKnowledgeTab />
+      ) : (
+        <LunaNasTab />
       )}
     </div>
   );

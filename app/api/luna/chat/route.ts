@@ -47,6 +47,7 @@ type NasDirectoryRow = {
   size_bytes: number | null;
   modified_at: string | null;
   file_summary: string | null;
+  importance?: number | null;
 };
 
 type ChatRequestBody = {
@@ -112,12 +113,14 @@ function pathLastSegment(path: string): string {
 function toNasCard(row: NasDirectoryRow): LunaCard {
   const title = pathLastSegment(row.path);
   const summary = row.file_summary?.trim();
+  const base = summary ? `${row.path} · ${summary}` : row.path;
+  const important = (row.importance ?? 0) > 0;
   return {
     type: "nas",
     title,
     url: null,
     thumbnail: null,
-    description: summary ? `${row.path} · ${summary}` : row.path
+    description: important ? `★ ${base}` : base
   };
 }
 
@@ -132,7 +135,7 @@ function isAncestorNasPath(ancestor: string, descendant: string): boolean {
   return d.startsWith(`${a}/`);
 }
 
-/** 조상 폴더 제거 후 가장 깊은 항목만 유지. 최대 6건. */
+/** 조상 폴더 제거 후 가장 깊은 항목만 유지. 최대 8건. importance 높은 순 유지. */
 function dedupeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
   const original = rows.length;
   if (original === 0) {
@@ -156,8 +159,13 @@ function dedupeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
       if (kept.some((k) => isAncestorNasPath(row.path, k.path))) continue;
       kept.push(row);
     }
-    result = kept.slice(0, 6);
+    result = kept;
   }
+
+  result = [...result].sort(
+    (a, b) => (b.importance ?? 0) - (a.importance ?? 0)
+  );
+  result = result.slice(0, 8);
 
   console.log("[luna/workserver] dedup", original, "→", result.length);
   return result;
@@ -166,7 +174,8 @@ function dedupeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
 function cardDedupeKey(card: LunaCard): string {
   if (card.url) return `url:${card.url}`;
   if (card.type === "nas") {
-    const pathPart = card.description?.split(" · ")[0] || card.title;
+    let pathPart = card.description?.split(" · ")[0] || card.title;
+    if (pathPart.startsWith("★ ")) pathPart = pathPart.slice(2);
     return `nas:${pathPart}`;
   }
   return `${card.type}:${card.title}`;
@@ -201,7 +210,8 @@ function formatCardLineForEval(card: LunaCard): string {
     return `- [노션] ${card.title}`;
   }
   if (card.type === "nas") {
-    const pathPart = card.description?.split(" · ")[0]?.trim() || card.title;
+    let pathPart = card.description?.split(" · ")[0]?.trim() || card.title;
+    if (pathPart.startsWith("★ ")) pathPart = pathPart.slice(2);
     return `- [Work서버] ${pathPart}`;
   }
   return `- [웹] ${card.title}`;
@@ -808,22 +818,53 @@ export async function POST(request: NextRequest) {
                 .slice(0, 3);
               if (terms.length === 0) return [];
               const orFilter = terms.map((t) => `path.ilike.%${t}%`).join(",");
-              const { data: nasData, error: nasError } = await admin
+              const nasSelect =
+                "drive, path, type, size_bytes, modified_at, file_summary, importance";
+
+              const { data: importantData, error: importantError } = await admin
                 .from("nas_directory")
-                .select("drive, path, type, size_bytes, modified_at, file_summary")
+                .select(nasSelect)
                 .or(orFilter)
-                .limit(20);
-              if (nasError) {
-                console.error("[luna/chat] nas_directory", nasError);
-                return [];
+                .gt("importance", 0)
+                .order("importance", { ascending: false })
+                .limit(4);
+
+              if (importantError) {
+                console.error("[luna/chat] nas_directory important", importantError);
               }
+
+              const importantRows = (importantData ?? []) as NasDirectoryRow[];
+              const remain = Math.max(0, 8 - importantRows.length);
+              let normalRows: NasDirectoryRow[] = [];
+
+              if (remain > 0) {
+                const { data: normalData, error: normalError } = await admin
+                  .from("nas_directory")
+                  .select(nasSelect)
+                  .or(orFilter)
+                  .eq("importance", 0)
+                  .limit(Math.max(remain, 12));
+                if (normalError) {
+                  console.error("[luna/chat] nas_directory normal", normalError);
+                } else {
+                  const importantPaths = new Set(
+                    importantRows.map((r) => r.path)
+                  );
+                  normalRows = ((normalData ?? []) as NasDirectoryRow[]).filter(
+                    (r) => !importantPaths.has(r.path)
+                  );
+                }
+              }
+
+              const merged = [...importantRows, ...normalRows];
               console.log(
                 "[luna/workserver] results",
-                nasData?.length ?? 0,
+                merged.length,
                 "keywords:",
-                kw
+                kw,
+                `(important ${importantRows.length})`
               );
-              return dedupeNasDirectoryRows((nasData ?? []) as NasDirectoryRow[]);
+              return dedupeNasDirectoryRows(merged);
             })()
           ]);
 

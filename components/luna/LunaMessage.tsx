@@ -136,6 +136,11 @@ function CardRow({ card }: { card: LunaCard }) {
   const isLink = Boolean(card.url);
   const isTextIcon = card.type === "notion" || card.type === "nas";
   const Icon = card.type === "nas" ? Folder : FileText;
+  const isImportantNas =
+    card.type === "nas" && (card.description ?? "").startsWith("★ ");
+  const descriptionText = isImportantNas
+    ? (card.description ?? "").slice(2)
+    : card.description;
 
   const inner = (
     <>
@@ -145,9 +150,21 @@ function CardRow({ card }: { card: LunaCard }) {
         <MediaThumb card={card} />
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-slate-900">{card.title}</p>
-        {card.description ? (
-          <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{card.description}</p>
+        <p className="flex min-w-0 items-center gap-1.5 truncate text-[13px] font-medium text-slate-900">
+          <span className="truncate">{card.title}</span>
+          {isImportantNas ? (
+            <span
+              className="shrink-0 rounded-[3px] px-[5px] py-px text-[9px] font-medium"
+              style={{ backgroundColor: "#FAEEDA", color: "#412402" }}
+            >
+              주요
+            </span>
+          ) : null}
+        </p>
+        {descriptionText ? (
+          <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
+            {descriptionText}
+          </p>
         ) : null}
       </div>
     </>
