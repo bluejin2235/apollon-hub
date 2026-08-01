@@ -54,6 +54,8 @@ type LunaInputProps = {
   disabled?: boolean;
   conversationId: string | null;
   onEnsureConversation: () => Promise<string | null>;
+  connectors?: LunaConnectorsState;
+  onConnectorsChange?: (next: LunaConnectorsState) => void;
 };
 
 async function getAccessToken(): Promise<string | null> {
@@ -83,7 +85,9 @@ export function LunaInput({
   onSend,
   disabled,
   conversationId,
-  onEnsureConversation
+  onEnsureConversation,
+  connectors: connectorsProp,
+  onConnectorsChange
 }: LunaInputProps) {
   const [value, setValue] = useState("");
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
@@ -100,6 +104,29 @@ export function LunaInput({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const scopeOnEffective: Record<ScopeKey, boolean> = {
+    notion: connectorsProp?.notion ?? scopeOn.notion,
+    nas: connectorsProp?.nas ?? scopeOn.nas,
+    web: connectorsProp?.web ?? scopeOn.web,
+    youtube: scopeOn.youtube
+  };
+
+  function setScopeKey(key: ScopeKey, next: boolean) {
+    if (key === "youtube") {
+      setScopeOn((prev) => ({ ...prev, youtube: next }));
+      return;
+    }
+    if (connectorsProp && onConnectorsChange) {
+      onConnectorsChange({
+        notion: key === "notion" ? next : connectorsProp.notion,
+        nas: key === "nas" ? next : connectorsProp.nas,
+        web: key === "web" ? next : connectorsProp.web
+      });
+      return;
+    }
+    setScopeOn((prev) => ({ ...prev, [key]: next }));
+  }
 
   useEffect(() => {
     void (async () => {
@@ -179,9 +206,9 @@ export function LunaInput({
     if (!trimmed && attachments.length === 0) return;
 
     const connectors: LunaConnectorsState = {
-      notion: scopeOn.notion,
-      web: scopeOn.web,
-      nas: scopeOn.nas
+      notion: scopeOnEffective.notion,
+      web: scopeOnEffective.web,
+      nas: scopeOnEffective.nas
     };
     const skillsPayload: LunaSkillsSelection = {
       perspective_ids: perspectiveSkills.filter((s) => perspectiveOn[s.id]).map((s) => s.id),
@@ -309,15 +336,13 @@ export function LunaInput({
               </button>
             );
           }
-          const on = scopeOn[item.key];
+          const on = scopeOnEffective[item.key];
           return (
             <button
               key={item.key}
               type="button"
               className={`${baseToggle} ${toggleClass(on ? "scope" : "off")}`}
-              onClick={() =>
-                setScopeOn((prev) => ({ ...prev, [item.key]: !prev[item.key] }))
-              }
+              onClick={() => setScopeKey(item.key, !on)}
             >
               {item.label}
             </button>

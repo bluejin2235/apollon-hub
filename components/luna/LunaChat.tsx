@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LunaInput,
   type LunaAttachmentRef,
@@ -215,6 +215,8 @@ export type LunaStreamEventResult =
       notionSources: NotionSource[] | null;
       mode: "analysis" | null;
       teams: LunaAnalysisTeam[] | null;
+      searchRounds: number | null;
+      steps: LunaProgressStep[] | null;
     }
   | { kind: "text"; buffer: string };
 
@@ -287,13 +289,25 @@ export function consumeLunaStreamEvents(
       }
     }
     if (parsed.type === "meta") {
+      const roundsRaw = parsed.search_rounds;
+      const searchRounds =
+        typeof roundsRaw === "number" && Number.isFinite(roundsRaw)
+          ? roundsRaw
+          : typeof roundsRaw === "string" && roundsRaw.trim() !== ""
+            ? Number(roundsRaw)
+            : null;
       return {
         kind: "meta",
         buffer: rest,
         cards: normalizeLunaCards(parsed.cards),
         notionSources: normalizeNotionSources(parsed.notion_sources),
         mode: parsed.mode === "analysis" ? "analysis" : null,
-        teams: normalizeAnalysisTeams(parsed.teams)
+        teams: normalizeAnalysisTeams(parsed.teams),
+        searchRounds:
+          searchRounds != null && Number.isFinite(searchRounds)
+            ? searchRounds
+            : null,
+        steps: normalizeProgressSteps(parsed.steps)
       };
     }
   } catch {
@@ -335,11 +349,17 @@ type LunaChatProps = {
   onEnsureConversation: () => Promise<string | null>;
 };
 
+const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
+  notion: true,
+  web: true,
+  nas: true
+};
+
 export function LunaChat({
   conversation,
   messages,
   onSend,
-  onSuggestion,
+  onSuggestion: _onSuggestion,
   onBack,
   sending,
   searchStatus = [],
@@ -348,6 +368,9 @@ export function LunaChat({
 }: LunaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const reflectStateRef = useRef<{ id: string; messageCount: number } | null>(null);
+  const [connectors, setConnectors] = useState<LunaConnectorsState>(
+    DEFAULT_INPUT_CONNECTORS
+  );
   const title = conversation?.title ?? "새 대화";
 
   useEffect(() => {
@@ -428,7 +451,12 @@ export function LunaChat({
                   key={s}
                   type="button"
                   disabled={sending}
-                  onClick={() => onSuggestion(s)}
+                  onClick={() =>
+                    onSend(s, connectors, [], [], {
+                      perspective_ids: [],
+                      task_ids: []
+                    })
+                  }
                   className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition hover:border-[#534AB7]/40 hover:bg-[#EEEDFE]/40 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {s}
@@ -487,6 +515,8 @@ export function LunaChat({
           disabled={sending}
           conversationId={conversation?.id ?? null}
           onEnsureConversation={onEnsureConversation}
+          connectors={connectors}
+          onConnectorsChange={setConnectors}
         />
       </div>
     </div>

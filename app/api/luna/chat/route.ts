@@ -88,7 +88,7 @@ type ModelStep = {
   tokens?: { input: number; output: number };
 };
 
-const CACHE_MIN_CHARS = 2000;
+const CACHE_MIN_CHARS = 1200;
 
 function parseIdList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -121,6 +121,48 @@ function toNasCard(row: NasDirectoryRow): LunaCard {
   };
 }
 
+function normalizeNasPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function isAncestorNasPath(ancestor: string, descendant: string): boolean {
+  const a = normalizeNasPath(ancestor);
+  const d = normalizeNasPath(descendant);
+  if (!a || a === d) return false;
+  return d.startsWith(`${a}/`);
+}
+
+/** 조상 폴더 제거 후 가장 깊은 항목만 유지. 최대 6건. */
+function dedupeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
+  const original = rows.length;
+  if (original === 0) {
+    console.log("[luna/workserver] dedup", 0, "→", 0);
+    return [];
+  }
+
+  const hasFile = rows.some(
+    (r) => (r.type ?? "").toLowerCase() === "file"
+  );
+
+  let result: NasDirectoryRow[];
+  if (!hasFile) {
+    result = [...rows]
+      .sort((a, b) => b.path.length - a.path.length)
+      .slice(0, 3);
+  } else {
+    const sorted = [...rows].sort((a, b) => b.path.length - a.path.length);
+    const kept: NasDirectoryRow[] = [];
+    for (const row of sorted) {
+      if (kept.some((k) => isAncestorNasPath(row.path, k.path))) continue;
+      kept.push(row);
+    }
+    result = kept.slice(0, 6);
+  }
+
+  console.log("[luna/workserver] dedup", original, "→", result.length);
+  return result;
+}
+
 function cardDedupeKey(card: LunaCard): string {
   if (card.url) return `url:${card.url}`;
   if (card.type === "nas") {
@@ -135,6 +177,34 @@ function mergeCards(existing: LunaCard[], incoming: LunaCard[]): LunaCard[] {
   for (const c of existing) map.set(cardDedupeKey(c), c);
   for (const c of incoming) map.set(cardDedupeKey(c), c);
   return Array.from(map.values());
+}
+
+/** clarify assistant 바로 앞 user 메시지 content */
+function findClarifyOriginalUser(recent: MessageRow[]): string | null {
+  for (let i = recent.length - 1; i >= 0; i -= 1) {
+    const m = recent[i]!;
+    if (m.role !== "assistant") continue;
+    const meta = m.metadata;
+    if (!meta || typeof meta !== "object" || !meta.clarify) continue;
+    for (let j = i - 1; j >= 0; j -= 1) {
+      if (recent[j]!.role === "user") {
+        const content = recent[j]!.content?.trim();
+        return content || null;
+      }
+    }
+  }
+  return null;
+}
+
+function formatCardLineForEval(card: LunaCard): string {
+  if (card.type === "notion") {
+    return `- [노션] ${card.title}`;
+  }
+  if (card.type === "nas") {
+    const pathPart = card.description?.split(" · ")[0]?.trim() || card.title;
+    return `- [Work서버] ${pathPart}`;
+  }
+  return `- [웹] ${card.title}`;
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -251,8 +321,16 @@ function buildAnswerSystem(
 ): string | Anthropic.TextBlockParam[] {
   const stable = buildStableSystemText(opts);
   const volatile = buildVolatileSystemText(opts);
+  const cacheBlockLength = stable.length;
+  const applied = useCaching && cacheBlockLength >= CACHE_MIN_CHARS;
 
-  if (useCaching && stable.length >= CACHE_MIN_CHARS) {
+  console.log("[luna/cache]", {
+    useCaching,
+    cacheBlockLength,
+    applied
+  });
+
+  if (applied) {
     return [
       {
         type: "text",
@@ -386,6 +464,7 @@ export async function POST(request: NextRequest) {
     "connector.notion",
     "connector.workserver",
     "connector.web",
+    "connector.web.hint",
     "synthesis.opinion"
   ]);
 
@@ -394,9 +473,15 @@ export async function POST(request: NextRequest) {
     loadedPrompts["search.keyword_extract"]?.trim() || KEYWORD_EXTRACT_FALLBACK;
   const clarifyPrompt = loadedPrompts["search.clarify"]?.trim() || CLARIFY_FALLBACK;
   const selfEvalPrompt = loadedPrompts["search.self_eval"]?.trim() || SELF_EVAL_FALLBACK;
+  console.log(
+    "[luna/prompt] self_eval len",
+    selfEvalPrompt.length,
+    selfEvalPrompt.slice(0, 60)
+  );
   const requeryPrompt = loadedPrompts["search.requery"]?.trim() || REQUERY_FALLBACK;
   const synthesisOpinion =
     loadedPrompts["synthesis.opinion"]?.trim() || SYNTHESIS_OPINION_FALLBACK;
+  const webSearchHint = loadedPrompts["connector.web.hint"]?.trim() || "";
 
   const connectorPrompts: string[] = [];
   if (notionEnabled && loadedPrompts["connector.notion"]?.trim()) {
@@ -519,9 +604,16 @@ export async function POST(request: NextRequest) {
       typeof lastAssistant.metadata === "object" &&
       lastAssistant.metadata.clarify
   );
+  const clarifyOriginalUser = lastHadClarify
+    ? findClarifyOriginalUser(recent)
+    : null;
 
   const userText =
     message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
+  const searchIntentText =
+    lastHadClarify && clarifyOriginalUser
+      ? `원래 질문: ${clarifyOriginalUser}\n확인된 조건: ${userText}`
+      : userText;
   const attachmentMeta = attachments.map((a) => ({
     id: a.id,
     file_name: a.file_name,
@@ -645,13 +737,15 @@ export async function POST(request: NextRequest) {
               };
             }
 
+            const clarifyNow = Date.now();
             await admin.from("luna_messages").insert([
               {
                 conversation_id: conversationId,
                 role: "user",
                 content: userText,
                 engine: usedEngine,
-                metadata: userMeta
+                metadata: userMeta,
+                created_at: new Date(clarifyNow - 1000).toISOString()
               },
               {
                 conversation_id: conversationId,
@@ -664,7 +758,8 @@ export async function POST(request: NextRequest) {
                   model_steps: modelSteps,
                   model_label: tierB.model_label,
                   duration_ms: Date.now() - startedAt
-                }
+                },
+                created_at: new Date(clarifyNow).toISOString()
               }
             ]);
             await touchConversation();
@@ -676,7 +771,11 @@ export async function POST(request: NextRequest) {
         }
 
         // ——— 단계 2~5: 검색 루프 ———
-        const isSearchRequest = !hasAttachments && isSearchRequestMessage(userText);
+        const isSearchRequest =
+          !hasAttachments &&
+          (isSearchRequestMessage(userText) ||
+            (Boolean(clarifyOriginalUser) &&
+              isSearchRequestMessage(clarifyOriginalUser!)));
         const anySearch =
           notionEnabled || webEnabled || nasEnabled || isSearchRequest;
 
@@ -692,7 +791,11 @@ export async function POST(request: NextRequest) {
               ? searchNotionPages(kw)
               : Promise.resolve([] as NotionSource[]),
             webEnabled
-              ? searchTavily(kw || userText)
+              ? (() => {
+                  const q = kw || searchIntentText;
+                  console.log("[luna/search] keywords", q, "→ tavily");
+                  return searchTavily(q, webSearchHint);
+                })()
               : Promise.resolve([] as LunaCard[]),
             isSearchRequest && kw
               ? searchYoutube(kw)
@@ -709,12 +812,18 @@ export async function POST(request: NextRequest) {
                 .from("nas_directory")
                 .select("drive, path, type, size_bytes, modified_at, file_summary")
                 .or(orFilter)
-                .limit(6);
+                .limit(20);
               if (nasError) {
                 console.error("[luna/chat] nas_directory", nasError);
                 return [];
               }
-              return (nasData ?? []) as NasDirectoryRow[];
+              console.log(
+                "[luna/workserver] results",
+                nasData?.length ?? 0,
+                "keywords:",
+                kw
+              );
+              return dedupeNasDirectoryRows((nasData ?? []) as NasDirectoryRow[]);
             })()
           ]);
 
@@ -755,7 +864,7 @@ export async function POST(request: NextRequest) {
               model: tierB.model_id,
               max_tokens: 64,
               system: keywordExtractPrompt,
-              messages: [{ role: "user", content: userText || "문서" }]
+              messages: [{ role: "user", content: searchIntentText || "문서" }]
             });
             pushModelStep(modelSteps, admin, {
               label: "검색어 추출",
@@ -767,11 +876,30 @@ export async function POST(request: NextRequest) {
             const kwText =
               kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
             keywords =
-              kwText.replace(/^["']|["']$/g, "").trim() || userText.slice(0, 80);
+              kwText.replace(/^["']|["']$/g, "").trim() ||
+              searchIntentText.slice(0, 80);
           } catch (err) {
             console.error("[luna/chat] keyword extract", err);
-            keywords = userText.slice(0, 80);
+            keywords = searchIntentText.slice(0, 80);
           }
+
+          const formatSearchDoneLabel = (counts: {
+            notion: number;
+            nas: number;
+            web: number;
+          }) => {
+            const parts = [
+              notionEnabled ? `노션 ${counts.notion}` : null,
+              nasEnabled ? `Work서버 ${counts.nas}` : null,
+              webEnabled ? `웹 ${counts.web}` : null
+            ].filter(Boolean) as string[];
+            if (parts.length === 0) return "검색 결과 없음";
+            const allZero =
+              (!notionEnabled || counts.notion === 0) &&
+              (!nasEnabled || counts.nas === 0) &&
+              (!webEnabled || counts.web === 0);
+            return allZero ? "검색 결과 없음" : parts.join(" · ");
+          };
 
           previousKeywords.push(keywords);
           searchRounds = 1;
@@ -780,16 +908,7 @@ export async function POST(request: NextRequest) {
           nasResults = batch.nasResults;
           cards = batch.cards;
 
-          const countLabel = (
-            [
-              notionEnabled ? `노션 ${batch.counts.notion}` : null,
-              nasEnabled ? `Work서버 ${batch.counts.nas}` : null,
-              webEnabled ? `웹 ${batch.counts.web}` : null
-            ] as (string | null)[]
-          )
-            .filter(Boolean)
-            .join(" · ");
-          pushStep("search", "done", countLabel || "검색 완료");
+          pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
           // 자체 평가 + 재검색
           let sufficient = true;
@@ -797,52 +916,64 @@ export async function POST(request: NextRequest) {
           for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
-            pushStep("eval", "running", "결과 평가 중");
-            try {
-              const titles = cards.map((c) => c.title).filter(Boolean).slice(0, 40);
-              const evalRes = await client.messages.create({
-                model: tierB.model_id,
-                max_tokens: 256,
-                system: selfEvalPrompt,
-                messages: [
-                  {
-                    role: "user",
-                    content: `질문:\n${userText}\n\n찾은 자료 제목:\n${
-                      titles.length > 0 ? titles.map((t) => `- ${t}`).join("\n") : "(없음)"
-                    }`
-                  }
-                ]
-              });
-              pushModelStep(modelSteps, admin, {
-                label: "자체 평가",
-                model: tierB.model_label,
-                tier: "B",
-                model_id: tierB.model_id,
-                usage: readUsage(evalRes.usage)
-              });
-              const evalRaw =
-                evalRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-              const evalParsed = parseJsonObject(evalRaw);
-              sufficient = evalParsed?.sufficient !== false;
-              missing =
-                typeof evalParsed?.missing === "string"
-                  ? evalParsed.missing.trim()
-                  : "";
-            } catch (err) {
-              console.error("[luna/chat] self_eval", err);
-              sufficient = true;
+            if (cards.length === 0) {
+              sufficient = false;
+              missing = "검색 결과가 없음";
+              pushStep("eval", "done", "결과 없음");
+            } else {
+              pushStep("eval", "running", "결과 평가 중");
+              try {
+                const materialLines = cards
+                  .slice(0, 40)
+                  .map(formatCardLineForEval)
+                  .filter(Boolean);
+                const evalRes = await client.messages.create({
+                  model: tierB.model_id,
+                  max_tokens: 256,
+                  system: selfEvalPrompt,
+                  messages: [
+                    {
+                      role: "user",
+                      content: `질문:\n${searchIntentText}\n\n찾은 자료:\n${materialLines.join(
+                        "\n"
+                      )}`
+                    }
+                  ]
+                });
+                pushModelStep(modelSteps, admin, {
+                  label: "자체 평가",
+                  model: tierB.model_label,
+                  tier: "B",
+                  model_id: tierB.model_id,
+                  usage: readUsage(evalRes.usage)
+                });
+                const evalRaw =
+                  evalRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+                const evalParsed = parseJsonObject(evalRaw);
+                if (
+                  !evalParsed ||
+                  typeof evalParsed.sufficient !== "boolean"
+                ) {
+                  sufficient = cards.length > 0;
+                } else {
+                  sufficient = evalParsed.sufficient;
+                }
+                missing =
+                  typeof evalParsed?.missing === "string"
+                    ? evalParsed.missing.trim()
+                    : "";
+              } catch (err) {
+                console.error("[luna/chat] self_eval", err);
+                sufficient = cards.length > 0;
+              }
+              pushStep("eval", "done", "결과 평가");
             }
-            pushStep("eval", "done", "결과 평가");
 
             if (sufficient) break;
             if (round >= MAX_SEARCH_ROUNDS) break;
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
-            pushStep(
-              "requery",
-              "done",
-              "자료가 얇아 검색어를 바꿔 다시 찾는 중"
-            );
+            pushStep("requery", "running", "검색어를 바꿔 다시 찾는 중");
 
             let newKeywords = "";
             try {
@@ -853,7 +984,7 @@ export async function POST(request: NextRequest) {
                 messages: [
                   {
                     role: "user",
-                    content: `원 질문:\n${userText}\n\n이전 검색어:\n${previousKeywords.join(
+                    content: `원 질문:\n${searchIntentText}\n\n이전 검색어:\n${previousKeywords.join(
                       ", "
                     )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`
                   }
@@ -871,6 +1002,7 @@ export async function POST(request: NextRequest) {
               newKeywords = reqText.replace(/^["']|["']$/g, "").trim();
             } catch (err) {
               console.error("[luna/chat] requery", err);
+              pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
               break;
             }
 
@@ -880,6 +1012,7 @@ export async function POST(request: NextRequest) {
                 (k) => k.toLowerCase() === newKeywords.toLowerCase()
               )
             ) {
+              pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
               break;
             }
 
@@ -901,22 +1034,13 @@ export async function POST(request: NextRequest) {
               )
             ];
             cards = mergeCards(cards, batch.cards);
-            const recount = (
-              [
-                notionEnabled
-                  ? `노션 ${cards.filter((c) => c.type === "notion").length}`
-                  : null,
-                nasEnabled
-                  ? `Work서버 ${cards.filter((c) => c.type === "nas").length}`
-                  : null,
-                webEnabled
-                  ? `웹 ${cards.filter((c) => c.type === "web").length}`
-                  : null
-              ] as (string | null)[]
-            )
-              .filter(Boolean)
-              .join(" · ");
-            pushStep("search", "done", recount || "검색 완료");
+            const recountCounts = {
+              notion: cards.filter((c) => c.type === "notion").length,
+              nas: cards.filter((c) => c.type === "nas").length,
+              web: cards.filter((c) => c.type === "web").length
+            };
+            pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
+            pushStep("search", "done", formatSearchDoneLabel(recountCounts));
           }
         }
 
@@ -989,7 +1113,9 @@ export async function POST(request: NextRequest) {
         emit(controller, encoder, {
           type: "meta",
           cards,
-          notion_sources: notionSources
+          notion_sources: notionSources,
+          search_rounds: searchRounds,
+          steps
         });
 
         let assistantText = "";
@@ -1059,20 +1185,23 @@ export async function POST(request: NextRequest) {
           assistantMeta.attachments = attachmentMeta;
         }
 
+        const insertNow = Date.now();
         const { error: insertError } = await admin.from("luna_messages").insert([
           {
             conversation_id: conversationId,
             role: "user",
             content: userText,
             engine: usedEngine,
-            metadata: userMeta
+            metadata: userMeta,
+            created_at: new Date(insertNow - 1000).toISOString()
           },
           {
             conversation_id: conversationId,
             role: "assistant",
             content: assistantText,
             engine: usedEngine,
-            metadata: assistantMeta
+            metadata: assistantMeta,
+            created_at: new Date(insertNow).toISOString()
           }
         ]);
 

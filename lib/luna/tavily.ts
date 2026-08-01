@@ -12,6 +12,7 @@ type TavilyResult = {
   content?: string;
   raw_content?: string;
   image?: string;
+  score?: number;
 };
 
 type TavilyResponse = {
@@ -19,9 +20,20 @@ type TavilyResponse = {
   images?: string[];
 };
 
-export async function searchTavily(query: string): Promise<LunaCard[]> {
+const SCORE_MIN = 0.4;
+const FALLBACK_KEEP = 2;
+
+export async function searchTavily(
+  query: string,
+  domainHint?: string
+): Promise<LunaCard[]> {
   const apiKey = process.env.TAVILY_API_KEY;
-  if (!apiKey || !query.trim()) return [];
+  if (!apiKey || !query.trim()) {
+    console.log("[luna/tavily] skipped", { hasKey: !!apiKey, query });
+    return [];
+  }
+
+  const tavilyQuery = `${query} ${domainHint ?? ""}`.trim();
 
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -29,9 +41,10 @@ export async function searchTavily(query: string): Promise<LunaCard[]> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: apiKey,
-        query: query.trim(),
+        query: tavilyQuery,
         max_results: 5,
-        include_images: true
+        include_images: true,
+        search_depth: "advanced"
       })
     });
 
@@ -46,21 +59,40 @@ export async function searchTavily(query: string): Promise<LunaCard[]> {
     const results = Array.isArray(data.results) ? data.results : [];
     console.log("[luna/tavily] results", results.length);
 
-    return results
-      .filter((r) => typeof r.url === "string" && r.url.trim())
-      .map((r, i) => {
-        const content = (r.content ?? r.raw_content ?? "").trim();
-        const image =
-          (typeof r.image === "string" && r.image) ||
-          (typeof images[i] === "string" ? images[i] : null);
-        return {
-          type: "web" as const,
-          title: (r.title ?? "").trim() || r.url!.trim(),
-          url: r.url!.trim(),
-          thumbnail: image,
-          description: content.slice(0, 100)
-        };
-      });
+    const withUrl = results.filter(
+      (r) => typeof r.url === "string" && r.url.trim()
+    );
+    const hasScore = withUrl.some((r) => typeof r.score === "number");
+
+    let selected = withUrl;
+    if (!hasScore) {
+      console.log("[luna/tavily] filtered", withUrl.length, "→", withUrl.length, "(no score)");
+    } else {
+      const scored = [...withUrl].sort(
+        (a, b) => (b.score ?? 0) - (a.score ?? 0)
+      );
+      const above = scored.filter((r) => (r.score ?? 0) >= SCORE_MIN);
+      selected =
+        above.length > 0 ? above : scored.slice(0, FALLBACK_KEEP);
+      console.log("[luna/tavily] filtered", withUrl.length, "→", selected.length);
+    }
+
+    return selected.map((r, i) => {
+      const content = (r.content ?? r.raw_content ?? "").trim();
+      const origIndex = withUrl.indexOf(r);
+      const image =
+        (typeof r.image === "string" && r.image) ||
+        (typeof images[origIndex >= 0 ? origIndex : i] === "string"
+          ? images[origIndex >= 0 ? origIndex : i]
+          : null);
+      return {
+        type: "web" as const,
+        title: (r.title ?? "").trim() || r.url!.trim(),
+        url: r.url!.trim(),
+        thumbnail: image,
+        description: content.slice(0, 100)
+      };
+    });
   } catch (err) {
     console.error("[luna/tavily] search", err);
     return [];

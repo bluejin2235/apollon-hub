@@ -498,9 +498,10 @@ function ProgressStepsPanel({
 }) {
   const visible = steps.filter((s) => s.status !== "skip");
   const [expanded, setExpanded] = useState(!collapsedDefault);
-  const doneCount = visible.filter((s) => s.status === "done").length;
-  const rounds = searchRounds ?? 0;
-  const summary = `검색 ${rounds}회 · ${doneCount}단계`;
+  // 완료·스트리밍 공통: skip 제외 전체 단계 수 (running 포함)
+  const stepCount = visible.length;
+  const rounds = typeof searchRounds === "number" ? searchRounds : 0;
+  const summary = `검색 ${rounds}회 · ${stepCount}단계`;
 
   if (visible.length === 0) return null;
 

@@ -800,20 +800,23 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     assistantMeta.attachments = attachmentMeta;
   }
 
+  const insertNow = Date.now();
   const { error: insertError } = await admin.from("luna_messages").insert([
     {
       conversation_id: conversationId,
       role: "user",
       content: userText,
       engine: usedEngine,
-      metadata: userMeta
+      metadata: userMeta,
+      created_at: new Date(insertNow - 1000).toISOString()
     },
     {
       conversation_id: conversationId,
       role: "assistant",
       content: assistantText,
       engine: usedEngine,
-      metadata: assistantMeta
+      metadata: assistantMeta,
+      created_at: new Date(insertNow).toISOString()
     }
   ]);
 

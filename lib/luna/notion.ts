@@ -50,7 +50,10 @@ export function extractNotionPageTitle(result: NotionSearchResult): string {
 
 export async function searchNotionPages(query: string): Promise<NotionSource[]> {
   const token = process.env.NOTION_TOKEN;
-  if (!token || !query.trim()) return [];
+  if (!token || !query.trim()) {
+    console.log("[luna/notion] skipped", { hasToken: !!token, query });
+    return [];
+  }
 
   const res = await fetch("https://api.notion.com/v1/search", {
     method: "POST",
