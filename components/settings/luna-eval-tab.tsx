@@ -1,9 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LunaPromptRow, LunaPromptVersionRow } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
 type Connectors = { notion: boolean; web: boolean; nas: boolean };
+
+type PendingVerifyItem = {
+  version_id: string;
+  prompt_title: string;
+  version: number;
+  change_summary: string | null;
+  prediction: string;
+  created_at: string;
+};
 
 type EvalCase = {
   id: string;
@@ -120,6 +130,9 @@ export function LunaEvalTab() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [liveResults, setLiveResults] = useState<EvalResult[]>([]);
+  const [pendingVerify, setPendingVerify] = useState<PendingVerifyItem[]>([]);
+  const [verifyNotes, setVerifyNotes] = useState<Record<string, string>>({});
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
   const activeCount = useMemo(
     () => cases.filter((c) => c.is_active).length,
@@ -189,6 +202,76 @@ export function LunaEvalTab() {
         : null
     }));
     setResults(list);
+  }
+
+  async function loadPendingVerify(run: EvalRun) {
+    const token = await getAccessToken();
+    if (!token) {
+      setPendingVerify([]);
+      return;
+    }
+    const res = await fetch("/api/luna/prompts", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      setPendingVerify([]);
+      return;
+    }
+    const json = (await res.json()) as { prompts?: LunaPromptRow[] };
+    const before = new Date(run.started_at).getTime();
+    const items: PendingVerifyItem[] = [];
+    for (const p of json.prompts ?? []) {
+      for (const v of (p.versions ?? []) as LunaPromptVersionRow[]) {
+        const prediction = v.prediction?.trim() ?? "";
+        if (!prediction) continue;
+        if (v.verify_result) continue;
+        const created = new Date(v.created_at).getTime();
+        if (Number.isNaN(created) || created >= before) continue;
+        items.push({
+          version_id: v.id,
+          prompt_title: p.title,
+          version: v.version,
+          change_summary: v.change_summary,
+          prediction,
+          created_at: v.created_at
+        });
+      }
+    }
+    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    setPendingVerify(items.slice(0, 10));
+  }
+
+  async function submitVerify(
+    versionId: string,
+    result: "confirmed" | "refuted" | "inconclusive"
+  ) {
+    if (!selectedRunId || verifyingId) return;
+    const token = await getAccessToken();
+    if (!token) return;
+    setVerifyingId(versionId);
+    try {
+      const res = await fetch("/api/luna/prompts/verify", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          version_id: versionId,
+          verify_result: result,
+          verify_note: (verifyNotes[versionId] ?? "").trim(),
+          run_id: selectedRunId
+        })
+      });
+      if (!res.ok) {
+        setMessage(`검증 저장 실패: ${await res.text()}`);
+        return;
+      }
+      setPendingVerify((prev) => prev.filter((p) => p.version_id !== versionId));
+      setMessage("검증을 저장했습니다.");
+    } finally {
+      setVerifyingId(null);
+    }
   }
 
   function openCase(c: EvalCase) {
@@ -310,10 +393,13 @@ export function LunaEvalTab() {
   }
 
   async function openRunDetail(runId: string) {
+    const run = runs.find((r) => r.id === runId) ?? null;
     setSelectedRunId(runId);
     setView("detail");
     setLiveResults([]);
+    setPendingVerify([]);
     await loadResults(runId);
+    if (run) await loadPendingVerify(run);
   }
 
   async function setVerdict(resultId: string, verdict: "pass" | "fail") {
@@ -458,6 +544,7 @@ export function LunaEvalTab() {
     setRunning(false);
     await load();
     await loadResults(run.id);
+    await loadPendingVerify(run);
   }
 
   const displayResults = view === "detail" ? (liveResults.length > 0 && running ? liveResults : results.length > 0 ? results : liveResults) : [];
@@ -498,6 +585,72 @@ export function LunaEvalTab() {
         ) : null}
 
         {message ? <p className="text-[12px] text-slate-600">{message}</p> : null}
+
+        {pendingVerify.length > 0 ? (
+          <section className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+            <h3 className="text-[13px] font-semibold text-slate-800">
+              검증 대기 중인 수정
+            </h3>
+            {pendingVerify.map((item) => (
+              <div
+                key={item.version_id}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2"
+              >
+                <p className="text-[13px] font-medium text-slate-900">
+                  {item.prompt_title}{" "}
+                  <span className="font-mono text-[11px] text-slate-500">
+                    v{item.version}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-[11.5px] text-gray-500">
+                  {item.change_summary || ""}
+                </p>
+                <p className="mt-1 text-[12px] font-medium text-slate-800">
+                  → {item.prediction}
+                </p>
+                <input
+                  value={verifyNotes[item.version_id] ?? ""}
+                  onChange={(e) =>
+                    setVerifyNotes((prev) => ({
+                      ...prev,
+                      [item.version_id]: e.target.value
+                    }))
+                  }
+                  placeholder="메모 (선택)"
+                  className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-[12px]"
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    disabled={verifyingId === item.version_id}
+                    onClick={() => void submitVerify(item.version_id, "confirmed")}
+                    className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-800 disabled:opacity-50"
+                  >
+                    확인됨
+                  </button>
+                  <button
+                    type="button"
+                    disabled={verifyingId === item.version_id}
+                    onClick={() => void submitVerify(item.version_id, "refuted")}
+                    className="rounded border border-red-300 bg-red-50 px-2.5 py-1 text-[11px] text-red-800 disabled:opacity-50"
+                  >
+                    효과 없음
+                  </button>
+                  <button
+                    type="button"
+                    disabled={verifyingId === item.version_id}
+                    onClick={() =>
+                      void submitVerify(item.version_id, "inconclusive")
+                    }
+                    className="rounded border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-900 disabled:opacity-50"
+                  >
+                    판단 불가
+                  </button>
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         <div className="space-y-2">
           {displayResults.map((r) => {

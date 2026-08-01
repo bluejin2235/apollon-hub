@@ -5,14 +5,23 @@ import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaNasTab } from "@/components/settings/luna-nas-tab";
+import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
 import type {
+  LunaPromptGroupRow,
   LunaPromptKind,
   LunaPromptRow,
   LunaPromptVersionRow
 } from "@/lib/luna/prompts";
+import { formatPromptNumber } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
-type LunaSubTab = "prompts" | "eval" | "engine" | "knowledge" | "nas";
+type LunaSubTab =
+  | "prompts"
+  | "eval"
+  | "engine"
+  | "knowledge"
+  | "nas"
+  | "trace";
 
 type ProfileOption = { id: string; name: string };
 
@@ -68,6 +77,7 @@ type Draft = {
   owner_id: string;
   sort_order: number;
   change_summary: string;
+  prediction: string;
 };
 
 function toDraft(p: LunaPromptRow): Draft {
@@ -78,12 +88,30 @@ function toDraft(p: LunaPromptRow): Draft {
     content: p.content ?? "",
     owner_id: p.owner_id ?? "",
     sort_order: p.sort_order ?? 0,
-    change_summary: ""
+    change_summary: "",
+    prediction: ""
   };
+}
+
+function verifyBadge(result: string | null | undefined): {
+  label: string;
+  className: string;
+} | null {
+  if (result === "confirmed") {
+    return { label: "확인됨", className: "bg-emerald-100 text-emerald-800" };
+  }
+  if (result === "refuted") {
+    return { label: "효과 없음", className: "bg-red-100 text-red-800" };
+  }
+  if (result === "inconclusive") {
+    return { label: "판단 불가", className: "bg-amber-100 text-amber-900" };
+  }
+  return { label: "미검증", className: "bg-slate-100 text-slate-600" };
 }
 
 function LunaPromptsPanel() {
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
+  const [promptGroups, setPromptGroups] = useState<LunaPromptGroupRow[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -91,6 +119,8 @@ function LunaPromptsPanel() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [openGroupKey, setOpenGroupKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = await getAccessToken();
@@ -104,8 +134,12 @@ function LunaPromptsPanel() {
     ]);
 
     if (promptRes.ok) {
-      const json = (await promptRes.json()) as { prompts?: LunaPromptRow[] };
+      const json = (await promptRes.json()) as {
+        prompts?: LunaPromptRow[];
+        groups?: LunaPromptGroupRow[];
+      };
       setPrompts(json.prompts ?? []);
+      setPromptGroups(json.groups ?? []);
     } else {
       setMessage(`불러오기 실패: ${await promptRes.text()}`);
     }
@@ -125,15 +159,26 @@ function LunaPromptsPanel() {
     void load();
   }, [load]);
 
-  const groups = useMemo(() => {
-    const l1 = prompts.filter((p) => p.level === "L1");
-    const l2Perspective = prompts.filter(
-      (p) => p.level === "L2" && p.kind === "perspective"
-    );
-    const l2Task = prompts.filter((p) => p.level === "L2" && p.kind === "task");
-    const l3 = prompts.filter((p) => p.level === "L3");
-    return { l1, l2Perspective, l2Task, l3 };
-  }, [prompts]);
+  const filteredPrompts = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return prompts;
+    return prompts.filter((p) => {
+      const num = formatPromptNumber(p).toLowerCase();
+      const title = (p.title ?? "").toLowerCase();
+      return num.includes(q) || title.includes(q);
+    });
+  }, [prompts, filterQuery]);
+
+  const groupedSections = useMemo(() => {
+    return promptGroups
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((g) => ({
+        group: g,
+        items: filteredPrompts.filter((p) => p.group_name === g.group_key)
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [promptGroups, filteredPrompts]);
 
   function openRow(p: LunaPromptRow) {
     if (openId === p.id) {
@@ -167,7 +212,7 @@ function LunaPromptsPanel() {
   }
 
   async function saveRow(p: LunaPromptRow) {
-    if (!draft || !draft.change_summary.trim()) return;
+    if (!draft || !draft.change_summary.trim() || !draft.prediction.trim()) return;
     setSaving(true);
     setMessage("");
     const token = await getAccessToken();
@@ -189,7 +234,8 @@ function LunaPromptsPanel() {
         content: draft.content,
         owner_id: draft.owner_id || null,
         sort_order: draft.sort_order,
-        change_summary: draft.change_summary.trim()
+        change_summary: draft.change_summary.trim(),
+        prediction: draft.prediction.trim()
       })
     });
     setSaving(false);
@@ -258,7 +304,8 @@ function LunaPromptsPanel() {
         content: "",
         owner_id: "",
         sort_order: 0,
-        change_summary: ""
+        change_summary: "",
+        prediction: ""
       });
     }
   }
@@ -267,6 +314,11 @@ function LunaPromptsPanel() {
     const badge = kindBadge(p.kind);
     const open = openId === p.id;
     const versions = (p.versions ?? []) as LunaPromptVersionRow[];
+    const latestVersion = versions[0] ?? null;
+    const latestRefuted =
+      Boolean(latestVersion?.prediction) &&
+      latestVersion?.verify_result === "refuted";
+    const promptNo = formatPromptNumber(p);
 
     return (
       <div key={p.id} className="mb-1">
@@ -275,8 +327,24 @@ function LunaPromptsPanel() {
           onClick={() => openRow(p)}
           className="flex w-full items-center gap-2 rounded-lg border border-solid border-slate-200 px-2.5 py-[9px] text-left"
         >
-          <span className="shrink-0 whitespace-nowrap text-[13px] font-medium text-slate-900">
+          <span
+            className="shrink-0 font-mono"
+            style={{
+              fontSize: 10,
+              color: "#6B6A64",
+              marginRight: 7
+            }}
+          >
+            {promptNo}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[13px] font-medium text-slate-900">
             {p.title}
+            {latestRefuted ? (
+              <span
+                className="inline-block h-[5px] w-[5px] rounded-full bg-red-500"
+                title="최근 수정이 효과 없음으로 판정됨"
+              />
+            ) : null}
           </span>
           <span
             className={`shrink-0 rounded px-[7px] py-0.5 text-[9.5px] ${badge.className}`}
@@ -315,6 +383,12 @@ function LunaPromptsPanel() {
         {open && draft ? (
           <div className="flex rounded-b-lg border border-t-0 border-solid border-[#534AB7]">
             <div className="min-w-0 flex-1 p-3">
+              <div
+                className="mb-2 font-mono"
+                style={{ fontSize: 12, color: "#534AB7" }}
+              >
+                {promptNo}
+              </div>
               <label className="mb-2 block">
                 <span className="mb-1 block text-[11px] text-gray-500">제목</span>
                 <input
@@ -389,21 +463,33 @@ function LunaPromptsPanel() {
                 </div>
               ) : null}
 
-              <div className="mt-3 flex items-center gap-2 border-t border-slate-200 pt-3">
+              <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
                 <input
                   value={draft.change_summary}
                   onChange={(e) => setDraft({ ...draft, change_summary: e.target.value })}
                   placeholder="무엇을 왜 바꿨는지 한 줄로"
-                  className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1.5 text-[13px]"
+                  className="w-full rounded border border-slate-200 px-2 py-1.5 text-[13px]"
                 />
-                <button
-                  type="button"
-                  disabled={saving || !draft.change_summary.trim()}
-                  onClick={() => void saveRow(p)}
-                  className="shrink-0 rounded bg-[#534AB7] px-3 py-1.5 text-[13px] text-white disabled:opacity-40"
-                >
-                  저장
-                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={draft.prediction}
+                    onChange={(e) => setDraft({ ...draft, prediction: e.target.value })}
+                    placeholder="이 수정으로 무엇이 좋아질지 한 줄로"
+                    className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1.5 text-[13px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      saving ||
+                      !draft.change_summary.trim() ||
+                      !draft.prediction.trim()
+                    }
+                    onClick={() => void saveRow(p)}
+                    className="shrink-0 rounded bg-[#534AB7] px-3 py-1.5 text-[13px] text-white disabled:opacity-40"
+                  >
+                    저장
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -412,7 +498,12 @@ function LunaPromptsPanel() {
               {versions.length === 0 ? (
                 <p className="text-[10.5px] text-gray-500">이력이 없습니다.</p>
               ) : (
-                versions.map((v) => (
+                versions.map((v) => {
+                  const hasPrediction = Boolean(v.prediction?.trim());
+                  const badge = hasPrediction
+                    ? verifyBadge(v.verify_result)
+                    : null;
+                  return (
                   <div
                     key={v.id}
                     className="border-b border-slate-200 py-2 last:border-b-0"
@@ -427,10 +518,22 @@ function LunaPromptsPanel() {
                       <span className="font-mono">v{v.version}</span>
                       <span>{v.changed_by_luna ? "LUNA" : v.editor_name || "-"}</span>
                       <span className="text-gray-500">{formatVersionDate(v.created_at)}</span>
+                      {badge ? (
+                        <span
+                          className={`rounded-[3px] px-[6px] py-px text-[9px] font-medium ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-0.5 text-[10.5px] text-gray-500">
                       {v.change_summary || ""}
                     </p>
+                    {hasPrediction ? (
+                      <p className="mt-0.5 text-[10.5px] italic text-slate-600">
+                        → {v.prediction}
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void revertTo(p, v.version)}
@@ -439,25 +542,14 @@ function LunaPromptsPanel() {
                       이 버전으로 되돌리기
                     </button>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
         ) : null}
       </div>
     );
-  }
-
-  function GroupHeader({ text }: { text: string }) {
-    return (
-      <div className="mb-1.5 mt-4 font-mono text-[9.5px] uppercase tracking-wide text-gray-500 first:mt-0">
-        {text}
-      </div>
-    );
-  }
-
-  function SubHeader({ text }: { text: string }) {
-    return <div className="mb-1 mt-2 text-[11px] text-gray-500">{text}</div>;
   }
 
   if (loading) {
@@ -483,17 +575,56 @@ function LunaPromptsPanel() {
 
       {message ? <p className="mb-2 text-[12px] text-slate-600">{message}</p> : null}
 
-      <GroupHeader text="L1 · 정체성" />
-      {groups.l1.map(renderRow)}
+      <input
+        value={filterQuery}
+        onChange={(e) => setFilterQuery(e.target.value)}
+        placeholder="번호 또는 이름으로 찾기"
+        className="mb-3 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] placeholder:text-slate-400"
+      />
 
-      <GroupHeader text="L2 · 스킬" />
-      <SubHeader text="관점" />
-      {groups.l2Perspective.map(renderRow)}
-      <SubHeader text="작업" />
-      {groups.l2Task.map(renderRow)}
-
-      <GroupHeader text="L3 · 판단" />
-      {groups.l3.map(renderRow)}
+      {groupedSections.map(({ group, items }) => {
+        const descOpen = openGroupKey === group.group_key;
+        return (
+          <div key={group.group_key}>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenGroupKey(descOpen ? null : group.group_key)
+              }
+              className="flex w-full items-start gap-3 border-b border-slate-200 pb-1.5 text-left"
+              style={{ marginTop: 18, marginBottom: 6 }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-0">
+                  <span className="text-[14px] font-semibold text-slate-900">
+                    {group.label}
+                  </span>
+                  {group.tagline ? (
+                    <span className="text-[12px] text-gray-500">
+                      {" — "}
+                      {group.tagline}
+                    </span>
+                  ) : null}
+                </div>
+                {group.when_runs ? (
+                  <div className="mt-0.5 font-mono text-[10.5px] text-gray-400">
+                    실행 · {group.when_runs}
+                  </div>
+                ) : null}
+                {descOpen && group.description ? (
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-gray-600">
+                    {group.description}
+                  </p>
+                ) : null}
+              </div>
+              <span className="shrink-0 pt-0.5 text-[11px] text-gray-400">
+                {items.length}
+              </span>
+            </button>
+            <div className="space-y-1">{items.map(renderRow)}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -510,7 +641,8 @@ export function LunaSettingsTab() {
             { key: "eval", label: "회귀 테스트" },
             { key: "engine", label: "엔진" },
             { key: "knowledge", label: "지식" },
-            { key: "nas", label: "Work서버" }
+            { key: "nas", label: "Work서버" },
+            { key: "trace", label: "관측" }
           ] as const
         ).map((tab) => (
           <button
@@ -536,8 +668,10 @@ export function LunaSettingsTab() {
         <LunaEngineTab />
       ) : subTab === "knowledge" ? (
         <LunaKnowledgeTab />
-      ) : (
+      ) : subTab === "nas" ? (
         <LunaNasTab />
+      ) : (
+        <LunaTraceTab />
       )}
     </div>
   );

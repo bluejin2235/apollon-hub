@@ -12,6 +12,11 @@ export type LunaPromptVersionContent = {
   sort_order: number;
 };
 
+export type LunaPromptVerifyResult =
+  | "confirmed"
+  | "refuted"
+  | "inconclusive";
+
 export type LunaPromptVersionRow = {
   id: string;
   target_type: string;
@@ -23,6 +28,21 @@ export type LunaPromptVersionRow = {
   changed_by_luna: boolean;
   created_at: string;
   editor_name?: string | null;
+  prediction?: string | null;
+  verify_run_id?: string | null;
+  verify_result?: LunaPromptVerifyResult | null;
+  verify_note?: string | null;
+  verified_at?: string | null;
+  prompt_title?: string | null;
+};
+
+export type LunaPromptGroupRow = {
+  group_key: string;
+  label: string;
+  tagline: string | null;
+  description: string | null;
+  when_runs: string | null;
+  sort_order: number;
 };
 
 export type LunaPromptRow = {
@@ -30,6 +50,7 @@ export type LunaPromptRow = {
   level: LunaPromptLevel;
   kind: LunaPromptKind;
   prompt_key: string | null;
+  group_name?: string | null;
   title: string;
   description: string | null;
   purpose: string | null;
@@ -44,6 +65,20 @@ export type LunaPromptRow = {
   changed_by_luna?: boolean;
   versions?: LunaPromptVersionRow[];
 };
+
+/** level / kind / sort_order → L1-01, L2-P01, L2-T01, L3-01 */
+export function formatPromptNumber(p: {
+  level: string;
+  kind: string;
+  sort_order: number | null | undefined;
+}): string {
+  const n = String(p.sort_order ?? 0).padStart(2, "0");
+  if (p.level === "L1") return `L1-${n}`;
+  if (p.level === "L2" && p.kind === "perspective") return `L2-P${n}`;
+  if (p.level === "L2" && p.kind === "task") return `L2-T${n}`;
+  if (p.level === "L3") return `L3-${n}`;
+  return `${p.level}-${n}`;
+}
 
 /** luna_prompts 에서 prompt_key 로 active content 조회. 실패 시 "". */
 export async function getPrompt(
