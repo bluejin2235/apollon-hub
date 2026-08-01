@@ -1,6 +1,10 @@
 const SUPPLY_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function isSupplyUuid(value: string): boolean {
+  return SUPPLY_UUID_RE.test(value.trim());
+}
+
 /** QR에 넣을 비품 식별자 (라벨 인쇄·스캔용) */
 export function formatSupplyQrPayload(supplyId: string): string {
   return `supply:${supplyId}`;

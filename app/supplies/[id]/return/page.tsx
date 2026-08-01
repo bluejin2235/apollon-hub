@@ -25,7 +25,14 @@ export default function SupplyReturnPage() {
   const { status, profile } = useRequirePortalSession();
 
   const [supply, setSupply] = useState<SupplyWithRelations | null>(null);
-  const [loan, setLoan] = useState<{ id: string; purpose: string; due_date: string; borrowed_at: string } | null>(null);
+  const [loan, setLoan] = useState<{
+    id: string;
+    purpose: string;
+    due_date: string;
+    borrowed_at: string;
+    loan_quantity: number;
+    loan_components: string | null;
+  } | null>(null);
   const [step, setStep] = useState<ReturnStep>("scanning");
   const [scanKey, setScanKey] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -62,7 +69,7 @@ export default function SupplyReturnPage() {
   useEffect(() => {
     if (status !== "ready" || !profile?.id) return;
     void load();
-    void getActiveLoanForUser(id, profile.id).then(setLoan);
+    void getActiveLoanForUser(id, profile.id).then((loans) => setLoan(loans[0] ?? null));
   }, [status, profile?.id, id, load]);
 
   const handleQrScan = useCallback(

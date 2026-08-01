@@ -19,9 +19,9 @@ import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
   { value: "last_30days", label: "최근 1달" },
-  { value: "this_month", label: "이번 달" },
-  { value: "last_month", label: "지난 달" },
   { value: "last_3m", label: "최근 3개월" },
+  { value: "last_6m", label: "최근 6개월" },
+  { value: "last_1y", label: "최근 1년" },
   { value: "custom", label: "직접 선택" }
 ];
 
@@ -41,7 +41,9 @@ async function fetchUploadMeta(): Promise<ProviderUploadMeta[]> {
   const empty = (provider: ApiUsageProvider): ProviderUploadMeta => ({
     provider,
     created_at: null,
-    uploader_name: null
+    uploader_name: null,
+    data_start: null,
+    data_end: null
   });
 
   const { data: metaData, error: metaError } = await supabase
@@ -83,14 +85,16 @@ async function fetchUploadMeta(): Promise<ProviderUploadMeta[]> {
     return {
       provider,
       created_at: row.created_at,
-      uploader_name: nameMap[row.uploaded_by] ?? null
+      uploader_name: nameMap[row.uploaded_by] ?? null,
+      data_start: null,
+      data_end: null
     };
   };
 
   return [toMeta("openai", openaiRow), toMeta("anthropic", anthropicRow)];
 }
 
-export function ApiUsageDashboard() {
+export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [period, setPeriod] = useState<UsagePeriodPreset>("last_30days");
   const [customStart, setCustomStart] = useState(() => {
@@ -145,7 +149,7 @@ export function ApiUsageDashboard() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const agg = useMemo(() => aggregateUsageDashboard(rows, range), [rows, range]);
 
@@ -156,7 +160,18 @@ export function ApiUsageDashboard() {
         : `${agg.date_min} ~ ${agg.date_max}`
       : "—";
 
-  const totalKrw = agg.total_cost_usd * usdKrw;
+  const totalCostUsd = useMemo(
+    () => agg.byModel.reduce((sum, row) => sum + row.cost_usd, 0),
+    [agg.byModel]
+  );
+  const totalKrw = useMemo(
+    () => agg.byModel.reduce((sum, row) => sum + row.cost_krw, 0),
+    [agg.byModel]
+  );
+  const totalTokens = useMemo(
+    () => agg.rows.reduce((sum, row) => sum + (Number(row.total_tokens) || 0), 0),
+    [agg.rows]
+  );
   const openaiMeta = uploadMeta.find((m) => m.provider === "openai");
   const anthropicMeta = uploadMeta.find((m) => m.provider === "anthropic");
 
@@ -251,7 +266,7 @@ export function ApiUsageDashboard() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">총 비용</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(totalKrw)}</p>
-              <p className="mt-1 text-sm tabular-nums text-slate-400">{formatUsd(agg.total_cost_usd)}</p>
+              <p className="mt-1 text-sm tabular-nums text-slate-400">{formatUsd(totalCostUsd)}</p>
               <p className="mt-2 text-[11px] text-slate-400">
                 환율 기준: 1$ = {usdKrw.toLocaleString("ko-KR")}원 ({monthLabel})
               </p>
@@ -259,7 +274,7 @@ export function ApiUsageDashboard() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">총 토큰 수</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
-                {agg.total_tokens == null ? "—" : formatTokenCount(agg.total_tokens)}
+                {totalTokens === 0 ? "—" : formatTokenCount(totalTokens)}
               </p>
               <p className="mt-1 text-xs text-slate-500">OpenAI 데이터만 집계</p>
             </div>
@@ -346,7 +361,10 @@ export function ApiUsageDashboard() {
                         {formatUsd(row.cost_usd)}
                       </td>
                       <td className="px-5 py-3 text-right tabular-nums text-slate-600">
-                        {row.share_pct.toFixed(1)}%
+                        {totalCostUsd > 0
+                          ? ((row.cost_usd / totalCostUsd) * 100).toFixed(1)
+                          : "0.0"}
+                        %
                       </td>
                     </tr>
                   ))

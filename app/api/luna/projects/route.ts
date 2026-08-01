@@ -3,18 +3,18 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 
 export const runtime = "nodejs";
 
-export type LunaConversationRow = {
+export type LunaProjectRow = {
   id: string;
   user_id: string;
-  title: string;
-  engine: string;
-  project_id: string | null;
+  name: string;
+  description: string | null;
+  project_code: string | null;
   created_at: string;
   updated_at: string;
 };
 
 const SELECT =
-  "id, user_id, title, engine, project_id, created_at, updated_at";
+  "id, user_id, name, description, project_code, created_at, updated_at";
 
 export async function GET(request: NextRequest) {
   const user = await getApiUser(request);
@@ -28,17 +28,17 @@ export async function GET(request: NextRequest) {
   }
 
   const { data, error } = await admin
-    .from("luna_conversations")
+    .from("luna_projects")
     .select(SELECT)
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
   if (error) {
-    console.error("[luna/conversations] GET", error);
+    console.error("[luna/projects] GET", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ conversations: (data ?? []) as LunaConversationRow[] });
+  return NextResponse.json({ projects: (data ?? []) as LunaProjectRow[] });
 }
 
 export async function POST(request: NextRequest) {
@@ -52,52 +52,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  let body: { project_id?: string | null } = {};
+  let body: { name?: string; description?: string; project_code?: string };
   try {
-    const text = await request.text();
-    if (text.trim()) {
-      body = JSON.parse(text) as { project_id?: string | null };
-    }
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+
   const insert: Record<string, unknown> = {
     user_id: user.id,
-    title: "새 대화",
-    engine: "auto"
+    name
   };
-
-  if (typeof body.project_id === "string" && body.project_id.trim()) {
-    const projectId = body.project_id.trim();
-    const { data: project, error: projectError } = await admin
-      .from("luna_projects")
-      .select("id")
-      .eq("id", projectId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (projectError) {
-      console.error("[luna/conversations] POST project", projectError);
-      return NextResponse.json({ error: projectError.message }, { status: 500 });
-    }
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-    insert.project_id = projectId;
+  if (typeof body.description === "string") {
+    insert.description = body.description.trim() || null;
+  }
+  if (typeof body.project_code === "string") {
+    insert.project_code = body.project_code.trim() || null;
   }
 
   const { data, error } = await admin
-    .from("luna_conversations")
+    .from("luna_projects")
     .insert(insert)
     .select(SELECT)
     .single();
 
   if (error) {
-    console.error("[luna/conversations] POST", error);
+    console.error("[luna/projects] POST", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ conversation: data as LunaConversationRow }, { status: 201 });
+  return NextResponse.json({ project: data as LunaProjectRow }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -113,9 +102,9 @@ export async function PATCH(request: NextRequest) {
 
   let body: {
     id?: string;
-    title?: string;
-    engine?: string;
-    project_id?: string | null;
+    name?: string;
+    description?: string;
+    project_code?: string;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -131,46 +120,33 @@ export async function PATCH(request: NextRequest) {
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString()
   };
-  if (typeof body.title === "string") patch.title = body.title;
-  if (typeof body.engine === "string") patch.engine = body.engine;
-
-  if (body.project_id === null) {
-    patch.project_id = null;
-  } else if (typeof body.project_id === "string") {
-    const projectId = body.project_id.trim();
-    if (!projectId) {
-      patch.project_id = null;
-    } else {
-      const { data: project, error: projectError } = await admin
-        .from("luna_projects")
-        .select("id")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (projectError) {
-        console.error("[luna/conversations] PATCH project", projectError);
-        return NextResponse.json({ error: projectError.message }, { status: 500 });
-      }
-      if (!project) {
-        return NextResponse.json({ error: "Project not found" }, { status: 404 });
-      }
-      patch.project_id = projectId;
+  if (typeof body.name === "string") {
+    const name = body.name.trim();
+    if (!name) {
+      return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
     }
+    patch.name = name;
+  }
+  if (typeof body.description === "string") {
+    patch.description = body.description.trim() || null;
+  }
+  if (typeof body.project_code === "string") {
+    patch.project_code = body.project_code.trim() || null;
   }
 
   if (
-    patch.title === undefined &&
-    patch.engine === undefined &&
-    patch.project_id === undefined
+    patch.name === undefined &&
+    patch.description === undefined &&
+    patch.project_code === undefined
   ) {
     return NextResponse.json(
-      { error: "title, engine, or project_id is required" },
+      { error: "name, description, or project_code is required" },
       { status: 400 }
     );
   }
 
   const { data, error } = await admin
-    .from("luna_conversations")
+    .from("luna_projects")
     .update(patch)
     .eq("id", id)
     .eq("user_id", user.id)
@@ -178,14 +154,14 @@ export async function PATCH(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    console.error("[luna/conversations] PATCH", error);
+    console.error("[luna/projects] PATCH", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ conversation: data as LunaConversationRow });
+  return NextResponse.json({ project: data as LunaProjectRow });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -212,7 +188,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const { data, error } = await admin
-    .from("luna_conversations")
+    .from("luna_projects")
     .delete()
     .eq("id", id)
     .eq("user_id", user.id)
@@ -220,7 +196,7 @@ export async function DELETE(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    console.error("[luna/conversations] DELETE", error);
+    console.error("[luna/projects] DELETE", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!data) {
