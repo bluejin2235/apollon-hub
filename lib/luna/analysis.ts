@@ -58,9 +58,10 @@ export type AnalysisTeamResult = {
   id: string;
   title: string;
   content: string;
+  kind: "perspective" | "role";
 };
 
-type PerspectiveRow = {
+type SkillRow = {
   id: string;
   title: string;
   content: string;
@@ -68,6 +69,8 @@ type PerspectiveRow = {
   is_active: boolean;
   kind: string;
 };
+
+type BranchRow = SkillRow & { branchKind: "perspective" | "role" };
 
 function isSearchRequestMessage(message: string): boolean {
   return SEARCH_REQUEST_KEYWORDS.some((kw) => message.includes(kw));
@@ -200,6 +203,7 @@ export type RunAnalysisParams = {
   tierA: { model_id: string; model_label: string };
   tierB: { model_id: string; model_label: string };
   perspectiveIds: string[];
+  roleIds: string[];
   taskIds: string[];
   notionEnabled: boolean;
   webEnabled: boolean;
@@ -227,6 +231,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     tierA,
     tierB,
     perspectiveIds,
+    roleIds,
     taskIds,
     notionEnabled,
     webEnabled,
@@ -269,33 +274,51 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   const { data: skillData, error: skillError } = await admin
     .from("luna_prompts")
     .select("id, title, kind, content, is_active, sort_order")
-    .in("id", Array.from(new Set([...perspectiveIds, ...taskIds])))
+    .in("id", Array.from(new Set([...perspectiveIds, ...roleIds, ...taskIds])))
     .eq("level", "L2");
 
   if (skillError) {
     throw new Error(skillError.message);
   }
 
-  const rows = (skillData ?? []) as PerspectiveRow[];
+  const rows = (skillData ?? []) as SkillRow[];
   const byId = new Map(rows.filter((r) => r.is_active).map((r) => [r.id, r]));
 
-  const perspectives = perspectiveIds
+  const perspectiveRows = perspectiveIds
     .map((id) => byId.get(id))
     .filter(
-      (r): r is PerspectiveRow =>
+      (r): r is SkillRow =>
         Boolean(r) && r!.kind === "perspective" && Boolean(r!.content)
     )
-    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-    .slice(0, MAX_TEAMS);
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
-  if (perspectives.length < 2) {
-    throw new Error("분석 모드에는 활성 관점이 2개 이상 필요합니다.");
+  const roleRows = roleIds
+    .map((id) => byId.get(id))
+    .filter(
+      (r): r is SkillRow =>
+        Boolean(r) && r!.kind === "role" && Boolean(r!.content)
+    )
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+  // 관점 우선, 남는 자리를 역할로. 최대 5개
+  const branches: BranchRow[] = [];
+  for (const p of perspectiveRows) {
+    if (branches.length >= MAX_TEAMS) break;
+    branches.push({ ...p, branchKind: "perspective" });
+  }
+  for (const r of roleRows) {
+    if (branches.length >= MAX_TEAMS) break;
+    branches.push({ ...r, branchKind: "role" });
+  }
+
+  if (branches.length < 2) {
+    throw new Error("분석 모드에는 활성 관점·역할이 합쳐 2개 이상 필요합니다.");
   }
 
   const taskContents = taskIds
     .map((id) => byId.get(id))
-    .filter((r): r is PerspectiveRow => Boolean(r) && r!.kind === "task")
-    .map((r) => r.content.trim())
+    .filter((r): r is SkillRow => Boolean(r) && r!.kind === "task")
+    .map((r) => `[작업 · ${r.title}]\n${r.content.trim()}`)
     .filter(Boolean);
 
   const loaded = await getPrompts(admin, ["analysis.supervisor"]);
@@ -570,44 +593,55 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     }
   }
 
-  const teamResults: AnalysisTeamResult[] = perspectives.map((p) => ({
+  const teamResults: AnalysisTeamResult[] = branches.map((p) => ({
     id: p.id,
     title: p.title,
-    content: ""
+    content: "",
+    kind: p.branchKind
   }));
-  const teamDone = perspectives.map(() => false);
+  const teamDone = branches.map(() => false);
   let analysisTimedOut = false;
   const deadline = startedAt + ANALYSIS_TIMEOUT_MS;
 
   const analyzeTeam = async (index: number) => {
-    const p = perspectives[index]!;
-    emit({ type: "team", id: p.id, title: p.title, status: "running" });
+    const p = branches[index]!;
+    emit({
+      type: "team",
+      id: p.id,
+      title: p.title,
+      kind: p.branchKind,
+      status: "running"
+    });
 
     if (analysisTimedOut || Date.now() > deadline) {
       teamResults[index] = {
         id: p.id,
         title: p.title,
-        content: "분석 실패"
+        content: "분석 실패",
+        kind: p.branchKind
       };
       teamDone[index] = true;
       emit({
         type: "team",
         id: p.id,
         title: p.title,
+        kind: p.branchKind,
         status: "done",
         content: "분석 실패"
       });
       return;
     }
 
+    const labelPrefix = p.branchKind === "role" ? "역할" : "관점";
+    const skillBlock = `[${labelPrefix} · ${p.title}]\n${p.content.trim()}`;
     const taskBlock =
       taskContents.length > 0 ? `\n\n${taskContents.join("\n\n")}` : "";
     const systemPrompt = [
       identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT,
-      p.content.trim(),
+      skillBlock,
       taskBlock,
       `[수집된 자료]\n${materialsText}`,
-      `당신은 ${p.title} 관점으로만 분석합니다. 다른 팀 관점을 대신 말하지 마세요.\n이 관점에서 가장 중요한 판단 두세 가지를 근거와 함께 쓰세요.\n서론과 맺음말 없이 본론만 쓰세요. 400자 이내.`
+      `당신은 ${p.title} ${labelPrefix}으로만 분석합니다. 다른 팀 관점·역할을 대신 말하지 마세요.\n이 ${labelPrefix}에서 가장 중요한 판단 두세 가지를 근거와 함께 쓰세요.\n서론과 맺음말 없이 본론만 쓰세요. 400자 이내.`
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -630,7 +664,12 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       const text =
         res.content.find((part) => part.type === "text")?.text?.trim() ||
         "분석 실패";
-      teamResults[index] = { id: p.id, title: p.title, content: text };
+      teamResults[index] = {
+        id: p.id,
+        title: p.title,
+        content: text,
+        kind: p.branchKind
+      };
       teamDone[index] = true;
       pushModelStep(modelSteps, admin, {
         label: `${p.title} 분석`,
@@ -643,6 +682,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
         type: "team",
         id: p.id,
         title: p.title,
+        kind: p.branchKind,
         status: "done",
         content: text
       });
@@ -652,7 +692,8 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       teamResults[index] = {
         id: p.id,
         title: p.title,
-        content: "분석 실패"
+        content: "분석 실패",
+        kind: p.branchKind
       };
       teamDone[index] = true;
       pushModelStep(modelSteps, admin, {
@@ -665,6 +706,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
         type: "team",
         id: p.id,
         title: p.title,
+        kind: p.branchKind,
         status: "done",
         content: "분석 실패"
       });
@@ -672,7 +714,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   };
 
   await Promise.race([
-    Promise.all(perspectives.map((_, i) => analyzeTeam(i))),
+    Promise.all(branches.map((_, i) => analyzeTeam(i))),
     sleep(Math.max(0, deadline - Date.now())).then(() => {
       analysisTimedOut = true;
     })
@@ -680,17 +722,19 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
 
   for (let i = 0; i < teamResults.length; i += 1) {
     if (!teamDone[i]) {
-      const p = perspectives[i]!;
+      const p = branches[i]!;
       teamResults[i] = {
         id: p.id,
         title: p.title,
-        content: "분석 실패"
+        content: "분석 실패",
+        kind: p.branchKind
       };
       teamDone[i] = true;
       emit({
         type: "team",
         id: p.id,
         title: p.title,
+        kind: p.branchKind,
         status: "done",
         content: "분석 실패"
       });
@@ -703,7 +747,8 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   const teamsForMeta = teamResults.map((t) => ({
     id: t.id,
     title: t.title,
-    content: t.content || "분석 실패"
+    content: t.content || "분석 실패",
+    kind: t.kind
   }));
 
   // ——— 단계 3: 슈퍼바이저 통합 ———
@@ -767,6 +812,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   const userMeta: Record<string, unknown> = {
     skills: {
       perspective_ids: perspectiveIds,
+      role_ids: roleIds,
       task_ids: taskIds
     }
   };
@@ -786,6 +832,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     },
     skills: {
       perspective_ids: perspectiveIds,
+      role_ids: roleIds,
       task_ids: taskIds
     }
   };

@@ -104,7 +104,11 @@ type ChatRequestBody = {
   conversation_id?: string;
   message?: string;
   engine?: string;
-  skills?: { perspective_ids?: unknown; task_ids?: unknown };
+  skills?: {
+    perspective_ids?: unknown;
+    role_ids?: unknown;
+    task_ids?: unknown;
+  };
   connectors?: { notion?: boolean; web?: boolean; nas?: boolean };
   attachment_ids?: string[];
 };
@@ -479,8 +483,11 @@ export async function POST(request: NextRequest) {
     typeof body.conversation_id === "string" ? body.conversation_id.trim() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const perspectiveIds = parseIdList(body.skills?.perspective_ids);
+  const roleIds = parseIdList(body.skills?.role_ids);
   const taskIds = parseIdList(body.skills?.task_ids);
-  const skillIds = Array.from(new Set([...perspectiveIds, ...taskIds]));
+  const skillIds = Array.from(
+    new Set([...perspectiveIds, ...roleIds, ...taskIds])
+  );
   const attachmentIds = Array.isArray(body.attachment_ids)
     ? body.attachment_ids
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
@@ -626,6 +633,11 @@ export async function POST(request: NextRequest) {
       if (!row || row.kind !== "perspective") continue;
       blocks.push(`[관점 · ${row.title}]\n${row.content}`);
     }
+    for (const id of roleIds) {
+      const row = byId.get(id);
+      if (!row || row.kind !== "role") continue;
+      blocks.push(`[역할 · ${row.title}]\n${row.content}`);
+    }
     for (const id of taskIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "task") continue;
@@ -717,7 +729,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        if (perspectiveIds.length >= 2) {
+        if (perspectiveIds.length + roleIds.length >= 2) {
           await runAnalysisPipeline({
             controller,
             encoder,
@@ -735,6 +747,7 @@ export async function POST(request: NextRequest) {
             tierA,
             tierB,
             perspectiveIds,
+            roleIds,
             taskIds,
             notionEnabled,
             webEnabled,
@@ -797,9 +810,14 @@ export async function POST(request: NextRequest) {
 
             const userMeta: Record<string, unknown> = {};
             if (attachmentMeta.length > 0) userMeta.attachments = attachmentMeta;
-            if (perspectiveIds.length > 0 || taskIds.length > 0) {
+            if (
+              perspectiveIds.length > 0 ||
+              roleIds.length > 0 ||
+              taskIds.length > 0
+            ) {
               userMeta.skills = {
                 perspective_ids: perspectiveIds,
+                role_ids: roleIds,
                 task_ids: taskIds
               };
             }
@@ -1367,13 +1385,19 @@ export async function POST(request: NextRequest) {
             cache_read_input_tokens: answerUsage.cache_read_input_tokens
           }
         };
-        if (perspectiveIds.length > 0 || taskIds.length > 0) {
+        if (
+          perspectiveIds.length > 0 ||
+          roleIds.length > 0 ||
+          taskIds.length > 0
+        ) {
           userMeta.skills = {
             perspective_ids: perspectiveIds,
+            role_ids: roleIds,
             task_ids: taskIds
           };
           assistantMeta.skills = {
             perspective_ids: perspectiveIds,
+            role_ids: roleIds,
             task_ids: taskIds
           };
         }

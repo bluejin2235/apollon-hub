@@ -14,8 +14,9 @@ const LEVEL_ORDER: Record<string, number> = { L1: 0, L2: 1, L3: 2 };
 const KIND_ORDER: Record<string, number> = {
   identity: 0,
   perspective: 1,
-  task: 2,
-  system: 3
+  role: 2,
+  task: 3,
+  system: 4
 };
 
 const PROMPT_SELECT =
@@ -415,6 +416,7 @@ export async function POST(request: NextRequest) {
     (level !== "L1" && level !== "L2" && level !== "L3") ||
     (kind !== "identity" &&
       kind !== "perspective" &&
+      kind !== "role" &&
       kind !== "task" &&
       kind !== "system") ||
     !title

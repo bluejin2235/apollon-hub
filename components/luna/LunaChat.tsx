@@ -183,7 +183,12 @@ export function normalizeAnalysisTeams(raw: unknown): LunaAnalysisTeam[] | null 
         typeof (t as { title?: unknown }).title === "string" &&
         typeof (t as { content?: unknown }).content === "string"
     )
-    .map((t) => ({ id: t.id, title: t.title, content: t.content }));
+    .map((t): LunaAnalysisTeam => {
+      const kindRaw = (t as { kind?: unknown }).kind;
+      const kind: LunaAnalysisTeam["kind"] =
+        kindRaw === "role" || kindRaw === "perspective" ? kindRaw : undefined;
+      return { id: t.id, title: t.title, content: t.content, kind };
+    });
   return teams.length > 0 ? teams : null;
 }
 
@@ -207,6 +212,7 @@ export type LunaStreamEventResult =
       title: string;
       status: "running" | "done";
       content?: string;
+      teamKind?: "perspective" | "role";
     }
   | {
       kind: "meta";
@@ -277,6 +283,10 @@ export function consumeLunaStreamEvents(
         typeof parsed.title === "string" &&
         (status === "running" || status === "done")
       ) {
+        const teamKind =
+          parsed.kind === "role" || parsed.kind === "perspective"
+            ? parsed.kind
+            : undefined;
         return {
           kind: "team",
           buffer: rest,
@@ -284,7 +294,8 @@ export function consumeLunaStreamEvents(
           title: parsed.title,
           status,
           content:
-            typeof parsed.content === "string" ? parsed.content : undefined
+            typeof parsed.content === "string" ? parsed.content : undefined,
+          teamKind
         };
       }
     }
@@ -454,6 +465,7 @@ export function LunaChat({
                   onClick={() =>
                     onSend(s, connectors, [], [], {
                       perspective_ids: [],
+                      role_ids: [],
                       task_ids: []
                     })
                   }
@@ -498,7 +510,11 @@ export function LunaChat({
                             { notion: true, web: true, nas: true },
                             [],
                             [],
-                            { perspective_ids: [], task_ids: [] }
+                            {
+                              perspective_ids: [],
+                              role_ids: [],
+                              task_ids: []
+                            }
                           )
                       : undefined
                   }

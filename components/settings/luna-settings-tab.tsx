@@ -39,6 +39,9 @@ function kindBadge(kind: LunaPromptKind): { label: string; className: string } {
   if (kind === "perspective") {
     return { label: "관점", className: "bg-[#FAEEDA] text-[#412402]" };
   }
+  if (kind === "role") {
+    return { label: "역할", className: "bg-[#E6F1FB] text-[#0C447C]" };
+  }
   if (kind === "task") {
     return { label: "작업", className: "bg-[#EEEDFE] text-[#26215C]" };
   }

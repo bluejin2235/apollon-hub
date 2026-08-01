@@ -35,6 +35,7 @@ async function getAccessToken(): Promise<string | null> {
 
 const EMPTY_SKILLS: LunaSkillsSelection = {
   perspective_ids: [],
+  role_ids: [],
   task_ids: []
 };
 
@@ -372,12 +373,14 @@ export default function LunaPage() {
           title: string;
           status: "running" | "done";
           content?: string;
+          teamKind?: "perspective" | "role";
         }) => {
           streamMode = "analysis";
           const idx = streamTeams.findIndex((t) => t.id === ev.id);
           const next: LunaAnalysisTeam = {
             id: ev.id,
             title: ev.title,
+            kind: ev.teamKind ?? (idx >= 0 ? streamTeams[idx]!.kind : undefined),
             content:
               ev.status === "done"
                 ? (ev.content ?? "")

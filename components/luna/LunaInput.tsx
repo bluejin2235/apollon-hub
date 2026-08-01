@@ -26,6 +26,7 @@ export type LunaAttachmentRef = {
 
 export type LunaSkillsSelection = {
   perspective_ids: string[];
+  role_ids: string[];
   task_ids: string[];
 };
 
@@ -65,7 +66,9 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-function toggleClass(kind: "off" | "perspective" | "task" | "scope" | "disabled"): string {
+function toggleClass(
+  kind: "off" | "perspective" | "role" | "task" | "scope" | "disabled"
+): string {
   if (kind === "disabled") {
     return "cursor-not-allowed border-[#D3D1C7] bg-transparent text-[#6B6A64] opacity-40";
   }
@@ -74,6 +77,9 @@ function toggleClass(kind: "off" | "perspective" | "task" | "scope" | "disabled"
   }
   if (kind === "perspective") {
     return "cursor-pointer border-[#BA7517] bg-[#FAEEDA] font-medium text-[#412402]";
+  }
+  if (kind === "role") {
+    return "cursor-pointer border-[#1268B3] bg-[#E6F1FB] font-medium text-[#0C447C]";
   }
   if (kind === "task") {
     return "cursor-pointer border-[#534AB7] bg-[#EEEDFE] font-medium text-[#26215C]";
@@ -92,6 +98,7 @@ export function LunaInput({
   const [value, setValue] = useState("");
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
   const [perspectiveOn, setPerspectiveOn] = useState<Record<string, boolean>>({});
+  const [roleOn, setRoleOn] = useState<Record<string, boolean>>({});
   const [taskOn, setTaskOn] = useState<Record<string, boolean>>({});
   const [scopeOn, setScopeOn] = useState<Record<ScopeKey, boolean>>({
     notion: true,
@@ -143,8 +150,11 @@ export function LunaInput({
 
   const l2Active = prompts.filter((p) => p.level === "L2" && p.is_active === true);
   const perspectiveSkills = l2Active.filter((p) => p.kind === "perspective");
+  const roleSkills = l2Active.filter((p) => p.kind === "role");
   const taskSkills = l2Active.filter((p) => p.kind === "task");
   const perspectiveCount = perspectiveSkills.filter((s) => perspectiveOn[s.id]).length;
+  const roleCount = roleSkills.filter((s) => roleOn[s.id]).length;
+  const analysisBranchCount = perspectiveCount + roleCount;
 
   function resizeTextarea() {
     const el = textareaRef.current;
@@ -211,7 +221,10 @@ export function LunaInput({
       nas: scopeOnEffective.nas
     };
     const skillsPayload: LunaSkillsSelection = {
-      perspective_ids: perspectiveSkills.filter((s) => perspectiveOn[s.id]).map((s) => s.id),
+      perspective_ids: perspectiveSkills
+        .filter((s) => perspectiveOn[s.id])
+        .map((s) => s.id),
+      role_ids: roleSkills.filter((s) => roleOn[s.id]).map((s) => s.id),
       task_ids: taskSkills.filter((s) => taskOn[s.id]).map((s) => s.id)
     };
 
@@ -301,7 +314,28 @@ export function LunaInput({
           );
         })}
 
-        {perspectiveSkills.length > 0 && taskSkills.length > 0 ? (
+        {perspectiveSkills.length > 0 && roleSkills.length > 0 ? (
+          <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
+        ) : null}
+
+        {roleSkills.map((s) => {
+          const on = Boolean(roleOn[s.id]);
+          return (
+            <button
+              key={s.id}
+              type="button"
+              className={`${baseToggle} ${toggleClass(on ? "role" : "off")}`}
+              onClick={() =>
+                setRoleOn((prev) => ({ ...prev, [s.id]: !prev[s.id] }))
+              }
+            >
+              {s.title}
+            </button>
+          );
+        })}
+
+        {(perspectiveSkills.length > 0 || roleSkills.length > 0) &&
+        taskSkills.length > 0 ? (
           <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
         ) : null}
 
@@ -319,7 +353,9 @@ export function LunaInput({
           );
         })}
 
-        {(perspectiveSkills.length > 0 || taskSkills.length > 0) ? (
+        {perspectiveSkills.length > 0 ||
+        roleSkills.length > 0 ||
+        taskSkills.length > 0 ? (
           <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
         ) : null}
 
@@ -415,14 +451,19 @@ export function LunaInput({
       ) : null}
 
       {/* 3단 분석 전환 배너 */}
-      {perspectiveCount >= 2 ? (
+      {analysisBranchCount >= 2 ? (
         <div className="flex items-center gap-1.5 border-t border-[#BA7517] bg-[#FAEEDA] px-2.5 py-[5px] text-[10px] text-[#412402]">
           <span aria-hidden>◆</span>
           <span>
-            {`관점 ${perspectiveCount}개 · 팀별로 나눠 분석하고 정리해서 리포트로 드릴게요. 약 ${
-              perspectiveCount * 40 + 30
-            }초 걸려요.`}
-            {perspectiveCount > 5 ? " 상위 5개만 분석합니다." : ""}
+            {(() => {
+              const parts: string[] = [];
+              if (perspectiveCount > 0) parts.push(`관점 ${perspectiveCount}개`);
+              if (roleCount > 0) parts.push(`역할 ${roleCount}개`);
+              return `${parts.join(" · ")} · 팀별로 나눠 분석하고 정리해서 리포트로 드릴게요. 약 ${
+                analysisBranchCount * 40 + 30
+              }초 걸려요.`;
+            })()}
+            {analysisBranchCount > 5 ? " 상위 5개만 분석합니다." : ""}
           </span>
         </div>
       ) : null}

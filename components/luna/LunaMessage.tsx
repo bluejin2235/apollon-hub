@@ -35,6 +35,7 @@ export type LunaAnalysisTeam = {
   id: string;
   title: string;
   content: string;
+  kind?: "perspective" | "role";
 };
 
 type LunaMessageProps = {
@@ -349,13 +350,24 @@ function AnalysisReport({
               key={team.id}
               type="button"
               onClick={() => setActiveTab(team.id)}
-              className="px-2 py-1 text-[10.5px]"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px]"
               style={{
                 color: selected ? "#534AB7" : running ? "#BA7517" : "#6B6A64",
                 borderBottom: selected ? "2px solid #534AB7" : "2px solid transparent",
                 fontWeight: selected ? 600 : 400
               }}
             >
+              {team.kind === "role" ? (
+                <span
+                  className="inline-block shrink-0 rounded-full"
+                  style={{
+                    width: 4,
+                    height: 4,
+                    backgroundColor: "#1268B3"
+                  }}
+                  aria-hidden
+                />
+              ) : null}
               {team.title}
               {running ? " ···" : ""}
             </button>

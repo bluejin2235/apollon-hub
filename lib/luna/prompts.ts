@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type LunaPromptLevel = "L1" | "L2" | "L3";
-export type LunaPromptKind = "identity" | "perspective" | "task" | "system";
+export type LunaPromptKind =
+  | "identity"
+  | "perspective"
+  | "role"
+  | "task"
+  | "system";
 
 export type LunaPromptVersionContent = {
   title: string;
@@ -66,7 +71,7 @@ export type LunaPromptRow = {
   versions?: LunaPromptVersionRow[];
 };
 
-/** level / kind / sort_order → L1-01, L2-P01, L2-T01, L3-01 */
+/** level / kind / sort_order → L1-01, L2-P01, L2-R01, L2-T01, L3-01 */
 export function formatPromptNumber(p: {
   level: string;
   kind: string;
@@ -75,6 +80,7 @@ export function formatPromptNumber(p: {
   const n = String(p.sort_order ?? 0).padStart(2, "0");
   if (p.level === "L1") return `L1-${n}`;
   if (p.level === "L2" && p.kind === "perspective") return `L2-P${n}`;
+  if (p.level === "L2" && p.kind === "role") return `L2-R${n}`;
   if (p.level === "L2" && p.kind === "task") return `L2-T${n}`;
   if (p.level === "L3") return `L3-${n}`;
   return `${p.level}-${n}`;
