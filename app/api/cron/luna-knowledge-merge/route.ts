@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
+import {
+  evaluateMergeGate,
+  recordMergeRun
+} from "@/lib/luna/knowledge-merge-gate";
 import { runKnowledgeMerge } from "@/lib/luna/knowledge-merge";
 
 export const runtime = "nodejs";
@@ -22,9 +26,37 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const gate = await evaluateMergeGate(admin);
+    if (!gate.shouldRun || !gate.trigger) {
+      console.log("[luna-knowledge-merge] skipped", {
+        count: gate.count,
+        oldestDays: gate.oldestDays,
+        threshold: gate.settings.merge_threshold,
+        maxWait: gate.settings.max_wait_days
+      });
+      return NextResponse.json({
+        skipped: true,
+        count: gate.count,
+        oldest_days: gate.oldestDays
+      });
+    }
+
     const result = await runKnowledgeMerge(admin);
-    console.log("[luna-knowledge-merge] result", result);
-    return NextResponse.json(result);
+    await recordMergeRun(admin, {
+      count: gate.count,
+      trigger: gate.trigger
+    });
+    console.log("[luna-knowledge-merge] result", {
+      ...result,
+      trigger: gate.trigger,
+      count: gate.count
+    });
+    return NextResponse.json({
+      skipped: false,
+      trigger: gate.trigger,
+      count: gate.count,
+      ...result
+    });
   } catch (err) {
     console.error("[luna-knowledge-merge]", err);
     return NextResponse.json(

@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/luna-knowledge-merge",
-      "schedule": "0 18 * * 0"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/luna-trace-weekly",
