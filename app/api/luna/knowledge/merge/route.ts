@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { recordMergeRun } from "@/lib/luna/knowledge-merge-gate";
 import { runKnowledgeMerge } from "@/lib/luna/knowledge-merge";
 
 export const runtime = "nodejs";
@@ -29,8 +30,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const { count } = await admin
+      .from("luna_learnings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "candidate")
+      .neq("category", "identity");
+
     const result = await runKnowledgeMerge(admin);
-    return NextResponse.json(result);
+    await recordMergeRun(admin, {
+      count: count ?? 0,
+      trigger: "manual"
+    });
+    return NextResponse.json({ skipped: false, trigger: "manual", ...result });
   } catch (err) {
     console.error("[luna/knowledge/merge]", err);
     return NextResponse.json(

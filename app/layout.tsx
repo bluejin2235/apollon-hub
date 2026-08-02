@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Noto_Sans_KR } from "next/font/google";
+import { LunaLearnButton } from "@/components/luna/LunaLearnButton";
 import { APP_TITLE } from "@/lib/portal/app-title";
 import "./globals.css";
 
@@ -40,6 +41,7 @@ export default function RootLayout({
   `}
         </Script>
         <div className="mx-auto w-full max-w-7xl bg-white px-4 sm:px-6">{children}</div>
+        <LunaLearnButton />
       </body>
     </html>
   );

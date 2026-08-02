@@ -28,10 +28,29 @@ type KnowledgeItem = {
   created_at: string;
   author_id: string | null;
   author_name: string | null;
+  origin?: string | null;
   related?: RelatedLearning[];
 };
 
+type MergeSettingsState = {
+  merge_threshold: number;
+  max_wait_days: number;
+  last_merge_at: string | null;
+  last_merge_count: number | null;
+  last_merge_trigger: string | null;
+  candidate_count: number;
+  oldest_days: number;
+  next_midnight_action: string;
+};
+
 type SortKey = "recent" | "most_used" | "unused";
+
+function triggerLabel(trigger: string | null): string {
+  if (trigger === "threshold") return "임계치";
+  if (trigger === "timeout") return "대기일수";
+  if (trigger === "manual") return "수동";
+  return trigger || "-";
+}
 
 async function getAccessToken(): Promise<string | null> {
   const {
@@ -94,6 +113,12 @@ export function LunaKnowledgeTab() {
   const [keepOneFor, setKeepOneFor] = useState<string | null>(null);
   const [keepId, setKeepId] = useState<string>("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [mergeSettings, setMergeSettings] = useState<MergeSettingsState | null>(
+    null
+  );
+  const [thresholdDraft, setThresholdDraft] = useState(15);
+  const [maxWaitDraft, setMaxWaitDraft] = useState(7);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -108,13 +133,15 @@ export function LunaKnowledgeTab() {
       return;
     }
     const headers = { Authorization: `Bearer ${token}` };
-    const [activeRes, conflictRes, candidateRes, archivedRes] = await Promise.all([
+    const [activeRes, conflictRes, candidateRes, archivedRes, settingsRes] =
+      await Promise.all([
       fetch(`/api/luna/knowledge?status=active&sort=${sort}&page=${page}`, {
         headers
       }),
       fetch("/api/luna/knowledge?status=conflict&page=1", { headers }),
       fetch("/api/luna/knowledge?status=candidate&page=1", { headers }),
-      fetch("/api/luna/knowledge?status=archived&page=1", { headers })
+      fetch("/api/luna/knowledge?status=archived&page=1", { headers }),
+      fetch("/api/luna/knowledge/settings", { headers })
     ]);
 
     if (activeRes.ok) {
@@ -143,12 +170,48 @@ export function LunaKnowledgeTab() {
       const json = (await archivedRes.json()) as { items?: KnowledgeItem[] };
       setArchived(json.items ?? []);
     }
+    if (settingsRes.ok) {
+      const json = (await settingsRes.json()) as MergeSettingsState;
+      setMergeSettings(json);
+      setThresholdDraft(json.merge_threshold);
+      setMaxWaitDraft(json.max_wait_days);
+    }
     setLoading(false);
   }, [page, sort]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function saveMergeSettings() {
+    const token = await getAccessToken();
+    if (!token || savingSettings) return;
+    setSavingSettings(true);
+    try {
+      const res = await fetch("/api/luna/knowledge/settings", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          merge_threshold: thresholdDraft,
+          max_wait_days: maxWaitDraft
+        })
+      });
+      if (!res.ok) {
+        setToast(`설정 저장 실패: ${await res.text()}`);
+        return;
+      }
+      setToast("통합 설정을 저장했습니다");
+      await load();
+    } catch (err) {
+      console.error("[luna-knowledge] settings", err);
+      setToast("설정 저장 실패");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
 
   async function runMerge() {
     const token = await getAccessToken();
@@ -274,6 +337,63 @@ export function LunaKnowledgeTab() {
           {merging ? "통합 중…" : "지금 통합 실행"}
         </button>
       </div>
+
+      <section className="space-y-2 rounded-lg border border-slate-200 bg-white px-3 py-3">
+        <h3 className="text-[13px] font-semibold text-slate-800">통합 설정</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block text-[11px] text-slate-600">
+            통합 기준 개수
+            <input
+              type="number"
+              min={3}
+              max={100}
+              value={thresholdDraft}
+              onChange={(e) => setThresholdDraft(Number(e.target.value))}
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-slate-900"
+            />
+          </label>
+          <label className="block text-[11px] text-slate-600">
+            최대 대기 일수
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={maxWaitDraft}
+              onChange={(e) => setMaxWaitDraft(Number(e.target.value))}
+              className="mt-1 block w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={savingSettings}
+            onClick={() => void saveMergeSettings()}
+            className="rounded-lg border border-[#534AB7] px-3 py-1.5 text-[12px] font-medium text-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
+          >
+            {savingSettings ? "저장 중…" : "저장"}
+          </button>
+        </div>
+        {mergeSettings ? (
+          <div className="space-y-0.5 text-[11px] text-gray-500">
+            <p>
+              후보 {mergeSettings.candidate_count}개 · 가장 오래된 것{" "}
+              {mergeSettings.oldest_days}일 경과 · 다음 자정에{" "}
+              {mergeSettings.next_midnight_action}
+            </p>
+            <p>
+              마지막 실행:{" "}
+              {mergeSettings.last_merge_at
+                ? `${formatDate(mergeSettings.last_merge_at)} · ${triggerLabel(
+                    mergeSettings.last_merge_trigger
+                  )}${
+                    mergeSettings.last_merge_count != null
+                      ? ` · 후보 ${mergeSettings.last_merge_count}개`
+                      : ""
+                  }`
+                : "아직 없음"}
+            </p>
+          </div>
+        ) : null}
+      </section>
 
       {conflicts.length > 0 ? (
         <section className="space-y-2">
@@ -404,6 +524,7 @@ export function LunaKnowledgeTab() {
             <thead className="bg-slate-50 text-[11px] text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-medium">내용</th>
+                <th className="px-3 py-2 font-medium">출처</th>
                 <th className="px-3 py-2 font-medium">분류</th>
                 <th className="px-3 py-2 font-medium">신뢰도</th>
                 <th className="px-3 py-2 font-medium">쓰인 횟수</th>
@@ -414,7 +535,7 @@ export function LunaKnowledgeTab() {
             <tbody>
               {activeItems.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-4 text-slate-400">
+                  <td colSpan={7} className="px-3 py-4 text-slate-400">
                     활성 지식이 없습니다.
                   </td>
                 </tr>
@@ -433,6 +554,19 @@ export function LunaKnowledgeTab() {
                         {stale ? (
                           <span className="ml-1.5 inline-block rounded bg-slate-200 px-1.5 py-px text-[10px] text-slate-600">
                             폐기 후보
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2">
+                        {item.origin === "direct" ? (
+                          <span
+                            className="inline-block rounded px-1.5 py-px text-[10px] font-medium"
+                            style={{
+                              backgroundColor: "#EEEDFE",
+                              color: "#26215C"
+                            }}
+                          >
+                            직접
                           </span>
                         ) : null}
                       </td>

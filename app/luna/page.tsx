@@ -12,6 +12,7 @@ import {
   normalizeModelSteps,
   normalizeNotionSources,
   normalizeProgressSteps,
+  normalizeSourceReasons,
   removeThinkingMessage,
   THINKING_MESSAGE_ID,
   type LunaAnalysisTeam,
@@ -161,6 +162,7 @@ export default function LunaPage() {
           feedback,
           notionSources: normalizeNotionSources(meta?.notion_sources) ?? notionSources,
           cards: normalizeLunaCards(meta?.cards),
+          sourceReasons: normalizeSourceReasons(meta?.source_reasons),
           attachments,
           modelLabel,
           durationMs,
@@ -199,6 +201,56 @@ export default function LunaPage() {
   const onSelectProject = useCallback((id: string | null) => {
     setSelectedProjectId(id);
   }, []);
+
+  const onRenameConversation = useCallback(
+    async (id: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      const token = await getAccessToken();
+      if (!token) return;
+      const res = await fetch("/api/luna/conversations", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id, title: trimmed })
+      });
+      if (!res.ok) {
+        console.error("[luna] rename", await res.text());
+        return;
+      }
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c))
+      );
+    },
+    []
+  );
+
+  const onDeleteConversation = useCallback(
+    async (id: string) => {
+      const token = await getAccessToken();
+      if (!token) return;
+      const res = await fetch("/api/luna/conversations", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id })
+      });
+      if (!res.ok) {
+        console.error("[luna] delete", await res.text());
+        return;
+      }
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (selectedConversationId === id) {
+        setSelectedConversationId(null);
+        setMessages([]);
+      }
+    },
+    [selectedConversationId]
+  );
 
   const onNewChat = useCallback(async () => {
     const token = await getAccessToken();
@@ -318,6 +370,7 @@ export default function LunaPage() {
         let streamEndedByClarify = false;
         let streamCards: LunaChatMessage["cards"] = null;
         let streamNotionSources: LunaChatMessage["notionSources"] = null;
+        let streamSourceReasons: LunaChatMessage["sourceReasons"] = null;
         let streamSteps: LunaProgressStep[] = [];
         let streamMode: LunaChatMessage["mode"] = null;
         let streamTeams: LunaAnalysisTeam[] = [];
@@ -352,6 +405,7 @@ export default function LunaPage() {
               content,
               cards: streamCards,
               notionSources: streamNotionSources,
+              sourceReasons: streamSourceReasons,
               steps: streamSteps.length > 0 ? streamSteps : null,
               searchRounds: streamSearchRounds,
               mode: streamMode,
@@ -441,6 +495,7 @@ export default function LunaPage() {
               if (consumed.kind === "meta") {
                 streamCards = consumed.cards;
                 streamNotionSources = consumed.notionSources;
+                streamSourceReasons = consumed.sourceReasons;
                 if (consumed.mode === "analysis") streamMode = "analysis";
                 if (consumed.teams && consumed.teams.length > 0) {
                   streamTeams = consumed.teams;
@@ -494,6 +549,18 @@ export default function LunaPage() {
           ]);
         }
 
+        try {
+          await fetch("/api/luna/conversations/title", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ conversation_id: conversationId })
+          });
+        } catch (titleErr) {
+          console.error("[luna] title", titleErr);
+        }
         await loadConversations();
         await loadMessages(conversationId);
       } catch (err) {
@@ -537,6 +604,8 @@ export default function LunaPage() {
           onNewChat={() => void onNewChat()}
           selectedProjectId={selectedProjectId}
           onSelectProject={onSelectProject}
+          onRename={onRenameConversation}
+          onDelete={onDeleteConversation}
         />
       </div>
 
@@ -553,6 +622,8 @@ export default function LunaPage() {
           onNewChat={() => void onNewChat()}
           selectedProjectId={selectedProjectId}
           onSelectProject={onSelectProject}
+          onRename={onRenameConversation}
+          onDelete={onDeleteConversation}
         />
       </div>
 
@@ -579,6 +650,12 @@ export default function LunaPage() {
             searchStatus={searchStatus}
             showMobileHeader={Boolean(selectedConversationId)}
             onEnsureConversation={ensureConversation}
+            onRenameTitle={
+              selectedConversation
+                ? (title) =>
+                    void onRenameConversation(selectedConversation.id, title)
+                : undefined
+            }
           />
         )}
       </div>

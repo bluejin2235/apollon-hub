@@ -19,6 +19,7 @@ type LearningRow = {
   author_id: string | null;
   merged_from: unknown;
   importance: number | null;
+  origin: string | null;
 };
 
 async function requireSuperAdmin(request: NextRequest) {
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
   let query = admin
     .from("luna_learnings")
     .select(
-      "id, content, category, status, confidence, use_count, last_used_at, created_at, author_id, merged_from, importance",
+      "id, content, category, status, confidence, use_count, last_used_at, created_at, author_id, merged_from, importance, origin",
       { count: "exact" }
     )
     .eq("status", status)

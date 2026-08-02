@@ -52,6 +52,13 @@ function pathLastSegment(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+function isNasFileRow(row: NasDirectoryRow): boolean {
+  const t = (row.type ?? "").toLowerCase();
+  if (t === "file") return true;
+  if (t === "folder" || t === "directory" || t === "dir") return false;
+  return /\.[a-z0-9]{1,8}$/i.test(pathLastSegment(row.path));
+}
+
 function toNasCard(row: NasDirectoryRow): LunaCard {
   const title = pathLastSegment(row.path);
   const summary = row.file_summary?.trim();
@@ -60,7 +67,10 @@ function toNasCard(row: NasDirectoryRow): LunaCard {
     title,
     url: null,
     thumbnail: null,
-    description: summary ? `${row.path} · ${summary}` : row.path
+    description: summary ? `${row.path} · ${summary}` : row.path,
+    drive: row.drive?.trim() || undefined,
+    raw_path: row.path,
+    is_file: isNasFileRow(row)
   };
 }
 

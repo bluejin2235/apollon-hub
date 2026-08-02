@@ -691,7 +691,8 @@ async function exploreWorkserverForTopic(
         name: row.path.split(/[\\/]/).filter(Boolean).pop() || row.path,
         type: row.type,
         importance: row.importance,
-        file_summary: row.file_summary
+        file_summary: row.file_summary,
+        modified_at: row.modified_at
       };
       collected.set(`${item.drive ?? ""}::${item.path}`, item);
     }

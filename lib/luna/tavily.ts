@@ -4,6 +4,12 @@ export type LunaCard = {
   url: string | null;
   thumbnail: string | null;
   description: string;
+  /** Work서버 카드 전용: 드라이브 문자 (예: "T") */
+  drive?: string;
+  /** Work서버 카드 전용: DB 원본 경로 (드라이브 접두사 없음) */
+  raw_path?: string;
+  /** Work서버 카드 전용: 파일이면 true, 폴더면 false */
+  is_file?: boolean;
 };
 
 type TavilyResult = {
