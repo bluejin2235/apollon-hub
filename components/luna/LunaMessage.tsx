@@ -5,6 +5,8 @@ import {
   useEffect,
   useMemo,
   useState,
+  type KeyboardEvent,
+  type MouseEvent,
   type ReactNode
 } from "react";
 import { FileText, Folder, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
@@ -38,6 +40,14 @@ export type LunaAnalysisTeam = {
   kind?: "perspective" | "role";
 };
 
+export type LunaSourceReasons = {
+  notion?: string;
+  nas?: string;
+  web?: string;
+};
+
+export type LunaNasDriveMode = "office" | "raidrive";
+
 type LunaMessageProps = {
   id: string;
   role: "user" | "assistant";
@@ -46,6 +56,9 @@ type LunaMessageProps = {
   feedback?: "good" | "bad" | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
+  sourceReasons?: LunaSourceReasons | null;
+  nasDriveMode?: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   attachments?: LunaAttachmentRef[] | null;
   isThinking?: boolean;
   searchStatus?: string[];
@@ -133,7 +146,186 @@ function ThinkingDotsText() {
   return <span className="break-all">{"생각 중" + ".".repeat(dots)}</span>;
 }
 
-function CardRow({ card }: { card: LunaCard }) {
+function normalizeNasDriveLetter(drive?: string): string {
+  return (drive ?? "").trim().replace(/:$/, "").toUpperCase();
+}
+
+function nasDrivePrefix(drive: string | undefined, mode: LunaNasDriveMode): string {
+  const letter = normalizeNasDriveLetter(drive);
+  if (mode === "raidrive") {
+    if (letter === "P") return "Z:\\Partners\\";
+    return "Z:\\Work\\";
+  }
+  if (letter === "P") return "P:\\";
+  if (letter === "T") return "T:\\";
+  return letter ? `${letter}:\\` : "";
+}
+
+function normalizeRawNasPath(rawPath: string): string {
+  return rawPath.replace(/\//g, "\\").replace(/^\\+/, "").replace(/\\+$/, "");
+}
+
+/** 표시·복사 공통: 접두사 + 폴더 경로 + 끝 백슬래시 (파일명이면 제거) */
+function formatNasFolderPath(
+  drive: string | undefined,
+  rawPath: string,
+  mode: LunaNasDriveMode,
+  isFile: boolean
+): string {
+  let path = normalizeRawNasPath(rawPath);
+  if (!path) {
+    const prefix = nasDrivePrefix(drive, mode);
+    return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
+  }
+  if (isFile) {
+    const idx = path.lastIndexOf("\\");
+    path = idx >= 0 ? path.slice(0, idx) : "";
+  }
+  const prefix = nasDrivePrefix(drive, mode);
+  if (!path) return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
+  return `${prefix}${path}\\`;
+}
+
+function nasDescriptionRest(card: LunaCard): string {
+  let desc = card.description ?? "";
+  if (desc.startsWith("★ ")) desc = desc.slice(2);
+  const raw = card.raw_path?.trim() || "";
+  if (raw && desc.startsWith(raw)) {
+    return desc.slice(raw.length).replace(/^ · /, "");
+  }
+  if (desc.includes(" · ")) {
+    return desc.split(" · ").slice(1).join(" · ");
+  }
+  return "";
+}
+
+function NasPathDescription({
+  card,
+  nasDriveMode
+}: {
+  card: LunaCard;
+  nasDriveMode: LunaNasDriveMode;
+}) {
+  const rawPath =
+    card.raw_path?.trim() ||
+    (() => {
+      let desc = card.description ?? "";
+      if (desc.startsWith("★ ")) desc = desc.slice(2);
+      return desc.split(" · ")[0] || "";
+    })();
+  const rest = nasDescriptionRest(card);
+  const isFile =
+    card.is_file === true ||
+    (card.is_file !== false &&
+      /\.[a-z0-9]{1,8}$/i.test(rawPath.split(/[\\/]/).pop() || ""));
+  const folderPath = rawPath
+    ? formatNasFolderPath(card.drive, rawPath, nasDriveMode, isFile)
+    : "";
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+
+  if (!folderPath && !rest) return null;
+
+  const copyPath = () => {
+    if (!folderPath) return;
+    void navigator.clipboard.writeText(folderPath).then(
+      () => setCopied(true),
+      () => {
+        /* ignore */
+      }
+    );
+  };
+
+  const onCopyClick = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    copyPath();
+  };
+
+  const onCopyKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    copyPath();
+  };
+
+  return (
+    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
+      {copied ? (
+        <span style={{ color: "#0F6E56" }}>경로가 복사되었어요</span>
+      ) : folderPath ? (
+        <span
+          role="button"
+          tabIndex={0}
+          title="클릭하면 경로 복사"
+          onClick={onCopyClick}
+          onKeyDown={onCopyKeyDown}
+          className="cursor-pointer border-b border-transparent hover:border-dashed hover:border-gray-700 hover:text-gray-700"
+        >
+          {folderPath}
+        </span>
+      ) : null}
+      {!copied && rest ? (
+        <span>
+          {folderPath ? " · " : ""}
+          {rest}
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+function NasDriveModeToggles({
+  mode,
+  onChange
+}: {
+  mode: LunaNasDriveMode;
+  onChange?: (mode: LunaNasDriveMode) => void;
+}) {
+  const btn = (value: LunaNasDriveMode, label: string) => {
+    const selected = mode === value;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onChange?.(value);
+        }}
+        className="shrink-0 text-[10px]"
+        style={{
+          padding: "2px 7px",
+          borderRadius: 10,
+          backgroundColor: selected ? "#E1F5EE" : "transparent",
+          border: selected ? "1px solid #0F6E56" : "1px solid #D3D1C7",
+          color: selected ? "#04342C" : "#6B7280"
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {btn("office", "사무실")}
+      {btn("raidrive", "RaiDrive")}
+    </div>
+  );
+}
+
+function CardRow({
+  card,
+  nasDriveMode
+}: {
+  card: LunaCard;
+  nasDriveMode: LunaNasDriveMode;
+}) {
   const isLink = Boolean(card.url);
   const isTextIcon = card.type === "notion" || card.type === "nas";
   const Icon = card.type === "nas" ? Folder : FileText;
@@ -162,7 +354,9 @@ function CardRow({ card }: { card: LunaCard }) {
             </span>
           ) : null}
         </p>
-        {descriptionText ? (
+        {card.type === "nas" ? (
+          <NasPathDescription card={card} nasDriveMode={nasDriveMode} />
+        ) : descriptionText ? (
           <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
             {descriptionText}
           </p>
@@ -190,7 +384,17 @@ function CardRow({ card }: { card: LunaCard }) {
   return <div className={className}>{inner}</div>;
 }
 
-function SourceSections({ cards }: { cards: LunaCard[] }) {
+function SourceSections({
+  cards,
+  sourceReasons = null,
+  nasDriveMode = "office",
+  onNasDriveModeChange
+}: {
+  cards: LunaCard[];
+  sourceReasons?: LunaSourceReasons | null;
+  nasDriveMode?: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+}) {
   const groups = useMemo(() => {
     const map = new Map<LunaCard["type"], LunaCard[]>();
     for (const card of cards) {
@@ -210,9 +414,17 @@ function SourceSections({ cards }: { cards: LunaCard[] }) {
     <div className="mt-3 space-y-4">
       {groups.map((group) => {
         const meta = CARD_SECTION_META[group.type];
+        const reasonKey =
+          group.type === "notion" || group.type === "nas" || group.type === "web"
+            ? group.type
+            : null;
+        const reason =
+          reasonKey && sourceReasons
+            ? sourceReasons[reasonKey]?.trim() || ""
+            : "";
         return (
           <section key={group.type} className="mb-4 last:mb-0">
-            <div className="mb-1.5 flex items-center gap-2">
+            <div className={`flex items-center gap-2 ${reason ? "" : "mb-1.5"}`}>
               <span
                 className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
                 style={{ backgroundColor: meta.color }}
@@ -222,10 +434,33 @@ function SourceSections({ cards }: { cards: LunaCard[] }) {
               <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
                 {group.items.length}
               </span>
+              {group.type === "nas" ? (
+                <div className="ml-auto flex min-w-0 items-center gap-1.5">
+                  <span className="hidden truncate text-[10px] text-gray-400 min-[520px]:inline">
+                    경로 클릭하면 복사
+                  </span>
+                  <NasDriveModeToggles
+                    mode={nasDriveMode}
+                    onChange={onNasDriveModeChange}
+                  />
+                </div>
+              ) : null}
             </div>
+            {reason ? (
+              <p
+                className="text-[11px] text-gray-500"
+                style={{ margin: "3px 0 5px" }}
+              >
+                {reason}
+              </p>
+            ) : null}
             <div className="flex flex-col">
               {group.items.map((card, index) => (
-                <CardRow key={`${card.type}-${card.title}-${card.url ?? index}`} card={card} />
+                <CardRow
+                  key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
+                  card={card}
+                  nasDriveMode={nasDriveMode}
+                />
               ))}
             </div>
           </section>
@@ -317,11 +552,17 @@ function AnalysisReport({
   content,
   teams,
   cards,
+  sourceReasons,
+  nasDriveMode,
+  onNasDriveModeChange,
   isThinking
 }: {
   content: string;
   teams: LunaAnalysisTeam[];
   cards: LunaCard[];
+  sourceReasons?: LunaSourceReasons | null;
+  nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   isThinking: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<string>("summary");
@@ -435,7 +676,12 @@ function AnalysisReport({
           </button>
           {sourcesOpen ? (
             <div className="mt-2">
-              <SourceSections cards={cards} />
+              <SourceSections
+                cards={cards}
+                sourceReasons={sourceReasons}
+                nasDriveMode={nasDriveMode}
+                onNasDriveModeChange={onNasDriveModeChange}
+              />
             </div>
           ) : null}
         </div>
@@ -584,6 +830,9 @@ export function LunaMessage({
   feedback: initialFeedback = null,
   notionSources = null,
   cards = null,
+  sourceReasons = null,
+  nasDriveMode = "office",
+  onNasDriveModeChange,
   attachments = null,
   isThinking = false,
   searchStatus = [],
@@ -700,6 +949,9 @@ export function LunaMessage({
         content={content}
         teams={teamList}
         cards={cardList}
+        sourceReasons={sourceReasons}
+        nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
         isThinking={isThinking}
       />
     );
@@ -712,7 +964,12 @@ export function LunaMessage({
   } else if (hasCards) {
     body = (
       <>
-        <SourceSections cards={cardList} />
+        <SourceSections
+          cards={cardList}
+          sourceReasons={sourceReasons}
+          nasDriveMode={nasDriveMode}
+          onNasDriveModeChange={onNasDriveModeChange}
+        />
         {content ? <OpinionBlock content={content} /> : null}
       </>
     );
