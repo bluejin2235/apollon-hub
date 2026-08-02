@@ -12,7 +12,9 @@ import {
   type LunaAnalysisTeam,
   type LunaClarifyData,
   type LunaModelStep,
-  type LunaProgressStep
+  type LunaNasDriveMode,
+  type LunaProgressStep,
+  type LunaSourceReasons
 } from "@/components/luna/LunaMessage";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -55,6 +57,7 @@ export type LunaChatMessage = {
   feedback?: "good" | "bad" | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
+  sourceReasons?: LunaSourceReasons | null;
   attachments?: LunaAttachmentRef[] | null;
   isThinking?: boolean;
   metadata?: { isThinking?: boolean } | null;
@@ -67,6 +70,21 @@ export type LunaChatMessage = {
   mode?: "analysis" | null;
   teams?: LunaAnalysisTeam[] | null;
 };
+
+export type { LunaSourceReasons };
+
+export function normalizeSourceReasons(raw: unknown): LunaSourceReasons | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const next: LunaSourceReasons = {};
+  for (const key of ["notion", "nas", "web"] as const) {
+    if (typeof row[key] === "string") {
+      const v = row[key].trim().replace(/\s+/g, " ");
+      if (v) next[key] = v.length > 40 ? v.slice(0, 40) : v;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : null;
+}
 
 export function createThinkingMessage(): LunaChatMessage {
   return {
@@ -109,7 +127,10 @@ export function normalizeLunaCards(raw: unknown): LunaCard[] | null {
         title: row.title as string,
         url: typeof row.url === "string" ? row.url : null,
         thumbnail: typeof row.thumbnail === "string" ? row.thumbnail : null,
-        description: typeof row.description === "string" ? row.description : ""
+        description: typeof row.description === "string" ? row.description : "",
+        drive: typeof row.drive === "string" ? row.drive : undefined,
+        raw_path: typeof row.raw_path === "string" ? row.raw_path : undefined,
+        is_file: typeof row.is_file === "boolean" ? row.is_file : undefined
       };
     });
   return cards.length > 0 ? cards : null;
@@ -219,6 +240,7 @@ export type LunaStreamEventResult =
       buffer: string;
       cards: LunaCard[] | null;
       notionSources: NotionSource[] | null;
+      sourceReasons: LunaSourceReasons | null;
       mode: "analysis" | null;
       teams: LunaAnalysisTeam[] | null;
       searchRounds: number | null;
@@ -312,6 +334,7 @@ export function consumeLunaStreamEvents(
         buffer: rest,
         cards: normalizeLunaCards(parsed.cards),
         notionSources: normalizeNotionSources(parsed.notion_sources),
+        sourceReasons: normalizeSourceReasons(parsed.source_reasons),
         mode: parsed.mode === "analysis" ? "analysis" : null,
         teams: normalizeAnalysisTeams(parsed.teams),
         searchRounds:
@@ -358,6 +381,7 @@ type LunaChatProps = {
   searchStatus?: string[];
   showMobileHeader?: boolean;
   onEnsureConversation: () => Promise<string | null>;
+  onRenameTitle?: (title: string) => void | Promise<void>;
 };
 
 const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
@@ -365,6 +389,8 @@ const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
   web: true,
   nas: true
 };
+
+const DEFAULT_NAS_DRIVE_MODE: LunaNasDriveMode = "office";
 
 export function LunaChat({
   conversation,
@@ -375,14 +401,58 @@ export function LunaChat({
   sending,
   searchStatus = [],
   showMobileHeader,
-  onEnsureConversation
+  onEnsureConversation,
+  onRenameTitle
 }: LunaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const reflectStateRef = useRef<{ id: string; messageCount: number } | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const skipTitleCommitRef = useRef(false);
   const [connectors, setConnectors] = useState<LunaConnectorsState>(
     DEFAULT_INPUT_CONNECTORS
   );
+  const [nasDriveMode, setNasDriveMode] =
+    useState<LunaNasDriveMode>(DEFAULT_NAS_DRIVE_MODE);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const title = conversation?.title ?? "새 대화";
+
+  useEffect(() => {
+    setEditingTitle(false);
+    setTitleDraft(title);
+  }, [conversation?.id, title]);
+
+  useEffect(() => {
+    if (editingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [editingTitle]);
+
+  function beginEditTitle() {
+    if (!conversation || !onRenameTitle) return;
+    skipTitleCommitRef.current = false;
+    setTitleDraft(title);
+    setEditingTitle(true);
+  }
+
+  async function commitTitleEdit() {
+    if (skipTitleCommitRef.current) {
+      skipTitleCommitRef.current = false;
+      return;
+    }
+    if (!editingTitle) return;
+    const next = titleDraft.trim();
+    setEditingTitle(false);
+    if (!next || next === title) return;
+    await onRenameTitle?.(next);
+  }
+
+  function cancelTitleEdit() {
+    skipTitleCommitRef.current = true;
+    setEditingTitle(false);
+    setTitleDraft(title);
+  }
 
   useEffect(() => {
     const el = listRef.current;
@@ -437,14 +507,65 @@ export function LunaChat({
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-semibold text-white">
             L
           </div>
-          <div className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-            {title}
+          <div className="min-w-0 flex-1">
+            {editingTitle ? (
+              <input
+                ref={titleInputRef}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={() => void commitTitleEdit()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void commitTitleEdit();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelTitleEdit();
+                  }
+                }}
+                className="w-full rounded border border-[#534AB7] px-1.5 py-0.5 text-sm font-semibold text-slate-900 outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                onDoubleClick={beginEditTitle}
+                className="block w-full truncate text-left text-sm font-semibold text-slate-900"
+                title="더블클릭하여 이름 변경"
+              >
+                {title}
+              </button>
+            )}
           </div>
         </div>
       ) : null}
 
       <div className="hidden items-center border-b border-slate-200 px-5 py-3 md:flex">
-        <h1 className="truncate text-base font-semibold text-slate-900">{title}</h1>
+        {editingTitle ? (
+          <input
+            ref={titleInputRef}
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={() => void commitTitleEdit()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commitTitleEdit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancelTitleEdit();
+              }
+            }}
+            className="w-full max-w-md rounded border border-[#534AB7] px-2 py-1 text-base font-semibold text-slate-900 outline-none"
+          />
+        ) : (
+          <h1
+            className="truncate text-base font-semibold text-slate-900"
+            onDoubleClick={beginEditTitle}
+            title="더블클릭하여 이름 변경"
+          >
+            {title}
+          </h1>
+        )}
       </div>
 
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-4">
@@ -491,6 +612,9 @@ export function LunaChat({
                   feedback={m.feedback}
                   notionSources={m.notionSources}
                   cards={m.cards}
+                  sourceReasons={m.sourceReasons}
+                  nasDriveMode={nasDriveMode}
+                  onNasDriveModeChange={setNasDriveMode}
                   attachments={m.attachments}
                   isThinking={isThinking}
                   searchStatus={isThinking ? searchStatus : []}

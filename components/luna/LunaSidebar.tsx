@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  KeyboardEvent,
+  MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -41,6 +48,8 @@ type LunaSidebarProps = {
   onNewChat: () => void;
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
+  onRename?: (id: string, title: string) => void | Promise<void>;
+  onDelete?: (id: string) => void | Promise<void>;
   className?: string;
 };
 
@@ -61,6 +70,8 @@ export function LunaSidebar({
   onNewChat,
   selectedProjectId,
   onSelectProject,
+  onRename,
+  onDelete,
   className = ""
 }: LunaSidebarProps) {
   const router = useRouter();
@@ -74,6 +85,30 @@ export function LunaSidebar({
   const [creating, setCreating] = useState(false);
   const [skillsCount, setSkillsCount] = useState(0);
   const [learningsCount, setLearningsCount] = useState(0);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const skipRenameCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!menuId) return;
+    function onDocClick(e: Event) {
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(e.target as Node)) return;
+      setMenuId(null);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [menuId]);
+
+  useEffect(() => {
+    if (editingId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingId]);
 
   useEffect(() => {
     void (async () => {
@@ -142,6 +177,56 @@ export function LunaSidebar({
     } finally {
       setCreating(false);
     }
+  }
+
+  function startRename(c: LunaConversation) {
+    setMenuId(null);
+    skipRenameCommitRef.current = false;
+    setEditingId(c.id);
+    setEditTitle(c.title || "새 대화");
+  }
+
+  async function commitRename() {
+    if (skipRenameCommitRef.current) {
+      skipRenameCommitRef.current = false;
+      return;
+    }
+    if (!editingId) return;
+    const id = editingId;
+    const next = editTitle.trim();
+    setEditingId(null);
+    if (!next) return;
+    const prev = conversations.find((c) => c.id === id)?.title;
+    if (prev === next) return;
+    await onRename?.(id, next);
+  }
+
+  function cancelRename() {
+    skipRenameCommitRef.current = true;
+    setEditingId(null);
+    setEditTitle("");
+  }
+
+  function onEditKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void commitRename();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelRename();
+    }
+  }
+
+  function confirmDelete(c: LunaConversation) {
+    setMenuId(null);
+    if (!window.confirm("이 대화를 삭제할까요?")) return;
+    void onDelete?.(c.id);
+  }
+
+  function openMenu(e: MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuId((prev) => (prev === id ? null : id));
   }
 
   return (
@@ -279,13 +364,31 @@ export function LunaSidebar({
           <ul className="flex flex-col gap-0.5">
             {recentItems.map((c) => {
               const selected = c.id === selectedId;
+              const editing = editingId === c.id;
+              const menuOpen = menuId === c.id;
+
+              if (editing) {
+                return (
+                  <li key={c.id} className="px-1">
+                    <input
+                      ref={editInputRef}
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={onEditKeyDown}
+                      onBlur={() => void commitRename()}
+                      className="w-full rounded-lg border border-[#534AB7] bg-white px-2 py-1.5 text-[12.5px] text-slate-800 outline-none"
+                    />
+                  </li>
+                );
+              }
+
               return (
-                <li key={c.id}>
+                <li key={c.id} className="group relative">
                   <button
                     type="button"
                     onClick={() => onSelect(c.id)}
                     title={c.title}
-                    className={`flex w-full items-center gap-2 rounded-lg px-[9px] py-1.5 text-left text-[12.5px] transition ${
+                    className={`flex w-full items-center gap-2 rounded-lg px-[9px] py-1.5 pr-8 text-left text-[12.5px] transition ${
                       selected
                         ? "bg-[#EEEDFE] font-medium text-[#3C3489]"
                         : "text-slate-600 hover:bg-slate-50"
@@ -297,6 +400,39 @@ export function LunaSidebar({
                     />
                     <span className="truncate">{c.title || "새 대화"}</span>
                   </button>
+                  <button
+                    type="button"
+                    aria-label="대화 메뉴"
+                    onClick={(e) => openMenu(e, c.id)}
+                    className={`absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-700 ${
+                      menuOpen
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                    }`}
+                  >
+                    <MoreHorizontal size={14} strokeWidth={1.75} />
+                  </button>
+                  {menuOpen ? (
+                    <div
+                      ref={menuRef}
+                      className="absolute right-1 top-full z-20 mt-0.5 min-w-[110px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-md"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => startRename(c)}
+                        className="block w-full px-3 py-1.5 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                      >
+                        이름 변경
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => confirmDelete(c)}
+                        className="block w-full px-3 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
