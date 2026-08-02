@@ -985,12 +985,22 @@ export function LunaMessage({
 
   return (
     <div className="group flex items-start gap-2.5 px-4 py-1.5">
-      <div
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-semibold text-white"
-        aria-hidden
-      >
-        L
-      </div>
+      <img
+        src="/luna/luna-face.png"
+        alt="LUNA"
+        width={22}
+        height={22}
+        draggable={false}
+        className="mt-0.5"
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+          display: "block"
+        }}
+      />
       <div className="max-w-[85%] min-w-0 flex-1">
         {hasSteps ? (
           <ProgressStepsPanel

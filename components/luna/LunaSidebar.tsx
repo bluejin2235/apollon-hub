@@ -234,9 +234,20 @@ export function LunaSidebar({
       className={`flex h-full w-full flex-col gap-0.5 rounded-xl border-[0.5px] border-slate-200 bg-white px-2 py-2.5 md:w-[250px] md:shrink-0 ${className}`}
     >
       <div className="flex items-center gap-2.5 px-2 pb-2.5 pt-1">
-        <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-[11px] font-semibold text-white">
-          L
-        </div>
+        <img
+          src="/luna/luna-face.png"
+          alt="LUNA"
+          width={28}
+          height={28}
+          draggable={false}
+          className="block shrink-0"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            objectFit: "cover"
+          }}
+        />
         <span className="text-sm font-medium text-slate-900">LUNA</span>
       </div>
 

@@ -504,9 +504,14 @@ export function LunaChat({
           >
             ←
           </button>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-xs font-semibold text-white">
-            L
-          </div>
+          <img
+            src="/luna/luna-face.png"
+            alt="LUNA"
+            width={32}
+            height={32}
+            draggable={false}
+            className="block h-8 w-8 shrink-0 rounded-full object-cover"
+          />
           <div className="min-w-0 flex-1">
             {editingTitle ? (
               <input
@@ -571,10 +576,22 @@ export function LunaChat({
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-4">
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#534AB7] text-xl font-semibold text-white">
-              L
-            </div>
-            <p className="mb-6 text-base font-medium text-slate-800">
+            <img
+              src="/luna/luna-play.webp"
+              alt="루나"
+              width={140}
+              height={140}
+              draggable={false}
+              style={{
+                display: "block",
+                margin: "0 auto",
+                pointerEvents: "none"
+              }}
+            />
+            <p
+              className="mb-6 text-base font-medium text-slate-800"
+              style={{ marginTop: 12 }}
+            >
               안녕하세요, 저는 루나입니다
             </p>
             <div className="flex w-full max-w-md flex-col gap-2">
