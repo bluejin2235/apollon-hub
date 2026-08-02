@@ -13,12 +13,15 @@ import {
 import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
+import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import {
   bumpReportUse,
   findSimilarReport
 } from "@/lib/luna/selfstudy";
 import {
   listFolder,
+  refineWorkserverHits,
+  runWorkserverResultPipeline,
   searchAll,
   searchIn,
   searchNasLegacy,
@@ -42,6 +45,9 @@ const SELF_EVAL_FALLBACK =
 
 const REQUERY_FALLBACK =
   "부족한 점을 보완할 새 검색어만 짧게 제안하세요. 검색어 문자열만 응답하세요.";
+
+const SYNTHESIS_REASON_FALLBACK =
+  "질문과 소스별 검색 결과를 보고, 각 소스를 왜 보여주는지 한 줄씩 쓰세요. JSON만: {\"notion\":\"...\",\"nas\":\"...\",\"web\":\"...\"}. 결과 없는 소스는 키를 생략. 각 값은 40자 이내. Work서버는 중요 표시가 아니라 왜 골랐는지에 집중.";
 
 const SEARCH_REQUEST_KEYWORDS = ["찾아줘", "레퍼런스", "사례", "검색", "알려줘"] as const;
 const SEARCH_BUDGET_MS = 45_000;
@@ -98,6 +104,7 @@ type NasDirectoryRow = {
   modified_at: string | null;
   file_summary: string | null;
   importance?: number | null;
+  variant_hidden?: number;
 };
 
 type ChatRequestBody = {
@@ -142,6 +149,11 @@ type ModelStep = {
   tier: string;
   tokens?: { input: number; output: number };
 };
+type SourceReasons = {
+  notion?: string;
+  nas?: string;
+  web?: string;
+};
 
 const CACHE_MIN_CHARS = 1200;
 
@@ -164,70 +176,42 @@ function pathLastSegment(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+function isNasFileRow(row: NasDirectoryRow): boolean {
+  const t = (row.type ?? "").toLowerCase();
+  if (t === "file") return true;
+  if (t === "folder" || t === "directory" || t === "dir") return false;
+  return /\.[a-z0-9]{1,8}$/i.test(pathLastSegment(row.path));
+}
+
 function toNasCard(row: NasDirectoryRow): LunaCard {
   const title = pathLastSegment(row.path);
   const summary = row.file_summary?.trim();
-  const base = summary ? `${row.path} · ${summary}` : row.path;
+  const hidden = row.variant_hidden ?? 0;
+  let base = row.path;
+  if (summary) base = `${base} · ${summary}`;
+  if (hidden > 0) base = `${base} · 다른 형식 ${hidden}개`;
   const important = (row.importance ?? 0) > 0;
   return {
     type: "nas",
     title,
     url: null,
     thumbnail: null,
-    description: important ? `★ ${base}` : base
+    description: important ? `★ ${base}` : base,
+    drive: row.drive?.trim() || undefined,
+    raw_path: row.path,
+    is_file: isNasFileRow(row)
   };
 }
 
-function normalizeNasPath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "");
-}
-
-function isAncestorNasPath(ancestor: string, descendant: string): boolean {
-  const a = normalizeNasPath(ancestor);
-  const d = normalizeNasPath(descendant);
-  if (!a || a === d) return false;
-  return d.startsWith(`${a}/`);
-}
-
-/** 조상 폴더 제거 후 가장 깊은 항목만 유지. 최대 8건. importance 높은 순 유지. */
-function dedupeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
-  const original = rows.length;
-  if (original === 0) {
-    console.log("[luna/workserver] dedup", 0, "→", 0);
-    return [];
-  }
-
-  const hasFile = rows.some(
-    (r) => (r.type ?? "").toLowerCase() === "file"
-  );
-
-  let result: NasDirectoryRow[];
-  if (!hasFile) {
-    result = [...rows]
-      .sort((a, b) => b.path.length - a.path.length)
-      .slice(0, 3);
-  } else {
-    const sorted = [...rows].sort((a, b) => b.path.length - a.path.length);
-    const kept: NasDirectoryRow[] = [];
-    for (const row of sorted) {
-      if (kept.some((k) => isAncestorNasPath(row.path, k.path))) continue;
-      kept.push(row);
-    }
-    result = kept;
-  }
-
-  result = [...result].sort(
-    (a, b) => (b.importance ?? 0) - (a.importance ?? 0)
-  );
-  result = result.slice(0, 8);
-
-  console.log("[luna/workserver] dedup", original, "→", result.length);
-  return result;
+/** 도구 루프 결과 최종 정리 — exact → ancestor → variant → importance → 6건 */
+function finalizeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
+  return runWorkserverResultPipeline(rows);
 }
 
 function cardDedupeKey(card: LunaCard): string {
   if (card.url) return `url:${card.url}`;
   if (card.type === "nas") {
+    if (card.raw_path) return `nas:${card.raw_path}`;
     let pathPart = card.description?.split(" · ")[0] || card.title;
     if (pathPart.startsWith("★ ")) pathPart = pathPart.slice(2);
     return `nas:${pathPart}`;
@@ -240,6 +224,62 @@ function mergeCards(existing: LunaCard[], incoming: LunaCard[]): LunaCard[] {
   for (const c of existing) map.set(cardDedupeKey(c), c);
   for (const c of incoming) map.set(cardDedupeKey(c), c);
   return Array.from(map.values());
+}
+
+function clipReason(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  return t.length > 40 ? t.slice(0, 40) : t;
+}
+
+function buildSourceReasonUserMessage(
+  question: string,
+  cards: LunaCard[],
+  nasResults: NasDirectoryRow[]
+): string | null {
+  const notionTitles = cards
+    .filter((c) => c.type === "notion")
+    .map((c) => c.title)
+    .filter(Boolean);
+  const webTitles = cards
+    .filter((c) => c.type === "web")
+    .map((c) => c.title)
+    .filter(Boolean);
+
+  const nasLines =
+    nasResults.length > 0
+      ? nasResults.map((r) => {
+          const important = (r.importance ?? 0) > 0;
+          return `- ${r.path}${important ? " (importance>0)" : ""}`;
+        })
+      : cards
+          .filter((c) => c.type === "nas")
+          .map((c) => {
+            let pathPart = c.description?.split(" · ")[0]?.trim() || c.title;
+            const important = pathPart.startsWith("★ ");
+            if (important) pathPart = pathPart.slice(2);
+            return `- ${pathPart}${important ? " (importance>0)" : ""}`;
+          });
+
+  if (
+    notionTitles.length === 0 &&
+    nasLines.length === 0 &&
+    webTitles.length === 0
+  ) {
+    return null;
+  }
+
+  const parts = [`질문:\n${question}`];
+  if (notionTitles.length > 0) {
+    parts.push(`노션:\n${notionTitles.map((t) => `- ${t}`).join("\n")}`);
+  }
+  if (nasLines.length > 0) {
+    parts.push(`Work서버:\n${nasLines.join("\n")}`);
+  }
+  if (webTitles.length > 0) {
+    parts.push(`웹:\n${webTitles.map((t) => `- ${t}`).join("\n")}`);
+  }
+  return parts.join("\n\n");
 }
 
 /** clarify assistant 바로 앞 user 메시지 content */
@@ -539,7 +579,8 @@ export async function POST(request: NextRequest) {
     "connector.workserver.explore",
     "connector.web",
     "connector.web.hint",
-    "synthesis.opinion"
+    "synthesis.opinion",
+    "synthesis.reason"
   ]);
 
   const identity = loadedPrompts.identity?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
@@ -555,6 +596,8 @@ export async function POST(request: NextRequest) {
   const requeryPrompt = loadedPrompts["search.requery"]?.trim() || REQUERY_FALLBACK;
   const synthesisOpinion =
     loadedPrompts["synthesis.opinion"]?.trim() || SYNTHESIS_OPINION_FALLBACK;
+  const synthesisReason =
+    loadedPrompts["synthesis.reason"]?.trim() || SYNTHESIS_REASON_FALLBACK;
   const webSearchHint = loadedPrompts["connector.web.hint"]?.trim() || "";
 
   const connectorPrompts: string[] = [];
@@ -848,6 +891,7 @@ export async function POST(request: NextRequest) {
               }
             ]);
             await touchConversation();
+            scheduleConversationTitle(admin, conversationId);
             controller.close();
             return;
           }
@@ -889,9 +933,10 @@ export async function POST(request: NextRequest) {
           path: item.path,
           type: item.type,
           size_bytes: null,
-          modified_at: null,
+          modified_at: item.modified_at,
           file_summary: item.file_summary,
-          importance: item.importance
+          importance: item.importance,
+          variant_hidden: item.variant_hidden
         });
 
         const exploreWorkserverWithTools = async (
@@ -961,12 +1006,14 @@ export async function POST(request: NextRequest) {
                     admin,
                     typeof input.path === "string" ? input.path : "",
                     typeof input.keywords === "string" ? input.keywords : "",
-                    typeof input.drive === "string" ? input.drive : undefined
+                    typeof input.drive === "string" ? input.drive : undefined,
+                    searchIntentText
                   );
                 } else if (tu.name === "search_all") {
                   items = await searchAll(
                     admin,
-                    typeof input.keywords === "string" ? input.keywords : ""
+                    typeof input.keywords === "string" ? input.keywords : "",
+                    searchIntentText
                   );
                 }
               } catch (toolErr) {
@@ -1001,7 +1048,12 @@ export async function POST(request: NextRequest) {
             pushStep("ws", "done", "Work서버 탐색");
           }
 
-          return dedupeNasDirectoryRows(Array.from(collected.values()));
+          return finalizeNasDirectoryRows(
+            refineWorkserverHits(
+              Array.from(collected.values()),
+              searchIntentText
+            )
+          );
         };
 
         const runConnectorSearch = async (kw: string) => {
@@ -1029,8 +1081,14 @@ export async function POST(request: NextRequest) {
                   err
                 );
                 pushStep("ws", "done", "Work서버 탐색 (fallback)");
-                const legacy = await searchNasLegacy(admin, kw || searchIntentText);
-                return dedupeNasDirectoryRows(legacy);
+                const legacy = await searchNasLegacy(
+                  admin,
+                  kw || searchIntentText,
+                  searchIntentText
+                );
+                return finalizeNasDirectoryRows(
+                  refineWorkserverHits(legacy, searchIntentText)
+                );
               }
             })()
           ]);
@@ -1247,13 +1305,17 @@ export async function POST(request: NextRequest) {
                 (s) => !notionSources.some((x) => x.url === s.url)
               )
             ];
-            nasResults = [
+            nasResults = finalizeNasDirectoryRows([
               ...nasResults,
-              ...batch.nasResults.filter(
-                (r) => !nasResults.some((x) => x.path === r.path)
-              )
+              ...batch.nasResults
+            ]);
+            cards = [
+              ...mergeCards(
+                cards.filter((c) => c.type !== "nas"),
+                batch.cards.filter((c) => c.type !== "nas")
+              ),
+              ...nasResults.map(toNasCard)
             ];
-            cards = mergeCards(cards, batch.cards);
             const recountCounts = {
               notion: cards.filter((c) => c.type === "notion").length,
               nas: cards.filter((c) => c.type === "nas").length,
@@ -1264,7 +1326,53 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // ——— 단계 6: 답변 ———
+        // ——— 단계 6: 소스별 이유 + 답변 ———
+        let sourceReasons: SourceReasons | null = null;
+        const reasonUser = buildSourceReasonUserMessage(
+          searchIntentText,
+          cards,
+          nasResults
+        );
+        if (reasonUser) {
+          try {
+            const reasonRes = await client.messages.create({
+              model: tierB.model_id,
+              max_tokens: 256,
+              system: synthesisReason,
+              messages: [{ role: "user", content: reasonUser }]
+            });
+            pushModelStep(modelSteps, admin, {
+              label: "소스 이유",
+              model: tierB.model_label,
+              tier: "B",
+              model_id: tierB.model_id,
+              usage: readUsage(reasonRes.usage)
+            });
+            const reasonRaw =
+              reasonRes.content.find((p) => p.type === "text")?.text?.trim() ??
+              "";
+            const parsedReason = parseJsonObject(reasonRaw);
+            if (parsedReason) {
+              const next: SourceReasons = {};
+              if (typeof parsedReason.notion === "string") {
+                const v = clipReason(parsedReason.notion);
+                if (v) next.notion = v;
+              }
+              if (typeof parsedReason.nas === "string") {
+                const v = clipReason(parsedReason.nas);
+                if (v) next.nas = v;
+              }
+              if (typeof parsedReason.web === "string") {
+                const v = clipReason(parsedReason.web);
+                if (v) next.web = v;
+              }
+              if (Object.keys(next).length > 0) sourceReasons = next;
+            }
+          } catch (err) {
+            console.error("[luna/chat] source reasons", err);
+          }
+        }
+
         pushStep("answer", "running", "정리하는 중");
 
         const historyMessages: Anthropic.MessageParam[] = recent
@@ -1336,7 +1444,8 @@ export async function POST(request: NextRequest) {
           cards,
           notion_sources: notionSources,
           search_rounds: searchRounds,
-          steps
+          steps,
+          source_reasons: sourceReasons
         });
 
         let assistantText = "";
@@ -1413,6 +1522,9 @@ export async function POST(request: NextRequest) {
         if (cards.length > 0) {
           assistantMeta.cards = cards;
         }
+        if (sourceReasons) {
+          assistantMeta.source_reasons = sourceReasons;
+        }
         if (attachmentMeta.length > 0) {
           userMeta.attachments = attachmentMeta;
           assistantMeta.attachments = attachmentMeta;
@@ -1443,6 +1555,7 @@ export async function POST(request: NextRequest) {
         }
 
         await touchConversation();
+        scheduleConversationTitle(admin, conversationId);
         controller.close();
       } catch (err) {
         console.error("[luna/chat] stream", err);

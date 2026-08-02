@@ -7,6 +7,8 @@ export type WorkserverItem = {
   type: string | null;
   importance: number | null;
   file_summary: string | null;
+  modified_at: string | null;
+  variant_hidden?: number;
 };
 
 type NasRow = {
@@ -18,6 +20,19 @@ type NasRow = {
   file_summary: string | null;
   importance: number | null;
 };
+
+const VARIANT_EXT_RANK: Record<string, number> = {
+  pptx: 0,
+  ppt: 1,
+  docx: 2,
+  xlsx: 3,
+  hwp: 4,
+  pdf: 5
+};
+
+const IMG_MARKER_STRIP_RE = /(\(\s*img\s*\)|_img|\(\s*이미지\s*\))/gi;
+const IMG_MARKER_TEST_RE = /(\(\s*img\s*\)|_img|\(\s*이미지\s*\))/i;
+const MAX_SEARCH_RESULTS = 6;
 
 const NAS_SELECT =
   "drive, path, type, size_bytes, modified_at, file_summary, importance";
@@ -38,13 +53,212 @@ function toItem(row: NasRow): WorkserverItem {
     name: pathName(row.path),
     type: row.type,
     importance: row.importance ?? 0,
-    file_summary: row.file_summary
+    file_summary: row.file_summary,
+    modified_at: row.modified_at
   };
+}
+
+function parentDir(path: string): string {
+  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const idx = norm.lastIndexOf("/");
+  return idx >= 0 ? norm.slice(0, idx).toLowerCase() : "";
+}
+
+function exactRowKey(drive: string | null | undefined, path: string): string {
+  const d = (drive ?? "").trim().toUpperCase();
+  const p = normalizeWsPath(path).toLowerCase();
+  return `${d}::${p}`;
+}
+
+function isAncestorPath(ancestor: string, descendant: string): boolean {
+  const a = ancestor.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const d = descendant.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  if (!a || a === d) return false;
+  return d.startsWith(`${a}/`);
+}
+
+function fileExtension(name: string): string {
+  const m = name.match(/\.([^.]+)$/);
+  return m ? m[1]!.toLowerCase() : "";
+}
+
+function stripExtension(name: string): string {
+  return name.replace(/\.[^.]+$/, "");
+}
+
+function hasImgMarker(fileName: string): boolean {
+  return IMG_MARKER_TEST_RE.test(stripExtension(fileName));
+}
+
+/** 확장자·(img)/_img/(이미지)·끝 공백 제거 후 비교 키 */
+function documentVariantKey(path: string): string {
+  const base = stripExtension(pathName(path))
+    .replace(IMG_MARKER_STRIP_RE, "")
+    .replace(/\s+$/g, "");
+  return `${parentDir(path)}\0${base.toLowerCase()}`;
+}
+
+function variantExtRank(path: string): number {
+  const ext = fileExtension(pathName(path));
+  return VARIANT_EXT_RANK[ext] ?? 99;
+}
+
+function compareDocumentVariants<
+  T extends { path: string; modified_at?: string | null }
+>(a: T, b: T): number {
+  const aImg = hasImgMarker(pathName(a.path)) ? 1 : 0;
+  const bImg = hasImgMarker(pathName(b.path)) ? 1 : 0;
+  if (aImg !== bImg) return aImg - bImg;
+
+  const aExt = variantExtRank(a.path);
+  const bExt = variantExtRank(b.path);
+  if (aExt !== bExt) return aExt - bExt;
+
+  const aTime = a.modified_at ? Date.parse(a.modified_at) : 0;
+  const bTime = b.modified_at ? Date.parse(b.modified_at) : 0;
+  const aOk = Number.isFinite(aTime) ? aTime : 0;
+  const bOk = Number.isFinite(bTime) ? bTime : 0;
+  return bOk - aOk;
+}
+
+/**
+ * 같은 문서의 형식 변형(img/확장자)을 하나로 정리.
+ * 조상 폴더 dedup 이후에 호출.
+ */
+export function dedupeDocumentVariants<
+  T extends { path: string; modified_at?: string | null }
+>(rows: T[]): Array<T & { variant_hidden: number }> {
+  const original = rows.length;
+  if (original === 0) {
+    console.log("[luna/ws] variant dedup", 0, "→", 0);
+    return [];
+  }
+
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = documentVariantKey(row.path);
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+
+  const result: Array<T & { variant_hidden: number }> = [];
+  for (const group of groups.values()) {
+    const sorted = [...group].sort(compareDocumentVariants);
+    const winner = sorted[0]!;
+    result.push({ ...winner, variant_hidden: group.length - 1 });
+  }
+
+  console.log("[luna/ws] variant dedup", original, "→", result.length);
+  return result;
+}
+
+function dedupeExactRows<
+  T extends { drive?: string | null; path: string; importance?: number | null }
+>(rows: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const row of rows) {
+    const key = exactRowKey(row.drive, row.path);
+    const prev = map.get(key);
+    if (!prev || (row.importance ?? 0) > (prev.importance ?? 0)) {
+      map.set(key, row);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function dedupeAncestorFolders<
+  T extends { path: string; type?: string | null }
+>(rows: T[]): T[] {
+  if (rows.length === 0) return [];
+  const hasFile = rows.some((r) => (r.type ?? "").toLowerCase() === "file");
+  if (!hasFile) {
+    return [...rows]
+      .sort((a, b) => b.path.length - a.path.length)
+      .slice(0, 3);
+  }
+  const sorted = [...rows].sort((a, b) => b.path.length - a.path.length);
+  const kept: T[] = [];
+  for (const row of sorted) {
+    if (kept.some((k) => isAncestorPath(row.path, k.path))) continue;
+    kept.push(row);
+  }
+  return kept;
+}
+
+/**
+ * 최종 결과 파이프라인 (순서 고정):
+ * 합친 결과 → 완전동일 제거 → 조상 폴더 제거 → variant dedup → importance 정렬 → 최대 6건
+ */
+export function runWorkserverResultPipeline<
+  T extends {
+    drive?: string | null;
+    path: string;
+    type?: string | null;
+    modified_at?: string | null;
+    importance?: number | null;
+  }
+>(rows: T[]): Array<T & { variant_hidden: number }> {
+  const raw = rows.length;
+  if (raw === 0) {
+    console.log("[luna/ws] pipeline", {
+      raw: 0,
+      dedupExact: 0,
+      dedupAncestor: 0,
+      dedupVariant: 0,
+      final: 0
+    });
+    return [];
+  }
+
+  const afterExact = dedupeExactRows(rows);
+  const afterAncestor = dedupeAncestorFolders(afterExact);
+  const afterVariant = dedupeDocumentVariants(afterAncestor);
+  const final = [...afterVariant]
+    .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+    .slice(0, MAX_SEARCH_RESULTS);
+
+  console.log("[luna/ws] pipeline", {
+    raw,
+    dedupExact: afterExact.length,
+    dedupAncestor: afterAncestor.length,
+    dedupVariant: afterVariant.length,
+    final: final.length
+  });
+  return final;
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+const GENERIC_DOC_TERMS = new Set([
+  "수행계획서",
+  "보고서",
+  "제안서",
+  "자료",
+  "문서",
+  "파일",
+  "계획서",
+  "소개서",
+  "기획서",
+  "발표자료",
+  "찾아줘",
+  "검색"
+]);
+
+const MEDIA_EXTS = new Set([
+  "mp4",
+  "mov",
+  "avi",
+  "jpg",
+  "jpeg",
+  "png",
+  "psd",
+  "ai"
+]);
+
+const MEDIA_QUERY_RE = /영상|비디오|이미지|사진|레퍼런스\s*영상/;
 
 function splitKeywords(keywords: string): string[] {
   return keywords
@@ -59,13 +273,9 @@ function haystack(row: NasRow): string {
 }
 
 function matchesAll(row: NasRow, terms: string[]): boolean {
+  if (terms.length === 0) return false;
   const h = haystack(row);
   return terms.every((t) => h.includes(t.toLowerCase()));
-}
-
-function matchesAny(row: NasRow, terms: string[]): boolean {
-  const h = haystack(row);
-  return terms.some((t) => h.includes(t.toLowerCase()));
 }
 
 function rankByImportance(rows: NasRow[]): NasRow[] {
@@ -79,6 +289,11 @@ function underBase(row: NasRow, base: string): boolean {
   return row.path === base || row.path.startsWith(`${base}\\`);
 }
 
+function cleanIlikeTerm(term: string): string {
+  return term.replace(/[%_,]/g, "").trim();
+}
+
+/** SQL에서도 AND(ilike 연쇄). OR 완화 없음. */
 async function fetchCandidates(
   admin: SupabaseClient,
   opts: {
@@ -100,18 +315,13 @@ async function fetchCandidates(
 
   const base = opts.basePath ? normalizeWsPath(opts.basePath) : "";
   if (base) {
-    // Lexicographic range — avoids LIKE (backslash is LIKE escape in Postgres)
     query = query.gte("path", base).lt("path", `${base}\uFFFF`);
   }
 
-  if (opts.terms.length > 0) {
-    const orFilter = opts.terms
-      .map((t) => `path.ilike.%${t.replace(/[%_,]/g, "")}%`)
-      .filter((f) => f.includes(".ilike.%") && !f.endsWith(".ilike.%%"))
-      .join(",");
-    if (orFilter) {
-      query = query.or(orFilter);
-    }
+  for (const term of opts.terms) {
+    const cleaned = cleanIlikeTerm(term);
+    if (!cleaned) continue;
+    query = query.ilike("path", `%${cleaned}%`);
   }
 
   const { data, error } = await query;
@@ -125,13 +335,162 @@ async function fetchCandidates(
   return rows.filter((r) => underBase(r, base));
 }
 
-function preferAndThenOr(rows: NasRow[], terms: string[], max: number): NasRow[] {
-  if (terms.length === 0) {
-    return rankByImportance(rows).slice(0, max);
+type SeasonId = { n: string };
+type PlainId = { raw: string };
+
+function extractSeasonIds(text: string): SeasonId[] {
+  const found = new Map<string, SeasonId>();
+  const patterns = [
+    /시즌\s*(\d+)/gi,
+    /season\s*(\d+)/gi,
+    /(?:^|[^A-Za-z0-9])S\s*(\d+)(?![A-Za-z0-9])/gi
+  ];
+  for (const re of patterns) {
+    for (const m of text.matchAll(re)) {
+      const n = m[1];
+      if (n) found.set(n, { n });
+    }
   }
-  const andHits = rows.filter((r) => matchesAll(r, terms));
-  const picked = andHits.length > 0 ? andHits : rows.filter((r) => matchesAny(r, terms));
-  return rankByImportance(picked).slice(0, max);
+  return Array.from(found.values());
+}
+
+function extractPlainIds(text: string): PlainId[] {
+  const found = new Set<string>();
+  for (const m of text.matchAll(/(\d+)\s*차/g)) {
+    if (m[0]) found.add(m[0].replace(/\s+/g, ""));
+  }
+  for (const m of text.matchAll(/\b(20\d{2})\b/g)) {
+    if (m[1]) found.add(m[1]);
+  }
+  for (const m of text.matchAll(/\b(\d{6})\b/g)) {
+    if (m[1]) found.add(m[1]);
+  }
+  return Array.from(found).map((raw) => ({ raw }));
+}
+
+function pathHasSeason(path: string, n: string): boolean {
+  const seasonKo = new RegExp(`시즌\\s*${n}(?!\\d)`, "i");
+  const seasonEn = new RegExp(`season\\s*${n}(?!\\d)`, "i");
+  const seasonS = new RegExp(`(?:^|[^A-Za-z0-9])S\\s*${n}(?![A-Za-z0-9])`, "i");
+  return seasonKo.test(path) || seasonEn.test(path) || seasonS.test(path);
+}
+
+function filterByIdentifiers<T extends { path: string }>(
+  rows: T[],
+  queryText: string
+): T[] {
+  const seasons = extractSeasonIds(queryText);
+  const plains = extractPlainIds(queryText);
+  if (seasons.length === 0 && plains.length === 0) return rows;
+
+  return rows.filter((row) => {
+    for (const s of seasons) {
+      if (!pathHasSeason(row.path, s.n)) return false;
+    }
+    for (const p of plains) {
+      if (!row.path.includes(p.raw)) return false;
+    }
+    return true;
+  });
+}
+
+function queryWantsMedia(queryText: string): boolean {
+  return MEDIA_QUERY_RE.test(queryText);
+}
+
+function filterMediaExt<T extends { path: string }>(
+  rows: T[],
+  queryText: string
+): T[] {
+  if (queryWantsMedia(queryText)) return rows;
+  return rows.filter((row) => {
+    const ext = fileExtension(pathName(row.path));
+    return !MEDIA_EXTS.has(ext);
+  });
+}
+
+/** 수집된 Work서버 결과에 시즌·미디어 필터 재적용 */
+export function refineWorkserverHits<T extends { path: string }>(
+  rows: T[],
+  queryText: string
+): T[] {
+  const q = queryText.trim();
+  if (!q) return rows;
+  return filterMediaExt(filterByIdentifiers(rows, q), q);
+}
+
+function dropOneGeneric(terms: string[]): string[] | null {
+  const idx = terms.findIndex((t) => GENERIC_DOC_TERMS.has(t.toLowerCase()) || GENERIC_DOC_TERMS.has(t));
+  if (idx < 0) return null;
+  return terms.filter((_, i) => i !== idx);
+}
+
+function isSeasonLikeToken(t: string): boolean {
+  return /^(시즌\s*\d+|season\s*\d+|s\d+|\d+차)$/i.test(t.replace(/\s+/g, " ").trim());
+}
+
+function isProjectNameToken(t: string): boolean {
+  if (!t || GENERIC_DOC_TERMS.has(t) || GENERIC_DOC_TERMS.has(t.toLowerCase())) {
+    return false;
+  }
+  if (isSeasonLikeToken(t)) return false;
+  if (/^\d{4}$/.test(t) || /^\d{6}$/.test(t)) return false;
+  if (/^[A-Z][A-Za-z0-9_-]*$/.test(t)) return true;
+  if (/^[가-힣]{2,}$/.test(t)) return true;
+  return false;
+}
+
+function pickProjectName(terms: string[]): string | null {
+  const candidates = terms.filter(isProjectNameToken);
+  if (candidates.length === 0) return null;
+  return [...candidates].sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+async function progressiveAndSearch(
+  admin: SupabaseClient,
+  terms: string[],
+  queryText: string,
+  opts: { basePath?: string; drive?: string }
+): Promise<NasRow[]> {
+  if (terms.length === 0) {
+    console.log("[luna/ws] match", "empty-terms", [], "→", 0);
+    return [];
+  }
+
+  type Stage = { name: string; terms: string[] };
+  const stages: Stage[] = [{ name: "and-all", terms }];
+
+  if (terms.length >= 3) {
+    const reduced = dropOneGeneric(terms);
+    if (reduced && reduced.length > 0 && reduced.length < terms.length) {
+      stages.push({ name: "and-drop-generic", terms: reduced });
+    }
+  }
+
+  const project = pickProjectName(terms);
+  if (project && !(terms.length === 1 && terms[0] === project)) {
+    stages.push({ name: "and-project", terms: [project] });
+  }
+
+  for (const stage of stages) {
+    const rows = await fetchCandidates(admin, {
+      terms: stage.terms,
+      basePath: opts.basePath,
+      drive: opts.drive,
+      limit: 80
+    });
+    let hits = rows.filter((r) => matchesAll(r, stage.terms));
+    hits = filterByIdentifiers(hits, queryText);
+    hits = filterMediaExt(hits, queryText);
+    console.log("[luna/ws] match", stage.name, stage.terms, "→", hits.length);
+    if (hits.length > 0) {
+      // 상한/variant 는 최종 pipeline 에서 처리 (여기서 자르면 원본이 탈락함)
+      return rankByImportance(hits).slice(0, 40);
+    }
+  }
+
+  console.log("[luna/ws] match", "empty", terms, "→", 0);
+  return [];
 }
 
 /** 경로 바로 아래 항목만. path 빈 문자열이면 각 드라이브 최상위. */
@@ -172,22 +531,21 @@ export async function listFolder(
   return items;
 }
 
-/** basePath 아래에서만 검색. AND 우선, 없으면 OR. */
+/** basePath 아래에서만 검색. AND만 사용, 품질 우선. */
 export async function searchIn(
   admin: SupabaseClient,
   basePath: string,
   keywords: string,
-  drive?: string
+  drive?: string,
+  queryContext?: string
 ): Promise<WorkserverItem[]> {
   const terms = splitKeywords(keywords);
-  const rows = await fetchCandidates(admin, {
-    terms,
+  const queryText = (queryContext?.trim() || keywords).trim();
+  const picked = await progressiveAndSearch(admin, terms, queryText, {
     basePath,
-    drive,
-    limit: 80
+    drive
   });
-  const picked = preferAndThenOr(rows, terms, 10);
-  const items = picked.map(toItem);
+  const items = runWorkserverResultPipeline(picked).map(toItem);
   console.log(
     "[luna/ws]",
     "searchIn",
@@ -198,72 +556,37 @@ export async function searchIn(
   return items;
 }
 
-/** 전체 검색. AND 우선, 없으면 OR. */
+/** 전체 검색. AND만 사용, 품질 우선. */
 export async function searchAll(
   admin: SupabaseClient,
-  keywords: string
+  keywords: string,
+  queryContext?: string
 ): Promise<WorkserverItem[]> {
   const terms = splitKeywords(keywords);
-  const rows = await fetchCandidates(admin, { terms, limit: 80 });
-  const picked = preferAndThenOr(rows, terms, 10);
-  const items = picked.map(toItem);
+  const queryText = (queryContext?.trim() || keywords).trim();
+  const picked = await progressiveAndSearch(admin, terms, queryText, {});
+  const items = runWorkserverResultPipeline(picked).map(toItem);
   console.log("[luna/ws]", "searchAll", { keywords }, "→", items.length);
   return items;
 }
 
-/** 기존 단일 OR 검색 (도구 루프 실패 시 fallback). */
+/** 도구 루프 실패 시 fallback — 동일 AND 품질 파이프라인. */
 export async function searchNasLegacy(
   admin: SupabaseClient,
-  keywords: string
+  keywords: string,
+  queryContext?: string
 ): Promise<NasRow[]> {
-  const terms = keywords
-    .split(/\s+/)
-    .filter((t) => t.length > 1)
-    .slice(0, 3);
+  const terms = splitKeywords(keywords).filter((t) => t.length > 1);
   if (terms.length === 0) return [];
-
-  const orFilter = terms.map((t) => `path.ilike.%${t}%`).join(",");
-
-  const { data: importantData, error: importantError } = await admin
-    .from("nas_directory")
-    .select(NAS_SELECT)
-    .or(orFilter)
-    .gt("importance", 0)
-    .order("importance", { ascending: false })
-    .limit(4);
-
-  if (importantError) {
-    console.error("[luna/ws] searchNasLegacy important", importantError);
-  }
-
-  const importantRows = (importantData ?? []) as NasRow[];
-  const remain = Math.max(0, 8 - importantRows.length);
-  let normalRows: NasRow[] = [];
-
-  if (remain > 0) {
-    const { data: normalData, error: normalError } = await admin
-      .from("nas_directory")
-      .select(NAS_SELECT)
-      .or(orFilter)
-      .eq("importance", 0)
-      .limit(Math.max(remain, 12));
-    if (normalError) {
-      console.error("[luna/ws] searchNasLegacy normal", normalError);
-    } else {
-      const importantPaths = new Set(importantRows.map((r) => r.path));
-      normalRows = ((normalData ?? []) as NasRow[]).filter(
-        (r) => !importantPaths.has(r.path)
-      );
-    }
-  }
-
-  const merged = [...importantRows, ...normalRows];
+  const queryText = (queryContext?.trim() || keywords).trim();
+  const picked = await progressiveAndSearch(admin, terms, queryText, {});
+  const finalized = runWorkserverResultPipeline(picked);
   console.log(
     "[luna/ws]",
     "searchNasLegacy",
     { keywords },
     "→",
-    merged.length
+    finalized.length
   );
-  return merged;
+  return finalized;
 }
