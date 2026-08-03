@@ -10,14 +10,10 @@ export default function ResearchPage() {
   const router = useRouter();
   const { status, profile } = useRequirePortalSession();
   const [error, setError] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState<boolean | null>(null);
+  const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
-    setIsMobile(window.matchMedia("(max-width: 767px)").matches);
-  }, []);
-
-  useEffect(() => {
-    if (isMobile !== false || status !== "ready" || !profile?.id) return;
+    if (status !== "ready" || !profile?.id) return;
 
     let cancelled = false;
 
@@ -50,6 +46,8 @@ export default function ResearchPage() {
       }
 
       const rooms = (data ?? []) as TrendRoom[];
+      const roomIds = new Set(rooms.map((room) => room.id));
+
       const personalRoom =
         personalResponse.ok && personalData.room
           ? personalData.room
@@ -59,27 +57,41 @@ export default function ResearchPage() {
       const currentPublicRoom = publicRooms.find((room) => isCurrentWeekRoom(room));
       const fallbackPublicRoom = publicRooms.find((room) => !room.is_archived) ?? publicRooms[0];
 
-      const target = personalRoom ?? currentPublicRoom ?? fallbackPublicRoom;
-      if (target) {
-        router.replace(`/research/${target.id}`);
+      const { data: latestMessage } = await supabase
+        .from("trend_messages")
+        .select("room_id")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const latestRoomId =
+        latestMessage && typeof latestMessage.room_id === "string" && roomIds.has(latestMessage.room_id)
+          ? latestMessage.room_id
+          : null;
+
+      const targetId =
+        latestRoomId ??
+        personalRoom?.id ??
+        currentPublicRoom?.id ??
+        fallbackPublicRoom?.id ??
+        null;
+
+      if (targetId) {
+        router.replace(`/research/${targetId}`);
         return;
       }
 
-      setError("이용 가능한 채팅방이 없습니다.");
+      setEmpty(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isMobile, status, profile?.id, router]);
+  }, [status, profile?.id, router]);
 
-  if (isMobile === true) {
-    return null;
-  }
-
-  if (isMobile === null || status === "checking") {
+  if (status === "checking") {
     return (
-      <div className="hidden flex-1 items-center justify-center text-sm text-slate-500 md:flex">
+      <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
         채팅방으로 이동하는 중…
       </div>
     );
@@ -91,7 +103,18 @@ export default function ResearchPage() {
     );
   }
 
+  if (empty) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm font-medium text-slate-800">이용 가능한 채팅방이 없습니다.</p>
+        <p className="text-xs text-slate-500">왼쪽 메뉴에서 새 채팅방을 만들어 보세요.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-1 items-center justify-center text-sm text-slate-500">채팅방으로 이동하는 중…</div>
+    <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
+      채팅방으로 이동하는 중…
+    </div>
   );
 }

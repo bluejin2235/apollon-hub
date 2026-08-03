@@ -4,11 +4,14 @@ import {
   DragEvent,
   FormEvent,
   KeyboardEvent,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
-  useState
+  useState,
+  type ReactNode
 } from "react";
-import { Paperclip } from "lucide-react";
+import { ChevronLeft, ChevronRight, Paperclip } from "lucide-react";
 import type { LunaPromptRow } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
@@ -109,8 +112,11 @@ export function LunaInput({
   const [attachments, setAttachments] = useState<LunaAttachmentRef[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [showChipLeft, setShowChipLeft] = useState(false);
+  const [showChipRight, setShowChipRight] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chipScrollRef = useRef<HTMLDivElement>(null);
 
   const scopeOnEffective: Record<ScopeKey, boolean> = {
     notion: connectorsProp?.notion ?? scopeOn.notion,
@@ -154,15 +160,71 @@ export function LunaInput({
   const taskSkills = l2Active.filter((p) => p.kind === "task");
   const perspectiveCount = perspectiveSkills.filter((s) => perspectiveOn[s.id]).length;
   const roleCount = roleSkills.filter((s) => roleOn[s.id]).length;
+  const taskCount = taskSkills.filter((s) => taskOn[s.id]).length;
+  const scopeOnCount = SCOPE_ITEMS.filter(
+    (item) => !item.disabled && scopeOnEffective[item.key]
+  ).length;
+  const enabledChipCount =
+    scopeOnCount + perspectiveCount + roleCount + taskCount;
   const analysisBranchCount = perspectiveCount + roleCount;
+  const prevEnabledChipCount = useRef(0);
+
+  const updateChipScrollState = useCallback(() => {
+    const el = chipScrollRef.current;
+    if (!el) {
+      setShowChipLeft(false);
+      setShowChipRight(false);
+      return;
+    }
+    const { scrollLeft, clientWidth, scrollWidth } = el;
+    setShowChipLeft(scrollLeft > 4);
+    setShowChipRight(scrollLeft + clientWidth < scrollWidth - 4);
+  }, []);
+
+  const scrollChipsToStart = useCallback(() => {
+    const el = chipScrollRef.current;
+    if (el) el.scrollLeft = 0;
+    requestAnimationFrame(updateChipScrollState);
+  }, [updateChipScrollState]);
+
+  const scrollChipsBy = useCallback(
+    (delta: number) => {
+      const el = chipScrollRef.current;
+      if (!el) return;
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      const next = Math.max(0, Math.min(maxScroll, el.scrollLeft + delta));
+      el.scrollTo({ left: next, behavior: "smooth" });
+      // smooth 스크롤 중·종료 후 화살표 표시 갱신
+      requestAnimationFrame(updateChipScrollState);
+      window.setTimeout(updateChipScrollState, 220);
+    },
+    [updateChipScrollState]
+  );
+
+  useEffect(() => {
+    if (enabledChipCount > prevEnabledChipCount.current) {
+      scrollChipsToStart();
+    } else {
+      updateChipScrollState();
+    }
+    prevEnabledChipCount.current = enabledChipCount;
+  }, [enabledChipCount, scrollChipsToStart, updateChipScrollState]);
 
   function resizeTextarea() {
     const el = textareaRef.current;
     if (!el) return;
+    const isMobile =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches;
+    const minH = isMobile ? 44 : 36;
+    const max = isMobile ? 13.5 * 1.65 * 5 : 12 * 1.5 * 5;
     el.style.height = "auto";
-    const max = 12 * 1.5 * 5; // 5 lines at 12px / 1.5
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+    el.style.height = `${Math.min(Math.max(minH, el.scrollHeight), max)}px`;
   }
+
+  useEffect(() => {
+    resizeTextarea();
+  }, []);
 
   async function uploadFiles(files: FileList | File[]) {
     const list = Array.from(files);
@@ -273,7 +335,195 @@ export function LunaInput({
   }
 
   const baseToggle =
-    "shrink-0 whitespace-nowrap rounded-[11px] border border-solid px-2 py-0.5 text-[10px] leading-[1.6]";
+    "chip-sm shrink-0 whitespace-nowrap rounded-[11px] border border-solid px-2 py-0.5 text-[10px] leading-[1.6] max-md:h-[30px] max-md:px-3 max-md:py-1.5 max-md:text-[12px] max-md:leading-none";
+
+  const chipNodes = useMemo(() => {
+    const nodes: ReactNode[] = [];
+    const onScopes = SCOPE_ITEMS.filter((item) =>
+      item.disabled ? false : scopeOnEffective[item.key]
+    );
+    const offScopes = SCOPE_ITEMS.filter((item) =>
+      item.disabled ? true : !scopeOnEffective[item.key]
+    );
+    const onPerspectives = perspectiveSkills.filter((s) => perspectiveOn[s.id]);
+    const offPerspectives = perspectiveSkills.filter((s) => !perspectiveOn[s.id]);
+    const onRoles = roleSkills.filter((s) => roleOn[s.id]);
+    const offRoles = roleSkills.filter((s) => !roleOn[s.id]);
+    const onTasks = taskSkills.filter((s) => taskOn[s.id]);
+    const offTasks = taskSkills.filter((s) => !taskOn[s.id]);
+
+    for (const item of onScopes) {
+      nodes.push(
+        <button
+          key={`scope-on-${item.key}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("scope")}`}
+          onClick={() => {
+            setScopeKey(item.key, false);
+          }}
+        >
+          {item.label}
+        </button>
+      );
+    }
+
+    for (const s of onPerspectives) {
+      nodes.push(
+        <button
+          key={`p-on-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("perspective")}`}
+          onClick={() => {
+            setPerspectiveOn((prev) => ({ ...prev, [s.id]: false }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+    for (const s of onRoles) {
+      nodes.push(
+        <button
+          key={`r-on-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("role")}`}
+          onClick={() => {
+            setRoleOn((prev) => ({ ...prev, [s.id]: false }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+    for (const s of onTasks) {
+      nodes.push(
+        <button
+          key={`t-on-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("task")}`}
+          onClick={() => {
+            setTaskOn((prev) => ({ ...prev, [s.id]: false }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+
+    const hasOn =
+      onScopes.length + onPerspectives.length + onRoles.length + onTasks.length > 0;
+    const hasOff =
+      offScopes.length +
+        offPerspectives.length +
+        offRoles.length +
+        offTasks.length >
+      0;
+    if (hasOn && hasOff) {
+      nodes.push(
+        <span
+          key="chip-divider"
+          className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]"
+          aria-hidden
+        />
+      );
+    }
+
+    for (const s of offPerspectives) {
+      nodes.push(
+        <button
+          key={`p-off-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("off")}`}
+          onClick={() => {
+            setPerspectiveOn((prev) => ({ ...prev, [s.id]: true }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+    for (const s of offRoles) {
+      nodes.push(
+        <button
+          key={`r-off-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("off")}`}
+          onClick={() => {
+            setRoleOn((prev) => ({ ...prev, [s.id]: true }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+    for (const s of offTasks) {
+      nodes.push(
+        <button
+          key={`t-off-${s.id}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("off")}`}
+          onClick={() => {
+            setTaskOn((prev) => ({ ...prev, [s.id]: true }));
+          }}
+        >
+          {s.title}
+        </button>
+      );
+    }
+    for (const item of offScopes) {
+      if (item.disabled) {
+        nodes.push(
+          <button
+            key={`scope-off-${item.key}`}
+            type="button"
+            disabled
+            className={`${baseToggle} ${toggleClass("disabled")}`}
+          >
+            {item.label}
+          </button>
+        );
+        continue;
+      }
+      nodes.push(
+        <button
+          key={`scope-off-${item.key}`}
+          type="button"
+          className={`${baseToggle} ${toggleClass("off")}`}
+          onClick={() => {
+            setScopeKey(item.key, true);
+          }}
+        >
+          {item.label}
+        </button>
+      );
+    }
+
+    return nodes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chip order follows toggle state snapshots
+  }, [
+    perspectiveSkills,
+    roleSkills,
+    taskSkills,
+    perspectiveOn,
+    roleOn,
+    taskOn,
+    scopeOnEffective.notion,
+    scopeOnEffective.nas,
+    scopeOnEffective.web,
+    scopeOn.youtube,
+    scrollChipsToStart
+  ]);
+
+  const hasChips = chipNodes.length > 0;
+
+  useEffect(() => {
+    const el = chipScrollRef.current;
+    if (!el) return;
+    updateChipScrollState();
+    const ro = new ResizeObserver(() => updateChipScrollState());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateChipScrollState, chipNodes.length, enabledChipCount]);
 
   return (
     <form
@@ -294,131 +544,102 @@ export function LunaInput({
         }}
       />
 
-      {/* 1단 토글 줄 */}
-      <div
-        className="flex items-center gap-1 overflow-x-auto px-2.5 pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {perspectiveSkills.map((s) => {
-          const on = Boolean(perspectiveOn[s.id]);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={`${baseToggle} ${toggleClass(on ? "perspective" : "off")}`}
-              onClick={() =>
-                setPerspectiveOn((prev) => ({ ...prev, [s.id]: !prev[s.id] }))
-              }
-            >
-              {s.title}
-            </button>
-          );
-        })}
-
-        {perspectiveSkills.length > 0 && roleSkills.length > 0 ? (
-          <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
-        ) : null}
-
-        {roleSkills.map((s) => {
-          const on = Boolean(roleOn[s.id]);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={`${baseToggle} ${toggleClass(on ? "role" : "off")}`}
-              onClick={() =>
-                setRoleOn((prev) => ({ ...prev, [s.id]: !prev[s.id] }))
-              }
-            >
-              {s.title}
-            </button>
-          );
-        })}
-
-        {(perspectiveSkills.length > 0 || roleSkills.length > 0) &&
-        taskSkills.length > 0 ? (
-          <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
-        ) : null}
-
-        {taskSkills.map((s) => {
-          const on = Boolean(taskOn[s.id]);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={`${baseToggle} ${toggleClass(on ? "task" : "off")}`}
-              onClick={() => setTaskOn((prev) => ({ ...prev, [s.id]: !prev[s.id] }))}
-            >
-              {s.title}
-            </button>
-          );
-        })}
-
-        {perspectiveSkills.length > 0 ||
-        roleSkills.length > 0 ||
-        taskSkills.length > 0 ? (
-          <span className="mx-[3px] h-[13px] w-px shrink-0 bg-[#D3D1C7]" aria-hidden />
-        ) : null}
-
-        {SCOPE_ITEMS.map((item) => {
-          if (item.disabled) {
-            return (
-              <button
-                key={item.key}
-                type="button"
-                disabled
-                className={`${baseToggle} ${toggleClass("disabled")}`}
-              >
-                {item.label}
-              </button>
-            );
-          }
-          const on = scopeOnEffective[item.key];
-          return (
-            <button
-              key={item.key}
-              type="button"
-              className={`${baseToggle} ${toggleClass(on ? "scope" : "off")}`}
-              onClick={() => setScopeKey(item.key, !on)}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* 1단 토글 줄 — 화살표는 스크롤 영역 밖(형제)에 두어 칩 클릭과 겹치지 않게 함 */}
+      {hasChips ? (
+        <div className="relative flex items-stretch pt-1.5">
+          <button
+            type="button"
+            aria-label="칩 왼쪽으로"
+            tabIndex={showChipLeft ? 0 : -1}
+            aria-hidden={!showChipLeft}
+            disabled={!showChipLeft}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              scrollChipsBy(-120);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className="relative z-10 flex w-8 shrink-0 cursor-pointer items-center justify-center disabled:pointer-events-none disabled:opacity-0"
+            style={{
+              background:
+                "linear-gradient(to left, rgba(255,255,255,0), #fff 70%)",
+              pointerEvents: showChipLeft ? "auto" : "none"
+            }}
+          >
+            <ChevronLeft className="h-3.5 w-3.5 text-[#6B6A64]" strokeWidth={2} aria-hidden />
+          </button>
+          <div
+            ref={chipScrollRef}
+            className="hscroll luna-input-chips min-w-0 flex-1 items-center"
+            onScroll={updateChipScrollState}
+          >
+            {chipNodes}
+          </div>
+          <button
+            type="button"
+            aria-label="칩 오른쪽으로"
+            tabIndex={showChipRight ? 0 : -1}
+            aria-hidden={!showChipRight}
+            disabled={!showChipRight}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              scrollChipsBy(120);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className="relative z-10 flex w-8 shrink-0 cursor-pointer items-center justify-center disabled:pointer-events-none disabled:opacity-0"
+            style={{
+              background:
+                "linear-gradient(to right, rgba(255,255,255,0), #fff 70%)",
+              pointerEvents: showChipRight ? "auto" : "none"
+            }}
+          >
+            <ChevronRight className="h-3.5 w-3.5 text-[#6B6A64]" strokeWidth={2} aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       {/* 2단 입력 줄 */}
-      <div className="flex items-center gap-[7px] px-2.5 pb-[9px] pt-[7px]">
+      <div className="flex items-center gap-[7px] px-2.5 pb-[9px] pt-[7px] max-md:gap-2 max-md:px-3 max-md:pb-2.5 max-md:pt-2">
         <button
           type="button"
           aria-label="파일 첨부"
           disabled={disabled || uploading}
           onClick={() => fileInputRef.current?.click()}
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border border-solid border-[#E4E2DA] text-[#6B6A64] disabled:opacity-40"
+          className="chip-sm flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border border-solid border-[#E4E2DA] text-[#6B6A64] disabled:opacity-40 max-md:h-11 max-md:w-9 max-md:rounded-[11px]"
         >
-          <Paperclip className="h-[13px] w-[13px]" strokeWidth={1.75} aria-hidden />
+          <Paperclip className="h-[13px] w-[13px] max-md:h-4 max-md:w-4" strokeWidth={1.75} aria-hidden />
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            requestAnimationFrame(resizeTextarea);
-          }}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={disabled || uploading}
-          placeholder="LUNA에게 메시지 보내기"
-          className="max-h-[90px] min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent text-[12px] text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-50"
-        />
+        <div className="flex min-h-0 min-w-0 flex-1 items-center max-md:rounded-[22px] max-md:border max-md:border-[#E4E2DA] max-md:bg-[#F7F7F5]">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              requestAnimationFrame(resizeTextarea);
+            }}
+            onKeyDown={onKeyDown}
+            rows={1}
+            disabled={disabled || uploading}
+            placeholder="LUNA에게 메시지 보내기"
+            className="max-h-[90px] min-h-[44px] w-full min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-[15px] py-3 text-[13.5px] leading-snug text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-50 md:min-h-[36px] md:px-0 md:py-0 md:text-[12px] md:leading-normal"
+          />
+        </div>
 
         <button
           type="submit"
           disabled={disabled || uploading || (!value.trim() && attachments.length === 0)}
           aria-label="전송"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#534AB7] text-white disabled:opacity-40"
+          className="chip-sm flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#534AB7] text-white disabled:opacity-40 max-md:h-11 max-md:w-11 max-md:rounded-full"
         >
-          <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden>
+          <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current max-md:h-4 max-md:w-4" aria-hidden>
             <path d="M12 4l-7 7h4v9h6v-9h4l-7-7z" />
           </svg>
         </button>

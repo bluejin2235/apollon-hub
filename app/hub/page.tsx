@@ -386,26 +386,62 @@ export default function ServiceHubPage() {
             className="px-5 pb-0 pt-6 sm:px-6"
             style={{ background: "linear-gradient(135deg,#1e1c2e 0%,#16151f 100%)" }}
           >
-            <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              {/* 시간·인사 */}
-              <div>
-                <div className="text-2xl font-medium tracking-tight text-white md:text-4xl" style={{ lineHeight: 1 }}>
+            {/* 모바일: 시계·날씨 통합 카드 */}
+            <div
+              className="mb-5 rounded-2xl p-4 md:hidden"
+              style={{ background: "#12111a", border: "0.5px solid rgba(255,255,255,0.08)" }}
+            >
+              <div className="font-medium tracking-tight text-white" style={{ fontSize: 28, lineHeight: 1 }}>
+                {clock}
+              </div>
+              <div className="mt-1.5 whitespace-nowrap" style={{ fontSize: 12.5, color: "#8f8fa6" }}>
+                {todayLabel()}
+              </div>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 18 }}>
+                      {weather ? weatherIcon(weather.today.condition) : "⛅"}
+                    </span>
+                    <span className="font-medium text-white" style={{ fontSize: 19, lineHeight: 1 }}>
+                      {weather?.today.temp ?? "—"}°
+                    </span>
+                  </div>
+                  <div className="mt-1" style={{ fontSize: 11.5, color: "#cfcfe0" }}>
+                    {weather?.today.condition ?? "날씨 불러오는 중"}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right" style={{ fontSize: 11.5, color: "#6b6b82" }}>
+                  <div>
+                    <i className="ti ti-map-pin" style={{ fontSize: 11, marginRight: 3 }} />
+                    성동구 성수
+                  </div>
+                  <div className="mt-0.5">
+                    {weather?.today.tempMin ?? "—"}° / {weather?.today.tempMax ?? "—"}°
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 text-[11.5px] font-medium" style={{ color: "#AFA9EC" }}>
+                안녕하세요, {profile?.name ?? ""}님
+              </div>
+            </div>
+
+            {/* 데스크톱: 기존 시계·날씨 분리 레이아웃 */}
+            <div className="mb-6 hidden gap-3 md:flex md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="text-4xl font-medium tracking-tight text-white" style={{ lineHeight: 1 }}>
                   {clock}
                 </div>
-                <div
-                  className="mt-1 whitespace-nowrap text-xs md:text-sm"
-                  style={{ color: "#8f8fa6" }}
-                >
+                <div className="mt-1 whitespace-nowrap text-sm" style={{ color: "#8f8fa6" }}>
                   {todayLabel()}
                 </div>
-                <div className="mt-2 text-xs font-medium md:text-sm" style={{ color: "#AFA9EC" }}>
+                <div className="mt-2 text-sm font-medium" style={{ color: "#AFA9EC" }}>
                   안녕하세요, {profile?.name ?? ""}님 👋
                 </div>
               </div>
 
-              {/* 날씨 — 모바일: full width, PC: 고정폭 */}
               <div
-                className="w-full rounded-xl md:w-auto md:flex-shrink-0"
+                className="w-auto flex-shrink-0 rounded-xl"
                 style={{ background: "rgba(255,255,255,0.06)", padding: "14px 18px" }}
               >
                 <div className="mb-3 text-xs" style={{ color: "#6b6b82" }}>
@@ -416,7 +452,7 @@ export default function ServiceHubPage() {
                   성동구 성수2가3동
                 </div>
                 <div className="flex min-w-0 items-stretch gap-0">
-                  <div className="min-w-0 flex-1 pr-3 sm:pr-4">
+                  <div className="min-w-0 flex-1 pr-4">
                     <div className="mb-2 text-xs" style={{ color: "#8f8fa6" }}>
                       현재 {weather?.today.date || "—"}
                     </div>
@@ -446,11 +482,11 @@ export default function ServiceHubPage() {
 
                   <div className="shrink-0" style={{ width: 1, background: "rgba(255,255,255,0.1)" }} />
 
-                  <div className="min-w-0 flex-1 pl-3 sm:pl-4">
+                  <div className="min-w-0 flex-1 pl-4">
                     <div className="mb-2 text-xs" style={{ color: "#8f8fa6" }}>
                       내일 {weather?.tomorrow.date || "—"}
                     </div>
-                    <div className="mb-2 flex flex-wrap items-end gap-2 sm:gap-3">
+                    <div className="mb-2 flex flex-wrap items-end gap-3">
                       <div>
                         <div className="text-xs" style={{ color: "#8f8fa6" }}>
                           최저
@@ -488,22 +524,21 @@ export default function ServiceHubPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 md:grid-cols-7 gap-2 pb-5">
+            <div className="grid grid-cols-2 gap-2 pb-5 md:grid-cols-7">
               <Link
                 href={lunaRoomHref}
-                className="col-span-3 md:col-span-1 flex flex-col rounded-xl"
+                className="col-span-2 flex flex-col rounded-xl px-3 py-3.5 md:col-span-1 md:px-3.5 md:py-3"
                 style={{
                   background: "rgba(83,74,183,0.28)",
                   border: "0.5px solid rgba(83,74,183,0.5)",
-                  padding: "12px 14px",
                   textDecoration: "none"
                 }}
               >
                 <i className="ti ti-sparkles" style={{ color: "#AFA9EC", fontSize: 20 }} />
-                <div className="mt-2 text-xs font-medium" style={{ color: "#AFA9EC" }}>
+                <div className="mt-2 text-[12px] font-medium md:text-xs" style={{ color: "#AFA9EC" }}>
                   나와 루나
                 </div>
-                <div className="mt-1 text-xs" style={{ color: "#7F77DD" }}>
+                <div className="mt-1 text-[10px] md:text-xs" style={{ color: "#7F77DD" }}>
                   채팅방 바로가기 →
                 </div>
               </Link>
@@ -512,19 +547,18 @@ export default function ServiceHubPage() {
                 <Link
                   key={s.href}
                   href={s.href}
-                  className="flex flex-col rounded-xl"
+                  className="flex flex-col rounded-xl px-3 py-3.5 md:px-3.5 md:py-3"
                   style={{
                     background: "rgba(255,255,255,0.05)",
                     border: "0.5px solid rgba(255,255,255,0.09)",
-                    padding: "12px 14px",
                     textDecoration: "none"
                   }}
                 >
                   <i className={`ti ${s.icon}`} style={{ color: s.color, fontSize: 20 }} />
-                  <div className="mt-2 text-xs font-medium" style={{ color: "#e0e0e8" }}>
+                  <div className="mt-2 text-[12px] font-medium md:text-xs" style={{ color: "#e0e0e8" }}>
                     {s.label}
                   </div>
-                  <div className="mt-1 text-xs" style={{ color: "#555570" }}>
+                  <div className="mt-1 text-[10px] md:text-xs" style={{ color: "#555570" }}>
                     {s.sub}
                   </div>
                 </Link>
@@ -579,13 +613,15 @@ export default function ServiceHubPage() {
                       key={p.id}
                       type="button"
                       onClick={() => setDetailPost(p)}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left"
+                      className={`w-full items-center justify-between px-4 py-3 text-left ${
+                        i >= 3 ? "hidden md:flex" : "flex"
+                      }`}
                       style={{
                         borderTop: i === 0 ? undefined : `0.5px solid ${C.border}`,
                         color: "inherit"
                       }}
                     >
-                      <span className="flex-1 truncate text-sm font-medium text-slate-900">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
                         {p.title}
                       </span>
                       <span className="ml-3 flex-shrink-0 text-xs" style={{ color: C.textMuted }}>
@@ -601,7 +637,8 @@ export default function ServiceHubPage() {
                   className="px-4 py-3 text-center text-xs"
                   style={{ borderTop: `0.5px solid ${C.border}`, color: C.textMuted }}
                 >
-                  최근 5건 표시
+                  <span className="md:hidden">최근 3건 표시</span>
+                  <span className="hidden md:inline">최근 5건 표시</span>
                 </div>
               </div>
             </div>
@@ -613,20 +650,20 @@ export default function ServiceHubPage() {
               >
                 MY TODAY
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <Link
                   href={`/licenses/members/${profile?.id ?? ""}`}
-                  className="col-span-2 block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  className="col-span-1 block rounded-[14px] border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400 md:col-span-2 md:rounded-xl"
                   style={{ background: C.surface2 }}
                 >
-                  <div className="mb-1 text-xs" style={{ color: C.textMuted }}>
+                  <div className="mb-1 text-[12px] md:text-xs" style={{ color: C.textMuted }}>
                     <i
                       className="ti ti-key"
                       style={{ fontSize: 11, verticalAlign: -1, marginRight: 4 }}
                     />
                     내가 이용 중인 라이선스
                   </div>
-                  <div className="text-lg font-medium text-slate-900">
+                  <div className="text-[20px] font-medium text-slate-900 md:text-lg">
                     {stats?.myLicenseCount ?? "-"}개 ·{" "}
                     <span style={{ color: C.textAccent }}>
                       ₩{stats ? formatKrw(stats.myLicenseCostKrw) : "---"}
@@ -636,17 +673,17 @@ export default function ServiceHubPage() {
 
                 <Link
                   href="/agents"
-                  className="block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  className="block rounded-[14px] border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400 md:rounded-xl"
                   style={{ background: C.surface2 }}
                 >
-                  <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
+                  <div className="mb-2 text-[12px] md:text-xs" style={{ color: C.textMuted }}>
                     <i
                       className="ti ti-cpu"
                       style={{ fontSize: 11, verticalAlign: -1, marginRight: 3 }}
                     />
                     주간 전사 AI 비용
                   </div>
-                  <div className="text-lg font-medium" style={{ color: C.textAccent }}>
+                  <div className="text-[20px] font-medium md:text-lg" style={{ color: C.textAccent }}>
                     ₩{stats ? formatKrw(stats.weekAiCostKrw) : "---"}
                   </div>
                   <div className="mt-1 text-xs" style={{ color: C.textMuted }}>
@@ -655,17 +692,17 @@ export default function ServiceHubPage() {
                 </Link>
 
                 <div
-                  className="rounded-xl p-3"
+                  className="rounded-[14px] p-3 md:rounded-xl"
                   style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
                 >
-                  <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
+                  <div className="mb-2 text-[12px] md:text-xs" style={{ color: C.textMuted }}>
                     <i
                       className="ti ti-send"
                       style={{ fontSize: 11, verticalAlign: -1, marginRight: 3 }}
                     />
                     7일 리포트 발송
                   </div>
-                  <div className="text-lg font-medium text-slate-900">
+                  <div className="text-[20px] font-medium text-slate-900 md:text-lg">
                     {stats?.weekSentReports ?? "-"}
                     <span className="ml-1 text-xs font-normal" style={{ color: C.textMuted }}>
                       건
@@ -678,10 +715,10 @@ export default function ServiceHubPage() {
 
                 <Link
                   href={lunaRoomHref}
-                  className="block rounded-xl border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400"
+                  className="block rounded-[14px] border-[0.5px] border-slate-200 p-3 text-inherit no-underline transition-[border-color] hover:border-slate-400 md:rounded-xl"
                   style={{ background: C.surface2 }}
                 >
-                  <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
+                  <div className="mb-2 text-[12px] md:text-xs" style={{ color: C.textMuted }}>
                     <i
                       className="ti ti-sparkles"
                       style={{
@@ -693,7 +730,7 @@ export default function ServiceHubPage() {
                     />
                     내 루나 활용
                   </div>
-                  <div className="text-lg font-medium" style={{ color: "#7F77DD" }}>
+                  <div className="text-[20px] font-medium md:text-lg" style={{ color: "#7F77DD" }}>
                     {stats?.weekMyChat ?? "-"}
                     <span className="ml-1 text-xs font-normal" style={{ color: C.textMuted }}>
                       건
@@ -705,17 +742,17 @@ export default function ServiceHubPage() {
                 </Link>
 
                 <div
-                  className="rounded-xl p-3"
+                  className="rounded-[14px] p-3 md:rounded-xl"
                   style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
                 >
-                  <div className="mb-2 text-xs" style={{ color: C.textMuted }}>
+                  <div className="mb-2 text-[12px] md:text-xs" style={{ color: C.textMuted }}>
                     <i
                       className="ti ti-users"
                       style={{ fontSize: 11, verticalAlign: -1, marginRight: 3 }}
                     />
                     어제 접속자
                   </div>
-                  <div className="text-lg font-medium text-slate-900">
+                  <div className="text-[20px] font-medium text-slate-900 md:text-lg">
                     {stats?.yesterdayVisitors ?? "-"}
                     <span className="ml-1 text-xs font-normal" style={{ color: C.textMuted }}>
                       명

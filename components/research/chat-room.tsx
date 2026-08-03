@@ -10,11 +10,12 @@ import {
   useRef,
   useState
 } from "react";
-import { ArrowLeft, Upload } from "lucide-react";
-import Link from "next/link";
+import { Menu, Upload } from "lucide-react";
+import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
 import { useResearchRooms } from "@/components/research/research-rooms-context";
 import { RoomChatMessage } from "@/components/research/chat-message";
 import { SupplyToast } from "@/components/supplies/toast";
+import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
 import { storagePublicUrl } from "@/lib/storage/public-url";
 import {
   buildMessageMetadata,
@@ -348,58 +349,59 @@ function RoomChatInput({
   const inputDisabled = disabled || sending || uploading;
 
   return (
-    <div className="shrink-0 bg-white px-4 pb-4 pt-2 sm:px-6">
-      <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+    <div className="shrink-0 border-t border-[#E4E2DA] bg-white" style={{ padding: "0 11px 11px" }}>
+      <form onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl pt-2">
         {replyingTo ? (
           <div
-            className="mb-2 flex items-start justify-between gap-3 rounded-lg px-3 py-2"
+            className="mb-2 flex items-start justify-between gap-3 rounded-[11px] px-3 py-2"
             style={{
-              background: "var(--color-background-secondary)",
+              background: "#F5F3EE",
               borderLeft: "2px solid #534AB7"
             }}
           >
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-[#0d0d0d]">{getMessageSenderName(replyingTo)}</p>
-              <p className="mt-0.5 truncate text-xs text-[#676767]">{truncatePreview(replyingTo.content)}</p>
+              <p className="text-[11.5px] font-semibold text-[#0d0d0d]">
+                {getMessageSenderName(replyingTo)}
+              </p>
+              <p className="mt-0.5 truncate text-[11.5px] text-[#676767]">
+                {truncatePreview(replyingTo.content)}
+              </p>
             </div>
             <button
               type="button"
               onClick={onCancelReply}
-              className="shrink-0 rounded p-1 text-[#8e8e8e] transition hover:bg-[#ebebeb] hover:text-[#0d0d0d]"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#8e8e8e] transition hover:bg-[#ebebeb] hover:text-[#0d0d0d]"
               aria-label="답장 취소"
             >
               ✕
             </button>
           </div>
         ) : null}
-        <div
-          className="flex items-end gap-2 rounded-[26px] px-3 py-3 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-          style={{ background: "var(--color-background-secondary, #f4f4f4)" }}
-        >
+        <div className="flex items-center gap-2">
           <div ref={attachRef} className="relative shrink-0">
             <button
               type="button"
               disabled={inputDisabled}
               onClick={() => setAttachOpen((prev) => !prev)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-[#676767] transition hover:bg-[#e5e5e5] hover:text-[#0d0d0d] disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-11 w-9 items-center justify-center rounded-[11px] border border-[#D3D1C7] text-[#6B6A64] transition hover:bg-[#F5F3EE] disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="파일 첨부"
               aria-expanded={attachOpen}
             >
-              <IconPlus className="h-5 w-5" />
+              <IconPlus className="h-4 w-4" />
             </button>
 
             {attachOpen ? (
-              <div className="absolute bottom-full left-0 z-20 mb-2 min-w-[160px] overflow-hidden rounded-xl border border-[rgba(0,0,0,0.08)] bg-white py-1 shadow-lg">
+              <div className="absolute bottom-full left-0 z-20 mb-2 min-w-[160px] overflow-hidden rounded-xl border border-[#D3D1C7] bg-white py-1 shadow-lg">
                 <button
                   type="button"
-                  className="block w-full px-4 py-2.5 text-left text-sm text-[#0d0d0d] hover:bg-[#f4f4f4]"
+                  className="block w-full px-4 py-2.5 text-left text-[13.5px] text-[#0d0d0d] hover:bg-[#F5F3EE]"
                   onClick={() => imageInputRef.current?.click()}
                 >
                   이미지 업로드
                 </button>
                 <button
                   type="button"
-                  className="block w-full px-4 py-2.5 text-left text-sm text-[#0d0d0d] hover:bg-[#f4f4f4]"
+                  className="block w-full px-4 py-2.5 text-left text-[13.5px] text-[#0d0d0d] hover:bg-[#F5F3EE]"
                   onClick={() => pdfInputRef.current?.click()}
                 >
                   PDF 업로드
@@ -429,26 +431,37 @@ function RoomChatInput({
             />
           </div>
 
-          <textarea
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={uploading ? "파일 업로드 중…" : "링크, 영상, 기사를 던져주세요. 루나가 분석할게요."}
-            rows={1}
-            disabled={inputDisabled}
-            className="max-h-40 min-h-[24px] flex-1 resize-none bg-transparent text-[15px] leading-relaxed text-[#0d0d0d] placeholder:text-[#8e8e8e] focus:outline-none disabled:opacity-60"
-          />
+          <div
+            className="flex min-h-[44px] min-w-0 flex-1 items-center rounded-[22px] border border-solid px-[15px]"
+            style={{ background: "#F5F3EE", borderColor: "#D3D1C7" }}
+          >
+            <textarea
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                uploading
+                  ? "파일 업로드 중…"
+                  : "링크, 영상, 기사를 던져주세요. 루나가 분석할게요."
+              }
+              rows={1}
+              disabled={inputDisabled}
+              className="max-h-[90px] min-h-[44px] w-full flex-1 resize-none bg-transparent py-3 text-[13.5px] leading-snug text-[#0d0d0d] placeholder:text-[#8e8e8e] focus:outline-none disabled:opacity-60"
+            />
+          </div>
           <button
             type="submit"
             disabled={inputDisabled || !value.trim()}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] text-white transition hover:bg-[#333] disabled:cursor-not-allowed disabled:bg-[#d1d1d1] disabled:text-[#8e8e8e]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-white transition hover:bg-[#3C3489] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="전송"
           >
             <IconSend className="h-4 w-4" />
           </button>
         </div>
         {disabled ? (
-          <p className="mt-2 text-center text-xs text-[#8e8e8e]">아카이브된 채팅방입니다. 메시지를 보낼 수 없습니다.</p>
+          <p className="mt-2 text-center text-[11.5px] text-[#8e8e8e]">
+            아카이브된 채팅방입니다. 메시지를 보낼 수 없습니다.
+          </p>
         ) : null}
       </form>
     </div>
@@ -526,7 +539,7 @@ function requestLunaAnalysis(
 
 export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const router = useRouter();
-  const { onRoomUpdated, removeRoom } = useResearchRooms() ?? {};
+  const { onRoomUpdated, removeRoom, openDrawer } = useResearchRooms() ?? {};
   const [room, setRoom] = useState<TrendRoom | null>(null);
   const [messages, setMessages] = useState<TrendMessage[]>([]);
   const [viewerId, setViewerId] = useState(profileId);
@@ -545,7 +558,9 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const bottomUiRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
+  useMeasureBottomUi(bottomUiRef, true);
   const scrollRestoreHeightRef = useRef<number | null>(null);
   const messagesLoadKindRef = useRef<"initial" | "prepend" | "append" | null>("initial");
   const dragCounterRef = useRef(0);
@@ -1015,62 +1030,96 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4 sm:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Link
-            href="/research"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#0d0d0d] transition hover:bg-[#f4f4f4] md:hidden"
-            aria-label="채팅방 목록으로"
-          >
-            <ArrowLeft className="h-5 w-5" aria-hidden />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-[#0d0d0d]">
-              {room ? getTrendRoomDisplayName(room) : "트렌드 공유"}
-            </h1>
-            {room ? (
-              <p className="mt-0.5 text-xs text-[#8e8e8e]">{formatDateRange(room.week_start, room.week_end)}</p>
+    <>
+      <ChatShellChrome
+        headerLeft={
+          <>
+            <button
+              type="button"
+              onClick={() => openDrawer?.()}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+              aria-label="방 목록"
+            >
+              <Menu size={20} strokeWidth={1.75} aria-hidden />
+            </button>
+            <img
+              src="/luna/luna-face.png"
+              alt="루나"
+              width={26}
+              height={26}
+              draggable={false}
+              className="block h-[26px] w-[26px] shrink-0 rounded-full object-cover"
+            />
+          </>
+        }
+        headerTitle={
+          <h1 className="truncate text-[14.5px] font-semibold text-slate-900">
+            {room ? getTrendRoomDisplayName(room) : "트렌드 공유"}
+          </h1>
+        }
+        desktopHeader={
+          <header className="flex items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4 sm:px-6">
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-semibold text-[#0d0d0d]">
+                {room ? getTrendRoomDisplayName(room) : "트렌드 공유"}
+              </h1>
+              {room ? (
+                <p className="mt-0.5 text-xs text-[#8e8e8e]">
+                  {formatDateRange(room.week_start, room.week_end)}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <RoomSettingsMenu
+                canDeleteRoom={canManageRoom}
+                canEditPrompt={canManageRoom}
+                onRename={openRenameModal}
+                onEditPrompt={() => router.push("/research/publishing/prompts")}
+                onDelete={handleDelete}
+                deleteBusy={deleteBusy}
+              />
+            </div>
+          </header>
+        }
+        messagesRef={messagesScrollRef}
+        onMessagesScroll={handleMessagesScroll}
+        onBodyDragEnter={handleDragEnter}
+        onBodyDragOver={handleDragOver}
+        onBodyDragLeave={handleDragLeave}
+        onBodyDrop={(event) => void handleDrop(event)}
+        bodyOverlay={
+          isDragOver ? (
+            <div
+              className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center"
+              style={{
+                background: "rgba(83, 74, 183, 0.15)",
+                border: "2px dashed #534AB7"
+              }}
+            >
+              <Upload className="h-12 w-12 text-[#534AB7]" aria-hidden />
+              <p className="mt-3 text-base font-medium text-[#534AB7]">파일을 여기에 놓으세요</p>
+            </div>
+          ) : null
+        }
+        footerRef={bottomUiRef}
+        footer={
+          <>
+            {error ? (
+              <p className="border-t border-red-100 bg-red-50 px-4 py-2 text-center text-xs text-red-600">
+                {error}
+              </p>
             ) : null}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <RoomSettingsMenu
-            canDeleteRoom={canManageRoom}
-            canEditPrompt={canManageRoom}
-            onRename={openRenameModal}
-            onEditPrompt={() => router.push("/research/publishing/prompts")}
-            onDelete={handleDelete}
-            deleteBusy={deleteBusy}
-          />
-        </div>
-      </header>
-
-      <div
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={(event) => void handleDrop(event)}
+            <RoomChatInput
+              onSend={handleSend}
+              onUploadFile={handleUploadFile}
+              disabled={room?.is_archived}
+              uploading={uploading}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+            />
+          </>
+        }
       >
-        {isDragOver ? (
-          <div
-            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center"
-            style={{
-              background: "rgba(83, 74, 183, 0.15)",
-              border: "2px dashed #534AB7"
-            }}
-          >
-            <Upload className="h-12 w-12 text-[#534AB7]" aria-hidden />
-            <p className="mt-3 text-base font-medium text-[#534AB7]">파일을 여기에 놓으세요</p>
-          </div>
-        ) : null}
-
-        <div
-          ref={messagesScrollRef}
-          onScroll={handleMessagesScroll}
-          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain md:overscroll-auto"
-        >
         {!loading && messages.length > 0 ? (
           <div className="sticky top-0 z-[1] bg-white/95 px-4 py-3 backdrop-blur-sm">
             {loadingOlder ? (
@@ -1096,10 +1145,12 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
         ) : null}
         {messages.length === 0 ? (
           <div className="flex min-h-[12rem] items-center justify-center px-6">
-            <p className="text-center text-sm text-[#8e8e8e]">아직 메시지가 없습니다. 첫 트렌드를 공유해 보세요.</p>
+            <p className="text-center text-sm text-[#8e8e8e]">
+              아직 메시지가 없습니다. 첫 트렌드를 공유해 보세요.
+            </p>
           </div>
         ) : (
-          <div className="mx-auto min-w-0 w-full max-w-3xl">
+          <div className="min-w-0 w-full">
             {messages.map((message) => {
               const replyId = message.reply_to_id ?? message.metadata?.reply_to_id;
               const replyToMessage = replyId ? messageById.get(replyId) ?? null : null;
@@ -1111,7 +1162,8 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
                   roomId={roomId}
                   currentUserId={viewerId}
                   snsMemoSaved={
-                    message.metadata?.sns_memo_saved === true || snsMemoAiMessageIds.has(message.id)
+                    message.metadata?.sns_memo_saved === true ||
+                    snsMemoAiMessageIds.has(message.id)
                   }
                   canDelete={
                     message.id !== THINKING_MESSAGE_ID &&
@@ -1127,21 +1179,7 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
           </div>
         )}
         <div ref={bottomRef} />
-      </div>
-
-      {error ? (
-        <p className="shrink-0 border-t border-red-100 bg-red-50 px-4 py-2 text-center text-xs text-red-600">{error}</p>
-      ) : null}
-
-      <RoomChatInput
-        onSend={handleSend}
-        onUploadFile={handleUploadFile}
-        disabled={room?.is_archived}
-        uploading={uploading}
-        replyingTo={replyingTo}
-        onCancelReply={() => setReplyingTo(null)}
-      />
-      </div>
+      </ChatShellChrome>
 
       {renameOpen ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
@@ -1178,7 +1216,6 @@ export function ChatRoom({ roomId, profileId }: ChatRoomProps) {
       ) : null}
 
       <SupplyToast message={toast} onClose={() => setToast(null)} />
-
-    </div>
+    </>
   );
 }

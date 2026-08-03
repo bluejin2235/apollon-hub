@@ -33,12 +33,16 @@ const FILTER_TABS: { value: SourceFilter; label: string }[] = [
 function SourceTypeBadge({ type }: { type: TrendSourceType }) {
   if (type === "magazine") {
     return (
-      <span className="rounded-full bg-[#534AB7]/10 px-2 py-0.5 text-[11px] font-medium text-[#534AB7]">매거진</span>
+      <span className="rounded-full bg-[#534AB7]/10 px-2 py-0.5 text-[10px] font-medium text-[#534AB7]">
+        매거진
+      </span>
     );
   }
 
   return (
-    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700">스튜디오</span>
+    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+      스튜디오
+    </span>
   );
 }
 
@@ -412,20 +416,22 @@ export default function ResearchSourcesPage() {
         ) : filteredSources.length === 0 ? (
           <p className="mt-10 text-center text-sm text-[#8e8e8e]">등록된 채널이 없습니다.</p>
         ) : (
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="mt-4 divide-y divide-[rgba(0,0,0,0.06)] border-y border-[rgba(0,0,0,0.06)]">
             {filteredSources.map((source) => (
               <Link
                 key={source.id}
                 href={`/research/sources/${source.id}`}
-                className="block rounded-2xl border border-[rgba(0,0,0,0.08)] bg-white p-4 transition hover:border-[rgba(0,0,0,0.15)] hover:shadow-sm"
+                className="flex h-[52px] items-center gap-3 px-1 transition hover:bg-[#F7F7F5]"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="text-base font-semibold text-[#0d0d0d]">{source.name}</h2>
-                  <SourceTypeBadge type={source.type} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13.5px] font-medium leading-tight text-[#0d0d0d]">
+                    {source.name}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11.5px] leading-tight text-[#676767]">
+                    {source.description?.trim() || "설명이 없습니다."}
+                  </p>
                 </div>
-                <p className="mt-2 line-clamp-2 text-sm text-[#676767]">
-                  {source.description?.trim() || "설명이 없습니다."}
-                </p>
+                <SourceTypeBadge type={source.type} />
               </Link>
             ))}
           </div>

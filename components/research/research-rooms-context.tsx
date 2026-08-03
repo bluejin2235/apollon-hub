@@ -6,6 +6,8 @@ import type { TrendRoom } from "@/lib/research/types";
 type ResearchRoomsContextValue = {
   onRoomUpdated: (room: TrendRoom) => void;
   removeRoom: (roomId: string) => void;
+  openDrawer: () => void;
+  closeDrawer: () => void;
 };
 
 export const ResearchRoomsContext = createContext<ResearchRoomsContextValue | null>(null);

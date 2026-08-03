@@ -17,6 +17,7 @@ import {
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
 import { formatKrw } from "@/lib/arte/usd-krw-rate";
+import { TableScrollHint } from "@/components/ui/table-scroll-hint";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -248,7 +249,7 @@ export function AiCostOverview({ onTabChange }: Props) {
       ) : (
         <>
           {/* KPI 카드 */}
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">기간 총 AI 비용</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(totalCostKrw)}</p>
@@ -357,37 +358,39 @@ export function AiCostOverview({ onTabChange }: Props) {
             {recentCredits.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-slate-500">해당 기간 등록 내역이 없습니다.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
-                    <th className="px-5 py-3">서비스</th>
-                    <th className="px-5 py-3">유형</th>
-                    <th className="px-5 py-3">날짜</th>
-                    <th className="px-5 py-3">등록자</th>
-                    <th className="px-5 py-3 text-right">금액</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentCredits.map((r) => {
-                    const tag = paymentTypeLabel(r.payment_type);
-                    return (
-                      <tr key={r.id}>
-                        <td className="px-5 py-3 font-medium text-slate-900">{r.service_name}</td>
-                        <td className="px-5 py-3">
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tag.bg} ${tag.color}`}>
-                            {tag.text}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-slate-600">{r.paid_at}</td>
-                        <td className="px-5 py-3 text-slate-600">{r.registrar_name ?? "—"}</td>
-                        <td className="px-5 py-3 text-right font-medium tabular-nums">
-                          {r.amount_krw.toLocaleString("ko-KR", { style: "currency", currency: "KRW" })}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <TableScrollHint>
+                <table className="w-full text-[12px] md:text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
+                      <th className="px-5 py-3">서비스</th>
+                      <th className="px-5 py-3">유형</th>
+                      <th className="px-5 py-3">날짜</th>
+                      <th className="px-5 py-3">등록자</th>
+                      <th className="px-5 py-3 text-right">금액</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentCredits.map((r) => {
+                      const tag = paymentTypeLabel(r.payment_type);
+                      return (
+                        <tr key={r.id}>
+                          <td className="px-5 py-3 font-medium text-slate-900">{r.service_name}</td>
+                          <td className="px-5 py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tag.bg} ${tag.color}`}>
+                              {tag.text}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-slate-600">{r.paid_at}</td>
+                          <td className="px-5 py-3 text-slate-600">{r.registrar_name ?? "—"}</td>
+                          <td className="px-5 py-3 text-right font-medium tabular-nums">
+                            {r.amount_krw.toLocaleString("ko-KR", { style: "currency", currency: "KRW" })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </TableScrollHint>
             )}
           </section>
         </>

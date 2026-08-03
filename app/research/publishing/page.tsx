@@ -272,14 +272,14 @@ function EditorAnalysisDataModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-[2.5vh]"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-3 md:p-[2.5vh]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="editor-analysis-modal-title"
       onClick={onClose}
     >
       <div
-        className="flex h-[95vh] w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="flex h-[95vh] w-[calc(100vw-24px)] max-w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-5 py-4">
@@ -929,14 +929,14 @@ function EditorNewsletterMailModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-[2.5vh]"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-3 md:p-[2.5vh]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="editor-newsletter-mail-modal-title"
       onClick={onClose}
     >
       <div
-        className="flex h-[95vh] w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="flex h-[95vh] w-[calc(100vw-24px)] max-w-[95vw] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-5 py-4">

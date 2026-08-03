@@ -54,6 +54,7 @@ export default function LunaPage() {
   const [sending, setSending] = useState(false);
   const [searchStatus, setSearchStatus] = useState<string[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const visibleConversations = useMemo(() => {
     if (!selectedProjectId) return conversations;
@@ -593,8 +594,13 @@ export default function LunaPage() {
     [ensureConversation, loadConversations, loadMessages]
   );
 
+  const selectConversation = useCallback((id: string) => {
+    setSelectedConversationId(id);
+    setDrawerOpen(false);
+  }, []);
+
   return (
-    <div className="flex min-h-0 w-full flex-1 overflow-hidden">
+    <div className="relative flex min-h-0 w-full flex-1 overflow-hidden">
       {/* PC 사이드바 */}
       <div className="hidden h-full p-2 md:flex">
         <LunaSidebar
@@ -609,30 +615,45 @@ export default function LunaPage() {
         />
       </div>
 
-      {/* 모바일: 목록 */}
+      {/* 모바일 드로어 */}
       <div
-        className={`h-full w-full p-2 md:hidden ${
-          selectedConversationId ? "hidden" : "flex"
-        }`}
+        className={`fixed inset-0 z-50 md:hidden ${drawerOpen ? "" : "pointer-events-none"}`}
+        aria-hidden={!drawerOpen}
       >
-        <LunaSidebar
-          conversations={visibleConversations}
-          selectedId={selectedConversationId}
-          onSelect={setSelectedConversationId}
-          onNewChat={() => void onNewChat()}
-          selectedProjectId={selectedProjectId}
-          onSelectProject={onSelectProject}
-          onRename={onRenameConversation}
-          onDelete={onDeleteConversation}
+        <button
+          type="button"
+          aria-label="메뉴 닫기"
+          className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${
+            drawerOpen ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => setDrawerOpen(false)}
         />
+        <div
+          className={`absolute inset-y-0 left-0 flex w-[min(280px,86vw)] transform bg-white shadow-xl transition-transform duration-200 ${
+            drawerOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="h-full w-full p-2 pt-[calc(3.5rem+0.5rem)]">
+            <LunaSidebar
+              conversations={visibleConversations}
+              selectedId={selectedConversationId}
+              onSelect={selectConversation}
+              onNewChat={() => {
+                void onNewChat();
+                setDrawerOpen(false);
+              }}
+              selectedProjectId={selectedProjectId}
+              onSelectProject={(id) => {
+                onSelectProject(id);
+              }}
+              onRename={onRenameConversation}
+              onDelete={onDeleteConversation}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* 채팅: PC 항상 / 모바일은 선택 시 */}
-      <div
-        className={`min-h-0 min-w-0 flex-1 flex-col ${
-          selectedConversationId ? "flex" : "hidden md:flex"
-        }`}
-      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {loadingList && !selectedConversation ? (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
             불러오는 중…
@@ -644,11 +665,14 @@ export default function LunaPage() {
             onSend={(text, connectors, attachmentIds, attachmentMeta, skills) =>
               void sendMessage(text, connectors, attachmentIds, attachmentMeta, skills)
             }
-            onSuggestion={(text) => void sendMessage(text, DEFAULT_CONNECTORS, [], [], EMPTY_SKILLS)}
+            onSuggestion={(text) =>
+              void sendMessage(text, DEFAULT_CONNECTORS, [], [], EMPTY_SKILLS)
+            }
             onBack={() => setSelectedConversationId(null)}
+            onOpenMenu={() => setDrawerOpen(true)}
             sending={sending}
             searchStatus={searchStatus}
-            showMobileHeader={Boolean(selectedConversationId)}
+            showMobileHeader
             onEnsureConversation={ensureConversation}
             onRenameTitle={
               selectedConversation

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { SupplyCard } from "@/components/supplies/supply-card";
 import { SupplyRegisterModal } from "@/components/supplies/supply-register-modal";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/components/supplies/supplies-nav";
 import { WarehouseMapModal } from "@/components/supplies/warehouse-map-modal";
 import {
+  formatSupplyLocation,
   getSlotsForZone,
   getSupplyZones,
   mapSupplyRow,
@@ -20,6 +22,7 @@ import {
 } from "@/lib/supplies/locations";
 import { canCreateSupply } from "@/lib/services/permissions";
 import type { SupplyLocation, SupplyWithRelations } from "@/lib/supplies/types";
+import { imagePublicUrls, supplyDetailPath } from "@/lib/supplies/utils";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { supabase } from "@/lib/supabase/client";
 
@@ -151,6 +154,31 @@ export default function SuppliesPage() {
         ))}
       </div>
 
+      {/* 모바일 필터 칩 */}
+      <div className="hscroll px-0.5 md:hidden">
+        {SUPPLIES_NAV.map((item) => (
+          <button
+            key={item.tabKey}
+            type="button"
+            onClick={() => navigateTab(item.tabKey)}
+            className={`chip-sm h-[30px] rounded-full border px-3 text-[12px] ${
+              tabKey === item.tabKey
+                ? "border-[#534AB7] bg-[#EEEDFE] font-medium text-[#3C3489]"
+                : "border-[#D3D1C7] bg-white text-[#6B6A64]"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setMapOpen(true)}
+          className="chip-sm h-[30px] rounded-full border border-[#D3D1C7] bg-white px-3 text-[12px] text-[#6B6A64]"
+        >
+          📍 위치안내
+        </button>
+      </div>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <input
@@ -193,7 +221,7 @@ export default function SuppliesPage() {
           <button
             type="button"
             onClick={() => setMapOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            className="hidden items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 md:inline-flex"
           >
             📍 보관위치 안내
           </button>
@@ -222,11 +250,45 @@ export default function SuppliesPage() {
           {supplies.length === 0 ? "등록된 물품이 없습니다." : "조건에 맞는 물품이 없습니다."}
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-          {filtered.map((s) => (
-            <SupplyCard key={s.id} supply={s} />
-          ))}
-        </div>
+        <>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white md:hidden">
+            {filtered.map((s) => {
+              const thumb = imagePublicUrls(s.image_paths ?? [])[0];
+              return (
+                <Link
+                  key={s.id}
+                  href={supplyDetailPath(s.id)}
+                  className="flex min-h-[66px] items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0"
+                >
+                  <div className="h-[46px] w-[46px] shrink-0 overflow-hidden rounded-[10px] bg-slate-100">
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumb} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-lg text-slate-300">
+                        📦
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13.5px] font-medium text-slate-900">{s.name}</p>
+                    <p className="mt-0.5 truncate text-[11.5px] text-gray-500">
+                      {s.code} · {formatSupplyLocation(s.location)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[12px] tabular-nums text-slate-600">
+                    {s.quantity}개
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+          <div className="hidden grid-cols-2 gap-4 md:grid md:grid-cols-3 lg:grid-cols-6">
+            {filtered.map((s) => (
+              <SupplyCard key={s.id} supply={s} />
+            ))}
+          </div>
+        </>
       )}
 
       {profile?.id ? (

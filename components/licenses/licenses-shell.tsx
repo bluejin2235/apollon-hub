@@ -2,8 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import { LicenseMobileBottomNav, LicenseSidebarNav } from "@/components/licenses/license-nav";
-import { MOBILE_BOTTOM_TAB_PADDING } from "@/components/mobile/bottom-tab-bar";
+import { LicenseMobileSubNav, LicenseSidebarNav } from "@/components/licenses/license-nav";
+import { MOBILE_SUBNAV_PADDING } from "@/components/portal/MobileSubNav";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
@@ -24,7 +24,7 @@ export function LicensesShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
-      <div className={`flex h-screen w-full pt-14 ${MOBILE_BOTTOM_TAB_PADDING}`}>
+      <div className={`flex h-screen w-full pt-14 ${MOBILE_SUBNAV_PADDING}`}>
         <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">
           <p className="text-xs font-semibold uppercase tracking-wider text-apollon-600">License</p>
           <h2 className="mt-1 text-lg font-bold text-slate-900">License Manager</h2>
@@ -36,7 +36,7 @@ export function LicensesShell({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      <LicenseMobileBottomNav pathname={pathname} />
+      <LicenseMobileSubNav />
     </div>
   );
 }

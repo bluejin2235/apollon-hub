@@ -361,7 +361,7 @@ export function LunaNasTab() {
               ))}
             </select>
           </label>
-          <label className="min-w-[160px] flex-1 text-[12px] text-slate-600">
+          <label className="min-w-0 flex-1 text-[12px] text-slate-600 sm:min-w-[160px]">
             대상 드라이브
             <input
               className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 font-mono text-[12px]"
@@ -475,7 +475,7 @@ export function LunaNasTab() {
               <option value="P">P</option>
             </select>
             <input
-              className="min-w-[240px] flex-1 rounded border border-slate-200 px-2 py-1 font-mono text-[11px]"
+              className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 font-mono text-[11px] sm:min-w-[240px]"
               value={addPath}
               onChange={(e) => onPathInputChange(e.target.value)}
               placeholder="02 Project\2024\프로젝트명\01 Planning"

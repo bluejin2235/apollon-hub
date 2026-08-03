@@ -327,7 +327,7 @@ export function LunaSidebar({
                 }`}
               >
                 <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-                <span className="truncate">{p.name}</span>
+                <span className="min-w-0 truncate">{p.name}</span>
               </button>
             );
           })}
@@ -409,7 +409,7 @@ export function LunaSidebar({
                       className="h-3.5 w-3.5 shrink-0 opacity-70"
                       strokeWidth={1.75}
                     />
-                    <span className="truncate">{c.title || "새 대화"}</span>
+                    <span className="min-w-0 truncate">{c.title || "새 대화"}</span>
                   </button>
                   <button
                     type="button"

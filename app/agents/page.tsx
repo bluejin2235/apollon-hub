@@ -7,7 +7,6 @@ import { AiCostOverview } from "@/components/agents/ai-cost-overview";
 import { ApiUsageUploadModal } from "@/components/agents/api-usage-upload-modal";
 import {
   AGENTS_NAV,
-  AgentsMobileBottomNav,
   agentsTabKeyToId,
   parseAgentsTabKey,
   type AgentsTabId,
@@ -131,8 +130,6 @@ export default function AgentsPage() {
         onSaved={() => setUsageRefreshKey((k) => k + 1)}
       />
       <OpenAiKeyNameMapModal open={usageModal === "keys"} onClose={() => setUsageModal(null)} />
-
-      <AgentsMobileBottomNav activeTabKey={tabKey} />
     </>
   );
 }

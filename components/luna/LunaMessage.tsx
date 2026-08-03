@@ -255,7 +255,7 @@ function NasPathDescription({
   };
 
   return (
-    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
+    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 max-md:breakall">
       {copied ? (
         <span style={{ color: "#0F6E56" }}>경로가 복사되었어요</span>
       ) : folderPath ? (
@@ -265,7 +265,7 @@ function NasPathDescription({
           title="클릭하면 경로 복사"
           onClick={onCopyClick}
           onKeyDown={onCopyKeyDown}
-          className="cursor-pointer border-b border-transparent hover:border-dashed hover:border-gray-700 hover:text-gray-700"
+          className="breakall cursor-pointer border-b border-transparent hover:border-dashed hover:border-gray-700 hover:text-gray-700"
         >
           {folderPath}
         </span>
@@ -430,7 +430,9 @@ function SourceSections({
                 style={{ backgroundColor: meta.color }}
                 aria-hidden
               />
-              <span className="text-[13px] font-medium text-slate-800">{meta.label}</span>
+              <span className="text-[13px] font-medium text-slate-800 max-md:text-[14px]">
+                {meta.label}
+              </span>
               <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
                 {group.items.length}
               </span>
@@ -454,15 +456,58 @@ function SourceSections({
                 {reason}
               </p>
             ) : null}
-            <div className="flex flex-col">
-              {group.items.map((card, index) => (
-                <CardRow
-                  key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
-                  card={card}
-                  nasDriveMode={nasDriveMode}
-                />
-              ))}
-            </div>
+            {group.type === "web" ? (
+              <>
+                <div className="hscroll mt-1 md:hidden">
+                  {group.items.map((card, index) => {
+                    const href = card.url || "#";
+                    const thumb = card.thumbnail || (card.url ? faviconUrl(card.url) : "");
+                    return (
+                      <a
+                        key={`m-web-${card.title}-${card.url ?? index}`}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex w-[132px] flex-col overflow-hidden rounded-[12px] border border-[#E4E2DA] bg-white"
+                      >
+                        <div className="h-[72px] w-full overflow-hidden bg-slate-100">
+                          {thumb ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={thumb}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                        </div>
+                        <p className="line-clamp-2 px-2 py-1.5 text-[11.5px] leading-snug text-slate-800">
+                          {card.title}
+                        </p>
+                      </a>
+                    );
+                  })}
+                </div>
+                <div className="hidden flex-col md:flex">
+                  {group.items.map((card, index) => (
+                    <CardRow
+                      key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
+                      card={card}
+                      nasDriveMode={nasDriveMode}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col">
+                {group.items.map((card, index) => (
+                  <CardRow
+                    key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
+                    card={card}
+                    nasDriveMode={nasDriveMode}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         );
       })}
@@ -749,8 +794,8 @@ function ModelMetaFooter({
                 }`}
               >
                 <span className="w-[110px] shrink-0 text-[#6B6A64]">{step.label}</span>
-                <span className="font-mono text-[10px] text-slate-800">{step.model}</span>
-                <span className="ml-auto font-mono text-[10px] text-[#6B6A64]">
+                <span className="min-w-0 font-mono text-[10px] text-slate-800">{step.model}</span>
+                <span className="ml-auto shrink-0 font-mono text-[10px] text-[#6B6A64]">
                   {step.tier}
                 </span>
               </div>
@@ -887,7 +932,7 @@ export function LunaMessage({
     const attachmentList = (attachments ?? []).filter((a) => a.file_name);
     return (
       <div className="flex justify-end px-4 py-1.5">
-        <div className="max-w-[85%]">
+        <div className="max-w-[82%] md:max-w-[85%]">
           {attachmentList.length > 0 ? (
             <div className="mb-1.5 flex flex-wrap justify-end gap-1">
               {attachmentList.map((att) => {
@@ -906,7 +951,7 @@ export function LunaMessage({
             </div>
           ) : null}
           {content ? (
-            <div className="rounded-[12px_12px_2px_12px] bg-[#EEEDFE] px-3.5 py-2.5 text-sm leading-relaxed text-slate-900 whitespace-pre-wrap break-words">
+            <div className="whitespace-pre-wrap break-words rounded-[14px_14px_4px_14px] bg-[#EEEDFE] px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_2px_12px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
               {content}
               {engine ? (
                 <div className="mt-1.5 text-[10px] text-gray-500 opacity-70">{engine}</div>
@@ -925,7 +970,7 @@ export function LunaMessage({
   let body: ReactNode;
   if (clarify) {
     body = (
-      <div className="rounded-[12px_12px_12px_2px] bg-slate-100 px-3.5 py-2.5 text-sm leading-relaxed text-slate-900">
+      <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
         <p className="whitespace-pre-wrap break-words">{clarify.question || content}</p>
         <div className="mt-2.5">
           {clarify.options.map((opt) => (
@@ -957,7 +1002,7 @@ export function LunaMessage({
     );
   } else if (isThinking) {
     body = hasSteps ? null : (
-      <div className="rounded-[12px_12px_12px_2px] bg-slate-100 px-3.5 py-2.5 text-sm leading-relaxed text-slate-900">
+      <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
         <ThinkingDotsText />
       </div>
     );
@@ -975,7 +1020,7 @@ export function LunaMessage({
     );
   } else if (content) {
     body = (
-      <div className="rounded-[12px_12px_12px_2px] bg-slate-100 px-3.5 py-2.5 text-sm leading-relaxed text-slate-900 whitespace-pre-wrap break-words">
+      <div className="whitespace-pre-wrap break-words rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
         {content}
       </div>
     );
@@ -1001,7 +1046,7 @@ export function LunaMessage({
           display: "block"
         }}
       />
-      <div className="max-w-[85%] min-w-0 flex-1">
+      <div className="min-w-0 max-w-[82%] flex-1 md:max-w-[85%]">
         {hasSteps ? (
           <ProgressStepsPanel
             steps={stepList}

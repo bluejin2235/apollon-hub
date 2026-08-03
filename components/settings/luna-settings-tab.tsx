@@ -340,11 +340,11 @@ function LunaPromptsPanel() {
           >
             {promptNo}
           </span>
-          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[13px] font-medium text-slate-900">
+          <span className="inline-flex min-w-0 items-center gap-1 truncate text-[13px] font-medium text-slate-900">
             {p.title}
             {latestRefuted ? (
               <span
-                className="inline-block h-[5px] w-[5px] rounded-full bg-red-500"
+                className="inline-block h-[5px] w-[5px] shrink-0 rounded-full bg-red-500"
                 title="최근 수정이 효과 없음으로 판정됨"
               />
             ) : null}
@@ -384,7 +384,7 @@ function LunaPromptsPanel() {
         </button>
 
         {open && draft ? (
-          <div className="flex rounded-b-lg border border-t-0 border-solid border-[#534AB7]">
+          <div className="flex flex-col rounded-b-lg border border-t-0 border-solid border-[#534AB7] sm:flex-row">
             <div className="min-w-0 flex-1 p-3">
               <div
                 className="mb-2 font-mono"
@@ -427,7 +427,7 @@ function LunaPromptsPanel() {
                 />
               </label>
               <div className="mb-2 flex flex-wrap gap-3">
-                <label className="block min-w-[180px] flex-1">
+                <label className="block min-w-0 flex-1 sm:min-w-[180px]">
                   <span className="mb-1 block text-[11px] text-gray-500">담당자</span>
                   <select
                     value={draft.owner_id}
@@ -496,7 +496,7 @@ function LunaPromptsPanel() {
               </div>
             </div>
 
-            <div className="w-[230px] shrink-0 border-l border-slate-200 bg-slate-50 p-2.5">
+            <div className="w-full border-t border-slate-200 bg-slate-50 p-2.5 sm:w-[230px] sm:shrink-0 sm:border-l sm:border-t-0">
               <div className="mb-2 text-[11px] font-medium text-slate-600">버전 이력</div>
               {versions.length === 0 ? (
                 <p className="text-[10.5px] text-gray-500">이력이 없습니다.</p>

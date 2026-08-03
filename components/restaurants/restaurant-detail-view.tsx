@@ -33,6 +33,7 @@ import {
   type Restaurant,
   type RestaurantCategory,
   type Review,
+  reviewRevisitPositive,
   reviewStarsScore
 } from "@/lib/restaurants/types";
 import { formatMenuAndPriceRange, parseMenuStringToRows, type MenuRow } from "@/lib/restaurants/menu-rows";
@@ -323,6 +324,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const [reviewDeleteErr, setReviewDeleteErr] = useState("");
   const [menuSaving, setMenuSaving] = useState(false);
   const [menuUploadMsg, setMenuUploadMsg] = useState("");
+  const [mapExpanded, setMapExpanded] = useState(false);
   const [reviewPage, setReviewPage] = useState(1);
   const [lightboxItems, setLightboxItems] = useState<AshulengLightboxItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -446,10 +448,15 @@ export function RestaurantDetailView({ id }: { id: string }) {
     return m;
   }, [profiles]);
 
-  const { avg, count } = useMemo(() => {
-    if (reviews.length === 0) return { avg: 0, count: 0 };
+  const { avg, count, revisitPct } = useMemo(() => {
+    if (reviews.length === 0) return { avg: 0, count: 0, revisitPct: 0 };
     const sum = reviews.reduce((s, rv) => s + reviewStarsScore(rv), 0);
-    return { avg: sum / reviews.length, count: reviews.length };
+    const revisit = reviews.filter((rv) => reviewRevisitPositive(rv)).length;
+    return {
+      avg: sum / reviews.length,
+      count: reviews.length,
+      revisitPct: Math.round((revisit / reviews.length) * 100)
+    };
   }, [reviews]);
 
   const keywordRows = useMemo(() => {
@@ -832,8 +839,19 @@ export function RestaurantDetailView({ id }: { id: string }) {
     );
   }
 
+  const heroSrc = menuStoragePaths[0] ? menuPublicUrl(menuStoragePaths[0]) : null;
+
   return (
     <div className="min-h-0 bg-white pt-1">
+      {heroSrc ? (
+        <div className="relative left-1/2 mb-4 h-[180px] w-screen -translate-x-1/2 overflow-hidden md:hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={heroSrc} alt="" className="h-full w-full object-cover" />
+        </div>
+      ) : (
+        <div className="relative left-1/2 mb-4 h-[180px] w-screen -translate-x-1/2 bg-slate-100 md:hidden" />
+      )}
+
       <div className="mb-6">
         <Link href="/restaurants" className="text-sm text-slate-500 hover:text-slate-800">
           ← 맛집 목록
@@ -1029,7 +1047,36 @@ export function RestaurantDetailView({ id }: { id: string }) {
               </div>
             ) : (
               <>
-                <p className="text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">{restaurant.name}</p>
+                <p className="text-[18px] font-bold leading-tight text-slate-900 md:text-2xl lg:text-3xl">
+                  {restaurant.name}
+                </p>
+                <p className="mt-1 text-[13px] text-slate-600 md:hidden">
+                  {[
+                    getRestaurantCategories(restaurant).map(restaurantCategoryDisplayLabel).join(" · "),
+                    restaurant.price_range
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
+                </p>
+
+                <div className="mt-4 grid grid-cols-3 gap-2 md:hidden">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-3 text-center">
+                    <p className="text-[11px] text-slate-500">평점</p>
+                    <p className="mt-1 text-[16px] font-bold text-slate-900">
+                      {avg > 0 ? avg.toFixed(1) : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-3 text-center">
+                    <p className="text-[11px] text-slate-500">리뷰</p>
+                    <p className="mt-1 text-[16px] font-bold text-slate-900">{count}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-3 text-center">
+                    <p className="text-[11px] text-slate-500">재방문</p>
+                    <p className="mt-1 text-[16px] font-bold text-slate-900">
+                      {count > 0 ? `${revisitPct}%` : "—"}
+                    </p>
+                  </div>
+                </div>
 
                 <div className="mt-6">
                   <p className="mb-2 text-sm font-bold text-slate-900">카테고리</p>
@@ -1156,30 +1203,42 @@ export function RestaurantDetailView({ id }: { id: string }) {
             const coords = resolveRestaurantCoords(restaurant.lat, restaurant.lng);
             if (!coords) return null;
             return (
-              <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="mb-4 text-base font-bold text-slate-900">위치정보</h2>
-                <div className="mb-4 flex flex-wrap items-start gap-3">
-                  <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-700">{restaurant.address}</p>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <a
-                      href={naverMapUrl(restaurant.address)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
-                    >
-                      네이버 지도
-                    </a>
-                    <a
-                      href={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
-                    >
-                      카카오맵
-                    </a>
+              <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <button
+                  type="button"
+                  className="flex h-[52px] w-full items-center justify-between px-4 text-left md:hidden"
+                  onClick={() => setMapExpanded((v) => !v)}
+                >
+                  <span className="text-[13.5px] font-bold text-slate-900">위치정보</span>
+                  <span className="text-slate-400">{mapExpanded ? "⌃" : "⌄"}</span>
+                </button>
+                <div className={`p-6 pt-0 md:block md:p-6 ${mapExpanded ? "block" : "hidden"}`}>
+                  <h2 className="mb-4 hidden text-base font-bold text-slate-900 md:block">위치정보</h2>
+                  <div className="mb-4 flex flex-wrap items-start gap-3">
+                    <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-700">
+                      {restaurant.address}
+                    </p>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <a
+                        href={naverMapUrl(restaurant.address)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex rounded-lg border-2 border-emerald-500 bg-white px-3 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 sm:text-sm"
+                      >
+                        네이버 지도
+                      </a>
+                      <a
+                        href={kakaoMapUrl(restaurant.name, coords.lat, coords.lng)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex rounded-lg border-2 border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-50 sm:text-sm"
+                      >
+                        카카오맵
+                      </a>
+                    </div>
                   </div>
+                  <RestaurantDetailMapEmbed lat={coords.lat} lng={coords.lng} />
                 </div>
-                <RestaurantDetailMapEmbed lat={coords.lat} lng={coords.lng} />
               </section>
             );
           })()}

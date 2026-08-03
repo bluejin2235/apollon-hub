@@ -96,7 +96,9 @@ export function PortalHeader({
       <PortalStatsTracker />
       <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-4 sm:px-6`}>
         <div className="flex min-w-0 items-center gap-3">
-          <LogoMark />
+          <Link href="/hub" className="shrink-0" aria-label="허브로 이동">
+            <LogoMark />
+          </Link>
           {hubTitleVariant === "link" ? (
             <Link href="/hub" className="min-w-0 shrink truncate text-gray-900 hover:text-gray-700">
               {title}

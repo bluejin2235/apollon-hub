@@ -71,6 +71,7 @@ export function LunaLearnButton() {
   const reactId = useId();
   const fabId = `luna-learn-fab-${reactId.replace(/:/g, "")}`;
   const [mounted, setMounted] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<PanelPhase>("input");
@@ -96,6 +97,14 @@ export function LunaLearnButton() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const on = () => setIsNarrow(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
   }, []);
 
   useEffect(() => {
@@ -140,7 +149,8 @@ export function LunaLearnButton() {
   }, []);
 
   useEffect(() => {
-    if (!authed || !pathname?.startsWith("/luna")) return;
+    if (!authed) return;
+    if (!pathname?.startsWith("/luna") && !pathname?.startsWith("/research")) return;
     void loadPendingQuestion();
   }, [authed, pathname, loadPendingQuestion]);
 
@@ -377,7 +387,9 @@ export function LunaLearnButton() {
     setTeaserReady(false);
   };
 
-  if (!pathname?.startsWith("/luna")) return null;
+  const showOnPath =
+    Boolean(pathname?.startsWith("/luna")) || Boolean(pathname?.startsWith("/research"));
+  if (!showOnPath) return null;
   if (!mounted || !authed) return null;
 
   const hasPending = Boolean(pendingQuestion);
@@ -386,10 +398,15 @@ export function LunaLearnButton() {
     phase === "question" || phase === "question_answered"
       ? "루나"
       : "루나에게 알려주기";
+  const fabSize = isNarrow ? 44 : 56;
+  const fabRight = isNarrow ? 14 : 20;
+  const fabBottom = "calc(var(--bottom-ui, 0px) + 12px)";
 
   const ui = (
     <>
       <style>{`
+        .luna-learn-fab::-webkit-scrollbar { display: none; width: 0; height: 0; }
+        .luna-learn-fab { -ms-overflow-style: none; scrollbar-width: none; }
         .luna-learn-bubble::after {
           content: "";
           position: absolute;
@@ -433,10 +450,10 @@ export function LunaLearnButton() {
           aria-label={headerTitle}
           className="luna-learn-bubble fixed flex flex-col border border-[#D3D1C7] bg-white"
           style={{
-            right: 20,
-            bottom: 96,
+            right: fabRight,
+            bottom: `calc(var(--bottom-ui, 0px) + 12px + ${fabSize}px + 12px)`,
             zIndex: 70,
-            width: 310,
+            width: isNarrow ? "min(310px, calc(100vw - 28px))" : 310,
             height: 380,
             display: "flex",
             flexDirection: "column",
@@ -876,11 +893,15 @@ export function LunaLearnButton() {
         ref={fabWrapRef}
         className="fixed"
         style={{
-          right: 20,
-          bottom: 20,
-          width: 56,
-          height: 56,
-          zIndex: 70
+          right: fabRight,
+          bottom: fabBottom,
+          width: fabSize,
+          height: fabSize,
+          zIndex: 30,
+          overflow: "visible",
+          background: "transparent",
+          border: "none",
+          padding: 0
         }}
       >
         {hasPending && !teaserDismissed ? (
@@ -897,7 +918,7 @@ export function LunaLearnButton() {
             className={`luna-question-teaser ${showTeaser ? "is-visible" : ""}`}
             style={{
               position: "absolute",
-              right: 66,
+              right: fabSize + 10,
               bottom: 14,
               maxWidth: 200,
               background: "#FFFFFF",
@@ -949,34 +970,71 @@ export function LunaLearnButton() {
           aria-label="루나에게 알려주기"
           aria-expanded={open}
           onClick={toggleOpen}
-          className="relative overflow-hidden rounded-full transition-transform duration-150 hover:scale-[1.06]"
+          className="luna-learn-fab relative rounded-full transition-transform duration-150 hover:scale-[1.06] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#534AB7] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
           style={{
-            width: 56,
-            height: 56,
+            display: "block",
+            width: fabSize,
+            height: fabSize,
+            maxWidth: fabSize,
+            maxHeight: fabSize,
+            minWidth: fabSize,
+            minHeight: fabSize,
+            padding: 0,
+            margin: 0,
             border: "1px solid #E4E2DA",
-            boxShadow: "0 3px 12px rgba(0,0,0,0.14)"
+            borderRadius: 9999,
+            boxSizing: "border-box",
+            overflow: "hidden",
+            lineHeight: 0,
+            appearance: "none",
+            WebkitAppearance: "none",
+            background: "#fff",
+            boxShadow: "0 3px 14px rgba(0,0,0,.16)",
+            cursor: "pointer",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none"
           }}
         >
-          <img
-            src="/luna/luna-blink.webp"
-            alt="루나"
-            width={56}
-            height={56}
-            draggable={false}
-            className="block h-full w-full object-cover"
-          />
+          <span
+            aria-hidden
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              overflow: "hidden",
+              borderRadius: 9999,
+              lineHeight: 0,
+              pointerEvents: "none"
+            }}
+          >
+            <img
+              src="/luna/luna-blink.webp"
+              alt=""
+              draggable={false}
+              style={{
+                display: "block",
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                borderRadius: 9999,
+                border: "none",
+                maxWidth: "none"
+              }}
+            />
+          </span>
           {hasPending ? (
             <span
               aria-hidden
               style={{
                 position: "absolute",
-                top: 0,
-                right: 0,
+                top: 1,
+                right: 1,
                 width: 8,
                 height: 8,
                 borderRadius: "50%",
                 background: "#BA7517",
-                border: "2px solid white"
+                border: "2px solid white",
+                boxSizing: "border-box"
               }}
             />
           ) : null}

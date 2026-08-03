@@ -4,15 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileText, MessageCircle, Send, Settings, SquarePen } from "lucide-react";
+import { Bookmark, FileText, Inbox, Send, Settings, Settings2, SquarePen, User, Users } from "lucide-react";
 import { ResearchRoomsContext } from "@/components/research/research-rooms-context";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
-import { MobileBottomTabBar, MOBILE_BOTTOM_TAB_PADDING, type MobileBottomTabItem } from "@/components/mobile/bottom-tab-bar";
+import { MobileSubNav, MOBILE_SUBNAV_PADDING } from "@/components/portal/MobileSubNav";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
-import { isPublicTrendRoom, type TrendRoom, type TrendRoomType } from "@/lib/research/types";
+import {
+  isPersonalTrendRoom,
+  isPublicTrendRoom,
+  type TrendRoom,
+  type TrendRoomType
+} from "@/lib/research/types";
 import { buildCurrentWeekRoomFields, PERSONAL_ROOM_DEFAULT_NAME } from "@/lib/research/room-create";
 import { getTrendRoomDisplayName } from "@/lib/research/week-label";
 import { supabase } from "@/lib/supabase/client";
@@ -211,73 +216,74 @@ function IconInbox(props: { className?: string }) {
   );
 }
 
-function isResearchChatSection(pathname: string): boolean {
-  return !pathname.startsWith("/research/sources") && !pathname.startsWith("/research/publishing");
-}
-
 function ResearchRoomList({
   pathname,
   rooms,
-  variant = "sidebar",
-  showLeadingDot = false
+  tone = "dark",
+  onNavigate
 }: {
   pathname: string;
   rooms: TrendRoom[];
-  variant?: "sidebar" | "mobile";
-  showLeadingDot?: boolean;
+  tone?: "dark" | "light";
+  onNavigate?: () => void;
 }) {
   const activeRoomId = pathname.match(
     /^\/research\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
   )?.[1];
 
   if (rooms.length === 0) {
-    const emptyClass =
-      variant === "mobile"
-        ? "mt-4 px-3 text-sm text-neutral-500"
-        : "mt-4 px-3 text-xs text-neutral-500";
-    return <p className={emptyClass}>등록된 방이 없습니다.</p>;
+    return (
+      <p className={`mt-2 px-3 text-xs ${tone === "light" ? "text-neutral-500" : "text-neutral-500"}`}>
+        등록된 방이 없습니다.
+      </p>
+    );
   }
 
   return (
-    <nav className={variant === "mobile" ? "flex flex-col gap-1" : "mt-1 flex flex-col gap-0.5"}>
+    <nav className="mt-1 flex flex-col">
       {rooms.map((room) => {
         const isActive = activeRoomId === room.id;
-
-        if (variant === "mobile") {
-          return (
-            <Link
-              key={room.id}
-              href={`/research/${room.id}`}
-              className={`flex items-center gap-3 rounded-xl px-4 py-3.5 text-sm transition ${
-                isActive ? "bg-[#534AB7]/70 font-medium text-white" : "text-[#0d0d0d] hover:bg-neutral-100"
-              }`}
-            >
-              {showLeadingDot ? (
-                <span className="shrink-0" aria-hidden>
-                  •
-                </span>
-              ) : null}
-              <span className="min-w-0 flex-1 truncate">{getTrendRoomDisplayName(room)}</span>
-            </Link>
-          );
-        }
+        const isPersonal = isPersonalTrendRoom(room);
+        const Icon = isPersonal ? User : Users;
+        const badge = isPersonal ? "개인" : "공개";
 
         return (
           <Link
             key={room.id}
             href={`/research/${room.id}`}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition ${
+            onClick={onNavigate}
+            className={`flex h-11 items-center gap-2 px-3 ${
               isActive
-                ? "bg-[#534AB7]/70 font-medium text-white"
-                : "text-white hover:bg-white/5"
+                ? "bg-[#EEEDFE] font-medium text-[#26215C]"
+                : tone === "light"
+                  ? "text-slate-800 hover:bg-slate-50"
+                  : "text-white hover:bg-white/5"
             }`}
           >
-            {showLeadingDot ? (
-              <span className="shrink-0" aria-hidden>
-                •
-              </span>
-            ) : null}
-            <span className="truncate">{getTrendRoomDisplayName(room)}</span>
+            <Icon
+              className={`h-3.5 w-3.5 shrink-0 ${
+                isActive
+                  ? "text-[#534AB7]"
+                  : tone === "light"
+                    ? "text-slate-500"
+                    : "text-neutral-400"
+              }`}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-[13.5px]">
+              {getTrendRoomDisplayName(room)}
+            </span>
+            <span
+              className={`shrink-0 text-[10px] ${
+                isActive
+                  ? "text-[#534AB7]"
+                  : tone === "light"
+                    ? "text-slate-500"
+                    : "text-neutral-500"
+              }`}
+            >
+              {badge}
+            </span>
           </Link>
         );
       })}
@@ -285,130 +291,111 @@ function ResearchRoomList({
   );
 }
 
-function sectionLabelClass(variant: "sidebar" | "mobile", compactTop = false): string {
-  if (variant === "mobile") {
-    return "px-3 pt-4 text-xs font-semibold uppercase tracking-wide text-[#8e8e8e] first:pt-0";
-  }
+function sectionLabelClass(tone: "dark" | "light", compactTop = false): string {
+  const color = tone === "light" ? "text-[#8e8e8e]" : "text-neutral-500";
   return compactTop
-    ? "px-3 pt-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 first:pt-2"
-    : "px-3 pt-4 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 first:pt-0";
+    ? `px-3 pt-3 text-[11px] font-semibold uppercase tracking-wide ${color} first:pt-2`
+    : `px-3 pt-4 text-[11px] font-semibold uppercase tracking-wide ${color} first:pt-0`;
 }
 
 function ResearchRoomSections({
   pathname,
   personalRooms,
   publicRooms,
-  variant = "sidebar"
+  tone = "dark",
+  onNavigate
 }: {
   pathname: string;
   personalRooms: TrendRoom[];
   publicRooms: TrendRoom[];
-  variant?: "sidebar" | "mobile";
+  tone?: "dark" | "light";
+  onNavigate?: () => void;
 }) {
   const hasPersonal = personalRooms.length > 0;
   const hasPublic = publicRooms.length > 0;
 
   if (!hasPersonal && !hasPublic) {
-    const emptyClass =
-      variant === "mobile" ? "mt-4 px-3 text-sm text-neutral-500" : "mt-4 px-3 text-xs text-neutral-500";
-    return <p className={emptyClass}>등록된 방이 없습니다.</p>;
+    return (
+      <p className={`mt-4 px-3 text-xs ${tone === "light" ? "text-neutral-500" : "text-neutral-500"}`}>
+        등록된 방이 없습니다.
+      </p>
+    );
   }
 
   return (
-    <div className={variant === "mobile" ? "flex flex-col" : "flex flex-col"}>
+    <div className="flex flex-col">
       {hasPersonal ? (
         <section>
-          <p className={sectionLabelClass(variant, variant === "sidebar")}>개인방</p>
+          <p className={sectionLabelClass(tone, true)}>개인방</p>
           <ResearchRoomList
             pathname={pathname}
             rooms={personalRooms}
-            variant={variant}
-            showLeadingDot={false}
+            tone={tone}
+            onNavigate={onNavigate}
           />
         </section>
       ) : null}
       {hasPublic ? (
         <section>
-          <p className={sectionLabelClass(variant, false)}>공개방</p>
-          <ResearchRoomList pathname={pathname} rooms={publicRooms} variant={variant} showLeadingDot />
+          <p className={sectionLabelClass(tone, false)}>공개방</p>
+          <ResearchRoomList
+            pathname={pathname}
+            rooms={publicRooms}
+            tone={tone}
+            onNavigate={onNavigate}
+          />
         </section>
       ) : null}
     </div>
   );
 }
 
-function MobileResearchRoomList({
+function ResearchDrawerPanel({
   pathname,
   personalRooms,
   publicRooms,
   onCreated,
-  canCreateRoom
+  canCreateRoom,
+  onNavigate
 }: {
   pathname: string;
   personalRooms: TrendRoom[];
   publicRooms: TrendRoom[];
   onCreated: (room: TrendRoom) => void;
   canCreateRoom: boolean;
+  onNavigate: () => void;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col md:hidden">
-      <div className="flex shrink-0 items-center justify-between border-b border-[rgba(0,0,0,0.08)] px-4 py-4">
-        <h2 className="text-base font-semibold text-[#0d0d0d]">✦ 트렌드 레이더</h2>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-3">
+        <h2 className="text-sm font-semibold text-slate-900">✦ 트렌드 레이더</h2>
         {canCreateRoom ? <CreateRoomButton onCreated={onCreated} variant="mobile" /> : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">
         <ResearchRoomSections
           pathname={pathname}
           personalRooms={personalRooms}
           publicRooms={publicRooms}
-          variant="mobile"
+          tone="light"
+          onNavigate={onNavigate}
         />
       </div>
     </div>
   );
 }
 
-function ResearchMobileBottomNav({ pathname }: { pathname: string }) {
-  const isChatActive = isResearchChatSection(pathname);
-  const isSourcesActive = pathname.startsWith("/research/sources");
-  const isPromptsActive = pathname.startsWith("/research/publishing/prompts");
-  const isPublishingActive =
-    pathname.startsWith("/research/publishing") && !isPromptsActive;
-
-  const items: MobileBottomTabItem[] = [
-    {
-      href: "/research",
-      label: "트렌드 수집함",
-      icon: <MessageCircle aria-hidden />,
-      active: isChatActive
-    },
-    {
-      href: "/research/sources",
-      label: "트렌드 구독함",
-      icon: <Settings aria-hidden />,
-      active: isSourcesActive
-    },
-    {
-      href: "/research/publishing",
-      label: "Publishing",
-      icon: <Send aria-hidden />,
-      active: isPublishingActive
-    },
-    {
-      href: "/research/publishing/prompts",
-      label: "프롬프트 관리",
-      icon: <FileText aria-hidden />,
-      active: isPromptsActive
-    }
-  ];
-
-  return <MobileBottomTabBar items={items} variant="dark" />;
-}
+const RESEARCH_MOBILE_SUBNAV_ITEMS = [
+  { href: "/research", label: "수집함", icon: <Inbox aria-hidden /> },
+  { href: "/research/sources", label: "구독함", icon: <Bookmark aria-hidden /> },
+  { href: "/research/publishing", label: "Publishing", icon: <Send aria-hidden /> },
+  { href: "/research/publishing/prompts", label: "프롬프트", icon: <Settings2 aria-hidden /> }
+];
 
 export default function ResearchLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { status, profile } = useRequirePortalSession();
   const [rooms, setRooms] = useState<TrendRoom[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const loadRooms = useCallback(async () => {
     if (!profile?.id) return;
@@ -484,25 +471,32 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
     setRooms((prev) => prev.filter((item) => item.id !== roomId));
   }, []);
 
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+
   const roomsContextValue = useMemo(
     () => ({
       onRoomUpdated: handleRoomUpdated,
-      removeRoom: handleRemoveRoom
+      removeRoom: handleRemoveRoom,
+      openDrawer,
+      closeDrawer
     }),
-    [handleRoomUpdated, handleRemoveRoom]
+    [handleRoomUpdated, handleRemoveRoom, openDrawer, closeDrawer]
   );
   const canManageResearch = useResearchManager() === true;
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
 
   if (status === "checking") {
     return <PortalAuthChecking />;
   }
 
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
-  const showMobileRoomList = pathname === "/research";
   const isRoomDetail = /^\/research\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
     pathname
   );
-  const mobileScrollLocked = showMobileRoomList || isRoomDetail;
   const canCreateRoom = Boolean(profile?.id);
 
   return (
@@ -510,95 +504,120 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
       <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
 
       <div
-        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] ${MOBILE_BOTTOM_TAB_PADDING}`}
+        className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] ${MOBILE_SUBNAV_PADDING}`}
       >
-        <div className="flex min-h-0 flex-1 overflow-hidden md:h-[calc(100vh-3.5rem)]">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 flex-col overflow-hidden bg-[#171717] md:flex">
-          <div className="shrink-0 px-3 pt-5">
-            <div className="flex items-center justify-between px-3">
-              <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
-              {canCreateRoom ? (
-                <CreateRoomButton onCreated={handleRoomCreated} />
-              ) : null}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden md:h-[calc(100vh-3.5rem)]">
+          <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 flex-col overflow-hidden bg-[#171717] md:flex">
+            <div className="shrink-0 px-3 pt-5">
+              <div className="flex items-center justify-between px-3">
+                <h2 className="text-base font-semibold text-white">✦ 트렌드 레이더</h2>
+                {canCreateRoom ? (
+                  <CreateRoomButton onCreated={handleRoomCreated} />
+                ) : null}
+              </div>
+              <div className="mt-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400">
+                <IconInbox className="h-4 w-4 shrink-0" />
+                트렌드 수집함
+              </div>
             </div>
-            <div className="mt-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400">
-              <IconInbox className="h-4 w-4 shrink-0" />
-              트렌드 수집함
-            </div>
-          </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-            <ResearchRoomSections
-              pathname={pathname}
-              personalRooms={personalRooms}
-              publicRooms={publicRooms}
-            />
-          </div>
-
-          <div className="shrink-0 border-t border-white/10 px-3 py-4">
-            <nav className="flex flex-col gap-0.5">
-              <Link
-                href="/research/sources"
-                className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
-              >
-                <Settings className="h-4 w-4 shrink-0" aria-hidden />
-                트렌드 구독함
-              </Link>
-              {canManageResearch ? (
-                <>
-                  <Link
-                    href="/research/publishing"
-                    className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
-                  >
-                    <Send className="h-4 w-4 shrink-0" aria-hidden />
-                    Publishing
-                  </Link>
-                  <Link
-                    href="/research/publishing/prompts"
-                    className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
-                  >
-                    <FileText className="h-4 w-4 shrink-0" aria-hidden />
-                    프롬프트 관리
-                  </Link>
-                </>
-              ) : null}
-            </nav>
-          </div>
-        </aside>
-
-        <ResearchRoomsContext.Provider value={roomsContextValue}>
-          <div
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:h-[calc(100vh-3.5rem)] md:overflow-y-auto"
-            style={
-              {
-                "--color-background-secondary": "#f4f4f4",
-                "--color-border": "rgba(0, 0, 0, 0.1)"
-              } as React.CSSProperties
-            }
-          >
-            {showMobileRoomList ? (
-              <MobileResearchRoomList
+            <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-3">
+              <ResearchRoomSections
                 pathname={pathname}
                 personalRooms={personalRooms}
                 publicRooms={publicRooms}
-                onCreated={handleRoomCreated}
-                canCreateRoom={canCreateRoom}
+                tone="dark"
               />
-            ) : (
+            </div>
+
+            <div className="shrink-0 border-t border-white/10 px-3 py-4">
+              <nav className="flex flex-col gap-0.5">
+                <Link
+                  href="/research/sources"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
+                >
+                  <Settings className="h-4 w-4 shrink-0" aria-hidden />
+                  트렌드 구독함
+                </Link>
+                {canManageResearch ? (
+                  <>
+                    <Link
+                      href="/research/publishing"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
+                    >
+                      <Send className="h-4 w-4 shrink-0" aria-hidden />
+                      Publishing
+                    </Link>
+                    <Link
+                      href="/research/publishing/prompts"
+                      className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200"
+                    >
+                      <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                      프롬프트 관리
+                    </Link>
+                  </>
+                ) : null}
+              </nav>
+            </div>
+          </aside>
+
+          {/* 모바일 드로어 */}
+          <div
+            className={`fixed inset-0 z-50 md:hidden ${drawerOpen ? "" : "pointer-events-none"}`}
+            aria-hidden={!drawerOpen}
+          >
+            <button
+              type="button"
+              aria-label="메뉴 닫기"
+              className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${
+                drawerOpen ? "opacity-100" : "opacity-0"
+              }`}
+              onClick={closeDrawer}
+            />
+            <div
+              className={`absolute inset-y-0 left-0 flex w-[min(280px,86vw)] transform bg-white shadow-xl transition-transform duration-200 ${
+                drawerOpen ? "translate-x-0" : "-translate-x-full"
+              }`}
+            >
+              <div className="h-full w-full p-2 pt-[calc(3.5rem+0.5rem)]">
+                <ResearchDrawerPanel
+                  pathname={pathname}
+                  personalRooms={personalRooms}
+                  publicRooms={publicRooms}
+                  onCreated={(room) => {
+                    handleRoomCreated(room);
+                    closeDrawer();
+                  }}
+                  canCreateRoom={canCreateRoom}
+                  onNavigate={closeDrawer}
+                />
+              </div>
+            </div>
+          </div>
+
+          <ResearchRoomsContext.Provider value={roomsContextValue}>
+            <div
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white md:h-[calc(100vh-3.5rem)] md:overflow-y-auto"
+              style={
+                {
+                  "--color-background-secondary": "#f4f4f4",
+                  "--color-border": "rgba(0, 0, 0, 0.1)"
+                } as React.CSSProperties
+              }
+            >
               <div
                 className={`flex min-h-0 min-w-0 flex-1 flex-col ${
-                  mobileScrollLocked ? "overflow-hidden" : "overflow-y-auto overscroll-contain"
+                  isRoomDetail ? "overflow-hidden" : "overflow-y-auto overscroll-contain"
                 }`}
               >
                 {children}
               </div>
-            )}
-          </div>
-        </ResearchRoomsContext.Provider>
+            </div>
+          </ResearchRoomsContext.Provider>
         </div>
       </div>
 
-      <ResearchMobileBottomNav pathname={pathname} />
+      <MobileSubNav items={RESEARCH_MOBILE_SUBNAV_ITEMS} />
     </div>
   );
 }

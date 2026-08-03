@@ -26,6 +26,7 @@ import {
 import { getCategoryColorHex } from "@/lib/licenses/category-colors";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
+import { TableScrollHint } from "@/components/ui/table-scroll-hint";
 import { supabase } from "@/lib/supabase/client";
 
 function isActiveService(l: License): boolean {
@@ -531,7 +532,7 @@ export default function LicensesDashboardPage() {
       </section>
 
       {/* 요약 4카드 */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
         <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
           <div className="mb-4 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-xl bg-purple-100 text-purple-600">
             <IconSubscriptionPurple className="h-6 w-6" />
@@ -589,68 +590,70 @@ export default function LicensesDashboardPage() {
 
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
           <div className="min-w-0 flex-1">
-            <table className="w-full table-fixed text-sm">
-              <colgroup>
-                <col className="w-[30%]" />
-                <col className="w-[15%]" />
-                <col className="w-[25%]" />
-                <col className="w-[20%]" />
-                <col className="w-[10%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
-                  <th className="pb-3 pr-2 align-bottom">카테고리</th>
-                  <th className="pb-3 pr-2 text-right align-bottom">서비스 수</th>
-                  <th className="pb-3 pr-2 text-right align-bottom">월비용 (구독)</th>
-                  <th className="pb-3 pr-2 text-right align-bottom">영구 라이선스</th>
-                  <th className="pb-3 text-right align-bottom">비중</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sortedCategoryRows.map((row) => {
-                  const pct =
-                    totalSubscriptionMonthlyForShare > 0
-                      ? (row.subscriptionMonthlyKrw / totalSubscriptionMonthlyForShare) * 100
-                      : 0;
-                  return (
-                    <tr key={row.key} className="text-slate-800">
-                      <td className="py-3 pr-2 align-top">
-                        <span className="flex items-start gap-2 break-words">
-                          <span
-                            className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: row.color }}
-                          />
-                          <span className="min-w-0 break-words">{row.key}</span>
-                        </span>
-                      </td>
-                      <td className="py-3 pr-2 text-right align-top tabular-nums">{row.serviceCount}개</td>
-                      <td className="break-words py-3 pr-2 text-right align-top font-medium tabular-nums text-slate-900">
-                        {row.subscriptionMonthlyKrw > 0 ? formatCurrency(row.subscriptionMonthlyKrw) : "—"}
-                      </td>
-                      <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
-                        {row.perpetualKrw > 0 ? formatCurrency(row.perpetualKrw) : "—"}
-                      </td>
-                      <td className="py-3 text-right align-top tabular-nums text-slate-700">
-                        {totalSubscriptionMonthlyForShare > 0 ? `${pct.toFixed(1)}%` : "0%"}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="border-t border-slate-200 font-semibold text-slate-900">
-                  <td className="py-3 pr-2 align-top">합계</td>
-                  <td className="py-3 pr-2 text-right align-top tabular-nums">{totalServicesInCategories}개</td>
-                  <td className="break-words py-3 pr-2 text-right align-top tabular-nums text-indigo-600">
-                    {formatCurrency(totalSubscriptionMonthlyForShare)}
-                  </td>
-                  <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
-                    {totalPerpetualKrwAcrossCategories > 0
-                      ? formatCurrency(totalPerpetualKrwAcrossCategories)
-                      : "—"}
-                  </td>
-                  <td className="py-3 text-right align-top">100%</td>
-                </tr>
-              </tbody>
-            </table>
+            <TableScrollHint>
+              <table className="w-full min-w-[560px] table-fixed text-[12px] md:text-sm">
+                <colgroup>
+                  <col className="w-[30%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+                    <th className="pb-3 pr-2 align-bottom">카테고리</th>
+                    <th className="pb-3 pr-2 text-right align-bottom">서비스 수</th>
+                    <th className="pb-3 pr-2 text-right align-bottom">월비용 (구독)</th>
+                    <th className="pb-3 pr-2 text-right align-bottom">영구 라이선스</th>
+                    <th className="pb-3 text-right align-bottom">비중</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sortedCategoryRows.map((row) => {
+                    const pct =
+                      totalSubscriptionMonthlyForShare > 0
+                        ? (row.subscriptionMonthlyKrw / totalSubscriptionMonthlyForShare) * 100
+                        : 0;
+                    return (
+                      <tr key={row.key} className="text-slate-800">
+                        <td className="py-3 pr-2 align-top">
+                          <span className="flex items-start gap-2 break-words">
+                            <span
+                              className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: row.color }}
+                            />
+                            <span className="min-w-0 break-words">{row.key}</span>
+                          </span>
+                        </td>
+                        <td className="py-3 pr-2 text-right align-top tabular-nums">{row.serviceCount}개</td>
+                        <td className="break-words py-3 pr-2 text-right align-top font-medium tabular-nums text-slate-900">
+                          {row.subscriptionMonthlyKrw > 0 ? formatCurrency(row.subscriptionMonthlyKrw) : "—"}
+                        </td>
+                        <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
+                          {row.perpetualKrw > 0 ? formatCurrency(row.perpetualKrw) : "—"}
+                        </td>
+                        <td className="py-3 text-right align-top tabular-nums text-slate-700">
+                          {totalSubscriptionMonthlyForShare > 0 ? `${pct.toFixed(1)}%` : "0%"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t border-slate-200 font-semibold text-slate-900">
+                    <td className="py-3 pr-2 align-top">합계</td>
+                    <td className="py-3 pr-2 text-right align-top tabular-nums">{totalServicesInCategories}개</td>
+                    <td className="break-words py-3 pr-2 text-right align-top tabular-nums text-indigo-600">
+                      {formatCurrency(totalSubscriptionMonthlyForShare)}
+                    </td>
+                    <td className="break-words py-3 pr-2 text-right align-top tabular-nums">
+                      {totalPerpetualKrwAcrossCategories > 0
+                        ? formatCurrency(totalPerpetualKrwAcrossCategories)
+                        : "—"}
+                    </td>
+                    <td className="py-3 text-right align-top">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </TableScrollHint>
           </div>
 
           <div className="mx-auto w-full shrink-0 lg:mx-0 lg:w-[280px] xl:w-[300px]">

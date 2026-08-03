@@ -44,3 +44,100 @@ body {
 .apollon-card {
   @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
 }
+
+/* Mobile foundation — typography tokens (desktop defaults; overridden below) */
+:root {
+  --fs-title: 20px;
+  --fs-section: 17px;
+  --fs-body: 13px;
+  --fs-sub: 11.5px;
+  --fs-caption: 11px;
+  --pad-x: 20px;
+  --bottom-ui: 0px;
+  --mobile-subnav-h: 0px;
+}
+
+/* Horizontal scroll utilities — only opt-in containers scroll sideways */
+.hscroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
+}
+.hscroll > * {
+  flex-shrink: 0;
+}
+
+/* Luna input chips: keep desktop spacing when reusing .hscroll */
+@media (min-width: 768px) {
+  .hscroll.luna-input-chips {
+    gap: 4px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+.tablewrap {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.tablewrap::-webkit-scrollbar {
+  display: none;
+}
+
+/* Long paths/URLs should not push the viewport */
+.breakall {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --fs-title: 18px;
+    --fs-section: 15.5px;
+    --fs-body: 13.5px;
+    --fs-sub: 12px;
+    --fs-caption: 11.5px;
+    --pad-x: 14px;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Keep all containers within the viewport */
+  #__next,
+  body > div {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Default: flex children can shrink instead of overflowing */
+  main,
+  section,
+  article {
+    min-width: 0;
+  }
+
+  /* Touch target minimum */
+  button,
+  a[role="button"],
+  [role="tab"],
+  input[type="checkbox"] + label {
+    min-height: 44px;
+  }
+
+  /* Visually small chips/badges are exempt */
+  .chip-sm,
+  .badge-sm {
+    min-height: 0;
+  }
+}

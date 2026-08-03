@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { BarChart3, CreditCard, LayoutDashboard } from "lucide-react";
-import { MobileBottomTabBar, type MobileBottomTabItem } from "@/components/mobile/bottom-tab-bar";
+import { CreditCard, LayoutGrid, Plug } from "lucide-react";
+import { MobileSubNav, type SubNavItem } from "@/components/portal/MobileSubNav";
 
 export type AgentsTabKey = "dashboard" | "api" | "credit";
 
@@ -12,27 +12,31 @@ export const AGENTS_NAV: {
   tabKey: AgentsTabKey;
   tabId: AgentsTabId;
   label: string;
+  shortLabel: string;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: typeof LayoutGrid;
 }[] = [
   {
     tabKey: "dashboard",
     tabId: "overview",
     label: "대시보드",
+    shortLabel: "대시보드",
     href: "/agents?tab=dashboard",
-    icon: LayoutDashboard
+    icon: LayoutGrid
   },
   {
     tabKey: "api",
     tabId: "usage",
     label: "API 사용 내역",
+    shortLabel: "API 사용",
     href: "/agents?tab=api",
-    icon: BarChart3
+    icon: Plug
   },
   {
     tabKey: "credit",
     tabId: "credits",
     label: "크레딧 결제 내역",
+    shortLabel: "크레딧",
     href: "/agents?tab=credit",
     icon: CreditCard
   }
@@ -74,16 +78,15 @@ export function AgentsSidebarNav({ activeTabKey }: { activeTabKey: AgentsTabKey 
   );
 }
 
-export function AgentsMobileBottomNav({ activeTabKey }: { activeTabKey: AgentsTabKey }) {
-  const items: MobileBottomTabItem[] = AGENTS_NAV.map((item) => {
+export function AgentsMobileSubNav() {
+  const items: SubNavItem[] = AGENTS_NAV.map((item) => {
     const Icon = item.icon;
     return {
       href: item.href,
-      label: item.label,
-      icon: <Icon aria-hidden />,
-      active: item.tabKey === activeTabKey
+      label: item.shortLabel,
+      icon: <Icon aria-hidden />
     };
   });
 
-  return <MobileBottomTabBar items={items} variant="light" />;
+  return <MobileSubNav items={items} />;
 }

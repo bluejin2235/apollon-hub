@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Menu } from "lucide-react";
 import {
   LunaInput,
   type LunaAttachmentRef,
   type LunaConnectorsState,
   type LunaSkillsSelection
 } from "@/components/luna/LunaInput";
+import { LunaInlineQuestionCard } from "@/components/luna/LunaInlineQuestionCard";
 import {
   LunaMessage,
   type LunaAnalysisTeam,
@@ -17,8 +19,11 @@ import {
   type LunaSourceReasons
 } from "@/components/luna/LunaMessage";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
+import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
+import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
+import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -377,6 +382,7 @@ type LunaChatProps = {
   ) => void;
   onSuggestion: (text: string) => void;
   onBack?: () => void;
+  onOpenMenu?: () => void;
   sending?: boolean;
   searchStatus?: string[];
   showMobileHeader?: boolean;
@@ -398,6 +404,7 @@ export function LunaChat({
   onSend,
   onSuggestion: _onSuggestion,
   onBack,
+  onOpenMenu,
   sending,
   searchStatus = [],
   showMobileHeader,
@@ -405,9 +412,11 @@ export function LunaChat({
   onRenameTitle
 }: LunaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const bottomUiRef = useRef<HTMLDivElement>(null);
   const reflectStateRef = useRef<{ id: string; messageCount: number } | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipTitleCommitRef = useRef(false);
+  useMeasureBottomUi(bottomUiRef, true);
   const [connectors, setConnectors] = useState<LunaConnectorsState>(
     DEFAULT_INPUT_CONNECTORS
   );
@@ -415,7 +424,18 @@ export function LunaChat({
     useState<LunaNasDriveMode>(DEFAULT_NAS_DRIVE_MODE);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [showQuestionCard, setShowQuestionCard] = useState(false);
+  const {
+    pendingQuestion,
+    busy: questionBusy,
+    error: questionError,
+    answeredContent,
+    answeredMessage,
+    submitAnswer,
+    clearAnswered
+  } = useLunaPendingQuestion(Boolean(showMobileHeader));
   const title = conversation?.title ?? "새 대화";
+  const hasPendingQuestion = Boolean(pendingQuestion);
 
   useEffect(() => {
     setEditingTitle(false);
@@ -492,181 +512,132 @@ export function LunaChat({
 
   const isEmpty = messages.length === 0 && !sending;
 
+  const titleNode = editingTitle ? (
+    <input
+      ref={titleInputRef}
+      value={titleDraft}
+      onChange={(e) => setTitleDraft(e.target.value)}
+      onBlur={() => void commitTitleEdit()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void commitTitleEdit();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          cancelTitleEdit();
+        }
+      }}
+      className="w-full rounded border border-[#534AB7] px-1.5 py-0.5 text-[14.5px] font-semibold text-slate-900 outline-none"
+    />
+  ) : (
+    <button
+      type="button"
+      onDoubleClick={beginEditTitle}
+      className="chip-sm block w-full truncate text-left text-[14.5px] font-semibold text-slate-900"
+      title="더블클릭하여 이름 변경"
+    >
+      {title}
+    </button>
+  );
+
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-white">
-      {showMobileHeader ? (
-        <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-3 md:hidden">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
-            aria-label="뒤로가기"
-          >
-            ←
-          </button>
-          <img
-            src="/luna/luna-face.png"
-            alt="LUNA"
-            width={32}
-            height={32}
-            draggable={false}
-            className="block h-8 w-8 shrink-0 rounded-full object-cover"
-          />
-          <div className="min-w-0 flex-1">
-            {editingTitle ? (
-              <input
-                ref={titleInputRef}
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={() => void commitTitleEdit()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void commitTitleEdit();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelTitleEdit();
-                  }
-                }}
-                className="w-full rounded border border-[#534AB7] px-1.5 py-0.5 text-sm font-semibold text-slate-900 outline-none"
-              />
-            ) : (
-              <button
-                type="button"
-                onDoubleClick={beginEditTitle}
-                className="block w-full truncate text-left text-sm font-semibold text-slate-900"
-                title="더블클릭하여 이름 변경"
-              >
-                {title}
-              </button>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="hidden items-center border-b border-slate-200 px-5 py-3 md:flex">
-        {editingTitle ? (
-          <input
-            ref={titleInputRef}
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={() => void commitTitleEdit()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void commitTitleEdit();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                cancelTitleEdit();
-              }
-            }}
-            className="w-full max-w-md rounded border border-[#534AB7] px-2 py-1 text-base font-semibold text-slate-900 outline-none"
-          />
-        ) : (
-          <h1
-            className="truncate text-base font-semibold text-slate-900"
-            onDoubleClick={beginEditTitle}
-            title="더블클릭하여 이름 변경"
-          >
-            {title}
-          </h1>
-        )}
-      </div>
-
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-4">
-        {isEmpty ? (
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <img
-              src="/luna/luna-play.webp"
-              alt="루나"
-              width={140}
-              height={140}
-              draggable={false}
-              style={{
-                display: "block",
-                margin: "0 auto",
-                pointerEvents: "none"
-              }}
-            />
-            <p
-              className="mb-6 text-base font-medium text-slate-800"
-              style={{ marginTop: 12 }}
+    <ChatShellChrome
+      headerLeft={
+        showMobileHeader ? (
+          <>
+            <button
+              type="button"
+              onClick={onBack}
+              className="chip-sm flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+              aria-label="뒤로가기"
             >
-              안녕하세요, 저는 루나입니다
-            </p>
-            <div className="flex w-full max-w-md flex-col gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={sending}
-                  onClick={() =>
-                    onSend(s, connectors, [], [], {
-                      perspective_ids: [],
-                      role_ids: [],
-                      task_ids: []
-                    })
-                  }
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition hover:border-[#534AB7]/40 hover:bg-[#EEEDFE]/40 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mx-auto w-full max-w-3xl pb-2">
-            {messages.map((m) => {
-              const isThinking =
-                m.isThinking === true || m.metadata?.isThinking === true;
-              return (
-                <LunaMessage
-                  key={m.id}
-                  id={m.id}
-                  role={m.role}
-                  content={m.content}
-                  engine={m.engine}
-                  feedback={m.feedback}
-                  notionSources={m.notionSources}
-                  cards={m.cards}
-                  sourceReasons={m.sourceReasons}
-                  nasDriveMode={nasDriveMode}
-                  onNasDriveModeChange={setNasDriveMode}
-                  attachments={m.attachments}
-                  isThinking={isThinking}
-                  searchStatus={isThinking ? searchStatus : []}
-                  modelLabel={m.modelLabel}
-                  durationMs={m.durationMs}
-                  modelSteps={m.modelSteps}
-                  steps={m.steps}
-                  searchRounds={m.searchRounds}
-                  clarify={m.clarify}
-                  mode={m.mode}
-                  teams={m.teams}
-                  onClarifySelect={
-                    m.clarify
-                      ? (option) =>
-                          onSend(
-                            option,
-                            { notion: true, web: true, nas: true },
-                            [],
-                            [],
-                            {
-                              perspective_ids: [],
-                              role_ids: [],
-                              task_ids: []
-                            }
-                          )
-                      : undefined
-                  }
+              <ChevronLeft size={22} strokeWidth={1.75} aria-hidden />
+            </button>
+            <img
+              src="/luna/luna-face.png"
+              alt="LUNA"
+              width={26}
+              height={26}
+              draggable={false}
+              className="block h-[26px] w-[26px] shrink-0 rounded-full object-cover"
+            />
+          </>
+        ) : undefined
+      }
+      headerTitle={showMobileHeader ? titleNode : <span className="sr-only">{title}</span>}
+      headerRight={
+        showMobileHeader ? (
+          <>
+            <button
+              type="button"
+              aria-label="루나 질문"
+              onClick={() => {
+                if (pendingQuestion || answeredMessage) {
+                  setShowQuestionCard(true);
+                }
+              }}
+              className="chip-sm relative flex h-10 w-10 shrink-0 items-center justify-center"
+            >
+              <img
+                src="/luna/luna-face.png"
+                alt=""
+                width={28}
+                height={28}
+                draggable={false}
+                className="block h-7 w-7 rounded-full object-cover"
+              />
+              {hasPendingQuestion ? (
+                <span
+                  aria-hidden
+                  className="absolute right-1 top-1 h-2 w-2 rounded-full border-2 border-white"
+                  style={{ background: "#BA7517" }}
                 />
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="mx-auto w-full max-w-3xl">
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={onOpenMenu}
+              className="chip-sm flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+              aria-label="메뉴"
+            >
+              <Menu size={20} strokeWidth={1.75} aria-hidden />
+            </button>
+          </>
+        ) : undefined
+      }
+      desktopHeader={
+        <div className="flex items-center border-b border-slate-200 px-5 py-3">
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={() => void commitTitleEdit()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commitTitleEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelTitleEdit();
+                }
+              }}
+              className="w-full max-w-md rounded border border-[#534AB7] px-2 py-1 text-base font-semibold text-slate-900 outline-none"
+            />
+          ) : (
+            <h1
+              className="truncate text-base font-semibold text-slate-900"
+              onDoubleClick={beginEditTitle}
+              title="더블클릭하여 이름 변경"
+            >
+              {title}
+            </h1>
+          )}
+        </div>
+      }
+      messagesRef={listRef}
+      footerRef={bottomUiRef}
+      footer={
         <LunaInput
           onSend={onSend}
           disabled={sending}
@@ -675,7 +646,115 @@ export function LunaChat({
           connectors={connectors}
           onConnectorsChange={setConnectors}
         />
-      </div>
-    </div>
+      }
+    >
+      {showQuestionCard ? (
+        <LunaInlineQuestionCard
+          question={pendingQuestion}
+          answeredMessage={answeredMessage}
+          answeredContent={answeredContent}
+          busy={questionBusy}
+          error={questionError}
+          onAnswer={async (answer) => {
+            await submitAnswer(answer);
+          }}
+          onDismiss={() => setShowQuestionCard(false)}
+          onCloseAnswered={() => {
+            clearAnswered();
+            setShowQuestionCard(false);
+          }}
+        />
+      ) : null}
+      {isEmpty ? (
+        <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+          <img
+            src="/luna/luna-play.webp"
+            alt="루나"
+            width={140}
+            height={140}
+            draggable={false}
+            style={{
+              display: "block",
+              margin: "0 auto",
+              pointerEvents: "none"
+            }}
+          />
+          <p
+            className="mb-6 text-base font-medium text-slate-800"
+            style={{ marginTop: 12 }}
+          >
+            안녕하세요, 저는 루나입니다
+          </p>
+          <div className="flex w-full max-w-md flex-col gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                disabled={sending}
+                onClick={() =>
+                  onSend(s, connectors, [], [], {
+                    perspective_ids: [],
+                    role_ids: [],
+                    task_ids: []
+                  })
+                }
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition hover:border-[#534AB7]/40 hover:bg-[#EEEDFE]/40 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="pb-2">
+          {messages.map((m) => {
+            const isThinking =
+              m.isThinking === true || m.metadata?.isThinking === true;
+            return (
+              <LunaMessage
+                key={m.id}
+                id={m.id}
+                role={m.role}
+                content={m.content}
+                engine={m.engine}
+                feedback={m.feedback}
+                notionSources={m.notionSources}
+                cards={m.cards}
+                sourceReasons={m.sourceReasons}
+                nasDriveMode={nasDriveMode}
+                onNasDriveModeChange={setNasDriveMode}
+                attachments={m.attachments}
+                isThinking={isThinking}
+                searchStatus={isThinking ? searchStatus : []}
+                modelLabel={m.modelLabel}
+                durationMs={m.durationMs}
+                modelSteps={m.modelSteps}
+                steps={m.steps}
+                searchRounds={m.searchRounds}
+                clarify={m.clarify}
+                mode={m.mode}
+                teams={m.teams}
+                onClarifySelect={
+                  m.clarify
+                    ? (option) =>
+                        onSend(
+                          option,
+                          { notion: true, web: true, nas: true },
+                          [],
+                          [],
+                          {
+                            perspective_ids: [],
+                            role_ids: [],
+                            task_ids: []
+                          }
+                        )
+                    : undefined
+                }
+              />
+            );
+          })}
+        </div>
+      )}
+    </ChatShellChrome>
   );
 }

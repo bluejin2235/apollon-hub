@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { LunaSettingsTab } from "@/components/settings/luna-settings-tab";
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     profileSelect: "id, email, name, department, role"
   });
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
+  const [mobileShowingContent, setMobileShowingContent] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [profileEmail, setProfileEmail] = useState("");
   const [profileRole, setProfileRole] = useState<Role>("멤버");
@@ -295,12 +297,12 @@ export default function SettingsPage() {
       />
 
       <div className="pb-10 pt-14">
-        <div className="mb-7">
+        <div className="mb-7 hidden md:block">
           <h1 className="text-3xl font-bold text-slate-900">설정</h1>
           <p className="mt-2 text-slate-600">프로필 및 계정 설정을 관리하세요.</p>
         </div>
 
-        <div className="mb-7 flex items-center justify-between">
+        <div className="mb-7 hidden items-center justify-between md:flex">
           <nav className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
             {tabs.map((tab) => (
               <button
@@ -328,6 +330,57 @@ export default function SettingsPage() {
             </button>
           ) : null}
         </div>
+
+        <div className={mobileShowingContent ? "hidden" : "md:hidden"}>
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-[#E4E2DA] bg-white p-4">
+            <div className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-apollon-500 text-lg font-bold text-white">
+              {profileName.slice(0, 1) || "A"}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-[16px] font-semibold text-slate-900">{profileName || "-"}</p>
+              <p className="truncate text-[13px] text-slate-600">
+                {profileDepartment || profileEmail || "-"}
+              </p>
+            </div>
+          </div>
+          <nav className="overflow-hidden rounded-2xl border border-[#E4E2DA] bg-white">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  setMobileShowingContent(true);
+                }}
+                className="flex h-[52px] w-full items-center gap-3 border-b border-[#E4E2DA] px-4 text-left text-[13.5px] text-[#1C1C1A] last:border-b-0"
+              >
+                <span className="min-w-0 flex-1">{tab.label}</span>
+                <ChevronRight size={16} className="shrink-0 text-[#9B9A93]" />
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className={mobileShowingContent ? "block" : "hidden md:block"}>
+          <button
+            type="button"
+            onClick={() => setMobileShowingContent(false)}
+            className="chip-sm mb-4 inline-flex items-center gap-1 text-[13.5px] text-slate-600 md:hidden"
+          >
+            <ChevronLeft size={18} />
+            설정 목록
+          </button>
+          {activeTab === "team" && canManageTeam ? (
+            <div className="mb-4 flex justify-end md:hidden">
+              <button
+                type="button"
+                onClick={handleOpenInviteModal}
+                className="rounded-lg bg-apollon-500 px-4 py-2 text-sm font-semibold text-white"
+              >
+                + 팀원 추가
+              </button>
+            </div>
+          ) : null}
 
         {activeTab === "profile" ? (
           <section className="apollon-card p-6 md:p-8">
@@ -521,6 +574,7 @@ export default function SettingsPage() {
         {activeTab === "stats" ? <StatisticsTab canManage={canManageServices} /> : null}
 
         {activeTab === "luna" && canManageServices ? <LunaSettingsTab /> : null}
+        </div>
       </div>
 
       {canManageTeam ? (

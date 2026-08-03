@@ -4,6 +4,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 import { resolveUsageDateRange, type UsagePeriodPreset } from "@/lib/arte/api-usage";
 import { supabase } from "@/lib/supabase/client";
 import { CreditRegisterModal } from "@/components/agents/credit-register-modal";
+import { TableScrollHint } from "@/components/ui/table-scroll-hint";
 
 type CreditRecord = {
   id: string;
@@ -266,7 +267,7 @@ export function CreditRecordsTab() {
       </section>
 
       {/* KPI 카드 */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-slate-500">기간 내 총 충전 비용</p>
           <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
@@ -354,7 +355,7 @@ export function CreditRecordsTab() {
       )}
 
       {/* 결제 내역 */}
-      <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="text-base font-semibold text-slate-900">결제 내역</h2>
         </div>
@@ -365,7 +366,8 @@ export function CreditRecordsTab() {
             등록된 내역이 없습니다. 충전 등록 버튼으로 추가해 주세요.
           </p>
         ) : (
-          <table className="w-full min-w-[600px] text-sm">
+          <TableScrollHint className="tablewrap">
+          <table className="w-full min-w-[600px] text-[12px] md:text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
                 <SortableTh
@@ -461,6 +463,7 @@ export function CreditRecordsTab() {
               })}
             </tbody>
           </table>
+          </TableScrollHint>
         )}
       </section>
 

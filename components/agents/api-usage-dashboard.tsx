@@ -15,6 +15,7 @@ import {
   type UsagePeriodPreset
 } from "@/lib/arte/api-usage";
 import { formatKrw, useUsdKrwForUsage } from "@/lib/arte/usd-krw-rate";
+import { TableScrollHint } from "@/components/ui/table-scroll-hint";
 import { supabase } from "@/lib/supabase/client";
 
 const PERIOD_OPTIONS: { value: UsagePeriodPreset; label: string }[] = [
@@ -262,7 +263,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
 
       {!loading && !error ? (
         <>
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-slate-500">총 비용</p>
               <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{formatKrw(totalKrw)}</p>
@@ -326,11 +327,12 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
             </div>
           </section>
 
-          <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-base font-semibold text-slate-900">모델별 비용</h2>
             </div>
-            <table className="w-full min-w-[640px] text-sm">
+            <TableScrollHint className="tablewrap">
+            <table className="w-full min-w-[640px] text-[12px] md:text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium text-slate-500">
                   <th className="px-5 py-3">모델명</th>
@@ -371,6 +373,7 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                 )}
               </tbody>
             </table>
+            </TableScrollHint>
           </section>
 
           <section className="rounded-xl bg-slate-100 px-5 py-4 text-sm text-slate-700">
