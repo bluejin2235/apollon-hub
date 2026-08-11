@@ -906,8 +906,17 @@ export function LunaSettingsTab() {
           ? ((await evalRes.json()) as { cases?: unknown[] })
           : {};
         const teachJson = teachRes.ok
-          ? ((await teachRes.json()) as { teachPending?: number })
+          ? ((await teachRes.json()) as {
+              conflicts?: unknown[];
+              pending?: unknown[];
+              teachPending?: number;
+            })
           : {};
+
+        // origin=direct 응답: conflict_group 고유 수(conflicts) + candidate 건수(pending)
+        const teachPending =
+          (Array.isArray(teachJson.conflicts) ? teachJson.conflicts.length : 0) +
+          (Array.isArray(teachJson.pending) ? teachJson.pending.length : 0);
 
         const notion = engineJson.connections?.notion === true;
         const web = engineJson.connections?.tavily === true;
@@ -922,7 +931,7 @@ export function LunaSettingsTab() {
           connectorConnected: connected,
           connectorTotal: 4,
           nextStudyAt: "매일 03:00",
-          teachPending: teachJson.teachPending ?? 0,
+          teachPending,
           examCount: evalJson.cases?.length ?? 0,
           examTotal: 20
         });

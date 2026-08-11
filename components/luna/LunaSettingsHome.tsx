@@ -81,7 +81,9 @@ export default function LunaSettingsHome({ onSelect, stats = {} }: LunaSettingsH
           {icon(m.slug)}
           <span className={`text-sm font-medium ${isBrain ? 'text-amber-900' : 'text-gray-900'}`}>{m.name}</span>
           {m.badgeAccent && (
-            <span className="ml-auto text-[11px] bg-orange-50 text-orange-800 px-2 py-px rounded-lg">{m.badge.replace('대기 ', '')}</span>
+            <span className="ml-auto text-[11px] bg-orange-50 text-orange-800 px-2 py-px rounded-lg">
+              {m.badge}
+            </span>
           )}
         </div>
         <p className={`mt-1 text-xs ${isBrain ? 'text-amber-800' : 'text-gray-500'}`}>{m.desc}</p>
