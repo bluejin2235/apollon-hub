@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
+import { HubNotifications } from "@/components/portal/hub-notifications";
 import { PortalStatsTracker } from "@/components/portal/portal-stats-tracker";
 import { APP_TITLE } from "@/lib/portal/app-title";
 
@@ -56,29 +56,6 @@ function IconLogout(props: { className?: string }) {
   );
 }
 
-function HeaderNotifications() {
-  useEffect(() => {
-    if (document.getElementById("tabler-icons-css")) return;
-    const link = document.createElement("link");
-    link.id = "tabler-icons-css";
-    link.rel = "stylesheet";
-    link.href =
-      "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css";
-    document.head.appendChild(link);
-  }, []);
-
-  return (
-    <button
-      type="button"
-      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-gray-900 transition hover:border-slate-400 hover:bg-slate-50"
-      aria-label="알림"
-      title="알림"
-    >
-      <i className="ti ti-bell text-lg leading-none" aria-hidden />
-    </button>
-  );
-}
-
 export function PortalHeader({
   userInfoLine,
   onLogout,
@@ -116,7 +93,7 @@ export function PortalHeader({
             {userInfoLine}
           </span>
 
-          <HeaderNotifications />
+          <HubNotifications />
 
           {showSettingsLink ? (
             <Link
