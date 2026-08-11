@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { lunaNotify } from "@/lib/luna/notify";
 
 export const runtime = "nodejs";
 
@@ -71,6 +72,14 @@ export async function POST(request: NextRequest) {
     console.error("[luna/teach/conflict] update", updateError);
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
+
+  await lunaNotify(
+    admin,
+    "conflict",
+    "충돌 표시",
+    "교정 화면에 의견 충돌 1건이 등록되었습니다.",
+    { level: "info", meta: { group, ids } }
+  );
 
   return NextResponse.json({ ok: true, group, ids });
 }

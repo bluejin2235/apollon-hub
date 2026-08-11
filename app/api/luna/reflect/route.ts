@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { getPrompt } from "@/lib/luna/prompts";
+import { lunaNotify } from "@/lib/luna/notify";
 
 export const runtime = "nodejs";
 
@@ -190,6 +191,14 @@ export async function POST(request: NextRequest) {
     console.error("[luna/reflect] insert", insertError);
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
+
+  await lunaNotify(
+    admin,
+    "reflect",
+    "루나가 배움",
+    `루나가 ${rows.length}건 배움`,
+    { level: "success", meta: { saved: rows.length, conversation_id: conversationId } }
+  );
 
   // 4)
   return NextResponse.json({ saved: rows.length });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { lunaNotify } from "@/lib/luna/notify";
 
 export const runtime = "nodejs";
 
@@ -94,6 +95,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: loserError.message }, { status: 500 });
     }
   }
+
+  await lunaNotify(
+    admin,
+    "conflict",
+    "충돌 판정 완료",
+    "의견 충돌 1건이 판정·정리되었습니다.",
+    { level: "success", meta: { group, winner_id: winnerId } }
+  );
 
   return NextResponse.json({ ok: true, group, winner_id: winnerId });
 }

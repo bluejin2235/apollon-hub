@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { lunaNotify } from "@/lib/luna/notify";
 
 export const runtime = "nodejs";
 
@@ -136,6 +137,17 @@ export async function POST(request: NextRequest) {
     console.error("[luna/prompts/revert] insert version", verInsertError);
     return NextResponse.json({ error: verInsertError.message }, { status: 500 });
   }
+
+  await lunaNotify(
+    admin,
+    "prompt_change",
+    "프롬프트 버전 복원",
+    `「${title}」 → v${version} 기준 복원 (새 버전 v${nextVersion})`,
+    {
+      level: "info",
+      meta: { prompt_id: id, restored_version: version, version: nextVersion }
+    }
+  );
 
   return NextResponse.json({ prompt: updated });
 }

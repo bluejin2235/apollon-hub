@@ -782,47 +782,325 @@ function LunaTalkPanel() {
   );
 }
 
+type NotifyEventsState = {
+  consolidation: boolean;
+  study: boolean;
+  reflect: boolean;
+  conflict: boolean;
+  prompt_change: boolean;
+};
+
+type ConsolidationStatusState = {
+  settings: {
+    volume_threshold: number;
+    backstop_days: number;
+    notify_events: NotifyEventsState;
+  };
+  last_run: {
+    finished_at: string | null;
+    started_at: string;
+    status: string;
+    trigger: string;
+    merged_candidates: number | null;
+    stale_candidates: number | null;
+    conflict_candidates: number | null;
+  } | null;
+  new_active_since_last: number;
+  days_since_last: number | null;
+  days_until_backstop: number | null;
+  would_run: boolean;
+  next_trigger: string | null;
+};
+
+function formatStudyDate(iso: string | null | undefined): string {
+  if (!iso) return "없음";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "없음";
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 function LunaStudyPanel() {
-  const cards = [
-    {
-      title: "예습",
-      subtitle: "자습",
-      desc: "아직 모르는 주제를 미리 학습합니다.",
-      pending: false
-    },
-    {
-      title: "복습",
-      subtitle: "리플렉션",
-      desc: "대화·실패·피드백을 되짚어 정리합니다.",
-      pending: false
-    },
-    {
-      title: "정리",
-      subtitle: "망각·통합",
-      desc: "오래된 기억을 정리하고 통합합니다.",
-      pending: true
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState<ConsolidationStatusState | null>(null);
+  const [volumeDraft, setVolumeDraft] = useState(30);
+  const [backstopDraft, setBackstopDraft] = useState(14);
+  const [notifyDraft, setNotifyDraft] = useState<NotifyEventsState>({
+    consolidation: true,
+    study: true,
+    reflect: true,
+    conflict: true,
+    prompt_change: true
+  });
+
+  const load = useCallback(async () => {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token ?? null;
+    if (!token) {
+      setLoading(false);
+      return;
     }
-  ] as const;
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      setIsAdmin(profile?.role === "슈퍼관리자");
+    }
+
+    const res = await fetch("/api/luna/consolidate", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      setMessage(`정리 상태 불러오기 실패`);
+      setLoading(false);
+      return;
+    }
+    const json = (await res.json()) as ConsolidationStatusState;
+    setStatus(json);
+    setVolumeDraft(json.settings.volume_threshold);
+    setBackstopDraft(json.settings.backstop_days);
+    setNotifyDraft(json.settings.notify_events);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function saveSettings() {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token ?? null;
+    if (!token || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/luna/consolidate", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          volume_threshold: volumeDraft,
+          backstop_days: backstopDraft,
+          notify_events: notifyDraft
+        })
+      });
+      if (!res.ok) {
+        setMessage(`저장 실패: ${await res.text()}`);
+        return;
+      }
+      const json = (await res.json()) as ConsolidationStatusState;
+      setStatus(json);
+      setMessage("설정 저장됨");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runNow() {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token ?? null;
+    if (!token || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/luna/consolidate", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ force: true })
+      });
+      const json = (await res.json()) as {
+        skipped?: boolean;
+        error?: string;
+        merged_candidates?: number;
+        stale_candidates?: number;
+        conflict_candidates?: number;
+      };
+      if (!res.ok) {
+        setMessage(`실행 실패: ${json.error || "unknown"}`);
+        return;
+      }
+      if (json.skipped) {
+        setMessage("조건 미충족으로 건너뜀");
+      } else if (json.error) {
+        setMessage(`정리 실패: ${json.error}`);
+      } else {
+        setMessage(
+          `정리 완료 — 중복 ${json.merged_candidates ?? 0} · 미사용 ${json.stale_candidates ?? 0} · 충돌 ${json.conflict_candidates ?? 0}`
+        );
+      }
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const lastRunAt =
+    status?.last_run?.finished_at ?? status?.last_run?.started_at ?? null;
+  const notifyLabels: Array<{ key: keyof NotifyEventsState; label: string }> = [
+    { key: "consolidation", label: "정리" },
+    { key: "study", label: "자습" },
+    { key: "reflect", label: "리플렉션" },
+    { key: "conflict", label: "충돌" },
+    { key: "prompt_change", label: "프롬프트" }
+  ];
 
   return (
     <div className="grid gap-3 md:grid-cols-3">
-      {cards.map((card) => (
-        <div
-          key={card.title}
-          className="rounded-xl border border-slate-200 bg-white p-4"
-        >
-          <div className="flex items-center gap-2">
-            <h3 className="text-[13px] font-semibold text-slate-900">{card.title}</h3>
-            <span className="text-[11px] text-slate-500">{card.subtitle}</span>
-            {card.pending ? (
-              <span className="ml-auto rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                준비 중
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold text-slate-900">예습</h3>
+          <span className="text-[11px] text-slate-500">자습</span>
+        </div>
+        <p className="mt-2 text-[12px] text-slate-600">
+          아직 모르는 주제를 미리 학습합니다.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold text-slate-900">복습</h3>
+          <span className="text-[11px] text-slate-500">리플렉션</span>
+        </div>
+        <p className="mt-2 text-[12px] text-slate-600">
+          대화·실패·피드백을 되짚어 정리합니다.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-1">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold text-slate-900">정리</h3>
+          <span className="text-[11px] text-slate-500">망각·통합</span>
+        </div>
+        <p className="mt-2 text-[12px] text-slate-600">
+          오래된 기억을 정리하고 통합합니다. 후보는 교정 화면에서 승인합니다.
+        </p>
+
+        {loading ? (
+          <p className="mt-3 text-[12px] text-slate-500">불러오는 중…</p>
+        ) : (
+          <div className="mt-3 space-y-3 text-[12px] text-slate-700">
+            <p>
+              마지막 실행일{" "}
+              <span className="font-medium text-slate-900">
+                {formatStudyDate(lastRunAt)}
               </span>
+              {status?.last_run?.status ? (
+                <span className="text-slate-500"> · {status.last_run.status}</span>
+              ) : null}
+            </p>
+            <p>
+              다음 조건 · 신규{" "}
+              <span className="font-medium">
+                {status?.new_active_since_last ?? 0}/{status?.settings.volume_threshold ?? volumeDraft}
+              </span>
+              {" · "}
+              백스톱{" "}
+              <span className="font-medium">
+                {status?.days_until_backstop === 0
+                  ? "도래"
+                  : `D-${status?.days_until_backstop ?? "-"}`}
+              </span>
+            </p>
+
+            {isAdmin ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-[11px] text-slate-500">
+                    신규 임계값
+                    <input
+                      type="number"
+                      min={5}
+                      max={500}
+                      value={volumeDraft}
+                      onChange={(e) => setVolumeDraft(Number(e.target.value))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-slate-900"
+                    />
+                  </label>
+                  <label className="block text-[11px] text-slate-500">
+                    백스톱(일)
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={backstopDraft}
+                      onChange={(e) => setBackstopDraft(Number(e.target.value))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-slate-900"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <p className="mb-1.5 text-[11px] text-slate-500">알림 이벤트</p>
+                  <div className="flex flex-wrap gap-2">
+                    {notifyLabels.map(({ key, label }) => (
+                      <label
+                        key={key}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={notifyDraft[key]}
+                          onChange={(e) =>
+                            setNotifyDraft((prev) => ({
+                              ...prev,
+                              [key]: e.target.checked
+                            }))
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveSettings()}
+                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    설정 저장
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runNow()}
+                    className="rounded-lg bg-[#534AB7] px-2.5 py-1.5 text-[11px] font-medium text-white disabled:opacity-40"
+                  >
+                    지금 정리 실행
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {message ? (
+              <p className="text-[11px] text-slate-500">{message}</p>
             ) : null}
           </div>
-          <p className="mt-2 text-[12px] text-slate-600">{card.desc}</p>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
   );
 }

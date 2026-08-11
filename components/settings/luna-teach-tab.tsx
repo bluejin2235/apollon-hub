@@ -13,7 +13,17 @@ type TeachItem = {
   created_at: string | null;
   use_count: number | null;
   conflict_group: string | null;
+  raw_input?: string | null;
+  merge_target?: string | null;
+  review_reason?: string | null;
 };
+
+function reviewReasonLabel(reason: string | null | undefined): string | null {
+  if (reason === "duplicate") return "중복";
+  if (reason === "stale") return "미사용";
+  if (reason === "contradiction") return "충돌";
+  return null;
+}
 
 type ConflictGroup = {
   group: string;
@@ -162,6 +172,11 @@ export function LunaTeachTab() {
                   key={group.group}
                   className="rounded-lg border border-orange-200 bg-orange-50/40 p-3"
                 >
+                  {group.items.some((it) => it.review_reason === "contradiction") ? (
+                    <span className="mb-2 inline-block rounded-lg bg-orange-100 px-2 py-0.5 text-[11px] text-orange-900">
+                      충돌
+                    </span>
+                  ) : null}
                   <div className="grid gap-3 md:grid-cols-2">
                     {[a, b].map((item) => (
                       <div
@@ -281,12 +296,27 @@ export function LunaTeachTab() {
           <p className="mt-3 text-[12px] text-slate-500">아직 항목이 없습니다</p>
         ) : (
           <ul className="mt-3 divide-y divide-slate-100">
-            {pending.map((item) => (
+            {pending.map((item) => {
+              const reasonLabel = reviewReasonLabel(item.review_reason);
+              return (
               <li key={item.id} className="flex flex-wrap items-start gap-3 py-3">
                 <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    {reasonLabel ? (
+                      <span className="rounded-lg bg-orange-50 px-2 py-0.5 text-[11px] text-orange-900">
+                        {reasonLabel}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="whitespace-pre-wrap text-[13px] text-slate-900">
                     {item.content}
                   </p>
+                  {item.review_reason === "duplicate" && item.raw_input ? (
+                    <p className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-2.5 py-2 text-[12px] text-slate-700">
+                      <span className="font-medium text-slate-500">병합 초안 · </span>
+                      {item.raw_input}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-[11px] text-slate-500">
                     {item.author_name || "알 수 없음"} · {formatDate(item.created_at)}
                   </p>
@@ -322,7 +352,8 @@ export function LunaTeachTab() {
                   </div>
                 ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

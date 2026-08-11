@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { lunaNotify } from "@/lib/luna/notify";
 import type {
   LunaPromptKind,
   LunaPromptLevel,
@@ -390,6 +391,17 @@ export async function PATCH(request: NextRequest) {
     console.error("[luna/prompts] PATCH version", verInsertError);
     return NextResponse.json({ error: verInsertError.message }, { status: 500 });
   }
+
+  await lunaNotify(
+    admin,
+    "prompt_change",
+    "프롬프트 변경",
+    `「${nextTitle}」 v${nextVersion} — ${changeSummary}`,
+    {
+      level: "info",
+      meta: { prompt_id: id, version: nextVersion }
+    }
+  );
 
   return NextResponse.json({ prompt: updated });
 }

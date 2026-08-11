@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
+import { lunaNotify } from "@/lib/luna/notify";
 import {
   pickSelfstudyTopics,
   runSelfstudyQueueItem
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
 
     const runs: Array<{ report_id: string; queue_id: string; topic: string }> =
       [];
+    const failures: string[] = [];
     const ids = (pending ?? []).map((r) => r.id as string);
 
     for (let i = 0; i < ids.length; i += 1) {
@@ -56,19 +58,53 @@ export async function GET(request: NextRequest) {
         runs.push(result);
       } catch (err) {
         console.error("[luna-selfstudy] run one", ids[i], err);
+        failures.push(
+          err instanceof Error ? err.message : "Selfstudy item failed"
+        );
       }
+    }
+
+    if (runs.length > 0) {
+      await lunaNotify(
+        admin,
+        "study",
+        "야간 자습 완료",
+        `${runs.length}건 자습 리포트 작성`,
+        {
+          level: "success",
+          meta: { ran: runs.length, picked: pick.picked }
+        }
+      );
+    }
+    if (failures.length > 0) {
+      await lunaNotify(
+        admin,
+        "study",
+        "야간 자습 실패",
+        failures[0]!.slice(0, 200),
+        {
+          level: "error",
+          meta: { failed: failures.length, picked: pick.picked }
+        }
+      );
     }
 
     console.log("[luna-selfstudy] cron", {
       picked: pick.picked,
-      ran: runs.length
+      ran: runs.length,
+      failed: failures.length
     });
-    return NextResponse.json({ pick, runs });
+    return NextResponse.json({ pick, runs, failed: failures.length });
   } catch (err) {
     console.error("[luna-selfstudy]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Selfstudy failed" },
-      { status: 500 }
-    );
+    const message = err instanceof Error ? err.message : "Selfstudy failed";
+    try {
+      await lunaNotify(admin, "study", "야간 자습 실패", message.slice(0, 200), {
+        level: "error"
+      });
+    } catch {
+      /* ignore notify errors */
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

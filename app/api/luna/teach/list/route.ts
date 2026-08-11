@@ -16,6 +16,8 @@ type LearningRow = {
   resolved_by: string | null;
   resolved_at: string | null;
   raw_input: string | null;
+  merge_target: string | null;
+  review_reason: string | null;
 };
 
 export type TeachItem = LearningRow & {
@@ -44,9 +46,9 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, category, status, origin, author_id, created_at, use_count, conflict_group, resolved_by, resolved_at, raw_input"
+      "id, content, category, status, origin, author_id, created_at, use_count, conflict_group, resolved_by, resolved_at, raw_input, merge_target, review_reason"
     )
-    .eq("origin", "direct")
+    .or("origin.eq.direct,review_reason.not.is.null")
     .neq("category", "identity")
     .order("created_at", { ascending: false });
 
