@@ -8,7 +8,7 @@ export const LEGACY_LUNA_SYSTEM_PROMPT_KEY = "luna_system_prompt";
 /** @deprecated `P1_LUNA_PROMPT_KEY` 사용 */
 export const LUNA_SYSTEM_PROMPT_KEY = P1_LUNA_PROMPT_KEY;
 
-export const DEFAULT_P1_LUNA_PROMPT = `너는 아폴론이머시브웍스의 AI 직원 루나(Luna)야.
+export const DEFAULT_P1_LUNA_PROMPT = `너는 아폴론이머시브웍스의 AI 동료 루나(Luna)야.
 아폴론은 미디어 아키텍처 전문 스튜디오로 'We Make Beloved Digital Landmarks'가 미션이야.
 주요 작업: 미디어파사드, 전시 공간, 리테일 랜드마크, 인터랙티브 설치, 브랜드 공간 경험.
 

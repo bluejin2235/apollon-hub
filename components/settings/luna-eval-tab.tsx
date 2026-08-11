@@ -337,7 +337,7 @@ export function LunaEvalTab() {
   }
 
   async function deleteCase(c: EvalCase) {
-    if (!window.confirm("이 문항을 삭제할까요?")) return;
+    if (!window.confirm("이 시험 문제를 삭제할까요?")) return;
     const token = await getAccessToken();
     if (!token) return;
     const res = await fetch("/api/luna/eval/cases", {
@@ -367,7 +367,7 @@ export function LunaEvalTab() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        question: "새 문항",
+        question: "새 시험 문제",
         expectation: "",
         category: "general",
         connectors: { notion: true, web: true, nas: true },
@@ -452,10 +452,10 @@ export function LunaEvalTab() {
   async function runAll() {
     const active = cases.filter((c) => c.is_active);
     if (active.length === 0) {
-      setMessage("활성 문항이 없습니다.");
+      setMessage("활성 시험 문제가 없습니다.");
       return;
     }
-    if (!window.confirm(`문항 ${active.length}개를 실행합니다. 계속할까요?`)) {
+    if (!window.confirm(`시험 문제 ${active.length}개를 실행합니다. 계속할까요?`)) {
       return;
     }
 
@@ -662,7 +662,7 @@ export function LunaEvalTab() {
                 className="rounded-lg border border-solid border-slate-200 px-2.5 py-[9px]"
               >
                 <p className="text-[13px] font-medium text-slate-900">{q}</p>
-                <p className="mt-1 text-[11.5px] text-gray-500">{exp || "(기대 결과 없음)"}</p>
+                <p className="mt-1 text-[11.5px] text-gray-500">{exp || "(채점 기준 없음)"}</p>
                 <div className="mt-2">
                   <AnswerBlock answer={r.answer || ""} />
                 </div>
@@ -732,7 +732,7 @@ export function LunaEvalTab() {
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 px-2.5 py-[9px]">
-            <div className="text-[11px] text-slate-500">문항 수</div>
+            <div className="text-[11px] text-slate-500">시험 문제 수</div>
             <div className="mt-0.5 text-[15px] font-medium text-slate-900">{activeCount}</div>
           </div>
         </div>
@@ -742,7 +742,7 @@ export function LunaEvalTab() {
           onClick={() => void runAll()}
           className="shrink-0 rounded-lg bg-[#534AB7] px-3 py-2 text-[12px] font-medium text-white disabled:opacity-40"
         >
-          전체 실행
+          시험 보기
         </button>
       </div>
 
@@ -753,11 +753,11 @@ export function LunaEvalTab() {
       ) : null}
       {message ? <p className="text-[12px] text-slate-600">{message}</p> : null}
 
-      {/* 섹션 1 문항 */}
+      {/* 섹션 1 시험 문제 */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[13px] font-semibold text-slate-900">
-            문항 <span className="font-normal text-slate-400">{cases.length}</span>
+            시험 문제 <span className="font-normal text-slate-400">{cases.length}</span>
           </h3>
           <button
             type="button"
@@ -816,7 +816,7 @@ export function LunaEvalTab() {
                     />
                   </label>
                   <label className="mb-2 block">
-                    <span className="mb-1 block text-[11px] text-gray-500">기대 결과</span>
+                    <span className="mb-1 block text-[11px] text-gray-500">채점 기준</span>
                     <textarea
                       rows={3}
                       value={draft.expectation}

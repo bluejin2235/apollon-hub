@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
@@ -60,6 +60,15 @@ export default function SettingsPage() {
 
   const canManageTeam = profileRole === "슈퍼관리자";
   const canManageServices = profileRole === "슈퍼관리자";
+
+  useEffect(() => {
+    if (!canManageServices) return;
+    const luna = new URLSearchParams(window.location.search).get("luna");
+    if (luna) {
+      setActiveTab("luna");
+      setMobileShowingContent(true);
+    }
+  }, [canManageServices]);
 
   const tabs = useMemo<Array<{ key: TabKey; label: string }>>(() => {
     const base: Array<{ key: TabKey; label: string }> = [
@@ -573,7 +582,11 @@ export default function SettingsPage() {
 
         {activeTab === "stats" ? <StatisticsTab canManage={canManageServices} /> : null}
 
-        {activeTab === "luna" && canManageServices ? <LunaSettingsTab /> : null}
+        {activeTab === "luna" && canManageServices ? (
+          <Suspense fallback={<p className="text-sm text-slate-500">불러오는 중…</p>}>
+            <LunaSettingsTab />
+          </Suspense>
+        ) : null}
         </div>
       </div>
 

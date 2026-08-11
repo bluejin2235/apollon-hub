@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import LunaSettingsHome from "@/components/luna/LunaSettingsHome";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
@@ -15,13 +17,57 @@ import type {
 import { formatPromptNumber } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
-type LunaSubTab =
+type LunaMenuSlug = "brain" | "memory" | "talk" | "study" | "teach" | "exam";
+type LunaSubTab = LunaMenuSlug | "home";
+type LegacyLunaSubTab =
   | "prompts"
   | "eval"
   | "engine"
   | "knowledge"
   | "nas"
   | "trace";
+
+const LEGACY_LUNA_SLUG_MAP: Record<LegacyLunaSubTab, LunaMenuSlug> = {
+  prompts: "brain",
+  engine: "brain",
+  knowledge: "memory",
+  nas: "memory",
+  eval: "exam",
+  trace: "exam"
+};
+
+const LUNA_MENU_SLUGS: LunaMenuSlug[] = [
+  "brain",
+  "memory",
+  "talk",
+  "study",
+  "teach",
+  "exam"
+];
+
+const LUNA_MENU_TITLES: Record<LunaMenuSlug, string> = {
+  brain: "두뇌",
+  memory: "기억",
+  talk: "대화",
+  study: "학습",
+  teach: "교정",
+  exam: "평가"
+};
+
+function isLunaMenuSlug(value: string): value is LunaMenuSlug {
+  return (LUNA_MENU_SLUGS as string[]).includes(value);
+}
+
+function isLegacyLunaSubTab(value: string): value is LegacyLunaSubTab {
+  return value in LEGACY_LUNA_SLUG_MAP;
+}
+
+function resolveLunaSubTab(raw: string | null): LunaSubTab {
+  if (!raw || raw === "home") return "home";
+  if (isLunaMenuSlug(raw)) return raw;
+  if (isLegacyLunaSubTab(raw)) return LEGACY_LUNA_SLUG_MAP[raw];
+  return "home";
+}
 
 type ProfileOption = { id: string; name: string };
 
@@ -632,50 +678,369 @@ function LunaPromptsPanel() {
   );
 }
 
-export function LunaSettingsTab() {
-  const [subTab, setSubTab] = useState<LunaSubTab>("prompts");
+function LunaTalkPanel() {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<
+    { key: string; label: string; connected: boolean; note?: string }[]
+  >([
+    { key: "notion", label: "노션", connected: false },
+    { key: "nas", label: "Work서버", connected: false },
+    { key: "web", label: "웹", connected: false },
+    { key: "youtube", label: "YouTube", connected: false, note: "준비 중" }
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const token = await getAccessToken();
+      if (!token) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      try {
+        const [engineRes, nasRes] = await Promise.all([
+          fetch("/api/luna/engine", { headers: { Authorization: `Bearer ${token}` } }),
+          fetch("/api/luna/nas", { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+        const engineJson = engineRes.ok
+          ? ((await engineRes.json()) as {
+              connections?: { notion?: boolean; tavily?: boolean };
+            })
+          : {};
+        const nasJson = nasRes.ok
+          ? ((await nasRes.json()) as { settings?: unknown; total_count?: number })
+          : {};
+        if (cancelled) return;
+        setRows([
+          {
+            key: "notion",
+            label: "노션",
+            connected: engineJson.connections?.notion === true
+          },
+          {
+            key: "nas",
+            label: "Work서버",
+            connected: Boolean(nasJson.settings) || (nasJson.total_count ?? 0) > 0
+          },
+          {
+            key: "web",
+            label: "웹",
+            connected: engineJson.connections?.tavily === true
+          },
+          {
+            key: "youtube",
+            label: "YouTube",
+            connected: false,
+            note: "준비 중"
+          }
+        ]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <div>
-      <nav className="mb-4 inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
-        {(
-          [
-            { key: "prompts", label: "프롬프트" },
-            { key: "eval", label: "회귀 테스트" },
-            { key: "engine", label: "엔진" },
-            { key: "knowledge", label: "지식" },
-            { key: "nas", label: "Work서버" },
-            { key: "trace", label: "관측" }
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setSubTab(tab.key)}
-            className={`rounded-lg px-3 py-1.5 text-[12px] transition ${
-              subTab === tab.key
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+    <div className="space-y-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-[13px] font-semibold text-slate-900">말투</h3>
+        <p className="mt-1 text-[12px] text-slate-600">
+          말투는 두뇌 L1-01에서 관리합니다.
+        </p>
+      </section>
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-3 text-[13px] font-semibold text-slate-900">커넥터</h3>
+        {loading ? (
+          <p className="text-[12px] text-slate-500">불러오는 중…</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <li
+                key={row.key}
+                className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+              >
+                <span className="text-slate-900">{row.label}</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    row.connected
+                      ? "bg-[#E1F5EE] text-[#04342C]"
+                      : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {row.note ?? (row.connected ? "연결됨" : "미연결")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
 
-      {subTab === "prompts" ? (
-        <LunaPromptsPanel />
-      ) : subTab === "eval" ? (
-        <LunaEvalTab />
-      ) : subTab === "engine" ? (
-        <LunaEngineTab />
-      ) : subTab === "knowledge" ? (
-        <LunaKnowledgeTab />
-      ) : subTab === "nas" ? (
-        <LunaNasTab />
-      ) : (
-        <LunaTraceTab />
-      )}
+function LunaStudyPanel() {
+  const cards = [
+    {
+      title: "예습",
+      subtitle: "자습",
+      desc: "아직 모르는 주제를 미리 학습합니다.",
+      pending: false
+    },
+    {
+      title: "복습",
+      subtitle: "리플렉션",
+      desc: "대화·실패·피드백을 되짚어 정리합니다.",
+      pending: false
+    },
+    {
+      title: "정리",
+      subtitle: "망각·통합",
+      desc: "오래된 기억을 정리하고 통합합니다.",
+      pending: true
+    }
+  ] as const;
+
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {cards.map((card) => (
+        <div
+          key={card.title}
+          className="rounded-xl border border-slate-200 bg-white p-4"
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-slate-900">{card.title}</h3>
+            <span className="text-[11px] text-slate-500">{card.subtitle}</span>
+            {card.pending ? (
+              <span className="ml-auto rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                준비 중
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-[12px] text-slate-600">{card.desc}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LunaTeachPanel() {
+  return (
+    <div className="space-y-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-[13px] font-semibold text-slate-900">의견 충돌 보류함</h3>
+        <p className="mt-3 text-[12px] text-slate-500">아직 항목이 없습니다</p>
+      </section>
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-[13px] font-semibold text-slate-900">승인 대기</h3>
+        <p className="mt-3 text-[12px] text-slate-500">아직 항목이 없습니다</p>
+      </section>
+    </div>
+  );
+}
+
+export function LunaSettingsTab() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawLuna = searchParams.get("luna");
+  const subTab = resolveLunaSubTab(rawLuna);
+
+  const [stats, setStats] = useState<{
+    promptCount?: number;
+    memoryCount?: number;
+    connectorConnected?: number;
+    connectorTotal?: number;
+    nextStudyAt?: string;
+    teachPending?: number;
+    examCount?: number;
+    examTotal?: number;
+  }>({
+    teachPending: 0,
+    nextStudyAt: "매일 03:00",
+    examTotal: 20,
+    connectorTotal: 4
+  });
+
+  useEffect(() => {
+    if (!rawLuna) return;
+    if (rawLuna === "home") {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("luna");
+      const qs = params.toString();
+      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
+      return;
+    }
+    if (isLegacyLunaSubTab(rawLuna)) {
+      const next = LEGACY_LUNA_SLUG_MAP[rawLuna];
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("luna", next);
+      router.replace(`/settings?${params.toString()}`, { scroll: false });
+    }
+  }, [rawLuna, router, searchParams]);
+
+  useEffect(() => {
+    if (subTab !== "home") return;
+    let cancelled = false;
+    void (async () => {
+      const token = await getAccessToken();
+      if (!token || cancelled) return;
+      try {
+        const [promptRes, nasRes, engineRes, evalRes] = await Promise.all([
+          fetch("/api/luna/prompts?active=true", {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch("/api/luna/nas", {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch("/api/luna/engine", {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch("/api/luna/eval/cases", {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
+
+        const promptsJson = promptRes.ok
+          ? ((await promptRes.json()) as { prompts?: unknown[] })
+          : {};
+        const nasJson = nasRes.ok
+          ? ((await nasRes.json()) as { total_count?: number; settings?: unknown })
+          : {};
+        const engineJson = engineRes.ok
+          ? ((await engineRes.json()) as {
+              connections?: { notion?: boolean; tavily?: boolean };
+            })
+          : {};
+        const evalJson = evalRes.ok
+          ? ((await evalRes.json()) as { cases?: unknown[] })
+          : {};
+
+        const notion = engineJson.connections?.notion === true;
+        const web = engineJson.connections?.tavily === true;
+        const nas = Boolean(nasJson.settings) || (nasJson.total_count ?? 0) > 0;
+        const youtube = false;
+        const connected = [notion, nas, web, youtube].filter(Boolean).length;
+
+        if (cancelled) return;
+        setStats({
+          promptCount: promptsJson.prompts?.length ?? 0,
+          memoryCount: nasJson.total_count ?? 0,
+          connectorConnected: connected,
+          connectorTotal: 4,
+          nextStudyAt: "매일 03:00",
+          teachPending: 0,
+          examCount: evalJson.cases?.length ?? 0,
+          examTotal: 20
+        });
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [subTab]);
+
+  const setSubTab = useCallback(
+    (next: LunaSubTab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "home") {
+        params.delete("luna");
+      } else {
+        params.set("luna", next);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
+    },
+    [router, searchParams]
+  );
+
+  if (subTab === "home") {
+    return (
+      <LunaSettingsHome
+        onSelect={(slug) => setSubTab(slug)}
+        stats={stats}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setSubTab("home")}
+          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
+        >
+          ← 홈
+        </button>
+        <h2 className="text-[14px] font-semibold text-slate-900">
+          {LUNA_MENU_TITLES[subTab]}
+        </h2>
+      </div>
+
+      {subTab === "brain" ? (
+        <div className="space-y-8">
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">프롬프트</h3>
+            <LunaPromptsPanel />
+          </section>
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">엔진</h3>
+            <LunaEngineTab />
+          </section>
+        </div>
+      ) : null}
+
+      {subTab === "memory" ? (
+        <div className="space-y-6">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-[13px] font-semibold text-slate-900">
+                조직 기억 (전사 공유)
+              </h3>
+              <p className="mt-1 text-[12px] text-slate-600">
+                팀 전체가 공유하는 지식·문서·합의된 맥락입니다.
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-[13px] font-semibold text-slate-900">
+                개인 기억 (계정별)
+              </h3>
+              <p className="mt-1 text-[12px] text-slate-600">
+                계정별로 쌓이는 대화·선호·개인 맥락입니다.
+              </p>
+            </div>
+          </div>
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">지식</h3>
+            <LunaKnowledgeTab />
+          </section>
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">Work서버</h3>
+            <LunaNasTab />
+          </section>
+        </div>
+      ) : null}
+
+      {subTab === "talk" ? <LunaTalkPanel /> : null}
+      {subTab === "study" ? <LunaStudyPanel /> : null}
+      {subTab === "teach" ? <LunaTeachPanel /> : null}
+
+      {subTab === "exam" ? (
+        <div className="space-y-8">
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">시험</h3>
+            <LunaEvalTab />
+          </section>
+          <section>
+            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">관측 지표</h3>
+            <LunaTraceTab />
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
