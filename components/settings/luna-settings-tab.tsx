@@ -4,11 +4,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import LunaSettingsHome from "@/components/luna/LunaSettingsHome";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
-import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaNasTab } from "@/components/settings/luna-nas-tab";
 import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
-import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
 import type {
   LunaPromptGroupRow,
   LunaPromptKind,
@@ -18,7 +16,7 @@ import type {
 import { formatPromptNumber } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
-type LunaMenuSlug = "brain" | "memory" | "talk" | "study" | "teach" | "exam";
+type LunaMenuSlug = "brain" | "memory" | "talk" | "study" | "teach";
 type LunaSubTab = LunaMenuSlug | "home";
 type LegacyLunaSubTab =
   | "prompts"
@@ -26,15 +24,17 @@ type LegacyLunaSubTab =
   | "engine"
   | "knowledge"
   | "nas"
-  | "trace";
+  | "trace"
+  | "exam";
 
-const LEGACY_LUNA_SLUG_MAP: Record<LegacyLunaSubTab, LunaMenuSlug> = {
+const LEGACY_LUNA_SLUG_MAP: Record<LegacyLunaSubTab, LunaMenuSlug | "home"> = {
   prompts: "brain",
   engine: "brain",
   knowledge: "memory",
   nas: "memory",
-  eval: "exam",
-  trace: "exam"
+  eval: "home",
+  trace: "home",
+  exam: "home"
 };
 
 const LUNA_MENU_SLUGS: LunaMenuSlug[] = [
@@ -42,8 +42,7 @@ const LUNA_MENU_SLUGS: LunaMenuSlug[] = [
   "memory",
   "talk",
   "study",
-  "teach",
-  "exam"
+  "teach"
 ];
 
 const LUNA_MENU_TITLES: Record<LunaMenuSlug, string> = {
@@ -51,8 +50,7 @@ const LUNA_MENU_TITLES: Record<LunaMenuSlug, string> = {
   memory: "기억",
   talk: "대화",
   study: "학습",
-  teach: "교정",
-  exam: "평가"
+  teach: "교정"
 };
 
 function isLunaMenuSlug(value: string): value is LunaMenuSlug {
@@ -788,6 +786,7 @@ type NotifyEventsState = {
   reflect: boolean;
   conflict: boolean;
   prompt_change: boolean;
+  exam: boolean;
 };
 
 type ConsolidationStatusState = {
@@ -834,7 +833,8 @@ function LunaStudyPanel() {
     study: true,
     reflect: true,
     conflict: true,
-    prompt_change: true
+    prompt_change: true,
+    exam: true
   });
 
   const load = useCallback(async () => {
@@ -962,7 +962,8 @@ function LunaStudyPanel() {
     { key: "study", label: "자습" },
     { key: "reflect", label: "리플렉션" },
     { key: "conflict", label: "충돌" },
-    { key: "prompt_change", label: "프롬프트" }
+    { key: "prompt_change", label: "프롬프트" },
+    { key: "exam", label: "시험" }
   ];
 
   return (
@@ -971,9 +972,12 @@ function LunaStudyPanel() {
         <div className="flex items-center gap-2">
           <h3 className="text-[13px] font-semibold text-slate-900">예습</h3>
           <span className="text-[11px] text-slate-500">자습</span>
+          <span className="ml-auto rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+            재설계 중
+          </span>
         </div>
         <p className="mt-2 text-[12px] text-slate-600">
-          아직 모르는 주제를 미리 학습합니다.
+          아직 모르는 주제를 미리 학습합니다. 양육 모델 재설계로 일시 중지되었습니다.
         </p>
       </div>
 
@@ -1083,14 +1087,6 @@ function LunaStudyPanel() {
                   >
                     설정 저장
                   </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void runNow()}
-                    className="rounded-lg bg-[#534AB7] px-2.5 py-1.5 text-[11px] font-medium text-white disabled:opacity-40"
-                  >
-                    지금 정리 실행
-                  </button>
                 </div>
               </>
             ) : null}
@@ -1118,12 +1114,9 @@ export function LunaSettingsTab() {
     connectorTotal?: number;
     nextStudyAt?: string;
     teachPending?: number;
-    examCount?: number;
-    examTotal?: number;
   }>({
     teachPending: 0,
     nextStudyAt: "매일 03:00",
-    examTotal: 20,
     connectorTotal: 4
   });
 
@@ -1139,8 +1132,13 @@ export function LunaSettingsTab() {
     if (isLegacyLunaSubTab(rawLuna)) {
       const next = LEGACY_LUNA_SLUG_MAP[rawLuna];
       const params = new URLSearchParams(searchParams.toString());
-      params.set("luna", next);
-      router.replace(`/settings?${params.toString()}`, { scroll: false });
+      if (next === "home") {
+        params.delete("luna");
+      } else {
+        params.set("luna", next);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
     }
   }, [rawLuna, router, searchParams]);
 
@@ -1151,7 +1149,7 @@ export function LunaSettingsTab() {
       const token = await getAccessToken();
       if (!token || cancelled) return;
       try {
-        const [promptRes, nasRes, engineRes, evalRes, teachRes] = await Promise.all([
+        const [promptRes, nasRes, engineRes, teachRes] = await Promise.all([
           fetch("/api/luna/prompts", {
             headers: { Authorization: `Bearer ${token}` }
           }),
@@ -1159,9 +1157,6 @@ export function LunaSettingsTab() {
             headers: { Authorization: `Bearer ${token}` }
           }),
           fetch("/api/luna/engine", {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch("/api/luna/eval/cases", {
             headers: { Authorization: `Bearer ${token}` }
           }),
           fetch("/api/luna/teach/list", {
@@ -1179,9 +1174,6 @@ export function LunaSettingsTab() {
           ? ((await engineRes.json()) as {
               connections?: { notion?: boolean; tavily?: boolean };
             })
-          : {};
-        const evalJson = evalRes.ok
-          ? ((await evalRes.json()) as { cases?: unknown[] })
           : {};
         const teachJson = teachRes.ok
           ? ((await teachRes.json()) as {
@@ -1209,9 +1201,7 @@ export function LunaSettingsTab() {
           connectorConnected: connected,
           connectorTotal: 4,
           nextStudyAt: "매일 03:00",
-          teachPending,
-          examCount: evalJson.cases?.length ?? 0,
-          examTotal: 20
+          teachPending
         });
       } catch {
         // keep defaults
@@ -1307,19 +1297,6 @@ export function LunaSettingsTab() {
       {subTab === "talk" ? <LunaTalkPanel /> : null}
       {subTab === "study" ? <LunaStudyPanel /> : null}
       {subTab === "teach" ? <LunaTeachTab /> : null}
-
-      {subTab === "exam" ? (
-        <div className="space-y-8">
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">시험</h3>
-            <LunaEvalTab />
-          </section>
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">관측 지표</h3>
-            <LunaTraceTab />
-          </section>
-        </div>
-      ) : null}
     </div>
   );
 }

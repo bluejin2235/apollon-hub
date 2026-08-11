@@ -5,14 +5,16 @@ export type LunaNotifyEvent =
   | "study"
   | "reflect"
   | "conflict"
-  | "prompt_change";
+  | "prompt_change"
+  | "exam";
 
 const DEFAULT_NOTIFY_EVENTS: Record<LunaNotifyEvent, boolean> = {
   consolidation: true,
   study: true,
   reflect: true,
   conflict: true,
-  prompt_change: true
+  prompt_change: true,
+  exam: true
 };
 
 const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
@@ -20,7 +22,8 @@ const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
   study: "luna_study",
   reflect: "luna_reflect",
   conflict: "luna_conflict",
-  prompt_change: "luna_prompt"
+  prompt_change: "luna_prompt",
+  exam: "luna_exam"
 };
 
 const EVENT_LINK: Record<LunaNotifyEvent, string> = {
@@ -28,11 +31,12 @@ const EVENT_LINK: Record<LunaNotifyEvent, string> = {
   study: "/settings?tab=luna&luna=study",
   reflect: "/settings?tab=luna&luna=teach",
   conflict: "/settings?tab=luna&luna=teach",
-  prompt_change: "/settings?tab=luna&luna=brain"
+  prompt_change: "/settings?tab=luna&luna=brain",
+  exam: "/settings"
 };
 
 export type LunaNotifyOptions = {
-  level?: "info" | "success" | "error";
+  level?: "info" | "success" | "warn" | "error";
   link?: string;
   meta?: Record<string, unknown>;
 };

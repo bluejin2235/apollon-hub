@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
-import { runLunaTurn, type LunaConnectors } from "@/lib/luna/run-chat";
+import { executeEvalCase } from "@/lib/luna/eval-exam";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
@@ -47,68 +48,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Run not found" }, { status: 404 });
   }
 
-  const { data: evalCase, error: caseError } = await admin
-    .from("luna_eval_cases")
-    .select("id, question, connectors, is_active")
-    .eq("id", caseId)
-    .maybeSingle();
-
-  if (caseError) {
-    console.error("[luna/eval/run-one] case", caseError);
-    return NextResponse.json({ error: caseError.message }, { status: 500 });
-  }
-  if (!evalCase) {
-    return NextResponse.json({ error: "Case not found" }, { status: 404 });
-  }
-
-  const connectorsRaw =
-    evalCase.connectors && typeof evalCase.connectors === "object"
-      ? (evalCase.connectors as Record<string, unknown>)
-      : {};
-  const connectors: LunaConnectors = {
-    notion: connectorsRaw.notion === true,
-    web: connectorsRaw.web === true,
-    nas: connectorsRaw.nas === true
-  };
-
-  let result;
   try {
-    result = await runLunaTurn(admin, evalCase.question as string, connectors);
+    const result = await executeEvalCase(admin, runId, caseId);
+    return NextResponse.json({
+      case_id: caseId,
+      answer: result.answer,
+      duration_ms: result.duration_ms,
+      result: {
+        id: result.id,
+        case_id: result.case_id,
+        answer: result.answer,
+        auto_pass: result.auto_pass,
+        auto_reason: result.auto_reason,
+        duration_ms: result.duration_ms,
+        model_label: result.model_label,
+        verdict: result.auto_pass ? "pass" : "fail",
+        memo: null,
+        sources: null
+      }
+    });
   } catch (err) {
-    console.error("[luna/eval/run-one] runLunaTurn", err);
+    console.error("[luna/eval/run-one]", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Run failed" },
       { status: 500 }
     );
   }
-
-  const { data: inserted, error: insertError } = await admin
-    .from("luna_eval_results")
-    .upsert(
-      {
-        run_id: runId,
-        case_id: caseId,
-        answer: result.answer,
-        sources: result.sources,
-        verdict: null,
-        memo: null,
-        duration_ms: result.durationMs,
-        model_label: result.modelLabel
-      },
-      { onConflict: "run_id,case_id" }
-    )
-    .select("id, case_id, answer, duration_ms, model_label, sources, verdict, memo")
-    .single();
-
-  if (insertError) {
-    console.error("[luna/eval/run-one] insert", insertError);
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({
-    case_id: caseId,
-    answer: result.answer,
-    duration_ms: result.durationMs,
-    result: inserted
-  });
 }

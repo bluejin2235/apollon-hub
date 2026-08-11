@@ -27,7 +27,7 @@ async function recomputeRunCounts(
 ) {
   const { data: rows, error } = await admin
     .from("luna_eval_results")
-    .select("verdict")
+    .select("auto_pass, verdict")
     .eq("run_id", runId);
 
   if (error) {
@@ -38,8 +38,14 @@ async function recomputeRunCounts(
   let passed = 0;
   let failed = 0;
   for (const row of rows ?? []) {
-    if (row.verdict === "pass") passed += 1;
-    else if (row.verdict === "fail") failed += 1;
+    if (typeof row.auto_pass === "boolean") {
+      if (row.auto_pass) passed += 1;
+      else failed += 1;
+    } else if (row.verdict === "pass") {
+      passed += 1;
+    } else if (row.verdict === "fail") {
+      failed += 1;
+    }
   }
 
   const { error: updateError } = await admin
@@ -55,7 +61,7 @@ async function recomputeRunCounts(
 export async function GET(request: NextRequest) {
   const gate = await requireSuperAdmin(request);
   if ("error" in gate && gate.error) return gate.error;
-  const { admin } = gate;
+  const { user, admin } = gate;
 
   const runId = request.nextUrl.searchParams.get("run_id")?.trim() ?? "";
   if (!runId) {
@@ -65,7 +71,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_eval_results")
     .select(
-      "id, run_id, case_id, answer, sources, verdict, memo, duration_ms, model_label, created_at, case:luna_eval_cases(id, question, expectation, category, connectors, sort_order)"
+      "id, run_id, case_id, answer, sources, verdict, memo, auto_pass, auto_reason, duration_ms, model_label, created_at, case:luna_eval_cases(id, question, expectation, category, connectors, sort_order)"
     )
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
@@ -75,7 +81,77 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ results: data ?? [] });
+  const results = data ?? [];
+  const resultIds = results.map((r) => r.id as string);
+
+  let myScores = new Map<string, { score: number; comment: string | null }>();
+  let avgByResult = new Map<string, number>();
+  let humanAvg: number | null = null;
+
+  if (resultIds.length > 0) {
+    const { data: scores, error: scoreError } = await admin
+      .from("luna_eval_human_scores")
+      .select("result_id, scorer_id, score, comment")
+      .in("result_id", resultIds);
+
+    if (scoreError) {
+      console.error("[luna/eval/results] scores", scoreError);
+      return NextResponse.json({ error: scoreError.message }, { status: 500 });
+    }
+
+    const sumByResult = new Map<string, { sum: number; n: number }>();
+    let allSum = 0;
+    let allN = 0;
+    for (const s of scores ?? []) {
+      const rid = s.result_id as string;
+      const score = s.score as number;
+      if (s.scorer_id === user.id) {
+        myScores.set(rid, {
+          score,
+          comment: (s.comment as string | null) ?? null
+        });
+      }
+      const agg = sumByResult.get(rid) ?? { sum: 0, n: 0 };
+      agg.sum += score;
+      agg.n += 1;
+      sumByResult.set(rid, agg);
+      allSum += score;
+      allN += 1;
+    }
+    for (const [rid, agg] of sumByResult) {
+      avgByResult.set(rid, Math.round((agg.sum / agg.n) * 10) / 10);
+    }
+    if (allN > 0) {
+      humanAvg = Math.round((allSum / allN) * 10) / 10;
+    }
+  }
+
+  let autoPassed = 0;
+  let autoTotal = 0;
+  for (const r of results) {
+    autoTotal += 1;
+    if (r.auto_pass === true) autoPassed += 1;
+  }
+
+  const enriched = results.map((r) => {
+    const id = r.id as string;
+    const mine = myScores.get(id) ?? null;
+    return {
+      ...r,
+      my_score: mine?.score ?? null,
+      my_comment: mine?.comment ?? null,
+      human_avg: avgByResult.get(id) ?? null
+    };
+  });
+
+  return NextResponse.json({
+    results: enriched,
+    summary: {
+      auto_passed: autoPassed,
+      auto_total: autoTotal,
+      human_avg: humanAvg
+    }
+  });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -116,7 +192,7 @@ export async function PATCH(request: NextRequest) {
     .update(patch)
     .eq("id", id)
     .select(
-      "id, run_id, case_id, answer, sources, verdict, memo, duration_ms, model_label, created_at"
+      "id, run_id, case_id, answer, sources, verdict, memo, auto_pass, auto_reason, duration_ms, model_label, created_at"
     )
     .maybeSingle();
 

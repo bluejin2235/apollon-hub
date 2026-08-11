@@ -119,7 +119,11 @@ export async function PATCH(request: NextRequest) {
       prompt_change:
         typeof incoming.prompt_change === "boolean"
           ? incoming.prompt_change
-          : current.notify_events.prompt_change
+          : current.notify_events.prompt_change,
+      exam:
+        typeof incoming.exam === "boolean"
+          ? incoming.exam
+          : current.notify_events.exam
     };
     rows.push({
       key: "notify_events",

@@ -1,119 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { isSuperAdminUser } from "@/lib/luna/auth";
+import { lunaSelfstudyGone } from "@/lib/luna/selfstudy-gone";
 
 export const runtime = "nodejs";
 
-async function requireSuperAdmin(request: NextRequest) {
-  const user = await getApiUser(request);
-  if (!user) {
-    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  }
-  const admin = getServiceSupabase();
-  if (!admin) {
-    return {
-      error: NextResponse.json({ error: "Server configuration error" }, { status: 500 })
-    };
-  }
-  if (!(await isSuperAdminUser(admin, user))) {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-  }
-  return { user, admin };
+/** Phase 0: disabled. Original implementation: route.phase5.bak */
+export async function GET() {
+  return lunaSelfstudyGone();
 }
 
-export async function GET(request: NextRequest) {
-  const gate = await requireSuperAdmin(request);
-  if ("error" in gate && gate.error) return gate.error;
-  const { admin } = gate;
-
-  const [queueRes, reportsRes] = await Promise.all([
-    admin
-      .from("luna_selfstudy_queue")
-      .select(
-        "id, topic, source, score, evidence, status, project_id, created_at, processed_at"
-      )
-      .eq("status", "pending")
-      .order("score", { ascending: false })
-      .limit(50),
-    admin
-      .from("luna_reports")
-      .select(
-        "id, topic, title, content, sources, queue_id, project_id, use_count, last_used_at, status, model_label, created_at"
-      )
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(50)
-  ]);
-
-  if (queueRes.error) {
-    console.error("[luna/selfstudy] GET queue", queueRes.error);
-    return NextResponse.json({ error: queueRes.error.message }, { status: 500 });
-  }
-  if (reportsRes.error) {
-    console.error("[luna/selfstudy] GET reports", reportsRes.error);
-    return NextResponse.json(
-      { error: reportsRes.error.message },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({
-    queue: queueRes.data ?? [],
-    reports: reportsRes.data ?? []
-  });
-}
-
-export async function PATCH(request: NextRequest) {
-  const gate = await requireSuperAdmin(request);
-  if ("error" in gate && gate.error) return gate.error;
-  const { admin } = gate;
-
-  let body: {
-    action?: string;
-    queue_id?: string;
-    report_id?: string;
-  };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (body.action === "skip") {
-    const id = typeof body.queue_id === "string" ? body.queue_id.trim() : "";
-    if (!id) {
-      return NextResponse.json({ error: "queue_id is required" }, { status: 400 });
-    }
-    const { error } = await admin
-      .from("luna_selfstudy_queue")
-      .update({
-        status: "skipped",
-        processed_at: new Date().toISOString()
-      })
-      .eq("id", id);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    return NextResponse.json({ ok: true });
-  }
-
-  if (body.action === "archive") {
-    const id = typeof body.report_id === "string" ? body.report_id.trim() : "";
-    if (!id) {
-      return NextResponse.json(
-        { error: "report_id is required" },
-        { status: 400 }
-      );
-    }
-    const { error } = await admin
-      .from("luna_reports")
-      .update({ status: "archived" })
-      .eq("id", id);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    return NextResponse.json({ ok: true });
-  }
-
-  return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+export async function PATCH() {
+  return lunaSelfstudyGone();
 }

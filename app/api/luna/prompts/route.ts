@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { triggerAutoExam } from "@/lib/luna/eval-exam";
 import { lunaNotify } from "@/lib/luna/notify";
 import type {
   LunaPromptKind,
@@ -10,6 +11,7 @@ import type {
 } from "@/lib/luna/prompts";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const LEVEL_ORDER: Record<string, number> = { L1: 0, L2: 1, L3: 2 };
 const KIND_ORDER: Record<string, number> = {
@@ -402,6 +404,8 @@ export async function PATCH(request: NextRequest) {
       meta: { prompt_id: id, version: nextVersion }
     }
   );
+
+  await triggerAutoExam(admin, "prompt_change", user.id);
 
   return NextResponse.json({ prompt: updated });
 }

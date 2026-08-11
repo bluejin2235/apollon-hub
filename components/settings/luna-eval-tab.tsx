@@ -47,9 +47,14 @@ type EvalResult = {
   sources: unknown;
   verdict: "pass" | "fail" | null;
   memo: string | null;
+  auto_pass?: boolean | null;
+  auto_reason?: string | null;
   duration_ms: number | null;
   model_label: string | null;
   created_at: string;
+  my_score?: number | null;
+  my_comment?: string | null;
+  human_avg?: number | null;
   case?: {
     id: string;
     question: string;
@@ -58,6 +63,12 @@ type EvalResult = {
     connectors: Connectors;
     sort_order: number;
   } | null;
+};
+
+type RunSummary = {
+  auto_passed: number;
+  auto_total: number;
+  human_avg: number | null;
 };
 
 type CaseDraft = {
@@ -133,6 +144,8 @@ export function LunaEvalTab() {
   const [pendingVerify, setPendingVerify] = useState<PendingVerifyItem[]>([]);
   const [verifyNotes, setVerifyNotes] = useState<Record<string, string>>({});
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
+  const [expandedResultId, setExpandedResultId] = useState<string | null>(null);
 
   const activeCount = useMemo(
     () => cases.filter((c) => c.is_active).length,
@@ -192,7 +205,10 @@ export function LunaEvalTab() {
       setMessage(`결과 불러오기 실패: ${await res.text()}`);
       return;
     }
-    const json = (await res.json()) as { results?: EvalResult[] };
+    const json = (await res.json()) as {
+      results?: EvalResult[];
+      summary?: RunSummary;
+    };
     const list = (json.results ?? []).map((r) => ({
       ...r,
       case: r.case
@@ -202,6 +218,7 @@ export function LunaEvalTab() {
         : null
     }));
     setResults(list);
+    setRunSummary(json.summary ?? null);
   }
 
   async function loadPendingVerify(run: EvalRun) {
@@ -402,53 +419,6 @@ export function LunaEvalTab() {
     if (run) await loadPendingVerify(run);
   }
 
-  async function setVerdict(resultId: string, verdict: "pass" | "fail") {
-    const token = await getAccessToken();
-    if (!token) return;
-    const res = await fetch("/api/luna/eval/results", {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ id: resultId, verdict })
-    });
-    if (!res.ok) {
-      setMessage(`판정 저장 실패: ${await res.text()}`);
-      return;
-    }
-    const json = (await res.json()) as { result?: EvalResult };
-    if (json.result) {
-      setResults((prev) =>
-        prev.map((r) => (r.id === resultId ? { ...r, verdict: json.result!.verdict } : r))
-      );
-      setLiveResults((prev) =>
-        prev.map((r) => (r.id === resultId ? { ...r, verdict: json.result!.verdict } : r))
-      );
-    }
-    await load();
-  }
-
-  async function setMemo(resultId: string, memo: string) {
-    const token = await getAccessToken();
-    if (!token) return;
-    const res = await fetch("/api/luna/eval/results", {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ id: resultId, memo })
-    });
-    if (!res.ok) return;
-    setResults((prev) =>
-      prev.map((r) => (r.id === resultId ? { ...r, memo } : r))
-    );
-    setLiveResults((prev) =>
-      prev.map((r) => (r.id === resultId ? { ...r, memo } : r))
-    );
-  }
-
   async function runAll() {
     const active = cases.filter((c) => c.is_active);
     if (active.length === 0) {
@@ -541,6 +511,15 @@ export function LunaEvalTab() {
       })
     });
 
+    await fetch("/api/luna/eval/finalize", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ run_id: run.id })
+    });
+
     setRunning(false);
     await load();
     await loadResults(run.id);
@@ -560,9 +539,26 @@ export function LunaEvalTab() {
           <div>
             <h2 className="text-base font-semibold text-slate-900">{selectedRun.label}</h2>
             <p className="text-[12px] text-slate-500">
-              {selectedRun.model_label || "-"} · {selectedRun.passed}/{selectedRun.total}{" "}
-              · {selectedRun.status}
+              {selectedRun.model_label || "-"} · {selectedRun.status}
             </p>
+            <div className="mt-1 flex flex-wrap gap-3 text-[12px] text-slate-700">
+              <span>
+                자동 점수{" "}
+                <span className="font-medium text-slate-900">
+                  {runSummary
+                    ? `${runSummary.auto_passed}/${runSummary.auto_total}`
+                    : `${selectedRun.passed}/${selectedRun.total}`}
+                </span>
+              </span>
+              <span>
+                사람 평균{" "}
+                <span className="font-medium text-slate-900">
+                  {runSummary?.human_avg != null
+                    ? `${runSummary.human_avg}/10`
+                    : "—"}
+                </span>
+              </span>
+            </div>
           </div>
           <button
             type="button"
@@ -656,53 +652,91 @@ export function LunaEvalTab() {
           {displayResults.map((r) => {
             const q = r.case?.question ?? "";
             const exp = r.case?.expectation ?? "";
+            const open = expandedResultId === r.id;
+            const autoPass =
+              typeof r.auto_pass === "boolean"
+                ? r.auto_pass
+                : r.verdict === "pass"
+                  ? true
+                  : r.verdict === "fail"
+                    ? false
+                    : null;
             return (
               <div
                 key={r.id}
                 className="rounded-lg border border-solid border-slate-200 px-2.5 py-[9px]"
               >
-                <p className="text-[13px] font-medium text-slate-900">{q}</p>
-                <p className="mt-1 text-[11.5px] text-gray-500">{exp || "(채점 기준 없음)"}</p>
-                <div className="mt-2">
-                  <AnswerBlock answer={r.answer || ""} />
-                </div>
-                <p className="mt-1.5 text-[10.5px] text-gray-400">
-                  {r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}초` : "-"} ·{" "}
-                  {r.model_label || "-"}
-                </p>
-                <div className="mt-2 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => void setVerdict(r.id, "pass")}
-                    className={`rounded px-2.5 py-1 text-[11px] ${
-                      r.verdict === "pass"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedResultId((prev) => (prev === r.id ? null : r.id))
+                  }
+                  className="flex w-full items-start justify-between gap-2 text-left"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-slate-900">{q}</p>
+                    <p className="mt-1 text-[11.5px] text-gray-500">
+                      {exp || "(채점 기준 없음)"}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded px-2 py-0.5 text-[11px] ${
+                      autoPass === true
                         ? "bg-[#E1F5EE] text-[#04342C]"
-                        : "border border-slate-200 bg-white text-slate-500"
+                        : autoPass === false
+                          ? "bg-[#FBEAF0] text-[#72243E]"
+                          : "bg-slate-100 text-slate-500"
                     }`}
                   >
-                    통과
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void setVerdict(r.id, "fail")}
-                    className={`rounded px-2.5 py-1 text-[11px] ${
-                      r.verdict === "fail"
-                        ? "bg-[#FBEAF0] text-[#72243E]"
-                        : "border border-slate-200 bg-white text-slate-500"
-                    }`}
-                  >
-                    실패
-                  </button>
-                </div>
-                <input
-                  defaultValue={r.memo ?? ""}
-                  onBlur={(e) => {
-                    const next = e.target.value;
-                    if (next !== (r.memo ?? "")) void setMemo(r.id, next);
-                  }}
-                  placeholder="메모 (선택)"
-                  className="mt-2 w-full rounded border border-slate-200 px-2 py-1.5 text-[12px]"
-                />
+                    {autoPass === true
+                      ? "합격"
+                      : autoPass === false
+                        ? "실패"
+                        : "대기"}
+                  </span>
+                </button>
+
+                {open ? (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-[11px] font-medium text-slate-500">
+                        루나 답변
+                      </p>
+                      <AnswerBlock answer={r.answer || ""} />
+                      <p className="mt-1.5 text-[10.5px] text-gray-400">
+                        {r.duration_ms != null
+                          ? `${(r.duration_ms / 1000).toFixed(1)}초`
+                          : "-"}{" "}
+                        · {r.model_label || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[11px] font-medium text-slate-500">
+                        자동 판정
+                      </p>
+                      <div
+                        className={`rounded-lg px-2.5 py-2 text-[12px] ${
+                          autoPass === true
+                            ? "bg-[#E1F5EE] text-[#04342C]"
+                            : autoPass === false
+                              ? "bg-[#FBEAF0] text-[#72243E]"
+                              : "bg-slate-50 text-slate-600"
+                        }`}
+                      >
+                        <p className="font-medium">
+                          {autoPass === true
+                            ? "합격"
+                            : autoPass === false
+                              ? "실패"
+                              : "미판정"}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-[11px] opacity-90">
+                          {r.auto_reason || "사유 없음"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -716,19 +750,27 @@ export function LunaEvalTab() {
 
   return (
     <div className="space-y-5">
-      {/* 상단 요약 */}
+      {/* 상단 요약 — 자동/사람 점수 분리, 합산 금지 */}
       <div className="flex items-start justify-between gap-3">
-        <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
           <div className="rounded-lg bg-slate-50 px-2.5 py-[9px]">
-            <div className="text-[11px] text-slate-500">최근 점수</div>
+            <div className="text-[11px] text-slate-500">자동 점수</div>
             <div className="mt-0.5 text-[15px] font-medium text-slate-900">
-              {latestDone ? `${latestDone.passed} / ${latestDone.total}` : "—"}
+              {latestDone ? `${latestDone.passed}/${latestDone.total}` : "—"}
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 px-2.5 py-[9px]">
-            <div className="text-[11px] text-slate-500">직전 점수</div>
+            <div className="text-[11px] text-slate-500">직전 자동</div>
             <div className="mt-0.5 text-[15px] font-medium text-gray-500">
-              {previousDone ? `${previousDone.passed} / ${previousDone.total}` : "—"}
+              {previousDone ? `${previousDone.passed}/${previousDone.total}` : "—"}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-2.5 py-[9px]">
+            <div className="text-[11px] text-slate-500">사람 평균</div>
+            <div className="mt-0.5 text-[15px] font-medium text-slate-900">
+              {runSummary?.human_avg != null && selectedRunId
+                ? `${runSummary.human_avg}/10`
+                : "시험 보기에서 확인"}
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 px-2.5 py-[9px]">

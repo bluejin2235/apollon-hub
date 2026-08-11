@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServiceSupabase } from "@/lib/auth/get-api-user";
+import { lunaNotify } from "@/lib/luna/notify";
+import { lunaSelfstudyGone } from "@/lib/luna/selfstudy-gone";
+import {
+  pickSelfstudyTopics,
+  runSelfstudyQueueItem
+} from "@/lib/luna/selfstudy";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function GET(request: NextRequest) {
+  return lunaSelfstudyGone();
+  // Phase 0 disabled — original cron body preserved below for Phase 5.
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("[luna-selfstudy] CRON_SECRET is not configured");
+    return NextResponse.json(
+      { error: "CRON_SECRET is not configured" },
+      { status: 500 }
+    );
+  }
+
+  const authHeader = request.headers.get("authorization") ?? "";
+  if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = getServiceSupabase();
+  if (!admin) {
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const pick = await pickSelfstudyTopics(admin);
+
+    const { data: pending } = await admin
+      .from("luna_selfstudy_queue")
+      .select("id")
+      .eq("status", "pending")
+      .order("score", { ascending: false })
+      .limit(3);
+
+    const runs: Array<{ report_id: string; queue_id: string; topic: string }> =
+      [];
+    const failures: string[] = [];
+    const ids = (pending ?? []).map((r) => r.id as string);
+
+    for (let i = 0; i < ids.length; i += 1) {
+      if (i > 0) await sleep(5000);
+      try {
+        const result = await runSelfstudyQueueItem(admin, ids[i]!);
+        runs.push(result);
+      } catch (err) {
+        console.error("[luna-selfstudy] run one", ids[i], err);
+        failures.push(
+          err instanceof Error ? err.message : "Selfstudy item failed"
+        );
+      }
+    }
+
+    if (runs.length > 0) {
+      await lunaNotify(
+        admin,
+        "study",
+        "야간 자습 완료",
+        `${runs.length}건 자습 리포트 작성`,
+        {
+          level: "success",
+          meta: { ran: runs.length, picked: pick.picked }
+        }
+      );
+    }
+    if (failures.length > 0) {
+      await lunaNotify(
+        admin,
+        "study",
+        "야간 자습 실패",
+        failures[0]!.slice(0, 200),
+        {
+          level: "error",
+          meta: { failed: failures.length, picked: pick.picked }
+        }
+      );
+    }
+
+    console.log("[luna-selfstudy] cron", {
+      picked: pick.picked,
+      ran: runs.length,
+      failed: failures.length
+    });
+    return NextResponse.json({ pick, runs, failed: failures.length });
+  } catch (err) {
+    console.error("[luna-selfstudy]", err);
+    const message = err instanceof Error ? err.message : "Selfstudy failed";
+    try {
+      await lunaNotify(admin, "study", "야간 자습 실패", message.slice(0, 200), {
+        level: "error"
+      });
+    } catch {
+      /* ignore notify errors */
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

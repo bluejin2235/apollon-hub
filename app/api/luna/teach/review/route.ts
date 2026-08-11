@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   const origin = row.origin as string | null;
   const reviewReason =
     typeof row.review_reason === "string" ? row.review_reason : null;
-  if (origin !== "direct" && !reviewReason) {
+  if (origin !== "direct" && origin !== "eval_feedback" && !reviewReason) {
     return NextResponse.json({ error: "Pending learning not found" }, { status: 404 });
   }
 
@@ -159,9 +159,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, id: data.id, status: data.status });
   }
 
-  // 일반 직접학습 후보
+  // 일반 직접학습 / 시험 피드백 후보
   const nextStatus = action === "approve" ? "active" : "archived";
-  const { data, error } = await admin
+  let query = admin
     .from("luna_learnings")
     .update({
       status: nextStatus,
@@ -169,10 +169,15 @@ export async function POST(request: NextRequest) {
       resolved_at: nowIso
     })
     .eq("id", id)
-    .eq("status", "candidate")
-    .eq("origin", "direct")
-    .select("id, status")
-    .maybeSingle();
+    .eq("status", "candidate");
+
+  if (origin === "eval_feedback") {
+    query = query.eq("origin", "eval_feedback");
+  } else {
+    query = query.eq("origin", "direct");
+  }
+
+  const { data, error } = await query.select("id, status").maybeSingle();
 
   if (error) {
     console.error("[luna/teach/review]", error);

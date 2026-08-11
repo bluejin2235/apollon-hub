@@ -368,6 +368,8 @@ function buildVolatileSystemText(opts: {
   notionSources?: NotionSource[];
   cards?: LunaCard[];
   nasResults?: NasDirectoryRow[];
+  /** Work서버 검색을 실제로 돌렸는지 (0건 명시 주입 구분용) */
+  nasSearchAttempted?: boolean;
   reportContent?: string | null;
 }): string {
   const parts: string[] = [];
@@ -392,14 +394,24 @@ function buildVolatileSystemText(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  if (opts.nasResults && opts.nasResults.length > 0) {
-    const nasBlock = opts.nasResults
+  const nasResults = opts.nasResults ?? [];
+  if (nasResults.length > 0) {
+    const nasBlock = nasResults
       .map((row) => {
         const name = pathLastSegment(row.path);
-        return `- ${name} → T:\\${row.path.replace(/\//g, "\\")}`;
+        const drive = (row.drive ?? "T").trim().toUpperCase() || "T";
+        return `- ${name} → ${drive}:\\${row.path.replace(/\//g, "\\")}`;
       })
       .join("\n");
-    parts.push(`[Work서버 파일 위치]\n${nasBlock}`);
+    parts.push(
+      "[Work서버 파일 위치]\n" +
+        "아래 경로만이 실측된 경로다. 이 목록에 없는 경로는 존재를 모르는 것이다.\n" +
+        nasBlock
+    );
+  } else if (opts.nasSearchAttempted) {
+    parts.push(
+      "[Work서버 파일 위치]\n(검색 결과 없음 — 아래 규칙 3 적용)"
+    );
   }
 
   const opinionRule = opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
@@ -407,7 +419,10 @@ function buildVolatileSystemText(opts: {
   parts.push(
     "[답변 규칙]\n" +
       "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
-      "- 검색 결과가 없으면 '기능 준비 중', '연동이 안 되어 있다', '실시간으로 불러올 수 없다' 같은 말은 절대 하지 마세요. 대신 아폴론 관점에서 아는 내용으로 답하거나, 검색어를 어떻게 바꾸면 좋을지 제안하세요.\n" +
+      "- 검색 결과가 없으면 반드시 '찾지 못했다'고 명확히 답한다.\n" +
+      "  - 경로·파일명·폴더명을 절대 추측하거나 조합해서 만들지 않는다. 검색 결과에 없는 T:\\ 또는 P:\\ 경로를 답변에 쓰는 것은 금지다.\n" +
+      "  - 대신 할 수 있는 것: ①검색 중 발견한 인접 자료(비슷한 프로젝트·상위 폴더)를 '대신 이런 것은 있다'로 제시 ②더 정확한 검색어 제안 ③담당자 확인 권유\n" +
+      "  - '기능 준비 중/연동 안 됨' 같은 표현은 여전히 금지\n" +
       `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
@@ -425,6 +440,7 @@ function buildAnswerSystem(
     notionSources?: NotionSource[];
     cards?: LunaCard[];
     nasResults?: NasDirectoryRow[];
+    nasSearchAttempted?: boolean;
     reportContent?: string | null;
   },
   useCaching: boolean
@@ -1434,6 +1450,7 @@ export async function POST(request: NextRequest) {
             notionSources,
             cards,
             nasResults,
+            nasSearchAttempted: nasEnabled && anySearch,
             reportContent: usedReportContent
           },
           tierACfg.use_caching === true

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { triggerAutoExam } from "@/lib/luna/eval-exam";
 import { LUNA_MODEL } from "@/lib/luna/run-chat";
 import { lunaNotify } from "@/lib/luna/notify";
 
@@ -15,6 +16,7 @@ export type ConsolidationSettings = {
     reflect: boolean;
     conflict: boolean;
     prompt_change: boolean;
+    exam: boolean;
   };
 };
 
@@ -68,7 +70,8 @@ const DEFAULT_SETTINGS: ConsolidationSettings = {
     study: true,
     reflect: true,
     conflict: true,
-    prompt_change: true
+    prompt_change: true,
+    exam: true
   }
 };
 
@@ -215,7 +218,11 @@ export async function loadConsolidationSettings(
       prompt_change:
         typeof notifyObj.prompt_change === "boolean"
           ? notifyObj.prompt_change
-          : DEFAULT_SETTINGS.notify_events.prompt_change
+          : DEFAULT_SETTINGS.notify_events.prompt_change,
+      exam:
+        typeof notifyObj.exam === "boolean"
+          ? notifyObj.exam
+          : DEFAULT_SETTINGS.notify_events.exam
     }
   };
 }
@@ -631,6 +638,8 @@ export async function runConsolidation(
         }
       }
     );
+
+    await triggerAutoExam(admin, "consolidation");
 
     return {
       skipped: false,

@@ -1,71 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { isSuperAdminUser } from "@/lib/luna/auth";
-import { lunaNotify } from "@/lib/luna/notify";
-import { runSelfstudyQueueItem } from "@/lib/luna/selfstudy";
+import { lunaSelfstudyGone } from "@/lib/luna/selfstudy-gone";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function isCronAuthorized(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = request.headers.get("authorization") ?? "";
-  return auth === `Bearer ${secret}`;
-}
-
-export async function POST(request: NextRequest) {
-  const admin = getServiceSupabase();
-  if (!admin) {
-    return NextResponse.json(
-      { error: "Server configuration error" },
-      { status: 500 }
-    );
-  }
-
-  if (!isCronAuthorized(request)) {
-    const user = await getApiUser(request);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!(await isSuperAdminUser(admin, user))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
-
-  let queueId: string | null = null;
-  try {
-    const body = (await request.json()) as { queue_id?: string };
-    if (typeof body.queue_id === "string" && body.queue_id.trim()) {
-      queueId = body.queue_id.trim();
-    }
-  } catch {
-    // body optional
-  }
-
-  try {
-    const result = await runSelfstudyQueueItem(admin, queueId);
-    await lunaNotify(
-      admin,
-      "study",
-      "자습 완료",
-      `「${result.topic}」 리포트 작성`,
-      {
-        level: "success",
-        meta: {
-          report_id: result.report_id,
-          queue_id: result.queue_id,
-          topic: result.topic
-        }
-      }
-    );
-    return NextResponse.json(result);
-  } catch (err) {
-    console.error("[luna/selfstudy/run]", err);
-    const message = err instanceof Error ? err.message : "Run failed";
-    await lunaNotify(admin, "study", "자습 실패", message.slice(0, 200), {
-      level: "error"
-    });
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+/** Phase 0: disabled. Original implementation: route.phase5.bak */
+export async function POST() {
+  return lunaSelfstudyGone();
 }
