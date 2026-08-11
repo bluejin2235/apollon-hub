@@ -7,6 +7,7 @@ import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaNasTab } from "@/components/settings/luna-nas-tab";
+import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
 import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
 import type {
   LunaPromptGroupRow,
@@ -826,21 +827,6 @@ function LunaStudyPanel() {
   );
 }
 
-function LunaTeachPanel() {
-  return (
-    <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-[13px] font-semibold text-slate-900">의견 충돌 보류함</h3>
-        <p className="mt-3 text-[12px] text-slate-500">아직 항목이 없습니다</p>
-      </section>
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-[13px] font-semibold text-slate-900">승인 대기</h3>
-        <p className="mt-3 text-[12px] text-slate-500">아직 항목이 없습니다</p>
-      </section>
-    </div>
-  );
-}
-
 export function LunaSettingsTab() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -887,8 +873,8 @@ export function LunaSettingsTab() {
       const token = await getAccessToken();
       if (!token || cancelled) return;
       try {
-        const [promptRes, nasRes, engineRes, evalRes] = await Promise.all([
-          fetch("/api/luna/prompts?active=true", {
+        const [promptRes, nasRes, engineRes, evalRes, teachRes] = await Promise.all([
+          fetch("/api/luna/prompts", {
             headers: { Authorization: `Bearer ${token}` }
           }),
           fetch("/api/luna/nas", {
@@ -898,6 +884,9 @@ export function LunaSettingsTab() {
             headers: { Authorization: `Bearer ${token}` }
           }),
           fetch("/api/luna/eval/cases", {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch("/api/luna/teach/list", {
             headers: { Authorization: `Bearer ${token}` }
           })
         ]);
@@ -916,6 +905,9 @@ export function LunaSettingsTab() {
         const evalJson = evalRes.ok
           ? ((await evalRes.json()) as { cases?: unknown[] })
           : {};
+        const teachJson = teachRes.ok
+          ? ((await teachRes.json()) as { teachPending?: number })
+          : {};
 
         const notion = engineJson.connections?.notion === true;
         const web = engineJson.connections?.tavily === true;
@@ -930,7 +922,7 @@ export function LunaSettingsTab() {
           connectorConnected: connected,
           connectorTotal: 4,
           nextStudyAt: "매일 03:00",
-          teachPending: 0,
+          teachPending: teachJson.teachPending ?? 0,
           examCount: evalJson.cases?.length ?? 0,
           examTotal: 20
         });
@@ -1027,7 +1019,7 @@ export function LunaSettingsTab() {
 
       {subTab === "talk" ? <LunaTalkPanel /> : null}
       {subTab === "study" ? <LunaStudyPanel /> : null}
-      {subTab === "teach" ? <LunaTeachPanel /> : null}
+      {subTab === "teach" ? <LunaTeachTab /> : null}
 
       {subTab === "exam" ? (
         <div className="space-y-8">
