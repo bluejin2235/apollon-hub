@@ -37,6 +37,12 @@ export type LunaDashboard = {
     search_zero_today: number;
     requery_today: number;
     assume_today: number;
+    top_users_yesterday: Array<{
+      rank: number;
+      user_id: string;
+      name: string;
+      count: number;
+    }>;
   };
   candidates: {
     pending: number;
@@ -76,6 +82,7 @@ export type LunaDashboard = {
     tokens_week: number;
     tokens_prev_week: number;
     tokens_delta: number | null;
+    tokens_delta_pct: number | null;
   };
 };
 
@@ -213,6 +220,53 @@ async function countCorrections(
   return n;
 }
 
+async function topTalkUsersYesterday(
+  admin: SupabaseClient,
+  startIso: string,
+  endIso: string
+): Promise<LunaDashboard["talk"]["top_users_yesterday"]> {
+  const { data, error } = await admin
+    .from("luna_conversations")
+    .select("user_id")
+    .gte("updated_at", startIso)
+    .lt("updated_at", endIso)
+    .limit(3000);
+  if (error) {
+    console.error("[luna/dashboard] top users", error);
+    return [];
+  }
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const uid = typeof row.user_id === "string" ? row.user_id : "";
+    if (!uid) continue;
+    counts.set(uid, (counts.get(uid) ?? 0) + 1);
+  }
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  if (top.length === 0) return [];
+
+  const ids = top.map(([id]) => id);
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, name")
+    .in("id", ids);
+
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [
+      p.id as string,
+      typeof p.name === "string" && p.name.trim() ? p.name.trim() : "—"
+    ])
+  );
+
+  return top.map(([user_id, count], index) => ({
+    rank: index + 1,
+    user_id,
+    name: nameById.get(user_id) ?? "—",
+    count
+  }));
+}
+
 async function countBySource(admin: SupabaseClient) {
   const out = { chat: 0, selfstudy: 0, question: 0, direct: 0 };
   await Promise.all(
@@ -301,7 +355,8 @@ export async function buildLunaDashboard(
     corrToday,
     corrYday,
     sourceCounts,
-    avgConfirm
+    avgConfirm,
+    topUsersYday
   ] = await Promise.all([
     admin
       .from("luna_learnings")
@@ -449,7 +504,8 @@ export async function buildLunaDashboard(
     countCorrections(admin, today.startIso, today.endIso),
     countCorrections(admin, yesterday.startIso, yesterday.endIso),
     countBySource(admin),
-    avgConfirmDays(admin, week.startIso, week.endIso)
+    avgConfirmDays(admin, week.startIso, week.endIso),
+    topTalkUsersYesterday(admin, yesterday.startIso, yesterday.endIso)
   ]);
 
   const weeklyInflow: number[] = [];
@@ -471,7 +527,7 @@ export async function buildLunaDashboard(
     const cur = weeklyInflow[weeklyInflow.length - 1] ?? 0;
     if (cur < prev) {
       trend = "down";
-      trend_label = "유입 감소 — 성장 신호";
+      trend_label = "유입 ↓ 성장 신호";
     } else if (cur > prev) {
       trend = "up";
       trend_label = "유입 증가 — 원인 점검";
@@ -523,6 +579,11 @@ export async function buildLunaDashboard(
     );
   const tokensWeek = sumTokens(usageWeekRes.data);
   const tokensPrev = sumTokens(usagePrevRes.data);
+  const tokensDelta = tokensWeek - tokensPrev;
+  const tokensDeltaPct =
+    tokensPrev > 0
+      ? Math.round((tokensDelta / tokensPrev) * 1000) / 10
+      : null;
 
   const models = (tiersRes.data ?? []).map((t) => ({
     tier: String(t.tier),
@@ -618,7 +679,8 @@ export async function buildLunaDashboard(
       corrections_yesterday: corrYday,
       search_zero_today: talkToday.searchZero,
       requery_today: talkToday.requery,
-      assume_today: talkToday.assume
+      assume_today: talkToday.assume,
+      top_users_yesterday: topUsersYday
     },
     candidates: {
       pending: pendingCandRes.count ?? 0,
@@ -647,7 +709,8 @@ export async function buildLunaDashboard(
       models,
       tokens_week: tokensWeek,
       tokens_prev_week: tokensPrev,
-      tokens_delta: tokensWeek - tokensPrev
+      tokens_delta: tokensDelta,
+      tokens_delta_pct: tokensDeltaPct
     }
   };
 }

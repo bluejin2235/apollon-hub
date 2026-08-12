@@ -1538,17 +1538,7 @@ export function LunaSettingsTab() {
 
   function renderContent() {
     if (menu === "dashboard") {
-      return (
-        <LunaSettingsHome
-          onSelect={(nextMenu, opts) => {
-            if (nextMenu === "candidates" && opts?.filter === "mine") {
-              navigate("candidates", "mine");
-              return;
-            }
-            navigate(nextMenu);
-          }}
-        />
-      );
+      return <LunaSettingsHome />;
     }
 
     if (menu === "knowledge") {

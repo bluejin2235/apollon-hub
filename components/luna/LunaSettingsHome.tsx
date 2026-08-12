@@ -1,14 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { LunaDashboard } from "@/lib/luna/dashboard";
+import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
-
-import type { LunaMenuSlug } from "@/lib/luna/settings-nav";
-
-type Props = {
-  onSelect: (slug: LunaMenuSlug, opts?: { filter?: string }) => void;
-};
 
 const COLORS = {
   knowledge: "#534AB7",
@@ -16,6 +12,14 @@ const COLORS = {
   candidates: "#D85A30",
   selfstudy: "#534AB7",
   brain: "#BA7517"
+} as const;
+
+const CARD_COPY = {
+  knowledge: "확정된 조직·개인 지식",
+  talk: "팀원과의 루나 채팅",
+  candidates: "검토 대기 중인 학습 후보",
+  selfstudy: "루나 자율 학습",
+  brain: "프롬프트·모델·자기개선"
 } as const;
 
 async function getAccessToken(): Promise<string | null> {
@@ -30,21 +34,35 @@ function clip(s: string, n: number): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-function Metric({
+function initial(name: string): string {
+  const t = name.trim();
+  return t ? t.slice(0, 1).toUpperCase() : "?";
+}
+
+function verifyLabel(result: string | null | undefined): string | null {
+  if (result === "confirmed") return "확인됨";
+  if (result === "refuted") return "효과 없음";
+  if (result === "inconclusive") return "판단 불가";
+  return result ?? null;
+}
+
+function RowItem({
   label,
   value,
-  accent
+  coral,
+  green
 }: {
   label: string;
   value: string | number;
-  accent?: boolean;
+  coral?: boolean;
+  green?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 text-[12px]">
+    <div className="flex items-center justify-between gap-3 py-1 text-[11px]">
       <span className="text-slate-500">{label}</span>
       <span
         className={`font-medium tabular-nums ${
-          accent ? "text-[#D85A30]" : "text-slate-900"
+          coral ? "text-[#D85A30]" : green ? "text-emerald-600" : "text-slate-900"
         }`}
       >
         {value}
@@ -53,49 +71,56 @@ function Metric({
   );
 }
 
+function Divider() {
+  return <div className="my-2.5 h-px bg-slate-100" />;
+}
+
 function DashCard({
   title,
+  subtitle,
   color,
-  onClick,
+  href,
+  headerExtra,
   children,
   className = ""
 }: {
   title: string;
+  subtitle: string;
   color: string;
-  onClick: () => void;
+  href: string;
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
+  const router = useRouter();
   return (
     <button
       type="button"
-      onClick={onClick}
-      className={`overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:shadow-md ${className}`}
+      onClick={() => router.push(href)}
+      className={`overflow-hidden rounded-xl border-[0.5px] border-slate-200 bg-white text-left transition hover:shadow-sm ${className}`}
     >
-      <div style={{ height: 3, background: color }} />
-      <div className="p-3.5">
-        <h3 className="mb-2.5 text-[13px] font-semibold text-slate-900">
-          {title}
-        </h3>
-        <div className="space-y-1.5">{children}</div>
+      <div className="h-[3px]" style={{ background: color }} />
+      <div className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-medium text-slate-900">{title}</h3>
+            <p className="mt-0.5 text-[11px] text-slate-500">{subtitle}</p>
+          </div>
+          {headerExtra}
+        </div>
+        {children}
       </div>
     </button>
   );
 }
 
-function FlowArrow({
-  label,
-  className = ""
-}: {
-  label: string;
-  className?: string;
-}) {
+function FlowArrow({ label }: { label: string }) {
   return (
     <div
-      className={`hidden items-center gap-1 text-[10.5px] text-slate-400 md:flex ${className}`}
+      className="hidden shrink-0 flex-col items-center justify-center gap-1 px-1 text-[10.5px] text-slate-400 md:flex"
       aria-hidden
     >
-      <span className="max-w-[72px] leading-tight">{label}</span>
+      <span className="max-w-[72px] text-center leading-tight">{label}</span>
       <span className="text-slate-300">→</span>
     </div>
   );
@@ -104,12 +129,14 @@ function FlowArrow({
 function MiniBars({ values }: { values: number[] }) {
   const max = Math.max(1, ...values);
   return (
-    <div className="flex h-8 items-end gap-1">
+    <div className="flex h-9 items-end gap-1">
       {values.map((v, i) => (
         <div
           key={i}
-          className="flex-1 rounded-sm bg-[#D85A30]/25"
-          style={{ height: `${Math.max(8, Math.round((v / max) * 100))}%` }}
+          className={`flex-1 rounded-sm ${
+            i === values.length - 1 ? "bg-[#D85A30]" : "bg-[#D85A30]/25"
+          }`}
+          style={{ height: `${Math.max(10, Math.round((v / max) * 100))}%` }}
           title={`${v}`}
         />
       ))}
@@ -117,7 +144,280 @@ function MiniBars({ values }: { values: number[] }) {
   );
 }
 
-export default function LunaSettingsHome({ onSelect }: Props) {
+function KnowledgeCard({ k }: { k: LunaDashboard["knowledge"] }) {
+  const nasValue =
+    k.nas_last_total != null
+      ? `${k.nas_indexed.toLocaleString()} (스캔 ${k.nas_last_total.toLocaleString()})`
+      : k.nas_indexed.toLocaleString();
+
+  return (
+    <DashCard
+      title="지식"
+      subtitle={CARD_COPY.knowledge}
+      color={COLORS.knowledge}
+      href={buildLunaSettingsUrl("knowledge", "confirmed")}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-[26px] font-medium tabular-nums text-slate-900">
+          {k.active_count}
+        </span>
+        {k.week_new > 0 ? (
+          <span className="text-[13px] font-medium text-emerald-600">
+            +{k.week_new} 이번 주
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-[11px] text-slate-500">
+        조직 {k.org_count} · 개인 {k.personal_count}
+      </p>
+      <Divider />
+      <RowItem label="Work서버 인덱싱" value={nasValue} />
+      <RowItem
+        label="노션"
+        value={k.notion_connected ? "연결됨" : "미연결"}
+      />
+      {k.conflict_count > 0 ? (
+        <RowItem label="충돌 보류" value={k.conflict_count} coral />
+      ) : (
+        <RowItem label="충돌 보류" value={k.conflict_count} />
+      )}
+      {k.top_used ? (
+        <RowItem
+          label="최다 사용 지식"
+          value={`${clip(k.top_used.content, 28)} (${k.top_used.use_count}회)`}
+        />
+      ) : null}
+      {k.latest_confirmed ? (
+        <RowItem
+          label="최근 확정"
+          value={clip(k.latest_confirmed.content, 32)}
+        />
+      ) : null}
+    </DashCard>
+  );
+}
+
+function TalkCard({ t }: { t: LunaDashboard["talk"] }) {
+  return (
+    <DashCard
+      title="대화"
+      subtitle={CARD_COPY.talk}
+      color={COLORS.talk}
+      href={buildLunaSettingsUrl("talk", "history")}
+    >
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[11px] text-slate-500">오늘 대화</p>
+          <p className="text-[26px] font-medium tabular-nums leading-tight text-slate-900">
+            {t.conversations_today}
+          </p>
+          <p className="text-[10px] text-slate-400">어제 {t.conversations_yesterday}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-slate-500">활성 사용자</p>
+          <p className="text-[26px] font-medium tabular-nums leading-tight text-slate-900">
+            {t.active_users_today}
+            <span className="text-[14px] font-normal text-slate-400">
+              /{t.total_users}
+            </span>
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] text-slate-500">피드백</p>
+          <p className="text-[26px] font-medium tabular-nums leading-tight text-slate-900">
+            👍{t.thumbs_up_today}
+          </p>
+          <p className="text-[14px] font-medium tabular-nums text-slate-700">
+            👎{t.thumbs_down_today}
+          </p>
+        </div>
+      </div>
+      {t.top_users_yesterday.length > 0 ? (
+        <>
+          <Divider />
+          <p className="mb-1.5 text-[11px] text-slate-500">어제 많이 쓴 사람</p>
+          <ul className="space-y-1.5">
+            {t.top_users_yesterday.map((u) => (
+              <li
+                key={u.user_id}
+                className="flex items-center justify-between gap-2 text-[11px]"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="w-4 shrink-0 text-slate-400">{u.rank}</span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#0F6E56]/10 text-[10px] font-medium text-[#0F6E56]">
+                    {initial(u.name)}
+                  </span>
+                  <span className="truncate text-slate-800">{u.name}</span>
+                </div>
+                <span className="shrink-0 font-medium tabular-nums text-slate-900">
+                  {u.count}건
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <Divider />
+      <RowItem
+        label="되물음"
+        value={`오늘 ${t.clarify_today} · 어제 ${t.clarify_yesterday}`}
+      />
+      <RowItem
+        label="정정받음"
+        value={`오늘 ${t.corrections_today} · 어제 ${t.corrections_yesterday}`}
+      />
+      <RowItem
+        label="검색 0건 · 재검색"
+        value={`${t.search_zero_today} · ${t.requery_today}`}
+      />
+      <RowItem label="가정 확인 표시" value={t.assume_today} />
+    </DashCard>
+  );
+}
+
+function CandidatesCard({ c }: { c: LunaDashboard["candidates"] }) {
+  return (
+    <DashCard
+      title="지식후보"
+      subtitle={CARD_COPY.candidates}
+      color={COLORS.candidates}
+      href={buildLunaSettingsUrl("candidates", "pending")}
+    >
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] text-slate-500">대기</p>
+          <p className="text-[26px] font-medium tabular-nums text-[#D85A30]">
+            {c.pending}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[11px] text-slate-500">오늘 확정</p>
+          <p className="text-[20px] font-medium tabular-nums text-emerald-600">
+            {c.confirmed_today}
+          </p>
+        </div>
+      </div>
+      {c.weekly_inflow.length > 0 ? (
+        <div className="mt-3">
+          <MiniBars values={c.weekly_inflow} />
+          {c.trend_label ? (
+            <p className="mt-1.5 text-[11px] text-slate-500">{c.trend_label}</p>
+          ) : null}
+        </div>
+      ) : null}
+      <Divider />
+      <RowItem
+        label="출처 구성"
+        value={`대화${c.by_source.chat} · 자습${c.by_source.selfstudy} · 질문${c.by_source.question} · 직접${c.by_source.direct}`}
+      />
+      {c.avg_confirm_days != null ? (
+        <RowItem label="평균 확정 소요" value={`${c.avg_confirm_days}일`} />
+      ) : null}
+      {c.my_turn > 0 ? (
+        <RowItem label="내가 답할 차례" value={c.my_turn} coral />
+      ) : (
+        <RowItem label="내가 답할 차례" value={c.my_turn} />
+      )}
+    </DashCard>
+  );
+}
+
+function SelfstudyCard({ s }: { s: LunaDashboard["selfstudy"] }) {
+  return (
+    <DashCard
+      title="자습"
+      subtitle={CARD_COPY.selfstudy}
+      color={COLORS.selfstudy}
+      href={buildLunaSettingsUrl("selfstudy", "history")}
+      headerExtra={
+        <span className="shrink-0 text-[10.5px] text-slate-400">
+          다음 실행 {s.next_run_label}
+        </span>
+      }
+    >
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[11px] text-slate-500">어제 제출 문답</p>
+          <p className="text-[26px] font-medium tabular-nums text-slate-900">
+            {s.yesterday_submitted}
+          </p>
+        </div>
+        {s.accuracy_pct != null ? (
+          <div>
+            <p className="text-[11px] text-slate-500">자습 정확도</p>
+            <p className="text-[26px] font-medium tabular-nums text-slate-900">
+              {s.accuracy_pct}%
+            </p>
+          </div>
+        ) : null}
+        <div>
+          <p className="text-[11px] text-slate-500">오늘 막힌 순간</p>
+          <p className="text-[26px] font-medium tabular-nums text-slate-900">
+            {s.stuck_today}
+          </p>
+        </div>
+      </div>
+      <Divider />
+      {s.recent_topic ? (
+        <RowItem label="최근 자습 주제" value={clip(s.recent_topic, 36)} />
+      ) : null}
+      <RowItem label='"안 배워도 됨" 판정 주간' value={s.not_needed_week} />
+    </DashCard>
+  );
+}
+
+function BrainCard({ b }: { b: LunaDashboard["brain"] }) {
+  const tokenSuffix =
+    b.tokens_delta_pct != null
+      ? ` (${b.tokens_delta_pct >= 0 ? "+" : ""}${b.tokens_delta_pct}%)`
+      : b.tokens_delta != null && b.tokens_delta !== 0
+        ? ` (${b.tokens_delta >= 0 ? "+" : ""}${b.tokens_delta.toLocaleString()})`
+        : "";
+
+  return (
+    <DashCard
+      title="두뇌"
+      subtitle={CARD_COPY.brain}
+      color={COLORS.brain}
+      href={buildLunaSettingsUrl("brain", "prompts")}
+    >
+      <RowItem
+        label="이번 주 변경"
+        value={`루나 ${b.week_changes_luna} · 사람 ${b.week_changes_human}`}
+      />
+      {b.revert_pending > 0 ? (
+        <RowItem
+          label="루나의 개선 제안 대기"
+          value={b.revert_pending}
+          coral
+        />
+      ) : (
+        <RowItem label="루나의 개선 제안 대기" value={b.revert_pending} />
+      )}
+      {b.latest_upgrade ? (
+        <RowItem
+          label="최근 자기개선"
+          value={`${clip(b.latest_upgrade.title, 24)}${
+            verifyLabel(b.latest_upgrade.verify_result)
+              ? ` · ${verifyLabel(b.latest_upgrade.verify_result)}`
+              : ""
+          }`}
+        />
+      ) : null}
+      <RowItem
+        label="모델"
+        value={b.models.map((m) => m.tier).join(" · ")}
+      />
+      <RowItem
+        label="주간 토큰"
+        value={`${b.tokens_week.toLocaleString()}${tokenSuffix}`}
+      />
+    </DashCard>
+  );
+}
+
+export default function LunaSettingsHome() {
+  const router = useRouter();
   const [data, setData] = useState<LunaDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,20 +457,13 @@ export default function LunaSettingsHome({ onSelect }: Props) {
   const b = data?.brain;
 
   return (
-    <div className="rounded-xl bg-slate-50 p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+    <div>
+      <div className="mb-5 flex flex-wrap items-center gap-3">
         <div
-          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-[#E4E2DA] bg-white"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-sm font-semibold text-white"
           aria-hidden
         >
-          <img
-            src="/luna/luna-blink.webp"
-            alt=""
-            width={40}
-            height={40}
-            className="h-full w-full object-cover"
-            draggable={false}
-          />
+          L
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-base font-semibold text-slate-900">LUNA 대시보드</p>
@@ -180,13 +473,12 @@ export default function LunaSettingsHome({ onSelect }: Props) {
         </div>
         <button
           type="button"
-          onClick={() => onSelect("candidates", { filter: "mine" })}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#D85A30]/40 bg-white px-3 py-1.5 text-[12px] font-medium text-[#993C1D] transition hover:bg-[#FAECE7]"
+          onClick={() =>
+            router.push(buildLunaSettingsUrl("candidates", "mine"))
+          }
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#D85A30]/35 bg-[#FAECE7]/60 px-3 py-1.5 text-[12px] font-medium text-[#993C1D] transition hover:bg-[#FAECE7]"
         >
-          내가 답할 차례
-          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#D85A30] px-1.5 text-[11px] font-semibold text-white">
-            {data?.my_turn_count ?? 0}
-          </span>
+          내가 답할 차례 {data?.my_turn_count ?? 0}건
         </button>
       </div>
 
@@ -200,277 +492,40 @@ export default function LunaSettingsHome({ onSelect }: Props) {
         </p>
       ) : data && k && t && c && s && b ? (
         <>
-          {/* desktop flow */}
-          <div className="mb-2 hidden justify-end md:flex">
-            <div className="flex items-center gap-2 text-[11px] text-slate-400">
-              <span className="border-t border-dashed border-slate-300 px-2 pt-0.5">
-                확정된 지식만 기억으로
+          <div className="relative mb-3 hidden md:block">
+            <div className="flex items-center gap-2 px-1 text-[11px] text-slate-400">
+              <div className="h-px flex-1 border-t border-dashed border-slate-300" />
+              <span className="shrink-0">확정된 지식만 기억으로</span>
+              <span className="shrink-0 text-slate-300" aria-hidden>
+                ↩
               </span>
-              <span aria-hidden>↩</span>
             </div>
           </div>
 
-          <div className="hidden md:block">
-            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2">
-              <DashCard
-                title="지식"
-                color={COLORS.knowledge}
-                onClick={() => onSelect("knowledge")}
-              >
-                <Metric
-                  label="확정"
-                  value={`${k.active_count}(+${k.week_new})`}
-                />
-                <Metric
-                  label="조직·개인"
-                  value={`${k.org_count} : ${k.personal_count}`}
-                />
-                <Metric
-                  label="Work서버"
-                  value={
-                    k.nas_last_total != null
-                      ? `${k.nas_indexed.toLocaleString()} (스캔 ${k.nas_last_total.toLocaleString()})`
-                      : k.nas_indexed.toLocaleString()
-                  }
-                />
-                <Metric
-                  label="노션"
-                  value={k.notion_connected ? "연결" : "미연결"}
-                />
-                <Metric label="충돌 보류" value={k.conflict_count} accent={k.conflict_count > 0} />
-                {k.top_used ? (
-                  <p className="pt-1 text-[11px] text-slate-500">
-                    최다 사용 · {clip(k.top_used.content, 36)} ({k.top_used.use_count})
-                  </p>
-                ) : null}
-                {k.latest_confirmed ? (
-                  <p className="text-[11px] text-slate-500">
-                    최근 확정 · {clip(k.latest_confirmed.content, 36)}
-                  </p>
-                ) : null}
-              </DashCard>
-
-              <FlowArrow label="지식으로 답변" />
-
-              <DashCard
-                title="대화"
-                color={COLORS.talk}
-                onClick={() => onSelect("talk")}
-              >
-                <Metric
-                  label="오늘·어제"
-                  value={`${t.conversations_today} · ${t.conversations_yesterday}`}
-                />
-                <Metric
-                  label="활성 사용자"
-                  value={`${t.active_users_today}/${t.total_users}`}
-                />
-                <Metric
-                  label="👍 · 👎"
-                  value={`${t.thumbs_up_today} · ${t.thumbs_down_today}`}
-                />
-                <Metric
-                  label="되물음"
-                  value={`${t.clarify_today} · ${t.clarify_yesterday}`}
-                />
-                <Metric
-                  label="정정"
-                  value={`${t.corrections_today} · ${t.corrections_yesterday}`}
-                />
-                <Metric
-                  label="검색0·재검색"
-                  value={`${t.search_zero_today} · ${t.requery_today}`}
-                />
-                <Metric label="가정 확인" value={t.assume_today} />
-              </DashCard>
-
-              <FlowArrow label="대화로 얻은 지식후보" />
-
-              <DashCard
-                title="지식후보"
-                color={COLORS.candidates}
-                onClick={() => onSelect("candidates")}
-              >
-                <Metric label="대기" value={c.pending} accent />
-                <Metric label="오늘 확정" value={c.confirmed_today} />
-                <div className="pt-1">
-                  <p className="mb-1 text-[11px] text-slate-500">주간 유입 4주</p>
-                  <MiniBars values={c.weekly_inflow} />
-                  {c.trend_label ? (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {c.trend_label}
-                    </p>
-                  ) : null}
-                </div>
-                <Metric
-                  label="출처"
-                  value={`대화${c.by_source.chat}·자습${c.by_source.selfstudy}·질문${c.by_source.question}·직접${c.by_source.direct}`}
-                />
-                {c.avg_confirm_days != null ? (
-                  <Metric label="평균 확정" value={`${c.avg_confirm_days}일`} />
-                ) : null}
-                <Metric label="내 차례" value={c.my_turn} accent={c.my_turn > 0} />
-              </DashCard>
-            </div>
-
-            <div className="my-3 flex justify-center">
-              <div className="flex flex-col items-center text-[11px] text-slate-400">
-                <span>↓</span>
-                <span>
-                  대화로 궁금한 점 · 막힌 순간 {s.stuck_today}개
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-[1.4fr_1fr] gap-3">
-              <DashCard
-                title="자습"
-                color={COLORS.selfstudy}
-                onClick={() => onSelect("selfstudy")}
-              >
-                <Metric label="어제 제출" value={`${s.yesterday_submitted}건`} />
-                {s.accuracy_pct != null ? (
-                  <Metric label="자습 정확도" value={`${s.accuracy_pct}%`} />
-                ) : null}
-                <Metric label="오늘 막힌 순간" value={s.stuck_today} />
-                <Metric label="다음 실행" value={s.next_run_label} />
-                {s.recent_topic ? (
-                  <p className="pt-1 text-[11px] text-slate-500">
-                    최근 · {clip(s.recent_topic, 48)}
-                  </p>
-                ) : null}
-                <Metric
-                  label="안 배워도 됨(주간)"
-                  value={s.not_needed_week}
-                />
-              </DashCard>
-
-              <DashCard
-                title="두뇌"
-                color={COLORS.brain}
-                onClick={() => onSelect("brain")}
-              >
-                <Metric label="프롬프트 활성" value={`${b.active_prompts}개`} />
-                <Metric
-                  label="이번 주 변경"
-                  value={`루나 ${b.week_changes_luna} · 사람 ${b.week_changes_human}`}
-                />
-                <Metric
-                  label="되돌림 제안"
-                  value={b.revert_pending}
-                  accent={b.revert_pending > 0}
-                />
-                {b.latest_upgrade ? (
-                  <p className="pt-1 text-[11px] text-slate-500">
-                    최근 개선 · {b.latest_upgrade.title}
-                    {b.latest_upgrade.verify_result
-                      ? ` (${b.latest_upgrade.verify_result})`
-                      : ""}
-                  </p>
-                ) : null}
-                <Metric
-                  label="모델"
-                  value={b.models.map((m) => `${m.tier}:${m.label.replace("Claude ", "")}`).join(" · ")}
-                />
-                <Metric
-                  label="주간 토큰"
-                  value={`${b.tokens_week.toLocaleString()}${
-                    b.tokens_delta != null
-                      ? ` (${b.tokens_delta >= 0 ? "+" : ""}${b.tokens_delta.toLocaleString()})`
-                      : ""
-                  }`}
-                />
-              </DashCard>
-            </div>
+          <div className="hidden md:grid md:grid-cols-[1fr_auto_1.15fr_auto_1fr] md:items-stretch md:gap-x-2">
+            <KnowledgeCard k={k} />
+            <FlowArrow label="지식으로 답변" />
+            <TalkCard t={t} />
+            <FlowArrow label="대화로 얻은 지식후보" />
+            <CandidatesCard c={c} />
           </div>
 
-          {/* mobile stack */}
+          <div className="my-4 hidden flex-col items-center text-[11px] text-slate-400 md:flex">
+            <span aria-hidden>↓</span>
+            <span>대화로 궁금한 점 · 막힌 순간 {s.stuck_today}개</span>
+          </div>
+
+          <div className="hidden md:grid md:grid-cols-[1.2fr_1fr] md:gap-3">
+            <SelfstudyCard s={s} />
+            <BrainCard b={b} />
+          </div>
+
           <div className="flex flex-col gap-3 md:hidden">
-            <DashCard
-              title="지식"
-              color={COLORS.knowledge}
-              onClick={() => onSelect("knowledge")}
-            >
-              <Metric label="확정" value={`${k.active_count}(+${k.week_new})`} />
-              <Metric
-                label="조직·개인"
-                value={`${k.org_count} : ${k.personal_count}`}
-              />
-              <Metric label="Work서버" value={k.nas_indexed.toLocaleString()} />
-              <Metric
-                label="노션"
-                value={k.notion_connected ? "연결" : "미연결"}
-              />
-              <Metric label="충돌 보류" value={k.conflict_count} />
-            </DashCard>
-            <DashCard
-              title="대화"
-              color={COLORS.talk}
-              onClick={() => onSelect("talk")}
-            >
-              <Metric
-                label="오늘·어제"
-                value={`${t.conversations_today} · ${t.conversations_yesterday}`}
-              />
-              <Metric
-                label="활성"
-                value={`${t.active_users_today}/${t.total_users}`}
-              />
-              <Metric
-                label="👍·👎"
-                value={`${t.thumbs_up_today} · ${t.thumbs_down_today}`}
-              />
-              <Metric
-                label="되물음·정정"
-                value={`${t.clarify_today} · ${t.corrections_today}`}
-              />
-              <Metric
-                label="검색0·재검색"
-                value={`${t.search_zero_today} · ${t.requery_today}`}
-              />
-              <Metric label="가정 확인" value={t.assume_today} />
-            </DashCard>
-            <DashCard
-              title="지식후보"
-              color={COLORS.candidates}
-              onClick={() => onSelect("candidates")}
-            >
-              <Metric label="대기" value={c.pending} accent />
-              <Metric label="오늘 확정" value={c.confirmed_today} />
-              <MiniBars values={c.weekly_inflow} />
-              {c.trend_label ? (
-                <p className="text-[11px] text-slate-500">{c.trend_label}</p>
-              ) : null}
-              <Metric label="내 차례" value={c.my_turn} accent={c.my_turn > 0} />
-            </DashCard>
-            <DashCard
-              title="자습"
-              color={COLORS.selfstudy}
-              onClick={() => onSelect("selfstudy")}
-            >
-              <Metric label="어제 제출" value={`${s.yesterday_submitted}건`} />
-              {s.accuracy_pct != null ? (
-                <Metric label="정확도" value={`${s.accuracy_pct}%`} />
-              ) : null}
-              <Metric label="막힌 순간" value={s.stuck_today} />
-              <Metric label="다음 실행" value={s.next_run_label} />
-            </DashCard>
-            <DashCard
-              title="두뇌"
-              color={COLORS.brain}
-              onClick={() => onSelect("brain")}
-            >
-              <Metric label="프롬프트" value={`${b.active_prompts}개`} />
-              <Metric
-                label="이번 주 변경"
-                value={`루나 ${b.week_changes_luna} · 사람 ${b.week_changes_human}`}
-              />
-              <Metric label="되돌림 제안" value={b.revert_pending} />
-              <Metric
-                label="주간 토큰"
-                value={b.tokens_week.toLocaleString()}
-              />
-            </DashCard>
+            <KnowledgeCard k={k} />
+            <TalkCard t={t} />
+            <CandidatesCard c={c} />
+            <SelfstudyCard s={s} />
+            <BrainCard b={b} />
           </div>
         </>
       ) : null}
