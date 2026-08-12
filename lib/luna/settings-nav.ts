@@ -170,6 +170,14 @@ export function resolveLunaRoute(
     return { menu: "dashboard", sub: null };
   }
 
+  // Canonical menu slugs take precedence over legacy aliases (knowledge, talk, brain, …).
+  if (isLunaMenuSlug(rawMenu)) {
+    return {
+      menu: rawMenu,
+      sub: resolveLunaSubForMenu(rawMenu, rawSub)
+    };
+  }
+
   if (isLegacyLunaParam(rawMenu)) {
     const mapped = LEGACY_LUNA_MAP[rawMenu];
     return {
@@ -178,14 +186,7 @@ export function resolveLunaRoute(
     };
   }
 
-  if (!isLunaMenuSlug(rawMenu)) {
-    return { menu: "dashboard", sub: null };
-  }
-
-  return {
-    menu: rawMenu,
-    sub: resolveLunaSubForMenu(rawMenu, rawSub)
-  };
+  return { menu: "dashboard", sub: null };
 }
 
 export function menuDef(menu: LunaMenuSlug): LunaMenuDef {
@@ -238,7 +239,12 @@ export function canonicalLunaSettingsUrl(
     return null;
   }
 
-  if (isLegacyLunaParam(rawMenu) || rawMenu === "home") {
+  if (rawMenu === "home") {
+    return buildLunaSettingsUrl("dashboard");
+  }
+
+  // Legacy-only params (memory, nas, teach, …) — not canonical menu slugs.
+  if (isLegacyLunaParam(rawMenu) && !isLunaMenuSlug(rawMenu)) {
     const mapped = resolveLunaRoute(rawMenu, rawSub);
     const sub =
       legacyFilterToSub(mapped.menu, filter) ?? mapped.sub ?? undefined;
