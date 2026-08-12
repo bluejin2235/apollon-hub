@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 대화 — 목업 (2개 하위 페이지)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+    --brain:#BA7517; --brain-soft:#FAEEDA; --brain-ink:#633806;
+    --danger:#A32D2D; --danger-soft:#FCEBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  .mocklabel{margin:36px 0 10px;font-size:12px;font-weight:800;color:var(--talk);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  .subtabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--talk)}
+
+  /* 기간 선택 */
+  .period{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:5px 13px;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chip.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .period .range{margin-left:auto;font-size:11.5px;color:var(--faint)}
+
+  /* 그래프 + 순위 */
+  .gridtop{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .box h4{font-size:13px;font-weight:700;margin-bottom:10px}
+  .box h4 .r{float:right;font-size:11.5px;color:var(--faint);font-weight:400}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;color:var(--sub)}
+  .legend i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:5px}
+
+  .rank{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line2)}
+  .rank:first-of-type{border-top:0}
+  .rank .no{width:14px;color:var(--faint)}
+  .rank .av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:700}
+  .av1{background:var(--luna-soft);color:var(--luna-ink)}
+  .av2{background:var(--talk-soft);color:var(--talk)}
+  .av3{background:var(--cand-soft);color:var(--cand-ink)}
+  .av0{background:var(--chip);color:var(--sub)}
+  .rank .nm{flex:1}
+  .rank b{font-weight:700}
+  .rank.none{color:var(--faint)}
+
+  /* 검색 + 반응 필터 */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  input,select{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;background:var(--panel);color:var(--ink);outline:none}
+  input:focus,select:focus{border-color:#d9d2ff}
+  .grow{flex:1;min-width:170px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .chips .lb{font-size:11.5px;color:var(--faint);margin-right:2px}
+
+  /* 대화 목록 */
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .item{padding:13px 16px;border-bottom:1px solid var(--line2)}
+  .item:last-child{border-bottom:0}
+  .item .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .item .who{font-size:13.5px;font-weight:700}
+  .item .when{font-size:11.5px;color:var(--faint)}
+  .item .sum{font-size:13px;color:var(--sub);margin-top:8px;line-height:1.55}
+  .item .corr{font-size:12.5px;margin-top:4px;line-height:1.55}
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-ok{background:var(--talk-soft);color:var(--talk)}
+  .b-bad{background:var(--danger-soft);color:var(--danger)}
+  .b-corr{background:var(--cand-soft);color:var(--cand-ink)}
+  .b-plain{background:var(--chip);color:var(--sub)}
+  .b-cand{background:var(--luna-soft);color:var(--luna-ink)}
+  .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .btn{padding:7px 12px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;margin-top:8px}
+  .hint{margin-top:10px;font-size:12px;color:var(--faint);text-align:center}
+
+  /* 관측 지표 */
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+  .metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .metric .h{display:flex;align-items:baseline;gap:8px}
+  .metric .h .t{font-size:13px;font-weight:700;flex:1}
+  .metric .h .v{font-size:20px;font-weight:700;letter-spacing:-.4px}
+  .metric .h .d{font-size:11.5px;font-weight:700}
+  .metric .d.up{color:var(--talk)} .metric .d.down{color:var(--talk)} .metric .d.flat{color:var(--faint)}
+  .metric .desc{font-size:11.5px;color:var(--sub);margin:3px 0 10px}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:44px}
+  .bars i{flex:1;border-radius:2px;display:block}
+  .g1{background:#9FE1CB} .g2{background:#5DCAA5} .g3{background:#0F6E56}
+  .c1{background:#F5C4B3} .c2{background:#F0997B} .c3{background:#D85A30}
+  .p1{background:#CECBF6} .p2{background:#AFA9EC} .p3{background:#7F77DD}
+  .a1{background:#FAC775} .a2{background:#EF9F27} .a3{background:#BA7517}
+
+  @media(max-width:900px){
+    .gridtop,.metrics{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════════ 1. 대화 이력 ══════════ -->
+<div class="mocklabel">PAGE 1 — talk / history (대화 이력 · 반응 통합)</div>
+
+<div class="subtabs">
+  <div class="subtab on">대화 이력</div>
+  <div class="subtab">관측 지표</div>
+</div>
+
+<div class="period">
+  <div class="chip">7일</div>
+  <div class="chip on">30일</div>
+  <div class="chip">90일</div>
+  <div class="chip">직접 지정</div>
+  <div class="range">2026.07.14 – 08.12</div>
+</div>
+
+<div class="gridtop">
+  <div class="box">
+    <h4>사용자별 대화 추이 <span class="r">주간 합계</span></h4>
+    <svg viewBox="0 0 420 180" style="width:100%;height:auto">
+      <line x1="34" y1="150" x2="410" y2="150" stroke="#B4B2A9" stroke-width="0.5"/>
+      <line x1="34" y1="110" x2="410" y2="110" stroke="#D3D1C7" stroke-width="0.5" stroke-dasharray="3 3"/>
+      <line x1="34" y1="70" x2="410" y2="70" stroke="#D3D1C7" stroke-width="0.5" stroke-dasharray="3 3"/>
+      <line x1="34" y1="30" x2="410" y2="30" stroke="#D3D1C7" stroke-width="0.5" stroke-dasharray="3 3"/>
+      <text x="28" y="153" text-anchor="end" font-size="9" fill="#9aa0a8">0</text>
+      <text x="28" y="113" text-anchor="end" font-size="9" fill="#9aa0a8">10</text>
+      <text x="28" y="73" text-anchor="end" font-size="9" fill="#9aa0a8">20</text>
+      <text x="28" y="33" text-anchor="end" font-size="9" fill="#9aa0a8">30</text>
+      <polyline points="70,118 160,86 250,62 340,42" fill="none" stroke="#534AB7" stroke-width="2"/>
+      <circle cx="70" cy="118" r="3" fill="#534AB7"/><circle cx="160" cy="86" r="3" fill="#534AB7"/>
+      <circle cx="250" cy="62" r="3" fill="#534AB7"/><circle cx="340" cy="42" r="3" fill="#534AB7"/>
+      <polyline points="70,142 160,126 250,102 340,90" fill="none" stroke="#1D9E75" stroke-width="2"/>
+      <circle cx="70" cy="142" r="3" fill="#1D9E75"/><circle cx="160" cy="126" r="3" fill="#1D9E75"/>
+      <circle cx="250" cy="102" r="3" fill="#1D9E75"/><circle cx="340" cy="90" r="3" fill="#1D9E75"/>
+      <polyline points="70,146 160,138 250,130 340,114" fill="none" stroke="#D85A30" stroke-width="2"/>
+      <circle cx="70" cy="146" r="3" fill="#D85A30"/><circle cx="160" cy="138" r="3" fill="#D85A30"/>
+      <circle cx="250" cy="130" r="3" fill="#D85A30"/><circle cx="340" cy="114" r="3" fill="#D85A30"/>
+      <polyline points="70,150 160,146 250,142 340,134" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="70" y="166" text-anchor="middle" font-size="9" fill="#9aa0a8">7/14</text>
+      <text x="160" y="166" text-anchor="middle" font-size="9" fill="#9aa0a8">7/21</text>
+      <text x="250" y="166" text-anchor="middle" font-size="9" fill="#9aa0a8">7/28</text>
+      <text x="340" y="166" text-anchor="middle" font-size="9" fill="#9aa0a8">8/4</text>
+    </svg>
+    <div class="legend">
+      <span><i style="background:#534AB7"></i>이택진</span>
+      <span><i style="background:#1D9E75"></i>김벼리</span>
+      <span><i style="background:#D85A30"></i>박예리</span>
+      <span><i style="background:#888780"></i>기타 9명</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <h4>사용자 순위 <span class="r">30일</span></h4>
+    <div class="rank"><span class="no">1</span><span class="av av1">이택</span><span class="nm">이택진</span><b>86</b></div>
+    <div class="rank"><span class="no">2</span><span class="av av2">김벼</span><span class="nm">김벼리</span><b>41</b></div>
+    <div class="rank"><span class="no">3</span><span class="av av3">박예</span><span class="nm">박예리</span><b>27</b></div>
+    <div class="rank"><span class="no">4</span><span class="av av0">이준</span><span class="nm">이준용</span><b>14</b></div>
+    <div class="rank"><span class="no">5</span><span class="av av0">최민</span><span class="nm">최민서</span><b>9</b></div>
+    <div class="rank none"><span class="no"></span><span class="nm">미사용 5명</span><b>0</b></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input class="grow" placeholder="대화 내용 검색">
+  <select style="width:130px"><option>전체 사용자</option><option>이택진</option><option>김벼리</option></select>
+</div>
+<div class="chips">
+  <span class="lb">반응</span>
+  <div class="chip on">전체</div>
+  <div class="chip">좋아요 23</div>
+  <div class="chip">싫어요 4</div>
+  <div class="chip">정정 7</div>
+  <div class="chip">미반영 2</div>
+  <div class="chip">검색 0건</div>
+</div>
+
+<div class="list">
+  <div class="item">
+    <div class="top">
+      <span class="av av1" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700">이택</span>
+      <span class="who">이택진</span>
+      <span class="when">오늘 10:22 · 8메시지</span>
+      <span class="right">
+        <span class="badge b-ok">좋아요 2</span>
+        <span class="badge b-corr">정정 1</span>
+      </span>
+    </div>
+    <div class="sum">인스파이어 자료 찾아줘 → 되물음(시즌 선택) → 시즌3 착수 자료 안내</div>
+    <div class="corr">정정: "착수보고서는 계약 후 첫 보고 문서를 말하는 거야"
+      <span class="badge b-ok" style="margin-left:4px">기억 확정</span></div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="av av2" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700">김벼</span>
+      <span class="who">김벼리</span>
+      <span class="when">오늘 09:41 · 4메시지</span>
+      <span class="right">
+        <span class="badge b-bad">싫어요 1</span>
+        <span class="badge b-plain">미반영</span>
+      </span>
+    </div>
+    <div class="sum">인터랙티브 전시 레퍼런스 요청 — 웹 결과만 나열, 아폴론 관점 없음</div>
+    <button class="btn">이 건으로 가르치기</button>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="av av3" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700">박예</span>
+      <span class="who">박예리</span>
+      <span class="when">어제 17:08 · 12메시지</span>
+      <span class="right"><span class="badge b-cand">후보 2건</span></span>
+    </div>
+    <div class="sum">구남로 2차 연출안 관련 문의 → 가정 확인 후 안내</div>
+  </div>
+</div>
+<div class="hint">행 클릭 시 대화 원문 — 되묻기·가정·출처·반응이 그대로 표시</div>
+
+
+<!-- ══════════ 2. 관측 지표 ══════════ -->
+<div class="mocklabel">PAGE 2 — talk / metrics (관측 지표)</div>
+
+<div class="subtabs">
+  <div class="subtab">대화 이력</div>
+  <div class="subtab on">관측 지표</div>
+</div>
+
+<div class="period">
+  <div class="chip on">최근 4주</div>
+  <div class="chip">최근 7일</div>
+  <div class="chip">전체</div>
+</div>
+
+<div class="metrics">
+  <div class="metric">
+    <div class="h"><span class="t">되물음률</span><span class="v">18%</span><span class="d up">▲ 6%p</span></div>
+    <div class="desc">모르면 묻는 비율 — 초기에는 오를수록 좋음</div>
+    <div class="bars"><i class="g1" style="height:26%"></i><i class="g1" style="height:40%"></i><i class="g2" style="height:62%"></i><i class="g3" style="height:100%"></i></div>
+  </div>
+  <div class="metric">
+    <div class="h"><span class="t">검색 0건</span><span class="v">9회</span><span class="d down">▼ 5회</span></div>
+    <div class="desc">못 찾은 질문 — 자습 재료가 됨</div>
+    <div class="bars"><i class="c1" style="height:100%"></i><i class="c1" style="height:82%"></i><i class="c2" style="height:70%"></i><i class="c3" style="height:46%"></i></div>
+  </div>
+  <div class="metric">
+    <div class="h"><span class="t">재검색 발생</span><span class="v">31%</span><span class="d flat">— 유지</span></div>
+    <div class="desc">1차 검색이 부족해 다시 찾은 비율</div>
+    <div class="bars"><i class="p1" style="height:64%"></i><i class="p1" style="height:72%"></i><i class="p2" style="height:60%"></i><i class="p3" style="height:66%"></i></div>
+  </div>
+  <div class="metric">
+    <div class="h"><span class="t">가정 확인</span><span class="v">12회</span><span class="d up">▲ 8회</span></div>
+    <div class="desc">숨은 가정을 드러낸 횟수 · 정정 유발 4회</div>
+    <div class="bars"><i class="a1" style="height:8%"></i><i class="a1" style="height:22%"></i><i class="a2" style="height:58%"></i><i class="a3" style="height:100%"></i></div>
+  </div>
+</div>
+
+<div class="box">
+  <h4>주 단위 요약</h4>
+  <div style="font-size:12.5px;color:var(--sub);line-height:2.05">
+    <div style="display:flex;gap:10px;border-bottom:1px solid var(--line2);padding-bottom:4px;color:var(--faint);font-size:11.5px">
+      <span style="width:70px">주</span><span style="flex:1">대화</span><span style="flex:1">되물음</span><span style="flex:1">검색 0건</span><span style="flex:1">재검색</span><span style="flex:1">가정 확인</span>
+    </div>
+    <div style="display:flex;gap:10px"><span style="width:70px">8/4 주</span><span style="flex:1"><b style="color:var(--ink)">42</b></span><span style="flex:1"><b style="color:var(--ink)">8</b></span><span style="flex:1"><b style="color:var(--ink)">9</b></span><span style="flex:1"><b style="color:var(--ink)">13</b></span><span style="flex:1"><b style="color:var(--ink)">12</b></span></div>
+    <div style="display:flex;gap:10px"><span style="width:70px">7/28 주</span><span style="flex:1">36</span><span style="flex:1">5</span><span style="flex:1">14</span><span style="flex:1">11</span><span style="flex:1">7</span></div>
+    <div style="display:flex;gap:10px"><span style="width:70px">7/21 주</span><span style="flex:1">28</span><span style="flex:1">3</span><span style="flex:1">16</span><span style="flex:1">12</span><span style="flex:1">3</span></div>
+    <div style="display:flex;gap:10px"><span style="width:70px">7/14 주</span><span style="flex:1">19</span><span style="flex:1">2</span><span style="flex:1">18</span><span style="flex:1">9</span><span style="flex:1">1</span></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

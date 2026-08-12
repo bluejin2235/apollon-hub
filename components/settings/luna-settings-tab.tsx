@@ -8,6 +8,8 @@ import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledge
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
 import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
+import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
+import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
@@ -1553,8 +1555,8 @@ export function LunaSettingsTab() {
     }
 
     if (menu === "talk") {
-      if (sub === "metrics") return <LunaTalkPanel />;
-      if (sub === "history") return <LunaPlaceholder title="대화 이력" />;
+      if (sub === "history") return <LunaTalkHistory />;
+      if (sub === "metrics") return <LunaTalkMetrics />;
     }
 
     if (menu === "candidates") {
