@@ -116,33 +116,35 @@ export function LunaSidebar({
     }
   }, [editingId]);
 
+  // 사이드바는 모든 루나 화면에 뜬다. 한 요청이 실패해도 나머지는 살아 있어야 한다.
   useEffect(() => {
     void (async () => {
       const token = await getAccessToken();
       if (!token) return;
       const headers = { Authorization: `Bearer ${token}` };
 
-      const [projectsRes, glossaryRes] = await Promise.all([
-        fetch("/api/luna/projects", { headers }),
-        fetch("/api/glossary", { headers })
+      const load = async <T,>(url: string): Promise<T | null> => {
+        try {
+          const res = await fetch(url, { headers });
+          if (!res.ok) return null;
+          return (await res.json()) as T;
+        } catch (err) {
+          console.error("[luna sidebar]", url, err);
+          return null;
+        }
+      };
+
+      const [projectsJson, glossaryJson, conversationsJson] = await Promise.all([
+        load<{ projects?: LunaProject[] }>("/api/luna/projects"),
+        load<{ pending_candidates?: number }>("/api/glossary"),
+        managed
+          ? Promise.resolve(null)
+          : load<{ conversations?: LunaConversation[] }>("/api/luna/conversations")
       ]);
 
-      if (projectsRes.ok) {
-        const json = (await projectsRes.json()) as { projects?: LunaProject[] };
-        setProjects(json.projects ?? []);
-      }
-      if (glossaryRes.ok) {
-        const json = (await glossaryRes.json()) as { pending_candidates?: number };
-        setTermCandidates(json.pending_candidates ?? 0);
-      }
-
-      if (!managed) {
-        const res = await fetch("/api/luna/conversations", { headers });
-        if (res.ok) {
-          const json = (await res.json()) as { conversations?: LunaConversation[] };
-          setOwnConversations(json.conversations ?? []);
-        }
-      }
+      if (projectsJson) setProjects(projectsJson.projects ?? []);
+      if (glossaryJson) setTermCandidates(glossaryJson.pending_candidates ?? 0);
+      if (conversationsJson) setOwnConversations(conversationsJson.conversations ?? []);
     })();
   }, [managed]);
 

@@ -155,6 +155,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ term, versions });
   }
 
+  // 이 목록은 루나 사이드바가 모든 화면에서 부른다.
+  // 용어 테이블이 없거나 조회에 실패해도 사이드바가 죽지 않도록 빈 목록으로 되돌린다.
   const { data: terms, error } = await admin
     .from("glossary_terms")
     .select(LIST_SELECT)
@@ -162,12 +164,18 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error("[glossary] GET list", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      terms: [],
+      pending_candidates: 0,
+      available: false,
+      message: "용어사전 테이블을 읽지 못했습니다."
+    });
   }
 
   return NextResponse.json({
     terms: terms ?? [],
-    pending_candidates: await countTermCandidates(admin)
+    pending_candidates: await countTermCandidates(admin),
+    available: true
   });
 }
 
