@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import {
+  createCandidate,
+  firstTurnFallback,
+  makeTurn,
+  runDialogueTurn
+} from "@/lib/luna/candidates";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
 import { getPrompt } from "@/lib/luna/prompts";
 import { trigramSimilarity } from "@/lib/luna/selfstudy";
@@ -382,36 +388,40 @@ export async function POST(request: NextRequest) {
   }
 
   const insertContent = content || text;
-  const { data: inserted, error: insertError } = await admin
-    .from("luna_learnings")
-    .insert({
+  const lunaFirst =
+    (await runDialogueTurn(admin, {
+      mode: "first",
       content: insertContent,
-      category: ALLOWED_CATEGORIES.has(category) ? category : "term",
-      status: "active",
-      origin: "direct",
-      author_id: user.id,
-      confidence: 3,
-      importance: 4,
-      raw_input: text,
-      use_count: 0
-    })
-    .select("id, content, category")
-    .single();
+      evidence: text
+    })) || firstTurnFallback(insertContent);
 
-  if (insertError) {
-    console.error("[luna/learn] insert", insertError);
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+  const created = await createCandidate(admin, {
+    content: insertContent,
+    evidence: text,
+    category: ALLOWED_CATEGORIES.has(category) ? category : "term",
+    source: "direct",
+    author_id: user.id,
+    assigned_to: user.id,
+    raw_input: text,
+    thread: [makeTurn("luna", lunaFirst)],
+    scope_suggestion: null
+  });
+
+  if (!created) {
+    return NextResponse.json({ error: "Failed to create candidate" }, { status: 500 });
   }
 
   const newWeekCount = await countWeekDirect(admin, user.id);
 
   return NextResponse.json({
     status: "ok",
-    message: message || "기억했어요",
-    content: inserted.content as string,
-    category: inserted.category as string,
+    message: message || "후보함에 넣었어요. 맞는지 확인해 주세요.",
+    content: created.content,
+    category: ALLOWED_CATEGORIES.has(category) ? category : "term",
     removed,
-    id: inserted.id as string,
-    week_count: newWeekCount
+    id: created.id,
+    week_count: newWeekCount,
+    candidate: true,
+    thread: created.thread
   });
 }

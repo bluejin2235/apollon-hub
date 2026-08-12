@@ -2,7 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
-import { getPrompts } from "@/lib/luna/prompts";
+import {
+  getPrompts,
+  LUNA_PROMPT_KEYS,
+  LUNA_RUNTIME_PROMPT_KEYS
+} from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { searchYoutube } from "@/lib/luna/youtube";
 
@@ -184,32 +188,24 @@ export async function runLunaTurn(
     throw new Error("message is required");
   }
 
-  const loadedPrompts = await getPrompts(admin, [
-    "identity",
-    "search.keyword_extract",
-    "connector.notion",
-    "connector.workserver",
-    "connector.web",
-    "synthesis.opinion"
-  ]);
+  const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
 
-  const identity = loadedPrompts.identity?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const keywordExtractPrompt =
-    loadedPrompts["search.keyword_extract"]?.trim() || KEYWORD_EXTRACT_FALLBACK;
+  const identity =
+    loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
+  const talkSearch = loadedPrompts[LUNA_PROMPT_KEYS.search]?.trim() || "";
+  const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
+  const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
+  const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
   const synthesisOpinion =
-    loadedPrompts["synthesis.opinion"]?.trim() || SYNTHESIS_OPINION_FALLBACK;
+    [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
+    SYNTHESIS_OPINION_FALLBACK;
 
   const connectorPrompts: string[] = [];
-  if (notionEnabled && loadedPrompts["connector.notion"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.notion"].trim());
-  }
-  if (nasEnabled && loadedPrompts["connector.workserver"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.workserver"].trim());
-  }
-  if (webEnabled && loadedPrompts["connector.web"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.web"].trim());
+  if ((notionEnabled || nasEnabled || webEnabled) && talkSearch) {
+    connectorPrompts.push(talkSearch);
   }
 
+  // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData } = await admin
     .from("luna_learnings")
     .select("content, category")

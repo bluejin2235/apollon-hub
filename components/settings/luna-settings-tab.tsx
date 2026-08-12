@@ -7,13 +7,14 @@ import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaNasTab } from "@/components/settings/luna-nas-tab";
 import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
-import type {
-  LunaPromptGroupRow,
-  LunaPromptKind,
-  LunaPromptRow,
-  LunaPromptVersionRow
+import {
+  formatPromptNumber,
+  isHumanOnlyPromptLevel,
+  type LunaPromptGroupRow,
+  type LunaPromptKind,
+  type LunaPromptRow,
+  type LunaPromptVersionRow
 } from "@/lib/luna/prompts";
-import { formatPromptNumber } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
 type LunaMenuSlug = "brain" | "memory" | "talk" | "study" | "teach";
@@ -50,7 +51,7 @@ const LUNA_MENU_TITLES: Record<LunaMenuSlug, string> = {
   memory: "기억",
   talk: "대화",
   study: "학습",
-  teach: "교정"
+  teach: "후보함"
 };
 
 function isLunaMenuSlug(value: string): value is LunaMenuSlug {
@@ -75,6 +76,31 @@ async function getAccessToken(): Promise<string | null> {
     data: { session }
   } = await supabase.auth.getSession();
   return session?.access_token ?? null;
+}
+
+function HumanOnlyLock() {
+  return (
+    <span
+      title="사람만 수정"
+      aria-label="사람만 수정"
+      className="inline-flex shrink-0 text-slate-500"
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    </span>
+  );
 }
 
 function kindBadge(kind: LunaPromptKind): { label: string; className: string } {
@@ -367,6 +393,7 @@ function LunaPromptsPanel() {
       Boolean(latestVersion?.prediction) &&
       latestVersion?.verify_result === "refuted";
     const promptNo = formatPromptNumber(p);
+    const humanOnly = isHumanOnlyPromptLevel(p.level);
 
     return (
       <div key={p.id} className="mb-1">
@@ -387,6 +414,7 @@ function LunaPromptsPanel() {
           </span>
           <span className="inline-flex min-w-0 items-center gap-1 truncate text-[13px] font-medium text-slate-900">
             {p.title}
+            {humanOnly ? <HumanOnlyLock /> : null}
             {latestRefuted ? (
               <span
                 className="inline-block h-[5px] w-[5px] shrink-0 rounded-full bg-red-500"
@@ -1149,20 +1177,24 @@ export function LunaSettingsTab() {
       const token = await getAccessToken();
       if (!token || cancelled) return;
       try {
-        const [promptRes, nasRes, engineRes, teachRes] = await Promise.all([
-          fetch("/api/luna/prompts", {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch("/api/luna/nas", {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch("/api/luna/engine", {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch("/api/luna/teach/list", {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-        ]);
+        const [promptRes, nasRes, engineRes, teachRes, candidatesRes] =
+          await Promise.all([
+            fetch("/api/luna/prompts", {
+              headers: { Authorization: `Bearer ${token}` }
+            }),
+            fetch("/api/luna/nas", {
+              headers: { Authorization: `Bearer ${token}` }
+            }),
+            fetch("/api/luna/engine", {
+              headers: { Authorization: `Bearer ${token}` }
+            }),
+            fetch("/api/luna/teach/list", {
+              headers: { Authorization: `Bearer ${token}` }
+            }),
+            fetch("/api/luna/candidates?filter=all", {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          ]);
 
         const promptsJson = promptRes.ok
           ? ((await promptRes.json()) as { prompts?: unknown[] })
@@ -1178,15 +1210,20 @@ export function LunaSettingsTab() {
         const teachJson = teachRes.ok
           ? ((await teachRes.json()) as {
               conflicts?: unknown[];
-              pending?: unknown[];
-              teachPending?: number;
             })
           : {};
+        const candidatesJson = candidatesRes.ok
+          ? ((await candidatesRes.json()) as { count?: number; items?: unknown[] })
+          : {};
 
-        // origin=direct 응답: conflict_group 고유 수(conflicts) + candidate 건수(pending)
+        // 후보함 뱃지 = candidate 수 + 충돌 그룹 수
         const teachPending =
-          (Array.isArray(teachJson.conflicts) ? teachJson.conflicts.length : 0) +
-          (Array.isArray(teachJson.pending) ? teachJson.pending.length : 0);
+          (typeof candidatesJson.count === "number"
+            ? candidatesJson.count
+            : Array.isArray(candidatesJson.items)
+              ? candidatesJson.items.length
+              : 0) +
+          (Array.isArray(teachJson.conflicts) ? teachJson.conflicts.length : 0);
 
         const notion = engineJson.connections?.notion === true;
         const web = engineJson.connections?.tavily === true;

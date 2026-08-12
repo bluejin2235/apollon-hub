@@ -78,7 +78,10 @@ export async function GET(request: NextRequest) {
   }));
 
   const history = withNames.filter((r) => r.status === "active");
-  const pending = withNames.filter((r) => r.status === "candidate");
+  // 승인 대기: 정리(consolidate) 등 review_reason 이 있는 후보만 (일반 후보는 /candidates)
+  const pending = withNames.filter(
+    (r) => r.status === "candidate" && Boolean(r.review_reason)
+  );
   const conflictRows = withNames.filter((r) => r.status === "conflict");
 
   const groupMap = new Map<string, TeachItem[]>();

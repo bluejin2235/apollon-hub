@@ -1,12 +1,48 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type LunaPromptLevel = "L1" | "L2" | "L3";
+export type LunaPromptLevel = "L1" | "L2" | "L3" | "L4" | "L5";
 export type LunaPromptKind =
   | "identity"
   | "perspective"
   | "role"
   | "task"
   | "system";
+
+/** 체계 v2 로더 등록 키 (상시·대화·배움·자기개선). */
+export const LUNA_PROMPT_KEYS = {
+  identity: "identity.apollon",
+  understand: "talk.understand",
+  assume: "talk.assume",
+  search: "talk.search",
+  answer: "talk.answer",
+  capture: "learn.capture",
+  dialogue: "learn.dialogue",
+  selfstudy: "learn.selfstudy",
+  upgrade: "self.upgrade",
+  report: "self.report"
+} as const;
+
+export type LunaPromptKey =
+  (typeof LUNA_PROMPT_KEYS)[keyof typeof LUNA_PROMPT_KEYS];
+
+/** 채팅/런타임에서 getPrompts 로 한 번에 불러올 키 목록. */
+export const LUNA_RUNTIME_PROMPT_KEYS: LunaPromptKey[] = [
+  LUNA_PROMPT_KEYS.identity,
+  LUNA_PROMPT_KEYS.understand,
+  LUNA_PROMPT_KEYS.assume,
+  LUNA_PROMPT_KEYS.search,
+  LUNA_PROMPT_KEYS.answer,
+  LUNA_PROMPT_KEYS.capture,
+  LUNA_PROMPT_KEYS.dialogue,
+  LUNA_PROMPT_KEYS.selfstudy,
+  LUNA_PROMPT_KEYS.upgrade,
+  LUNA_PROMPT_KEYS.report
+];
+
+/** L1·L5 는 사람만 수정. 루나 자동 수정 API 에서 거부. */
+export function isHumanOnlyPromptLevel(level: string): boolean {
+  return level === "L1" || level === "L5";
+}
 
 export type LunaPromptVersionContent = {
   title: string;
@@ -71,18 +107,13 @@ export type LunaPromptRow = {
   versions?: LunaPromptVersionRow[];
 };
 
-/** level / kind / sort_order → L1-01, L2-P01, L2-R01, L2-T01, L3-01 */
+/** level / sort_order → L1-01, L2-01, L3-01, L4-01, L5-01 (체계 v2) */
 export function formatPromptNumber(p: {
   level: string;
-  kind: string;
+  kind?: string;
   sort_order: number | null | undefined;
 }): string {
   const n = String(p.sort_order ?? 0).padStart(2, "0");
-  if (p.level === "L1") return `L1-${n}`;
-  if (p.level === "L2" && p.kind === "perspective") return `L2-P${n}`;
-  if (p.level === "L2" && p.kind === "role") return `L2-R${n}`;
-  if (p.level === "L2" && p.kind === "task") return `L2-T${n}`;
-  if (p.level === "L3") return `L3-${n}`;
   return `${p.level}-${n}`;
 }
 

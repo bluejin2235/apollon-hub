@@ -9,11 +9,18 @@ import type {
   LunaPromptRow,
   LunaPromptVersionRow
 } from "@/lib/luna/prompts";
+import { isHumanOnlyPromptLevel } from "@/lib/luna/prompts";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const LEVEL_ORDER: Record<string, number> = { L1: 0, L2: 1, L3: 2 };
+const LEVEL_ORDER: Record<string, number> = {
+  L1: 0,
+  L2: 1,
+  L3: 2,
+  L4: 3,
+  L5: 4
+};
 const KIND_ORDER: Record<string, number> = {
   identity: 0,
   perspective: 1,
@@ -257,6 +264,7 @@ export async function PATCH(request: NextRequest) {
     is_active?: boolean;
     change_summary?: string;
     prediction?: string;
+    changed_by_luna?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -292,6 +300,22 @@ export async function PATCH(request: NextRequest) {
   }
   if (!current) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (
+    body.changed_by_luna === true &&
+    isHumanOnlyPromptLevel(String(current.level))
+  ) {
+    console.warn(
+      "[luna/prompts] rejected Luna edit on human-only prompt",
+      current.level,
+      current.prompt_key,
+      id
+    );
+    return NextResponse.json(
+      { error: "L1/L5 prompts can only be edited by humans" },
+      { status: 403 }
+    );
   }
 
   if (activeOnly) {
@@ -429,7 +453,11 @@ export async function POST(request: NextRequest) {
   const kind = body.kind as LunaPromptKind | undefined;
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (
-    (level !== "L1" && level !== "L2" && level !== "L3") ||
+    (level !== "L1" &&
+      level !== "L2" &&
+      level !== "L3" &&
+      level !== "L4" &&
+      level !== "L5") ||
     (kind !== "identity" &&
       kind !== "perspective" &&
       kind !== "role" &&

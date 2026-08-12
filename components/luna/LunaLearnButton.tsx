@@ -849,7 +849,7 @@ export function LunaLearnButton() {
             {phase === "done" ? (
               <div className="space-y-2">
                 <div className="rounded-lg bg-[#E1F5EE] px-2.5 py-2 text-[12px] text-[#04342C]">
-                  기억했어요. 다음 질문부터 바로 씁니다.
+                  후보함에 넣었어요. 확정되면 기억에 남아요.
                 </div>
                 <p className="text-[10.5px] text-gray-500">
                   이번 주에 {weekCount}개 알려주셨어요

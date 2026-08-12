@@ -40,7 +40,7 @@ export default function LunaSettingsHome({ onSelect, stats = {} }: LunaSettingsH
     { slug: 'memory', name: '기억', desc: '아는 것 — 조직·개인·Work서버', badge: `${memoryCount.toLocaleString()}건 연결` },
     { slug: 'talk', name: '대화', desc: '말하기 — 말투, 커넥터', badge: `커넥터 ${connectorConnected}/${connectorTotal} 연결` },
     { slug: 'study', name: '학습', desc: '배우기 — 예습·복습·정리', badge: nextStudyAt },
-    { slug: 'teach', name: '교정', desc: '가르치기 — 팀 피드백, 승인', badge: teachPending > 0 ? `대기 ${teachPending}건` : '준비 중', badgeAccent: teachPending > 0 },
+    { slug: 'teach', name: '후보함', desc: '가르치기 — 지식 후보 확정', badge: teachPending > 0 ? `후보 ${teachPending}건` : '비어 있음', badgeAccent: teachPending > 0 },
   ];
 
   const icon = (slug: MenuSlug) => {
