@@ -98,13 +98,19 @@ export function LunaTeachTab() {
   const [message, setMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const initialFilter = searchParams.get("filter");
-  const [filter, setFilter] = useState<FilterChip>(
-    initialFilter === "mine" ||
+  const lunaMenu = searchParams.get("luna");
+  const lunaSub = searchParams.get("sub");
+  const [filter, setFilter] = useState<FilterChip>(() => {
+    if (lunaMenu === "candidates" && lunaSub === "mine") return "mine";
+    if (
+      initialFilter === "mine" ||
       initialFilter === "chat" ||
       initialFilter === "selfstudy"
-      ? initialFilter
-      : "all"
-  );
+    ) {
+      return initialFilter;
+    }
+    return "all";
+  });
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [reviseOpen, setReviseOpen] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<TeachItem[]>([]);

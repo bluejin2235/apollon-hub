@@ -367,7 +367,7 @@ export function LunaLearnButton() {
 
   const openCandidates = () => {
     setOpen(false);
-    router.push("/settings?luna=teach");
+    router.push("/settings?tab=luna&luna=candidates&sub=mine");
   };
 
   const isLogin =

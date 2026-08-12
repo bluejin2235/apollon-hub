@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { LunaDashboard } from "@/lib/luna/dashboard";
 import { supabase } from "@/lib/supabase/client";
 
-type MenuSlug = "brain" | "memory" | "talk" | "study" | "teach";
+import type { LunaMenuSlug } from "@/lib/luna/settings-nav";
 
 type Props = {
-  onSelect: (slug: MenuSlug, opts?: { filter?: string }) => void;
+  onSelect: (slug: LunaMenuSlug, opts?: { filter?: string }) => void;
 };
 
 const COLORS = {
@@ -180,7 +180,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
         </div>
         <button
           type="button"
-          onClick={() => onSelect("teach", { filter: "mine" })}
+          onClick={() => onSelect("candidates", { filter: "mine" })}
           className="inline-flex items-center gap-1.5 rounded-full border border-[#D85A30]/40 bg-white px-3 py-1.5 text-[12px] font-medium text-[#993C1D] transition hover:bg-[#FAECE7]"
         >
           내가 답할 차례
@@ -215,7 +215,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
               <DashCard
                 title="지식"
                 color={COLORS.knowledge}
-                onClick={() => onSelect("memory")}
+                onClick={() => onSelect("knowledge")}
               >
                 <Metric
                   label="확정"
@@ -289,7 +289,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
               <DashCard
                 title="지식후보"
                 color={COLORS.candidates}
-                onClick={() => onSelect("teach")}
+                onClick={() => onSelect("candidates")}
               >
                 <Metric label="대기" value={c.pending} accent />
                 <Metric label="오늘 확정" value={c.confirmed_today} />
@@ -326,7 +326,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
               <DashCard
                 title="자습"
                 color={COLORS.selfstudy}
-                onClick={() => onSelect("study")}
+                onClick={() => onSelect("selfstudy")}
               >
                 <Metric label="어제 제출" value={`${s.yesterday_submitted}건`} />
                 {s.accuracy_pct != null ? (
@@ -389,7 +389,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
             <DashCard
               title="지식"
               color={COLORS.knowledge}
-              onClick={() => onSelect("memory")}
+              onClick={() => onSelect("knowledge")}
             >
               <Metric label="확정" value={`${k.active_count}(+${k.week_new})`} />
               <Metric
@@ -433,7 +433,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
             <DashCard
               title="지식후보"
               color={COLORS.candidates}
-              onClick={() => onSelect("teach")}
+              onClick={() => onSelect("candidates")}
             >
               <Metric label="대기" value={c.pending} accent />
               <Metric label="오늘 확정" value={c.confirmed_today} />
@@ -446,7 +446,7 @@ export default function LunaSettingsHome({ onSelect }: Props) {
             <DashCard
               title="자습"
               color={COLORS.selfstudy}
-              onClick={() => onSelect("study")}
+              onClick={() => onSelect("selfstudy")}
             >
               <Metric label="어제 제출" value={`${s.yesterday_submitted}건`} />
               {s.accuracy_pct != null ? (

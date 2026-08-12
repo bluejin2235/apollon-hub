@@ -248,7 +248,7 @@ export async function runWeeklySelfReport(
       category: "luna_report",
       title,
       body: bodyText.slice(0, 4000),
-      link: "/settings?luna=brain",
+      link: "/settings?tab=luna&luna=brain&sub=report",
       level: "info",
       scope: "admin",
       meta: { event: "self_report", ...stats }

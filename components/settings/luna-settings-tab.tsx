@@ -4,9 +4,22 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import LunaSettingsHome from "@/components/luna/LunaSettingsHome";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
+import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaNasTab } from "@/components/settings/luna-nas-tab";
+import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
 import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
+import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
+import {
+  buildLunaSettingsUrl,
+  canonicalLunaSettingsUrl,
+  defaultSubForMenu,
+  legacyFilterToSub,
+  resolveLunaRoute,
+  subLabel,
+  type LunaMenuSlug,
+  type LunaSubSlug
+} from "@/lib/luna/settings-nav";
 import {
   formatPromptNumber,
   isHumanOnlyPromptLevel,
@@ -17,59 +30,16 @@ import {
 } from "@/lib/luna/prompts";
 import { supabase } from "@/lib/supabase/client";
 
-type LunaMenuSlug = "brain" | "memory" | "talk" | "study" | "teach";
-type LunaSubTab = LunaMenuSlug | "home";
-type LegacyLunaSubTab =
-  | "prompts"
-  | "eval"
-  | "engine"
-  | "knowledge"
-  | "nas"
-  | "trace"
-  | "exam";
-
-const LEGACY_LUNA_SLUG_MAP: Record<LegacyLunaSubTab, LunaMenuSlug | "home"> = {
-  prompts: "brain",
-  engine: "brain",
-  knowledge: "memory",
-  nas: "memory",
-  eval: "home",
-  trace: "home",
-  exam: "home"
-};
-
-const LUNA_MENU_SLUGS: LunaMenuSlug[] = [
-  "brain",
-  "memory",
-  "talk",
-  "study",
-  "teach"
-];
-
-const LUNA_MENU_TITLES: Record<LunaMenuSlug, string> = {
-  brain: "두뇌",
-  memory: "기억",
-  talk: "대화",
-  study: "학습",
-  teach: "후보함"
-};
-
-function isLunaMenuSlug(value: string): value is LunaMenuSlug {
-  return (LUNA_MENU_SLUGS as string[]).includes(value);
-}
-
-function isLegacyLunaSubTab(value: string): value is LegacyLunaSubTab {
-  return value in LEGACY_LUNA_SLUG_MAP;
-}
-
-function resolveLunaSubTab(raw: string | null): LunaSubTab {
-  if (!raw || raw === "home") return "home";
-  if (isLunaMenuSlug(raw)) return raw;
-  if (isLegacyLunaSubTab(raw)) return LEGACY_LUNA_SLUG_MAP[raw];
-  return "home";
-}
-
 type ProfileOption = { id: string; name: string };
+
+function LunaPlaceholder({ title }: { title: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center">
+      <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
+      <p className="mt-2 text-[13px] text-slate-500">준비 중</p>
+    </div>
+  );
+}
 
 async function getAccessToken(): Promise<string | null> {
   const {
@@ -1542,126 +1512,96 @@ export function LunaSettingsTab() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawLuna = searchParams.get("luna");
-  const subTab = resolveLunaSubTab(rawLuna);
+  const rawSub = searchParams.get("sub");
+  const filter = searchParams.get("filter");
+  const route = resolveLunaRoute(rawLuna, rawSub);
+  const filterSub = legacyFilterToSub(route.menu, filter);
+  const menu = route.menu;
+  const sub = filterSub ?? route.sub;
 
   useEffect(() => {
-    if (!rawLuna) return;
-    if (rawLuna === "home") {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("luna");
-      const qs = params.toString();
-      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
-      return;
+    const canonical = canonicalLunaSettingsUrl(searchParams);
+    if (canonical) {
+      router.replace(canonical, { scroll: false });
     }
-    if (isLegacyLunaSubTab(rawLuna)) {
-      const next = LEGACY_LUNA_SLUG_MAP[rawLuna];
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === "home") {
-        params.delete("luna");
-      } else {
-        params.set("luna", next);
-      }
-      const qs = params.toString();
-      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
-    }
-  }, [rawLuna, router, searchParams]);
+  }, [router, searchParams]);
 
-  const setSubTab = useCallback(
-    (next: LunaSubTab) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === "home") {
-        params.delete("luna");
-        params.delete("filter");
-      } else {
-        params.set("luna", next);
-        if (next !== "teach") params.delete("filter");
-      }
-      const qs = params.toString();
-      router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
+  const navigate = useCallback(
+    (nextMenu: LunaMenuSlug, nextSub?: LunaSubSlug | null) => {
+      router.replace(buildLunaSettingsUrl(nextMenu, nextSub), { scroll: false });
     },
-    [router, searchParams]
+    [router]
   );
 
-  if (subTab === "home") {
-    return (
-      <LunaSettingsHome
-        onSelect={(slug, opts) => {
-          if (opts?.filter) {
-            const params = new URLSearchParams(searchParams.toString());
-            params.set("luna", slug);
-            params.set("filter", opts.filter);
-            router.push(`/settings?${params.toString()}`, { scroll: false });
-            return;
-          }
-          setSubTab(slug);
-        }}
-      />
-    );
+  const pageTitle =
+    menu === "dashboard" ? "대시보드" : subLabel(menu, sub);
+
+  function renderContent() {
+    if (menu === "dashboard") {
+      return (
+        <LunaSettingsHome
+          onSelect={(nextMenu, opts) => {
+            if (nextMenu === "candidates" && opts?.filter === "mine") {
+              navigate("candidates", "mine");
+              return;
+            }
+            navigate(nextMenu);
+          }}
+        />
+      );
+    }
+
+    if (menu === "knowledge") {
+      if (sub === "confirmed") return <LunaKnowledgeTab />;
+      if (sub === "workserver") return <LunaNasTab />;
+      if (sub === "glossary") return <LunaPlaceholder title="용어사전" />;
+      if (sub === "conflict") return <LunaPlaceholder title="충돌 보류함" />;
+      if (sub === "notion") return <LunaPlaceholder title="노션" />;
+    }
+
+    if (menu === "talk") {
+      if (sub === "metrics") return <LunaTalkPanel />;
+      if (sub === "history") return <LunaPlaceholder title="대화 이력" />;
+    }
+
+    if (menu === "candidates") {
+      if (sub === "pending" || sub === "mine") {
+        return <LunaTeachTab key={sub} />;
+      }
+      if (sub === "history") return <LunaPlaceholder title="처리 이력" />;
+    }
+
+    if (menu === "selfstudy") {
+      if (sub === "settings") return <LunaStudyPanel />;
+      if (sub === "history") return <LunaTraceTab />;
+      if (sub === "stuck") return <LunaPlaceholder title="막힌 순간" />;
+    }
+
+    if (menu === "brain") {
+      if (sub === "prompts") return <LunaPromptsPanel />;
+      if (sub === "upgrade") return <LunaBrainImproveSection />;
+      if (sub === "model") return <LunaEngineTab />;
+      if (sub === "eval") return <LunaEvalTab />;
+      if (sub === "report") return <LunaPlaceholder title="성장 보고" />;
+    }
+
+    return <LunaPlaceholder title={pageTitle} />;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setSubTab("home")}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
-        >
-          ← 홈
-        </button>
-        <h2 className="text-[14px] font-semibold text-slate-900">
-          {LUNA_MENU_TITLES[subTab]}
-        </h2>
-      </div>
+    <div className="space-y-5">
+      <LunaSettingsNav
+        menu={menu}
+        sub={sub}
+        onMenuChange={(nextMenu) => navigate(nextMenu, defaultSubForMenu(nextMenu))}
+        onSubChange={(nextSub) => navigate(menu, nextSub)}
+      />
 
-      {subTab === "brain" ? (
-        <div className="space-y-8">
-          <LunaBrainImproveSection />
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">프롬프트</h3>
-            <LunaPromptsPanel />
-          </section>
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">엔진</h3>
-            <LunaEngineTab />
-          </section>
-        </div>
+      {menu !== "dashboard" ? (
+        <h2 className="text-[14px] font-semibold text-slate-900">{pageTitle}</h2>
       ) : null}
 
-      {subTab === "memory" ? (
-        <div className="space-y-6">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="text-[13px] font-semibold text-slate-900">
-                조직 기억 (전사 공유)
-              </h3>
-              <p className="mt-1 text-[12px] text-slate-600">
-                팀 전체가 공유하는 지식·문서·합의된 맥락입니다.
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="text-[13px] font-semibold text-slate-900">
-                개인 기억 (계정별)
-              </h3>
-              <p className="mt-1 text-[12px] text-slate-600">
-                계정별로 쌓이는 대화·선호·개인 맥락입니다.
-              </p>
-            </div>
-          </div>
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">지식</h3>
-            <LunaKnowledgeTab />
-          </section>
-          <section>
-            <h3 className="mb-3 text-[13px] font-semibold text-slate-900">Work서버</h3>
-            <LunaNasTab />
-          </section>
-        </div>
-      ) : null}
-
-      {subTab === "talk" ? <LunaTalkPanel /> : null}
-      {subTab === "study" ? <LunaStudyPanel /> : null}
-      {subTab === "teach" ? <LunaTeachTab /> : null}
+      {renderContent()}
     </div>
   );
 }

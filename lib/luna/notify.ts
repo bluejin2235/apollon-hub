@@ -27,12 +27,12 @@ const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
 };
 
 const EVENT_LINK: Record<LunaNotifyEvent, string> = {
-  consolidation: "/settings?tab=luna&luna=study",
-  study: "/settings?tab=luna&luna=study",
-  reflect: "/settings?tab=luna&luna=teach",
-  conflict: "/settings?tab=luna&luna=teach",
-  prompt_change: "/settings?tab=luna&luna=brain",
-  exam: "/settings"
+  consolidation: "/settings?tab=luna&luna=selfstudy&sub=settings",
+  study: "/settings?tab=luna&luna=selfstudy&sub=settings",
+  reflect: "/settings?tab=luna&luna=candidates&sub=pending",
+  conflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
+  prompt_change: "/settings?tab=luna&luna=brain&sub=prompts",
+  exam: "/settings?tab=luna&luna=brain&sub=eval"
 };
 
 export type LunaNotifyOptions = {

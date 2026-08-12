@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
@@ -13,6 +14,7 @@ import { TeamMemberEditModal, type TeamMemberRow } from "@/components/settings/t
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
+import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
 
 type TabKey =
@@ -27,7 +29,21 @@ type TabKey =
 type Role = "슈퍼관리자" | "중간관리자" | "멤버";
 
 const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
+
+function isSettingsTabKey(value: string): value is TabKey {
+  return (
+    value === "profile" ||
+    value === "password" ||
+    value === "team" ||
+    value === "loans" ||
+    value === "services" ||
+    value === "permissions" ||
+    value === "stats" ||
+    value === "luna"
+  );
+}
 export default function SettingsPage() {
+  const router = useRouter();
   const { status, profile: sessionProfile } = useRequirePortalSession({
     profileSelect: "id, email, name, department, role"
   });
@@ -63,12 +79,34 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!canManageServices) return;
-    const luna = new URLSearchParams(window.location.search).get("luna");
-    if (luna) {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    const luna = params.get("luna");
+    if (tab === "luna" || luna) {
       setActiveTab("luna");
       setMobileShowingContent(true);
+      return;
+    }
+    if (tab && isSettingsTabKey(tab)) {
+      setActiveTab(tab);
+      if (tab !== "profile") {
+        setMobileShowingContent(true);
+      }
     }
   }, [canManageServices]);
+
+  const selectTab = (key: TabKey) => {
+    setActiveTab(key);
+    if (key === "luna") {
+      router.replace(buildLunaSettingsUrl("dashboard"), { scroll: false });
+      return;
+    }
+    if (key === "profile") {
+      router.replace("/settings", { scroll: false });
+      return;
+    }
+    router.replace(`/settings?tab=${key}`, { scroll: false });
+  };
 
   const tabs = useMemo<Array<{ key: TabKey; label: string }>>(() => {
     const base: Array<{ key: TabKey; label: string }> = [
@@ -317,7 +355,7 @@ export default function SettingsPage() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => selectTab(tab.key)}
                 className={`rounded-lg px-4 py-2 text-sm transition ${
                   activeTab === tab.key
                     ? "bg-white text-slate-900 shadow-sm"
@@ -358,7 +396,7 @@ export default function SettingsPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => {
-                  setActiveTab(tab.key);
+                  selectTab(tab.key);
                   setMobileShowingContent(true);
                 }}
                 className="flex h-[52px] w-full items-center gap-3 border-b border-[#E4E2DA] px-4 text-left text-[13.5px] text-[#1C1C1A] last:border-b-0"
