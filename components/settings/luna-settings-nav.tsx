@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase/client";
 type BadgeCounts = {
   candidatesPending: number;
   brainPending: number;
+  knowledgeConflict: number;
 };
 
 type Props = {
@@ -40,7 +41,8 @@ function NavBadge({ count }: { count: number }) {
 export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props) {
   const [badges, setBadges] = useState<BadgeCounts>({
     candidatesPending: 0,
-    brainPending: 0
+    brainPending: 0,
+    knowledgeConflict: 0
   });
 
   useEffect(() => {
@@ -55,10 +57,12 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
         const json = (await res.json()) as {
           candidates?: { pending?: number };
           brain?: { revert_pending?: number };
+          knowledge?: { conflict_count?: number };
         };
         setBadges({
           candidatesPending: json.candidates?.pending ?? 0,
-          brainPending: json.brain?.revert_pending ?? 0
+          brainPending: json.brain?.revert_pending ?? 0,
+          knowledgeConflict: json.knowledge?.conflict_count ?? 0
         });
       } catch {
         /* ignore */
@@ -107,6 +111,12 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
         >
           {subs.map((item) => {
             const active = sub === item.slug;
+            const conflictBadge =
+              menu === "knowledge" &&
+              item.slug === "conflict" &&
+              badges.knowledgeConflict > 0
+                ? badges.knowledgeConflict
+                : 0;
             return (
               <button
                 key={item.slug}
@@ -119,6 +129,11 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
                 }`}
               >
                 {item.label}
+                {conflictBadge > 0 ? (
+                  <span className="ml-1 font-bold text-[#993C1D]">
+                    {conflictBadge > 99 ? "99+" : conflictBadge}
+                  </span>
+                ) : null}
               </button>
             );
           })}

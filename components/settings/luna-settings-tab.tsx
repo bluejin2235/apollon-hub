@@ -3,10 +3,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import LunaSettingsHome from "@/components/luna/LunaSettingsHome";
+import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
+import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
+import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
+import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
+import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
-import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
-import { LunaNasTab } from "@/components/settings/luna-nas-tab";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
 import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
 import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
@@ -1543,10 +1546,10 @@ export function LunaSettingsTab() {
 
     if (menu === "knowledge") {
       if (sub === "confirmed") return <LunaKnowledgeTab />;
-      if (sub === "workserver") return <LunaNasTab />;
-      if (sub === "glossary") return <LunaPlaceholder title="용어사전" />;
-      if (sub === "conflict") return <LunaPlaceholder title="충돌 보류함" />;
-      if (sub === "notion") return <LunaPlaceholder title="노션" />;
+      if (sub === "glossary") return <LunaKnowledgeGlossary />;
+      if (sub === "conflict") return <LunaKnowledgeConflict />;
+      if (sub === "workserver") return <LunaKnowledgeWorkserver />;
+      if (sub === "notion") return <LunaKnowledgeNotion />;
     }
 
     if (menu === "talk") {

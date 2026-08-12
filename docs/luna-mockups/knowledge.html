@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 지식 — 목업 (5개 하위 페이지)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+    --brain:#BA7517; --brain-soft:#FAEEDA; --brain-ink:#633806;
+    --danger:#A32D2D; --danger-soft:#FCEBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* 페이지 구분용 라벨 — 실제 구현에는 없음 */
+  .mocklabel{margin:36px 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  /* 하위 탭 */
+  .subtabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--luna)}
+  .subtab .b{color:var(--cand-ink);font-weight:700}
+
+  /* 지표 카드 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stat{background:var(--panel);border-radius:9px;padding:12px 14px}
+  .stat .l{font-size:12px;color:var(--sub)}
+  .stat .v{font-size:22px;font-weight:700;margin-top:2px;letter-spacing:-.4px}
+  .stat .v.sm{font-size:15px}
+  .stat .s{font-size:11px;color:var(--faint)}
+  .stat .v.ok{color:var(--talk)}
+
+  /* 툴바 */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  input,select{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;background:var(--panel);color:var(--ink);outline:none}
+  input:focus,select:focus{border-color:#d9d2ff}
+  .grow{flex:1;min-width:170px}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ok{background:var(--talk);color:#fff;border-color:var(--talk)}
+
+  /* 칩 필터 */
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .chip{font-size:12px;padding:5px 13px;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chip.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .chips .lb{font-size:11.5px;color:var(--faint);margin-right:2px}
+
+  /* 리스트 카드 */
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .item{padding:13px 16px;border-bottom:1px solid var(--line2)}
+  .item:last-child{border-bottom:0}
+  .item .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .item .txt{font-size:14px;margin:8px 0 3px;line-height:1.6}
+  .item .sub{font-size:12px;color:var(--sub)}
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-org{background:var(--luna-soft);color:var(--luna-ink)}
+  .b-me{background:var(--talk-soft);color:var(--talk)}
+  .b-src{background:var(--chip);color:var(--sub)}
+  .b-warn{background:var(--cand-soft);color:var(--cand-ink)}
+  .b-ok{background:var(--talk-soft);color:var(--talk)}
+  .b-red{background:var(--danger-soft);color:var(--danger)}
+  .meta{margin-left:auto;font-size:11.5px;color:var(--faint)}
+  .hint{margin-top:10px;font-size:12px;color:var(--faint);text-align:center}
+
+  /* 테이블형 */
+  .tbl{font-size:12.5px}
+  .tbl .th{display:flex;gap:10px;padding:8px 16px;background:#fafbfc;color:var(--sub);
+    font-size:11.5px;border-bottom:1px solid var(--line2)}
+  .tbl .tr{display:flex;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line2);align-items:center}
+  .tbl .tr:last-child{border-bottom:0}
+  .tbl .c-drv{width:30px;color:var(--faint)}
+  .tbl .c-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tbl .c-num{width:56px;text-align:right}
+  .tbl .c-date{width:74px;text-align:right;color:var(--faint)}
+  .tbl .c-x{width:26px;text-align:right;color:var(--faint);cursor:pointer}
+  .tbl .more{padding:9px;text-align:center;color:var(--faint);cursor:pointer}
+
+  /* 2열 */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .cols.wide{grid-template-columns:1.15fr 1fr}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .box h4{font-size:13px;font-weight:700;margin-bottom:10px}
+  .box .row{display:flex;justify-content:space-between;font-size:12.5px;line-height:2.05;color:var(--sub)}
+  .box .row b{color:var(--ink);font-weight:700}
+  .box .row b.ok{color:var(--talk)}
+  .note{margin-top:10px;font-size:11px;color:var(--faint)}
+
+  /* 충돌 */
+  .conflict{background:var(--panel);border:1px solid #f0d9cf;border-radius:12px;padding:16px}
+  .conflict .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+  .opt{border:1px solid var(--line);border-radius:9px;padding:12px}
+  .opt .t{font-size:14px;line-height:1.55;margin-bottom:6px}
+  .opt .w{font-size:11.5px;color:var(--sub);margin-bottom:10px}
+  .opt .btn{width:100%}
+  .conflict .foot{display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;
+    border-top:1px solid var(--line2);flex-wrap:wrap}
+  .conflict .foot span{font-size:11.5px;color:var(--faint)}
+  .banner{background:var(--cand-soft);border-radius:9px;padding:10px 14px;font-size:13px;
+    color:var(--cand-ink);margin-bottom:14px}
+  .infobar{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:13px 16px;display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .infobar .t{font-size:14px;font-weight:700}
+  .infobar .s{font-size:12px;color:var(--sub)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--talk)}
+
+  /* 용어사전 */
+  .gl{display:grid;grid-template-columns:270px 1fr;gap:12px}
+  .gl .side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 10px}
+  .search{display:flex;align-items:center;gap:8px;background:var(--chip);border-radius:9px;padding:8px 11px;margin-bottom:10px}
+  .search input{border:0;background:transparent;padding:0;font-size:12.5px;width:100%}
+  .tabs3{display:flex;gap:5px;margin-bottom:10px}
+  .tabs3 div{flex:1;text-align:center;font-size:11.5px;padding:6px 0;border-radius:8px;
+    background:var(--chip);color:var(--sub);font-weight:700;cursor:pointer}
+  .tabs3 div.on{background:var(--luna);color:#fff}
+  .index{display:flex;flex-wrap:wrap;gap:2px;padding-bottom:10px;border-bottom:1px solid var(--line2);margin-bottom:6px}
+  .ix{width:21px;height:21px;display:grid;place-items:center;font-size:11px;color:var(--sub);border-radius:5px;cursor:pointer}
+  .ix.on{background:var(--luna);color:#fff;font-weight:700}
+  .term{padding:8px 10px;border-radius:8px;cursor:pointer}
+  .term.on{background:var(--luna-soft)}
+  .term .ko{font-size:13px;font-weight:700}
+  .term.on .ko{color:var(--luna-ink)}
+  .term .en{font-size:11.5px;color:var(--faint)}
+  .term.on .en{color:var(--luna-ink)}
+  .gl .detail{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+  .gl .title{font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .langs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0 0}
+  .lang{border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+  .lang .l{font-size:10.5px;color:var(--faint);font-weight:800;text-transform:uppercase}
+  .lang .v{font-size:15px;font-weight:700;margin-top:3px}
+  .lang .v small{font-size:11.5px;color:var(--sub);font-weight:400;margin-left:5px}
+  .defn{border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-top:12px}
+  .defn .l{font-size:10.5px;color:var(--faint);font-weight:800;margin-bottom:6px;text-transform:uppercase}
+  .defn p{font-size:13.5px;line-height:1.75}
+  .hist{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+  .hist:last-child{border-bottom:0}
+  .hist .av{width:24px;height:24px;border-radius:50%;background:var(--chip);display:grid;place-items:center;
+    font-size:10px;font-weight:800;color:var(--sub);flex-shrink:0}
+  .hist .av.luna{background:var(--luna-soft);color:var(--luna-ink)}
+  .hist .who{font-weight:700}
+  .hist .act{font-size:12px;color:var(--sub);margin-top:1px}
+  .verchip{font-size:10.5px;font-weight:700;color:var(--sub);background:var(--chip);padding:1px 7px;border-radius:20px}
+
+  @media(max-width:900px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .cols,.cols.wide,.gl,.conflict .pair,.langs{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════════ 1. 확정 지식 ══════════ -->
+<div class="mocklabel">PAGE 1 — knowledge / confirmed (확정 지식)</div>
+
+<div class="subtabs">
+  <div class="subtab on">확정 지식</div>
+  <div class="subtab">용어사전</div>
+  <div class="subtab">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab">Work서버</div>
+  <div class="subtab">노션</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">전체</div><div class="v">128</div></div>
+  <div class="stat"><div class="l">조직 지식</div><div class="v">97</div></div>
+  <div class="stat"><div class="l">개인 지식</div><div class="v">31</div></div>
+  <div class="stat"><div class="l">이번 주 추가</div><div class="v ok">+9</div></div>
+</div>
+
+<div class="toolbar">
+  <input class="grow" placeholder="지식 검색">
+  <select><option>전체 범위</option><option>조직</option><option>개인</option></select>
+  <select><option>최근 확정순</option><option>많이 쓰인 순</option><option>오래된 순</option></select>
+</div>
+
+<div class="list">
+  <div class="item">
+    <div class="top">
+      <span class="badge b-org">조직</span>
+      <span class="badge b-src">대화에서</span>
+      <span class="meta">사용 12회 · 2026.08.02</span>
+    </div>
+    <div class="txt">착수보고서와 수행계획서는 같은 문서를 가리킨다. 어느 쪽으로 물어도 같은 자료를 찾아준다.</div>
+    <div class="sub">근거: 이택진 · 원문 보기</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-org">조직</span>
+      <span class="badge b-src">알려주기</span>
+      <span class="meta">사용 0회 · 2026.08.12</span>
+    </div>
+    <div class="txt">아폴론의 견적서는 PDF 형식으로만 클라이언트에게 발송한다.</div>
+    <div class="sub">근거: 이택진 · 원문 보기</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-me">개인</span>
+      <span class="badge b-src">자습에서</span>
+      <span class="meta">사용 3회 · 2026.08.11</span>
+    </div>
+    <div class="txt">상설 전시에서는 운영시간·주변광·유지보수를 기준으로 LED를 우선 검토한다.</div>
+    <div class="sub">근거: 자습 문답 · 원문 보기</div>
+  </div>
+</div>
+<div class="hint">행 클릭 시 상세 — 전체 문장 · 근거 원문 · 사용 이력 · 수정 / 보류 / 삭제</div>
+
+
+<!-- ══════════ 2. 용어사전 ══════════ -->
+<div class="mocklabel">PAGE 2 — knowledge / glossary (용어사전 · 관리자 관점, /glossary 와 같은 데이터)</div>
+
+<div class="subtabs">
+  <div class="subtab">확정 지식</div>
+  <div class="subtab on">용어사전</div>
+  <div class="subtab">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab">Work서버</div>
+  <div class="subtab">노션</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">전체 용어</div><div class="v">184</div></div>
+  <div class="stat"><div class="l">공통 / 인테리어 / HW</div><div class="v sm">42 / 96 / 46</div></div>
+  <div class="stat"><div class="l">이번 주 수정</div><div class="v">7</div></div>
+  <div class="stat"><div class="l">확인 대기 후보</div><div class="v" style="color:var(--cand-ink)">3</div></div>
+</div>
+
+<div class="gl">
+  <div class="side">
+    <div class="search"><span>🔍</span><input placeholder="용어 검색 (한·영·중)"></div>
+    <div class="tabs3"><div class="on">공통</div><div>인테리어</div><div>하드웨어</div></div>
+    <div class="index">
+      <div class="ix on">ㄱ</div><div class="ix">ㄴ</div><div class="ix">ㄷ</div><div class="ix">ㄹ</div>
+      <div class="ix">ㅁ</div><div class="ix">ㅂ</div><div class="ix">ㅅ</div><div class="ix">ㅇ</div>
+      <div class="ix">ㅈ</div><div class="ix">ㅊ</div><div class="ix">ㅋ</div><div class="ix">ㅌ</div>
+      <div class="ix">ㅍ</div><div class="ix">ㅎ</div><div class="ix">A</div><div class="ix">B</div>
+      <div class="ix">C</div><div class="ix">S</div>
+    </div>
+    <div class="term on"><div class="ko">감리</div><div class="en">Supervision · 监理</div></div>
+    <div class="term"><div class="ko">검수</div><div class="en">Inspection · 验收</div></div>
+    <div class="term"><div class="ko">견적서</div><div class="en">Quotation · 报价单</div></div>
+    <div class="term"><div class="ko">계약서</div><div class="en">Contract · 合同</div></div>
+    <div class="term"><div class="ko">기본설계</div><div class="en">Basic Design · 初步设计</div></div>
+    <div class="term"><div class="ko">킥오프 미팅</div><div class="en">Kick-off Meeting · 启动会议</div></div>
+    <div class="term"><div class="ko">청사진</div><div class="en">Blueprint · 蓝图</div></div>
+  </div>
+
+  <div class="detail">
+    <div class="title">감리</div>
+    <span class="badge b-src" style="display:inline-block;margin-top:6px">공통 용어</span>
+
+    <div class="langs">
+      <div class="lang"><div class="l">한국어</div><div class="v">감리</div></div>
+      <div class="lang"><div class="l">English</div><div class="v">Supervision</div></div>
+      <div class="lang"><div class="l">中文</div><div class="v">监理 <small>지엔리</small></div></div>
+    </div>
+
+    <div class="defn">
+      <div class="l">정의</div>
+      <p>우리 업무의 감리는 크게 인테리어(시공) 감리와 기술감리로 구분된다. 시공감리는 시공 현장 담당자와 협업하여 청사진 기준으로 시공되도록 모니터링·지원하고 이슈 발생 시 고객사·SV에게 보고한다. 기술감리는 HW 기술감리를 의미하며, 청사진 기준으로 HW가 설치되도록 인테리어 현장소장 및 HW 외주업체를 모니터링·지원·보고한다.</p>
+    </div>
+
+    <div class="toolbar" style="margin:14px 0 0">
+      <button class="btn primary">수정하기</button>
+      <button class="btn">루나에게 물어보기</button>
+      <button class="btn">이력 전체</button>
+    </div>
+
+    <div style="margin-top:18px;border-top:1px solid var(--line2);padding-top:12px">
+      <div style="font-size:11px;color:var(--faint);margin-bottom:8px">변경 이력</div>
+      <div class="hist">
+        <div class="av">이택</div>
+        <div style="flex:1"><div class="who">이택진 <span class="verchip">v4 · 현재</span></div><div class="act">정의 문구 다듬음 · 중문 발음 추가</div></div>
+        <div style="font-size:11.5px;color:var(--faint)">08.08</div>
+      </div>
+      <div class="hist">
+        <div class="av luna">L</div>
+        <div style="flex:1"><div class="who">루나 <span class="verchip">v3</span></div><div class="act">대화에서 얻은 예시 반영 · 지식후보함 승인</div></div>
+        <div style="font-size:11.5px;color:var(--faint)">07.30</div>
+      </div>
+      <div class="hist">
+        <div class="av">이택</div>
+        <div style="flex:1"><div class="who">이택진 <span class="verchip">v1 · 최초</span></div><div class="act">디스트릭트 Glossary Book에서 이관</div></div>
+        <div style="font-size:11.5px;color:var(--faint)">07.15</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 3. 충돌 보류함 ══════════ -->
+<div class="mocklabel">PAGE 3 — knowledge / conflict (충돌 보류함)</div>
+
+<div class="subtabs">
+  <div class="subtab">확정 지식</div>
+  <div class="subtab">용어사전</div>
+  <div class="subtab on">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab">Work서버</div>
+  <div class="subtab">노션</div>
+</div>
+
+<div class="banner">보류 중인 지식은 루나가 답변에 사용하지 않습니다. 확정해 주세요.</div>
+
+<div class="conflict">
+  <div class="top" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span class="badge b-warn">의견 충돌</span>
+    <span style="font-size:12px;color:var(--sub)">제안서 표지 스타일 · 2건</span>
+    <span class="meta">보류 3일째</span>
+  </div>
+  <div class="pair">
+    <div class="opt">
+      <div class="t">제안서 표지는 항상 다크 톤으로 제작한다.</div>
+      <div class="w">김벼리 · 2026.08.05 · 대화에서</div>
+      <button class="btn">이걸로 확정</button>
+    </div>
+    <div class="opt">
+      <div class="t">제안서 표지는 발주처 CI 색을 따른다.</div>
+      <div class="w">박예리 · 2026.08.07 · 알려주기</div>
+      <button class="btn">이걸로 확정</button>
+    </div>
+  </div>
+  <div class="foot">
+    <button class="btn primary">병합해서 확정</button>
+    <button class="btn">둘 다 폐기</button>
+    <span>병합 시 두 문장을 합친 초안을 루나가 만들어 줍니다</span>
+  </div>
+</div>
+
+<div style="margin-top:18px">
+  <div style="font-size:13px;font-weight:700;margin-bottom:8px">처리 이력</div>
+  <div class="list">
+    <div class="item" style="display:flex;align-items:center;gap:10px;padding:11px 16px">
+      <span class="badge b-ok">병합 확정</span>
+      <span style="flex:1;font-size:13px">착수보고서 = 수행계획서 (2건 병합)</span>
+      <span class="meta">08.11 · 이택진</span>
+    </div>
+    <div class="item" style="display:flex;align-items:center;gap:10px;padding:11px 16px">
+      <span class="badge b-src">폐기</span>
+      <span style="flex:1;font-size:13px;color:var(--sub)">인스파이어 시즌5 관련 추정</span>
+      <span class="meta">08.10 · 이택진</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 4. Work서버 ══════════ -->
+<div class="mocklabel">PAGE 4 — knowledge / workserver (Work서버)</div>
+
+<div class="subtabs">
+  <div class="subtab">확정 지식</div>
+  <div class="subtab">용어사전</div>
+  <div class="subtab">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab on">Work서버</div>
+  <div class="subtab">노션</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">인덱싱 파일</div><div class="v">100,881</div></div>
+  <div class="stat"><div class="l">중요 마킹</div><div class="v">1,136</div><div class="s">84개 경로</div></div>
+  <div class="stat"><div class="l">마지막 스캔</div><div class="v sm">오늘 03:00</div><div class="s" style="color:var(--talk)">성공 · 4분 36초</div></div>
+  <div class="stat"><div class="l">다음 스캔</div><div class="v sm">내일 03:00</div><div class="s">자동 · 재시도 3회</div></div>
+</div>
+
+<div class="list" style="margin-bottom:14px">
+  <div style="padding:13px 16px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:13px;font-weight:700">중요 경로 마킹 <span style="color:var(--faint);font-weight:400">84개</span></div>
+      <div style="font-size:11.5px;color:var(--sub)">여기 등록된 경로의 파일을 루나가 우선 검색합니다</div>
+    </div>
+    <input placeholder="경로 검색" style="width:150px">
+    <select style="width:100px"><option>전체</option><option>T 드라이브</option><option>P 드라이브</option></select>
+    <button class="btn">경로 추가</button>
+  </div>
+  <div class="tbl">
+    <div class="th"><span class="c-drv">드라이브</span><span class="c-path">경로</span><span class="c-num">파일</span><span class="c-date">최근 수정</span><span class="c-x"></span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2026</span><span class="c-num">412</span><span class="c-date">08.12</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2025</span><span class="c-num">386</span><span class="c-date">08.09</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">01 사업개발\2026</span><span class="c-num">208</span><span class="c-date">08.11</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">00_회사기본자료\03 회사템플릿자료</span><span class="c-num">96</span><span class="c-date">07.28</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">00_회사기본자료\01 회사소개서</span><span class="c-num">64</span><span class="c-date">08.02</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2026\260108 해운대스퀘어 공공부지</span><span class="c-num">58</span><span class="c-date">08.12</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2026\260713 더후 글로벌 론칭</span><span class="c-num">52</span><span class="c-date">08.10</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">P</span><span class="c-path">두엠\2026 공동작업</span><span class="c-num">47</span><span class="c-date">08.08</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">01 사업개발\2025</span><span class="c-num">44</span><span class="c-date">07.19</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">03 Design\템플릿</span><span class="c-num">41</span><span class="c-date">08.05</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2026\260220 인스파이어 시즌3</span><span class="c-num">39</span><span class="c-date">08.11</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">P</span><span class="c-path">협력사 공통\제출양식</span><span class="c-num">36</span><span class="c-date">07.30</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">00_회사기본자료\04 견적양식</span><span class="c-num">33</span><span class="c-date">08.12</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2025\250912 구남로 미디어폴</span><span class="c-num">31</span><span class="c-date">08.07</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">04 Hardware\장비스펙</span><span class="c-num">29</span><span class="c-date">07.22</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">00_회사기본자료\02 포트폴리오</span><span class="c-num">28</span><span class="c-date">08.01</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">P</span><span class="c-path">시공사\2026</span><span class="c-num">26</span><span class="c-date">08.06</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">03 Design\컬러가이드</span><span class="c-num">24</span><span class="c-date">07.25</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">02 Project\2026\260415 롯데월드 미디어</span><span class="c-num">22</span><span class="c-date">08.04</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">T</span><span class="c-path">05 Admin\계약서양식</span><span class="c-num">19</span><span class="c-date">07.31</span><span class="c-x">×</span></div>
+    <div class="tr"><span class="c-drv">P</span><span class="c-path">음향\2026</span><span class="c-num">17</span><span class="c-date">08.03</span><span class="c-x">×</span></div>
+    <div class="more">더 보기 · 62개 남음</div>
+  </div>
+</div>
+
+<div class="cols">
+  <div class="box">
+    <h4>스캔 설정</h4>
+    <div class="row"><span>실행 시각</span><b>매일 03:00</b></div>
+    <div class="row"><span>대상 드라이브</span><b>T · P</b></div>
+    <div class="row"><span>실패 시 재시도</span><b>3회</b></div>
+    <div class="row"><span>안전장치</span><b class="ok">50% 미만 시 중단</b></div>
+    <div class="toolbar" style="margin:12px 0 0"><button class="btn">설정 변경</button><button class="btn">지금 스캔</button></div>
+  </div>
+  <div class="box">
+    <h4>스캔 이력</h4>
+    <div class="row"><span style="width:84px">08.12 03:00</span><span style="color:var(--talk);width:40px">성공</span><span style="flex:1">변동 없음</span><b>4분 36초</b></div>
+    <div class="row"><span style="width:84px">08.11 03:00</span><span style="color:var(--talk);width:40px">성공</span><span style="flex:1">+274건</span><b>6분 23초</b></div>
+    <div class="row"><span style="width:84px">08.10 19:04</span><span style="color:var(--danger);width:40px">실패</span><span style="flex:1">세션 없음</span><b>—</b></div>
+    <div class="note">스캔은 회사 PC 로그온 세션에서만 실행됩니다</div>
+  </div>
+</div>
+
+
+<!-- ══════════ 5. 노션 ══════════ -->
+<div class="mocklabel">PAGE 5 — knowledge / notion (노션 · 팀스페이스 단위)</div>
+
+<div class="subtabs">
+  <div class="subtab">확정 지식</div>
+  <div class="subtab">용어사전</div>
+  <div class="subtab">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab">Work서버</div>
+  <div class="subtab on">노션</div>
+</div>
+
+<div class="infobar">
+  <div class="dot"></div>
+  <div style="flex:1">
+    <div class="t">연결됨</div>
+    <div class="s">통합 토큰 정상 · 마지막 조회 오늘 10:22</div>
+  </div>
+  <button class="btn">연결 테스트</button>
+</div>
+
+<div class="list" style="margin-bottom:14px">
+  <div style="padding:13px 16px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:13px;font-weight:700">검색 대상 팀스페이스</div>
+      <div style="font-size:11.5px;color:var(--sub)">팀스페이스를 연결하면 그 안의 모든 DB·페이지가 자동으로 검색 대상이 됩니다</div>
+    </div>
+    <button class="btn">팀스페이스 추가</button>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span style="font-size:14px;font-weight:700">트렌드</span>
+      <span class="badge b-ok">우선 검색</span>
+      <span class="meta">DB 3 · 페이지 128 · 동기화 오늘 10:22</span>
+    </div>
+    <div class="sub" style="margin-top:6px">포함: 트렌드 라이브러리 · 위클리 편집회의 · 레퍼런스 아카이브</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span style="font-size:14px;font-weight:700">프로젝트</span>
+      <span class="badge b-src">일반</span>
+      <span class="meta">DB 5 · 페이지 214 · 동기화 오늘 10:22</span>
+    </div>
+    <div class="sub" style="margin-top:6px">포함: 프로젝트 대시보드 · 이슈 트래커 · 회의록 · 산출물 · 일정</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span style="font-size:14px;font-weight:700">경영일반</span>
+      <span class="badge b-red">제외 3건</span>
+      <span class="meta">DB 2 · 페이지 46 · 동기화 오늘 10:22</span>
+    </div>
+    <div class="sub" style="margin-top:6px">제외: 인사평가 · 급여 · 계약 협상 메모</div>
+  </div>
+</div>
+
+<div class="cols wide">
+  <div class="box">
+    <h4>검색 규칙</h4>
+    <div class="row"><span>내부 지식·트렌드</span><b>노션 우선</b></div>
+    <div class="row"><span>결과 없을 때</span><b>웹으로 보완</b></div>
+    <div class="row"><span>출처 표기</span><b>노션 / 웹 구분</b></div>
+    <div class="note">규칙은 두뇌 → L3-03 자료 찾기에서 관리합니다</div>
+  </div>
+  <div class="box">
+    <h4>최근 조회</h4>
+    <div class="row"><span style="width:44px">10:22</span><span style="flex:1">미디어아트 트렌드</span><b>4건</b></div>
+    <div class="row"><span style="width:44px">09:41</span><span style="flex:1">인터랙티브 전시 사례</span><b>2건</b></div>
+    <div class="row"><span style="width:44px">어제</span><span style="flex:1">LED 미디어파사드</span><b>0건</b></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

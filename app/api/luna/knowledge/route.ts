@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { kstWeekBounds } from "@/lib/luna/self-report";
 
 export const runtime = "nodejs";
 
@@ -16,11 +17,19 @@ type LearningRow = {
   use_count: number | null;
   last_used_at: string | null;
   created_at: string;
+  resolved_at: string | null;
   author_id: string | null;
   merged_from: unknown;
   importance: number | null;
   origin: string | null;
+  source: string | null;
+  scope_suggestion: string | null;
+  evidence: string | null;
+  source_conversation_id: string | null;
 };
+
+const SELECT_FIELDS =
+  "id, content, category, status, confidence, use_count, last_used_at, created_at, resolved_at, author_id, merged_from, importance, origin, source, scope_suggestion, evidence, source_conversation_id";
 
 async function requireSuperAdmin(request: NextRequest) {
   const user = await getApiUser(request);
@@ -66,6 +75,32 @@ async function countByStatus(
   return counts;
 }
 
+async function activeStats(admin: NonNullable<ReturnType<typeof getServiceSupabase>>) {
+  const week = kstWeekBounds();
+  const base = () =>
+    admin
+      .from("luna_learnings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .neq("category", "identity");
+
+  const [total, weekNew, org, personal] = await Promise.all([
+    base(),
+    base()
+      .gte("resolved_at", week.startIso)
+      .lt("resolved_at", week.endIso),
+    base().eq("scope_suggestion", "org"),
+    base().eq("scope_suggestion", "personal")
+  ]);
+
+  return {
+    total: total.count ?? 0,
+    week_new: weekNew.count ?? 0,
+    org: org.count ?? 0,
+    personal: personal.count ?? 0
+  };
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireSuperAdmin(request);
   if ("error" in auth) return auth.error;
@@ -75,27 +110,40 @@ export async function GET(request: NextRequest) {
   const statusRaw = url.searchParams.get("status") ?? "active";
   const status = STATUSES.has(statusRaw) ? statusRaw : "active";
   const sort = url.searchParams.get("sort") ?? "recent";
+  const scope = url.searchParams.get("scope");
+  const q = (url.searchParams.get("q") ?? "").trim();
   const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
   let query = admin
     .from("luna_learnings")
-    .select(
-      "id, content, category, status, confidence, use_count, last_used_at, created_at, author_id, merged_from, importance, origin",
-      { count: "exact" }
-    )
+    .select(SELECT_FIELDS, { count: "exact" })
     .eq("status", status)
     .neq("category", "identity");
+
+  if (scope === "org" || scope === "personal") {
+    query = query.eq("scope_suggestion", scope);
+  }
+
+  if (q) {
+    query = query.ilike("content", `%${q.replace(/[%_]/g, "")}%`);
+  }
 
   if (sort === "most_used") {
     query = query
       .order("use_count", { ascending: false })
       .order("created_at", { ascending: false });
+  } else if (sort === "oldest") {
+    query = query.order("created_at", { ascending: true });
   } else if (sort === "unused") {
     query = query
       .order("use_count", { ascending: true })
       .order("created_at", { ascending: true });
+  } else if (status === "active") {
+    query = query
+      .order("resolved_at", { ascending: false })
+      .order("created_at", { ascending: false });
   } else {
     query = query.order("created_at", { ascending: false });
   }
@@ -159,14 +207,18 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const counts = await countByStatus(admin);
+  const [counts, stats] = await Promise.all([
+    countByStatus(admin),
+    status === "active" ? activeStats(admin) : Promise.resolve(null)
+  ]);
 
   return NextResponse.json({
     items,
     page,
     page_size: PAGE_SIZE,
     total: count ?? 0,
-    counts
+    counts,
+    stats
   });
 }
 
