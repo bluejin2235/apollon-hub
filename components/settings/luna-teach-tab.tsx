@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 type ThreadTurn = { role: "luna" | "human"; text: string; at: string };
@@ -90,12 +91,20 @@ const FILTERS: { key: FilterChip; label: string }[] = [
 ];
 
 export function LunaTeachTab() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [filter, setFilter] = useState<FilterChip>("all");
+  const initialFilter = searchParams.get("filter");
+  const [filter, setFilter] = useState<FilterChip>(
+    initialFilter === "mine" ||
+      initialFilter === "chat" ||
+      initialFilter === "selfstudy"
+      ? initialFilter
+      : "all"
+  );
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [reviseOpen, setReviseOpen] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<TeachItem[]>([]);

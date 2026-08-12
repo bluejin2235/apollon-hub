@@ -510,6 +510,16 @@ async function answerAndSubmit(
 }
 
 /**
+ * 오늘(KST) 막힌 순간 건수 — 자습 재료 미리보기.
+ */
+export async function countTodayStuckMoments(
+  admin: SupabaseClient
+): Promise<number> {
+  const stuck = await extractStuckMoments(admin);
+  return stuck.length;
+}
+
+/**
  * 그날 막힌 것만 자습 → 후보함 제출.
  * force=false 이고 오늘 이미 생성분이 있으면 skip.
  */

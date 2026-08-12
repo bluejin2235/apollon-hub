@@ -1544,19 +1544,6 @@ export function LunaSettingsTab() {
   const rawLuna = searchParams.get("luna");
   const subTab = resolveLunaSubTab(rawLuna);
 
-  const [stats, setStats] = useState<{
-    promptCount?: number;
-    memoryCount?: number;
-    connectorConnected?: number;
-    connectorTotal?: number;
-    nextStudyAt?: string;
-    teachPending?: number;
-  }>({
-    teachPending: 0,
-    nextStudyAt: "매일 03:00",
-    connectorTotal: 4
-  });
-
   useEffect(() => {
     if (!rawLuna) return;
     if (rawLuna === "home") {
@@ -1579,92 +1566,15 @@ export function LunaSettingsTab() {
     }
   }, [rawLuna, router, searchParams]);
 
-  useEffect(() => {
-    if (subTab !== "home") return;
-    let cancelled = false;
-    void (async () => {
-      const token = await getAccessToken();
-      if (!token || cancelled) return;
-      try {
-        const [promptRes, nasRes, engineRes, teachRes, candidatesRes] =
-          await Promise.all([
-            fetch("/api/luna/prompts", {
-              headers: { Authorization: `Bearer ${token}` }
-            }),
-            fetch("/api/luna/nas", {
-              headers: { Authorization: `Bearer ${token}` }
-            }),
-            fetch("/api/luna/engine", {
-              headers: { Authorization: `Bearer ${token}` }
-            }),
-            fetch("/api/luna/teach/list", {
-              headers: { Authorization: `Bearer ${token}` }
-            }),
-            fetch("/api/luna/candidates?filter=all", {
-              headers: { Authorization: `Bearer ${token}` }
-            })
-          ]);
-
-        const promptsJson = promptRes.ok
-          ? ((await promptRes.json()) as { prompts?: unknown[] })
-          : {};
-        const nasJson = nasRes.ok
-          ? ((await nasRes.json()) as { total_count?: number; settings?: unknown })
-          : {};
-        const engineJson = engineRes.ok
-          ? ((await engineRes.json()) as {
-              connections?: { notion?: boolean; tavily?: boolean };
-            })
-          : {};
-        const teachJson = teachRes.ok
-          ? ((await teachRes.json()) as {
-              conflicts?: unknown[];
-            })
-          : {};
-        const candidatesJson = candidatesRes.ok
-          ? ((await candidatesRes.json()) as { count?: number; items?: unknown[] })
-          : {};
-
-        // 후보함 뱃지 = candidate 수 + 충돌 그룹 수
-        const teachPending =
-          (typeof candidatesJson.count === "number"
-            ? candidatesJson.count
-            : Array.isArray(candidatesJson.items)
-              ? candidatesJson.items.length
-              : 0) +
-          (Array.isArray(teachJson.conflicts) ? teachJson.conflicts.length : 0);
-
-        const notion = engineJson.connections?.notion === true;
-        const web = engineJson.connections?.tavily === true;
-        const nas = Boolean(nasJson.settings) || (nasJson.total_count ?? 0) > 0;
-        const youtube = false;
-        const connected = [notion, nas, web, youtube].filter(Boolean).length;
-
-        if (cancelled) return;
-        setStats({
-          promptCount: promptsJson.prompts?.length ?? 0,
-          memoryCount: nasJson.total_count ?? 0,
-          connectorConnected: connected,
-          connectorTotal: 4,
-          nextStudyAt: "매일 03:00",
-          teachPending
-        });
-      } catch {
-        // keep defaults
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [subTab]);
-
   const setSubTab = useCallback(
     (next: LunaSubTab) => {
       const params = new URLSearchParams(searchParams.toString());
       if (next === "home") {
         params.delete("luna");
+        params.delete("filter");
       } else {
         params.set("luna", next);
+        if (next !== "teach") params.delete("filter");
       }
       const qs = params.toString();
       router.replace(qs ? `/settings?${qs}` : "/settings", { scroll: false });
@@ -1675,8 +1585,16 @@ export function LunaSettingsTab() {
   if (subTab === "home") {
     return (
       <LunaSettingsHome
-        onSelect={(slug) => setSubTab(slug)}
-        stats={stats}
+        onSelect={(slug, opts) => {
+          if (opts?.filter) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("luna", slug);
+            params.set("filter", opts.filter);
+            router.push(`/settings?${params.toString()}`, { scroll: false });
+            return;
+          }
+          setSubTab(slug);
+        }}
       />
     );
   }
