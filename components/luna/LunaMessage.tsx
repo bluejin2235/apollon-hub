@@ -14,6 +14,11 @@ import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
+import {
+  countSourceBadges,
+  parseAssumeMarkers,
+  parseNumberedChoices
+} from "@/lib/luna/chat-response";
 import { supabase } from "@/lib/supabase/client";
 
 export type LunaModelStep = {
@@ -71,6 +76,11 @@ type LunaMessageProps = {
   mode?: "analysis" | null;
   teams?: LunaAnalysisTeam[] | null;
   onClarifySelect?: (option: string) => void;
+  /** 선택지는 입력창 위 패널로만 — 말풍선 버튼 숨김 */
+  hideInlineClarifyOptions?: boolean;
+  memoryCount?: number | null;
+  correctionCandidateIds?: string[] | null;
+  onCorrectionCancel?: (candidateId: string) => void;
 };
 
 const CARD_SECTION_ORDER: LunaCard["type"][] = ["notion", "nas", "web", "youtube"];
@@ -516,15 +526,88 @@ function SourceSections({
 }
 
 function OpinionBlock({ content }: { content: string }) {
+  const { body, assumptions } = parseAssumeMarkers(content);
   return (
     <div className="mt-3 rounded-lg bg-[#EEEDFE] px-3.5 py-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[#3C3489]">
         <Sparkles className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
         LUNA 종합 의견
       </div>
-      <div className="whitespace-pre-wrap break-words text-[13px] leading-[1.65] text-[#26215C]">
-        {content}
-      </div>
+      {body ? (
+        <div className="whitespace-pre-wrap break-words text-[13px] leading-[1.65] text-[#26215C]">
+          {body}
+        </div>
+      ) : null}
+      {assumptions.length > 0 ? (
+        <div className="mt-2 space-y-1.5">
+          {assumptions.map((a, i) => (
+            <div
+              key={`${i}-${a.slice(0, 24)}`}
+              className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] leading-snug text-amber-950"
+            >
+              <span className="font-medium text-amber-800">가정 · </span>
+              {a}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SourceBadgeRow({
+  cards,
+  notionSources,
+  memoryCount
+}: {
+  cards: LunaCard[];
+  notionSources: NotionSource[];
+  memoryCount: number;
+}) {
+  const counts = countSourceBadges({ cards, notionSources, memoryCount });
+  const items: { label: string; n: number }[] = [];
+  if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
+  if (counts.nas > 0) items.push({ label: "Work서버 실측", n: counts.nas });
+  if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
+  if (counts.web > 0) items.push({ label: "웹", n: counts.web });
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {items.map((it) => (
+        <span
+          key={it.label}
+          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] text-slate-600"
+        >
+          {it.label} {it.n}건
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AssistantTextBubble({ content }: { content: string }) {
+  const numbered = parseNumberedChoices(content);
+  const base = numbered ? numbered.body : content;
+  const { body, assumptions } = parseAssumeMarkers(base);
+  const display = body || (assumptions.length === 0 ? content : "");
+  return (
+    <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
+      {display ? (
+        <div className="whitespace-pre-wrap break-words">{display}</div>
+      ) : null}
+      {assumptions.length > 0 ? (
+        <div className="mt-2 space-y-1.5">
+          {assumptions.map((a, i) => (
+            <div
+              key={`${i}-${a.slice(0, 24)}`}
+              className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] leading-snug text-amber-950"
+            >
+              <span className="font-medium text-amber-800">가정 · </span>
+              {a}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -889,10 +972,15 @@ export function LunaMessage({
   clarify = null,
   mode = null,
   teams = null,
-  onClarifySelect
+  onClarifySelect,
+  hideInlineClarifyOptions = false,
+  memoryCount = null,
+  correctionCandidateIds = null,
+  onCorrectionCancel
 }: LunaMessageProps) {
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
   const [busy, setBusy] = useState(false);
+  const [dismissedChips, setDismissedChips] = useState<string[]>([]);
   const canFeedback =
     role === "assistant" && Boolean(id) && !id.startsWith("temp-") && !isThinking;
   const sources = notionSources?.filter((s) => s.title && s.url) ?? [];
@@ -900,6 +988,31 @@ export function LunaMessage({
   const hasCards = cardList.length > 0;
   const teamList = teams ?? [];
   const isAnalysis = mode === "analysis" || teamList.length > 0;
+  const visibleCorrectionIds = (correctionCandidateIds ?? []).filter(
+    (cid) => !dismissedChips.includes(cid)
+  );
+
+  async function cancelCorrection(candidateId: string) {
+    setDismissedChips((prev) => [...prev, candidateId]);
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const res = await fetch("/api/luna/candidates/respond", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id: candidateId, action: "reject" })
+      });
+      if (!res.ok) {
+        console.error("[luna] cancel correction", await res.text());
+      }
+      onCorrectionCancel?.(candidateId);
+    } catch (err) {
+      console.error("[luna] cancel correction", err);
+    }
+  }
 
   async function sendFeedback(next: "good" | "bad") {
     if (!canFeedback || busy) return;
@@ -969,23 +1082,28 @@ export function LunaMessage({
 
   let body: ReactNode;
   if (clarify) {
+    const q = clarify.question || content;
     body = (
       <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-        <p className="whitespace-pre-wrap break-words">{clarify.question || content}</p>
-        <div className="mt-2.5">
-          {clarify.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              disabled={busy || !onClarifySelect}
-              onClick={() => onClarifySelect?.(opt)}
-              className="mb-1 block w-full rounded-lg border border-solid border-[#D3D1C7] px-[9px] py-[5px] text-left text-[11px] text-slate-800 transition hover:border-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-[10px] text-gray-500">직접 입력해도 됩니다</p>
+        <p className="whitespace-pre-wrap break-words">{q}</p>
+        {!hideInlineClarifyOptions ? (
+          <>
+            <div className="mt-2.5">
+              {clarify.options.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  disabled={busy || !onClarifySelect}
+                  onClick={() => onClarifySelect?.(opt)}
+                  className="mb-1 block w-full rounded-lg border border-solid border-[#D3D1C7] px-[9px] py-[5px] text-left text-[11px] text-slate-800 transition hover:border-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] text-gray-500">직접 입력해도 됩니다</p>
+          </>
+        ) : null}
       </div>
     );
   } else if (isAnalysis) {
@@ -1019,11 +1137,7 @@ export function LunaMessage({
       </>
     );
   } else if (content) {
-    body = (
-      <div className="whitespace-pre-wrap break-words rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-        {content}
-      </div>
-    );
+    body = <AssistantTextBubble content={content} />;
   } else {
     body = null;
   }
@@ -1064,6 +1178,32 @@ export function LunaMessage({
           </div>
         ) : null}
         {body}
+        {!isThinking && !clarify ? (
+          <SourceBadgeRow
+            cards={cardList}
+            notionSources={sources}
+            memoryCount={memoryCount ?? 0}
+          />
+        ) : null}
+        {visibleCorrectionIds.length > 0 ? (
+          <div className="mt-1.5 space-y-1">
+            {visibleCorrectionIds.map((cid) => (
+              <div
+                key={cid}
+                className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-900"
+              >
+                <span>🌱 방금 정정을 배움 후보로 올렸어요</span>
+                <button
+                  type="button"
+                  className="font-medium underline-offset-2 hover:underline"
+                  onClick={() => void cancelCorrection(cid)}
+                >
+                  · 취소
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {!isThinking && !clarify && modelLabel ? (
           <ModelMetaFooter
             modelLabel={modelLabel}
@@ -1087,7 +1227,7 @@ export function LunaMessage({
           </div>
         ) : null}
         {canFeedback && !clarify ? (
-          <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-1 flex items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100">
             <button
               type="button"
               aria-label="좋아요"
@@ -1097,7 +1237,7 @@ export function LunaMessage({
                 feedback === "good" ? "text-[#534AB7] opacity-100" : "text-gray-500"
               }`}
             >
-              <ThumbsUp className="h-3 w-3" strokeWidth={1.75} />
+              <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
             <button
               type="button"
@@ -1108,7 +1248,7 @@ export function LunaMessage({
                 feedback === "bad" ? "text-[#534AB7] opacity-100" : "text-gray-500"
               }`}
             >
-              <ThumbsDown className="h-3 w-3" strokeWidth={1.75} />
+              <ThumbsDown className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           </div>
         ) : null}

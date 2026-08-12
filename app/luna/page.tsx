@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addThinkingMessage,
   buildSearchStatus,
@@ -25,6 +25,7 @@ import type {
   LunaSkillsSelection
 } from "@/components/luna/LunaInput";
 import { LunaSidebar, type LunaConversation } from "@/components/luna/LunaSidebar";
+import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -55,6 +56,7 @@ export default function LunaPage() {
   const [searchStatus, setSearchStatus] = useState<string[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const pendingCorrectionIdsRef = useRef<string[]>([]);
 
   const visibleConversations = useMemo(() => {
     if (!selectedProjectId) return conversations;
@@ -154,11 +156,33 @@ export default function LunaPage() {
         const clarify = normalizeClarify(meta?.clarify);
         const mode = meta?.mode === "analysis" ? ("analysis" as const) : null;
         const teams = normalizeAnalysisTeams(meta?.teams);
+        const memRaw = meta?.memory_count;
+        let memoryCount: number | null = null;
+        if (typeof memRaw === "number" && Number.isFinite(memRaw)) {
+          memoryCount = memRaw;
+        } else if (typeof memRaw === "string" && memRaw.trim() !== "") {
+          const n = Number(memRaw);
+          if (Number.isFinite(n)) memoryCount = n;
+        }
+
+        // 본문에 번호 선택지가 남아 있으면 clarify 로 승격 (패널용)
+        let content = row.content as string;
+        let clarifyResolved = clarify;
+        if (!clarifyResolved && row.role === "assistant") {
+          const numbered = parseNumberedChoices(content);
+          if (numbered) {
+            content = numbered.body;
+            clarifyResolved = {
+              question: numbered.body,
+              options: numbered.options
+            };
+          }
+        }
 
         return {
           id: row.id as string,
           role: row.role as "user" | "assistant",
-          content: row.content as string,
+          content,
           engine: (row.engine as string | null) ?? null,
           feedback,
           notionSources: normalizeNotionSources(meta?.notion_sources) ?? notionSources,
@@ -170,9 +194,10 @@ export default function LunaPage() {
           modelSteps: normalizeModelSteps(meta?.model_steps),
           steps: normalizeProgressSteps(meta?.steps),
           searchRounds,
-          clarify,
+          clarify: clarifyResolved,
           mode,
-          teams
+          teams,
+          memoryCount
         };
       })
     );
@@ -376,6 +401,7 @@ export default function LunaPage() {
         let streamMode: LunaChatMessage["mode"] = null;
         let streamTeams: LunaAnalysisTeam[] = [];
         let streamSearchRounds: number | null = null;
+        let streamMemoryCount: number | null = null;
         let assistantContent = "";
         let assistantVisible = false;
 
@@ -411,6 +437,7 @@ export default function LunaPage() {
               searchRounds: streamSearchRounds,
               mode: streamMode,
               teams: streamTeams.length > 0 ? streamTeams : null,
+              memoryCount: streamMemoryCount,
               ...extra
             };
             if (existing) {
@@ -497,6 +524,7 @@ export default function LunaPage() {
                 streamCards = consumed.cards;
                 streamNotionSources = consumed.notionSources;
                 streamSourceReasons = consumed.sourceReasons;
+                streamMemoryCount = consumed.memoryCount;
                 if (consumed.mode === "analysis") streamMode = "analysis";
                 if (consumed.teams && consumed.teams.length > 0) {
                   streamTeams = consumed.teams;
@@ -536,7 +564,18 @@ export default function LunaPage() {
               label: "정리 완료"
             };
           }
-          upsertAssistant(assistantContent, { isThinking: false });
+          const numbered = parseNumberedChoices(assistantContent);
+          if (numbered) {
+            upsertAssistant(numbered.body, {
+              isThinking: false,
+              clarify: {
+                question: numbered.body,
+                options: numbered.options
+              }
+            });
+          } else {
+            upsertAssistant(assistantContent, { isThinking: false });
+          }
         }
 
         if (!assistantVisible && !streamEndedByClarify) {
@@ -564,6 +603,25 @@ export default function LunaPage() {
         }
         await loadConversations();
         await loadMessages(conversationId);
+
+        const correctionIds = pendingCorrectionIdsRef.current;
+        pendingCorrectionIdsRef.current = [];
+        if (correctionIds.length > 0) {
+          setMessages((prev) => {
+            for (let i = prev.length - 1; i >= 0; i -= 1) {
+              const m = prev[i]!;
+              if (m.role === "assistant" && !m.clarify) {
+                const next = [...prev];
+                next[i] = {
+                  ...m,
+                  correctionCandidateIds: correctionIds
+                };
+                return next;
+              }
+            }
+            return prev;
+          });
+        }
       } catch (err) {
         console.error("[luna] chat stream", err);
         setSearchStatus([]);
@@ -680,6 +738,26 @@ export default function LunaPage() {
                     void onRenameConversation(selectedConversation.id, title)
                 : undefined
             }
+            onReflectCorrections={(ids) => {
+              pendingCorrectionIdsRef.current = [
+                ...pendingCorrectionIdsRef.current,
+                ...ids
+              ];
+            }}
+            onClearCorrection={(messageId, candidateId) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === messageId
+                    ? {
+                        ...m,
+                        correctionCandidateIds: (m.correctionCandidateIds ?? []).filter(
+                          (id) => id !== candidateId
+                        )
+                      }
+                    : m
+                )
+              );
+            }}
           />
         )}
       </div>

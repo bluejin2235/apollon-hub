@@ -60,6 +60,8 @@ type LunaInputProps = {
   onEnsureConversation: () => Promise<string | null>;
   connectors?: LunaConnectorsState;
   onConnectorsChange?: (next: LunaConnectorsState) => void;
+  /** 값 변경 시 textarea 포커스 (기타 선택 등) */
+  focusTick?: number;
 };
 
 async function getAccessToken(): Promise<string | null> {
@@ -96,7 +98,8 @@ export function LunaInput({
   conversationId,
   onEnsureConversation,
   connectors: connectorsProp,
-  onConnectorsChange
+  onConnectorsChange,
+  focusTick = 0
 }: LunaInputProps) {
   const [value, setValue] = useState("");
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
@@ -209,6 +212,13 @@ export function LunaInput({
     }
     prevEnabledChipCount.current = enabledChipCount;
   }, [enabledChipCount, scrollChipsToStart, updateChipScrollState]);
+
+  useEffect(() => {
+    if (!focusTick) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+  }, [focusTick]);
 
   function resizeTextarea() {
     const el = textareaRef.current;

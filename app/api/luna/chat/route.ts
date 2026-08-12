@@ -11,7 +11,11 @@ import {
   type LunaUsageTokens
 } from "@/lib/luna/engine";
 import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
-import { getPrompts } from "@/lib/luna/prompts";
+import {
+  getPrompts,
+  LUNA_PROMPT_KEYS,
+  LUNA_RUNTIME_PROMPT_KEYS
+} from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import {
@@ -28,6 +32,7 @@ import {
   type WorkserverItem
 } from "@/lib/luna/workserver";
 import { searchYoutube } from "@/lib/luna/youtube";
+import { parseNumberedChoices } from "@/lib/luna/chat-response";
 
 export const runtime = "nodejs";
 
@@ -584,49 +589,36 @@ export async function POST(request: NextRequest) {
   const tierA = resolveAnthropicModel(tierACfg);
   const tierB = resolveAnthropicModel(tierBCfg);
 
-  const loadedPrompts = await getPrompts(admin, [
-    "identity",
-    "search.keyword_extract",
-    "search.clarify",
-    "search.self_eval",
-    "search.requery",
-    "connector.notion",
-    "connector.workserver",
-    "connector.workserver.explore",
-    "connector.web",
-    "connector.web.hint",
-    "synthesis.opinion",
-    "synthesis.reason"
-  ]);
+  const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
 
-  const identity = loadedPrompts.identity?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const keywordExtractPrompt =
-    loadedPrompts["search.keyword_extract"]?.trim() || KEYWORD_EXTRACT_FALLBACK;
-  const clarifyPrompt = loadedPrompts["search.clarify"]?.trim() || CLARIFY_FALLBACK;
-  const selfEvalPrompt = loadedPrompts["search.self_eval"]?.trim() || SELF_EVAL_FALLBACK;
+  const identity =
+    loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
+  const talkSearch = loadedPrompts[LUNA_PROMPT_KEYS.search]?.trim() || "";
+  const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
+  const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
+  // 키워드/자체평가/재검색은 구조화 출력이 필요해 FALLBACK 유지. 검색 원칙은 talk.search.
+  const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
+  const clarifyPrompt =
+    loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK;
+  const selfEvalPrompt = SELF_EVAL_FALLBACK;
   console.log(
     "[luna/prompt] self_eval len",
     selfEvalPrompt.length,
     selfEvalPrompt.slice(0, 60)
   );
-  const requeryPrompt = loadedPrompts["search.requery"]?.trim() || REQUERY_FALLBACK;
+  const requeryPrompt = REQUERY_FALLBACK;
   const synthesisOpinion =
-    loadedPrompts["synthesis.opinion"]?.trim() || SYNTHESIS_OPINION_FALLBACK;
-  const synthesisReason =
-    loadedPrompts["synthesis.reason"]?.trim() || SYNTHESIS_REASON_FALLBACK;
-  const webSearchHint = loadedPrompts["connector.web.hint"]?.trim() || "";
+    [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
+    SYNTHESIS_OPINION_FALLBACK;
+  const synthesisReason = SYNTHESIS_REASON_FALLBACK;
+  const webSearchHint = "";
 
   const connectorPrompts: string[] = [];
-  if (notionEnabled && loadedPrompts["connector.notion"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.notion"].trim());
-  }
-  if (nasEnabled && loadedPrompts["connector.workserver"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.workserver"].trim());
-  }
-  if (webEnabled && loadedPrompts["connector.web"]?.trim()) {
-    connectorPrompts.push(loadedPrompts["connector.web"].trim());
+  if ((notionEnabled || nasEnabled || webEnabled) && talkSearch) {
+    connectorPrompts.push(talkSearch);
   }
 
+  // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData, error: learningsError } = await admin
     .from("luna_learnings")
     .select("id, content, category, use_count")
@@ -846,15 +838,25 @@ export async function POST(request: NextRequest) {
             const raw =
               clarifyRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
             const parsed = parseJsonObject(raw);
-            needsClarify = parsed?.needs_clarify === true;
-            clarifyQuestion =
-              typeof parsed?.question === "string" ? parsed.question.trim() : "";
-            clarifyOptions = Array.isArray(parsed?.options)
-              ? parsed!.options
-                  .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
-                  .map((o) => o.trim())
-                  .slice(0, 5)
-              : [];
+            if (parsed) {
+              needsClarify = parsed?.needs_clarify === true;
+              clarifyQuestion =
+                typeof parsed?.question === "string" ? parsed.question.trim() : "";
+              clarifyOptions = Array.isArray(parsed?.options)
+                ? parsed!.options
+                    .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+                    .map((o) => o.trim())
+                    .slice(0, 5)
+                : [];
+            } else {
+              // talk.understand 번호 목록 형식 폴백
+              const numbered = parseNumberedChoices(raw);
+              if (numbered && numbered.options.length >= 2) {
+                needsClarify = true;
+                clarifyQuestion = numbered.body || "어느 쪽을 찾으시나요?";
+                clarifyOptions = numbered.options.slice(0, 5);
+              }
+            }
           } catch (err) {
             console.error("[luna/chat] clarify", err);
           }
@@ -937,12 +939,9 @@ export async function POST(request: NextRequest) {
           result_count: number;
         }> = [];
 
-        const workserverExploreSystem = [
-          loadedPrompts["connector.workserver"]?.trim(),
-          loadedPrompts["connector.workserver.explore"]?.trim()
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+        const workserverExploreSystem =
+          talkSearch ||
+          "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요.";
 
         const itemToNasRow = (item: WorkserverItem): NasDirectoryRow => ({
           drive: item.drive,
@@ -1462,7 +1461,8 @@ export async function POST(request: NextRequest) {
           notion_sources: notionSources,
           search_rounds: searchRounds,
           steps,
-          source_reasons: sourceReasons
+          source_reasons: sourceReasons,
+          memory_count: learningsRows.length
         });
 
         let assistantText = "";
@@ -1542,6 +1542,7 @@ export async function POST(request: NextRequest) {
         if (sourceReasons) {
           assistantMeta.source_reasons = sourceReasons;
         }
+        assistantMeta.memory_count = learningsRows.length;
         if (attachmentMeta.length > 0) {
           userMeta.attachments = attachmentMeta;
           assistantMeta.attachments = attachmentMeta;

@@ -1,31 +1,53 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { getPrompt } from "@/lib/luna/prompts";
+import {
+  createCandidate,
+  parseJsonArray,
+  type ScopeSuggestion
+} from "@/lib/luna/candidates";
+import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { lunaNotify } from "@/lib/luna/notify";
 
 export const runtime = "nodejs";
 
 const CLAUDE_MODEL = "claude-sonnet-4-6";
 
-const REFLECT_SYSTEM_PROMPT_FALLBACK = `당신은 LUNA입니다. 아폴론이머시브웍스의 AI입니다.
-방금 끝난 대화를 분석해서 아폴론에 대해 새로 알게 된 것을 정리하세요.
-아래 형식의 JSON 배열로만 응답하세요. 다른 텍스트 없이 JSON만:
-[{ "category": "카테고리", "content": "배운 내용" }]
-카테고리: preference(선호방향), client(클라이언트성향), project(프로젝트패턴), style(크리에이티브스타일), general(기타)
-새로 배운 것이 없으면 빈 배열 [] 반환. 최대 3개까지만.`;
+const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었는지 판정하고, 있으면 지식 후보를 만든다.
 
-const ALLOWED_CATEGORIES = new Set([
-  "preference",
-  "client",
-  "project",
-  "style",
-  "general"
-]);
+후보로 올리는 것:
+① 사람의 정정 — 내 답을 고쳐준 것 ("아니라 ~야", "그게 아니고") : 최우선
+② 새 사실·용어·절차 — 아폴론의 일하는 방식, 프로젝트 정보, 용어 정의
+③ 반복 패턴 — 여러 사람이 비슷하게 묻는 것 (내가 못 잡고 있는 지식)
+
+올리지 않는 것:
+- 잡담, 감정 표현, 일회성 맥락
+- 이미 확정 지식으로 아는 것
+- 개인의 사생활
+- 확신이 서지 않는 애매한 추측
+
+후보 형식: 지식 한 문장 + 근거 원문(누가·언제 말했는지) + 조직/개인 구분 제안.
+하루에 같은 대화에서 후보는 최대 3건. 양보다 정확함.
+
+JSON 배열만 응답. 다른 텍스트 금지. 없으면 []:
+[{ "content": "지식 한 문장", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general" }]`;
+
+const CAPTURE_USER_SUFFIX = `
+
+위 규칙을 따르세요. JSON 배열만 출력하세요. 파싱 가능한 JSON이 아니면 빈 배열 [].
+최대 3건. 사람의 정정("아니라", "그게 아니고" 등)이 있으면 최우선으로 올리세요.
+각 항목에 from_correction: true|false 를 포함하세요 (직전 사용자 정정에 근거하면 true).`;
 
 type ReflectBody = { conversation_id?: string };
-type MessageRow = { role: string; content: string };
-type LearningItem = { category: string; content: string };
+type MessageRow = { role: string; content: string; created_at?: string };
+
+type CaptureItem = {
+  content: string;
+  evidence: string | null;
+  scope_suggestion: ScopeSuggestion | null;
+  category: string;
+  from_correction: boolean;
+};
 
 function getAnthropicClient(): Anthropic | null {
   const apiKey = process.env.hubtrendchat_claude;
@@ -33,49 +55,36 @@ function getAnthropicClient(): Anthropic | null {
   return new Anthropic({ apiKey });
 }
 
-function extractJsonArray(text: string): LearningItem[] {
-  const trimmed = text.trim();
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (Array.isArray(parsed)) return parsed as LearningItem[];
-  } catch {
-    /* fall through */
-  }
-
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence?.[1]) {
-    try {
-      const parsed = JSON.parse(fence[1].trim()) as unknown;
-      if (Array.isArray(parsed)) return parsed as LearningItem[];
-    } catch {
-      /* fall through */
-    }
-  }
-
-  const start = trimmed.indexOf("[");
-  const end = trimmed.lastIndexOf("]");
-  if (start >= 0 && end > start) {
-    try {
-      const parsed = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
-      if (Array.isArray(parsed)) return parsed as LearningItem[];
-    } catch {
-      /* fall through */
-    }
-  }
-
-  return [];
-}
-
-function normalizeLearnings(raw: LearningItem[]): LearningItem[] {
-  const out: LearningItem[] = [];
+function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
+  if (!raw) return [];
+  const out: CaptureItem[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
-    const content = typeof item.content === "string" ? item.content.trim() : "";
-    const categoryRaw = typeof item.category === "string" ? item.category.trim() : "";
-    if (categoryRaw === "identity") continue;
-    const category = ALLOWED_CATEGORIES.has(categoryRaw) ? categoryRaw : "general";
+    const row = item as Record<string, unknown>;
+    const content = typeof row.content === "string" ? row.content.trim() : "";
     if (!content) continue;
-    out.push({ category, content });
+    const categoryRaw =
+      typeof row.category === "string" ? row.category.trim() : "general";
+    if (categoryRaw === "identity") continue;
+    const scopeRaw =
+      typeof row.scope_suggestion === "string"
+        ? row.scope_suggestion.trim()
+        : "";
+    const scope_suggestion: ScopeSuggestion | null =
+      scopeRaw === "org" || scopeRaw === "personal" ? scopeRaw : null;
+    const evidence =
+      typeof row.evidence === "string" ? row.evidence.trim() || null : null;
+    const evidenceHint = `${evidence ?? ""} ${content}`.toLowerCase();
+    const fromCorrection =
+      row.from_correction === true ||
+      /아니라|그게 아니고|그게 아니라|틀렸|잘못된/.test(evidenceHint);
+    out.push({
+      content,
+      evidence,
+      scope_suggestion,
+      category: categoryRaw || "general",
+      from_correction: fromCorrection
+    });
     if (out.length >= 3) break;
   }
   return out;
@@ -125,10 +134,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  // 1) 메시지 전체 조회
   const { data: messagesData, error: messagesError } = await admin
     .from("luna_messages")
-    .select("role, content")
+    .select("role, content, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
 
@@ -143,13 +151,17 @@ export async function POST(request: NextRequest) {
   }
 
   const transcript = messages
-    .map((m) => `${m.role === "assistant" ? "LUNA" : "User"}: ${m.content}`)
+    .map((m) => {
+      const who = m.role === "assistant" ? "LUNA" : "User";
+      const when = m.created_at ? ` (${m.created_at})` : "";
+      return `${who}${when}: ${m.content}`;
+    })
     .join("\n\n");
 
   const reflectPrompt =
-    (await getPrompt(admin, "knowledge.extract")).trim() || REFLECT_SYSTEM_PROMPT_FALLBACK;
+    (await getPrompt(admin, LUNA_PROMPT_KEYS.capture)).trim() ||
+    REFLECT_SYSTEM_PROMPT_FALLBACK;
 
-  // 2) Claude (비스트리밍)
   let rawText = "";
   try {
     const response = await client.messages.create({
@@ -159,11 +171,12 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `다음 대화를 분석하세요.\n\n${transcript}`
+          content: `다음 대화를 분석하세요.\n\n${transcript}${CAPTURE_USER_SUFFIX}`
         }
       ]
     });
-    rawText = response.content.find((part) => part.type === "text")?.text?.trim() ?? "";
+    rawText =
+      response.content.find((part) => part.type === "text")?.text?.trim() ?? "";
   } catch (err) {
     console.error("[luna/reflect] claude", err);
     return NextResponse.json(
@@ -172,34 +185,57 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3) JSON 파싱 후 INSERT
-  const learnings = normalizeLearnings(extractJsonArray(rawText));
-  if (learnings.length === 0) {
+  const parsed = parseJsonArray(rawText);
+  if (!parsed) {
+    // 파싱 실패 시 아무것도 생성하지 않음
+    console.warn("[luna/reflect] JSON parse failed, skipping insert");
+    return NextResponse.json({ saved: 0, parse_error: true });
+  }
+
+  const items = normalizeCaptureItems(parsed);
+  if (items.length === 0) {
     return NextResponse.json({ saved: 0 });
   }
 
-  const rows = learnings.map((l) => ({
-    category: l.category,
-    content: l.content,
-    source_conversation_id: conversationId,
-    status: "candidate" as const,
-    author_id: user.id
-  }));
-
-  const { error: insertError } = await admin.from("luna_learnings").insert(rows);
-  if (insertError) {
-    console.error("[luna/reflect] insert", insertError);
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+  let saved = 0;
+  const ids: string[] = [];
+  const correctionIds: string[] = [];
+  for (const item of items) {
+    const created = await createCandidate(admin, {
+      content: item.content,
+      evidence: item.evidence,
+      scope_suggestion: item.scope_suggestion,
+      category: item.category,
+      source: "chat",
+      author_id: user.id,
+      assigned_to: user.id,
+      source_conversation_id: conversationId,
+      thread: [],
+      meta: item.from_correction ? { from_correction: true } : {}
+    });
+    if (created) {
+      saved += 1;
+      ids.push(created.id);
+      if (item.from_correction) correctionIds.push(created.id);
+    }
   }
 
-  await lunaNotify(
-    admin,
-    "reflect",
-    "루나가 배움",
-    `루나가 ${rows.length}건 배움`,
-    { level: "success", meta: { saved: rows.length, conversation_id: conversationId } }
-  );
+  if (saved > 0) {
+    await lunaNotify(
+      admin,
+      "reflect",
+      "지식 후보",
+      `루나가 후보 ${saved}건을 올렸어요`,
+      {
+        level: "success",
+        meta: { saved, conversation_id: conversationId, ids, correctionIds }
+      }
+    );
+  }
 
-  // 4)
-  return NextResponse.json({ saved: rows.length });
+  return NextResponse.json({
+    saved,
+    ids,
+    correction_ids: correctionIds
+  });
 }

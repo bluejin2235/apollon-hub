@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, Menu } from "lucide-react";
 import {
   LunaInput,
@@ -22,6 +22,10 @@ import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
+import {
+  parseNumberedChoices,
+  resolveChoiceInput
+} from "@/lib/luna/chat-response";
 import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
 import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
 import { supabase } from "@/lib/supabase/client";
@@ -33,11 +37,13 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-async function callReflect(conversationId: string) {
+async function callReflect(
+  conversationId: string
+): Promise<{ correctionIds: string[] }> {
   const token = await getAccessToken();
-  if (!token) return;
+  if (!token) return { correctionIds: [] };
   try {
-    await fetch("/api/luna/reflect", {
+    const res = await fetch("/api/luna/reflect", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -45,8 +51,18 @@ async function callReflect(conversationId: string) {
       },
       body: JSON.stringify({ conversation_id: conversationId })
     });
+    if (!res.ok) return { correctionIds: [] };
+    const json = (await res.json()) as {
+      correction_ids?: string[];
+    };
+    return {
+      correctionIds: Array.isArray(json.correction_ids)
+        ? json.correction_ids.filter((id): id is string => typeof id === "string")
+        : []
+    };
   } catch (err) {
     console.error("[luna] reflect", err);
+    return { correctionIds: [] };
   }
 }
 
@@ -74,6 +90,9 @@ export type LunaChatMessage = {
   clarify?: LunaClarifyData | null;
   mode?: "analysis" | null;
   teams?: LunaAnalysisTeam[] | null;
+  memoryCount?: number | null;
+  /** reflect 후 다음 턴에 표시할 정정 후보 칩 */
+  correctionCandidateIds?: string[] | null;
 };
 
 export type { LunaSourceReasons };
@@ -250,6 +269,7 @@ export type LunaStreamEventResult =
       teams: LunaAnalysisTeam[] | null;
       searchRounds: number | null;
       steps: LunaProgressStep[] | null;
+      memoryCount: number | null;
     }
   | { kind: "text"; buffer: string };
 
@@ -334,6 +354,13 @@ export function consumeLunaStreamEvents(
           : typeof roundsRaw === "string" && roundsRaw.trim() !== ""
             ? Number(roundsRaw)
             : null;
+      const memRaw = parsed.memory_count;
+      const memoryCount =
+        typeof memRaw === "number" && Number.isFinite(memRaw)
+          ? memRaw
+          : typeof memRaw === "string" && memRaw.trim() !== ""
+            ? Number(memRaw)
+            : null;
       return {
         kind: "meta",
         buffer: rest,
@@ -346,7 +373,11 @@ export function consumeLunaStreamEvents(
           searchRounds != null && Number.isFinite(searchRounds)
             ? searchRounds
             : null,
-        steps: normalizeProgressSteps(parsed.steps)
+        steps: normalizeProgressSteps(parsed.steps),
+        memoryCount:
+          memoryCount != null && Number.isFinite(memoryCount)
+            ? memoryCount
+            : null
       };
     }
   } catch {
@@ -388,6 +419,9 @@ type LunaChatProps = {
   showMobileHeader?: boolean;
   onEnsureConversation: () => Promise<string | null>;
   onRenameTitle?: (title: string) => void | Promise<void>;
+  /** reflect 가 정정 후보를 만들면, 다음 답변 칩용으로 전달 */
+  onReflectCorrections?: (candidateIds: string[]) => void;
+  onClearCorrection?: (messageId: string, candidateId: string) => void;
 };
 
 const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
@@ -409,7 +443,9 @@ export function LunaChat({
   searchStatus = [],
   showMobileHeader,
   onEnsureConversation,
-  onRenameTitle
+  onRenameTitle,
+  onReflectCorrections,
+  onClearCorrection
 }: LunaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const bottomUiRef = useRef<HTMLDivElement>(null);
@@ -425,6 +461,7 @@ export function LunaChat({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [showQuestionCard, setShowQuestionCard] = useState(false);
+  const [focusTick, setFocusTick] = useState(0);
   const {
     pendingQuestion,
     busy: questionBusy,
@@ -436,6 +473,58 @@ export function LunaChat({
   } = useLunaPendingQuestion(Boolean(showMobileHeader));
   const title = conversation?.title ?? "새 대화";
   const hasPendingQuestion = Boolean(pendingQuestion);
+
+  const activeClarify = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i]!;
+      if (m.isThinking || m.metadata?.isThinking) continue;
+      if (m.role === "user") return null;
+      if (m.role === "assistant" && m.clarify?.options && m.clarify.options.length >= 2) {
+        return {
+          question: m.clarify.question || m.content,
+          options: m.clarify.options
+        };
+      }
+      if (m.role === "assistant" && m.content) {
+        const parsed = parseNumberedChoices(m.content);
+        if (parsed) {
+          return { question: parsed.body, options: parsed.options };
+        }
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const emptySkills = {
+    perspective_ids: [] as string[],
+    role_ids: [] as string[],
+    task_ids: [] as string[]
+  };
+
+  function sendChoice(text: string) {
+    onSend(text, { notion: true, web: true, nas: true }, [], [], emptySkills);
+  }
+
+  function handleSendWrapped(
+    message: string,
+    nextConnectors: LunaConnectorsState,
+    attachmentIds: string[],
+    attachmentMeta: LunaAttachmentRef[],
+    skills: LunaSkillsSelection
+  ) {
+    if (activeClarify) {
+      const resolved = resolveChoiceInput(message, activeClarify.options);
+      if (resolved.kind === "other") {
+        setFocusTick((n) => n + 1);
+        return;
+      }
+      if (resolved.kind === "option") {
+        onSend(resolved.text, nextConnectors, attachmentIds, attachmentMeta, skills);
+        return;
+      }
+    }
+    onSend(message, nextConnectors, attachmentIds, attachmentMeta, skills);
+  }
 
   useEffect(() => {
     setEditingTitle(false);
@@ -488,27 +577,33 @@ export function LunaChat({
     const prev = reflectStateRef.current;
 
     if (prev && prev.id !== nextId && prev.messageCount >= 2) {
-      void callReflect(prev.id);
+      void callReflect(prev.id).then((r) => {
+        if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
+      });
     }
 
     if (nextId) {
       reflectStateRef.current = { id: nextId, messageCount: count };
     } else if (prev && prev.messageCount >= 2) {
-      void callReflect(prev.id);
+      void callReflect(prev.id).then((r) => {
+        if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
+      });
       reflectStateRef.current = null;
     } else {
       reflectStateRef.current = null;
     }
-  }, [conversation?.id, messages]);
+  }, [conversation?.id, messages, onReflectCorrections]);
 
   useEffect(() => {
     return () => {
       const prev = reflectStateRef.current;
       if (prev && prev.messageCount >= 2) {
-        void callReflect(prev.id);
+        void callReflect(prev.id).then((r) => {
+          if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
+        });
       }
     };
-  }, []);
+  }, [onReflectCorrections]);
 
   const isEmpty = messages.length === 0 && !sending;
 
@@ -638,14 +733,50 @@ export function LunaChat({
       messagesRef={listRef}
       footerRef={bottomUiRef}
       footer={
-        <LunaInput
-          onSend={onSend}
-          disabled={sending}
-          conversationId={conversation?.id ?? null}
-          onEnsureConversation={onEnsureConversation}
-          connectors={connectors}
-          onConnectorsChange={setConnectors}
-        />
+        <div className="w-full">
+          {activeClarify ? (
+            <div className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+              <p className="mb-2 text-[11px] font-medium text-slate-600">
+                루나의 질문 — 선택하거나 번호를 입력하세요
+              </p>
+              <ul className="space-y-1">
+                {activeClarify.options.map((opt, idx) => {
+                  const isOther = /기타/.test(opt);
+                  return (
+                    <li key={`${idx}-${opt}`}>
+                      <button
+                        type="button"
+                        disabled={sending}
+                        onClick={() => {
+                          if (isOther) {
+                            setFocusTick((n) => n + 1);
+                            return;
+                          }
+                          sendChoice(opt);
+                        }}
+                        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[13px] text-slate-800 transition hover:bg-[#EEEDFE] disabled:opacity-50"
+                      >
+                        <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-[#534AB7] px-1 text-[11px] font-semibold text-white">
+                          {idx + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 leading-snug">{opt}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+          <LunaInput
+            onSend={handleSendWrapped}
+            disabled={sending}
+            conversationId={conversation?.id ?? null}
+            onEnsureConversation={onEnsureConversation}
+            connectors={connectors}
+            onConnectorsChange={setConnectors}
+            focusTick={focusTick}
+          />
+        </div>
       }
     >
       {showQuestionCard ? (
@@ -734,22 +865,15 @@ export function LunaChat({
                 clarify={m.clarify}
                 mode={m.mode}
                 teams={m.teams}
-                onClarifySelect={
-                  m.clarify
-                    ? (option) =>
-                        onSend(
-                          option,
-                          { notion: true, web: true, nas: true },
-                          [],
-                          [],
-                          {
-                            perspective_ids: [],
-                            role_ids: [],
-                            task_ids: []
-                          }
-                        )
+                memoryCount={m.memoryCount}
+                correctionCandidateIds={m.correctionCandidateIds}
+                hideInlineClarifyOptions
+                onCorrectionCancel={
+                  onClearCorrection
+                    ? (candidateId) => onClearCorrection(m.id, candidateId)
                     : undefined
                 }
+                onClarifySelect={undefined}
               />
             );
           })}
