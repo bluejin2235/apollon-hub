@@ -13,6 +13,7 @@ type BadgeCounts = {
   candidatesPending: number;
   brainPending: number;
   knowledgeConflict: number;
+  selfstudyStuck: number;
 };
 
 type Props = {
@@ -42,7 +43,8 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
   const [badges, setBadges] = useState<BadgeCounts>({
     candidatesPending: 0,
     brainPending: 0,
-    knowledgeConflict: 0
+    knowledgeConflict: 0,
+    selfstudyStuck: 0
   });
 
   useEffect(() => {
@@ -58,11 +60,13 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
           candidates?: { pending?: number };
           brain?: { revert_pending?: number };
           knowledge?: { conflict_count?: number };
+          selfstudy?: { stuck_today?: number };
         };
         setBadges({
           candidatesPending: json.candidates?.pending ?? 0,
           brainPending: json.brain?.revert_pending ?? 0,
-          knowledgeConflict: json.knowledge?.conflict_count ?? 0
+          knowledgeConflict: json.knowledge?.conflict_count ?? 0,
+          selfstudyStuck: json.selfstudy?.stuck_today ?? 0
         });
       } catch {
         /* ignore */
@@ -111,12 +115,20 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
         >
           {subs.map((item) => {
             const active = sub === item.slug;
-            const conflictBadge =
+            let conflictBadge = 0;
+            if (
               menu === "knowledge" &&
               item.slug === "conflict" &&
               badges.knowledgeConflict > 0
-                ? badges.knowledgeConflict
-                : 0;
+            ) {
+              conflictBadge = badges.knowledgeConflict;
+            } else if (
+              menu === "selfstudy" &&
+              item.slug === "stuck" &&
+              badges.selfstudyStuck > 0
+            ) {
+              conflictBadge = badges.selfstudyStuck;
+            }
             return (
               <button
                 key={item.slug}

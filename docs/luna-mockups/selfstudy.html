@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 자습 — 목업 (3개 하위 페이지)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+    --brain:#BA7517; --brain-soft:#FAEEDA; --brain-ink:#633806;
+    --danger:#A32D2D; --danger-soft:#FCEBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  .mocklabel{margin:36px 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  .subtabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--luna)}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stats.c3{grid-template-columns:repeat(3,1fr)}
+  .stat{background:var(--panel);border-radius:9px;padding:12px 14px}
+  .stat .l{font-size:12px;color:var(--sub)}
+  .stat .v{font-size:22px;font-weight:700;margin-top:2px;letter-spacing:-.4px}
+  .stat .v.sm{font-size:15px}
+  .stat .v.ok{color:var(--talk)}
+
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .chip{font-size:12px;padding:5px 13px;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chip.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+
+  .daylabel{font-size:12px;color:var(--sub);margin:0 0 8px}
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px}
+  .item{padding:13px 16px;border-bottom:1px solid var(--line2)}
+  .item:last-child{border-bottom:0}
+  .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-wait{background:var(--brain-soft);color:var(--brain-ink)}
+  .b-ok{background:var(--talk-soft);color:var(--talk)}
+  .b-skip{background:var(--chip);color:var(--sub)}
+  .b-zero{background:var(--cand-soft);color:var(--cand-ink)}
+  .b-clarify{background:var(--luna-soft);color:var(--luna-ink)}
+  .b-corr{background:var(--talk-soft);color:var(--talk)}
+  .meta{font-size:11.5px;color:var(--faint)}
+  .q{font-size:12.5px;color:var(--sub);margin:8px 0 3px}
+  .a{font-size:13.5px;line-height:1.6}
+  .a.muted{color:var(--sub)}
+  .found{font-size:11.5px;color:var(--faint);margin-top:6px}
+  .rowline{display:flex;align-items:center;gap:10px}
+  .rowline .t{flex:1;font-size:13px}
+
+  .infobar{background:var(--panel);border-radius:9px;padding:11px 14px;font-size:13px;
+    color:var(--sub);margin-bottom:14px}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+  .runbar{background:var(--panel);border-radius:9px;padding:12px 14px;display:flex;
+    align-items:center;gap:12px;margin-top:14px}
+  .runbar .t{flex:1;font-size:13px;color:var(--sub)}
+
+  /* 설정 */
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .box h4{font-size:13px;font-weight:700;margin-bottom:4px}
+  .box .desc{font-size:12px;color:var(--sub);margin-bottom:12px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .field label{font-size:12px;color:var(--sub);display:block;margin-bottom:4px}
+  .field input{width:100%;font-family:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:9px;padding:8px 11px;outline:none;background:var(--panel)}
+  .field input:focus{border-color:#d9d2ff}
+  .check{display:flex;align-items:center;gap:10px;font-size:13px;line-height:2.2}
+  .check input{width:16px;height:16px}
+  .check .lock{font-size:11.5px;color:var(--faint)}
+  .check.off{color:var(--faint)}
+  .divider{border-top:1px solid var(--line2);margin-top:12px;padding-top:8px}
+  .criteria .row{display:flex;align-items:center;gap:10px;font-size:13px;line-height:2.3;
+    border-top:1px solid var(--line2);padding-top:2px}
+  .criteria .row:first-child{border-top:0}
+  .criteria .row .t{flex:1}
+  .note{margin-top:10px;font-size:11px;color:var(--faint)}
+
+  @media(max-width:900px){
+    .stats,.stats.c3,.fields{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════════ 1. 자습 이력 ══════════ -->
+<div class="mocklabel">PAGE 1 — selfstudy / history (자습 이력)</div>
+
+<div class="subtabs">
+  <div class="subtab on">자습 이력</div>
+  <div class="subtab">막힌 순간 3</div>
+  <div class="subtab">자습 설정</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">누적 문답</div><div class="v">18</div></div>
+  <div class="stat"><div class="l">기억으로 확정</div><div class="v ok">12</div></div>
+  <div class="stat"><div class="l">자습 정확도</div><div class="v">67<span style="font-size:13px">%</span></div></div>
+  <div class="stat"><div class="l">다음 실행</div><div class="v sm">내일 03:00</div></div>
+</div>
+
+<div class="chips">
+  <div class="chip on">전체</div>
+  <div class="chip">확정됨</div>
+  <div class="chip">대기 중</div>
+  <div class="chip">틀림 · 안 배워도 됨</div>
+</div>
+
+<div class="daylabel">8월 12일 · 3문답</div>
+<div class="list">
+  <div class="item">
+    <div class="top">
+      <span class="badge b-wait">대기 중</span>
+      <span class="meta">출처: 어제 김벼리와의 대화 · 검색 0건</span>
+    </div>
+    <div class="q">Q. 상설 전시에서 프로젝터와 LED 중 선택 기준이 뭘까?</div>
+    <div class="a">A. 운영시간·주변광·유지보수 기준으로 LED 우선, 곡면·바닥은 프로젝터</div>
+    <div class="found">찾은 곳: 노션 2건 · 웹 3건</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-ok">확정됨</span>
+      <span class="meta">출처: 어제 대화 · 되묻기 미해소</span>
+    </div>
+    <div class="q">Q. 두엠과 협업할 때 파일은 어디에 두는가?</div>
+    <div class="a">A. P드라이브(파트너) 프로젝트 폴더에서 공동작업한다</div>
+    <div class="found">찾은 곳: Work서버 실측 4건 · 이택진 확정 08.12</div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-skip">안 배워도 됨</span>
+      <span class="meta">출처: 어제 대화 · 정정받음</span>
+    </div>
+    <div class="q">Q. 미디어파사드의 일반적인 픽셀 피치 기준은?</div>
+    <div class="a muted">A. 일반론 정리 — 아폴론 기준이 아니라 반려됨</div>
+  </div>
+</div>
+
+<div class="daylabel">8월 11일 · 2문답</div>
+<div class="list">
+  <div class="item">
+    <div class="rowline">
+      <span class="badge b-ok">확정됨</span>
+      <span class="t">제안서 표지 규격 · 견적서 발송 형식</span>
+      <span class="meta">2건 모두 확정</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 2. 막힌 순간 ══════════ -->
+<div class="mocklabel">PAGE 2 — selfstudy / stuck (막힌 순간)</div>
+
+<div class="subtabs">
+  <div class="subtab">자습 이력</div>
+  <div class="subtab on">막힌 순간 3</div>
+  <div class="subtab">자습 설정</div>
+</div>
+
+<div class="infobar">오늘 대화에서 루나가 막힌 순간들입니다. 이 중에서만 오늘 밤 자습 주제를 고릅니다 — 임의 주제는 만들지 않아요.</div>
+
+<div class="stats c3">
+  <div class="stat"><div class="l">검색 0건</div><div class="v">1</div></div>
+  <div class="stat"><div class="l">되묻기 미해소</div><div class="v">1</div></div>
+  <div class="stat"><div class="l">정정받음</div><div class="v">1</div></div>
+</div>
+
+<div class="list">
+  <div class="item">
+    <div class="top">
+      <span class="badge b-zero">검색 0건</span>
+      <span class="meta">김벼리 · 오늘 09:41 · 원문 보기</span>
+      <span class="badge b-wait" style="margin-left:auto">오늘 밤 자습 예정</span>
+    </div>
+    <div class="a" style="margin-top:8px">MS 직책의 정확한 업무 범위</div>
+    <div class="q" style="margin:3px 0 0">"MS가 무슨 역할이야?" — 기억·검색 모두 결과 없음</div>
+    <div class="btns">
+      <button class="btn">자습에서 제외</button>
+      <button class="btn">내가 직접 알려주기</button>
+    </div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-clarify">되묻기 미해소</span>
+      <span class="meta">박예리 · 오늘 11:05 · 원문 보기</span>
+      <span class="badge b-wait" style="margin-left:auto">오늘 밤 자습 예정</span>
+    </div>
+    <div class="a" style="margin-top:8px">두엠과의 공동작업 절차</div>
+    <div class="q" style="margin:3px 0 0">선택지를 물었으나 답을 못 받고 대화 종료</div>
+    <div class="btns">
+      <button class="btn">자습에서 제외</button>
+      <button class="btn">내가 직접 알려주기</button>
+    </div>
+  </div>
+  <div class="item">
+    <div class="top">
+      <span class="badge b-corr">정정받음</span>
+      <span class="meta">이택진 · 오늘 10:24 · 원문 보기</span>
+      <span class="badge b-skip" style="margin-left:auto">이미 확정됨 · 제외</span>
+    </div>
+    <div class="a muted" style="margin-top:8px">착수보고서 용어 정의</div>
+    <div class="q" style="margin:3px 0 0">정정이 기억으로 확정되어 자습 대상에서 자동 제외</div>
+  </div>
+</div>
+
+<div class="runbar">
+  <div class="t">오늘 밤 03:00에 2건을 자습하고 지식후보로 제출합니다</div>
+  <button class="btn">지금 실행</button>
+</div>
+
+
+<!-- ══════════ 3. 자습 설정 ══════════ -->
+<div class="mocklabel">PAGE 3 — selfstudy / settings (자습 설정)</div>
+
+<div class="subtabs">
+  <div class="subtab">자습 이력</div>
+  <div class="subtab">막힌 순간 3</div>
+  <div class="subtab on">자습 설정</div>
+</div>
+
+<div class="box">
+  <h4>실행</h4>
+  <div class="fields">
+    <div class="field"><label>실행 시각</label><input value="03:00"></div>
+    <div class="field"><label>하루 최대 문답</label><input value="3"></div>
+  </div>
+  <div class="divider">
+    <div class="check"><input type="checkbox" checked><span>막힌 순간이 없으면 자습하지 않음</span></div>
+    <div class="check"><input type="checkbox" checked disabled><span>자습 결과는 반드시 지식후보로 제출 <span class="lock">(해제 불가 · 헌법)</span></span></div>
+  </div>
+</div>
+
+<div class="box criteria">
+  <h4>선정 기준</h4>
+  <div class="desc">어떤 막힌 순간을 자습 주제로 삼을지</div>
+  <div class="row"><input type="checkbox" checked><span class="t">검색 0건이었던 주제</span><span class="meta">오늘 1건</span></div>
+  <div class="row"><input type="checkbox" checked><span class="t">되물었지만 해소되지 않은 것</span><span class="meta">오늘 1건</span></div>
+  <div class="row"><input type="checkbox" checked><span class="t">정정받았지만 이해가 얕은 것</span><span class="meta">오늘 1건</span></div>
+  <div class="row"><input type="checkbox" disabled><span class="t" style="color:var(--faint)">지식에서 스스로 찾은 공백</span><span class="badge b-skip">아직 이름</span></div>
+  <div class="note">임의 주제 선정은 프롬프트(L4-03 자습)에서 금지되어 있습니다</div>
+</div>
+
+<div class="box">
+  <h4>알림</h4>
+  <div class="check"><input type="checkbox" checked><span>자습 완료 시 알림 <span class="lock">(0건이면 알림 없음)</span></span></div>
+  <div class="check"><input type="checkbox" checked><span>자습 실패 시 알림</span></div>
+</div>
+
+<div class="btns">
+  <button class="btn primary">설정 저장</button>
+  <button class="btn">지금 자습 실행</button>
+  <span class="meta">마지막 실행 오늘 03:00 · 3문답 제출</span>
+</div>
+
+</div>
+</body>
+</html>

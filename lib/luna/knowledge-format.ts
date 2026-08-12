@@ -97,6 +97,9 @@ export const K = {
   cand: "#D85A30",
   candSoft: "#FAECE7",
   candInk: "#993C1D",
+  brain: "#BA7517",
+  brainSoft: "#FAEEDA",
+  brainInk: "#633806",
   danger: "#A32D2D",
   dangerSoft: "#FCEBEB"
 } as const;

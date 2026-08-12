@@ -45,6 +45,8 @@ export type LunaReportRow = {
 
 const REPORT_SIM_THRESHOLD = 0.35;
 const SETTINGS_KEY = "selfstudy_last_run";
+const SETTINGS_CONFIG_KEY = "selfstudy_settings";
+const SETTINGS_EXCLUDE_KEY = "selfstudy_excluded";
 const MAX_PER_DAY = 3;
 
 const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"만 찾는다:
@@ -81,13 +83,57 @@ type MsgRow = {
   created_at: string;
 };
 
-type StuckMoment = {
-  kind: "search_zero" | "clarify_unresolved" | "correction";
+export type StuckKind = "search_zero" | "clarify_unresolved" | "correction";
+
+export type StuckMoment = {
+  /** 오늘 안에서 안정적인 식별자 — 자습 제외 목록의 키 */
+  key: string;
+  kind: StuckKind;
   conversation_id: string;
   user_id: string;
   user_name: string;
+  /** 화면용 한 줄 제목 */
+  title: string;
+  /** 화면용 보조 설명 */
+  detail: string;
   snippet: string;
   at: string;
+};
+
+export type SelfstudyCriteria = {
+  search_zero: boolean;
+  clarify_unresolved: boolean;
+  correction: boolean;
+  /** 아직 미구현 — 화면에서 비활성 */
+  knowledge_gap: boolean;
+};
+
+export type SelfstudySettings = {
+  run_hour: number;
+  run_minute: number;
+  max_per_day: number;
+  skip_when_empty: boolean;
+  /** 헌법 — 항상 true, 해제 불가 */
+  must_submit_candidate: true;
+  criteria: SelfstudyCriteria;
+  notify_done: boolean;
+  notify_fail: boolean;
+};
+
+export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
+  run_hour: 3,
+  run_minute: 0,
+  max_per_day: MAX_PER_DAY,
+  skip_when_empty: true,
+  must_submit_candidate: true,
+  criteria: {
+    search_zero: true,
+    clarify_unresolved: true,
+    correction: true,
+    knowledge_gap: false
+  },
+  notify_done: true,
+  notify_fail: true
 };
 
 type GeneratedQuestion = {
@@ -209,7 +255,179 @@ export async function getSelfstudyStatus(
   };
 }
 
-async function extractStuckMoments(
+/** KST 기준 오늘 날짜 (YYYY-MM-DD) */
+export function kstDateKey(now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    kst.getUTCDate()
+  ).padStart(2, "0")}`;
+}
+
+/** 다음 자습 실행 시각 라벨 (예: "내일 08.13 03:00") */
+export function nextSelfstudyRunLabel(
+  hour = SELFSTUDY_DEFAULT_SETTINGS.run_hour,
+  minute = SELFSTUDY_DEFAULT_SETTINGS.run_minute,
+  now = new Date()
+): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const past =
+    kst.getUTCHours() > hour ||
+    (kst.getUTCHours() === hour && kst.getUTCMinutes() >= minute);
+  const next = new Date(
+    Date.UTC(
+      kst.getUTCFullYear(),
+      kst.getUTCMonth(),
+      kst.getUTCDate() + (past ? 1 : 0),
+      hour,
+      minute
+    )
+  );
+  const label = past ? "내일" : "오늘";
+  return `${label} ${String(next.getUTCHours()).padStart(2, "0")}:${String(
+    next.getUTCMinutes()
+  ).padStart(2, "0")}`;
+}
+
+function coerceBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function coerceInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+export function normalizeSelfstudySettings(raw: unknown): SelfstudySettings {
+  const d = SELFSTUDY_DEFAULT_SETTINGS;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...d };
+  const row = raw as Record<string, unknown>;
+  const c =
+    row.criteria && typeof row.criteria === "object" && !Array.isArray(row.criteria)
+      ? (row.criteria as Record<string, unknown>)
+      : {};
+  return {
+    run_hour: coerceInt(row.run_hour, d.run_hour, 0, 23),
+    run_minute: coerceInt(row.run_minute, d.run_minute, 0, 59),
+    max_per_day: coerceInt(row.max_per_day, d.max_per_day, 1, 10),
+    skip_when_empty: coerceBool(row.skip_when_empty, d.skip_when_empty),
+    must_submit_candidate: true,
+    criteria: {
+      search_zero: coerceBool(c.search_zero, d.criteria.search_zero),
+      clarify_unresolved: coerceBool(
+        c.clarify_unresolved,
+        d.criteria.clarify_unresolved
+      ),
+      correction: coerceBool(c.correction, d.criteria.correction),
+      // 미구현 기능 — 저장값과 무관하게 항상 off
+      knowledge_gap: false
+    },
+    notify_done: coerceBool(row.notify_done, d.notify_done),
+    notify_fail: coerceBool(row.notify_fail, d.notify_fail)
+  };
+}
+
+export async function getSelfstudySettings(
+  admin: SupabaseClient
+): Promise<SelfstudySettings> {
+  const { data, error } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", SETTINGS_CONFIG_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error("[luna/selfstudy] getSettings", error);
+    return { ...SELFSTUDY_DEFAULT_SETTINGS };
+  }
+  return normalizeSelfstudySettings(data?.value);
+}
+
+export async function saveSelfstudySettings(
+  admin: SupabaseClient,
+  next: SelfstudySettings
+): Promise<SelfstudySettings> {
+  const value = normalizeSelfstudySettings(next);
+  const { error } = await admin.from("luna_settings").upsert(
+    {
+      key: SETTINGS_CONFIG_KEY,
+      value,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "key" }
+  );
+  if (error) console.error("[luna/selfstudy] saveSettings", error);
+  return value;
+}
+
+/** 오늘자 자습 제외 목록 (날짜가 바뀌면 자동으로 비워짐) */
+export async function getTodayExclusions(
+  admin: SupabaseClient
+): Promise<Set<string>> {
+  const { data, error } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", SETTINGS_EXCLUDE_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error("[luna/selfstudy] getExclusions", error);
+    return new Set();
+  }
+  const v = data?.value;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return new Set();
+  const row = v as Record<string, unknown>;
+  if (row.date !== kstDateKey()) return new Set();
+  const keys = Array.isArray(row.keys)
+    ? row.keys.filter((x): x is string => typeof x === "string")
+    : [];
+  return new Set(keys);
+}
+
+export async function setTodayExclusion(
+  admin: SupabaseClient,
+  key: string,
+  excluded: boolean
+): Promise<string[]> {
+  const current = await getTodayExclusions(admin);
+  if (excluded) current.add(key);
+  else current.delete(key);
+  const keys = [...current];
+  const { error } = await admin.from("luna_settings").upsert(
+    {
+      key: SETTINGS_EXCLUDE_KEY,
+      value: { date: kstDateKey(), keys },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "key" }
+  );
+  if (error) console.error("[luna/selfstudy] setExclusion", error);
+  return keys;
+}
+
+function stuckKey(
+  kind: StuckKind,
+  conversationId: string,
+  snippet: string
+): string {
+  const base = `${kind}:${conversationId}:${snippet.slice(0, 80)}`;
+  let h = 0;
+  for (let i = 0; i < base.length; i += 1) {
+    h = (Math.imul(h, 31) + base.charCodeAt(i)) | 0;
+  }
+  return `${kind}_${(h >>> 0).toString(36)}`;
+}
+
+function clip(text: string, max: number): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return t.length <= max ? t : `${t.slice(0, max)}…`;
+}
+
+export async function extractStuckMoments(
   admin: SupabaseClient
 ): Promise<StuckMoment[]> {
   const { startIso, endIso } = kstDayBounds();
@@ -298,12 +516,17 @@ async function extractStuckMoments(
           const prevUser = [...list.slice(0, i)]
             .reverse()
             .find((x) => x.role === "user");
+          const asked = prevUser?.content || "";
+          const snippet = `검색 0건. 질문: ${asked.slice(0, 200)} / 답: ${m.content.slice(0, 200)}`;
           out.push({
+            key: stuckKey("search_zero", conversation_id, snippet),
             kind: "search_zero",
             conversation_id,
             user_id,
             user_name,
-            snippet: `검색 0건. 질문: ${(prevUser?.content || "").slice(0, 200)} / 답: ${m.content.slice(0, 200)}`,
+            title: clip(asked, 60) || clip(m.content, 60),
+            detail: "기억·검색 모두 결과 없음",
+            snippet,
             at: m.created_at
           });
         }
@@ -334,12 +557,18 @@ async function extractStuckMoments(
               typeof (clarify as { question?: unknown }).question === "string"
                 ? (clarify as { question: string }).question
                 : m.content.slice(0, 200);
+            const snippet = `되묻기 미해소: ${q}`;
             out.push({
+              key: stuckKey("clarify_unresolved", conversation_id, snippet),
               kind: "clarify_unresolved",
               conversation_id,
               user_id,
               user_name,
-              snippet: `되묻기 미해소: ${q}`,
+              title: clip(q, 60),
+              detail: nextUser
+                ? "되물었지만 답이 해소되지 않음"
+                : "선택지를 물었으나 답을 못 받고 대화 종료",
+              snippet,
               at: m.created_at
             });
           }
@@ -350,14 +579,18 @@ async function extractStuckMoments(
         const prevAsst = [...list.slice(0, i)]
           .reverse()
           .find((x) => x.role === "assistant");
+        const snippet = `정정: ${m.content.slice(0, 200)}${
+          prevAsst ? ` (이전 답: ${prevAsst.content.slice(0, 120)})` : ""
+        }`;
         out.push({
+          key: stuckKey("correction", conversation_id, snippet),
           kind: "correction",
           conversation_id,
           user_id,
           user_name,
-          snippet: `정정: ${m.content.slice(0, 200)}${
-            prevAsst ? ` (이전 답: ${prevAsst.content.slice(0, 120)})` : ""
-          }`,
+          title: clip(m.content, 60),
+          detail: "사람에게 정정받음 — 이해가 얕을 수 있음",
+          snippet,
           at: m.created_at
         });
       }
@@ -368,9 +601,8 @@ async function extractStuckMoments(
   const seen = new Set<string>();
   const unique: StuckMoment[] = [];
   for (const s of out) {
-    const key = `${s.kind}:${s.conversation_id}:${s.snippet.slice(0, 80)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(s.key)) continue;
+    seen.add(s.key);
     unique.push(s);
     if (unique.length >= 20) break;
   }
@@ -519,6 +751,84 @@ export async function countTodayStuckMoments(
   return stuck.length;
 }
 
+export type StuckMomentView = StuckMoment & {
+  /** 사용자가 오늘 자습에서 제외한 항목 */
+  excluded: boolean;
+  /** 이미 기억으로 확정되어 자습 대상에서 자동 제외 */
+  already_learned: boolean;
+  /** 선정 기준·제외를 반영해 오늘 밤 자습 대상인지 */
+  planned: boolean;
+};
+
+/**
+ * 오늘(KST) 막힌 순간 + 제외/확정 상태.
+ * 화면(막힌 순간 탭)과 실제 자습 선정이 같은 기준을 쓰도록 한 곳에서 계산한다.
+ */
+export async function listTodayStuckMoments(
+  admin: SupabaseClient
+): Promise<{
+  items: StuckMomentView[];
+  counts: Record<StuckKind, number>;
+  planned_count: number;
+  settings: SelfstudySettings;
+}> {
+  const [moments, exclusions, settings] = await Promise.all([
+    extractStuckMoments(admin),
+    getTodayExclusions(admin),
+    getSelfstudySettings(admin)
+  ]);
+
+  // 정정 → 이미 기억으로 확정된 대화는 자습 대상에서 자동 제외
+  const convIds = Array.from(
+    new Set(moments.map((m) => m.conversation_id).filter(Boolean))
+  );
+  const resolvedConvs = new Set<string>();
+  if (convIds.length > 0) {
+    const { data } = await admin
+      .from("luna_learnings")
+      .select("source_conversation_id, meta")
+      .eq("status", "active")
+      .in("source_conversation_id", convIds)
+      .limit(500);
+    for (const row of data ?? []) {
+      const meta =
+        row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+          ? (row.meta as Record<string, unknown>)
+          : {};
+      if (meta.from_correction === true && typeof row.source_conversation_id === "string") {
+        resolvedConvs.add(row.source_conversation_id);
+      }
+    }
+  }
+
+  const counts: Record<StuckKind, number> = {
+    search_zero: 0,
+    clarify_unresolved: 0,
+    correction: 0
+  };
+
+  const items: StuckMomentView[] = moments.map((m) => {
+    counts[m.kind] += 1;
+    const excluded = exclusions.has(m.key);
+    const already_learned =
+      m.kind === "correction" && resolvedConvs.has(m.conversation_id);
+    const criteriaOn = settings.criteria[m.kind];
+    return {
+      ...m,
+      excluded,
+      already_learned,
+      planned: !excluded && !already_learned && criteriaOn
+    };
+  });
+
+  const planned_count = Math.min(
+    settings.max_per_day,
+    items.filter((i) => i.planned).length
+  );
+
+  return { items, counts, planned_count, settings };
+}
+
 /**
  * 그날 막힌 것만 자습 → 후보함 제출.
  * force=false 이고 오늘 이미 생성분이 있으면 skip.
@@ -528,7 +838,9 @@ export async function runDailySelfstudy(
   opts?: { force?: boolean; notify?: boolean }
 ): Promise<SelfstudyRunResult> {
   const force = opts?.force === true;
-  const notify = opts?.notify !== false;
+  const settings = await getSelfstudySettings(admin);
+  const notify = opts?.notify !== false && settings.notify_done;
+  const maxPerDay = settings.max_per_day;
 
   const todayCount = await countTodaySelfstudy(admin);
   if (!force && todayCount > 0) {
@@ -543,7 +855,9 @@ export async function runDailySelfstudy(
     return { ok: true, ...run };
   }
 
-  const stuck = await extractStuckMoments(admin);
+  const { items } = await listTodayStuckMoments(admin);
+  // 선정 기준 off · 오늘 제외 · 이미 확정된 항목은 자습 대상에서 뺀다
+  const stuck: StuckMoment[] = items.filter((i) => i.planned);
   if (stuck.length === 0) {
     const run: SelfstudyLastRun = {
       finished_at: new Date().toISOString(),
@@ -570,8 +884,8 @@ export async function runDailySelfstudy(
   }
 
   const remaining = force
-    ? MAX_PER_DAY
-    : Math.max(0, MAX_PER_DAY - todayCount);
+    ? maxPerDay
+    : Math.max(0, maxPerDay - todayCount);
   const ids: string[] = [];
   for (const q of questions.slice(0, remaining)) {
     const id = await answerAndSubmit(admin, q);

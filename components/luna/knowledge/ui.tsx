@@ -134,7 +134,7 @@ export function Btn({
   );
 }
 
-type BadgeKind = "org" | "me" | "src" | "warn" | "ok" | "red";
+type BadgeKind = "org" | "me" | "src" | "warn" | "ok" | "red" | "wait";
 
 const BADGE_STYLES: Record<BadgeKind, { bg: string; color: string }> = {
   org: { bg: K.lunaSoft, color: K.lunaInk },
@@ -142,7 +142,8 @@ const BADGE_STYLES: Record<BadgeKind, { bg: string; color: string }> = {
   src: { bg: K.chip, color: K.sub },
   warn: { bg: K.candSoft, color: K.candInk },
   ok: { bg: K.talkSoft, color: K.talk },
-  red: { bg: K.dangerSoft, color: K.danger }
+  red: { bg: K.dangerSoft, color: K.danger },
+  wait: { bg: K.brainSoft, color: K.brainInk }
 };
 
 export function Badge({

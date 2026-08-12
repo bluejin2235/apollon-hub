@@ -16,7 +16,9 @@ import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
 import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
 import { LunaCandidatesMine } from "@/components/luna/candidates/LunaCandidatesMine";
 import { LunaCandidatesPending } from "@/components/luna/candidates/LunaCandidatesPending";
-import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
+import { LunaSelfstudyHistory } from "@/components/luna/selfstudy/LunaSelfstudyHistory";
+import { LunaSelfstudySettings } from "@/components/luna/selfstudy/LunaSelfstudySettings";
+import { LunaSelfstudyStuck } from "@/components/luna/selfstudy/LunaSelfstudyStuck";
 import {
   buildLunaSettingsUrl,
   canonicalLunaSettingsUrl,
@@ -1568,9 +1570,9 @@ export function LunaSettingsTab() {
     }
 
     if (menu === "selfstudy") {
-      if (sub === "settings") return <LunaStudyPanel />;
-      if (sub === "history") return <LunaTraceTab />;
-      if (sub === "stuck") return <LunaPlaceholder title="막힌 순간" />;
+      if (sub === "history") return <LunaSelfstudyHistory />;
+      if (sub === "stuck") return <LunaSelfstudyStuck />;
+      if (sub === "settings") return <LunaSelfstudySettings />;
     }
 
     if (menu === "brain") {
