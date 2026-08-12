@@ -65,15 +65,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "metrics", label: "관측 지표" }
     ]
   },
-  {
-    slug: "candidates",
-    label: "지식후보",
-    subs: [
-      { slug: "pending", label: "대기 후보" },
-      { slug: "mine", label: "내가 답할 차례" },
-      { slug: "history", label: "처리 이력" }
-    ]
-  },
+  // 대화·자습에서 나온 것이 지식후보로 모이는 흐름 순서
   {
     slug: "selfstudy",
     label: "자습",
@@ -81,6 +73,15 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "history", label: "자습 이력" },
       { slug: "stuck", label: "막힌 순간" },
       { slug: "settings", label: "자습 설정" }
+    ]
+  },
+  {
+    slug: "candidates",
+    label: "지식후보",
+    subs: [
+      { slug: "pending", label: "대기 후보" },
+      { slug: "mine", label: "내가 답할 차례" },
+      { slug: "history", label: "처리 이력" }
     ]
   },
   {
