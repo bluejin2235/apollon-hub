@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 지식후보 — 목업 (3개 하위 페이지)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+    --danger:#A32D2D; --danger-soft:#FCEBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  .mocklabel{margin:36px 0 10px;font-size:12px;font-weight:800;color:var(--cand);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  .subtabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--cand)}
+  .subtab .b{color:var(--cand-ink);font-weight:700}
+
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  .chip{font-size:12px;padding:5px 13px;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chip.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .chips .lb{font-size:11.5px;color:var(--faint);margin-right:2px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+  .card.hl{border:2px solid #d9cdf7}
+  .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-chat{background:var(--talk-soft);color:var(--talk)}
+  .b-self{background:var(--luna-soft);color:var(--luna-ink)}
+  .b-q{background:var(--cand-soft);color:var(--cand-ink)}
+  .b-direct{background:var(--chip);color:var(--sub)}
+  .b-term{background:var(--luna-soft);color:var(--luna-ink)}
+  .b-ok{background:var(--talk-soft);color:var(--talk)}
+  .b-red{background:var(--danger-soft);color:var(--danger)}
+  .meta{font-size:11.5px;color:var(--faint)}
+  .right{margin-left:auto}
+  .know{font-size:14px;line-height:1.6;margin:10px 0 3px}
+  .evi{font-size:12px;color:var(--sub)}
+  .qa .q{font-size:12.5px;color:var(--sub);margin:10px 0 2px}
+  .qa .a{font-size:14px;line-height:1.6}
+
+  .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ghost{border-color:transparent;color:var(--sub)}
+  .btns .note{font-size:11.5px;color:var(--faint)}
+
+  /* 용어형 카드 */
+  .langs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .lang{border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+  .lang .l{font-size:10px;color:var(--faint);font-weight:800;text-transform:uppercase}
+  .lang .v{font-size:13px;font-weight:700;margin-top:2px}
+  .lang .v.none{color:var(--faint);font-weight:400}
+  .termname{font-size:17px;font-weight:800;margin-top:10px}
+  .draft{border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .draft .l{font-size:10px;color:var(--faint);font-weight:800;margin-bottom:4px;text-transform:uppercase}
+  .draft p{font-size:13px;line-height:1.7}
+
+  /* 문답 스레드 */
+  .thread{margin:10px 0;padding-left:10px;border-left:2px solid var(--line)}
+  .thread p{font-size:13px;line-height:1.6;margin-bottom:6px}
+  .thread p.me{color:var(--ink)}
+  .thread p.luna{color:var(--sub)}
+  .reply{display:flex;gap:8px;margin-top:10px}
+  .reply input{flex:1;font-family:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:9px;padding:8px 11px;outline:none;background:var(--panel)}
+  .reply input:focus{border-color:#d9d2ff}
+
+  /* 내 차례 */
+  .infobar{background:var(--panel);border-radius:9px;padding:11px 14px;font-size:13px;
+    color:var(--sub);margin-bottom:14px}
+  .qcard{background:var(--panel);border:2px solid #d9cdf7;border-radius:12px;padding:16px;margin-bottom:12px}
+  .qcard .head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .qcard .av{width:26px;height:26px;border-radius:50%;background:var(--luna);color:#EEEDFE;
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .qcard .t{font-size:13.5px;font-weight:700;flex:1}
+  .qcard .q{font-size:14px;line-height:1.6;margin-bottom:4px}
+  .qcard .s{font-size:12px;color:var(--sub)}
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line2)}
+  .row:last-child{border-bottom:0}
+  .row .t{flex:1;font-size:13px}
+  .teamrow{background:var(--panel);border-radius:9px;padding:12px 14px;display:flex;
+    align-items:center;gap:12px;margin-top:14px}
+  .teamrow .t{font-size:13px}
+  .teamrow .s{font-size:12px;color:var(--sub)}
+
+  /* 통계 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stat{background:var(--panel);border-radius:9px;padding:12px 14px}
+  .stat .l{font-size:12px;color:var(--sub)}
+  .stat .v{font-size:22px;font-weight:700;margin-top:2px;letter-spacing:-.4px}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+  .box h4{font-size:13px;font-weight:700}
+  .box h4 .r{float:right;font-size:11.5px;color:var(--talk);font-weight:700}
+  .bars{display:flex;align-items:flex-end;gap:10px;height:60px;margin-top:10px}
+  .bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .bars .b i{width:100%;border-radius:2px;display:block;background:#F5C4B3}
+  .bars .b.now i{background:var(--cand)}
+  .bars .b span{font-size:11px;color:var(--faint)}
+
+  @media(max-width:900px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .langs{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════════ 1. 대기 후보 ══════════ -->
+<div class="mocklabel">PAGE 1 — candidates / pending (대기 후보)</div>
+
+<div class="subtabs">
+  <div class="subtab on">대기 후보 4</div>
+  <div class="subtab">내가 답할 차례 <span class="b">1</span></div>
+  <div class="subtab">처리 이력</div>
+</div>
+
+<div class="chips">
+  <div class="chip on">전체 4</div>
+  <div class="chip">대화에서 2</div>
+  <div class="chip">자습에서 1</div>
+  <div class="chip">루나의 질문 1</div>
+  <div class="chip">알려주기 0</div>
+  <div class="chip">용어 1</div>
+</div>
+
+<!-- 일반 후보 (대화에서) -->
+<div class="card">
+  <div class="top">
+    <span class="badge b-chat">대화에서</span>
+    <span class="meta">김벼리와의 대화 · 오늘 09:41 · 원문 보기</span>
+    <span class="badge b-direct right">조직 제안</span>
+  </div>
+  <div class="know">제안서 1차 리뷰는 CD가 아니라 SV가 먼저 본다.</div>
+  <div class="evi">근거: "이거 SV 리뷰 먼저 받고 CD한테 올려주세요" — 김벼리</div>
+  <div class="btns">
+    <button class="btn primary">맞아요 → 기억</button>
+    <button class="btn">고쳐서 확정</button>
+    <button class="btn">아니에요</button>
+  </div>
+</div>
+
+<!-- 용어형 후보 -->
+<div class="card">
+  <div class="top">
+    <span class="badge b-term">용어 · 대화에서</span>
+    <span class="meta">김벼리와의 대화 · 08.11 · 원문 보기</span>
+    <span class="badge b-direct right">공통 제안</span>
+  </div>
+  <div class="termname">GX 프로젝트</div>
+  <div class="langs">
+    <div class="lang"><div class="l">한국어</div><div class="v">GX 프로젝트</div></div>
+    <div class="lang"><div class="l">English</div><div class="v">GX Project</div></div>
+    <div class="lang"><div class="l">中文</div><div class="v none">—</div></div>
+  </div>
+  <div class="draft">
+    <div class="l">정의 초안</div>
+    <p>몰입형 대공간 그래픽 익스피리언스 프로젝트를 지칭하는 내부 약어.</p>
+  </div>
+  <div class="evi" style="margin-top:8px">근거: "GX가 무슨 뜻이에요?" 질문에 김벼리가 답한 내용</div>
+  <div class="btns">
+    <button class="btn primary">맞아요 → 용어사전 등록</button>
+    <button class="btn">고쳐서 등록</button>
+    <button class="btn">아니에요</button>
+  </div>
+</div>
+
+<!-- 자습 문답 후보 -->
+<div class="card">
+  <div class="top">
+    <span class="badge b-self">자습에서</span>
+    <span class="meta">오늘 03:00 · 어제 검색 0건이던 주제</span>
+  </div>
+  <div class="qa">
+    <div class="q">Q. 상설 전시에서 프로젝터와 LED 중 선택 기준이 뭘까?</div>
+    <div class="a">A. 운영시간·주변광·유지보수를 기준으로 LED 우선, 곡면·바닥은 프로젝터 — 라고 정리해봤어요. 맞나요?</div>
+  </div>
+  <div class="evi" style="margin-top:8px">찾은 곳: 노션 2건 · 웹 3건</div>
+  <div class="btns">
+    <button class="btn primary">잘 배웠어 → 기억</button>
+    <button class="btn">고쳐서 확정</button>
+    <button class="btn">틀렸어</button>
+    <button class="btn ghost">이런 건 안 배워도 돼</button>
+  </div>
+</div>
+
+<!-- 루나의 질문 (문답 진행 중) -->
+<div class="card hl">
+  <div class="top">
+    <span class="badge b-q">루나의 질문 · 내 차례</span>
+    <span class="meta">문답 2번째</span>
+  </div>
+  <div class="thread">
+    <p class="luna">루나: MS는 BO·BS와 같은 직책이라고 이해했어요. 맞나요?</p>
+    <p class="me">나: 맞는데 공식 문서에선 하나로 통일해서 써</p>
+    <p class="luna">루나: 그럼 셋 중 공식 표기는 뭘로 쓸까요?</p>
+  </div>
+  <div class="reply">
+    <input placeholder="답을 입력하면 루나가 이해를 다듬어 다시 확인해요">
+    <button class="btn primary">보내기</button>
+  </div>
+</div>
+
+
+<!-- ══════════ 2. 내가 답할 차례 ══════════ -->
+<div class="mocklabel">PAGE 2 — candidates / mine (내가 답할 차례)</div>
+
+<div class="subtabs">
+  <div class="subtab">대기 후보 4</div>
+  <div class="subtab on">내가 답할 차례 <span class="b">1</span></div>
+  <div class="subtab">처리 이력</div>
+</div>
+
+<div class="infobar">내 대화에서 나온 질문만 나에게 배정됩니다. 하루 1건을 넘기지 않아요.</div>
+
+<div class="qcard">
+  <div class="head">
+    <div class="av">L</div>
+    <div class="t">택진님, 하나만 여쭤봐도 돼요?</div>
+    <div class="meta">어제 대화에서 · 2일 남음</div>
+  </div>
+  <div class="q">어제 말씀하신 "구남로 2차 연출안"이 제가 아는 "부산 구남로 미디어폴" 건과 같은 프로젝트인가요?</div>
+  <div class="s">확인되면 두 이름을 같은 프로젝트로 기억할게요</div>
+  <div class="btns">
+    <button class="btn primary">네 맞아요</button>
+    <button class="btn">아니에요</button>
+    <button class="btn ghost">나중에</button>
+  </div>
+  <div class="reply"><input placeholder="또는 직접 설명해 주세요"><button class="btn">보내기</button></div>
+</div>
+
+<div style="font-size:13px;font-weight:700;margin:16px 0 8px">내가 시작한 문답 <span style="color:var(--faint);font-weight:400">진행 중</span></div>
+<div class="list">
+  <div class="row">
+    <span class="badge b-direct">알려주기</span>
+    <span class="t">MS 직책 공식 표기 정리 중</span>
+    <span class="meta">2번째 문답</span>
+    <button class="btn">이어서 답하기</button>
+  </div>
+  <div class="row">
+    <span class="badge b-chat">대화에서</span>
+    <span class="t">착수보고서 용어 관련 추가 확인</span>
+    <span class="meta">1번째 문답</span>
+    <button class="btn">이어서 답하기</button>
+  </div>
+</div>
+
+<div class="teamrow">
+  <div style="flex:1">
+    <div class="t">팀 전체 대기 현황</div>
+    <div class="s">김벼리 1건 · 박예리 1건 · 이준용 0건 · 미배정 1건</div>
+  </div>
+  <button class="btn">배정 관리</button>
+</div>
+
+
+<!-- ══════════ 3. 처리 이력 ══════════ -->
+<div class="mocklabel">PAGE 3 — candidates / history (처리 이력)</div>
+
+<div class="subtabs">
+  <div class="subtab">대기 후보 4</div>
+  <div class="subtab">내가 답할 차례 <span class="b">1</span></div>
+  <div class="subtab on">처리 이력</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">누적 확정</div><div class="v">128</div></div>
+  <div class="stat"><div class="l">반려·폐기</div><div class="v">34</div></div>
+  <div class="stat"><div class="l">확정률</div><div class="v">79%</div></div>
+  <div class="stat"><div class="l">평균 확정 소요</div><div class="v">1.4<span style="font-size:13px">일</span></div></div>
+</div>
+
+<div class="box">
+  <h4>주간 유입 추이 <span class="r">유입 감소 — 루나가 이미 아는 것이 늘고 있어요</span></h4>
+  <div class="bars">
+    <div class="b"><i style="height:52px"></i><span>7/20 · 21</span></div>
+    <div class="b"><i style="height:44px"></i><span>7/27 · 18</span></div>
+    <div class="b"><i style="height:30px"></i><span>8/3 · 12</span></div>
+    <div class="b now"><i style="height:22px"></i><span>8/10 · 9</span></div>
+  </div>
+</div>
+
+<div class="chips">
+  <div class="chip on">전체</div>
+  <div class="chip">확정</div>
+  <div class="chip">반려</div>
+  <div class="chip">안 배워도 됨</div>
+</div>
+
+<div class="list">
+  <div class="row">
+    <span class="badge b-ok">확정</span>
+    <span class="t">아폴론의 견적서는 PDF 형식으로만 발송한다</span>
+    <span class="meta">알려주기</span>
+    <span class="meta" style="width:100px;text-align:right">08.12 · 이택진</span>
+  </div>
+  <div class="row">
+    <span class="badge b-ok">확정</span>
+    <span class="t">착수보고서와 수행계획서는 같은 문서를 가리킨다</span>
+    <span class="meta">대화에서</span>
+    <span class="meta" style="width:100px;text-align:right">08.11 · 이택진</span>
+  </div>
+  <div class="row">
+    <span class="badge b-direct">안 배워도 됨</span>
+    <span class="t" style="color:var(--sub)">방호형 LED 미디어 설계 일반론</span>
+    <span class="meta">자습에서</span>
+    <span class="meta" style="width:100px;text-align:right">08.11 · 이택진</span>
+  </div>
+  <div class="row">
+    <span class="badge b-red">반려</span>
+    <span class="t" style="color:var(--sub)">제안서 표지는 항상 다크 톤 (충돌 → 병합으로 대체)</span>
+    <span class="meta">대화에서</span>
+    <span class="meta" style="width:100px;text-align:right">08.10 · 이택진</span>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

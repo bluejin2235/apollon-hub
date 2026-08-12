@@ -13,7 +13,9 @@ import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
 import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
 import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
-import { LunaTeachTab } from "@/components/settings/luna-teach-tab";
+import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
+import { LunaCandidatesMine } from "@/components/luna/candidates/LunaCandidatesMine";
+import { LunaCandidatesPending } from "@/components/luna/candidates/LunaCandidatesPending";
 import { LunaTraceTab } from "@/components/settings/luna-trace-tab";
 import {
   buildLunaSettingsUrl,
@@ -1560,10 +1562,9 @@ export function LunaSettingsTab() {
     }
 
     if (menu === "candidates") {
-      if (sub === "pending" || sub === "mine") {
-        return <LunaTeachTab key={sub} />;
-      }
-      if (sub === "history") return <LunaPlaceholder title="처리 이력" />;
+      if (sub === "pending") return <LunaCandidatesPending />;
+      if (sub === "mine") return <LunaCandidatesMine />;
+      if (sub === "history") return <LunaCandidatesHistory />;
     }
 
     if (menu === "selfstudy") {

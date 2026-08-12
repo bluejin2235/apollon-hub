@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
+  shouldRegisterGlossary,
+  tryRegisterGlossaryFromCandidate
+} from "@/lib/luna/candidate-glossary";
+import {
   makeTurn,
   normalizeThread,
   runDialogueTurn,
@@ -62,7 +66,7 @@ export async function POST(request: NextRequest) {
   const { data: current, error: loadError } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, status, source, evidence, thread, meta, author_id, assigned_to"
+      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category"
     )
     .eq("id", id)
     .maybeSingle();
@@ -215,11 +219,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  let glossary_registered: boolean | undefined;
+  let glossary_notice: string | undefined;
+  const meta =
+    current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
+      ? (current.meta as Record<string, unknown>)
+      : {};
+  const category =
+    typeof current.category === "string" ? current.category : undefined;
+  if (shouldRegisterGlossary(meta, category)) {
+    const glossaryResult = await tryRegisterGlossaryFromCandidate(
+      admin,
+      user.id,
+      meta,
+      polished
+    );
+    glossary_registered = glossaryResult.registered;
+    if (glossaryResult.notice) glossary_notice = glossaryResult.notice;
+  }
+
   await lunaNotify(
     admin,
     "reflect",
-    "기억 확정",
-    `후보가 기억으로 확정됐어요: ${polished.slice(0, 80)}`,
+    glossary_registered ? "용어사전 등록" : "기억 확정",
+    glossary_registered
+      ? `용어가 사전에 등록됐어요: ${polished.slice(0, 80)}`
+      : `후보가 기억으로 확정됐어요: ${polished.slice(0, 80)}`,
     { level: "success", meta: { learning_id: id } }
   );
 
@@ -227,6 +252,8 @@ export async function POST(request: NextRequest) {
     id: data.id,
     status: data.status,
     content: data.content,
-    thread: normalizeThread(data.thread)
+    thread: normalizeThread(data.thread),
+    glossary_registered,
+    glossary_notice
   });
 }
