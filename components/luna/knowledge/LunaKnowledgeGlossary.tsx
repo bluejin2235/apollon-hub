@@ -271,7 +271,6 @@ export function LunaKnowledgeGlossary() {
             ) : (
               terms.map((term) => {
                 const on = selectedId === term.id;
-                const sub = [term.term_en, term.term_zh].filter(Boolean).join(" · ");
                 return (
                   <button
                     key={term.id}
@@ -290,7 +289,18 @@ export function LunaKnowledgeGlossary() {
                       className="text-[11.5px]"
                       style={{ color: on ? K.lunaInk : K.faint }}
                     >
-                      {sub || "—"}
+                      {term.term_en || "—"}
+                      {term.term_zh ? (
+                        <>
+                          {" · "}
+                          <span
+                            className="font-bold"
+                            style={{ color: on ? K.lunaInk : K.sub }}
+                          >
+                            {term.term_zh}
+                          </span>
+                        </>
+                      ) : null}
                     </div>
                   </button>
                 );

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 채팅 사이드바 + 용어사전(/glossary) — 목업</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+  .app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+
+  /* ── 좌측 사이드바 ── */
+  .rail{background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:12px 10px}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 6px 12px}
+  .brand .logo{width:26px;height:26px;border-radius:8px;background:var(--luna);
+    display:grid;place-items:center;color:#EEEDFE;font-weight:800;font-size:13px}
+  .brand b{font-size:14.5px;flex:1}
+  .brand .new{font-size:17px;color:var(--luna);cursor:pointer;line-height:1}
+  .search{display:flex;align-items:center;gap:8px;background:var(--chip);
+    border-radius:9px;padding:8px 10px;margin-bottom:12px}
+  .search input{border:0;background:transparent;outline:none;width:100%;font-size:12.5px;
+    font-family:inherit;color:var(--ink)}
+  .grouplabel{font-size:11px;color:var(--faint);padding:0 6px;margin-bottom:4px}
+  .navitem{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;
+    font-size:13px;cursor:pointer}
+  .navitem:hover{background:#f7f7f9}
+  .navitem .ic{width:16px;text-align:center;opacity:.75;font-size:13px}
+  .navitem .t{flex:1}
+  .navitem.muted .t{color:var(--sub)}
+  .chatitem{padding:6px 8px;border-radius:8px;font-size:12.5px;color:var(--sub);cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chatitem:hover{background:#f7f7f9}
+  .chatitem.on{background:var(--luna-soft);color:var(--luna-ink)}
+  .spacer{flex:1;min-height:16px}
+  .bottom{border-top:1px solid var(--line2);padding-top:8px}
+  .navitem.active{background:var(--luna-soft);color:var(--luna-ink);font-weight:700}
+  .navitem .badge{font-size:10px;font-weight:800;background:var(--cand-soft);
+    color:var(--cand-ink);padding:1px 7px;border-radius:20px}
+
+  /* ── 메인 ── */
+  .main{display:flex;flex-direction:column;min-width:0;padding:20px 24px}
+  .head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .head .pin{font-size:18px;color:var(--luna)}
+  .head h1{font-size:16px;font-weight:800;letter-spacing:-.2px}
+  .head .desc{font-size:11.5px;color:var(--sub);margin-top:1px}
+  .head .right{margin-left:auto}
+  .cand-btn{background:var(--cand-soft);color:var(--cand-ink);border:1px solid #f3d9cf;
+    padding:6px 13px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer}
+
+  .body{display:grid;grid-template-columns:270px 1fr;gap:12px}
+
+  /* 좌측 용어 리스트 */
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:12px 10px;align-self:start}
+  .tabs3{display:flex;gap:5px;margin-bottom:10px}
+  .tabs3 div{flex:1;text-align:center;font-size:11.5px;padding:6px 0;border-radius:8px;
+    background:var(--chip);color:var(--sub);font-weight:700;cursor:pointer}
+  .tabs3 div.on{background:var(--luna);color:#fff}
+  .index{display:flex;flex-wrap:wrap;gap:2px;padding-bottom:10px;
+    border-bottom:1px solid var(--line2);margin-bottom:6px}
+  .ix{width:21px;height:21px;display:grid;place-items:center;font-size:11px;
+    color:var(--sub);border-radius:5px;cursor:pointer}
+  .ix:hover{background:var(--chip)}
+  .ix.on{background:var(--luna);color:#fff;font-weight:700}
+  .term{padding:8px 10px;border-radius:8px;cursor:pointer}
+  .term:hover{background:#f7f7f9}
+  .term.on{background:var(--luna-soft)}
+  .term .ko{font-size:13px;font-weight:700}
+  .term.on .ko{color:var(--luna-ink)}
+  .term .sub{font-size:11.5px;color:var(--faint)}
+  .term .sub .zh{font-weight:700;color:var(--sub)}
+  .term.on .sub,.term.on .sub .zh{color:var(--luna-ink)}
+
+  /* 우측 상세 */
+  .detail{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 24px}
+  .dtitle{font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .dcat{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:800;
+    background:var(--chip);color:var(--sub);padding:2px 9px;border-radius:20px}
+  .langs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+  .lang{border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+  .lang .l{font-size:10.5px;color:var(--faint);font-weight:800;text-transform:uppercase}
+  .lang .v{font-size:15px;font-weight:700;margin-top:3px}
+  .lang .v small{font-size:11.5px;color:var(--sub);font-weight:400;margin-left:5px}
+  .defn{border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-top:12px}
+  .defn .l{font-size:10.5px;color:var(--faint);font-weight:800;margin-bottom:6px;text-transform:uppercase}
+  .defn p{font-size:13.5px;line-height:1.75}
+  .defn .empty{font-size:13px;color:var(--faint)}
+  .toolbar{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .btn{padding:8px 14px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .hist-wrap{margin-top:20px;border-top:1px solid var(--line2);padding-top:12px}
+  .hist-wrap .l{font-size:11px;color:var(--faint);margin-bottom:8px}
+  .hist{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:12.5px}
+  .hist:last-child{border-bottom:0}
+  .hist .av{width:24px;height:24px;border-radius:50%;background:var(--chip);display:grid;
+    place-items:center;font-size:10px;font-weight:800;color:var(--sub);flex-shrink:0}
+  .hist .av.luna{background:var(--luna-soft);color:var(--luna-ink)}
+  .hist .who{font-weight:700}
+  .hist .act{font-size:12px;color:var(--sub);margin-top:1px}
+  .hist .when{margin-left:auto;font-size:11.5px;color:var(--faint)}
+  .verchip{font-size:10.5px;font-weight:700;color:var(--sub);background:var(--chip);
+    padding:1px 7px;border-radius:20px}
+
+  /* 편집 모드 */
+  .edit{margin-top:12px;border:1px solid #d9d2ff;border-radius:9px;padding:14px 16px;background:#fbfaff}
+  .edit .l{font-size:11px;color:var(--faint);margin-bottom:4px}
+  .edit input,.edit textarea{width:100%;font-family:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;outline:none;background:var(--panel);margin-bottom:10px}
+  .edit textarea{height:90px;line-height:1.7;resize:vertical}
+  .edit .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .note{font-size:11.5px;color:var(--faint);margin-top:4px}
+
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr}
+    .rail{display:none}
+    .body{grid-template-columns:1fr}
+    .langs,.edit .row3{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══ 좌측 사이드바 (루나 채팅과 공유) ═══ -->
+  <aside class="rail">
+    <div class="brand">
+      <div class="logo">L</div><b>루나</b>
+      <span class="new" title="새 대화">✎</span>
+    </div>
+
+    <div class="search"><span>🔍</span><input placeholder="대화 검색"></div>
+
+    <div class="grouplabel">프로젝트</div>
+    <div class="navitem"><span class="ic">📁</span><span class="t">인스파이어 시즌3</span></div>
+    <div class="navitem"><span class="ic">📁</span><span class="t">해운대스퀘어</span></div>
+    <div class="navitem muted"><span class="ic">＋</span><span class="t">프로젝트 만들기</span></div>
+
+    <div class="grouplabel" style="margin-top:12px">최근 대화</div>
+    <div class="chatitem on">인스파이어 자료 위치</div>
+    <div class="chatitem">검수확인서 양식 정리</div>
+    <div class="chatitem">샵드로잉이 뭐야?</div>
+    <div class="chatitem">제주 롤아웃 일정</div>
+    <div class="chatitem" style="color:var(--faint)">더 보기</div>
+
+    <div class="spacer"></div>
+
+    <div class="bottom">
+      <div class="navitem active"><span class="ic">📖</span><span class="t">용어사전</span><span class="badge">3</span></div>
+    </div>
+  </aside>
+
+  <!-- ═══ 메인: /glossary ═══ -->
+  <main class="main">
+    <div class="head">
+      <span class="pin">📖</span>
+      <div>
+        <h1>용어사전</h1>
+        <div class="desc">아폴론 공통 용어를 한 곳에서 · 누구나 수정, 이력 기록</div>
+      </div>
+      <div class="right"><button class="cand-btn">확인 필요 3</button></div>
+    </div>
+
+    <div class="body">
+
+      <!-- 용어 리스트 -->
+      <section class="list">
+        <div class="search"><span>🔍</span><input placeholder="용어 검색 (한·영·중)"></div>
+        <div class="tabs3"><div class="on">공통</div><div>인테리어</div><div>하드웨어</div></div>
+        <div class="index">
+          <div class="ix on">ㄱ</div><div class="ix">ㄴ</div><div class="ix">ㄷ</div><div class="ix">ㄹ</div>
+          <div class="ix">ㅁ</div><div class="ix">ㅂ</div><div class="ix">ㅅ</div><div class="ix">ㅇ</div>
+          <div class="ix">ㅈ</div><div class="ix">ㅊ</div><div class="ix">ㅋ</div><div class="ix">ㅌ</div>
+          <div class="ix">ㅍ</div><div class="ix">ㅎ</div><div class="ix">A</div><div class="ix">B</div>
+          <div class="ix">C</div><div class="ix">D</div><div class="ix">G</div><div class="ix">H</div>
+          <div class="ix">I</div><div class="ix">K</div><div class="ix">M</div><div class="ix">O</div>
+          <div class="ix">P</div><div class="ix">R</div><div class="ix">S</div><div class="ix">V</div>
+        </div>
+        <div class="term on"><div class="ko">감리</div><div class="sub">Supervision · <span class="zh">监理</span></div></div>
+        <div class="term"><div class="ko">건축인프라</div><div class="sub">Construction Infra · <span class="zh">建筑机电工程</span></div></div>
+        <div class="term"><div class="ko">검수</div><div class="sub">Inspection · <span class="zh">验收</span></div></div>
+        <div class="term"><div class="ko">검수확인서</div><div class="sub">Inspection Confirmation · <span class="zh">验收确认书</span></div></div>
+        <div class="term"><div class="ko">견적서</div><div class="sub">Quotation · <span class="zh">报价单</span></div></div>
+        <div class="term"><div class="ko">계약서</div><div class="sub">Contract · <span class="zh">合同</span></div></div>
+        <div class="term"><div class="ko">기본설계</div><div class="sub">Basic Design · <span class="zh">初步设计</span></div></div>
+        <div class="term"><div class="ko">기술감리</div><div class="sub">Technical Supervision · <span class="zh">技术监理</span></div></div>
+        <div class="term"><div class="ko">기획설계</div><div class="sub">Schematic Design · <span class="zh">方案设计</span></div></div>
+        <div class="term"><div class="ko">고객관리</div><div class="sub">Client Management · <span class="zh">客户管理</span></div></div>
+      </section>
+
+      <!-- 상세 -->
+      <section class="detail">
+        <div class="dtitle">감리</div>
+        <span class="dcat">공통 용어</span>
+
+        <div class="langs">
+          <div class="lang"><div class="l">한국어</div><div class="v">감리</div></div>
+          <div class="lang"><div class="l">English</div><div class="v">Supervision</div></div>
+          <div class="lang"><div class="l">中文</div><div class="v">监理 <small>지엔리</small></div></div>
+        </div>
+
+        <div class="defn">
+          <div class="l">정의</div>
+          <p>보통 우리 업무에서 의미하는 감리는 크게 인테리어 감리와 기술감리로 구분된다. 시공감리는 인테리어 시공단계에 시공현장 담당자와 협업하여 청사진(고객에게 컨펌된 최종 실시설계도면) 기준으로 시공이 되도록 모니터링 및 지원하고 이슈가 있을 때 고객사 및 SV에게 적절히 보고하는 역할이다. 기술감리는 HW 기술감리를 의미하며 청사진 기준으로 HW가 설치될 수 있도록 인테리어 현장소장 및 HW 외주업체를 모니터링·지원·보고하는 역할이다.</p>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn primary">수정하기</button>
+          <button class="btn">루나에게 물어보기</button>
+        </div>
+        <div class="note">수정은 검토 없이 바로 반영되고, 모든 변경은 이력으로 남습니다</div>
+
+        <!-- 편집 모드 (수정하기 클릭 시 이 영역이 열림) -->
+        <div class="edit">
+          <div class="l">수정 — 편집 중</div>
+          <div class="row3">
+            <div><div class="l">한국어</div><input value="감리"></div>
+            <div><div class="l">English</div><input value="Supervision"></div>
+            <div><div class="l">中文 / 발음</div><input value="监理 / 지엔리"></div>
+          </div>
+          <div class="l">정의</div>
+          <textarea>보통 우리 업무에서 의미하는 감리는 크게 인테리어 감리와 기술감리로 구분된다…</textarea>
+          <div class="l">무엇을 왜 바꿨나요</div>
+          <input placeholder="예: 오타 수정 · 중문 발음 추가">
+          <div class="toolbar" style="margin-top:2px">
+            <button class="btn primary">저장</button>
+            <button class="btn">취소</button>
+          </div>
+        </div>
+
+        <div class="hist-wrap">
+          <div class="l">변경 이력</div>
+          <div class="hist">
+            <div class="av">이택</div>
+            <div><div class="who">이택진 <span class="verchip">v2 · 현재</span></div>
+              <div class="act">오타 수정 (역gu이다 → 역할이다)</div></div>
+            <div class="when">08.12</div>
+          </div>
+          <div class="hist">
+            <div class="av luna">L</div>
+            <div><div class="who">루나 <span class="verchip">v1</span></div>
+              <div class="act">디스트릭트 Glossary Book에서 이관 · 지식후보함 승인</div></div>
+            <div class="when">08.12</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

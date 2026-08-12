@@ -24,6 +24,7 @@ import type {
   LunaConnectorsState,
   LunaSkillsSelection
 } from "@/components/luna/LunaInput";
+import { LunaShell } from "@/components/luna/LunaShell";
 import { LunaSidebar, type LunaConversation } from "@/components/luna/LunaSidebar";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import { supabase } from "@/lib/supabase/client";
@@ -57,6 +58,7 @@ export default function LunaPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pendingCorrectionIdsRef = useRef<string[]>([]);
+  const askedRef = useRef(false);
 
   const visibleConversations = useMemo(() => {
     if (!selectedProjectId) return conversations;
@@ -206,6 +208,15 @@ export default function LunaPage() {
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  // /glossary 사이드바에서 넘어올 때 ?c= · ?project= 로 방을 지정한다
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const conversationId = params.get("c");
+    const projectId = params.get("project");
+    if (conversationId) setSelectedConversationId(conversationId);
+    if (projectId) setSelectedProjectId(projectId);
+  }, []);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -657,61 +668,36 @@ export default function LunaPage() {
     setDrawerOpen(false);
   }, []);
 
+  // 용어사전의 "루나에게 물어보기" → ?ask= 로 넘어온 질문을 한 번만 보낸다
+  useEffect(() => {
+    if (askedRef.current) return;
+    const question = new URLSearchParams(window.location.search).get("ask");
+    if (!question?.trim()) return;
+    askedRef.current = true;
+    void sendMessage(question.trim(), DEFAULT_CONNECTORS, [], [], EMPTY_SKILLS);
+  }, [sendMessage]);
+
   return (
-    <div className="relative flex min-h-0 w-full flex-1 overflow-hidden">
-      {/* PC 사이드바 */}
-      <div className="hidden h-full p-2 md:flex">
+    <LunaShell
+      drawerOpen={drawerOpen}
+      onCloseDrawer={() => setDrawerOpen(false)}
+      sidebar={
         <LunaSidebar
           conversations={visibleConversations}
           selectedId={selectedConversationId}
-          onSelect={setSelectedConversationId}
-          onNewChat={() => void onNewChat()}
+          onSelect={selectConversation}
+          onNewChat={() => {
+            void onNewChat();
+            setDrawerOpen(false);
+          }}
           selectedProjectId={selectedProjectId}
           onSelectProject={onSelectProject}
           onRename={onRenameConversation}
           onDelete={onDeleteConversation}
         />
-      </div>
-
-      {/* 모바일 드로어 */}
-      <div
-        className={`fixed inset-0 z-50 md:hidden ${drawerOpen ? "" : "pointer-events-none"}`}
-        aria-hidden={!drawerOpen}
-      >
-        <button
-          type="button"
-          aria-label="메뉴 닫기"
-          className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${
-            drawerOpen ? "opacity-100" : "opacity-0"
-          }`}
-          onClick={() => setDrawerOpen(false)}
-        />
-        <div
-          className={`absolute inset-y-0 left-0 flex w-[min(280px,86vw)] transform bg-white shadow-xl transition-transform duration-200 ${
-            drawerOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="h-full w-full p-2 pt-[calc(3.5rem+0.5rem)]">
-            <LunaSidebar
-              conversations={visibleConversations}
-              selectedId={selectedConversationId}
-              onSelect={selectConversation}
-              onNewChat={() => {
-                void onNewChat();
-                setDrawerOpen(false);
-              }}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={(id) => {
-                onSelectProject(id);
-              }}
-              onRename={onRenameConversation}
-              onDelete={onDeleteConversation}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      }
+    >
+      <>
         {loadingList && !selectedConversation ? (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
             불러오는 중…
@@ -760,7 +746,7 @@ export default function LunaPage() {
             }}
           />
         )}
-      </div>
-    </div>
+      </>
+    </LunaShell>
   );
 }

@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     name: ((p.name as string) || "").trim() || "—"
   }));
 
-  let messagesByConv = new Map<
+  const messagesByConv = new Map<
     string,
     Array<{ role: string; content: string; metadata: unknown; created_at: string }>
   >();
@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
   };
 
   const aggs: ConvAgg[] = [];
-  let filterCounts = { good: 0, bad: 0, correction: 0, unapplied: 0, search_zero: 0 };
+  const filterCounts = { good: 0, bad: 0, correction: 0, unapplied: 0, search_zero: 0 };
 
   for (const c of conversations) {
     const id = c.id as string;

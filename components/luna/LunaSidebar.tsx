@@ -3,6 +3,7 @@
 import {
   KeyboardEvent,
   MouseEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,12 +11,8 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  ChevronDown,
+  BookOpen,
   Folder,
-  FolderTree,
-  GraduationCap,
-  Lightbulb,
-  MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
@@ -41,20 +38,24 @@ export type LunaProject = {
   updated_at: string;
 };
 
+/**
+ * 대화 목록·선택은 /luna 페이지가 넘겨준다.
+ * /glossary 처럼 대화 상태가 없는 화면에서는 생략하면 스스로 불러오고,
+ * 항목을 누르면 /luna 로 옮겨간다.
+ */
 type LunaSidebarProps = {
-  conversations: LunaConversation[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onNewChat: () => void;
-  selectedProjectId: string | null;
-  onSelectProject: (id: string | null) => void;
+  conversations?: LunaConversation[];
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+  onNewChat?: () => void;
+  selectedProjectId?: string | null;
+  onSelectProject?: (id: string | null) => void;
   onRename?: (id: string, title: string) => void | Promise<void>;
   onDelete?: (id: string) => void | Promise<void>;
   className?: string;
 };
 
-const navItemClass =
-  "flex w-full items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] text-slate-800 transition hover:bg-slate-50";
+const RECENT_LIMIT = 8;
 
 async function getAccessToken(): Promise<string | null> {
   const {
@@ -64,11 +65,11 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 export function LunaSidebar({
-  conversations,
-  selectedId,
+  conversations: conversationsProp,
+  selectedId = null,
   onSelect,
   onNewChat,
-  selectedProjectId,
+  selectedProjectId = null,
   onSelectProject,
   onRename,
   onDelete,
@@ -76,26 +77,26 @@ export function LunaSidebar({
 }: LunaSidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const chatActive =
-    pathname === "/luna" || (pathname?.startsWith("/luna/") ?? false);
   const glossaryActive =
     pathname === "/glossary" || (pathname?.startsWith("/glossary/") ?? false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const managed = conversationsProp !== undefined;
+
+  const [ownConversations, setOwnConversations] = useState<LunaConversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [projectsOpen, setProjectsOpen] = useState(true);
   const [projects, setProjects] = useState<LunaProject[]>([]);
   const [showAllRecent, setShowAllRecent] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [skillsCount, setSkillsCount] = useState(0);
-  const [learningsCount, setLearningsCount] = useState(0);
+  const [termCandidates, setTermCandidates] = useState(0);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const skipRenameCommitRef = useRef(false);
+
+  const conversations = conversationsProp ?? ownConversations;
 
   useEffect(() => {
     if (!menuId) return;
@@ -119,40 +120,65 @@ export function LunaSidebar({
     void (async () => {
       const token = await getAccessToken();
       if (!token) return;
+      const headers = { Authorization: `Bearer ${token}` };
 
-      const [projectsRes, promptsRes] = await Promise.all([
-        fetch("/api/luna/projects", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/luna/prompts?active=true&level=L2", {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+      const [projectsRes, glossaryRes] = await Promise.all([
+        fetch("/api/luna/projects", { headers }),
+        fetch("/api/glossary", { headers })
       ]);
 
       if (projectsRes.ok) {
         const json = (await projectsRes.json()) as { projects?: LunaProject[] };
         setProjects(json.projects ?? []);
       }
-      if (promptsRes.ok) {
-        const json = (await promptsRes.json()) as { prompts?: unknown[] };
-        setSkillsCount(json.prompts?.length ?? 0);
+      if (glossaryRes.ok) {
+        const json = (await glossaryRes.json()) as { pending_candidates?: number };
+        setTermCandidates(json.pending_candidates ?? 0);
       }
 
-      const { count } = await supabase
-        .from("luna_learnings")
-        .select("id", { count: "exact", head: true })
-        .neq("category", "identity");
-      setLearningsCount(count ?? 0);
+      if (!managed) {
+        const res = await fetch("/api/luna/conversations", { headers });
+        if (res.ok) {
+          const json = (await res.json()) as { conversations?: LunaConversation[] };
+          setOwnConversations(json.conversations ?? []);
+        }
+      }
     })();
-  }, []);
+  }, [managed]);
 
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter((c) => (c.title || "").toLowerCase().includes(q));
-  }, [conversations, searchQuery]);
+    const base = selectedProjectId
+      ? conversations.filter((c) => c.project_id === selectedProjectId)
+      : conversations;
+    if (!q) return base;
+    return base.filter((c) => (c.title || "").toLowerCase().includes(q));
+  }, [conversations, searchQuery, selectedProjectId]);
 
   const recentItems = showAllRecent
     ? filteredConversations
-    : filteredConversations.slice(0, 10);
+    : filteredConversations.slice(0, RECENT_LIMIT);
+
+  const selectConversation = useCallback(
+    (id: string) => {
+      if (onSelect) onSelect(id);
+      else router.push(`/luna?c=${id}`);
+    },
+    [onSelect, router]
+  );
+
+  const startNewChat = useCallback(() => {
+    if (onNewChat) onNewChat();
+    else router.push("/luna");
+  }, [onNewChat, router]);
+
+  const selectProject = useCallback(
+    (id: string | null) => {
+      if (onSelectProject) onSelectProject(id);
+      else router.push(id ? `/luna?project=${id}` : "/luna");
+    },
+    [onSelectProject, router]
+  );
 
   async function createProject() {
     const name = newProjectName.trim();
@@ -177,8 +203,7 @@ export function LunaSidebar({
       setProjects((prev) => [json.project, ...prev]);
       setNewProjectName("");
       setCreateOpen(false);
-      setProjectsOpen(true);
-      onSelectProject(json.project.id);
+      selectProject(json.project.id);
     } finally {
       setCreating(false);
     }
@@ -236,172 +261,78 @@ export function LunaSidebar({
 
   return (
     <aside
-      className={`flex h-full w-full flex-col gap-0.5 rounded-xl border-[0.5px] border-slate-200 bg-white px-2 py-2.5 md:w-[250px] md:shrink-0 ${className}`}
+      className={`flex h-full w-full flex-col rounded-xl border-[0.5px] border-slate-200 bg-white px-2.5 py-3 md:w-[250px] md:shrink-0 ${className}`}
     >
-      <div className="flex items-center gap-2.5 px-2 pb-2.5 pt-1">
-        <img
-          src="/luna/luna-face.png"
-          alt="LUNA"
-          width={28}
-          height={28}
-          draggable={false}
-          className="block shrink-0"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            objectFit: "cover"
-          }}
-        />
-        <span className="text-sm font-medium text-slate-900">LUNA</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => router.push("/luna")}
-        className={`${navItemClass} ${
-          chatActive ? "bg-[#EEEDFE] font-medium text-[#3C3489]" : ""
-        }`}
-      >
-        <MessageSquare className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
-        루나 채팅
-      </button>
-
-      <button
-        type="button"
-        onClick={() => router.push("/glossary")}
-        className={`${navItemClass} ${
-          glossaryActive ? "bg-[#EEEDFE] font-medium text-[#3C3489]" : ""
-        }`}
-      >
-        <span className="flex h-4 w-[17px] shrink-0 items-center justify-center text-[15px] leading-none" aria-hidden>
-          📖
-        </span>
-        용어사전
-      </button>
-
-      <div className="mx-1 my-2 h-px bg-slate-200" />
-
-      {searchOpen ? (
-        <div className="px-1 pb-1">
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="대화 검색"
-              autoFocus
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 outline-none placeholder:text-slate-400"
-            />
-            <button
-              type="button"
-              className="text-[11px] text-slate-400 hover:text-slate-600"
-              onClick={() => {
-                setSearchOpen(false);
-                setSearchQuery("");
-              }}
-            >
-              닫기
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={onNewChat}
-        className={`${navItemClass} font-medium text-[#534AB7] hover:bg-[#EEEDFE]/50`}
-      >
-        <SquarePen className="h-4 w-[17px] shrink-0 text-[#534AB7]" strokeWidth={1.75} />
-        새 대화
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setSearchOpen((v) => !v)}
-        className={navItemClass}
-      >
-        <Search className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
-        대화 검색
-      </button>
-
-      <div className="mx-1 my-2 h-px bg-slate-200" />
-
-      <button
-        type="button"
-        onClick={() => setProjectsOpen((v) => !v)}
-        className={navItemClass}
-      >
-        <FolderTree className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
-        <span className="flex-1">프로젝트</span>
-        <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition ${
-            projectsOpen ? "rotate-180" : ""
-          }`}
-          aria-hidden
-        />
-      </button>
-
-      {projectsOpen ? (
-        <div className="flex flex-col gap-0.5">
-          {projects.map((p) => {
-            const active = selectedProjectId === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelectProject(active ? null : p.id)}
-                className={`flex w-full items-center gap-2 rounded-lg py-1.5 pl-[26px] pr-[9px] text-left text-[12.5px] transition ${
-                  active
-                    ? "bg-[#EEEDFE] font-medium text-[#3C3489]"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <Folder className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-                <span className="min-w-0 truncate">{p.name}</span>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="flex w-full items-center gap-2 rounded-lg py-1.5 pl-[26px] pr-[9px] text-left text-[12.5px] text-slate-600 transition hover:bg-slate-50"
+      <div className="flex items-center gap-2 px-1.5 pb-3 pt-0.5">
+        <button
+          type="button"
+          onClick={() => router.push("/luna")}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <span
+            className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-[13px] font-extrabold"
+            style={{ background: "#534AB7", color: "#EEEDFE" }}
           >
-            <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-            프로젝트 만들기
-          </button>
-        </div>
-      ) : null}
-
-      <div className="mx-1 my-2 h-px bg-slate-200" />
-
-      <button
-        type="button"
-        onClick={() => router.push("/luna/learn")}
-        className={navItemClass}
-      >
-        <GraduationCap className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
-        <span className="flex-1">학습</span>
-        <span className="text-[11px] text-slate-400">{learningsCount}</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => router.push("/settings")}
-        className={navItemClass}
-      >
-        <Lightbulb className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
-        <span className="flex-1">스킬</span>
-        <span className="text-[11px] text-slate-400">{skillsCount}</span>
-      </button>
-
-      <div className="px-[9px] pb-1 pt-3 text-[11px] font-medium text-slate-400">
-        최근 항목
+            L
+          </span>
+          <b className="truncate text-[14.5px] font-bold text-slate-900">루나</b>
+        </button>
+        <button
+          type="button"
+          onClick={startNewChat}
+          title="새 대화"
+          aria-label="새 대화"
+          className="shrink-0 rounded-md p-1 text-[#534AB7] transition hover:bg-[#EEEDFE]"
+        >
+          <SquarePen className="h-[17px] w-[17px]" strokeWidth={1.75} />
+        </button>
       </div>
+
+      <div className="mb-3 flex items-center gap-2 rounded-[9px] bg-[#f1f2f5] px-2.5 py-2">
+        <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="대화 검색"
+          className="min-w-0 flex-1 bg-transparent text-[12.5px] text-slate-800 outline-none placeholder:text-slate-400"
+        />
+      </div>
+
+      <div className="px-1.5 pb-1 text-[11px] text-slate-400">프로젝트</div>
+      <div className="flex flex-col gap-0.5">
+        {projects.map((p) => {
+          const active = selectedProjectId === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => selectProject(active ? null : p.id)}
+              className={`flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] transition ${
+                active
+                  ? "bg-[#EEEDFE] font-medium text-[#3C3489]"
+                  : "text-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <Folder className="h-4 w-4 shrink-0 opacity-75" strokeWidth={1.75} />
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] text-slate-500 transition hover:bg-slate-50"
+        >
+          <Plus className="h-4 w-4 shrink-0 opacity-75" strokeWidth={1.75} />
+          <span className="min-w-0 flex-1 truncate">프로젝트 만들기</span>
+        </button>
+      </div>
+
+      <div className="px-1.5 pb-1 pt-3 text-[11px] text-slate-400">최근 대화</div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {recentItems.length === 0 ? (
-          <p className="px-[9px] py-4 text-center text-[12px] text-slate-400">대화가 없습니다</p>
+          <p className="px-2 py-3 text-[12px] text-slate-400">대화가 없습니다</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {recentItems.map((c) => {
@@ -411,7 +342,7 @@ export function LunaSidebar({
 
               if (editing) {
                 return (
-                  <li key={c.id} className="px-1">
+                  <li key={c.id} className="px-0.5">
                     <input
                       ref={editInputRef}
                       value={editTitle}
@@ -428,52 +359,54 @@ export function LunaSidebar({
                 <li key={c.id} className="group relative">
                   <button
                     type="button"
-                    onClick={() => onSelect(c.id)}
+                    onClick={() => selectConversation(c.id)}
                     title={c.title}
-                    className={`flex w-full items-center gap-2 rounded-lg px-[9px] py-1.5 pr-8 text-left text-[12.5px] transition ${
+                    className={`block w-full truncate rounded-lg px-2 py-1.5 pr-8 text-left text-[12.5px] transition ${
                       selected
-                        ? "bg-[#EEEDFE] font-medium text-[#3C3489]"
-                        : "text-slate-600 hover:bg-slate-50"
+                        ? "bg-[#EEEDFE] text-[#3C3489]"
+                        : "text-slate-500 hover:bg-slate-50"
                     }`}
                   >
-                    <MessageSquare
-                      className="h-3.5 w-3.5 shrink-0 opacity-70"
-                      strokeWidth={1.75}
-                    />
-                    <span className="min-w-0 truncate">{c.title || "새 대화"}</span>
+                    {c.title || "새 대화"}
                   </button>
-                  <button
-                    type="button"
-                    aria-label="대화 메뉴"
-                    onClick={(e) => openMenu(e, c.id)}
-                    className={`absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-700 ${
-                      menuOpen
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
-                    }`}
-                  >
-                    <MoreHorizontal size={14} strokeWidth={1.75} />
-                  </button>
-                  {menuOpen ? (
-                    <div
-                      ref={menuRef}
-                      className="absolute right-1 top-full z-20 mt-0.5 min-w-[110px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-md"
-                    >
+                  {onRename || onDelete ? (
+                    <>
                       <button
                         type="button"
-                        onClick={() => startRename(c)}
-                        className="block w-full px-3 py-1.5 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                        aria-label="대화 메뉴"
+                        onClick={(e) => openMenu(e, c.id)}
+                        className={`absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200/80 hover:text-slate-700 ${
+                          menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        }`}
                       >
-                        이름 변경
+                        <MoreHorizontal size={14} strokeWidth={1.75} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => confirmDelete(c)}
-                        className="block w-full px-3 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50"
-                      >
-                        삭제
-                      </button>
-                    </div>
+                      {menuOpen ? (
+                        <div
+                          ref={menuRef}
+                          className="absolute right-1 top-full z-20 mt-0.5 min-w-[110px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-md"
+                        >
+                          {onRename ? (
+                            <button
+                              type="button"
+                              onClick={() => startRename(c)}
+                              className="block w-full px-3 py-1.5 text-left text-[12px] text-slate-700 hover:bg-slate-50"
+                            >
+                              이름 변경
+                            </button>
+                          ) : null}
+                          {onDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => confirmDelete(c)}
+                              className="block w-full px-3 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50"
+                            >
+                              삭제
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
                 </li>
               );
@@ -481,16 +414,38 @@ export function LunaSidebar({
           </ul>
         )}
 
-        {!showAllRecent && filteredConversations.length > 10 ? (
+        {!showAllRecent && filteredConversations.length > RECENT_LIMIT ? (
           <button
             type="button"
             onClick={() => setShowAllRecent(true)}
-            className="mt-1 flex w-full items-center gap-2 rounded-lg px-[9px] py-1.5 text-left text-[12.5px] text-slate-400 transition hover:bg-slate-50"
+            className="mt-0.5 block w-full rounded-lg px-2 py-1.5 text-left text-[12.5px] text-slate-400 transition hover:bg-slate-50"
           >
-            <MoreHorizontal className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-            전체 보기
+            더 보기
           </button>
         ) : null}
+      </div>
+
+      <div className="mt-4 border-t border-[#eef0f3] pt-2">
+        <button
+          type="button"
+          onClick={() => router.push("/glossary")}
+          className={`flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] transition ${
+            glossaryActive
+              ? "bg-[#EEEDFE] font-bold text-[#3C3489]"
+              : "text-slate-800 hover:bg-slate-50"
+          }`}
+        >
+          <BookOpen className="h-4 w-4 shrink-0 opacity-75" strokeWidth={1.75} />
+          <span className="min-w-0 flex-1 truncate">용어사전</span>
+          {termCandidates > 0 ? (
+            <span
+              className="shrink-0 rounded-[20px] px-[7px] py-px text-[10px] font-extrabold"
+              style={{ background: "#FAECE7", color: "#993C1D" }}
+            >
+              {termCandidates}
+            </span>
+          ) : null}
+        </button>
       </div>
 
       {createOpen ? (

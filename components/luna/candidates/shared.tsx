@@ -198,10 +198,10 @@ export function GlossaryCardBody({
       <div className="mt-2.5 text-[17px] font-extrabold">{draft.term_ko}</div>
       <div className="my-2.5 grid grid-cols-1 gap-2 min-[901px]:grid-cols-3">
         {[
-          ["한국어", draft.term_ko],
-          ["English", draft.term_en],
-          ["中文", draft.term_zh]
-        ].map(([label, val]) => (
+          ["한국어", draft.term_ko, null],
+          ["English", draft.term_en, null],
+          ["中文", draft.term_zh, draft.term_zh_pron]
+        ].map(([label, val, pron]) => (
           <div
             key={label}
             className="rounded-[9px] border px-2.5 py-2"
@@ -218,6 +218,14 @@ export function GlossaryCardBody({
               style={{ color: val ? K.ink : K.faint }}
             >
               {val || "—"}
+              {pron ? (
+                <small
+                  className="ml-1.5 text-[11px] font-normal"
+                  style={{ color: K.sub }}
+                >
+                  {pron}
+                </small>
+              ) : null}
             </div>
           </div>
         ))}
