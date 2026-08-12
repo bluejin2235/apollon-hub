@@ -1,21 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  getTierModel,
-  readUsage,
-  resolveAnthropicModel,
-  bumpUsageDaily
-} from "@/lib/luna/engine";
-import { searchNotionPages } from "@/lib/luna/notion";
-import { getPrompt } from "@/lib/luna/prompts";
-import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
-import {
-  listFolder,
-  searchAll,
-  searchIn,
-  searchNasLegacy,
-  type WorkserverItem
-} from "@/lib/luna/workserver";
+  createCandidate,
+  makeTurn,
+  parseJsonArray,
+  parseJsonObject
+} from "@/lib/luna/candidates";
+import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { lunaNotify } from "@/lib/luna/notify";
+import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
+import { runLunaTurn } from "@/lib/luna/run-chat";
+
+// ── Legacy types (채팅 리포트 매칭·trace 탭 호환) ─────────────────
 
 export type SelfstudySource = "frequency" | "failure" | "manual" | "project";
 export type SelfstudyQueueStatus = "pending" | "running" | "done" | "skipped";
@@ -25,7 +21,7 @@ export type SelfstudyQueueRow = {
   topic: string;
   source: SelfstudySource;
   score: number;
-  evidence: Record<string, unknown> | null;
+  evidence: Record<string, unknown>;
   status: SelfstudyQueueStatus;
   project_id: string | null;
   created_at: string;
@@ -47,61 +43,60 @@ export type LunaReportRow = {
   created_at: string;
 };
 
-export type PickedTopic = {
-  topic: string;
-  source: SelfstudySource;
-  score: number;
-  evidence?: Record<string, unknown>;
-  project_id?: string | null;
+const REPORT_SIM_THRESHOLD = 0.35;
+const SETTINGS_KEY = "selfstudy_last_run";
+const MAX_PER_DAY = 3;
+
+const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"만 찾는다:
+- 검색했지만 0건이었던 주제
+- 되물었지만 해소되지 않은 것
+- 사람에게 정정받은 것 중 아직 이해가 얕은 것
+
+각각에 대해 스스로 질문을 만든다 (오늘 실제로 막힌 것에서만. 임의 주제 선정 금지).
+하루 최대 3문답. 막힌 것이 없었으면 빈 배열.
+
+JSON 배열만:
+[{ "question": "스스로 던질 질문", "topic": "막힌 주제 짧은 이름", "conversation_id": "...", "user_id": "...", "user_name": "..." }]`;
+
+const CORRECTION_RE = /아니라|그게 아니고|그게 아니라|틀렸|잘못된|아니야|아니에요/;
+
+export type SelfstudyLastRun = {
+  finished_at: string;
+  submitted: number;
+  skipped: boolean;
+  message: string;
+  ids: string[];
 };
 
-const PROJECT_ROOTS = ["02 Project", "01 사업개발"] as const;
-const REPORT_SIM_THRESHOLD = 0.3;
-const WS_TOOL_LOOP_MS = 25_000;
-const MAX_WS_TOOL_ROUNDS = 5;
+export type SelfstudyRunResult = SelfstudyLastRun & {
+  ok: true;
+};
 
-const WORKSERVER_TOOLS: Anthropic.Tool[] = [
-  {
-    name: "list_folder",
-    description: "Work서버 특정 경로 바로 아래 항목 보기. 경로를 비우면 최상위",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        drive: { type: "string" }
-      }
-    }
-  },
-  {
-    name: "search_in",
-    description: "Work서버 특정 경로 아래에서만 검색",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        keywords: { type: "string" }
-      },
-      required: ["path", "keywords"]
-    }
-  },
-  {
-    name: "search_all",
-    description: "Work서버 전체 검색. 어디를 볼지 모를 때만",
-    input_schema: {
-      type: "object",
-      properties: {
-        keywords: { type: "string" }
-      },
-      required: ["keywords"]
-    }
-  }
-];
+type MsgRow = {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
 
-const PICK_FALLBACK =
-  "아래 근거를 보고 자습할 주제를 JSON 배열로만 고르세요. 각 항목: {\"topic\",\"source\":\"frequency|failure|project|manual\",\"score\":0~1,\"evidence\":{}}. 이미 있는 리포트 topic 과 중복되지 않게 하세요. 최대 8개.";
+type StuckMoment = {
+  kind: "search_zero" | "clarify_unresolved" | "correction";
+  conversation_id: string;
+  user_id: string;
+  user_name: string;
+  snippet: string;
+  at: string;
+};
 
-const REPORT_FALLBACK =
-  "주제와 수집 자료를 바탕으로 아폴론 내부용 정리 리포트를 작성하세요. JSON만: {\"title\":\"...\",\"content\":\"마크다운 본문\"}";
+type GeneratedQuestion = {
+  question: string;
+  topic: string;
+  conversation_id: string;
+  user_id: string;
+  user_name: string;
+};
 
 function getAnthropicClient(): Anthropic | null {
   const apiKey = process.env.hubtrendchat_claude;
@@ -109,83 +104,496 @@ function getAnthropicClient(): Anthropic | null {
   return new Anthropic({ apiKey });
 }
 
-function parseJsonValue(text: string): unknown {
-  const trimmed = text.trim();
-  const tryParse = (raw: string) => {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch {
-      return null;
-    }
+/** KST 하루 구간 → UTC ISO */
+export function kstDayBounds(now = new Date()): {
+  startIso: string;
+  endIso: string;
+} {
+  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
+  const kst = new Date(kstMs);
+  const y = kst.getUTCFullYear();
+  const m = kst.getUTCMonth();
+  const d = kst.getUTCDate();
+  const startUtc = Date.UTC(y, m, d) - 9 * 60 * 60 * 1000;
+  return {
+    startIso: new Date(startUtc).toISOString(),
+    endIso: new Date(startUtc + 24 * 60 * 60 * 1000).toISOString()
   };
-  const direct = tryParse(trimmed);
-  if (direct !== null) return direct;
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence?.[1]) {
-    const fromFence = tryParse(fence[1].trim());
-    if (fromFence !== null) return fromFence;
-  }
-  const arrStart = trimmed.indexOf("[");
-  const arrEnd = trimmed.lastIndexOf("]");
-  if (arrStart >= 0 && arrEnd > arrStart) {
-    const fromArr = tryParse(trimmed.slice(arrStart, arrEnd + 1));
-    if (fromArr !== null) return fromArr;
-  }
-  const objStart = trimmed.indexOf("{");
-  const objEnd = trimmed.lastIndexOf("}");
-  if (objStart >= 0 && objEnd > objStart) {
-    return tryParse(trimmed.slice(objStart, objEnd + 1));
-  }
-  return null;
 }
 
-function asSource(raw: unknown): SelfstudySource | null {
-  if (
-    raw === "frequency" ||
-    raw === "failure" ||
-    raw === "manual" ||
-    raw === "project"
-  ) {
-    return raw;
-  }
-  return null;
+function cardCount(meta: Record<string, unknown> | null): number {
+  if (!meta) return 0;
+  const cards = meta.cards;
+  const notion = meta.notion_sources;
+  const nCards = Array.isArray(cards) ? cards.length : 0;
+  const nNotion = Array.isArray(notion) ? notion.length : 0;
+  return nCards + nNotion;
 }
 
-function normalizePicked(raw: unknown): PickedTopic[] {
-  let list: unknown[] = [];
-  if (Array.isArray(raw)) list = raw;
-  else if (raw && typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    if (Array.isArray(obj.topics)) list = obj.topics;
-    else if (Array.isArray(obj.items)) list = obj.items;
+function searchAttempted(meta: Record<string, unknown> | null): boolean {
+  if (!meta) return false;
+  const rounds = meta.search_rounds;
+  if (typeof rounds === "number" && rounds > 0) return true;
+  if (Array.isArray(meta.cards)) return true;
+  if (Array.isArray(meta.notion_sources)) return true;
+  if (Array.isArray(meta.ws_tool_calls) && meta.ws_tool_calls.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+async function countTodaySelfstudy(
+  admin: SupabaseClient
+): Promise<number> {
+  const { startIso, endIso } = kstDayBounds();
+  const { count, error } = await admin
+    .from("luna_learnings")
+    .select("id", { count: "exact", head: true })
+    .eq("source", "selfstudy")
+    .gte("created_at", startIso)
+    .lt("created_at", endIso);
+  if (error) {
+    console.error("[luna/selfstudy] countToday", error);
+    return MAX_PER_DAY; // 안전하게 skip
+  }
+  return count ?? 0;
+}
+
+async function saveLastRun(
+  admin: SupabaseClient,
+  run: SelfstudyLastRun
+): Promise<void> {
+  const { error } = await admin.from("luna_settings").upsert(
+    {
+      key: SETTINGS_KEY,
+      value: run,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "key" }
+  );
+  if (error) console.error("[luna/selfstudy] saveLastRun", error);
+}
+
+export async function getSelfstudyStatus(
+  admin: SupabaseClient
+): Promise<{ last_run: SelfstudyLastRun | null; today_count: number }> {
+  const today_count = await countTodaySelfstudy(admin);
+  const { data, error } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", SETTINGS_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error("[luna/selfstudy] getStatus", error);
+    return { last_run: null, today_count };
+  }
+  const v = data?.value;
+  if (!v || typeof v !== "object" || Array.isArray(v)) {
+    return { last_run: null, today_count };
+  }
+  const row = v as Record<string, unknown>;
+  return {
+    last_run: {
+      finished_at:
+        typeof row.finished_at === "string"
+          ? row.finished_at
+          : new Date().toISOString(),
+      submitted: typeof row.submitted === "number" ? row.submitted : 0,
+      skipped: row.skipped === true,
+      message: typeof row.message === "string" ? row.message : "",
+      ids: Array.isArray(row.ids)
+        ? row.ids.filter((x): x is string => typeof x === "string")
+        : []
+    },
+    today_count
+  };
+}
+
+async function extractStuckMoments(
+  admin: SupabaseClient
+): Promise<StuckMoment[]> {
+  const { startIso, endIso } = kstDayBounds();
+
+  const { data: convs, error: convErr } = await admin
+    .from("luna_conversations")
+    .select("id, user_id")
+    .gte("updated_at", startIso)
+    .lt("updated_at", endIso)
+    .limit(200);
+
+  if (convErr) {
+    console.error("[luna/selfstudy] conversations", convErr);
+    return [];
+  }
+  if (!convs?.length) return [];
+
+  const convIds = convs.map((c) => c.id as string);
+  const userIds = Array.from(
+    new Set(convs.map((c) => c.user_id as string).filter(Boolean))
+  );
+
+  const [{ data: profiles }, { data: messages, error: msgErr }] =
+    await Promise.all([
+      admin.from("profiles").select("id, name").in("id", userIds),
+      admin
+        .from("luna_messages")
+        .select("id, conversation_id, role, content, metadata, created_at")
+        .in("conversation_id", convIds)
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: true })
+        .limit(2000)
+    ]);
+
+  if (msgErr) {
+    console.error("[luna/selfstudy] messages", msgErr);
+    return [];
   }
 
-  const out: PickedTopic[] = [];
-  for (const item of list) {
+  const nameByUser = new Map<string, string>();
+  for (const p of profiles ?? []) {
+    if (typeof p.name === "string" && p.name.trim()) {
+      nameByUser.set(p.id as string, p.name.trim());
+    }
+  }
+  const userByConv = new Map<string, string>();
+  for (const c of convs) {
+    userByConv.set(c.id as string, c.user_id as string);
+  }
+
+  const byConv = new Map<string, MsgRow[]>();
+  for (const raw of messages ?? []) {
+    const m: MsgRow = {
+      id: raw.id as string,
+      conversation_id: raw.conversation_id as string,
+      role: raw.role as string,
+      content: typeof raw.content === "string" ? raw.content : "",
+      metadata:
+        raw.metadata && typeof raw.metadata === "object"
+          ? (raw.metadata as Record<string, unknown>)
+          : null,
+      created_at: raw.created_at as string
+    };
+    const list = byConv.get(m.conversation_id) ?? [];
+    list.push(m);
+    byConv.set(m.conversation_id, list);
+  }
+
+  const out: StuckMoment[] = [];
+
+  for (const [conversation_id, list] of byConv) {
+    const user_id = userByConv.get(conversation_id) ?? "";
+    const user_name = nameByUser.get(user_id) || "동료";
+
+    for (let i = 0; i < list.length; i += 1) {
+      const m = list[i]!;
+      if (m.role === "assistant") {
+        const meta = m.metadata;
+        const clarify =
+          meta && typeof meta === "object" && meta.clarify
+            ? meta.clarify
+            : null;
+
+        if (searchAttempted(meta) && cardCount(meta) === 0) {
+          const prevUser = [...list.slice(0, i)]
+            .reverse()
+            .find((x) => x.role === "user");
+          out.push({
+            kind: "search_zero",
+            conversation_id,
+            user_id,
+            user_name,
+            snippet: `검색 0건. 질문: ${(prevUser?.content || "").slice(0, 200)} / 답: ${m.content.slice(0, 200)}`,
+            at: m.created_at
+          });
+        }
+
+        if (clarify) {
+          const nextUser = list
+            .slice(i + 1)
+            .find((x) => x.role === "user");
+          const afterUserIdx = nextUser
+            ? list.findIndex((x) => x.id === nextUser.id)
+            : -1;
+          const nextAssistant =
+            afterUserIdx >= 0
+              ? list.slice(afterUserIdx + 1).find((x) => x.role === "assistant")
+              : null;
+          const unresolved =
+            !nextUser ||
+            !nextAssistant ||
+            Boolean(
+              nextAssistant.metadata &&
+                typeof nextAssistant.metadata === "object" &&
+                nextAssistant.metadata.clarify
+            ) ||
+            (searchAttempted(nextAssistant.metadata) &&
+              cardCount(nextAssistant.metadata) === 0);
+          if (unresolved) {
+            const q =
+              typeof (clarify as { question?: unknown }).question === "string"
+                ? (clarify as { question: string }).question
+                : m.content.slice(0, 200);
+            out.push({
+              kind: "clarify_unresolved",
+              conversation_id,
+              user_id,
+              user_name,
+              snippet: `되묻기 미해소: ${q}`,
+              at: m.created_at
+            });
+          }
+        }
+      }
+
+      if (m.role === "user" && CORRECTION_RE.test(m.content)) {
+        const prevAsst = [...list.slice(0, i)]
+          .reverse()
+          .find((x) => x.role === "assistant");
+        out.push({
+          kind: "correction",
+          conversation_id,
+          user_id,
+          user_name,
+          snippet: `정정: ${m.content.slice(0, 200)}${
+            prevAsst ? ` (이전 답: ${prevAsst.content.slice(0, 120)})` : ""
+          }`,
+          at: m.created_at
+        });
+      }
+    }
+  }
+
+  // 중복 스니펫 축소
+  const seen = new Set<string>();
+  const unique: StuckMoment[] = [];
+  for (const s of out) {
+    const key = `${s.kind}:${s.conversation_id}:${s.snippet.slice(0, 80)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(s);
+    if (unique.length >= 20) break;
+  }
+  return unique;
+}
+
+async function generateQuestions(
+  admin: SupabaseClient,
+  stuck: StuckMoment[]
+): Promise<GeneratedQuestion[]> {
+  const client = getAnthropicClient();
+  if (!client || stuck.length === 0) return [];
+
+  const system =
+    (await getPrompt(admin, LUNA_PROMPT_KEYS.selfstudy)).trim() ||
+    SELFSTUDY_FALLBACK;
+  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+
+  const evidenceBlock = stuck
+    .map(
+      (s, i) =>
+        `${i + 1}. [${s.kind}] ${s.user_name} (user=${s.user_id}, conv=${s.conversation_id})\n${s.snippet}`
+    )
+    .join("\n\n");
+
+  let raw = "";
+  try {
+    const res = await client.messages.create({
+      model: tierB.model_id,
+      max_tokens: 1024,
+      system,
+      messages: [
+        {
+          role: "user",
+          content: `아래는 오늘 대화에서 추출한 "막힌 순간"입니다. 이중에서만 스스로 공부할 질문 0~${MAX_PER_DAY}개를 만드세요. 임의 주제 금지. JSON 배열만.\n\n${evidenceBlock}`
+        }
+      ]
+    });
+    raw = res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  } catch (err) {
+    console.error("[luna/selfstudy] generateQuestions", err);
+    return [];
+  }
+
+  const arr = parseJsonArray(raw);
+  if (!arr) {
+    const obj = parseJsonObject(raw);
+    const nested = obj && Array.isArray(obj.questions) ? obj.questions : null;
+    if (!nested) {
+      console.warn("[luna/selfstudy] question JSON parse failed → 0");
+      return [];
+    }
+    return normalizeQuestions(nested, stuck);
+  }
+  return normalizeQuestions(arr, stuck);
+}
+
+function normalizeQuestions(
+  raw: unknown[],
+  stuck: StuckMoment[]
+): GeneratedQuestion[] {
+  const fallback = stuck[0];
+  const out: GeneratedQuestion[] = [];
+  for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
-    const topic = typeof row.topic === "string" ? row.topic.trim() : "";
-    const source = asSource(row.source) ?? "manual";
-    if (!topic) continue;
-    const scoreRaw = row.score;
-    const score =
-      typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
-        ? Math.max(0, Math.min(1, scoreRaw))
-        : 0.5;
-    const evidence =
-      row.evidence && typeof row.evidence === "object" && !Array.isArray(row.evidence)
-        ? (row.evidence as Record<string, unknown>)
-        : typeof row.reason === "string"
-          ? { reason: row.reason }
-          : {};
-    const project_id =
-      typeof row.project_id === "string" && row.project_id.trim()
-        ? row.project_id.trim()
-        : null;
-    out.push({ topic, source, score, evidence, project_id });
+    const question =
+      typeof row.question === "string"
+        ? row.question.trim()
+        : typeof row.ask === "string"
+          ? row.ask.trim()
+          : "";
+    if (!question) continue;
+    const topic =
+      typeof row.topic === "string" && row.topic.trim()
+        ? row.topic.trim()
+        : question.slice(0, 40);
+    const conversation_id =
+      typeof row.conversation_id === "string" && row.conversation_id.trim()
+        ? row.conversation_id.trim()
+        : fallback?.conversation_id || "";
+    const user_id =
+      typeof row.user_id === "string" && row.user_id.trim()
+        ? row.user_id.trim()
+        : fallback?.user_id || "";
+    const user_name =
+      typeof row.user_name === "string" && row.user_name.trim()
+        ? row.user_name.trim()
+        : fallback?.user_name || "동료";
+    if (!conversation_id || !user_id) continue;
+    out.push({ question, topic, conversation_id, user_id, user_name });
+    if (out.length >= MAX_PER_DAY) break;
   }
-  return out.slice(0, 8);
+  return out;
 }
+
+async function answerAndSubmit(
+  admin: SupabaseClient,
+  q: GeneratedQuestion
+): Promise<string | null> {
+  let answer = "";
+  try {
+    const turn = await runLunaTurn(admin, q.question, {
+      notion: true,
+      web: true,
+      nas: true
+    });
+    answer = turn.answer.trim();
+  } catch (err) {
+    console.error("[luna/selfstudy] runLunaTurn", err);
+    return null;
+  }
+  if (!answer) return null;
+
+  const content = answer.length > 800 ? `${answer.slice(0, 800)}…` : answer;
+  const evidence = `출처: 오늘 ${q.user_name}와의 대화에서 막힌 주제`;
+  const firstAsk = `오늘 대화에서 ${q.topic}가 막혀서 스스로 정리해봤어요. 맞나요?`;
+
+  const created = await createCandidate(admin, {
+    content,
+    evidence,
+    category: "general",
+    source: "selfstudy",
+    author_id: q.user_id,
+    assigned_to: q.user_id,
+    source_conversation_id: q.conversation_id,
+    raw_input: q.question,
+    thread: [makeTurn("luna", firstAsk)],
+    meta: {
+      selfstudy: true,
+      topic: q.topic,
+      question: q.question
+    }
+  });
+
+  return created?.id ?? null;
+}
+
+/**
+ * 그날 막힌 것만 자습 → 후보함 제출.
+ * force=false 이고 오늘 이미 생성분이 있으면 skip.
+ */
+export async function runDailySelfstudy(
+  admin: SupabaseClient,
+  opts?: { force?: boolean; notify?: boolean }
+): Promise<SelfstudyRunResult> {
+  const force = opts?.force === true;
+  const notify = opts?.notify !== false;
+
+  const todayCount = await countTodaySelfstudy(admin);
+  if (!force && todayCount > 0) {
+    const run: SelfstudyLastRun = {
+      finished_at: new Date().toISOString(),
+      submitted: 0,
+      skipped: true,
+      message: "이미 오늘 자습 생성분이 있어 skip",
+      ids: []
+    };
+    await saveLastRun(admin, run);
+    return { ok: true, ...run };
+  }
+
+  const stuck = await extractStuckMoments(admin);
+  if (stuck.length === 0) {
+    const run: SelfstudyLastRun = {
+      finished_at: new Date().toISOString(),
+      submitted: 0,
+      skipped: true,
+      message: "오늘은 자습할 것이 없음",
+      ids: []
+    };
+    await saveLastRun(admin, run);
+    return { ok: true, ...run };
+  }
+
+  const questions = await generateQuestions(admin, stuck);
+  if (questions.length === 0) {
+    const run: SelfstudyLastRun = {
+      finished_at: new Date().toISOString(),
+      submitted: 0,
+      skipped: true,
+      message: "오늘은 자습할 것이 없음",
+      ids: []
+    };
+    await saveLastRun(admin, run);
+    return { ok: true, ...run };
+  }
+
+  const remaining = force
+    ? MAX_PER_DAY
+    : Math.max(0, MAX_PER_DAY - todayCount);
+  const ids: string[] = [];
+  for (const q of questions.slice(0, remaining)) {
+    const id = await answerAndSubmit(admin, q);
+    if (id) ids.push(id);
+  }
+
+  const run: SelfstudyLastRun = {
+    finished_at: new Date().toISOString(),
+    submitted: ids.length,
+    skipped: ids.length === 0,
+    message:
+      ids.length > 0
+        ? `자습 문답 ${ids.length}건을 후보함에 제출했어요`
+        : "오늘은 자습할 것이 없음",
+    ids
+  };
+  await saveLastRun(admin, run);
+
+  if (notify && ids.length > 0) {
+    await lunaNotify(
+      admin,
+      "study",
+      "자습 완료",
+      `자습 문답 ${ids.length}건을 후보함에 제출했어요`,
+      { level: "success", meta: { submitted: ids.length, ids } }
+    );
+  }
+
+  return { ok: true, ...run };
+}
+
+// ── Legacy helpers (chat / learn) ────────────────────────────────
 
 /** pg_trgm 과 유사한 3-gram Dice 유사도 */
 export function trigramSimilarity(a: string, b: string): number {
@@ -209,668 +617,18 @@ export function trigramSimilarity(a: string, b: string): number {
   return (2 * inter) / (ga.size + gb.size);
 }
 
-type ProjectFolder = { name: string; path: string };
-
-function isFileType(type: string | null | undefined): boolean {
-  return (type ?? "").toLowerCase() === "file";
-}
-
-function isYearFolder(name: string): boolean {
-  return /^\d{4}$/.test(name.trim());
-}
-
-/** '240910 인스파이어 시즌3 쇼콘텐츠제작' → ['인스파이어','시즌3','쇼콘텐츠제작'] */
 export function extractCoreTokens(folderName: string): string[] {
   const cleaned = folderName.replace(/^[-※\s]+/, "").trim();
   const parts = cleaned.split(/[\s_/\-·]+/).map((p) => p.trim()).filter(Boolean);
   const tokens: string[] = [];
   for (const part of parts) {
-    if (/^\d{4,}$/.test(part)) continue; // 240910, 2024
+    if (/^\d{4,}$/.test(part)) continue;
     if (/^\d+$/.test(part)) continue;
     if (part.length < 2) continue;
     if (/^(프로젝트|폴더|복사본|final|finals)$/i.test(part)) continue;
     tokens.push(part);
   }
   return tokens.slice(0, 6);
-}
-
-/** 02 Project / 01 사업개발 아래 프로젝트 폴더 (연도 한 단계 더 진입) */
-async function listProjectFolders(
-  admin: SupabaseClient
-): Promise<ProjectFolder[]> {
-  const found = new Map<string, ProjectFolder>();
-
-  for (const root of PROJECT_ROOTS) {
-    try {
-      const top = await listFolder(admin, root);
-      for (const item of top) {
-        if (isFileType(item.type)) continue;
-        const name = item.name?.trim();
-        if (!name) continue;
-
-        if (isYearFolder(name)) {
-          const children = await listFolder(admin, item.path);
-          for (const child of children) {
-            if (isFileType(child.type)) continue;
-            const childName = child.name?.trim();
-            if (!childName || isYearFolder(childName)) continue;
-            found.set(child.path, { name: childName, path: child.path });
-          }
-        } else {
-          found.set(item.path, { name, path: item.path });
-        }
-      }
-    } catch (err) {
-      console.error("[luna/selfstudy] listFolder", root, err);
-    }
-  }
-
-  return Array.from(found.values());
-}
-
-async function countMentions(
-  admin: SupabaseClient,
-  folders: ProjectFolder[]
-): Promise<Array<{ name: string; path: string; count: number; tokens: string[] }>> {
-  if (folders.length === 0) return [];
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await admin
-    .from("luna_messages")
-    .select("content")
-    .eq("role", "user")
-    .gte("created_at", since)
-    .limit(4000);
-
-  if (error) {
-    console.error("[luna/selfstudy] messages", error);
-    return [];
-  }
-
-  const folderTokens = folders.map((f) => ({
-    ...f,
-    tokens: extractCoreTokens(f.name)
-  }));
-
-  const counts = new Map<string, number>();
-  for (const f of folderTokens) counts.set(f.path, 0);
-
-  for (const row of data ?? []) {
-    const content = typeof row.content === "string" ? row.content : "";
-    if (!content) continue;
-    const lower = content.toLowerCase();
-    for (const f of folderTokens) {
-      const fullHit = lower.includes(f.name.toLowerCase());
-      const tokenHit = f.tokens.some(
-        (t) => t.length >= 2 && lower.includes(t.toLowerCase())
-      );
-      if (fullHit || tokenHit) {
-        counts.set(f.path, (counts.get(f.path) ?? 0) + 1);
-      }
-    }
-  }
-
-  return folderTokens
-    .map((f) => ({
-      name: f.name,
-      path: f.path,
-      tokens: f.tokens,
-      count: counts.get(f.path) ?? 0
-    }))
-    .filter((r) => r.count > 0)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 15);
-}
-
-/** importance>0 경로가 가장 많은 프로젝트 폴더 상위 N */
-async function topImportantProjectFolders(
-  admin: SupabaseClient,
-  limit = 5
-): Promise<Array<{ name: string; path: string; importantCount: number }>> {
-  const { data, error } = await admin
-    .from("nas_directory")
-    .select("path")
-    .gt("importance", 0)
-    .limit(8000);
-
-  if (error) {
-    console.error("[luna/selfstudy] important paths", error);
-    return [];
-  }
-
-  const counts = new Map<
-    string,
-    { name: string; path: string; importantCount: number }
-  >();
-
-  for (const row of data ?? []) {
-    const raw = typeof row.path === "string" ? row.path : "";
-    if (!raw) continue;
-    const segs = raw.replace(/\//g, "\\").split("\\").filter(Boolean);
-    if (segs.length < 2) continue;
-    const root = segs[0]!;
-    if (!(PROJECT_ROOTS as readonly string[]).includes(root)) continue;
-
-    let projectName: string;
-    let projectPath: string;
-    if (segs.length >= 3 && isYearFolder(segs[1]!)) {
-      projectName = segs[2]!;
-      projectPath = `${segs[0]}\\${segs[1]}\\${segs[2]}`;
-    } else {
-      projectName = segs[1]!;
-      projectPath = `${segs[0]}\\${segs[1]}`;
-    }
-    if (!projectName || isYearFolder(projectName)) continue;
-
-    const prev = counts.get(projectPath);
-    if (prev) prev.importantCount += 1;
-    else {
-      counts.set(projectPath, {
-        name: projectName,
-        path: projectPath,
-        importantCount: 1
-      });
-    }
-  }
-
-  return Array.from(counts.values())
-    .sort((a, b) => b.importantCount - a.importantCount)
-    .slice(0, limit);
-}
-
-async function collectFailures(admin: SupabaseClient): Promise<
-  Array<{ question: string; reason: string; created_at: string }>
-> {
-  const { data, error } = await admin
-    .from("luna_trace_weekly")
-    .select("top_failures, week_start")
-    .order("week_start", { ascending: false })
-    .limit(2);
-
-  if (error) {
-    console.error("[luna/selfstudy] trace_weekly", error);
-    return [];
-  }
-
-  const out: Array<{ question: string; reason: string; created_at: string }> =
-    [];
-  for (const week of data ?? []) {
-    const failures = week.top_failures;
-    if (!Array.isArray(failures)) continue;
-    for (const f of failures) {
-      if (!f || typeof f !== "object") continue;
-      const row = f as Record<string, unknown>;
-      const question =
-        typeof row.question === "string" ? row.question.trim() : "";
-      if (!question) continue;
-      out.push({
-        question,
-        reason: typeof row.reason === "string" ? row.reason : "",
-        created_at:
-          typeof row.created_at === "string" ? row.created_at : ""
-      });
-    }
-  }
-  return out;
-}
-
-export async function pickSelfstudyTopics(
-  admin: SupabaseClient
-): Promise<{ picked: number; topics: PickedTopic[]; reason?: string }> {
-  const client = getAnthropicClient();
-  if (!client) throw new Error("Claude API key is not configured");
-
-  const folders = await listProjectFolders(admin);
-  const frequency = await countMentions(admin, folders);
-  const failures = await collectFailures(admin);
-
-  const [{ data: projects }, { data: reports }] = await Promise.all([
-    admin.from("luna_projects").select("id, name, description, project_code"),
-    admin.from("luna_reports").select("topic").eq("status", "active")
-  ]);
-
-  const projectRows = projects ?? [];
-  const existingTopics = (reports ?? [])
-    .map((r) => (typeof r.topic === "string" ? r.topic : ""))
-    .filter(Boolean);
-
-  // 빈도 후보가 3개 미만이면 importance 많은 프로젝트 폴더로 보강
-  let importantProjects: Array<{
-    name: string;
-    path: string;
-    importantCount: number;
-  }> = [];
-  if (frequency.length < 3) {
-    importantProjects = await topImportantProjectFolders(admin, 5);
-  }
-
-  console.log("[luna/selfstudy] evidence", {
-    frequencyCount: frequency.length,
-    failureCount: failures.length,
-    projectCount: projectRows.length,
-    existingReports: existingTopics.length,
-    folderCount: folders.length,
-    importantFallback: importantProjects.length
-  });
-
-  const hasEvidence =
-    frequency.length > 0 ||
-    failures.length > 0 ||
-    projectRows.length > 0 ||
-    importantProjects.length > 0;
-
-  if (!hasEvidence) {
-    console.log("[luna/selfstudy] pick early exit: 근거 없음");
-    return { picked: 0, topics: [], reason: "근거 없음" };
-  }
-
-  const evidenceBundle = {
-    frequency_top: frequency.map((f) => ({
-      name: f.name,
-      path: f.path,
-      count: f.count,
-      tokens: f.tokens
-    })),
-    failures,
-    projects: projectRows,
-    important_projects: importantProjects,
-    existing_report_topics: existingTopics
-  };
-
-  const tierCCfg = await getTierModel(admin, "C");
-  const tierC = resolveAnthropicModel(tierCCfg);
-  const pickPrompt =
-    (await getPrompt(admin, "selfstudy.pick")).trim() || PICK_FALLBACK;
-
-  const res = await client.messages.create({
-    model: tierC.model_id,
-    max_tokens: 2048,
-    system: pickPrompt,
-    messages: [
-      {
-        role: "user",
-        content: `자습 주제 선정 근거:\n${JSON.stringify(evidenceBundle, null, 2)}\n\n규칙: frequency_top / failures / projects / important_projects 를 참고해 주제를 고르세요. important_projects 는 source=\"project\" 로 써도 됩니다. 이미 existing_report_topics 에 있는 주제는 피하세요.`
-      }
-    ]
-  });
-
-  bumpUsageDaily(admin, {
-    tier: "C",
-    model_id: tierC.model_id,
-    usage: readUsage(res.usage)
-  });
-
-  const rawText =
-    res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-  console.log("[luna/selfstudy] raw", rawText.slice(0, 500));
-
-  const parsed = parseJsonValue(rawText);
-  if (parsed === null) {
-    console.error("[luna/selfstudy] JSON parse failed");
-    return {
-      picked: 0,
-      topics: [],
-      reason: "모델 응답 파싱 실패"
-    };
-  }
-
-  let topics = normalizePicked(parsed);
-
-  // 모델이 비워도 important_projects 로 최소 후보 확보
-  if (topics.length === 0 && importantProjects.length > 0) {
-    topics = importantProjects.slice(0, 5).map((p, i) => ({
-      topic: p.name,
-      source: "project" as const,
-      score: Math.max(0.3, 0.9 - i * 0.1),
-      evidence: {
-        summary: "importance 경로 수 기반 폴백",
-        path: p.path,
-        importantCount: p.importantCount
-      },
-      project_id: null
-    }));
-    console.log("[luna/selfstudy] fallback topics from important_projects");
-  }
-
-  for (const t of topics) {
-    if (!t.evidence || Object.keys(t.evidence).length === 0) {
-      t.evidence = {
-        summary: `${t.source} 기반 선정`,
-        frequency_hint: frequency.slice(0, 5),
-        failure_hint: failures.slice(0, 3),
-        important_hint: importantProjects.slice(0, 3)
-      };
-    }
-  }
-
-  let picked = 0;
-  for (const t of topics) {
-    const { data: existing } = await admin
-      .from("luna_selfstudy_queue")
-      .select("id, status")
-      .eq("topic", t.topic)
-      .eq("source", t.source)
-      .maybeSingle();
-
-    if (existing?.id) {
-      const { error } = await admin
-        .from("luna_selfstudy_queue")
-        .update({
-          score: t.score,
-          evidence: t.evidence ?? {},
-          project_id: t.project_id ?? null
-        })
-        .eq("id", existing.id);
-      if (error) {
-        console.error("[luna/selfstudy] upsert update", error);
-        continue;
-      }
-      picked += 1;
-    } else {
-      const { error } = await admin.from("luna_selfstudy_queue").insert({
-        topic: t.topic,
-        source: t.source,
-        score: t.score,
-        evidence: t.evidence ?? {},
-        status: "pending",
-        project_id: t.project_id ?? null
-      });
-      if (error) {
-        console.error("[luna/selfstudy] upsert insert", error);
-        continue;
-      }
-      picked += 1;
-    }
-  }
-
-  console.log("[luna/selfstudy] pick", picked, topics.map((t) => t.topic));
-  return { picked, topics };
-}
-
-async function exploreWorkserverForTopic(
-  admin: SupabaseClient,
-  client: Anthropic,
-  modelId: string,
-  topic: string
-): Promise<WorkserverItem[]> {
-  const explorePrompt = [
-    (await getPrompt(admin, "connector.workserver")).trim(),
-    (await getPrompt(admin, "connector.workserver.explore")).trim()
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const loopStarted = Date.now();
-  const collected = new Map<string, WorkserverItem>();
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `자습 주제: ${topic}\n관련 Work서버 자료를 importance 높은 것 위주로 찾아주세요.`
-    }
-  ];
-
-  try {
-    for (let round = 0; round < MAX_WS_TOOL_ROUNDS; round += 1) {
-      if (Date.now() - loopStarted > WS_TOOL_LOOP_MS) break;
-
-      const res = await client.messages.create({
-        model: modelId,
-        max_tokens: 1024,
-        system:
-          explorePrompt ||
-          "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요. importance 높은 항목을 우선하세요.",
-        tools: WORKSERVER_TOOLS,
-        messages
-      });
-
-      bumpUsageDaily(admin, {
-        tier: "C",
-        model_id: modelId,
-        usage: readUsage(res.usage)
-      });
-
-      const toolUses = res.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-      );
-      if (toolUses.length === 0) break;
-
-      messages.push({ role: "assistant", content: res.content });
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const tu of toolUses) {
-        const input =
-          tu.input && typeof tu.input === "object"
-            ? (tu.input as Record<string, unknown>)
-            : {};
-        let items: WorkserverItem[] = [];
-        try {
-          if (tu.name === "list_folder") {
-            items = await listFolder(
-              admin,
-              typeof input.path === "string" ? input.path : "",
-              typeof input.drive === "string" ? input.drive : undefined
-            );
-          } else if (tu.name === "search_in") {
-            items = await searchIn(
-              admin,
-              typeof input.path === "string" ? input.path : "",
-              typeof input.keywords === "string" ? input.keywords : topic,
-              typeof input.drive === "string" ? input.drive : undefined
-            );
-          } else if (tu.name === "search_all") {
-            items = await searchAll(
-              admin,
-              typeof input.keywords === "string" ? input.keywords : topic
-            );
-          }
-        } catch (err) {
-          console.error("[luna/selfstudy] ws tool", tu.name, err);
-          items = [];
-        }
-
-        for (const item of items) {
-          const key = `${item.drive ?? ""}::${item.path}`;
-          if (!collected.has(key)) collected.set(key, item);
-        }
-
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: JSON.stringify(items)
-        });
-      }
-
-      messages.push({ role: "user", content: toolResults });
-    }
-  } catch (err) {
-    console.error("[luna/selfstudy] ws explore failed, legacy", err);
-    const legacy = await searchNasLegacy(admin, topic);
-    for (const row of legacy) {
-      const item: WorkserverItem = {
-        drive: row.drive,
-        path: row.path,
-        name: row.path.split(/[\\/]/).filter(Boolean).pop() || row.path,
-        type: row.type,
-        importance: row.importance,
-        file_summary: row.file_summary,
-        modified_at: row.modified_at
-      };
-      collected.set(`${item.drive ?? ""}::${item.path}`, item);
-    }
-  }
-
-  return Array.from(collected.values())
-    .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
-    .slice(0, 12);
-}
-
-export async function runSelfstudyQueueItem(
-  admin: SupabaseClient,
-  queueId?: string | null
-): Promise<{ report_id: string; queue_id: string; topic: string }> {
-  const client = getAnthropicClient();
-  if (!client) throw new Error("Claude API key is not configured");
-
-  let item: SelfstudyQueueRow | null = null;
-
-  if (queueId) {
-    const { data, error } = await admin
-      .from("luna_selfstudy_queue")
-      .select("*")
-      .eq("id", queueId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    item = data as SelfstudyQueueRow | null;
-  } else {
-    const { data, error } = await admin
-      .from("luna_selfstudy_queue")
-      .select("*")
-      .eq("status", "pending")
-      .order("score", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    item = data as SelfstudyQueueRow | null;
-  }
-
-  if (!item) {
-    throw new Error("No pending selfstudy queue item");
-  }
-
-  const { error: runErr } = await admin
-    .from("luna_selfstudy_queue")
-    .update({ status: "running" })
-    .eq("id", item.id);
-  if (runErr) throw new Error(runErr.message);
-
-  try {
-    const tierCCfg = await getTierModel(admin, "C");
-    const tierC = resolveAnthropicModel(tierCCfg);
-    const webHint = (await getPrompt(admin, "connector.web.hint")).trim();
-
-    // 노션 → Work서버 → 웹 순서
-    const notionSources = await searchNotionPages(item.topic);
-    const nasItems = await exploreWorkserverForTopic(
-      admin,
-      client,
-      tierC.model_id,
-      item.topic
-    );
-    const webCards = await searchTavily(item.topic, webHint);
-
-    const sources: Array<{ type: string; title: string; ref: string }> = [];
-    for (const n of notionSources) {
-      sources.push({ type: "notion", title: n.title, ref: n.url });
-    }
-    for (const n of nasItems) {
-      sources.push({
-        type: "nas",
-        title: n.name,
-        ref: n.path
-      });
-    }
-    for (const w of webCards as LunaCard[]) {
-      sources.push({
-        type: "web",
-        title: w.title,
-        ref: w.url || w.description
-      });
-    }
-
-    const materialBlock = [
-      "### 노션",
-      ...notionSources.map((s) => `- ${s.title}: ${s.url}`),
-      "### Work서버",
-      ...nasItems.map(
-        (s) =>
-          `- ${s.name} (${s.path})${s.file_summary ? ` — ${s.file_summary}` : ""}${
-            (s.importance ?? 0) > 0 ? " ★" : ""
-          }`
-      ),
-      "### 웹",
-      ...webCards.map((s) => `- ${s.title}: ${s.url ?? ""} — ${s.description}`)
-    ].join("\n");
-
-    const reportPrompt =
-      (await getPrompt(admin, "selfstudy.report")).trim() || REPORT_FALLBACK;
-
-    const reportRes = await client.messages.create({
-      model: tierC.model_id,
-      max_tokens: 4096,
-      system: reportPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `주제: ${item.topic}\n\n수집 자료:\n${materialBlock}`
-        }
-      ]
-    });
-
-    bumpUsageDaily(admin, {
-      tier: "C",
-      model_id: tierC.model_id,
-      usage: readUsage(reportRes.usage)
-    });
-
-    const reportText =
-      reportRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-    const parsed = parseJsonValue(reportText);
-    let title = item.topic;
-    let content = reportText;
-
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const obj = parsed as Record<string, unknown>;
-      if (typeof obj.title === "string" && obj.title.trim()) {
-        title = obj.title.trim();
-      }
-      if (typeof obj.content === "string" && obj.content.trim()) {
-        content = obj.content.trim();
-      }
-    }
-
-    const { data: report, error: insertErr } = await admin
-      .from("luna_reports")
-      .insert({
-        topic: item.topic,
-        title,
-        content,
-        sources,
-        queue_id: item.id,
-        project_id: item.project_id,
-        use_count: 0,
-        status: "active",
-        model_label: tierC.model_label
-      })
-      .select("id")
-      .single();
-
-    if (insertErr || !report) {
-      throw new Error(insertErr?.message || "Failed to insert report");
-    }
-
-    const { error: doneErr } = await admin
-      .from("luna_selfstudy_queue")
-      .update({
-        status: "done",
-        processed_at: new Date().toISOString()
-      })
-      .eq("id", item.id);
-    if (doneErr) {
-      console.error("[luna/selfstudy] mark done", doneErr);
-    }
-
-    console.log("[luna/selfstudy] run done", item.topic, report.id);
-    return {
-      report_id: report.id as string,
-      queue_id: item.id,
-      topic: item.topic
-    };
-  } catch (err) {
-    await admin
-      .from("luna_selfstudy_queue")
-      .update({ status: "pending" })
-      .eq("id", item.id);
-    throw err;
-  }
 }
 
 export async function findSimilarReport(
@@ -880,7 +638,6 @@ export async function findSimilarReport(
   const q = keywords.trim();
   if (!q) return null;
 
-  // pg_trgm RPC 가 있으면 우선 사용 (없어도 앱 폴백)
   try {
     const { data: rpcData, error: rpcError } = await admin.rpc(
       "luna_match_report",
@@ -894,7 +651,7 @@ export async function findSimilarReport(
       return rpcData[0] as LunaReportRow;
     }
   } catch {
-    /* fallback below */
+    /* fallback */
   }
 
   const { data, error } = await admin
@@ -924,15 +681,9 @@ export async function findSimilarReport(
   }
 
   if (!best || bestScore < REPORT_SIM_THRESHOLD) return null;
-  console.log("[luna/selfstudy] report match", {
-    query: q,
-    topic: best.topic,
-    score: Number(bestScore.toFixed(3))
-  });
   return best;
 }
 
-/** fire-and-forget use_count 갱신 */
 export function bumpReportUse(admin: SupabaseClient, reportId: string): void {
   void (async () => {
     try {
@@ -941,8 +692,7 @@ export function bumpReportUse(admin: SupabaseClient, reportId: string): void {
         .select("use_count")
         .eq("id", reportId)
         .maybeSingle();
-      const prev =
-        typeof data?.use_count === "number" ? data.use_count : 0;
+      const prev = typeof data?.use_count === "number" ? data.use_count : 0;
       const { error } = await admin
         .from("luna_reports")
         .update({

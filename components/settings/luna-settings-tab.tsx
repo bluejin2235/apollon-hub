@@ -852,8 +852,19 @@ function LunaStudyPanel() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [studyBusy, setStudyBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [studyMessage, setStudyMessage] = useState("");
   const [status, setStatus] = useState<ConsolidationStatusState | null>(null);
+  const [selfstudy, setSelfstudy] = useState<{
+    last_run: {
+      finished_at: string;
+      submitted: number;
+      skipped: boolean;
+      message: string;
+    } | null;
+    today_count: number;
+  } | null>(null);
   const [volumeDraft, setVolumeDraft] = useState(30);
   const [backstopDraft, setBackstopDraft] = useState(14);
   const [notifyDraft, setNotifyDraft] = useState<NotifyEventsState>({
@@ -878,28 +889,48 @@ function LunaStudyPanel() {
     const {
       data: { user }
     } = await supabase.auth.getUser();
+    let admin = false;
     if (user) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .maybeSingle();
-      setIsAdmin(profile?.role === "슈퍼관리자");
+      admin = profile?.role === "슈퍼관리자";
+      setIsAdmin(admin);
     }
 
-    const res = await fetch("/api/luna/consolidate", {
+    const consolidateRes = await fetch("/api/luna/consolidate", {
       headers: { Authorization: `Bearer ${token}` }
     });
-    if (!res.ok) {
+    if (!consolidateRes.ok) {
       setMessage(`정리 상태 불러오기 실패`);
-      setLoading(false);
-      return;
+    } else {
+      const json = (await consolidateRes.json()) as ConsolidationStatusState;
+      setStatus(json);
+      setVolumeDraft(json.settings.volume_threshold);
+      setBackstopDraft(json.settings.backstop_days);
+      setNotifyDraft(json.settings.notify_events);
     }
-    const json = (await res.json()) as ConsolidationStatusState;
-    setStatus(json);
-    setVolumeDraft(json.settings.volume_threshold);
-    setBackstopDraft(json.settings.backstop_days);
-    setNotifyDraft(json.settings.notify_events);
+
+    if (admin) {
+      const studyRes = await fetch("/api/luna/selfstudy", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (studyRes.ok) {
+        const s = (await studyRes.json()) as {
+          last_run: {
+            finished_at: string;
+            submitted: number;
+            skipped: boolean;
+            message: string;
+          } | null;
+          today_count: number;
+        };
+        setSelfstudy(s);
+      }
+    }
+
     setLoading(false);
   }, []);
 
@@ -983,8 +1014,49 @@ function LunaStudyPanel() {
     }
   }
 
+  async function runSelfstudyNow() {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token ?? null;
+    if (!token || studyBusy) return;
+    setStudyBusy(true);
+    setStudyMessage("");
+    try {
+      const res = await fetch("/api/luna/selfstudy", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ force: true })
+      });
+      const json = (await res.json()) as {
+        submitted?: number;
+        skipped?: boolean;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setStudyMessage(`자습 실패: ${json.error || "unknown"}`);
+        return;
+      }
+      setStudyMessage(
+        json.message ||
+          (json.submitted
+            ? `자습 문답 ${json.submitted}건 제출`
+            : "오늘은 자습할 것이 없음")
+      );
+      await load();
+    } finally {
+      setStudyBusy(false);
+    }
+  }
+
   const lastRunAt =
     status?.last_run?.finished_at ?? status?.last_run?.started_at ?? null;
+  const selfstudyLastAt = selfstudy?.last_run?.finished_at ?? null;
+  const selfstudySubmitted = selfstudy?.last_run?.submitted ?? 0;
   const notifyLabels: Array<{ key: keyof NotifyEventsState; label: string }> = [
     { key: "consolidation", label: "정리" },
     { key: "study", label: "자습" },
@@ -998,15 +1070,54 @@ function LunaStudyPanel() {
     <div className="grid gap-3 md:grid-cols-3">
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-[13px] font-semibold text-slate-900">예습</h3>
-          <span className="text-[11px] text-slate-500">자습</span>
-          <span className="ml-auto rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-            재설계 중
-          </span>
+          <h3 className="text-[13px] font-semibold text-slate-900">자습</h3>
+          <span className="text-[11px] text-slate-500">그날 막힌 것만</span>
         </div>
         <p className="mt-2 text-[12px] text-slate-600">
-          아직 모르는 주제를 미리 학습합니다. 양육 모델 재설계로 일시 중지되었습니다.
+          오늘 대화에서 막힌 순간을 골라 스스로 정리한 뒤 후보함에 제출합니다.
         </p>
+        {loading ? (
+          <p className="mt-3 text-[12px] text-slate-500">불러오는 중…</p>
+        ) : (
+          <div className="mt-3 space-y-2 text-[12px] text-slate-700">
+            <p>
+              마지막 실행{" "}
+              <span className="font-medium text-slate-900">
+                {formatStudyDate(selfstudyLastAt)}
+              </span>
+            </p>
+            <p>
+              제출 문답{" "}
+              <span className="font-medium text-slate-900">
+                {selfstudySubmitted}건
+              </span>
+              {typeof selfstudy?.today_count === "number" ? (
+                <span className="text-slate-500">
+                  {" "}
+                  · 오늘 {selfstudy.today_count}건
+                </span>
+              ) : null}
+            </p>
+            {selfstudy?.last_run?.message ? (
+              <p className="text-[11px] text-slate-500">
+                {selfstudy.last_run.message}
+              </p>
+            ) : null}
+            {isAdmin ? (
+              <button
+                type="button"
+                disabled={studyBusy}
+                onClick={() => void runSelfstudyNow()}
+                className="mt-1 w-full rounded-lg bg-[#534AB7] px-3 py-2 text-[12px] font-medium text-white hover:bg-[#3C3489] disabled:opacity-50"
+              >
+                {studyBusy ? "자습 중…" : "지금 자습 실행"}
+              </button>
+            ) : null}
+            {studyMessage ? (
+              <p className="text-[11px] text-slate-600">{studyMessage}</p>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
