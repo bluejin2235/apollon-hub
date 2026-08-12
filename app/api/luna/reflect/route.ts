@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   createCandidate,
+  hasOpenAssignedQuestion,
+  makeTurn,
   parseJsonArray,
+  parseJsonObject,
   type ScopeSuggestion
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
@@ -29,14 +32,30 @@ const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었
 후보 형식: 지식 한 문장 + 근거 원문(누가·언제 말했는지) + 조직/개인 구분 제안.
 하루에 같은 대화에서 후보는 최대 3건. 양보다 정확함.
 
-JSON 배열만 응답. 다른 텍스트 금지. 없으면 []:
-[{ "content": "지식 한 문장", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general" }]`;
+확인이 필요한 질문은 별도로 최대 1건 (question). 본인(대화 상대)만 답할 수 있는 사실·선호·절차 확인에 한정.
+없으면 question: null.
+
+JSON만 응답. 다른 텍스트 금지. 없으면:
+{ "candidates": [], "question": null }`;
 
 const CAPTURE_USER_SUFFIX = `
 
-위 규칙을 따르세요. JSON 배열만 출력하세요. 파싱 가능한 JSON이 아니면 빈 배열 [].
-최대 3건. 사람의 정정("아니라", "그게 아니고" 등)이 있으면 최우선으로 올리세요.
-각 항목에 from_correction: true|false 를 포함하세요 (직전 사용자 정정에 근거하면 true).`;
+위 규칙을 따르세요. JSON만 출력하세요.
+형식:
+{
+  "candidates": [
+    { "content": "지식 한 문장", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general", "from_correction": true|false }
+  ],
+  "question": null | {
+    "ask": "사람에게 물을 짧은 질문 (한 문장)",
+    "content": "확인하려는 지식 초안 한 문장",
+    "evidence": "근거 원문",
+    "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general"
+  }
+}
+candidates 최대 3건. 사람의 정정("아니라", "그게 아니고" 등)이 있으면 최우선으로 올리세요.
+question 은 확인이 꼭 필요할 때만 1건, 아니면 null. 본인만 답할 수 있는 내용만.
+레거시로 배열만 줘도 candidates 로 처리합니다.`;
 
 type ReflectBody = { conversation_id?: string };
 type MessageRow = { role: string; content: string; created_at?: string };
@@ -47,6 +66,13 @@ type CaptureItem = {
   scope_suggestion: ScopeSuggestion | null;
   category: string;
   from_correction: boolean;
+};
+
+type CaptureQuestion = {
+  ask: string;
+  content: string;
+  evidence: string | null;
+  category: string;
 };
 
 function getAnthropicClient(): Anthropic | null {
@@ -88,6 +114,55 @@ function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
     if (out.length >= 3) break;
   }
   return out;
+}
+
+function normalizeCaptureQuestion(raw: unknown): CaptureQuestion | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const ask = typeof row.ask === "string" ? row.ask.trim() : "";
+  const content =
+    typeof row.content === "string"
+      ? row.content.trim()
+      : typeof row.knowledge === "string"
+        ? row.knowledge.trim()
+        : "";
+  if (!ask && !content) return null;
+  const evidence =
+    typeof row.evidence === "string" ? row.evidence.trim() || null : null;
+  const categoryRaw =
+    typeof row.category === "string" ? row.category.trim() : "general";
+  if (categoryRaw === "identity") return null;
+  return {
+    ask: ask || (content ? `${content} — 맞아요?` : ""),
+    content: content || ask,
+    evidence,
+    category: categoryRaw || "general"
+  };
+}
+
+function parseCapturePayload(rawText: string): {
+  items: CaptureItem[];
+  question: CaptureQuestion | null;
+} {
+  const asObj = parseJsonObject(rawText);
+  if (asObj) {
+    const candidatesRaw = Array.isArray(asObj.candidates)
+      ? asObj.candidates
+      : Array.isArray(asObj.items)
+        ? asObj.items
+        : Array.isArray(asObj.learnings)
+          ? asObj.learnings
+          : null;
+    return {
+      items: normalizeCaptureItems(candidatesRaw),
+      question: normalizeCaptureQuestion(asObj.question)
+    };
+  }
+  const asArr = parseJsonArray(rawText);
+  return {
+    items: normalizeCaptureItems(asArr),
+    question: null
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -185,15 +260,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const parsed = parseJsonArray(rawText);
-  if (!parsed) {
-    // 파싱 실패 시 아무것도 생성하지 않음
-    console.warn("[luna/reflect] JSON parse failed, skipping insert");
-    return NextResponse.json({ saved: 0, parse_error: true });
-  }
-
-  const items = normalizeCaptureItems(parsed);
-  if (items.length === 0) {
+  const { items, question: parsedQuestion } = parseCapturePayload(rawText);
+  if (items.length === 0 && !parsedQuestion) {
+    if (!parseJsonArray(rawText) && !parseJsonObject(rawText)) {
+      console.warn("[luna/reflect] JSON parse failed, skipping insert");
+      return NextResponse.json({ saved: 0, parse_error: true });
+    }
     return NextResponse.json({ saved: 0 });
   }
 
@@ -220,15 +292,47 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  let questionId: string | null = null;
+  if (parsedQuestion) {
+    const alreadyOpen = await hasOpenAssignedQuestion(admin, user.id);
+    if (!alreadyOpen) {
+      const ask = parsedQuestion.ask.trim();
+      const createdQ = await createCandidate(admin, {
+        content: parsedQuestion.content,
+        evidence: parsedQuestion.evidence,
+        category: parsedQuestion.category,
+        source: "question",
+        author_id: user.id,
+        assigned_to: user.id,
+        source_conversation_id: conversationId,
+        thread: ask ? [makeTurn("luna", ask)] : [],
+        meta: { popup: true }
+      });
+      if (createdQ) {
+        questionId = createdQ.id;
+        saved += 1;
+        ids.push(createdQ.id);
+      }
+    }
+  }
+
   if (saved > 0) {
     await lunaNotify(
       admin,
       "reflect",
       "지식 후보",
-      `루나가 후보 ${saved}건을 올렸어요`,
+      questionId
+        ? `루나가 후보 ${saved}건(질문 포함)을 올렸어요`
+        : `루나가 후보 ${saved}건을 올렸어요`,
       {
         level: "success",
-        meta: { saved, conversation_id: conversationId, ids, correctionIds }
+        meta: {
+          saved,
+          conversation_id: conversationId,
+          ids,
+          correctionIds,
+          question_id: questionId
+        }
       }
     );
   }
@@ -236,6 +340,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     saved,
     ids,
-    correction_ids: correctionIds
+    correction_ids: correctionIds,
+    question_id: questionId
   });
 }

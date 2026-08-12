@@ -172,6 +172,28 @@ export async function createCandidate(
   };
 }
 
+/**
+ * 미응답 질문(source=question, status=candidate)이 이미 있는지.
+ * snooze 중·만료 모두 미응답으로 셈 → 추가 생성 skip.
+ */
+export async function hasOpenAssignedQuestion(
+  admin: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const { count, error } = await admin
+    .from("luna_learnings")
+    .select("id", { count: "exact", head: true })
+    .eq("source", "question")
+    .eq("status", "candidate")
+    .eq("assigned_to", userId);
+
+  if (error) {
+    console.error("[luna/candidates] hasOpenAssignedQuestion", error);
+    return true; // 안전하게 생성 막기
+  }
+  return (count ?? 0) > 0;
+}
+
 type DialogueMode = "first" | "revise" | "confirm";
 
 /**
