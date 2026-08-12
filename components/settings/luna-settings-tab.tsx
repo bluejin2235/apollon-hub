@@ -848,6 +848,304 @@ function formatStudyDate(iso: string | null | undefined): string {
   ).padStart(2, "0")}`;
 }
 
+type UpgradeHistoryItem = {
+  id: string;
+  target_id: string;
+  version: number;
+  change_summary: string | null;
+  prediction: string | null;
+  verify_result: string | null;
+  verify_note: string | null;
+  created_at: string;
+  prompt_title: string | null;
+  prompt_key: string | null;
+  current_version: number | null;
+};
+
+function LunaBrainImproveSection() {
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [reportBody, setReportBody] = useState<string | null>(null);
+  const [reportAt, setReportAt] = useState<string | null>(null);
+  const [history, setHistory] = useState<UpgradeHistoryItem[]>([]);
+  const [revertSuggestion, setRevertSuggestion] = useState<{
+    prompt_id: string;
+    title: string;
+    version: number;
+    previous_version: number;
+    reason: string;
+  } | null>(null);
+
+  const load = useCallback(async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const [upgradeRes, reportRes] = await Promise.all([
+        fetch("/api/luna/self-upgrade", {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch("/api/luna/self-report", {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      if (upgradeRes.ok) {
+        const u = (await upgradeRes.json()) as {
+          history?: UpgradeHistoryItem[];
+          revert_suggestion?: {
+            prompt_id: string;
+            title: string;
+            version: number;
+            previous_version: number;
+            reason: string;
+          } | null;
+        };
+        setHistory(Array.isArray(u.history) ? u.history : []);
+        setRevertSuggestion(u.revert_suggestion ?? null);
+      }
+      if (reportRes.ok) {
+        const r = (await reportRes.json()) as {
+          last_report?: {
+            body?: string;
+            finished_at?: string;
+          } | null;
+        };
+        setReportBody(r.last_report?.body ?? null);
+        setReportAt(r.last_report?.finished_at ?? null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function runUpgrade() {
+    const token = await getAccessToken();
+    if (!token || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/luna/self-upgrade", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: "{}"
+      });
+      const json = (await res.json()) as { message?: string; error?: string };
+      if (!res.ok) {
+        setMessage(`실행 실패: ${json.error || "unknown"}`);
+        return;
+      }
+      setMessage(json.message || "실행 완료");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revertUpgrade(item: UpgradeHistoryItem) {
+    const token = await getAccessToken();
+    if (!token || busy) return;
+    const toVersion = Math.max(1, item.version - 1);
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/luna/prompts/revert", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id: item.target_id, version: toVersion })
+      });
+      if (!res.ok) {
+        setMessage(`되돌리기 실패: ${await res.text()}`);
+        return;
+      }
+      setMessage(`「${item.prompt_title ?? item.prompt_key}」 v${toVersion}으로 되돌림`);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revertSuggestionNow() {
+    if (!revertSuggestion) return;
+    const token = await getAccessToken();
+    if (!token || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/luna/prompts/revert", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id: revertSuggestion.prompt_id,
+          version: revertSuggestion.previous_version
+        })
+      });
+      if (!res.ok) {
+        setMessage(`되돌리기 실패: ${await res.text()}`);
+        return;
+      }
+      setMessage(
+        `「${revertSuggestion.title}」 v${revertSuggestion.previous_version}으로 되돌림`
+      );
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-[13px] font-semibold text-slate-900">
+            최근 주간 성장 보고
+          </h3>
+          {reportAt ? (
+            <span className="text-[11px] text-slate-500">
+              {formatStudyDate(reportAt)}
+            </span>
+          ) : null}
+        </div>
+        {loading ? (
+          <p className="mt-2 text-[12px] text-slate-500">불러오는 중…</p>
+        ) : reportBody ? (
+          <p className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+            {reportBody.length > 600
+              ? `${reportBody.slice(0, 600)}…`
+              : reportBody}
+          </p>
+        ) : (
+          <p className="mt-2 text-[12px] text-slate-500">
+            아직 주간 보고가 없습니다. (월요일 08:00 KST 자동)
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-[13px] font-semibold text-slate-900">
+            루나의 개선 이력
+          </h3>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void runUpgrade()}
+            className="ml-auto rounded-lg border border-[#534AB7] px-2.5 py-1 text-[11px] font-medium text-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
+          >
+            {busy ? "실행 중…" : "지금 자기개선 실행"}
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-slate-500">
+          확정 지식·반복 정정(3회+)만 근거. L2·L3·L4 한 건씩. 일요일 04:00 KST.
+        </p>
+
+        {revertSuggestion ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
+            <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold">
+              되돌리기 제안
+            </span>
+            <span className="min-w-0 flex-1">
+              「{revertSuggestion.title}」 v{revertSuggestion.version} 회귀
+              하락 — {revertSuggestion.reason.slice(0, 80)}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void revertSuggestionNow()}
+              className="shrink-0 rounded bg-[#534AB7] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+            >
+              되돌리기
+            </button>
+          </div>
+        ) : null}
+
+        {message ? (
+          <p className="mt-2 text-[11px] text-slate-600">{message}</p>
+        ) : null}
+
+        {loading ? (
+          <p className="mt-3 text-[12px] text-slate-500">불러오는 중…</p>
+        ) : history.length === 0 ? (
+          <p className="mt-3 text-[12px] text-slate-500">
+            루나가 스스로 바꾼 이력이 아직 없습니다.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-slate-100">
+            {history.map((item) => {
+              const dropped = item.verify_result === "refuted";
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-1 py-2.5 text-[12px] text-slate-700 sm:flex-row sm:items-start sm:gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium text-slate-900">
+                        {item.prompt_title || item.prompt_key || "프롬프트"}
+                      </span>
+                      <span className="font-mono text-[10.5px] text-slate-500">
+                        v{item.version}
+                      </span>
+                      {dropped ? (
+                        <span className="rounded bg-red-100 px-1.5 py-px text-[10px] font-medium text-red-800">
+                          회귀 하락
+                        </span>
+                      ) : item.verify_result === "confirmed" ? (
+                        <span className="rounded bg-emerald-100 px-1.5 py-px text-[10px] font-medium text-emerald-800">
+                          회귀 통과
+                        </span>
+                      ) : null}
+                      <span className="text-[10.5px] text-slate-400">
+                        {formatStudyDate(item.created_at)}
+                      </span>
+                    </div>
+                    {item.change_summary ? (
+                      <p className="mt-0.5 text-slate-600">
+                        이유: {item.change_summary}
+                      </p>
+                    ) : null}
+                    {item.prediction ? (
+                      <p className="text-slate-500">예측: {item.prediction}</p>
+                    ) : null}
+                    {item.verify_note ? (
+                      <p className="text-[11px] text-slate-500">
+                        회귀: {item.verify_note}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy || item.version <= 1}
+                    onClick={() => void revertUpgrade(item)}
+                    className="shrink-0 self-start rounded border border-slate-300 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    되돌리기
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function LunaStudyPanel() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1400,6 +1698,7 @@ export function LunaSettingsTab() {
 
       {subTab === "brain" ? (
         <div className="space-y-8">
+          <LunaBrainImproveSection />
           <section>
             <h3 className="mb-3 text-[13px] font-semibold text-slate-900">프롬프트</h3>
             <LunaPromptsPanel />

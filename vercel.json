@@ -31,6 +31,14 @@
     {
       "path": "/api/cron/luna-selfstudy",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/luna-self-upgrade",
+      "schedule": "0 19 * * 6"
+    },
+    {
+      "path": "/api/cron/luna-self-report",
+      "schedule": "0 23 * * 0"
     }
   ]
 }
