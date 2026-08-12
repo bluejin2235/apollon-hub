@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LUNA 대시보드 — 디자인 레퍼런스</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Sans KR", -apple-system, sans-serif;
+      background: #f4f3f8;
+      color: #1e293b;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .dash { max-width: 1120px; margin: 0 auto; }
+    .dash-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .dash-avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: #534AB7;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .dash-title { font-size: 16px; font-weight: 600; color: #0f172a; }
+    .dash-date { font-size: 12.5px; color: #94a3b8; margin-top: 2px; }
+    .dash-header-main { flex: 1; min-width: 0; }
+    .mine-pill {
+      border: 1px solid rgba(216, 90, 48, 0.35);
+      background: rgba(250, 236, 231, 0.6);
+      color: #993C1D;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .return-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .return-line .line {
+      flex: 1;
+      border-top: 1px dashed #cbd5e1;
+      height: 0;
+    }
+    .row1 {
+      display: grid;
+      grid-template-columns: 1fr auto 1.15fr auto 1fr;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .row2 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .flow-h {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 0 4px;
+      font-size: 10.5px;
+      color: #94a3b8;
+      text-align: center;
+      min-width: 52px;
+    }
+    .flow-h .arrow { color: #cbd5e1; font-size: 14px; }
+    .flow-v {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin: 16px 0;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .card {
+      background: #fff;
+      border: 0.5px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+      text-align: left;
+      cursor: pointer;
+      width: 100%;
+    }
+    .card-bar { height: 3px; }
+    .card-body { padding: 16px; }
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .card-head-left { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
+    .card-title { font-size: 15px; font-weight: 500; color: #0f172a; }
+    .card-desc { font-size: 11px; color: #94a3b8; }
+    .card-head-extra { font-size: 10.5px; color: #94a3b8; white-space: nowrap; }
+    .big-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .big-num { font-size: 26px; font-weight: 500; color: #0f172a; line-height: 1.1; }
+    .big-num.coral { color: #D85A30; }
+    .big-num.green { color: #059669; }
+    .big-sub { font-size: 13px; font-weight: 500; color: #059669; }
+    .big-sub-muted { font-size: 10px; color: #94a3b8; }
+    .sub-line { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .metrics3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .metric-block .lbl { font-size: 11px; color: #94a3b8; }
+    .metric-block .num { font-size: 26px; font-weight: 500; line-height: 1.15; }
+    .metric-block .sub { font-size: 10px; color: #94a3b8; }
+    .metric-block .num-sm { font-size: 14px; color: #94a3b8; font-weight: 400; }
+    .pending-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+    .pending-row .right { text-align: right; }
+    .pending-row .right .num { font-size: 20px; font-weight: 500; color: #059669; }
+    .divider { height: 1px; background: #f1f5f9; margin: 10px 0; }
+    .row-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 0;
+      font-size: 11px;
+    }
+    .row-item .lbl { color: #94a3b8; flex-shrink: 0; }
+    .row-item .val { font-weight: 500; color: #0f172a; text-align: right; }
+    .row-item .val.coral { color: #D85A30; }
+    .row-item .val.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%; }
+    .user-list { list-style: none; }
+    .user-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 11px;
+    }
+    .user-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .user-rank { width: 16px; color: #94a3b8; flex-shrink: 0; }
+    .user-initial {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: rgba(15, 110, 86, 0.1);
+      color: #0F6E56;
+      font-size: 10px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-count { font-weight: 500; flex-shrink: 0; }
+    .section-lbl { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
+    .mini-bars { display: flex; align-items: flex-end; gap: 4px; height: 36px; margin-top: 12px; }
+    .mini-bars .bar { flex: 1; border-radius: 2px; background: rgba(216, 90, 48, 0.25); min-height: 8px; }
+    .mini-bars .bar.last { background: #D85A30; }
+    .trend-lbl { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="dash">
+    <header class="dash-header">
+      <div class="dash-avatar" aria-hidden="true">L</div>
+      <div class="dash-header-main">
+        <div class="dash-title">LUNA 대시보드</div>
+        <div class="dash-date">2026.08.12 (화)</div>
+      </div>
+      <button type="button" class="mine-pill">내가 답할 차례 2건</button>
+    </header>
+
+    <div class="return-line">
+      <div class="line"></div>
+      <span>확정된 지식만 기억으로</span>
+      <span aria-hidden="true">↩</span>
+    </div>
+
+    <div class="row1">
+      <article class="card">
+        <div class="card-bar" style="background:#534AB7"></div>
+        <div class="card-body">
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-title">지식</span>
+              <span class="card-desc">확정된 조직·개인 지식</span>
+            </div>
+          </div>
+          <div class="big-row">
+            <span class="big-num">142</span>
+            <span class="big-sub">+8 이번 주</span>
+          </div>
+          <p class="sub-line">조직 98 · 개인 44</p>
+          <div class="divider"></div>
+          <div class="row-item"><span class="lbl">Work서버 인덱싱</span><span class="val">12,450 (스캔 15,200)</span></div>
+          <div class="row-item"><span class="lbl">노션</span><span class="val">연결됨</span></div>
+          <div class="row-item"><span class="lbl">충돌 보류</span><span class="val coral">3</span></div>
+          <div class="row-item"><span class="lbl">최다 사용 지식</span><span class="val truncate">감리 정의 (24회)</span></div>
+          <div class="row-item"><span class="lbl">최근 확정</span><span class="val truncate">청사진 — 고객 컨펌 최종 도면</span></div>
+        </div>
+      </article>
+
+      <div class="flow-h"><span>지식으로<br>답변</span><span class="arrow">→</span></div>
+
+      <article class="card">
+        <div class="card-bar" style="background:#0F6E56"></div>
+        <div class="card-body">
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-title">대화</span>
+              <span class="card-desc">팀원과의 루나 채팅</span>
+            </div>
+          </div>
+          <div class="metrics3">
+            <div class="metric-block">
+              <div class="lbl">오늘 대화</div>
+              <div class="num">18</div>
+              <div class="sub">어제 12</div>
+            </div>
+            <div class="metric-block">
+              <div class="lbl">활성 사용자</div>
+              <div class="num">5<span class="num-sm">/12</span></div>
+            </div>
+            <div class="metric-block">
+              <div class="lbl">피드백</div>
+              <div class="num" style="font-size:22px">👍4</div>
+              <div class="num" style="font-size:14px;font-weight:500">👎1</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <p class="section-lbl">어제 많이 쓴 사람</p>
+          <ul class="user-list">
+            <li><div class="user-left"><span class="user-rank">1</span><span class="user-initial">김</span><span class="user-name">김OO</span></div><span class="user-count">8건</span></li>
+            <li><div class="user-left"><span class="user-rank">2</span><span class="user-initial">이</span><span class="user-name">이OO</span></div><span class="user-count">5건</span></li>
+            <li><div class="user-left"><span class="user-rank">3</span><span class="user-initial">박</span><span class="user-name">박OO</span></div><span class="user-count">3건</span></li>
+          </ul>
+          <div class="divider"></div>
+          <div class="row-item"><span class="lbl">되물음</span><span class="val">오늘 2 · 어제 1</span></div>
+          <div class="row-item"><span class="lbl">정정받음</span><span class="val">오늘 0 · 어제 1</span></div>
+          <div class="row-item"><span class="lbl">검색 0건 · 재검색</span><span class="val">1 · 0</span></div>
+          <div class="row-item"><span class="lbl">가정 확인 표시</span><span class="val">0</span></div>
+        </div>
+      </article>
+
+      <div class="flow-h"><span>대화로 얻은<br>지식후보</span><span class="arrow">→</span></div>
+
+      <article class="card">
+        <div class="card-bar" style="background:#D85A30"></div>
+        <div class="card-body">
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-title">지식후보</span>
+              <span class="card-desc">검토 대기 중인 학습 후보</span>
+            </div>
+          </div>
+          <div class="pending-row">
+            <div><div class="lbl" style="font-size:11px;color:#94a3b8">대기</div><div class="big-num coral">7</div></div>
+            <div class="right"><div class="lbl" style="font-size:11px;color:#94a3b8">오늘 확정</div><div class="num">2</div></div>
+          </div>
+          <div class="mini-bars">
+            <div class="bar" style="height:45%"></div>
+            <div class="bar" style="height:70%"></div>
+            <div class="bar" style="height:55%"></div>
+            <div class="bar last" style="height:35%"></div>
+          </div>
+          <p class="trend-lbl">유입 ↓ 성장 신호</p>
+          <div class="divider"></div>
+          <div class="row-item"><span class="lbl">출처 구성</span><span class="val">대화4 · 자습1 · 질문1 · 직접1</span></div>
+          <div class="row-item"><span class="lbl">평균 확정 소요</span><span class="val">3.2일</span></div>
+          <div class="row-item"><span class="lbl">내가 답할 차례</span><span class="val coral">2</span></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="flow-v">
+      <span aria-hidden="true">↓</span>
+      <span>대화로 궁금한 점 · 막힌 순간 3개</span>
+    </div>
+
+    <div class="row2">
+      <article class="card">
+        <div class="card-bar" style="background:#534AB7"></div>
+        <div class="card-body">
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-title">자습</span>
+              <span class="card-desc">루나 자율 학습</span>
+            </div>
+            <span class="card-head-extra">다음 실행 내일 03:00</span>
+          </div>
+          <div class="metrics3">
+            <div class="metric-block"><div class="lbl">어제 제출 문답</div><div class="num">5</div></div>
+            <div class="metric-block"><div class="lbl">자습 정확도</div><div class="num">72%</div></div>
+            <div class="metric-block"><div class="lbl">오늘 막힌 순간</div><div class="num">3</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="row-item"><span class="lbl">최근 자습 주제</span><span class="val truncate">GX 프로젝트 범위 정의</span></div>
+          <div class="row-item"><span class="lbl">"안 배워도 됨" 판정 주간</span><span class="val">2</span></div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-bar" style="background:#BA7517"></div>
+        <div class="card-body">
+          <div class="card-head">
+            <div class="card-head-left">
+              <span class="card-title">두뇌</span>
+              <span class="card-desc">프롬프트·모델·자기개선</span>
+            </div>
+          </div>
+          <div class="row-item"><span class="lbl">이번 주 변경</span><span class="val">루나 2 · 사람 1</span></div>
+          <div class="row-item"><span class="lbl">루나의 개선 제안 대기</span><span class="val coral">1</span></div>
+          <div class="row-item"><span class="lbl">최근 자기개선</span><span class="val truncate">L2-31 Work서버 · 확인됨</span></div>
+          <div class="row-item"><span class="lbl">모델</span><span class="val">A · B · C</span></div>
+          <div class="row-item"><span class="lbl">주간 토큰</span><span class="val">1,240,000 (+12.5%)</span></div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <style>
+    @media (max-width: 899px) {
+      .return-line, .flow-h, .flow-v { display: none !important; }
+      .row1, .row2 { display: flex; flex-direction: column; gap: 12px; }
+    }
+  </style>
+</body>
+</html>
