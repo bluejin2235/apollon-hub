@@ -10,8 +10,11 @@ import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNo
 import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
 import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
 import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
-import { LunaEngineTab } from "@/components/settings/luna-engine-tab";
-import { LunaEvalTab } from "@/components/settings/luna-eval-tab";
+import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
+import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
+import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
+import { LunaBrainReport } from "@/components/luna/brain/LunaBrainReport";
+import { LunaBrainUpgrade } from "@/components/luna/brain/LunaBrainUpgrade";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
 import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
 import { LunaCandidatesMine } from "@/components/luna/candidates/LunaCandidatesMine";
@@ -1576,11 +1579,11 @@ export function LunaSettingsTab() {
     }
 
     if (menu === "brain") {
-      if (sub === "prompts") return <LunaPromptsPanel />;
-      if (sub === "upgrade") return <LunaBrainImproveSection />;
-      if (sub === "model") return <LunaEngineTab />;
-      if (sub === "eval") return <LunaEvalTab />;
-      if (sub === "report") return <LunaPlaceholder title="성장 보고" />;
+      if (sub === "prompts") return <LunaBrainPrompts />;
+      if (sub === "upgrade") return <LunaBrainUpgrade />;
+      if (sub === "model") return <LunaBrainModel />;
+      if (sub === "eval") return <LunaBrainEval />;
+      if (sub === "report") return <LunaBrainReport />;
     }
 
     return <LunaPlaceholder title={pageTitle} />;

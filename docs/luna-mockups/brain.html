@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 두뇌 — 목업 (5개 하위 페이지)</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+    --brain:#BA7517; --brain-soft:#FAEEDA; --brain-ink:#633806;
+    --danger:#A32D2D; --danger-soft:#FCEBEB;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+
+  .mocklabel{margin:36px 0 10px;font-size:12px;font-weight:800;color:var(--brain);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  .subtabs{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--brain)}
+  .subtab .b{color:var(--cand-ink);font-weight:700}
+
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  input,select{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;background:var(--panel);color:var(--ink);outline:none}
+  input:focus,select:focus{border-color:#d9d2ff}
+  .grow{flex:1;min-width:180px}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ghost{border-color:transparent;color:var(--sub)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  .btns .note{font-size:11.5px;color:var(--faint)}
+
+  /* 프롬프트 계층 */
+  .layer{font-size:12px;color:var(--sub);margin:0 0 6px}
+  .layer .hint{color:var(--faint)}
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+  .prow{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line2);cursor:pointer}
+  .prow:last-child{border-bottom:0}
+  .prow .no{width:46px;font-size:11px;color:var(--faint)}
+  .prow .name{flex:1;font-size:13.5px}
+  .prow .lock{font-size:11.5px;color:var(--faint)}
+  .prow .ver{font-size:11.5px;color:var(--faint);width:78px;text-align:right}
+
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-luna{background:var(--brain-soft);color:var(--brain-ink)}
+  .b-human{background:var(--chip);color:var(--sub)}
+  .b-ok{background:var(--talk-soft);color:var(--talk)}
+  .b-red{background:var(--danger-soft);color:var(--danger)}
+  .b-wait{background:var(--brain-soft);color:var(--brain-ink)}
+  .meta{font-size:11.5px;color:var(--faint)}
+
+  /* 자기개선 */
+  .infobar{background:var(--panel);border-radius:9px;padding:11px 14px;font-size:13px;
+    color:var(--sub);margin-bottom:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .card.hl{border:2px solid #e4d3ae}
+  .card .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .card .t{font-size:13.5px;font-weight:700}
+  .kv{font-size:12.5px;line-height:1.95;color:var(--sub);margin-bottom:10px}
+  .kv b{color:var(--ink)}
+  .diff{background:var(--chip);border-radius:9px;padding:10px 12px;font-size:12.5px;
+    color:var(--ink);line-height:1.65}
+  .hrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .hrow .t{flex:1;font-size:13px;font-weight:400}
+  .hsub{font-size:12px;color:var(--sub);margin-top:6px}
+  .runbar{background:var(--panel);border-radius:9px;padding:12px 14px;display:flex;
+    align-items:center;gap:12px;margin-top:14px}
+  .runbar .t{flex:1;font-size:13px;color:var(--sub)}
+
+  /* 성장 보고 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stat{background:var(--chip);border-radius:9px;padding:10px 12px}
+  .stat .l{font-size:11.5px;color:var(--sub)}
+  .stat .v{font-size:19px;font-weight:700;margin-top:2px}
+  .stat .v small{font-size:12px;color:var(--talk);font-weight:700}
+  .report{font-size:13.5px;line-height:1.8}
+  .report p{margin-bottom:10px}
+  .report p:last-child{margin-bottom:0}
+  .avatar{width:28px;height:28px;border-radius:50%;background:var(--luna);color:#EEEDFE;
+    display:grid;place-items:center;font-size:12px;font-weight:800}
+
+  /* 모델·비용 */
+  .mrow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line2)}
+  .mrow:last-child{border-bottom:0}
+  .mrow .tag{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;width:26px;text-align:center}
+  .t-a{background:var(--luna-soft);color:var(--luna-ink)}
+  .t-b{background:var(--talk-soft);color:var(--talk)}
+  .t-c{background:var(--brain-soft);color:var(--brain-ink)}
+  .mrow .info{flex:1}
+  .mrow .info .n{font-size:13.5px}
+  .mrow .info .d{font-size:11.5px;color:var(--sub)}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:70px;margin-top:10px}
+  .bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .bars .b i{width:100%;border-radius:2px;display:block;background:#CECBF6}
+  .bars .b.mid i{background:#AFA9EC}
+  .bars .b.now i{background:var(--luna)}
+  .bars .b span{font-size:10.5px;color:var(--faint)}
+  .fields{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .field label{font-size:12px;color:var(--sub);display:block;margin-bottom:4px}
+  .field input{width:100%}
+
+  /* 회귀 시험 */
+  .trend{display:flex;align-items:flex-end;gap:10px;height:64px;margin-top:10px}
+  .trend .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .trend .b i{width:100%;border-radius:2px;display:block;background:#CECBF6}
+  .trend .b.down i{background:#F0997B}
+  .trend .b.now i{background:var(--luna)}
+  .trend .b span{font-size:10.5px;color:var(--faint)}
+  .erow{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line2);cursor:pointer}
+  .erow:last-child{border-bottom:0}
+  .erow .no{width:22px;font-size:11px;color:var(--faint)}
+  .erow .q{flex:1;font-size:13px}
+  .hint{margin-top:10px;font-size:12px;color:var(--faint);text-align:center}
+
+  @media(max-width:900px){
+    .stats,.fields{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════════ 1. 프롬프트 ══════════ -->
+<div class="mocklabel">PAGE 1 — brain / prompts (프롬프트)</div>
+
+<div class="subtabs">
+  <div class="subtab on">프롬프트 17</div>
+  <div class="subtab">자기개선 <span class="b">1</span></div>
+  <div class="subtab">성장 보고</div>
+  <div class="subtab">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<div class="toolbar">
+  <input class="grow" placeholder="번호 또는 이름으로 찾기">
+  <button class="btn">변경 이력 전체</button>
+</div>
+
+<div class="layer">L1 정체성 · 루나가 누구인가 <span class="hint">— 모든 답변에 항상 주입</span></div>
+<div class="list">
+  <div class="prow"><span class="no">L1-01</span><span class="name">아폴론 정체성</span><span class="lock">사람만 수정</span><span class="ver">v3</span></div>
+</div>
+
+<div class="layer">L2 관점 · 어느 눈으로 볼 것인가 <span class="hint">— 관점 토글 시</span></div>
+<div class="list">
+  <div class="prow"><span class="no">L2-01</span><span class="name">공간기획 관점</span><span class="ver">v3</span></div>
+  <div class="prow"><span class="no">L2-02</span><span class="name">공간디자인 관점</span><span class="ver">v3</span></div>
+  <div class="prow"><span class="no">L2-03</span><span class="name">콘텐츠기획 관점</span><span class="ver">v3</span></div>
+  <div class="prow"><span class="no">L2-04</span><span class="name">콘텐츠디자인 관점</span><span class="ver">v3</span></div>
+  <div class="prow"><span class="no">L2-05</span><span class="name">하드웨어디자인 관점</span><span class="ver">v3</span></div>
+  <div class="prow"><span class="no">L2-06</span><span class="name">역할 관점</span><span class="meta">BD·SV·CD·AD·SD 통합</span><span class="ver">v2</span></div>
+  <div class="prow"><span class="no">L2-07</span><span class="name">RFP 분석</span><span class="ver">v3</span></div>
+</div>
+
+<div class="layer">L3 대화 · 묻고 찾고 답한다 <span class="hint">— 매 대화 턴</span></div>
+<div class="list">
+  <div class="prow"><span class="no">L3-01</span><span class="name">질문 이해와 되묻기</span><span class="badge b-luna">루나 수정</span><span class="ver">v2</span></div>
+  <div class="prow"><span class="no">L3-02</span><span class="name">가정 확인</span><span class="ver">v2</span></div>
+  <div class="prow"><span class="no">L3-03</span><span class="name">자료 찾기</span><span class="meta">Work서버 구조·탐색 포함</span><span class="ver">v2</span></div>
+  <div class="prow"><span class="no">L3-04</span><span class="name">답변 원칙</span><span class="ver">v1</span></div>
+</div>
+
+<div class="layer">L4 배움 · 대화에서 남길 것 <span class="hint">— 대화 후·새벽</span></div>
+<div class="list">
+  <div class="prow"><span class="no">L4-01</span><span class="name">배움 포착</span><span class="ver">v2</span></div>
+  <div class="prow"><span class="no">L4-02</span><span class="name">후보 문답</span><span class="ver">v1</span></div>
+  <div class="prow"><span class="no">L4-03</span><span class="name">자습</span><span class="ver">v2</span></div>
+</div>
+
+<div class="layer">L5 자기개선 · 판단 문서와 성장 보고 <span class="hint">— 사람만 수정</span></div>
+<div class="list">
+  <div class="prow"><span class="no">L5-01</span><span class="name">프롬프트 업그레이드</span><span class="lock">사람만 수정</span><span class="ver">v1</span></div>
+  <div class="prow"><span class="no">L5-02</span><span class="name">주간 성장 보고</span><span class="lock">사람만 수정</span><span class="ver">v1</span></div>
+</div>
+
+
+<!-- ══════════ 2. 자기개선 ══════════ -->
+<div class="mocklabel">PAGE 2 — brain / upgrade (자기개선)</div>
+
+<div class="subtabs">
+  <div class="subtab">프롬프트 17</div>
+  <div class="subtab on">자기개선 <span class="b">1</span></div>
+  <div class="subtab">성장 보고</div>
+  <div class="subtab">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<div class="infobar">루나는 확정된 지식과 3회 이상 반복된 정정만을 근거로 L2~L4를 스스로 고칩니다. L1·L5는 사람만 수정합니다.</div>
+
+<div style="font-size:13px;font-weight:700;margin-bottom:8px">개선 대기</div>
+<div class="card hl">
+  <div class="top">
+    <span class="badge b-wait">루나의 제안</span>
+    <span class="t">L3-03 자료 찾기 · v2 → v3</span>
+    <span class="meta" style="margin-left:auto">오늘 04:00</span>
+  </div>
+  <div class="kv">
+    <div><b>근거</b> · 문서 용어 혼동 정정 3회 (착수보고서·수행계획서·킥오프 자료)</div>
+    <div><b>변경</b> · 검색 전에 확정 지식의 용어 별칭을 먼저 대조하는 절차 추가</div>
+    <div><b>예측</b> · 같은 용어를 다르게 불러도 같은 자료를 찾게 되어 정정이 줄어듦</div>
+  </div>
+  <div class="diff">+ 검색어에 문서 이름이 포함되면, 확정 지식에서 같은 문서를 가리키는 다른 이름이 있는지 먼저 확인한다.</div>
+  <div class="btns">
+    <button class="btn primary">반영하기</button>
+    <button class="btn">수정해서 반영</button>
+    <button class="btn">반려</button>
+    <span class="note">반영하면 회귀 시험이 자동 실행됩니다</span>
+  </div>
+</div>
+
+<div style="font-size:13px;font-weight:700;margin:16px 0 8px">개선 이력</div>
+<div class="list">
+  <div class="prow" style="display:block;padding:13px 16px">
+    <div class="hrow">
+      <span class="badge b-luna">루나</span>
+      <span class="t">L3-01 질문 이해와 되묻기 · v1 → v2</span>
+      <span class="badge b-ok">시험 9 → 11 · 예측 확인</span>
+      <span class="meta">08.11</span>
+    </div>
+    <div class="hsub">선택지를 2~4개로 제한 — 되물음이 길어 답하기 어렵다는 정정 3회</div>
+  </div>
+  <div class="prow" style="display:block;padding:13px 16px">
+    <div class="hrow">
+      <span class="badge b-human">사람</span>
+      <span class="t">L3-03 자료 찾기 · 환각 금지 조항 추가</span>
+      <span class="badge b-ok">시험 6 → 9</span>
+      <span class="meta">08.11 · 이택진</span>
+    </div>
+  </div>
+  <div class="prow" style="display:block;padding:13px 16px">
+    <div class="hrow">
+      <span class="badge b-luna">루나</span>
+      <span class="t" style="color:var(--sub)">L4-01 배움 포착 · v2 → v3</span>
+      <span class="badge b-red">시험 11 → 8 · 되돌림</span>
+      <span class="meta">08.09</span>
+    </div>
+    <div class="hsub">후보 기준을 넓혔다가 잡담까지 올라와 자동 되돌림 제안 → 사람이 승인</div>
+  </div>
+</div>
+
+<div class="runbar">
+  <div class="t">자동 점검 매주 일요일 04:00 · 한 번에 한 프롬프트만</div>
+  <button class="btn">지금 점검</button>
+</div>
+
+
+<!-- ══════════ 3. 성장 보고 ══════════ -->
+<div class="mocklabel">PAGE 3 — brain / report (성장 보고)</div>
+
+<div class="subtabs">
+  <div class="subtab">프롬프트 17</div>
+  <div class="subtab">자기개선 <span class="b">1</span></div>
+  <div class="subtab on">성장 보고</div>
+  <div class="subtab">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<div class="card">
+  <div class="top">
+    <div class="avatar">L</div>
+    <div style="flex:1">
+      <div class="t">8월 2주차 성장 보고</div>
+      <div class="meta">08.12 08:00 발행</div>
+    </div>
+    <span class="badge b-ok">최신</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="l">확정 지식</div><div class="v">9 <small>▲3</small></div></div>
+    <div class="stat"><div class="l">후보 유입</div><div class="v">9 <small>▼3</small></div></div>
+    <div class="stat"><div class="l">정정받음</div><div class="v">7</div></div>
+    <div class="stat"><div class="l">시험 점수</div><div class="v">11<span style="font-size:12px;color:var(--faint)">/20</span></div></div>
+  </div>
+
+  <div class="report">
+    <p>이번 주에 9건을 확실히 배웠습니다. 대표적으로 착수보고서와 수행계획서가 같은 문서라는 것, 견적서는 PDF로만 발송한다는 것, 두엠과는 P드라이브에서 공동작업한다는 것입니다.</p>
+    <p>가장 많이 정정받은 것은 문서 용어 혼동으로 3회였습니다. 이 때문에 자료 찾기 프롬프트 개선을 제안해 두었습니다.</p>
+    <p>되묻기 프롬프트를 v2로 고친 뒤 시험 점수가 9에서 11로 올라 예측이 맞았습니다. 배움 포착 v3는 잡담까지 후보로 올려 되돌렸습니다.</p>
+    <p>후보 유입이 12건에서 9건으로 줄었습니다. 같은 질문을 다시 묻는 일이 줄어든 결과로 보입니다. 다음 주에는 Work서버 경로를 못 찾는 경우를 줄이는 데 집중하겠습니다.</p>
+  </div>
+</div>
+
+<div style="font-size:13px;font-weight:700;margin:16px 0 8px">지난 보고</div>
+<div class="list">
+  <div class="prow">
+    <span class="name">8월 1주차 성장 보고</span>
+    <span class="meta">확정 6 · 유입 12 · 시험 9/20</span>
+    <span class="ver">08.05</span>
+  </div>
+  <div class="prow">
+    <span class="name">7월 5주차 성장 보고</span>
+    <span class="meta">확정 4 · 유입 18 · 시험 6/20</span>
+    <span class="ver">07.29</span>
+  </div>
+</div>
+
+<div class="runbar">
+  <div class="t">매주 월요일 08:00 발행 · 알림으로도 전달</div>
+  <button class="btn">지금 생성</button>
+</div>
+
+
+<!-- ══════════ 4. 모델·비용 ══════════ -->
+<div class="mocklabel">PAGE 4 — brain / model (모델·비용)</div>
+
+<div class="subtabs">
+  <div class="subtab">프롬프트 17</div>
+  <div class="subtab">자기개선 <span class="b">1</span></div>
+  <div class="subtab">성장 보고</div>
+  <div class="subtab on">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<div style="font-size:13px;font-weight:700;margin-bottom:8px">모델 지정</div>
+<div class="list">
+  <div class="mrow">
+    <span class="tag t-a">A</span>
+    <div class="info"><div class="n">답변·판단</div><div class="d">대화 응답, 자료 찾기, 후보 문답</div></div>
+    <select style="width:190px"><option>Claude Sonnet 4.6</option><option>Claude Opus 4.6</option></select>
+  </div>
+  <div class="mrow">
+    <span class="tag t-b">B</span>
+    <div class="info"><div class="n">분류·추출</div><div class="d">배움 포착, 관련성 판단, 요약</div></div>
+    <select style="width:190px"><option>Claude Haiku 4.5</option><option>Claude Sonnet 4.6</option></select>
+  </div>
+  <div class="mrow">
+    <span class="tag t-c">C</span>
+    <div class="info"><div class="n">자습·배치</div><div class="d">야간 자습, 자기개선, 주간 보고</div></div>
+    <select style="width:190px"><option>Claude Sonnet 4.6</option><option>Claude Haiku 4.5</option></select>
+  </div>
+</div>
+
+<div class="stats" style="margin-top:14px">
+  <div class="stat"><div class="l">주간 토큰</div><div class="v">2.1M</div><div class="meta" style="color:var(--cand-ink)">+12%</div></div>
+  <div class="stat"><div class="l">오늘</div><div class="v">196K</div></div>
+  <div class="stat"><div class="l">대화 : 배치</div><div class="v">64:36</div></div>
+  <div class="stat"><div class="l">월 누적</div><div class="v">7.8M</div></div>
+</div>
+
+<div class="card">
+  <div class="t">일별 토큰 사용 (최근 7일)</div>
+  <div class="bars">
+    <div class="b"><i style="height:38px"></i><span>8/6</span></div>
+    <div class="b"><i style="height:30px"></i><span>8/7</span></div>
+    <div class="b"><i style="height:20px"></i><span>8/8</span></div>
+    <div class="b"><i style="height:12px"></i><span>8/9</span></div>
+    <div class="b mid"><i style="height:44px"></i><span>8/10</span></div>
+    <div class="b mid"><i style="height:66px"></i><span>8/11</span></div>
+    <div class="b now"><i style="height:50px"></i><span>8/12</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="t">사용량 알림</div>
+  <div class="meta" style="margin:4px 0 12px">한도를 넘으면 알림만 보냅니다. 서비스는 중단되지 않아요.</div>
+  <div class="fields">
+    <div class="field"><label>일 한도 (토큰)</label><input value="400,000"></div>
+    <div class="field"><label>월 한도</label><input value="10,000,000"></div>
+    <div class="field"><label>급증 기준</label><input value="전일 대비 +200%"></div>
+  </div>
+  <div class="btns"><button class="btn primary">저장</button></div>
+</div>
+
+
+<!-- ══════════ 5. 회귀 시험 ══════════ -->
+<div class="mocklabel">PAGE 5 — brain / eval (회귀 시험)</div>
+
+<div class="subtabs">
+  <div class="subtab">프롬프트 17</div>
+  <div class="subtab">자기개선 <span class="b">1</span></div>
+  <div class="subtab">성장 보고</div>
+  <div class="subtab">모델·비용</div>
+  <div class="subtab on">회귀 시험</div>
+</div>
+
+<div class="infobar">개발용 안전장치입니다. 프롬프트가 바뀔 때 자동 실행되어 나빠졌는지만 확인합니다 — 루나의 성장 평가가 아닙니다.</div>
+
+<div class="card">
+  <div class="hrow">
+    <span class="t" style="flex:1;font-weight:700">점수 추이</span>
+    <span style="font-size:22px;font-weight:700">11<span style="font-size:13px;color:var(--faint)">/20</span></span>
+    <span class="badge b-ok">▲ 2</span>
+  </div>
+  <div class="trend">
+    <div class="b"><i style="height:19px"></i><span>6/20</span></div>
+    <div class="b"><i style="height:29px"></i><span>9/20</span></div>
+    <div class="b down"><i style="height:26px"></i><span>8/20</span></div>
+    <div class="b now"><i style="height:35px"></i><span>11/20</span></div>
+  </div>
+  <div class="meta" style="margin-top:10px">각 실행은 프롬프트 변경 직후 자동 수행 · 하락 시 되돌림 제안</div>
+</div>
+
+<div class="toolbar">
+  <div style="flex:1;font-size:13px;font-weight:700">최근 실행 결과
+    <span class="meta" style="font-weight:400">08.12 04:02 · L3-01 변경 후</span></div>
+  <button class="btn">문항 관리 20</button>
+  <button class="btn">지금 실행</button>
+</div>
+
+<div class="list">
+  <div class="erow"><span class="no">13</span><span class="q">인스파이어 시즌5 자료 찾아줘</span><span class="badge b-human">환각방지</span><span class="badge b-ok">합격</span></div>
+  <div class="erow"><span class="no">09</span><span class="q">착수보고서 어디 있어?</span><span class="badge b-human">지식</span><span class="badge b-ok">합격</span></div>
+  <div class="erow"><span class="no">11</span><span class="q" style="color:var(--sub)">MS가 무슨 역할이야?</span><span class="badge b-human">용어</span><span class="badge b-red">실패</span></div>
+  <div class="erow"><span class="no">17</span><span class="q" style="color:var(--sub)">최근 미디어아트 트렌드 알려줘</span><span class="badge b-human">트렌드</span><span class="badge b-red">실패</span></div>
+</div>
+<div class="hint">행 클릭 시 루나의 답변 전문과 채점 사유</div>
+
+</div>
+</body>
+</html>
