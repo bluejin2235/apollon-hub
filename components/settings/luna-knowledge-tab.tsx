@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LunaConsolidateBox } from "@/components/luna/knowledge/LunaConsolidateBox";
 import {
   Badge,
   ErrorLine,
@@ -239,6 +240,8 @@ export function LunaKnowledgeTab() {
           </Hint>
         </>
       ) : null}
+
+      <LunaConsolidateBox />
     </KnowledgeShell>
   );
 }
