@@ -84,8 +84,8 @@ export async function GET(request: NextRequest) {
   const results = data ?? [];
   const resultIds = results.map((r) => r.id as string);
 
-  let myScores = new Map<string, { score: number; comment: string | null }>();
-  let avgByResult = new Map<string, number>();
+  const myScores = new Map<string, { score: number; comment: string | null }>();
+  const avgByResult = new Map<string, number>();
   let humanAvg: number | null = null;
 
   if (resultIds.length > 0) {
