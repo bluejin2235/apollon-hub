@@ -8,7 +8,7 @@ import {
   useRef,
   useState
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronDown,
   Folder,
@@ -75,6 +75,11 @@ export function LunaSidebar({
   className = ""
 }: LunaSidebarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const chatActive =
+    pathname === "/luna" || (pathname?.startsWith("/luna/") ?? false);
+  const glossaryActive =
+    pathname === "/glossary" || (pathname?.startsWith("/glossary/") ?? false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [projectsOpen, setProjectsOpen] = useState(true);
@@ -250,6 +255,32 @@ export function LunaSidebar({
         />
         <span className="text-sm font-medium text-slate-900">LUNA</span>
       </div>
+
+      <button
+        type="button"
+        onClick={() => router.push("/luna")}
+        className={`${navItemClass} ${
+          chatActive ? "bg-[#EEEDFE] font-medium text-[#3C3489]" : ""
+        }`}
+      >
+        <MessageSquare className="h-4 w-[17px] shrink-0 text-slate-500" strokeWidth={1.75} />
+        루나 채팅
+      </button>
+
+      <button
+        type="button"
+        onClick={() => router.push("/glossary")}
+        className={`${navItemClass} ${
+          glossaryActive ? "bg-[#EEEDFE] font-medium text-[#3C3489]" : ""
+        }`}
+      >
+        <span className="flex h-4 w-[17px] shrink-0 items-center justify-center text-[15px] leading-none" aria-hidden>
+          📖
+        </span>
+        용어사전
+      </button>
+
+      <div className="mx-1 my-2 h-px bg-slate-200" />
 
       {searchOpen ? (
         <div className="px-1 pb-1">
