@@ -331,11 +331,13 @@ export function GlossaryEditForm({
 }) {
   const fieldLabel = "mb-1 text-[10px] font-semibold";
   const labelColor = { color: K.faint };
-  const termBorder = !draft.term_ko.trim() ? "#D85A30" : K.line;
+  const termMissing = !draft.term_ko.trim();
+  const termBorder = termMissing ? "#D85A30" : K.line;
+  const showTitleBanner = termMissing && draft.movedFromTitle;
 
   return (
     <div className="mt-3">
-      {!draft.term_ko.trim() ? (
+      {showTitleBanner ? (
         <div
           className="mb-2.5 rounded-[9px] px-3 py-2 text-[12.5px] leading-snug"
           style={{ background: "#FAECE7", color: "#993C1D" }}

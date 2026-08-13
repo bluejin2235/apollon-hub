@@ -32,8 +32,8 @@ export function looksLikeDefinitionSentence(text: string): boolean {
   if (!t) return false;
   if (t.length > 40) return true;
   if (/[.。]/.test(t) || /다\./.test(t)) return true;
-  // 조사 는/은/이/가 뒤에 공백·서술 이어짐
-  if (/(?:는|은|이|가)\s+\S/.test(t)) return true;
+  // 조사 는/은/이/가 뒤에 서술이 이어짐 (공백 없어도)
+  if (/(?:는|은|이|가)\S/.test(t)) return true;
   return false;
 }
 
@@ -42,11 +42,13 @@ export function parseGlossaryMeta(
   content: string
 ): GlossaryDraft {
   const m = meta ?? {};
+  const hasTermKoKey = Object.prototype.hasOwnProperty.call(m, "term_ko");
   // meta.term_ko 키가 있으면(빈 문자열 포함) 명시값 우선 — 수정 저장 후 빈 용어명 유지
-  const term_ko =
-    typeof m.term_ko === "string"
+  let term_ko = hasTermKoKey
+    ? typeof m.term_ko === "string"
       ? m.term_ko.trim()
-      : content.split("\n")[0]?.trim() || content.trim().slice(0, 80);
+      : ""
+    : content.split("\n")[0]?.trim() || content.trim().slice(0, 80);
   const cat = m.category;
   const category: GlossaryDraft["category"] =
     cat === "interior" || cat === "hw" ? cat : "common";
@@ -54,6 +56,14 @@ export function parseGlossaryMeta(
     (typeof m.definition === "string" && m.definition.trim()) ||
     (typeof m.definition_draft === "string" && m.definition_draft.trim()) ||
     "";
+  let definition = definitionFromMeta || content.trim();
+
+  // 메타에 용어명이 없고 content 가 문장이면 용어명으로 쓰지 않음
+  if (!hasTermKoKey && looksLikeDefinitionSentence(term_ko)) {
+    definition = definitionFromMeta || term_ko || content.trim();
+    term_ko = "";
+  }
+
   return {
     term_ko,
     term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : null,
@@ -62,7 +72,7 @@ export function parseGlossaryMeta(
       typeof m.term_zh_pron === "string" && m.term_zh_pron.trim()
         ? m.term_zh_pron.trim()
         : null,
-    definition: definitionFromMeta || content.trim(),
+    definition,
     category
   };
 }
@@ -89,17 +99,21 @@ export function glossaryCardTitle(draft: GlossaryDraft): {
 
 /** 편집 모드 오픈 시 문장형 용어명을 정의로 이동 */
 export function openGlossaryEditDraft(draft: GlossaryDraft): GlossaryEditDraft {
-  if (!looksLikeDefinitionSentence(draft.term_ko)) {
-    return { ...draft, movedFromTitle: false };
+  if (looksLikeDefinitionSentence(draft.term_ko)) {
+    const moved = draft.term_ko.trim();
+    const definition = draft.definition.trim() || moved;
+    return {
+      ...draft,
+      term_ko: "",
+      definition,
+      movedFromTitle: true
+    };
   }
-  const moved = draft.term_ko.trim();
-  const definition = draft.definition.trim() || moved;
-  return {
-    ...draft,
-    term_ko: "",
-    definition,
-    movedFromTitle: true
-  };
+  // 용어명은 비어 있고 정의만 있는 경우(문장이 content 로만 들어온 데이터)
+  if (!draft.term_ko.trim() && draft.definition.trim()) {
+    return { ...draft, movedFromTitle: true };
+  }
+  return { ...draft, movedFromTitle: false };
 }
 
 export function getCandidateCardKind(input: {

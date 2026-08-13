@@ -4,7 +4,11 @@ import {
   shouldRegisterGlossary,
   tryRegisterGlossaryFromCandidate
 } from "@/lib/luna/candidate-glossary";
-import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
+import {
+  isGlossaryCandidate,
+  looksLikeDefinitionSentence,
+  parseGlossaryMeta
+} from "@/lib/luna/candidate-format";
 import {
   makeTurn,
   normalizeThread,
@@ -277,14 +281,40 @@ export async function POST(request: NextRequest) {
   }
 
   // confirm
-  const polished =
-    (await runDialogueTurn(admin, {
-      mode: "confirm",
-      content: text || content,
-      thread,
-      humanText: text || undefined,
-      evidence
-    })) || (text || content).trim();
+  const meta =
+    current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
+      ? (current.meta as Record<string, unknown>)
+      : {};
+  const category =
+    typeof current.category === "string" ? current.category : undefined;
+  const isGlossary = shouldRegisterGlossary(meta, category);
+  if (isGlossary) {
+    const draft = parseGlossaryMeta(meta, content);
+    if (
+      !draft.term_ko.trim() ||
+      looksLikeDefinitionSentence(draft.term_ko)
+    ) {
+      return NextResponse.json(
+        { error: "용어명이 비어 있어 용어사전에 등록할 수 없습니다." },
+        { status: 400 }
+      );
+    }
+  }
+
+  // 용어형: AI 윤문 없이 정의(content) 그대로 확정 → glossary_terms 등록
+  const polished = isGlossary
+    ? (
+        (typeof meta.definition === "string" && meta.definition.trim()) ||
+        text ||
+        content
+      ).trim()
+    : (await runDialogueTurn(admin, {
+        mode: "confirm",
+        content: text || content,
+        thread,
+        humanText: text || undefined,
+        evidence
+      })) || (text || content).trim();
 
   let finalThread = thread;
   if (text) {
@@ -292,7 +322,12 @@ export async function POST(request: NextRequest) {
   }
   finalThread = [
     ...finalThread,
-    makeTurn("luna", `확정했어요: ${polished}`)
+    makeTurn(
+      "luna",
+      isGlossary
+        ? `용어사전에 등록했어요: ${polished}`
+        : `확정했어요: ${polished}`
+    )
   ];
 
   const { data, error } = await admin
@@ -321,13 +356,7 @@ export async function POST(request: NextRequest) {
 
   let glossary_registered: boolean | undefined;
   let glossary_notice: string | undefined;
-  const meta =
-    current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
-      ? (current.meta as Record<string, unknown>)
-      : {};
-  const category =
-    typeof current.category === "string" ? current.category : undefined;
-  if (shouldRegisterGlossary(meta, category)) {
+  if (isGlossary) {
     const glossaryResult = await tryRegisterGlossaryFromCandidate(
       admin,
       user.id,

@@ -158,11 +158,24 @@ export async function createCandidate(
   if (!content) return null;
 
   const thread = normalizeThread(input.thread ?? []);
+  const category = (input.category?.trim() || "general").slice(0, 64);
+  const baseMeta =
+    input.meta && typeof input.meta === "object" && !Array.isArray(input.meta)
+      ? { ...input.meta }
+      : {};
+  // 용어 후보는 카드 UI·사전이 구조화 필드를 쓰도록 kind 표시
+  if (category === "term" && baseMeta.kind !== "glossary") {
+    baseMeta.kind = "glossary";
+    if (typeof baseMeta.definition !== "string" || !String(baseMeta.definition).trim()) {
+      baseMeta.definition = content;
+    }
+  }
+
   const row = {
     content,
     evidence: input.evidence?.trim() || null,
     scope_suggestion: input.scope_suggestion ?? null,
-    category: (input.category?.trim() || "general").slice(0, 64),
+    category,
     status: "candidate" as const,
     source: input.source,
     origin: originForSource(input.source),
@@ -171,7 +184,7 @@ export async function createCandidate(
     source_conversation_id: input.source_conversation_id ?? null,
     raw_input: input.raw_input?.trim() || null,
     thread,
-    meta: input.meta ?? {},
+    meta: baseMeta,
     confidence: 2,
     importance: 3,
     use_count: 0
