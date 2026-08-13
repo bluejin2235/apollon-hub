@@ -7,6 +7,7 @@ import {
   ErrorLine,
   FilterChip,
   GlossaryCardBody,
+  GlossaryEditForm,
   KnowledgeShell,
   LoadingLine,
   ReplyRow,
@@ -20,9 +21,12 @@ import {
 } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
 import {
+  glossaryCardTitle,
+  openGlossaryEditDraft,
   parseGlossaryMeta,
   selfstudyQuestion,
-  candidateMetaLine
+  candidateMetaLine,
+  type GlossaryEditDraft
 } from "@/lib/luna/candidate-format";
 import { K } from "@/lib/luna/knowledge-format";
 import type { PendingFilter } from "@/app/api/luna/candidates/route";
@@ -54,6 +58,9 @@ export function LunaCandidatesPending() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reviseOpen, setReviseOpen] = useState<Record<string, string>>({});
+  const [glossaryEdit, setGlossaryEdit] = useState<
+    Record<string, GlossaryEditDraft>
+  >({});
   const [replyDraft, setReplyDraft] = useState<Record<string, string>>({});
 
   const load = useCallback(async (f: PendingFilter) => {
@@ -92,7 +99,8 @@ export function LunaCandidatesPending() {
   async function respond(
     id: string,
     action: "confirm" | "revise" | "reject" | "not_needed",
-    text?: string
+    text?: string,
+    glossary?: GlossaryEditDraft
   ) {
     const token = await getAccessToken();
     if (!token) return;
@@ -105,7 +113,21 @@ export function LunaCandidatesPending() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ id, action, text })
+        body: JSON.stringify({
+          id,
+          action,
+          text,
+          glossary: glossary
+            ? {
+                term_ko: glossary.term_ko,
+                term_en: glossary.term_en,
+                term_zh: glossary.term_zh,
+                term_zh_pron: glossary.term_zh_pron,
+                definition: glossary.definition,
+                category: glossary.category
+              }
+            : undefined
+        })
       });
       if (!res.ok) {
         setMessage(`처리 실패: ${await res.text()}`);
@@ -115,6 +137,7 @@ export function LunaCandidatesPending() {
         id?: string;
         status?: string;
         content?: string;
+        meta?: Record<string, unknown> | null;
         thread?: CandidateRow["thread"];
         glossary_registered?: boolean;
         glossary_notice?: string;
@@ -127,6 +150,7 @@ export function LunaCandidatesPending() {
               ? {
                   ...c,
                   content: json.content ?? c.content,
+                  meta: json.meta ?? c.meta,
                   thread: json.thread ?? c.thread,
                   is_my_turn:
                     c.source === "question" &&
@@ -137,6 +161,11 @@ export function LunaCandidatesPending() {
           )
         );
         setReviseOpen((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setGlossaryEdit((prev) => {
           const next = { ...prev };
           delete next[id];
           return next;
@@ -221,6 +250,11 @@ export function LunaCandidatesPending() {
           });
 
           if (kind === "glossary") {
+            const editing = glossaryEdit[item.id];
+            const registerBlocked = editing
+              ? !editing.term_ko.trim()
+              : glossaryCardTitle(glossary).missingTerm;
+
             return (
               <CandidateCardShell key={item.id}>
                 <div className="flex flex-wrap items-center gap-2">
@@ -238,40 +272,42 @@ export function LunaCandidatesPending() {
                   </span>
                   <ScopeBadge label={scopeLabel} />
                 </div>
-                <GlossaryCardBody
-                  meta={item.meta}
-                  content={item.content}
-                  evidence={item.evidence}
-                />
-                {reviseOpen[item.id] !== undefined ? (
-                  <textarea
-                    className="mt-3 w-full rounded-[9px] border p-2.5 text-[13px] outline-none focus:border-[#d9d2ff]"
-                    style={{ borderColor: K.line }}
-                    rows={3}
-                    value={reviseOpen[item.id]}
-                    onChange={(e) =>
-                      setReviseOpen((p) => ({ ...p, [item.id]: e.target.value }))
+                {editing ? (
+                  <GlossaryEditForm
+                    draft={editing}
+                    evidence={item.evidence}
+                    onChange={(next) =>
+                      setGlossaryEdit((p) => ({ ...p, [item.id]: next }))
                     }
-                    placeholder="고친 정의를 입력하세요"
                   />
-                ) : null}
+                ) : (
+                  <GlossaryCardBody
+                    meta={item.meta}
+                    content={item.content}
+                    evidence={item.evidence}
+                  />
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {reviseOpen[item.id] !== undefined ? (
+                  {editing ? (
                     <>
                       <Btn
                         primary
-                        disabled={busy || !reviseOpen[item.id]?.trim()}
+                        disabled={busy}
                         onClick={() =>
-                          void respond(item.id, "revise", reviseOpen[item.id])
+                          void respond(item.id, "revise", undefined, editing)
                         }
                       >
                         수정 반영
                       </Btn>
-                      <Btn onClick={() => setReviseOpen((p) => {
-                        const n = { ...p };
-                        delete n[item.id];
-                        return n;
-                      })}>
+                      <Btn
+                        onClick={() =>
+                          setGlossaryEdit((p) => {
+                            const n = { ...p };
+                            delete n[item.id];
+                            return n;
+                          })
+                        }
+                      >
                         취소
                       </Btn>
                     </>
@@ -279,23 +315,34 @@ export function LunaCandidatesPending() {
                     <>
                       <Btn
                         primary
-                        disabled={busy}
+                        disabled={busy || registerBlocked}
                         onClick={() => void respond(item.id, "confirm")}
                       >
                         맞아요 → 용어사전 등록
                       </Btn>
+                      {registerBlocked ? (
+                        <span
+                          className="text-[11.5px]"
+                          style={{ color: K.faint }}
+                        >
+                          용어명이 비어 있어 바로 등록할 수 없어요
+                        </span>
+                      ) : null}
                       <Btn
                         disabled={busy}
                         onClick={() =>
-                          setReviseOpen((p) => ({
+                          setGlossaryEdit((p) => ({
                             ...p,
-                            [item.id]: glossary.definition
+                            [item.id]: openGlossaryEditDraft(glossary)
                           }))
                         }
                       >
                         고쳐서 등록
                       </Btn>
-                      <Btn disabled={busy} onClick={() => void respond(item.id, "reject")}>
+                      <Btn
+                        disabled={busy}
+                        onClick={() => void respond(item.id, "reject")}
+                      >
                         아니에요
                       </Btn>
                     </>

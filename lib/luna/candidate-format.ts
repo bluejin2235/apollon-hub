@@ -10,6 +10,10 @@ export type GlossaryDraft = {
   category: "common" | "interior" | "hw";
 };
 
+export type GlossaryEditDraft = GlossaryDraft & {
+  movedFromTitle: boolean;
+};
+
 export type CandidateCardKind = "glossary" | "selfstudy" | "dialogue" | "general";
 
 export function isGlossaryCandidate(
@@ -22,18 +26,34 @@ export function isGlossaryCandidate(
   return false;
 }
 
+/** 용어명 칸에 정의 문장이 들어온 경우 판별 */
+export function looksLikeDefinitionSentence(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (t.length > 40) return true;
+  if (/[.。]/.test(t) || /다\./.test(t)) return true;
+  // 조사 는/은/이/가 뒤에 공백·서술 이어짐
+  if (/(?:는|은|이|가)\s+\S/.test(t)) return true;
+  return false;
+}
+
 export function parseGlossaryMeta(
   meta: Record<string, unknown> | null | undefined,
   content: string
 ): GlossaryDraft {
   const m = meta ?? {};
+  // meta.term_ko 키가 있으면(빈 문자열 포함) 명시값 우선 — 수정 저장 후 빈 용어명 유지
   const term_ko =
-    (typeof m.term_ko === "string" && m.term_ko.trim()) ||
-    content.split("\n")[0]?.trim() ||
-    content.trim().slice(0, 80);
+    typeof m.term_ko === "string"
+      ? m.term_ko.trim()
+      : content.split("\n")[0]?.trim() || content.trim().slice(0, 80);
   const cat = m.category;
   const category: GlossaryDraft["category"] =
     cat === "interior" || cat === "hw" ? cat : "common";
+  const definitionFromMeta =
+    (typeof m.definition === "string" && m.definition.trim()) ||
+    (typeof m.definition_draft === "string" && m.definition_draft.trim()) ||
+    "";
   return {
     term_ko,
     term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : null,
@@ -42,11 +62,43 @@ export function parseGlossaryMeta(
       typeof m.term_zh_pron === "string" && m.term_zh_pron.trim()
         ? m.term_zh_pron.trim()
         : null,
-    definition:
-      (typeof m.definition === "string" && m.definition.trim()) ||
-      (typeof m.definition_draft === "string" && m.definition_draft.trim()) ||
-      content.trim(),
+    definition: definitionFromMeta || content.trim(),
     category
+  };
+}
+
+/** 카드 제목: 용어명만. 없거나 문장이면 정의 앞 30자 + 용어명 없음 표시 */
+export function glossaryCardTitle(draft: GlossaryDraft): {
+  title: string;
+  missingTerm: boolean;
+} {
+  const ko = draft.term_ko.trim();
+  if (ko && !looksLikeDefinitionSentence(ko)) {
+    return { title: ko, missingTerm: false };
+  }
+  const defSource =
+    draft.definition.trim() ||
+    (looksLikeDefinitionSentence(ko) ? ko : "");
+  if (!defSource) {
+    return { title: "—", missingTerm: true };
+  }
+  const title =
+    defSource.length > 30 ? `${defSource.slice(0, 30)}…` : defSource;
+  return { title, missingTerm: true };
+}
+
+/** 편집 모드 오픈 시 문장형 용어명을 정의로 이동 */
+export function openGlossaryEditDraft(draft: GlossaryDraft): GlossaryEditDraft {
+  if (!looksLikeDefinitionSentence(draft.term_ko)) {
+    return { ...draft, movedFromTitle: false };
+  }
+  const moved = draft.term_ko.trim();
+  const definition = draft.definition.trim() || moved;
+  return {
+    ...draft,
+    term_ko: "",
+    definition,
+    movedFromTitle: true
   };
 }
 

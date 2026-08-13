@@ -4,6 +4,7 @@ import {
   shouldRegisterGlossary,
   tryRegisterGlossaryFromCandidate
 } from "@/lib/luna/candidate-glossary";
+import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
 import {
   makeTurn,
   normalizeThread,
@@ -16,11 +17,56 @@ export const runtime = "nodejs";
 
 type Action = "confirm" | "revise" | "reject" | "not_needed";
 
+type GlossaryPatch = {
+  term_ko?: string;
+  term_en?: string | null;
+  term_zh?: string | null;
+  term_zh_pron?: string | null;
+  definition?: string;
+  category?: string;
+};
+
 type Body = {
   id?: string;
   action?: string;
   text?: string;
+  glossary?: GlossaryPatch;
 };
+
+function normalizeGlossaryPatch(
+  raw: GlossaryPatch | undefined
+): {
+  term_ko: string;
+  term_en: string | null;
+  term_zh: string | null;
+  term_zh_pron: string | null;
+  definition: string;
+  category: "common" | "interior" | "hw";
+} | null {
+  if (!raw || typeof raw !== "object") return null;
+  const category =
+    raw.category === "interior" || raw.category === "hw"
+      ? raw.category
+      : "common";
+  return {
+    term_ko: typeof raw.term_ko === "string" ? raw.term_ko.trim() : "",
+    term_en:
+      typeof raw.term_en === "string" && raw.term_en.trim()
+        ? raw.term_en.trim()
+        : null,
+    term_zh:
+      typeof raw.term_zh === "string" && raw.term_zh.trim()
+        ? raw.term_zh.trim()
+        : null,
+    term_zh_pron:
+      typeof raw.term_zh_pron === "string" && raw.term_zh_pron.trim()
+        ? raw.term_zh_pron.trim()
+        : null,
+    definition:
+      typeof raw.definition === "string" ? raw.definition.trim() : "",
+    category
+  };
+}
 
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
@@ -49,6 +95,7 @@ export async function POST(request: NextRequest) {
       ? actionRaw
       : null;
   const text = typeof body.text === "string" ? body.text.trim() : "";
+  const glossaryPatch = normalizeGlossaryPatch(body.glossary);
 
   if (!id || !action) {
     return NextResponse.json(
@@ -56,9 +103,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (action === "revise" && !text) {
+  if (action === "revise" && !text && !glossaryPatch) {
     return NextResponse.json(
-      { error: "text is required for revise" },
+      { error: "text or glossary is required for revise" },
       { status: 400 }
     );
   }
@@ -140,6 +187,59 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "revise") {
+    const prevMeta =
+      current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
+        ? (current.meta as Record<string, unknown>)
+        : {};
+    const category =
+      typeof current.category === "string" ? current.category : undefined;
+
+    // 용어형: 필드별 구조화 저장 (AI 문답 생략)
+    if (
+      glossaryPatch &&
+      isGlossaryCandidate(prevMeta, category)
+    ) {
+      const nextMeta: Record<string, unknown> = {
+        ...prevMeta,
+        kind: "glossary",
+        term_ko: glossaryPatch.term_ko,
+        term_en: glossaryPatch.term_en,
+        term_zh: glossaryPatch.term_zh,
+        term_zh_pron: glossaryPatch.term_zh_pron,
+        definition: glossaryPatch.definition,
+        category: glossaryPatch.category
+      };
+      const nextContent =
+        glossaryPatch.definition ||
+        glossaryPatch.term_ko ||
+        content;
+
+      const { data, error } = await admin
+        .from("luna_learnings")
+        .update({
+          content: nextContent,
+          meta: nextMeta,
+          category: "term"
+        })
+        .eq("id", id)
+        .eq("status", "candidate")
+        .select("id, status, content, thread, meta")
+        .maybeSingle();
+
+      if (error) {
+        console.error("[luna/candidates/respond] glossary revise", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        id: data?.id,
+        status: data?.status ?? "candidate",
+        content: data?.content,
+        meta: data?.meta ?? nextMeta,
+        thread: normalizeThread(data?.thread ?? thread)
+      });
+    }
+
     const nextThread: ThreadTurn[] = [...thread, makeTurn("human", text)];
     const lunaText =
       (await runDialogueTurn(admin, {
