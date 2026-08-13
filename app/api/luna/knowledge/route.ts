@@ -26,10 +26,11 @@ type LearningRow = {
   scope_suggestion: string | null;
   evidence: string | null;
   source_conversation_id: string | null;
+  source_id: string | null;
 };
 
 const SELECT_FIELDS =
-  "id, content, category, status, confidence, use_count, last_used_at, created_at, resolved_at, author_id, merged_from, importance, origin, source, scope_suggestion, evidence, source_conversation_id";
+  "id, content, category, status, confidence, use_count, last_used_at, created_at, resolved_at, author_id, merged_from, importance, origin, source, scope_suggestion, evidence, source_conversation_id, source_id";
 
 async function requireSuperAdmin(request: NextRequest) {
   const user = await getApiUser(request);
@@ -107,6 +108,56 @@ export async function GET(request: NextRequest) {
   const { admin } = auth;
 
   const url = request.nextUrl;
+
+  // 단건 상세 + 변경 이력
+  const detailId = (url.searchParams.get("id") ?? "").trim();
+  if (detailId) {
+    const { data: row, error } = await admin
+      .from("luna_learnings")
+      .select(SELECT_FIELDS)
+      .eq("id", detailId)
+      .neq("category", "identity")
+      .maybeSingle();
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!row) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    let source_title: string | null = null;
+    const sourceId =
+      typeof row.source_id === "string" ? row.source_id : null;
+    if (sourceId) {
+      const { data: src } = await admin
+        .from("luna_knowledge_sources")
+        .select("title")
+        .eq("id", sourceId)
+        .maybeSingle();
+      if (typeof src?.title === "string" && src.title.trim()) {
+        source_title = src.title.trim();
+      }
+    }
+
+    const { data: versions, error: verError } = await admin
+      .from("luna_learning_versions")
+      .select(
+        "id, version, content, status, change_note, edited_by, editor_name, created_at"
+      )
+      .eq("learning_id", detailId)
+      .order("version", { ascending: false })
+      .limit(50);
+    if (verError) {
+      console.error("[luna/knowledge] versions", verError);
+    }
+
+    return NextResponse.json({
+      item: { ...row, source_title },
+      versions: versions ?? [],
+      can_manage: true
+    });
+  }
+
   const statusRaw = url.searchParams.get("status") ?? "active";
   const status = STATUSES.has(statusRaw) ? statusRaw : "active";
   const sort = url.searchParams.get("sort") ?? "recent";
@@ -194,6 +245,25 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const sourceIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.source_id)
+        .filter((id): id is string => typeof id === "string" && Boolean(id))
+    )
+  );
+  const sourceTitleMap = new Map<string, string>();
+  if (sourceIds.length > 0) {
+    const { data: sources } = await admin
+      .from("luna_knowledge_sources")
+      .select("id, title")
+      .in("id", sourceIds);
+    for (const s of sources ?? []) {
+      const title = typeof s.title === "string" ? s.title.trim() : "";
+      if (title) sourceTitleMap.set(s.id as string, title);
+    }
+  }
+
   const items = rows.map((r) => {
     const from = Array.isArray(r.merged_from) ? r.merged_from : [];
     const related = from
@@ -203,6 +273,7 @@ export async function GET(request: NextRequest) {
     return {
       ...r,
       author_name: r.author_id ? authorMap.get(r.author_id) || null : null,
+      source_title: r.source_id ? sourceTitleMap.get(r.source_id) ?? null : null,
       related
     };
   });
@@ -218,7 +289,8 @@ export async function GET(request: NextRequest) {
     page_size: PAGE_SIZE,
     total: count ?? 0,
     counts,
-    stats
+    stats,
+    can_manage: true
   });
 }
 
@@ -271,6 +343,7 @@ export async function PATCH(request: NextRequest) {
     id?: string;
     status?: string;
     content?: string;
+    scope_suggestion?: string | null;
     change_note?: string;
   };
   try {
@@ -290,26 +363,35 @@ export async function PATCH(request: NextRequest) {
     typeof body.content === "string" ? body.content.trim() : "";
   const changeNote =
     typeof body.change_note === "string" ? body.change_note.trim() : "";
+  const hasScope =
+    Object.prototype.hasOwnProperty.call(body, "scope_suggestion");
+  const nextScopeRaw = body.scope_suggestion;
+  const nextScope =
+    nextScopeRaw === "org" || nextScopeRaw === "personal"
+      ? nextScopeRaw
+      : nextScopeRaw === null || nextScopeRaw === ""
+        ? null
+        : undefined;
 
-  if (!nextStatus && !nextContent) {
+  if (!nextStatus && !nextContent && !hasScope) {
     return NextResponse.json(
-      { error: "status or content required" },
+      { error: "status, content, or scope_suggestion required" },
       { status: 400 }
     );
   }
   if (nextStatus && !STATUSES.has(nextStatus)) {
     return NextResponse.json({ error: "invalid status" }, { status: 400 });
   }
-  if (nextContent && !changeNote) {
+  if ((nextContent || nextStatus || hasScope) && !changeNote) {
     return NextResponse.json(
-      { error: "change_note is required when editing content" },
+      { error: "change_note is required" },
       { status: 400 }
     );
   }
 
   const { data: row, error: fetchError } = await admin
     .from("luna_learnings")
-    .select("id, content, status, category")
+    .select("id, content, status, category, scope_suggestion")
     .eq("id", id)
     .maybeSingle();
 
@@ -323,6 +405,13 @@ export async function PATCH(request: NextRequest) {
   const patch: Record<string, unknown> = {};
   if (nextStatus && nextStatus !== row.status) patch.status = nextStatus;
   if (nextContent && nextContent !== row.content) patch.content = nextContent;
+  if (hasScope && nextScope !== undefined) {
+    const prevScope =
+      row.scope_suggestion === "org" || row.scope_suggestion === "personal"
+        ? row.scope_suggestion
+        : null;
+    if (nextScope !== prevScope) patch.scope_suggestion = nextScope;
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: true, unchanged: true });
@@ -340,11 +429,13 @@ export async function PATCH(request: NextRequest) {
 
   const note =
     changeNote ||
-    (nextStatus === "archived"
+    (nextStatus === "conflict"
       ? "보류"
-      : nextStatus
-        ? `상태 변경 → ${nextStatus}`
-        : null);
+      : nextStatus === "archived"
+        ? "폐기"
+        : nextStatus
+          ? `상태 변경 → ${nextStatus}`
+          : null);
 
   try {
     await appendLearningVersion(admin, {
