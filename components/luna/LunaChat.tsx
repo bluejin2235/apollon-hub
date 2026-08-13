@@ -425,9 +425,9 @@ type LunaChatProps = {
 };
 
 const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
-  notion: true,
-  web: true,
-  nas: true
+  notion: false,
+  web: false,
+  nas: false
 };
 
 const DEFAULT_NAS_DRIVE_MODE: LunaNasDriveMode = "office";
@@ -453,6 +453,10 @@ export function LunaChat({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipTitleCommitRef = useRef(false);
   const stickToBottomRef = useRef(true);
+  const connectorsByConvRef = useRef<Map<string, LunaConnectorsState>>(
+    new Map()
+  );
+  const prevConversationIdRef = useRef<string | null | undefined>(undefined);
   useMeasureBottomUi(bottomUiRef, true);
   const [connectors, setConnectors] = useState<LunaConnectorsState>(
     DEFAULT_INPUT_CONNECTORS
@@ -532,7 +536,7 @@ export function LunaChat({
 
   function sendChoice(text: string) {
     forceStickToBottom();
-    onSend(text, { notion: true, web: true, nas: true }, [], [], emptySkills);
+    onSend(text, connectors, [], [], emptySkills);
   }
 
   function handleSendWrapped(
@@ -562,6 +566,45 @@ export function LunaChat({
     setEditingTitle(false);
     setTitleDraft(title);
   }, [conversation?.id, title]);
+
+  function handleConnectorsChange(next: LunaConnectorsState) {
+    setConnectors(next);
+    if (conversation?.id) {
+      connectorsByConvRef.current.set(conversation.id, next);
+    }
+  }
+
+  // 검색 소스: 대화별로 유지, 새 대화(null)에서는 전부 꺼짐으로 초기화
+  useEffect(() => {
+    const nextId = conversation?.id ?? null;
+    const prevId = prevConversationIdRef.current;
+    prevConversationIdRef.current = nextId;
+
+    if (prevId === undefined) {
+      setConnectors(DEFAULT_INPUT_CONNECTORS);
+      return;
+    }
+
+    if (nextId === null) {
+      setConnectors(DEFAULT_INPUT_CONNECTORS);
+      return;
+    }
+
+    if (prevId === null) {
+      // 첫 메시지 직후 — 직전(새 대화)에서 켠 토글을 이어가 저장
+      setConnectors((current) => {
+        connectorsByConvRef.current.set(nextId, current);
+        return current;
+      });
+      return;
+    }
+
+    if (prevId !== nextId) {
+      setConnectors(
+        connectorsByConvRef.current.get(nextId) ?? DEFAULT_INPUT_CONNECTORS
+      );
+    }
+  }, [conversation?.id]);
 
   useEffect(() => {
     if (editingTitle) {
@@ -822,7 +865,7 @@ export function LunaChat({
             conversationId={conversation?.id ?? null}
             onEnsureConversation={onEnsureConversation}
             connectors={connectors}
-            onConnectorsChange={setConnectors}
+            onConnectorsChange={handleConnectorsChange}
             focusTick={focusTick}
           />
         </div>

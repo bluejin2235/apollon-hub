@@ -43,9 +43,9 @@ const EMPTY_SKILLS: LunaSkillsSelection = {
 };
 
 const DEFAULT_CONNECTORS: LunaConnectorsState = {
-  notion: true,
-  web: true,
-  nas: true
+  notion: false,
+  web: false,
+  nas: false
 };
 
 export default function LunaPage() {

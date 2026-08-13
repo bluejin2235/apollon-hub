@@ -107,9 +107,9 @@ export function LunaInput({
   const [roleOn, setRoleOn] = useState<Record<string, boolean>>({});
   const [taskOn, setTaskOn] = useState<Record<string, boolean>>({});
   const [scopeOn, setScopeOn] = useState<Record<ScopeKey, boolean>>({
-    notion: true,
-    nas: true,
-    web: true,
+    notion: false,
+    nas: false,
+    web: false,
     youtube: false
   });
   const [attachments, setAttachments] = useState<LunaAttachmentRef[]>([]);
