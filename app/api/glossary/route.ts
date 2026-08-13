@@ -1,29 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import type {
+  GlossaryCategory,
+  GlossaryStats,
+  GlossaryVersionItem
+} from "@/lib/glossary/types";
 import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
+import { kstWeekBounds } from "@/lib/luna/self-report";
 
 export const runtime = "nodejs";
 
-export type GlossaryCategory = "common" | "interior" | "hw";
-
-export type GlossaryListItem = {
-  id: string;
-  term_ko: string;
-  term_en: string | null;
-  term_zh: string | null;
-  term_zh_pron: string | null;
-  category: GlossaryCategory;
-};
-
-export type GlossaryVersionItem = {
-  id: string;
-  version: number;
-  editor_type: "human" | "luna";
-  editor_name: string | null;
-  change_note: string | null;
-  created_at: string;
-};
+export type {
+  GlossaryCategory,
+  GlossaryListItem,
+  GlossaryStats,
+  GlossaryVersionItem
+} from "@/lib/glossary/types";
 
 const TERM_SELECT =
   "id, term_ko, term_en, term_zh, term_zh_pron, category, definition, version, updated_at, updated_by";
@@ -58,9 +51,8 @@ function bearer(request: NextRequest): string | null {
 
 /** 지식후보함에 쌓인 용어형 후보 수 — 상단 "확인 필요 N" */
 async function countTermCandidates(
-  admin: ReturnType<typeof getServiceSupabase>
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>
 ): Promise<number> {
-  if (!admin) return 0;
   const { data, error } = await admin
     .from("luna_learnings")
     .select("category, meta, snoozed_until")
@@ -82,6 +74,41 @@ async function countTermCandidates(
         : null;
     return isGlossaryCandidate(meta, row.category as string | null);
   }).length;
+}
+
+/** 설정 화면용 관리 지표 — ?stats=1 일 때만 계산 */
+async function buildGlossaryStats(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  pendingCandidates: number
+): Promise<GlossaryStats> {
+  const week = kstWeekBounds();
+  const countByCategory = async (cat: GlossaryCategory) => {
+    const { count, error } = await admin
+      .from("glossary_terms")
+      .select("id", { count: "exact", head: true })
+      .eq("category", cat);
+    if (error) return null;
+    return count ?? 0;
+  };
+
+  const [totalRes, weekRes, common, interior, hw] = await Promise.all([
+    admin.from("glossary_terms").select("id", { count: "exact", head: true }),
+    admin
+      .from("glossary_terms")
+      .select("id", { count: "exact", head: true })
+      .gte("updated_at", week.startIso)
+      .lt("updated_at", week.endIso),
+    countByCategory("common"),
+    countByCategory("interior"),
+    countByCategory("hw")
+  ]);
+
+  return {
+    total: totalRes.count ?? 0,
+    week_updated: weekRes.error ? 0 : (weekRes.count ?? 0),
+    pending_candidates: pendingCandidates,
+    by_category: { common, interior, hw }
+  };
 }
 
 /** 편집자 표시 이름은 profiles 기준 (auth 메타데이터에는 비어 있는 경우가 많다) */
@@ -157,6 +184,7 @@ export async function GET(request: NextRequest) {
 
   // 이 목록은 루나 사이드바가 모든 화면에서 부른다.
   // 용어 테이블이 없거나 조회에 실패해도 사이드바가 죽지 않도록 빈 목록으로 되돌린다.
+  const wantStats = request.nextUrl.searchParams.get("stats") === "1";
   const { data: terms, error } = await admin
     .from("glossary_terms")
     .select(LIST_SELECT)
@@ -168,14 +196,19 @@ export async function GET(request: NextRequest) {
       terms: [],
       pending_candidates: 0,
       available: false,
-      message: "용어사전 테이블을 읽지 못했습니다."
+      message: "용어사전 테이블을 읽지 못했습니다.",
+      ...(wantStats ? { stats: null } : {})
     });
   }
 
+  const pending_candidates = await countTermCandidates(admin);
   return NextResponse.json({
     terms: terms ?? [],
-    pending_candidates: await countTermCandidates(admin),
-    available: true
+    pending_candidates,
+    available: true,
+    ...(wantStats
+      ? { stats: await buildGlossaryStats(admin, pending_candidates) }
+      : {})
   });
 }
 

@@ -27,19 +27,20 @@ export function StatCard({
   value,
   sub,
   valueClassName,
-  small
+  small,
+  onClick
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   valueClassName?: string;
   small?: boolean;
+  onClick?: () => void;
 }) {
-  return (
-    <div
-      className="rounded-[9px] px-3.5 py-3"
-      style={{ background: K.panel }}
-    >
+  const className = "rounded-[9px] px-3.5 py-3 text-left";
+  const style = { background: K.panel };
+  const body = (
+    <>
       <div className="text-[12px]" style={{ color: K.sub }}>
         {label}
       </div>
@@ -53,6 +54,23 @@ export function StatCard({
           {sub}
         </div>
       ) : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${className} transition-opacity hover:opacity-90`}
+        style={style}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className={className} style={style}>
+      {body}
     </div>
   );
 }
