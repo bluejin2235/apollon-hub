@@ -7,10 +7,10 @@ import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
-import { LunaKnowledgeSources } from "@/components/luna/knowledge/LunaKnowledgeSources";
 import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
 import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
 import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
+import { LunaTalkSources } from "@/components/luna/talk/LunaTalkSources";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
@@ -1556,7 +1556,6 @@ export function LunaSettingsTab() {
 
     if (menu === "knowledge") {
       if (sub === "confirmed") return <LunaKnowledgeTab />;
-      if (sub === "sources") return <LunaKnowledgeSources />;
       if (sub === "glossary") return <LunaKnowledgeGlossary />;
       if (sub === "conflict") return <LunaKnowledgeConflict />;
       if (sub === "workserver") return <LunaKnowledgeWorkserver />;
@@ -1565,6 +1564,7 @@ export function LunaSettingsTab() {
 
     if (menu === "talk") {
       if (sub === "history") return <LunaTalkHistory />;
+      if (sub === "sources") return <LunaTalkSources />;
       if (sub === "metrics") return <LunaTalkMetrics />;
     }
 

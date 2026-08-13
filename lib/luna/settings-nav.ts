@@ -8,13 +8,12 @@ export type LunaMenuSlug =
 
 export type LunaKnowledgeSub =
   | "confirmed"
-  | "sources"
   | "glossary"
   | "conflict"
   | "workserver"
   | "notion";
 
-export type LunaTalkSub = "history" | "metrics";
+export type LunaTalkSub = "history" | "sources" | "metrics";
 
 export type LunaCandidatesSub = "pending" | "mine" | "history";
 
@@ -52,7 +51,6 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "지식",
     subs: [
       { slug: "confirmed", label: "확정 지식" },
-      { slug: "sources", label: "원문" },
       { slug: "glossary", label: "용어사전" },
       { slug: "conflict", label: "충돌 보류함" },
       { slug: "workserver", label: "Work서버" },
@@ -64,6 +62,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "대화",
     subs: [
       { slug: "history", label: "대화 이력" },
+      { slug: "sources", label: "구술·문서" },
       { slug: "metrics", label: "관측 지표" }
     ]
   },
@@ -244,6 +243,11 @@ export function canonicalLunaSettingsUrl(
 
   if (rawMenu === "home") {
     return buildLunaSettingsUrl("dashboard");
+  }
+
+  // 구 지식>원문 → 대화>구술·문서
+  if (rawMenu === "knowledge" && rawSub === "sources") {
+    return buildLunaSettingsUrl("talk", "sources");
   }
 
   // Legacy-only params (memory, nas, teach, …) — not canonical menu slugs.

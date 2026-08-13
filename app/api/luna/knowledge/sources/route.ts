@@ -260,7 +260,6 @@ export async function GET(request: NextRequest) {
 
   const items = filtered.map((s) => {
     const learnings = learningBySource.get(s.id) ?? [];
-    const activeOrAll = learnings.filter((l) => l.status !== "archived");
     const conflictCount = learnings.filter((l) => l.status === "conflict").length;
     const termIds = asTermIds(s.meta);
     let terms: TermRow[] | null = null;
@@ -284,10 +283,10 @@ export async function GET(request: NextRequest) {
       meta: s.meta,
       created_at: s.created_at,
       updated_at: s.updated_at,
-      learning_count: activeOrAll.length,
+      learning_count: learnings.length,
       term_count: terms ? terms.length : null,
       conflict_count: conflictCount,
-      learnings: activeOrAll.map((l) => ({
+      learnings: learnings.map((l) => ({
         id: l.id,
         content: l.content,
         status: l.status,

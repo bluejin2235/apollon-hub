@@ -179,7 +179,16 @@ function SmBtn({
   );
 }
 
-export function LunaKnowledgeSources() {
+function learningStatusBadge(status: string): {
+  label: string;
+  kind: "warn" | "ok" | "src";
+} {
+  if (status === "active") return { label: "확정", kind: "ok" };
+  if (status === "archived") return { label: "폐기", kind: "src" };
+  return { label: "후보 대기", kind: "warn" };
+}
+
+export function LunaTalkSources() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState<string[]>([]);
@@ -463,6 +472,13 @@ export function LunaKnowledgeSources() {
   return (
     <KnowledgeShell>
       <SupplyToast message={toast} onClose={() => setToast(null)} />
+
+      <div className="mb-3.5">
+        <h2 className="text-[17px] font-bold tracking-[-0.2px]">구술·문서</h2>
+        <p className="mt-1 text-[12.5px]" style={{ color: K.sub }}>
+          블루진 구술과 회사 문서 — 여기서 지식후보가 나옵니다
+        </p>
+      </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         {PERIODS.map((p) => (
@@ -902,12 +918,14 @@ export function LunaKnowledgeSources() {
                           ) : (
                             visibleLearnings.map((l) => {
                               const scope = scopeLabel(l.scope_suggestion);
+                              const st = learningStatusBadge(l.status);
                               return (
                                 <div
                                   key={l.id}
                                   className="flex items-center gap-2.5 border-b py-[9px] last:border-b-0"
                                   style={{ borderColor: K.line2 }}
                                 >
+                                  <Badge kind={st.kind}>{st.label}</Badge>
                                   {scope ? (
                                     <Badge
                                       kind={
@@ -916,31 +934,31 @@ export function LunaKnowledgeSources() {
                                     >
                                       {scope.label}
                                     </Badge>
-                                  ) : (
-                                    <Badge kind="src">—</Badge>
-                                  )}
+                                  ) : null}
                                   <span className="min-w-0 flex-1 text-[13px] leading-[1.6]">
                                     {l.content}
                                   </span>
-                                  <span className="flex shrink-0 gap-1.5">
-                                    <SmBtn
-                                      onClick={() =>
-                                        setEditingLearning({
-                                          sourceId: item.id,
-                                          learningId: l.id,
-                                          content: l.content,
-                                          note: ""
-                                        })
-                                      }
-                                    >
-                                      수정
-                                    </SmBtn>
-                                    <SmBtn
-                                      onClick={() => void holdLearning(l.id)}
-                                    >
-                                      보류
-                                    </SmBtn>
-                                  </span>
+                                  {l.status !== "archived" ? (
+                                    <span className="flex shrink-0 gap-1.5">
+                                      <SmBtn
+                                        onClick={() =>
+                                          setEditingLearning({
+                                            sourceId: item.id,
+                                            learningId: l.id,
+                                            content: l.content,
+                                            note: ""
+                                          })
+                                        }
+                                      >
+                                        수정
+                                      </SmBtn>
+                                      <SmBtn
+                                        onClick={() => void holdLearning(l.id)}
+                                      >
+                                        보류
+                                      </SmBtn>
+                                    </span>
+                                  ) : null}
                                 </div>
                               );
                             })
