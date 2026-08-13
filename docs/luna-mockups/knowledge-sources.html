@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 지식 &gt; 원문 — 목업 v2</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --talk:#0F6E56; --talk-soft:#E1F5EE;
+    --cand:#D85A30; --cand-soft:#FAECE7; --cand-ink:#993C1D;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .mocklabel{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+
+  .subtabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);white-space:nowrap;cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--luna)}
+  .subtab .b{color:var(--cand-ink);font-weight:700}
+
+  /* 상단 기간칩 + 검색 */
+  .period{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:5px 13px;border-radius:20px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chip.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .period .range{margin-left:auto;font-size:11.5px;color:var(--faint)}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .stat{background:var(--panel);border-radius:9px;padding:12px 14px}
+  .stat .l{font-size:12px;color:var(--sub)}
+  .stat .v{font-size:22px;font-weight:700;margin-top:2px;letter-spacing:-.4px}
+  .stat .v.sm{font-size:15px}
+
+  /* 본문 2열 */
+  .body{display:grid;grid-template-columns:230px 1fr;gap:14px;align-items:start}
+
+  /* 좌측 사이드 */
+  .side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 10px;
+    position:sticky;top:16px;max-height:calc(100vh - 60px);overflow:auto}
+  .side .h{font-size:11px;color:var(--faint);font-weight:800;text-transform:uppercase;
+    padding:0 6px;margin:4px 0 6px}
+  .side .h:not(:first-child){margin-top:14px;padding-top:12px;border-top:1px solid var(--line2)}
+  .drow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .drow:hover{background:#f7f7f9}
+  .drow.on{background:var(--luna-soft);color:var(--luna-ink);font-weight:700}
+  .drow .d{flex:1}
+  .drow .n{font-size:11px;color:var(--faint)}
+  .drow.on .n{color:var(--luna-ink)}
+  .month{font-size:11.5px;color:var(--sub);font-weight:700;padding:6px 8px 2px}
+  .navmonth{display:flex;align-items:center;gap:6px;padding:2px 4px 8px}
+  .navmonth .arw{width:22px;height:22px;display:grid;place-items:center;border-radius:6px;
+    color:var(--sub);cursor:pointer;font-size:12px}
+  .navmonth .arw:hover{background:var(--chip)}
+  .navmonth .cur{flex:1;text-align:center;font-size:12.5px;font-weight:700}
+  .tag{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .tag:hover{background:#f7f7f9}
+  .tag.on{background:var(--luna-soft);color:var(--luna-ink);font-weight:700}
+  .tag .t{flex:1}
+  .tag .n{font-size:11px;color:var(--faint)}
+
+  /* 우측 목록 */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  input,select,textarea{font-family:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:9px;padding:8px 11px;background:var(--panel);color:var(--ink);outline:none}
+  input:focus,select:focus,textarea:focus{border-color:#d9d2ff}
+  .grow{flex:1;min-width:170px}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.sm{padding:5px 10px;font-size:11.5px}
+  .btn.ghost{border-color:transparent;color:var(--sub)}
+
+  .daylabel{font-size:12px;color:var(--sub);margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  .daylabel b{color:var(--ink);font-size:13px;font-weight:700}
+  .daylabel .cnt{color:var(--faint)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:10px}
+  .chead{padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;flex-wrap:wrap}
+  .chead .t{font-size:14.5px;font-weight:700;flex:1;min-width:180px}
+  .chead .m{font-size:11.5px;color:var(--faint)}
+  .badge{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px}
+  .b-know{background:var(--luna-soft);color:var(--luna-ink)}
+  .b-term{background:var(--talk-soft);color:var(--talk)}
+  .b-src{background:var(--chip);color:var(--sub)}
+  .b-warn{background:var(--cand-soft);color:var(--cand-ink)}
+  .caret{color:var(--faint);font-size:12px}
+
+  .cbody{border-top:1px solid var(--line2);padding:16px}
+  .sec{font-size:11px;color:var(--faint);font-weight:800;text-transform:uppercase;margin-bottom:8px}
+  .origin{background:#fafbfc;border:1px solid var(--line2);border-radius:9px;padding:14px 16px;
+    font-size:13px;line-height:1.8;white-space:pre-wrap;max-height:240px;overflow:auto}
+  .cbody .row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line2)}
+  .cbody .row:last-child{border-bottom:0}
+  .cbody .row .t{flex:1;font-size:13px;line-height:1.6}
+  .cbody .row .acts{display:flex;gap:6px;flex-shrink:0}
+  .subsec{margin-top:18px}
+  .edit{margin-top:10px;border:1px solid #d9d2ff;border-radius:9px;padding:12px 14px;background:#fbfaff}
+  .edit textarea{width:100%;height:76px;line-height:1.7;resize:vertical;margin-bottom:8px}
+  .edit .l{font-size:11px;color:var(--faint);margin-bottom:4px}
+
+  @media(max-width:900px){
+    .body{grid-template-columns:1fr}
+    .side{position:static;max-height:none}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">PAGE — knowledge / sources (원문) · 날짜·주제 탐색</div>
+
+<div class="subtabs">
+  <div class="subtab">확정 지식</div>
+  <div class="subtab on">원문</div>
+  <div class="subtab">용어사전</div>
+  <div class="subtab">충돌 보류함 <span class="b">1</span></div>
+  <div class="subtab">Work서버</div>
+  <div class="subtab">노션</div>
+</div>
+
+<div class="period">
+  <div class="chip">7일</div>
+  <div class="chip on">30일</div>
+  <div class="chip">90일</div>
+  <div class="chip">전체</div>
+  <div class="chip">직접 지정</div>
+  <div class="range">2026.07.15 – 08.13 · 원문 14편</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="l">원문</div><div class="v">14</div></div>
+  <div class="stat"><div class="l">여기서 나온 지식</div><div class="v">63</div></div>
+  <div class="stat"><div class="l">여기서 나온 용어</div><div class="v">28</div></div>
+  <div class="stat"><div class="l">최근 입력</div><div class="v sm">오늘 · 이택진</div></div>
+</div>
+
+<div class="body">
+
+  <!-- 좌측: 날짜 + 주제 -->
+  <aside class="side">
+    <div class="navmonth">
+      <div class="arw">‹</div>
+      <div class="cur">2026년 8월</div>
+      <div class="arw">›</div>
+    </div>
+
+    <div class="h">날짜</div>
+    <div class="drow on"><span class="d">8월 13일 (목)</span><span class="n">2</span></div>
+    <div class="drow"><span class="d">8월 12일 (수)</span><span class="n">1</span></div>
+    <div class="drow"><span class="d">8월 11일 (화)</span><span class="n">3</span></div>
+    <div class="drow"><span class="d">8월 8일 (금)</span><span class="n">2</span></div>
+    <div class="drow"><span class="d">8월 6일 (수)</span><span class="n">1</span></div>
+    <div class="drow"><span class="d">8월 4일 (월)</span><span class="n">2</span></div>
+    <div class="month">7월</div>
+    <div class="drow"><span class="d">7월 29일 (화)</span><span class="n">2</span></div>
+    <div class="drow"><span class="d">7월 22일 (화)</span><span class="n">1</span></div>
+
+    <div class="h">주제</div>
+    <div class="tag on"><span class="t">전체</span><span class="n">14</span></div>
+    <div class="tag"><span class="t">정체성·철학</span><span class="n">2</span></div>
+    <div class="tag"><span class="t">프로젝트 이력</span><span class="n">4</span></div>
+    <div class="tag"><span class="t">협력사·외주</span><span class="n">2</span></div>
+    <div class="tag"><span class="t">견적·계약</span><span class="n">3</span></div>
+    <div class="tag"><span class="t">발주처</span><span class="n">1</span></div>
+    <div class="tag"><span class="t">프로세스</span><span class="n">2</span></div>
+
+    <div class="h">구술자</div>
+    <div class="tag on"><span class="t">전체</span><span class="n">14</span></div>
+    <div class="tag"><span class="t">이택진</span><span class="n">14</span></div>
+  </aside>
+
+  <!-- 우측: 목록 -->
+  <section>
+    <div class="toolbar">
+      <input class="grow" placeholder="원문 내용 검색">
+      <select style="width:110px"><option>최근순</option><option>오래된순</option></select>
+      <button class="btn">원문 추가</button>
+    </div>
+
+    <div class="daylabel"><b>2026년 8월 13일 (목)</b><span class="cnt">· 리포트 2편 · 인터뷰 1일차</span></div>
+
+    <div class="card">
+      <div class="chead">
+        <span class="t">아폴론 정체성 — 우리는 무엇을 만드는 회사인가</span>
+        <span class="badge b-know">지식 5</span>
+        <span class="badge b-term">용어 7</span>
+        <span class="m">이택진 구술</span>
+        <span class="caret">▲</span>
+      </div>
+
+      <div class="cbody">
+        <div class="sec">원문</div>
+        <div class="origin">아폴론이머시브웍스는 기존 이머시브 미디어 회사들과 다르게 시작했다. 기존 업계 회사는 "뭐든 다 잘하는" 회사였다면, 아폴론은 처음부터 타깃 고객이 있었다 — 시행사, 삼우·희림·디에이 같은 대형 건축설계사, 그리고 쇼핑몰·호텔을 운영하는 운영사.
+
+핵심 개념은 '앵커테넌트(키테넌트)'다. 부동산 공간을 개발할 때 다양한 테넌트가 필요한데, 그중 공간을 대표하고 상징하며 고객을 끊임없이 재방문하게 만드는 것이 앵커테넌트다…</div>
+        <div class="toolbar" style="margin:10px 0 0">
+          <button class="btn sm">원문 수정</button>
+          <button class="btn sm">전체 보기</button>
+          <button class="btn sm ghost">요약 다시 만들기</button>
+        </div>
+
+        <div class="subsec">
+          <div class="sec">여기서 나온 지식 5</div>
+          <div class="row">
+            <span class="badge b-src">조직</span>
+            <span class="t">아폴론이 파는 것은 '이머시브 앵커테넌트' — 공간을 대표·상징하고 재방문을 유도하는 디지털 키테넌트다.</span>
+            <span class="acts"><button class="btn sm">수정</button><button class="btn sm">보류</button></span>
+          </div>
+          <div class="row">
+            <span class="badge b-src">조직</span>
+            <span class="t">아폴론의 숙명은 '집객'이다 — 직접 매출이든 주변 테넌트 매출이든 결국 유동인구를 만드는 것.</span>
+            <span class="acts"><button class="btn sm">수정</button><button class="btn sm">보류</button></span>
+          </div>
+          <div class="row">
+            <span class="badge b-src">조직</span>
+            <span class="t">슬로건의 핵심은 'beloved' — 사랑받아야 집객이 된다.</span>
+            <span class="acts"><button class="btn sm">수정</button><button class="btn sm">보류</button></span>
+          </div>
+          <div class="row" style="color:var(--faint)">
+            <span class="t">외 2건</span>
+            <span class="acts"><button class="btn sm ghost">모두 보기</button></span>
+          </div>
+
+          <div class="edit">
+            <div class="l">지식 수정 — 편집 중</div>
+            <textarea>아폴론의 숙명은 '집객'이다 — 직접 매출이든 주변 테넌트 매출이든 결국 유동인구를 만드는 것.</textarea>
+            <div class="l">무엇을 왜 바꿨나요</div>
+            <input style="width:100%;margin-bottom:8px" placeholder="예: 표현 다듬음">
+            <button class="btn primary sm">저장</button>
+            <button class="btn sm">취소</button>
+          </div>
+        </div>
+
+        <div class="subsec">
+          <div class="sec">여기서 나온 용어 7</div>
+          <div class="row">
+            <span class="t"><b>앵커테넌트</b> · Anchor Tenant · <b>锚定租户</b> — 공간을 대표·상징하며 고객 재방문을 유도하는 핵심 테넌트</span>
+            <span class="acts"><button class="btn sm">용어사전에서 보기</button></span>
+          </div>
+          <div class="row">
+            <span class="t"><b>이머시브 앵커테넌트</b> · Immersive Anchor Tenant — 미디어가 접목된 앵커테넌트</span>
+            <span class="acts"><button class="btn sm">용어사전에서 보기</button></span>
+          </div>
+          <div class="row" style="color:var(--faint)">
+            <span class="t">외 5건 — 테넌트 · 테넌트 믹스 전략 · 디지털 랜드마크 · beloved · 집객</span>
+            <span class="acts"><button class="btn sm ghost">모두 보기</button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chead">
+        <span class="t">인스파이어 계열 프로젝트 — 시즌 구분</span>
+        <span class="badge b-know">지식 4</span>
+        <span class="badge b-term">용어 2</span>
+        <span class="badge b-warn">충돌 1</span>
+        <span class="m">이택진 구술</span>
+        <span class="caret">▼</span>
+      </div>
+    </div>
+
+    <div class="daylabel" style="margin-top:18px"><b>2026년 8월 12일 (수)</b><span class="cnt">· 리포트 1편</span></div>
+
+    <div class="card">
+      <div class="chead">
+        <span class="t">착수보고서와 수행계획서 용어 정리</span>
+        <span class="badge b-know">지식 3</span>
+        <span class="badge b-term">용어 0</span>
+        <span class="m">이택진 구술</span>
+        <span class="caret">▼</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+</div>
+</body>
+</html>

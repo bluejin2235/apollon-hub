@@ -8,6 +8,7 @@ export type LunaMenuSlug =
 
 export type LunaKnowledgeSub =
   | "confirmed"
+  | "sources"
   | "glossary"
   | "conflict"
   | "workserver"
@@ -51,6 +52,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "지식",
     subs: [
       { slug: "confirmed", label: "확정 지식" },
+      { slug: "sources", label: "원문" },
       { slug: "glossary", label: "용어사전" },
       { slug: "conflict", label: "충돌 보류함" },
       { slug: "workserver", label: "Work서버" },

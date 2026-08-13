@@ -222,27 +222,147 @@ export async function GET(request: NextRequest) {
   });
 }
 
+async function appendLearningVersion(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  opts: {
+    learningId: string;
+    content: string;
+    status: string | null;
+    changeNote: string | null;
+    editedBy: string;
+    editorName: string | null;
+  }
+) {
+  const { data: last } = await admin
+    .from("luna_learning_versions")
+    .select("version")
+    .eq("learning_id", opts.learningId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion =
+    typeof last?.version === "number" && Number.isFinite(last.version)
+      ? last.version + 1
+      : 1;
+
+  const { error } = await admin.from("luna_learning_versions").insert({
+    learning_id: opts.learningId,
+    version: nextVersion,
+    content: opts.content,
+    status: opts.status,
+    change_note: opts.changeNote,
+    edited_by: opts.editedBy,
+    editor_name: opts.editorName
+  });
+
+  if (error) {
+    console.error("[luna/knowledge] version insert", error);
+    throw error;
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   const auth = await requireSuperAdmin(request);
   if ("error" in auth) return auth.error;
-  const { admin } = auth;
+  const { admin, user } = auth;
 
-  let body: { id?: string; status?: string };
+  let body: {
+    id?: string;
+    status?: string;
+    content?: string;
+    change_note?: string;
+  };
   try {
-    body = (await request.json()) as { id?: string; status?: string };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const id = typeof body.id === "string" ? body.id.trim() : "";
-  const status = typeof body.status === "string" ? body.status.trim() : "";
-  if (!id || !STATUSES.has(status)) {
-    return NextResponse.json({ error: "id and valid status required" }, { status: 400 });
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  const nextStatus =
+    typeof body.status === "string" ? body.status.trim() : "";
+  const nextContent =
+    typeof body.content === "string" ? body.content.trim() : "";
+  const changeNote =
+    typeof body.change_note === "string" ? body.change_note.trim() : "";
+
+  if (!nextStatus && !nextContent) {
+    return NextResponse.json(
+      { error: "status or content required" },
+      { status: 400 }
+    );
+  }
+  if (nextStatus && !STATUSES.has(nextStatus)) {
+    return NextResponse.json({ error: "invalid status" }, { status: 400 });
+  }
+  if (nextContent && !changeNote) {
+    return NextResponse.json(
+      { error: "change_note is required when editing content" },
+      { status: 400 }
+    );
+  }
+
+  const { data: row, error: fetchError } = await admin
+    .from("luna_learnings")
+    .select("id, content, status, category")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fetchError) {
+    return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  }
+  if (!row || row.category === "identity") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (nextStatus && nextStatus !== row.status) patch.status = nextStatus;
+  if (nextContent && nextContent !== row.content) patch.content = nextContent;
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ ok: true, unchanged: true });
+  }
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const editorName =
+    typeof profile?.name === "string" && profile.name.trim()
+      ? profile.name.trim()
+      : null;
+
+  const note =
+    changeNote ||
+    (nextStatus === "archived"
+      ? "보류"
+      : nextStatus
+        ? `상태 변경 → ${nextStatus}`
+        : null);
+
+  try {
+    await appendLearningVersion(admin, {
+      learningId: id,
+      content: row.content as string,
+      status: row.status as string,
+      changeNote: note,
+      editedBy: user.id,
+      editorName
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "version history failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const { error } = await admin
     .from("luna_learnings")
-    .update({ status })
+    .update(patch)
     .eq("id", id)
     .neq("category", "identity");
 
