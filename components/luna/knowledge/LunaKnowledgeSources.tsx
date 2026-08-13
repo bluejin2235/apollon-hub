@@ -16,13 +16,13 @@ import {
 import { SupplyToast } from "@/components/supplies/toast";
 import { clipText, K, scopeLabel } from "@/lib/luna/knowledge-format";
 import {
-  formatDayLabel,
   formatMonthLabel,
-  formatSideDate,
+  formatSourceDate,
   groupTypeSummary,
   kstYmd,
   recentInputLabel,
   shiftMonth,
+  sourceTypeLabel,
   type PeriodKey
 } from "@/lib/luna/knowledge-sources";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
@@ -50,6 +50,7 @@ type SourceItem = {
   source_type: string;
   spoken_by: string | null;
   spoken_at: string | null;
+  source_ref: string | null;
   topic: string;
   learning_count: number;
   term_count: number | null;
@@ -582,7 +583,7 @@ export function LunaKnowledgeSources() {
               <SideRow
                 key={d.date}
                 on={dateFilter === d.date}
-                label={formatSideDate(d.date)}
+                label={formatSourceDate(d.date, "side")}
                 count={d.count}
                 onClick={() =>
                   setDateFilter((prev) => (prev === d.date ? null : d.date))
@@ -668,7 +669,7 @@ export function LunaKnowledgeSources() {
                 style={{ color: K.sub }}
               >
                 <b className="text-[13px] font-bold" style={{ color: K.ink }}>
-                  {day === "unknown" ? "날짜 없음" : formatDayLabel(day)}
+                  {day === "unknown" ? "날짜 없음" : formatSourceDate(day, "full")}
                 </b>
                 <span style={{ color: K.faint }}>
                   · {groupTypeSummary(dayItems)}
@@ -711,6 +712,12 @@ export function LunaKnowledgeSources() {
                       </span>
                       <span
                         className="rounded-[20px] px-2 py-0.5 text-[10.5px] font-extrabold"
+                        style={{ background: K.chip, color: K.sub }}
+                      >
+                        {sourceTypeLabel(item.source_type)}
+                      </span>
+                      <span
+                        className="rounded-[20px] px-2 py-0.5 text-[10.5px] font-extrabold"
                         style={{ background: K.lunaSoft, color: K.lunaInk }}
                       >
                         지식 {item.learning_count}
@@ -738,6 +745,14 @@ export function LunaKnowledgeSources() {
                         {open ? "▲" : "▼"}
                       </span>
                     </button>
+                    {item.source_ref ? (
+                      <div
+                        className="px-4 pb-2 text-[11.5px]"
+                        style={{ color: K.faint }}
+                      >
+                        출처: {clipText(item.source_ref, 60)}
+                      </div>
+                    ) : null}
 
                     {open ? (
                       <div
@@ -1171,8 +1186,8 @@ export function LunaKnowledgeSources() {
                 }
               >
                 <option value="interview">인터뷰</option>
-                <option value="company_brief">리포트</option>
-                <option value="report">리포트(report)</option>
+                <option value="company_brief">회사소개서</option>
+                <option value="service_intro">서비스소개서</option>
               </FieldSelect>
             </div>
             <div className="flex justify-end gap-2">
@@ -1196,11 +1211,15 @@ export function LunaKnowledgeSources() {
             <h3 className="mb-2 text-[15px] font-bold">{fullViewItem.title}</h3>
             <p className="mb-3 text-[12px]" style={{ color: K.faint }}>
               {fullViewItem.spoken_at
-                ? formatDayLabel(fullViewItem.spoken_at)
+                ? formatSourceDate(fullViewItem.spoken_at, "full")
                 : "—"}
               {fullViewItem.spoken_by
                 ? ` · ${fullViewItem.spoken_by} 구술`
                 : ""}
+              {fullViewItem.source_ref
+                ? ` · 출처: ${fullViewItem.source_ref}`
+                : ""}
+              {` · ${sourceTypeLabel(fullViewItem.source_type)}`}
             </p>
             <div className="whitespace-pre-wrap text-[13px] leading-[1.8]">
               {fullViewItem.body}

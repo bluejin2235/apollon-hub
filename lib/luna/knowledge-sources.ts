@@ -26,9 +26,32 @@ export function asTermIds(meta: unknown): string[] | null {
 
 export function sourceTypeLabel(sourceType: string | null | undefined): string {
   if (sourceType === "interview") return "인터뷰";
-  if (sourceType === "company_brief" || sourceType === "report") return "리포트";
+  if (sourceType === "company_brief") return "회사소개서";
+  if (sourceType === "service_intro") return "서비스소개서";
   if (!sourceType) return "원문";
   return sourceType;
+}
+
+const WEEKDAYS_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+/** YYYY-MM-DD 달력일 기준 요일 (KST 날짜 문자열을 그대로 해석) */
+export function weekdayKoFromYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return WEEKDAYS_KO[dt.getUTCDay()] ?? "";
+}
+
+/** 목록 헤더·사이드 공통. style: full=2026년 8월 13일 (목), side=8월 13일 (목) */
+export function formatSourceDate(
+  ymd: string,
+  style: "full" | "side" = "full"
+): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return "—";
+  const wd = weekdayKoFromYmd(ymd);
+  if (style === "side") return `${m}월 ${d}일 (${wd})`;
+  return `${y}년 ${m}월 ${d}일 (${wd})`;
 }
 
 /** YYYY-MM-DD in Asia/Seoul */
@@ -83,17 +106,11 @@ export function formatRangeLabel(from: string | null, to: string | null): string
 }
 
 export function formatDayLabel(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  const wd = ["일", "월", "화", "수", "목", "금", "토"][dt.getUTCDay()] ?? "";
-  return `${y}년 ${m}월 ${d}일 (${wd})`;
+  return formatSourceDate(ymd, "full");
 }
 
 export function formatSideDate(ymd: string): string {
-  const [, m, d] = ymd.split("-").map(Number);
-  const dt = new Date(Date.UTC(2000, m! - 1, d!));
-  const wd = ["일", "월", "화", "수", "목", "금", "토"][dt.getUTCDay()] ?? "";
-  return `${m}월 ${d}일 (${wd})`;
+  return formatSourceDate(ymd, "side");
 }
 
 export function formatMonthLabel(ym: string): string {

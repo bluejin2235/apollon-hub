@@ -10,10 +10,14 @@ create table if not exists public.luna_knowledge_sources (
   source_type text not null default 'interview',
   spoken_by text null,
   spoken_at date null,
+  source_ref text null,
   meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.luna_knowledge_sources
+  add column if not exists source_ref text null;
 
 create index if not exists idx_luna_knowledge_sources_type
   on public.luna_knowledge_sources (source_type, spoken_at desc);

@@ -19,6 +19,7 @@ type SourceRow = {
   source_type: string;
   spoken_by: string | null;
   spoken_at: string | null;
+  source_ref: string | null;
   meta: unknown;
   created_at: string;
   updated_at: string;
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_knowledge_sources")
     .select(
-      "id, title, body, source_type, spoken_by, spoken_at, meta, created_at, updated_at"
+      "id, title, body, source_type, spoken_by, spoken_at, source_ref, meta, created_at, updated_at"
     )
     .order("spoken_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -278,6 +279,7 @@ export async function GET(request: NextRequest) {
       source_type: s.source_type,
       spoken_by: s.spoken_by,
       spoken_at: s.spoken_at,
+      source_ref: s.source_ref,
       topic: asTopic(s.meta),
       meta: s.meta,
       created_at: s.created_at,
