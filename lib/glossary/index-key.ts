@@ -33,7 +33,17 @@ const DOUBLE_TO_BASE: Record<string, string> = {
   ㅉ: "ㅈ"
 };
 
-/** 색인 버튼 정렬 순서: 초성 14자 → A~Z → 기타 */
+/** 색인 그룹 */
+export type IndexGroup = "all" | "ko" | "en" | "num";
+
+export const INDEX_GROUPS: Array<{ key: IndexGroup; label: string }> = [
+  { key: "all", label: "전체" },
+  { key: "ko", label: "가나다순" },
+  { key: "en", label: "알파벳순" },
+  { key: "num", label: "숫자순" }
+];
+
+/** 초성 버튼 정렬 순서 */
 export const KO_INDEX_ORDER = [
   "ㄱ",
   "ㄴ",
@@ -51,6 +61,7 @@ export const KO_INDEX_ORDER = [
   "ㅎ"
 ] as const;
 
+/** 숫자·특수문자 그룹의 기타 키 */
 export const OTHER_INDEX_KEY = "#";
 
 /** 한글 음절 한 글자의 초성을 뽑는다. 한글이 아니면 null */
@@ -63,29 +74,80 @@ export function chosungOf(char: string): string | null {
   return DOUBLE_TO_BASE[cho] ?? cho;
 }
 
+export type IndexKind = "ko" | "en" | "num";
+
 /**
- * 용어 한 건의 색인 키.
- * 한글로 시작하면 초성, 알파벳으로 시작하면 대문자, 그 외는 "#".
+ * 용어 한 건의 색인.
+ * - 한글 → 초성
+ * - 알파벳 → 대문자
+ * - 숫자 → 해당 숫자 문자 ("0"…"9")
+ * - 그 외 특수문자 → "#"
  */
-export function indexKeyOf(termKo: string | null | undefined): string {
+export function indexInfoOf(termKo: string | null | undefined): {
+  kind: IndexKind;
+  key: string;
+} {
   const first = (termKo ?? "").trim().charAt(0);
-  if (!first) return OTHER_INDEX_KEY;
+  if (!first) return { kind: "num", key: OTHER_INDEX_KEY };
   const cho = chosungOf(first);
-  if (cho) return cho;
-  if (/[a-zA-Z]/.test(first)) return first.toUpperCase();
-  return OTHER_INDEX_KEY;
+  if (cho) return { kind: "ko", key: cho };
+  if (/[a-zA-Z]/.test(first)) return { kind: "en", key: first.toUpperCase() };
+  if (/[0-9]/.test(first)) return { kind: "num", key: first };
+  return { kind: "num", key: OTHER_INDEX_KEY };
 }
 
-function rank(key: string): number {
-  const ko = KO_INDEX_ORDER.indexOf(key as (typeof KO_INDEX_ORDER)[number]);
-  if (ko >= 0) return ko;
-  if (/^[A-Z]$/.test(key)) return 100 + key.charCodeAt(0);
-  return 9999;
+/** @deprecated indexInfoOf 사용. 하위 호환용 */
+export function indexKeyOf(termKo: string | null | undefined): string {
+  return indexInfoOf(termKo).key;
 }
 
-/** 실제 데이터에 존재하는 색인 키만 정렬해서 돌려준다 */
+function rankKey(kind: IndexKind, key: string): number {
+  if (kind === "ko") {
+    const i = KO_INDEX_ORDER.indexOf(key as (typeof KO_INDEX_ORDER)[number]);
+    return i >= 0 ? i : 50;
+  }
+  if (kind === "en") return 100 + key.charCodeAt(0);
+  if (/^[0-9]$/.test(key)) return 200 + Number(key);
+  return 300;
+}
+
+/** 그룹에 속하는 글자 버튼 목록 (데이터에 있는 것만) */
+export function buildIndexKeysForGroup(
+  terms: Array<{ term_ko: string }>,
+  group: IndexGroup
+): string[] {
+  if (group === "all") return [];
+  const keys = new Set<string>();
+  for (const t of terms) {
+    const info = indexInfoOf(t.term_ko);
+    if (info.kind !== group) continue;
+    keys.add(info.key);
+  }
+  return Array.from(keys).sort(
+    (a, b) => rankKey(group, a) - rankKey(group, b)
+  );
+}
+
+/** 그룹·글자 필터 */
+export function matchesIndexFilter(
+  termKo: string,
+  group: IndexGroup,
+  letter: string | null
+): boolean {
+  if (group === "all") return true;
+  const info = indexInfoOf(termKo);
+  if (info.kind !== group) return false;
+  if (!letter) return true;
+  return info.key === letter;
+}
+
+/** 실제 데이터에 존재하는 색인 키만 (구 API 호환) */
 export function buildIndexKeys(terms: Array<{ term_ko: string }>): string[] {
   const keys = new Set<string>();
   for (const t of terms) keys.add(indexKeyOf(t.term_ko));
-  return Array.from(keys).sort((a, b) => rank(a) - rank(b));
+  return Array.from(keys).sort((a, b) => {
+    const kindOf = (k: string): IndexKind =>
+      /[ㄱ-ㅎ]/.test(k) ? "ko" : /^[A-Z]$/.test(k) ? "en" : "num";
+    return rankKey(kindOf(a), a) - rankKey(kindOf(b), b);
+  });
 }

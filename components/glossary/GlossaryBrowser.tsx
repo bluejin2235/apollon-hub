@@ -12,7 +12,12 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { GlossaryFields } from "@/components/glossary/GlossaryFields";
 import { categoryTabFilter } from "@/lib/glossary/categories";
-import { buildIndexKeys, indexKeyOf } from "@/lib/glossary/index-key";
+import {
+  INDEX_GROUPS,
+  buildIndexKeysForGroup,
+  matchesIndexFilter,
+  type IndexGroup
+} from "@/lib/glossary/index-key";
 import { extractInlineSynonyms } from "@/lib/glossary/synonyms";
 import type {
   GlossaryCategory,
@@ -147,7 +152,8 @@ export function GlossaryBrowser({
 
   const [tab, setTab] = useState<TabKey>("전체");
   const [query, setQuery] = useState("");
-  const [indexKey, setIndexKey] = useState<string | null>(null);
+  const [indexGroup, setIndexGroup] = useState<IndexGroup>("all");
+  const [indexLetter, setIndexLetter] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TermDetail | null>(null);
@@ -235,21 +241,26 @@ export function GlossaryBrowser({
     [terms, tab]
   );
 
-  const indexKeys = useMemo(() => buildIndexKeys(tabTerms), [tabTerms]);
+  const indexLetters = useMemo(
+    () => buildIndexKeysForGroup(tabTerms, indexGroup),
+    [tabTerms, indexGroup]
+  );
 
   const visibleTerms = useMemo(() => {
     const q = query.trim().toLowerCase();
+    let list = tabTerms.filter((t) =>
+      matchesIndexFilter(t.term_ko, indexGroup, indexLetter)
+    );
     if (q) {
-      return tabTerms.filter((t) => {
+      list = list.filter((t) => {
         const fields = [t.term_ko, t.term_en, t.term_zh, ...(t.synonyms ?? [])];
         return fields
           .filter(Boolean)
           .some((v) => (v as string).toLowerCase().includes(q));
       });
     }
-    if (!indexKey) return tabTerms;
-    return tabTerms.filter((t) => indexKeyOf(t.term_ko) === indexKey);
-  }, [tabTerms, query, indexKey]);
+    return list;
+  }, [tabTerms, query, indexGroup, indexLetter]);
 
   useEffect(() => {
     if (visibleTerms.length === 0) {
@@ -328,16 +339,20 @@ export function GlossaryBrowser({
 
   async function removeTerm() {
     if (!detail || !canDelete) return;
+    const removedId = detail.id;
     setDeleting(true);
     setNotice("");
     try {
       await api("/api/glossary", {
         method: "DELETE",
-        body: JSON.stringify({ id: detail.id })
+        body: JSON.stringify({ id: removedId })
       });
       setConfirmDelete(false);
+      setDraft(null);
       setDetail(null);
+      setVersions([]);
       setSelectedId(null);
+      setTerms((prev) => prev.filter((t) => t.id !== removedId));
       setNotice("용어를 삭제했습니다.");
       await loadTerms();
     } catch (err) {
@@ -406,7 +421,7 @@ export function GlossaryBrowser({
                   type="button"
                   onClick={() => {
                     setTab(t.key);
-                    setIndexKey(null);
+                    setIndexLetter(null);
                   }}
                   className="rounded-lg px-2 py-1.5 text-center text-[11px] font-bold"
                   style={{
@@ -420,31 +435,45 @@ export function GlossaryBrowser({
             })}
           </div>
 
-          {indexKeys.length > 0 ? (
+          <div
+            className="mb-1.5 flex flex-wrap gap-1 border-b pb-2"
+            style={{ borderColor: C.line2 }}
+          >
+            {INDEX_GROUPS.map((g) => {
+              const on = indexGroup === g.key;
+              return (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => {
+                    setIndexGroup(g.key);
+                    setIndexLetter(null);
+                  }}
+                  className="rounded-[6px] px-2 py-1 text-[11px] font-bold"
+                  style={{
+                    background: on ? C.luna : C.chip,
+                    color: on ? "#fff" : C.sub
+                  }}
+                >
+                  {g.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {indexGroup !== "all" && indexLetters.length > 0 ? (
             <div
               className="mb-1.5 flex flex-wrap gap-0.5 border-b pb-2.5"
               style={{ borderColor: C.line2 }}
             >
-              <button
-                type="button"
-                onClick={() => setIndexKey(null)}
-                className="grid h-[21px] place-items-center rounded-[5px] px-1.5 text-[11px]"
-                style={
-                  indexKey === null
-                    ? { background: C.luna, color: "#fff", fontWeight: 700 }
-                    : { color: C.sub }
-                }
-              >
-                전체
-              </button>
-              {indexKeys.map((key) => {
-                const on = indexKey === key;
+              {indexLetters.map((key) => {
+                const on = indexLetter === key;
                 return (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setIndexKey(on ? null : key)}
-                    className="grid h-[21px] w-[21px] place-items-center rounded-[5px] text-[11px]"
+                    onClick={() => setIndexLetter(on ? null : key)}
+                    className="grid h-[21px] min-w-[21px] place-items-center rounded-[5px] px-1 text-[11px]"
                     style={
                       on
                         ? { background: C.luna, color: "#fff", fontWeight: 700 }

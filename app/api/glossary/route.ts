@@ -40,6 +40,16 @@ function mapTermRow(row: Record<string, unknown>) {
   };
 }
 
+function isMissingColumnError(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  const msg = err.message ?? "";
+  return (
+    err.code === "PGRST204" ||
+    msg.includes("does not exist") ||
+    msg.includes("schema cache")
+  );
+}
+
 /** 지식후보함에 쌓인 용어형 후보 수 — 상단 "확인 필요 N" */
 async function countTermCandidates(
   admin: NonNullable<ReturnType<typeof getServiceSupabase>>
@@ -75,26 +85,51 @@ async function buildGlossaryStats(
   const week = kstWeekBounds();
 
   const countContaining = async (cat: GlossaryCategory) => {
-    const { count, error } = await admin
+    const first = await admin
       .from("glossary_terms")
       .select("id", { count: "exact", head: true })
-      .contains("categories", [cat]);
-    if (error) {
-      console.error("[glossary] count category", cat, error);
-      return null;
+      .contains("categories", [cat])
+      .is("deleted_at", null);
+    if (!first.error) return first.count ?? 0;
+    if (isMissingColumnError(first.error)) {
+      const retry = await admin
+        .from("glossary_terms")
+        .select("id", { count: "exact", head: true })
+        .contains("categories", [cat]);
+      return retry.error ? null : (retry.count ?? 0);
     }
-    return count ?? 0;
+    console.error("[glossary] count category", cat, first.error);
+    return null;
   };
 
-  const [totalRes, weekRes, ...catCounts] = await Promise.all([
-    admin.from("glossary_terms").select("id", { count: "exact", head: true }),
-    admin
+  let totalRes = await admin
+    .from("glossary_terms")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+  let weekRes = await admin
+    .from("glossary_terms")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null)
+    .gte("updated_at", week.startIso)
+    .lt("updated_at", week.endIso);
+
+  if (isMissingColumnError(totalRes.error)) {
+    totalRes = await admin
+      .from("glossary_terms")
+      .select("id", { count: "exact", head: true });
+    weekRes = await admin
       .from("glossary_terms")
       .select("id", { count: "exact", head: true })
       .gte("updated_at", week.startIso)
-      .lt("updated_at", week.endIso),
-    ...GLOSSARY_CATEGORIES.map((c) => countContaining(c))
-  ]);
+      .lt("updated_at", week.endIso);
+  }
+
+  const catCounts = await Promise.all(
+    GLOSSARY_CATEGORIES.map((c) => countContaining(c))
+  );
+
+  const total = totalRes.count ?? 0;
+  const weekUpdated = weekRes.error ? 0 : (weekRes.count ?? 0);
 
   const by_category = {} as Record<GlossaryCategory, number | null>;
   GLOSSARY_CATEGORIES.forEach((cat, i) => {
@@ -102,8 +137,8 @@ async function buildGlossaryStats(
   });
 
   return {
-    total: totalRes.count ?? 0,
-    week_updated: weekRes.error ? 0 : (weekRes.count ?? 0),
+    total,
+    week_updated: weekUpdated,
     pending_candidates: pendingCandidates,
     by_category
   };
@@ -124,6 +159,39 @@ async function resolveEditorNames(
   return map;
 }
 
+async function insertVersion(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  row: {
+    term_id: string;
+    version: number;
+    term_ko: string | null;
+    term_en: string | null;
+    term_zh: string | null;
+    definition: string | null;
+    synonyms: string[];
+    editor_type: "human" | "luna";
+    editor_id: string | null;
+    editor_name: string | null;
+    change_note: string | null;
+  }
+) {
+  // 실제 컬럼명은 editor_id (edited_by 아님)
+  const { error } = await admin.from("glossary_versions").insert({
+    term_id: row.term_id,
+    version: row.version,
+    term_ko: row.term_ko,
+    term_en: row.term_en,
+    term_zh: row.term_zh,
+    definition: row.definition,
+    synonyms: row.synonyms,
+    editor_type: row.editor_type,
+    editor_id: row.editor_id,
+    editor_name: row.editor_name,
+    change_note: row.change_note
+  });
+  return error;
+}
+
 export async function GET(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
@@ -138,11 +206,23 @@ export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
 
   if (id) {
-    const { data: term, error } = await admin
+    let detailQ = admin
       .from("glossary_terms")
       .select(TERM_SELECT)
       .eq("id", id)
-      .maybeSingle();
+      .is("deleted_at", null);
+    let { data: term, error } = await detailQ.maybeSingle();
+
+    if (error && isMissingColumnError(error)) {
+      const retry = await admin
+        .from("glossary_terms")
+        .select(TERM_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      term = retry.data;
+      error = retry.error;
+    }
+
     if (error) {
       console.error("[glossary] GET detail", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -151,17 +231,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const { data: versionRows } = await admin
+    const { data: versionRows, error: verErr } = await admin
       .from("glossary_versions")
-      .select("id, version, editor_type, editor_name, edited_by, change_note, created_at")
+      .select(
+        "id, version, editor_type, editor_name, editor_id, change_note, created_at"
+      )
       .eq("term_id", id)
       .order("version", { ascending: false })
-      .limit(20);
+      .limit(40);
+
+    if (verErr) {
+      console.error("[glossary] GET versions", verErr);
+    }
 
     const editorIds = Array.from(
       new Set(
         (versionRows ?? [])
-          .map((v) => v.edited_by)
+          .map((v) => v.editor_id)
           .filter((v): v is string => typeof v === "string" && Boolean(v))
       )
     );
@@ -172,7 +258,7 @@ export async function GET(request: NextRequest) {
       version: Number(v.version) || 0,
       editor_type: v.editor_type === "luna" ? "luna" : "human",
       editor_name:
-        (typeof v.edited_by === "string" ? nameById.get(v.edited_by) : null) ??
+        (typeof v.editor_id === "string" ? nameById.get(v.editor_id) : null) ??
         text(v.editor_name),
       change_note: text(v.change_note),
       created_at: v.created_at as string
@@ -188,10 +274,21 @@ export async function GET(request: NextRequest) {
   // 이 목록은 루나 사이드바가 모든 화면에서 부른다.
   // 용어 테이블이 없거나 조회에 실패해도 사이드바가 죽지 않도록 빈 목록으로 되돌린다.
   const wantStats = request.nextUrl.searchParams.get("stats") === "1";
-  const { data: terms, error } = await admin
+  let listQ = admin
     .from("glossary_terms")
     .select(LIST_SELECT)
+    .is("deleted_at", null)
     .order("term_ko", { ascending: true });
+  let { data: terms, error } = await listQ;
+
+  if (error && isMissingColumnError(error)) {
+    const retry = await admin
+      .from("glossary_terms")
+      .select(LIST_SELECT)
+      .order("term_ko", { ascending: true });
+    terms = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     console.error("[glossary] GET list", error);
@@ -276,11 +373,21 @@ export async function POST(request: NextRequest) {
 
   let saved: { id: string; version: number } | null = null;
   if (termId) {
-    const { data: current, error: readError } = await admin
+    let readQ = admin
       .from("glossary_terms")
       .select("version")
       .eq("id", termId)
-      .maybeSingle();
+      .is("deleted_at", null);
+    let { data: current, error: readError } = await readQ.maybeSingle();
+    if (readError && isMissingColumnError(readError)) {
+      const retry = await admin
+        .from("glossary_terms")
+        .select("version")
+        .eq("id", termId)
+        .maybeSingle();
+      current = retry.data;
+      readError = retry.error;
+    }
     if (readError || !current) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -320,7 +427,7 @@ export async function POST(request: NextRequest) {
     saved = { id: data.id as string, version: 1 };
   }
 
-  const { error: versionError } = await admin.from("glossary_versions").insert({
+  const versionError = await insertVersion(admin, {
     term_id: saved.id,
     version: saved.version,
     term_ko: payload.term_ko,
@@ -329,18 +436,27 @@ export async function POST(request: NextRequest) {
     definition: payload.definition,
     synonyms: payload.synonyms,
     editor_type: "human",
-    edited_by: user.id,
+    editor_id: user.id,
     editor_name: editorName,
     change_note: changeNote
   });
   if (versionError) {
     console.error("[glossary] version insert", versionError);
+    return NextResponse.json(
+      {
+        error: `용어는 저장됐지만 이력을 남기지 못했습니다: ${versionError.message}`
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ term: saved });
 }
 
-/** 슈퍼관리자 전용 삭제 — 이력 남긴 뒤 용어 제거 */
+/**
+ * 슈퍼관리자 전용 소프트 삭제.
+ * deleted_at 컬럼이 있으면 soft delete, 없으면(마이그레이션 전) hard delete 폴백.
+ */
 export async function DELETE(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
@@ -367,11 +483,21 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id 가 필요합니다." }, { status: 400 });
   }
 
-  const { data: term, error: readError } = await admin
+  let readQ = admin
     .from("glossary_terms")
     .select("id, term_ko, term_en, term_zh, definition, synonyms, version")
     .eq("id", termId)
-    .maybeSingle();
+    .is("deleted_at", null);
+  let { data: term, error: readError } = await readQ.maybeSingle();
+  if (readError && isMissingColumnError(readError)) {
+    const retry = await admin
+      .from("glossary_terms")
+      .select("id, term_ko, term_en, term_zh, definition, synonyms, version")
+      .eq("id", termId)
+      .maybeSingle();
+    term = retry.data;
+    readError = retry.error;
+  }
   if (readError) {
     console.error("[glossary] DELETE read", readError);
     return NextResponse.json({ error: readError.message }, { status: 500 });
@@ -388,16 +514,16 @@ export async function DELETE(request: NextRequest) {
   const editorName = ((profile?.name as string) || "").trim() || null;
   const nextVersion = (Number(term.version) || 1) + 1;
 
-  const { error: versionError } = await admin.from("glossary_versions").insert({
-    term_id: term.id,
+  const versionError = await insertVersion(admin, {
+    term_id: term.id as string,
     version: nextVersion,
-    term_ko: term.term_ko,
-    term_en: term.term_en,
-    term_zh: term.term_zh,
-    definition: term.definition,
+    term_ko: term.term_ko as string,
+    term_en: (term.term_en as string | null) ?? null,
+    term_zh: (term.term_zh as string | null) ?? null,
+    definition: (term.definition as string | null) ?? null,
     synonyms: normalizeSynonyms(term.synonyms),
     editor_type: "human",
-    edited_by: user.id,
+    editor_id: user.id,
     editor_name: editorName,
     change_note: "삭제 — 루나 사용 중단"
   });
@@ -406,14 +532,42 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: versionError.message }, { status: 500 });
   }
 
+  const now = new Date().toISOString();
+  const { error: softError } = await admin
+    .from("glossary_terms")
+    .update({
+      deleted_at: now,
+      deleted_by: user.id,
+      version: nextVersion,
+      updated_by: user.id,
+      updated_at: now
+    })
+    .eq("id", termId);
+
+  if (!softError) {
+    return NextResponse.json({ ok: true, id: termId, soft: true });
+  }
+
+  if (!isMissingColumnError(softError)) {
+    console.error("[glossary] DELETE soft", softError);
+    return NextResponse.json({ error: softError.message }, { status: 500 });
+  }
+
+  // 마이그레이션 전 폴백: hard delete (versions 는 cascade)
   const { error: deleteError } = await admin
     .from("glossary_terms")
     .delete()
     .eq("id", termId);
   if (deleteError) {
-    console.error("[glossary] DELETE term", deleteError);
+    console.error("[glossary] DELETE hard", deleteError);
     return NextResponse.json({ error: deleteError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: termId });
+  return NextResponse.json({
+    ok: true,
+    id: termId,
+    soft: false,
+    notice:
+      "deleted_at 컬럼이 없어 하드 삭제했습니다. supabase/migrations/glossary_soft_delete.sql 을 적용하세요."
+  });
 }

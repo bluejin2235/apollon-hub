@@ -57,7 +57,7 @@ export async function tryRegisterGlossaryFromCandidate(
         definition: draft.definition,
         synonyms: draft.synonyms,
         editor_type: "human",
-        edited_by: userId,
+        editor_id: userId,
         change_note: "지식후보 확정"
       });
 
@@ -94,7 +94,7 @@ export async function tryRegisterGlossaryFromCandidate(
       definition: draft.definition,
       synonyms: draft.synonyms,
       editor_type: "human",
-      edited_by: userId,
+      editor_id: userId,
       change_note: "지식후보 확정"
     });
 
