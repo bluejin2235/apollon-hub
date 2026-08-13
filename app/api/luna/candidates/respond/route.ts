@@ -436,12 +436,33 @@ export async function POST(request: NextRequest) {
   }
 
   // confirm
-  const meta = prevMeta;
   const category =
     typeof current.category === "string" ? current.category : undefined;
-  const isGlossary = shouldRegisterGlossary(meta, category);
+
+  // 고쳐서 확정: glossary 패치가 오면 meta/content 에 바로 반영 후 등록
+  let meta: Record<string, unknown> = { ...prevMeta };
+  let workingContent = content;
+  if (
+    glossaryPatch &&
+    (isGlossaryCandidate(prevMeta, category) || glossaryPatch.term_ko)
+  ) {
+    meta = {
+      ...prevMeta,
+      kind: "glossary",
+      term_ko: glossaryPatch.term_ko,
+      term_en: glossaryPatch.term_en,
+      term_zh: glossaryPatch.term_zh,
+      term_zh_pron: glossaryPatch.term_zh_pron,
+      definition: glossaryPatch.definition,
+      category: glossaryPatch.category
+    };
+    workingContent =
+      glossaryPatch.definition || glossaryPatch.term_ko || content;
+  }
+
+  const isGlossary = shouldRegisterGlossary(meta, category || (glossaryPatch ? "term" : null));
   if (isGlossary) {
-    const draft = parseGlossaryMeta(meta, content);
+    const draft = parseGlossaryMeta(meta, workingContent);
     if (
       !draft.term_ko.trim() ||
       looksLikeDefinitionSentence(draft.term_ko)
@@ -453,20 +474,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 용어형: AI 윤문 없이 정의(content) 그대로 확정 → glossary_terms 등록
+  // 용어형·직접 수정본은 AI 윤문 없이 확정. 맞아요만 윤문 허용.
   const polished = isGlossary
     ? (
         (typeof meta.definition === "string" && meta.definition.trim()) ||
         text ||
-        content
+        workingContent
       ).trim()
-    : (await runDialogueTurn(admin, {
-        mode: "confirm",
-        content: text || content,
-        thread,
-        humanText: text || undefined,
-        evidence
-      })) || (text || content).trim();
+    : text
+      ? text
+      : (await runDialogueTurn(admin, {
+          mode: "confirm",
+          content: workingContent,
+          thread,
+          evidence
+        })) || workingContent.trim();
 
   let finalThread = thread;
   if (text) {
@@ -482,17 +504,23 @@ export async function POST(request: NextRequest) {
     )
   ];
 
+  const confirmPatch: Record<string, unknown> = {
+    content: polished,
+    status: "active",
+    thread: finalThread,
+    confidence: 4,
+    importance: 4,
+    resolved_by: user.id,
+    resolved_at: new Date().toISOString()
+  };
+  if (glossaryPatch && isGlossary) {
+    confirmPatch.meta = meta;
+    confirmPatch.category = "term";
+  }
+
   const { data, error } = await admin
     .from("luna_learnings")
-    .update({
-      content: polished,
-      status: "active",
-      thread: finalThread,
-      confidence: 4,
-      importance: 4,
-      resolved_by: user.id,
-      resolved_at: new Date().toISOString()
-    })
+    .update(confirmPatch)
     .eq("id", id)
     .eq("status", "candidate")
     .select("id, status, content, thread")

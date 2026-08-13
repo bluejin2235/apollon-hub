@@ -43,6 +43,9 @@ export type CandidateRow = {
   source_title: string | null;
   created_at: string | null;
   meta: Record<string, unknown> | null;
+  review_reason: string | null;
+  merge_target: string | null;
+  raw_input: string | null;
   is_glossary: boolean;
   is_my_turn: boolean;
 };

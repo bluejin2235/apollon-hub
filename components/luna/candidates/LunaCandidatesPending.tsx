@@ -143,6 +143,7 @@ export function LunaCandidatesPending() {
         thread?: CandidateRow["thread"];
         glossary_registered?: boolean;
         glossary_notice?: string;
+        merged_into?: string;
       };
 
       if (action === "revise" && json.id) {
@@ -153,6 +154,8 @@ export function LunaCandidatesPending() {
                   ...c,
                   content: json.content ?? c.content,
                   meta: json.meta ?? c.meta,
+                  raw_input:
+                    typeof json.content === "string" ? json.content : c.raw_input,
                   thread: json.thread ?? c.thread,
                   is_my_turn:
                     c.source === "question" &&
@@ -181,8 +184,20 @@ export function LunaCandidatesPending() {
       }
 
       setItems((prev) => prev.filter((c) => c.id !== id));
+      setReviseOpen((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setGlossaryEdit((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       if (action === "confirm") {
-        if (json.glossary_registered) {
+        if (json.merged_into) {
+          setMessage("중복 후보를 본문에 병합했어요");
+        } else if (json.glossary_registered) {
           setMessage("용어사전에 등록했어요");
         } else if (json.glossary_notice) {
           setMessage(`기억으로 확정했어요 (${json.glossary_notice})`);
@@ -251,10 +266,70 @@ export function LunaCandidatesPending() {
             meta: item.meta
           });
 
+          const isDuplicate = item.review_reason === "duplicate";
+          const reviseDraft = reviseOpen[item.id];
+          const editingGlossary = glossaryEdit[item.id];
+          const openRevise = () => {
+            const initial = isDuplicate
+              ? (item.raw_input?.trim() || item.content)
+              : item.content;
+            setReviseOpen((p) => ({ ...p, [item.id]: initial }));
+            setGlossaryEdit((p) => {
+              const n = { ...p };
+              delete n[item.id];
+              return n;
+            });
+          };
+          const closeRevise = () => {
+            setReviseOpen((p) => {
+              const n = { ...p };
+              delete n[item.id];
+              return n;
+            });
+            setGlossaryEdit((p) => {
+              const n = { ...p };
+              delete n[item.id];
+              return n;
+            });
+          };
+          const revisePanel =
+            reviseDraft !== undefined ? (
+              <div className="mt-3">
+                {isDuplicate ? (
+                  <div
+                    className="mb-1.5 text-[11px] font-semibold"
+                    style={{ color: K.faint }}
+                  >
+                    병합 초안
+                  </div>
+                ) : null}
+                <textarea
+                  className="w-full rounded-[9px] border p-2.5 text-[13px] leading-[1.7]"
+                  style={{ borderColor: K.line, minHeight: 70 }}
+                  rows={3}
+                  value={reviseDraft}
+                  onChange={(e) =>
+                    setReviseOpen((p) => ({ ...p, [item.id]: e.target.value }))
+                  }
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Btn
+                    primary
+                    disabled={busy || !reviseDraft.trim()}
+                    onClick={() =>
+                      void respond(item.id, "confirm", reviseDraft.trim())
+                    }
+                  >
+                    저장 · 확정
+                  </Btn>
+                  <Btn onClick={closeRevise}>취소</Btn>
+                </div>
+              </div>
+            ) : null;
+
           if (kind === "glossary") {
-            const editing = glossaryEdit[item.id];
-            const registerBlocked = editing
-              ? !editing.term_ko.trim()
+            const registerBlocked = editingGlossary
+              ? !editingGlossary.term_ko.trim()
               : glossaryCardTitle(glossary).missingTerm;
 
             return (
@@ -279,9 +354,9 @@ export function LunaCandidatesPending() {
                   </span>
                   <ScopeBadge label={scopeLabel} />
                 </div>
-                {editing ? (
+                {editingGlossary ? (
                   <GlossaryEditForm
-                    draft={editing}
+                    draft={editingGlossary}
                     evidence={item.evidence}
                     onChange={(next) =>
                       setGlossaryEdit((p) => ({ ...p, [item.id]: next }))
@@ -295,28 +370,23 @@ export function LunaCandidatesPending() {
                   />
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {editing ? (
+                  {editingGlossary ? (
                     <>
                       <Btn
                         primary
-                        disabled={busy}
+                        disabled={busy || !editingGlossary.term_ko.trim()}
                         onClick={() =>
-                          void respond(item.id, "revise", undefined, editing)
+                          void respond(
+                            item.id,
+                            "confirm",
+                            undefined,
+                            editingGlossary
+                          )
                         }
                       >
-                        수정 반영
+                        저장 · 확정
                       </Btn>
-                      <Btn
-                        onClick={() =>
-                          setGlossaryEdit((p) => {
-                            const n = { ...p };
-                            delete n[item.id];
-                            return n;
-                          })
-                        }
-                      >
-                        취소
-                      </Btn>
+                      <Btn onClick={closeRevise}>취소</Btn>
                     </>
                   ) : (
                     <>
@@ -344,7 +414,7 @@ export function LunaCandidatesPending() {
                           }))
                         }
                       >
-                        고쳐서 등록
+                        고쳐서 확정
                       </Btn>
                       <Btn
                         disabled={busy}
@@ -386,65 +456,36 @@ export function LunaCandidatesPending() {
                     찾은 곳: {item.evidence.replace(/^출처:\s*/, "")}
                   </div>
                 ) : null}
-                {reviseOpen[item.id] !== undefined ? (
-                  <textarea
-                    className="mt-3 w-full rounded-[9px] border p-2.5 text-[13px]"
-                    style={{ borderColor: K.line }}
-                    rows={3}
-                    value={reviseOpen[item.id]}
-                    onChange={(e) =>
-                      setReviseOpen((p) => ({ ...p, [item.id]: e.target.value }))
-                    }
-                  />
+                {revisePanel}
+                {reviseDraft === undefined ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Btn
+                      primary
+                      disabled={busy}
+                      onClick={() => void respond(item.id, "confirm")}
+                    >
+                      잘 배웠어 → 기억
+                    </Btn>
+                    <Btn disabled={busy} onClick={openRevise}>
+                      고쳐서 확정
+                    </Btn>
+                    <Btn
+                      disabled={busy}
+                      onClick={() => void respond(item.id, "reject")}
+                    >
+                      틀렸어
+                    </Btn>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="px-2 text-[12.5px] font-bold disabled:opacity-50"
+                      style={{ color: K.faint }}
+                      onClick={() => void respond(item.id, "not_needed")}
+                    >
+                      이런 건 안 배워도 돼
+                    </button>
+                  </div>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {reviseOpen[item.id] !== undefined ? (
-                    <>
-                      <Btn
-                        primary
-                        disabled={busy}
-                        onClick={() =>
-                          void respond(item.id, "revise", reviseOpen[item.id])
-                        }
-                      >
-                        수정 반영
-                      </Btn>
-                      <Btn onClick={() => setReviseOpen((p) => {
-                        const n = { ...p };
-                        delete n[item.id];
-                        return n;
-                      })}>
-                        취소
-                      </Btn>
-                    </>
-                  ) : (
-                    <>
-                      <Btn primary disabled={busy} onClick={() => void respond(item.id, "confirm")}>
-                        잘 배웠어 → 기억
-                      </Btn>
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          setReviseOpen((p) => ({ ...p, [item.id]: item.content }))
-                        }
-                      >
-                        고쳐서 확정
-                      </Btn>
-                      <Btn disabled={busy} onClick={() => void respond(item.id, "reject")}>
-                        틀렸어
-                      </Btn>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        className="px-2 text-[12.5px] font-bold disabled:opacity-50"
-                        style={{ color: K.faint }}
-                        onClick={() => void respond(item.id, "not_needed")}
-                      >
-                        이런 건 안 배워도 돼
-                      </button>
-                    </>
-                  )}
-                </div>
               </CandidateCardShell>
             );
           }
@@ -462,29 +503,45 @@ export function LunaCandidatesPending() {
                   />
                   <span className="text-[11.5px]" style={{ color: K.faint }}>
                     문답 {turnN}번째
+                    {isDuplicate ? " · 중복 병합" : ""}
                   </span>
                 </div>
                 <ThreadBlock thread={item.thread} />
-                <ReplyRow
-                  value={replyDraft[item.id] ?? ""}
-                  onChange={(v) =>
-                    setReplyDraft((p) => ({ ...p, [item.id]: v }))
-                  }
-                  busy={busy}
-                  onSend={() => {
-                    const t = replyDraft[item.id]?.trim();
-                    if (!t) return;
-                    void respond(item.id, "revise", t);
-                  }}
-                />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Btn primary disabled={busy} onClick={() => void respond(item.id, "confirm")}>
-                    맞아요 → 기억
-                  </Btn>
-                  <Btn disabled={busy} onClick={() => void respond(item.id, "reject")}>
-                    아니에요
-                  </Btn>
-                </div>
+                {!isDuplicate ? (
+                  <ReplyRow
+                    value={replyDraft[item.id] ?? ""}
+                    onChange={(v) =>
+                      setReplyDraft((p) => ({ ...p, [item.id]: v }))
+                    }
+                    busy={busy}
+                    onSend={() => {
+                      const t = replyDraft[item.id]?.trim();
+                      if (!t) return;
+                      void respond(item.id, "revise", t);
+                    }}
+                  />
+                ) : null}
+                {revisePanel}
+                {reviseDraft === undefined ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Btn
+                      primary
+                      disabled={busy}
+                      onClick={() => void respond(item.id, "confirm")}
+                    >
+                      맞아요 → 기억
+                    </Btn>
+                    <Btn disabled={busy} onClick={openRevise}>
+                      고쳐서 확정
+                    </Btn>
+                    <Btn
+                      disabled={busy}
+                      onClick={() => void respond(item.id, "reject")}
+                    >
+                      아니에요
+                    </Btn>
+                  </div>
+                ) : null}
               </CandidateCardShell>
             );
           }
@@ -499,6 +556,7 @@ export function LunaCandidatesPending() {
                 />
                 <span className="text-[11.5px]" style={{ color: K.faint }}>
                   {metaLine}
+                  {isDuplicate ? " · 중복 병합" : ""}
                   {item.source_conversation_id ? (
                     <>
                       {" · "}
@@ -510,62 +568,37 @@ export function LunaCandidatesPending() {
                 </span>
                 <ScopeBadge label={scopeLabel} />
               </div>
-              <div className="my-2.5 text-[14px] leading-relaxed">{item.content}</div>
+              <div className="my-2.5 text-[14px] leading-relaxed">
+                {isDuplicate
+                  ? item.raw_input?.trim() || item.content
+                  : item.content}
+              </div>
               {item.evidence ? (
                 <div className="text-[12px]" style={{ color: K.sub }}>
                   근거: {item.evidence.replace(/^근거:\s*/, "")}
                 </div>
               ) : null}
-              {reviseOpen[item.id] !== undefined ? (
-                <textarea
-                  className="mt-3 w-full rounded-[9px] border p-2.5 text-[13px]"
-                  style={{ borderColor: K.line }}
-                  rows={3}
-                  value={reviseOpen[item.id]}
-                  onChange={(e) =>
-                    setReviseOpen((p) => ({ ...p, [item.id]: e.target.value }))
-                  }
-                />
+              {revisePanel}
+              {reviseDraft === undefined ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Btn
+                    primary
+                    disabled={busy}
+                    onClick={() => void respond(item.id, "confirm")}
+                  >
+                    맞아요 → 기억
+                  </Btn>
+                  <Btn disabled={busy} onClick={openRevise}>
+                    고쳐서 확정
+                  </Btn>
+                  <Btn
+                    disabled={busy}
+                    onClick={() => void respond(item.id, "reject")}
+                  >
+                    아니에요
+                  </Btn>
+                </div>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {reviseOpen[item.id] !== undefined ? (
-                  <>
-                    <Btn
-                      primary
-                      disabled={busy}
-                      onClick={() =>
-                        void respond(item.id, "revise", reviseOpen[item.id])
-                      }
-                    >
-                      수정 반영
-                    </Btn>
-                    <Btn onClick={() => setReviseOpen((p) => {
-                      const n = { ...p };
-                      delete n[item.id];
-                      return n;
-                    })}>
-                      취소
-                    </Btn>
-                  </>
-                ) : (
-                  <>
-                    <Btn primary disabled={busy} onClick={() => void respond(item.id, "confirm")}>
-                      맞아요 → 기억
-                    </Btn>
-                    <Btn
-                      disabled={busy}
-                      onClick={() =>
-                        setReviseOpen((p) => ({ ...p, [item.id]: item.content }))
-                      }
-                    >
-                      고쳐서 확정
-                    </Btn>
-                    <Btn disabled={busy} onClick={() => void respond(item.id, "reject")}>
-                      아니에요
-                    </Btn>
-                  </>
-                )}
-              </div>
             </CandidateCardShell>
           );
         })

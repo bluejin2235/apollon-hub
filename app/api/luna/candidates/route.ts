@@ -36,6 +36,9 @@ type LearningRow = {
   created_at: string | null;
   snoozed_until: string | null;
   meta: Record<string, unknown> | null;
+  review_reason: string | null;
+  merge_target: string | null;
+  raw_input: string | null;
 };
 
 export type CandidateItem = Omit<LearningRow, "source"> & {
@@ -88,7 +91,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta"
+      "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, raw_input"
     )
     .eq("status", "candidate")
     .neq("category", "identity")
