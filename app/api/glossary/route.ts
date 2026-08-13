@@ -1,11 +1,13 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import type {
-  GlossaryCategory,
-  GlossaryStats,
-  GlossaryVersionItem
+import { normalizeCategories } from "@/lib/glossary/categories";
+import {
+  GLOSSARY_CATEGORIES,
+  type GlossaryCategory,
+  type GlossaryStats,
+  type GlossaryVersionItem
 } from "@/lib/glossary/types";
+import { isSuperAdminUser } from "@/lib/luna/auth";
 import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
 import { kstWeekBounds } from "@/lib/luna/self-report";
 
@@ -19,13 +21,9 @@ export type {
 } from "@/lib/glossary/types";
 
 const TERM_SELECT =
-  "id, term_ko, term_en, term_zh, term_zh_pron, category, definition, version, updated_at, updated_by";
+  "id, term_ko, term_en, term_zh, categories, definition, version, updated_at, updated_by";
 
-const LIST_SELECT = "id, term_ko, term_en, term_zh, term_zh_pron, category";
-
-function normalizeCategory(raw: unknown): GlossaryCategory {
-  return raw === "interior" || raw === "hw" ? raw : "common";
-}
+const LIST_SELECT = "id, term_ko, term_en, term_zh, categories";
 
 function text(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -33,20 +31,11 @@ function text(raw: unknown): string | null {
   return t ? t : null;
 }
 
-/** RPC 안의 auth.uid() 가 풀리도록 호출자 JWT 를 단 클라이언트 */
-function getUserSupabase(token: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !anonKey) return null;
-  return createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } }
-  });
-}
-
-function bearer(request: NextRequest): string | null {
-  const header = request.headers.get("authorization");
-  return header?.startsWith("Bearer ") ? header.slice(7).trim() : null;
+function mapTermRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    categories: normalizeCategories(row.categories)
+  };
 }
 
 /** 지식후보함에 쌓인 용어형 후보 수 — 상단 "확인 필요 N" */
@@ -82,36 +71,43 @@ async function buildGlossaryStats(
   pendingCandidates: number
 ): Promise<GlossaryStats> {
   const week = kstWeekBounds();
-  const countByCategory = async (cat: GlossaryCategory) => {
+
+  const countContaining = async (cat: GlossaryCategory) => {
     const { count, error } = await admin
       .from("glossary_terms")
       .select("id", { count: "exact", head: true })
-      .eq("category", cat);
-    if (error) return null;
+      .contains("categories", [cat]);
+    if (error) {
+      console.error("[glossary] count category", cat, error);
+      return null;
+    }
     return count ?? 0;
   };
 
-  const [totalRes, weekRes, common, interior, hw] = await Promise.all([
+  const [totalRes, weekRes, ...catCounts] = await Promise.all([
     admin.from("glossary_terms").select("id", { count: "exact", head: true }),
     admin
       .from("glossary_terms")
       .select("id", { count: "exact", head: true })
       .gte("updated_at", week.startIso)
       .lt("updated_at", week.endIso),
-    countByCategory("common"),
-    countByCategory("interior"),
-    countByCategory("hw")
+    ...GLOSSARY_CATEGORIES.map((c) => countContaining(c))
   ]);
+
+  const by_category = {} as Record<GlossaryCategory, number | null>;
+  GLOSSARY_CATEGORIES.forEach((cat, i) => {
+    by_category[cat] = catCounts[i] ?? null;
+  });
 
   return {
     total: totalRes.count ?? 0,
     week_updated: weekRes.error ? 0 : (weekRes.count ?? 0),
     pending_candidates: pendingCandidates,
-    by_category: { common, interior, hw }
+    by_category
   };
 }
 
-/** 편집자 표시 이름은 profiles 기준 (auth 메타데이터에는 비어 있는 경우가 많다) */
+/** 편집자 표시 이름은 profiles 기준 */
 async function resolveEditorNames(
   admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
   ids: string[]
@@ -136,6 +132,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
+  const canDelete = await isSuperAdminUser(admin, user);
   const id = request.nextUrl.searchParams.get("id");
 
   if (id) {
@@ -179,7 +176,11 @@ export async function GET(request: NextRequest) {
       created_at: v.created_at as string
     }));
 
-    return NextResponse.json({ term, versions });
+    return NextResponse.json({
+      term: mapTermRow(term as Record<string, unknown>),
+      versions,
+      can_delete: canDelete
+    });
   }
 
   // 이 목록은 루나 사이드바가 모든 화면에서 부른다.
@@ -196,6 +197,7 @@ export async function GET(request: NextRequest) {
       terms: [],
       pending_candidates: 0,
       available: false,
+      can_delete: canDelete,
       message: "용어사전 테이블을 읽지 못했습니다.",
       ...(wantStats ? { stats: null } : {})
     });
@@ -203,9 +205,10 @@ export async function GET(request: NextRequest) {
 
   const pending_candidates = await countTermCandidates(admin);
   return NextResponse.json({
-    terms: terms ?? [],
+    terms: (terms ?? []).map((t) => mapTermRow(t as Record<string, unknown>)),
     pending_candidates,
     available: true,
+    can_delete: canDelete,
     ...(wantStats
       ? { stats: await buildGlossaryStats(admin, pending_candidates) }
       : {})
@@ -215,8 +218,7 @@ export async function GET(request: NextRequest) {
 /** 위키 방식 저장 — 검토 없이 즉시 반영, 버전 증가, 이력 기록 */
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
-  const token = bearer(request);
-  if (!user || !token) {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const admin = getServiceSupabase();
@@ -229,8 +231,8 @@ export async function POST(request: NextRequest) {
     term_ko?: string;
     term_en?: string | null;
     term_zh?: string | null;
-    term_zh_pron?: string | null;
-    category?: string;
+    categories?: unknown;
+    category?: unknown;
     definition?: string | null;
     change_note?: string | null;
   };
@@ -245,13 +247,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "한국어 용어는 반드시 있어야 합니다." }, { status: 400 });
   }
 
+  const categories = normalizeCategories(body.categories, body.category);
+  if (categories.length === 0) {
+    return NextResponse.json({ error: "분류를 하나 이상 선택해 주세요." }, { status: 400 });
+  }
+
   const termId = typeof body.id === "string" && body.id ? body.id : null;
   const payload = {
     term_ko: termKo,
     term_en: text(body.term_en),
     term_zh: text(body.term_zh),
-    term_zh_pron: text(body.term_zh_pron),
-    category: normalizeCategory(body.category),
+    categories,
     definition: text(body.definition)
   };
   const changeNote = text(body.change_note);
@@ -263,43 +269,6 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   const editorName = ((profile?.name as string) || "").trim() || null;
 
-  // save_term RPC 가 있으면 그것으로 (버전 증가 + 이력 기록이 한 트랜잭션)
-  const userClient = getUserSupabase(token);
-  if (userClient) {
-    const { data, error } = await userClient.rpc("save_term", {
-      p_term_id: termId,
-      p_ko: payload.term_ko,
-      p_en: payload.term_en,
-      p_zh: payload.term_zh,
-      p_zh_pron: payload.term_zh_pron,
-      p_category: payload.category,
-      p_definition: payload.definition,
-      p_change_note: changeNote
-    });
-
-    if (!error) {
-      const saved = (Array.isArray(data) ? data[0] : data) as
-        | { id: string; version: number }
-        | null;
-      if (saved?.id) {
-        // RPC 는 auth 메타데이터에서 이름을 읽으므로 profiles 이름으로 덮어쓴다
-        if (editorName) {
-          await admin
-            .from("glossary_versions")
-            .update({ editor_name: editorName })
-            .eq("term_id", saved.id)
-            .eq("version", saved.version);
-        }
-        return NextResponse.json({ term: saved });
-      }
-    } else if (error.code !== "PGRST202" && error.code !== "42883") {
-      // RPC 가 존재하는데 실패한 경우만 오류로 본다
-      console.error("[glossary] save_term", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-  }
-
-  // RPC 가 없을 때: 직접 update + versions insert
   let saved: { id: string; version: number } | null = null;
   if (termId) {
     const { data: current, error: readError } = await admin
@@ -346,14 +315,12 @@ export async function POST(request: NextRequest) {
     saved = { id: data.id as string, version: 1 };
   }
 
-  // glossary_versions 에는 category 컬럼이 없다
   const { error: versionError } = await admin.from("glossary_versions").insert({
     term_id: saved.id,
     version: saved.version,
     term_ko: payload.term_ko,
     term_en: payload.term_en,
     term_zh: payload.term_zh,
-    term_zh_pron: payload.term_zh_pron,
     definition: payload.definition,
     editor_type: "human",
     edited_by: user.id,
@@ -365,4 +332,81 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ term: saved });
+}
+
+/** 슈퍼관리자 전용 삭제 — 이력 남긴 뒤 용어 제거 */
+export async function DELETE(request: NextRequest) {
+  const user = await getApiUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const admin = getServiceSupabase();
+  if (!admin) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+  if (!(await isSuperAdminUser(admin, user))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  let termId = (request.nextUrl.searchParams.get("id") ?? "").trim();
+  if (!termId) {
+    try {
+      const body = (await request.json()) as { id?: string };
+      termId = typeof body.id === "string" ? body.id.trim() : "";
+    } catch {
+      termId = "";
+    }
+  }
+  if (!termId) {
+    return NextResponse.json({ error: "id 가 필요합니다." }, { status: 400 });
+  }
+
+  const { data: term, error: readError } = await admin
+    .from("glossary_terms")
+    .select("id, term_ko, term_en, term_zh, definition, version")
+    .eq("id", termId)
+    .maybeSingle();
+  if (readError) {
+    console.error("[glossary] DELETE read", readError);
+    return NextResponse.json({ error: readError.message }, { status: 500 });
+  }
+  if (!term) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const editorName = ((profile?.name as string) || "").trim() || null;
+  const nextVersion = (Number(term.version) || 1) + 1;
+
+  const { error: versionError } = await admin.from("glossary_versions").insert({
+    term_id: term.id,
+    version: nextVersion,
+    term_ko: term.term_ko,
+    term_en: term.term_en,
+    term_zh: term.term_zh,
+    definition: term.definition,
+    editor_type: "human",
+    edited_by: user.id,
+    editor_name: editorName,
+    change_note: "삭제 — 루나 사용 중단"
+  });
+  if (versionError) {
+    console.error("[glossary] DELETE version", versionError);
+    return NextResponse.json({ error: versionError.message }, { status: 500 });
+  }
+
+  const { error: deleteError } = await admin
+    .from("glossary_terms")
+    .delete()
+    .eq("id", termId);
+  if (deleteError) {
+    console.error("[glossary] DELETE term", deleteError);
+    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id: termId });
 }

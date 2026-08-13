@@ -2,12 +2,12 @@
 
 import type { MouseEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { GlossaryFields } from "@/components/glossary/GlossaryFields";
 import {
   Badge,
   Btn,
   ErrorLine,
   FieldInput,
-  FieldSelect,
   KnowledgeShell,
   LoadingLine,
   Meta
@@ -266,12 +266,23 @@ export function GlossaryCardBody({
           </span>
         ) : null}
       </div>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {draft.categories.map((cat) => (
+          <span
+            key={cat}
+            className="rounded-[20px] px-2 py-0.5 text-[10.5px] font-extrabold"
+            style={{ background: K.chip, color: K.sub }}
+          >
+            {cat}
+          </span>
+        ))}
+      </div>
       <div className="my-2.5 grid grid-cols-1 gap-2 min-[901px]:grid-cols-3">
         {[
-          ["한국어", displayKo, null as string | null],
-          ["English", draft.term_en, null],
-          ["中文", draft.term_zh, draft.term_zh_pron]
-        ].map(([label, val, pron]) => (
+          ["한국어", displayKo],
+          ["ENGLISH", draft.term_en || null],
+          ["中文", draft.term_zh || null]
+        ].map(([label, val]) => (
           <div
             key={String(label)}
             className="rounded-[9px] border px-2.5 py-2"
@@ -290,14 +301,6 @@ export function GlossaryCardBody({
               style={{ color: val && val !== "—" ? K.ink : K.faint }}
             >
               {val || "—"}
-              {pron ? (
-                <small
-                  className="ml-1.5 text-[11px] font-normal"
-                  style={{ color: K.sub }}
-                >
-                  {pron}
-                </small>
-              ) : null}
             </div>
           </div>
         ))}
@@ -332,132 +335,15 @@ export function GlossaryEditForm({
   onChange: (next: GlossaryEditDraft) => void;
   evidence: string | null;
 }) {
-  const fieldLabel = "mb-1 text-[10px] font-semibold";
-  const labelColor = { color: K.faint };
-  const termMissing = !draft.term_ko.trim();
-  const termBorder = termMissing ? "#D85A30" : K.line;
-  const showTitleBanner = termMissing && draft.movedFromTitle;
-
   return (
     <div className="mt-3">
-      {showTitleBanner ? (
-        <div
-          className="mb-2.5 rounded-[9px] px-3 py-2 text-[12.5px] leading-snug"
-          style={{ background: "#FAECE7", color: "#993C1D" }}
-        >
-          정의 문장이 용어명 자리에 들어와 있어요. 용어명을 채워 주세요.
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-2 min-[901px]:grid-cols-4">
-        <div>
-          <div className={fieldLabel} style={labelColor}>
-            한국어
-          </div>
-          <input
-            className="w-full rounded-[9px] border px-[11px] py-2 text-[13px] outline-none focus:border-[#d9d2ff]"
-            style={{
-              borderColor: termBorder,
-              background: K.panel,
-              color: K.ink
-            }}
-            value={draft.term_ko}
-            onChange={(e) => onChange({ ...draft, term_ko: e.target.value })}
-            placeholder="용어명"
-          />
-        </div>
-        <div>
-          <div className={fieldLabel} style={labelColor}>
-            ENGLISH
-          </div>
-          <FieldInput
-            className="w-full"
-            value={draft.term_en ?? ""}
-            onChange={(e) =>
-              onChange({ ...draft, term_en: e.target.value || null })
-            }
-            placeholder="English"
-          />
-        </div>
-        <div>
-          <div className={fieldLabel} style={labelColor}>
-            中文
-          </div>
-          <FieldInput
-            className="w-full font-bold"
-            value={draft.term_zh ?? ""}
-            onChange={(e) =>
-              onChange({ ...draft, term_zh: e.target.value || null })
-            }
-            placeholder="中文"
-          />
-        </div>
-        <div>
-          <div className={fieldLabel} style={labelColor}>
-            중문 발음
-          </div>
-          <FieldInput
-            className="w-full"
-            value={draft.term_zh_pron ?? ""}
-            onChange={(e) =>
-              onChange({ ...draft, term_zh_pron: e.target.value || null })
-            }
-            placeholder="발음"
-          />
-        </div>
-      </div>
-
-      <div className="mt-2.5">
-        <div className="mb-1 flex flex-wrap items-baseline gap-1.5">
-          <span className="text-[10px] font-semibold" style={{ color: K.faint }}>
-            정의
-          </span>
-          {draft.movedFromTitle ? (
-            <span className="text-[11px]" style={{ color: K.candInk }}>
-              · 원래 제목에 있던 문장을 옮겨 왔어요
-            </span>
-          ) : null}
-        </div>
-        <textarea
-          className="w-full resize-y rounded-[9px] border px-[11px] py-2 text-[13px] outline-none focus:border-[#d9d2ff]"
-          style={{
-            borderColor: K.line,
-            background: K.panel,
-            color: K.ink,
-            height: 70,
-            lineHeight: 1.7
-          }}
-          value={draft.definition}
-          onChange={(e) => onChange({ ...draft, definition: e.target.value })}
-          placeholder="정의"
-        />
-      </div>
-
-      <div className="mt-2.5 max-w-[220px]">
-        <div className={fieldLabel} style={labelColor}>
-          분류
-        </div>
-        <FieldSelect
-          className="w-full"
-          value={draft.category}
-          onChange={(e) =>
-            onChange({
-              ...draft,
-              category: e.target.value as GlossaryEditDraft["category"]
-            })
-          }
-        >
-          <option value="common">공통</option>
-          <option value="interior">인테리어</option>
-          <option value="hw">하드웨어</option>
-        </FieldSelect>
-      </div>
-
-      {evidence ? (
-        <div className="mt-2.5 text-[12px]" style={{ color: K.sub }}>
-          근거: {evidence.replace(/^근거:\s*/, "")}
-        </div>
-      ) : null}
+      <GlossaryFields
+        value={draft}
+        onChange={(next) => onChange({ ...draft, ...next })}
+        highlightMissingTerm
+        movedFromTitle={draft.movedFromTitle}
+        evidence={evidence}
+      />
     </div>
   );
 }

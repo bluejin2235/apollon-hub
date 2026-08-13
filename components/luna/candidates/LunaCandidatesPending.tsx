@@ -122,11 +122,10 @@ export function LunaCandidatesPending() {
           glossary: glossary
             ? {
                 term_ko: glossary.term_ko,
-                term_en: glossary.term_en,
-                term_zh: glossary.term_zh,
-                term_zh_pron: glossary.term_zh_pron,
+                term_en: glossary.term_en || null,
+                term_zh: glossary.term_zh || null,
                 definition: glossary.definition,
-                category: glossary.category
+                categories: glossary.categories
               }
             : undefined
         })
@@ -256,7 +255,7 @@ export function LunaCandidatesPending() {
           const glossary = parseGlossaryMeta(item.meta, item.content);
           const scopeLabel = scopeBadgeLabel(
             item.scope_suggestion,
-            kind === "glossary" ? glossary.category : undefined
+            kind === "glossary" ? glossary.categories : undefined
           );
           const metaLine = candidateMetaLine({
             source: item.source,

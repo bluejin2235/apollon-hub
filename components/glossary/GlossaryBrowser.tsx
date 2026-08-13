@@ -10,16 +10,19 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
+import { GlossaryFields } from "@/components/glossary/GlossaryFields";
+import { categoryTabFilter } from "@/lib/glossary/categories";
 import { buildIndexKeys, indexKeyOf } from "@/lib/glossary/index-key";
 import type {
   GlossaryCategory,
+  GlossaryFieldValues,
   GlossaryListItem,
   GlossaryStats,
   GlossaryVersionItem
 } from "@/lib/glossary/types";
+import { GLOSSARY_CATEGORIES } from "@/lib/glossary/types";
 import { supabase } from "@/lib/supabase/client";
 
-type Category = GlossaryCategory;
 type TermListItem = GlossaryListItem;
 type VersionItem = GlossaryVersionItem;
 
@@ -29,26 +32,14 @@ type TermDetail = TermListItem & {
   updated_at: string | null;
 };
 
-type Draft = {
-  term_ko: string;
-  term_en: string;
-  term_zh: string;
-  term_zh_pron: string;
-  definition: string;
-  change_note: string;
-};
+type Draft = GlossaryFieldValues & { change_note: string };
 
-const TABS: Array<{ key: Category; label: string }> = [
-  { key: "common", label: "공통" },
-  { key: "interior", label: "인테리어" },
-  { key: "hw", label: "하드웨어" }
+type TabKey = "전체" | GlossaryCategory;
+
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "전체", label: "전체" },
+  ...GLOSSARY_CATEGORIES.map((c) => ({ key: c as TabKey, label: c }))
 ];
-
-const CATEGORY_LABEL: Record<Category, string> = {
-  common: "공통 용어",
-  interior: "인테리어 용어",
-  hw: "하드웨어 용어"
-};
 
 const C = {
   line: "#e7e8ec",
@@ -59,7 +50,9 @@ const C = {
   chip: "#f1f2f5",
   luna: "#534AB7",
   lunaSoft: "#EEEDFE",
-  lunaInk: "#3C3489"
+  lunaInk: "#3C3489",
+  danger: "#A32D2D",
+  dangerSoft: "#FAECE7"
 };
 
 async function getAccessToken(): Promise<string | null> {
@@ -95,12 +88,10 @@ function shortDate(iso: string | null | undefined): string {
 function LangCard({
   label,
   value,
-  pron,
   bold
 }: {
   label: string;
   value: string | null;
-  pron?: string | null;
   bold?: boolean;
 }) {
   return (
@@ -119,39 +110,7 @@ function LangCard({
         style={{ color: value ? C.ink : C.faint }}
       >
         {value || "—"}
-        {pron ? (
-          <small className="ml-[5px] text-[11.5px] font-normal" style={{ color: C.sub }}>
-            {pron}
-          </small>
-        ) : null}
       </div>
-    </div>
-  );
-}
-
-function EditField({
-  label,
-  value,
-  onChange,
-  placeholder
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <div className="mb-1 text-[11px]" style={{ color: C.faint }}>
-        {label}
-      </div>
-      <input
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="mb-2.5 w-full rounded-lg border bg-white px-2.5 py-2 text-[13px] outline-none focus:border-[#d9d2ff]"
-        style={{ borderColor: C.line, color: C.ink }}
-      />
     </div>
   );
 }
@@ -161,13 +120,12 @@ export type GlossaryBrowserMeta = {
   available: boolean;
   message: string;
   stats: GlossaryStats | null;
+  canDelete: boolean;
 };
 
 type GlossaryBrowserProps = {
-  /** true면 GET /api/glossary?stats=1 로 관리 지표도 함께 받는다 */
   includeStats?: boolean;
   onMeta?: (meta: GlossaryBrowserMeta) => void;
-  /** 목록 위쪽에 붙일 슬롯 (설정 화면 관리 지표 등) */
   topSlot?: ReactNode;
 };
 
@@ -182,10 +140,11 @@ export function GlossaryBrowser({
 
   const [terms, setTerms] = useState<TermListItem[]>([]);
   const [available, setAvailable] = useState(true);
+  const [canDelete, setCanDelete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [tab, setTab] = useState<Category>("common");
+  const [tab, setTab] = useState<TabKey>("전체");
   const [query, setQuery] = useState("");
   const [indexKey, setIndexKey] = useState<string | null>(null);
 
@@ -197,6 +156,8 @@ export function GlossaryBrowser({
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [notice, setNotice] = useState("");
 
   const loadTerms = useCallback(async () => {
@@ -210,10 +171,13 @@ export function GlossaryBrowser({
         available?: boolean;
         message?: string;
         stats?: GlossaryStats | null;
+        can_delete?: boolean;
       }>(url);
       const nextAvailable = json.available !== false;
+      const nextCanDelete = json.can_delete === true;
       setTerms(json.terms ?? []);
       setAvailable(nextAvailable);
+      setCanDelete(nextCanDelete);
       if (!nextAvailable) {
         setError(json.message ?? "용어사전 테이블을 읽지 못했습니다.");
       }
@@ -221,16 +185,19 @@ export function GlossaryBrowser({
         pendingCandidates: json.pending_candidates ?? 0,
         available: nextAvailable,
         message: json.message ?? "",
-        stats: json.stats ?? null
+        stats: json.stats ?? null,
+        canDelete: nextCanDelete
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
       setAvailable(false);
+      setCanDelete(false);
       onMetaRef.current?.({
         pendingCandidates: 0,
         available: false,
         message: err instanceof Error ? err.message : "불러오지 못했습니다.",
-        stats: null
+        stats: null,
+        canDelete: false
       });
     } finally {
       setLoading(false);
@@ -245,11 +212,14 @@ export function GlossaryBrowser({
     setDetailLoading(true);
     setDetailError("");
     try {
-      const json = await api<{ term: TermDetail; versions: VersionItem[] }>(
-        `/api/glossary?id=${id}`
-      );
+      const json = await api<{
+        term: TermDetail;
+        versions: VersionItem[];
+        can_delete?: boolean;
+      }>(`/api/glossary?id=${id}`);
       setDetail(json.term);
       setVersions(json.versions ?? []);
+      if (typeof json.can_delete === "boolean") setCanDelete(json.can_delete);
     } catch (err) {
       setDetail(null);
       setVersions([]);
@@ -260,7 +230,7 @@ export function GlossaryBrowser({
   }, []);
 
   const tabTerms = useMemo(
-    () => terms.filter((t) => t.category === tab),
+    () => terms.filter((t) => categoryTabFilter(t.categories, tab)),
     [terms, tab]
   );
 
@@ -294,18 +264,21 @@ export function GlossaryBrowser({
     if (!selectedId) return;
     setDraft(null);
     setNotice("");
+    setConfirmDelete(false);
     void loadDetail(selectedId);
   }, [selectedId, loadDetail]);
 
   function startEdit() {
     if (!detail) return;
     setNotice("");
+    setConfirmDelete(false);
     setDraft({
       term_ko: detail.term_ko ?? "",
       term_en: detail.term_en ?? "",
       term_zh: detail.term_zh ?? "",
-      term_zh_pron: detail.term_zh_pron ?? "",
       definition: detail.definition ?? "",
+      categories:
+        detail.categories?.length > 0 ? [...detail.categories] : ["공통"],
       change_note: ""
     });
   }
@@ -314,6 +287,10 @@ export function GlossaryBrowser({
     if (!detail || !draft) return;
     if (!draft.term_ko.trim()) {
       setNotice("한국어 용어는 반드시 있어야 합니다.");
+      return;
+    }
+    if (draft.categories.length === 0) {
+      setNotice("분류를 하나 이상 선택해 주세요.");
       return;
     }
     setSaving(true);
@@ -326,8 +303,7 @@ export function GlossaryBrowser({
           term_ko: draft.term_ko.trim(),
           term_en: draft.term_en.trim(),
           term_zh: draft.term_zh.trim(),
-          term_zh_pron: draft.term_zh_pron.trim(),
-          category: detail.category,
+          categories: draft.categories,
           definition: draft.definition.trim(),
           change_note: draft.change_note.trim()
         })
@@ -339,6 +315,27 @@ export function GlossaryBrowser({
       setNotice(err instanceof Error ? err.message : "저장하지 못했습니다.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function removeTerm() {
+    if (!detail || !canDelete) return;
+    setDeleting(true);
+    setNotice("");
+    try {
+      await api("/api/glossary", {
+        method: "DELETE",
+        body: JSON.stringify({ id: detail.id })
+      });
+      setConfirmDelete(false);
+      setDetail(null);
+      setSelectedId(null);
+      setNotice("용어를 삭제했습니다.");
+      await loadTerms();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "삭제하지 못했습니다.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -368,7 +365,7 @@ export function GlossaryBrowser({
     <div>
       {topSlot}
       {error ? (
-        <p className="mb-3 text-[12.5px]" style={{ color: "#A32D2D" }}>
+        <p className="mb-3 text-[12.5px]" style={{ color: C.danger }}>
           {error}
         </p>
       ) : null}
@@ -392,7 +389,7 @@ export function GlossaryBrowser({
             />
           </div>
 
-          <div className="mb-2.5 flex gap-[5px]">
+          <div className="mb-2.5 flex flex-wrap gap-[5px]">
             {TABS.map((t) => {
               const on = tab === t.key;
               return (
@@ -403,7 +400,7 @@ export function GlossaryBrowser({
                     setTab(t.key);
                     setIndexKey(null);
                   }}
-                  className="flex-1 rounded-lg py-1.5 text-center text-[11.5px] font-bold"
+                  className="rounded-lg px-2 py-1.5 text-center text-[11px] font-bold"
                   style={{
                     background: on ? C.luna : C.chip,
                     color: on ? "#fff" : C.sub
@@ -512,7 +509,7 @@ export function GlossaryBrowser({
               불러오는 중…
             </p>
           ) : detailError ? (
-            <p className="text-[12.5px]" style={{ color: "#A32D2D" }}>
+            <p className="text-[12.5px]" style={{ color: C.danger }}>
               {detailError}
             </p>
           ) : !detail ? (
@@ -524,21 +521,24 @@ export function GlossaryBrowser({
               <div className="text-[24px] font-extrabold tracking-[-0.5px]">
                 {detail.term_ko}
               </div>
-              <span
-                className="mt-1.5 inline-block rounded-[20px] px-[9px] py-0.5 text-[10.5px] font-extrabold"
-                style={{ background: C.chip, color: C.sub }}
-              >
-                {CATEGORY_LABEL[detail.category]}
-              </span>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {(detail.categories?.length ? detail.categories : ["공통"]).map(
+                  (cat) => (
+                    <span
+                      key={cat}
+                      className="inline-block rounded-[20px] px-[9px] py-0.5 text-[10.5px] font-extrabold"
+                      style={{ background: C.chip, color: C.sub }}
+                    >
+                      {cat}
+                    </span>
+                  )
+                )}
+              </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2.5 min-[901px]:grid-cols-3">
                 <LangCard label="한국어" value={detail.term_ko} />
-                <LangCard label="English" value={detail.term_en} />
-                <LangCard
-                  label="中文"
-                  value={detail.term_zh}
-                  pron={detail.term_zh_pron}
-                />
+                <LangCard label="ENGLISH" value={detail.term_en} />
+                <LangCard label="中文" value={detail.term_zh} />
               </div>
 
               <div
@@ -573,6 +573,23 @@ export function GlossaryBrowser({
                     >
                       수정하기
                     </button>
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmDelete(true);
+                          setNotice("");
+                        }}
+                        className="rounded-[9px] border px-3.5 py-2 text-[12.5px] font-bold"
+                        style={{
+                          background: C.dangerSoft,
+                          borderColor: "#f3d9cf",
+                          color: C.danger
+                        }}
+                      >
+                        삭제
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() =>
@@ -592,6 +609,37 @@ export function GlossaryBrowser({
                 </>
               )}
 
+              {confirmDelete ? (
+                <div
+                  className="mt-3 rounded-[9px] border px-4 py-3.5"
+                  style={{ borderColor: "#f3d9cf", background: C.dangerSoft }}
+                >
+                  <p className="text-[13px] font-bold" style={{ color: C.danger }}>
+                    이 용어를 삭제하면 루나가 더 이상 사용하지 않습니다
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => void removeTerm()}
+                      className="rounded-[9px] border px-3.5 py-2 text-[12.5px] font-bold text-white disabled:opacity-50"
+                      style={{ background: C.danger, borderColor: C.danger }}
+                    >
+                      {deleting ? "삭제 중…" : "삭제 확인"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => setConfirmDelete(false)}
+                      className="rounded-[9px] border bg-white px-3.5 py-2 text-[12.5px] font-bold disabled:opacity-50"
+                      style={{ borderColor: C.line, color: "#33363c" }}
+                    >
+                      취소
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {notice ? (
                 <p className="mt-2 text-[12px]" style={{ color: C.luna }}>
                   {notice}
@@ -603,48 +651,20 @@ export function GlossaryBrowser({
                   className="mt-3 rounded-[9px] border px-4 py-3.5"
                   style={{ borderColor: "#d9d2ff", background: "#fbfaff" }}
                 >
-                  <div className="mb-1 text-[11px]" style={{ color: C.faint }}>
+                  <div className="mb-2 text-[11px]" style={{ color: C.faint }}>
                     수정 — 편집 중
                   </div>
-                  <div className="grid grid-cols-1 gap-2.5 min-[901px]:grid-cols-4">
-                    <EditField
-                      label="한국어"
-                      value={draft.term_ko}
-                      onChange={(v) => setDraft({ ...draft, term_ko: v })}
-                    />
-                    <EditField
-                      label="English"
-                      value={draft.term_en}
-                      onChange={(v) => setDraft({ ...draft, term_en: v })}
-                    />
-                    <EditField
-                      label="中文"
-                      value={draft.term_zh}
-                      onChange={(v) => setDraft({ ...draft, term_zh: v })}
-                    />
-                    <EditField
-                      label="중문 발음"
-                      value={draft.term_zh_pron}
-                      onChange={(v) => setDraft({ ...draft, term_zh_pron: v })}
-                      placeholder="예: 지엔리"
-                    />
-                  </div>
-                  <div className="mb-1 text-[11px]" style={{ color: C.faint }}>
-                    정의
-                  </div>
-                  <textarea
-                    value={draft.definition}
-                    onChange={(e) => setDraft({ ...draft, definition: e.target.value })}
-                    className="mb-2.5 h-[120px] w-full resize-y rounded-lg border bg-white px-2.5 py-2 text-[13px] leading-[1.7] outline-none focus:border-[#d9d2ff]"
-                    style={{ borderColor: C.line, color: C.ink }}
+                  <GlossaryFields
+                    value={draft}
+                    onChange={(next) =>
+                      setDraft({ ...next, change_note: draft.change_note })
+                    }
+                    changeNote={draft.change_note}
+                    onChangeNote={(note) =>
+                      setDraft({ ...draft, change_note: note })
+                    }
                   />
-                  <EditField
-                    label="무엇을 왜 바꿨나요"
-                    value={draft.change_note}
-                    onChange={(v) => setDraft({ ...draft, change_note: v })}
-                    placeholder="예: 오타 수정 · 중문 발음 추가"
-                  />
-                  <div className="flex flex-wrap gap-2">
+                  <div className="mt-1 flex flex-wrap gap-2">
                     <button
                       type="button"
                       disabled={saving}

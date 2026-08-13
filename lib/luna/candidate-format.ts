@@ -1,14 +1,12 @@
+import { normalizeCategories } from "@/lib/glossary/categories";
+import type {
+  GlossaryCategory,
+  GlossaryFieldValues
+} from "@/lib/glossary/types";
 import { clipText, formatShortDate, sourceLabel } from "@/lib/luna/knowledge-format";
 import type { CandidateSource } from "@/lib/luna/candidates";
 
-export type GlossaryDraft = {
-  term_ko: string;
-  term_en: string | null;
-  term_zh: string | null;
-  term_zh_pron: string | null;
-  definition: string;
-  category: "common" | "interior" | "hw";
-};
+export type GlossaryDraft = GlossaryFieldValues;
 
 export type GlossaryEditDraft = GlossaryDraft & {
   movedFromTitle: boolean;
@@ -49,9 +47,7 @@ export function parseGlossaryMeta(
       ? m.term_ko.trim()
       : ""
     : content.split("\n")[0]?.trim() || content.trim().slice(0, 80);
-  const cat = m.category;
-  const category: GlossaryDraft["category"] =
-    cat === "interior" || cat === "hw" ? cat : "common";
+  const categories = normalizeCategories(m.categories, m.category);
   const definitionFromMeta =
     (typeof m.definition === "string" && m.definition.trim()) ||
     (typeof m.definition_draft === "string" && m.definition_draft.trim()) ||
@@ -66,14 +62,10 @@ export function parseGlossaryMeta(
 
   return {
     term_ko,
-    term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : null,
-    term_zh: typeof m.term_zh === "string" && m.term_zh.trim() ? m.term_zh.trim() : null,
-    term_zh_pron:
-      typeof m.term_zh_pron === "string" && m.term_zh_pron.trim()
-        ? m.term_zh_pron.trim()
-        : null,
+    term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : "",
+    term_zh: typeof m.term_zh === "string" && m.term_zh.trim() ? m.term_zh.trim() : "",
     definition,
-    category
+    categories
   };
 }
 
@@ -130,13 +122,16 @@ export function getCandidateCardKind(input: {
 
 export function scopeBadgeLabel(
   scope: string | null | undefined,
-  glossaryCategory?: GlossaryDraft["category"]
+  glossaryCategories?: GlossaryCategory[] | GlossaryCategory
 ): string | null {
   if (scope === "org") return "조직 제안";
   if (scope === "personal") return "개인 제안";
-  if (glossaryCategory === "common") return "공통 제안";
-  if (glossaryCategory === "interior") return "인테리어 제안";
-  if (glossaryCategory === "hw") return "HW 제안";
+  const cats = Array.isArray(glossaryCategories)
+    ? glossaryCategories
+    : glossaryCategories
+      ? [glossaryCategories]
+      : [];
+  if (cats.length > 0) return `${cats[0]} 제안`;
   return null;
 }
 

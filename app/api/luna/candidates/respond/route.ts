@@ -4,6 +4,8 @@ import {
   shouldRegisterGlossary,
   tryRegisterGlossaryFromCandidate
 } from "@/lib/luna/candidate-glossary";
+import { normalizeCategories } from "@/lib/glossary/categories";
+import type { GlossaryCategory } from "@/lib/glossary/types";
 import {
   isGlossaryCandidate,
   looksLikeDefinitionSentence,
@@ -23,9 +25,9 @@ type GlossaryPatch = {
   term_ko?: string;
   term_en?: string | null;
   term_zh?: string | null;
-  term_zh_pron?: string | null;
   definition?: string;
-  category?: string;
+  categories?: unknown;
+  category?: unknown;
 };
 
 type Body = {
@@ -41,15 +43,10 @@ function normalizeGlossaryPatch(
   term_ko: string;
   term_en: string | null;
   term_zh: string | null;
-  term_zh_pron: string | null;
   definition: string;
-  category: "common" | "interior" | "hw";
+  categories: GlossaryCategory[];
 } | null {
   if (!raw || typeof raw !== "object") return null;
-  const category =
-    raw.category === "interior" || raw.category === "hw"
-      ? raw.category
-      : "common";
   return {
     term_ko: typeof raw.term_ko === "string" ? raw.term_ko.trim() : "",
     term_en:
@@ -60,13 +57,9 @@ function normalizeGlossaryPatch(
       typeof raw.term_zh === "string" && raw.term_zh.trim()
         ? raw.term_zh.trim()
         : null,
-    term_zh_pron:
-      typeof raw.term_zh_pron === "string" && raw.term_zh_pron.trim()
-        ? raw.term_zh_pron.trim()
-        : null,
     definition:
       typeof raw.definition === "string" ? raw.definition.trim() : "",
-    category
+    categories: normalizeCategories(raw.categories, raw.category)
   };
 }
 
@@ -210,9 +203,8 @@ export async function POST(request: NextRequest) {
         term_ko: glossaryPatch.term_ko,
         term_en: glossaryPatch.term_en,
         term_zh: glossaryPatch.term_zh,
-        term_zh_pron: glossaryPatch.term_zh_pron,
         definition: glossaryPatch.definition,
-        category: glossaryPatch.category
+        categories: glossaryPatch.categories
       };
       const nextContent =
         glossaryPatch.definition ||
@@ -435,9 +427,8 @@ export async function POST(request: NextRequest) {
       term_ko: glossaryPatch.term_ko,
       term_en: glossaryPatch.term_en,
       term_zh: glossaryPatch.term_zh,
-      term_zh_pron: glossaryPatch.term_zh_pron,
       definition: glossaryPatch.definition,
-      category: glossaryPatch.category
+      categories: glossaryPatch.categories
     };
     workingContent =
       glossaryPatch.definition || glossaryPatch.term_ko || content;

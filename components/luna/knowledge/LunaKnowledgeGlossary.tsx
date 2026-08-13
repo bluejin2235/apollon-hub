@@ -11,7 +11,7 @@ import {
   StatCard,
   StatGrid
 } from "@/components/luna/knowledge/ui";
-import type { GlossaryStats } from "@/lib/glossary/types";
+import { GLOSSARY_CATEGORIES, type GlossaryStats } from "@/lib/glossary/types";
 
 export function LunaKnowledgeGlossary() {
   const router = useRouter();
@@ -19,9 +19,11 @@ export function LunaKnowledgeGlossary() {
 
   const categoryLine = useMemo(() => {
     if (!stats?.by_category) return "—";
-    const { common, interior, hw } = stats.by_category;
-    if (common == null && interior == null && hw == null) return "—";
-    return `${common ?? "—"} / ${interior ?? "—"} / ${hw ?? "—"}`;
+    const parts = GLOSSARY_CATEGORIES.map(
+      (cat) => stats.by_category[cat] ?? "—"
+    );
+    if (parts.every((p) => p === "—" || p == null)) return "—";
+    return parts.join(" / ");
   }, [stats]);
 
   function handleMeta(meta: GlossaryBrowserMeta) {
@@ -36,11 +38,7 @@ export function LunaKnowledgeGlossary() {
         topSlot={
           <StatGrid>
             <StatCard label="전체 용어" value={stats ? stats.total : "—"} />
-            <StatCard
-              label="공통 / 인테리어 / HW"
-              value={categoryLine}
-              small
-            />
+            <StatCard label="분류별 개수" value={categoryLine} small />
             <StatCard
               label="이번 주 수정"
               value={stats ? stats.week_updated : "—"}

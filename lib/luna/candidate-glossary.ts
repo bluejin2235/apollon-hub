@@ -21,23 +21,9 @@ export async function tryRegisterGlossaryFromCandidate(
       .from("glossary_terms")
       .select("id")
       .eq("term_ko", draft.term_ko)
-      .eq("category", draft.category)
       .maybeSingle();
 
     if (existing?.id) {
-      const { error: updateError } = await admin
-        .from("glossary_terms")
-        .update({
-          term_en: draft.term_en,
-          term_zh: draft.term_zh,
-          term_zh_pron: draft.term_zh_pron,
-          definition: draft.definition,
-          updated_by: userId,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", existing.id);
-      if (updateError) throw updateError;
-
       const { data: verRow } = await admin
         .from("glossary_versions")
         .select("version")
@@ -46,13 +32,27 @@ export async function tryRegisterGlossaryFromCandidate(
         .limit(1)
         .maybeSingle();
       const nextVersion = (Number(verRow?.version) || 0) + 1;
+
+      const { error: updateError } = await admin
+        .from("glossary_terms")
+        .update({
+          term_en: draft.term_en || null,
+          term_zh: draft.term_zh || null,
+          definition: draft.definition,
+          categories: draft.categories,
+          version: nextVersion,
+          updated_by: userId,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", existing.id);
+      if (updateError) throw updateError;
+
       await admin.from("glossary_versions").insert({
         term_id: existing.id,
         version: nextVersion,
         term_ko: draft.term_ko,
-        term_en: draft.term_en,
-        term_zh: draft.term_zh,
-        term_zh_pron: draft.term_zh_pron,
+        term_en: draft.term_en || null,
+        term_zh: draft.term_zh || null,
         definition: draft.definition,
         editor_type: "human",
         edited_by: userId,
@@ -66,11 +66,11 @@ export async function tryRegisterGlossaryFromCandidate(
       .from("glossary_terms")
       .insert({
         term_ko: draft.term_ko,
-        term_en: draft.term_en,
-        term_zh: draft.term_zh,
-        term_zh_pron: draft.term_zh_pron,
-        category: draft.category,
+        term_en: draft.term_en || null,
+        term_zh: draft.term_zh || null,
+        categories: draft.categories,
         definition: draft.definition,
+        version: 1,
         created_by: userId,
         updated_by: userId
       })
@@ -86,9 +86,8 @@ export async function tryRegisterGlossaryFromCandidate(
       term_id: inserted.id,
       version: 1,
       term_ko: draft.term_ko,
-      term_en: draft.term_en,
-      term_zh: draft.term_zh,
-      term_zh_pron: draft.term_zh_pron,
+      term_en: draft.term_en || null,
+      term_zh: draft.term_zh || null,
       definition: draft.definition,
       editor_type: "human",
       edited_by: userId,
