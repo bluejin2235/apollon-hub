@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Fragment,
   useEffect,
   useMemo,
   useState,
@@ -11,6 +10,7 @@ import {
 } from "react";
 import { FileText, Folder, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
+import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
@@ -534,9 +534,11 @@ function OpinionBlock({ content }: { content: string }) {
         LUNA 종합 의견
       </div>
       {body ? (
-        <div className="whitespace-pre-wrap break-words text-[13px] leading-[1.65] text-[#26215C]">
-          {body}
-        </div>
+        <SafeMarkdown
+          content={body}
+          compact
+          className="text-[13px] leading-[1.65] text-[#26215C]"
+        />
       ) : null}
       {assumptions.length > 0 ? (
         <div className="mt-2 space-y-1.5">
@@ -592,9 +594,7 @@ function AssistantTextBubble({ content }: { content: string }) {
   const display = body || (assumptions.length === 0 ? content : "");
   return (
     <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-      {display ? (
-        <div className="whitespace-pre-wrap break-words">{display}</div>
-      ) : null}
+      {display ? <SafeMarkdown content={display} /> : null}
       {assumptions.length > 0 ? (
         <div className="mt-2 space-y-1.5">
           {assumptions.map((a, i) => (
@@ -612,67 +612,12 @@ function AssistantTextBubble({ content }: { content: string }) {
   );
 }
 
-function renderMarkdownLine(line: string, lineKey: number): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*|(`[^`]+`)/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
-  let tokenIndex = 0;
-
-  while ((match = pattern.exec(line)) !== null) {
-    if (match.index > last) {
-      nodes.push(line.slice(last, match.index));
-    }
-    if (match[1] !== undefined) {
-      nodes.push(
-        <strong key={`${lineKey}-${tokenIndex++}`} className="font-semibold">
-          {match[1]}
-        </strong>
-      );
-    } else if (match[2]) {
-      nodes.push(
-        <code
-          key={`${lineKey}-${tokenIndex++}`}
-          className="rounded bg-slate-200/70 px-1 py-px text-[12px]"
-        >
-          {match[2].slice(1, -1)}
-        </code>
-      );
-    }
-    last = match.index + match[0].length;
-  }
-  if (last < line.length) nodes.push(line.slice(last));
-  return nodes;
-}
-
 function MarkdownText({ content }: { content: string }) {
-  const lines = content.split("\n");
   return (
-    <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-900">
-      {lines.map((line, lineIndex) => {
-        const heading = line.match(/^(#{1,3})\s+(.+)$/);
-        if (heading) {
-          const level = heading[1].length;
-          const cls =
-            level === 1
-              ? "text-[15px] font-semibold"
-              : level === 2
-                ? "text-[14px] font-semibold"
-                : "text-[13px] font-semibold";
-          return (
-            <p key={lineIndex} className={`${cls} text-slate-900`}>
-              {renderMarkdownLine(heading[2], lineIndex)}
-            </p>
-          );
-        }
-        return (
-          <Fragment key={lineIndex}>
-            {renderMarkdownLine(line, lineIndex)}
-            {lineIndex < lines.length - 1 ? <br /> : null}
-          </Fragment>
-        );
-      })}
-    </div>
+    <SafeMarkdown
+      content={content}
+      className="text-sm leading-relaxed text-slate-900"
+    />
   );
 }
 
@@ -1083,9 +1028,23 @@ export function LunaMessage({
   let body: ReactNode;
   if (clarify) {
     const q = clarify.question || content;
+    const { body: clarifyBody, assumptions } = parseAssumeMarkers(q);
     body = (
       <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-        <p className="whitespace-pre-wrap break-words">{q}</p>
+        {clarifyBody ? <SafeMarkdown content={clarifyBody} /> : null}
+        {assumptions.length > 0 ? (
+          <div className="mt-2 space-y-1.5">
+            {assumptions.map((a, i) => (
+              <div
+                key={`${i}-${a.slice(0, 24)}`}
+                className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] leading-snug text-amber-950"
+              >
+                <span className="font-medium text-amber-800">가정 · </span>
+                {a}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {!hideInlineClarifyOptions ? (
           <>
             <div className="mt-2.5">

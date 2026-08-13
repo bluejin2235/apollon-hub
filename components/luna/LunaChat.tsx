@@ -452,6 +452,7 @@ export function LunaChat({
   const reflectStateRef = useRef<{ id: string; messageCount: number } | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipTitleCommitRef = useRef(false);
+  const stickToBottomRef = useRef(true);
   useMeasureBottomUi(bottomUiRef, true);
   const [connectors, setConnectors] = useState<LunaConnectorsState>(
     DEFAULT_INPUT_CONNECTORS
@@ -462,6 +463,34 @@ export function LunaChat({
   const [titleDraft, setTitleDraft] = useState("");
   const [showQuestionCard, setShowQuestionCard] = useState(false);
   const [focusTick, setFocusTick] = useState(0);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+
+  const NEAR_BOTTOM_PX = 40;
+
+  function scrollMessagesToBottom() {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function forceStickToBottom() {
+    stickToBottomRef.current = true;
+    setShowJumpToLatest(false);
+    requestAnimationFrame(() => {
+      scrollMessagesToBottom();
+      requestAnimationFrame(scrollMessagesToBottom);
+    });
+  }
+
+  function handleMessagesScroll() {
+    const el = listRef.current;
+    if (!el) return;
+    const distance =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distance <= NEAR_BOTTOM_PX;
+    stickToBottomRef.current = nearBottom;
+    setShowJumpToLatest(!nearBottom);
+  }
   const {
     pendingQuestion,
     busy: questionBusy,
@@ -502,6 +531,7 @@ export function LunaChat({
   };
 
   function sendChoice(text: string) {
+    forceStickToBottom();
     onSend(text, { notion: true, web: true, nas: true }, [], [], emptySkills);
   }
 
@@ -519,10 +549,12 @@ export function LunaChat({
         return;
       }
       if (resolved.kind === "option") {
+        forceStickToBottom();
         onSend(resolved.text, nextConnectors, attachmentIds, attachmentMeta, skills);
         return;
       }
     }
+    forceStickToBottom();
     onSend(message, nextConnectors, attachmentIds, attachmentMeta, skills);
   }
 
@@ -564,9 +596,14 @@ export function LunaChat({
   }
 
   useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+    setShowJumpToLatest(false);
+    requestAnimationFrame(scrollMessagesToBottom);
+  }, [conversation?.id]);
+
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    scrollMessagesToBottom();
   }, [messages, sending, searchStatus]);
 
   useEffect(() => {
@@ -731,6 +768,18 @@ export function LunaChat({
         </div>
       }
       messagesRef={listRef}
+      onMessagesScroll={handleMessagesScroll}
+      bodyOverlay={
+        showJumpToLatest ? (
+          <button
+            type="button"
+            onClick={() => forceStickToBottom()}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-slate-700 shadow-md transition hover:bg-slate-50"
+          >
+            새 메시지 ↓
+          </button>
+        ) : null
+      }
       footerRef={bottomUiRef}
       footer={
         <div className="w-full">
