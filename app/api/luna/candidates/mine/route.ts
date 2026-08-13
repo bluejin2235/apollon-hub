@@ -4,7 +4,10 @@ import {
   dialogueTurnLabel,
   questionDeadlineLabel
 } from "@/lib/luna/candidate-format";
-import { normalizeThread, type CandidateSource } from "@/lib/luna/candidates";
+import {
+  normalizeThread,
+  resolveCandidateSource
+} from "@/lib/luna/candidates";
 import { clipText } from "@/lib/luna/knowledge-format";
 
 export const runtime = "nodejs";
@@ -22,14 +25,6 @@ type Row = {
   snoozed_until: string | null;
   meta: Record<string, unknown> | null;
 };
-
-function resolveSource(row: Row): CandidateSource {
-  const s = row.source;
-  if (s === "chat" || s === "selfstudy" || s === "question" || s === "direct") {
-    return s;
-  }
-  return row.origin === "direct" ? "direct" : "chat";
-}
 
 function isSnoozed(row: Row): boolean {
   if (!row.snoozed_until) return false;
@@ -73,7 +68,7 @@ export async function GET(request: NextRequest) {
 
   const assignedCandidates = rows.filter(
     (r) =>
-      resolveSource(r) === "question" &&
+      resolveCandidateSource(r.source, r.origin) === "question" &&
       r.assigned_to === user.id &&
       !isSnoozed(r)
   );
@@ -106,7 +101,7 @@ export async function GET(request: NextRequest) {
 
   const myDialogues = rows
     .filter((r) => {
-      const src = resolveSource(r);
+      const src = resolveCandidateSource(r.source, r.origin);
       const thread = normalizeThread(r.thread);
       if (thread.length === 0) return false;
       if (r.assigned_to !== user.id && r.author_id !== user.id) return false;
@@ -115,7 +110,7 @@ export async function GET(request: NextRequest) {
     })
     .map((r) => {
       const thread = normalizeThread(r.thread);
-      const src = resolveSource(r);
+      const src = resolveCandidateSource(r.source, r.origin);
       const title =
         (typeof r.meta?.title === "string" && r.meta.title.trim()) ||
         clipText(r.content, 48);
@@ -128,7 +123,9 @@ export async function GET(request: NextRequest) {
     })
     .slice(0, 20);
 
-  const questionRows = rows.filter((r) => resolveSource(r) === "question");
+  const questionRows = rows.filter(
+    (r) => resolveCandidateSource(r.source, r.origin) === "question"
+  );
   const assigneeIds = Array.from(
     new Set(
       questionRows

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Badge,
@@ -22,9 +22,10 @@ import {
   selfstudyQuestion,
   type GlossaryEditDraft
 } from "@/lib/luna/candidate-format";
-import { K, sourceLabel } from "@/lib/luna/knowledge-format";
+import { clipText, K, sourceLabel } from "@/lib/luna/knowledge-format";
 import type { CandidateSource } from "@/lib/luna/candidates";
 import type { ThreadTurn } from "@/lib/luna/candidates";
+import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
 
 export type CandidateRow = {
@@ -38,6 +39,8 @@ export type CandidateRow = {
   author_name: string | null;
   assigned_to: string | null;
   source_conversation_id: string | null;
+  source_id: string | null;
+  source_title: string | null;
   created_at: string | null;
   meta: Record<string, unknown> | null;
   is_glossary: boolean;
@@ -54,19 +57,47 @@ export async function getAccessToken(): Promise<string | null> {
 export function SourceBadge({
   source,
   glossary,
-  myTurn
+  myTurn,
+  sourceId,
+  sourceTitle
 }: {
   source: CandidateSource;
   glossary?: boolean;
   myTurn?: boolean;
+  sourceId?: string | null;
+  sourceTitle?: string | null;
 }) {
+  const router = useRouter();
+  const titleBit =
+    source === "interview" && sourceTitle
+      ? ` · ${clipText(sourceTitle, 28)}`
+      : "";
+
+  function goToSource(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!sourceId) return;
+    router.push(
+      buildLunaSettingsUrl("talk", "sources", { source: sourceId })
+    );
+  }
+
   if (glossary) {
     const src = sourceLabel(source);
-    return (
-      <Badge kind="org">
-        용어 · {src !== "—" ? src : "대화에서"}
-      </Badge>
-    );
+    const label = `용어 · ${src !== "—" ? src : "대화에서"}${titleBit}`;
+    if (source === "interview" && sourceId) {
+      return (
+        <button
+          type="button"
+          onClick={goToSource}
+          className="cursor-pointer text-left"
+          title="구술·문서에서 보기"
+        >
+          <Badge kind="org">{label}</Badge>
+        </button>
+      );
+    }
+    return <Badge kind="org">{label}</Badge>;
   }
   if (myTurn && source === "question") {
     return <Badge kind="warn">루나의 질문 · 내 차례</Badge>;
@@ -74,6 +105,22 @@ export function SourceBadge({
   if (source === "chat") return <Badge kind="me">대화에서</Badge>;
   if (source === "selfstudy") return <Badge kind="org">자습에서</Badge>;
   if (source === "question") return <Badge kind="warn">루나의 질문</Badge>;
+  if (source === "interview") {
+    const label = `구술·문서${titleBit}`;
+    if (sourceId) {
+      return (
+        <button
+          type="button"
+          onClick={goToSource}
+          className="cursor-pointer text-left"
+          title="구술·문서에서 보기"
+        >
+          <Badge kind="org">{label}</Badge>
+        </button>
+      );
+    }
+    return <Badge kind="org">{label}</Badge>;
+  }
   return <Badge kind="src">알려주기</Badge>;
 }
 

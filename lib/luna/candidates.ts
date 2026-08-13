@@ -3,7 +3,30 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 
-export type CandidateSource = "chat" | "selfstudy" | "question" | "direct";
+export type CandidateSource =
+  | "chat"
+  | "selfstudy"
+  | "question"
+  | "direct"
+  | "interview";
+
+export function resolveCandidateSource(
+  source: string | null | undefined,
+  origin?: string | null
+): CandidateSource {
+  if (
+    source === "chat" ||
+    source === "selfstudy" ||
+    source === "question" ||
+    source === "direct" ||
+    source === "interview"
+  ) {
+    return source;
+  }
+  // source 비어 있는 레거시 행만 origin 으로 보정
+  if (origin === "direct") return "direct";
+  return "chat";
+}
 export type ScopeSuggestion = "org" | "personal";
 
 export type ThreadTurn = {

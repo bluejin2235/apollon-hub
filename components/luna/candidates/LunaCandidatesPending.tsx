@@ -37,6 +37,7 @@ type Counts = {
   selfstudy: number;
   question: number;
   direct: number;
+  interview: number;
   glossary: number;
 };
 
@@ -46,6 +47,7 @@ const FILTERS: { key: PendingFilter; label: string; countKey: keyof Counts }[] =
   { key: "selfstudy", label: "자습에서", countKey: "selfstudy" },
   { key: "question", label: "루나의 질문", countKey: "question" },
   { key: "direct", label: "알려주기", countKey: "direct" },
+  { key: "interview", label: "구술·문서", countKey: "interview" },
   { key: "glossary", label: "용어", countKey: "glossary" }
 ];
 
@@ -258,7 +260,12 @@ export function LunaCandidatesPending() {
             return (
               <CandidateCardShell key={item.id}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <SourceBadge source={item.source} glossary />
+                  <SourceBadge
+                    source={item.source}
+                    glossary
+                    sourceId={item.source_id}
+                    sourceTitle={item.source_title}
+                  />
                   <span className="text-[11.5px]" style={{ color: K.faint }}>
                     {metaLine}
                     {item.source_conversation_id ? (
@@ -357,7 +364,11 @@ export function LunaCandidatesPending() {
             return (
               <CandidateCardShell key={item.id}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <SourceBadge source={item.source} />
+                  <SourceBadge
+                    source={item.source}
+                    sourceId={item.source_id}
+                    sourceTitle={item.source_title}
+                  />
                   <span className="text-[11.5px]" style={{ color: K.faint }}>
                     {metaLine}
                   </span>
@@ -446,6 +457,8 @@ export function LunaCandidatesPending() {
                   <SourceBadge
                     source={item.source}
                     myTurn={item.is_my_turn}
+                    sourceId={item.source_id}
+                    sourceTitle={item.source_title}
                   />
                   <span className="text-[11.5px]" style={{ color: K.faint }}>
                     문답 {turnN}번째
@@ -479,7 +492,11 @@ export function LunaCandidatesPending() {
           return (
             <CandidateCardShell key={item.id}>
               <div className="flex flex-wrap items-center gap-2">
-                <SourceBadge source={item.source} />
+                <SourceBadge
+                  source={item.source}
+                  sourceId={item.source_id}
+                  sourceTitle={item.source_title}
+                />
                 <span className="text-[11.5px]" style={{ color: K.faint }}>
                   {metaLine}
                   {item.source_conversation_id ? (

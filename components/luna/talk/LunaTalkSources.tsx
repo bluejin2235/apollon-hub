@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Btn,
@@ -189,12 +190,18 @@ function learningStatusBadge(status: string): {
 }
 
 export function LunaTalkSources() {
+  const searchParams = useSearchParams();
+  const focusSourceId = searchParams.get("source");
+  const focusAppliedRef = useRef<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notes, setNotes] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [period, setPeriod] = useState<PeriodKey>("30");
+  const [period, setPeriod] = useState<PeriodKey>(() =>
+    focusSourceId ? "all" : "30"
+  );
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [month, setMonth] = useState(() => kstYmd().slice(0, 7));
@@ -310,6 +317,33 @@ export function LunaTalkSources() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!focusSourceId) return;
+    if (focusAppliedRef.current === focusSourceId) return;
+    setPeriod("all");
+    setDateFilter(null);
+    setTopicFilter("");
+    setSpeakerFilter("");
+  }, [focusSourceId]);
+
+  useEffect(() => {
+    if (!focusSourceId || loading) return;
+    if (focusAppliedRef.current === focusSourceId) return;
+    const found = items.some((i) => i.id === focusSourceId);
+    if (!found) return;
+    focusAppliedRef.current = focusSourceId;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(focusSourceId);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`luna-source-${focusSourceId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [focusSourceId, items, loading]);
 
   useEffect(() => {
     const t = setTimeout(() => setQuery(q.trim()), 300);
@@ -715,7 +749,8 @@ export function LunaTalkSources() {
                 return (
                   <div
                     key={item.id}
-                    className="mb-2.5 rounded-xl border"
+                    id={`luna-source-${item.id}`}
+                    className="mb-2.5 scroll-mt-4 rounded-xl border"
                     style={{ background: K.panel, borderColor: K.line }}
                   >
                     <button

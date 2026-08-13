@@ -30,7 +30,8 @@ function parseSource(raw: unknown): CandidateSource | null {
     raw === "chat" ||
     raw === "selfstudy" ||
     raw === "question" ||
-    raw === "direct"
+    raw === "direct" ||
+    raw === "interview"
   ) {
     return raw;
   }

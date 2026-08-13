@@ -62,7 +62,9 @@ export function sourceLabel(
   if (source === "direct") return "알려주기";
   if (source === "selfstudy") return "자습에서";
   if (source === "question") return "루나의 질문";
-  if (origin === "direct") return "알려주기";
+  if (source === "interview") return "구술·문서";
+  // source 가 비어 있을 때만 origin 보정 (interview 를 direct 로 덮지 않음)
+  if (!source && origin === "direct") return "알려주기";
   if (origin === "eval_feedback") return "평가 피드백";
   return "—";
 }

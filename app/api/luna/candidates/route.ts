@@ -3,6 +3,7 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
 import {
   normalizeThread,
+  resolveCandidateSource,
   type CandidateSource,
   type ThreadTurn
 } from "@/lib/luna/candidates";
@@ -15,6 +16,7 @@ export type PendingFilter =
   | "selfstudy"
   | "question"
   | "direct"
+  | "interview"
   | "glossary";
 
 type LearningRow = {
@@ -30,16 +32,18 @@ type LearningRow = {
   author_id: string | null;
   assigned_to: string | null;
   source_conversation_id: string | null;
+  source_id: string | null;
   created_at: string | null;
   snoozed_until: string | null;
   meta: Record<string, unknown> | null;
 };
 
-export type CandidateItem = LearningRow & {
+export type CandidateItem = Omit<LearningRow, "source"> & {
   author_name: string | null;
   assigned_name: string | null;
   thread: ThreadTurn[];
   source: CandidateSource;
+  source_title: string | null;
   is_glossary: boolean;
   is_my_turn: boolean;
 };
@@ -50,16 +54,9 @@ export type CandidateCounts = {
   selfstudy: number;
   question: number;
   direct: number;
+  interview: number;
   glossary: number;
 };
-
-function resolveSource(row: LearningRow): CandidateSource {
-  const s = row.source;
-  if (s === "chat" || s === "selfstudy" || s === "question" || s === "direct") {
-    return s;
-  }
-  return row.origin === "direct" ? "direct" : "chat";
-}
 
 function isSnoozed(row: LearningRow): boolean {
   if (!row.snoozed_until) return false;
@@ -83,6 +80,7 @@ export async function GET(request: NextRequest) {
     filterRaw === "selfstudy" ||
     filterRaw === "question" ||
     filterRaw === "direct" ||
+    filterRaw === "interview" ||
     filterRaw === "glossary"
       ? filterRaw
       : "all";
@@ -90,7 +88,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, created_at, snoozed_until, meta"
+      "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta"
     )
     .eq("status", "candidate")
     .neq("category", "identity")
@@ -110,20 +108,30 @@ export async function GET(request: NextRequest) {
     selfstudy: 0,
     question: 0,
     direct: 0,
+    interview: 0,
     glossary: 0
   };
   for (const r of rows) {
-    const src = resolveSource(r);
+    const src = resolveCandidateSource(r.source, r.origin);
     if (src === "chat") counts.chat += 1;
     if (src === "selfstudy") counts.selfstudy += 1;
     if (src === "question") counts.question += 1;
     if (src === "direct") counts.direct += 1;
+    if (src === "interview") counts.interview += 1;
     if (isGlossaryCandidate(r.meta, r.category)) counts.glossary += 1;
   }
 
   let filtered = rows;
-  if (filter === "chat" || filter === "selfstudy" || filter === "question" || filter === "direct") {
-    filtered = rows.filter((r) => resolveSource(r) === filter);
+  if (
+    filter === "chat" ||
+    filter === "selfstudy" ||
+    filter === "question" ||
+    filter === "direct" ||
+    filter === "interview"
+  ) {
+    filtered = rows.filter(
+      (r) => resolveCandidateSource(r.source, r.origin) === filter
+    );
   } else if (filter === "glossary") {
     filtered = rows.filter((r) => isGlossaryCandidate(r.meta, r.category));
   }
@@ -149,8 +157,27 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const sourceIds = Array.from(
+    new Set(
+      filtered
+        .map((r) => r.source_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+  const sourceTitleMap = new Map<string, string>();
+  if (sourceIds.length > 0) {
+    const { data: sources } = await admin
+      .from("luna_knowledge_sources")
+      .select("id, title")
+      .in("id", sourceIds);
+    for (const s of sources ?? []) {
+      const title = typeof s.title === "string" ? s.title.trim() : "";
+      if (title) sourceTitleMap.set(s.id as string, title);
+    }
+  }
+
   const items: CandidateItem[] = filtered.map((r) => {
-    const source = resolveSource(r);
+    const source = resolveCandidateSource(r.source, r.origin);
     const thread = normalizeThread(r.thread);
     const isMyTurn =
       source === "question" &&
@@ -160,6 +187,9 @@ export async function GET(request: NextRequest) {
     return {
       ...r,
       source,
+      source_title: r.source_id
+        ? sourceTitleMap.get(r.source_id) ?? null
+        : null,
       thread,
       is_glossary: isGlossaryCandidate(r.meta, r.category),
       is_my_turn: isMyTurn,
@@ -170,7 +200,7 @@ export async function GET(request: NextRequest) {
 
   const myTurnCount = rows.filter(
     (r) =>
-      resolveSource(r) === "question" &&
+      resolveCandidateSource(r.source, r.origin) === "question" &&
       r.assigned_to === user.id &&
       !isSnoozed(r)
   ).length;
