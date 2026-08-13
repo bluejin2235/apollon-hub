@@ -30,7 +30,7 @@ const C = {
 } as const;
 
 const CARD_CAP = {
-  knowledge: "확정된 것만 기억",
+  knowledge: "확정된 것만 · 슈퍼관리자 열람",
   talk: "모르면 묻고 · 정정은 줍는다",
   candidates: "유일한 관문",
   selfstudy: "그날 막힌 것만 · 결과는 지식후보로",
@@ -141,14 +141,21 @@ function DashCard({
 }) {
   const router = useRouter();
   return (
-    <button
-      type="button"
+    <div
+      role="link"
+      tabIndex={0}
       onClick={() => router.push(href)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          router.push(href);
+        }
+      }}
       className="flex w-full cursor-pointer flex-col rounded-[12px] border border-[#e7e8ec] bg-white px-[17px] py-[15px] text-left"
       style={{ borderTopWidth: 3, borderTopColor: topColor }}
     >
       {children}
-    </button>
+    </div>
   );
 }
 
@@ -255,53 +262,73 @@ function MiniBars({ values }: { values: number[] }) {
 }
 
 function KnowledgeCard({ k }: { k: LunaDashboard["knowledge"] }) {
+  const workNotion = [
+    k.nas_indexed > 0 ? k.nas_indexed.toLocaleString() : "—",
+    k.notion_connected ? "노션 정상" : "노션 미연결"
+  ].join(" · ");
+
   return (
     <DashCard topColor={C.luna} href={buildLunaSettingsUrl("knowledge", "confirmed")}>
       <CardHead title="지식" cap={CARD_CAP.knowledge} />
-      <div className="my-[9px] text-[26px] font-bold tracking-[-0.5px] text-[#1c1d21]">
-        {k.active_count}
-        {k.week_new > 0 ? (
-          <small className="ml-1.5 text-[12px] font-semibold text-[#0F6E56]">
-            +{k.week_new} 이번 주
-          </small>
-        ) : null}
-      </div>
-      <div className="mt-px text-[11px] text-[#9aa0a8]">
-        조직 {k.org_count} · 개인 {k.personal_count}
-      </div>
-      <Rows>
-        <Row label="Work서버 인덱싱">
-          {k.nas_indexed > 0
-            ? k.nas_indexed.toLocaleString()
-            : "—"}
-        </Row>
-        <Row label="노션 연결">
-          {k.notion_connected ? "정상" : "미연결"}
-        </Row>
-        <Row label="충돌 보류">
-          {k.conflict_count > 0 ? (
-            <span className="text-[#993C1D]">{k.conflict_count}건</span>
-          ) : (
-            k.conflict_count === 0 ? "0건" : "—"
-          )}
-        </Row>
-        <Row label="최다 사용">
-          {k.top_used
-            ? `${clip(k.top_used.content, 20)} · ${k.top_used.use_count}회`
-            : "—"}
-        </Row>
-        <Row label="최근 확정">
-          {k.latest_confirmed
-            ? clip(k.latest_confirmed.content, 28)
-            : "—"}
-        </Row>
-      </Rows>
+      {k.has_summary_layer ? (
+        <Rows>
+          <Row label="요약">—</Row>
+          <Row label="핵심">—</Row>
+        </Rows>
+      ) : (
+        <>
+          <div className="my-[9px] text-[26px] font-bold tracking-[-0.5px] text-[#1c1d21]">
+            {k.active_count}
+            {k.week_new > 0 ? (
+              <small className="ml-1.5 text-[12px] font-semibold text-[#0F6E56]">
+                +{k.week_new} 이번 주
+              </small>
+            ) : null}
+          </div>
+          <div className="mt-px text-[11px] text-[#9aa0a8]">
+            조직 {k.org_count} · 개인 {k.personal_count}
+          </div>
+          <Rows>
+            {k.glossary_count != null ? (
+              <Row label="용어사전">{k.glossary_count.toLocaleString()}</Row>
+            ) : null}
+            <Row label="Work서버·노션">{workNotion}</Row>
+            <Row label="충돌 보류">
+              {k.conflict_count > 0 ? (
+                <span className="text-[#993C1D]">{k.conflict_count}건</span>
+              ) : (
+                "0건"
+              )}
+            </Row>
+            <Row label="최다 사용">
+              {k.top_used
+                ? `${clip(k.top_used.content, 20)} · ${k.top_used.use_count}회`
+                : "—"}
+            </Row>
+            <Row label="최근 확정">
+              {k.latest_confirmed
+                ? clip(k.latest_confirmed.content, 28)
+                : "—"}
+            </Row>
+          </Rows>
+        </>
+      )}
     </DashCard>
   );
 }
 
 function TalkCard({ t }: { t: LunaDashboard["talk"] }) {
+  const router = useRouter();
   const users = t.top_users_yesterday;
+  const sourcesValue =
+    t.sources_count == null
+      ? null
+      : [
+          `${t.sources_count}편`,
+          t.sources_latest_label ? t.sources_latest_label : null
+        ]
+          .filter(Boolean)
+          .join(" · ");
 
   return (
     <DashCard topColor={C.talk} href={buildLunaSettingsUrl("talk", "history")}>
@@ -362,6 +389,21 @@ function TalkCard({ t }: { t: LunaDashboard["talk"] }) {
         )}
       </Rows>
       <Rows>
+        {sourcesValue != null ? (
+          <div className="flex justify-between gap-2.5 leading-[1.95]">
+            <span>구술·문서</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(buildLunaSettingsUrl("talk", "sources"));
+              }}
+              className="cursor-pointer text-right font-bold text-[#0F6E56] underline-offset-2 hover:underline"
+            >
+              {sourcesValue || "—"}
+            </button>
+          </div>
+        ) : null}
         <Row label="되물음">
           오늘 {t.clarify_today} · 어제 {t.clarify_yesterday}
         </Row>

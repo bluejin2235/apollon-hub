@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { addDaysYmd, kstYmd } from "@/lib/luna/knowledge-sources";
 import { kstWeekBounds } from "@/lib/luna/self-report";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import {
@@ -12,10 +13,13 @@ export type LunaDashboard = {
   date_label: string;
   my_turn_count: number;
   knowledge: {
+    /** 요약·핵심 층이 준비되면 true — 없으면 세 겹 블록 생략 */
+    has_summary_layer: boolean;
     active_count: number;
     week_new: number;
     org_count: number;
     personal_count: number;
+    glossary_count: number | null;
     nas_indexed: number;
     nas_last_total: number | null;
     notion_connected: boolean;
@@ -37,6 +41,10 @@ export type LunaDashboard = {
     search_zero_today: number;
     requery_today: number;
     assume_today: number;
+    /** 구술·문서(원문) 편수 — 집계 불가 시 null */
+    sources_count: number | null;
+    /** 최근 입력일 라벨 (오늘/어제/MM.DD) */
+    sources_latest_label: string | null;
     top_users_yesterday: Array<{
       rank: number;
       user_id: string;
@@ -283,6 +291,77 @@ async function countBySource(admin: SupabaseClient) {
   return out;
 }
 
+async function countGlossaryTerms(
+  admin: SupabaseClient
+): Promise<number | null> {
+  const { count, error } = await admin
+    .from("glossary_terms")
+    .select("id", { count: "exact", head: true });
+  if (error) {
+    console.warn("[luna/dashboard] glossary_terms", error.message);
+    return null;
+  }
+  return count ?? 0;
+}
+
+function formatSourcesLatestLabel(
+  spokenAt: string | null | undefined,
+  createdAt: string | null | undefined
+): string | null {
+  let ymd: string | null = null;
+  if (typeof spokenAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(spokenAt)) {
+    ymd = spokenAt;
+  } else if (typeof createdAt === "string") {
+    const d = new Date(createdAt);
+    if (!Number.isNaN(d.getTime())) ymd = kstYmd(d);
+  }
+  if (!ymd) return null;
+  const today = kstYmd();
+  const yesterday = addDaysYmd(today, -1);
+  if (ymd === today) return "오늘";
+  if (ymd === yesterday) return "어제";
+  const [, m, d] = ymd.split("-");
+  return `${m}.${d}`;
+}
+
+async function loadTalkSourcesStats(admin: SupabaseClient): Promise<{
+  count: number | null;
+  latest_label: string | null;
+}> {
+  const { count, error: countError } = await admin
+    .from("luna_knowledge_sources")
+    .select("id", { count: "exact", head: true });
+  if (countError) {
+    console.warn("[luna/dashboard] knowledge_sources", countError.message);
+    return { count: null, latest_label: null };
+  }
+  const { data: latestRows, error: latestError } = await admin
+    .from("luna_knowledge_sources")
+    .select("spoken_at, created_at")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (latestError) {
+    console.warn("[luna/dashboard] knowledge_sources latest", latestError.message);
+    return { count: count ?? 0, latest_label: null };
+  }
+  let bestSpoken: string | null = null;
+  let bestCreated: string | null = null;
+  for (const row of latestRows ?? []) {
+    const spoken =
+      typeof row.spoken_at === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.spoken_at)
+        ? row.spoken_at
+        : null;
+    const created =
+      typeof row.created_at === "string" ? row.created_at : null;
+    if (spoken && (!bestSpoken || spoken > bestSpoken)) bestSpoken = spoken;
+    if (created && (!bestCreated || created > bestCreated)) bestCreated = created;
+  }
+  return {
+    count: count ?? 0,
+    latest_label: formatSourcesLatestLabel(bestSpoken, bestCreated)
+  };
+}
+
 async function avgConfirmDays(
   admin: SupabaseClient,
   startIso: string,
@@ -356,7 +435,9 @@ export async function buildLunaDashboard(
     corrYday,
     sourceCounts,
     avgConfirm,
-    topUsersYday
+    topUsersYday,
+    glossaryCount,
+    talkSources
   ] = await Promise.all([
     admin
       .from("luna_learnings")
@@ -505,7 +586,9 @@ export async function buildLunaDashboard(
     countCorrections(admin, yesterday.startIso, yesterday.endIso),
     countBySource(admin),
     avgConfirmDays(admin, week.startIso, week.endIso),
-    topTalkUsersYesterday(admin, yesterday.startIso, yesterday.endIso)
+    topTalkUsersYesterday(admin, yesterday.startIso, yesterday.endIso),
+    countGlossaryTerms(admin),
+    loadTalkSourcesStats(admin)
   ]);
 
   const weeklyInflow: number[] = [];
@@ -636,10 +719,12 @@ export async function buildLunaDashboard(
     date_label: formatKstDate(),
     my_turn_count: myTurn,
     knowledge: {
+      has_summary_layer: false,
       active_count: activeCountRes.count ?? 0,
       week_new: weekNewRes.count ?? 0,
       org_count: orgRes.count ?? 0,
       personal_count: personalRes.count ?? 0,
+      glossary_count: glossaryCount,
       nas_indexed: nasTotalRes.count ?? 0,
       nas_last_total:
         typeof nasSettingsRes.data?.last_total === "number"
@@ -680,6 +765,8 @@ export async function buildLunaDashboard(
       search_zero_today: talkToday.searchZero,
       requery_today: talkToday.requery,
       assume_today: talkToday.assume,
+      sources_count: talkSources.count,
+      sources_latest_label: talkSources.latest_label,
       top_users_yesterday: topUsersYday
     },
     candidates: {
