@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { LUNA_LINKS } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 
@@ -248,7 +249,7 @@ export async function runWeeklySelfReport(
       category: "luna_report",
       title,
       body: bodyText.slice(0, 4000),
-      link: "/settings?tab=luna&luna=brain&sub=report",
+      link: LUNA_LINKS.brainReport,
       level: "info",
       scope: "admin",
       meta: { event: "self_report", ...stats }

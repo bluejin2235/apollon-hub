@@ -118,6 +118,8 @@ export type SelfstudySettings = {
   criteria: SelfstudyCriteria;
   notify_done: boolean;
   notify_fail: boolean;
+  /** luna_settings.notify_events.morning 과 동기화 */
+  notify_morning: boolean;
 };
 
 export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
@@ -133,7 +135,8 @@ export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
     knowledge_gap: false
   },
   notify_done: true,
-  notify_fail: true
+  notify_fail: true,
+  notify_morning: true
 };
 
 type GeneratedQuestion = {
@@ -328,7 +331,8 @@ export function normalizeSelfstudySettings(raw: unknown): SelfstudySettings {
       knowledge_gap: false
     },
     notify_done: coerceBool(row.notify_done, d.notify_done),
-    notify_fail: coerceBool(row.notify_fail, d.notify_fail)
+    notify_fail: coerceBool(row.notify_fail, d.notify_fail),
+    notify_morning: coerceBool(row.notify_morning, d.notify_morning)
   };
 }
 

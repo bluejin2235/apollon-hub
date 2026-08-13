@@ -123,7 +123,11 @@ export async function PATCH(request: NextRequest) {
       exam:
         typeof incoming.exam === "boolean"
           ? incoming.exam
-          : current.notify_events.exam
+          : current.notify_events.exam,
+      morning:
+        typeof incoming.morning === "boolean"
+          ? incoming.morning
+          : current.notify_events.morning
     };
     rows.push({
       key: "notify_events",

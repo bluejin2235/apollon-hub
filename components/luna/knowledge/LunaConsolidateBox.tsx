@@ -12,6 +12,7 @@ type NotifyEvents = {
   conflict: boolean;
   prompt_change: boolean;
   exam: boolean;
+  morning: boolean;
 };
 
 type ConsolidationStatus = {
@@ -38,6 +39,7 @@ type ConsolidationStatus = {
 const NOTIFY_LABELS: Array<{ key: keyof NotifyEvents; label: string }> = [
   { key: "consolidation", label: "정리" },
   { key: "study", label: "자습" },
+  { key: "morning", label: "아침 요약" },
   { key: "reflect", label: "리플렉션" },
   { key: "conflict", label: "충돌" },
   { key: "prompt_change", label: "프롬프트" },
@@ -50,7 +52,8 @@ const DEFAULT_NOTIFY: NotifyEvents = {
   reflect: true,
   conflict: true,
   prompt_change: true,
-  exam: true
+  exam: true,
+  morning: true
 };
 
 async function getAccessToken(): Promise<string | null> {
@@ -105,7 +108,7 @@ export function LunaConsolidateBox() {
       setStatus(json);
       setVolumeDraft(json.settings.volume_threshold);
       setBackstopDraft(json.settings.backstop_days);
-      setNotifyDraft(json.settings.notify_events);
+      setNotifyDraft({ ...DEFAULT_NOTIFY, ...json.settings.notify_events });
     } catch {
       setError("네트워크 오류");
     } finally {
@@ -143,7 +146,7 @@ export function LunaConsolidateBox() {
       setStatus(json);
       setVolumeDraft(json.settings.volume_threshold);
       setBackstopDraft(json.settings.backstop_days);
-      setNotifyDraft(json.settings.notify_events);
+      setNotifyDraft({ ...DEFAULT_NOTIFY, ...json.settings.notify_events });
       setMessage("설정 저장됨");
     } finally {
       setBusy(false);

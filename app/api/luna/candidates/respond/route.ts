@@ -15,8 +15,6 @@ import {
   runDialogueTurn,
   type ThreadTurn
 } from "@/lib/luna/candidates";
-import { lunaNotify } from "@/lib/luna/notify";
-
 export const runtime = "nodejs";
 
 type Action = "confirm" | "revise" | "reject" | "not_needed";
@@ -410,21 +408,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await lunaNotify(
-      admin,
-      "reflect",
-      "중복 병합",
-      `중복 후보를 본문에 병합했어요: ${merged.slice(0, 80)}`,
-      {
-        level: "success",
-        meta: {
-          learning_id: id,
-          merged_into: mergeTarget,
-          merge: true
-        }
-      }
-    );
-
     return NextResponse.json({
       id: data.id,
       status: data.status,
@@ -546,16 +529,6 @@ export async function POST(request: NextRequest) {
     glossary_registered = glossaryResult.registered;
     if (glossaryResult.notice) glossary_notice = glossaryResult.notice;
   }
-
-  await lunaNotify(
-    admin,
-    "reflect",
-    glossary_registered ? "용어사전 등록" : "기억 확정",
-    glossary_registered
-      ? `용어가 사전에 등록됐어요: ${polished.slice(0, 80)}`
-      : `후보가 기억으로 확정됐어요: ${polished.slice(0, 80)}`,
-    { level: "success", meta: { learning_id: id } }
-  );
 
   return NextResponse.json({
     id: data.id,

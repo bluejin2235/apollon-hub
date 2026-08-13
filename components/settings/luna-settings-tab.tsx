@@ -798,6 +798,7 @@ type NotifyEventsState = {
   conflict: boolean;
   prompt_change: boolean;
   exam: boolean;
+  morning: boolean;
 };
 
 type ConsolidationStatusState = {
@@ -1154,7 +1155,8 @@ function LunaStudyPanel() {
     reflect: true,
     conflict: true,
     prompt_change: true,
-    exam: true
+    exam: true,
+    morning: true
   });
 
   const load = useCallback(async () => {
@@ -1191,7 +1193,18 @@ function LunaStudyPanel() {
       setStatus(json);
       setVolumeDraft(json.settings.volume_threshold);
       setBackstopDraft(json.settings.backstop_days);
-      setNotifyDraft(json.settings.notify_events);
+      setNotifyDraft({
+        ...( {
+          consolidation: true,
+          study: true,
+          reflect: true,
+          conflict: true,
+          prompt_change: true,
+          exam: true,
+          morning: true
+        } satisfies NotifyEventsState),
+        ...json.settings.notify_events
+      });
     }
 
     if (admin) {
@@ -1341,6 +1354,7 @@ function LunaStudyPanel() {
   const notifyLabels: Array<{ key: keyof NotifyEventsState; label: string }> = [
     { key: "consolidation", label: "정리" },
     { key: "study", label: "자습" },
+    { key: "morning", label: "아침 요약" },
     { key: "reflect", label: "리플렉션" },
     { key: "conflict", label: "충돌" },
     { key: "prompt_change", label: "프롬프트" },

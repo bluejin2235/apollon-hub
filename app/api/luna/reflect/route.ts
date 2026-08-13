@@ -10,7 +10,6 @@ import {
   type ScopeSuggestion
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
-import { lunaNotify } from "@/lib/luna/notify";
 import {
   filterNewCaptureItems,
   reflectCandidateCap
@@ -431,26 +430,7 @@ export async function POST(request: NextRequest) {
 
     await finishReflectWatermark(admin, conversationId, user.id, messages.length);
 
-    if (saved > 0) {
-      await lunaNotify(
-        admin,
-        "reflect",
-        "지식 후보",
-        questionId
-          ? `루나가 후보 ${saved}건(질문 포함)을 올렸어요`
-          : `루나가 후보 ${saved}건을 올렸어요`,
-        {
-          level: "success",
-          meta: {
-            saved,
-            conversation_id: conversationId,
-            ids,
-            correctionIds,
-            question_id: questionId
-          }
-        }
-      );
-    }
+    // 지식후보 생성 즉시 알림은 보내지 않음 — 아침 요약(/api/cron/luna-morning)에만 포함
 
     return NextResponse.json({
       saved,

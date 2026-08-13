@@ -283,11 +283,10 @@ export async function finalizeEvalExam(
       await lunaNotify(
         admin,
         "exam",
-        `시험 점수 하락 ${previous_passed}→${counts.passed} — 최근 변경: ${triggerLabel(trigger)}`,
-        `합격 ${counts.passed}/${counts.total} (직전 ${previous_passed}/${previous_total})`,
+        `점수 하락 ${previous_passed}→${counts.passed}, 되돌림을 제안해요`,
+        `합격 ${counts.passed}/${counts.total} (직전 ${previous_passed}/${previous_total}) · 최근 변경: ${triggerLabel(trigger)}`,
         {
           level: "warn",
-          link: "/settings",
           meta: {
             run_id: runId,
             trigger,

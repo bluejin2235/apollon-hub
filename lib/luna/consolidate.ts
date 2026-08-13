@@ -17,6 +17,7 @@ export type ConsolidationSettings = {
     conflict: boolean;
     prompt_change: boolean;
     exam: boolean;
+    morning: boolean;
   };
 };
 
@@ -71,7 +72,8 @@ const DEFAULT_SETTINGS: ConsolidationSettings = {
     reflect: true,
     conflict: true,
     prompt_change: true,
-    exam: true
+    exam: true,
+    morning: true
   }
 };
 
@@ -222,7 +224,11 @@ export async function loadConsolidationSettings(
       exam:
         typeof notifyObj.exam === "boolean"
           ? notifyObj.exam
-          : DEFAULT_SETTINGS.notify_events.exam
+          : DEFAULT_SETTINGS.notify_events.exam,
+      morning:
+        typeof notifyObj.morning === "boolean"
+          ? notifyObj.morning
+          : DEFAULT_SETTINGS.notify_events.morning
     }
   };
 }
@@ -623,21 +629,27 @@ export async function runConsolidation(
 
     const totalReview =
       mergedCandidates + staleCandidates + conflictCandidates;
-    await lunaNotify(
-      admin,
-      "consolidation",
-      `정리 완료 — 검토 ${totalReview}건(중복 ${mergedCandidates}·미사용 ${staleCandidates}·충돌 ${conflictCandidates})`,
-      `트리거: ${trigger}`,
-      {
-        level: "success",
-        meta: {
-          trigger,
-          merged_candidates: mergedCandidates,
-          stale_candidates: staleCandidates,
-          conflict_candidates: conflictCandidates
+    if (totalReview > 0) {
+      const title =
+        mergedCandidates > 0
+          ? `정리 완료 — 병합 제안 ${mergedCandidates}건`
+          : `정리 완료 — 검토 ${totalReview}건`;
+      await lunaNotify(
+        admin,
+        "consolidation",
+        title,
+        `중복 ${mergedCandidates} · 미사용 ${staleCandidates} · 충돌 ${conflictCandidates} · 트리거: ${trigger}`,
+        {
+          level: "success",
+          meta: {
+            trigger,
+            merged_candidates: mergedCandidates,
+            stale_candidates: staleCandidates,
+            conflict_candidates: conflictCandidates
+          }
         }
-      }
-    );
+      );
+    }
 
     await triggerAutoExam(admin, "consolidation");
 

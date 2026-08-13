@@ -599,11 +599,10 @@ export async function runSelfUpgrade(
           await lunaNotify(
             admin,
             "exam",
-            "점수 하락 — 되돌림을 제안해요",
+            `점수 하락 ${exam.previous_passed ?? "?"}→${exam.passed}, 되돌림을 제안해요`,
             `「${title}」 v${nextVersion} 회귀 하락. 두뇌에서 이전 버전으로 되돌릴 수 있어요.`,
             {
               level: "warn",
-              link: "/settings?tab=luna&luna=brain&sub=upgrade",
               meta: {
                 prompt_id: target.id,
                 version_id: versionId,

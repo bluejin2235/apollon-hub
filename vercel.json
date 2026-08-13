@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/luna-self-report",
       "schedule": "0 23 * * 0"
+    },
+    {
+      "path": "/api/cron/luna-morning",
+      "schedule": "0 23 * * *"
     }
   ]
 }

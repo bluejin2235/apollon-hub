@@ -1,12 +1,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** LUNA 설정 화면 딥링크 (알림·아침 요약 공통) */
+export const LUNA_LINKS = {
+  dashboard: "/settings?tab=luna&luna=dashboard",
+  selfstudyHistory: "/settings?tab=luna&luna=selfstudy&sub=history",
+  candidatesPending: "/settings?tab=luna&luna=candidates&sub=pending",
+  brainUpgrade: "/settings?tab=luna&luna=brain&sub=upgrade",
+  brainReport: "/settings?tab=luna&luna=brain&sub=report",
+  brainEval: "/settings?tab=luna&luna=brain&sub=eval",
+  knowledgeConflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
+  knowledgeWorkserver: "/settings?tab=luna&luna=knowledge&sub=workserver"
+} as const;
+
 export type LunaNotifyEvent =
   | "consolidation"
   | "study"
   | "reflect"
   | "conflict"
   | "prompt_change"
-  | "exam";
+  | "exam"
+  | "morning";
 
 const DEFAULT_NOTIFY_EVENTS: Record<LunaNotifyEvent, boolean> = {
   consolidation: true,
@@ -14,7 +27,8 @@ const DEFAULT_NOTIFY_EVENTS: Record<LunaNotifyEvent, boolean> = {
   reflect: true,
   conflict: true,
   prompt_change: true,
-  exam: true
+  exam: true,
+  morning: true
 };
 
 const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
@@ -23,16 +37,18 @@ const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
   reflect: "luna_reflect",
   conflict: "luna_conflict",
   prompt_change: "luna_prompt",
-  exam: "luna_exam"
+  exam: "luna_exam",
+  morning: "luna_morning"
 };
 
 const EVENT_LINK: Record<LunaNotifyEvent, string> = {
-  consolidation: "/settings?tab=luna&luna=selfstudy&sub=settings",
-  study: "/settings?tab=luna&luna=selfstudy&sub=settings",
-  reflect: "/settings?tab=luna&luna=candidates&sub=pending",
-  conflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
-  prompt_change: "/settings?tab=luna&luna=brain&sub=prompts",
-  exam: "/settings?tab=luna&luna=brain&sub=eval"
+  consolidation: LUNA_LINKS.candidatesPending,
+  study: LUNA_LINKS.selfstudyHistory,
+  reflect: LUNA_LINKS.candidatesPending,
+  conflict: LUNA_LINKS.knowledgeConflict,
+  prompt_change: LUNA_LINKS.brainUpgrade,
+  exam: LUNA_LINKS.brainEval,
+  morning: LUNA_LINKS.dashboard
 };
 
 export type LunaNotifyOptions = {
@@ -41,7 +57,7 @@ export type LunaNotifyOptions = {
   meta?: Record<string, unknown>;
 };
 
-async function isEventEnabled(
+export async function isLunaNotifyEventEnabled(
   admin: SupabaseClient,
   event: LunaNotifyEvent
 ): Promise<boolean> {
@@ -66,7 +82,7 @@ async function isEventEnabled(
 }
 
 /**
- * hub_notifications 에 scope='admin' 으로 삽입 (nas_scan_notify 와 동일 수신 구조).
+ * hub_notifications 에 scope='admin' 으로 삽입 (nas_scan_notify 와 동일 행 구조).
  * luna_settings.notify_events[event] 가 true 일 때만 동작.
  */
 export async function lunaNotify(
@@ -77,7 +93,7 @@ export async function lunaNotify(
   options: LunaNotifyOptions = {}
 ): Promise<string | null> {
   try {
-    if (!(await isEventEnabled(admin, event))) return null;
+    if (!(await isLunaNotifyEventEnabled(admin, event))) return null;
 
     const { data, error } = await admin
       .from("hub_notifications")

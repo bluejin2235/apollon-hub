@@ -31,14 +31,28 @@ export async function GET(request: NextRequest) {
   if ("error" in g) return g.error;
   const { admin } = g;
 
-  const [settings, { counts }, status] = await Promise.all([
+  const [settings, { counts }, status, notifyRow] = await Promise.all([
     getSelfstudySettings(admin),
     listTodayStuckMoments(admin),
-    getSelfstudyStatus(admin)
+    getSelfstudyStatus(admin),
+    admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", "notify_events")
+      .maybeSingle()
   ]);
 
+  const notifyVal = notifyRow.data?.value;
+  const morningFromEvents =
+    notifyVal &&
+    typeof notifyVal === "object" &&
+    !Array.isArray(notifyVal) &&
+    typeof (notifyVal as Record<string, unknown>).morning === "boolean"
+      ? ((notifyVal as Record<string, unknown>).morning as boolean)
+      : settings.notify_morning;
+
   return NextResponse.json({
-    settings,
+    settings: { ...settings, notify_morning: morningFromEvents },
     today_counts: counts,
     last_run: status.last_run,
     today_count: status.today_count,
@@ -67,7 +81,7 @@ export async function PUT(request: NextRequest) {
   const next = normalizeSelfstudySettings(body);
   const saved = await saveSelfstudySettings(admin, next);
 
-  // 자습 완료 알림은 공용 notify_events.study 로도 게이트되므로 함께 맞춘다
+  // 자습·아침 요약 알림은 공용 notify_events 로도 게이트되므로 함께 맞춘다
   try {
     const { data } = await admin
       .from("luna_settings")
@@ -81,7 +95,11 @@ export async function PUT(request: NextRequest) {
     await admin.from("luna_settings").upsert(
       {
         key: "notify_events",
-        value: { ...prev, study: saved.notify_done },
+        value: {
+          ...prev,
+          study: saved.notify_done,
+          morning: saved.notify_morning
+        },
         updated_at: new Date().toISOString()
       },
       { onConflict: "key" }

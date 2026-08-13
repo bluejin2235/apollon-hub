@@ -33,6 +33,7 @@ type Settings = {
   };
   notify_done: boolean;
   notify_fail: boolean;
+  notify_morning: boolean;
 };
 
 type Payload = {
@@ -103,7 +104,10 @@ export function LunaSelfstudySettings() {
       }
       const json = (await res.json()) as Payload;
       setData(json);
-      setDraft(json.settings);
+      setDraft({
+        ...json.settings,
+        notify_morning: json.settings.notify_morning !== false
+      });
       setTimeDraft(timeValue(json.settings.run_hour, json.settings.run_minute));
       setMaxDraft(String(json.settings.max_per_day));
     } catch {
@@ -307,6 +311,14 @@ export function LunaSelfstudySettings() {
           onChange={(v) => setDraft({ ...draft, notify_fail: v })}
         >
           자습 실패 시 알림
+        </CheckRow>
+        <CheckRow
+          checked={draft.notify_morning}
+          disabled={!admin}
+          onChange={(v) => setDraft({ ...draft, notify_morning: v })}
+          lock="(매일 08:00 KST)"
+        >
+          아침 요약
         </CheckRow>
       </SettingsBox>
 
