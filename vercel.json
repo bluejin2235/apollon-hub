@@ -33,6 +33,10 @@
       "schedule": "0 18 * * *"
     },
     {
+      "path": "/api/cron/luna-consolidate",
+      "schedule": "30 18 * * *"
+    },
+    {
       "path": "/api/cron/luna-self-upgrade",
       "schedule": "0 19 * * 6"
     },

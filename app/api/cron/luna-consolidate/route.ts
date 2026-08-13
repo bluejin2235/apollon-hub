@@ -5,6 +5,11 @@ import { runConsolidation } from "@/lib/luna/consolidate";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/**
+ * GET /api/cron/luna-consolidate
+ * 매일 03:30 KST (UTC 18:30) — volume/backstop 조건 확인 후 기억 정리.
+ * 조건 미충족 시 skip (알림 없음). 자습 cron(03:00)과 분리.
+ */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) {
