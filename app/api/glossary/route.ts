@@ -342,10 +342,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const termKo = typeof body.term_ko === "string" ? body.term_ko.trim() : "";
-  if (!termKo) {
-    return NextResponse.json({ error: "한국어 용어는 반드시 있어야 합니다." }, { status: 400 });
+  const rawKo = typeof body.term_ko === "string" ? body.term_ko.trim() : "";
+  const rawEn = typeof body.term_en === "string" ? body.term_en.trim() : "";
+  if (!rawKo && !rawEn) {
+    return NextResponse.json(
+      { error: "한국어 또는 영문 중 하나 이상 있어야 합니다." },
+      { status: 400 }
+    );
   }
+  // term_ko 는 NOT NULL — 한국어가 비면 영문으로 채운다
+  const termKo = rawKo || rawEn;
 
   const categories = normalizeCategories(body.categories, body.category);
   if (categories.length === 0) {
@@ -356,13 +362,13 @@ export async function POST(request: NextRequest) {
   const termId = typeof body.id === "string" && body.id ? body.id : null;
   const payload = {
     term_ko: termKo,
-    term_en: text(body.term_en),
+    term_en: text(rawEn),
     term_zh: text(body.term_zh),
     categories,
     synonyms,
     definition: text(body.definition)
   };
-  const changeNote = text(body.change_note);
+  const changeNote = text(body.change_note) ?? (termId ? null : "최초 등록");
 
   const { data: profile } = await admin
     .from("profiles")
@@ -412,6 +418,33 @@ export async function POST(request: NextRequest) {
     }
     saved = { id: data.id as string, version: Number(data.version) || nextVersion };
   } else {
+    // 신규: 동일 term_ko 가 있으면 중복 안내
+    let { data: existing, error: dupError } = await admin
+      .from("glossary_terms")
+      .select("id")
+      .eq("term_ko", termKo)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (dupError && isMissingColumnError(dupError)) {
+      const retry = await admin
+        .from("glossary_terms")
+        .select("id")
+        .eq("term_ko", termKo)
+        .maybeSingle();
+      existing = retry.data;
+      dupError = retry.error;
+    }
+    if (dupError) {
+      console.error("[glossary] dup check", dupError);
+      return NextResponse.json({ error: dupError.message }, { status: 500 });
+    }
+    if (existing?.id) {
+      return NextResponse.json(
+        { error: "이미 있는 용어입니다", existing_id: existing.id as string },
+        { status: 409 }
+      );
+    }
+
     const { data, error } = await admin
       .from("glossary_terms")
       .insert({ ...payload, version: 1, created_by: user.id, updated_by: user.id })
@@ -419,10 +452,14 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (error || !data) {
       console.error("[glossary] insert", error);
-      return NextResponse.json(
-        { error: error?.message ?? "저장하지 못했습니다." },
-        { status: 500 }
-      );
+      const msg = error?.message ?? "저장하지 못했습니다.";
+      if (msg.includes("unique") || msg.includes("duplicate")) {
+        return NextResponse.json(
+          { error: "이미 있는 용어입니다" },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ error: msg }, { status: 500 });
     }
     saved = { id: data.id as string, version: 1 };
   }

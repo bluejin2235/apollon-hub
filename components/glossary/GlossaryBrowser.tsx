@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { GlossaryFields } from "@/components/glossary/GlossaryFields";
 import { categoryTabFilter } from "@/lib/glossary/categories";
 import {
@@ -42,11 +42,6 @@ type Draft = GlossaryFieldValues & { change_note: string };
 
 type TabKey = "전체" | GlossaryCategory;
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: "전체", label: "전체" },
-  ...GLOSSARY_CATEGORIES.map((c) => ({ key: c as TabKey, label: c }))
-];
-
 const C = {
   line: "#e7e8ec",
   line2: "#eef0f3",
@@ -61,6 +56,18 @@ const C = {
   dangerSoft: "#FAECE7"
 };
 
+function emptyDraft(): Draft {
+  return {
+    term_ko: "",
+    term_en: "",
+    term_zh: "",
+    synonyms: [],
+    definition: "",
+    categories: ["공통"],
+    change_note: "최초 등록"
+  };
+}
+
 async function getAccessToken(): Promise<string | null> {
   const {
     data: { session }
@@ -68,9 +75,12 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
+async function api<T>(
+  url: string,
+  init?: RequestInit
+): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string; existing_id?: string }> {
   const token = await getAccessToken();
-  if (!token) throw new Error("로그인이 필요합니다.");
+  if (!token) return { ok: false, status: 401, error: "로그인이 필요합니다." };
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -79,9 +89,18 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {})
     }
   });
-  const json = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!res.ok) throw new Error(json?.error ?? "요청에 실패했습니다.");
-  return json as T;
+  const json = (await res.json().catch(() => null)) as
+    | (T & { error?: string; existing_id?: string })
+    | null;
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      error: json?.error ?? "요청에 실패했습니다.",
+      existing_id: typeof json?.existing_id === "string" ? json.existing_id : undefined
+    };
+  }
+  return { ok: true, data: json as T };
 }
 
 function shortDate(iso: string | null | undefined): string {
@@ -117,6 +136,14 @@ function LangCard({
       >
         {value || "—"}
       </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="mb-1.5 text-[10.5px] font-bold" style={{ color: C.faint }}>
+      {children}
     </div>
   );
 }
@@ -161,6 +188,7 @@ export function GlossaryBrowser({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
+  const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -172,7 +200,7 @@ export function GlossaryBrowser({
     setError("");
     try {
       const url = includeStats ? "/api/glossary?stats=1" : "/api/glossary";
-      const json = await api<{
+      const res = await api<{
         terms: TermListItem[];
         pending_candidates: number;
         available?: boolean;
@@ -180,6 +208,8 @@ export function GlossaryBrowser({
         stats?: GlossaryStats | null;
         can_delete?: boolean;
       }>(url);
+      if (!res.ok) throw new Error(res.error);
+      const json = res.data;
       const nextAvailable = json.available !== false;
       const nextCanDelete = json.can_delete === true;
       setTerms(json.terms ?? []);
@@ -219,14 +249,15 @@ export function GlossaryBrowser({
     setDetailLoading(true);
     setDetailError("");
     try {
-      const json = await api<{
+      const res = await api<{
         term: TermDetail;
         versions: VersionItem[];
         can_delete?: boolean;
       }>(`/api/glossary?id=${id}`);
-      setDetail(json.term);
-      setVersions(json.versions ?? []);
-      if (typeof json.can_delete === "boolean") setCanDelete(json.can_delete);
+      if (!res.ok) throw new Error(res.error);
+      setDetail(res.data.term);
+      setVersions(res.data.versions ?? []);
+      if (typeof res.data.can_delete === "boolean") setCanDelete(res.data.can_delete);
     } catch (err) {
       setDetail(null);
       setVersions([]);
@@ -235,6 +266,23 @@ export function GlossaryBrowser({
       setDetailLoading(false);
     }
   }, []);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<TabKey, number> = {
+      전체: terms.length,
+      공통: 0,
+      공간: 0,
+      HW: 0,
+      콘텐츠: 0,
+      기타: 0
+    };
+    for (const t of terms) {
+      for (const c of t.categories ?? []) {
+        if (c in counts) counts[c as GlossaryCategory] += 1;
+      }
+    }
+    return counts;
+  }, [terms]);
 
   const tabTerms = useMemo(
     () => terms.filter((t) => categoryTabFilter(t.categories, tab)),
@@ -249,7 +297,7 @@ export function GlossaryBrowser({
   const visibleTerms = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = tabTerms.filter((t) =>
-      matchesIndexFilter(t.term_ko, indexGroup, indexLetter)
+      matchesIndexFilter(t, indexGroup, indexLetter)
     );
     if (q) {
       list = list.filter((t) => {
@@ -262,7 +310,16 @@ export function GlossaryBrowser({
     return list;
   }, [tabTerms, query, indexGroup, indexLetter]);
 
+  const listCaption = useMemo(() => {
+    const n = visibleTerms.length;
+    if (indexLetter) return `${indexLetter} · ${n}개`;
+    if (indexGroup === "all") return `전체 · ${n}개`;
+    const label = INDEX_GROUPS.find((g) => g.key === indexGroup)?.label ?? "";
+    return `${label} · ${n}개`;
+  }, [visibleTerms.length, indexLetter, indexGroup]);
+
   useEffect(() => {
+    if (creating) return;
     if (visibleTerms.length === 0) {
       setSelectedId(null);
       setDetail(null);
@@ -271,15 +328,40 @@ export function GlossaryBrowser({
     }
     if (visibleTerms.some((t) => t.id === selectedId)) return;
     setSelectedId(visibleTerms[0]!.id);
-  }, [visibleTerms, selectedId]);
+  }, [visibleTerms, selectedId, creating]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (creating || !selectedId) return;
     setDraft(null);
     setNotice("");
     setConfirmDelete(false);
     void loadDetail(selectedId);
-  }, [selectedId, loadDetail]);
+  }, [selectedId, loadDetail, creating]);
+
+  function startCreate() {
+    setCreating(true);
+    setSelectedId(null);
+    setDetail(null);
+    setVersions([]);
+    setConfirmDelete(false);
+    setNotice("");
+    setDraft(emptyDraft());
+  }
+
+  function cancelCreate() {
+    setCreating(false);
+    setDraft(null);
+    setNotice("");
+    if (visibleTerms[0]) setSelectedId(visibleTerms[0].id);
+  }
+
+  function selectTerm(id: string) {
+    setCreating(false);
+    setDraft(null);
+    setConfirmDelete(false);
+    setNotice("");
+    setSelectedId(id);
+  }
 
   function startEdit() {
     if (!detail) return;
@@ -302,9 +384,9 @@ export function GlossaryBrowser({
   }
 
   async function save() {
-    if (!detail || !draft) return;
-    if (!draft.term_ko.trim()) {
-      setNotice("한국어 용어는 반드시 있어야 합니다.");
+    if (!draft) return;
+    if (!draft.term_ko.trim() && !draft.term_en.trim()) {
+      setNotice("한국어 또는 영문 중 하나 이상 있어야 합니다.");
       return;
     }
     if (draft.categories.length === 0) {
@@ -313,23 +395,50 @@ export function GlossaryBrowser({
     }
     setSaving(true);
     setNotice("");
+    const isNew = creating || !detail;
     try {
-      await api("/api/glossary", {
-        method: "POST",
-        body: JSON.stringify({
-          id: detail.id,
-          term_ko: draft.term_ko.trim(),
-          term_en: draft.term_en.trim(),
-          term_zh: draft.term_zh.trim(),
-          synonyms: draft.synonyms,
-          categories: draft.categories,
-          definition: draft.definition.trim(),
-          change_note: draft.change_note.trim()
-        })
-      });
+      const res = await api<{ term: { id: string; version: number } }>(
+        "/api/glossary",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            id: isNew ? null : detail!.id,
+            term_ko: draft.term_ko.trim(),
+            term_en: draft.term_en.trim(),
+            term_zh: draft.term_zh.trim(),
+            synonyms: draft.synonyms,
+            categories: draft.categories,
+            definition: draft.definition.trim(),
+            change_note: draft.change_note.trim() || (isNew ? "최초 등록" : "")
+          })
+        }
+      );
+      if (!res.ok) {
+        if (res.status === 409 && res.existing_id) {
+          setCreating(false);
+          setDraft(null);
+          setSelectedId(res.existing_id);
+          setNotice("이미 있는 용어입니다");
+          await loadTerms();
+          return;
+        }
+        if (res.status === 409) {
+          setNotice("이미 있는 용어입니다");
+          return;
+        }
+        throw new Error(res.error);
+      }
+      const savedId = res.data.term.id;
+      setCreating(false);
       setDraft(null);
-      setNotice("저장했습니다. 변경 이력에 남았습니다.");
-      await Promise.all([loadTerms(), loadDetail(detail.id)]);
+      setNotice(
+        isNew
+          ? "새 용어를 등록했습니다."
+          : "저장했습니다. 변경 이력에 남았습니다."
+      );
+      await loadTerms();
+      setSelectedId(savedId);
+      await loadDetail(savedId);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "저장하지 못했습니다.");
     } finally {
@@ -343,10 +452,11 @@ export function GlossaryBrowser({
     setDeleting(true);
     setNotice("");
     try {
-      await api("/api/glossary", {
+      const res = await api("/api/glossary", {
         method: "DELETE",
         body: JSON.stringify({ id: removedId })
       });
+      if (!res.ok) throw new Error(res.error);
       setConfirmDelete(false);
       setDraft(null);
       setDetail(null);
@@ -362,7 +472,16 @@ export function GlossaryBrowser({
     }
   }
 
+  function searchSynonym(syn: string) {
+    setQuery(syn);
+    setIndexGroup("all");
+    setIndexLetter(null);
+    setTab("전체");
+  }
+
   const currentVersion = versions[0]?.version ?? detail?.version ?? null;
+  const showCreateForm = creating && draft;
+  const showEditForm = !creating && !!draft && !!detail;
 
   if (!available && !loading) {
     return (
@@ -398,47 +517,61 @@ export function GlossaryBrowser({
           className="self-start rounded-[12px] border bg-white px-2.5 py-3"
           style={{ borderColor: C.line }}
         >
-          <div
-            className="mb-2.5 flex items-center gap-2 rounded-[9px] px-2.5 py-2"
-            style={{ background: C.chip }}
-          >
-            <Search className="h-3.5 w-3.5 shrink-0" style={{ color: C.faint }} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="용어 검색 (한·영·중)"
-              className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-400"
-              style={{ color: C.ink }}
-            />
+          <div className="mb-3 flex items-center gap-1.5">
+            <div
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] px-2.5 py-2"
+              style={{ background: C.chip }}
+            >
+              <Search className="h-3.5 w-3.5 shrink-0" style={{ color: C.faint }} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="용어·동의어 검색"
+                className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-slate-400"
+                style={{ color: C.ink }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={startCreate}
+              title="용어 추가"
+              className="flex h-[36px] shrink-0 items-center gap-0.5 rounded-[9px] px-2.5 text-[11.5px] font-bold text-white"
+              style={{ background: C.luna }}
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              추가
+            </button>
           </div>
 
-          <div className="mb-2.5 flex flex-wrap gap-[5px]">
-            {TABS.map((t) => {
-              const on = tab === t.key;
+          <SectionLabel>분류</SectionLabel>
+          <div className="mb-3 flex flex-wrap gap-1">
+            {(["전체", ...GLOSSARY_CATEGORIES] as TabKey[]).map((key) => {
+              const on = tab === key;
+              const count = categoryCounts[key] ?? 0;
               return (
                 <button
-                  key={t.key}
+                  key={key}
                   type="button"
                   onClick={() => {
-                    setTab(t.key);
+                    setTab(key);
                     setIndexLetter(null);
                   }}
-                  className="rounded-lg px-2 py-1.5 text-center text-[11px] font-bold"
+                  className="rounded-[20px] px-2.5 py-1 text-[11px] font-bold"
                   style={{
                     background: on ? C.luna : C.chip,
                     color: on ? "#fff" : C.sub
                   }}
                 >
-                  {t.label}
+                  {key} {count}
                 </button>
               );
             })}
           </div>
 
-          <div
-            className="mb-1.5 flex flex-wrap gap-1 border-b pb-2"
-            style={{ borderColor: C.line2 }}
-          >
+          <div className="mb-3 border-t" style={{ borderColor: C.line2 }} />
+
+          <SectionLabel>색인</SectionLabel>
+          <div className="mb-2 flex gap-1">
             {INDEX_GROUPS.map((g) => {
               const on = indexGroup === g.key;
               return (
@@ -449,7 +582,7 @@ export function GlossaryBrowser({
                     setIndexGroup(g.key);
                     setIndexLetter(null);
                   }}
-                  className="rounded-[6px] px-2 py-1 text-[11px] font-bold"
+                  className="flex-1 rounded-[7px] py-1.5 text-center text-[11px] font-bold"
                   style={{
                     background: on ? C.luna : C.chip,
                     color: on ? "#fff" : C.sub
@@ -462,10 +595,7 @@ export function GlossaryBrowser({
           </div>
 
           {indexGroup !== "all" && indexLetters.length > 0 ? (
-            <div
-              className="mb-1.5 flex flex-wrap gap-0.5 border-b pb-2.5"
-              style={{ borderColor: C.line2 }}
-            >
+            <div className="mb-3 flex flex-wrap gap-1">
               {indexLetters.map((key) => {
                 const on = indexLetter === key;
                 return (
@@ -473,11 +603,11 @@ export function GlossaryBrowser({
                     key={key}
                     type="button"
                     onClick={() => setIndexLetter(on ? null : key)}
-                    className="grid h-[21px] min-w-[21px] place-items-center rounded-[5px] px-1 text-[11px]"
+                    className="grid h-6 w-6 place-items-center rounded-[6px] text-[11px] font-bold"
                     style={
                       on
-                        ? { background: C.luna, color: "#fff", fontWeight: 700 }
-                        : { color: C.sub }
+                        ? { background: C.luna, color: "#fff" }
+                        : { background: C.chip, color: C.sub }
                     }
                   >
                     {key}
@@ -486,6 +616,12 @@ export function GlossaryBrowser({
               })}
             </div>
           ) : null}
+
+          <div className="mb-2 border-t" style={{ borderColor: C.line2 }} />
+
+          <div className="mb-1.5 text-[10.5px]" style={{ color: C.faint }}>
+            {listCaption}
+          </div>
 
           <div className="max-h-[min(56vh,520px)] overflow-y-auto">
             {loading ? (
@@ -498,12 +634,12 @@ export function GlossaryBrowser({
               </p>
             ) : (
               visibleTerms.map((t) => {
-                const on = selectedId === t.id;
+                const on = !creating && selectedId === t.id;
                 return (
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => selectTerm(t.id)}
                     className="block w-full rounded-lg px-2.5 py-2 text-left hover:bg-[#f7f7f9]"
                     style={on ? { background: C.lunaSoft } : undefined}
                   >
@@ -511,7 +647,7 @@ export function GlossaryBrowser({
                       className="truncate text-[13px] font-bold"
                       style={{ color: on ? C.lunaInk : C.ink }}
                     >
-                      {t.term_ko}
+                      {t.term_ko || t.term_en || t.term_zh || "—"}
                     </div>
                     <div
                       className="truncate text-[11.5px]"
@@ -541,7 +677,56 @@ export function GlossaryBrowser({
           className="rounded-[12px] border bg-white px-6 py-[22px]"
           style={{ borderColor: C.line }}
         >
-          {detailLoading && !detail ? (
+          {showCreateForm ? (
+            <>
+              <div className="text-[20px] font-extrabold tracking-[-0.4px]">
+                새 용어 등록
+              </div>
+              <p className="mt-1 text-[12px]" style={{ color: C.sub }}>
+                한국어 또는 영문 중 하나 이상 · 분류 최소 1개
+              </p>
+              <div
+                className="mt-4 rounded-[9px] border px-4 py-3.5"
+                style={{ borderColor: "#d9d2ff", background: "#fbfaff" }}
+              >
+                <GlossaryFields
+                  value={draft}
+                  onChange={(next) =>
+                    setDraft({ ...next, change_note: draft.change_note })
+                  }
+                  changeNote={draft.change_note}
+                  onChangeNote={(note) =>
+                    setDraft({ ...draft, change_note: note })
+                  }
+                />
+                {notice ? (
+                  <p className="mb-2 text-[12px]" style={{ color: C.luna }}>
+                    {notice}
+                  </p>
+                ) : null}
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void save()}
+                    className="rounded-[9px] border px-3.5 py-2 text-[12.5px] font-bold text-white disabled:opacity-50"
+                    style={{ background: C.luna, borderColor: C.luna }}
+                  >
+                    {saving ? "저장 중…" : "등록"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={cancelCreate}
+                    className="rounded-[9px] border bg-white px-3.5 py-2 text-[12.5px] font-bold disabled:opacity-50"
+                    style={{ borderColor: C.line, color: "#33363c" }}
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : detailLoading && !detail ? (
             <p className="text-[12px]" style={{ color: C.faint }}>
               불러오는 중…
             </p>
@@ -551,12 +736,12 @@ export function GlossaryBrowser({
             </p>
           ) : !detail ? (
             <p className="text-[13px]" style={{ color: C.sub }}>
-              왼쪽에서 용어를 고르면 뜻과 변경 이력을 볼 수 있습니다.
+              왼쪽에서 용어를 고르거나 [추가]로 새 용어를 등록하세요.
             </p>
           ) : (
             <>
               <div className="text-[24px] font-extrabold tracking-[-0.5px]">
-                {detail.term_ko}
+                {detail.term_ko || detail.term_en || "—"}
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {(detail.categories?.length ? detail.categories : ["공통"]).map(
@@ -579,12 +764,27 @@ export function GlossaryBrowser({
               </div>
 
               {detail.synonyms?.length ? (
-                <div className="mt-3 text-[13px]" style={{ color: C.sub }}>
-                  <span style={{ color: C.faint }}>같은 뜻으로 쓰는 말</span>
-                  <span className="mx-1.5" style={{ color: C.faint }}>
-                    ·
-                  </span>
-                  {detail.synonyms.join(", ")}
+                <div className="mt-3">
+                  <div
+                    className="mb-1.5 text-[10.5px] font-bold"
+                    style={{ color: C.faint }}
+                  >
+                    같은 뜻으로 쓰는 말
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detail.synonyms.map((syn) => (
+                      <button
+                        key={syn}
+                        type="button"
+                        onClick={() => searchSynonym(syn)}
+                        className="rounded-[20px] px-2.5 py-1 text-[12px] font-bold"
+                        style={{ background: C.chip, color: C.sub }}
+                        title={`'${syn}'로 검색`}
+                      >
+                        {syn}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
@@ -609,7 +809,7 @@ export function GlossaryBrowser({
                 )}
               </div>
 
-              {draft ? null : (
+              {showEditForm ? null : (
                 <>
                   <div className="mt-3.5 flex flex-wrap gap-2">
                     <button
@@ -641,7 +841,9 @@ export function GlossaryBrowser({
                       type="button"
                       onClick={() =>
                         router.push(
-                          `/luna?ask=${encodeURIComponent(`${detail.term_ko}가 무슨 뜻이야?`)}`
+                          `/luna?ask=${encodeURIComponent(
+                            `${detail.term_ko || detail.term_en}가 무슨 뜻이야?`
+                          )}`
                         )
                       }
                       className="rounded-[9px] border bg-white px-3.5 py-2 text-[12.5px] font-bold"
@@ -693,7 +895,7 @@ export function GlossaryBrowser({
                 </p>
               ) : null}
 
-              {draft ? (
+              {showEditForm ? (
                 <div
                   className="mt-3 rounded-[9px] border px-4 py-3.5"
                   style={{ borderColor: "#d9d2ff", background: "#fbfaff" }}
