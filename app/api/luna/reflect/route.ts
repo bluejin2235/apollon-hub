@@ -11,10 +11,15 @@ import {
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { lunaNotify } from "@/lib/luna/notify";
+import {
+  filterNewCaptureItems,
+  reflectCandidateCap
+} from "@/lib/luna/reflect-guard";
 
 export const runtime = "nodejs";
 
 const CLAUDE_MODEL = "claude-sonnet-4-6";
+const REFLECT_LOCK_MS = 120_000;
 
 const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었는지 판정하고, 있으면 지식 후보를 만든다.
 
@@ -73,6 +78,13 @@ type CaptureQuestion = {
   content: string;
   evidence: string | null;
   category: string;
+};
+
+type ConversationReflectRow = {
+  id: string;
+  last_reflected_at: string | null;
+  last_reflected_message_count: number | null;
+  reflect_lock_until: string | null;
 };
 
 function getAnthropicClient(): Anthropic | null {
@@ -165,6 +177,45 @@ function parseCapturePayload(rawText: string): {
   };
 }
 
+function buildTranscript(messages: MessageRow[]): string {
+  return messages
+    .map((m) => {
+      const who = m.role === "assistant" ? "LUNA" : "User";
+      const when = m.created_at ? ` (${m.created_at})` : "";
+      return `${who}${when}: ${m.content}`;
+    })
+    .join("\n\n");
+}
+
+async function clearReflectLock(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  conversationId: string,
+  userId: string
+): Promise<void> {
+  await admin
+    .from("luna_conversations")
+    .update({ reflect_lock_until: null })
+    .eq("id", conversationId)
+    .eq("user_id", userId);
+}
+
+async function finishReflectWatermark(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>,
+  conversationId: string,
+  userId: string,
+  messageCount: number
+): Promise<void> {
+  await admin
+    .from("luna_conversations")
+    .update({
+      last_reflected_at: new Date().toISOString(),
+      last_reflected_message_count: messageCount,
+      reflect_lock_until: null
+    })
+    .eq("id", conversationId)
+    .eq("user_id", userId);
+}
+
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
@@ -194,153 +245,226 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "conversation_id is required" }, { status: 400 });
   }
 
-  const { data: conversation, error: convError } = await admin
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const lockUntil = new Date(now.getTime() + REFLECT_LOCK_MS).toISOString();
+
+  // 소유권 확인 + 만료된 락만 갱신(동시 실행 차단)
+  const { data: locked, error: lockError } = await admin
     .from("luna_conversations")
-    .select("id")
+    .update({ reflect_lock_until: lockUntil })
     .eq("id", conversationId)
     .eq("user_id", user.id)
+    .or(`reflect_lock_until.is.null,reflect_lock_until.lt."${nowIso}"`)
+    .select(
+      "id, last_reflected_at, last_reflected_message_count, reflect_lock_until"
+    )
     .maybeSingle();
 
-  if (convError) {
-    console.error("[luna/reflect] conversation", convError);
-    return NextResponse.json({ error: convError.message }, { status: 500 });
+  if (lockError) {
+    console.error("[luna/reflect] lock", lockError);
+    return NextResponse.json({ error: lockError.message }, { status: 500 });
   }
-  if (!conversation) {
-    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-  }
-
-  const { data: messagesData, error: messagesError } = await admin
-    .from("luna_messages")
-    .select("role, content, created_at")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
-
-  if (messagesError) {
-    console.error("[luna/reflect] messages", messagesError);
-    return NextResponse.json({ error: messagesError.message }, { status: 500 });
+  if (!locked) {
+    const { data: existingConv } = await admin
+      .from("luna_conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!existingConv) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+    return NextResponse.json({ saved: 0, skipped: "locked" });
   }
 
-  const messages = (messagesData ?? []) as MessageRow[];
-  if (messages.length === 0) {
-    return NextResponse.json({ saved: 0 });
-  }
+  const conv = locked as ConversationReflectRow;
 
-  const transcript = messages
-    .map((m) => {
-      const who = m.role === "assistant" ? "LUNA" : "User";
-      const when = m.created_at ? ` (${m.created_at})` : "";
-      return `${who}${when}: ${m.content}`;
-    })
-    .join("\n\n");
-
-  const reflectPrompt =
-    (await getPrompt(admin, LUNA_PROMPT_KEYS.capture)).trim() ||
-    REFLECT_SYSTEM_PROMPT_FALLBACK;
-
-  let rawText = "";
   try {
-    const response = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 1024,
-      system: reflectPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `다음 대화를 분석하세요.\n\n${transcript}${CAPTURE_USER_SUFFIX}`
-        }
-      ]
-    });
-    rawText =
-      response.content.find((part) => part.type === "text")?.text?.trim() ?? "";
-  } catch (err) {
-    console.error("[luna/reflect] claude", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Claude request failed" },
-      { status: 500 }
-    );
-  }
+    const { data: messagesData, error: messagesError } = await admin
+      .from("luna_messages")
+      .select("role, content, created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
 
-  const { items, question: parsedQuestion } = parseCapturePayload(rawText);
-  if (items.length === 0 && !parsedQuestion) {
-    if (!parseJsonArray(rawText) && !parseJsonObject(rawText)) {
-      console.warn("[luna/reflect] JSON parse failed, skipping insert");
-      return NextResponse.json({ saved: 0, parse_error: true });
+    if (messagesError) {
+      console.error("[luna/reflect] messages", messagesError);
+      await clearReflectLock(admin, conversationId, user.id);
+      return NextResponse.json({ error: messagesError.message }, { status: 500 });
     }
-    return NextResponse.json({ saved: 0 });
-  }
 
-  let saved = 0;
-  const ids: string[] = [];
-  const correctionIds: string[] = [];
-  for (const item of items) {
-    const created = await createCandidate(admin, {
-      content: item.content,
-      evidence: item.evidence,
-      scope_suggestion: item.scope_suggestion,
-      category: item.category,
-      source: "chat",
-      author_id: user.id,
-      assigned_to: user.id,
-      source_conversation_id: conversationId,
-      thread: [],
-      meta: item.from_correction ? { from_correction: true } : {}
-    });
-    if (created) {
-      saved += 1;
-      ids.push(created.id);
-      if (item.from_correction) correctionIds.push(created.id);
+    const messages = (messagesData ?? []) as MessageRow[];
+    if (messages.length === 0) {
+      await finishReflectWatermark(admin, conversationId, user.id, 0);
+      return NextResponse.json({ saved: 0, skipped: "empty" });
     }
-  }
 
-  let questionId: string | null = null;
-  if (parsedQuestion) {
-    const alreadyOpen = await hasOpenAssignedQuestion(admin, user.id);
-    if (!alreadyOpen) {
-      const ask = parsedQuestion.ask.trim();
-      const createdQ = await createCandidate(admin, {
-        content: parsedQuestion.content,
-        evidence: parsedQuestion.evidence,
-        category: parsedQuestion.category,
-        source: "question",
+    const watermark = Math.max(0, conv.last_reflected_message_count ?? 0);
+    if (messages.length <= watermark) {
+      await finishReflectWatermark(admin, conversationId, user.id, messages.length);
+      return NextResponse.json({ saved: 0, skipped: "no_new_messages" });
+    }
+
+    const { data: existingRows, error: existingError } = await admin
+      .from("luna_learnings")
+      .select("content")
+      .eq("source_conversation_id", conversationId)
+      .eq("source", "chat");
+
+    if (existingError) {
+      console.error("[luna/reflect] existing candidates", existingError);
+      await clearReflectLock(admin, conversationId, user.id);
+      return NextResponse.json({ error: existingError.message }, { status: 500 });
+    }
+
+    const existingContents = (existingRows ?? [])
+      .map((r) => (typeof r.content === "string" ? r.content : ""))
+      .filter(Boolean);
+    const room = Math.max(0, reflectCandidateCap() - existingContents.length);
+
+    if (room === 0) {
+      // 상한 도달 — 워터마크만 전진, LLM 호출 없음
+      await finishReflectWatermark(admin, conversationId, user.id, messages.length);
+      return NextResponse.json({
+        saved: 0,
+        skipped: "cap",
+        ids: [],
+        correction_ids: [],
+        question_id: null
+      });
+    }
+
+    const newMessages = messages.slice(watermark);
+    const transcript = buildTranscript(newMessages);
+    const priorNote =
+      watermark > 0
+        ? `\n\n(참고: 이 대화의 앞부분 ${watermark}개 메시지는 이미 분석했습니다. 위는 그 이후 새 메시지만입니다. 이미 올린 지식과 중복되지 않게 하세요.)`
+        : "";
+
+    const reflectPrompt =
+      (await getPrompt(admin, LUNA_PROMPT_KEYS.capture)).trim() ||
+      REFLECT_SYSTEM_PROMPT_FALLBACK;
+
+    let rawText = "";
+    try {
+      const response = await client.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 1024,
+        system: reflectPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `다음 대화를 분석하세요.\n\n${transcript}${priorNote}${CAPTURE_USER_SUFFIX}`
+          }
+        ]
+      });
+      rawText =
+        response.content.find((part) => part.type === "text")?.text?.trim() ?? "";
+    } catch (err) {
+      console.error("[luna/reflect] claude", err);
+      await clearReflectLock(admin, conversationId, user.id);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Claude request failed" },
+        { status: 500 }
+      );
+    }
+
+    const { items, question: parsedQuestion } = parseCapturePayload(rawText);
+    if (items.length === 0 && !parsedQuestion) {
+      await finishReflectWatermark(admin, conversationId, user.id, messages.length);
+      if (!parseJsonArray(rawText) && !parseJsonObject(rawText)) {
+        console.warn("[luna/reflect] JSON parse failed, skipping insert");
+        return NextResponse.json({ saved: 0, parse_error: true });
+      }
+      return NextResponse.json({ saved: 0 });
+    }
+
+    const toCreate = filterNewCaptureItems(items, existingContents, room);
+
+    let saved = 0;
+    const ids: string[] = [];
+    const correctionIds: string[] = [];
+    for (const item of toCreate) {
+      const created = await createCandidate(admin, {
+        content: item.content,
+        evidence: item.evidence,
+        scope_suggestion: item.scope_suggestion,
+        category: item.category,
+        source: "chat",
         author_id: user.id,
         assigned_to: user.id,
         source_conversation_id: conversationId,
-        thread: ask ? [makeTurn("luna", ask)] : [],
-        meta: { popup: true }
+        thread: [],
+        meta: item.from_correction ? { from_correction: true } : {}
       });
-      if (createdQ) {
-        questionId = createdQ.id;
+      if (created) {
         saved += 1;
-        ids.push(createdQ.id);
+        ids.push(created.id);
+        if (item.from_correction) correctionIds.push(created.id);
+        existingContents.push(created.content);
       }
     }
-  }
 
-  if (saved > 0) {
-    await lunaNotify(
-      admin,
-      "reflect",
-      "지식 후보",
-      questionId
-        ? `루나가 후보 ${saved}건(질문 포함)을 올렸어요`
-        : `루나가 후보 ${saved}건을 올렸어요`,
-      {
-        level: "success",
-        meta: {
-          saved,
-          conversation_id: conversationId,
-          ids,
-          correctionIds,
-          question_id: questionId
+    let questionId: string | null = null;
+    if (parsedQuestion) {
+      const alreadyOpen = await hasOpenAssignedQuestion(admin, user.id);
+      if (!alreadyOpen) {
+        const ask = parsedQuestion.ask.trim();
+        const createdQ = await createCandidate(admin, {
+          content: parsedQuestion.content,
+          evidence: parsedQuestion.evidence,
+          category: parsedQuestion.category,
+          source: "question",
+          author_id: user.id,
+          assigned_to: user.id,
+          source_conversation_id: conversationId,
+          thread: ask ? [makeTurn("luna", ask)] : [],
+          meta: { popup: true }
+        });
+        if (createdQ) {
+          questionId = createdQ.id;
+          saved += 1;
+          ids.push(createdQ.id);
         }
       }
+    }
+
+    await finishReflectWatermark(admin, conversationId, user.id, messages.length);
+
+    if (saved > 0) {
+      await lunaNotify(
+        admin,
+        "reflect",
+        "지식 후보",
+        questionId
+          ? `루나가 후보 ${saved}건(질문 포함)을 올렸어요`
+          : `루나가 후보 ${saved}건을 올렸어요`,
+        {
+          level: "success",
+          meta: {
+            saved,
+            conversation_id: conversationId,
+            ids,
+            correctionIds,
+            question_id: questionId
+          }
+        }
+      );
+    }
+
+    return NextResponse.json({
+      saved,
+      ids,
+      correction_ids: correctionIds,
+      question_id: questionId,
+      skipped_dupes: Math.max(0, items.length - toCreate.length)
+    });
+  } catch (err) {
+    console.error("[luna/reflect] unexpected", err);
+    await clearReflectLock(admin, conversationId, user.id);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Reflect failed" },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    saved,
-    ids,
-    correction_ids: correctionIds,
-    question_id: questionId
-  });
 }

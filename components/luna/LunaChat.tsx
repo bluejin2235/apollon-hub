@@ -37,12 +37,18 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
+const reflectingConversationIds = new Set<string>();
+
 async function callReflect(
   conversationId: string
 ): Promise<{ correctionIds: string[] }> {
-  const token = await getAccessToken();
-  if (!token) return { correctionIds: [] };
+  if (reflectingConversationIds.has(conversationId)) {
+    return { correctionIds: [] };
+  }
+  reflectingConversationIds.add(conversationId);
   try {
+    const token = await getAccessToken();
+    if (!token) return { correctionIds: [] };
     const res = await fetch("/api/luna/reflect", {
       method: "POST",
       headers: {
@@ -63,6 +69,8 @@ async function callReflect(
   } catch (err) {
     console.error("[luna] reflect", err);
     return { correctionIds: [] };
+  } finally {
+    reflectingConversationIds.delete(conversationId);
   }
 }
 
@@ -450,6 +458,8 @@ export function LunaChat({
   const listRef = useRef<HTMLDivElement>(null);
   const bottomUiRef = useRef<HTMLDivElement>(null);
   const reflectStateRef = useRef<{ id: string; messageCount: number } | null>(null);
+  const onReflectCorrectionsRef = useRef(onReflectCorrections);
+  onReflectCorrectionsRef.current = onReflectCorrections;
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipTitleCommitRef = useRef(false);
   const stickToBottomRef = useRef(true);
@@ -656,34 +666,44 @@ export function LunaChat({
     ).length;
     const prev = reflectStateRef.current;
 
-    if (prev && prev.id !== nextId && prev.messageCount >= 2) {
-      void callReflect(prev.id).then((r) => {
-        if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
+    const fireReflect = (id: string) => {
+      void callReflect(id).then((r) => {
+        if (r.correctionIds.length > 0) {
+          onReflectCorrectionsRef.current?.(r.correctionIds);
+        }
       });
+    };
+
+    if (prev && prev.id !== nextId && prev.messageCount >= 2) {
+      // 같은 leave에 unmount cleanup 이 한 번 더 못 타게 카운트 소진
+      reflectStateRef.current = { id: prev.id, messageCount: 0 };
+      fireReflect(prev.id);
     }
 
     if (nextId) {
       reflectStateRef.current = { id: nextId, messageCount: count };
     } else if (prev && prev.messageCount >= 2) {
-      void callReflect(prev.id).then((r) => {
-        if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
-      });
+      fireReflect(prev.id);
       reflectStateRef.current = null;
-    } else {
+    } else if (!nextId) {
       reflectStateRef.current = null;
     }
-  }, [conversation?.id, messages, onReflectCorrections]);
+  }, [conversation?.id, messages]);
 
+  // unmount 전용 — onReflectCorrections 의존 금지(매 렌더 cleanup → 폭주 원인)
   useEffect(() => {
     return () => {
       const prev = reflectStateRef.current;
       if (prev && prev.messageCount >= 2) {
+        reflectStateRef.current = { id: prev.id, messageCount: 0 };
         void callReflect(prev.id).then((r) => {
-          if (r.correctionIds.length > 0) onReflectCorrections?.(r.correctionIds);
+          if (r.correctionIds.length > 0) {
+            onReflectCorrectionsRef.current?.(r.correctionIds);
+          }
         });
       }
     };
-  }, [onReflectCorrections]);
+  }, []);
 
   const isEmpty = messages.length === 0 && !sending;
 
