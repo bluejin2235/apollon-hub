@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
   const { data: current, error: loadError } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category"
+      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, raw_input"
     )
     .eq("id", id)
     .maybeSingle();
@@ -135,8 +135,19 @@ export async function POST(request: NextRequest) {
     typeof current.evidence === "string" ? current.evidence : null;
   const content =
     typeof current.content === "string" ? current.content : "";
+  const reviewReason =
+    typeof current.review_reason === "string" ? current.review_reason : null;
+  const mergeTarget =
+    typeof current.merge_target === "string" ? current.merge_target.trim() : "";
+  const rawInput =
+    typeof current.raw_input === "string" ? current.raw_input.trim() : "";
+  const prevMeta =
+    current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
+      ? (current.meta as Record<string, unknown>)
+      : {};
 
   if (action === "reject") {
+    // 중복 후보 반려: 후보만 archived (본문 merge_target 은 그대로)
     const { data, error } = await admin
       .from("luna_learnings")
       .update({
@@ -161,10 +172,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "not_needed") {
-    const prevMeta =
-      current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
-        ? (current.meta as Record<string, unknown>)
-        : {};
     const { data, error } = await admin
       .from("luna_learnings")
       .update({
@@ -191,10 +198,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "revise") {
-    const prevMeta =
-      current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
-        ? (current.meta as Record<string, unknown>)
-        : {};
     const category =
       typeof current.category === "string" ? current.category : undefined;
 
@@ -244,6 +247,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 중복 병합 후보: 수정문을 raw_input(병합 초안)에도 반영
+    if (reviewReason === "duplicate" && mergeTarget) {
+      const { data, error } = await admin
+        .from("luna_learnings")
+        .update({
+          content: text,
+          raw_input: text
+        })
+        .eq("id", id)
+        .eq("status", "candidate")
+        .select("id, status, content, thread, raw_input")
+        .maybeSingle();
+
+      if (error) {
+        console.error("[luna/candidates/respond] duplicate revise", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        id: data?.id,
+        status: data?.status ?? "candidate",
+        content: data?.content,
+        thread: normalizeThread(data?.thread ?? thread)
+      });
+    }
+
     const nextThread: ThreadTurn[] = [...thread, makeTurn("human", text)];
     const lunaText =
       (await runDialogueTurn(admin, {
@@ -280,11 +309,134 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // confirm — 정리 중복 후보: 본문에 병합 후 후보는 archived
+  if (reviewReason === "duplicate" && mergeTarget) {
+    const merged = (text || rawInput || content).trim();
+    if (!merged) {
+      return NextResponse.json(
+        { error: "duplicate candidate missing merge draft" },
+        { status: 400 }
+      );
+    }
+
+    const { data: keepRow, error: keepLoadError } = await admin
+      .from("luna_learnings")
+      .select("id, content, status")
+      .eq("id", mergeTarget)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (keepLoadError) {
+      console.error("[luna/candidates/respond] duplicate keep load", keepLoadError);
+      return NextResponse.json({ error: keepLoadError.message }, { status: 500 });
+    }
+    if (!keepRow) {
+      return NextResponse.json(
+        { error: "merge_target not found or not active" },
+        { status: 404 }
+      );
+    }
+
+    const { data: lastVer } = await admin
+      .from("luna_learning_versions")
+      .select("version")
+      .eq("learning_id", mergeTarget)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextVersion =
+      typeof lastVer?.version === "number" && Number.isFinite(lastVer.version)
+        ? lastVer.version + 1
+        : 1;
+
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("name")
+      .eq("id", user.id)
+      .maybeSingle();
+    const editorName =
+      typeof profile?.name === "string" && profile.name.trim()
+        ? profile.name.trim()
+        : null;
+
+    const { error: verError } = await admin.from("luna_learning_versions").insert({
+      learning_id: mergeTarget,
+      version: nextVersion,
+      content: typeof keepRow.content === "string" ? keepRow.content : "",
+      status: "active",
+      change_note: "중복 병합",
+      edited_by: user.id,
+      editor_name: editorName
+    });
+    if (verError) {
+      console.error("[luna/candidates/respond] duplicate version", verError);
+      return NextResponse.json({ error: verError.message }, { status: 500 });
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: keepError } = await admin
+      .from("luna_learnings")
+      .update({
+        content: merged,
+        resolved_by: user.id,
+        resolved_at: nowIso
+      })
+      .eq("id", mergeTarget)
+      .eq("status", "active");
+
+    if (keepError) {
+      console.error("[luna/candidates/respond] duplicate keep update", keepError);
+      return NextResponse.json({ error: keepError.message }, { status: 500 });
+    }
+
+    const { data, error } = await admin
+      .from("luna_learnings")
+      .update({
+        status: "archived",
+        meta: { ...prevMeta, merged_into: mergeTarget },
+        resolved_by: user.id,
+        resolved_at: nowIso
+      })
+      .eq("id", id)
+      .eq("status", "candidate")
+      .select("id, status, content, thread, meta")
+      .maybeSingle();
+
+    if (error) {
+      console.error("[luna/candidates/respond] duplicate archive", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    await lunaNotify(
+      admin,
+      "reflect",
+      "중복 병합",
+      `중복 후보를 본문에 병합했어요: ${merged.slice(0, 80)}`,
+      {
+        level: "success",
+        meta: {
+          learning_id: id,
+          merged_into: mergeTarget,
+          merge: true
+        }
+      }
+    );
+
+    return NextResponse.json({
+      id: data.id,
+      status: data.status,
+      content: data.content,
+      thread: normalizeThread(data.thread),
+      meta: data.meta,
+      merged_into: mergeTarget
+    });
+  }
+
   // confirm
-  const meta =
-    current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
-      ? (current.meta as Record<string, unknown>)
-      : {};
+  const meta = prevMeta;
   const category =
     typeof current.category === "string" ? current.category : undefined;
   const isGlossary = shouldRegisterGlossary(meta, category);
