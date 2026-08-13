@@ -14,6 +14,7 @@ export type GlossaryListItem = {
   term_en: string | null;
   term_zh: string | null;
   categories: GlossaryCategory[];
+  synonyms: string[];
 };
 
 export type GlossaryVersionItem = {
@@ -37,6 +38,7 @@ export type GlossaryFieldValues = {
   term_ko: string;
   term_en: string;
   term_zh: string;
+  synonyms: string[];
   definition: string;
   categories: GlossaryCategory[];
 };

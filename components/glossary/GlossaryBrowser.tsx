@@ -13,6 +13,7 @@ import { Search } from "lucide-react";
 import { GlossaryFields } from "@/components/glossary/GlossaryFields";
 import { categoryTabFilter } from "@/lib/glossary/categories";
 import { buildIndexKeys, indexKeyOf } from "@/lib/glossary/index-key";
+import { extractInlineSynonyms } from "@/lib/glossary/synonyms";
 import type {
   GlossaryCategory,
   GlossaryFieldValues,
@@ -239,11 +240,12 @@ export function GlossaryBrowser({
   const visibleTerms = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q) {
-      return tabTerms.filter((t) =>
-        [t.term_ko, t.term_en, t.term_zh]
+      return tabTerms.filter((t) => {
+        const fields = [t.term_ko, t.term_en, t.term_zh, ...(t.synonyms ?? [])];
+        return fields
           .filter(Boolean)
-          .some((v) => (v as string).toLowerCase().includes(q))
-      );
+          .some((v) => (v as string).toLowerCase().includes(q));
+      });
     }
     if (!indexKey) return tabTerms;
     return tabTerms.filter((t) => indexKeyOf(t.term_ko) === indexKey);
@@ -272,11 +274,16 @@ export function GlossaryBrowser({
     if (!detail) return;
     setNotice("");
     setConfirmDelete(false);
+    const extracted = extractInlineSynonyms(
+      detail.definition,
+      detail.synonyms ?? []
+    );
     setDraft({
       term_ko: detail.term_ko ?? "",
       term_en: detail.term_en ?? "",
       term_zh: detail.term_zh ?? "",
-      definition: detail.definition ?? "",
+      synonyms: extracted.synonyms,
+      definition: extracted.definition,
       categories:
         detail.categories?.length > 0 ? [...detail.categories] : ["공통"],
       change_note: ""
@@ -303,6 +310,7 @@ export function GlossaryBrowser({
           term_ko: draft.term_ko.trim(),
           term_en: draft.term_en.trim(),
           term_zh: draft.term_zh.trim(),
+          synonyms: draft.synonyms,
           categories: draft.categories,
           definition: draft.definition.trim(),
           change_note: draft.change_note.trim()
@@ -540,6 +548,16 @@ export function GlossaryBrowser({
                 <LangCard label="ENGLISH" value={detail.term_en} />
                 <LangCard label="中文" value={detail.term_zh} />
               </div>
+
+              {detail.synonyms?.length ? (
+                <div className="mt-3 text-[13px]" style={{ color: C.sub }}>
+                  <span style={{ color: C.faint }}>같은 뜻으로 쓰는 말</span>
+                  <span className="mx-1.5" style={{ color: C.faint }}>
+                    ·
+                  </span>
+                  {detail.synonyms.join(", ")}
+                </div>
+              ) : null}
 
               <div
                 className="mt-3 rounded-[9px] border px-4 py-3.5"

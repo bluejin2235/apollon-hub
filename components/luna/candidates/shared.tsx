@@ -305,6 +305,15 @@ export function GlossaryCardBody({
           </div>
         ))}
       </div>
+      {draft.synonyms.length > 0 ? (
+        <div className="mb-2 text-[12.5px]" style={{ color: K.sub }}>
+          <span style={{ color: K.faint }}>같은 뜻으로 쓰는 말</span>
+          <span className="mx-1.5" style={{ color: K.faint }}>
+            ·
+          </span>
+          {draft.synonyms.join(", ")}
+        </div>
+      ) : null}
       <div
         className="rounded-[9px] border px-3 py-2.5"
         style={{ borderColor: K.line }}

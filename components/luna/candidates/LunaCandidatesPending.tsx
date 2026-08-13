@@ -125,7 +125,8 @@ export function LunaCandidatesPending() {
                 term_en: glossary.term_en || null,
                 term_zh: glossary.term_zh || null,
                 definition: glossary.definition,
-                categories: glossary.categories
+                categories: glossary.categories,
+                synonyms: glossary.synonyms
               }
             : undefined
         })

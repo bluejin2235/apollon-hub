@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { normalizeCategories } from "@/lib/glossary/categories";
+import { normalizeSynonyms } from "@/lib/glossary/synonyms";
 import {
   GLOSSARY_CATEGORIES,
   type GlossaryCategory,
@@ -21,9 +22,9 @@ export type {
 } from "@/lib/glossary/types";
 
 const TERM_SELECT =
-  "id, term_ko, term_en, term_zh, categories, definition, version, updated_at, updated_by";
+  "id, term_ko, term_en, term_zh, categories, synonyms, definition, version, updated_at, updated_by";
 
-const LIST_SELECT = "id, term_ko, term_en, term_zh, categories";
+const LIST_SELECT = "id, term_ko, term_en, term_zh, categories, synonyms";
 
 function text(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -34,7 +35,8 @@ function text(raw: unknown): string | null {
 function mapTermRow(row: Record<string, unknown>) {
   return {
     ...row,
-    categories: normalizeCategories(row.categories)
+    categories: normalizeCategories(row.categories),
+    synonyms: normalizeSynonyms(row.synonyms)
   };
 }
 
@@ -233,6 +235,7 @@ export async function POST(request: NextRequest) {
     term_zh?: string | null;
     categories?: unknown;
     category?: unknown;
+    synonyms?: unknown;
     definition?: string | null;
     change_note?: string | null;
   };
@@ -252,12 +255,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "분류를 하나 이상 선택해 주세요." }, { status: 400 });
   }
 
+  const synonyms = normalizeSynonyms(body.synonyms);
   const termId = typeof body.id === "string" && body.id ? body.id : null;
   const payload = {
     term_ko: termKo,
     term_en: text(body.term_en),
     term_zh: text(body.term_zh),
     categories,
+    synonyms,
     definition: text(body.definition)
   };
   const changeNote = text(body.change_note);
@@ -322,6 +327,7 @@ export async function POST(request: NextRequest) {
     term_en: payload.term_en,
     term_zh: payload.term_zh,
     definition: payload.definition,
+    synonyms: payload.synonyms,
     editor_type: "human",
     edited_by: user.id,
     editor_name: editorName,
@@ -363,7 +369,7 @@ export async function DELETE(request: NextRequest) {
 
   const { data: term, error: readError } = await admin
     .from("glossary_terms")
-    .select("id, term_ko, term_en, term_zh, definition, version")
+    .select("id, term_ko, term_en, term_zh, definition, synonyms, version")
     .eq("id", termId)
     .maybeSingle();
   if (readError) {
@@ -389,6 +395,7 @@ export async function DELETE(request: NextRequest) {
     term_en: term.term_en,
     term_zh: term.term_zh,
     definition: term.definition,
+    synonyms: normalizeSynonyms(term.synonyms),
     editor_type: "human",
     edited_by: user.id,
     editor_name: editorName,

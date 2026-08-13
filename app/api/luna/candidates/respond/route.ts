@@ -5,6 +5,7 @@ import {
   tryRegisterGlossaryFromCandidate
 } from "@/lib/luna/candidate-glossary";
 import { normalizeCategories } from "@/lib/glossary/categories";
+import { normalizeSynonyms } from "@/lib/glossary/synonyms";
 import type { GlossaryCategory } from "@/lib/glossary/types";
 import {
   isGlossaryCandidate,
@@ -28,6 +29,7 @@ type GlossaryPatch = {
   definition?: string;
   categories?: unknown;
   category?: unknown;
+  synonyms?: unknown;
 };
 
 type Body = {
@@ -45,6 +47,7 @@ function normalizeGlossaryPatch(
   term_zh: string | null;
   definition: string;
   categories: GlossaryCategory[];
+  synonyms: string[];
 } | null {
   if (!raw || typeof raw !== "object") return null;
   return {
@@ -59,7 +62,8 @@ function normalizeGlossaryPatch(
         : null,
     definition:
       typeof raw.definition === "string" ? raw.definition.trim() : "",
-    categories: normalizeCategories(raw.categories, raw.category)
+    categories: normalizeCategories(raw.categories, raw.category),
+    synonyms: normalizeSynonyms(raw.synonyms)
   };
 }
 
@@ -204,7 +208,8 @@ export async function POST(request: NextRequest) {
         term_en: glossaryPatch.term_en,
         term_zh: glossaryPatch.term_zh,
         definition: glossaryPatch.definition,
-        categories: glossaryPatch.categories
+        categories: glossaryPatch.categories,
+        synonyms: glossaryPatch.synonyms
       };
       const nextContent =
         glossaryPatch.definition ||
@@ -428,7 +433,8 @@ export async function POST(request: NextRequest) {
       term_en: glossaryPatch.term_en,
       term_zh: glossaryPatch.term_zh,
       definition: glossaryPatch.definition,
-      categories: glossaryPatch.categories
+      categories: glossaryPatch.categories,
+      synonyms: glossaryPatch.synonyms
     };
     workingContent =
       glossaryPatch.definition || glossaryPatch.term_ko || content;

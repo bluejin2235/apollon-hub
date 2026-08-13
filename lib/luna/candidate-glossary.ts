@@ -40,6 +40,7 @@ export async function tryRegisterGlossaryFromCandidate(
           term_zh: draft.term_zh || null,
           definition: draft.definition,
           categories: draft.categories,
+          synonyms: draft.synonyms,
           version: nextVersion,
           updated_by: userId,
           updated_at: new Date().toISOString()
@@ -54,6 +55,7 @@ export async function tryRegisterGlossaryFromCandidate(
         term_en: draft.term_en || null,
         term_zh: draft.term_zh || null,
         definition: draft.definition,
+        synonyms: draft.synonyms,
         editor_type: "human",
         edited_by: userId,
         change_note: "지식후보 확정"
@@ -69,6 +71,7 @@ export async function tryRegisterGlossaryFromCandidate(
         term_en: draft.term_en || null,
         term_zh: draft.term_zh || null,
         categories: draft.categories,
+        synonyms: draft.synonyms,
         definition: draft.definition,
         version: 1,
         created_by: userId,
@@ -89,6 +92,7 @@ export async function tryRegisterGlossaryFromCandidate(
       term_en: draft.term_en || null,
       term_zh: draft.term_zh || null,
       definition: draft.definition,
+      synonyms: draft.synonyms,
       editor_type: "human",
       edited_by: userId,
       change_note: "지식후보 확정"

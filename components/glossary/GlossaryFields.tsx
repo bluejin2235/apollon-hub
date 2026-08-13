@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { toggleCategory } from "@/lib/glossary/categories";
+import { normalizeSynonyms, splitSynonymInput } from "@/lib/glossary/synonyms";
 import {
   GLOSSARY_CATEGORIES,
   type GlossaryCategory,
@@ -69,7 +70,79 @@ export function GlossaryCategoryToggles({
   );
 }
 
-/** 한국어 / ENGLISH / 中文(볼드) / 정의 / 분류(다중선택) — 세 화면 공용 */
+export function SynonymTagInput({
+  value,
+  onChange
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function commit(raw: string) {
+    const parts = splitSynonymInput(raw);
+    if (parts.length === 0) return;
+    onChange(normalizeSynonyms([...value, ...parts]));
+    setDraft("");
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commit(draft);
+      return;
+    }
+    if (e.key === "Backspace" && !draft && value.length > 0) {
+      onChange(value.slice(0, -1));
+    }
+  }
+
+  return (
+    <div
+      className="mb-2.5 flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5"
+      style={{ borderColor: C.line }}
+    >
+      {value.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-1 rounded-[20px] px-2 py-0.5 text-[12px] font-bold"
+          style={{ background: C.chip, color: C.ink }}
+        >
+          {tag}
+          <button
+            type="button"
+            aria-label={`${tag} 제거`}
+            onClick={() => onChange(value.filter((t) => t !== tag))}
+            className="text-[12px] leading-none"
+            style={{ color: C.faint }}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.includes(",") || v.includes("，") || v.includes("、")) {
+            commit(v);
+            return;
+          }
+          setDraft(v);
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => {
+          if (draft.trim()) commit(draft);
+        }}
+        placeholder={value.length ? "" : "Enter 또는 쉼표로 추가"}
+        className="min-w-[120px] flex-1 bg-transparent py-1 text-[13px] outline-none placeholder:text-slate-400"
+        style={{ color: C.ink }}
+      />
+    </div>
+  );
+}
+
+/** 한국어 / ENGLISH / 中文(볼드) / 동의어 / 정의 / 분류 — 세 화면 공용 */
 export function GlossaryFields({
   value,
   onChange,
@@ -127,6 +200,12 @@ export function GlossaryFields({
         </div>
       </div>
 
+      <FieldLabel>동의어</FieldLabel>
+      <SynonymTagInput
+        value={value.synonyms}
+        onChange={(synonyms) => onChange({ ...value, synonyms })}
+      />
+
       <div className="mb-1 flex flex-wrap items-baseline gap-1.5">
         <span className="text-[11px]" style={{ color: C.faint }}>
           정의
@@ -156,7 +235,7 @@ export function GlossaryFields({
           <FieldLabel>무엇을 왜 바꿨나요</FieldLabel>
           <input
             value={changeNote ?? ""}
-            placeholder="예: 오타 수정 · 분류 추가"
+            placeholder="예: 오타 수정 · 동의어 추가"
             onChange={(e) => onChangeNote(e.target.value)}
             className="mb-2.5 w-full rounded-lg border bg-white px-2.5 py-2 text-[13px] outline-none focus:border-[#d9d2ff]"
             style={{ borderColor: C.line, color: C.ink }}

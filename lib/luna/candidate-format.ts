@@ -1,4 +1,8 @@
 import { normalizeCategories } from "@/lib/glossary/categories";
+import {
+  extractInlineSynonyms,
+  normalizeSynonyms
+} from "@/lib/glossary/synonyms";
 import type {
   GlossaryCategory,
   GlossaryFieldValues
@@ -64,6 +68,7 @@ export function parseGlossaryMeta(
     term_ko,
     term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : "",
     term_zh: typeof m.term_zh === "string" && m.term_zh.trim() ? m.term_zh.trim() : "",
+    synonyms: normalizeSynonyms(m.synonyms),
     definition,
     categories
   };
@@ -89,23 +94,26 @@ export function glossaryCardTitle(draft: GlossaryDraft): {
   return { title, missingTerm: true };
 }
 
-/** 편집 모드 오픈 시 문장형 용어명을 정의로 이동 */
+/** 편집 모드 오픈 시 문장형 용어명을 정의로 이동 + 인라인 동의어 분리 */
 export function openGlossaryEditDraft(draft: GlossaryDraft): GlossaryEditDraft {
-  if (looksLikeDefinitionSentence(draft.term_ko)) {
-    const moved = draft.term_ko.trim();
-    const definition = draft.definition.trim() || moved;
+  const extracted = extractInlineSynonyms(draft.definition, draft.synonyms);
+  const base = { ...draft, ...extracted };
+
+  if (looksLikeDefinitionSentence(base.term_ko)) {
+    const moved = base.term_ko.trim();
+    const definition = base.definition.trim() || moved;
     return {
-      ...draft,
+      ...base,
       term_ko: "",
       definition,
       movedFromTitle: true
     };
   }
   // 용어명은 비어 있고 정의만 있는 경우(문장이 content 로만 들어온 데이터)
-  if (!draft.term_ko.trim() && draft.definition.trim()) {
-    return { ...draft, movedFromTitle: true };
+  if (!base.term_ko.trim() && base.definition.trim()) {
+    return { ...base, movedFromTitle: true };
   }
-  return { ...draft, movedFromTitle: false };
+  return { ...base, movedFromTitle: false };
 }
 
 export function getCandidateCardKind(input: {
