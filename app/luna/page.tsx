@@ -55,6 +55,8 @@ export default function LunaPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pendingCorrectionIdsRef = useRef<string[]>([]);
   const askedRef = useRef(false);
+  /** 스트리밍 중 selectedConversationId 변경 시 loadMessages 로 낙관 UI가 지워지지 않게 */
+  const streamGuardConvRef = useRef<string | null>(null);
 
   const visibleConversations = useMemo(() => {
     if (!selectedProjectId) return conversations;
@@ -224,7 +226,12 @@ export default function LunaPage() {
 
   useEffect(() => {
     if (!selectedConversationId) {
-      setMessages([]);
+      if (!streamGuardConvRef.current) {
+        setMessages([]);
+      }
+      return;
+    }
+    if (streamGuardConvRef.current) {
       return;
     }
     void loadMessages(selectedConversationId);
@@ -349,14 +356,15 @@ export default function LunaPage() {
       attachmentMeta: LunaAttachmentRef[] = [],
       skills: LunaSkillsSelection = EMPTY_SKILLS
     ) => {
-      const conversationId = await ensureConversation();
-      const token = await getAccessToken();
-      if (!token || !conversationId) return;
       if (!text.trim() && attachmentIds.length === 0) return;
 
       const userTempId = `temp-user-${Date.now()}`;
       const assistantTempId = `temp-assistant-${Date.now()}`;
 
+      streamGuardConvRef.current =
+        selectedConversationId ?? `pending-${assistantTempId}`;
+
+      setSending(true);
       setMessages((prev) => [
         ...prev,
         {
@@ -374,7 +382,46 @@ export default function LunaPage() {
           steps: []
         }
       ]);
-      setSending(true);
+
+      const token = await getAccessToken();
+      if (!token) {
+        streamGuardConvRef.current = null;
+        setSending(false);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  isThinking: false,
+                  metadata: undefined,
+                  content: "로그인이 필요합니다."
+                }
+              : m
+          )
+        );
+        return;
+      }
+
+      const conversationId = await ensureConversation();
+      if (!conversationId) {
+        streamGuardConvRef.current = null;
+        setSending(false);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  isThinking: false,
+                  metadata: undefined,
+                  content: "대화를 시작하지 못했습니다. 다시 시도해 주세요."
+                }
+              : m
+          )
+        );
+        return;
+      }
+
+      streamGuardConvRef.current = conversationId;
 
       try {
         const res = await fetch("/api/luna/chat", {
@@ -633,6 +680,7 @@ export default function LunaPage() {
           console.error("[luna] title", titleErr);
         }
         await loadConversations();
+        streamGuardConvRef.current = null;
         await loadMessages(conversationId);
 
         const correctionIds = pendingCorrectionIdsRef.current;
@@ -668,10 +716,11 @@ export default function LunaPage() {
           )
         );
       } finally {
+        streamGuardConvRef.current = null;
         setSending(false);
       }
     },
-    [ensureConversation, loadConversations, loadMessages]
+    [ensureConversation, loadConversations, loadMessages, selectedConversationId]
   );
 
   const selectConversation = useCallback((id: string) => {
