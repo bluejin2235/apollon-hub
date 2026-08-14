@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { isGlossaryCandidate } from "@/lib/luna/candidate-format";
+import { hasAnyGlossaryOverlap } from "@/lib/glossary/duplicate";
+import { loadActiveGlossaryTerms } from "@/lib/glossary/duplicate-service";
+import { isGlossaryCandidate, parseGlossaryMeta } from "@/lib/luna/candidate-format";
 import {
   normalizeThread,
   resolveCandidateSource,
@@ -48,6 +50,7 @@ export type CandidateItem = Omit<LearningRow, "source"> & {
   source: CandidateSource;
   source_title: string | null;
   is_glossary: boolean;
+  glossary_already_exists: boolean;
   is_my_turn: boolean;
 };
 
@@ -179,6 +182,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const glossaryTerms = await loadActiveGlossaryTerms(admin);
+
   const items: CandidateItem[] = filtered.map((r) => {
     const source = resolveCandidateSource(r.source, r.origin);
     const thread = normalizeThread(r.thread);
@@ -187,6 +192,12 @@ export async function GET(request: NextRequest) {
       r.assigned_to === user.id &&
       thread.length > 0 &&
       thread[thread.length - 1]?.role === "luna";
+    const isGlossary = isGlossaryCandidate(r.meta, r.category);
+    let glossary_already_exists = false;
+    if (isGlossary) {
+      const draft = parseGlossaryMeta(r.meta, r.content);
+      glossary_already_exists = hasAnyGlossaryOverlap(draft, glossaryTerms);
+    }
     return {
       ...r,
       source,
@@ -194,7 +205,8 @@ export async function GET(request: NextRequest) {
         ? sourceTitleMap.get(r.source_id) ?? null
         : null,
       thread,
-      is_glossary: isGlossaryCandidate(r.meta, r.category),
+      is_glossary: isGlossary,
+      glossary_already_exists,
       is_my_turn: isMyTurn,
       author_name: r.author_id ? nameMap.get(r.author_id) ?? null : null,
       assigned_name: r.assigned_to ? nameMap.get(r.assigned_to) ?? null : null

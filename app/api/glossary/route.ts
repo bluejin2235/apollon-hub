@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { normalizeCategories } from "@/lib/glossary/categories";
+import { toFieldValues } from "@/lib/glossary/duplicate";
+import {
+  buildGlossaryMergeDraft,
+  checkGlossaryDuplicate,
+  normalizeIncomingFields
+} from "@/lib/glossary/duplicate-service";
 import { normalizeSynonyms } from "@/lib/glossary/synonyms";
 import {
   GLOSSARY_CATEGORIES,
@@ -370,6 +376,36 @@ export async function POST(request: NextRequest) {
   };
   const changeNote = text(body.change_note) ?? (termId ? null : "최초 등록");
 
+  // 서버측 5종 중복 검사 (클라이언트 팝업과 동일 기준)
+  const incomingFields = normalizeIncomingFields({
+    term_ko: payload.term_ko,
+    term_en: payload.term_en,
+    term_zh: payload.term_zh,
+    definition: payload.definition,
+    categories: payload.categories,
+    synonyms: payload.synonyms
+  });
+  const dup = await checkGlossaryDuplicate(admin, incomingFields, termId);
+  if (dup.conflicts && dup.primary && dup.existing) {
+    const merge_draft = await buildGlossaryMergeDraft(
+      toFieldValues(dup.existing),
+      incomingFields
+    );
+    return NextResponse.json(
+      {
+        error: "glossary_duplicate",
+        conflicts: true,
+        primary: dup.primary,
+        others: dup.others,
+        existing: dup.existing,
+        incoming: incomingFields,
+        merge_draft,
+        existing_id: dup.existing.id
+      },
+      { status: 409 }
+    );
+  }
+
   const { data: profile } = await admin
     .from("profiles")
     .select("name")
@@ -418,33 +454,6 @@ export async function POST(request: NextRequest) {
     }
     saved = { id: data.id as string, version: Number(data.version) || nextVersion };
   } else {
-    // 신규: 동일 term_ko 가 있으면 중복 안내
-    let { data: existing, error: dupError } = await admin
-      .from("glossary_terms")
-      .select("id")
-      .eq("term_ko", termKo)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (dupError && isMissingColumnError(dupError)) {
-      const retry = await admin
-        .from("glossary_terms")
-        .select("id")
-        .eq("term_ko", termKo)
-        .maybeSingle();
-      existing = retry.data;
-      dupError = retry.error;
-    }
-    if (dupError) {
-      console.error("[glossary] dup check", dupError);
-      return NextResponse.json({ error: dupError.message }, { status: 500 });
-    }
-    if (existing?.id) {
-      return NextResponse.json(
-        { error: "이미 있는 용어입니다", existing_id: existing.id as string },
-        { status: 409 }
-      );
-    }
-
     const { data, error } = await admin
       .from("glossary_terms")
       .insert({ ...payload, version: 1, created_by: user.id, updated_by: user.id })

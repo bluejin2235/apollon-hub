@@ -47,6 +47,7 @@ export type CandidateRow = {
   merge_target: string | null;
   raw_input: string | null;
   is_glossary: boolean;
+  glossary_already_exists?: boolean;
   is_my_turn: boolean;
 };
 
@@ -239,11 +240,13 @@ export function ReplyRow({
 export function GlossaryCardBody({
   meta,
   content,
-  evidence
+  evidence,
+  alreadyInGlossary
 }: {
   meta: Record<string, unknown> | null;
   content: string;
   evidence: string | null;
+  alreadyInGlossary?: boolean;
 }) {
   const draft = parseGlossaryMeta(meta, content);
   const { title, missingTerm } = glossaryCardTitle(draft);
@@ -263,6 +266,14 @@ export function GlossaryCardBody({
             style={{ background: K.candSoft, color: K.candInk }}
           >
             용어명 없음
+          </span>
+        ) : null}
+        {alreadyInGlossary ? (
+          <span
+            className="rounded-[20px] px-2 py-0.5 text-[10.5px] font-extrabold"
+            style={{ background: K.candSoft, color: K.candInk }}
+          >
+            사전에 이미 있음
           </span>
         ) : null}
       </div>

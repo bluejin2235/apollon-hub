@@ -11,7 +11,12 @@ import {
 import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { GlossaryFields } from "@/components/glossary/GlossaryFields";
+import {
+  GlossaryDuplicateDialog,
+  type GlossaryDuplicatePayload
+} from "@/components/glossary/GlossaryDuplicateDialog";
 import { categoryTabFilter } from "@/lib/glossary/categories";
+import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
 import {
   INDEX_GROUPS,
   buildIndexKeysForGroup,
@@ -78,7 +83,16 @@ async function getAccessToken(): Promise<string | null> {
 async function api<T>(
   url: string,
   init?: RequestInit
-): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string; existing_id?: string }> {
+): Promise<
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      existing_id?: string;
+      data?: T;
+    }
+> {
   const token = await getAccessToken();
   if (!token) return { ok: false, status: 401, error: "로그인이 필요합니다." };
   const res = await fetch(url, {
@@ -97,7 +111,8 @@ async function api<T>(
       ok: false,
       status: res.status,
       error: json?.error ?? "요청에 실패했습니다.",
-      existing_id: typeof json?.existing_id === "string" ? json.existing_id : undefined
+      existing_id: typeof json?.existing_id === "string" ? json.existing_id : undefined,
+      data: (json as T) ?? undefined
     };
   }
   return { ok: true, data: json as T };
@@ -194,6 +209,10 @@ export function GlossaryBrowser({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [notice, setNotice] = useState("");
+  const [dupPayload, setDupPayload] = useState<GlossaryDuplicatePayload | null>(
+    null
+  );
+  const [dupBusy, setDupBusy] = useState(false);
 
   const loadTerms = useCallback(async () => {
     setLoading(true);
@@ -396,53 +415,153 @@ export function GlossaryBrowser({
     setSaving(true);
     setNotice("");
     const isNew = creating || !detail;
+    const excludeId = isNew ? null : detail!.id;
     try {
-      const res = await api<{ term: { id: string; version: number } }>(
-        "/api/glossary",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            id: isNew ? null : detail!.id,
-            term_ko: draft.term_ko.trim(),
-            term_en: draft.term_en.trim(),
-            term_zh: draft.term_zh.trim(),
-            synonyms: draft.synonyms,
-            categories: draft.categories,
-            definition: draft.definition.trim(),
-            change_note: draft.change_note.trim() || (isNew ? "최초 등록" : "")
-          })
-        }
-      );
-      if (!res.ok) {
-        if (res.status === 409 && res.existing_id) {
-          setCreating(false);
-          setDraft(null);
-          setSelectedId(res.existing_id);
-          setNotice("이미 있는 용어입니다");
-          await loadTerms();
-          return;
-        }
-        if (res.status === 409) {
-          setNotice("이미 있는 용어입니다");
-          return;
-        }
-        throw new Error(res.error);
+      const check = await api<{
+        conflicts: boolean;
+        primary?: GlossaryDupMatch;
+        others?: GlossaryDupMatch[];
+        existing?: GlossaryDupTerm;
+        incoming?: GlossaryFieldValues;
+        merge_draft?: GlossaryFieldValues | null;
+      }>("/api/glossary/check-duplicate", {
+        method: "POST",
+        body: JSON.stringify({
+          term_ko: draft.term_ko.trim(),
+          term_en: draft.term_en.trim(),
+          term_zh: draft.term_zh.trim(),
+          synonyms: draft.synonyms,
+          categories: draft.categories,
+          definition: draft.definition.trim(),
+          exclude_id: excludeId,
+          with_merge_draft: true
+        })
+      });
+      if (!check.ok) throw new Error(check.error);
+      if (
+        check.data.conflicts &&
+        check.data.primary &&
+        check.data.existing &&
+        check.data.incoming
+      ) {
+        setDupPayload({
+          primary: check.data.primary,
+          others: check.data.others ?? [],
+          existing: check.data.existing,
+          incoming: check.data.incoming,
+          merge_draft: check.data.merge_draft ?? null,
+          source_label: isNew ? "신규 등록" : "용어 수정",
+          exclude_id: excludeId
+        });
+        return;
       }
-      const savedId = res.data.term.id;
-      setCreating(false);
-      setDraft(null);
-      setNotice(
-        isNew
-          ? "새 용어를 등록했습니다."
-          : "저장했습니다. 변경 이력에 남았습니다."
-      );
-      await loadTerms();
-      setSelectedId(savedId);
-      await loadDetail(savedId);
+
+      await saveDirect(isNew, excludeId);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "저장하지 못했습니다.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveDirect(isNew: boolean, excludeId: string | null) {
+    if (!draft) return;
+    const res = await api<{ term: { id: string; version: number } }>(
+      "/api/glossary",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          id: isNew ? null : excludeId,
+          term_ko: draft.term_ko.trim(),
+          term_en: draft.term_en.trim(),
+          term_zh: draft.term_zh.trim(),
+          synonyms: draft.synonyms,
+          categories: draft.categories,
+          definition: draft.definition.trim(),
+          change_note: draft.change_note.trim() || (isNew ? "최초 등록" : "")
+        })
+      }
+    );
+    if (!res.ok) {
+      if (res.status === 409) {
+        setNotice("이미 있는 용어입니다");
+        return;
+      }
+      throw new Error(res.error);
+    }
+    const savedId = res.data.term.id;
+    setCreating(false);
+    setDraft(null);
+    setNotice(
+      isNew
+        ? "새 용어를 등록했습니다."
+        : "저장했습니다. 변경 이력에 남았습니다."
+    );
+    await loadTerms();
+    setSelectedId(savedId);
+    await loadDetail(savedId);
+  }
+
+  async function resolveDuplicate(args: {
+    action: "merge" | "replace" | "keep" | "register";
+    merged: GlossaryFieldValues;
+    incoming: GlossaryFieldValues;
+  }) {
+    if (!dupPayload) return;
+    setDupBusy(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        message?: string;
+        term?: { id: string };
+        conflicts?: boolean;
+        primary?: GlossaryDupMatch;
+        others?: GlossaryDupMatch[];
+        existing?: GlossaryDupTerm;
+        incoming?: GlossaryFieldValues;
+      }>("/api/glossary/resolve-duplicate", {
+        method: "POST",
+        body: JSON.stringify({
+          action: args.action,
+          existing_id: dupPayload.existing.id,
+          incoming: args.incoming,
+          merged: args.merged,
+          exclude_id: dupPayload.exclude_id,
+          candidate_id: null
+        })
+      });
+      if (!res.ok) {
+        if (res.status === 409 && res.data?.conflicts && res.data.primary && res.data.existing) {
+          setDupPayload({
+            ...dupPayload,
+            primary: res.data.primary,
+            others: res.data.others ?? [],
+            existing: res.data.existing,
+            incoming: res.data.incoming ?? args.incoming,
+            merge_draft: null
+          });
+          setNotice("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+          return;
+        }
+        throw new Error(res.error);
+      }
+      setDupPayload(null);
+      setCreating(false);
+      setDraft(null);
+      setNotice(res.data.message ?? "처리했습니다.");
+      await loadTerms();
+      const nextId = res.data.term?.id ?? dupPayload.existing.id;
+      if (args.action !== "keep") {
+        setSelectedId(nextId);
+        await loadDetail(nextId);
+      } else if (dupPayload.exclude_id) {
+        setSelectedId(dupPayload.exclude_id);
+        await loadDetail(dupPayload.exclude_id);
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "처리에 실패했습니다.");
+    } finally {
+      setDupBusy(false);
     }
   }
 
@@ -998,6 +1117,14 @@ export function GlossaryBrowser({
           )}
         </section>
       </div>
+
+      <GlossaryDuplicateDialog
+        open={!!dupPayload}
+        payload={dupPayload}
+        busy={dupBusy}
+        onCancel={() => setDupPayload(null)}
+        onResolve={(args) => void resolveDuplicate(args)}
+      />
     </div>
   );
 }

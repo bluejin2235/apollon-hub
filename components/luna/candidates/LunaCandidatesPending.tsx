@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  GlossaryDuplicateDialog,
+  type GlossaryDuplicatePayload
+} from "@/components/glossary/GlossaryDuplicateDialog";
+import {
   CandidateCardShell,
   ConversationLink,
   ErrorLine,
@@ -20,6 +24,8 @@ import {
   type CandidateRow
 } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
+import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
+import type { GlossaryFieldValues } from "@/lib/glossary/types";
 import {
   glossaryCardTitle,
   openGlossaryEditDraft,
@@ -64,6 +70,10 @@ export function LunaCandidatesPending() {
     Record<string, GlossaryEditDraft>
   >({});
   const [replyDraft, setReplyDraft] = useState<Record<string, string>>({});
+  const [dupPayload, setDupPayload] = useState<GlossaryDuplicatePayload | null>(
+    null
+  );
+  const [dupBusy, setDupBusy] = useState(false);
 
   const load = useCallback(async (f: PendingFilter) => {
     const token = await getAccessToken();
@@ -131,11 +141,7 @@ export function LunaCandidatesPending() {
             : undefined
         })
       });
-      if (!res.ok) {
-        setMessage(`처리 실패: ${await res.text()}`);
-        return;
-      }
-      const json = (await res.json()) as {
+      const json = (await res.json().catch(() => null)) as {
         id?: string;
         status?: string;
         content?: string;
@@ -144,7 +150,36 @@ export function LunaCandidatesPending() {
         glossary_registered?: boolean;
         glossary_notice?: string;
         merged_into?: string;
-      };
+        error?: string;
+        conflicts?: boolean;
+        primary?: GlossaryDupMatch;
+        others?: GlossaryDupMatch[];
+        existing?: GlossaryDupTerm;
+        incoming?: GlossaryFieldValues;
+        merge_draft?: GlossaryFieldValues | null;
+      } | null;
+
+      if (res.status === 409 && json?.conflicts && json.primary && json.existing && json.incoming) {
+        setDupPayload({
+          primary: json.primary,
+          others: json.others ?? [],
+          existing: json.existing,
+          incoming: json.incoming,
+          merge_draft: json.merge_draft ?? null,
+          source_label: "지식후보",
+          candidate_id: id
+        });
+        return;
+      }
+
+      if (!res.ok) {
+        setMessage(`처리 실패: ${json?.error ?? res.status}`);
+        return;
+      }
+      if (!json) {
+        setMessage("처리 실패");
+        return;
+      }
 
       if (action === "revise" && json.id) {
         setItems((prev) =>
@@ -208,6 +243,71 @@ export function LunaCandidatesPending() {
       void load(filter);
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function resolveGlossaryDup(args: {
+    action: "merge" | "replace" | "keep" | "register";
+    merged: GlossaryFieldValues;
+    incoming: GlossaryFieldValues;
+  }) {
+    if (!dupPayload?.candidate_id) return;
+    const token = await getAccessToken();
+    if (!token) return;
+    setDupBusy(true);
+    try {
+      const res = await fetch("/api/glossary/resolve-duplicate", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: args.action,
+          existing_id: dupPayload.existing.id,
+          incoming: args.incoming,
+          merged: args.merged,
+          candidate_id: dupPayload.candidate_id
+        })
+      });
+      const json = (await res.json().catch(() => null)) as {
+        message?: string;
+        error?: string;
+        conflicts?: boolean;
+        primary?: GlossaryDupMatch;
+        others?: GlossaryDupMatch[];
+        existing?: GlossaryDupTerm;
+        incoming?: GlossaryFieldValues;
+        merge_draft?: GlossaryFieldValues | null;
+      } | null;
+      if (res.status === 409 && json?.conflicts && json.primary && json.existing) {
+        setDupPayload({
+          ...dupPayload,
+          primary: json.primary,
+          others: json.others ?? [],
+          existing: json.existing,
+          incoming: json.incoming ?? args.incoming,
+          merge_draft: json.merge_draft ?? null
+        });
+        setMessage("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+        return;
+      }
+      if (!res.ok) {
+        setMessage(`처리 실패: ${json?.error ?? res.status}`);
+        return;
+      }
+      const doneId = dupPayload.candidate_id;
+      setDupPayload(null);
+      setItems((prev) => prev.filter((c) => c.id !== doneId));
+      setGlossaryEdit((prev) => {
+        const next = { ...prev };
+        delete next[doneId];
+        return next;
+      });
+      setMessage(json?.message ?? "처리했습니다.");
+      void load(filter);
+    } finally {
+      setDupBusy(false);
     }
   }
 
@@ -367,6 +467,7 @@ export function LunaCandidatesPending() {
                     meta={item.meta}
                     content={item.content}
                     evidence={item.evidence}
+                    alreadyInGlossary={item.glossary_already_exists}
                   />
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -603,6 +704,14 @@ export function LunaCandidatesPending() {
           );
         })
       )}
+
+      <GlossaryDuplicateDialog
+        open={!!dupPayload}
+        payload={dupPayload}
+        busy={dupBusy}
+        onCancel={() => setDupPayload(null)}
+        onResolve={(args) => void resolveGlossaryDup(args)}
+      />
     </KnowledgeShell>
   );
 }

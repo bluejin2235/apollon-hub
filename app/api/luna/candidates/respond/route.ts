@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { normalizeCategories } from "@/lib/glossary/categories";
+import { toFieldValues } from "@/lib/glossary/duplicate";
+import {
+  buildGlossaryMergeDraft,
+  checkGlossaryDuplicate,
+  normalizeIncomingFields
+} from "@/lib/glossary/duplicate-service";
+import { normalizeSynonyms } from "@/lib/glossary/synonyms";
+import type { GlossaryCategory } from "@/lib/glossary/types";
 import {
   shouldRegisterGlossary,
   tryRegisterGlossaryFromCandidate
 } from "@/lib/luna/candidate-glossary";
-import { normalizeCategories } from "@/lib/glossary/categories";
-import { normalizeSynonyms } from "@/lib/glossary/synonyms";
-import type { GlossaryCategory } from "@/lib/glossary/types";
 import {
   isGlossaryCandidate,
   looksLikeDefinitionSentence,
@@ -452,6 +458,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const incoming = normalizeIncomingFields(draft);
+    const dup = await checkGlossaryDuplicate(admin, incoming, null);
+    if (dup.conflicts && dup.primary && dup.existing) {
+      const merge_draft = await buildGlossaryMergeDraft(
+        toFieldValues(dup.existing),
+        incoming
+      );
+      return NextResponse.json(
+        {
+          error: "glossary_duplicate",
+          conflicts: true,
+          primary: dup.primary,
+          others: dup.others,
+          existing: dup.existing,
+          incoming,
+          merge_draft
+        },
+        { status: 409 }
+      );
+    }
   }
 
   // 용어형·직접 수정본은 AI 윤문 없이 확정. 맞아요만 윤문 허용.
@@ -525,6 +552,13 @@ export async function POST(request: NextRequest) {
     );
     glossary_registered = glossaryResult.registered;
     if (glossaryResult.notice) glossary_notice = glossaryResult.notice;
+    if (glossaryResult.conflict?.conflicts) {
+      // 경합으로 확정 후 충돌 — 후보를 archived 로 되돌리지 않고 안내만
+      glossary_notice =
+        glossary_notice ||
+        glossaryResult.conflict.primary?.message ||
+        "용어사전 중복이 감지되어 등록을 건너뛰었습니다.";
+    }
   }
 
   return NextResponse.json({
