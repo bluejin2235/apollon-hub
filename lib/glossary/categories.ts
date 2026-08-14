@@ -3,10 +3,15 @@ import {
   type GlossaryCategory
 } from "@/lib/glossary/types";
 
-const LEGACY_MAP: Record<string, GlossaryCategory> = {
+const LEGACY_SLUG_MAP: Record<string, GlossaryCategory> = {
   common: "공통",
   interior: "공간",
   hw: "HW",
+  content: "콘텐츠"
+};
+
+const LEGACY_MAP: Record<string, GlossaryCategory> = {
+  ...LEGACY_SLUG_MAP,
   공통: "공통",
   공간: "공간",
   HW: "HW",
@@ -32,7 +37,10 @@ export function normalizeGlossaryCategory(
   const t = raw.trim();
   if (!t) return null;
   if (isGlossaryCategory(t)) return t;
-  return LEGACY_MAP[t] ?? null;
+  if (LEGACY_MAP[t]) return LEGACY_MAP[t];
+  // meta.category 레거시 slug — 알 수 없는 영문 slug 는 기타
+  if (/^[a-z][a-z0-9_]*$/i.test(t)) return "기타";
+  return null;
 }
 
 /**

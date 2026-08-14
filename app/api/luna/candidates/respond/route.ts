@@ -16,6 +16,7 @@ import {
 import {
   isGlossaryCandidate,
   looksLikeDefinitionSentence,
+  applyGlossaryMetaPatch,
   parseGlossaryMeta,
   sanitizeGlossaryField
 } from "@/lib/luna/candidate-format";
@@ -214,16 +215,7 @@ export async function POST(request: NextRequest) {
       glossaryPatch &&
       isGlossaryCandidate(prevMeta, category)
     ) {
-      const nextMeta: Record<string, unknown> = {
-        ...prevMeta,
-        kind: "glossary",
-        term_ko: glossaryPatch.term_ko,
-        term_en: glossaryPatch.term_en,
-        term_zh: glossaryPatch.term_zh,
-        definition: glossaryPatch.definition,
-        categories: glossaryPatch.categories,
-        synonyms: glossaryPatch.synonyms
-      };
+      const nextMeta = applyGlossaryMetaPatch(prevMeta, glossaryPatch);
       const nextContent =
         glossaryPatch.definition ||
         glossaryPatch.term_ko ||
@@ -439,16 +431,7 @@ export async function POST(request: NextRequest) {
     glossaryPatch &&
     (isGlossaryCandidate(prevMeta, category) || glossaryPatch.term_ko)
   ) {
-    meta = {
-      ...prevMeta,
-      kind: "glossary",
-      term_ko: glossaryPatch.term_ko,
-      term_en: glossaryPatch.term_en,
-      term_zh: glossaryPatch.term_zh,
-      definition: glossaryPatch.definition,
-      categories: glossaryPatch.categories,
-      synonyms: glossaryPatch.synonyms
-    };
+    meta = applyGlossaryMetaPatch(prevMeta, glossaryPatch);
     workingContent =
       glossaryPatch.definition || glossaryPatch.term_ko || content;
   }

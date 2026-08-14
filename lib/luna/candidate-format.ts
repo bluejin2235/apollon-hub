@@ -12,6 +12,11 @@ import type { CandidateSource } from "@/lib/luna/candidates";
 
 export type GlossaryDraft = GlossaryFieldValues;
 
+export type GlossaryMetaPatch = Omit<GlossaryDraft, "term_en" | "term_zh"> & {
+  term_en: string | null;
+  term_zh: string | null;
+};
+
 export type GlossaryEditDraft = GlossaryDraft & {
   movedFromTitle: boolean;
 };
@@ -54,8 +59,8 @@ export function looksLikeDefinitionSentence(text: string): boolean {
   if (!t) return false;
   if (t.length > 40) return true;
   if (/[.。]/.test(t) || /다\./.test(t)) return true;
-  // 조사 는/은/이/가 뒤에 서술이 이어짐 (공백 없어도)
-  if (/(?:는|은|이|가)\S/.test(t)) return true;
+  // 조사 + 공백 + 서술 — 단어 내부(이머시브 등) 오탐 방지
+  if (/(?:는|은|이|가)\s+\S/.test(t)) return true;
   return false;
 }
 
@@ -110,6 +115,26 @@ export function parseGlossaryMeta(
     synonyms: normalizeSynonyms(m.synonyms),
     definition,
     categories
+  };
+}
+
+/** 카드 제목: 용어명만. 없거나 문장이면 정의 앞 30자 + 용어명 없음 표시 */
+
+/** glossary meta 저장 — categories 배열만 유지, 레거시 category slug 제거 */
+export function applyGlossaryMetaPatch(
+  prevMeta: Record<string, unknown>,
+  patch: GlossaryMetaPatch
+): Record<string, unknown> {
+  const { category: _legacy, ...rest } = prevMeta;
+  return {
+    ...rest,
+    kind: "glossary",
+    term_ko: patch.term_ko,
+    term_en: patch.term_en || null,
+    term_zh: patch.term_zh || null,
+    definition: patch.definition,
+    categories: patch.categories,
+    synonyms: patch.synonyms
   };
 }
 
