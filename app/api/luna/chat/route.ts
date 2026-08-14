@@ -408,7 +408,7 @@ function buildVolatileSystemText(opts: {
 
   if (opts.notionSources && opts.notionSources.length > 0) {
     const notionBlock = opts.notionSources
-      .map((s) => `- ${s.title}: ${s.url}`)
+      .map((s) => `- ${s.title} — ${s.url}`)
       .join("\n");
     parts.push(`[노션 검색 결과]\n${notionBlock}`);
   } else if (opts.notionSearchAttempted) {

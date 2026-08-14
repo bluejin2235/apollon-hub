@@ -109,19 +109,7 @@ export default function LunaPage() {
             : null;
         const fb = meta?.feedback;
         const feedback = fb === "good" || fb === "bad" ? fb : null;
-        const rawSources = meta?.notion_sources;
-        let notionSources: { title: string; url: string }[] | null = null;
-        if (Array.isArray(rawSources)) {
-          notionSources = rawSources
-            .filter(
-              (s): s is { title: string; url: string } =>
-                Boolean(s) &&
-                typeof s === "object" &&
-                typeof (s as { title?: unknown }).title === "string" &&
-                typeof (s as { url?: unknown }).url === "string"
-            )
-            .map((s) => ({ title: s.title, url: s.url }));
-        }
+        const notionSources = normalizeNotionSources(meta?.notion_sources);
         let attachments: LunaAttachmentRef[] | null = null;
         const rawAttachments = meta?.attachments;
         if (Array.isArray(rawAttachments)) {
@@ -192,7 +180,7 @@ export default function LunaPage() {
           content,
           engine: (row.engine as string | null) ?? null,
           feedback,
-          notionSources: normalizeNotionSources(meta?.notion_sources) ?? notionSources,
+          notionSources,
           cards: normalizeLunaCards(meta?.cards),
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),
           attachments,

@@ -3,6 +3,8 @@ import { prepareSearchTerms } from "@/lib/luna/workserver";
 export type NotionSource = {
   title: string;
   url: string;
+  id: string;
+  last_edited_time?: string | null;
 };
 
 export type NotionSearchStatus = "ok" | "empty" | "skipped" | "error";
@@ -18,13 +20,17 @@ export type NotionSearchOutcome = {
 
 type NotionSearchResult = {
   object?: string;
+  id?: string;
   url?: string;
+  title?: unknown;
+  last_edited_time?: string | null;
   properties?: Record<string, unknown>;
 };
 
 const MAX_NOTION_QUERIES = 6;
 const PAGE_SIZE = 10;
 const MAX_RESULTS = 5;
+const EMPTY_TITLE = "(제목 없음)";
 
 function plainFromRichText(value: unknown): string {
   if (!Array.isArray(value)) return "";
@@ -40,28 +46,102 @@ function plainFromRichText(value: unknown): string {
 }
 
 export function extractNotionPageTitle(result: NotionSearchResult): string {
+  return extractTitleFromSearchResult(result);
+}
+
+function extractTitleFromSearchResult(result: NotionSearchResult): string {
+  if (result.object === "database") {
+    const text = plainFromRichText(result.title);
+    return text || EMPTY_TITLE;
+  }
+
   const props = result.properties;
-  if (!props || typeof props !== "object") return "Untitled";
-
-  for (const value of Object.values(props)) {
-    if (!value || typeof value !== "object") continue;
-    const prop = value as { type?: string; title?: unknown; name?: unknown };
-    if (prop.type === "title") {
-      const text = plainFromRichText(prop.title);
-      if (text) return text;
+  if (props && typeof props === "object") {
+    for (const value of Object.values(props)) {
+      if (!value || typeof value !== "object") continue;
+      const prop = value as { type?: string; title?: unknown };
+      if (prop.type === "title") {
+        const text = plainFromRichText(prop.title);
+        if (text) return text;
+      }
     }
   }
 
-  for (const value of Object.values(props)) {
-    if (!value || typeof value !== "object") continue;
-    const prop = value as { title?: unknown };
-    if ("title" in prop) {
-      const text = plainFromRichText(prop.title);
-      if (text) return text;
+  return EMPTY_TITLE;
+}
+
+function extractUrlSlug(url: string): string | null {
+  const match = url.match(/\/p\/([^/?#]+)/i);
+  if (!match) return null;
+
+  let segment = decodeURIComponent(match[1]);
+  segment = segment
+    .replace(/-[a-f0-9]{32}$/i, "")
+    .replace(
+      /-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i,
+      ""
+    );
+  return segment || null;
+}
+
+function slugToDisplayText(slug: string): string {
+  return slug.replace(/-/g, " ").trim();
+}
+
+function normalizeTitleForCompare(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function titleMatchesUrlSlug(title: string, url: string): boolean {
+  if (title === EMPTY_TITLE) return true;
+
+  const slug = extractUrlSlug(url);
+  if (!slug) return false;
+
+  const slugDisplay = slugToDisplayText(slug);
+  const normTitle = normalizeTitleForCompare(title);
+  const normSlug = normalizeTitleForCompare(slugDisplay);
+
+  if (normTitle === normSlug) return true;
+  if (normSlug.startsWith(normTitle) && normTitle.length >= 6) return true;
+  if (normTitle.startsWith(normSlug) && normSlug.length >= 6) return true;
+  return false;
+}
+
+async function fetchNotionTitle(
+  id: string,
+  objectType: string | undefined,
+  token: string
+): Promise<string> {
+  const endpoint =
+    objectType === "database"
+      ? `https://api.notion.com/v1/databases/${id}`
+      : `https://api.notion.com/v1/pages/${id}`;
+
+  const res = await fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": "2022-06-28"
     }
+  });
+
+  if (!res.ok) {
+    console.error(
+      "[luna/notion] enrich",
+      res.status,
+      id,
+      (await res.text()).slice(0, 200)
+    );
+    return EMPTY_TITLE;
   }
 
-  return "Untitled";
+  const data = (await res.json()) as NotionSearchResult;
+  const title = extractTitleFromSearchResult(data);
+  return title === EMPTY_TITLE ? EMPTY_TITLE : title;
+}
+
+function notionSourceKey(source: NotionSource): string {
+  return source.id || source.url;
 }
 
 function normalizeForMatch(text: string): string {
@@ -122,14 +202,35 @@ function scoreNotionSource(title: string, terms: string[]): number {
   return score;
 }
 
-function mapNotionResults(results: NotionSearchResult[]): NotionSource[] {
-  return results
-    .filter((r) => r.object === "page" || Boolean(r.url))
-    .map((r) => ({
-      title: extractNotionPageTitle(r),
-      url: typeof r.url === "string" ? r.url : ""
-    }))
-    .filter((s) => Boolean(s.url));
+async function mapNotionResults(
+  results: NotionSearchResult[],
+  token: string
+): Promise<NotionSource[]> {
+  const sources: NotionSource[] = [];
+
+  for (const r of results) {
+    if (r.object !== "page" && r.object !== "database" && !r.url) continue;
+
+    const url = typeof r.url === "string" ? r.url : "";
+    if (!url) continue;
+
+    const id = typeof r.id === "string" ? r.id : "";
+    let title = extractTitleFromSearchResult(r);
+
+    if (titleMatchesUrlSlug(title, url) && id) {
+      title = await fetchNotionTitle(id, r.object, token);
+    }
+
+    sources.push({
+      title,
+      url,
+      id,
+      last_edited_time:
+        typeof r.last_edited_time === "string" ? r.last_edited_time : null
+    });
+  }
+
+  return sources;
 }
 
 async function searchNotionOnce(
@@ -171,7 +272,7 @@ async function searchNotionOnce(
   }
 
   const data = (await res.json()) as { results?: NotionSearchResult[] };
-  const sources = mapNotionResults(data.results ?? []);
+  const sources = await mapNotionResults(data.results ?? [], token);
   return { ok: true, sources, httpStatus: res.status };
 }
 
@@ -255,9 +356,10 @@ export async function searchNotionPages(
     const rankTerms = terms.length > 0 ? terms : q.split(/\s+/).filter(Boolean);
     for (const s of result.sources) {
       const score = scoreNotionSource(s.title, rankTerms);
-      const existing = merged.get(s.url);
+      const key = notionSourceKey(s);
+      const existing = merged.get(key);
       if (!existing || existing.score < score) {
-        merged.set(s.url, { ...s, score });
+        merged.set(key, { ...s, score });
       }
     }
 
@@ -267,7 +369,12 @@ export async function searchNotionPages(
   const sources = [...merged.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_RESULTS)
-    .map(({ title, url }) => ({ title, url }));
+    .map(({ title, url, id, last_edited_time }) => ({
+      title,
+      url,
+      id,
+      last_edited_time
+    }));
 
   console.log("[luna/notion] summary", {
     keywords,

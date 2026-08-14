@@ -206,13 +206,25 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
   if (!Array.isArray(raw)) return null;
   const sources = raw
     .filter(
-      (s): s is { title: string; url: string } =>
+      (s): s is {
+        title: string;
+        url: string;
+        id?: string;
+        last_edited_time?: string | null;
+      } =>
         Boolean(s) &&
         typeof s === "object" &&
         typeof (s as { title?: unknown }).title === "string" &&
         typeof (s as { url?: unknown }).url === "string"
     )
-    .map((s) => ({ title: s.title, url: s.url }));
+    .map((s) => ({
+      title: s.title,
+      url: s.url,
+      id: typeof s.id === "string" ? s.id : "",
+      ...(s.last_edited_time !== undefined
+        ? { last_edited_time: s.last_edited_time }
+        : {})
+    }));
   return sources.length > 0 ? sources : null;
 }
 
