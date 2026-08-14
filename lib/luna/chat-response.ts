@@ -90,17 +90,69 @@ export type ParsedAssume = {
   assumptions: string[];
 };
 
-const ASSUME_RE = /\[\[\s*가정\s*[：:]\s*([\s\S]*?)\]\]/g;
+function isAssumeColon(ch: string | undefined): boolean {
+  return ch === ":" || ch === "：";
+}
 
-/** [[가정: …]] 마커를 본문에서 분리. */
+function skipWs(s: string, from: number): number {
+  let i = from;
+  while (i < s.length && (s[i] === " " || s[i] === "\t" || s[i] === "\n" || s[i] === "\r")) {
+    i += 1;
+  }
+  return i;
+}
+
+/**
+ * [[가정: …]] 마커를 본문에서 분리. 정규식 대신 indexOf — 번들러가 유니코드 리터럴을 깨도 동작.
+ */
 export function parseAssumeMarkers(text: string): ParsedAssume {
   const assumptions: string[] = [];
-  const body = text
-    .replace(ASSUME_RE, (_full, inner: string) => {
-      const s = String(inner).trim();
-      if (s) assumptions.push(s);
-      return "";
-    })
+  const parts: string[] = [];
+  const keyword = "가정";
+  let i = 0;
+
+  while (i < text.length) {
+    const openAscii = text[i] === "[" && text[i + 1] === "[";
+    const openFull = text[i] === "［" && text[i + 1] === "［";
+    if (!openAscii && !openFull) {
+      parts.push(text[i] ?? "");
+      i += 1;
+      continue;
+    }
+
+    const closeAscii = text.indexOf("]]", i + 2);
+    const closeFull = text.indexOf("］］", i + 2);
+    let close = -1;
+    if (closeAscii >= 0 && closeFull >= 0) close = Math.min(closeAscii, closeFull);
+    else close = closeAscii >= 0 ? closeAscii : closeFull;
+    if (close < 0) {
+      parts.push(text[i] ?? "");
+      i += 1;
+      continue;
+    }
+
+    const inner = text.slice(i + 2, close);
+    const kw = inner.indexOf(keyword);
+    if (kw < 0 || inner.slice(0, kw).trim() !== "") {
+      parts.push(text[i] ?? "");
+      i += 1;
+      continue;
+    }
+
+    const afterKw = skipWs(inner, kw + keyword.length);
+    if (!isAssumeColon(inner[afterKw])) {
+      parts.push(text[i] ?? "");
+      i += 1;
+      continue;
+    }
+
+    const value = inner.slice(afterKw + 1).trim();
+    if (value) assumptions.push(value);
+    i = close + 2;
+  }
+
+  const body = parts
+    .join("")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

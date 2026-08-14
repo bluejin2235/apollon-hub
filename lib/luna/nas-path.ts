@@ -104,13 +104,21 @@ export function cleanPathMatch(raw: string): string {
   return s.trim();
 }
 
+export function isOfficeDriveAt(content: string, i: number): boolean {
+  const a = content.charCodeAt(i);
+  const b = content.charCodeAt(i + 1);
+  const c = content.charCodeAt(i + 2);
+  if (b !== 58 || c !== 92) return false;
+  return a === 84 || a === 116 || a === 80 || a === 112;
+}
+
 export function parseOfficePath(text: string): ParsedOfficePath | null {
   const cleaned = cleanPathMatch(text.trim());
-  const m = cleaned.match(/^([TP]):\\(.+)$/i);
-  if (!m?.[1] || !m[2]) return null;
+  if (!isOfficeDriveAt(cleaned, 0)) return null;
+  if (cleaned.length < 3) return null;
 
-  const drive = m[1].toUpperCase();
-  let rest = m[2].replace(/\//g, "\\");
+  const drive = cleaned[0]!.toUpperCase();
+  let rest = cleaned.slice(3).replace(/\//g, "\\");
   const hadTrailingSlash = rest.endsWith("\\");
   rest = rest.replace(/\\+$/, "");
   if (!rest && !hadTrailingSlash) return null;
@@ -212,10 +220,11 @@ type PathSpan = {
 };
 
 function drivePathStart(content: string, from: number): number {
-  const slice = content.slice(from);
-  const m = slice.match(/(?:T|P):\\/i);
-  if (!m || m.index === undefined) return -1;
-  return from + m.index;
+  const last = content.length - 2;
+  for (let i = from; i < last; i++) {
+    if (isOfficeDriveAt(content, i)) return i;
+  }
+  return -1;
 }
 
 function pathCompleteAtSpace(pathSoFar: string): boolean {
@@ -271,7 +280,7 @@ export function scanBareOfficePath(
 
   let raw = content.slice(pathStart, i);
   raw = cleanPathMatch(raw);
-  if (!/^([TP]):\\/i.test(raw)) return null;
+  if (!isOfficeDriveAt(raw, 0)) return null;
   if (!parseOfficePath(raw)) return null;
   return { raw, end: i };
 }
@@ -311,17 +320,15 @@ export function findAllWorkserverPathSpans(content: string): PathSpan[] {
     const close = content.indexOf("`", i + 1);
     if (close > i) {
       const inner = content.slice(i + 1, close).trim();
-      if (/^(?:T|P):\\/i.test(inner) && isFree(i, close + 1)) {
+      if (isOfficeDriveAt(inner, 0) && isFree(i, close + 1)) {
         pushSpan(i, close + 1, inner);
       }
       i = close;
       continue;
     }
 
-    const after = content.slice(i + 1);
-    const rel = after.search(/(?:T|P):\\/i);
-    if (rel >= 0) {
-      const absStart = i + 1 + rel;
+    const absStart = drivePathStart(content, i + 1);
+    if (absStart >= 0) {
       const scanned = scanBareOfficePath(content, absStart);
       if (scanned && isFree(i, scanned.end)) {
         pushSpan(i, scanned.end, scanned.raw);
@@ -332,7 +339,7 @@ export function findAllWorkserverPathSpans(content: string): PathSpan[] {
 
   for (let i = 0; i < content.length; i++) {
     if (covered[i]) continue;
-    if (!/^(?:T|P):\\/i.test(content.slice(i))) continue;
+    if (!isOfficeDriveAt(content, i)) continue;
     const scanned = scanBareOfficePath(content, i);
     if (!scanned || !isFree(i, scanned.end)) continue;
     pushSpan(i, scanned.end, scanned.raw);
@@ -345,34 +352,86 @@ export function findAllWorkserverPathSpans(content: string): PathSpan[] {
 
 const PATH_RUN_GAP_RE = /^[\s,;·\-*•]*$/;
 
+function isBareFileName(value: string): boolean {
+  const t = value.trim();
+  if (!t || t.includes("\\") || t.includes("/")) return false;
+  return FILE_EXT_RE.test(t);
+}
+
+function extractFileNameFromLine(line: string): string | null {
+  let t = line.trim();
+  if (t.startsWith("→") || t.startsWith("->")) {
+    t = t.replace(/^(?:→|->)\s*/, "");
+  }
+  if (t.startsWith("`") && t.endsWith("`") && t.length > 2) {
+    t = t.slice(1, -1).trim();
+  }
+  if (t.startsWith("**") && t.endsWith("**") && t.length > 4) {
+    t = t.slice(2, -2).trim();
+  }
+  return isBareFileName(t) ? t : null;
+}
+
+function extractFolderFromLine(
+  line: string
+): { raw: string; backtick: boolean } | null {
+  let t = line.trim();
+  const backtick = t.startsWith("`") && t.endsWith("`") && t.length > 2;
+  if (backtick) t = t.slice(1, -1).trim();
+  if (!isOfficeDriveAt(t, 0)) return null;
+  const parsed = parseOfficePath(t);
+  if (!parsed || parsed.isFile) return null;
+  return { raw: t, backtick };
+}
+
+function emitMergedPath(
+  folder: { raw: string; backtick: boolean },
+  fileName: string
+): string {
+  const folderClean = folder.raw.replace(/\\+$/, "");
+  const merged = `${folderClean}\\${fileName}`;
+  return folder.backtick ? `\`${merged}\`` : merged;
+}
+
 /**
- * 폴더 줄 + 이어지는 파일 줄(→ 또는 확장자)을 한 경로로 합친다.
- * `T:\\folder\\` + `→ file.pptx` → `T:\\folder\\file.pptx`
+ * 폴더/파일 줄 조합을 한 경로로 합친다.
+ * - `T:\\folder\\` + 다음 줄 `→ file.pptx`
+ * - **file.pptx** + 다음 줄 `T:\\folder\\`
+ * - 폴더만 단독이면 그대로 둔다 (스캐너가 카드로 만듦)
  */
 export function preprocessFolderFileLines(content: string): string {
-  let result = content;
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
 
-  result = result.replace(
-    /`((?:T|P):\\(?:[^`\\]|\\)+\\)`[ \t]*\r?\n[ \t]*(?:→[ \t]*)?(?:`([^`\r\n]+)`|([^\r\n`]+))/gim,
-    (match, folder: string, fileBt?: string, filePlain?: string) => {
-      const file = (fileBt ?? filePlain ?? "").trim();
-      if (!file || !/^[^\\]+\.[a-z0-9]{1,8}$/i.test(file)) return match;
-      const folderClean = folder.replace(/\\+$/, "");
-      return `\`${folderClean}\\${file}\``;
+  for (let i = 0; i < lines.length; i++) {
+    const fileHere = extractFileNameFromLine(lines[i] ?? "");
+    const folderNext =
+      i + 1 < lines.length ? extractFolderFromLine(lines[i + 1] ?? "") : null;
+    if (fileHere && folderNext) {
+      out.push(emitMergedPath(folderNext, fileHere));
+      i += 1;
+      continue;
     }
-  );
 
-  result = result.replace(
-    /((?:T|P):\\[^\r\n`]+\\)[ \t]*\r?\n[ \t]*(?:→[ \t]*)?(?:`([^`\r\n]+)`|([^\r\n`]+))/gim,
-    (match, folder: string, fileBt?: string, filePlain?: string) => {
-      const file = (fileBt ?? filePlain ?? "").trim();
-      if (!file || !/^[^\\]+\.[a-z0-9]{1,8}$/i.test(file)) return match;
-      const folderClean = folder.replace(/\\+$/, "");
-      return `${folderClean}\\${file}`;
+    const folderHere = extractFolderFromLine(lines[i] ?? "");
+    const fileNext =
+      i + 1 < lines.length ? extractFileNameFromLine(lines[i + 1] ?? "") : null;
+    if (folderHere && fileNext) {
+      out.push(emitMergedPath(folderHere, fileNext));
+      i += 1;
+      while (i + 1 < lines.length) {
+        const more = extractFileNameFromLine(lines[i + 1] ?? "");
+        if (!more) break;
+        out.push(emitMergedPath(folderHere, more));
+        i += 1;
+      }
+      continue;
     }
-  );
 
-  return result;
+    out.push(lines[i] ?? "");
+  }
+
+  return out.join("\n");
 }
 
 /** 마크down 본문에서 Work서버 경로 블록을 분리한다. 파싱 실패 구간은 원문 유지 */

@@ -15,7 +15,6 @@ import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import { groupNasCardsByFolder, type LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
-import { prepareLunaAnswerMarkdown } from "@/lib/luna/answer-render";
 import {
   countSourceBadges,
   parseAssumeMarkers,
@@ -369,22 +368,6 @@ function OpinionBlock({ content }: { content: string }) {
   );
 }
 
-function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
-  if (assumptions.length === 0) return null;
-  return (
-    <div className="mt-2 space-y-1.5">
-      {assumptions.map((a, i) => (
-        <div
-          key={`${i}-${a.slice(0, 24)}`}
-          className="rounded-lg bg-[#FAEEDA] px-[11px] py-[9px] text-[13px] leading-[1.6] text-[#633806]"
-        >
-          {a}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const LUNA_BUBBLE_CLASS =
   "rounded-[5px_16px_16px_16px] border border-[#E3E0F5] bg-[#F4F3FB] px-4 py-[14px] text-[14.5px] leading-[1.75] text-[#1c1d21] max-md:px-[13px] max-md:py-[11px] max-md:text-[13.5px] max-md:leading-[1.7]";
 
@@ -415,11 +398,8 @@ function InlineThinkingProgress({
   const visible = steps.filter((s) => s.status !== "skip");
   const running = visible.find((s) => s.status === "running");
   const done = visible.filter((s) => s.status === "done");
-  const { markdown: streamBody, assumptions: streamAssumptions } = content
-    ? prepareLunaAnswerMarkdown(content)
-    : { markdown: "", assumptions: [] as string[] };
 
-  if (!running && done.length === 0 && !streamBody) {
+  if (!running && done.length === 0 && !content.trim()) {
     return (
       <div className="flex items-center gap-2">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
@@ -443,16 +423,16 @@ function InlineThinkingProgress({
           ))}
         </div>
       ) : null}
-      {streamBody ? (
+      {content.trim() ? (
         <div className="text-[14.5px] leading-[1.75] max-md:text-[13.5px] max-md:leading-[1.7]">
           <LunaMarkdown
-            content={streamBody}
+            content={content}
             className="text-[14.5px] max-md:text-[13.5px]"
             nasDriveMode={nasDriveMode}
             onNasDriveModeChange={onNasDriveModeChange}
             onCopyToast={onCopyToast}
+            source="stream"
           />
-          <AssumeBlocks assumptions={streamAssumptions} />
           <span
             className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
             aria-hidden
@@ -497,27 +477,24 @@ function AssistantTextBubble({
   content,
   nasDriveMode,
   onNasDriveModeChange,
-  onCopyToast
+  onCopyToast,
+  source = "complete"
 }: {
   content: string;
   nasDriveMode: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
+  source?: string;
 }) {
-  const { markdown, assumptions } = prepareLunaAnswerMarkdown(content);
   return (
-    <>
-      {markdown ? (
-        <LunaMarkdown
-          content={markdown}
-          className="text-[14.5px] max-md:text-[13.5px]"
-          nasDriveMode={nasDriveMode}
-          onNasDriveModeChange={onNasDriveModeChange}
-          onCopyToast={onCopyToast}
-        />
-      ) : null}
-      <AssumeBlocks assumptions={assumptions} />
-    </>
+    <LunaMarkdown
+      content={content}
+      className="text-[14.5px] max-md:text-[13.5px]"
+      nasDriveMode={nasDriveMode}
+      onNasDriveModeChange={onNasDriveModeChange}
+      onCopyToast={onCopyToast}
+      source={source}
+    />
   );
 }
 
@@ -532,20 +509,15 @@ function MarkdownText({
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
 }) {
-  const { markdown, assumptions } = prepareLunaAnswerMarkdown(content);
   return (
-    <>
-      {markdown ? (
-        <LunaMarkdown
-          content={markdown}
-          className="text-sm leading-relaxed text-slate-900"
-          nasDriveMode={nasDriveMode}
-          onNasDriveModeChange={onNasDriveModeChange}
-          onCopyToast={onCopyToast}
-        />
-      ) : null}
-      <AssumeBlocks assumptions={assumptions} />
-    </>
+    <LunaMarkdown
+      content={content}
+      className="text-sm leading-relaxed text-slate-900"
+      nasDriveMode={nasDriveMode}
+      onNasDriveModeChange={onNasDriveModeChange}
+      onCopyToast={onCopyToast}
+      source="analysis"
+    />
   );
 }
 
@@ -1056,11 +1028,17 @@ export function LunaMessage({
   let bubbleInner: ReactNode;
   if (clarify) {
     const q = clarify.question || content;
-    const { body: clarifyBody, assumptions } = parseAssumeMarkers(q);
     bubbleInner = (
       <>
-        {clarifyBody ? <SafeMarkdown content={clarifyBody} variant="luna" /> : null}
-        <AssumeBlocks assumptions={assumptions} />
+        {q ? (
+          <LunaMarkdown
+            content={q}
+            nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
+            onCopyToast={handleCopyToast}
+            source="clarify"
+          />
+        ) : null}
         {!hideInlineClarifyOptions ? (
           <>
             <div className="mt-2.5">
@@ -1111,6 +1089,7 @@ export function LunaMessage({
         nasDriveMode={nasDriveMode}
         onNasDriveModeChange={onNasDriveModeChange}
         onCopyToast={handleCopyToast}
+        source={id.startsWith("temp-") ? "complete-stream" : "complete-db"}
       />
     );
   } else {

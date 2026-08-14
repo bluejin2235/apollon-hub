@@ -1,13 +1,11 @@
 ﻿"use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import { WorkserverPathCard } from "@/components/luna/WorkserverPathCard";
+import { parseLunaAnswer } from "@/lib/luna/answer-render";
 import type { LunaNasDriveMode } from "@/lib/luna/nas-path";
-import {
-  splitMarkdownByWorkserverPaths,
-  type MarkdownSegment
-} from "@/lib/luna/nas-path";
+import type { MarkdownSegment } from "@/lib/luna/nas-path";
 
 type LunaMarkdownProps = {
   content: string;
@@ -15,7 +13,25 @@ type LunaMarkdownProps = {
   nasDriveMode: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
+  /** 렌더 경로 추적 (스트리밍 / 완료 / DB 로드 등) */
+  source?: string;
 };
+
+function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
+  if (assumptions.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      {assumptions.map((a, i) => (
+        <div
+          key={`${i}-${a.slice(0, 24)}`}
+          className="rounded-lg bg-[#FAEEDA] px-[11px] py-[9px] text-[13px] leading-[1.6] text-[#633806]"
+        >
+          {a}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function renderSegments(
   segments: MarkdownSegment[],
@@ -58,36 +74,41 @@ export function LunaMarkdown({
   className = "",
   nasDriveMode,
   onNasDriveModeChange,
-  onCopyToast
+  onCopyToast,
+  source = "luna-md"
 }: LunaMarkdownProps) {
-  const split = useMemo(() => {
-    try {
-      const segments = splitMarkdownByWorkserverPaths(content);
-      return { ok: true as const, segments };
-    } catch {
-      return { ok: false as const };
-    }
-  }, [content]);
+  const parsed = useMemo(() => parseLunaAnswer(content), [content]);
+
+  useEffect(() => {
+    const pathSegs = parsed.segments.filter((s) => s.type === "paths");
+    console.info("[luna-render]", {
+      source,
+      assumeCount: parsed.assumptions.length,
+      segmentTypes: parsed.segments.map((s) => s.type),
+      pathGroups: pathSegs.length,
+      files: pathSegs.flatMap((s) =>
+        s.type === "paths" ? s.groups.flatMap((g) => g.files) : []
+      ),
+      preview: content.slice(0, 120)
+    });
+  }, [content, parsed, source]);
 
   if (!content.trim()) return null;
 
-  if (!split.ok) {
-    return (
-      <SafeMarkdown content={content} variant="luna" className={className} />
-    );
-  }
-
-  const { segments } = split;
-  const hasPaths = segments.some((s) => s.type === "paths");
-  if (!hasPaths) {
-    return (
-      <SafeMarkdown content={content} variant="luna" className={className} />
-    );
-  }
+  const { segments, assumptions } = parsed;
+  const hasContent = segments.some(
+    (s) => (s.type === "text" && s.value.trim()) || (s.type === "paths" && s.groups.length > 0)
+  );
 
   return (
-    <div className={`break-words ${className}`.trim()}>
-      {renderSegments(segments, nasDriveMode, onNasDriveModeChange, onCopyToast)}
+    <div
+      className={`break-words ${className}`.trim()}
+      data-luna-render={source}
+      data-luna-paths={segments.filter((s) => s.type === "paths").length}
+      data-luna-assume={assumptions.length}
+    >
+      {hasContent ? renderSegments(segments, nasDriveMode, onNasDriveModeChange, onCopyToast) : null}
+      <AssumeBlocks assumptions={assumptions} />
     </div>
   );
 }
