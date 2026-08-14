@@ -13,7 +13,8 @@ import { parseAssumeMarkers } from "../lib/luna/chat-response.ts";
 import {
   parseLunaAnswer,
   extractNotionPagesFromMarkdown,
-  stripNotionLinksFromMarkdown
+  stripNotionLinksFromMarkdown,
+  composeLunaResultLayout
 } from "../lib/luna/answer-render.ts";
 
 const CASES = [
@@ -270,6 +271,120 @@ if (
   console.log("PASS notion extract/strip");
 } else {
   console.log("FAIL notion", notionPages, stripped);
+  failed = true;
+}
+
+console.log("\n=== composeLunaResultLayout (DB sample) ===");
+const layoutRaw = `청담 오피스라운지 제안서는 두 버전이 확인됩니다.
+
+**Work서버 (T드라이브)**
+
+- \`아폴론_청담오피스라운지 미디어아트_230711.pptx\`
+  → \`T:\\01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230711 제안서\\\`
+
+- \`아폴론_청담오피스라운지 미디어아트_230720.pptx\`
+  → \`T:\\01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅\\\`
+
+- \`아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx\`
+  → 같은 폴더 안에 계약용 버전도 있어요.
+
+**노션 (정리본)**
+
+- [230711 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL](https://app.notion.com/p/230711)
+- [230720 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL](https://app.notion.com/p/230720)
+
+230711이 초안, 230720이 이수만 회장님 첫 미팅용이자 계약 직전 버전으로 보입니다.
+
+[[가정: "제안서"를 수주 전 BD 단계 문서로 해석했어요. 계약 후 착수 보고서나 디자인 시안이 필요하신 거라면 알려주세요.]]`;
+
+const layoutCards = [
+  {
+    type: "nas",
+    title: "아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx",
+    url: null,
+    thumbnail: null,
+    description: "★ 01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅\\아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx",
+    drive: "T",
+    raw_path: "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅\\아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx",
+    is_file: true
+  },
+  {
+    type: "nas",
+    title: "아폴론_청담오피스라운지 미디어아트_230720.pptx",
+    url: null,
+    thumbnail: null,
+    description: "★ 01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅\\아폴론_청담오피스라운지 미디어아트_230720.pptx",
+    drive: "T",
+    raw_path: "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅\\아폴론_청담오피스라운지 미디어아트_230720.pptx",
+    is_file: true
+  },
+  {
+    type: "nas",
+    title: "아폴론_청담오피스라운지 미디어아트_230711.pptx",
+    url: null,
+    thumbnail: null,
+    description: "★ 01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230711 제안서\\아폴론_청담오피스라운지 미디어아트_230711.pptx",
+    drive: "T",
+    raw_path: "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230711 제안서\\아폴론_청담오피스라운지 미디어아트_230711.pptx",
+    is_file: true
+  },
+  {
+    type: "nas",
+    title: "HW 볼팍견적_230823.xlsx",
+    url: null,
+    thumbnail: null,
+    description: "02 Project\\2023\\230724 청담오피스라운지 미디어아트설치\\00 Management\\01 견적\\HW 볼팍견적_230823.xlsx",
+    drive: "T",
+    raw_path: "02 Project\\2023\\230724 청담오피스라운지 미디어아트설치\\00 Management\\01 견적\\HW 볼팍견적_230823.xlsx",
+    is_file: true
+  },
+  {
+    type: "notion",
+    title: "230628 청담동 오피스 라운지(EB 완료)",
+    url: "https://app.notion.com/p/230628",
+    thumbnail: null,
+    description: ""
+  }
+];
+
+const layoutNotion = [
+  { id: "a", title: "230628 청담동 오피스 라운지(EB 완료)", url: "https://app.notion.com/p/230628" },
+  { id: "b", title: "230711 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL", url: "https://app.notion.com/p/230711" },
+  { id: "c", title: "230720 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL", url: "https://app.notion.com/p/230720" }
+];
+
+const layout = composeLunaResultLayout({
+  raw: layoutRaw,
+  cards: layoutCards,
+  notionSources: layoutNotion
+});
+
+const folders = layout.nasGroups.map((g) => g.folderRawPath.split("\\").pop());
+const layoutOk =
+  layout.lead.startsWith("청담 오피스라운지 제안서는") &&
+  layout.nasGroups.length === 2 &&
+  folders.includes("230714 이수만 회장님 첫 미팅") &&
+  folders.includes("230711 제안서") &&
+  layout.nasGroups[0].files.includes("아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx") &&
+  layout.notionItems.length === 3 &&
+  layout.notionItems[0].title.startsWith("230720") &&
+  layout.body.includes("230711이 초안") &&
+  !layout.body.includes("T:\\") &&
+  !layout.body.includes("[[") &&
+  layout.assume.length === 1 &&
+  layout.assume[0].includes("제안서");
+
+if (layoutOk) {
+  console.log("PASS compose layout order");
+} else {
+  console.log("FAIL compose layout", {
+    lead: layout.lead,
+    folders,
+    files: layout.nasGroups.map((g) => g.files),
+    notion: layout.notionItems.map((n) => n.title),
+    body: layout.body,
+    assume: layout.assume
+  });
   failed = true;
 }
 

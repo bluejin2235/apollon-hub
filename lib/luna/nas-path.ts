@@ -116,12 +116,19 @@ export function stripFileExtension(fileName: string): string {
 
 export type LunaFileTag = { label: string; kind: "final" | "draft" };
 
-export function inferFileTag(fileName: string): LunaFileTag | null {
+export function inferFileTag(
+  fileName: string,
+  folderRawPath?: string
+): LunaFileTag | null {
   const stem = stripFileExtension(fileName);
   if (/계약용|최종본|_FIN\b|[-_]FIN$/i.test(stem) || /최종/.test(stem)) {
     return { label: "최종", kind: "final" };
   }
   if (/초안|draft/i.test(stem)) {
+    return { label: "초안", kind: "draft" };
+  }
+  const last = (folderRawPath ?? "").split("\\").pop() ?? "";
+  if (/초안|제안서/.test(last)) {
     return { label: "초안", kind: "draft" };
   }
   return null;
@@ -401,6 +408,13 @@ export function findAllWorkserverPathSpans(content: string): PathSpan[] {
 
 const PATH_RUN_GAP_RE = /^[\s,;·\-*•]*$/;
 
+function unwrapListLine(line: string): string {
+  let t = line.trim();
+  t = t.replace(/^[-*•]\s+/, "");
+  t = t.replace(/^(?:→|->)\s*/, "");
+  return t.trim();
+}
+
 function isBareFileName(value: string): boolean {
   const t = value.trim();
   if (!t || t.includes("\\") || t.includes("/")) return false;
@@ -408,10 +422,7 @@ function isBareFileName(value: string): boolean {
 }
 
 function extractFileNameFromLine(line: string): string | null {
-  let t = line.trim();
-  if (t.startsWith("→") || t.startsWith("->")) {
-    t = t.replace(/^(?:→|->)\s*/, "");
-  }
+  let t = unwrapListLine(line);
   if (t.startsWith("`") && t.endsWith("`") && t.length > 2) {
     t = t.slice(1, -1).trim();
   }
@@ -424,7 +435,7 @@ function extractFileNameFromLine(line: string): string | null {
 function extractFolderFromLine(
   line: string
 ): { raw: string; backtick: boolean } | null {
-  let t = line.trim();
+  let t = unwrapListLine(line);
   const backtick = t.startsWith("`") && t.endsWith("`") && t.length > 2;
   if (backtick) t = t.slice(1, -1).trim();
   if (!isOfficeDriveAt(t, 0)) return null;

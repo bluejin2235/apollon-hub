@@ -181,7 +181,7 @@ export function WorkserverPathCard({
           style={{ border: "1px solid #e7e8ec" }}
         >
           {group.files.map((fileName, index) => {
-            const tag = inferFileTag(fileName);
+            const tag = inferFileTag(fileName, group.folderRawPath);
             const isFinal = tag?.kind === "final";
             const isLast = index === group.files.length - 1;
             return (

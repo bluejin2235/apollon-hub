@@ -6,14 +6,10 @@ import {
   NotionResultCard,
   WorkserverPathCard
 } from "@/components/luna/WorkserverPathCard";
-import {
-  extractNotionPagesFromMarkdown,
-  mergeNotionSources,
-  parseLunaAnswer,
-  stripNotionLinksFromMarkdown
-} from "@/lib/luna/answer-render";
-import type { LunaNasDriveMode, MarkdownSegment } from "@/lib/luna/nas-path";
+import { composeLunaResultLayout } from "@/lib/luna/answer-render";
+import type { LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { NotionSource } from "@/lib/luna/notion";
+import type { LunaCard } from "@/lib/luna/tavily";
 
 type LunaMarkdownProps = {
   content: string;
@@ -21,6 +17,7 @@ type LunaMarkdownProps = {
   nasDriveMode: LunaNasDriveMode;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
+  cards?: LunaCard[] | null;
   source?: string;
 };
 
@@ -40,85 +37,68 @@ function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
   );
 }
 
-function renderSegments(
-  segments: MarkdownSegment[],
-  nasDriveMode: LunaNasDriveMode,
-  onCopyToast?: (message: string) => void
-) {
-  return segments.map((seg, index) => {
-    if (seg.type === "text") {
-      if (!seg.value.trim()) return null;
-      return (
-        <SafeMarkdown
-          key={`text-${index}`}
-          content={seg.value}
-          variant="luna"
-        />
-      );
-    }
-
-    if (seg.groups.length === 0) return null;
-
-    return (
-      <div key={`paths-${index}`} className="mt-4 space-y-[18px]">
-        {seg.groups.map((group, groupIndex) => (
-          <WorkserverPathCard
-            key={`${group.drive}-${group.folderRawPath}-${groupIndex}`}
-            group={group}
-            mode={nasDriveMode}
-            onCopyToast={onCopyToast}
-          />
-        ))}
-      </div>
-    );
-  });
-}
-
 export function LunaMarkdown({
   content,
   className = "",
   nasDriveMode,
   onCopyToast,
   notionSources = null,
+  cards = null,
   source = "luna-md"
 }: LunaMarkdownProps) {
-  const parsed = useMemo(() => {
-    const raw = parseLunaAnswer(content);
-    const fromMd = extractNotionPagesFromMarkdown(raw.markdown);
-    const pages = mergeNotionSources(notionSources, fromMd);
-    const segments = raw.segments.map((seg) =>
-      seg.type === "text"
-        ? { ...seg, value: stripNotionLinksFromMarkdown(seg.value) }
-        : seg
-    );
-    return { ...raw, segments, pages };
-  }, [content, notionSources]);
+  const layout = useMemo(
+    () =>
+      composeLunaResultLayout({
+        raw: content,
+        cards,
+        notionSources
+      }),
+    [content, cards, notionSources]
+  );
 
   if (!content.trim()) return null;
 
-  const { segments, assumptions, pages } = parsed;
-  const hasContent = segments.some(
-    (s) =>
-      (s.type === "text" && s.value.trim()) ||
-      (s.type === "paths" && s.groups.length > 0)
-  );
+  const { lead, nasGroups, notionItems, body, assume } = layout;
+  const hasNas = nasGroups.length > 0;
+  const hasNotion = notionItems.length > 0;
 
   return (
     <div
       className={`break-words ${className}`.trim()}
       data-luna-render={source}
-      data-luna-paths={segments.filter((s) => s.type === "paths").length}
-      data-luna-assume={assumptions.length}
+      data-luna-paths={nasGroups.length}
+      data-luna-assume={assume.length}
     >
-      {hasContent
-        ? renderSegments(segments, nasDriveMode, onCopyToast)
-        : null}
-      {pages.length > 0 ? (
-        <div className="mt-[18px]">
-          <NotionResultCard sources={pages} />
+      {lead ? (
+        <SafeMarkdown content={lead} variant="luna" />
+      ) : null}
+
+      {hasNas ? (
+        <div className={lead ? "mt-4 space-y-[18px]" : "space-y-[18px]"}>
+          {nasGroups.map((group, groupIndex) => (
+            <WorkserverPathCard
+              key={`${group.drive}-${group.folderRawPath}-${groupIndex}`}
+              group={group}
+              mode={nasDriveMode}
+              onCopyToast={onCopyToast}
+            />
+          ))}
         </div>
       ) : null}
-      <AssumeBlocks assumptions={assumptions} />
+
+      {hasNotion ? (
+        <div className={lead || hasNas ? "mt-[18px]" : undefined}>
+          <NotionResultCard sources={notionItems} />
+        </div>
+      ) : null}
+
+      {body ? (
+        <div className={lead || hasNas || hasNotion ? "mt-[18px]" : undefined}>
+          <SafeMarkdown content={body} variant="luna" />
+        </div>
+      ) : null}
+
+      <AssumeBlocks assumptions={assume} />
     </div>
   );
 }
