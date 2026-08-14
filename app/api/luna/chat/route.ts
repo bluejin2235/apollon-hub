@@ -43,11 +43,13 @@ import {
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
+  formatConnectorRoutingSummary,
   hasManualConnectors,
   hasManualSkills,
   matchPerspectiveIdByDepartment,
   resolveConnectorsAuto,
-  type ConnectorFlags
+  type ConnectorFlags,
+  type ConnectorRoutingResult
 } from "@/lib/luna/connector-routing";
 import { buildUsedPromptRefs } from "@/lib/luna/used-prompts";
 
@@ -676,14 +678,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  let connectorRouting: ConnectorRoutingResult | null = null;
   if (!hasManualConnectors(manualConnectorFlags)) {
-    const resolved = resolveConnectorsAuto(routingMessage, {
+    connectorRouting = resolveConnectorsAuto(routingMessage, {
       hasAttachments,
       manual: manualConnectorFlags
     });
-    notionEnabled = resolved.notion;
-    webEnabled = resolved.web;
-    nasEnabled = resolved.nas;
+    notionEnabled = connectorRouting.connectors.notion;
+    webEnabled = connectorRouting.connectors.web;
+    nasEnabled = connectorRouting.connectors.nas;
+    console.log(
+      "[luna/route] connectors =",
+      { nas: nasEnabled, notion: notionEnabled, web: webEnabled },
+      "· reason =",
+      connectorRouting.reasonLabel
+    );
   } else if (hasAttachments) {
     notionEnabled = false;
     webEnabled = false;
@@ -1638,6 +1647,17 @@ export async function POST(request: NextRequest) {
           l2Skills: l2SkillRows
         });
 
+        const connectorRoutingMeta = connectorRouting
+          ? {
+              nas: nasEnabled,
+              notion: notionEnabled,
+              web: webEnabled,
+              reason: connectorRouting.reason,
+              reason_label: connectorRouting.reasonLabel,
+              summary: formatConnectorRoutingSummary(connectorRouting)
+            }
+          : null;
+
         emit(controller, encoder, {
           type: "meta",
           cards,
@@ -1647,7 +1667,8 @@ export async function POST(request: NextRequest) {
           source_reasons: sourceReasons,
           memory_count: learningsRows.length,
           used_prompts: usedPrompts,
-          auto_routing: autoRoutingUsed
+          auto_routing: autoRoutingUsed,
+          connector_routing: connectorRoutingMeta
         });
 
         let assistantText = "";
@@ -1728,6 +1749,16 @@ export async function POST(request: NextRequest) {
           assistantMeta.source_reasons = sourceReasons;
         }
         assistantMeta.used_prompts = usedPrompts;
+        if (connectorRouting) {
+          assistantMeta.connector_routing = {
+            nas: nasEnabled,
+            notion: notionEnabled,
+            web: webEnabled,
+            reason: connectorRouting.reason,
+            reason_label: connectorRouting.reasonLabel,
+            summary: formatConnectorRoutingSummary(connectorRouting)
+          };
+        }
         assistantMeta.auto_routing = autoRoutingUsed;
         assistantMeta.memory_count = learningsRows.length;
         if (attachmentMeta.length > 0) {

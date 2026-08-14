@@ -54,10 +54,19 @@ export type LunaSourceReasons = {
 
 export type LunaNasDriveMode = "office" | "raidrive";
 
+export type LunaConnectorRoutingMeta = {
+  summary: string;
+  nas: boolean;
+  notion: boolean;
+  web: boolean;
+  reasonLabel: string;
+};
+
 export type LunaDetailMeta = {
   modelSteps?: LunaModelStep[] | null;
   steps?: LunaProgressStep[] | null;
   wsSearches?: unknown[] | null;
+  connectorRouting?: LunaConnectorRoutingMeta | null;
 };
 
 type LunaMessageProps = {
@@ -849,8 +858,12 @@ function DetailMetaFooter({
   const modelSteps = detailMeta?.modelSteps ?? [];
   const steps = detailMeta?.steps ?? [];
   const wsSearches = detailMeta?.wsSearches ?? [];
+  const connectorRouting = detailMeta?.connectorRouting ?? null;
   const hasDetail =
-    modelSteps.length > 0 || steps.length > 0 || wsSearches.length > 0;
+    modelSteps.length > 0 ||
+    steps.length > 0 ||
+    wsSearches.length > 0 ||
+    Boolean(connectorRouting?.summary);
 
   return (
     <>
@@ -872,6 +885,12 @@ function DetailMetaFooter({
       </div>
       {open && hasDetail ? (
         <div className="mt-1.5 rounded-lg border border-[#E3E0F5] bg-white px-[11px] py-[9px]">
+          {connectorRouting?.summary ? (
+            <div className="mb-2 space-y-0.5">
+              <p className="text-[10px] font-medium text-[#6b6f76]">커넥터</p>
+              <p className="text-[10.5px] text-[#6b6f76]">{connectorRouting.summary}</p>
+            </div>
+          ) : null}
           {steps.length > 0 ? (
             <div className="mb-2 space-y-1">
               <p className="text-[10px] font-medium text-[#6b6f76]">진행 단계</p>
@@ -1059,7 +1078,8 @@ export function LunaMessage({
   const mergedDetailMeta: LunaDetailMeta = {
     modelSteps: detailMeta?.modelSteps ?? modelSteps,
     steps: detailMeta?.steps ?? steps,
-    wsSearches: detailMeta?.wsSearches ?? null
+    wsSearches: detailMeta?.wsSearches ?? null,
+    connectorRouting: detailMeta?.connectorRouting ?? null
   };
 
   function copyContent() {

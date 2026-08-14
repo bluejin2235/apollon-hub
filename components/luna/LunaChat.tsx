@@ -107,9 +107,37 @@ export type LunaChatMessage = {
   usedPrompts?: UsedPromptRef[] | null;
   keywords?: string[] | null;
   wsToolCalls?: unknown[] | null;
+  connectorRouting?: LunaConnectorRoutingMeta | null;
 };
 
 export type { LunaSourceReasons };
+
+export type LunaConnectorRoutingMeta = {
+  summary: string;
+  nas: boolean;
+  notion: boolean;
+  web: boolean;
+  reasonLabel: string;
+};
+
+export function normalizeConnectorRouting(raw: unknown): LunaConnectorRoutingMeta | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const summary = typeof row.summary === "string" ? row.summary.trim() : "";
+  if (!summary) return null;
+  return {
+    summary,
+    nas: row.nas === true,
+    notion: row.notion === true,
+    web: row.web === true,
+    reasonLabel:
+      typeof row.reason_label === "string"
+        ? row.reason_label.trim()
+        : typeof row.reasonLabel === "string"
+          ? row.reasonLabel.trim()
+          : ""
+  };
+}
 
 export function normalizeSourceReasons(raw: unknown): LunaSourceReasons | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -285,6 +313,7 @@ export type LunaStreamEventResult =
       steps: LunaProgressStep[] | null;
       memoryCount: number | null;
       usedPrompts: UsedPromptRef[] | null;
+      connectorRouting: LunaConnectorRoutingMeta | null;
     }
   | { kind: "text"; buffer: string };
 
@@ -393,7 +422,8 @@ export function consumeLunaStreamEvents(
           memoryCount != null && Number.isFinite(memoryCount)
             ? memoryCount
             : null,
-        usedPrompts: normalizeUsedPrompts(parsed.used_prompts)
+        usedPrompts: normalizeUsedPrompts(parsed.used_prompts),
+        connectorRouting: normalizeConnectorRouting(parsed.connector_routing)
       };
     }
   } catch {
@@ -867,7 +897,8 @@ export function LunaChat({
             const detailMeta: LunaDetailMeta = {
               modelSteps: m.modelSteps,
               steps: m.steps,
-              wsSearches: m.wsToolCalls
+              wsSearches: m.wsToolCalls,
+              connectorRouting: m.connectorRouting
             };
             return (
               <LunaMessage

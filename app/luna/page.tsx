@@ -8,6 +8,7 @@ import {
   normalizeClarify,
   normalizeLunaCards,
   normalizeModelSteps,
+  normalizeConnectorRouting,
   normalizeNotionSources,
   normalizeProgressSteps,
   normalizeSourceReasons,
@@ -205,7 +206,8 @@ export default function LunaPage() {
           teams,
           memoryCount,
           usedPrompts: normalizeUsedPrompts(meta?.used_prompts),
-          wsToolCalls
+          wsToolCalls,
+          connectorRouting: normalizeConnectorRouting(meta?.connector_routing)
         };
       })
     );
@@ -471,6 +473,7 @@ export default function LunaPage() {
         let streamSearchRounds: number | null = null;
         let streamMemoryCount: number | null = null;
         let streamUsedPrompts: LunaChatMessage["usedPrompts"] = null;
+        let streamConnectorRouting: LunaChatMessage["connectorRouting"] = null;
         let assistantContent = "";
         let assistantVisible = false;
 
@@ -509,6 +512,7 @@ export default function LunaPage() {
                     teams: streamTeams.length > 0 ? streamTeams : m.teams,
                     memoryCount: streamMemoryCount ?? m.memoryCount,
                     usedPrompts: streamUsedPrompts ?? m.usedPrompts,
+                    connectorRouting: streamConnectorRouting ?? m.connectorRouting,
                     ...extra
                   }
                 : m
@@ -603,6 +607,7 @@ export default function LunaPage() {
                   streamSteps = consumed.steps;
                 }
                 streamUsedPrompts = consumed.usedPrompts;
+                streamConnectorRouting = consumed.connectorRouting;
                 metaReceived = true;
                 buffer = consumed.buffer;
                 assistantContent = buffer;
