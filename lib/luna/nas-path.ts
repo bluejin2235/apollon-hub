@@ -10,8 +10,10 @@ export type WorkserverPathGroup = {
   files: string[];
 };
 
-/** T:\ 또는 P:\ 로 시작하는 Work서버 경로 */
-export const WORKSERVER_OFFICE_PATH_RE = /(?:T|P):\\[^\s\r\n<>|`[\]）)]+/gi;
+/** @deprecated 스캐너 기반 findAllWorkserverPathSpans 사용 */
+export const WORKSERVER_OFFICE_PATH_RE = /(?:T|P):\\[^\r\n`[\]()（）]+/gi;
+
+const FILE_EXT_RE = /\.[a-z0-9]{1,8}$/i;
 
 export function loadNasDriveMode(): LunaNasDriveMode {
   if (typeof window === "undefined") return "office";
@@ -94,8 +96,12 @@ export type ParsedOfficePath = {
   isFile: boolean;
 };
 
+/** 경로 끝의 문장 부호만 제거 (경로 본문은 유지) */
 export function cleanPathMatch(raw: string): string {
-  return raw.replace(/[.,;:!?)>\]"'」】]+$/u, "").trim();
+  let s = raw.trim();
+  s = s.replace(/^[`'"]+/, "").replace(/[`'"]+$/, "");
+  s = s.replace(/[.,;:!?)>\]"'」】]+$/u, "");
+  return s.trim();
 }
 
 export function parseOfficePath(text: string): ParsedOfficePath | null {
@@ -104,16 +110,23 @@ export function parseOfficePath(text: string): ParsedOfficePath | null {
   if (!m?.[1] || !m[2]) return null;
 
   const drive = m[1].toUpperCase();
-  const rest = normalizeRawNasPath(m[2]);
-  if (!rest) return null;
+  let rest = m[2].replace(/\//g, "\\");
+  const hadTrailingSlash = rest.endsWith("\\");
+  rest = rest.replace(/\\+$/, "");
+  if (!rest && !hadTrailingSlash) return null;
+
+  if (!rest && hadTrailingSlash) {
+    return { drive, rawPath: "", folderRawPath: "", fileName: null, isFile: false };
+  }
 
   const lastSeg = rest.split("\\").pop() ?? "";
-  const isFile = /\.[a-z0-9]{1,8}$/i.test(lastSeg);
+  const isFile = !hadTrailingSlash && FILE_EXT_RE.test(lastSeg);
 
   if (isFile) {
     const idx = rest.lastIndexOf("\\");
     const folderRawPath = idx >= 0 ? rest.slice(0, idx) : "";
     const fileName = idx >= 0 ? rest.slice(idx + 1) : rest;
+    if (!fileName) return null;
     return { drive, rawPath: rest, folderRawPath, fileName, isFile: true };
   }
 
@@ -166,7 +179,7 @@ export function pathGroupFromNasCard(card: LunaCard): WorkserverPathGroup | null
   const isFile =
     card.is_file === true ||
     (card.is_file !== false &&
-      /\.[a-z0-9]{1,8}$/i.test(rawPath.split("\\").pop() || ""));
+      FILE_EXT_RE.test(rawPath.split("\\").pop() || ""));
 
   if (isFile) {
     const idx = rawPath.lastIndexOf("\\");
@@ -191,49 +204,191 @@ export type MarkdownSegment =
   | { type: "text"; value: string }
   | { type: "paths"; groups: WorkserverPathGroup[] };
 
+type PathSpan = {
+  start: number;
+  end: number;
+  original: string;
+  path: string;
+};
+
+function drivePathStart(content: string, from: number): number {
+  const slice = content.slice(from);
+  const m = slice.match(/(?:T|P):\\/i);
+  if (!m || m.index === undefined) return -1;
+  return from + m.index;
+}
+
+function pathCompleteAtSpace(pathSoFar: string): boolean {
+  const trimmed = pathSoFar.trimEnd();
+  if (!trimmed) return false;
+  const lastSeg = trimmed.split("\\").pop() ?? "";
+  if (FILE_EXT_RE.test(lastSeg)) return true;
+  if (trimmed.endsWith("\\")) return true;
+  return false;
+}
+
+function proseAfterSpace(content: string, spaceIndex: number): boolean {
+  let j = spaceIndex + 1;
+  while (j < content.length && content[j] === " ") j += 1;
+  if (j >= content.length) return false;
+  const next = content[j];
+  if (/[가-힣]/.test(next)) {
+    const ahead = content.slice(j, j + 8);
+    if (/^\d/.test(ahead.trim())) return false;
+    return true;
+  }
+  return false;
+}
+
+/** T:\ / P:\ 부터 줄 끝·백틱·따옴표·닫는 괄호 또는 완성된 경로 뒤 공백까지 스캔 */
+export function scanBareOfficePath(
+  content: string,
+  start: number
+): { raw: string; end: number } | null {
+  const pathStart = drivePathStart(content, start);
+  if (pathStart < 0) return null;
+
+  let i = pathStart + 1;
+  if (content[i] !== ":") return null;
+  i += 1;
+  if (content[i] !== "\\") return null;
+  i += 1;
+
+  while (i < content.length) {
+    const ch = content[i];
+    if (ch === "\r" || ch === "\n" || ch === "`") break;
+    if (ch === '"' || ch === "'") break;
+    if (ch === ")" || ch === "]" || ch === "）" || ch === "】") break;
+
+    if (ch === " ") {
+      const pathSoFar = content.slice(pathStart, i);
+      if (pathCompleteAtSpace(pathSoFar) && proseAfterSpace(content, i)) {
+        break;
+      }
+    }
+    i += 1;
+  }
+
+  let raw = content.slice(pathStart, i);
+  raw = cleanPathMatch(raw);
+  if (!/^([TP]):\\/i.test(raw)) return null;
+  if (!parseOfficePath(raw)) return null;
+  return { raw, end: i };
+}
+
+/** 인라인 코드·본문에서 Work서버 경로 구간을 찾는다 (겹침 없음) */
+export function findAllWorkserverPathSpans(content: string): PathSpan[] {
+  const spans: PathSpan[] = [];
+  const covered = new Uint8Array(content.length);
+
+  const mark = (start: number, end: number) => {
+    for (let i = start; i < end; i++) covered[i] = 1;
+  };
+
+  const isFree = (start: number, end: number) => {
+    for (let i = start; i < end; i++) {
+      if (covered[i]) return false;
+    }
+    return true;
+  };
+
+  const pushSpan = (start: number, end: number, path: string) => {
+    const cleaned = cleanPathMatch(path);
+    if (!parseOfficePath(cleaned)) return;
+    const fromBacktick = content[start] === "`";
+    spans.push({
+      start,
+      end,
+      original: fromBacktick ? cleaned : content.slice(start, end),
+      path: cleaned
+    });
+    mark(start, end);
+  };
+
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] !== "`") continue;
+
+    const close = content.indexOf("`", i + 1);
+    if (close > i) {
+      const inner = content.slice(i + 1, close).trim();
+      if (/^(?:T|P):\\/i.test(inner) && isFree(i, close + 1)) {
+        pushSpan(i, close + 1, inner);
+      }
+      i = close;
+      continue;
+    }
+
+    const after = content.slice(i + 1);
+    const rel = after.search(/(?:T|P):\\/i);
+    if (rel >= 0) {
+      const absStart = i + 1 + rel;
+      const scanned = scanBareOfficePath(content, absStart);
+      if (scanned && isFree(i, scanned.end)) {
+        pushSpan(i, scanned.end, scanned.raw);
+        i = scanned.end - 1;
+      }
+    }
+  }
+
+  for (let i = 0; i < content.length; i++) {
+    if (covered[i]) continue;
+    if (!/^(?:T|P):\\/i.test(content.slice(i))) continue;
+    const scanned = scanBareOfficePath(content, i);
+    if (!scanned || !isFree(i, scanned.end)) continue;
+    pushSpan(i, scanned.end, scanned.raw);
+    i = scanned.end - 1;
+  }
+
+  spans.sort((a, b) => a.start - b.start);
+  return spans;
+}
+
 const PATH_RUN_GAP_RE = /^[\s,;·\-*•]*$/;
 
-/** 마크다운 본문에서 Work서버 경로 블록을 분리한다 */
+/** 마크down 본문에서 Work서버 경로 블록을 분리한다. 파싱 실패 구간은 원문 유지 */
 export function splitMarkdownByWorkserverPaths(content: string): MarkdownSegment[] {
-  const segments: MarkdownSegment[] = [];
-  const re = new RegExp(WORKSERVER_OFFICE_PATH_RE.source, "gi");
+  const spans = findAllWorkserverPathSpans(content);
+  if (spans.length === 0) {
+    return [{ type: "text", value: content }];
+  }
 
+  const segments: MarkdownSegment[] = [];
   let lastIndex = 0;
-  let pathBuffer: string[] = [];
-  let match: RegExpExecArray | null;
+  let pathBuffer: PathSpan[] = [];
 
   const flushPaths = () => {
     if (pathBuffer.length === 0) return;
-    segments.push({
-      type: "paths",
-      groups: mergePathGroups(
-        pathBuffer
-          .map(pathGroupFromOfficePath)
-          .filter((g): g is WorkserverPathGroup => g != null)
-      )
-    });
+    const groups = mergePathGroups(
+      pathBuffer
+        .map((s) => pathGroupFromOfficePath(s.path))
+        .filter((g): g is WorkserverPathGroup => g != null)
+    );
+    if (groups.length > 0) {
+      segments.push({ type: "paths", groups });
+    } else {
+      segments.push({ type: "text", value: pathBuffer.map((s) => s.original).join("") });
+    }
     pathBuffer = [];
   };
 
-  while ((match = re.exec(content)) !== null) {
-    const between = content.slice(lastIndex, match.index);
-    const path = cleanPathMatch(match[0]);
+  for (const span of spans) {
+    const between = content.slice(lastIndex, span.start);
 
     if (pathBuffer.length > 0 && PATH_RUN_GAP_RE.test(between)) {
-      pathBuffer.push(path);
+      pathBuffer.push(span);
     } else {
       flushPaths();
       if (between) segments.push({ type: "text", value: between });
-      pathBuffer = [path];
+      pathBuffer = [span];
     }
 
-    lastIndex = match.index + match[0].length;
+    lastIndex = span.end;
   }
 
   flushPaths();
   const tail = content.slice(lastIndex);
   if (tail) segments.push({ type: "text", value: tail });
 
-  if (segments.length === 0) segments.push({ type: "text", value: content });
+  if (segments.length === 0) return [{ type: "text", value: content }];
   return segments;
 }
