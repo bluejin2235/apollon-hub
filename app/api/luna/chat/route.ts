@@ -24,6 +24,7 @@ import {
 } from "@/lib/luna/selfstudy";
 import {
   listFolder,
+  prepareSearchTerms,
   refineWorkserverHits,
   runWorkserverResultPipeline,
   searchAll,
@@ -959,10 +960,33 @@ export async function POST(request: NextRequest) {
         ): Promise<NasDirectoryRow[]> => {
           const loopStarted = Date.now();
           const collected = new Map<string, NasDirectoryRow>();
+          const seedTerms = prepareSearchTerms(kw, searchIntentText);
+          const hintKeywords =
+            seedTerms.join(" ") || kw.trim() || searchIntentText;
+
+          if (seedTerms.length > 0) {
+            try {
+              const seeded = await searchAll(
+                admin,
+                hintKeywords,
+                searchIntentText
+              );
+              for (const item of seeded) {
+                const key = `${item.drive ?? ""}::${item.path}`;
+                if (!collected.has(key)) {
+                  collected.set(key, itemToNasRow(item));
+                }
+              }
+              console.log("[luna/ws] seed search", { hintKeywords }, "→", seeded.length);
+            } catch (seedErr) {
+              console.error("[luna/ws] seed search", seedErr);
+            }
+          }
+
           const messages: Anthropic.MessageParam[] = [
             {
               role: "user",
-              content: `질문: ${searchIntentText}\n검색 키워드 힌트: ${kw || searchIntentText}`
+              content: `질문: ${searchIntentText}\n검색 키워드 힌트: ${hintKeywords}\n(프로젝트명·문서명만 space로 구분해 search_all/search_in keywords에 넣으세요. 위치·알려줘 등은 제외)`
             }
           ];
 
@@ -1041,6 +1065,7 @@ export async function POST(request: NextRequest) {
                 input,
                 result_count: items.length
               });
+              console.log("[luna/ws] tool", tu.name, input, "→", items.length);
 
               for (const item of items) {
                 const key = `${item.drive ?? ""}::${item.path}`;

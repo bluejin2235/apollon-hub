@@ -215,7 +215,7 @@ export function runWorkserverResultPipeline<
   const afterAncestor = dedupeAncestorFolders(afterExact);
   const afterVariant = dedupeDocumentVariants(afterAncestor);
   const final = [...afterVariant]
-    .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+    .sort(compareImportanceThenModified)
     .slice(0, MAX_SEARCH_RESULTS);
 
   console.log("[luna/ws] pipeline", {
@@ -247,6 +247,40 @@ const GENERIC_DOC_TERMS = new Set([
   "검색"
 ]);
 
+/** 자연어 질문에서 path 검색에 쓰면 안 되는 조사·요청어 */
+const SEARCH_STOP_WORDS = new Set([
+  "위치",
+  "어디",
+  "어디에",
+  "어디있",
+  "어디있어",
+  "어디에있",
+  "찾아",
+  "찾아줘",
+  "찾아주",
+  "찾아주세요",
+  "알려",
+  "알려줘",
+  "알려주",
+  "알려주세요",
+  "있어",
+  "있나",
+  "있나요",
+  "있을까",
+  "좀",
+  "해줘",
+  "해주세요",
+  "주세요",
+  "원래",
+  "질문",
+  "확인된",
+  "조건",
+  "관련",
+  "대한",
+  "필요",
+  "부탁"
+]);
+
 const MEDIA_EXTS = new Set([
   "mp4",
   "mov",
@@ -268,20 +302,71 @@ function splitKeywords(keywords: string): string[] {
     .slice(0, 8);
 }
 
+function isSearchableToken(token: string): boolean {
+  if (!token) return false;
+  const lower = token.toLowerCase();
+  if (SEARCH_STOP_WORDS.has(token) || SEARCH_STOP_WORDS.has(lower)) return false;
+  if (GENERIC_DOC_TERMS.has(token) || GENERIC_DOC_TERMS.has(lower)) return false;
+  if (/^[a-zA-Z]$/.test(token)) return false;
+  if (token.length < 2 && !/^\d+$/.test(token)) return false;
+  return true;
+}
+
+/** LLM/사용자 키워드에서 path AND 검색용 토큰만 추출 (2자 한글 포함) */
+export function prepareSearchTerms(
+  keywords: string,
+  queryContext?: string
+): string[] {
+  const kwTerms = splitKeywords(keywords).filter(isSearchableToken);
+  const ctxTerms = splitKeywords(queryContext ?? "").filter(isSearchableToken);
+  const merged = [...new Set([...kwTerms, ...ctxTerms])];
+  return merged.slice(0, 8);
+}
+
+/** 한 토큰에 대한 path 부분일치 패턴 (견적서→견적 등) */
+function pathMatchVariants(term: string): string[] {
+  const cleaned = cleanIlikeTerm(term.toLowerCase());
+  if (!cleaned) return [];
+  const variants = new Set<string>([cleaned]);
+  if (/[가-힣]{2,}서$/.test(cleaned)) {
+    variants.add(cleaned.slice(0, -1));
+  }
+  return [...variants].filter((v) => v.length >= 2 || /^\d+$/.test(v));
+}
+
 function haystack(row: NasRow): string {
   return `${row.path}\n${row.file_summary ?? ""}`.toLowerCase();
+}
+
+function termMatchesHaystack(h: string, term: string): boolean {
+  if (pathMatchVariants(term).some((v) => h.includes(v))) return true;
+  const seasonM = term.replace(/\s+/g, "").match(/^시즌(\d+)$/i);
+  if (seasonM?.[1]) return pathHasSeason(h, seasonM[1]);
+  const sM = term.match(/^s(\d+)$/i);
+  if (sM?.[1]) return pathHasSeason(h, sM[1]);
+  return false;
 }
 
 function matchesAll(row: NasRow, terms: string[]): boolean {
   if (terms.length === 0) return false;
   const h = haystack(row);
-  return terms.every((t) => h.includes(t.toLowerCase()));
+  return terms.every((t) => termMatchesHaystack(h, t));
+}
+
+function compareImportanceThenModified<
+  T extends { importance?: number | null; modified_at?: string | null }
+>(a: T, b: T): number {
+  const imp = (b.importance ?? 0) - (a.importance ?? 0);
+  if (imp !== 0) return imp;
+  const aTime = a.modified_at ? Date.parse(a.modified_at) : 0;
+  const bTime = b.modified_at ? Date.parse(b.modified_at) : 0;
+  const aOk = Number.isFinite(aTime) ? aTime : 0;
+  const bOk = Number.isFinite(bTime) ? bTime : 0;
+  return bOk - aOk;
 }
 
 function rankByImportance(rows: NasRow[]): NasRow[] {
-  return [...rows].sort(
-    (a, b) => (b.importance ?? 0) - (a.importance ?? 0)
-  );
+  return [...rows].sort(compareImportanceThenModified);
 }
 
 function underBase(row: NasRow, base: string): boolean {
@@ -319,9 +404,14 @@ async function fetchCandidates(
   }
 
   for (const term of opts.terms) {
-    const cleaned = cleanIlikeTerm(term);
-    if (!cleaned) continue;
-    query = query.ilike("path", `%${cleaned}%`);
+    const variants = pathMatchVariants(term);
+    if (variants.length === 0) continue;
+    if (variants.length === 1) {
+      query = query.ilike("path", `%${variants[0]}%`);
+    } else {
+      const orClause = variants.map((v) => `path.ilike.%${v}%`).join(",");
+      query = query.or(orClause);
+    }
   }
 
   const { data, error } = await query;
@@ -446,14 +536,54 @@ function pickProjectName(terms: string[]): string | null {
   return [...candidates].sort((a, b) => b.length - a.length)[0] ?? null;
 }
 
+async function expandFoldersOneLevel(
+  admin: SupabaseClient,
+  rows: NasRow[],
+  drive?: string
+): Promise<NasRow[]> {
+  const hasFile = rows.some((r) => (r.type ?? "").toLowerCase() === "file");
+  if (hasFile) return rows;
+
+  const folders = rows.filter((r) => (r.type ?? "").toLowerCase() === "folder");
+  if (folders.length === 0) return rows;
+
+  const merged = new Map<string, NasRow>();
+  for (const row of rows) {
+    merged.set(exactRowKey(row.drive, row.path), row);
+  }
+
+  for (const folder of folders.slice(0, 2)) {
+    const children = await listFolder(
+      admin,
+      folder.path,
+      folder.drive ?? drive
+    );
+    for (const item of children) {
+      const child: NasRow = {
+        drive: item.drive,
+        path: item.path,
+        type: item.type,
+        size_bytes: null,
+        modified_at: item.modified_at,
+        file_summary: item.file_summary,
+        importance: item.importance
+      };
+      merged.set(exactRowKey(child.drive, child.path), child);
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
 async function progressiveAndSearch(
   admin: SupabaseClient,
-  terms: string[],
+  keywords: string,
   queryText: string,
   opts: { basePath?: string; drive?: string }
 ): Promise<NasRow[]> {
+  const terms = prepareSearchTerms(keywords, queryText);
   if (terms.length === 0) {
-    console.log("[luna/ws] match", "empty-terms", [], "→", 0);
+    console.log("[luna/ws] match", "empty-terms", { keywords, queryText }, "→", 0);
     return [];
   }
 
@@ -482,6 +612,15 @@ async function progressiveAndSearch(
     let hits = rows.filter((r) => matchesAll(r, stage.terms));
     hits = filterByIdentifiers(hits, queryText);
     hits = filterMediaExt(hits, queryText);
+    if (
+      hits.length > 0 &&
+      hits.every((r) => (r.type ?? "").toLowerCase() === "folder")
+    ) {
+      hits = await expandFoldersOneLevel(admin, hits, opts.drive);
+      hits = hits.filter((r) => matchesAll(r, stage.terms));
+      hits = filterByIdentifiers(hits, queryText);
+      hits = filterMediaExt(hits, queryText);
+    }
     console.log("[luna/ws] match", stage.name, stage.terms, "→", hits.length);
     if (hits.length > 0) {
       // 상한/variant 는 최종 pipeline 에서 처리 (여기서 자르면 원본이 탈락함)
@@ -489,7 +628,7 @@ async function progressiveAndSearch(
     }
   }
 
-  console.log("[luna/ws] match", "empty", terms, "→", 0);
+  console.log("[luna/ws] match", "empty", { keywords, terms, queryText }, "→", 0);
   return [];
 }
 
@@ -539,9 +678,9 @@ export async function searchIn(
   drive?: string,
   queryContext?: string
 ): Promise<WorkserverItem[]> {
-  const terms = splitKeywords(keywords);
   const queryText = (queryContext?.trim() || keywords).trim();
-  const picked = await progressiveAndSearch(admin, terms, queryText, {
+  const terms = prepareSearchTerms(keywords, queryText);
+  const picked = await progressiveAndSearch(admin, keywords, queryText, {
     basePath,
     drive
   });
@@ -549,7 +688,7 @@ export async function searchIn(
   console.log(
     "[luna/ws]",
     "searchIn",
-    { basePath, keywords, drive },
+    { basePath, keywords, terms, drive },
     "→",
     items.length
   );
@@ -562,11 +701,11 @@ export async function searchAll(
   keywords: string,
   queryContext?: string
 ): Promise<WorkserverItem[]> {
-  const terms = splitKeywords(keywords);
   const queryText = (queryContext?.trim() || keywords).trim();
-  const picked = await progressiveAndSearch(admin, terms, queryText, {});
+  const terms = prepareSearchTerms(keywords, queryText);
+  const picked = await progressiveAndSearch(admin, keywords, queryText, {});
   const items = runWorkserverResultPipeline(picked).map(toItem);
-  console.log("[luna/ws]", "searchAll", { keywords }, "→", items.length);
+  console.log("[luna/ws]", "searchAll", { keywords, terms }, "→", items.length);
   return items;
 }
 
@@ -576,15 +715,15 @@ export async function searchNasLegacy(
   keywords: string,
   queryContext?: string
 ): Promise<NasRow[]> {
-  const terms = splitKeywords(keywords).filter((t) => t.length > 1);
-  if (terms.length === 0) return [];
   const queryText = (queryContext?.trim() || keywords).trim();
-  const picked = await progressiveAndSearch(admin, terms, queryText, {});
+  const terms = prepareSearchTerms(keywords, queryText);
+  if (terms.length === 0) return [];
+  const picked = await progressiveAndSearch(admin, keywords, queryText, {});
   const finalized = runWorkserverResultPipeline(picked);
   console.log(
     "[luna/ws]",
     "searchNasLegacy",
-    { keywords },
+    { keywords, terms },
     "→",
     finalized.length
   );
