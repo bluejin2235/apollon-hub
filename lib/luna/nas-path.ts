@@ -82,7 +82,7 @@ export function formatNasFilePath(
   mode: LunaNasDriveMode,
   fileName: string
 ): string {
-  const folder = formatNasFolderPath(drive, rawPath, mode, true);
+  const folder = formatNasFolderPath(drive, rawPath, mode, false);
   return `${folder}${fileName}`;
 }
 
