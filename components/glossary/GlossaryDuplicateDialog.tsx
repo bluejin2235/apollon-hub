@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   GlossaryCategoryToggles,
   SynonymTagInput
@@ -16,7 +16,8 @@ const C = {
   chip: "#f1f2f5",
   warnBg: "#FAECE7",
   warnInk: "#993C1D",
-  luna: "#534AB7"
+  luna: "#534AB7",
+  coral: "#E36B5B"
 };
 
 export type GlossaryDupAction = "merge" | "replace" | "keep" | "register";
@@ -31,6 +32,8 @@ export type GlossaryDuplicatePayload = {
   candidate_id?: string | null;
   /** 용어사전 수정 중이면 자기 id */
   exclude_id?: string | null;
+  /** 편집 중인 용어의 표시명 (삭제 안내용) */
+  editing_term_ko?: string | null;
 };
 
 type Props = {
@@ -43,6 +46,7 @@ type Props = {
     action: GlossaryDupAction;
     merged: GlossaryFieldValues;
     incoming: GlossaryFieldValues;
+    survivor_id: string;
   }) => void;
 };
 
@@ -134,12 +138,12 @@ function shortDate(iso: string | null | undefined): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const ACTION_LABEL: Record<GlossaryDupAction, string> = {
-  merge: "이대로 합치기",
-  replace: "교체",
-  keep: "유지",
-  register: "등록"
-};
+function quoteNames(names: string[]): string {
+  const uniq = Array.from(new Set(names.map((n) => n.trim()).filter(Boolean)));
+  if (uniq.length === 0) return "";
+  if (uniq.length === 1) return `'${uniq[0]}'`;
+  return uniq.map((n) => `'${n}'`).join(", ");
+}
 
 export function GlossaryDuplicateDialog({
   open,
@@ -154,10 +158,15 @@ export function GlossaryDuplicateDialog({
   const [incomingEdit, setIncomingEdit] = useState<GlossaryFieldValues | null>(
     null
   );
+  /** 수정 모드 합치기: 살릴 쪽 */
+  const [survivorChoice, setSurvivorChoice] = useState<"editing" | "existing">(
+    "existing"
+  );
 
   useEffect(() => {
     if (!open || !payload) return;
     setAction("merge");
+    setSurvivorChoice("existing");
     setMerged(
       payload.merge_draft ?? {
         ...payload.incoming
@@ -165,6 +174,22 @@ export function GlossaryDuplicateDialog({
     );
     setIncomingEdit({ ...payload.incoming });
   }, [open, payload]);
+
+  const isEditMode = Boolean(payload?.exclude_id) && !payload?.candidate_id;
+
+  const conflictNames = useMemo(() => {
+    if (!payload) return [] as string[];
+    const names = [payload.existing.term_ko];
+    for (const o of payload.others) {
+      if (o.existing_term_ko) names.push(o.existing_term_ko);
+    }
+    return Array.from(new Set(names.filter(Boolean)));
+  }, [payload]);
+
+  const editingName =
+    payload?.editing_term_ko?.trim() ||
+    payload?.incoming.term_ko?.trim() ||
+    "편집 중인 용어";
 
   if (!open || !payload || !merged || !incomingEdit) return null;
 
@@ -187,13 +212,106 @@ export function GlossaryDuplicateDialog({
     activePayload.existing.updated_at
   )} · ${activePayload.existing.updated_by_name || "—"}`;
 
+  const survivorId =
+    isEditMode && action === "merge"
+      ? survivorChoice === "editing"
+        ? (activePayload.exclude_id as string)
+        : activePayload.existing.id
+      : isEditMode && action === "replace"
+        ? (activePayload.exclude_id as string)
+        : activePayload.existing.id;
+
+  const willDelete: string[] = (() => {
+    if (action === "keep" || action === "register") return [];
+    if (action === "replace") {
+      if (isEditMode) return conflictNames;
+      return activePayload.others
+        .map((o) => o.existing_term_ko)
+        .filter(
+          (n): n is string =>
+            Boolean(n) && n !== activePayload.existing.term_ko
+        );
+    }
+    // merge
+    if (isEditMode) {
+      return survivorChoice === "editing" ? conflictNames : [editingName];
+    }
+    return activePayload.others
+      .map((o) => o.existing_term_ko)
+      .filter(
+        (n): n is string => Boolean(n) && n !== activePayload.existing.term_ko
+      );
+  })();
+
+  const destructive = willDelete.length > 0;
+
+  const actionOptions: Array<{ key: GlossaryDupAction; label: string }> = isEditMode
+    ? [
+        {
+          key: "merge",
+          label: "합치기 — 두 정의를 하나로 정리 (살릴 쪽을 고름)"
+        },
+        {
+          key: "replace",
+          label: "새 것으로 교체 — 충돌한 상대를 지우고 이 용어에 저장"
+        },
+        {
+          key: "keep",
+          label: "수정 취소 — 원래 값으로 되돌리기"
+        },
+        {
+          key: "register",
+          label: "다른 용어로 등록 — 지금 용어는 두고 새 이름으로 추가"
+        }
+      ]
+    : [
+        {
+          key: "merge",
+          label: "합치기 — 두 정의를 하나로 정리해 기존 용어를 갱신"
+        },
+        {
+          key: "replace",
+          label: "새 것으로 교체 — 기존 내용을 새 내용으로 덮어씀"
+        },
+        {
+          key: "keep",
+          label: "기존 것 유지 — 새로 올린 것은 폐기"
+        },
+        {
+          key: "register",
+          label: "다른 용어로 등록 — 이름을 바꿔 별개 용어로 추가"
+        }
+      ];
+
+  const buttonLabel = (() => {
+    if (busy) return "처리 중…";
+    if (action === "merge") return "이대로 합치기";
+    if (action === "replace") return "교체";
+    if (action === "keep") {
+      return isEditMode ? "수정 취소" : "유지";
+    }
+    return "등록";
+  })();
+
+  const deleteHint =
+    willDelete.length > 0
+      ? `${quoteNames(willDelete)}가 사전에서 삭제됩니다`
+      : action === "keep" && !isEditMode
+        ? "새로 올린 내용은 등록되지 않습니다"
+        : action === "keep" && isEditMode
+          ? "아무 용어도 삭제되지 않습니다"
+          : action === "register"
+            ? "아무 용어도 삭제되지 않습니다"
+            : null;
+
   function submit() {
     if (busy) return;
     onResolve({
       action,
       merged: activeMerged,
       incoming:
-        action === "register" ? activeIncomingEdit : activePayload.incoming
+        action === "register" ? activeIncomingEdit : activePayload.incoming,
+      survivor_id: survivorId
     });
   }
 
@@ -235,22 +353,15 @@ export function GlossaryDuplicateDialog({
             fields={existingFields}
           />
           <CompareColumn
-            badge="새로 올린 것"
+            badge={isEditMode ? "수정하려는 것" : "새로 올린 것"}
             emphasize
-            meta={payload.source_label || "신규"}
+            meta={payload.source_label || (isEditMode ? "용어 수정" : "신규")}
             fields={payload.incoming}
           />
         </div>
 
         <div className="space-y-2 border-t px-4 py-3" style={{ borderColor: C.line }}>
-          {(
-            [
-              ["merge", "합치기 — 두 정의를 하나로 정리해 기존 용어를 갱신"],
-              ["replace", "새 것으로 교체 — 기존 내용을 새 내용으로 덮어씀"],
-              ["keep", "기존 것 유지 — 새로 올린 것은 폐기"],
-              ["register", "다른 용어로 등록 — 이름을 바꿔 별개 용어로 추가"]
-            ] as const
-          ).map(([key, label]) => (
+          {actionOptions.map(({ key, label }) => (
             <label
               key={key}
               className="flex cursor-pointer items-start gap-2 text-[13px]"
@@ -267,6 +378,46 @@ export function GlossaryDuplicateDialog({
             </label>
           ))}
         </div>
+
+        {action === "merge" && isEditMode ? (
+          <div className="border-t px-4 py-3" style={{ borderColor: C.line }}>
+            <div className="mb-2 text-[12px] font-bold" style={{ color: C.sub }}>
+              어느 쪽을 남길까요?
+            </div>
+            <div className="space-y-2">
+              <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+                <input
+                  type="radio"
+                  className="mt-1"
+                  name="survivor-choice"
+                  checked={survivorChoice === "existing"}
+                  onChange={() => setSurvivorChoice("existing")}
+                />
+                <span>
+                  사전에 있는 것 유지 — '{activePayload.existing.term_ko}'
+                  <span className="block text-[11.5px]" style={{ color: C.faint }}>
+                    '{editingName}' 삭제
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+                <input
+                  type="radio"
+                  className="mt-1"
+                  name="survivor-choice"
+                  checked={survivorChoice === "editing"}
+                  onChange={() => setSurvivorChoice("editing")}
+                />
+                <span>
+                  수정 중인 것 유지 — '{editingName}'
+                  <span className="block text-[11.5px]" style={{ color: C.faint }}>
+                    {quoteNames(conflictNames)} 삭제
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+        ) : null}
 
         {action === "merge" ? (
           <div className="border-t px-4 py-3" style={{ borderColor: C.line }}>
@@ -371,30 +522,40 @@ export function GlossaryDuplicateDialog({
         ) : null}
 
         <div
-          className="flex flex-wrap items-center gap-2 border-t px-4 py-3"
+          className="border-t px-4 py-3"
           style={{ borderColor: C.line }}
         >
-          <button
-            type="button"
-            disabled={busy}
-            onClick={submit}
-            className="rounded-[9px] px-3.5 py-2 text-[13px] font-bold text-white disabled:opacity-50"
-            style={{ background: C.luna }}
-          >
-            {busy ? "처리 중…" : ACTION_LABEL[action]}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            className="rounded-[9px] border px-3.5 py-2 text-[13px] font-bold disabled:opacity-50"
-            style={{ borderColor: C.line, color: C.sub }}
-          >
-            취소
-          </button>
-          <span className="ml-auto text-[11px]" style={{ color: C.faint }}>
-            모든 처리는 변경 이력에 남습니다
-          </span>
+          {deleteHint ? (
+            <p
+              className="mb-2 text-[12.5px] font-semibold"
+              style={{ color: destructive ? C.warnInk : C.sub }}
+            >
+              {deleteHint}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={submit}
+              className="rounded-[9px] px-3.5 py-2 text-[13px] font-bold text-white disabled:opacity-50"
+              style={{ background: destructive ? C.coral : C.luna }}
+            >
+              {buttonLabel}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onCancel}
+              className="rounded-[9px] border px-3.5 py-2 text-[13px] font-bold disabled:opacity-50"
+              style={{ borderColor: C.line, color: C.sub }}
+            >
+              닫기
+            </button>
+            <span className="ml-auto text-[11px]" style={{ color: C.faint }}>
+              모든 처리는 변경 이력에 남습니다
+            </span>
+          </div>
         </div>
         {error ? (
           <div

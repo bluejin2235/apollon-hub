@@ -452,7 +452,8 @@ export function GlossaryBrowser({
           incoming: check.data.incoming,
           merge_draft: check.data.merge_draft ?? null,
           source_label: isNew ? "신규 등록" : "용어 수정",
-          exclude_id: excludeId
+          exclude_id: excludeId,
+          editing_term_ko: (detail?.term_ko ?? draft.term_ko.trim()) || null
         });
         setDupError("");
         setSaving(false);
@@ -509,21 +510,43 @@ export function GlossaryBrowser({
     action: "merge" | "replace" | "keep" | "register";
     merged: GlossaryFieldValues;
     incoming: GlossaryFieldValues;
+    survivor_id: string;
   }) {
     if (!dupPayload) return;
     setDupBusy(true);
     setSaving(false);
     setDupError("");
-    const loserIds = Array.from(
+
+    const isEditMode = Boolean(dupPayload.exclude_id);
+    const conflictIds = Array.from(
       new Set(
         [
-          dupPayload.exclude_id,
           dupPayload.existing.id,
           dupPayload.primary.existing_id,
           ...dupPayload.others.map((o) => o.existing_id)
-        ].filter((id): id is string => Boolean(id))
+        ].filter(Boolean)
       )
-    ).filter((id) => id !== dupPayload.existing.id);
+    );
+
+    // 수정 모드 keep: API 호출 없이 편집 취소
+    if (args.action === "keep" && isEditMode) {
+      const editId = dupPayload.exclude_id!;
+      setDupPayload(null);
+      setDupError("");
+      setDraft(null);
+      setCreating(false);
+      setNotice("수정을 취소하고 원래 값으로 되돌렸어요");
+      setSelectedId(editId);
+      await loadDetail(editId);
+      setDupBusy(false);
+      return;
+    }
+
+    const loserIds = isEditMode
+      ? conflictIds.filter((id) => id !== args.survivor_id)
+      : conflictIds.filter(
+          (id) => id !== dupPayload.existing.id && id !== args.survivor_id
+        );
 
     try {
       const res = await api<{
@@ -541,6 +564,7 @@ export function GlossaryBrowser({
         body: JSON.stringify({
           action: args.action,
           existing_id: dupPayload.existing.id,
+          survivor_id: args.survivor_id,
           incoming: args.incoming,
           merged: args.merged,
           exclude_id: dupPayload.exclude_id ?? null,
@@ -584,14 +608,12 @@ export function GlossaryBrowser({
       setDraft(null);
       setNotice(res.data.message ?? "처리했습니다.");
       await loadTerms();
-      const nextId = res.data.term?.id ?? dupPayload.existing.id;
-      if (args.action !== "keep") {
-        setSelectedId(nextId);
-        await loadDetail(nextId);
-      } else if (dupPayload.exclude_id) {
-        setSelectedId(dupPayload.exclude_id);
-        await loadDetail(dupPayload.exclude_id);
-      }
+      const nextId =
+        args.action === "keep"
+          ? dupPayload.exclude_id ?? dupPayload.existing.id
+          : res.data.term?.id ?? args.survivor_id;
+      setSelectedId(nextId);
+      await loadDetail(nextId);
     } catch (err) {
       setDupError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {

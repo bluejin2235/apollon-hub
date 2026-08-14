@@ -3,7 +3,6 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   checkGlossaryDuplicate,
   insertGlossaryTerm,
-  bumpGlossaryVersion,
   normalizeIncomingFields,
   resolveGlossaryDuplicateTx
 } from "@/lib/glossary/duplicate-service";
@@ -15,10 +14,15 @@ type ResolveAction = "merge" | "replace" | "keep" | "register";
 /**
  * POST /api/glossary/resolve-duplicate
  *
- * 합치기·교체:
- * - survivor = existing_id (사전에 있던 쪽, primary)
- * - losers = exclude_id + 모든 충돌 용어 id (loser_ids) — survivor 제외, soft-delete
- * - 한 트랜잭션 RPC 로 soft-delete → survivor 전필드 갱신 → 이력
+ * 수정 모드 (exclude_id 있음, candidate 없음):
+ * - keep: 아무 것도 삭제하지 않음 (클라이언트에서 편집 취소)
+ * - replace: survivor = exclude_id, losers = 충돌 상대들
+ * - merge: survivor = survivor_id (클라이언트가 고름)
+ * - register: exclude 는 그대로 두고 신규 insert
+ *
+ * 신규/후보 모드:
+ * - keep: 후보만 archive
+ * - replace/merge: survivor = existing_id, losers = 추가 충돌만
  */
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
@@ -33,6 +37,7 @@ export async function POST(request: NextRequest) {
   let body: {
     action?: ResolveAction;
     existing_id?: string;
+    survivor_id?: string | null;
     incoming?: Record<string, unknown>;
     merged?: Record<string, unknown>;
     candidate_id?: string | null;
@@ -86,14 +91,23 @@ export async function POST(request: NextRequest) {
     typeof body.exclude_id === "string" && body.exclude_id.trim()
       ? body.exclude_id.trim()
       : null;
+  const existingId =
+    typeof body.existing_id === "string" ? body.existing_id.trim() : "";
+  const isEditMode = Boolean(excludeId) && !candidateId;
 
   if (action === "keep") {
-    await archiveCandidate(candidateId);
+    // 수정 모드: 삭제 없음. 신규/후보: 후보만 archive
+    if (!isEditMode) {
+      await archiveCandidate(candidateId);
+    }
     return NextResponse.json({
       ok: true,
       action: "keep",
-      message: "기존 것을 유지했어요",
-      term_id: typeof body.existing_id === "string" ? body.existing_id : null
+      message: isEditMode
+        ? "수정을 취소하고 원래 값으로 되돌렸어요"
+        : "기존 것을 유지했어요",
+      term_id: isEditMode ? excludeId : existingId || null,
+      deleted_ids: []
     });
   }
 
@@ -103,7 +117,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "register") {
-    const again = await checkGlossaryDuplicate(admin, incoming, excludeId);
+    const again = await checkGlossaryDuplicate(
+      admin,
+      incoming,
+      // 수정 모드에서도 자기 자신은 그대로 두고 신규 insert 이므로 exclude 하지 않음
+      // (자기 이름과 같아도 신규 행이 생김 → unique 걸릴 수 있음 → exclude 없이 검사)
+      null
+    );
     if (again.conflicts && again.primary) {
       return NextResponse.json(
         {
@@ -118,20 +138,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = excludeId
-      ? await bumpGlossaryVersion(admin, {
-          termId: excludeId,
-          fields: incoming,
-          userId: user.id,
-          editorName,
-          changeNote: "이름 변경 등록"
-        })
-      : await insertGlossaryTerm(admin, {
-          fields: incoming,
-          userId: user.id,
-          editorName,
-          changeNote: "최초 등록"
-        });
+    // 수정·신규 모두 별개 용어로 insert (편집 중인 행은 건드리지 않음)
+    const result = await insertGlossaryTerm(admin, {
+      fields: incoming,
+      userId: user.id,
+      editorName,
+      changeNote: "최초 등록"
+    });
     if ("error" in result) {
       const msg = result.error;
       if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -150,13 +163,12 @@ export async function POST(request: NextRequest) {
       ok: true,
       action: "register",
       message: "새로 등록했어요",
-      term: result
+      term: result,
+      deleted_ids: []
     });
   }
 
-  const existingId =
-    typeof body.existing_id === "string" ? body.existing_id.trim() : "";
-  if (!existingId) {
+  if (!existingId && !excludeId) {
     return NextResponse.json({ error: "existing_id required" }, { status: 400 });
   }
 
@@ -173,10 +185,26 @@ export async function POST(request: NextRequest) {
   if (fields.categories.length === 0) fields.categories = ["공통"];
   if (!fields.term_ko.trim()) fields.term_ko = fields.term_en;
 
-  // 저장할 내용 기준으로 남은 충돌 용어를 모두 loser 로 모은다
-  const remaining = await checkGlossaryDuplicate(admin, fields, existingId);
+  // survivor 결정
+  let survivorId = existingId;
+  if (isEditMode && action === "replace") {
+    survivorId = excludeId!;
+  } else if (isEditMode && action === "merge") {
+    const requested =
+      typeof body.survivor_id === "string" && body.survivor_id.trim()
+        ? body.survivor_id.trim()
+        : "";
+    if (requested === excludeId || requested === existingId) {
+      survivorId = requested;
+    } else {
+      survivorId = existingId;
+    }
+  }
+
+  // loser 수집: 절대 수정 모드 keep처럼 exclude 를 기본 loser 로 넣지 않음
+  const remaining = await checkGlossaryDuplicate(admin, fields, survivorId);
   const loserIds = new Set<string>();
-  if (excludeId) loserIds.add(excludeId);
+
   if (Array.isArray(body.loser_ids)) {
     for (const id of body.loser_ids) {
       if (typeof id === "string" && id) loserIds.add(id);
@@ -184,7 +212,23 @@ export async function POST(request: NextRequest) {
   }
   if (remaining.primary) loserIds.add(remaining.primary.existing_id);
   for (const m of remaining.others) loserIds.add(m.existing_id);
-  loserIds.delete(existingId);
+
+  if (isEditMode) {
+    if (action === "replace") {
+      // 충돌 상대만 삭제. 편집 중 용어는 survivor
+      if (existingId) loserIds.add(existingId);
+      loserIds.delete(excludeId!);
+    } else if (action === "merge") {
+      // survivor 가 아닌 쪽(편집 or 상대) + 추가 충돌
+      if (survivorId === excludeId) {
+        if (existingId) loserIds.add(existingId);
+      } else {
+        loserIds.add(excludeId!);
+      }
+    }
+  }
+  // 신규/후보: exclude 없음. survivor=existing, 추가 충돌만 loser
+  loserIds.delete(survivorId);
 
   const changeNote = action === "merge" ? "중복 병합" : "중복 교체";
   const loserNote =
@@ -193,7 +237,7 @@ export async function POST(request: NextRequest) {
       : "중복 교체 — 다른 용어로 통합";
 
   const result = await resolveGlossaryDuplicateTx(admin, {
-    survivorId: existingId,
+    survivorId,
     loserIds: Array.from(loserIds),
     fields,
     userId: user.id,

@@ -252,17 +252,17 @@ export function LunaCandidatesPending() {
     action: "merge" | "replace" | "keep" | "register";
     merged: GlossaryFieldValues;
     incoming: GlossaryFieldValues;
+    survivor_id: string;
   }) {
     if (!dupPayload?.candidate_id) return;
     const token = await getAccessToken();
     if (!token) return;
     setDupBusy(true);
     setDupError("");
-    const survivorId = dupPayload.existing.id;
+    const survivorId = args.survivor_id || dupPayload.existing.id;
     const loserIds = Array.from(
       new Set(
         [
-          dupPayload.exclude_id,
           dupPayload.primary.existing_id,
           ...dupPayload.others.map((o) => o.existing_id)
         ].filter((id): id is string => Boolean(id) && id !== survivorId)
@@ -277,7 +277,8 @@ export function LunaCandidatesPending() {
         },
         body: JSON.stringify({
           action: args.action,
-          existing_id: survivorId,
+          existing_id: dupPayload.existing.id,
+          survivor_id: survivorId,
           incoming: args.incoming,
           merged: args.merged,
           candidate_id: dupPayload.candidate_id,
