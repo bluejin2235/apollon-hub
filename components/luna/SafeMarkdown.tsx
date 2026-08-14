@@ -10,8 +10,15 @@ function safeHref(href: string | undefined): string | undefined {
   return undefined;
 }
 
-function makeComponents(compact?: boolean): Components {
+function makeComponents(compact?: boolean, variant?: "default" | "luna"): Components {
   const pGap = compact ? "mb-1.5" : "mb-2";
+  const isLuna = variant === "luna";
+  const inlineCodeClass = isLuna
+    ? "rounded border border-[#E3E0F5] bg-white px-[5px] py-px font-mono text-[12px] text-[#1c1d21]"
+    : "rounded bg-slate-200/80 px-1 py-px text-[12px] text-slate-800";
+  const preClass = isLuna
+    ? "my-2 overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-[#E3E0F5] bg-white px-[11px] py-[9px] font-mono text-[12px] leading-[1.7] text-[#1c1d21] last:mb-0"
+    : "my-2 overflow-x-auto rounded-lg bg-slate-800 px-3 py-2 text-[12px] leading-relaxed text-slate-100 last:mb-0";
   return {
     p: ({ children }) => (
       <p className={`${pGap} last:mb-0 whitespace-pre-wrap`}>{children}</p>
@@ -59,11 +66,7 @@ function makeComponents(compact?: boolean): Components {
     img: ({ alt }) => (
       <span className="text-slate-500">[{alt?.trim() || "image"}]</span>
     ),
-    pre: ({ children }) => (
-      <pre className="my-2 overflow-x-auto rounded-lg bg-slate-800 px-3 py-2 text-[12px] leading-relaxed text-slate-100 last:mb-0">
-        {children}
-      </pre>
-    ),
+    pre: ({ children }) => <pre className={preClass}>{children}</pre>,
     code: ({ className, children }) => {
       const raw = String(children);
       const isBlock = Boolean(className) || raw.includes("\n");
@@ -74,11 +77,7 @@ function makeComponents(compact?: boolean): Components {
           </code>
         );
       }
-      return (
-        <code className="rounded bg-slate-200/80 px-1 py-px text-[12px] text-slate-800">
-          {children}
-        </code>
-      );
+      return <code className={inlineCodeClass}>{children}</code>;
     },
     h1: ({ children }) => (
       <h1 className={`${pGap} text-[15px] font-semibold last:mb-0`}>
@@ -102,6 +101,7 @@ type SafeMarkdownProps = {
   content: string;
   className?: string;
   compact?: boolean;
+  variant?: "default" | "luna";
 };
 
 /**
@@ -111,13 +111,14 @@ type SafeMarkdownProps = {
 export function SafeMarkdown({
   content,
   className = "",
-  compact
+  compact,
+  variant = "default"
 }: SafeMarkdownProps) {
   const text = content.trimEnd();
   if (!text) return null;
   return (
     <div className={`break-words ${className}`}>
-      <ReactMarkdown components={makeComponents(compact)} skipHtml>
+      <ReactMarkdown components={makeComponents(compact, variant)} skipHtml>
         {text}
       </ReactMarkdown>
     </div>

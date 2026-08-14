@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Menu } from "lucide-react";
+import { Menu, SquarePen } from "lucide-react";
 import {
   LunaInput,
   type LunaAttachmentRef,
@@ -16,7 +16,8 @@ import {
   type LunaModelStep,
   type LunaNasDriveMode,
   type LunaProgressStep,
-  type LunaSourceReasons
+  type LunaSourceReasons,
+  type LunaDetailMeta
 } from "@/components/luna/LunaMessage";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
@@ -24,7 +25,9 @@ import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
 import {
   parseNumberedChoices,
-  resolveChoiceInput
+  resolveChoiceInput,
+  normalizeUsedPrompts,
+  type UsedPromptRef
 } from "@/lib/luna/chat-response";
 import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
 import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
@@ -101,6 +104,9 @@ export type LunaChatMessage = {
   memoryCount?: number | null;
   /** reflect 후 다음 턴에 표시할 정정 후보 칩 */
   correctionCandidateIds?: string[] | null;
+  usedPrompts?: UsedPromptRef[] | null;
+  keywords?: string[] | null;
+  wsToolCalls?: unknown[] | null;
 };
 
 export type { LunaSourceReasons };
@@ -278,6 +284,7 @@ export type LunaStreamEventResult =
       searchRounds: number | null;
       steps: LunaProgressStep[] | null;
       memoryCount: number | null;
+      usedPrompts: UsedPromptRef[] | null;
     }
   | { kind: "text"; buffer: string };
 
@@ -385,7 +392,8 @@ export function consumeLunaStreamEvents(
         memoryCount:
           memoryCount != null && Number.isFinite(memoryCount)
             ? memoryCount
-            : null
+            : null,
+        usedPrompts: normalizeUsedPrompts(parsed.used_prompts)
       };
     }
   } catch {
@@ -395,12 +403,8 @@ export function consumeLunaStreamEvents(
   return consumeLunaStreamEvents(rest, false);
 }
 
-export function buildSearchStatus(connectors: LunaConnectorsState): string[] {
-  const status: string[] = [];
-  if (connectors.notion) status.push("노션 검색 중...");
-  if (connectors.web) status.push("웹 검색 중...");
-  if (connectors.nas) status.push("Work서버 검색 중...");
-  return status;
+export function buildSearchStatus(_connectors: LunaConnectorsState): string[] {
+  return [];
 }
 
 const SUGGESTIONS = [
@@ -420,22 +424,15 @@ type LunaChatProps = {
     skills: LunaSkillsSelection
   ) => void;
   onSuggestion: (text: string) => void;
-  onBack?: () => void;
+  onNewChat?: () => void;
   onOpenMenu?: () => void;
   sending?: boolean;
-  searchStatus?: string[];
   showMobileHeader?: boolean;
   onEnsureConversation: () => Promise<string | null>;
   onRenameTitle?: (title: string) => void | Promise<void>;
   /** reflect 가 정정 후보를 만들면, 다음 답변 칩용으로 전달 */
   onReflectCorrections?: (candidateIds: string[]) => void;
   onClearCorrection?: (messageId: string, candidateId: string) => void;
-};
-
-const DEFAULT_INPUT_CONNECTORS: LunaConnectorsState = {
-  notion: false,
-  web: false,
-  nas: false
 };
 
 const DEFAULT_NAS_DRIVE_MODE: LunaNasDriveMode = "office";
@@ -445,10 +442,9 @@ export function LunaChat({
   messages,
   onSend,
   onSuggestion: _onSuggestion,
-  onBack,
+  onNewChat,
   onOpenMenu,
   sending,
-  searchStatus = [],
   showMobileHeader,
   onEnsureConversation,
   onRenameTitle,
@@ -463,14 +459,7 @@ export function LunaChat({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipTitleCommitRef = useRef(false);
   const stickToBottomRef = useRef(true);
-  const connectorsByConvRef = useRef<Map<string, LunaConnectorsState>>(
-    new Map()
-  );
-  const prevConversationIdRef = useRef<string | null | undefined>(undefined);
   useMeasureBottomUi(bottomUiRef, true);
-  const [connectors, setConnectors] = useState<LunaConnectorsState>(
-    DEFAULT_INPUT_CONNECTORS
-  );
   const [nasDriveMode, setNasDriveMode] =
     useState<LunaNasDriveMode>(DEFAULT_NAS_DRIVE_MODE);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -546,7 +535,7 @@ export function LunaChat({
 
   function sendChoice(text: string) {
     forceStickToBottom();
-    onSend(text, connectors, [], [], emptySkills);
+    onSend(text, { notion: false, web: false, nas: false }, [], [], emptySkills);
   }
 
   function handleSendWrapped(
@@ -576,45 +565,6 @@ export function LunaChat({
     setEditingTitle(false);
     setTitleDraft(title);
   }, [conversation?.id, title]);
-
-  function handleConnectorsChange(next: LunaConnectorsState) {
-    setConnectors(next);
-    if (conversation?.id) {
-      connectorsByConvRef.current.set(conversation.id, next);
-    }
-  }
-
-  // 검색 소스: 대화별로 유지, 새 대화(null)에서는 전부 꺼짐으로 초기화
-  useEffect(() => {
-    const nextId = conversation?.id ?? null;
-    const prevId = prevConversationIdRef.current;
-    prevConversationIdRef.current = nextId;
-
-    if (prevId === undefined) {
-      setConnectors(DEFAULT_INPUT_CONNECTORS);
-      return;
-    }
-
-    if (nextId === null) {
-      setConnectors(DEFAULT_INPUT_CONNECTORS);
-      return;
-    }
-
-    if (prevId === null) {
-      // 첫 메시지 직후 — 직전(새 대화)에서 켠 토글을 이어가 저장
-      setConnectors((current) => {
-        connectorsByConvRef.current.set(nextId, current);
-        return current;
-      });
-      return;
-    }
-
-    if (prevId !== nextId) {
-      setConnectors(
-        connectorsByConvRef.current.get(nextId) ?? DEFAULT_INPUT_CONNECTORS
-      );
-    }
-  }, [conversation?.id]);
 
   useEffect(() => {
     if (editingTitle) {
@@ -657,7 +607,7 @@ export function LunaChat({
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottom();
-  }, [messages, sending, searchStatus]);
+  }, [messages, sending]);
 
   useEffect(() => {
     const nextId = conversation?.id ?? null;
@@ -737,67 +687,30 @@ export function LunaChat({
 
   return (
     <ChatShellChrome
+      className="max-md:bg-[#F5F4F1]"
       headerLeft={
         showMobileHeader ? (
-          <>
-            <button
-              type="button"
-              onClick={onBack}
-              className="chip-sm flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
-              aria-label="뒤로가기"
-            >
-              <ChevronLeft size={22} strokeWidth={1.75} aria-hidden />
-            </button>
-            <img
-              src="/luna/luna-face.png"
-              alt="LUNA"
-              width={26}
-              height={26}
-              draggable={false}
-              className="block h-[26px] w-[26px] shrink-0 rounded-full object-cover"
-            />
-          </>
+          <button
+            type="button"
+            onClick={onOpenMenu}
+            className="chip-sm flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
+            aria-label="메뉴"
+          >
+            <Menu size={16} strokeWidth={1.75} aria-hidden />
+          </button>
         ) : undefined
       }
       headerTitle={showMobileHeader ? titleNode : <span className="sr-only">{title}</span>}
       headerRight={
         showMobileHeader ? (
-          <>
-            <button
-              type="button"
-              aria-label="루나 질문"
-              onClick={() => {
-                if (pendingQuestion || answeredMessage) {
-                  setShowQuestionCard(true);
-                }
-              }}
-              className="chip-sm relative flex h-10 w-10 shrink-0 items-center justify-center"
-            >
-              <img
-                src="/luna/luna-face.png"
-                alt=""
-                width={28}
-                height={28}
-                draggable={false}
-                className="block h-7 w-7 rounded-full object-cover"
-              />
-              {hasPendingQuestion ? (
-                <span
-                  aria-hidden
-                  className="absolute right-1 top-1 h-2 w-2 rounded-full border-2 border-white"
-                  style={{ background: "#BA7517" }}
-                />
-              ) : null}
-            </button>
-            <button
-              type="button"
-              onClick={onOpenMenu}
-              className="chip-sm flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
-              aria-label="메뉴"
-            >
-              <Menu size={20} strokeWidth={1.75} aria-hidden />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="chip-sm flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
+            aria-label="새 대화"
+          >
+            <SquarePen size={16} strokeWidth={1.75} aria-hidden />
+          </button>
         ) : undefined
       }
       desktopHeader={
@@ -884,8 +797,6 @@ export function LunaChat({
             disabled={sending}
             conversationId={conversation?.id ?? null}
             onEnsureConversation={onEnsureConversation}
-            connectors={connectors}
-            onConnectorsChange={handleConnectorsChange}
             focusTick={focusTick}
           />
         </div>
@@ -935,7 +846,7 @@ export function LunaChat({
                 type="button"
                 disabled={sending}
                 onClick={() =>
-                  onSend(s, connectors, [], [], {
+                  onSend(s, { notion: false, web: false, nas: false }, [], [], {
                     perspective_ids: [],
                     role_ids: [],
                     task_ids: []
@@ -953,6 +864,11 @@ export function LunaChat({
           {messages.map((m) => {
             const isThinking =
               m.isThinking === true || m.metadata?.isThinking === true;
+            const detailMeta: LunaDetailMeta = {
+              modelSteps: m.modelSteps,
+              steps: m.steps,
+              wsSearches: m.wsToolCalls
+            };
             return (
               <LunaMessage
                 key={m.id}
@@ -968,16 +884,16 @@ export function LunaChat({
                 onNasDriveModeChange={setNasDriveMode}
                 attachments={m.attachments}
                 isThinking={isThinking}
-                searchStatus={isThinking ? searchStatus : []}
                 modelLabel={m.modelLabel}
                 durationMs={m.durationMs}
                 modelSteps={m.modelSteps}
                 steps={m.steps}
-                searchRounds={m.searchRounds}
                 clarify={m.clarify}
                 mode={m.mode}
                 teams={m.teams}
                 memoryCount={m.memoryCount}
+                usedPrompts={m.usedPrompts}
+                detailMeta={detailMeta}
                 correctionCandidateIds={m.correctionCandidateIds}
                 hideInlineClarifyOptions
                 onCorrectionCancel={

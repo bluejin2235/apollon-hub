@@ -14,7 +14,9 @@ import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
-  LUNA_RUNTIME_PROMPT_KEYS
+  LUNA_RUNTIME_PROMPT_KEYS,
+  type LunaPromptKind,
+  type LunaPromptLevel
 } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
@@ -34,6 +36,14 @@ import {
 } from "@/lib/luna/workserver";
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import {
+  hasManualConnectors,
+  hasManualSkills,
+  matchPerspectiveIdByDepartment,
+  resolveConnectorsAuto,
+  type ConnectorFlags
+} from "@/lib/luna/connector-routing";
+import { buildUsedPromptRefs } from "@/lib/luna/used-prompts";
 
 export const runtime = "nodejs";
 
@@ -145,6 +155,7 @@ type PromptSkillRow = {
   kind: string;
   content: string;
   is_active: boolean;
+  sort_order: number | null;
 };
 
 type StepStatus = "running" | "done" | "skip";
@@ -544,21 +555,18 @@ export async function POST(request: NextRequest) {
   const conversationId =
     typeof body.conversation_id === "string" ? body.conversation_id.trim() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  const perspectiveIds = parseIdList(body.skills?.perspective_ids);
+  let perspectiveIds = parseIdList(body.skills?.perspective_ids);
   const roleIds = parseIdList(body.skills?.role_ids);
   const taskIds = parseIdList(body.skills?.task_ids);
-  const skillIds = Array.from(
-    new Set([...perspectiveIds, ...roleIds, ...taskIds])
-  );
   const attachmentIds = Array.isArray(body.attachment_ids)
     ? body.attachment_ids
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
         .map((id) => id.trim())
     : [];
   const hasAttachments = attachmentIds.length > 0;
-  const notionEnabled = !hasAttachments && body.connectors?.notion === true;
-  const webEnabled = !hasAttachments && body.connectors?.web === true;
-  const nasEnabled = !hasAttachments && body.connectors?.nas === true;
+  let notionEnabled = body.connectors?.notion === true;
+  let webEnabled = body.connectors?.web === true;
+  let nasEnabled = body.connectors?.nas === true;
   if (!conversationId || (!message && !hasAttachments)) {
     return NextResponse.json(
       { error: "conversation_id and message (or attachments) are required" },
@@ -583,10 +591,93 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  const [tierACfg, tierBCfg] = await Promise.all([
+  const routingMessage =
+    message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
+  const manualConnectorFlags: ConnectorFlags = {
+    notion: body.connectors?.notion === true,
+    web: body.connectors?.web === true,
+    nas: body.connectors?.nas === true
+  };
+
+  const [
+    profileResult,
+    perspectivesResult,
+    tierACfg,
+    tierBCfg,
+    l3PromptResult
+  ] = await Promise.all([
+    admin.from("profiles").select("department").eq("id", user.id).maybeSingle(),
+    admin
+      .from("luna_prompts")
+      .select("id, title, kind")
+      .eq("level", "L2")
+      .eq("kind", "perspective")
+      .eq("is_active", true),
     getTierModel(admin, "A"),
-    getTierModel(admin, "B")
+    getTierModel(admin, "B"),
+    admin
+      .from("luna_prompts")
+      .select("prompt_key, title, level, sort_order, kind")
+      .in("prompt_key", [
+        "talk.understand",
+        "talk.assume",
+        "talk.search",
+        "talk.answer"
+      ])
+      .eq("is_active", true)
   ]);
+
+  if (profileResult.error) {
+    console.error("[luna/chat] profile", profileResult.error);
+  }
+  if (perspectivesResult.error) {
+    console.error("[luna/chat] perspectives", perspectivesResult.error);
+  }
+  if (l3PromptResult.error) {
+    console.error("[luna/chat] l3 prompts", l3PromptResult.error);
+  }
+
+  const profile = profileResult.data;
+  const perspectives = perspectivesResult.data ?? [];
+  const l3PromptRows = l3PromptResult.data ?? [];
+
+  const manualSkillIds = {
+    perspective_ids: perspectiveIds,
+    role_ids: roleIds,
+    task_ids: taskIds
+  };
+
+  if (!hasManualSkills(manualSkillIds)) {
+    const matched = matchPerspectiveIdByDepartment(
+      profile?.department,
+      perspectives
+    );
+    if (matched) {
+      perspectiveIds = [matched];
+    }
+  }
+
+  if (!hasManualConnectors(manualConnectorFlags)) {
+    const resolved = resolveConnectorsAuto(routingMessage, {
+      hasAttachments,
+      manual: manualConnectorFlags
+    });
+    notionEnabled = resolved.notion;
+    webEnabled = resolved.web;
+    nasEnabled = resolved.nas;
+  } else if (hasAttachments) {
+    notionEnabled = false;
+    webEnabled = false;
+    nasEnabled = false;
+  }
+
+  const autoRoutingUsed =
+    !hasManualConnectors(manualConnectorFlags) ||
+    !hasManualSkills(manualSkillIds);
+
+  const skillIds = Array.from(
+    new Set([...perspectiveIds, ...roleIds, ...taskIds])
+  );
   const tierA = resolveAnthropicModel(tierACfg);
   const tierB = resolveAnthropicModel(tierBCfg);
 
@@ -663,10 +754,16 @@ export async function POST(request: NextRequest) {
   }
 
   let skillPrompt: string | null = null;
+  let l2SkillRows: Array<{
+    title: string;
+    level: LunaPromptLevel;
+    sort_order: number;
+    kind: LunaPromptKind;
+  }> = [];
   if (skillIds.length > 0) {
     const { data: skillData, error: skillError } = await admin
       .from("luna_prompts")
-      .select("id, title, kind, content, is_active")
+      .select("id, title, kind, content, is_active, sort_order")
       .in("id", skillIds)
       .eq("level", "L2");
 
@@ -684,16 +781,34 @@ export async function POST(request: NextRequest) {
       const row = byId.get(id);
       if (!row || row.kind !== "perspective") continue;
       blocks.push(`[관점 · ${row.title}]\n${row.content}`);
+      l2SkillRows.push({
+        title: row.title,
+        level: "L2",
+        sort_order: row.sort_order ?? 0,
+        kind: row.kind as LunaPromptKind
+      });
     }
     for (const id of roleIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "role") continue;
       blocks.push(`[역할 · ${row.title}]\n${row.content}`);
+      l2SkillRows.push({
+        title: row.title,
+        level: "L2",
+        sort_order: row.sort_order ?? 0,
+        kind: row.kind as LunaPromptKind
+      });
     }
     for (const id of taskIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "task") continue;
       blocks.push(`[작업 · ${row.title}]\n${row.content}`);
+      l2SkillRows.push({
+        title: row.title,
+        level: "L2",
+        sort_order: row.sort_order ?? 0,
+        kind: row.kind as LunaPromptKind
+      });
     }
     skillPrompt = blocks.length > 0 ? blocks.join("\n\n") : null;
   }
@@ -757,6 +872,8 @@ export async function POST(request: NextRequest) {
       const steps: StepRecord[] = [];
       const modelSteps: ModelStep[] = [];
       let searchRounds = 0;
+      let clarifyRan = false;
+      let searchRan = false;
 
       const pushStep = (key: string, status: StepStatus, label: string) => {
         const idx = steps.findIndex((s) => s.key === key);
@@ -818,6 +935,7 @@ export async function POST(request: NextRequest) {
         if (skipClarify) {
           pushStep("clarify", "skip", "의도 확인");
         } else {
+          clarifyRan = true;
           pushStep("clarify", "running", "의도 확인 중");
           let needsClarify = false;
           let clarifyQuestion = "";
@@ -1154,6 +1272,7 @@ export async function POST(request: NextRequest) {
         };
 
         if (anySearch) {
+          searchRan = true;
           const searchParts: string[] = [];
           if (notionEnabled) searchParts.push("노션");
           if (nasEnabled) searchParts.push("Work서버");
@@ -1480,6 +1599,17 @@ export async function POST(request: NextRequest) {
           tierACfg.use_caching === true
         );
 
+        const usedPrompts = buildUsedPromptRefs({
+          clarifyRan: steps.some(
+            (s) => s.key === "clarify" && s.status === "done"
+          ),
+          searchRan:
+            searchRounds > 0 || notionSources.length + cards.length > 0,
+          answerRan: true,
+          l3Rows: l3PromptRows,
+          l2Skills: l2SkillRows
+        });
+
         emit(controller, encoder, {
           type: "meta",
           cards,
@@ -1487,7 +1617,9 @@ export async function POST(request: NextRequest) {
           search_rounds: searchRounds,
           steps,
           source_reasons: sourceReasons,
-          memory_count: learningsRows.length
+          memory_count: learningsRows.length,
+          used_prompts: usedPrompts,
+          auto_routing: autoRoutingUsed
         });
 
         let assistantText = "";
@@ -1567,6 +1699,8 @@ export async function POST(request: NextRequest) {
         if (sourceReasons) {
           assistantMeta.source_reasons = sourceReasons;
         }
+        assistantMeta.used_prompts = usedPrompts;
+        assistantMeta.auto_routing = autoRoutingUsed;
         assistantMeta.memory_count = learningsRows.length;
         if (attachmentMeta.length > 0) {
           userMeta.attachments = attachmentMeta;

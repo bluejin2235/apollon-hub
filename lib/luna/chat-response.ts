@@ -114,6 +114,36 @@ export type SourceBadgeCounts = {
   web: number;
 };
 
+export type UsedPromptRef = {
+  number: string;
+  title: string;
+};
+
+/** meta.used_prompts / metadata.used_prompts 정규화. */
+export function normalizeUsedPrompts(raw: unknown): UsedPromptRef[] | null {
+  if (!Array.isArray(raw)) return null;
+  const items: UsedPromptRef[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const number =
+      typeof row.number === "string"
+        ? row.number.trim()
+        : typeof row.prompt_number === "string"
+          ? row.prompt_number.trim()
+          : "";
+    const title =
+      typeof row.title === "string"
+        ? row.title.trim()
+        : typeof row.prompt_title === "string"
+          ? row.prompt_title.trim()
+          : "";
+    if (!title) continue;
+    items.push({ number, title });
+  }
+  return items.length > 0 ? items : null;
+}
+
 export function countSourceBadges(opts: {
   cards?: Array<{ type: string }> | null;
   notionSources?: unknown[] | null;

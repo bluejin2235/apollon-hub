@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type ReactNode
 } from "react";
-import { FileText, Folder, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Copy, FileText, Folder, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import { SupplyToast } from "@/components/supplies/toast";
@@ -17,7 +17,8 @@ import type { LunaCard } from "@/lib/luna/tavily";
 import {
   countSourceBadges,
   parseAssumeMarkers,
-  parseNumberedChoices
+  parseNumberedChoices,
+  type UsedPromptRef
 } from "@/lib/luna/chat-response";
 import { supabase } from "@/lib/supabase/client";
 
@@ -53,6 +54,12 @@ export type LunaSourceReasons = {
 
 export type LunaNasDriveMode = "office" | "raidrive";
 
+export type LunaDetailMeta = {
+  modelSteps?: LunaModelStep[] | null;
+  steps?: LunaProgressStep[] | null;
+  wsSearches?: unknown[] | null;
+};
+
 type LunaMessageProps = {
   id: string;
   role: "user" | "assistant";
@@ -66,7 +73,6 @@ type LunaMessageProps = {
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   attachments?: LunaAttachmentRef[] | null;
   isThinking?: boolean;
-  searchStatus?: string[];
   modelLabel?: string | null;
   durationMs?: number | null;
   modelSteps?: LunaModelStep[] | null;
@@ -81,6 +87,8 @@ type LunaMessageProps = {
   memoryCount?: number | null;
   correctionCandidateIds?: string[] | null;
   onCorrectionCancel?: (candidateId: string) => void;
+  usedPrompts?: UsedPromptRef[] | null;
+  detailMeta?: LunaDetailMeta | null;
 };
 
 const CARD_SECTION_ORDER: LunaCard["type"][] = ["notion", "nas", "web", "youtube"];
@@ -142,19 +150,6 @@ function MediaThumb({ card }: { card: LunaCard }) {
   );
 }
 
-function ThinkingDotsText() {
-  const [dots, setDots] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setDots((prev) => prev + 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  return <span className="break-all">{"생각 중" + ".".repeat(dots)}</span>;
-}
 
 function normalizeNasDriveLetter(drive?: string): string {
   return (drive ?? "").trim().replace(/:$/, "").toUpperCase();
@@ -557,6 +552,87 @@ function OpinionBlock({ content }: { content: string }) {
   );
 }
 
+function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
+  if (assumptions.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      {assumptions.map((a, i) => (
+        <div
+          key={`${i}-${a.slice(0, 24)}`}
+          className="rounded-lg bg-[#FAEEDA] px-[11px] py-[9px] text-[13px] leading-[1.6] text-[#633806]"
+        >
+          {a}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const LUNA_BUBBLE_CLASS =
+  "rounded-[5px_16px_16px_16px] border border-[#E3E0F5] bg-[#F4F3FB] px-4 py-[14px] text-[14.5px] leading-[1.75] text-[#1c1d21] max-md:px-[13px] max-md:py-[11px] max-md:text-[13.5px] max-md:leading-[1.7]";
+
+function LunaAvatar() {
+  return (
+    <div
+      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-[12px] font-bold text-[#EEEDFE] max-md:h-6 max-md:w-6 max-md:text-[10.5px]"
+      aria-hidden
+    >
+      L
+    </div>
+  );
+}
+
+function InlineThinkingProgress({
+  steps,
+  content
+}: {
+  steps: LunaProgressStep[];
+  content: string;
+}) {
+  const visible = steps.filter((s) => s.status !== "skip");
+  const running = visible.find((s) => s.status === "running");
+  const done = visible.filter((s) => s.status === "done");
+  const numbered = content ? parseNumberedChoices(content) : null;
+  const base = numbered ? numbered.body : content;
+  const { body: streamBody } = parseAssumeMarkers(base);
+
+  if (!running && done.length === 0 && !streamBody) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+        <span className="text-[13px] text-[#6b6f76]">생각 중…</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {running ? (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+          <span className="text-[13px] text-[#6b6f76]">{running.label}</span>
+        </div>
+      ) : null}
+      {done.length > 0 ? (
+        <div className="mb-2 pl-3.5 text-[12.5px] leading-[1.9] text-[#9aa0a8]">
+          {done.map((s) => (
+            <div key={s.key}>{s.label} — 완료</div>
+          ))}
+        </div>
+      ) : null}
+      {streamBody ? (
+        <div className="text-[14.5px] leading-[1.75] max-md:text-[13.5px] max-md:leading-[1.7]">
+          <SafeMarkdown content={streamBody} variant="luna" />
+          <span
+            className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
+            aria-hidden
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function SourceBadgeRow({
   cards,
   notionSources,
@@ -568,22 +644,22 @@ function SourceBadgeRow({
 }) {
   const counts = countSourceBadges({ cards, notionSources, memoryCount });
   const items: { label: string; n: number }[] = [];
+  if (counts.nas > 0) items.push({ label: "Work서버", n: counts.nas });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
-  if (counts.nas > 0) items.push({ label: "Work서버 실측", n: counts.nas });
   if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
   if (items.length === 0) return null;
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1">
+    <>
       {items.map((it) => (
         <span
           key={it.label}
-          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10.5px] text-slate-600"
+          className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
         >
           {it.label} {it.n}건
         </span>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -593,22 +669,12 @@ function AssistantTextBubble({ content }: { content: string }) {
   const { body, assumptions } = parseAssumeMarkers(base);
   const display = body || (assumptions.length === 0 ? content : "");
   return (
-    <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-      {display ? <SafeMarkdown content={display} /> : null}
-      {assumptions.length > 0 ? (
-        <div className="mt-2 space-y-1.5">
-          {assumptions.map((a, i) => (
-            <div
-              key={`${i}-${a.slice(0, 24)}`}
-              className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] leading-snug text-amber-950"
-            >
-              <span className="font-medium text-amber-800">가정 · </span>
-              {a}
-            </div>
-          ))}
-        </div>
+    <>
+      {display ? (
+        <SafeMarkdown content={display} variant="luna" className="text-[14.5px] max-md:text-[13.5px]" />
       ) : null}
-    </div>
+      <AssumeBlocks assumptions={assumptions} />
+    </>
   );
 }
 
@@ -770,127 +836,174 @@ function formatDuration(ms: number): string {
   return `${sec.toFixed(1)}초`;
 }
 
-function ModelMetaFooter({
+function DetailMetaFooter({
   modelLabel,
   durationMs,
-  modelSteps
+  detailMeta
 }: {
   modelLabel: string;
   durationMs: number | null;
-  modelSteps: LunaModelStep[];
+  detailMeta?: LunaDetailMeta | null;
 }) {
   const [open, setOpen] = useState(false);
+  const modelSteps = detailMeta?.modelSteps ?? [];
+  const steps = detailMeta?.steps ?? [];
+  const wsSearches = detailMeta?.wsSearches ?? [];
+  const hasDetail =
+    modelSteps.length > 0 || steps.length > 0 || wsSearches.length > 0;
 
   return (
-    <div>
-      <div
-        className="mb-2 ml-[25px] mt-1 flex items-center gap-[5px] text-[9px] text-[#6B6A64]"
-      >
-        <span className="rounded border border-solid border-[#E4E2DA] bg-[#F5F3EE] px-1.5 py-px font-mono text-[8.5px]">
-          {modelLabel}
-        </span>
-        {durationMs != null ? (
+    <>
+      <div className="mt-0.5 text-[10.5px] text-[#9aa0a8]">
+        {modelLabel}
+        {durationMs != null ? ` · ${formatDuration(durationMs)}` : ""}
+        {hasDetail ? (
           <>
-            <span>·</span>
-            <span>{formatDuration(durationMs)}</span>
-          </>
-        ) : null}
-        {modelSteps.length > 0 ? (
-          <>
-            <span>·</span>
+            {" · "}
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className="cursor-pointer text-[#534AB7]"
+              className="text-[#534AB7] hover:underline"
             >
               자세히
             </button>
           </>
         ) : null}
       </div>
-      {open && modelSteps.length > 0 ? (
-        <div className="mb-2 ml-[25px] rounded-lg border border-solid border-[#E4E2DA] bg-white px-[11px] py-[9px]">
-          {modelSteps.map((step, index) => {
-            const isLast = index === modelSteps.length - 1;
-            return (
-              <div
-                key={`${step.label}-${index}`}
-                className={`flex gap-2 text-[10.5px] ${
-                  isLast
-                    ? "mt-1 border-t border-solid border-[#E4E2DA] pt-1.5"
-                    : "py-[3px]"
-                }`}
-              >
-                <span className="w-[110px] shrink-0 text-[#6B6A64]">{step.label}</span>
-                <span className="min-w-0 font-mono text-[10px] text-slate-800">{step.model}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-[#6B6A64]">
-                  {step.tier}
-                </span>
-              </div>
-            );
-          })}
+      {open && hasDetail ? (
+        <div className="mt-1.5 rounded-lg border border-[#E3E0F5] bg-white px-[11px] py-[9px]">
+          {steps.length > 0 ? (
+            <div className="mb-2 space-y-1">
+              <p className="text-[10px] font-medium text-[#6b6f76]">진행 단계</p>
+              {steps
+                .filter((s) => s.status !== "skip")
+                .map((s) => (
+                  <div key={s.key} className="text-[10.5px] text-[#6b6f76]">
+                    {s.label}
+                  </div>
+                ))}
+            </div>
+          ) : null}
+          {modelSteps.length > 0 ? (
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-medium text-[#6b6f76]">모델</p>
+              {modelSteps.map((step, index) => (
+                <div key={`${step.label}-${index}`} className="flex gap-2 text-[10.5px]">
+                  <span className="w-[100px] shrink-0 text-[#6b6f76]">{step.label}</span>
+                  <span className="min-w-0 font-mono text-[10px]">{step.model}</span>
+                  {step.tier ? (
+                    <span className="ml-auto shrink-0 font-mono text-[10px] text-[#9aa0a8]">
+                      {step.tier}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {wsSearches.length > 0 ? (
+            <div className="mt-2 space-y-0.5 border-t border-[#eef0f3] pt-2">
+              <p className="text-[10px] font-medium text-[#6b6f76]">Work서버 검색</p>
+              {wsSearches.map((row, i) => (
+                <div key={i} className="text-[10.5px] text-[#6b6f76]">
+                  {typeof row === "string"
+                    ? row
+                    : typeof row === "object" && row && "query" in row
+                      ? String((row as { query?: unknown }).query ?? "")
+                      : JSON.stringify(row)}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
+    </>
+  );
+}
+
+function UsedPromptsFooter({ usedPrompts }: { usedPrompts: UsedPromptRef[] }) {
+  const visible = usedPrompts.filter(
+    (p) => p.number !== "L1" && !p.number.startsWith("L1-")
+  );
+  if (visible.length === 0) return null;
+
+  const desktopParts = visible.map((p) =>
+    p.number ? `${p.number} ${p.title}` : p.title
+  );
+  const mobileParts = visible.map((p) => p.title);
+
+  return (
+    <div className="mt-1.5 text-[10.5px] leading-[1.6] text-[#9aa0a8] max-md:text-[10px]">
+      <span>사용한 판단 · </span>
+      <span className="max-md:hidden">{desktopParts.join(" · ")}</span>
+      <span className="hidden max-md:inline">{mobileParts.join(" · ")}</span>
     </div>
   );
 }
 
-function ProgressStepsPanel({
-  steps,
-  searchRounds,
-  collapsedDefault
+function MessageActionsRow({
+  content,
+  cards,
+  notionSources,
+  memoryCount,
+  canFeedback,
+  feedback,
+  busy,
+  onCopy,
+  onFeedback
 }: {
-  steps: LunaProgressStep[];
-  searchRounds?: number | null;
-  collapsedDefault: boolean;
+  content: string;
+  cards: LunaCard[];
+  notionSources: NotionSource[];
+  memoryCount: number;
+  canFeedback: boolean;
+  feedback: "good" | "bad" | null;
+  busy: boolean;
+  onCopy: () => void;
+  onFeedback: (next: "good" | "bad") => void;
 }) {
-  const visible = steps.filter((s) => s.status !== "skip");
-  const [expanded, setExpanded] = useState(!collapsedDefault);
-  // 완료·스트리밍 공통: skip 제외 전체 단계 수 (running 포함)
-  const stepCount = visible.length;
-  const rounds = typeof searchRounds === "number" ? searchRounds : 0;
-  const summary = `검색 ${rounds}회 · ${stepCount}단계`;
-
-  if (visible.length === 0) return null;
-
-  if (!expanded && collapsedDefault) {
-    return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="mb-2 rounded-lg border border-solid border-[#E4E2DA] bg-[#F5F3EE] px-[9px] py-[7px] text-left text-[10.5px] text-gray-600"
-      >
-        {summary}
-      </button>
-    );
-  }
-
   return (
-    <div className="mb-2 rounded-lg border border-solid border-[#E4E2DA] bg-[#F5F3EE] px-[9px] py-[7px]">
-      {collapsedDefault ? (
+    <div className="mt-2 flex flex-wrap items-center gap-[7px]">
+      <SourceBadgeRow
+        cards={cards}
+        notionSources={notionSources}
+        memoryCount={memoryCount}
+      />
+      {content ? (
         <button
           type="button"
-          onClick={() => setExpanded(false)}
-          className="mb-1.5 block text-[10.5px] text-gray-500"
+          aria-label="복사"
+          onClick={onCopy}
+          className="ml-[3px] text-[#9aa0a8] hover:text-[#6b6f76]"
         >
-          {summary} ⌃
+          <Copy className="h-[15px] w-[15px]" strokeWidth={1.75} />
         </button>
       ) : null}
-      <div className="space-y-1">
-        {visible.map((s) => (
-          <div key={s.key} className="flex items-center gap-1.5 text-[10.5px] text-gray-600">
-            <span
-              className={`inline-block h-[5px] w-[5px] shrink-0 rounded-full ${
-                s.status === "done"
-                  ? "bg-[#0F6E56]"
-                  : "animate-pulse bg-[#BA7517]"
-              }`}
-              aria-hidden
-            />
-            <span>{s.label}</span>
-          </div>
-        ))}
-      </div>
+      {canFeedback ? (
+        <>
+          <button
+            type="button"
+            aria-label="좋아요"
+            disabled={busy}
+            onClick={() => onFeedback("good")}
+            className={`text-[15px] leading-none ${
+              feedback === "good" ? "text-[#534AB7]" : "text-[#9aa0a8]"
+            }`}
+          >
+            <ThumbsUp className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            aria-label="싫어요"
+            disabled={busy}
+            onClick={() => onFeedback("bad")}
+            className={`text-[15px] leading-none ${
+              feedback === "bad" ? "text-[#534AB7]" : "text-[#9aa0a8]"
+            }`}
+          >
+            <ThumbsDown className="h-[15px] w-[15px]" strokeWidth={1.75} />
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -908,12 +1021,10 @@ export function LunaMessage({
   onNasDriveModeChange,
   attachments = null,
   isThinking = false,
-  searchStatus = [],
   modelLabel = null,
   durationMs = null,
   modelSteps = null,
   steps = null,
-  searchRounds = null,
   clarify = null,
   mode = null,
   teams = null,
@@ -921,21 +1032,45 @@ export function LunaMessage({
   hideInlineClarifyOptions = false,
   memoryCount = null,
   correctionCandidateIds = null,
-  onCorrectionCancel
+  onCorrectionCancel,
+  usedPrompts = null,
+  detailMeta = null
 }: LunaMessageProps) {
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [dismissedChips, setDismissedChips] = useState<string[]>([]);
   const canFeedback =
     role === "assistant" && Boolean(id) && !id.startsWith("temp-") && !isThinking;
   const sources = notionSources?.filter((s) => s.title && s.url) ?? [];
   const cardList = (cards ?? []).filter((c) => c.title);
-  const hasCards = cardList.length > 0;
   const teamList = teams ?? [];
   const isAnalysis = mode === "analysis" || teamList.length > 0;
   const visibleCorrectionIds = (correctionCandidateIds ?? []).filter(
     (cid) => !dismissedChips.includes(cid)
   );
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+
+  const mergedDetailMeta: LunaDetailMeta = {
+    modelSteps: detailMeta?.modelSteps ?? modelSteps,
+    steps: detailMeta?.steps ?? steps,
+    wsSearches: detailMeta?.wsSearches ?? null
+  };
+
+  function copyContent() {
+    if (!content) return;
+    void navigator.clipboard.writeText(content).then(
+      () => setCopied(true),
+      () => {
+        /* ignore */
+      }
+    );
+  }
 
   async function cancelCorrection(candidateId: string) {
     setDismissedChips((prev) => [...prev, candidateId]);
@@ -989,8 +1124,8 @@ export function LunaMessage({
   if (role === "user") {
     const attachmentList = (attachments ?? []).filter((a) => a.file_name);
     return (
-      <div className="flex justify-end px-4 py-1.5">
-        <div className="max-w-[82%] md:max-w-[85%]">
+      <div className="mb-[22px] flex justify-end px-4 max-md:mb-3">
+        <div className="max-w-[75%] max-md:max-w-[80%]">
           {attachmentList.length > 0 ? (
             <div className="mb-1.5 flex flex-wrap justify-end gap-1">
               {attachmentList.map((att) => {
@@ -999,7 +1134,7 @@ export function LunaMessage({
                 return (
                   <span
                     key={att.id}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                    className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] text-white/90"
                   >
                     <Icon className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden />
                     <span className="max-w-[160px] truncate">{att.file_name}</span>
@@ -1009,10 +1144,10 @@ export function LunaMessage({
             </div>
           ) : null}
           {content ? (
-            <div className="whitespace-pre-wrap break-words rounded-[14px_14px_4px_14px] bg-[#EEEDFE] px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_2px_12px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
+            <div className="whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-[#534AB7] px-[15px] py-[11px] text-[14px] leading-[1.6] text-white max-md:px-[13px] max-md:py-[9px] max-md:text-[13.5px]">
               {content}
               {engine ? (
-                <div className="mt-1.5 text-[10px] text-gray-500 opacity-70">{engine}</div>
+                <div className="mt-1.5 text-[10px] text-white/70">{engine}</div>
               ) : null}
             </div>
           ) : null}
@@ -1022,29 +1157,15 @@ export function LunaMessage({
   }
 
   const stepList = steps ?? [];
-  const hasSteps = stepList.some((s) => s.status !== "skip");
-  const hasAnswerBody = Boolean(content) || hasCards || isAnalysis;
 
-  let body: ReactNode;
+  let bubbleInner: ReactNode;
   if (clarify) {
     const q = clarify.question || content;
     const { body: clarifyBody, assumptions } = parseAssumeMarkers(q);
-    body = (
-      <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-        {clarifyBody ? <SafeMarkdown content={clarifyBody} /> : null}
-        {assumptions.length > 0 ? (
-          <div className="mt-2 space-y-1.5">
-            {assumptions.map((a, i) => (
-              <div
-                key={`${i}-${a.slice(0, 24)}`}
-                className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] leading-snug text-amber-950"
-              >
-                <span className="font-medium text-amber-800">가정 · </span>
-                {a}
-              </div>
-            ))}
-          </div>
-        ) : null}
+    bubbleInner = (
+      <>
+        {clarifyBody ? <SafeMarkdown content={clarifyBody} variant="luna" /> : null}
+        <AssumeBlocks assumptions={assumptions} />
         {!hideInlineClarifyOptions ? (
           <>
             <div className="mt-2.5">
@@ -1063,10 +1184,10 @@ export function LunaMessage({
             <p className="mt-1 text-[10px] text-gray-500">직접 입력해도 됩니다</p>
           </>
         ) : null}
-      </div>
+      </>
     );
   } else if (isAnalysis) {
-    body = (
+    bubbleInner = (
       <AnalysisReport
         content={content}
         teams={teamList}
@@ -1078,72 +1199,48 @@ export function LunaMessage({
       />
     );
   } else if (isThinking) {
-    body = hasSteps ? null : (
-      <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-[13px] py-[11px] text-[13.5px] leading-[1.65] text-slate-900 md:rounded-[12px_12px_12px_2px] md:px-3.5 md:py-2.5 md:text-sm md:leading-relaxed">
-        <ThinkingDotsText />
-      </div>
-    );
-  } else if (hasCards) {
-    body = (
-      <>
-        <SourceSections
-          cards={cardList}
-          sourceReasons={sourceReasons}
-          nasDriveMode={nasDriveMode}
-          onNasDriveModeChange={onNasDriveModeChange}
-        />
-        {content ? <OpinionBlock content={content} /> : null}
-      </>
+    bubbleInner = (
+      <InlineThinkingProgress steps={stepList} content={content} />
     );
   } else if (content) {
-    body = <AssistantTextBubble content={content} />;
+    bubbleInner = <AssistantTextBubble content={content} />;
   } else {
-    body = null;
+    bubbleInner = null;
   }
 
+  const showBubble = bubbleInner != null;
+  const wrapAnalysis = isAnalysis && !isThinking;
+
   return (
-    <div className="group flex items-start gap-2.5 px-4 py-1.5">
-      <img
-        src="/luna/luna-face.png"
-        alt="LUNA"
-        width={22}
-        height={22}
-        draggable={false}
-        className="mt-0.5"
-        style={{
-          width: 22,
-          height: 22,
-          borderRadius: "50%",
-          objectFit: "cover",
-          flexShrink: 0,
-          display: "block"
-        }}
-      />
-      <div className="min-w-0 max-w-[82%] flex-1 md:max-w-[85%]">
-        {hasSteps ? (
-          <ProgressStepsPanel
-            steps={stepList}
-            searchRounds={searchRounds}
-            collapsedDefault={!isThinking && hasAnswerBody}
-          />
+    <div className="group mb-[22px] flex items-start gap-2.5 px-4 max-md:mb-4">
+      <LunaAvatar />
+      <div className="min-w-0 flex-1">
+        {showBubble ? (
+          wrapAnalysis ? (
+            bubbleInner
+          ) : (
+            <div className={LUNA_BUBBLE_CLASS}>{bubbleInner}</div>
+          )
         ) : null}
-        {isThinking && !hasSteps && searchStatus.length > 0 ? (
-          <div className="mb-1.5 space-y-0.5">
-            {searchStatus.map((label) => (
-              <p key={label} className="animate-pulse text-[11px] text-gray-500">
-                {label}
-              </p>
-            ))}
-          </div>
-        ) : null}
-        {body}
+
         {!isThinking && !clarify ? (
-          <SourceBadgeRow
+          <MessageActionsRow
+            content={content}
             cards={cardList}
             notionSources={sources}
             memoryCount={memoryCount ?? 0}
+            canFeedback={canFeedback}
+            feedback={feedback}
+            busy={busy}
+            onCopy={copyContent}
+            onFeedback={(next) => void sendFeedback(next)}
           />
         ) : null}
+
+        {copied ? (
+          <p className="mt-1 text-[10px] text-[#0F6E56]">복사했어요</p>
+        ) : null}
+
         {visibleCorrectionIds.length > 0 ? (
           <div className="mt-1.5 space-y-1">
             {visibleCorrectionIds.map((cid) => (
@@ -1163,53 +1260,17 @@ export function LunaMessage({
             ))}
           </div>
         ) : null}
+
+        {!isThinking && usedPrompts && usedPrompts.length > 0 ? (
+          <UsedPromptsFooter usedPrompts={usedPrompts} />
+        ) : null}
+
         {!isThinking && !clarify && modelLabel ? (
-          <ModelMetaFooter
+          <DetailMetaFooter
             modelLabel={modelLabel}
             durationMs={durationMs}
-            modelSteps={modelSteps ?? []}
+            detailMeta={mergedDetailMeta}
           />
-        ) : null}
-        {!isThinking && !hasCards && sources.length > 0 ? (
-          <div className="mt-1.5 flex flex-col gap-0.5">
-            {sources.map((s) => (
-              <a
-                key={`${s.url}-${s.title}`}
-                href={s.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-slate-600 underline-offset-2 hover:text-[#534AB7] hover:underline"
-              >
-                📄 {s.title}
-              </a>
-            ))}
-          </div>
-        ) : null}
-        {canFeedback && !clarify ? (
-          <div className="mt-1 flex items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100">
-            <button
-              type="button"
-              aria-label="좋아요"
-              disabled={busy}
-              onClick={() => void sendFeedback("good")}
-              className={`rounded p-0.5 hover:bg-slate-200 ${
-                feedback === "good" ? "text-[#534AB7] opacity-100" : "text-gray-500"
-              }`}
-            >
-              <ThumbsUp className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-            <button
-              type="button"
-              aria-label="싫어요"
-              disabled={busy}
-              onClick={() => void sendFeedback("bad")}
-              className={`rounded p-0.5 hover:bg-slate-200 ${
-                feedback === "bad" ? "text-[#534AB7] opacity-100" : "text-gray-500"
-              }`}
-            >
-              <ThumbsDown className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-          </div>
         ) : null}
       </div>
     </div>

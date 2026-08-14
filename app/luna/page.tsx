@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addThinkingMessage,
-  buildSearchStatus,
   consumeLunaStreamEvents,
   LunaChat,
   normalizeAnalysisTeams,
@@ -13,11 +11,10 @@ import {
   normalizeNotionSources,
   normalizeProgressSteps,
   normalizeSourceReasons,
-  removeThinkingMessage,
-  THINKING_MESSAGE_ID,
   type LunaAnalysisTeam,
   type LunaChatMessage
 } from "@/components/luna/LunaChat";
+import { normalizeUsedPrompts } from "@/lib/luna/chat-response";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
 import type {
   LunaAttachmentRef,
@@ -54,7 +51,6 @@ export default function LunaPage() {
   const [conversations, setConversations] = useState<LunaConversation[]>([]);
   const [messages, setMessages] = useState<LunaChatMessage[]>([]);
   const [sending, setSending] = useState(false);
-  const [searchStatus, setSearchStatus] = useState<string[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pendingCorrectionIdsRef = useRef<string[]>([]);
@@ -181,6 +177,12 @@ export default function LunaPage() {
           }
         }
 
+        const wsRaw = meta?.ws_tool_calls;
+        let wsToolCalls: unknown[] | null = null;
+        if (Array.isArray(wsRaw) && wsRaw.length > 0) {
+          wsToolCalls = wsRaw;
+        }
+
         return {
           id: row.id as string,
           role: row.role as "user" | "assistant",
@@ -199,7 +201,9 @@ export default function LunaPage() {
           clarify: clarifyResolved,
           mode,
           teams,
-          memoryCount
+          memoryCount,
+          usedPrompts: normalizeUsedPrompts(meta?.used_prompts),
+          wsToolCalls
         };
       })
     );
@@ -353,20 +357,23 @@ export default function LunaPage() {
       const userTempId = `temp-user-${Date.now()}`;
       const assistantTempId = `temp-assistant-${Date.now()}`;
 
-      setMessages((prev) =>
-        addThinkingMessage([
-          ...prev,
-          {
-            id: userTempId,
-            role: "user",
-            content: text,
-            attachments: attachmentMeta.length > 0 ? attachmentMeta : null
-          }
-        ])
-      );
-      setSearchStatus(
-        attachmentIds.length > 0 ? ["문서 분석 중..."] : buildSearchStatus(connectors)
-      );
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: userTempId,
+          role: "user",
+          content: text,
+          attachments: attachmentMeta.length > 0 ? attachmentMeta : null
+        },
+        {
+          id: assistantTempId,
+          role: "assistant",
+          content: "",
+          isThinking: true,
+          metadata: { isThinking: true },
+          steps: []
+        }
+      ]);
       setSending(true);
 
       try {
@@ -388,15 +395,18 @@ export default function LunaPage() {
         if (!res.ok || !res.body) {
           const errText = await res.text();
           console.error("[luna] chat", errText);
-          setSearchStatus([]);
-          setMessages((prev) => [
-            ...removeThinkingMessage(prev),
-            {
-              id: assistantTempId,
-              role: "assistant",
-              content: "응답을 가져오지 못했습니다. 다시 시도해 주세요."
-            }
-          ]);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId
+                ? {
+                    ...m,
+                    isThinking: false,
+                    metadata: undefined,
+                    content: "응답을 가져오지 못했습니다. 다시 시도해 주세요."
+                  }
+                : m
+            )
+          );
           return;
         }
 
@@ -413,15 +423,18 @@ export default function LunaPage() {
         let streamTeams: LunaAnalysisTeam[] = [];
         let streamSearchRounds: number | null = null;
         let streamMemoryCount: number | null = null;
+        let streamUsedPrompts: LunaChatMessage["usedPrompts"] = null;
         let assistantContent = "";
         let assistantVisible = false;
 
         const updateThinking = (extra?: Partial<LunaChatMessage>) => {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === THINKING_MESSAGE_ID || m.isThinking
+              m.id === assistantTempId
                 ? {
                     ...m,
+                    isThinking: true,
+                    metadata: { isThinking: true },
                     steps: streamSteps.length > 0 ? [...streamSteps] : m.steps,
                     searchRounds: streamSearchRounds ?? m.searchRounds,
                     mode: streamMode ?? m.mode,
@@ -434,30 +447,26 @@ export default function LunaPage() {
         };
 
         const upsertAssistant = (content: string, extra?: Partial<LunaChatMessage>) => {
-          setMessages((prev) => {
-            const base = removeThinkingMessage(prev);
-            const existing = base.some((m) => m.id === assistantTempId);
-            const next: LunaChatMessage = {
-              id: assistantTempId,
-              role: "assistant",
-              content,
-              cards: streamCards,
-              notionSources: streamNotionSources,
-              sourceReasons: streamSourceReasons,
-              steps: streamSteps.length > 0 ? streamSteps : null,
-              searchRounds: streamSearchRounds,
-              mode: streamMode,
-              teams: streamTeams.length > 0 ? streamTeams : null,
-              memoryCount: streamMemoryCount,
-              ...extra
-            };
-            if (existing) {
-              return base.map((m) =>
-                m.id === assistantTempId ? { ...m, ...next } : m
-              );
-            }
-            return [...base, next];
-          });
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId
+                ? {
+                    ...m,
+                    content,
+                    cards: streamCards ?? m.cards,
+                    notionSources: streamNotionSources ?? m.notionSources,
+                    sourceReasons: streamSourceReasons ?? m.sourceReasons,
+                    steps: streamSteps.length > 0 ? streamSteps : m.steps,
+                    searchRounds: streamSearchRounds ?? m.searchRounds,
+                    mode: streamMode ?? m.mode,
+                    teams: streamTeams.length > 0 ? streamTeams : m.teams,
+                    memoryCount: streamMemoryCount ?? m.memoryCount,
+                    usedPrompts: streamUsedPrompts ?? m.usedPrompts,
+                    ...extra
+                  }
+                : m
+            )
+          );
           assistantVisible = true;
         };
 
@@ -519,13 +528,13 @@ export default function LunaPage() {
               }
               if (consumed.kind === "clarify") {
                 buffer = consumed.buffer;
-                setSearchStatus([]);
                 upsertAssistant(consumed.question, {
                   clarify: {
                     question: consumed.question,
                     options: consumed.options
                   },
-                  isThinking: false
+                  isThinking: false,
+                  metadata: undefined
                 });
                 streamEndedByClarify = true;
                 keepParsing = false;
@@ -546,11 +555,14 @@ export default function LunaPage() {
                 if (consumed.steps && consumed.steps.length > 0) {
                   streamSteps = consumed.steps;
                 }
-                setSearchStatus([]);
+                streamUsedPrompts = consumed.usedPrompts;
                 metaReceived = true;
                 buffer = consumed.buffer;
                 assistantContent = buffer;
-                upsertAssistant(assistantContent, { isThinking: false });
+                upsertAssistant(assistantContent, {
+                  isThinking: true,
+                  metadata: { isThinking: true }
+                });
                 keepParsing = false;
                 continue;
               }
@@ -579,25 +591,33 @@ export default function LunaPage() {
           if (numbered) {
             upsertAssistant(numbered.body, {
               isThinking: false,
+              metadata: undefined,
               clarify: {
                 question: numbered.body,
                 options: numbered.options
               }
             });
           } else {
-            upsertAssistant(assistantContent, { isThinking: false });
+            upsertAssistant(assistantContent, {
+              isThinking: false,
+              metadata: undefined
+            });
           }
         }
 
         if (!assistantVisible && !streamEndedByClarify) {
-          setMessages((prev) => [
-            ...removeThinkingMessage(prev),
-            {
-              id: assistantTempId,
-              role: "assistant",
-              content: "응답을 가져오지 못했습니다. 다시 시도해 주세요."
-            }
-          ]);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId
+                ? {
+                    ...m,
+                    isThinking: false,
+                    metadata: undefined,
+                    content: "응답을 가져오지 못했습니다. 다시 시도해 주세요."
+                  }
+                : m
+            )
+          );
         }
 
         try {
@@ -635,29 +655,20 @@ export default function LunaPage() {
         }
       } catch (err) {
         console.error("[luna] chat stream", err);
-        setSearchStatus([]);
-        setMessages((prev) => {
-          const withoutThinking = removeThinkingMessage(prev);
-          const existing = withoutThinking.find((m) => m.id === assistantTempId);
-          if (existing) {
-            return withoutThinking.map((m) =>
-              m.id === assistantTempId
-                ? { ...m, content: m.content || "오류가 발생했습니다." }
-                : m
-            );
-          }
-          return [
-            ...withoutThinking,
-            {
-              id: assistantTempId,
-              role: "assistant",
-              content: "오류가 발생했습니다."
-            }
-          ];
-        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  isThinking: false,
+                  metadata: undefined,
+                  content: m.content || "오류가 발생했습니다."
+                }
+              : m
+          )
+        );
       } finally {
         setSending(false);
-        setSearchStatus([]);
       }
     },
     [ensureConversation, loadConversations, loadMessages]
@@ -712,10 +723,9 @@ export default function LunaPage() {
             onSuggestion={(text) =>
               void sendMessage(text, DEFAULT_CONNECTORS, [], [], EMPTY_SKILLS)
             }
-            onBack={() => setSelectedConversationId(null)}
+            onNewChat={() => void onNewChat()}
             onOpenMenu={() => setDrawerOpen(true)}
             sending={sending}
-            searchStatus={searchStatus}
             showMobileHeader
             onEnsureConversation={ensureConversation}
             onRenameTitle={

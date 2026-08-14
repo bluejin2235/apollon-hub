@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>루나 채팅방 — 목업</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-bub:#F4F3FB; --luna-bub-line:#E3E0F5; --luna-soft:#EEEDFE;
+    --amber-bg:#FAEEDA; --amber-ink:#633806;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .mocklabel{margin:26px 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;max-width:720px}
+
+  /* ── 내 말풍선 ── */
+  .me-row{display:flex;justify-content:flex-end;margin-bottom:22px}
+  .me{background:var(--luna);color:#fff;border-radius:16px 16px 5px 16px;
+    padding:11px 15px;font-size:14px;line-height:1.6;max-width:75%;white-space:pre-wrap}
+
+  /* ── 루나 말풍선 ── */
+  .luna-row{display:flex;gap:10px}
+  .avatar{width:28px;height:28px;border-radius:50%;background:var(--luna);color:#EEEDFE;
+    font-size:12px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
+  .luna-col{flex:1;min-width:0}
+  .bub{background:var(--luna-bub);border:1px solid var(--luna-bub-line);
+    border-radius:5px 16px 16px 16px;padding:14px 16px;font-size:14.5px;line-height:1.75}
+  .bub p{margin:0 0 10px}
+  .bub p:last-child{margin-bottom:0}
+  .bub .cap{font-size:12.5px;color:var(--sub);margin-bottom:5px}
+  .path{background:#fff;border:1px solid var(--luna-bub-line);border-radius:8px;
+    padding:9px 11px;font-size:12px;line-height:1.7;font-family:var(--mono);
+    margin-bottom:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+  .assume{background:var(--amber-bg);border-radius:8px;padding:9px 11px;
+    font-size:13px;color:var(--amber-ink);line-height:1.6}
+  .bub code{font-family:var(--mono);font-size:12px;background:#fff;
+    border:1px solid var(--luna-bub-line);border-radius:4px;padding:1px 5px}
+
+  /* ── 하단 액션 ── */
+  .acts{display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap}
+  .src{font-size:10.5px;background:var(--bg);border:1px solid var(--line);color:var(--sub);
+    padding:2px 8px;border-radius:10px}
+  .icn{font-size:15px;color:var(--faint);cursor:pointer;line-height:1}
+  .icn.first{margin-left:3px}
+  .judge{margin-top:6px;font-size:10.5px;color:var(--faint);line-height:1.6}
+  .meta{margin-top:2px;font-size:10.5px;color:var(--faint)}
+  .meta a{color:var(--luna);text-decoration:none;cursor:pointer}
+
+  /* ── 진행 중 ── */
+  .live-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--luna)}
+  .live-head span{font-size:13px;color:var(--sub)}
+  .steps{font-size:12.5px;color:var(--faint);line-height:1.9;padding-left:14px}
+  .typing{margin-top:10px;font-size:14.5px;line-height:1.75}
+  .caret{display:inline-block;width:7px;height:15px;background:var(--ink);
+    vertical-align:text-bottom;margin-left:2px}
+
+  /* ── 입력창 ── */
+  .composer{margin-top:22px;border:1px solid var(--line);border-radius:22px;
+    padding:12px 14px;background:var(--panel)}
+  .composer .ph{font-size:14px;color:var(--faint);margin-bottom:32px}
+  .composer .typed{font-size:14px;color:var(--ink);line-height:1.55;margin-bottom:30px;white-space:pre-wrap}
+  .crow{display:flex;align-items:center;gap:9px}
+  .crow .spacer{margin-left:auto}
+  .crow .pick{font-size:11.5px;color:var(--faint);cursor:pointer}
+  .send{width:30px;height:30px;border-radius:50%;background:var(--luna);
+    display:grid;place-items:center;color:#fff;font-size:15px;line-height:1}
+  .cicn{font-size:17px;color:var(--sub);line-height:1}
+
+  /* ── 모바일 ── */
+  .phone{width:320px;background:#F5F4F1;border-radius:28px;padding:14px 12px;border:1px solid var(--line)}
+  .ptop{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .pbtn{width:34px;height:34px;border-radius:50%;background:var(--panel);display:grid;place-items:center;
+    font-size:16px;color:var(--sub)}
+  .phone .me{font-size:13.5px;padding:9px 13px;max-width:80%}
+  .phone .me-row{margin-bottom:12px}
+  .phone .avatar{width:24px;height:24px;font-size:10.5px}
+  .phone .bub{font-size:13.5px;line-height:1.7;padding:11px 13px}
+  .phone .judge{font-size:10px}
+  .phone .composer{background:var(--panel);border-radius:22px;padding:13px 14px;margin-top:16px}
+  .phone .composer .typed{font-size:14px;margin-bottom:28px}
+  .phone .send{width:34px;height:34px;font-size:16px}
+  .phone .cicn{font-size:18px}
+  .note{margin:8px 4px 0;font-size:10.5px;color:var(--faint);text-align:center}
+
+  .cols{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">LUNA CHAT — 색 규칙</div>
+<div class="stage" style="max-width:560px">
+  <div class="me-row"><div class="me">내 말 — 배경 #534AB7 / 흰 글씨 / 우측 / 꼬리 우하단</div></div>
+  <div class="luna-row">
+    <div class="avatar">L</div>
+    <div class="luna-col">
+      <div class="bub">루나 — 배경 #F4F3FB / 테두리 #E3E0F5 / 좌측 / 꼬리 좌상단 / 아바타 보라 원 L</div>
+      <div class="judge">사용한 판단 · 루나 말풍선 바로 아래 회색 10.5px</div>
+    </div>
+  </div>
+</div>
+
+<div class="cols">
+<div>
+<div class="mocklabel">1 — 답변 완료 (PC)</div>
+<div class="stage">
+  <div class="me-row"><div class="me">더후 견적서 위치 알려줘</div></div>
+
+  <div class="luna-row">
+    <div class="avatar">L</div>
+    <div class="luna-col">
+      <div class="bub">
+        <p>견적서는 여기 있어요.</p>
+        <div class="cap">최종본</div>
+        <div class="path">T:\02 Project\2026\260713 더후 글로벌 론칭\00 Management\01 견적\260708 견적서\
+K2_Apollon_더후이벤트영상제작_견적서_260708_FIN.pdf</div>
+        <p>같은 견적서가 사업개발 폴더에도 있어요. 수주 전 단계라 그쪽이 원본이고, 프로젝트 폴더 쪽이 최신이에요.</p>
+        <div class="assume">확인할게요 — 최종본(FIN) 기준으로 찾았어요. 이전 버전이 필요하면 <code>00 old</code> 폴더에 있어요.</div>
+      </div>
+
+      <div class="acts">
+        <span class="src">Work서버 4건</span>
+        <span class="src">기억 6건</span>
+        <span class="icn first">⧉</span>
+        <span class="icn">👍</span>
+        <span class="icn">👎</span>
+      </div>
+
+      <div class="judge">사용한 판단 · L3-01 질문 이해 · L3-03 자료 찾기 · L3-02 가정 확인 · L3-04 답변 원칙 · L2-01 공간기획 관점</div>
+      <div class="meta">Sonnet 4.6 · 8.2초 · <a>자세히</a></div>
+    </div>
+  </div>
+
+  <div class="composer">
+    <div class="ph">루나에게 물어보기</div>
+    <div class="crow">
+      <span class="cicn">＋</span>
+      <span class="cicn" style="font-size:15px">🔗</span>
+      <span class="spacer"></span>
+      <span class="pick">직접 지정</span>
+      <span class="cicn" style="font-size:16px">🎙</span>
+      <span class="send">↑</span>
+    </div>
+  </div>
+</div>
+
+<div class="mocklabel">2 — 답변 중 (단계 실시간)</div>
+<div class="stage">
+  <div class="me-row"><div class="me">더후 견적서 위치 알려줘</div></div>
+  <div class="luna-row">
+    <div class="avatar">L</div>
+    <div class="luna-col">
+      <div class="bub">
+        <div class="live-head"><span class="dot"></span><span>Work서버에서 '더후 견적' 찾는 중…</span></div>
+        <div class="steps">
+          <div>질문 이해 — 완료</div>
+          <div>자료 찾기 — 2번째 검색</div>
+        </div>
+        <div class="typing">견적서는 여기 있어요.<span class="caret"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div>
+<div class="mocklabel">3 — 모바일 (줄바꿈 시 입력창 확장)</div>
+<div class="phone">
+  <div class="ptop">
+    <div class="pbtn">☰</div>
+    <div class="pbtn">✎</div>
+  </div>
+
+  <div class="me-row"><div class="me">더후 견적서 위치 알려줘</div></div>
+
+  <div class="luna-row" style="margin-bottom:16px">
+    <div class="avatar">L</div>
+    <div class="luna-col">
+      <div class="bub">견적서는 프로젝트 폴더 <code>00 Management\01 견적</code> 안에 있어요.</div>
+      <div class="judge">사용한 판단 · 질문 이해 · 자료 찾기 · 답변 원칙</div>
+    </div>
+  </div>
+
+  <div class="composer">
+    <div class="typed">최신본만
+알려줘</div>
+    <div class="crow">
+      <span class="cicn">＋</span>
+      <span class="cicn" style="font-size:16px">🔗</span>
+      <span class="spacer"></span>
+      <span class="cicn">🎙</span>
+      <span class="send">↑</span>
+    </div>
+  </div>
+  <div class="note">토글 없음 · 루나가 스스로 판단합니다</div>
+</div>
+</div>
+</div>
+
+</div>
+</body>
+</html>
