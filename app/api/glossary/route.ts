@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
 
   if (id) {
-    let detailQ = admin
+    const detailQ = admin
       .from("glossary_terms")
       .select(TERM_SELECT)
       .eq("id", id)
@@ -280,7 +280,7 @@ export async function GET(request: NextRequest) {
   // 이 목록은 루나 사이드바가 모든 화면에서 부른다.
   // 용어 테이블이 없거나 조회에 실패해도 사이드바가 죽지 않도록 빈 목록으로 되돌린다.
   const wantStats = request.nextUrl.searchParams.get("stats") === "1";
-  let listQ = admin
+  const listQ = admin
     .from("glossary_terms")
     .select(LIST_SELECT)
     .is("deleted_at", null)
@@ -415,7 +415,7 @@ export async function POST(request: NextRequest) {
 
   let saved: { id: string; version: number } | null = null;
   if (termId) {
-    let readQ = admin
+    const readQ = admin
       .from("glossary_terms")
       .select("version")
       .eq("id", termId)
@@ -529,7 +529,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "id 가 필요합니다." }, { status: 400 });
   }
 
-  let readQ = admin
+  const readQ = admin
     .from("glossary_terms")
     .select("id, term_ko, term_en, term_zh, definition, synonyms, version")
     .eq("id", termId)

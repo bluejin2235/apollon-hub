@@ -394,9 +394,9 @@ export function GlossaryDuplicateDialog({
                   onChange={() => setSurvivorChoice("existing")}
                 />
                 <span>
-                  사전에 있는 것 유지 — '{activePayload.existing.term_ko}'
+                  {`사전에 있는 것 유지 — '${activePayload.existing.term_ko}'`}
                   <span className="block text-[11.5px]" style={{ color: C.faint }}>
-                    '{editingName}' 삭제
+                    {`'${editingName}' 삭제`}
                   </span>
                 </span>
               </label>
@@ -409,7 +409,7 @@ export function GlossaryDuplicateDialog({
                   onChange={() => setSurvivorChoice("editing")}
                 />
                 <span>
-                  수정 중인 것 유지 — '{editingName}'
+                  {`수정 중인 것 유지 — '${editingName}'`}
                   <span className="block text-[11.5px]" style={{ color: C.faint }}>
                     {quoteNames(conflictNames)} 삭제
                   </span>

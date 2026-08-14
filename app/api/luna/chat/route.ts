@@ -754,7 +754,7 @@ export async function POST(request: NextRequest) {
   }
 
   let skillPrompt: string | null = null;
-  let l2SkillRows: Array<{
+  const l2SkillRows: Array<{
     title: string;
     level: LunaPromptLevel;
     sort_order: number;
