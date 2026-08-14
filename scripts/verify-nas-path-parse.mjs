@@ -409,7 +409,8 @@ const layoutOk =
   layout.nasGroups[0].files.includes("아폴론_청담오피스라운지 미디어아트_230720_계약용.pptx") &&
   layout.notionItems.length === 3 &&
   layout.notionItems[0].title.startsWith("230720") &&
-  layout.body.includes("230711이 초안") &&
+  !layout.body.includes("230711") &&
+  !layout.body.includes("같은 폴더") &&
   !layout.body.includes("T:\\") &&
   !layout.body.includes("[[") &&
   layout.assume.length === 1 &&
@@ -425,6 +426,44 @@ if (layoutOk) {
     notion: layout.notionItems.map((n) => n.title),
     body: layout.body,
     assume: layout.assume
+  });
+  failed = true;
+}
+
+const overlapRaw = `제안서는 세 버전이 있어요. **230720 계약용**이 최종본입니다.
+
+**230711 버전** (첫 제안서)
+**230720 버전** (이수만 회장님 첫 미팅용, 계약용 포함)
+노션에도 관련 기록이 있습니다.
+최종 계약용은 230720_계약용.pptx입니다. 230711은 그 이전 초안입니다.
+
+견적은 볼팍 기준으로 다시 뽑아야 합니다.
+
+[[가정: 수정일 기준 230720 계약용을 최종본으로 봤어요.]]`;
+
+const overlap = composeLunaResultLayout({
+  raw: overlapRaw,
+  cards: layoutCards,
+  notionSources: layoutNotion
+});
+
+const overlapOk =
+  overlap.lead.includes("제안서는 세 버전") &&
+  overlap.lead.includes("230720 계약용") &&
+  !overlap.body.includes("230711 버전") &&
+  !overlap.body.includes("230720 버전") &&
+  !overlap.body.includes("노션에도") &&
+  !overlap.body.includes("230720_계약용.pptx") &&
+  overlap.body.includes("견적은 볼팍") &&
+  overlap.assume[0]?.includes("수정일 기준");
+
+if (overlapOk) {
+  console.log("PASS compose overlap body");
+} else {
+  console.log("FAIL compose overlap body", {
+    lead: overlap.lead,
+    body: overlap.body,
+    assume: overlap.assume
   });
   failed = true;
 }

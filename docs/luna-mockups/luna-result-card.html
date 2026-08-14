@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>루나 검색 결과 카드 — 목업</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8;
+    --luna:#534AB7; --luna-bub:#F7F6FC; --luna-bub-line:#E8E5F4;
+    --amber-line:#E0C79B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:620px;margin:0 auto}
+  .mocklabel{margin:24px 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .mocklabel:first-child{margin-top:0}
+
+  /* 루나 말풍선 */
+  .bub{background:var(--luna-bub);border:1px solid var(--luna-bub-line);
+    border-radius:6px 18px 18px 18px;padding:18px 20px}
+  .lead{font-size:14.5px;line-height:1.7;margin-bottom:16px}
+  .lead b{font-weight:600}
+
+  /* 폴더 헤더 — 카드 밖 */
+  .group{margin-bottom:18px}
+  .folder{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .folder .ico{font-size:15px;color:var(--faint);line-height:1}
+  .folder .crumb{font-size:11.5px;color:var(--sub);flex:1;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .folder .copy{font-size:14px;color:var(--faint);cursor:pointer;line-height:1}
+
+  /* 파일 카드 */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .row{display:flex;align-items:center;gap:11px;padding:11px 14px;
+    border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .row .name{flex:1;min-width:0;font-size:13px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .name.dim{color:var(--sub)}
+  .row .tag{font-size:10.5px;white-space:nowrap;color:var(--faint)}
+  .row .tag.final{color:#0F6E56}
+  .row .copy{font-size:14px;color:var(--faint);cursor:pointer;line-height:1}
+  .row .ext{font-size:9px;font-weight:600;border-radius:4px;padding:2px 5px;
+    letter-spacing:.2px;white-space:nowrap}
+
+  /* 확장자 배지 색 */
+  .ext-ppt {color:#B0552F;border:1px solid #E8CFC2}
+  .ext-xls {color:#2F7A57;border:1px solid #C4E0D2}
+  .ext-pdf {color:#A83A3A;border:1px solid #E8C9C9}
+  .ext-doc {color:#3B6396;border:1px solid #C7D5E8}
+  .ext-dwg {color:#7A6A45;border:1px solid #DED5C1}
+  .ext-img {color:#6B5AA8;border:1px solid #D3CCE8}
+  .ext-vid {color:#5A5A57;border:1px solid #D6D5D0}
+  .ext-file{color:#8A8A85;border:1px solid #DEDDD8}
+
+  /* 노션 */
+  .srclabel{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .srclabel .n{font-size:12px;font-weight:600;color:var(--faint);width:15px;text-align:center}
+  .srclabel .t{font-size:11.5px;color:var(--sub)}
+  .row .link{font-size:15px;color:var(--faint);line-height:1}
+
+  /* 가정 확인 — 왼쪽 선 */
+  .assume{border-left:2px solid var(--amber-line);padding:2px 0 2px 12px}
+  .assume p{font-size:12.5px;color:var(--sub);line-height:1.65}
+
+  /* 드라이브 토글 — 말풍선 아래 */
+  .drive{display:flex;align-items:center;gap:14px;margin-top:12px;padding-left:2px}
+  .drive span{font-size:11px;color:var(--faint);cursor:pointer}
+  .drive .cur{color:var(--ink);border-bottom:1px solid var(--faint);padding-bottom:1px}
+
+  .swatches{display:flex;gap:7px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">LUNA 검색 결과 카드</div>
+
+<div class="bub">
+  <p class="lead">제안서는 세 버전이 있어요. <b>230720 계약용</b>이 최종본입니다.</p>
+
+  <!-- 그룹 1 -->
+  <div class="group">
+    <div class="folder">
+      <span class="ico">🗀</span>
+      <span class="crumb">01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230714 이수만 회장님 첫 미팅</span>
+      <span class="copy">⧉</span>
+    </div>
+    <div class="card">
+      <div class="row">
+        <span class="ext ext-ppt">PPT</span>
+        <span class="name">아폴론_청담오피스라운지 미디어아트_230720_계약용</span>
+        <span class="tag final">최종</span>
+      </div>
+      <div class="row">
+        <span class="ext ext-ppt">PPT</span>
+        <span class="name dim">아폴론_청담오피스라운지 미디어아트_230720</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 그룹 2 -->
+  <div class="group">
+    <div class="folder">
+      <span class="ico">🗀</span>
+      <span class="crumb">01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230711 제안서</span>
+      <span class="copy">⧉</span>
+    </div>
+    <div class="card">
+      <div class="row">
+        <span class="ext ext-ppt">PPT</span>
+        <span class="name dim">아폴론_청담오피스라운지 미디어아트_230711</span>
+        <span class="tag">초안</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 노션 -->
+  <div class="srclabel">
+    <span class="n">N</span>
+    <span class="t">노션</span>
+  </div>
+  <div class="card" style="margin-bottom:18px">
+    <div class="row">
+      <span class="name">230720 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL</span>
+      <span class="link">↗</span>
+    </div>
+    <div class="row">
+      <span class="name">230711 청담동 오피스 라운지 MEDIA ART INSTALLATION PROPOSAL</span>
+      <span class="link">↗</span>
+    </div>
+    <div class="row">
+      <span class="name">230628 청담동 오피스 라운지(EB 완료)</span>
+      <span class="link">↗</span>
+    </div>
+  </div>
+
+  <!-- 가정 확인 -->
+  <div class="assume">
+    <p>수정일 기준 230720 계약용을 최종본으로 봤어요. 다른 기준이 있으면 알려주세요.</p>
+  </div>
+</div>
+
+<!-- 드라이브 토글 -->
+<div class="drive">
+  <span>T 드라이브</span>
+  <span>·</span>
+  <span class="cur">사무실</span>
+  <span>RaiDrive</span>
+</div>
+
+<div class="mocklabel">파일 유형 배지</div>
+<div class="swatches">
+  <span class="ext ext-ppt">PPT</span>
+  <span class="ext ext-xls">XLS</span>
+  <span class="ext ext-pdf">PDF</span>
+  <span class="ext ext-doc">DOC</span>
+  <span class="ext ext-dwg">DWG</span>
+  <span class="ext ext-img">IMG</span>
+  <span class="ext ext-vid">VID</span>
+  <span class="ext ext-file">FILE</span>
+</div>
+
+</div>
+</body>
+</html>

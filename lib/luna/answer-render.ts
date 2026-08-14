@@ -5,6 +5,7 @@ import {
   groupNasCardsByFolder,
   mergePathGroups,
   splitMarkdownByWorkserverPaths,
+  stripFileExtension,
   type MarkdownSegment,
   type WorkserverPathGroup
 } from "./nas-path";
@@ -180,7 +181,7 @@ function collectedFileNames(groups: WorkserverPathGroup[]): Set<string> {
   return names;
 }
 
-function isFilenameOnlyLine(line: string, files: Set<string>): boolean {
+function unwrapCatalogLine(line: string): string {
   let t = line.trim().replace(/^[-*•]\s+/, "").replace(/^(?:→|->)\s*/, "");
   if (t.startsWith("`") && t.endsWith("`") && t.length > 2) {
     t = t.slice(1, -1).trim();
@@ -188,7 +189,129 @@ function isFilenameOnlyLine(line: string, files: Set<string>): boolean {
   if (t.startsWith("**") && t.endsWith("**") && t.length > 4) {
     t = t.slice(2, -2).trim();
   }
+  return t.replace(/\*\*/g, "").replace(/`/g, "").trim();
+}
+
+function isFilenameOnlyLine(line: string, files: Set<string>): boolean {
+  const t = unwrapCatalogLine(line);
   return files.has(t);
+}
+
+function yymmddTokens(text: string): string[] {
+  return text.match(/\d{6}/g) ?? [];
+}
+
+type CardOverlapTokens = {
+  files: Set<string>;
+  stems: string[];
+  dates: Set<string>;
+  phrases: string[];
+};
+
+const OVERLAP_FILLER_RE =
+  /버전|초안|최종|계약용|제안서|포함|이전|같은|폴더|안에|있는|있어요|있습니다|입니다|보입니다|확인됩니다|관련|기록|페이지|문서|정리본|정리|링크|항목|첫|직전|미팅용|용이자/g;
+
+function collectOverlapTokens(
+  nasGroups: WorkserverPathGroup[],
+  notionItems: NotionSource[]
+): CardOverlapTokens {
+  const files = collectedFileNames(nasGroups);
+  const stemSet = new Set<string>();
+  const dates = new Set<string>();
+  const phrases: string[] = [];
+
+  for (const name of files) {
+    const stem = stripFileExtension(name);
+    if (stem) stemSet.add(stem);
+    for (const d of yymmddTokens(name)) dates.add(d);
+  }
+  for (const g of nasGroups) {
+    for (const d of yymmddTokens(g.folderRawPath)) dates.add(d);
+    const leaf = g.folderRawPath.split("\\").pop()?.trim() ?? "";
+    if (leaf.length >= 4) phrases.push(leaf);
+  }
+  for (const page of notionItems) {
+    if (!page.title) continue;
+    phrases.push(page.title);
+    for (const d of yymmddTokens(page.title)) dates.add(d);
+  }
+
+  const stems = Array.from(stemSet).sort((a, b) => b.length - a.length);
+  phrases.sort((a, b) => b.length - a.length);
+  return { files, stems, dates, phrases };
+}
+
+function significantAfterOverlapStrip(
+  plain: string,
+  tokens: CardOverlapTokens
+): string {
+  let t = plain;
+  for (const f of tokens.files) t = t.split(f).join(" ");
+  for (const s of tokens.stems) t = t.split(s).join(" ");
+  for (const p of tokens.phrases) t = t.split(p).join(" ");
+  for (const d of tokens.dates) t = t.split(d).join(" ");
+  t = t.replace(/노션/g, " ");
+  t = t.replace(OVERLAP_FILLER_RE, " ");
+  t = t.replace(/\.[a-z0-9]{1,8}\b/gi, " ");
+  t = t.replace(/[^\w가-힣]+/g, " ");
+  return t.replace(/\s+/g, " ").trim();
+}
+
+function isNotionPointerLine(plain: string): boolean {
+  if (!/노션/.test(plain)) return false;
+  return significantAfterOverlapStrip(plain, {
+    files: new Set(),
+    stems: [],
+    dates: new Set(),
+    phrases: []
+  }).length <= 2;
+}
+
+function isCardOverlapLine(
+  line: string,
+  tokens: CardOverlapTokens,
+  hasNotion: boolean
+): boolean {
+  const plain = unwrapCatalogLine(line);
+  if (!plain) return true;
+  if (isResultSectionHeading(plain)) return true;
+  if (tokens.files.has(plain) || tokens.stems.includes(plain)) return true;
+  for (const f of tokens.files) {
+    if (plain.includes(f)) return true;
+  }
+  for (const s of tokens.stems) {
+    if (s.length >= 8 && plain.includes(s)) return true;
+  }
+  for (const d of tokens.dates) {
+    if (plain.includes(d)) return true;
+  }
+  if (hasNotion && isNotionPointerLine(plain)) return true;
+  return significantAfterOverlapStrip(plain, tokens).length < 8;
+}
+
+function stripCardOverlapBody(
+  body: string,
+  nasGroups: WorkserverPathGroup[],
+  notionItems: NotionSource[]
+): string {
+  if (!body.trim()) return "";
+  if (nasGroups.length === 0 && notionItems.length === 0) return body;
+  const tokens = collectOverlapTokens(nasGroups, notionItems);
+  const hasNotion = notionItems.length > 0;
+  const kept: string[] = [];
+  for (const line of body.replace(/\r\n/g, "\n").split("\n")) {
+    if (!line.trim()) {
+      kept.push("");
+      continue;
+    }
+    if (isCardOverlapLine(line, tokens, hasNotion)) continue;
+    kept.push(line);
+  }
+  return kept
+    .join("\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function stripOfficePaths(text: string): string {
@@ -292,7 +415,13 @@ export function composeLunaResultLayout(opts: {
   }
 
   const { lead, body } = splitLeadAndBody(stripped);
-  return { lead, nasGroups, notionItems, body, assume: assumptions };
+  return {
+    lead,
+    nasGroups,
+    notionItems,
+    body: stripCardOverlapBody(body, nasGroups, notionItems),
+    assume: assumptions
+  };
 }
 
 /** @deprecated parseLunaAnswer 사용 */
