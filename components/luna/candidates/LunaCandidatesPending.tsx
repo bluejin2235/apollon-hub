@@ -258,6 +258,16 @@ export function LunaCandidatesPending() {
     if (!token) return;
     setDupBusy(true);
     setDupError("");
+    const survivorId = dupPayload.existing.id;
+    const loserIds = Array.from(
+      new Set(
+        [
+          dupPayload.exclude_id,
+          dupPayload.primary.existing_id,
+          ...dupPayload.others.map((o) => o.existing_id)
+        ].filter((id): id is string => Boolean(id) && id !== survivorId)
+      )
+    );
     try {
       const res = await fetch("/api/glossary/resolve-duplicate", {
         method: "POST",
@@ -267,10 +277,11 @@ export function LunaCandidatesPending() {
         },
         body: JSON.stringify({
           action: args.action,
-          existing_id: dupPayload.existing.id,
+          existing_id: survivorId,
           incoming: args.incoming,
           merged: args.merged,
-          candidate_id: dupPayload.candidate_id
+          candidate_id: dupPayload.candidate_id,
+          loser_ids: loserIds
         })
       });
       const json = (await res.json().catch(() => null)) as {
@@ -282,6 +293,7 @@ export function LunaCandidatesPending() {
         existing?: GlossaryDupTerm;
         incoming?: GlossaryFieldValues;
         merge_draft?: GlossaryFieldValues | null;
+        conflict_term_ko?: string;
       } | null;
       if (res.status === 409 && json?.conflicts && json.primary && json.existing) {
         setDupPayload({
@@ -292,11 +304,20 @@ export function LunaCandidatesPending() {
           incoming: json.incoming ?? args.incoming,
           merge_draft: json.merge_draft ?? null
         });
-        setDupError("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+        setDupError(
+          json.error ||
+            json.primary.message ||
+            "바꾼 이름도 겹칩니다. 다시 확인해 주세요."
+        );
         return;
       }
       if (!res.ok) {
-        setDupError(json?.error ?? `처리 실패 (${res.status})`);
+        setDupError(
+          json?.error ??
+            (json?.conflict_term_ko
+              ? `한국어 이름이 다른 활성 용어와 겹칩니다 — ${json.conflict_term_ko}`
+              : `처리 실패 (${res.status})`)
+        );
         return;
       }
       const doneId = dupPayload.candidate_id;

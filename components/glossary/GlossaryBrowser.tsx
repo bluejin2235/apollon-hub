@@ -455,6 +455,7 @@ export function GlossaryBrowser({
           exclude_id: excludeId
         });
         setDupError("");
+        setSaving(false);
         return;
       }
 
@@ -511,7 +512,19 @@ export function GlossaryBrowser({
   }) {
     if (!dupPayload) return;
     setDupBusy(true);
+    setSaving(false);
     setDupError("");
+    const loserIds = Array.from(
+      new Set(
+        [
+          dupPayload.exclude_id,
+          dupPayload.existing.id,
+          dupPayload.primary.existing_id,
+          ...dupPayload.others.map((o) => o.existing_id)
+        ].filter((id): id is string => Boolean(id))
+      )
+    ).filter((id) => id !== dupPayload.existing.id);
+
     try {
       const res = await api<{
         ok: boolean;
@@ -522,6 +535,7 @@ export function GlossaryBrowser({
         others?: GlossaryDupMatch[];
         existing?: GlossaryDupTerm;
         incoming?: GlossaryFieldValues;
+        conflict_term_ko?: string;
       }>("/api/glossary/resolve-duplicate", {
         method: "POST",
         body: JSON.stringify({
@@ -530,6 +544,7 @@ export function GlossaryBrowser({
           incoming: args.incoming,
           merged: args.merged,
           exclude_id: dupPayload.exclude_id ?? null,
+          loser_ids: loserIds,
           candidate_id: null
         })
       });
@@ -548,10 +563,19 @@ export function GlossaryBrowser({
             incoming: res.data.incoming ?? args.incoming,
             merge_draft: null
           });
-          setDupError("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+          setDupError(
+            res.error ||
+              res.data.primary.message ||
+              "바꾼 이름도 겹칩니다. 다시 확인해 주세요."
+          );
           return;
         }
-        setDupError(res.error || "처리에 실패했습니다.");
+        setDupError(
+          res.error ||
+            (typeof res.data?.conflict_term_ko === "string"
+              ? `한국어 이름이 다른 활성 용어와 겹칩니다 — ${res.data.conflict_term_ko}`
+              : "처리에 실패했습니다.")
+        );
         return;
       }
       setDupPayload(null);
@@ -572,6 +596,7 @@ export function GlossaryBrowser({
       setDupError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {
       setDupBusy(false);
+      setSaving(false);
     }
   }
 
@@ -836,7 +861,7 @@ export function GlossaryBrowser({
                 <div className="mt-1 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={saving}
+                    disabled={saving || !!dupPayload || dupBusy}
                     onClick={() => void save()}
                     className="rounded-[9px] border px-3.5 py-2 text-[12.5px] font-bold text-white disabled:opacity-50"
                     style={{ background: C.luna, borderColor: C.luna }}
@@ -845,7 +870,7 @@ export function GlossaryBrowser({
                   </button>
                   <button
                     type="button"
-                    disabled={saving}
+                    disabled={saving || dupBusy}
                     onClick={cancelCreate}
                     className="rounded-[9px] border bg-white px-3.5 py-2 text-[12.5px] font-bold disabled:opacity-50"
                     style={{ borderColor: C.line, color: "#33363c" }}
@@ -1045,7 +1070,7 @@ export function GlossaryBrowser({
                   <div className="mt-1 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={saving}
+                      disabled={saving || !!dupPayload || dupBusy}
                       onClick={() => void save()}
                       className="rounded-[9px] border px-3.5 py-2 text-[12.5px] font-bold text-white disabled:opacity-50"
                       style={{ background: C.luna, borderColor: C.luna }}
@@ -1054,7 +1079,7 @@ export function GlossaryBrowser({
                     </button>
                     <button
                       type="button"
-                      disabled={saving}
+                      disabled={saving || dupBusy}
                       onClick={() => setDraft(null)}
                       className="rounded-[9px] border bg-white px-3.5 py-2 text-[12.5px] font-bold disabled:opacity-50"
                       style={{ borderColor: C.line, color: "#33363c" }}

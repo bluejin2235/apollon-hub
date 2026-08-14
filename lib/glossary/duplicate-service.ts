@@ -288,6 +288,107 @@ export async function insertGlossaryTerm(
   return { id: data.id as string, version: 1 };
 }
 
+export type ResolveDuplicateTxResult =
+  | {
+      id: string;
+      version: number;
+      deleted_ids: string[];
+    }
+  | { error: string; status?: number; conflict_term_ko?: string; conflict_term_id?: string };
+
+/**
+ * 한 트랜잭션으로 loser soft-delete → survivor 전필드 갱신 → 이력.
+ * loserIds: exclude_id + 팝업에서 잡힌 모든 충돌 용어 id (survivor 제외)
+ */
+export async function resolveGlossaryDuplicateTx(
+  admin: SupabaseClient,
+  args: {
+    survivorId: string;
+    loserIds: string[];
+    fields: GlossaryFieldValues;
+    userId: string;
+    editorName: string | null;
+    changeNote: string;
+    loserNote: string;
+  }
+): Promise<ResolveDuplicateTxResult> {
+  const termKo = args.fields.term_ko.trim() || args.fields.term_en.trim();
+  if (!termKo) {
+    return { error: "한국어 또는 영문 중 하나 이상 있어야 합니다.", status: 400 };
+  }
+
+  const loserIds = Array.from(
+    new Set(
+      args.loserIds.filter(
+        (id) => typeof id === "string" && id && id !== args.survivorId
+      )
+    )
+  );
+
+  const { data, error } = await admin.rpc("resolve_glossary_duplicate", {
+    p_survivor_id: args.survivorId,
+    p_loser_ids: loserIds,
+    p_term_ko: termKo,
+    p_term_en: args.fields.term_en || null,
+    p_term_zh: args.fields.term_zh || null,
+    p_definition: args.fields.definition || null,
+    p_categories: args.fields.categories,
+    p_synonyms: args.fields.synonyms,
+    p_user_id: args.userId,
+    p_editor_name: args.editorName,
+    p_change_note: args.changeNote,
+    p_loser_note: args.loserNote
+  });
+
+  if (error) {
+    const msg = error.message || String(error);
+    const conflict = msg.match(/TERM_KO_CONFLICT:([^:]*):([0-9a-f-]*)/i);
+    if (conflict) {
+      const ko = conflict[1] || termKo;
+      return {
+        error: `한국어 이름이 다른 활성 용어와 겹칩니다 — ${ko}`,
+        status: 409,
+        conflict_term_ko: ko,
+        conflict_term_id: conflict[2] || undefined
+      };
+    }
+    if (msg.includes("unique") || msg.includes("duplicate") || msg.includes("glossary_terms_term_ko")) {
+      // fallback: 누가 들고 있는지 조회
+      const { data: holder } = await admin
+        .from("glossary_terms")
+        .select("id, term_ko")
+        .eq("term_ko", termKo)
+        .is("deleted_at", null)
+        .neq("id", args.survivorId)
+        .maybeSingle();
+      return {
+        error: holder
+          ? `한국어 이름이 다른 활성 용어와 겹칩니다 — ${holder.term_ko}`
+          : `저장 제약에 걸렸습니다: ${msg}`,
+        status: 409,
+        conflict_term_ko: holder?.term_ko ?? termKo,
+        conflict_term_id: holder?.id
+      };
+    }
+    if (msg.includes("SURVIVOR_NOT_FOUND")) {
+      return { error: "기존 용어를 찾을 수 없습니다.", status: 404 };
+    }
+    return { error: msg, status: 500 };
+  }
+
+  const row = data as {
+    id?: string;
+    version?: number;
+    deleted_ids?: string[] | null;
+  } | null;
+
+  return {
+    id: (row?.id as string) || args.survivorId,
+    version: Number(row?.version) || 1,
+    deleted_ids: Array.isArray(row?.deleted_ids) ? row!.deleted_ids! : loserIds
+  };
+}
+
 /**
  * 활성 용어 soft-delete. 합치기/교체 시 "지는 쪽" 정리용.
  * 이력 change_note 예: "중복 교체 — 다른 용어로 통합"

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
-  bumpGlossaryVersion,
   checkGlossaryDuplicate,
   insertGlossaryTerm,
+  bumpGlossaryVersion,
   normalizeIncomingFields,
-  softDeleteGlossaryTerm
+  resolveGlossaryDuplicateTx
 } from "@/lib/glossary/duplicate-service";
 
 export const runtime = "nodejs";
@@ -15,13 +15,10 @@ type ResolveAction = "merge" | "replace" | "keep" | "register";
 /**
  * POST /api/glossary/resolve-duplicate
  *
- * 합치기·교체 시 id 규칙:
- * - survivor = existing_id (사전에 이미 있던 쪽)
- * - loser = exclude_id (지금 편집 중이던 쪽, existing 과 다를 때만 soft-delete)
- * - 신규 등록·지식후보만이면 exclude_id 없음 → survivor 만 갱신
- *
- * 교체: survivor 의 전 필드를 incoming 으로 덮어씀.
- * 합치기: survivor 를 merged 로 갱신.
+ * 합치기·교체:
+ * - survivor = existing_id (사전에 있던 쪽, primary)
+ * - losers = exclude_id + 모든 충돌 용어 id (loser_ids) — survivor 제외, soft-delete
+ * - 한 트랜잭션 RPC 로 soft-delete → survivor 전필드 갱신 → 이력
  */
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
@@ -40,6 +37,7 @@ export async function POST(request: NextRequest) {
     merged?: Record<string, unknown>;
     candidate_id?: string | null;
     exclude_id?: string | null;
+    loser_ids?: string[] | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -106,10 +104,10 @@ export async function POST(request: NextRequest) {
 
   if (action === "register") {
     const again = await checkGlossaryDuplicate(admin, incoming, excludeId);
-    if (again.conflicts) {
+    if (again.conflicts && again.primary) {
       return NextResponse.json(
         {
-          error: "glossary_duplicate",
+          error: again.primary.message,
           conflicts: true,
           primary: again.primary,
           others: again.others,
@@ -138,7 +136,10 @@ export async function POST(request: NextRequest) {
       const msg = result.error;
       if (msg.includes("unique") || msg.includes("duplicate")) {
         return NextResponse.json(
-          { error: "이미 있는 용어입니다", message: msg },
+          {
+            error: `한국어 이름이 다른 활성 용어와 겹칩니다 — ${incoming.term_ko}`,
+            message: msg
+          },
           { status: 409 }
         );
       }
@@ -172,33 +173,44 @@ export async function POST(request: NextRequest) {
   if (fields.categories.length === 0) fields.categories = ["공통"];
   if (!fields.term_ko.trim()) fields.term_ko = fields.term_en;
 
-  const changeNote = action === "merge" ? "중복 병합" : "중복 교체";
-
-  // 편집 중이던 레코드(loser)를 먼저 soft-delete → term_ko unique 충돌 방지
-  if (excludeId && excludeId !== existingId) {
-    const del = await softDeleteGlossaryTerm(admin, {
-      termId: excludeId,
-      userId: user.id,
-      editorName,
-      changeNote:
-        action === "merge"
-          ? "중복 병합 — 다른 용어로 통합"
-          : "중복 교체 — 다른 용어로 통합"
-    });
-    if ("error" in del) {
-      return NextResponse.json({ error: del.error }, { status: 500 });
+  // 저장할 내용 기준으로 남은 충돌 용어를 모두 loser 로 모은다
+  const remaining = await checkGlossaryDuplicate(admin, fields, existingId);
+  const loserIds = new Set<string>();
+  if (excludeId) loserIds.add(excludeId);
+  if (Array.isArray(body.loser_ids)) {
+    for (const id of body.loser_ids) {
+      if (typeof id === "string" && id) loserIds.add(id);
     }
   }
+  if (remaining.primary) loserIds.add(remaining.primary.existing_id);
+  for (const m of remaining.others) loserIds.add(m.existing_id);
+  loserIds.delete(existingId);
 
-  const result = await bumpGlossaryVersion(admin, {
-    termId: existingId,
+  const changeNote = action === "merge" ? "중복 병합" : "중복 교체";
+  const loserNote =
+    action === "merge"
+      ? "중복 병합 — 다른 용어로 통합"
+      : "중복 교체 — 다른 용어로 통합";
+
+  const result = await resolveGlossaryDuplicateTx(admin, {
+    survivorId: existingId,
+    loserIds: Array.from(loserIds),
     fields,
     userId: user.id,
     editorName,
-    changeNote
+    changeNote,
+    loserNote
   });
+
   if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: result.error,
+        conflict_term_ko: result.conflict_term_ko,
+        conflict_term_id: result.conflict_term_id
+      },
+      { status: result.status ?? 500 }
+    );
   }
 
   await archiveCandidate(candidateId);
@@ -207,8 +219,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     action,
     message: action === "merge" ? "합쳤어요" : "교체했어요",
-    term: result,
-    deleted_id:
-      excludeId && excludeId !== existingId ? excludeId : null
+    term: { id: result.id, version: result.version },
+    deleted_ids: result.deleted_ids
   });
 }
