@@ -192,7 +192,7 @@ export function GlossaryFields({
           <FieldLabel>中文</FieldLabel>
           <input
             value={value.term_zh}
-            placeholder="中文"
+            placeholder="예: 沉浸式主力租户"
             onChange={(e) => onChange({ ...value, term_zh: e.target.value })}
             className="mb-2.5 w-full rounded-lg border bg-white px-2.5 py-2 text-[13px] font-bold outline-none focus:border-[#d9d2ff]"
             style={{ borderColor: C.line, color: C.ink }}

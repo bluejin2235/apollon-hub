@@ -359,7 +359,9 @@ export function GlossaryEditForm({
     <div className="mt-3">
       <GlossaryFields
         value={draft}
-        onChange={(next) => onChange({ ...draft, ...next })}
+        onChange={(next) =>
+          onChange({ ...next, movedFromTitle: draft.movedFromTitle })
+        }
         highlightMissingTerm
         movedFromTitle={draft.movedFromTitle}
         evidence={evidence}

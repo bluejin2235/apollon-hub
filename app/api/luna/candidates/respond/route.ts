@@ -16,7 +16,8 @@ import {
 import {
   isGlossaryCandidate,
   looksLikeDefinitionSentence,
-  parseGlossaryMeta
+  parseGlossaryMeta,
+  sanitizeGlossaryField
 } from "@/lib/luna/candidate-format";
 import {
   makeTurn,
@@ -56,16 +57,22 @@ function normalizeGlossaryPatch(
   synonyms: string[];
 } | null {
   if (!raw || typeof raw !== "object") return null;
+  const term_ko =
+    typeof raw.term_ko === "string"
+      ? sanitizeGlossaryField("term_ko", raw.term_ko)
+      : "";
+  const term_en_raw =
+    typeof raw.term_en === "string"
+      ? sanitizeGlossaryField("term_en", raw.term_en)
+      : "";
+  const term_zh_raw =
+    typeof raw.term_zh === "string"
+      ? sanitizeGlossaryField("term_zh", raw.term_zh)
+      : "";
   return {
-    term_ko: typeof raw.term_ko === "string" ? raw.term_ko.trim() : "",
-    term_en:
-      typeof raw.term_en === "string" && raw.term_en.trim()
-        ? raw.term_en.trim()
-        : null,
-    term_zh:
-      typeof raw.term_zh === "string" && raw.term_zh.trim()
-        ? raw.term_zh.trim()
-        : null,
+    term_ko,
+    term_en: term_en_raw || null,
+    term_zh: term_zh_raw || null,
     definition:
       typeof raw.definition === "string" ? raw.definition.trim() : "",
     categories: normalizeCategories(raw.categories, raw.category),

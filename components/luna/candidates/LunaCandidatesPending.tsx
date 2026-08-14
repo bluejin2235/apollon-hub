@@ -27,7 +27,6 @@ import { Btn } from "@/components/luna/knowledge/ui";
 import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
 import type { GlossaryFieldValues } from "@/lib/glossary/types";
 import {
-  glossaryCardTitle,
   openGlossaryEditDraft,
   parseGlossaryMeta,
   selfstudyQuestion,
@@ -56,6 +55,22 @@ const FILTERS: { key: PendingFilter; label: string; countKey: keyof Counts }[] =
   { key: "interview", label: "구술·문서", countKey: "interview" },
   { key: "glossary", label: "용어", countKey: "glossary" }
 ];
+function toGlossaryPayload(draft: GlossaryEditDraft) {
+  return {
+    term_ko: draft.term_ko.trim(),
+    term_en: draft.term_en.trim() || null,
+    term_zh: draft.term_zh.trim() || null,
+    definition: draft.definition.trim(),
+    categories: draft.categories,
+    synonyms: draft.synonyms
+  };
+}
+
+function asConfirmDraft(
+  draft: ReturnType<typeof parseGlossaryMeta>
+): GlossaryEditDraft {
+  return { ...draft, movedFromTitle: false };
+}
 
 export function LunaCandidatesPending() {
   const [loading, setLoading] = useState(true);
@@ -75,6 +90,7 @@ export function LunaCandidatesPending() {
   );
   const [dupBusy, setDupBusy] = useState(false);
   const [dupError, setDupError] = useState("");
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
 
   const load = useCallback(async (f: PendingFilter) => {
     const token = await getAccessToken();
@@ -116,9 +132,13 @@ export function LunaCandidatesPending() {
     glossary?: GlossaryEditDraft
   ) {
     const token = await getAccessToken();
-    if (!token) return;
+    if (!token) {
+      setCardErrors((prev) => ({ ...prev, [id]: "로그인이 필요합니다" }));
+      return;
+    }
     setBusyId(id);
     setMessage("");
+    setCardErrors((prev) => ({ ...prev, [id]: "" }));
     try {
       const res = await fetch("/api/luna/candidates/respond", {
         method: "POST",
@@ -130,16 +150,7 @@ export function LunaCandidatesPending() {
           id,
           action,
           text,
-          glossary: glossary
-            ? {
-                term_ko: glossary.term_ko,
-                term_en: glossary.term_en || null,
-                term_zh: glossary.term_zh || null,
-                definition: glossary.definition,
-                categories: glossary.categories,
-                synonyms: glossary.synonyms
-              }
-            : undefined
+          glossary: glossary ? toGlossaryPayload(glossary) : undefined
         })
       });
       const json = (await res.json().catch(() => null)) as {
@@ -175,11 +186,12 @@ export function LunaCandidatesPending() {
       }
 
       if (!res.ok) {
-        setMessage(`처리 실패: ${json?.error ?? res.status}`);
+        const errMsg = json?.error ?? `처리 실패 (${res.status})`;
+        setCardErrors((prev) => ({ ...prev, [id]: errMsg }));
         return;
       }
       if (!json) {
-        setMessage("처리 실패");
+        setCardErrors((prev) => ({ ...prev, [id]: "처리 실패" }));
         return;
       }
 
@@ -217,6 +229,12 @@ export function LunaCandidatesPending() {
           delete next[id];
           return next;
         });
+
+        setCardErrors((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         return;
       }
 
@@ -231,6 +249,11 @@ export function LunaCandidatesPending() {
         delete next[id];
         return next;
       });
+        setCardErrors((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
       if (action === "confirm") {
         if (json.merged_into) {
           setMessage("중복 후보를 본문에 병합했어요");
@@ -243,6 +266,8 @@ export function LunaCandidatesPending() {
         }
       }
       void load(filter);
+    } catch {
+      setCardErrors((prev) => ({ ...prev, [id]: "네트워크 오류" }));
     } finally {
       setBusyId(null);
     }
@@ -382,6 +407,7 @@ export function LunaCandidatesPending() {
           });
           const busy = busyId === item.id;
           const glossary = parseGlossaryMeta(item.meta, item.content);
+          const confirmDraft = asConfirmDraft(glossary);
           const scopeLabel = scopeBadgeLabel(
             item.scope_suggestion,
             kind === "glossary" ? glossary.categories : undefined
@@ -397,6 +423,7 @@ export function LunaCandidatesPending() {
           const isDuplicate = item.review_reason === "duplicate";
           const reviseDraft = reviseOpen[item.id];
           const editingGlossary = glossaryEdit[item.id];
+          const cardError = cardErrors[item.id];
           const openRevise = () => {
             const initial = isDuplicate
               ? (item.raw_input?.trim() || item.content)
@@ -407,6 +434,7 @@ export function LunaCandidatesPending() {
               delete n[item.id];
               return n;
             });
+            setCardErrors((p) => ({ ...p, [item.id]: "" }));
           };
           const closeRevise = () => {
             setReviseOpen((p) => {
@@ -419,6 +447,7 @@ export function LunaCandidatesPending() {
               delete n[item.id];
               return n;
             });
+            setCardErrors((p) => ({ ...p, [item.id]: "" }));
           };
           const revisePanel =
             reviseDraft !== undefined ? (
@@ -456,9 +485,8 @@ export function LunaCandidatesPending() {
             ) : null;
 
           if (kind === "glossary") {
-            const registerBlocked = editingGlossary
-              ? !editingGlossary.term_ko.trim()
-              : glossaryCardTitle(glossary).missingTerm;
+            const activeDraft = editingGlossary ?? confirmDraft;
+            const registerBlocked = !activeDraft.term_ko.trim();
 
             return (
               <CandidateCardShell key={item.id}>
@@ -498,6 +526,11 @@ export function LunaCandidatesPending() {
                     alreadyInGlossary={item.glossary_already_exists}
                   />
                 )}
+                {cardError ? (
+                  <p className="mt-2 text-[12px]" style={{ color: K.danger }}>
+                    {cardError}
+                  </p>
+                ) : null}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {editingGlossary ? (
                     <>
@@ -513,18 +546,22 @@ export function LunaCandidatesPending() {
                           )
                         }
                       >
-                        저장 · 확정
+                        {busy ? "저장 중…" : "저장 · 확정"}
                       </Btn>
-                      <Btn onClick={closeRevise}>취소</Btn>
+                      <Btn disabled={busy} onClick={closeRevise}>
+                        취소
+                      </Btn>
                     </>
                   ) : (
                     <>
                       <Btn
                         primary
                         disabled={busy || registerBlocked}
-                        onClick={() => void respond(item.id, "confirm")}
+                        onClick={() =>
+                          void respond(item.id, "confirm", undefined, confirmDraft)
+                        }
                       >
-                        맞아요 → 용어사전 등록
+                        {busy ? "등록 중…" : "맞아요 → 용어사전 등록"}
                       </Btn>
                       {registerBlocked ? (
                         <span

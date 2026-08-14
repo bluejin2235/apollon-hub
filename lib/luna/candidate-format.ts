@@ -18,6 +18,26 @@ export type GlossaryEditDraft = GlossaryDraft & {
 
 export type CandidateCardKind = "glossary" | "selfstudy" | "dialogue" | "general";
 
+const GLOSSARY_FIELD_LABELS: Record<
+  "term_ko" | "term_en" | "term_zh",
+  readonly string[]
+> = {
+  term_ko: ["한국어", "용어명"],
+  term_en: ["ENGLISH", "English", "english"],
+  term_zh: ["中文"]
+};
+
+/** 라벨·placeholder 가 실제 값으로 저장된 경우 빈 값으로 취급 */
+export function sanitizeGlossaryField(
+  field: "term_ko" | "term_en" | "term_zh",
+  value: string
+): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (GLOSSARY_FIELD_LABELS[field].includes(trimmed)) return "";
+  return trimmed;
+}
+
 export function isGlossaryCandidate(
   meta: Record<string, unknown> | null | undefined,
   category?: string | null
@@ -58,16 +78,35 @@ export function parseGlossaryMeta(
     "";
   let definition = definitionFromMeta || content.trim();
 
+  // meta.term_ko 키는 있으나 빈 문자열 — content 첫 줄에서 용어명 복원
+  if (hasTermKoKey && !term_ko) {
+    const fromContent =
+      content.split("\n")[0]?.trim() || content.trim().slice(0, 80);
+    if (fromContent && !looksLikeDefinitionSentence(fromContent)) {
+      term_ko = fromContent;
+    }
+  }
+
   // 메타에 용어명이 없고 content 가 문장이면 용어명으로 쓰지 않음
   if (!hasTermKoKey && looksLikeDefinitionSentence(term_ko)) {
     definition = definitionFromMeta || term_ko || content.trim();
     term_ko = "";
   }
 
+  term_ko = sanitizeGlossaryField("term_ko", term_ko);
+  const term_en =
+    typeof m.term_en === "string" && m.term_en.trim()
+      ? sanitizeGlossaryField("term_en", m.term_en)
+      : "";
+  const term_zh =
+    typeof m.term_zh === "string" && m.term_zh.trim()
+      ? sanitizeGlossaryField("term_zh", m.term_zh)
+      : "";
+
   return {
     term_ko,
-    term_en: typeof m.term_en === "string" && m.term_en.trim() ? m.term_en.trim() : "",
-    term_zh: typeof m.term_zh === "string" && m.term_zh.trim() ? m.term_zh.trim() : "",
+    term_en,
+    term_zh,
     synonyms: normalizeSynonyms(m.synonyms),
     definition,
     categories
