@@ -19,6 +19,7 @@ import {
   type LunaSourceReasons,
   type LunaDetailMeta
 } from "@/components/luna/LunaMessage";
+import { loadNasDriveMode, saveNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -477,8 +478,6 @@ type LunaChatProps = {
   onClearCorrection?: (messageId: string, candidateId: string) => void;
 };
 
-const DEFAULT_NAS_DRIVE_MODE: LunaNasDriveMode = "office";
-
 export function LunaChat({
   conversation,
   messages,
@@ -503,7 +502,12 @@ export function LunaChat({
   const stickToBottomRef = useRef(true);
   useMeasureBottomUi(bottomUiRef, true);
   const [nasDriveMode, setNasDriveMode] =
-    useState<LunaNasDriveMode>(DEFAULT_NAS_DRIVE_MODE);
+    useState<LunaNasDriveMode>(() => loadNasDriveMode());
+
+  function handleNasDriveModeChange(mode: LunaNasDriveMode) {
+    setNasDriveMode(mode);
+    saveNasDriveMode(mode);
+  }
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [showQuestionCard, setShowQuestionCard] = useState(false);
@@ -924,7 +928,7 @@ export function LunaChat({
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}
                 nasDriveMode={nasDriveMode}
-                onNasDriveModeChange={setNasDriveMode}
+                onNasDriveModeChange={handleNasDriveModeChange}
                 attachments={m.attachments}
                 isThinking={isThinking}
                 modelLabel={m.modelLabel}

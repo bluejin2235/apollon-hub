@@ -4,15 +4,16 @@ import {
   useEffect,
   useMemo,
   useState,
-  type KeyboardEvent,
-  type MouseEvent,
   type ReactNode
 } from "react";
-import { Copy, FileText, Folder, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Copy, FileText, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
+import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
+import { WorkserverPathCard } from "@/components/luna/WorkserverPathCard";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
+import { groupNasCardsByFolder, type LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
 import {
   countSourceBadges,
@@ -52,7 +53,7 @@ export type LunaSourceReasons = {
   web?: string;
 };
 
-export type LunaNasDriveMode = "office" | "raidrive";
+export type { LunaNasDriveMode } from "@/lib/luna/nas-path";
 
 export type LunaConnectorRoutingMeta = {
   summary: string;
@@ -160,194 +161,10 @@ function MediaThumb({ card }: { card: LunaCard }) {
 }
 
 
-function normalizeNasDriveLetter(drive?: string): string {
-  return (drive ?? "").trim().replace(/:$/, "").toUpperCase();
-}
-
-function nasDrivePrefix(drive: string | undefined, mode: LunaNasDriveMode): string {
-  const letter = normalizeNasDriveLetter(drive);
-  if (mode === "raidrive") {
-    if (letter === "P") return "Z:\\Partners\\";
-    return "Z:\\Work\\";
-  }
-  if (letter === "P") return "P:\\";
-  if (letter === "T") return "T:\\";
-  return letter ? `${letter}:\\` : "";
-}
-
-function normalizeRawNasPath(rawPath: string): string {
-  return rawPath.replace(/\//g, "\\").replace(/^\\+/, "").replace(/\\+$/, "");
-}
-
-/** 표시·복사 공통: 접두사 + 폴더 경로 + 끝 백슬래시 (파일명이면 제거) */
-function formatNasFolderPath(
-  drive: string | undefined,
-  rawPath: string,
-  mode: LunaNasDriveMode,
-  isFile: boolean
-): string {
-  let path = normalizeRawNasPath(rawPath);
-  if (!path) {
-    const prefix = nasDrivePrefix(drive, mode);
-    return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
-  }
-  if (isFile) {
-    const idx = path.lastIndexOf("\\");
-    path = idx >= 0 ? path.slice(0, idx) : "";
-  }
-  const prefix = nasDrivePrefix(drive, mode);
-  if (!path) return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
-  return `${prefix}${path}\\`;
-}
-
-function nasDescriptionRest(card: LunaCard): string {
-  let desc = card.description ?? "";
-  if (desc.startsWith("★ ")) desc = desc.slice(2);
-  const raw = card.raw_path?.trim() || "";
-  if (raw && desc.startsWith(raw)) {
-    return desc.slice(raw.length).replace(/^ · /, "");
-  }
-  if (desc.includes(" · ")) {
-    return desc.split(" · ").slice(1).join(" · ");
-  }
-  return "";
-}
-
-function NasPathDescription({
-  card,
-  nasDriveMode
-}: {
-  card: LunaCard;
-  nasDriveMode: LunaNasDriveMode;
-}) {
-  const rawPath =
-    card.raw_path?.trim() ||
-    (() => {
-      let desc = card.description ?? "";
-      if (desc.startsWith("★ ")) desc = desc.slice(2);
-      return desc.split(" · ")[0] || "";
-    })();
-  const rest = nasDescriptionRest(card);
-  const isFile =
-    card.is_file === true ||
-    (card.is_file !== false &&
-      /\.[a-z0-9]{1,8}$/i.test(rawPath.split(/[\\/]/).pop() || ""));
-  const folderPath = rawPath
-    ? formatNasFolderPath(card.drive, rawPath, nasDriveMode, isFile)
-    : "";
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(t);
-  }, [copied]);
-
-  if (!folderPath && !rest) return null;
-
-  const copyPath = () => {
-    if (!folderPath) return;
-    void navigator.clipboard.writeText(folderPath).then(
-      () => setCopied(true),
-      () => {
-        /* ignore */
-      }
-    );
-  };
-
-  const onCopyClick = (e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    copyPath();
-  };
-
-  const onCopyKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    e.stopPropagation();
-    copyPath();
-  };
-
-  return (
-    <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500 max-md:breakall">
-      {copied ? (
-        <span style={{ color: "#0F6E56" }}>경로가 복사되었어요</span>
-      ) : folderPath ? (
-        <span
-          role="button"
-          tabIndex={0}
-          title="클릭하면 경로 복사"
-          onClick={onCopyClick}
-          onKeyDown={onCopyKeyDown}
-          className="breakall cursor-pointer border-b border-transparent hover:border-dashed hover:border-gray-700 hover:text-gray-700"
-        >
-          {folderPath}
-        </span>
-      ) : null}
-      {!copied && rest ? (
-        <span>
-          {folderPath ? " · " : ""}
-          {rest}
-        </span>
-      ) : null}
-    </p>
-  );
-}
-
-function NasDriveModeToggles({
-  mode,
-  onChange
-}: {
-  mode: LunaNasDriveMode;
-  onChange?: (mode: LunaNasDriveMode) => void;
-}) {
-  const btn = (value: LunaNasDriveMode, label: string) => {
-    const selected = mode === value;
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onChange?.(value);
-        }}
-        className="shrink-0 text-[10px]"
-        style={{
-          padding: "2px 7px",
-          borderRadius: 10,
-          backgroundColor: selected ? "#E1F5EE" : "transparent",
-          border: selected ? "1px solid #0F6E56" : "1px solid #D3D1C7",
-          color: selected ? "#04342C" : "#6B7280"
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-
-  return (
-    <div className="flex shrink-0 items-center gap-1">
-      {btn("office", "사무실")}
-      {btn("raidrive", "RaiDrive")}
-    </div>
-  );
-}
-
-function CardRow({
-  card,
-  nasDriveMode
-}: {
-  card: LunaCard;
-  nasDriveMode: LunaNasDriveMode;
-}) {
+function CardRow({ card }: { card: LunaCard }) {
   const isLink = Boolean(card.url);
-  const isTextIcon = card.type === "notion" || card.type === "nas";
-  const Icon = card.type === "nas" ? Folder : FileText;
-  const isImportantNas =
-    card.type === "nas" && (card.description ?? "").startsWith("★ ");
-  const descriptionText = isImportantNas
-    ? (card.description ?? "").slice(2)
-    : card.description;
+  const isTextIcon = card.type === "notion";
+  const Icon = FileText;
 
   const inner = (
     <>
@@ -359,20 +176,10 @@ function CardRow({
       <div className="min-w-0 flex-1">
         <p className="flex min-w-0 items-center gap-1.5 truncate text-[13px] font-medium text-slate-900">
           <span className="truncate">{card.title}</span>
-          {isImportantNas ? (
-            <span
-              className="shrink-0 rounded-[3px] px-[5px] py-px text-[9px] font-medium"
-              style={{ backgroundColor: "#FAEEDA", color: "#412402" }}
-            >
-              주요
-            </span>
-          ) : null}
         </p>
-        {card.type === "nas" ? (
-          <NasPathDescription card={card} nasDriveMode={nasDriveMode} />
-        ) : descriptionText ? (
+        {card.description ? (
           <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
-            {descriptionText}
+            {card.description}
           </p>
         ) : null}
       </div>
@@ -402,12 +209,14 @@ function SourceSections({
   cards,
   sourceReasons = null,
   nasDriveMode = "office",
-  onNasDriveModeChange
+  onNasDriveModeChange,
+  onCopyToast
 }: {
   cards: LunaCard[];
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode?: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  onCopyToast?: (message: string) => void;
 }) {
   const groups = useMemo(() => {
     const map = new Map<LunaCard["type"], LunaCard[]>();
@@ -450,17 +259,6 @@ function SourceSections({
               <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
                 {group.items.length}
               </span>
-              {group.type === "nas" ? (
-                <div className="ml-auto flex min-w-0 items-center gap-1.5">
-                  <span className="hidden truncate text-[10px] text-gray-400 min-[520px]:inline">
-                    경로 클릭하면 복사
-                  </span>
-                  <NasDriveModeToggles
-                    mode={nasDriveMode}
-                    onChange={onNasDriveModeChange}
-                  />
-                </div>
-              ) : null}
             </div>
             {reason ? (
               <p
@@ -470,7 +268,19 @@ function SourceSections({
                 {reason}
               </p>
             ) : null}
-            {group.type === "web" ? (
+            {group.type === "nas" ? (
+              <div className="mt-1 space-y-2">
+                {groupNasCardsByFolder(group.items).map((pathGroup, index) => (
+                  <WorkserverPathCard
+                    key={`${pathGroup.drive}-${pathGroup.folderRawPath}-${index}`}
+                    group={pathGroup}
+                    mode={nasDriveMode}
+                    onModeChange={onNasDriveModeChange}
+                    onCopyToast={onCopyToast}
+                  />
+                ))}
+              </div>
+            ) : group.type === "web" ? (
               <>
                 <div className="hscroll mt-1 md:hidden">
                   {group.items.map((card, index) => {
@@ -506,7 +316,6 @@ function SourceSections({
                     <CardRow
                       key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
                       card={card}
-                      nasDriveMode={nasDriveMode}
                     />
                   ))}
                 </div>
@@ -517,7 +326,6 @@ function SourceSections({
                   <CardRow
                     key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
                     card={card}
-                    nasDriveMode={nasDriveMode}
                   />
                 ))}
               </div>
@@ -593,10 +401,16 @@ function LunaAvatar() {
 
 function InlineThinkingProgress({
   steps,
-  content
+  content,
+  nasDriveMode,
+  onNasDriveModeChange,
+  onCopyToast
 }: {
   steps: LunaProgressStep[];
   content: string;
+  nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  onCopyToast?: (message: string) => void;
 }) {
   const visible = steps.filter((s) => s.status !== "skip");
   const running = visible.find((s) => s.status === "running");
@@ -631,7 +445,13 @@ function InlineThinkingProgress({
       ) : null}
       {streamBody ? (
         <div className="text-[14.5px] leading-[1.75] max-md:text-[13.5px] max-md:leading-[1.7]">
-          <SafeMarkdown content={streamBody} variant="luna" />
+          <LunaMarkdown
+            content={streamBody}
+            className="text-[14.5px] max-md:text-[13.5px]"
+            nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
+            onCopyToast={onCopyToast}
+          />
           <span
             className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
             aria-hidden
@@ -672,7 +492,17 @@ function SourceBadgeRow({
   );
 }
 
-function AssistantTextBubble({ content }: { content: string }) {
+function AssistantTextBubble({
+  content,
+  nasDriveMode,
+  onNasDriveModeChange,
+  onCopyToast
+}: {
+  content: string;
+  nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  onCopyToast?: (message: string) => void;
+}) {
   const numbered = parseNumberedChoices(content);
   const base = numbered ? numbered.body : content;
   const { body, assumptions } = parseAssumeMarkers(base);
@@ -680,18 +510,37 @@ function AssistantTextBubble({ content }: { content: string }) {
   return (
     <>
       {display ? (
-        <SafeMarkdown content={display} variant="luna" className="text-[14.5px] max-md:text-[13.5px]" />
+        <LunaMarkdown
+          content={display}
+          className="text-[14.5px] max-md:text-[13.5px]"
+          nasDriveMode={nasDriveMode}
+          onNasDriveModeChange={onNasDriveModeChange}
+          onCopyToast={onCopyToast}
+        />
       ) : null}
       <AssumeBlocks assumptions={assumptions} />
     </>
   );
 }
 
-function MarkdownText({ content }: { content: string }) {
+function MarkdownText({
+  content,
+  nasDriveMode,
+  onNasDriveModeChange,
+  onCopyToast
+}: {
+  content: string;
+  nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  onCopyToast?: (message: string) => void;
+}) {
   return (
-    <SafeMarkdown
+    <LunaMarkdown
       content={content}
       className="text-sm leading-relaxed text-slate-900"
+      nasDriveMode={nasDriveMode}
+      onNasDriveModeChange={onNasDriveModeChange}
+      onCopyToast={onCopyToast}
     />
   );
 }
@@ -703,6 +552,7 @@ function AnalysisReport({
   sourceReasons,
   nasDriveMode,
   onNasDriveModeChange,
+  onCopyToast,
   isThinking
 }: {
   content: string;
@@ -711,6 +561,7 @@ function AnalysisReport({
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  onCopyToast?: (message: string) => void;
   isThinking: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<string>("summary");
@@ -781,14 +632,24 @@ function AnalysisReport({
       <div className="min-h-[2.5rem]">
         {activeTab === "summary" ? (
           content ? (
-            <MarkdownText content={content} />
+            <MarkdownText
+              content={content}
+              nasDriveMode={nasDriveMode}
+              onNasDriveModeChange={onNasDriveModeChange}
+              onCopyToast={onCopyToast}
+            />
           ) : isThinking ? (
             <p className="text-[12px] text-[#BA7517]">통합 리포트 작성 중···</p>
           ) : (
             <p className="text-[12px] text-slate-500">리포트가 없습니다.</p>
           )
         ) : activeTeam?.content ? (
-          <MarkdownText content={activeTeam.content} />
+          <MarkdownText
+            content={activeTeam.content}
+            nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
+            onCopyToast={onCopyToast}
+          />
         ) : (
           <p className="text-[12px] text-[#BA7517]">분석 중···</p>
         )}
@@ -829,6 +690,7 @@ function AnalysisReport({
                 sourceReasons={sourceReasons}
                 nasDriveMode={nasDriveMode}
                 onNasDriveModeChange={onNasDriveModeChange}
+                onCopyToast={onCopyToast}
               />
             </div>
           ) : null}
@@ -1058,6 +920,7 @@ export function LunaMessage({
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
   const [dismissedChips, setDismissedChips] = useState<string[]>([]);
   const canFeedback =
     role === "assistant" && Boolean(id) && !id.startsWith("temp-") && !isThinking;
@@ -1074,6 +937,14 @@ export function LunaMessage({
     const t = window.setTimeout(() => setCopied(false), 1500);
     return () => window.clearTimeout(t);
   }, [copied]);
+
+  useEffect(() => {
+    if (!copyToast) return;
+    const t = window.setTimeout(() => setCopyToast(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [copyToast]);
+
+  const handleCopyToast = (message: string) => setCopyToast(message);
 
   const mergedDetailMeta: LunaDetailMeta = {
     modelSteps: detailMeta?.modelSteps ?? modelSteps,
@@ -1215,15 +1086,29 @@ export function LunaMessage({
         sourceReasons={sourceReasons}
         nasDriveMode={nasDriveMode}
         onNasDriveModeChange={onNasDriveModeChange}
+        onCopyToast={handleCopyToast}
         isThinking={isThinking}
       />
     );
   } else if (isThinking) {
     bubbleInner = (
-      <InlineThinkingProgress steps={stepList} content={content} />
+      <InlineThinkingProgress
+        steps={stepList}
+        content={content}
+        nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
+        onCopyToast={handleCopyToast}
+      />
     );
   } else if (content) {
-    bubbleInner = <AssistantTextBubble content={content} />;
+    bubbleInner = (
+      <AssistantTextBubble
+        content={content}
+        nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
+        onCopyToast={handleCopyToast}
+      />
+    );
   } else {
     bubbleInner = null;
   }
@@ -1293,6 +1178,7 @@ export function LunaMessage({
           />
         ) : null}
       </div>
+      <SupplyToast message={copyToast} onClose={() => setCopyToast(null)} />
     </div>
   );
 }
