@@ -3,10 +3,18 @@ import {
   scanBareOfficePath,
   findAllWorkserverPathSpans,
   preprocessFolderFileLines,
-  splitMarkdownByWorkserverPaths
+  splitMarkdownByWorkserverPaths,
+  formatNasFolderBreadcrumb,
+  fileExtBadgeKind,
+  inferFileTag,
+  stripFileExtension
 } from "../lib/luna/nas-path.ts";
 import { parseAssumeMarkers } from "../lib/luna/chat-response.ts";
-import { parseLunaAnswer } from "../lib/luna/answer-render.ts";
+import {
+  parseLunaAnswer,
+  extractNotionPagesFromMarkdown,
+  stripNotionLinksFromMarkdown
+} from "../lib/luna/answer-render.ts";
 
 const CASES = [
   {
@@ -208,6 +216,60 @@ if (assumeOnly.assumptions[0] === "테스트 가정" && assumeOnly.body === "본
   console.log("PASS parseAssumeMarkers indexOf");
 } else {
   console.log("FAIL parseAssumeMarkers", assumeOnly);
+  failed = true;
+}
+
+console.log("\n=== breadcrumb / ext / tag ===");
+
+const crumb = formatNasFolderBreadcrumb(
+  "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅"
+);
+if (crumb === "01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230714 이수만 회장님 첫 미팅") {
+  console.log("PASS breadcrumb");
+} else {
+  console.log("FAIL breadcrumb", crumb);
+  failed = true;
+}
+
+if (
+  fileExtBadgeKind("a.pptx") === "PPT" &&
+  fileExtBadgeKind("a.xlsx") === "XLS" &&
+  fileExtBadgeKind("a.pdf") === "PDF" &&
+  fileExtBadgeKind("a.docx") === "DOC" &&
+  fileExtBadgeKind("a.dwg") === "DWG" &&
+  fileExtBadgeKind("a.png") === "IMG" &&
+  fileExtBadgeKind("a.mp4") === "VID" &&
+  fileExtBadgeKind("a.txt") === "FILE"
+) {
+  console.log("PASS ext badges");
+} else {
+  console.log("FAIL ext badges");
+  failed = true;
+}
+
+if (
+  stripFileExtension("foo.pptx") === "foo" &&
+  inferFileTag("아폴론_청담_230720_계약용.pptx")?.kind === "final" &&
+  inferFileTag("아폴론_청담_230711.pptx") === null &&
+  inferFileTag("견적서_260708_FIN.xlsx")?.kind === "final"
+) {
+  console.log("PASS file tag");
+} else {
+  console.log("FAIL file tag", inferFileTag("견적서_260708_FIN.xlsx"));
+  failed = true;
+}
+
+const notionMd = `노션: [230720 PROPOSAL](https://app.notion.com/p/example)\n\n[[가정: x]]`;
+const notionPages = extractNotionPagesFromMarkdown(notionMd);
+const stripped = stripNotionLinksFromMarkdown(notionMd);
+if (
+  notionPages.length === 1 &&
+  notionPages[0].title === "230720 PROPOSAL" &&
+  !stripped.includes("app.notion.com")
+) {
+  console.log("PASS notion extract/strip");
+} else {
+  console.log("FAIL notion", notionPages, stripped);
   failed = true;
 }
 

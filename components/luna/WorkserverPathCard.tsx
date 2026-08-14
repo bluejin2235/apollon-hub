@@ -1,18 +1,56 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
-import type { LunaNasDriveMode, WorkserverPathGroup } from "@/lib/luna/nas-path";
-import { formatNasFilePath, formatNasFolderPath } from "@/lib/luna/nas-path";
+import { ArrowUpRight, Check, Copy, Folder } from "lucide-react";
+import type { NotionSource } from "@/lib/luna/notion";
+import type {
+  FileExtBadgeKind,
+  LunaNasDriveMode,
+  WorkserverPathGroup
+} from "@/lib/luna/nas-path";
+import {
+  fileExtBadgeKind,
+  formatNasFolderBreadcrumb,
+  formatNasFolderPath,
+  inferFileTag,
+  stripFileExtension
+} from "@/lib/luna/nas-path";
 
-export function NasDriveModeToggles({
+const EXT_BADGE_STYLE: Record<FileExtBadgeKind, { color: string; border: string }> = {
+  PPT: { color: "#B0552F", border: "#E8CFC2" },
+  XLS: { color: "#2F7A57", border: "#C4E0D2" },
+  PDF: { color: "#A83A3A", border: "#E8C9C9" },
+  DOC: { color: "#3B6396", border: "#C7D5E8" },
+  DWG: { color: "#7A6A45", border: "#DED5C1" },
+  IMG: { color: "#6B5AA8", border: "#D3CCE8" },
+  VID: { color: "#5A5A57", border: "#D6D5D0" },
+  FILE: { color: "#8A8A85", border: "#DEDDD8" }
+};
+
+function FileExtBadge({ fileName }: { fileName: string }) {
+  const kind = fileExtBadgeKind(fileName);
+  const style = EXT_BADGE_STYLE[kind];
+  return (
+    <span
+      className="shrink-0 whitespace-nowrap rounded px-[5px] py-0.5 text-[9px] font-semibold tracking-[0.2px]"
+      style={{ color: style.color, border: `1px solid ${style.border}` }}
+    >
+      {kind}
+    </span>
+  );
+}
+
+export function NasDriveModeFooter({
+  driveLetter,
   mode,
   onChange
 }: {
+  driveLetter?: string;
   mode: LunaNasDriveMode;
   onChange?: (mode: LunaNasDriveMode) => void;
 }) {
-  const btn = (value: LunaNasDriveMode, label: string) => {
+  const letter = (driveLetter ?? "T").replace(/:$/, "").toUpperCase() || "T";
+  const item = (value: LunaNasDriveMode, label: string) => {
     const selected = mode === value;
     return (
       <button
@@ -22,13 +60,12 @@ export function NasDriveModeToggles({
           e.stopPropagation();
           onChange?.(value);
         }}
-        className="shrink-0 text-[10px]"
+        className="text-[11px]"
         style={{
-          padding: "2px 7px",
-          borderRadius: 10,
-          backgroundColor: selected ? "#E1F5EE" : "transparent",
-          border: selected ? "1px solid #0F6E56" : "1px solid #D3D1C7",
-          color: selected ? "#04342C" : "#6B7280"
+          color: selected ? "#1c1d21" : "#9aa0a8",
+          borderBottom: selected ? "1px solid #9aa0a8" : "1px solid transparent",
+          paddingBottom: 1,
+          fontWeight: selected ? 600 : 400
         }}
       >
         {label}
@@ -37,9 +74,13 @@ export function NasDriveModeToggles({
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      {btn("office", "사무실")}
-      {btn("raidrive", "RaiDrive")}
+    <div className="mt-3 flex items-center gap-3.5 pl-0.5">
+      <span className="text-[11px] text-[#9aa0a8]">{letter} 드라이브</span>
+      <span className="text-[11px] text-[#9aa0a8]" aria-hidden>
+        ·
+      </span>
+      {item("office", "사무실")}
+      {item("raidrive", "RaiDrive")}
     </div>
   );
 }
@@ -97,14 +138,12 @@ function CopyButton({
 type WorkserverPathCardProps = {
   group: WorkserverPathGroup;
   mode: LunaNasDriveMode;
-  onModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
 };
 
 export function WorkserverPathCard({
   group,
   mode,
-  onModeChange,
   onCopyToast
 }: WorkserverPathCardProps) {
   const folderPath = formatNasFolderPath(
@@ -113,29 +152,21 @@ export function WorkserverPathCard({
     mode,
     false
   );
+  const crumb = formatNasFolderBreadcrumb(group.folderRawPath);
 
   return (
-    <div
-      className="overflow-hidden rounded-lg bg-white"
-      style={{ border: "0.5px solid #E3E0F5" }}
-    >
-      <div
-        className="flex items-center justify-between gap-2 px-[11px] py-[7px]"
-        style={{ borderBottom: "0.5px solid #EEEDFE" }}
-      >
-        <span className="text-[10.5px] text-[#9aa0a8]">경로</span>
-        <NasDriveModeToggles mode={mode} onChange={onModeChange} />
-      </div>
-
-      <div
-        className="flex items-start gap-2 px-[11px] py-[8px]"
-        style={{
-          borderBottom: group.files.length > 0 ? "0.5px solid #EEEDFE" : undefined
-        }}
-      >
-        <span className="mt-px w-[26px] shrink-0 text-[10px] text-[#9aa0a8]">폴더</span>
-        <span className="min-w-0 flex-1 break-all font-mono text-[12px] leading-[1.6] text-[#1c1d21]">
-          {folderPath}
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <Folder
+          className="h-[15px] w-[15px] shrink-0 text-[#9aa0a8]"
+          strokeWidth={1.75}
+          aria-hidden
+        />
+        <span
+          className="min-w-0 flex-1 truncate text-[11.5px] text-[#6b6f76]"
+          title={folderPath}
+        >
+          {crumb || folderPath}
         </span>
         <CopyButton
           text={folderPath}
@@ -144,32 +175,95 @@ export function WorkserverPathCard({
         />
       </div>
 
-      {group.files.map((fileName, index) => {
-        const filePath = formatNasFilePath(
-          group.drive,
-          group.folderRawPath,
-          mode,
-          fileName
-        );
-        const isLast = index === group.files.length - 1;
-        return (
-          <div
-            key={fileName}
-            className="flex items-start gap-2 px-[11px] py-[8px]"
-            style={{ borderBottom: isLast ? undefined : "0.5px solid #EEEDFE" }}
-          >
-            <span className="mt-px w-[26px] shrink-0 text-[10px] text-[#9aa0a8]">파일</span>
-            <span className="min-w-0 flex-1 break-all font-mono text-[12px] font-semibold leading-[1.6] text-[#1c1d21]">
-              {fileName}
-            </span>
-            <CopyButton
-              text={filePath}
-              onCopyToast={onCopyToast}
-              ariaLabel={`${fileName} 경로 복사`}
-            />
-          </div>
-        );
-      })}
+      {group.files.length > 0 ? (
+        <div
+          className="overflow-hidden rounded-[10px] bg-white"
+          style={{ border: "1px solid #e7e8ec" }}
+        >
+          {group.files.map((fileName, index) => {
+            const tag = inferFileTag(fileName);
+            const isFinal = tag?.kind === "final";
+            const isLast = index === group.files.length - 1;
+            return (
+              <div
+                key={`${fileName}-${index}`}
+                className="flex items-center gap-[11px] px-[14px] py-[11px]"
+                style={{
+                  borderBottom: isLast ? undefined : "1px solid #e7e8ec"
+                }}
+              >
+                <FileExtBadge fileName={fileName} />
+                <span
+                  className="min-w-0 flex-1 truncate text-[13px]"
+                  style={{
+                    color: isFinal ? "#1c1d21" : "#6b6f76",
+                    fontWeight: isFinal ? 600 : 400
+                  }}
+                  title={fileName}
+                >
+                  {stripFileExtension(fileName)}
+                </span>
+                {tag ? (
+                  <span
+                    className="shrink-0 whitespace-nowrap text-[10.5px]"
+                    style={{ color: isFinal ? "#0F6E56" : "#9aa0a8" }}
+                  >
+                    {tag.label}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function NotionResultCard({ sources }: { sources: NotionSource[] }) {
+  const pages = sources.filter((s) => s.title && s.url);
+  if (pages.length === 0) return null;
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="w-[15px] text-center text-[12px] font-semibold text-[#9aa0a8]">
+          N
+        </span>
+        <span className="text-[11.5px] text-[#6b6f76]">노션</span>
+      </div>
+      <div
+        className="overflow-hidden rounded-[10px] bg-white"
+        style={{ border: "1px solid #e7e8ec" }}
+      >
+        {pages.map((page, index) => {
+          const isLast = index === pages.length - 1;
+          return (
+            <a
+              key={page.id || page.url}
+              href={page.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-[11px] px-[14px] py-[11px] hover:bg-[#fafafa]"
+              style={{
+                borderBottom: isLast ? undefined : "1px solid #e7e8ec"
+              }}
+            >
+              <span
+                className="min-w-0 flex-1 truncate text-[13px] text-[#1c1d21]"
+                title={page.title}
+              >
+                {page.title}
+              </span>
+              <ArrowUpRight
+                className="h-[15px] w-[15px] shrink-0 text-[#9aa0a8]"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+            </a>
+          );
+        })}
+      </div>
     </div>
   );
 }

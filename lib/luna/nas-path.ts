@@ -78,6 +78,55 @@ export function formatNasFolderPath(
   return `${prefix}${path}\\`;
 }
 
+/** 화면용: 드라이브·백슬래시를 숨기고 › 로 구분 */
+export function formatNasFolderBreadcrumb(rawPath: string): string {
+  const path = normalizeRawNasPath(rawPath);
+  if (!path) return "";
+  return path.split("\\").filter(Boolean).join(" › ");
+}
+
+export type FileExtBadgeKind =
+  | "PPT"
+  | "XLS"
+  | "PDF"
+  | "DOC"
+  | "DWG"
+  | "IMG"
+  | "VID"
+  | "FILE";
+
+export function fileExtBadgeKind(fileName: string): FileExtBadgeKind {
+  const m = fileName.trim().match(/\.([a-z0-9]{1,8})$/i);
+  const ext = (m?.[1] ?? "").toLowerCase();
+  if (ext === "ppt" || ext === "pptx") return "PPT";
+  if (ext === "xls" || ext === "xlsx" || ext === "csv") return "XLS";
+  if (ext === "pdf") return "PDF";
+  if (ext === "doc" || ext === "docx" || ext === "hwp") return "DOC";
+  if (ext === "dwg" || ext === "dxf" || ext === "skp" || ext === "3dm") return "DWG";
+  if (ext === "jpg" || ext === "jpeg" || ext === "png" || ext === "psd" || ext === "ai") {
+    return "IMG";
+  }
+  if (ext === "mp4" || ext === "mov" || ext === "avi") return "VID";
+  return "FILE";
+}
+
+export function stripFileExtension(fileName: string): string {
+  return fileName.replace(/\.[a-z0-9]{1,8}$/i, "");
+}
+
+export type LunaFileTag = { label: string; kind: "final" | "draft" };
+
+export function inferFileTag(fileName: string): LunaFileTag | null {
+  const stem = stripFileExtension(fileName);
+  if (/계약용|최종본|_FIN\b|[-_]FIN$/i.test(stem) || /최종/.test(stem)) {
+    return { label: "최종", kind: "final" };
+  }
+  if (/초안|draft/i.test(stem)) {
+    return { label: "초안", kind: "draft" };
+  }
+  return null;
+}
+
 export function formatNasFilePath(
   drive: string | undefined,
   rawPath: string,

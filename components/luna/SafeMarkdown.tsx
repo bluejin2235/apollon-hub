@@ -11,7 +11,7 @@ function safeHref(href: string | undefined): string | undefined {
 }
 
 function makeComponents(compact?: boolean, variant?: "default" | "luna"): Components {
-  const pGap = compact ? "mb-1.5" : "mb-2";
+  const pGap = compact ? "mb-1.5" : variant === "luna" ? "mb-4" : "mb-2";
   const isLuna = variant === "luna";
   const inlineCodeClass = isLuna
     ? "rounded border border-[#E3E0F5] bg-white px-[5px] py-px font-mono text-[12px] text-[#1c1d21]"
