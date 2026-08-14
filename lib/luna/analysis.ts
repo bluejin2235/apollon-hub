@@ -362,7 +362,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     const runConnectorSearch = async (kw: string) => {
       const [notionRes, webRes, youtubeRes, nasRes] = await Promise.all([
         notionEnabled && kw
-          ? searchNotionPages(kw)
+          ? searchNotionPages(kw, userText).then((o) => o.sources)
           : Promise.resolve([] as NotionSource[]),
         webEnabled
           ? searchTavily(kw || userText)

@@ -230,7 +230,8 @@ export async function runLunaTurn(
   }
 
   if (notionEnabled && keywords) {
-    notionSources = await searchNotionPages(keywords);
+    const notionOutcome = await searchNotionPages(keywords, userText);
+    notionSources = notionOutcome.sources;
   }
   if (webEnabled) {
     webCards = await searchTavily(keywords || userText);

@@ -10,7 +10,13 @@ import {
   resolveAnthropicModel,
   type LunaUsageTokens
 } from "@/lib/luna/engine";
-import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
+import {
+  mergeNotionSearchOutcomes,
+  searchNotionPages,
+  type NotionSearchOutcome,
+  type NotionSearchStatus,
+  type NotionSource
+} from "@/lib/luna/notion";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
@@ -388,6 +394,9 @@ function buildVolatileSystemText(opts: {
   /** Work서버 검색을 실제로 돌렸는지 (0건 명시 주입 구분용) */
   nasSearchAttempted?: boolean;
   reportContent?: string | null;
+  notionSearchAttempted?: boolean;
+  notionSearchStatus?: NotionSearchStatus;
+  notionSearchRounds?: number;
 }): string {
   const parts: string[] = [];
 
@@ -400,6 +409,13 @@ function buildVolatileSystemText(opts: {
       .map((s) => `- ${s.title}: ${s.url}`)
       .join("\n");
     parts.push(`[노션 검색 결과]\n${notionBlock}`);
+  } else if (opts.notionSearchAttempted) {
+    if (opts.notionSearchStatus === "error") {
+      parts.push("[노션 검색] 호출 실패 — 결과를 확인하지 몸함");
+    } else if (opts.notionSearchStatus === "empty") {
+      const n = opts.notionSearchRounds ?? 0;
+      parts.push(`[노션 검색] ${n}회 검색, 결과 0건`);
+    }
   }
 
   if (opts.cards && opts.cards.length > 0) {
@@ -459,6 +475,9 @@ function buildAnswerSystem(
     nasResults?: NasDirectoryRow[];
     nasSearchAttempted?: boolean;
     reportContent?: string | null;
+    notionSearchAttempted?: boolean;
+    notionSearchStatus?: NotionSearchStatus;
+    notionSearchRounds?: number;
   },
   useCaching: boolean
 ): string | Anthropic.TextBlockParam[] {
@@ -1046,6 +1065,7 @@ export async function POST(request: NextRequest) {
           notionEnabled || webEnabled || nasEnabled || isSearchRequest;
 
         let notionSources: NotionSource[] = [];
+        let notionSearchOutcome: NotionSearchOutcome | null = null;
         let cards: LunaCard[] = [];
         let nasResults: NasDirectoryRow[] = [];
         let keywords = "";
@@ -1214,11 +1234,12 @@ export async function POST(request: NextRequest) {
           );
         };
 
+        const skippedNotionOutcome = (): NotionSearchOutcome => ({ status: "skipped", sources: [], queries: [], rounds: 0 });
         const runConnectorSearch = async (kw: string) => {
-          const [notionRes, webRes, youtubeRes, nasRes] = await Promise.all([
+          const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
             notionEnabled && kw
-              ? searchNotionPages(kw)
-              : Promise.resolve([] as NotionSource[]),
+              ? searchNotionPages(kw, searchIntentText)
+              : Promise.resolve(skippedNotionOutcome()),
             webEnabled
               ? (() => {
                   const q = kw || searchIntentText;
@@ -1251,6 +1272,7 @@ export async function POST(request: NextRequest) {
             })()
           ]);
 
+          const notionRes = notionOutcome.sources;
           const notionCards: LunaCard[] = notionRes.map((s) => ({
             type: "notion" as const,
             title: s.title,
@@ -1261,6 +1283,7 @@ export async function POST(request: NextRequest) {
           const nasCards = nasRes.map(toNasCard);
           return {
             notionSources: notionRes,
+            notionOutcome,
             nasResults: nasRes,
             cards: [...notionCards, ...nasCards, ...webRes, ...youtubeRes],
             counts: {
@@ -1342,6 +1365,7 @@ export async function POST(request: NextRequest) {
           searchRounds = 1;
           let batch = await runConnectorSearch(keywords);
           notionSources = batch.notionSources;
+          notionSearchOutcome = batch.notionOutcome;
           nasResults = batch.nasResults;
           cards = batch.cards;
 
@@ -1458,6 +1482,7 @@ export async function POST(request: NextRequest) {
             searchRounds += 1;
             pushStep("search", "running", searchRunningLabel);
             batch = await runConnectorSearch(keywords);
+            notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome) : batch.notionOutcome;
             notionSources = [
               ...notionSources,
               ...batch.notionSources.filter(
@@ -1594,7 +1619,10 @@ export async function POST(request: NextRequest) {
             cards,
             nasResults,
             nasSearchAttempted: nasEnabled && anySearch,
-            reportContent: usedReportContent
+            reportContent: usedReportContent,
+            notionSearchAttempted: notionEnabled && anySearch,
+            notionSearchStatus: notionSearchOutcome?.status,
+            notionSearchRounds: notionSearchOutcome?.rounds ?? 0
           },
           tierACfg.use_caching === true
         );
