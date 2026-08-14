@@ -11,6 +11,12 @@ import {
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import {
+  collectExistingTermKeys,
+  processCaptureItems,
+  type ProcessedCaptureItem,
+  type RawCaptureItem
+} from "@/lib/luna/capture-glossary";
+import {
   filterNewCaptureItems,
   reflectCandidateCap
 } from "@/lib/luna/reflect-guard";
@@ -34,6 +40,7 @@ const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었
 - 확신이 서지 않는 애매한 추측
 
 후보 형식: 지식 한 문장 + 근거 원문(누가·언제 말했는지) + 조직/개인 구분 제안.
+용어 정의·구분("A는 B다", "A는 C가 아니라 D")은 category=term 으로 1건만 올리세요. 같은 내용을 general 과 term 에 중복 올리지 마세요. term_ko 를 반드로 채우세요.
 하루에 같은 대화에서 후보는 최대 3건. 양보다 정확함.
 
 확인이 필요한 질문은 별도로 최대 1건 (question). 본인(대화 상대)만 답할 수 있는 사실·선호·절차 확인에 한정.
@@ -48,7 +55,7 @@ const CAPTURE_USER_SUFFIX = `
 형식:
 {
   "candidates": [
-    { "content": "지식 한 문장", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general", "from_correction": true|false }
+    { "content": "지식 한 문장(용어 정의면 정의만, 용어명 제외)", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general", "from_correction": true|false, "term_ko": "용어명(용어일 때 필수)", "term_en": "원어(약어일 때)" }
   ],
   "question": null | {
     "ask": "사람에게 물을 짧은 질문 (한 문장)",
@@ -64,13 +71,7 @@ question 은 확인이 꼭 필요할 때만 1건, 아니면 null. 본인만 답�
 type ReflectBody = { conversation_id?: string };
 type MessageRow = { role: string; content: string; created_at?: string };
 
-type CaptureItem = {
-  content: string;
-  evidence: string | null;
-  scope_suggestion: ScopeSuggestion | null;
-  category: string;
-  from_correction: boolean;
-};
+type CaptureItem = RawCaptureItem;
 
 type CaptureQuestion = {
   ask: string;
@@ -115,12 +116,18 @@ function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
     const fromCorrection =
       row.from_correction === true ||
       /아니라|그게 아니고|그게 아니라|틀렸|잘못된/.test(evidenceHint);
+    const term_ko =
+      typeof row.term_ko === "string" ? row.term_ko.trim() || null : null;
+    const term_en =
+      typeof row.term_en === "string" ? row.term_en.trim() || null : null;
     out.push({
       content,
       evidence,
       scope_suggestion,
       category: categoryRaw || "general",
-      from_correction: fromCorrection
+      from_correction: fromCorrection,
+      term_ko,
+      term_en
     });
     if (out.length >= 3) break;
   }
@@ -306,7 +313,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingRows, error: existingError } = await admin
       .from("luna_learnings")
-      .select("content")
+      .select("content, meta, category")
       .eq("source_conversation_id", conversationId)
       .eq("source", "chat");
 
@@ -316,8 +323,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: existingError.message }, { status: 500 });
     }
 
-    const existingContents = (existingRows ?? [])
-      .map((r) => (typeof r.content === "string" ? r.content : ""))
+    const existingRowsList = existingRows ?? [];
+    const existingContents = existingRowsList
+      .map((row) => (typeof row.content === "string" ? row.content : ""))
       .filter(Boolean);
     const room = Math.max(0, reflectCandidateCap() - existingContents.length);
 
@@ -378,12 +386,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ saved: 0 });
     }
 
-    const toCreate = filterNewCaptureItems(items, existingContents, room);
+    const existingTermKeys = collectExistingTermKeys(existingRowsList);
+    const processed = processCaptureItems(items, transcript, existingTermKeys);
+    const toCreate = filterNewCaptureItems(processed, existingContents, room);
 
     let saved = 0;
     const ids: string[] = [];
     const correctionIds: string[] = [];
-    for (const item of toCreate) {
+    for (const item of toCreate as ProcessedCaptureItem[]) {
       const created = await createCandidate(admin, {
         content: item.content,
         evidence: item.evidence,
@@ -394,7 +404,7 @@ export async function POST(request: NextRequest) {
         assigned_to: user.id,
         source_conversation_id: conversationId,
         thread: [],
-        meta: item.from_correction ? { from_correction: true } : {}
+        meta: item.meta
       });
       if (created) {
         saved += 1;

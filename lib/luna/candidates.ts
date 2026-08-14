@@ -158,13 +158,18 @@ export async function createCandidate(
   if (!content) return null;
 
   const thread = normalizeThread(input.thread ?? []);
-  const category = (input.category?.trim() || "general").slice(0, 64);
+  let category = (input.category?.trim() || "general").slice(0, 64);
   const baseMeta =
     input.meta && typeof input.meta === "object" && !Array.isArray(input.meta)
       ? { ...input.meta }
       : {};
-  // 용어 후보는 카드 UI·사전이 구조화 필드를 쓰도록 kind 표시
-  if (category === "term" && baseMeta.kind !== "glossary") {
+  // 용어 후보: term_ko 가 있을 때만 glossary — 없으면 일반 지식
+  const termKo =
+    typeof baseMeta.term_ko === "string" ? baseMeta.term_ko.trim() : "";
+  if (category === "term" && !termKo) {
+    category = "general";
+    delete baseMeta.kind;
+  } else if (category === "term" && termKo) {
     baseMeta.kind = "glossary";
     if (typeof baseMeta.definition !== "string" || !String(baseMeta.definition).trim()) {
       baseMeta.definition = content;
