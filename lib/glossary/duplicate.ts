@@ -148,7 +148,7 @@ export function findGlossaryDuplicates(
   };
 
   for (const term of existingTerms) {
-    if (excludeId && term.id === excludeId) continue;
+    if (excludeId && String(term.id) === String(excludeId)) continue;
 
     const tKo = display(term.term_ko);
     const tEn = display(term.term_en);

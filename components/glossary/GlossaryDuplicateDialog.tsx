@@ -37,6 +37,7 @@ type Props = {
   open: boolean;
   payload: GlossaryDuplicatePayload | null;
   busy?: boolean;
+  error?: string;
   onCancel: () => void;
   onResolve: (args: {
     action: GlossaryDupAction;
@@ -144,6 +145,7 @@ export function GlossaryDuplicateDialog({
   open,
   payload,
   busy,
+  error,
   onCancel,
   onResolve
 }: Props) {
@@ -166,20 +168,34 @@ export function GlossaryDuplicateDialog({
 
   if (!open || !payload || !merged || !incomingEdit) return null;
 
+  const activePayload = payload;
+  const activeMerged = merged;
+  const activeIncomingEdit = incomingEdit;
+
   const existingFields: GlossaryFieldValues = {
-    term_ko: payload.existing.term_ko,
-    term_en: payload.existing.term_en ?? "",
-    term_zh: payload.existing.term_zh ?? "",
-    synonyms: payload.existing.synonyms ?? [],
-    definition: payload.existing.definition ?? "",
-    categories: payload.existing.categories?.length
-      ? payload.existing.categories
+    term_ko: activePayload.existing.term_ko,
+    term_en: activePayload.existing.term_en ?? "",
+    term_zh: activePayload.existing.term_zh ?? "",
+    synonyms: activePayload.existing.synonyms ?? [],
+    definition: activePayload.existing.definition ?? "",
+    categories: activePayload.existing.categories?.length
+      ? activePayload.existing.categories
       : ["공통"]
   };
 
-  const existingMeta = `v${payload.existing.version} · ${shortDate(
-    payload.existing.updated_at
-  )} · ${payload.existing.updated_by_name || "—"}`;
+  const existingMeta = `v${activePayload.existing.version} · ${shortDate(
+    activePayload.existing.updated_at
+  )} · ${activePayload.existing.updated_by_name || "—"}`;
+
+  function submit() {
+    if (busy) return;
+    onResolve({
+      action,
+      merged: activeMerged,
+      incoming:
+        action === "register" ? activeIncomingEdit : activePayload.incoming
+    });
+  }
 
   return (
     <div
@@ -361,14 +377,7 @@ export function GlossaryDuplicateDialog({
           <button
             type="button"
             disabled={busy}
-            onClick={() =>
-              onResolve({
-                action,
-                merged,
-                incoming:
-                  action === "register" ? incomingEdit : payload.incoming
-              })
-            }
+            onClick={submit}
             className="rounded-[9px] px-3.5 py-2 text-[13px] font-bold text-white disabled:opacity-50"
             style={{ background: C.luna }}
           >
@@ -387,6 +396,18 @@ export function GlossaryDuplicateDialog({
             모든 처리는 변경 이력에 남습니다
           </span>
         </div>
+        {error ? (
+          <div
+            className="border-t px-4 py-2.5 text-[12.5px]"
+            style={{
+              borderColor: C.line,
+              background: C.warnBg,
+              color: C.warnInk
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
       </div>
     </div>
   );

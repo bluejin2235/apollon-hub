@@ -213,6 +213,7 @@ export function GlossaryBrowser({
     null
   );
   const [dupBusy, setDupBusy] = useState(false);
+  const [dupError, setDupError] = useState("");
 
   const loadTerms = useCallback(async () => {
     setLoading(true);
@@ -453,6 +454,7 @@ export function GlossaryBrowser({
           source_label: isNew ? "신규 등록" : "용어 수정",
           exclude_id: excludeId
         });
+        setDupError("");
         return;
       }
 
@@ -509,6 +511,7 @@ export function GlossaryBrowser({
   }) {
     if (!dupPayload) return;
     setDupBusy(true);
+    setDupError("");
     try {
       const res = await api<{
         ok: boolean;
@@ -526,12 +529,17 @@ export function GlossaryBrowser({
           existing_id: dupPayload.existing.id,
           incoming: args.incoming,
           merged: args.merged,
-          exclude_id: dupPayload.exclude_id,
+          exclude_id: dupPayload.exclude_id ?? null,
           candidate_id: null
         })
       });
       if (!res.ok) {
-        if (res.status === 409 && res.data?.conflicts && res.data.primary && res.data.existing) {
+        if (
+          res.status === 409 &&
+          res.data?.conflicts &&
+          res.data.primary &&
+          res.data.existing
+        ) {
           setDupPayload({
             ...dupPayload,
             primary: res.data.primary,
@@ -540,12 +548,14 @@ export function GlossaryBrowser({
             incoming: res.data.incoming ?? args.incoming,
             merge_draft: null
           });
-          setNotice("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+          setDupError("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
           return;
         }
-        throw new Error(res.error);
+        setDupError(res.error || "처리에 실패했습니다.");
+        return;
       }
       setDupPayload(null);
+      setDupError("");
       setCreating(false);
       setDraft(null);
       setNotice(res.data.message ?? "처리했습니다.");
@@ -559,7 +569,7 @@ export function GlossaryBrowser({
         await loadDetail(dupPayload.exclude_id);
       }
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "처리에 실패했습니다.");
+      setDupError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {
       setDupBusy(false);
     }
@@ -1122,7 +1132,11 @@ export function GlossaryBrowser({
         open={!!dupPayload}
         payload={dupPayload}
         busy={dupBusy}
-        onCancel={() => setDupPayload(null)}
+        error={dupError}
+        onCancel={() => {
+          setDupPayload(null);
+          setDupError("");
+        }}
         onResolve={(args) => void resolveDuplicate(args)}
       />
     </div>

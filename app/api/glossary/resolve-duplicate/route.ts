@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
+  bumpGlossaryVersion,
   checkGlossaryDuplicate,
   insertGlossaryTerm,
   normalizeIncomingFields,
-  bumpGlossaryVersion
+  softDeleteGlossaryTerm
 } from "@/lib/glossary/duplicate-service";
 
 export const runtime = "nodejs";
@@ -13,7 +14,14 @@ type ResolveAction = "merge" | "replace" | "keep" | "register";
 
 /**
  * POST /api/glossary/resolve-duplicate
- * 중복 팝업 선택 처리. candidate_id 있으면 후보를 archived.
+ *
+ * 합치기·교체 시 id 규칙:
+ * - survivor = existing_id (사전에 이미 있던 쪽)
+ * - loser = exclude_id (지금 편집 중이던 쪽, existing 과 다를 때만 soft-delete)
+ * - 신규 등록·지식후보만이면 exclude_id 없음 → survivor 만 갱신
+ *
+ * 교체: survivor 의 전 필드를 incoming 으로 덮어씀.
+ * 합치기: survivor 를 merged 로 갱신.
  */
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
@@ -76,6 +84,10 @@ export async function POST(request: NextRequest) {
     typeof body.candidate_id === "string" && body.candidate_id
       ? body.candidate_id
       : null;
+  const excludeId =
+    typeof body.exclude_id === "string" && body.exclude_id.trim()
+      ? body.exclude_id.trim()
+      : null;
 
   if (action === "keep") {
     await archiveCandidate(candidateId);
@@ -93,10 +105,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "register") {
-    const excludeId =
-      typeof body.exclude_id === "string" && body.exclude_id
-        ? body.exclude_id
-        : null;
     const again = await checkGlossaryDuplicate(admin, incoming, excludeId);
     if (again.conflicts) {
       return NextResponse.json(
@@ -112,7 +120,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 수정 중이면 자기 행을 새 이름으로 갱신, 신규면 insert
     const result = excludeId
       ? await bumpGlossaryVersion(admin, {
           termId: excludeId,
@@ -166,6 +173,23 @@ export async function POST(request: NextRequest) {
   if (!fields.term_ko.trim()) fields.term_ko = fields.term_en;
 
   const changeNote = action === "merge" ? "중복 병합" : "중복 교체";
+
+  // 편집 중이던 레코드(loser)를 먼저 soft-delete → term_ko unique 충돌 방지
+  if (excludeId && excludeId !== existingId) {
+    const del = await softDeleteGlossaryTerm(admin, {
+      termId: excludeId,
+      userId: user.id,
+      editorName,
+      changeNote:
+        action === "merge"
+          ? "중복 병합 — 다른 용어로 통합"
+          : "중복 교체 — 다른 용어로 통합"
+    });
+    if ("error" in del) {
+      return NextResponse.json({ error: del.error }, { status: 500 });
+    }
+  }
+
   const result = await bumpGlossaryVersion(admin, {
     termId: existingId,
     fields,
@@ -179,13 +203,12 @@ export async function POST(request: NextRequest) {
 
   await archiveCandidate(candidateId);
 
-  // 수정 화면에서 자기 자신을 다른 기존 용어로 합치기/교체한 경우:
-  // exclude_id 가 existing 과 다르면 원본(자기) 용어는 그대로 둔다 — 사용자가 의도한 건 기존 쪽 갱신.
-
   return NextResponse.json({
     ok: true,
     action,
     message: action === "merge" ? "합쳤어요" : "교체했어요",
-    term: result
+    term: result,
+    deleted_id:
+      excludeId && excludeId !== existingId ? excludeId : null
   });
 }

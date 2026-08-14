@@ -287,3 +287,58 @@ export async function insertGlossaryTerm(
   }
   return { id: data.id as string, version: 1 };
 }
+
+/**
+ * 활성 용어 soft-delete. 합치기/교체 시 "지는 쪽" 정리용.
+ * 이력 change_note 예: "중복 교체 — 다른 용어로 통합"
+ */
+export async function softDeleteGlossaryTerm(
+  admin: SupabaseClient,
+  args: {
+    termId: string;
+    userId: string;
+    editorName: string | null;
+    changeNote: string;
+  }
+): Promise<{ ok: true } | { error: string }> {
+  const { data: term, error: readError } = await admin
+    .from("glossary_terms")
+    .select(
+      "id, term_ko, term_en, term_zh, definition, synonyms, categories, version"
+    )
+    .eq("id", args.termId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (readError) return { error: readError.message };
+  if (!term) return { ok: true }; // 이미 없거나 삭제됨
+
+  const nextVersion = (Number(term.version) || 1) + 1;
+  const { error: verErr } = await admin.from("glossary_versions").insert({
+    term_id: term.id,
+    version: nextVersion,
+    term_ko: term.term_ko,
+    term_en: term.term_en,
+    term_zh: term.term_zh,
+    definition: term.definition,
+    synonyms: normalizeSynonyms(term.synonyms),
+    editor_type: "human",
+    editor_id: args.userId,
+    editor_name: args.editorName,
+    change_note: args.changeNote
+  });
+  if (verErr) return { error: verErr.message };
+
+  const now = new Date().toISOString();
+  const { error: softError } = await admin
+    .from("glossary_terms")
+    .update({
+      deleted_at: now,
+      deleted_by: args.userId,
+      version: nextVersion,
+      updated_by: args.userId,
+      updated_at: now
+    })
+    .eq("id", args.termId);
+  if (softError) return { error: softError.message };
+  return { ok: true };
+}

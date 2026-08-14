@@ -74,6 +74,7 @@ export function LunaCandidatesPending() {
     null
   );
   const [dupBusy, setDupBusy] = useState(false);
+  const [dupError, setDupError] = useState("");
 
   const load = useCallback(async (f: PendingFilter) => {
     const token = await getAccessToken();
@@ -169,6 +170,7 @@ export function LunaCandidatesPending() {
           source_label: "지식후보",
           candidate_id: id
         });
+        setDupError("");
         return;
       }
 
@@ -255,6 +257,7 @@ export function LunaCandidatesPending() {
     const token = await getAccessToken();
     if (!token) return;
     setDupBusy(true);
+    setDupError("");
     try {
       const res = await fetch("/api/glossary/resolve-duplicate", {
         method: "POST",
@@ -289,15 +292,16 @@ export function LunaCandidatesPending() {
           incoming: json.incoming ?? args.incoming,
           merge_draft: json.merge_draft ?? null
         });
-        setMessage("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
+        setDupError("바꾼 이름도 겹칩니다. 다시 확인해 주세요.");
         return;
       }
       if (!res.ok) {
-        setMessage(`처리 실패: ${json?.error ?? res.status}`);
+        setDupError(json?.error ?? `처리 실패 (${res.status})`);
         return;
       }
       const doneId = dupPayload.candidate_id;
       setDupPayload(null);
+      setDupError("");
       setItems((prev) => prev.filter((c) => c.id !== doneId));
       setGlossaryEdit((prev) => {
         const next = { ...prev };
@@ -306,6 +310,8 @@ export function LunaCandidatesPending() {
       });
       setMessage(json?.message ?? "처리했습니다.");
       void load(filter);
+    } catch (err) {
+      setDupError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {
       setDupBusy(false);
     }
@@ -709,7 +715,11 @@ export function LunaCandidatesPending() {
         open={!!dupPayload}
         payload={dupPayload}
         busy={dupBusy}
-        onCancel={() => setDupPayload(null)}
+        error={dupError}
+        onCancel={() => {
+          setDupPayload(null);
+          setDupError("");
+        }}
         onResolve={(args) => void resolveGlossaryDup(args)}
       />
     </KnowledgeShell>
