@@ -2,6 +2,7 @@ import {
   parseOfficePath,
   scanBareOfficePath,
   findAllWorkserverPathSpans,
+  preprocessFolderFileLines,
   splitMarkdownByWorkserverPaths
 } from "../lib/luna/nas-path.ts";
 
@@ -69,6 +70,33 @@ if (
   console.log("PASS backtick stripped, full path");
 } else {
   console.log("FAIL backtick", spans);
+  failed = true;
+}
+
+console.log("\n=== preprocessFolderFileLines ===");
+const folderFileRaw =
+  "파일 위치:\n\n`T:\\02 Project\\2026\\260713 더후 글로벌 론칭\\00 Management\\01 견적\\260708 견적서\\`\n→ K2_Apollon_더후이벤트영상제작_견적서_260708_FIN.xlsx";
+const folderFileMerged = preprocessFolderFileLines(folderFileRaw);
+const folderFileExpected =
+  "파일 위치:\n\n`T:\\02 Project\\2026\\260713 더후 글로벌 론칭\\00 Management\\01 견적\\260708 견적서\\K2_Apollon_더후이벤트영상제작_견적서_260708_FIN.xlsx`";
+if (folderFileMerged === folderFileExpected) {
+  console.log("PASS folder line + file line merge");
+} else {
+  console.log("FAIL preprocessFolderFileLines");
+  console.log("  got:", folderFileMerged);
+  failed = true;
+}
+
+const folderFileSegs = splitMarkdownByWorkserverPaths(folderFileRaw);
+const folderFilePathSegs = folderFileSegs.filter((s) => s.type === "paths");
+if (
+  folderFilePathSegs.length === 1 &&
+  folderFilePathSegs[0].groups[0]?.files[0] ===
+    "K2_Apollon_더후이벤트영상제작_견적서_260708_FIN.xlsx"
+) {
+  console.log("PASS split after folder/file preprocess");
+} else {
+  console.log("FAIL split after preprocess", folderFilePathSegs);
   failed = true;
 }
 

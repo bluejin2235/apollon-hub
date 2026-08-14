@@ -90,7 +90,7 @@ export type ParsedAssume = {
   assumptions: string[];
 };
 
-const ASSUME_RE = /\[\[\s*가정\s*:\s*([^\]]+)\]\]/g;
+const ASSUME_RE = /\[\[\s*가정\s*[：:]\s*([\s\S]*?)\]\]/g;
 
 /** [[가정: …]] 마커를 본문에서 분리. */
 export function parseAssumeMarkers(text: string): ParsedAssume {

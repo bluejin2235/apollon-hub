@@ -410,7 +410,9 @@ function buildVolatileSystemText(opts: {
     const notionBlock = opts.notionSources
       .map((s) => `- ${s.title} — ${s.url}`)
       .join("\n");
-    parts.push(`[노션 검색 결과]\n${notionBlock}`);
+    parts.push(
+      `[노션 검색 결과]\n${notionBlock}\n(답변 본문에 위 각 항목의 제목과 URL을 반드시 포함할 것. URL 없이 '노션에 정리되어 있다'고만 쓰지 말 것)`
+    );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
       parts.push("[노션 검색] 호출 실패 — 결과를 확인하지 못함");
@@ -454,6 +456,7 @@ function buildVolatileSystemText(opts: {
   parts.push(
     "[답변 규칙]\n" +
       "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
+      "- [노션 검색 결과]가 제공되면 각 페이지 제목과 URL을 답변 본문에 반드시 함께 쓴다.\n" +
       "- 검색 결과가 없으면 반드시 '찾지 못했다'고 명확히 답한다.\n" +
       "  - 경로·파일명·폴더명을 절대 추측하거나 조합해서 만들지 않는다. 검색 결과에 없는 T:\\ 또는 P:\\ 경로를 답변에 쓰는 것은 금지다.\n" +
       "  - 대신 할 수 있는 것: ①검색 중 발견한 인접 자료(비슷한 프로젝트·상위 폴더)를 '대신 이런 것은 있다'로 제시 ②더 정확한 검색어 제안 ③담당자 확인 권유\n" +

@@ -345,11 +345,42 @@ export function findAllWorkserverPathSpans(content: string): PathSpan[] {
 
 const PATH_RUN_GAP_RE = /^[\s,;·\-*•]*$/;
 
+/**
+ * 폴더 줄 + 이어지는 파일 줄(→ 또는 확장자)을 한 경로로 합친다.
+ * `T:\\folder\\` + `→ file.pptx` → `T:\\folder\\file.pptx`
+ */
+export function preprocessFolderFileLines(content: string): string {
+  let result = content;
+
+  result = result.replace(
+    /`((?:T|P):\\(?:[^`\\]|\\)+\\)`[ \t]*\r?\n[ \t]*(?:→[ \t]*)?(?:`([^`\r\n]+)`|([^\r\n`]+))/gim,
+    (match, folder: string, fileBt?: string, filePlain?: string) => {
+      const file = (fileBt ?? filePlain ?? "").trim();
+      if (!file || !/^[^\\]+\.[a-z0-9]{1,8}$/i.test(file)) return match;
+      const folderClean = folder.replace(/\\+$/, "");
+      return `\`${folderClean}\\${file}\``;
+    }
+  );
+
+  result = result.replace(
+    /((?:T|P):\\[^\r\n`]+\\)[ \t]*\r?\n[ \t]*(?:→[ \t]*)?(?:`([^`\r\n]+)`|([^\r\n`]+))/gim,
+    (match, folder: string, fileBt?: string, filePlain?: string) => {
+      const file = (fileBt ?? filePlain ?? "").trim();
+      if (!file || !/^[^\\]+\.[a-z0-9]{1,8}$/i.test(file)) return match;
+      const folderClean = folder.replace(/\\+$/, "");
+      return `${folderClean}\\${file}`;
+    }
+  );
+
+  return result;
+}
+
 /** 마크down 본문에서 Work서버 경로 블록을 분리한다. 파싱 실패 구간은 원문 유지 */
 export function splitMarkdownByWorkserverPaths(content: string): MarkdownSegment[] {
-  const spans = findAllWorkserverPathSpans(content);
+  const normalized = preprocessFolderFileLines(content);
+  const spans = findAllWorkserverPathSpans(normalized);
   if (spans.length === 0) {
-    return [{ type: "text", value: content }];
+    return [{ type: "text", value: normalized }];
   }
 
   const segments: MarkdownSegment[] = [];
@@ -372,7 +403,7 @@ export function splitMarkdownByWorkserverPaths(content: string): MarkdownSegment
   };
 
   for (const span of spans) {
-    const between = content.slice(lastIndex, span.start);
+    const between = normalized.slice(lastIndex, span.start);
 
     if (pathBuffer.length > 0 && PATH_RUN_GAP_RE.test(between)) {
       pathBuffer.push(span);
@@ -386,9 +417,9 @@ export function splitMarkdownByWorkserverPaths(content: string): MarkdownSegment
   }
 
   flushPaths();
-  const tail = content.slice(lastIndex);
+  const tail = normalized.slice(lastIndex);
   if (tail) segments.push({ type: "text", value: tail });
 
-  if (segments.length === 0) return [{ type: "text", value: content }];
+  if (segments.length === 0) return [{ type: "text", value: normalized }];
   return segments;
 }
