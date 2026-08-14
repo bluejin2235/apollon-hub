@@ -411,7 +411,7 @@ function buildVolatileSystemText(opts: {
     parts.push(`[노션 검색 결과]\n${notionBlock}`);
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
-      parts.push("[노션 검색] 호출 실패 — 결과를 확인하지 몸함");
+      parts.push("[노션 검색] 호출 실패 — 결과를 확인하지 못함");
     } else if (opts.notionSearchStatus === "empty") {
       const n = opts.notionSearchRounds ?? 0;
       parts.push(`[노션 검색] ${n}회 검색, 결과 0건`);
