@@ -11,14 +11,12 @@ import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import {
-  NasDriveModeFooter,
   WorkserverPathCard
 } from "@/components/luna/WorkserverPathCard";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import { groupNasCardsByFolder, type LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
-import { composeLunaResultLayout } from "@/lib/luna/answer-render";
 import {
   countSourceBadges,
   parseAssumeMarkers,
@@ -387,6 +385,7 @@ function InlineThinkingProgress({
   steps,
   content,
   nasDriveMode,
+  onNasDriveModeChange,
   onCopyToast,
   notionSources,
   cards
@@ -394,6 +393,7 @@ function InlineThinkingProgress({
   steps: LunaProgressStep[];
   content: string;
   nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -432,6 +432,7 @@ function InlineThinkingProgress({
             content={content}
             className="text-[14.5px] max-md:text-[13.5px]"
             nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
             onCopyToast={onCopyToast}
             notionSources={notionSources}
             cards={cards}
@@ -480,6 +481,7 @@ function SourceBadgeRow({
 function AssistantTextBubble({
   content,
   nasDriveMode,
+  onNasDriveModeChange,
   onCopyToast,
   source = "complete",
   notionSources,
@@ -487,6 +489,7 @@ function AssistantTextBubble({
 }: {
   content: string;
   nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
   source?: string;
   notionSources?: NotionSource[] | null;
@@ -497,6 +500,7 @@ function AssistantTextBubble({
       content={content}
       className="text-[14.5px] max-md:text-[13.5px]"
       nasDriveMode={nasDriveMode}
+      onNasDriveModeChange={onNasDriveModeChange}
       onCopyToast={onCopyToast}
       notionSources={notionSources}
       cards={cards}
@@ -508,12 +512,14 @@ function AssistantTextBubble({
 function MarkdownText({
   content,
   nasDriveMode,
+  onNasDriveModeChange,
   onCopyToast,
   notionSources,
   cards
 }: {
   content: string;
   nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -523,6 +529,7 @@ function MarkdownText({
       content={content}
       className="text-sm leading-relaxed text-slate-900"
       nasDriveMode={nasDriveMode}
+      onNasDriveModeChange={onNasDriveModeChange}
       onCopyToast={onCopyToast}
       notionSources={notionSources}
       cards={cards}
@@ -537,6 +544,7 @@ function AnalysisReport({
   cards,
   sourceReasons,
   nasDriveMode,
+  onNasDriveModeChange,
   onCopyToast,
   isThinking
 }: {
@@ -545,6 +553,7 @@ function AnalysisReport({
   cards: LunaCard[];
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
   isThinking: boolean;
 }) {
@@ -619,6 +628,7 @@ function AnalysisReport({
             <MarkdownText
               content={content}
               nasDriveMode={nasDriveMode}
+              onNasDriveModeChange={onNasDriveModeChange}
               onCopyToast={onCopyToast}
               cards={cards}
             />
@@ -631,6 +641,7 @@ function AnalysisReport({
           <MarkdownText
             content={activeTeam.content}
             nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
             onCopyToast={onCopyToast}
             cards={cards}
           />
@@ -920,18 +931,6 @@ export function LunaMessage({
   const visibleCorrectionIds = (correctionCandidateIds ?? []).filter(
     (cid) => !dismissedChips.includes(cid)
   );
-  const answerParsed = useMemo(
-    () =>
-      composeLunaResultLayout({
-        raw: content || "",
-        cards: cardList,
-        notionSources: sources
-      }),
-    [content, cardList, sources]
-  );
-  const pathGroups = answerParsed.nasGroups;
-  const hasPathCards = pathGroups.length > 0;
-  const driveLetter = pathGroups[0]?.drive;
 
   useEffect(() => {
     if (!copied) return;
@@ -1059,6 +1058,7 @@ export function LunaMessage({
           <LunaMarkdown
             content={q}
             nasDriveMode={nasDriveMode}
+            onNasDriveModeChange={onNasDriveModeChange}
             onCopyToast={handleCopyToast}
             notionSources={sources}
             cards={cardList}
@@ -1093,6 +1093,7 @@ export function LunaMessage({
         cards={cardList}
         sourceReasons={sourceReasons}
         nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
         onCopyToast={handleCopyToast}
         isThinking={isThinking}
       />
@@ -1103,6 +1104,7 @@ export function LunaMessage({
         steps={stepList}
         content={content}
         nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
         onCopyToast={handleCopyToast}
         notionSources={sources}
         cards={cardList}
@@ -1113,6 +1115,7 @@ export function LunaMessage({
       <AssistantTextBubble
         content={content}
         nasDriveMode={nasDriveMode}
+        onNasDriveModeChange={onNasDriveModeChange}
         onCopyToast={handleCopyToast}
         source={id.startsWith("temp-") ? "complete-stream" : "complete-db"}
         notionSources={sources}
@@ -1136,14 +1139,6 @@ export function LunaMessage({
           ) : (
             <div className={LUNA_BUBBLE_CLASS}>{bubbleInner}</div>
           )
-        ) : null}
-
-        {hasPathCards && !clarify ? (
-          <NasDriveModeFooter
-            driveLetter={driveLetter}
-            mode={nasDriveMode}
-            onChange={onNasDriveModeChange}
-          />
         ) : null}
 
         {!isThinking && !clarify ? (

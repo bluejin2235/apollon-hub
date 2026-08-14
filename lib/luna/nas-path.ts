@@ -78,11 +78,15 @@ export function formatNasFolderPath(
   return `${prefix}${path}\\`;
 }
 
-/** 화면용: 드라이브·백슬래시를 숨기고 › 로 구분 */
-export function formatNasFolderBreadcrumb(rawPath: string): string {
-  const path = normalizeRawNasPath(rawPath);
-  if (!path) return "";
-  return path.split("\\").filter(Boolean).join(" › ");
+/** 화면용: 드라이브부터 전체를 › 로 구분 (복사 경로는 formatNasFolderPath) */
+export function formatNasFolderBreadcrumb(
+  drive: string | undefined,
+  rawPath: string,
+  mode: LunaNasDriveMode
+): string {
+  const full = formatNasFolderPath(drive, rawPath, mode, false).replace(/\\+$/, "");
+  if (!full) return "";
+  return full.replace(/\\/g, " › ");
 }
 
 export type FileExtBadgeKind =

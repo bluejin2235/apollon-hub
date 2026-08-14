@@ -5,6 +5,7 @@ import {
   preprocessFolderFileLines,
   splitMarkdownByWorkserverPaths,
   formatNasFolderBreadcrumb,
+  formatNasFolderPath,
   fileExtBadgeKind,
   inferFileTag,
   stripFileExtension
@@ -222,13 +223,53 @@ if (assumeOnly.assumptions[0] === "테스트 가정" && assumeOnly.body === "본
 
 console.log("\n=== breadcrumb / ext / tag ===");
 
-const crumb = formatNasFolderBreadcrumb(
-  "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅"
-);
-if (crumb === "01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230714 이수만 회장님 첫 미팅") {
+const tFolder =
+  "01 사업개발\\2023\\230628 청담동 오피스 라운지\\03 Document\\230714 이수만 회장님 첫 미팅";
+const pFolder = "두엠\\2026 공동작업";
+
+const crumbOfficeT = formatNasFolderBreadcrumb("T", tFolder, "office");
+const crumbRaidriveT = formatNasFolderBreadcrumb("T", tFolder, "raidrive");
+const crumbOfficeP = formatNasFolderBreadcrumb("P", pFolder, "office");
+const crumbRaidriveP = formatNasFolderBreadcrumb("P", pFolder, "raidrive");
+
+if (
+  crumbOfficeT ===
+    "T: › 01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230714 이수만 회장님 첫 미팅" &&
+  crumbRaidriveT ===
+    "Z: › Work › 01 사업개발 › 2023 › 230628 청담동 오피스 라운지 › 03 Document › 230714 이수만 회장님 첫 미팅" &&
+  crumbOfficeP === "P: › 두엠 › 2026 공동작업" &&
+  crumbRaidriveP === "Z: › Partners › 두엠 › 2026 공동작업"
+) {
   console.log("PASS breadcrumb");
 } else {
-  console.log("FAIL breadcrumb", crumb);
+  console.log("FAIL breadcrumb", {
+    crumbOfficeT,
+    crumbRaidriveT,
+    crumbOfficeP,
+    crumbRaidriveP
+  });
+  failed = true;
+}
+
+const copyOfficeT = formatNasFolderPath("T", tFolder, "office", false);
+const copyRaidriveT = formatNasFolderPath("T", tFolder, "raidrive", false);
+const copyOfficeP = formatNasFolderPath("P", pFolder, "office", false);
+const copyRaidriveP = formatNasFolderPath("P", pFolder, "raidrive", false);
+
+if (
+  copyOfficeT === `T:\\${tFolder}\\` &&
+  copyRaidriveT === `Z:\\Work\\${tFolder}\\` &&
+  copyOfficeP === `P:\\${pFolder}\\` &&
+  copyRaidriveP === `Z:\\Partners\\${pFolder}\\`
+) {
+  console.log("PASS copy path");
+} else {
+  console.log("FAIL copy path", {
+    copyOfficeT,
+    copyRaidriveT,
+    copyOfficeP,
+    copyRaidriveP
+  });
   failed = true;
 }
 

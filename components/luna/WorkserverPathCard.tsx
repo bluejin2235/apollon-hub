@@ -40,16 +40,13 @@ function FileExtBadge({ fileName }: { fileName: string }) {
   );
 }
 
-export function NasDriveModeFooter({
-  driveLetter,
+export function NasDriveModeToggle({
   mode,
   onChange
 }: {
-  driveLetter?: string;
   mode: LunaNasDriveMode;
   onChange?: (mode: LunaNasDriveMode) => void;
 }) {
-  const letter = (driveLetter ?? "T").replace(/:$/, "").toUpperCase() || "T";
   const item = (value: LunaNasDriveMode, label: string) => {
     const selected = mode === value;
     return (
@@ -74,11 +71,7 @@ export function NasDriveModeFooter({
   };
 
   return (
-    <div className="mt-3 flex items-center gap-3.5 pl-0.5">
-      <span className="text-[11px] text-[#9aa0a8]">{letter} 드라이브</span>
-      <span className="text-[11px] text-[#9aa0a8]" aria-hidden>
-        ·
-      </span>
+    <div className="flex shrink-0 items-center gap-2.5 pt-0.5">
       {item("office", "사무실")}
       {item("raidrive", "RaiDrive")}
     </div>
@@ -152,7 +145,11 @@ export function WorkserverPathCard({
     mode,
     false
   );
-  const crumb = formatNasFolderBreadcrumb(group.folderRawPath);
+  const crumb = formatNasFolderBreadcrumb(
+    group.drive,
+    group.folderRawPath,
+    mode
+  );
 
   return (
     <div>

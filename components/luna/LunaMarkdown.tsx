@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import {
+  NasDriveModeToggle,
   NotionResultCard,
   WorkserverPathCard
 } from "@/components/luna/WorkserverPathCard";
@@ -15,6 +16,7 @@ type LunaMarkdownProps = {
   content: string;
   className?: string;
   nasDriveMode: LunaNasDriveMode;
+  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -41,6 +43,7 @@ export function LunaMarkdown({
   content,
   className = "",
   nasDriveMode,
+  onNasDriveModeChange,
   onCopyToast,
   notionSources = null,
   cards = null,
@@ -61,6 +64,7 @@ export function LunaMarkdown({
   const { lead, nasGroups, notionItems, body, assume } = layout;
   const hasNas = nasGroups.length > 0;
   const hasNotion = notionItems.length > 0;
+  const showDriveToggle = hasNas;
 
   return (
     <div
@@ -69,12 +73,26 @@ export function LunaMarkdown({
       data-luna-paths={nasGroups.length}
       data-luna-assume={assume.length}
     >
-      {lead ? (
-        <SafeMarkdown content={lead} variant="luna" />
+      {lead || showDriveToggle ? (
+        <div
+          className={`flex items-start gap-3 ${
+            hasNas || hasNotion || body ? "mb-4" : ""
+          }`}
+        >
+          <div className="min-w-0 flex-1 [&_p]:mb-0">
+            {lead ? <SafeMarkdown content={lead} variant="luna" /> : null}
+          </div>
+          {showDriveToggle ? (
+            <NasDriveModeToggle
+              mode={nasDriveMode}
+              onChange={onNasDriveModeChange}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {hasNas ? (
-        <div className={lead ? "mt-4 space-y-[18px]" : "space-y-[18px]"}>
+        <div className="space-y-[18px]">
           {nasGroups.map((group, groupIndex) => (
             <WorkserverPathCard
               key={`${group.drive}-${group.folderRawPath}-${groupIndex}`}
@@ -87,13 +105,13 @@ export function LunaMarkdown({
       ) : null}
 
       {hasNotion ? (
-        <div className={lead || hasNas ? "mt-[18px]" : undefined}>
+        <div className={hasNas ? "mt-[18px]" : undefined}>
           <NotionResultCard sources={notionItems} />
         </div>
       ) : null}
 
       {body ? (
-        <div className={lead || hasNas || hasNotion ? "mt-[18px]" : undefined}>
+        <div className={hasNas || hasNotion ? "mt-[18px]" : undefined}>
           <SafeMarkdown content={body} variant="luna" />
         </div>
       ) : null}
