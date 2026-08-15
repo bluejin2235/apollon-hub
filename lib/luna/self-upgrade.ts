@@ -38,6 +38,7 @@ export type SelfUpgradeResult = {
   ok: true;
   skipped: boolean;
   message: string;
+  finished_at?: string;
   prompt_id?: string;
   prompt_key?: string;
   title?: string;
@@ -679,6 +680,7 @@ export async function runSelfUpgrade(
     message: score_dropped
       ? `개선 반영·회귀 하락 — 되돌림 제안 (v${nextVersion})`
       : `개선 반영 「${title}」 v${nextVersion}`,
+    finished_at: new Date().toISOString(),
     prompt_id: target.id as string,
     prompt_key: target.prompt_key as string,
     title,
@@ -687,9 +689,6 @@ export async function runSelfUpgrade(
     score_dropped,
     exam_run_id
   };
-  await saveSetting(admin, SETTINGS_LAST, {
-    ...result,
-    finished_at: new Date().toISOString()
-  });
+  await saveSetting(admin, SETTINGS_LAST, result);
   return result;
 }

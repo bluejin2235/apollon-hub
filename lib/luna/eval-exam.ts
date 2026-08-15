@@ -530,7 +530,7 @@ export async function finalizeEvalExam(
     score_dropped = true;
   }
 
-  if (notify && (score_dropped || counts.must_pass_violations > 0)) {
+  if (notify) {
     const briefs = await loadFailedCaseBriefs(admin, runId, 3);
     const briefText = briefs
       .map(
@@ -544,36 +544,56 @@ export async function finalizeEvalExam(
         ? `${previous_score_sum}/${previous_score_max}`
         : previous_passed != null && previous_total != null
           ? `${previous_passed}/${previous_total}`
-          : "?/?";
+          : null;
     const currLabel = `${counts.score_sum}/${counts.score_max}`;
+    const isHeavy = tier === "heavy";
+    const shouldNotifyImmediate =
+      isHeavy || score_dropped || counts.must_pass_violations > 0;
 
-    const title =
-      counts.must_pass_violations > 0
-        ? `시험 필수 위반 ${counts.must_pass_violations}건 — 되돌림을 검토하세요`
-        : `점수 하락 ${prevLabel}→${currLabel}, 되돌림을 제안해요`;
-
-    const bodyParts = [
-      `${tier ? `[${tier}] ` : ""}${prevLabel} → ${currLabel} · ${triggerLabel(trigger)}`,
-      briefText || null,
-      `두뇌 > 회귀 시험: ${LUNA_LINKS.brainEval}`
-    ].filter(Boolean);
-
-    await lunaNotify(admin, "exam", title, bodyParts.join("\n"), {
-      level: counts.must_pass_violations > 0 ? "error" : "warn",
-      link: LUNA_LINKS.brainEval,
-      meta: {
-        run_id: runId,
-        trigger,
-        tier,
-        previous_score_sum,
-        previous_score_max,
-        score_sum: counts.score_sum,
-        score_max: counts.score_max,
-        must_pass_violations: counts.must_pass_violations,
-        quality_misses: counts.quality_misses,
-        failed_cases: briefs
+    if (shouldNotifyImmediate) {
+      let title: string;
+      if (isHeavy) {
+        title = prevLabel
+          ? `회귀 시험 heavy ${currLabel} (지난주 ${prevLabel})`
+          : `회귀 시험 heavy ${currLabel}`;
+      } else if (counts.must_pass_violations > 0) {
+        title = `시험 필수 위반 ${counts.must_pass_violations}건 — 되돌림을 검토하세요`;
+      } else {
+        title = `점수 하락 ${prevLabel ?? "?"}→${currLabel}, 되돌림을 제안해요`;
       }
-    });
+
+      const bodyParts = [
+        isHeavy
+          ? briefText ||
+            `${currLabel} · ${triggerLabel(trigger)} · 실패 문항 없음`
+          : `${tier ? `[${tier}] ` : ""}${prevLabel ?? "?"} → ${currLabel} · ${triggerLabel(trigger)}`,
+        !isHeavy ? briefText || null : null,
+        `두뇌 > 회귀 시험: ${LUNA_LINKS.brainEval}`
+      ].filter(Boolean);
+
+      await lunaNotify(admin, "exam", title, bodyParts.join("\n"), {
+        level:
+          counts.must_pass_violations > 0
+            ? "error"
+            : score_dropped
+              ? "warn"
+              : "info",
+        link: LUNA_LINKS.brainEval,
+        meta: {
+          run_id: runId,
+          trigger,
+          tier,
+          previous_score_sum,
+          previous_score_max,
+          score_sum: counts.score_sum,
+          score_max: counts.score_max,
+          must_pass_violations: counts.must_pass_violations,
+          quality_misses: counts.quality_misses,
+          failed_cases: briefs,
+          always_notify: isHeavy
+        }
+      });
+    }
   }
 
   await assignDailyMicroEvals(admin, runId);

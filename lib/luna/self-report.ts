@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import {
+  collectMorningSummaryParts,
+  isKstMonday
+} from "@/lib/luna/morning-summary";
 import { LUNA_LINKS } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
@@ -242,6 +246,26 @@ export async function runWeeklySelfReport(
     ].join("\n");
   }
 
+  // 월요일 08:00 — 아침 요약과 시각이 겹치므로 밤사이 요약을 본문에 합친다
+  let morningParts: string[] = [];
+  if (isKstMonday()) {
+    try {
+      const morning = await collectMorningSummaryParts(admin);
+      morningParts = morning.parts;
+      if (morningParts.length > 0) {
+        bodyText = [
+          "[밤사이]",
+          morningParts.join("\n"),
+          "",
+          "[주간 보고]",
+          bodyText
+        ].join("\n");
+      }
+    } catch (err) {
+      console.error("[luna/self-report] morning merge", err);
+    }
+  }
+
   const title = "루나 주간 성장 보고";
   const { data: notif, error: notifErr } = await admin
     .from("hub_notifications")
@@ -252,7 +276,11 @@ export async function runWeeklySelfReport(
       link: LUNA_LINKS.brainReport,
       level: "info",
       scope: "admin",
-      meta: { event: "self_report", ...stats }
+      meta: {
+        event: "self_report",
+        morning_parts: morningParts,
+        ...stats
+      }
     })
     .select("id")
     .maybeSingle();

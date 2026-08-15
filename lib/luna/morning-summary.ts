@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
+import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
 
 export type MorningSummaryResult = {
@@ -8,6 +9,7 @@ export type MorningSummaryResult = {
   notification_id?: string | null;
   message: string;
   parts?: string[];
+  reason?: string;
 };
 
 /** 직전 24시간(아침 cron 기준 밤사이) 구간 + 밤 날짜 라벨 */
@@ -29,7 +31,16 @@ export function morningWindow(now = new Date()): {
   };
 }
 
-function inWindow(iso: string | null | undefined, startIso: string, endIso: string): boolean {
+export function isKstMonday(now = new Date()): boolean {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.getUTCDay() === 1;
+}
+
+function inWindow(
+  iso: string | null | undefined,
+  startIso: string,
+  endIso: string
+): boolean {
   if (!iso) return false;
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return false;
@@ -42,33 +53,92 @@ function withLink(text: string, link: string): string {
   return `${text} (${link})`;
 }
 
+function runScoreLabel(row: {
+  score_sum?: number | null;
+  score_max?: number | null;
+  passed?: number | null;
+  total?: number | null;
+}): string | null {
+  if (
+    typeof row.score_sum === "number" &&
+    typeof row.score_max === "number" &&
+    row.score_max > 0
+  ) {
+    return `${row.score_sum}/${row.score_max}`;
+  }
+  if (
+    typeof row.passed === "number" &&
+    typeof row.total === "number" &&
+    row.total > 0
+  ) {
+    return `${row.passed}/${row.total}`;
+  }
+  return null;
+}
+
 /**
- * 매일 아침 08:00 KST — 밤사이 작업을 한 건의 알림으로 보고.
- * 아무 일도 없었으면 알림 없음. 지식후보 대기 건수는 여기에만 포함.
+ * 아침 요약에 넣을 한 줄들 수집.
+ * cron이 돌았으면 결과가 0이어도 줄을 남긴다 (돌지 않은 항목은 생략).
  */
-export async function runMorningSummary(
+export async function collectMorningSummaryParts(
   admin: SupabaseClient,
   now = new Date()
-): Promise<MorningSummaryResult> {
+): Promise<{ parts: string[]; dateLabel: string; startIso: string; endIso: string }> {
   const { startIso, endIso, dateLabel } = morningWindow(now);
   const parts: string[] = [];
 
-  const selfstudy = await getSelfstudyStatus(admin);
-  const last = selfstudy.last_run;
-  if (
-    last &&
-    !last.skipped &&
-    last.submitted > 0 &&
-    inWindow(last.finished_at, startIso, endIso)
-  ) {
-    parts.push(
-      withLink(
-        `자습 ${last.submitted}문답 제출`,
-        LUNA_LINKS.selfstudyHistory
-      )
-    );
+  // 1) light 회귀 시험
+  const { data: lightRuns, error: lightErr } = await admin
+    .from("luna_eval_runs")
+    .select(
+      "id, finished_at, score_sum, score_max, passed, total, status, tier"
+    )
+    .eq("tier", "light")
+    .eq("status", "done")
+    .gte("finished_at", startIso)
+    .lt("finished_at", endIso)
+    .order("finished_at", { ascending: false })
+    .limit(1);
+
+  if (lightErr) {
+    console.error("[luna/morning] light eval", lightErr);
+  } else if (lightRuns && lightRuns.length > 0) {
+    const curr = lightRuns[0]!;
+    const currLabel = runScoreLabel(curr) ?? "?/?";
+    const { data: prevLight } = await admin
+      .from("luna_eval_runs")
+      .select("score_sum, score_max, passed, total")
+      .eq("tier", "light")
+      .eq("status", "done")
+      .neq("id", curr.id as string)
+      .order("finished_at", { ascending: false })
+      .limit(1);
+    const prevLabel = prevLight?.[0] ? runScoreLabel(prevLight[0]) : null;
+    const line = prevLabel
+      ? `회귀 시험 light ${currLabel} (어제 ${prevLabel})`
+      : `회귀 시험 light ${currLabel}`;
+    parts.push(withLink(line, LUNA_LINKS.brainEval));
   }
 
+  // 2) 자습 — 돌았으면 0건이어도 한 줄
+  const selfstudy = await getSelfstudyStatus(admin);
+  const last = selfstudy.last_run;
+  if (last && inWindow(last.finished_at, startIso, endIso)) {
+    if (last.submitted > 0) {
+      parts.push(
+        withLink(`자습 ${last.submitted}문답 제출`, LUNA_LINKS.selfstudyHistory)
+      );
+    } else {
+      parts.push(
+        withLink(
+          "자습 — 어제는 막힌 것이 없어 건너뛰었어요",
+          LUNA_LINKS.selfstudyHistory
+        )
+      );
+    }
+  }
+
+  // 3) 정리
   const { data: runs, error: runsErr } = await admin
     .from("luna_consolidation_runs")
     .select(
@@ -96,9 +166,14 @@ export async function runMorningSummary(
           ? `정리 ${merged}건 병합 제안`
           : `정리 ${total}건 검토 제안`;
       parts.push(withLink(label, LUNA_LINKS.candidatesPending));
+    } else if ((runs ?? []).length > 0) {
+      parts.push(
+        withLink("정리 — 밤사이 병합·검토 제안 없음", LUNA_LINKS.candidatesPending)
+      );
     }
   }
 
+  // 4) 지식후보 대기 (누적)
   const { count: pendingCount, error: pendingErr } = await admin
     .from("luna_learnings")
     .select("id", { count: "exact", head: true })
@@ -115,6 +190,7 @@ export async function runMorningSummary(
     );
   }
 
+  // 5) 자기개선 — 개선함(버전) 또는 개선할 것 없음(last_run skip)
   const { data: upgrades, error: upErr } = await admin
     .from("luna_prompt_versions")
     .select("id, verify_note, verify_result, change_summary")
@@ -146,13 +222,51 @@ export async function runMorningSummary(
         LUNA_LINKS.brainUpgrade
       )
     );
+  } else {
+    const upgradeStatus = await getSelfUpgradeStatus(admin);
+    const upLast = upgradeStatus.last_run;
+    if (
+      upLast &&
+      upLast.skipped === true &&
+      inWindow(upLast.finished_at ?? null, startIso, endIso)
+    ) {
+      parts.push(
+        withLink(
+          "자기개선 — 이번 주는 고칠 근거가 없었어요 (정정 3회 반복 없음)",
+          LUNA_LINKS.brainUpgrade
+        )
+      );
+    }
   }
+
+  return { parts, dateLabel, startIso, endIso };
+}
+
+/**
+ * 매일 아침 08:00 KST — 밤사이 작업을 한 건의 알림으로 보고.
+ * cron이 돌았으면 결과가 없어도 보낸다. 월요일은 주간 보고에 합치므로 스킵.
+ */
+export async function runMorningSummary(
+  admin: SupabaseClient,
+  now = new Date()
+): Promise<MorningSummaryResult> {
+  if (isKstMonday(now)) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "monday_merged_into_self_report",
+      message: "월요일 — 주간 보고에 아침 요약을 합칩니다"
+    };
+  }
+
+  const { parts, dateLabel, startIso, endIso } =
+    await collectMorningSummaryParts(admin, now);
 
   if (parts.length === 0) {
     return {
       ok: true,
       skipped: true,
-      message: "밤사이 보고할 작업 없음"
+      message: "밤사이 실행된 cron 보고 없음"
     };
   }
 
@@ -177,7 +291,9 @@ export async function runMorningSummary(
     ok: true,
     skipped: false,
     notification_id: id,
-    message: id ? "아침 요약 알림 전송" : "아침 요약 스킵(설정 off 또는 삽입 실패)",
+    message: id
+      ? "아침 요약 알림 전송"
+      : "아침 요약 스킵(설정 off 또는 삽입 실패)",
     parts
   };
 }
