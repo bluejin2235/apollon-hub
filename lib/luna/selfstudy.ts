@@ -53,6 +53,7 @@ const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"
 - 검색했지만 0건이었던 주제
 - 되물었지만 해소되지 않은 것
 - 사람에게 정정받은 것 중 아직 이해가 얕은 것
+- 회귀 시험에서 품질이 미달한 것 (필수 위반은 제외 — 학습이 아니라 프롬프트 문제)
 
 각각에 대해 스스로 질문을 만든다 (오늘 실제로 막힌 것에서만. 임의 주제 선정 금지).
 하루 최대 3문답. 막힌 것이 없었으면 빈 배열.
@@ -83,7 +84,11 @@ type MsgRow = {
   created_at: string;
 };
 
-export type StuckKind = "search_zero" | "clarify_unresolved" | "correction";
+export type StuckKind =
+  | "search_zero"
+  | "clarify_unresolved"
+  | "correction"
+  | "eval_quality";
 
 export type StuckMoment = {
   /** 오늘 안에서 안정적인 식별자 — 자습 제외 목록의 키 */
@@ -98,12 +103,16 @@ export type StuckMoment = {
   detail: string;
   snippet: string;
   at: string;
+  /** chat(대화) | eval(회귀 품질 미달) */
+  source?: "chat" | "eval";
 };
 
 export type SelfstudyCriteria = {
   search_zero: boolean;
   clarify_unresolved: boolean;
   correction: boolean;
+  /** 회귀 시험 품질 미달 */
+  eval_quality: boolean;
   /** 아직 미구현 — 화면에서 비활성 */
   knowledge_gap: boolean;
 };
@@ -132,6 +141,7 @@ export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
     search_zero: true,
     clarify_unresolved: true,
     correction: true,
+    eval_quality: true,
     knowledge_gap: false
   },
   notify_done: true,
@@ -327,6 +337,7 @@ export function normalizeSelfstudySettings(raw: unknown): SelfstudySettings {
         d.criteria.clarify_unresolved
       ),
       correction: coerceBool(c.correction, d.criteria.correction),
+      eval_quality: coerceBool(c.eval_quality, d.criteria.eval_quality),
       // 미구현 기능 — 저장값과 무관하게 항상 off
       knowledge_gap: false
     },
@@ -610,6 +621,62 @@ export async function extractStuckMoments(
     unique.push(s);
     if (unique.length >= 20) break;
   }
+
+  // 회귀 시험 품질 미달 — 필수 위반은 제외(프롬프트 문제, 자습 대상 아님)
+  try {
+    const { startIso, endIso } = kstDayBounds();
+    const { data: evalFails } = await admin
+      .from("luna_eval_results")
+      .select(
+        "id, auto_reason, created_at, case:luna_eval_cases(question, category)"
+      )
+      .eq("fail_kind", "quality")
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    for (const row of evalFails ?? []) {
+      const caseObj = row.case as {
+        question?: string;
+        category?: string | null;
+      } | null;
+      const question =
+        caseObj && typeof caseObj.question === "string"
+          ? caseObj.question.trim()
+          : "";
+      if (!question) continue;
+      const reason =
+        typeof row.auto_reason === "string" ? row.auto_reason.trim() : "";
+      const category =
+        caseObj && typeof caseObj.category === "string"
+          ? caseObj.category
+          : "";
+      const snippet = `회귀 품질 미달${category ? ` [${category}]` : ""}: ${question}${reason ? ` — ${reason}` : ""}`;
+      const key = stuckKey("eval_quality", `eval:${row.id}`, snippet);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push({
+        key,
+        kind: "eval_quality",
+        conversation_id: `eval:${row.id}`,
+        user_id: "",
+        user_name: "회귀시험",
+        title: clip(question, 60),
+        detail: "시험 품질 미달 — 학습 재료",
+        snippet: clip(snippet, 400),
+        at:
+          typeof row.created_at === "string"
+            ? row.created_at
+            : new Date().toISOString(),
+        source: "eval"
+      });
+      if (unique.length >= 24) break;
+    }
+  } catch (err) {
+    console.error("[luna/selfstudy] eval stuck", err);
+  }
+
   return unique;
 }
 
@@ -808,7 +875,8 @@ export async function listTodayStuckMoments(
   const counts: Record<StuckKind, number> = {
     search_zero: 0,
     clarify_unresolved: 0,
-    correction: 0
+    correction: 0,
+    eval_quality: 0
   };
 
   const items: StuckMomentView[] = moments.map((m) => {

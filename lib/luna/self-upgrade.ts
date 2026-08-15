@@ -5,7 +5,10 @@ import {
   parseJsonObject
 } from "@/lib/luna/candidates";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
-import { runEvalExam } from "@/lib/luna/eval-exam";
+import {
+  listConsecutiveEvalFailures,
+  runEvalExam
+} from "@/lib/luna/eval-exam";
 import { lunaNotify } from "@/lib/luna/notify";
 import {
   getPrompt,
@@ -20,6 +23,9 @@ const UPGRADE_FALLBACK = `내 판단(프롬프트)을 고칠 수 있는 근거�
 ① 확정된 지식 (후보함을 통과한 것)
 ② 반복된 정정 (같은 유형으로 3회 이상 고쳐진 것)
 미확정 후보, 단발 정정, 나의 추측으로는 고치지 않는다.
+
+회귀 시험 연속 실패는 보조 신호일 뿐이다. 시험 점수만으로 프롬프트를 고치지 않는다.
+시험에 최적화된 답만 하는 것을 막기 위함이다. 주 근거는 사람의 정정·확정 지식이다.
 
 고칠 수 있는 범위: L2 관점, L3 대화, L4 배움.
 고칠 수 없는 것: L1 정체성, L5. 이것은 사람만 고친다.
@@ -212,6 +218,14 @@ type CorrectionCluster = {
 async function collectTriggers(admin: SupabaseClient): Promise<{
   clusters: CorrectionCluster[];
   confirmed: Array<{ content: string; category: string }>;
+  eval_streaks: Array<{
+    case_id: string;
+    question: string;
+    category: string | null;
+    streak: number;
+    last_reason: string;
+    fail_kind: string | null;
+  }>;
 }> {
   const since = daysAgoIso(7);
 
@@ -226,7 +240,7 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
 
   if (error) {
     console.error("[luna/self-upgrade] collect", error);
-    return { clusters: [], confirmed: [] };
+    return { clusters: [], confirmed: [], eval_streaks: [] };
   }
 
   const correctionByCat = new Map<string, string[]>();
@@ -278,13 +292,25 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
   }
   clusters.sort((a, b) => b.count - a.count);
 
-  return { clusters, confirmed: confirmed.slice(0, 30) };
+  const eval_streaks = await listConsecutiveEvalFailures(admin, 3);
+
+  return {
+    clusters,
+    confirmed: confirmed.slice(0, 30),
+    eval_streaks
+  };
 }
 
 async function proposeUpgrade(
   admin: SupabaseClient,
   clusters: CorrectionCluster[],
-  confirmed: Array<{ content: string; category: string }>
+  confirmed: Array<{ content: string; category: string }>,
+  evalStreaks: Array<{
+    question: string;
+    category: string | null;
+    streak: number;
+    last_reason: string;
+  }>
 ): Promise<{
   skip: boolean;
   reason?: string;
@@ -324,7 +350,7 @@ async function proposeUpgrade(
 
   const evidence = [
     clusters.length
-      ? `반복 정정(≥3):\n${clusters
+      ? `반복 정정(≥3) — 주 근거:\n${clusters
           .map(
             (c) =>
               `- ${c.category} ×${c.count}: ${c.samples.map((s) => `"${s}"`).join("; ")}`
@@ -332,11 +358,20 @@ async function proposeUpgrade(
           .join("\n")}`
       : "반복 정정: 없음",
     confirmed.length
-      ? `이번 주 확정 지식:\n${confirmed
+      ? `이번 주 확정 지식 — 주 근거:\n${confirmed
           .slice(0, 15)
           .map((c) => `- [${c.category}] ${c.content}`)
           .join("\n")}`
-      : "이번 주 확정 지식: 없음"
+      : "이번 주 확정 지식: 없음",
+    evalStreaks.length
+      ? `회귀 시험 연속 실패 — 보조 신호(이것만으로 고치지 말 것):\n${evalStreaks
+          .slice(0, 8)
+          .map(
+            (e) =>
+              `- ${e.streak}회 [${e.category ?? "?"}] ${e.question.slice(0, 80)} (${e.last_reason.slice(0, 80)})`
+          )
+          .join("\n")}`
+      : "회귀 시험 연속 실패: 없음"
   ].join("\n\n");
 
   let raw = "";
@@ -400,7 +435,7 @@ export async function runSelfUpgrade(
   opts?: { notify?: boolean }
 ): Promise<SelfUpgradeResult> {
   const notify = opts?.notify !== false;
-  const { clusters, confirmed } = await collectTriggers(admin);
+  const { clusters, confirmed, eval_streaks } = await collectTriggers(admin);
 
   if (clusters.length === 0 && confirmed.length === 0) {
     const result: SelfUpgradeResult = {
@@ -415,7 +450,12 @@ export async function runSelfUpgrade(
     return result;
   }
 
-  const proposal = await proposeUpgrade(admin, clusters, confirmed);
+  const proposal = await proposeUpgrade(
+    admin,
+    clusters,
+    confirmed,
+    eval_streaks
+  );
   if (!proposal) {
     const result: SelfUpgradeResult = {
       ok: true,
@@ -561,15 +601,24 @@ export async function runSelfUpgrade(
   try {
     const exam = await runEvalExam(admin, {
       trigger: "prompt_change",
-      force: true
+      force: true,
+      promptKey: target.prompt_key as string,
+      maxCases: 5,
+      // 자기개선 직후 상승은 알림 없이 verify 이력만
+      notify: false
     });
     if (!exam.skipped) {
       exam_run_id = exam.run_id ?? null;
       score_dropped = exam.score_dropped === true;
-      const verifyResult = score_dropped ? "refuted" : "confirmed";
-      const verifyNote = score_dropped
-        ? `회귀 점수 하락 ${exam.previous_passed ?? "?"}/${exam.previous_total ?? "?"} → ${exam.passed}/${exam.total}`
-        : `회귀 통과 ${exam.passed}/${exam.total}`;
+      const mustViolations = exam.must_pass_violations ?? 0;
+      const verifyResult =
+        score_dropped || mustViolations > 0 ? "refuted" : "confirmed";
+      const scoreLabel = `${exam.score_sum ?? exam.passed}/${exam.score_max ?? exam.total}`;
+      const prevLabel = `${exam.previous_score_sum ?? exam.previous_passed ?? "?"}/${exam.previous_score_max ?? exam.previous_total ?? "?"}`;
+      const verifyNote =
+        score_dropped || mustViolations > 0
+          ? `회귀 하락/필수위반 ${prevLabel} → ${scoreLabel}${mustViolations > 0 ? ` · 필수 ${mustViolations}건` : ""}`
+          : `예측 확인됨 ${scoreLabel}`;
 
       await admin
         .from("luna_prompt_versions")
@@ -581,7 +630,7 @@ export async function runSelfUpgrade(
         })
         .eq("id", versionId);
 
-      if (score_dropped) {
+      if (score_dropped || mustViolations > 0) {
         const suggestion: SelfUpgradeRevertSuggestion = {
           prompt_id: target.id as string,
           prompt_key: target.prompt_key as string,
@@ -599,21 +648,24 @@ export async function runSelfUpgrade(
           await lunaNotify(
             admin,
             "exam",
-            `점수 하락 ${exam.previous_passed ?? "?"}→${exam.passed}, 되돌림을 제안해요`,
-            `「${title}」 v${nextVersion} 회귀 하락. 두뇌에서 이전 버전으로 되돌릴 수 있어요.`,
+            mustViolations > 0
+              ? `시험 필수 위반 ${mustViolations}건 — 되돌림을 검토하세요`
+              : `점수 하락 ${prevLabel}→${scoreLabel}, 되돌림을 제안해요`,
+            `「${title}」 v${nextVersion} 회귀. 두뇌에서 이전 버전으로 되돌릴 수 있어요.`,
             {
-              level: "warn",
+              level: mustViolations > 0 ? "error" : "warn",
               meta: {
                 prompt_id: target.id,
                 version_id: versionId,
                 run_id: exam_run_id,
-                revert_to: previousVersion
+                revert_to: previousVersion,
+                must_pass_violations: mustViolations
               }
             }
           );
         }
       } else {
-        // 성공 시 이전 제안 제거
+        // 성공 시 이전 제안 제거 — 알림은 보내지 않음(예측 확인은 이력에만)
         await admin.from("luna_settings").delete().eq("key", SETTINGS_REVERT);
       }
     }

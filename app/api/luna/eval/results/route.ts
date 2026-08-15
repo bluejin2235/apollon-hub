@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await admin
     .from("luna_eval_results")
     .select(
-      "id, run_id, case_id, answer, sources, verdict, memo, auto_pass, auto_reason, duration_ms, model_label, created_at, case:luna_eval_cases(id, question, expectation, category, connectors, sort_order)"
+      "id, run_id, case_id, answer, sources, verdict, memo, auto_pass, auto_reason, score, fail_kind, duration_ms, model_label, created_at, case:luna_eval_cases(id, question, expectation, category, connectors, sort_order, tier, must_pass, quality)"
     )
     .eq("run_id", runId)
     .order("created_at", { ascending: true });

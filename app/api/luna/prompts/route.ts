@@ -429,7 +429,12 @@ export async function PATCH(request: NextRequest) {
     }
   );
 
-  await triggerAutoExam(admin, "prompt_change", user.id);
+  await triggerAutoExam(
+    admin,
+    "prompt_change",
+    user.id,
+    typeof current.prompt_key === "string" ? current.prompt_key : null
+  );
 
   return NextResponse.json({ prompt: updated });
 }

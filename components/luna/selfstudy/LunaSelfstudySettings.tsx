@@ -17,7 +17,11 @@ import {
 } from "@/components/luna/selfstudy/shared";
 import { K } from "@/lib/luna/knowledge-format";
 
-type Kind = "search_zero" | "clarify_unresolved" | "correction";
+type Kind =
+  | "search_zero"
+  | "clarify_unresolved"
+  | "correction"
+  | "eval_quality";
 
 type Settings = {
   run_hour: number;
@@ -29,6 +33,7 @@ type Settings = {
     search_zero: boolean;
     clarify_unresolved: boolean;
     correction: boolean;
+    eval_quality: boolean;
     knowledge_gap: boolean;
   };
   notify_done: boolean;
@@ -52,7 +57,8 @@ type Payload = {
 const CRITERIA: { key: Kind; label: string }[] = [
   { key: "search_zero", label: "검색 0건이었던 주제" },
   { key: "clarify_unresolved", label: "되물었지만 해소되지 않은 것" },
-  { key: "correction", label: "정정받았지만 이해가 얕은 것" }
+  { key: "correction", label: "정정받았지만 이해가 얕은 것" },
+  { key: "eval_quality", label: "회귀 시험 품질 미달" }
 ];
 
 function timeValue(h: number, m: number): string {

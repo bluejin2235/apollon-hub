@@ -37,6 +37,14 @@
       "schedule": "30 18 * * *"
     },
     {
+      "path": "/api/cron/luna-eval-light",
+      "schedule": "40 18 * * *"
+    },
+    {
+      "path": "/api/cron/luna-eval-heavy",
+      "schedule": "50 18 * * 6"
+    },
+    {
       "path": "/api/cron/luna-self-upgrade",
       "schedule": "0 19 * * 6"
     },

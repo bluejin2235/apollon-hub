@@ -20,9 +20,14 @@ export async function POST(request: NextRequest) {
   }
 
   let force = true;
+  let tier: "light" | "heavy" | null = null;
   try {
-    const body = (await request.json()) as { force?: unknown };
+    const body = (await request.json()) as {
+      force?: unknown;
+      tier?: unknown;
+    };
     if (body.force === false) force = false;
+    if (body.tier === "light" || body.tier === "heavy") tier = body.tier;
   } catch {
     force = true;
   }
@@ -31,7 +36,9 @@ export async function POST(request: NextRequest) {
     const result = await runEvalExam(admin, {
       trigger: "manual",
       createdBy: user.id,
-      force
+      force,
+      tier,
+      notify: true
     });
     return NextResponse.json(result);
   } catch (err) {

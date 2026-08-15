@@ -5,7 +5,7 @@ import { isSuperAdminUser } from "@/lib/luna/auth";
 export const runtime = "nodejs";
 
 const CASE_SELECT =
-  "id, question, expectation, category, connectors, sort_order, is_active, created_at";
+  "id, question, expectation, category, connectors, sort_order, is_active, created_at, tier, must_pass, quality";
 
 async function requireSuperAdmin(request: NextRequest) {
   const user = await getApiUser(request);
