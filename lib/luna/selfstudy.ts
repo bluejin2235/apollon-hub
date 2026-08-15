@@ -41,7 +41,7 @@ const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"
 JSON 배열만:
 [{ "question": "스스로 던질 질문", "topic": "막힌 주제 짧은 이름", "conversation_id": "...", "user_id": "...", "user_name": "..." }]`;
 
-const CORRECTION_RE = /아니라|그게 아니고|그게 아니라|틀렸|잘못된|아니야|아니에요/;
+export const CORRECTION_RE = /아니라|그게 아니고|그게 아니라|틀렸|잘못된|아니야|아니에요/;
 
 export type SelfstudyLastRun = {
   finished_at: string;

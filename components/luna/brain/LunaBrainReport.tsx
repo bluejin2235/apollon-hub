@@ -19,6 +19,7 @@ import {
   RunBar,
   SectionTitle
 } from "@/components/luna/brain/shared";
+import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import { K } from "@/lib/luna/knowledge-format";
 
 type ReportItem = {
@@ -29,10 +30,12 @@ type ReportItem = {
   week_label: string;
   confirmed_count: number | null;
   inflow: number | null;
+  inflow_confirmed: number | null;
+  inflow_pending: number | null;
+  inflow_archived: number | null;
   inflow_prev: number | null;
   correction_count: number | null;
-  eval_passed: number | null;
-  eval_total: number | null;
+  eval_score_line: string | null;
 };
 
 type ReportsResponse = {
@@ -44,26 +47,31 @@ function Stat({
   label,
   value,
   delta,
-  suffix
+  suffix,
+  display
 }: {
   label: string;
-  value: number | null;
+  value?: number | null;
   delta?: number | null;
   suffix?: string;
+  display?: string | null;
 }) {
+  const showNumber = display == null;
   return (
     <div className="rounded-[9px] px-3 py-2.5" style={{ background: K.chip }}>
       <div className="text-[11.5px]" style={{ color: K.sub }}>
         {label}
       </div>
-      <div className="mt-0.5 text-[19px] font-bold">
-        {value == null ? "—" : value}
-        {value != null && suffix ? (
+      <div
+        className={`mt-0.5 font-bold ${display ? "text-[13.5px] leading-[1.45]" : "text-[19px]"}`}
+      >
+        {showNumber ? (value == null ? "—" : value) : display}
+        {showNumber && value != null && suffix ? (
           <span className="text-[12px]" style={{ color: K.faint }}>
             {suffix}
           </span>
         ) : null}
-        {delta != null && delta !== 0 ? (
+        {showNumber && delta != null && delta !== 0 ? (
           <small
             className="ml-1 text-[12px] font-bold"
             style={{ color: delta > 0 ? K.talk : K.candInk }}
@@ -76,13 +84,19 @@ function Stat({
   );
 }
 
+function inflowCaption(item: ReportItem): string | null {
+  if (item.inflow == null) return null;
+  const m = item.inflow_confirmed ?? 0;
+  const k = item.inflow_pending ?? 0;
+  const p = item.inflow_archived ?? 0;
+  return `이번 주 신규 후보 ${item.inflow}건 (확정 ${m} · 대기 ${k} · 폐기 ${p})`;
+}
+
 function pastMetaLine(item: ReportItem): string {
   const parts: string[] = [];
   if (item.confirmed_count != null) parts.push(`확정 ${item.confirmed_count}`);
   if (item.inflow != null) parts.push(`유입 ${item.inflow}`);
-  if (item.eval_passed != null && item.eval_total != null) {
-    parts.push(`시험 ${item.eval_passed}/${item.eval_total}`);
-  }
+  if (item.eval_score_line) parts.push(item.eval_score_line);
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
@@ -129,6 +143,7 @@ export function LunaBrainReport() {
 
   const latest = data?.latest ?? null;
   const past = data?.past ?? [];
+  const inflowLine = latest ? inflowCaption(latest) : null;
 
   return (
     <KnowledgeShell>
@@ -157,7 +172,7 @@ export function LunaBrainReport() {
                 <Badge kind="ok">최신</Badge>
               </CardTop>
 
-              <div className="mb-3.5 grid grid-cols-2 gap-2.5 min-[901px]:grid-cols-4">
+              <div className="mb-2 grid grid-cols-2 gap-2.5 min-[901px]:grid-cols-4">
                 <Stat label="확정 지식" value={latest.confirmed_count} />
                 <Stat
                   label="후보 유입"
@@ -171,23 +186,22 @@ export function LunaBrainReport() {
                 <Stat label="정정받음" value={latest.correction_count} />
                 <Stat
                   label="시험 점수"
-                  value={latest.eval_passed}
-                  suffix={latest.eval_total ? `/${latest.eval_total}` : undefined}
+                  display={latest.eval_score_line ?? "light — · heavy —"}
                 />
               </div>
+              {inflowLine ? (
+                <p className="mb-3.5 text-[12px]" style={{ color: K.sub }}>
+                  {inflowLine}
+                </p>
+              ) : (
+                <div className="mb-3.5" />
+              )}
 
               <div className="text-[13.5px] leading-[1.8]">
-                {latest.body.split(/\n{1,}/).filter(Boolean).length === 0 ? (
-                  <p style={{ color: K.faint }}>본문이 없습니다.</p>
+                {latest.body.trim() ? (
+                  <SafeMarkdown content={latest.body} variant="luna" />
                 ) : (
-                  latest.body
-                    .split(/\n{1,}/)
-                    .filter((line) => line.trim())
-                    .map((line, i) => (
-                      <p key={i} className="mb-2.5 last:mb-0">
-                        {line}
-                      </p>
-                    ))
+                  <p style={{ color: K.faint }}>본문이 없습니다.</p>
                 )}
               </div>
             </BrainCard>
@@ -235,14 +249,11 @@ export function LunaBrainReport() {
                         className="border-b px-4 py-3 text-[13px] leading-[1.8]"
                         style={{ borderColor: K.line2, background: "#fbfbfd" }}
                       >
-                        {item.body
-                          .split(/\n{1,}/)
-                          .filter((line) => line.trim())
-                          .map((line, i) => (
-                            <p key={i} className="mb-2 last:mb-0">
-                              {line}
-                            </p>
-                          ))}
+                        {item.body.trim() ? (
+                          <SafeMarkdown content={item.body} compact />
+                        ) : (
+                          <p style={{ color: K.faint }}>본문이 없습니다.</p>
+                        )}
                       </div>
                     ) : null}
                   </div>

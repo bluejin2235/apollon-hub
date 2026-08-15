@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import {
+  countCandidateInflow,
+  countWeeklyCorrections,
+  formatEvalScoreLine,
+  loadLatestEvalTierScores
+} from "@/lib/luna/self-report";
 
 export const runtime = "nodejs";
 
@@ -12,10 +18,12 @@ export type ReportItem = {
   week_label: string;
   confirmed_count: number | null;
   inflow: number | null;
+  inflow_confirmed: number | null;
+  inflow_pending: number | null;
+  inflow_archived: number | null;
   inflow_prev: number | null;
   correction_count: number | null;
-  eval_passed: number | null;
-  eval_total: number | null;
+  eval_score_line: string | null;
 };
 
 function metaOf(raw: unknown): Record<string, unknown> {
@@ -64,36 +72,58 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 시험 점수는 보고 meta 에 없으므로 최근 완료된 회귀 시험에서 가져온다
-  const { data: runs } = await admin
-    .from("luna_eval_runs")
-    .select("passed, total, finished_at")
-    .eq("status", "done")
-    .order("finished_at", { ascending: false })
-    .limit(1);
-  const latestRun = runs?.[0] ?? null;
+  const evalScores = await loadLatestEvalTierScores(admin);
+  const evalLine = formatEvalScoreLine(evalScores);
 
-  const items: ReportItem[] = (data ?? []).map((row, index) => {
+  const items: ReportItem[] = [];
+  for (const [index, row] of (data ?? []).entries()) {
     const meta = metaOf(row.meta);
     const publishedAt =
       typeof row.created_at === "string" ? row.created_at : new Date().toISOString();
-    return {
+    const weekStart =
+      typeof meta.week_start === "string" ? meta.week_start : null;
+    const weekEnd = typeof meta.week_end === "string" ? meta.week_end : null;
+
+    let inflow = num(meta.candidate_inflow_this_week);
+    let inflowConfirmed = num(meta.candidate_inflow_confirmed);
+    let inflowPending = num(meta.candidate_inflow_pending);
+    let inflowArchived = num(meta.candidate_inflow_archived);
+    let inflowPrev = num(meta.candidate_inflow_prev_week);
+    let correctionCount = num(meta.top_correction_count);
+
+    if (weekStart && weekEnd) {
+      const [inflowStats, corrections] = await Promise.all([
+        countCandidateInflow(admin, weekStart, weekEnd),
+        countWeeklyCorrections(admin, weekStart, weekEnd)
+      ]);
+      inflow = inflowStats.total;
+      inflowConfirmed = inflowStats.confirmed;
+      inflowPending = inflowStats.pending;
+      inflowArchived = inflowStats.archived;
+      correctionCount = corrections.total;
+      const prevStart = new Date(
+        new Date(weekStart).getTime() - 7 * 24 * 60 * 60 * 1000
+      ).toISOString();
+      const prevStats = await countCandidateInflow(admin, prevStart, weekStart);
+      inflowPrev = prevStats.total;
+    }
+
+    items.push({
       id: row.id as string,
       title: typeof row.title === "string" ? row.title : "루나 주간 성장 보고",
       body: typeof row.body === "string" ? row.body : "",
       published_at: publishedAt,
-      week_label: weekLabel(
-        typeof meta.week_start === "string" ? meta.week_start : publishedAt
-      ),
+      week_label: weekLabel(weekStart ?? publishedAt),
       confirmed_count: num(meta.confirmed_count),
-      inflow: num(meta.candidate_inflow_this_week),
-      inflow_prev: num(meta.candidate_inflow_prev_week),
-      correction_count: num(meta.top_correction_count),
-      // 최신 보고에만 현재 시험 점수를 붙인다 (과거 시점 점수는 보관돼 있지 않음)
-      eval_passed: index === 0 ? num(latestRun?.passed) : null,
-      eval_total: index === 0 ? num(latestRun?.total) : null
-    };
-  });
+      inflow,
+      inflow_confirmed: inflowConfirmed,
+      inflow_pending: inflowPending,
+      inflow_archived: inflowArchived,
+      inflow_prev: inflowPrev,
+      correction_count: correctionCount,
+      eval_score_line: index === 0 ? evalLine : null
+    });
+  }
 
   return NextResponse.json({
     latest: items[0] ?? null,

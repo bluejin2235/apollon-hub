@@ -8,7 +8,7 @@ import {
 } from "@/lib/luna/morning-summary";
 import { LUNA_LINKS } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
-import { kstDayBounds } from "@/lib/luna/selfstudy";
+import { kstDayBounds, CORRECTION_RE } from "@/lib/luna/selfstudy";
 
 const SETTINGS_LAST = "self_report_last";
 
@@ -20,7 +20,11 @@ const REPORT_FALLBACK = `매주 한 번 블루진에게 보고한다:
 - 다음 주에 스스로 개선하려는 것 한 가지
 
 형식은 짧게. 숫자와 사례 중심. 잘한 척보다 약점을 정직하게.
-본문만 출력 (제목 없이 문단).`;
+본문만 출력 (제목 없이 문단).
+제목(#)과 구분선(---)을 쓰지 않는다. 문단으로 자연스럽게 쓴다.
+표는 정말 비교가 필요할 때만 쓴다.
+지표는 화면 상단에 이미 표시되므로 본문에서 숫자를 반복하지 않는다.
+무엇을 배웠고, 무엇을 자주 틀렸고, 다음 주에 무엇을 하겠다를 쓴다.`;
 
 export type SelfReportLast = {
   finished_at: string;
@@ -60,22 +64,171 @@ export function kstWeekBounds(now = new Date()): {
   };
 }
 
-async function countCandidatesInRange(
+function asMeta(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
+function isPurgedMeta(meta: Record<string, unknown>): boolean {
+  const v = meta.purged;
+  return v != null && v !== "" && v !== false;
+}
+
+export type CandidateInflowStats = {
+  total: number;
+  confirmed: number;
+  pending: number;
+  archived: number;
+};
+
+export type CorrectionStats = {
+  total: number;
+  thumbs_down: number;
+  from_correction: number;
+  user_correction: number;
+};
+
+export type EvalTierScores = {
+  light: string | null;
+  heavy: string | null;
+};
+
+export async function countCandidateInflow(
   admin: SupabaseClient,
   startIso: string,
   endIso: string
-): Promise<number> {
-  const { count, error } = await admin
+): Promise<CandidateInflowStats> {
+  const empty: CandidateInflowStats = {
+    total: 0,
+    confirmed: 0,
+    pending: 0,
+    archived: 0
+  };
+  const { data, error } = await admin
     .from("luna_learnings")
-    .select("id", { count: "exact", head: true })
+    .select("status, meta")
     .gte("created_at", startIso)
     .lt("created_at", endIso)
-    .neq("category", "identity");
+    .neq("category", "identity")
+    .limit(4000);
   if (error) {
-    console.error("[luna/self-report] candidate count", error);
-    return 0;
+    console.error("[luna/self-report] candidate inflow", error);
+    return empty;
   }
-  return count ?? 0;
+  const out = { ...empty };
+  for (const row of data ?? []) {
+    if (isPurgedMeta(asMeta(row.meta))) continue;
+    out.total += 1;
+    if (row.status === "active") out.confirmed += 1;
+    else if (row.status === "candidate") out.pending += 1;
+    else if (row.status === "archived") out.archived += 1;
+  }
+  return out;
+}
+
+export async function countWeeklyCorrections(
+  admin: SupabaseClient,
+  startIso: string,
+  endIso: string
+): Promise<CorrectionStats> {
+  const [{ data: messages, error: msgErr }, { data: learnings, error: learnErr }] =
+    await Promise.all([
+      admin
+        .from("luna_messages")
+        .select("role, content, metadata, conversation_id")
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .limit(8000),
+      admin
+        .from("luna_learnings")
+        .select("meta")
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .neq("category", "identity")
+        .limit(4000)
+    ]);
+  if (msgErr) console.error("[luna/self-report] correction messages", msgErr);
+  if (learnErr) console.error("[luna/self-report] correction learnings", learnErr);
+
+  let thumbsDown = 0;
+  let userCorrection = 0;
+  for (const row of messages ?? []) {
+    const meta = asMeta(row.metadata);
+    if (row.role === "assistant" && meta.feedback === "bad") thumbsDown += 1;
+    if (
+      row.role === "user" &&
+      typeof row.content === "string" &&
+      CORRECTION_RE.test(row.content)
+    ) {
+      userCorrection += 1;
+    }
+  }
+
+  let fromCorrection = 0;
+  for (const row of learnings ?? []) {
+    const meta = asMeta(row.meta);
+    if (isPurgedMeta(meta)) continue;
+    if (meta.from_correction === true) fromCorrection += 1;
+  }
+
+  return {
+    thumbs_down: thumbsDown,
+    from_correction: fromCorrection,
+    user_correction: userCorrection,
+    total: thumbsDown + fromCorrection + userCorrection
+  };
+}
+
+function evalScoreLabel(row: {
+  passed?: unknown;
+  total?: unknown;
+  score_sum?: unknown;
+  score_max?: unknown;
+}): string | null {
+  const passed = typeof row.passed === "number" ? row.passed : Number(row.passed);
+  const total = typeof row.total === "number" ? row.total : Number(row.total);
+  if (Number.isFinite(passed) && Number.isFinite(total) && total > 0) {
+    if (total === 20) return null;
+    return `${passed}/${total}`;
+  }
+  const sum =
+    typeof row.score_sum === "number" ? row.score_sum : Number(row.score_sum);
+  const max =
+    typeof row.score_max === "number" ? row.score_max : Number(row.score_max);
+  if (Number.isFinite(sum) && Number.isFinite(max) && max > 0) {
+    if (max === 20) return null;
+    return `${sum}/${max}`;
+  }
+  return null;
+}
+
+export async function loadLatestEvalTierScores(
+  admin: SupabaseClient
+): Promise<EvalTierScores> {
+  const loadOne = async (tier: "light" | "heavy"): Promise<string | null> => {
+    const { data, error } = await admin
+      .from("luna_eval_runs")
+      .select("passed, total, score_sum, score_max, finished_at")
+      .eq("tier", tier)
+      .eq("status", "done")
+      .order("finished_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.error(`[luna/self-report] eval ${tier}`, error);
+      return null;
+    }
+    const row = data?.[0];
+    return row ? evalScoreLabel(row) : null;
+  };
+  const [light, heavy] = await Promise.all([loadOne("light"), loadOne("heavy")]);
+  return { light, heavy };
+}
+
+export function formatEvalScoreLine(scores: EvalTierScores): string {
+  const light = scores.light ?? "—";
+  const heavy = scores.heavy ?? "—";
+  return `light ${light} · heavy ${heavy}`;
 }
 
 export async function getSelfReportStatus(
@@ -113,10 +266,10 @@ export async function runWeeklySelfReport(
 
   const [
     { data: confirmedRows },
-    { data: correctionRows },
     { data: lunaVersions },
     thisWeekInflow,
-    prevWeekInflow
+    prevWeekInflow,
+    corrections
   ] = await Promise.all([
     admin
       .from("luna_learnings")
@@ -128,13 +281,6 @@ export async function runWeeklySelfReport(
       .order("resolved_at", { ascending: false })
       .limit(50),
     admin
-      .from("luna_learnings")
-      .select("content, category, meta, thread, updated_at")
-      .gte("updated_at", week.startIso)
-      .lt("updated_at", week.endIso)
-      .neq("category", "identity")
-      .limit(300),
-    admin
       .from("luna_prompt_versions")
       .select(
         "version, change_summary, prediction, verify_result, verify_note, created_at, target_id, changed_by_luna"
@@ -145,8 +291,9 @@ export async function runWeeklySelfReport(
       .lt("created_at", week.endIso)
       .order("created_at", { ascending: false })
       .limit(20),
-    countCandidatesInRange(admin, week.startIso, week.endIso),
-    countCandidatesInRange(admin, week.prevStartIso, week.prevEndIso)
+    countCandidateInflow(admin, week.startIso, week.endIso),
+    countCandidateInflow(admin, week.prevStartIso, week.prevEndIso),
+    countWeeklyCorrections(admin, week.startIso, week.endIso)
   ]);
 
   const confirmed = (confirmedRows ?? []).map((r) => ({
@@ -155,36 +302,6 @@ export async function runWeeklySelfReport(
   }));
   const confirmedCount = confirmed.length;
   const top3 = confirmed.slice(0, 3);
-
-  const catCount = new Map<string, number>();
-  for (const row of correctionRows ?? []) {
-    const meta =
-      row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
-        ? (row.meta as Record<string, unknown>)
-        : {};
-    const thread = Array.isArray(row.thread) ? row.thread : [];
-    const hasHuman = thread.some(
-      (t) =>
-        t &&
-        typeof t === "object" &&
-        (t as { role?: string }).role === "human"
-    );
-    if (meta.from_correction === true || hasHuman) {
-      const cat =
-        typeof row.category === "string" && row.category.trim()
-          ? row.category.trim()
-          : "general";
-      catCount.set(cat, (catCount.get(cat) ?? 0) + 1);
-    }
-  }
-  let topCorrection = "없음";
-  let topCorrectionCount = 0;
-  for (const [cat, n] of catCount) {
-    if (n > topCorrectionCount) {
-      topCorrection = cat;
-      topCorrectionCount = n;
-    }
-  }
 
   const promptChanges = (lunaVersions ?? []).map((v) => ({
     summary: v.change_summary,
@@ -196,11 +313,16 @@ export async function runWeeklySelfReport(
   const stats = {
     confirmed_count: confirmedCount,
     top3,
-    top_correction_type: topCorrection,
-    top_correction_count: topCorrectionCount,
+    top_correction_count: corrections.total,
+    correction_thumbs_down: corrections.thumbs_down,
+    correction_from_learning: corrections.from_correction,
+    correction_user_phrase: corrections.user_correction,
     prompt_changes: promptChanges,
-    candidate_inflow_this_week: thisWeekInflow,
-    candidate_inflow_prev_week: prevWeekInflow,
+    candidate_inflow_this_week: thisWeekInflow.total,
+    candidate_inflow_confirmed: thisWeekInflow.confirmed,
+    candidate_inflow_pending: thisWeekInflow.pending,
+    candidate_inflow_archived: thisWeekInflow.archived,
+    candidate_inflow_prev_week: prevWeekInflow.total,
     week_start: week.startIso,
     week_end: week.endIso,
     generated_at: today.startIso
@@ -238,8 +360,8 @@ export async function runWeeklySelfReport(
       top3.length
         ? `대표: ${top3.map((t) => t.content).join(" / ")}`
         : "대표 사례 없음.",
-      `정정 최다 유형: ${topCorrection} (${topCorrectionCount}건).`,
-      `후보함 유입 ${prevWeekInflow}→${thisWeekInflow}.`,
+      `정정 ${corrections.total}건 (고침 ${corrections.from_correction} · 👎 ${corrections.thumbs_down} · 정정 문장 ${corrections.user_correction}).`,
+      `후보함 유입 ${prevWeekInflow.total}→${thisWeekInflow.total} (확정 ${thisWeekInflow.confirmed} · 대기 ${thisWeekInflow.pending} · 폐기 ${thisWeekInflow.archived}).`,
       promptChanges.length
         ? `프롬프트 자율 변경 ${promptChanges.length}건.`
         : "프롬프트 자율 변경 없음.",

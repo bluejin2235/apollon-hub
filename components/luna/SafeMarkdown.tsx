@@ -2,6 +2,7 @@
 
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function safeHref(href: string | undefined): string | undefined {
   if (!href) return undefined;
@@ -93,7 +94,21 @@ function makeComponents(compact?: boolean, variant?: "default" | "luna"): Compon
       <h3 className={`${pGap} text-[13px] font-semibold last:mb-0`}>
         {children}
       </h3>
-    )
+    ),
+    table: ({ children }) => (
+      <div className={`${pGap} overflow-x-auto last:mb-0`}>
+        <table className="w-full border-collapse text-[13px]">{children}</table>
+      </div>
+    ),
+    thead: ({ children }) => (
+      <thead className="border-b border-slate-200">{children}</thead>
+    ),
+    th: ({ children }) => (
+      <th className="px-2 py-1.5 text-left font-semibold">{children}</th>
+    ),
+    td: ({ children }) => (
+      <td className="border-t border-slate-100 px-2 py-1.5">{children}</td>
+    ),
   };
 }
 
@@ -118,7 +133,11 @@ export function SafeMarkdown({
   if (!text) return null;
   return (
     <div className={`break-words ${className}`}>
-      <ReactMarkdown components={makeComponents(compact, variant)} skipHtml>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={makeComponents(compact, variant)}
+        skipHtml
+      >
         {text}
       </ReactMarkdown>
     </div>
