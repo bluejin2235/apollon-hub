@@ -143,6 +143,8 @@ export const LUNA_USAGE_ALERTS_DEFAULT: LunaUsageAlerts = {
   spike_percent: 200
 };
 
+export type LunaCostMode = "cheap" | "balanced" | "performance";
+
 export type LunaModelCostSettings = {
   auto_swap: boolean;
   revert_on_drop: boolean;
@@ -151,6 +153,8 @@ export type LunaModelCostSettings = {
   next_inspect_at: string | null;
   /** Artificial Analysis 마지막 실패 사유 (성공 시 null) */
   last_market_error: string | null;
+  /** cheap | balanced | performance */
+  mode: LunaCostMode;
 };
 
 export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
@@ -159,7 +163,26 @@ export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
   protect_s: true,
   last_inspect_at: null,
   next_inspect_at: null,
-  last_market_error: null
+  last_market_error: null,
+  mode: "balanced"
+};
+
+export const LUNA_COST_MODE_META: Record<
+  LunaCostMode,
+  { label: string; desc: string }
+> = {
+  cheap: {
+    label: "가격 우선",
+    desc: "가장 저렴하게. 품질은 최소 기준만"
+  },
+  balanced: {
+    label: "가성비",
+    desc: "성능 대비 비용이 가장 좋은 선택"
+  },
+  performance: {
+    label: "성능 우선",
+    desc: "비용보다 품질. 지연 조건은 지킴"
+  }
 };
 
 export function normalizeUsageAlerts(raw: unknown): LunaUsageAlerts {
@@ -184,6 +207,11 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
+  const modeRaw = value.mode;
+  const mode: LunaCostMode =
+    modeRaw === "cheap" || modeRaw === "balanced" || modeRaw === "performance"
+      ? modeRaw
+      : LUNA_MODEL_COST_SETTINGS_DEFAULT.mode;
   return {
     auto_swap:
       typeof value.auto_swap === "boolean"
@@ -204,7 +232,8 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
     last_market_error:
       typeof value.last_market_error === "string"
         ? value.last_market_error
-        : null
+        : null,
+    mode
   };
 }
 

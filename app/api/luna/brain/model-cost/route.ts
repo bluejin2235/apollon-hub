@@ -19,7 +19,15 @@ import {
   loadMarketHistory,
   type MarketModelRow
 } from "@/lib/luna/model-market";
+import {
+  applyCostMode,
+  buildModePreview,
+  ensureActiveModePeriod,
+  estimateModeMonthlyCosts,
+  loadModeHistory
+} from "@/lib/luna/model-modes";
 import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
+import type { LunaCostMode } from "@/lib/luna/brain-models";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -422,9 +430,49 @@ export async function GET(request: NextRequest) {
     history.map((h) => String(h.fetched_at).slice(0, 10))
   ).size;
 
+  const usage28from = kstDate(-27);
+  const { data: usage28 } = await admin
+    .from("luna_usage_daily")
+    .select("tier, input_tokens, output_tokens")
+    .gte("date", usage28from)
+    .lte("date", today);
+
+  let modeEstimates: Record<LunaCostMode, number> = {
+    cheap: 0,
+    balanced: 0,
+    performance: 0
+  };
+  let modeHistory: Awaited<ReturnType<typeof loadModeHistory>> = [];
+  try {
+    modeEstimates = await estimateModeMonthlyCosts(
+      marketRows,
+      orderedTiers.map((t) => ({
+        tier: String(t.tier),
+        model_id: String(t.model_id)
+      })),
+      (usage28 ?? []).map((u) => ({
+        tier: String(u.tier),
+        input_tokens: Number(u.input_tokens) || 0,
+        output_tokens: Number(u.output_tokens) || 0
+      })),
+      usdKrw
+    );
+    await ensureActiveModePeriod(
+      admin,
+      settings.mode,
+      modeEstimates[settings.mode] ?? null
+    );
+    modeHistory = await loadModeHistory(admin);
+  } catch (err) {
+    console.warn("[luna/model-cost] modes", err);
+  }
+
   return NextResponse.json({
     connections: { ...connected, artificial_analysis: aaKey },
     fx: { usd_krw: usdKrw, date: fxDate },
+    mode: settings.mode,
+    mode_estimates: modeEstimates,
+    mode_history: modeHistory,
     tiers: orderedTiers.map((t) => ({
       ...t,
       meta: LUNA_TIER_META.find((m) => m.tier === t.tier) ?? null,
@@ -627,11 +675,91 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { action?: string } = {};
+  let body: {
+    action?: string;
+    mode?: string;
+  } = {};
   try {
-    body = (await request.json()) as { action?: string };
+    body = (await request.json()) as { action?: string; mode?: string };
   } catch {
     body = {};
+  }
+
+  const parseMode = (raw: unknown): LunaCostMode | null => {
+    if (raw === "cheap" || raw === "balanced" || raw === "performance") {
+      return raw;
+    }
+    return null;
+  };
+
+  if (body.action === "preview_mode" || body.action === "apply_mode") {
+    const mode = parseMode(body.mode);
+    if (!mode) {
+      return NextResponse.json({ error: "invalid mode" }, { status: 400 });
+    }
+    let usdKrw = USD_KRW_FALLBACK;
+    try {
+      const fx = await loadFx(admin);
+      usdKrw = fx.usd_krw;
+    } catch {
+      /* default */
+    }
+    const { rows: marketRows } = await loadLatestMarketSnapshot(admin);
+    const from28 = kstDate(-27);
+    const today = kstDate();
+    const { data: usage28 } = await admin
+      .from("luna_usage_daily")
+      .select("tier, input_tokens, output_tokens")
+      .gte("date", from28)
+      .lte("date", today);
+    const usage = (usage28 ?? []).map((u) => ({
+      tier: String(u.tier),
+      input_tokens: Number(u.input_tokens) || 0,
+      output_tokens: Number(u.output_tokens) || 0
+    }));
+
+    if (body.action === "preview_mode") {
+      const { data: tiers } = await admin
+        .from("luna_engine_tiers")
+        .select("tier, model_id");
+      const preview = buildModePreview(
+        mode,
+        marketRows,
+        (tiers ?? []).map((t) => ({
+          tier: String(t.tier),
+          model_id: String(t.model_id)
+        })),
+        usage,
+        usdKrw,
+        28
+      );
+      return NextResponse.json({ ok: true, preview });
+    }
+
+    const result = await applyCostMode(
+      admin,
+      mode,
+      marketRows,
+      usdKrw,
+      usage
+    );
+
+    const { data: settingsRow } = await admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", LUNA_MODEL_COST_SETTINGS_KEY)
+      .maybeSingle();
+    const settings = normalizeModelCostSettings(settingsRow?.value ?? null);
+    await admin.from("luna_settings").upsert(
+      {
+        key: LUNA_MODEL_COST_SETTINGS_KEY,
+        value: { ...settings, mode },
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "key" }
+    );
+
+    return NextResponse.json(result);
   }
 
   if (body.action === "inspect") {

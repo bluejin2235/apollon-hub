@@ -10,9 +10,11 @@ import {
 } from "@/components/luna/knowledge/ui";
 import { brainFetch, BtnRow, formatTokens } from "@/components/luna/brain/shared";
 import type {
+  LunaCostMode,
   LunaModelCostSettings,
   LunaUsageAlerts
 } from "@/lib/luna/brain-models";
+import { LUNA_COST_MODE_META } from "@/lib/luna/brain-models";
 import { K } from "@/lib/luna/knowledge-format";
 
 type TierView = {
@@ -62,6 +64,21 @@ type SelectableModel = {
   disabled_reason: string | null;
 };
 
+type ModePreview = {
+  mode: LunaCostMode;
+  mode_label: string;
+  lines: Array<{
+    tier: string;
+    from_model_id: string;
+    to_model_id: string | null;
+    changed: boolean;
+    reason: string;
+  }>;
+  monthly_from: number;
+  monthly_to: number;
+  monthly_delta_pct: number | null;
+};
+
 type Payload = {
   connections: {
     anthropic: boolean;
@@ -70,6 +87,19 @@ type Payload = {
     artificial_analysis: boolean;
   };
   fx: { usd_krw: number; date: string | null };
+  mode: LunaCostMode;
+  mode_estimates: Record<LunaCostMode, number>;
+  mode_history: Array<{
+    id: string;
+    mode: LunaCostMode;
+    mode_label: string;
+    started_at: string;
+    ended_at: string | null;
+    est_monthly_krw: number | null;
+    exam_score: string | null;
+    thumbs_up: number;
+    thumbs_down: number;
+  }>;
   tiers: TierView[];
   market: {
     fetched_at: string | null;
@@ -205,6 +235,7 @@ export function LunaBrainModel() {
   const [alerts, setAlerts] = useState<LunaUsageAlerts | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [hoverSlug, setHoverSlug] = useState<string | null>(null);
+  const [modePreview, setModePreview] = useState<ModePreview | null>(null);
 
   const load = useCallback(async (r: string = range) => {
     setLoading(true);
@@ -217,6 +248,7 @@ export function LunaBrainModel() {
       setSettings(json.settings);
       setAlerts(json.alerts);
       setDrafts({});
+      setModePreview(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
     } finally {
@@ -263,6 +295,54 @@ export function LunaBrainModel() {
       await load(range);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "저장 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewMode(mode: LunaCostMode) {
+    if (!data || mode === data.mode) {
+      setModePreview(null);
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      const res = await brainFetch<{ preview: ModePreview }>(
+        "/api/luna/brain/model-cost",
+        {
+          method: "POST",
+          body: JSON.stringify({ action: "preview_mode", mode })
+        }
+      );
+      setModePreview(res.preview);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "미리보기 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyMode() {
+    if (!modePreview) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const res = await brainFetch<{ message: string }>(
+        "/api/luna/brain/model-cost",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action: "apply_mode",
+            mode: modePreview.mode
+          })
+        }
+      );
+      setNotice(res.message);
+      setModePreview(null);
+      await load(range);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "모드 적용 실패");
     } finally {
       setBusy(false);
     }
@@ -406,6 +486,120 @@ export function LunaBrainModel() {
 
       {!loading && data ? (
         <div className="space-y-[22px]">
+          {/* 0. 모드 토글 */}
+          <section>
+            <div
+              className="rounded-xl border px-[18px] py-4"
+              style={{ borderColor: K.line, background: K.panel }}
+            >
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="inline-flex overflow-hidden rounded-xl border" style={{ borderColor: K.line }}>
+                  {(
+                    [
+                      ["cheap", "가격 우선"],
+                      ["balanced", "가성비"],
+                      ["performance", "성능 우선"]
+                    ] as const
+                  ).map(([key, label]) => {
+                    const active = (modePreview?.mode ?? data.mode) === key;
+                    const est = data.mode_estimates?.[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void previewMode(key)}
+                        className="min-w-[108px] cursor-pointer px-3.5 py-2.5 text-center"
+                        style={{
+                          background: active ? K.luna : "transparent",
+                          color: active ? "#fff" : K.ink
+                        }}
+                      >
+                        <div className="text-[13px] font-semibold">{label}</div>
+                        <div
+                          className="mt-0.5 text-[11px]"
+                          style={{ color: active ? "rgba(255,255,255,0.85)" : K.faint }}
+                        >
+                          월 {fmtWon(est ?? 0)}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="min-w-0 flex-1 pt-1 text-[12.5px]" style={{ color: K.sub }}>
+                  {
+                    LUNA_COST_MODE_META[
+                      (modePreview?.mode ?? data.mode) as LunaCostMode
+                    ]?.desc
+                  }
+                </p>
+              </div>
+
+              {modePreview ? (
+                <div
+                  className="mt-4 rounded-[10px] border px-3.5 py-3"
+                  style={{ borderColor: K.line2, background: "#FBFAFF" }}
+                >
+                  <div className="mb-2 text-[13px] font-semibold">
+                    {modePreview.mode_label} 모드로 바꾸면
+                  </div>
+                  <div className="space-y-1.5 text-[12.5px]">
+                    {modePreview.lines.map((line) => (
+                      <div
+                        key={line.tier}
+                        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                      >
+                        <TierBadge tier={line.tier} size={18} />
+                        <span className="font-mono text-[12px]">
+                          {line.from_model_id}
+                        </span>
+                        <span style={{ color: K.faint }}>→</span>
+                        {line.changed ? (
+                          <>
+                            <span className="font-mono text-[12px] font-semibold">
+                              {line.to_model_id}
+                            </span>
+                            <span style={{ color: K.sub }}>{line.reason}</span>
+                          </>
+                        ) : (
+                          <span style={{ color: K.faint }}>변경 없음</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-[12.5px]">
+                    월 예상 비용{" "}
+                    <b>{fmtWon(modePreview.monthly_from)}</b>
+                    <span style={{ color: K.faint }}> → </span>
+                    <b>{fmtWon(modePreview.monthly_to)}</b>
+                    {modePreview.monthly_delta_pct != null ? (
+                      <span
+                        className="ml-1.5 text-[11.5px] font-semibold"
+                        style={{
+                          color:
+                            modePreview.monthly_delta_pct > 0
+                              ? "#A32D2D"
+                              : "#0F6E56"
+                        }}
+                      >
+                        ({modePreview.monthly_delta_pct > 0 ? "▲" : "▼"}
+                        {Math.abs(modePreview.monthly_delta_pct)}%)
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Btn primary disabled={busy} onClick={() => void applyMode()}>
+                      이 모드로 적용
+                    </Btn>
+                    <Btn disabled={busy} onClick={() => setModePreview(null)}>
+                      취소
+                    </Btn>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
           {/* 1. 지금 쓰는 모델 */}
           <section>
             <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
@@ -1124,7 +1318,58 @@ export function LunaBrainModel() {
             ) : null}
           </section>
 
-          {/* 6. 교체 이력 */}
+          {/* 6. 모드 이력 */}
+          <section>
+            <div className="mb-2.5 flex items-baseline gap-2">
+              <h3 className="text-[14px] font-bold">모드 이력</h3>
+              <span className="text-[11.5px]" style={{ color: K.faint }}>
+                기간별 비용·시험·피드백으로 적정선을 비교합니다
+              </span>
+            </div>
+            <div
+              className="overflow-hidden rounded-xl border"
+              style={{ borderColor: K.line, background: K.panel }}
+            >
+              {(data.mode_history ?? []).length === 0 ? (
+                <p
+                  className="px-4 py-6 text-center text-[12.5px]"
+                  style={{ color: K.faint }}
+                >
+                  모드를 적용하면 이력이 쌓입니다
+                </p>
+              ) : (
+                (data.mode_history ?? []).map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-[18px] py-3 last:border-b-0"
+                    style={{ borderColor: K.line2 }}
+                  >
+                    <span
+                      className="w-[110px] shrink-0 text-[11.5px]"
+                      style={{ color: K.faint }}
+                    >
+                      {shortDate(m.started_at)}~
+                      {m.ended_at ? shortDate(m.ended_at) : "현재"}
+                    </span>
+                    <span className="w-[72px] text-[13px] font-semibold">
+                      {m.mode_label}
+                    </span>
+                    <span className="text-[12.5px]">
+                      월 {fmtWon(m.est_monthly_krw)}
+                    </span>
+                    <span className="text-[12.5px]" style={{ color: K.sub }}>
+                      시험 {m.exam_score ?? "—"}
+                    </span>
+                    <span className="text-[12.5px]" style={{ color: K.sub }}>
+                      👍 {m.thumbs_up} / 👎 {m.thumbs_down}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* 7. 교체 이력 */}
           <section>
             <div className="mb-2.5 flex items-baseline gap-2">
               <h3 className="text-[14px] font-bold">교체 이력</h3>
