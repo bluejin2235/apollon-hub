@@ -1,14 +1,19 @@
+import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  CandidateSource,
+  ScopeSuggestion,
+  ThreadTurn
+} from "@/lib/luna/candidate-types";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 
-export type CandidateSource =
-  | "chat"
-  | "selfstudy"
-  | "question"
-  | "direct"
-  | "interview";
+export type {
+  CandidateSource,
+  ScopeSuggestion,
+  ThreadTurn
+} from "@/lib/luna/candidate-types";
 
 export function resolveCandidateSource(
   source: string | null | undefined,
@@ -27,13 +32,6 @@ export function resolveCandidateSource(
   if (origin === "direct") return "direct";
   return "chat";
 }
-export type ScopeSuggestion = "org" | "personal";
-
-export type ThreadTurn = {
-  role: "luna" | "human";
-  text: string;
-  at: string;
-};
 
 export type CreateCandidateInput = {
   content: string;

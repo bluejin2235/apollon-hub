@@ -23,8 +23,8 @@ import {
   type GlossaryEditDraft
 } from "@/lib/luna/candidate-format";
 import { clipText, K, sourceLabel } from "@/lib/luna/knowledge-format";
-import type { CandidateSource } from "@/lib/luna/candidates";
-import type { ThreadTurn } from "@/lib/luna/candidates";
+import type { CandidateSource } from "@/lib/luna/candidate-types";
+import type { ThreadTurn } from "@/lib/luna/candidate-types";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
 

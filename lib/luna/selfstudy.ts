@@ -1,3 +1,4 @@
+import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createCandidate,
@@ -5,42 +6,22 @@ import {
   parseJsonArray,
   parseJsonObject
 } from "@/lib/luna/candidates";
+import {
+  CRON_SELFSTUDY_HOUR,
+  CRON_SELFSTUDY_MINUTE
+} from "@/lib/luna/cron-times";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { lunaNotify } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { runLunaTurn } from "@/lib/luna/run-chat";
+import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
 
-// ── Legacy types (채팅 리포트 매칭·trace 탭 호환) ─────────────────
-
-export type SelfstudySource = "frequency" | "failure" | "manual" | "project";
-export type SelfstudyQueueStatus = "pending" | "running" | "done" | "skipped";
-
-export type SelfstudyQueueRow = {
-  id: string;
-  topic: string;
-  source: SelfstudySource;
-  score: number;
-  evidence: Record<string, unknown>;
-  status: SelfstudyQueueStatus;
-  project_id: string | null;
-  created_at: string;
-  processed_at: string | null;
-};
-
-export type LunaReportRow = {
-  id: string;
-  topic: string;
-  title: string;
-  content: string;
-  sources: unknown;
-  queue_id: string | null;
-  project_id: string | null;
-  use_count: number;
-  last_used_at: string | null;
-  status: string;
-  model_label: string | null;
-  created_at: string;
-};
+export type {
+  LunaReportRow,
+  SelfstudyQueueRow,
+  SelfstudyQueueStatus,
+  SelfstudySource
+} from "@/lib/luna/selfstudy-types";
 
 const REPORT_SIM_THRESHOLD = 0.35;
 const SETTINGS_KEY = "selfstudy_last_run";
@@ -131,8 +112,8 @@ export type SelfstudySettings = {
 };
 
 export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
-  run_hour: 3,
-  run_minute: 0,
+  run_hour: CRON_SELFSTUDY_HOUR,
+  run_minute: CRON_SELFSTUDY_MINUTE,
   max_per_day: MAX_PER_DAY,
   skip_when_empty: true,
   must_submit_candidate: true,

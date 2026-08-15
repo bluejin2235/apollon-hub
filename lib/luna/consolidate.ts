@@ -1,3 +1,4 @@
+import "server-only";
 import { randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";

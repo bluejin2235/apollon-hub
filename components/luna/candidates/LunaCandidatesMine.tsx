@@ -13,7 +13,7 @@ import {
 } from "@/components/luna/candidates/shared";
 import { Btn, ListCard, ListItem } from "@/components/luna/knowledge/ui";
 import { K } from "@/lib/luna/knowledge-format";
-import type { CandidateSource } from "@/lib/luna/candidates";
+import type { CandidateSource } from "@/lib/luna/candidate-types";
 
 type AssignedQuestion = {
   id: string;

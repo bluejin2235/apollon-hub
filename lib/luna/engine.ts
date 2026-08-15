@@ -1,3 +1,4 @@
+import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LunaTier, LunaUsageFeature } from "@/lib/luna/brain-models";
 

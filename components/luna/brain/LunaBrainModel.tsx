@@ -21,7 +21,7 @@ import {
   formatTimeHm,
   weekdayLabel,
   type InspectPeriod
-} from "@/lib/luna/model-inspect-schedule";
+} from "@/lib/luna/model-inspect-schedule.shared";
 import { K } from "@/lib/luna/knowledge-format";
 
 type TierView = {

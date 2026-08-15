@@ -1,3 +1,4 @@
+import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";

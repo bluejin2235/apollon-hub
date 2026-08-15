@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { LunaDashboard } from "@/lib/luna/dashboard";
+import type { LunaDashboard } from "@/lib/luna/dashboard-types";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
 

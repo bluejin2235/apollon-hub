@@ -6,7 +6,7 @@ import type {
   LunaReportRow,
   SelfstudyQueueRow,
   SelfstudySource
-} from "@/lib/luna/selfstudy";
+} from "@/lib/luna/selfstudy-types";
 import type { LunaTraceWeeklyRow, TraceFailure } from "@/lib/luna/trace-weekly";
 import { getCurrentWeekBounds } from "@/lib/luna/trace-weekly";
 import { supabase } from "@/lib/supabase/client";

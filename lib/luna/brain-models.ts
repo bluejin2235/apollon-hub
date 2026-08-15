@@ -2,7 +2,7 @@ import {
   INSPECT_SCHEDULE_DEFAULT,
   normalizeInspectSchedule,
   type InspectSchedule
-} from "@/lib/luna/model-inspect-schedule";
+} from "@/lib/luna/model-inspect-schedule.shared";
 
 export type LunaTier = "S" | "A" | "B" | "C";
 

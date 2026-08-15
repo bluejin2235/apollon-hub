@@ -1,4 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  CRON_CONSOLIDATE_HOUR,
+  CRON_CONSOLIDATE_MINUTE,
+  CRON_EVAL_HEAVY_HOUR,
+  CRON_EVAL_HEAVY_MINUTE,
+  CRON_EVAL_HEAVY_WEEKDAY,
+  CRON_EVAL_LIGHT_HOUR,
+  CRON_EVAL_LIGHT_MINUTE,
+  CRON_SELFSTUDY_HOUR,
+  CRON_SELFSTUDY_MINUTE,
+  CRON_SELF_UPGRADE_HOUR,
+  CRON_SELF_UPGRADE_MINUTE,
+  CRON_SELF_UPGRADE_WEEKDAY
+} from "@/lib/luna/cron-times";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 
 export const EVAL_SCHEDULE_KEY = "eval_schedule";
@@ -23,8 +37,17 @@ export type EvalSchedule = {
 };
 
 export const EVAL_SCHEDULE_DEFAULT: EvalSchedule = {
-  light: { enabled: true, hour: 3, minute: 40 },
-  heavy: { enabled: true, weekday: 0, hour: 3, minute: 50 }
+  light: {
+    enabled: true,
+    hour: CRON_EVAL_LIGHT_HOUR,
+    minute: CRON_EVAL_LIGHT_MINUTE
+  },
+  heavy: {
+    enabled: true,
+    weekday: CRON_EVAL_HEAVY_WEEKDAY,
+    hour: CRON_EVAL_HEAVY_HOUR,
+    minute: CRON_EVAL_HEAVY_MINUTE
+  }
 };
 
 /** 다른 루나 야간 작업(KST) — 겹침 경고용 */
@@ -35,14 +58,26 @@ export const LUNA_NIGHT_SLOTS: Array<{
   hour: number;
   minute: number;
 }> = [
-  { key: "selfstudy", label: "자습", weekday: null, hour: 3, minute: 0 },
-  { key: "consolidate", label: "정리", weekday: null, hour: 3, minute: 30 },
+  {
+    key: "selfstudy",
+    label: "자습",
+    weekday: null,
+    hour: CRON_SELFSTUDY_HOUR,
+    minute: CRON_SELFSTUDY_MINUTE
+  },
+  {
+    key: "consolidate",
+    label: "정리",
+    weekday: null,
+    hour: CRON_CONSOLIDATE_HOUR,
+    minute: CRON_CONSOLIDATE_MINUTE
+  },
   {
     key: "self-upgrade",
     label: "자기개선",
-    weekday: 0,
-    hour: 4,
-    minute: 0
+    weekday: CRON_SELF_UPGRADE_WEEKDAY,
+    hour: CRON_SELF_UPGRADE_HOUR,
+    minute: CRON_SELF_UPGRADE_MINUTE
   }
 ];
 

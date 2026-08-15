@@ -8,7 +8,7 @@ import type {
   GlossaryFieldValues
 } from "@/lib/glossary/types";
 import { clipText, formatShortDate, sourceLabel } from "@/lib/luna/knowledge-format";
-import type { CandidateSource } from "@/lib/luna/candidates";
+import type { CandidateSource } from "@/lib/luna/candidate-types";
 
 export type GlossaryDraft = GlossaryFieldValues;
 
