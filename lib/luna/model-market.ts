@@ -236,12 +236,13 @@ function parseMarketItem(
     num(evals.intelligence_index) ??
     num(o.intelligence_index) ??
     num(o.quality_index);
-  // 다국어: coding 으로 대체하지 않음 (없으면 null)
+  // 다국어: Free 카탈로그에 없음. coding 으로 대체하지 않음.
   const multilingual =
     num(evals.multilingual_index) ??
     num(evals.global_mmlu_lite) ??
     num(evals["global_mmlu"]) ??
     num(o.multilingual_index);
+  // Free: artificial_analysis_agentic_index
   const agentic =
     num(evals.artificial_analysis_agentic_index) ??
     num(evals.agentic_index) ??
@@ -304,7 +305,30 @@ export async function fetchAndCacheMarketModels(
 
   const fetchedAt = new Date().toISOString();
   const preferred: MarketModelRow[] = [];
+  let loggedSample = false;
   for (const item of fetched.list) {
+    if (!loggedSample && item && typeof item === "object") {
+      const o = item as Record<string, unknown>;
+      const evals =
+        o.evaluations && typeof o.evaluations === "object"
+          ? (o.evaluations as Record<string, unknown>)
+          : {};
+      console.info(
+        "[luna/market] AA sample fields",
+        JSON.stringify({
+          slug: o.slug ?? o.id,
+          top_keys: Object.keys(o).slice(0, 30),
+          evaluation_keys: Object.keys(evals),
+          evaluation_sample: evals,
+          has_reasoning_model: "reasoning_model" in o,
+          performance_keys:
+            o.performance && typeof o.performance === "object"
+              ? Object.keys(o.performance as object)
+              : []
+        }).slice(0, 2500)
+      );
+      loggedSample = true;
+    }
     const row = parseMarketItem(item, fetchedAt);
     if (row && isPreferredProvider(row.provider)) preferred.push(row);
   }
@@ -319,6 +343,12 @@ export async function fetchAndCacheMarketModels(
 
   preferred.sort(
     (a, b) => (b.intelligence_index ?? 0) - (a.intelligence_index ?? 0)
+  );
+
+  const withMulti = preferred.filter((r) => r.multilingual_index != null).length;
+  const withAgent = preferred.filter((r) => r.agentic_index != null).length;
+  console.info(
+    `[luna/market] index coverage preferred=${preferred.length} multilingual=${withMulti} agentic=${withAgent}`
   );
 
   // 대량 insert — 500건 단위 (마이그레이션 전이면 성능 컬럼 제외 재시도)

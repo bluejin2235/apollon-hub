@@ -3,7 +3,9 @@ import {
   LUNA_MODEL_COST_SETTINGS_DEFAULT,
   LUNA_MODEL_COST_SETTINGS_KEY,
   LUNA_TIER_ORDER,
+  LUNA_USAGE_ALERTS_KEY,
   normalizeModelCostSettings,
+  normalizeUsageAlerts,
   type LunaCostMode,
   type LunaModelCostSettings,
   type LunaTier
@@ -17,6 +19,7 @@ import {
 import {
   blendedUsd,
   buildSwapReason,
+  estimateMonthlyKrwForPicks,
   findMarketRow,
   pickForTierMode,
   slugMatchesModel,
@@ -58,10 +61,11 @@ export function pickForTier(
 
 export function validateSwap(
   tier: LunaTier,
-  _from: MarketModelRow | null,
-  to: MarketModelRow
-): { ok: true } | { ok: false; reason: string } {
-  return validateModeCandidate(tier, to);
+  from: MarketModelRow | null,
+  to: MarketModelRow,
+  mode: LunaCostMode = "balanced"
+): { ok: true; reasonNote?: string } | { ok: false; reason: string } {
+  return validateModeCandidate(tier, to, { mode, from });
 }
 
 async function getSettings(
@@ -142,6 +146,36 @@ export async function runModelInspect(
   }> = [];
   const proposals: Array<{ tier: LunaTier; to: string; reason: string }> = [];
 
+  const { data: alertRow } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", LUNA_USAGE_ALERTS_KEY)
+    .maybeSingle();
+  const monthlyLimit = normalizeUsageAlerts(alertRow?.value ?? null)
+    .monthly_limit;
+
+  const today = new Date();
+  const from28 = new Date(today);
+  from28.setDate(from28.getDate() - 27);
+  const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+  const { data: usage28 } = await admin
+    .from("luna_usage_daily")
+    .select("tier, input_tokens, output_tokens")
+    .gte("date", isoDay(from28))
+    .lte("date", isoDay(today));
+  const usageTok = new Map<string, number>();
+  for (const u of usage28 ?? []) {
+    const t = String(u.tier).toUpperCase();
+    const tok =
+      (Number(u.input_tokens) || 0) + (Number(u.output_tokens) || 0);
+    usageTok.set(t, (usageTok.get(t) ?? 0) + tok);
+  }
+  const currentByTier = {} as Record<LunaTier, string>;
+  for (const t of LUNA_TIER_ORDER) {
+    currentByTier[t] =
+      String((tiers ?? []).find((x) => x.tier === t)?.model_id ?? "") || "";
+  }
+
   for (const tier of LUNA_TIER_ORDER) {
     if (tier === "S" && settings.protect_s) continue;
     const current = (tiers ?? []).find((t) => t.tier === tier);
@@ -157,7 +191,26 @@ export async function runModelInspect(
       continue;
     }
 
-    const check = validateModeCandidate(tier, candidate);
+    const trialPicks = {} as Record<LunaTier, MarketModelRow | null>;
+    for (const t of LUNA_TIER_ORDER) {
+      trialPicks[t] = findMarketRow(rows, currentByTier[t]);
+    }
+    trialPicks[tier] = candidate;
+    const monthlyTo = estimateMonthlyKrwForPicks(
+      trialPicks,
+      currentByTier,
+      rows,
+      usageTok,
+      usdKrw,
+      28
+    );
+
+    const check = validateModeCandidate(tier, candidate, {
+      mode,
+      from: fromRow,
+      monthlyToKrw: monthlyTo,
+      monthlyLimitKrw: monthlyLimit
+    });
     if (!check.ok) {
       console.info(
         `[luna/model-inspect] ${tier}: 거부 → ${candidate.model_slug} (${check.reason})`
@@ -165,7 +218,11 @@ export async function runModelInspect(
       continue;
     }
 
-    const reason = buildSwapReason(fromRow, candidate);
+    const reason = buildSwapReason(
+      fromRow,
+      candidate,
+      check.reasonNote
+    );
     proposals.push({ tier, to: candidate.model_slug, reason });
 
     if (!settings.auto_swap) {

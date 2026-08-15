@@ -321,12 +321,8 @@ export async function GET(request: NextRequest) {
     .map((t) => String(t.model_id))
     .filter(Boolean);
 
-  // 산점도·순위·추이 공통 15개
+  // 산점도·순위·추이 공통 15개 (이후 지능 하한선 필터)
   const curated = buildCuratedDisplaySet(marketRows, ourSlugs, 15);
-  const curatedSlugs = curated.map((r) => r.model_slug);
-  const history = await loadMarketHistory(admin, curatedSlugs, 12);
-  const counts = brandCounts(curated);
-  const historyDefaultOn = defaultHistoryVisibleSlugs(curated);
 
   function enrich(r: MarketModelRow, rank: number) {
     const ours = matchTierToSlug(r.model_slug, orderedTiers);
@@ -347,10 +343,41 @@ export async function GET(request: NextRequest) {
     };
   }
 
-  const ranked = curated
+  const { data: settingsRow } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", LUNA_MODEL_COST_SETTINGS_KEY)
+    .maybeSingle();
+  const settings = settingsRow?.value
+    ? normalizeModelCostSettings(settingsRow.value)
+    : normalizeModelCostSettings(null);
+
+  const { data: alertRow } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", LUNA_USAGE_ALERTS_KEY)
+    .maybeSingle();
+  const alerts: LunaUsageAlerts = alertRow?.value
+    ? normalizeUsageAlerts(alertRow.value)
+    : normalizeUsageAlerts(null);
+
+  const minIntel = settings.rank_min_intelligence;
+  const displayRows = curated.filter((r) => {
+    const ours = matchTierToSlug(r.model_slug, orderedTiers);
+    if (ours.length > 0) return true;
+    return (Number(r.intelligence_index) || 0) >= minIntel;
+  });
+
+  const ranked = displayRows
     .map((r, i) => enrich(r, i + 1))
     .sort((a, b) => b.value - a.value)
     .map((r, i) => ({ ...r, rank: i + 1 }));
+
+  const counts = brandCounts(displayRows);
+  const historyDefaultOn = defaultHistoryVisibleSlugs(displayRows);
+  // 추이는 필터된 표시 집합 기준
+  const historySlugs = displayRows.map((r) => r.model_slug);
+  const history = await loadMarketHistory(admin, historySlugs, 12);
 
   const selectable = preferredRank(marketRows).map((r) => {
     const blended =
@@ -388,27 +415,10 @@ export async function GET(request: NextRequest) {
 
   console.info(
     "[luna/model-cost] curated display",
-    curated.map((r) => `${r.provider}:${r.model_slug}`).join(", "),
-    counts
+    displayRows.map((r) => `${r.provider}:${r.model_slug}`).join(", "),
+    counts,
+    `minIntel=${minIntel}`
   );
-
-  const { data: settingsRow } = await admin
-    .from("luna_settings")
-    .select("value")
-    .eq("key", LUNA_MODEL_COST_SETTINGS_KEY)
-    .maybeSingle();
-  const settings = settingsRow?.value
-    ? normalizeModelCostSettings(settingsRow.value)
-    : normalizeModelCostSettings(null);
-
-  const { data: alertRow } = await admin
-    .from("luna_settings")
-    .select("value")
-    .eq("key", LUNA_USAGE_ALERTS_KEY)
-    .maybeSingle();
-  const alerts: LunaUsageAlerts = alertRow?.value
-    ? normalizeUsageAlerts(alertRow.value)
-    : normalizeUsageAlerts(null);
 
   // A등급 가격 추이 해석
   let priceNote: string | null = null;
@@ -505,10 +515,13 @@ export async function GET(request: NextRequest) {
       fetched_at: marketFetchedAt,
       missing_key: !aaKey && marketRows.length === 0,
       total_count: marketRows.length,
-      display_count: curated.length,
+      display_count: displayRows.length,
       brand_counts: counts,
       history_default_on: historyDefaultOn,
-      display_slugs: curatedSlugs,
+      display_slugs: historySlugs,
+      rank_min_intelligence: minIntel,
+      index_note:
+        "다국어 지수는 Artificial Analysis 유료 티어에서만 제공됩니다. 에이전트 지수는 무료 응답의 artificial_analysis_agentic_index 를 쓰며, 미측정이면 — 입니다. A등급 자동 선정은 종합 지능·TTFT만 사용합니다.",
       error:
         marketRows.length > 0
           ? null
@@ -746,6 +759,14 @@ export async function POST(request: NextRequest) {
       output_tokens: Number(u.output_tokens) || 0
     }));
 
+    const { data: alertRow } = await admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", LUNA_USAGE_ALERTS_KEY)
+      .maybeSingle();
+    const monthlyLimit = normalizeUsageAlerts(alertRow?.value ?? null)
+      .monthly_limit;
+
     if (body.action === "preview_mode") {
       const { data: tiers } = await admin
         .from("luna_engine_tiers")
@@ -759,7 +780,8 @@ export async function POST(request: NextRequest) {
         })),
         usage,
         usdKrw,
-        28
+        28,
+        monthlyLimit
       );
       return NextResponse.json({ ok: true, preview });
     }
@@ -769,7 +791,8 @@ export async function POST(request: NextRequest) {
       mode,
       marketRows,
       usdKrw,
-      usage
+      usage,
+      monthlyLimit
     );
 
     const { data: settingsRow } = await admin

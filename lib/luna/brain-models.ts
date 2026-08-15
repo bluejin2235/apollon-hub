@@ -155,6 +155,8 @@ export type LunaModelCostSettings = {
   last_market_error: string | null;
   /** cheap | balanced | performance */
   mode: LunaCostMode;
+  /** 순위·산점도 지능 하한 (우리 사용 모델은 제외) */
+  rank_min_intelligence: number;
 };
 
 export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
@@ -164,7 +166,8 @@ export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
   last_inspect_at: null,
   next_inspect_at: null,
   last_market_error: null,
-  mode: "balanced"
+  mode: "balanced",
+  rank_min_intelligence: 20
 };
 
 export const LUNA_COST_MODE_META: Record<
@@ -233,7 +236,14 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
       typeof value.last_market_error === "string"
         ? value.last_market_error
         : null,
-    mode
+    mode,
+    rank_min_intelligence: (() => {
+      const n = Number(value.rank_min_intelligence);
+      if (!Number.isFinite(n)) {
+        return LUNA_MODEL_COST_SETTINGS_DEFAULT.rank_min_intelligence;
+      }
+      return Math.min(60, Math.max(0, Math.round(n)));
+    })()
   };
 }
 

@@ -109,6 +109,8 @@ type Payload = {
     display_count?: number;
     brand_counts?: { Claude: number; GPT: number; Gemini: number };
     history_default_on?: string[];
+    rank_min_intelligence?: number;
+    index_note?: string | null;
     rows: MarketRow[];
   };
   selectable?: SelectableModel[];
@@ -459,21 +461,85 @@ export function LunaBrainModel() {
     const byValue = [...scored].sort(
       (a, b) => (b.value ?? 0) - (a.value ?? 0)
     );
-    const labelSlugs = new Set(
-      [
-        ...byValue.slice(0, 5).map((r) => r.model_slug),
-        ...scored.filter((r) => r.our_tiers.length > 0).map((r) => r.model_slug)
-      ]
-    );
 
-    const points = scored.map((r) => ({
+    // 점 좌표 + 완전 겹침 시 jitter (최대 ~4px ≈ 차트 1.3%)
+    type Pt = (typeof scored)[number] & {
+      x: number;
+      y: number;
+      showLabel: boolean;
+    };
+    const rawPoints: Pt[] = scored.map((r) => ({
       ...r,
       x: Math.min(100, Math.max(0, mapX(Math.max(r.cost, minC)))),
       y: Math.min(100, Math.max(0, mapY(r.score))),
-      showLabel: labelSlugs.has(r.model_slug)
+      showLabel: false
     }));
 
-    return { points, xTicks, yTicks, metricLabel, minC, maxC, minS, maxS };
+    const occupied: Array<{ x: number; y: number }> = [];
+    for (const p of rawPoints) {
+      let jx = 0;
+      let jy = 0;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const hit = occupied.some(
+          (o) =>
+            Math.hypot(o.x - (p.x + jx), o.y - (p.y + jy)) < 1.2
+        );
+        if (!hit) break;
+        const ang = (attempt + 1) * 1.7;
+        jx = Math.cos(ang) * 1.3;
+        jy = Math.sin(ang) * 1.3;
+      }
+      p.x = Math.min(100, Math.max(0, p.x + jx));
+      p.y = Math.min(100, Math.max(0, p.y + jy));
+      occupied.push({ x: p.x, y: p.y });
+    }
+
+    // 라벨: 우리 모델 최우선, 이후 가성비 상위. 충돌 시 생략
+    const labelCandidates = [
+      ...rawPoints.filter((p) => p.our_tiers.length > 0),
+      ...byValue
+        .map((r) => rawPoints.find((p) => p.model_slug === r.model_slug)!)
+        .filter(Boolean)
+    ];
+    const seenLabel = new Set<string>();
+    const placedLabels: Array<{ x: number; y: number; w: number; h: number }> =
+      [];
+    const labelW = 14; // % 대략
+    const labelH = 5;
+
+    for (const p of labelCandidates) {
+      if (seenLabel.has(p.model_slug)) continue;
+      seenLabel.add(p.model_slug);
+      const box = {
+        x: p.x - labelW / 2,
+        y: p.y - labelH - 1,
+        w: labelW,
+        h: labelH
+      };
+      const clash = placedLabels.some(
+        (b) =>
+          box.x < b.x + b.w &&
+          box.x + box.w > b.x &&
+          box.y < b.y + b.h &&
+          box.y + box.h > b.y
+      );
+      if (clash && p.our_tiers.length === 0) continue;
+      if (!clash || p.our_tiers.length > 0) {
+        p.showLabel = true;
+        placedLabels.push(box);
+      }
+    }
+
+    return {
+      points: rawPoints,
+      xTicks,
+      yTicks,
+      metricLabel,
+      minC,
+      maxC,
+      minS,
+      maxS
+    };
   }, [data?.market.rows, metric, priceScale]);
 
   const rankingSorted = useMemo(() => {
@@ -787,6 +853,10 @@ export function LunaBrainModel() {
                 Claude · GPT · Gemini {data.market.display_count ?? data.market.rows.length}개
                 {data.market.total_count
                   ? ` · ${data.market.total_count}개 중 선별`
+                  : ""}
+                {data.market.rank_min_intelligence != null &&
+                data.market.rank_min_intelligence > 0
+                  ? ` · 지능 ${data.market.rank_min_intelligence} 미만 제외`
                   : ""}{" "}
                 · Artificial Analysis 기준
               </span>
@@ -1048,7 +1118,12 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
               <h3 className="text-[14px] font-bold">순위</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                산점도와 같은 15개
+                산점도와 같은{" "}
+                {data.market.display_count ?? data.ranking.length}개
+                {data.market.rank_min_intelligence != null &&
+                data.market.rank_min_intelligence > 0
+                  ? ` · 지능 ${data.market.rank_min_intelligence} 미만 제외`
+                  : ""}
               </span>
               <span className="ml-auto flex flex-wrap gap-1.5">
                 {(
@@ -1174,6 +1249,11 @@ export function LunaBrainModel() {
                 </table>
               )}
             </div>
+            {data.market.index_note ? (
+              <p className="mt-2 text-[11.5px]" style={{ color: K.faint }}>
+                {data.market.index_note}
+              </p>
+            ) : null}
           </section>
 
           {/* 4. 가격 추이 */}
@@ -1181,7 +1261,8 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex items-baseline gap-2">
               <h3 className="text-[14px] font-bold">가격 추이</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                산점도·순위와 같은 15개 · 최근 12주
+                산점도·순위와 같은{" "}
+                {data.market.display_count ?? data.ranking.length}개 · 최근 12주
               </span>
             </div>
             <div
@@ -1543,7 +1624,31 @@ export function LunaBrainModel() {
                       </label>
                     ))}
                   </div>
-                  <div className="grid grid-cols-1 gap-3 min-[901px]:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 min-[901px]:grid-cols-2 min-[1201px]:grid-cols-4">
+                    <label className="block">
+                      <span
+                        className="mb-1 block text-[11.5px]"
+                        style={{ color: K.sub }}
+                      >
+                        순위 지능 하한선
+                      </span>
+                      <FieldInput
+                        className="w-full"
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={settings.rank_min_intelligence}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setSettings({
+                            ...settings,
+                            rank_min_intelligence: Number.isFinite(n)
+                              ? Math.min(60, Math.max(0, Math.round(n)))
+                              : 20
+                          });
+                        }}
+                      />
+                    </label>
                     <label className="block">
                       <span
                         className="mb-1 block text-[11.5px]"
