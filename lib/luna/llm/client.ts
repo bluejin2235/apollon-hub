@@ -11,6 +11,16 @@ import {
   type LunaUsageTokens,
   type ResolvedProviderModel
 } from "@/lib/luna/engine";
+import { lunaNotify } from "@/lib/luna/notify";
+
+/** C등급 GPT 실패 시 즉시 대체 */
+const C_TIER_FALLBACK: ResolvedProviderModel = {
+  provider: "anthropic",
+  model_id: "claude-haiku-4-5-20251001",
+  model_label: "Claude Haiku 4.5"
+};
+
+const LLM_FETCH_TIMEOUT_MS = 120_000;
 
 export type LlmToolDef = {
   name: string;
@@ -140,7 +150,8 @@ async function completeOpenAI(opts: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
     const detail = await response.text();
@@ -229,7 +240,8 @@ async function completeGoogle(opts: {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
     const detail = await response.text();
@@ -320,7 +332,7 @@ export async function llmComplete(opts: {
   };
 }
 
-/** 등급 조회 + 공급사 해석 + 완료 + 사용량 기록 */
+/** 등급 조회 + 공급사 해석 + 완료 + 사용량 기록. C등급은 실패 시 Haiku 폴백. */
 export async function lunaLlmComplete(
   admin: SupabaseClient,
   opts: {
@@ -334,22 +346,269 @@ export async function lunaLlmComplete(
 ): Promise<LlmCompleteResult> {
   const tierModel = await getTierModel(admin, opts.tier);
   const resolved = resolveProviderModel(tierModel);
-  const result = await llmComplete({
-    provider: resolved.provider,
-    model_id: resolved.model_id,
-    model_label: resolved.model_label,
-    system: opts.system,
-    user: opts.user,
-    maxTokens: opts.maxTokens,
-    tools: opts.tools
+
+  try {
+    const result = await llmComplete({
+      provider: resolved.provider,
+      model_id: resolved.model_id,
+      model_label: resolved.model_label,
+      system: opts.system,
+      user: opts.user,
+      maxTokens: opts.maxTokens,
+      tools: opts.tools
+    });
+    bumpUsageDaily(admin, {
+      tier: opts.tier,
+      model_id: result.model_id,
+      usage: result.usage,
+      feature: opts.feature
+    });
+    return result;
+  } catch (err) {
+    if (opts.tier !== "C" || !isRetryableLlmFailure(err)) {
+      throw err;
+    }
+    const reason = fallbackReasonLabel(err);
+    console.warn(
+      `[luna/llm] C등급 ${resolved.provider}/${resolved.model_id} 실패 → Haiku 폴백 (${reason})`,
+      err
+    );
+    void lunaNotify(
+      admin,
+      "prompt_change",
+      "C등급 폴백",
+      `C등급 GPT 호출 실패 — Haiku로 대체했어요 (사유: ${reason})`,
+      {
+        level: "warn",
+        meta: {
+          c_tier_fallback: true,
+          reason,
+          from_provider: resolved.provider,
+          from_model_id: resolved.model_id,
+          feature: opts.feature
+        }
+      }
+    );
+
+    const result = await llmComplete({
+      provider: C_TIER_FALLBACK.provider,
+      model_id: C_TIER_FALLBACK.model_id,
+      model_label: C_TIER_FALLBACK.model_label,
+      system: opts.system,
+      user: opts.user,
+      maxTokens: opts.maxTokens,
+      tools: opts.tools
+    });
+    bumpUsageDaily(admin, {
+      tier: opts.tier,
+      model_id: result.model_id,
+      usage: result.usage,
+      feature: opts.feature
+    });
+    return {
+      ...result,
+      model_label: `${result.model_label} (C폴백)`
+    };
+  }
+}
+
+function applyOpenAiTokenLimit(
+  body: Record<string, unknown>,
+  model: string,
+  maxTokens: number
+): void {
+  if (/^gpt-5|^o[1-4]|codex/i.test(model)) {
+    body.max_completion_tokens = maxTokens;
+  } else {
+    body.max_tokens = maxTokens;
+  }
+}
+
+async function* streamOpenAI(opts: {
+  model: string;
+  system?: string;
+  user: string;
+  maxTokens: number;
+}): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
+  const key = openaiKey();
+  if (!key) throw new Error("OpenAI API key is not configured");
+
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    stream: true,
+    stream_options: { include_usage: true },
+    messages: [
+      ...(opts.system?.trim()
+        ? [{ role: "system", content: opts.system.trim() }]
+        : []),
+      { role: "user", content: opts.user }
+    ]
+  };
+  applyOpenAiTokenLimit(body, opts.model, opts.maxTokens);
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
-  bumpUsageDaily(admin, {
-    tier: opts.tier,
-    model_id: result.model_id,
-    usage: result.usage,
-    feature: opts.feature
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI ${response.status}: ${detail.slice(0, 400)}`);
+  }
+  if (!response.body) throw new Error("OpenAI stream: empty body");
+
+  let usage: LunaUsageTokens | undefined;
+  for await (const data of readSseDataLines(response.body)) {
+    if (data === "[DONE]") break;
+    let json: {
+      choices?: Array<{ delta?: { content?: string | null } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    try {
+      json = JSON.parse(data) as typeof json;
+    } catch {
+      continue;
+    }
+    const delta = json.choices?.[0]?.delta?.content;
+    if (typeof delta === "string" && delta.length > 0) {
+      yield { delta };
+    }
+    if (json.usage) {
+      usage = {
+        input_tokens: json.usage.prompt_tokens ?? 0,
+        output_tokens: json.usage.completion_tokens ?? 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0
+      };
+    }
+  }
+  yield { delta: "", usage: usage ?? emptyUsage() };
+}
+
+async function* streamGoogle(opts: {
+  model: string;
+  system?: string;
+  user: string;
+  maxTokens: number;
+}): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
+  const key = googleKey();
+  if (!key) throw new Error("Gemini API key is not configured");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`;
+  const body: Record<string, unknown> = {
+    contents: [{ role: "user", parts: [{ text: opts.user }] }],
+    generationConfig: { maxOutputTokens: opts.maxTokens }
+  };
+  if (opts.system?.trim()) {
+    body.systemInstruction = { parts: [{ text: opts.system.trim() }] };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
-  return result;
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Gemini ${response.status}: ${detail.slice(0, 400)}`);
+  }
+  if (!response.body) throw new Error("Gemini stream: empty body");
+
+  let usage: LunaUsageTokens | undefined;
+  for await (const data of readSseDataLines(response.body)) {
+    let json: {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+      };
+    };
+    try {
+      json = JSON.parse(data) as typeof json;
+    } catch {
+      continue;
+    }
+    const parts = json.candidates?.[0]?.content?.parts ?? [];
+    for (const p of parts) {
+      if (typeof p.text === "string" && p.text.length > 0) {
+        yield { delta: p.text };
+      }
+    }
+    if (json.usageMetadata) {
+      usage = {
+        input_tokens: json.usageMetadata.promptTokenCount ?? 0,
+        output_tokens: json.usageMetadata.candidatesTokenCount ?? 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0
+      };
+    }
+  }
+  yield { delta: "", usage: usage ?? emptyUsage() };
+}
+
+/** SSE `data:` 줄을 한 줄씩 yield */
+async function* readSseDataLines(
+  body: ReadableStream<Uint8Array>
+): AsyncGenerator<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n/);
+      buffer = parts.pop() ?? "";
+      for (const line of parts) {
+        const trimmed = line.trimEnd();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trimStart();
+        if (payload) yield payload;
+      }
+    }
+    if (buffer.trim().startsWith("data:")) {
+      const payload = buffer.trim().slice(5).trimStart();
+      if (payload) yield payload;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export function isRetryableLlmFailure(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "TimeoutError") return true;
+  if (err instanceof Error) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") return true;
+    const msg = err.message;
+    if (/\b(429|503)\b/.test(msg)) return true;
+    if (/timeout|timed out|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/i.test(msg)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function fallbackReasonLabel(err: unknown): string {
+  if (err instanceof DOMException && err.name === "TimeoutError") {
+    return "타임아웃";
+  }
+  if (err instanceof Error) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return "타임아웃";
+    }
+    const m = err.message.match(/\b(429|503)\b/);
+    if (m) return m[1]!;
+    if (/timeout|timed out|ETIMEDOUT/i.test(err.message)) return "타임아웃";
+  }
+  return "오류";
 }
 
 export async function* llmStreamText(opts: {
@@ -383,16 +642,22 @@ export async function* llmStreamText(opts: {
     return;
   }
 
-  // OpenAI / Gemini: non-stream complete then emit once (도구·스트리밍 동시 요구가 없는 경로용)
-  const full = await llmComplete({
-    provider: opts.provider,
-    model_id: opts.model_id,
+  if (opts.provider === "openai") {
+    yield* streamOpenAI({
+      model: opts.model_id,
+      system: opts.system,
+      user: opts.user,
+      maxTokens
+    });
+    return;
+  }
+
+  yield* streamGoogle({
+    model: opts.model_id,
     system: opts.system,
     user: opts.user,
     maxTokens
   });
-  if (full.text) yield { delta: full.text };
-  yield { delta: "", usage: full.usage };
 }
 
 export { emptyUsage, anthropicClient };

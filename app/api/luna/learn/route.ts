@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
@@ -7,7 +6,7 @@ import {
   makeTurn,
   runDialogueTurn
 } from "@/lib/luna/candidates";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompt } from "@/lib/luna/prompts";
 import { trigramSimilarity } from "@/lib/luna/selfstudy";
 
@@ -51,12 +50,6 @@ const CATEGORY_ALIASES: Record<string, string> = {
 };
 
 type ActiveLearning = { id: string; content: string; category: string };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -293,13 +286,7 @@ export async function POST(request: NextRequest) {
       ? normalizeCategory(body.category)
       : null;
 
-  const client = getAnthropicClient();
-  if (!client) {
-    return NextResponse.json({ error: "Claude API key is not configured" }, { status: 500 });
-  }
-
   const similar = await findSimilarActive(admin, text);
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
   const systemPrompt =
     (await getPrompt(admin, "knowledge.direct")).trim() || DIRECT_FALLBACK;
 
@@ -312,15 +299,14 @@ export async function POST(request: NextRequest) {
 
   let parsed: Record<string, unknown> | null = null;
   try {
-    const res = await client.messages.create({
-      model: tierB.model_id,
-      max_tokens: 1024,
+    const res = await lunaLlmComplete(admin, {
+      tier: "C",
+      feature: "learn_capture",
       system: systemPrompt,
-      messages: [{ role: "user", content: userPayload }]
+      user: userPayload,
+      maxTokens: 1024
     });
-    const raw =
-      res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-    parsed = parseJsonObject(raw);
+    parsed = parseJsonObject(res.text.trim());
   } catch (err) {
     console.error("[luna/learn] model", err);
     return NextResponse.json({ error: "Learn model failed" }, { status: 500 });

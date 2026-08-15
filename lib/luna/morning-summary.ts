@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
+import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
+
+const USD_KRW_FALLBACK = 1350;
 
 export type MorningSummaryResult = {
   ok: boolean;
@@ -239,7 +242,147 @@ export async function collectMorningSummaryParts(
     }
   }
 
+  // 6) C등급 GPT 시험 운영 지표
+  const cTrial = await collectCTrialParts(admin, startIso, endIso);
+  parts.push(...cTrial);
+
   return { parts, dateLabel, startIso, endIso };
+}
+
+function kstDateOffset(days: number, now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  kst.setUTCDate(kst.getUTCDate() + days);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(kst.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+async function loadUsdKrw(admin: SupabaseClient): Promise<number> {
+  const { data } = await admin
+    .from("fx_daily_rates")
+    .select("usd_krw")
+    .not("usd_krw", "is", null)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (data?.usd_krw != null && Number.isFinite(Number(data.usd_krw))) {
+    return Number(data.usd_krw);
+  }
+  return USD_KRW_FALLBACK;
+}
+
+async function tierCostKrwForDate(
+  admin: SupabaseClient,
+  tier: string,
+  date: string,
+  usdKrw: number
+): Promise<number> {
+  const { data, error } = await admin
+    .from("luna_usage_daily")
+    .select("model_id, input_tokens, output_tokens")
+    .eq("tier", tier)
+    .eq("date", date);
+  if (error) {
+    console.error("[luna/morning] C cost", error);
+    return 0;
+  }
+  let total = 0;
+  for (const row of data ?? []) {
+    const tokens =
+      (Number(row.input_tokens) || 0) + (Number(row.output_tokens) || 0);
+    total += estimateKrwFromTokens(
+      String(row.model_id ?? ""),
+      tokens,
+      usdKrw,
+      null
+    ).krw;
+  }
+  return total;
+}
+
+async function collectCTrialParts(
+  admin: SupabaseClient,
+  startIso: string,
+  endIso: string
+): Promise<string[]> {
+  const { data: tierC } = await admin
+    .from("luna_engine_tiers")
+    .select("provider, model_id, model_label")
+    .eq("tier", "C")
+    .maybeSingle();
+
+  const isGptTrial =
+    String(tierC?.provider ?? "").toLowerCase() === "openai" ||
+    String(tierC?.model_id ?? "").includes("gpt-5.6-luna");
+  if (!isGptTrial) return [];
+
+  const parts: string[] = [];
+  const label = String(tierC?.model_label || tierC?.model_id || "GPT");
+
+  const selfstudy = await getSelfstudyStatus(admin);
+  const last = selfstudy.last_run;
+  const qaCount =
+    last && inWindow(last.finished_at, startIso, endIso)
+      ? Number(last.submitted) || 0
+      : 0;
+
+  const { count: candidateCount, error: candErr } = await admin
+    .from("luna_learnings")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "candidate")
+    .gte("created_at", startIso)
+    .lt("created_at", endIso);
+  if (candErr) console.error("[luna/morning] C candidates", candErr);
+  const submitted = candidateCount ?? 0;
+
+  const { data: lightRuns } = await admin
+    .from("luna_eval_runs")
+    .select("score_sum, score_max, passed, total, finished_at")
+    .eq("tier", "light")
+    .eq("status", "done")
+    .gte("finished_at", startIso)
+    .lt("finished_at", endIso)
+    .order("finished_at", { ascending: false })
+    .limit(1);
+  const lightLabel = lightRuns?.[0] ? runScoreLabel(lightRuns[0]) : null;
+
+  const { data: notifs, error: notifErr } = await admin
+    .from("hub_notifications")
+    .select("id, meta, created_at")
+    .eq("category", "luna_prompt")
+    .gte("created_at", startIso)
+    .lt("created_at", endIso);
+  if (notifErr) console.error("[luna/morning] C fallbacks", notifErr);
+  let fallbacks = 0;
+  for (const n of notifs ?? []) {
+    const meta =
+      n.meta && typeof n.meta === "object" && !Array.isArray(n.meta)
+        ? (n.meta as Record<string, unknown>)
+        : {};
+    if (meta.c_tier_fallback === true) fallbacks += 1;
+  }
+
+  const usdKrw = await loadUsdKrw(admin);
+  const yesterday = kstDateOffset(-1);
+  const dayBefore = kstDateOffset(-2);
+  const costY = await tierCostKrwForDate(admin, "C", yesterday, usdKrw);
+  const costPrev = await tierCostKrwForDate(admin, "C", dayBefore, usdKrw);
+  const costBit =
+    costPrev > 0
+      ? `₩${costY.toLocaleString("ko-KR")} (전날 ₩${costPrev.toLocaleString("ko-KR")})`
+      : `₩${costY.toLocaleString("ko-KR")}`;
+
+  parts.push(
+    withLink(
+      `C등급 ${label} 시험 — 자습 ${qaCount}문답 · 지식후보 ${submitted}건 · 폴백 ${fallbacks}회 · 비용 ${costBit}${
+        lightLabel ? ` · light ${lightLabel}` : ""
+      }`,
+      LUNA_LINKS.brainModel
+    )
+  );
+
+  return parts;
 }
 
 /**

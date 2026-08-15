@@ -1,7 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompt } from "@/lib/luna/prompts";
 
 export const runtime = "nodejs";
@@ -51,12 +50,6 @@ type QuestionRow = {
   status: string;
   created_at: string;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -194,15 +187,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const client = getAnthropicClient();
-  if (!client) {
-    return NextResponse.json(
-      { error: "Claude API key is not configured" },
-      { status: 500 }
-    );
-  }
-
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
   const systemPrompt =
     (await getPrompt(admin, "knowledge.direct")).trim() || DIRECT_FALLBACK;
 
@@ -219,15 +203,14 @@ export async function POST(request: NextRequest) {
   let message = "고맙습니다. 이제 이렇게 찾을게요.";
 
   try {
-    const res = await client.messages.create({
-      model: tierB.model_id,
-      max_tokens: 1024,
+    const res = await lunaLlmComplete(admin, {
+      tier: "C",
+      feature: "learn_capture",
       system: systemPrompt,
-      messages: [{ role: "user", content: userPayload }]
+      user: userPayload,
+      maxTokens: 1024
     });
-    const raw =
-      res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-    const parsed = parseJsonObject(raw);
+    const parsed = parseJsonObject(res.text.trim());
     if (parsed) {
       if (typeof parsed.content === "string" && parsed.content.trim()) {
         content = parsed.content.trim();

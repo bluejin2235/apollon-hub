@@ -21,6 +21,7 @@ const OFFICIAL_PRICES: Array<{ match: string; price: OfficialModelPrice }> = [
   { match: "claude-3-opus", price: { input: 15, output: 75, cache_read: 1.5 } },
   { match: "claude-3-haiku", price: { input: 0.25, output: 1.25, cache_read: 0.03 } },
   // OpenAI
+  { match: "gpt-5.6-luna", price: { input: 0.35, output: 0.75, cache_read: 0.035 } },
   { match: "gpt-5-mini", price: { input: 0.25, output: 2, cache_read: 0.025 } },
   { match: "gpt-5-nano", price: { input: 0.05, output: 0.4, cache_read: 0.005 } },
   { match: "gpt-5", price: { input: 1.25, output: 10, cache_read: 0.125 } },

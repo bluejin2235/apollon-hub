@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createCandidate,
@@ -6,7 +5,7 @@ import {
   parseJsonArray,
   parseJsonObject
 } from "@/lib/luna/candidates";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { lunaNotify } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { runLunaTurn } from "@/lib/luna/run-chat";
@@ -156,12 +155,6 @@ type GeneratedQuestion = {
   user_id: string;
   user_name: string;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 /** KST 하루 구간 → UTC ISO */
 export function kstDayBounds(now = new Date()): {
@@ -684,13 +677,11 @@ async function generateQuestions(
   admin: SupabaseClient,
   stuck: StuckMoment[]
 ): Promise<GeneratedQuestion[]> {
-  const client = getAnthropicClient();
-  if (!client || stuck.length === 0) return [];
+  if (stuck.length === 0) return [];
 
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.selfstudy)).trim() ||
     SELFSTUDY_FALLBACK;
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
 
   const evidenceBlock = stuck
     .map(
@@ -701,18 +692,14 @@ async function generateQuestions(
 
   let raw = "";
   try {
-    const res = await client.messages.create({
-      model: tierB.model_id,
-      max_tokens: 1024,
+    const res = await lunaLlmComplete(admin, {
+      tier: "C",
+      feature: "selfstudy",
       system,
-      messages: [
-        {
-          role: "user",
-          content: `아래는 오늘 대화에서 추출한 "막힌 순간"입니다. 이중에서만 스스로 공부할 질문 0~${MAX_PER_DAY}개를 만드세요. 임의 주제 금지. JSON 배열만.\n\n${evidenceBlock}`
-        }
-      ]
+      user: `아래는 오늘 대화에서 추출한 "막힌 순간"입니다. 이중에서만 스스로 공부할 질문 0~${MAX_PER_DAY}개를 만드세요. 임의 주제 금지. JSON 배열만.\n\n${evidenceBlock}`,
+      maxTokens: 1024
     });
-    raw = res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    raw = res.text.trim();
   } catch (err) {
     console.error("[luna/selfstudy] generateQuestions", err);
     return [];

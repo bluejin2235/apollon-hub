@@ -33,6 +33,11 @@ export const LUNA_MODEL_OPTIONS: LunaModelOption[] = [
   },
   {
     provider: "openai",
+    model_id: "gpt-5.6-luna",
+    model_label: "GPT-5.6 Luna"
+  },
+  {
+    provider: "openai",
     model_id: "gpt-5",
     model_label: "GPT-5"
   },

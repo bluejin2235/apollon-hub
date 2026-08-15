@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { getTierModel } from "@/lib/luna/engine";
+import { llmComplete, lunaLlmComplete } from "@/lib/luna/llm/client";
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
 import {
   runLunaTurn,
@@ -77,12 +77,6 @@ const AUTO_GRADE_SYSTEM = `당신은 LUNA 시험 채점관입니다.
   "reason": "한두 문장 사유"
 }
 설명 문장 없이 JSON만 출력하세요.`;
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -208,24 +202,6 @@ export async function autoGradeAnswer(
     admin?: SupabaseClient;
   }
 ): Promise<EvalGrade> {
-  const client = getAnthropicClient();
-  if (!client) {
-    return {
-      score: 0,
-      pass: false,
-      fail_kind: "must_pass",
-      reason: "채점 모델 API 키 없음",
-      must_pass_ok: false,
-      quality_ok: null
-    };
-  }
-
-  let modelId = "claude-haiku-4-5-20251001";
-  if (opts?.admin) {
-    const tierC = resolveAnthropicModel(await getTierModel(opts.admin, "C"));
-    modelId = tierC.model_id;
-  }
-
   const mustPass =
     (opts?.mustPass && opts.mustPass.trim()) ||
     (expectation && expectation.trim()) ||
@@ -234,29 +210,50 @@ export async function autoGradeAnswer(
     (opts?.quality && opts.quality.trim()) ||
     "(품질 기준 없음 — 필수만 통과하면 합격)";
 
-  const response = await client.messages.create({
-    model: modelId,
-    max_tokens: 512,
-    system: AUTO_GRADE_SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            question,
-            must_pass: mustPass,
-            quality,
-            answer
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
+  const userPayload = JSON.stringify(
+    {
+      question,
+      must_pass: mustPass,
+      quality,
+      answer
+    },
+    null,
+    2
+  );
 
-  const raw =
-    response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  let raw = "";
+  try {
+    if (opts?.admin) {
+      const res = await lunaLlmComplete(opts.admin, {
+        tier: "C",
+        feature: "eval_grade",
+        system: AUTO_GRADE_SYSTEM,
+        user: userPayload,
+        maxTokens: 512
+      });
+      raw = res.text.trim();
+    } else {
+      const res = await llmComplete({
+        provider: "anthropic",
+        model_id: "claude-haiku-4-5-20251001",
+        system: AUTO_GRADE_SYSTEM,
+        user: userPayload,
+        maxTokens: 512
+      });
+      raw = res.text.trim();
+    }
+  } catch (err) {
+    console.error("[luna/eval-exam] autoGrade", err);
+    return {
+      score: 0,
+      pass: false,
+      fail_kind: "must_pass",
+      reason: "채점 모델 호출 실패",
+      must_pass_ok: false,
+      quality_ok: null
+    };
+  }
+
   return normalizeGrade(parseJsonObject(raw));
 }
 
@@ -898,7 +895,7 @@ export async function runEvalExam(
       : opts.tier ?? null
   );
 
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
+  const tierC = await getTierModel(admin, "C");
   const now = new Date().toISOString();
   const note =
     opts.note ??
@@ -917,7 +914,7 @@ export async function runEvalExam(
     .insert({
       label: formatRunLabel(),
       note,
-      model_label: tierB.model_label,
+      model_label: tierC.model_label,
       total: active.length,
       passed: 0,
       failed: 0,
@@ -957,7 +954,7 @@ export async function runEvalExam(
             score: null,
             fail_kind: null,
             duration_ms: null,
-            model_label: tierB.model_label
+            model_label: tierC.model_label
           },
           { onConflict: "run_id,case_id" }
         );

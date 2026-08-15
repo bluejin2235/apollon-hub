@@ -1,6 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompt } from "@/lib/luna/prompts";
 
 const MERGE_FALLBACK = `당신은 팀 지식을 통합하는 편집자입니다.
@@ -32,12 +31,6 @@ export type KnowledgeMergeResult = {
   conflicts: number;
   archived: number;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -92,12 +85,6 @@ export async function runKnowledgeMerge(
     return { merged: 0, conflicts: 0, archived: 0 };
   }
 
-  const client = getAnthropicClient();
-  if (!client) {
-    throw new Error("Claude API key is not configured");
-  }
-
-  const tierC = resolveAnthropicModel(await getTierModel(admin, "C"));
   const mergePrompt =
     (await getPrompt(admin, "knowledge.merge")).trim() || MERGE_FALLBACK;
 
@@ -108,20 +95,15 @@ export async function runKnowledgeMerge(
     author_id: r.author_id
   }));
 
-  const response = await client.messages.create({
-    model: tierC.model_id,
-    max_tokens: 4096,
+  const response = await lunaLlmComplete(admin, {
+    tier: "C",
+    feature: "consolidate",
     system: mergePrompt,
-    messages: [
-      {
-        role: "user",
-        content: `다음 후보 지식을 통합하세요.\n\n${JSON.stringify(inputList, null, 2)}`
-      }
-    ]
+    user: `다음 후보 지식을 통합하세요.\n\n${JSON.stringify(inputList, null, 2)}`,
+    maxTokens: 4096
   });
 
-  const rawText =
-    response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  const rawText = response.text.trim();
   const parsed = parseJsonObject(rawText);
   if (!parsed) {
     throw new Error("Failed to parse merge model response");
