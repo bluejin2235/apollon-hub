@@ -34,6 +34,10 @@ import {
   defaultHistoryVisibleSlugs
 } from "@/lib/luna/model-display-set";
 import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
+import {
+  findInspectScheduleConflict,
+  nextInspectAt
+} from "@/lib/luna/model-inspect-schedule";
 import type { LunaCostMode } from "@/lib/luna/brain-models";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -593,7 +597,8 @@ export async function GET(request: NextRequest) {
       marketRows,
       orderedTiers.map((t) => ({
         tier: String(t.tier),
-        model_id: String(t.model_id)
+        model_id: String(t.model_id),
+        model_label: String(t.model_label ?? t.model_id)
       })),
       {
         mode: settings.mode,
@@ -643,10 +648,18 @@ export async function PATCH(request: NextRequest) {
 
   if (body.settings) {
     const settings = normalizeModelCostSettings(body.settings);
+    const conflict = findInspectScheduleConflict(settings.inspect_schedule);
+    if (conflict) {
+      return NextResponse.json({ error: conflict }, { status: 400 });
+    }
+    const next = nextInspectAt(settings.inspect_schedule);
     await admin.from("luna_settings").upsert(
       {
         key: LUNA_MODEL_COST_SETTINGS_KEY,
-        value: settings,
+        value: {
+          ...settings,
+          next_inspect_at: next ? next.toISOString() : null
+        },
         updated_at: new Date().toISOString()
       },
       { onConflict: "key" }
@@ -806,13 +819,14 @@ export async function POST(request: NextRequest) {
     if (body.action === "preview_mode") {
       const { data: tiers } = await admin
         .from("luna_engine_tiers")
-        .select("tier, model_id");
+        .select("tier, model_id, model_label");
       const preview = buildModePreview(
         mode,
         marketRows,
         (tiers ?? []).map((t) => ({
           tier: String(t.tier),
-          model_id: String(t.model_id)
+          model_id: String(t.model_id),
+          model_label: String(t.model_label ?? t.model_id)
         })),
         usage,
         usdKrw,

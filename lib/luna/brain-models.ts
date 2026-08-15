@@ -1,3 +1,9 @@
+import {
+  INSPECT_SCHEDULE_DEFAULT,
+  normalizeInspectSchedule,
+  type InspectSchedule
+} from "@/lib/luna/model-inspect-schedule";
+
 export type LunaTier = "S" | "A" | "B" | "C";
 
 export type LunaModelOption = {
@@ -177,6 +183,8 @@ export type LunaModelCostSettings = {
   rank_min_intelligence: number;
   /** 등급 선정 지능 하한 */
   tier_min_intelligence: LunaTierMinIntelligence;
+  /** 자동 점검 cron 주기 */
+  inspect_schedule: InspectSchedule;
 };
 
 export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
@@ -188,7 +196,8 @@ export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
   last_market_error: null,
   mode: "balanced",
   rank_min_intelligence: 20,
-  tier_min_intelligence: { ...LUNA_TIER_MIN_INTELLIGENCE_DEFAULT }
+  tier_min_intelligence: { ...LUNA_TIER_MIN_INTELLIGENCE_DEFAULT },
+  inspect_schedule: { ...INSPECT_SCHEDULE_DEFAULT }
 };
 
 export const LUNA_COST_MODE_META: Record<
@@ -267,7 +276,8 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
     })(),
     tier_min_intelligence: normalizeTierMinIntelligence(
       value.tier_min_intelligence
-    )
+    ),
+    inspect_schedule: normalizeInspectSchedule(value.inspect_schedule)
   };
 }
 

@@ -142,7 +142,18 @@ export function findMarketRow(
   modelId: string
 ): MarketModelRow | null {
   if (!modelId) return null;
-  return rows.find((r) => slugMatchesModel(r.model_slug, modelId)) ?? null;
+  const idNorm = modelId.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // 1) 정규화 exact
+  const exact = rows.find(
+    (r) => r.model_slug.toLowerCase().replace(/[^a-z0-9]/g, "") === idNorm
+  );
+  if (exact) return exact;
+  // 2) slugMatches — 가장 긴 slug 우선 (짧은 부분일치로 타 모델에 붙는 것 방지)
+  const matches = rows.filter((r) => slugMatchesModel(r.model_slug, modelId));
+  if (matches.length === 0) return null;
+  return [...matches].sort(
+    (a, b) => b.model_slug.length - a.model_slug.length
+  )[0]!;
 }
 
 function fmtNum(n: number | null | undefined, digits = 2): string {
@@ -381,6 +392,7 @@ export function validateModeCandidate(
 export type ModePickPreviewLine = {
   tier: LunaTier;
   from_model_id: string;
+  from_model_label: string;
   to_model_id: string | null;
   changed: boolean;
   reason: string;
@@ -441,7 +453,7 @@ export function estimateMonthlyKrwForPicks(
 export function buildModePreview(
   mode: LunaCostMode,
   market: MarketModelRow[],
-  tiers: Array<{ tier: string; model_id: string }>,
+  tiers: Array<{ tier: string; model_id: string; model_label?: string }>,
   usage: Array<{ tier: string; input_tokens: number; output_tokens: number }>,
   usdKrw: number,
   daysCovered = 28,
@@ -450,9 +462,16 @@ export function buildModePreview(
   mins?: LunaTierMinIntelligence | null
 ): ModePickPreview {
   const currentByTier = {} as Record<LunaTier, string>;
+  const labelByTier = {} as Record<LunaTier, string>;
   for (const t of LUNA_TIER_ORDER) {
-    currentByTier[t] =
-      String(tiers.find((x) => x.tier === t)?.model_id ?? "") || "";
+    const row = tiers.find((x) => x.tier === t);
+    currentByTier[t] = String(row?.model_id ?? "") || "";
+    labelByTier[t] =
+      (typeof row?.model_label === "string" && row.model_label.trim()
+        ? row.model_label.trim()
+        : null) ||
+      currentByTier[t] ||
+      "—";
   }
 
   const picks = {} as Record<LunaTier, MarketModelRow | null>;
@@ -507,6 +526,7 @@ export function buildModePreview(
     lines.push({
       tier,
       from_model_id: currentId || "—",
+      from_model_label: labelByTier[tier],
       to_model_id: changed && to ? to.model_slug : currentId || null,
       changed,
       reason:
@@ -760,7 +780,8 @@ export async function applyCostMode(
     market,
     (tiers ?? []).map((t) => ({
       tier: String(t.tier),
-      model_id: String(t.model_id)
+      model_id: String(t.model_id),
+      model_label: String(t.model_label ?? t.model_id)
     })),
     usage,
     usdKrw,
@@ -965,6 +986,7 @@ function sortPoolForMode(
 }
 
 function formatSwapSummaryLine(
+  fromLabel: string,
   from: MarketModelRow | null,
   to: MarketModelRow,
   modeNote: string
@@ -1000,7 +1022,7 @@ function formatSwapSummaryLine(
     ft != null ? `${fmtNum(ft, 2)}` : "—"
   }→${tt != null ? `${fmtNum(tt, 2)}` : "—"}초`;
 
-  return `${intelPart} · ${pricePart} · ${ttftPart} — ${modeNote}`;
+  return `현재 ${fromLabel} → ${to.model_slug} · ${intelPart} · ${pricePart} · ${ttftPart} — ${modeNote}`;
 }
 
 function candidateShort(row: MarketModelRow): string {
@@ -1030,7 +1052,7 @@ export type TierExplanation = {
 
 export function explainTierSelections(
   market: MarketModelRow[],
-  tiers: Array<{ tier: string; model_id: string }>,
+  tiers: Array<{ tier: string; model_id: string; model_label?: string }>,
   opts: {
     mode: LunaCostMode;
     auto_swap: boolean;
@@ -1047,8 +1069,15 @@ export function explainTierSelections(
   const out: TierExplanation[] = [];
 
   for (const tier of LUNA_TIER_ORDER) {
-    const currentId =
-      String(tiers.find((x) => x.tier === tier)?.model_id ?? "") || "";
+    const tierRow = tiers.find((x) => x.tier === tier);
+    const currentId = String(tierRow?.model_id ?? "") || "";
+    // 라벨은 반드시 해당 등급 행에서 — 배열 인덱스/다른 등급 model_id 로 조회하지 않음
+    const fromLabel =
+      (typeof tierRow?.model_label === "string" && tierRow.model_label.trim()
+        ? tierRow.model_label.trim()
+        : null) ||
+      currentId ||
+      "—";
     const from = findMarketRow(market, currentId);
     const pick = pickForTierMode(tier, market, mode, catalog, mins);
     const rule = modePickRuleLabel(tier, mode, mins);
@@ -1133,8 +1162,8 @@ export function explainTierSelections(
         (r) => !slugMatchesModel(r.model_slug, pick.model_slug)
       );
       summary = second
-        ? `현재가 최적입니다. 2위 후보 ${candidateShort(second)}보다 낫습니다`
-        : "현재가 최적입니다";
+        ? `현재 ${fromLabel}이(가) 최적입니다. 2위 후보 ${candidateShort(second)}보다 낫습니다`
+        : `현재 ${fromLabel}이(가) 최적입니다`;
     } else {
       const check = validateModeCandidate(tier, pick, {
         mode,
@@ -1163,7 +1192,7 @@ export function explainTierSelections(
         show_apply = true;
         summary = `자동 교체가 꺼져 있어요. 후보: ${candidateShort(pick)}`;
       } else {
-        summary = formatSwapSummaryLine(from, pick, rule);
+        summary = formatSwapSummaryLine(fromLabel, from, pick, rule);
         candidate_slug = apiModelIdForRow(pick, catalog);
         candidate_provider = (pick.provider ?? "").toLowerCase();
       }

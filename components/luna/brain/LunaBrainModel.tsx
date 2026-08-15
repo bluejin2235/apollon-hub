@@ -15,6 +15,13 @@ import type {
   LunaUsageAlerts
 } from "@/lib/luna/brain-models";
 import { LUNA_COST_MODE_META } from "@/lib/luna/brain-models";
+import {
+  findInspectScheduleConflict,
+  formatNextInspectLabel,
+  formatTimeHm,
+  weekdayLabel,
+  type InspectPeriod
+} from "@/lib/luna/model-inspect-schedule";
 import { K } from "@/lib/luna/knowledge-format";
 
 type TierView = {
@@ -70,6 +77,7 @@ type ModePreview = {
   lines: Array<{
     tier: string;
     from_model_id: string;
+    from_model_label?: string;
     to_model_id: string | null;
     changed: boolean;
     reason: string;
@@ -311,6 +319,11 @@ export function LunaBrainModel() {
 
   async function saveSettings() {
     if (!settings || !alerts) return;
+    const conflict = findInspectScheduleConflict(settings.inspect_schedule);
+    if (conflict) {
+      setNotice(conflict);
+      return;
+    }
     setBusy(true);
     setNotice("");
     try {
@@ -676,8 +689,8 @@ export function LunaBrainModel() {
                         className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                       >
                         <TierBadge tier={line.tier} size={18} />
-                        <span className="font-mono text-[12px]">
-                          {line.from_model_id}
+                        <span className="text-[12px]">
+                          {line.from_model_label || line.from_model_id}
                         </span>
                         <span style={{ color: K.faint }}>→</span>
                         {line.changed ? (
@@ -1758,6 +1771,122 @@ export function LunaBrainModel() {
             >
               {settings && alerts ? (
                 <>
+                  <div className="mb-4">
+                    <div
+                      className="mb-1.5 text-[12px] font-semibold"
+                      style={{ color: K.ink }}
+                    >
+                      점검 주기
+                    </div>
+                    <div
+                      className="inline-flex overflow-hidden rounded-xl border"
+                      style={{ borderColor: K.line }}
+                    >
+                      {(
+                        [
+                          ["daily", "매일"],
+                          ["weekly", "주 1회"],
+                          ["off", "사용 안 함"]
+                        ] as const
+                      ).map(([key, label]) => {
+                        const active =
+                          settings.inspect_schedule.period === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={busy}
+                            className="cursor-pointer px-3.5 py-2 text-[12.5px] font-semibold"
+                            style={{
+                              background: active ? K.luna : "transparent",
+                              color: active ? "#fff" : K.ink
+                            }}
+                            onClick={() =>
+                              setSettings({
+                                ...settings,
+                                inspect_schedule: {
+                                  ...settings.inspect_schedule,
+                                  period: key as InspectPeriod
+                                }
+                              })
+                            }
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {settings.inspect_schedule.period !== "off" ? (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[12.5px]">
+                        {settings.inspect_schedule.period === "weekly" ? (
+                          <label className="flex items-center gap-1.5">
+                            <span style={{ color: K.sub }}>요일</span>
+                            <select
+                              className="rounded-lg border bg-white px-2 py-1"
+                              style={{ borderColor: K.line }}
+                              value={settings.inspect_schedule.weekday}
+                              disabled={busy}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  inspect_schedule: {
+                                    ...settings.inspect_schedule,
+                                    weekday: Number(e.target.value)
+                                  }
+                                })
+                              }
+                            >
+                              {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                                <option key={d} value={d}>
+                                  {weekdayLabel(d)}요일
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        <label className="flex items-center gap-1.5">
+                          <span style={{ color: K.sub }}>시각</span>
+                          <input
+                            type="time"
+                            className="rounded-lg border bg-white px-2 py-1"
+                            style={{ borderColor: K.line }}
+                            value={formatTimeHm(
+                              settings.inspect_schedule.hour,
+                              settings.inspect_schedule.minute
+                            )}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const [h, m] = e.target.value
+                                .split(":")
+                                .map((x) => Number(x));
+                              setSettings({
+                                ...settings,
+                                inspect_schedule: {
+                                  ...settings.inspect_schedule,
+                                  hour: Number.isFinite(h) ? h : 4,
+                                  minute: Number.isFinite(m) ? m : 20
+                                }
+                              });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                    <p
+                      className="mt-2 text-[12px]"
+                      style={{ color: K.sub }}
+                    >
+                      {formatNextInspectLabel(settings.inspect_schedule)}
+                    </p>
+                    {findInspectScheduleConflict(settings.inspect_schedule) ? (
+                      <p
+                        className="mt-1 text-[12px]"
+                        style={{ color: "#A32D2D" }}
+                      >
+                        {findInspectScheduleConflict(settings.inspect_schedule)}
+                      </p>
+                    ) : null}
+                  </div>
                   <div
                     className="mb-3.5 space-y-1 text-[12.5px] leading-[2.1]"
                   >
@@ -1765,7 +1894,7 @@ export function LunaBrainModel() {
                       [
                         [
                           "auto_swap",
-                          "주 1회 자동 점검 후 등급별 모델을 자동 교체하고 리포트로 알림"
+                          "자동 점검 후 등급별 모델을 자동 교체하고 리포트로 알림"
                         ],
                         [
                           "revert_on_drop",

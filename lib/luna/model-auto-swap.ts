@@ -28,6 +28,7 @@ import {
   valuePerCost
 } from "@/lib/luna/model-modes";
 import { fetchProviderModelCatalog } from "@/lib/luna/model-api-ids";
+import { nextInspectAt } from "@/lib/luna/model-inspect-schedule";
 
 export {
   blendedUsd,
@@ -120,11 +121,11 @@ export async function runModelInspect(
 
   if (!market.ok && rows.length === 0) {
     const now = new Date();
-    const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const next = nextInspectAt(settings.inspect_schedule, now);
     await saveSettings(admin, {
       ...settings,
       last_inspect_at: now.toISOString(),
-      next_inspect_at: next.toISOString(),
+      next_inspect_at: next ? next.toISOString() : null,
       last_market_error: market.message
     });
     return {
@@ -310,11 +311,11 @@ export async function runModelInspect(
   }
 
   const now = new Date();
-  const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const next = nextInspectAt(settings.inspect_schedule, now);
   await saveSettings(admin, {
     ...settings,
     last_inspect_at: now.toISOString(),
-    next_inspect_at: next.toISOString(),
+    next_inspect_at: next ? next.toISOString() : null,
     last_market_error: market.ok ? null : market.message
   });
 
