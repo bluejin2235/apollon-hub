@@ -1796,7 +1796,7 @@ export function LunaBrainModel() {
                       </label>
                     ))}
                   </div>
-                  <div className="grid grid-cols-1 gap-3 min-[901px]:grid-cols-2 min-[1201px]:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 min-[701px]:grid-cols-2 min-[1101px]:grid-cols-4">
                     <label className="block">
                       <span
                         className="mb-1 block text-[11.5px]"
@@ -1817,6 +1817,87 @@ export function LunaBrainModel() {
                             rank_min_intelligence: Number.isFinite(n)
                               ? Math.min(60, Math.max(0, Math.round(n)))
                               : 20
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span
+                        className="mb-1 block text-[11.5px]"
+                        style={{ color: K.sub }}
+                      >
+                        A 지능 상위 %
+                      </span>
+                      <FieldInput
+                        className="w-full"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={settings.tier_min_intelligence.A_percentile}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setSettings({
+                            ...settings,
+                            tier_min_intelligence: {
+                              ...settings.tier_min_intelligence,
+                              A_percentile: Number.isFinite(n)
+                                ? Math.min(100, Math.max(1, Math.round(n)))
+                                : 30
+                            }
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span
+                        className="mb-1 block text-[11.5px]"
+                        style={{ color: K.sub }}
+                      >
+                        B 지능 하한
+                      </span>
+                      <FieldInput
+                        className="w-full"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={settings.tier_min_intelligence.B}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setSettings({
+                            ...settings,
+                            tier_min_intelligence: {
+                              ...settings.tier_min_intelligence,
+                              B: Number.isFinite(n)
+                                ? Math.min(100, Math.max(0, Math.round(n)))
+                                : 20
+                            }
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span
+                        className="mb-1 block text-[11.5px]"
+                        style={{ color: K.sub }}
+                      >
+                        C 지능 하한 (가성비)
+                      </span>
+                      <FieldInput
+                        className="w-full"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={settings.tier_min_intelligence.C}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setSettings({
+                            ...settings,
+                            tier_min_intelligence: {
+                              ...settings.tier_min_intelligence,
+                              C: Number.isFinite(n)
+                                ? Math.min(100, Math.max(0, Math.round(n)))
+                                : 40
+                            }
                           });
                         }}
                       />

@@ -98,7 +98,10 @@ export function resolveApiModelId(
   }
 
   const set = p === "openai" ? catalog.openai : p === "google" ? catalog.google : null;
-  if (!set) return candidates[0] ?? null;
+  if (!set || set.size === 0) {
+    // 카탈로그 비어 있으면(키 없음·조회 실패) 매핑/휴리스틱 허용
+    return candidates[0] ?? null;
+  }
 
   for (const id of candidates) {
     if (set.has(id)) return id;

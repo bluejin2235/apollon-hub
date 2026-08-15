@@ -145,6 +145,19 @@ export const LUNA_USAGE_ALERTS_DEFAULT: LunaUsageAlerts = {
 
 export type LunaCostMode = "cheap" | "balanced" | "performance";
 
+/** 등급별 지능 하한 (A는 상위 백분위, B·C는 절대값) */
+export type LunaTierMinIntelligence = {
+  A_percentile: number;
+  B: number;
+  C: number;
+};
+
+export const LUNA_TIER_MIN_INTELLIGENCE_DEFAULT: LunaTierMinIntelligence = {
+  A_percentile: 30,
+  B: 20,
+  C: 40
+};
+
 export type LunaModelCostSettings = {
   auto_swap: boolean;
   revert_on_drop: boolean;
@@ -157,6 +170,8 @@ export type LunaModelCostSettings = {
   mode: LunaCostMode;
   /** 순위·산점도 지능 하한 (우리 사용 모델은 제외) */
   rank_min_intelligence: number;
+  /** 등급 선정 지능 하한 */
+  tier_min_intelligence: LunaTierMinIntelligence;
 };
 
 export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
@@ -167,7 +182,8 @@ export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
   next_inspect_at: null,
   last_market_error: null,
   mode: "balanced",
-  rank_min_intelligence: 20
+  rank_min_intelligence: 20,
+  tier_min_intelligence: { ...LUNA_TIER_MIN_INTELLIGENCE_DEFAULT }
 };
 
 export const LUNA_COST_MODE_META: Record<
@@ -243,7 +259,34 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
         return LUNA_MODEL_COST_SETTINGS_DEFAULT.rank_min_intelligence;
       }
       return Math.min(60, Math.max(0, Math.round(n)));
-    })()
+    })(),
+    tier_min_intelligence: normalizeTierMinIntelligence(
+      value.tier_min_intelligence
+    )
+  };
+}
+
+export function normalizeTierMinIntelligence(
+  raw: unknown
+): LunaTierMinIntelligence {
+  const value =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const clamp = (n: unknown, min: number, max: number, fallback: number) => {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(v)));
+  };
+  return {
+    A_percentile: clamp(
+      value.A_percentile,
+      1,
+      100,
+      LUNA_TIER_MIN_INTELLIGENCE_DEFAULT.A_percentile
+    ),
+    B: clamp(value.B, 0, 100, LUNA_TIER_MIN_INTELLIGENCE_DEFAULT.B),
+    C: clamp(value.C, 0, 100, LUNA_TIER_MIN_INTELLIGENCE_DEFAULT.C)
   };
 }
 

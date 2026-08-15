@@ -600,7 +600,8 @@ export async function GET(request: NextRequest) {
         auto_swap: settings.auto_swap,
         protect_s: settings.protect_s,
         monthlyLimitKrw: alerts.monthly_limit,
-        catalog
+        catalog,
+        mins: settings.tier_min_intelligence
       }
     ),
     model_options: LUNA_MODEL_OPTIONS
@@ -792,6 +793,16 @@ export async function POST(request: NextRequest) {
 
     const catalog = await fetchProviderModelCatalog();
 
+    const { data: settingsRowForMode } = await admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", LUNA_MODEL_COST_SETTINGS_KEY)
+      .maybeSingle();
+    const modeSettings = normalizeModelCostSettings(
+      settingsRowForMode?.value ?? null
+    );
+    const mins = modeSettings.tier_min_intelligence;
+
     if (body.action === "preview_mode") {
       const { data: tiers } = await admin
         .from("luna_engine_tiers")
@@ -807,7 +818,8 @@ export async function POST(request: NextRequest) {
         usdKrw,
         28,
         monthlyLimit,
-        catalog
+        catalog,
+        mins
       );
       return NextResponse.json({ ok: true, preview });
     }
@@ -819,19 +831,14 @@ export async function POST(request: NextRequest) {
       usdKrw,
       usage,
       monthlyLimit,
-      catalog
+      catalog,
+      mins
     );
 
-    const { data: settingsRow } = await admin
-      .from("luna_settings")
-      .select("value")
-      .eq("key", LUNA_MODEL_COST_SETTINGS_KEY)
-      .maybeSingle();
-    const settings = normalizeModelCostSettings(settingsRow?.value ?? null);
     await admin.from("luna_settings").upsert(
       {
         key: LUNA_MODEL_COST_SETTINGS_KEY,
-        value: { ...settings, mode },
+        value: { ...modeSettings, mode },
         updated_at: new Date().toISOString()
       },
       { onConflict: "key" }

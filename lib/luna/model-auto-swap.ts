@@ -186,7 +186,13 @@ export async function runModelInspect(
     if (!current) continue;
 
     const fromRow = findMarketRow(rows, String(current.model_id));
-    const candidate = pickForTierMode(tier, rows, mode, catalog);
+    const candidate = pickForTierMode(
+      tier,
+      rows,
+      mode,
+      catalog,
+      settings.tier_min_intelligence
+    );
     if (!candidate) {
       console.info(`[luna/model-inspect] ${tier}: 후보 없음 (${mode})`);
       continue;
@@ -213,7 +219,8 @@ export async function runModelInspect(
       mode,
       from: fromRow,
       monthlyToKrw: monthlyTo,
-      monthlyLimitKrw: monthlyLimit
+      monthlyLimitKrw: monthlyLimit,
+      mins: settings.tier_min_intelligence
     });
     if (!check.ok) {
       console.info(
