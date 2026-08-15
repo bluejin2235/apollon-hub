@@ -41,16 +41,11 @@ function anthropicClient(): Anthropic | null {
 }
 
 function openaiKey(): string | null {
-  return process.env.OPENAI_API_KEY?.trim() || null;
+  return process.env.LUNA_OPENAI_API_KEY?.trim() || null;
 }
 
 function googleKey(): string | null {
-  return (
-    process.env.GOOGLE_API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim() ||
-    process.env.hubtrendchat_geminai?.trim() ||
-    null
-  );
+  return process.env.LUNA_GOOGLE_API_KEY?.trim() || null;
 }
 
 async function completeAnthropic(opts: {

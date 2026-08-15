@@ -53,6 +53,7 @@ type Payload = {
   market: {
     fetched_at: string | null;
     missing_key: boolean;
+    error: string | null;
     rows: MarketRow[];
   };
   ranking: Array<{
@@ -82,6 +83,7 @@ type Payload = {
     week_calls: number;
     week_tokens: number;
     month_estimate: number;
+    pricing_source: "official" | "market";
     by_feature: Array<{
       tier: string;
       feature: string;
@@ -210,14 +212,19 @@ export function LunaBrainModel() {
     setBusy(true);
     setNotice("");
     try {
-      const res = await brainFetch<{ message: string }>(
-        "/api/luna/brain/model-cost",
-        { method: "POST", body: JSON.stringify({ action: "inspect" }) }
-      );
-      setNotice(res.message);
+      const res = await brainFetch<{
+        message: string;
+        market_error?: string | null;
+        ok?: boolean;
+      }>("/api/luna/brain/model-cost", {
+        method: "POST",
+        body: JSON.stringify({ action: "inspect" })
+      });
+      setNotice(res.market_error || res.message);
       await load(range);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "점검 실패");
+      await load(range);
     } finally {
       setBusy(false);
     }
@@ -377,9 +384,14 @@ export function LunaBrainModel() {
               className="rounded-xl border px-[18px] py-4"
               style={{ borderColor: K.line, background: K.panel }}
             >
-              {data.market.missing_key ? (
+              {data.market.error || data.market.missing_key ? (
                 <p className="py-10 text-center text-[13px]" style={{ color: K.sub }}>
-                  Artificial Analysis API 키가 필요합니다
+                  {data.market.error ??
+                    "Artificial Analysis API 키가 필요합니다"}
+                </p>
+              ) : data.market.rows.length === 0 ? (
+                <p className="py-10 text-center text-[13px]" style={{ color: K.sub }}>
+                  시장 데이터가 없습니다. [지금 점검]을 눌러 주세요.
                 </p>
               ) : (
                 <>
@@ -390,7 +402,7 @@ export function LunaBrainModel() {
                     {(
                       [
                         ["intel", "종합 지능"],
-                        ["multi", "다국어"],
+                        ["multi", "코딩"],
                         ["agent", "에이전트"]
                       ] as const
                     ).map(([k, label]) => (
@@ -523,15 +535,21 @@ export function LunaBrainModel() {
               className="overflow-hidden rounded-xl border"
               style={{ borderColor: K.line, background: K.panel }}
             >
-              {data.market.missing_key && data.ranking.length === 0 ? (
+              {data.market.error ||
+              (data.market.missing_key && data.ranking.length === 0) ? (
                 <p className="px-4 py-8 text-center text-[13px]" style={{ color: K.sub }}>
-                  Artificial Analysis API 키가 필요합니다
+                  {data.market.error ??
+                    "Artificial Analysis API 키가 필요합니다"}
+                </p>
+              ) : data.ranking.length === 0 ? (
+                <p className="px-4 py-8 text-center text-[13px]" style={{ color: K.sub }}>
+                  순위 데이터가 없습니다. [지금 점검]을 눌러 주세요.
                 </p>
               ) : (
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {["", "모델", "종합", "다국어", "에이전트", "100만 토큰", "가성비", "변동"].map(
+                      {["", "모델", "종합", "코딩", "에이전트", "100만 토큰", "가성비", "변동"].map(
                         (h, i) => (
                           <th
                             key={h || "r"}
@@ -628,9 +646,11 @@ export function LunaBrainModel() {
             >
               {data.history.length === 0 ? (
                 <p className="py-8 text-center text-[13px]" style={{ color: K.sub }}>
-                  {data.market.missing_key
-                    ? "Artificial Analysis API 키가 필요합니다"
-                    : "주간 스냅샷이 아직 없습니다"}
+                  {data.market.error
+                    ? data.market.error
+                    : data.market.missing_key
+                      ? "Artificial Analysis API 키가 필요합니다"
+                      : "주간 스냅샷이 아직 없습니다"}
                 </p>
               ) : (
                 <PriceSparkline history={data.history} />
@@ -795,6 +815,11 @@ export function LunaBrainModel() {
                 </tbody>
               </table>
             </div>
+            {data.usage.pricing_source === "official" ? (
+              <p className="mt-2 text-[11.5px]" style={{ color: K.faint }}>
+                공식 단가 기준
+              </p>
+            ) : null}
           </section>
 
           {/* 6. 교체 이력 */}

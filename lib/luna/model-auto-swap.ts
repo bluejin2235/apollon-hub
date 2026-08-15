@@ -133,16 +133,35 @@ export async function runModelInspect(
   message: string;
   swapped: Array<{ tier: LunaTier; to: string; savings: number | null }>;
   market_count: number;
+  market_error: string | null;
 }> {
   const settings = await getSettings(admin);
   const market = await fetchAndCacheMarketModels(admin);
-  if (!market.ok && market.count === 0) {
-    // 캐시된 스냅샷으로라도 진행
+  if (!market.ok) {
     console.warn("[luna/model-inspect] fetch", market.message);
   }
 
   const { rows } = await loadLatestMarketSnapshot(admin);
   const usdKrw = opts?.usdKrw && opts.usdKrw > 0 ? opts.usdKrw : 1380;
+
+  // 시장 조회 실패 + 캐시도 없으면 교체 없이 사유만 반환
+  if (!market.ok && rows.length === 0) {
+    const now = new Date();
+    const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    await saveSettings(admin, {
+      ...settings,
+      last_inspect_at: now.toISOString(),
+      next_inspect_at: next.toISOString(),
+      last_market_error: market.message
+    });
+    return {
+      ok: false,
+      message: market.message,
+      swapped: [],
+      market_count: 0,
+      market_error: market.message
+    };
+  }
 
   const { data: tiers } = await admin
     .from("luna_engine_tiers")
@@ -236,18 +255,21 @@ export async function runModelInspect(
   await saveSettings(admin, {
     ...settings,
     last_inspect_at: now.toISOString(),
-    next_inspect_at: next.toISOString()
+    next_inspect_at: next.toISOString(),
+    last_market_error: market.ok ? null : market.message
   });
 
+  const marketError = market.ok ? null : market.message;
   return {
-    ok: true,
+    ok: market.ok || rows.length > 0,
     message:
       swapped.length > 0
         ? `${swapped.length}개 등급 교체`
         : market.ok
-          ? "점검 완료 · 교체 없음"
-          : `점검 완료(시장: ${market.message}) · 교체 없음`,
+          ? `점검 완료 · 교체 없음 · ${market.message}`
+          : `${market.message} (캐시 ${rows.length}건으로 점검)`,
     swapped,
-    market_count: rows.length || market.count
+    market_count: rows.length || market.count,
+    market_error: marketError
   };
 }

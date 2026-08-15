@@ -19,6 +19,7 @@ import {
   loadMarketHistory,
   type MarketModelRow
 } from "@/lib/luna/model-market";
+import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -30,9 +31,24 @@ async function loadFx(admin: SupabaseClient): Promise<{
   usd_krw: number;
   date: string | null;
 }> {
+  // 전날 우선, 없으면 가장 최근 usd_krw
+  const yesterday = kstDate(-1);
+  const { data: yRow } = await admin
+    .from("fx_daily_rates")
+    .select("date, usd_krw")
+    .eq("date", yesterday)
+    .maybeSingle();
+  if (yRow?.usd_krw != null && Number.isFinite(Number(yRow.usd_krw))) {
+    return {
+      usd_krw: Number(yRow.usd_krw),
+      date: typeof yRow.date === "string" ? yRow.date : yesterday
+    };
+  }
+
   const { data, error } = await admin
     .from("fx_daily_rates")
     .select("date, usd_krw")
+    .not("usd_krw", "is", null)
     .order("date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -97,7 +113,9 @@ export async function GET(request: NextRequest) {
         : 7;
 
   const connected = providerConnectedFlags();
-  const aaKey = Boolean(process.env.ARTIFICIAL_ANALYSIS_API_KEY?.trim());
+  const aaKey = Boolean(
+    process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim()
+  );
 
   const { data: tiers } = await admin
     .from("luna_engine_tiers")
@@ -147,7 +165,7 @@ export async function GET(request: NextRequest) {
     (r) => typeof r.feature === "string" && r.feature.length > 0
   );
 
-  // 비용 추정: 시장 blended USD * tokens/1e6 * usdKrw (없으면 토큰만)
+  // 비용 추정: 시장 blended USD 우선, 없으면 공급사 공식 단가
   const priceByModel = new Map<string, number>();
   for (const m of marketRows) {
     const blended =
@@ -156,7 +174,7 @@ export async function GET(request: NextRequest) {
     if (blended) priceByModel.set(m.model_slug.toLowerCase(), blended);
   }
 
-  function estimateKrw(modelId: string, tokens: number): number {
+  function marketUsdPerM(modelId: string): number | null {
     const key = modelId.toLowerCase();
     let usdPerM = priceByModel.get(key);
     if (usdPerM == null) {
@@ -167,8 +185,19 @@ export async function GET(request: NextRequest) {
         }
       }
     }
-    if (usdPerM == null || !tokens) return 0;
-    return Math.round((tokens / 1_000_000) * usdPerM * usdKrw);
+    return usdPerM ?? null;
+  }
+
+  let usedOfficialPricing = false;
+  function estimateKrw(modelId: string, tokens: number): number {
+    const { krw, usedOfficial } = estimateKrwFromTokens(
+      modelId,
+      tokens,
+      usdKrw,
+      marketUsdPerM(modelId)
+    );
+    if (usedOfficial && krw > 0) usedOfficialPricing = true;
+    return krw;
   }
 
   const weekFrom = kstDate(-6);
@@ -365,6 +394,13 @@ export async function GET(request: NextRequest) {
     market: {
       fetched_at: marketFetchedAt,
       missing_key: !aaKey && marketRows.length === 0,
+      error:
+        marketRows.length > 0
+          ? null
+          : settings.last_market_error ??
+            (!aaKey
+              ? "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY 없음"
+              : "Artificial Analysis 조회 결과가 없습니다. [지금 점검]으로 다시 받아 보세요."),
       rows: marketRows.map((r) => ({
         ...r,
         brand: brandOf(r.provider),
@@ -393,7 +429,8 @@ export async function GET(request: NextRequest) {
       week_calls: weekCalls,
       week_tokens: weekTokens,
       month_estimate: monthEstimate,
-      by_feature: featureRows
+      by_feature: featureRows,
+      pricing_source: usedOfficialPricing ? "official" : "market"
     },
     changes: changes ?? [],
     settings,
@@ -493,6 +530,15 @@ export async function POST(request: NextRequest) {
       /* default */
     }
     const result = await runModelInspect(admin, { force: true, usdKrw });
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          ...result,
+          error: result.market_error ?? result.message
+        },
+        { status: 502 }
+      );
+    }
     return NextResponse.json(result);
   }
 

@@ -31,14 +31,10 @@ function hasProviderKey(provider: string): boolean {
     return Boolean(process.env.hubtrendchat_claude?.trim());
   }
   if (provider === "openai") {
-    return Boolean(process.env.OPENAI_API_KEY?.trim());
+    return Boolean(process.env.LUNA_OPENAI_API_KEY?.trim());
   }
   if (provider === "google") {
-    return Boolean(
-      process.env.GOOGLE_API_KEY?.trim() ||
-        process.env.GEMINI_API_KEY?.trim() ||
-        process.env.hubtrendchat_geminai?.trim()
-    );
+    return Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim());
   }
   return false;
 }

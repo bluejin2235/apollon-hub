@@ -149,6 +149,8 @@ export type LunaModelCostSettings = {
   protect_s: boolean;
   last_inspect_at: string | null;
   next_inspect_at: string | null;
+  /** Artificial Analysis 마지막 실패 사유 (성공 시 null) */
+  last_market_error: string | null;
 };
 
 export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
@@ -156,7 +158,8 @@ export const LUNA_MODEL_COST_SETTINGS_DEFAULT: LunaModelCostSettings = {
   revert_on_drop: true,
   protect_s: true,
   last_inspect_at: null,
-  next_inspect_at: null
+  next_inspect_at: null,
+  last_market_error: null
 };
 
 export function normalizeUsageAlerts(raw: unknown): LunaUsageAlerts {
@@ -197,7 +200,11 @@ export function normalizeModelCostSettings(raw: unknown): LunaModelCostSettings 
     last_inspect_at:
       typeof value.last_inspect_at === "string" ? value.last_inspect_at : null,
     next_inspect_at:
-      typeof value.next_inspect_at === "string" ? value.next_inspect_at : null
+      typeof value.next_inspect_at === "string" ? value.next_inspect_at : null,
+    last_market_error:
+      typeof value.last_market_error === "string"
+        ? value.last_market_error
+        : null
   };
 }
 
@@ -208,11 +215,7 @@ export function providerConnectedFlags(): {
 } {
   return {
     anthropic: Boolean(process.env.hubtrendchat_claude?.trim()),
-    openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
-    google: Boolean(
-      process.env.GOOGLE_API_KEY?.trim() ||
-        process.env.GEMINI_API_KEY?.trim() ||
-        process.env.hubtrendchat_geminai?.trim()
-    )
+    openai: Boolean(process.env.LUNA_OPENAI_API_KEY?.trim()),
+    google: Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim())
   };
 }
