@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
+  formatConnectorRoutingSummary,
   hasManualConnectors,
   resolveConnectorsAuto,
   type ConnectorFlags
@@ -21,6 +22,11 @@ import {
   LUNA_RUNTIME_PROMPT_KEYS
 } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
+import {
+  exploreWorkserverFallback,
+  exploreWorkserverWithTools,
+  type WorkserverExploreRow
+} from "@/lib/luna/workserver-explore";
 import { searchYoutube } from "@/lib/luna/youtube";
 
 export const LUNA_MODEL = "claude-sonnet-4-6";
@@ -51,14 +57,7 @@ export type LunaRunResult = {
   modelLabel: string;
 };
 
-type NasDirectoryRow = {
-  drive: string | null;
-  path: string;
-  type: string | null;
-  size_bytes: number | null;
-  modified_at: string | null;
-  file_summary: string | null;
-};
+type NasDirectoryRow = WorkserverExploreRow;
 
 type LearningRow = { content: string; category: string };
 
@@ -82,12 +81,17 @@ function isNasFileRow(row: NasDirectoryRow): boolean {
 function toNasCard(row: NasDirectoryRow): LunaCard {
   const title = pathLastSegment(row.path);
   const summary = row.file_summary?.trim();
+  const hidden = row.variant_hidden ?? 0;
+  let base = row.path;
+  if (summary) base = `${base} · ${summary}`;
+  if (hidden > 0) base = `${base} · 다른 형식 ${hidden}개`;
+  const important = (row.importance ?? 0) > 0;
   return {
     type: "nas",
     title,
     url: null,
     thumbnail: null,
-    description: summary ? `${row.path} · ${summary}` : row.path,
+    description: important ? `★ ${base}` : base,
     drive: row.drive?.trim() || undefined,
     raw_path: row.path,
     is_file: isNasFileRow(row)
@@ -135,12 +139,27 @@ function resolveEvalConnectors(
     nas: requested.nas === true
   };
   if (hasManualConnectors(manual)) {
+    console.log(
+      "[luna/route] connectors =",
+      manual,
+      "· reason =",
+      "문항 connectors 지정"
+    );
     return manual;
   }
-  return resolveConnectorsAuto(message, {
+  const routed = resolveConnectorsAuto(message, {
     hasAttachments: false,
     manual
-  }).connectors;
+  });
+  console.log(
+    "[luna/route] connectors =",
+    routed.connectors,
+    "· reason =",
+    routed.reasonLabel,
+    "·",
+    formatConnectorRoutingSummary(routed)
+  );
+  return routed.connectors;
 }
 
 function buildSystemPrompt(opts: {
@@ -151,6 +170,7 @@ function buildSystemPrompt(opts: {
   notionSources?: NotionSource[];
   cards?: LunaCard[];
   nasResults?: NasDirectoryRow[];
+  nasSearchAttempted?: boolean;
 }): string {
   const parts: string[] = [opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT];
 
@@ -181,14 +201,24 @@ function buildSystemPrompt(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  if (opts.nasResults && opts.nasResults.length > 0) {
-    const nasBlock = opts.nasResults
+  const nasResults = opts.nasResults ?? [];
+  if (nasResults.length > 0) {
+    const nasBlock = nasResults
       .map((row) => {
         const name = pathLastSegment(row.path);
-        return `- ${name} → T:\\${row.path.replace(/\//g, "\\")}`;
+        const drive = (row.drive ?? "T").trim().toUpperCase() || "T";
+        return `- ${name} → ${drive}:\\${row.path.replace(/\//g, "\\")}`;
       })
       .join("\n");
-    parts.push(`[Work서버 파일 위치]\n${nasBlock}`);
+    parts.push(
+      "[Work서버 파일 위치]\n" +
+        "아래 경로만이 검증된 경로다. 이 목록에 없는 경로는 존재를 모르는 것이다.\n" +
+        nasBlock
+    );
+  } else if (opts.nasSearchAttempted) {
+    parts.push(
+      "[Work서버 파일 위치]\n(검색 결과 없음 — 찾지 못했다고 명확히 답하고 경로를 추측하지 마세요)"
+    );
   }
 
   const opinionRule = opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
@@ -196,7 +226,8 @@ function buildSystemPrompt(opts: {
   parts.push(
     "[답변 규칙]\n" +
       "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
-      "- 검색 결과가 없으면 '기능 준비 중', '연동이 안 되어 있다', '실시간으로 불러올 수 없다' 같은 말은 절대 하지 마세요. 대신 아폴론 관점에서 아는 내용으로 답하거나, 검색어를 어떻게 바꾸면 좋을지 제안하세요.\n" +
+      "- 검색 결과가 없으면 반드시 '찾지 못했다'고 명확히 답한다. 경로·파일명을 추측하지 마세요.\n" +
+      "- '기능 준비 중', '연동이 안 되어 있다', '검색 실패'처럼 시스템 장애로 단정하지 마세요.\n" +
       `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
       `${KNOWLEDGE_LIST_HARD_RULE}\n` +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
@@ -355,6 +386,7 @@ export async function runLunaTurn(
   let nasResults: NasDirectoryRow[] = [];
   let webCards: LunaCard[] = [];
   let youtubeCards: LunaCard[] = [];
+  let nasSearchAttempted = false;
 
   if (notionEnabled || webEnabled || isSearchRequest || nasEnabled) {
     keywords = await extractSearchKeywords(client, userText, keywordExtractPrompt);
@@ -370,19 +402,32 @@ export async function runLunaTurn(
   if (isSearchRequest && keywords) {
     youtubeCards = await searchYoutube(keywords);
   }
-  if (nasEnabled && keywords) {
-    const terms = keywords
-      .split(/\s+/)
-      .filter((t) => t.length > 1)
-      .slice(0, 3);
-    if (terms.length > 0) {
-      const orFilter = terms.map((t) => `path.ilike.%${t}%`).join(",");
-      const { data: nasData } = await admin
-        .from("nas_directory")
-        .select("drive, path, type, size_bytes, modified_at, file_summary")
-        .or(orFilter)
-        .limit(6);
-      nasResults = (nasData ?? []) as NasDirectoryRow[];
+  if (nasEnabled) {
+    nasSearchAttempted = true;
+    const kw = keywords || userText;
+    try {
+      const explored = await exploreWorkserverWithTools(admin, client, {
+        keywords: kw,
+        queryText: userText,
+        model: LUNA_MODEL,
+        exploreSystem:
+          talkSearch ||
+          "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요."
+      });
+      nasResults = explored.rows;
+      console.log(
+        "[luna/ws] eval explore done",
+        { kw, toolCalls: explored.toolCalls.length },
+        "→",
+        nasResults.length
+      );
+    } catch (err) {
+      console.error(
+        "[luna/ws] tool loop failed, fallback to legacy",
+        err
+      );
+      nasResults = await exploreWorkserverFallback(admin, kw, userText);
+      console.log("[luna/ws] eval fallback →", nasResults.length);
     }
   }
 
@@ -402,7 +447,8 @@ export async function runLunaTurn(
     synthesisOpinion,
     notionSources,
     cards,
-    nasResults
+    nasResults,
+    nasSearchAttempted
   });
 
   const response = await client.messages.create({

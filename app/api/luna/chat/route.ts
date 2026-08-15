@@ -31,15 +31,13 @@ import {
   findSimilarReport
 } from "@/lib/luna/selfstudy";
 import {
-  listFolder,
-  prepareSearchTerms,
-  refineWorkserverHits,
-  runWorkserverResultPipeline,
-  searchAll,
-  searchIn,
-  searchNasLegacy,
-  type WorkserverItem
+  runWorkserverResultPipeline
 } from "@/lib/luna/workserver";
+import {
+  exploreWorkserverFallback,
+  exploreWorkserverWithTools,
+  type WorkserverExploreRow
+} from "@/lib/luna/workserver-explore";
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
@@ -83,60 +81,12 @@ const SYNTHESIS_REASON_FALLBACK =
 const SEARCH_REQUEST_KEYWORDS = ["찾아줘", "레퍼런스", "사례", "검색", "알려줘"] as const;
 const SEARCH_BUDGET_MS = 45_000;
 const MAX_SEARCH_ROUNDS = 3;
-const WS_TOOL_LOOP_MS = 25_000;
-const MAX_WS_TOOL_ROUNDS = 5;
-
-const WORKSERVER_TOOLS: Anthropic.Tool[] = [
-  {
-    name: "list_folder",
-    description: "Work서버 특정 경로 바로 아래 항목 보기. 경로를 비우면 최상위",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        drive: { type: "string" }
-      }
-    }
-  },
-  {
-    name: "search_in",
-    description: "Work서버 특정 경로 아래에서만 검색",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        keywords: { type: "string" }
-      },
-      required: ["path", "keywords"]
-    }
-  },
-  {
-    name: "search_all",
-    description: "Work서버 전체 검색. 어디를 볼지 모를 때만",
-    input_schema: {
-      type: "object",
-      properties: {
-        keywords: { type: "string" }
-      },
-      required: ["keywords"]
-    }
-  }
-];
 
 function isSearchRequestMessage(message: string): boolean {
   return SEARCH_REQUEST_KEYWORDS.some((kw) => message.includes(kw));
 }
 
-type NasDirectoryRow = {
-  drive: string | null;
-  path: string;
-  type: string | null;
-  size_bytes: number | null;
-  modified_at: string | null;
-  file_summary: string | null;
-  importance?: number | null;
-  variant_hidden?: number;
-};
+type NasDirectoryRow = WorkserverExploreRow;
 
 type ChatRequestBody = {
   conversation_id?: string;
@@ -1139,158 +1089,6 @@ export async function POST(request: NextRequest) {
           talkSearch ||
           "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요.";
 
-        const itemToNasRow = (item: WorkserverItem): NasDirectoryRow => ({
-          drive: item.drive,
-          path: item.path,
-          type: item.type,
-          size_bytes: null,
-          modified_at: item.modified_at,
-          file_summary: item.file_summary,
-          importance: item.importance,
-          variant_hidden: item.variant_hidden
-        });
-
-        const exploreWorkserverWithTools = async (
-          kw: string
-        ): Promise<NasDirectoryRow[]> => {
-          const loopStarted = Date.now();
-          const collected = new Map<string, NasDirectoryRow>();
-          const seedTerms = prepareSearchTerms(kw, searchIntentText);
-          const hintKeywords =
-            seedTerms.join(" ") || kw.trim() || searchIntentText;
-
-          if (seedTerms.length > 0) {
-            try {
-              const seeded = await searchAll(
-                admin,
-                hintKeywords,
-                searchIntentText
-              );
-              for (const item of seeded) {
-                const key = `${item.drive ?? ""}::${item.path}`;
-                if (!collected.has(key)) {
-                  collected.set(key, itemToNasRow(item));
-                }
-              }
-              console.log("[luna/ws] seed search", { hintKeywords }, "→", seeded.length);
-            } catch (seedErr) {
-              console.error("[luna/ws] seed search", seedErr);
-            }
-          }
-
-          const messages: Anthropic.MessageParam[] = [
-            {
-              role: "user",
-              content: `질문: ${searchIntentText}\n검색 키워드 힌트: ${hintKeywords}\n(프로젝트명·문서명만 space로 구분해 search_all/search_in keywords에 넣으세요. 위치·알려줘 등은 제외)`
-            }
-          ];
-
-          for (let round = 0; round < MAX_WS_TOOL_ROUNDS; round += 1) {
-            if (Date.now() - loopStarted > WS_TOOL_LOOP_MS) break;
-
-            const res = await client.messages.create({
-              model: tierB.model_id,
-              max_tokens: 1024,
-              system:
-                workserverExploreSystem ||
-                "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요.",
-              tools: WORKSERVER_TOOLS,
-              messages
-            });
-
-            pushModelStep(modelSteps, admin, {
-              label: "Work서버 탐색",
-              model: tierB.model_label,
-              tier: "B",
-              model_id: tierB.model_id,
-              usage: readUsage(res.usage)
-            });
-
-            const toolUses = res.content.filter(
-              (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-            );
-
-            if (toolUses.length === 0) break;
-
-            messages.push({ role: "assistant", content: res.content });
-
-            const toolResults: Anthropic.ToolResultBlockParam[] = [];
-            for (const tu of toolUses) {
-              pushStep(
-                "ws",
-                "running",
-                `Work서버 탐색 · ${tu.name}`
-              );
-
-              const input =
-                tu.input && typeof tu.input === "object"
-                  ? (tu.input as Record<string, unknown>)
-                  : {};
-
-              let items: WorkserverItem[] = [];
-              try {
-                if (tu.name === "list_folder") {
-                  items = await listFolder(
-                    admin,
-                    typeof input.path === "string" ? input.path : "",
-                    typeof input.drive === "string" ? input.drive : undefined
-                  );
-                } else if (tu.name === "search_in") {
-                  items = await searchIn(
-                    admin,
-                    typeof input.path === "string" ? input.path : "",
-                    typeof input.keywords === "string" ? input.keywords : "",
-                    typeof input.drive === "string" ? input.drive : undefined,
-                    searchIntentText
-                  );
-                } else if (tu.name === "search_all") {
-                  items = await searchAll(
-                    admin,
-                    typeof input.keywords === "string" ? input.keywords : "",
-                    searchIntentText
-                  );
-                }
-              } catch (toolErr) {
-                console.error("[luna/ws] tool exec", tu.name, toolErr);
-                items = [];
-              }
-
-              wsToolCalls.push({
-                tool: tu.name,
-                input,
-                result_count: items.length
-              });
-              console.log("[luna/ws] tool", tu.name, input, "→", items.length);
-
-              for (const item of items) {
-                const key = `${item.drive ?? ""}::${item.path}`;
-                if (!collected.has(key)) {
-                  collected.set(key, itemToNasRow(item));
-                }
-              }
-
-              toolResults.push({
-                type: "tool_result",
-                tool_use_id: tu.id,
-                content: JSON.stringify(items)
-              });
-            }
-
-            messages.push({ role: "user", content: toolResults });
-          }
-
-          if (wsToolCalls.length > 0) {
-            pushStep("ws", "done", "Work서버 탐색");
-          }
-
-          return finalizeNasDirectoryRows(
-            refineWorkserverHits(
-              Array.from(collected.values()),
-              searchIntentText
-            )
-          );
-        };
-
         const skippedNotionOutcome = (): NotionSearchOutcome => ({ status: "skipped", sources: [], queries: [], rounds: 0 });
         const runConnectorSearch = async (kw: string) => {
           const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
@@ -1310,20 +1108,43 @@ export async function POST(request: NextRequest) {
             (async () => {
               if (!nasEnabled) return [] as NasDirectoryRow[];
               try {
-                return await exploreWorkserverWithTools(kw);
+                const explored = await exploreWorkserverWithTools(
+                  admin,
+                  client,
+                  {
+                    keywords: kw,
+                    queryText: searchIntentText,
+                    model: tierB.model_id,
+                    exploreSystem: workserverExploreSystem,
+                    onToolRound: (toolName) => {
+                      pushStep("ws", "running", `Work서버 탐색 · ${toolName}`);
+                    },
+                    onUsage: (usage) => {
+                      pushModelStep(modelSteps, admin, {
+                        label: "Work서버 탐색",
+                        model: tierB.model_label,
+                        tier: "B",
+                        model_id: tierB.model_id,
+                        usage: readUsage(usage)
+                      });
+                    }
+                  }
+                );
+                if (explored.toolCalls.length > 0) {
+                  wsToolCalls.push(...explored.toolCalls);
+                  pushStep("ws", "done", "Work서버 탐색");
+                }
+                return explored.rows;
               } catch (err) {
                 console.error(
                   "[luna/ws] tool loop failed, fallback to legacy",
                   err
                 );
                 pushStep("ws", "done", "Work서버 탐색 (fallback)");
-                const legacy = await searchNasLegacy(
+                return exploreWorkserverFallback(
                   admin,
                   kw || searchIntentText,
                   searchIntentText
-                );
-                return finalizeNasDirectoryRows(
-                  refineWorkserverHits(legacy, searchIntentText)
                 );
               }
             })()
