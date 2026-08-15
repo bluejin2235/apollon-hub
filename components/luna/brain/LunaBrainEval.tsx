@@ -16,9 +16,10 @@ import {
   BrainCard,
   brainFetch,
   formatDateTime,
+  getAccessToken,
   InfoBar
 } from "@/components/luna/brain/shared";
-import { clipText, K } from "@/lib/luna/knowledge-format";
+import { K } from "@/lib/luna/knowledge-format";
 
 type EvalRun = {
   id: string;
@@ -68,6 +69,54 @@ type EvalResult = {
   } | null;
 };
 
+type TierLastRun = {
+  id: string;
+  finished_at: string | null;
+  started_at: string | null;
+  status: string;
+  score_sum: number | null;
+  score_max: number | null;
+  passed: number | null;
+  total: number | null;
+  ok: boolean;
+};
+
+type SchedulePayload = {
+  schedule: {
+    light: { enabled: boolean; hour: number; minute: number };
+    heavy: {
+      enabled: boolean;
+      weekday: number;
+      hour: number;
+      minute: number;
+    };
+  };
+  light: {
+    enabled: boolean;
+    hour: number;
+    minute: number;
+    time_label: string;
+    cadence_label: string;
+    next_label: string;
+    search_label: string;
+  };
+  heavy: {
+    enabled: boolean;
+    weekday: number;
+    hour: number;
+    minute: number;
+    time_label: string;
+    weekday_label: string;
+    cadence_label: string;
+    next_label: string;
+    search_label: string;
+  };
+  conflicts: Array<{ tier: string; message: string }>;
+  cron_note: string;
+  last_runs: { light: TierLastRun | null; heavy: TierLastRun | null };
+  case_counts: { light: number; heavy: number };
+};
+
 function runScore(run: EvalRun): number {
   if (typeof run.score_sum === "number") return Number(run.score_sum);
   return run.passed ?? 0;
@@ -77,7 +126,17 @@ function runMax(run: EvalRun): number {
   if (typeof run.score_max === "number" && run.score_max > 0) {
     return Number(run.score_max);
   }
+  if (run.tier === "light") return 12;
+  if (run.tier === "heavy") return 8;
   return run.total ?? 0;
+}
+
+function tierBadgeLabel(tier: string | null | undefined): string {
+  if (tier === "light") return "light";
+  if (tier === "heavy") return "heavy";
+  if (tier === "prompt") return "prompt";
+  if (tier === "mixed") return "전체";
+  return "구 문항 기준";
 }
 
 function resultKind(
@@ -97,10 +156,36 @@ function resultKind(
   return "unknown";
 }
 
+function lastRunSummary(last: TierLastRun | null): string {
+  if (!last) return "마지막 실행 없음";
+  const when = formatDateTime(last.finished_at ?? last.started_at);
+  const score =
+    last.score_sum != null && last.score_max != null
+      ? `${last.score_sum}/${last.score_max}`
+      : last.passed != null && last.total != null
+        ? `${last.passed}/${last.total}`
+        : "—";
+  const ok =
+    last.status === "done"
+      ? "성공"
+      : last.status === "running"
+        ? "실행 중"
+        : "실패";
+  return `${when} · ${ok} · ${score}`;
+}
+
+function timeInputValue(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 export function LunaBrainEval() {
   const [runs, setRuns] = useState<EvalRun[]>([]);
   const [cases, setCases] = useState<EvalCase[]>([]);
   const [results, setResults] = useState<EvalResult[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [scheduleInfo, setScheduleInfo] = useState<SchedulePayload | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -110,48 +195,74 @@ export function LunaBrainEval() {
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const [newQuestion, setNewQuestion] = useState("");
   const [newCategory, setNewCategory] = useState("");
-  const [runTier, setRunTier] = useState<"all" | "light" | "heavy">("all");
+  const [editing, setEditing] = useState<"light" | "heavy" | null>(null);
+  const [editLight, setEditLight] = useState({
+    enabled: true,
+    hour: 3,
+    minute: 40
+  });
+  const [editHeavy, setEditHeavy] = useState({
+    enabled: true,
+    weekday: 0,
+    hour: 3,
+    minute: 50
+  });
+
+  const loadResultsFor = useCallback(async (runId: string) => {
+    const resultRes = await brainFetch<{ results?: EvalResult[] }>(
+      `/api/luna/eval/results?run_id=${runId}`
+    );
+    setResults(resultRes.results ?? []);
+    setSelectedRunId(runId);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [runRes, caseRes] = await Promise.all([
+      const [runRes, caseRes, schedRes] = await Promise.all([
         brainFetch<{ runs?: EvalRun[] }>("/api/luna/eval/runs"),
-        brainFetch<{ cases?: EvalCase[] }>("/api/luna/eval/cases")
+        brainFetch<{ cases?: EvalCase[] }>("/api/luna/eval/cases"),
+        brainFetch<SchedulePayload>("/api/luna/eval/schedule")
       ]);
       const runList = runRes.runs ?? [];
       setRuns(runList);
       setCases(caseRes.cases ?? []);
+      setScheduleInfo(schedRes);
 
-      const latest = runList.find((r) => r.status === "done") ?? runList[0];
-      if (latest) {
-        const resultRes = await brainFetch<{ results?: EvalResult[] }>(
-          `/api/luna/eval/results?run_id=${latest.id}`
-        );
-        setResults(resultRes.results ?? []);
+      const preferred =
+        runList.find((r) => r.id === selectedRunId) ??
+        runList.find((r) => r.status === "done") ??
+        runList[0];
+      if (preferred) {
+        await loadResultsFor(preferred.id);
       } else {
         setResults([]);
+        setSelectedRunId(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadResultsFor, selectedRunId]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
+  }, []);
 
   const doneRuns = useMemo(
     () => runs.filter((r) => r.status === "done" && r.total),
     [runs]
   );
 
+  const selectedRun =
+    runs.find((r) => r.id === selectedRunId) ?? doneRuns[0] ?? runs[0] ?? null;
+
   const lightTrend = useMemo(() => {
     const recent = doneRuns
-      .filter((r) => r.tier === "light" || (!r.tier && (r.total ?? 0) >= 10))
+      .filter((r) => r.tier === "light")
       .slice(0, 4)
       .reverse();
     return recent.map((run, i) => {
@@ -161,8 +272,7 @@ export function LunaBrainEval() {
       return {
         label: `${score}/${max}`,
         value: score,
-        tone:
-          prev && runScore(prev) > score ? ("down" as const) : undefined
+        tone: prev && runScore(prev) > score ? ("down" as const) : undefined
       };
     });
   }, [doneRuns]);
@@ -179,54 +289,104 @@ export function LunaBrainEval() {
       return {
         label: `${score}/${max}`,
         value: score,
-        tone:
-          prev && runScore(prev) > score ? ("down" as const) : undefined
+        tone: prev && runScore(prev) > score ? ("down" as const) : undefined
       };
     });
   }, [doneRuns]);
 
-  const latestRun = doneRuns[0] ?? runs[0] ?? null;
-  const previousSameTier = useMemo(() => {
-    if (!latestRun) return null;
-    return (
-      doneRuns.find(
-        (r) =>
-          r.id !== latestRun.id &&
-          (r.tier ?? null) === (latestRun.tier ?? null)
-      ) ?? doneRuns[1] ?? null
-    );
-  }, [doneRuns, latestRun]);
-
-  const delta =
-    latestRun && previousSameTier
-      ? runScore(latestRun) - runScore(previousSameTier)
-      : null;
-
   const activeCases = cases.filter((c) => c.is_active);
+  const lightCount =
+    scheduleInfo?.case_counts.light ??
+    activeCases.filter((c) => c.tier === "light").length;
+  const heavyCount =
+    scheduleInfo?.case_counts.heavy ??
+    activeCases.filter((c) => c.tier === "heavy").length;
 
   const sortedResults = useMemo(
     () =>
       results
         .slice()
-        .sort(
-          (a, b) => (a.case?.sort_order ?? 0) - (b.case?.sort_order ?? 0)
-        ),
+        .sort((a, b) => (a.case?.sort_order ?? 0) - (b.case?.sort_order ?? 0)),
     [results]
   );
 
-  async function runNow() {
+  function startEdit(tier: "light" | "heavy") {
+    if (!scheduleInfo) return;
+    if (tier === "light") {
+      setEditLight({ ...scheduleInfo.schedule.light });
+    } else {
+      setEditHeavy({ ...scheduleInfo.schedule.heavy });
+    }
+    setEditing(tier);
+  }
+
+  async function saveSchedule(force = false) {
+    if (!scheduleInfo || !editing) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const body =
+        editing === "light"
+          ? { light: editLight, force }
+          : { heavy: editHeavy, force };
+      const token = await getAccessToken();
+      if (!token) throw new Error("로그인이 필요합니다.");
+      const res = await fetch("/api/luna/eval/schedule", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+      });
+      const json = (await res.json()) as SchedulePayload & {
+        error?: string;
+        message?: string;
+        conflicts?: Array<{ message: string }>;
+      };
+      if (res.status === 409) {
+        const msg =
+          json.message ||
+          json.conflicts?.map((c) => c.message).join(" · ") ||
+          "다른 작업과 시각이 겹칩니다";
+        if (
+          typeof window !== "undefined" &&
+          window.confirm(`${msg}\n\n그래도 저장할까요?`)
+        ) {
+          await saveSchedule(true);
+          return;
+        }
+        setNotice(msg);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(json.error ?? json.message ?? "저장 실패");
+      }
+      setScheduleInfo(json);
+      setEditing(null);
+      setNotice("스케줄을 저장했습니다.");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "저장하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runExam(tier: "light" | "heavy" | "all") {
     setBusy(true);
     setNotice("");
     try {
       const body: { force: boolean; tier?: string } = { force: true };
-      if (runTier === "light" || runTier === "heavy") body.tier = runTier;
+      if (tier === "light" || tier === "heavy") body.tier = tier;
       const res = await brainFetch<{
         skipped: boolean;
         reason?: string;
+        run_id?: string;
         passed?: number;
         total?: number;
         score_sum?: number;
         score_max?: number;
+        tier?: string;
       }>("/api/luna/eval/exam", {
         method: "POST",
         body: JSON.stringify(body)
@@ -238,8 +398,9 @@ export function LunaBrainEval() {
       setNotice(
         res.skipped
           ? `건너뜀: ${res.reason ?? "실행 조건 미충족"}`
-          : `실행 완료 · ${score}점`
+          : `${tier === "all" ? "전체" : tier} 실행 완료 · ${score}점`
       );
+      if (res.run_id) setSelectedRunId(res.run_id);
       await load();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "실행하지 못했습니다.");
@@ -287,11 +448,20 @@ export function LunaBrainEval() {
     }
   }
 
+  const selectedMax = selectedRun ? runMax(selectedRun) : null;
+  const selectedScore = selectedRun ? runScore(selectedRun) : null;
+
   return (
     <KnowledgeShell>
       <InfoBar>
         매일 light(검색 없음)·매주 heavy(검색 포함)로 나눕니다. 필수 위반은
         프롬프트 문제, 품질 미달은 자습 재료입니다.
+        {scheduleInfo?.cron_note ? (
+          <>
+            <br />
+            <span style={{ color: K.faint }}>{scheduleInfo.cron_note}</span>
+          </>
+        ) : null}
       </InfoBar>
 
       {notice ? (
@@ -304,6 +474,168 @@ export function LunaBrainEval() {
 
       {!loading && !error ? (
         <>
+          <BrainCard>
+            <div className="mb-2 text-[13px] font-bold">실행 스케줄</div>
+
+            {/* light */}
+            <div
+              className="mb-2 rounded-lg border px-3 py-2.5"
+              style={{ borderColor: K.line2 }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge kind="src">light</Badge>
+                {editing === "light" ? (
+                  <div className="flex flex-1 flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1 text-[12px]">
+                      <input
+                        type="checkbox"
+                        checked={editLight.enabled}
+                        onChange={(e) =>
+                          setEditLight((s) => ({
+                            ...s,
+                            enabled: e.target.checked
+                          }))
+                        }
+                      />
+                      사용
+                    </label>
+                    <input
+                      type="time"
+                      className="rounded border px-2 py-1 text-[12px]"
+                      style={{ borderColor: K.line }}
+                      value={timeInputValue(editLight.hour, editLight.minute)}
+                      onChange={(e) => {
+                        const [h, m] = e.target.value.split(":").map(Number);
+                        setEditLight((s) => ({
+                          ...s,
+                          hour: h ?? 3,
+                          minute: m ?? 0
+                        }));
+                      }}
+                    />
+                    <Btn disabled={busy} onClick={() => void saveSchedule()}>
+                      저장
+                    </Btn>
+                    <Btn disabled={busy} onClick={() => setEditing(null)}>
+                      취소
+                    </Btn>
+                  </div>
+                ) : (
+                  <>
+                    <span className="min-w-0 flex-1 text-[12.5px]">
+                      {scheduleInfo?.light.cadence_label ?? "매일"}{" "}
+                      {scheduleInfo?.light.time_label ?? "03:40"} ·{" "}
+                      {lightCount}문항 ·{" "}
+                      {scheduleInfo?.light.search_label ?? "검색 없음"} · 다음
+                      실행 {scheduleInfo?.light.next_label ?? "—"}
+                      {!scheduleInfo?.light.enabled ? (
+                        <span style={{ color: K.faint }}> (꺼짐)</span>
+                      ) : null}
+                    </span>
+                    <Btn disabled={busy} onClick={() => startEdit("light")}>
+                      변경
+                    </Btn>
+                  </>
+                )}
+              </div>
+              <div className="mt-1 text-[11.5px]" style={{ color: K.faint }}>
+                {lastRunSummary(scheduleInfo?.last_runs.light ?? null)}
+              </div>
+            </div>
+
+            {/* heavy */}
+            <div
+              className="rounded-lg border px-3 py-2.5"
+              style={{ borderColor: K.line2 }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge kind="org">heavy</Badge>
+                {editing === "heavy" ? (
+                  <div className="flex flex-1 flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1 text-[12px]">
+                      <input
+                        type="checkbox"
+                        checked={editHeavy.enabled}
+                        onChange={(e) =>
+                          setEditHeavy((s) => ({
+                            ...s,
+                            enabled: e.target.checked
+                          }))
+                        }
+                      />
+                      사용
+                    </label>
+                    <select
+                      className="rounded border px-2 py-1 text-[12px]"
+                      style={{ borderColor: K.line }}
+                      value={editHeavy.weekday}
+                      onChange={(e) =>
+                        setEditHeavy((s) => ({
+                          ...s,
+                          weekday: Number(e.target.value)
+                        }))
+                      }
+                    >
+                      {["일", "월", "화", "수", "목", "금", "토"].map(
+                        (label, i) => (
+                          <option key={label} value={i}>
+                            {label}요일
+                          </option>
+                        )
+                      )}
+                    </select>
+                    <input
+                      type="time"
+                      className="rounded border px-2 py-1 text-[12px]"
+                      style={{ borderColor: K.line }}
+                      value={timeInputValue(editHeavy.hour, editHeavy.minute)}
+                      onChange={(e) => {
+                        const [h, m] = e.target.value.split(":").map(Number);
+                        setEditHeavy((s) => ({
+                          ...s,
+                          hour: h ?? 3,
+                          minute: m ?? 0
+                        }));
+                      }}
+                    />
+                    <Btn disabled={busy} onClick={() => void saveSchedule()}>
+                      저장
+                    </Btn>
+                    <Btn disabled={busy} onClick={() => setEditing(null)}>
+                      취소
+                    </Btn>
+                  </div>
+                ) : (
+                  <>
+                    <span className="min-w-0 flex-1 text-[12.5px]">
+                      {scheduleInfo?.heavy.cadence_label ?? "매주 일요일"}{" "}
+                      {scheduleInfo?.heavy.time_label ?? "03:50"} ·{" "}
+                      {heavyCount}문항 ·{" "}
+                      {scheduleInfo?.heavy.search_label ?? "검색 포함"} · 다음
+                      실행 {scheduleInfo?.heavy.next_label ?? "—"}
+                      {!scheduleInfo?.heavy.enabled ? (
+                        <span style={{ color: K.faint }}> (꺼짐)</span>
+                      ) : null}
+                    </span>
+                    <Btn disabled={busy} onClick={() => startEdit("heavy")}>
+                      변경
+                    </Btn>
+                  </>
+                )}
+              </div>
+              <div className="mt-1 text-[11.5px]" style={{ color: K.faint }}>
+                {lastRunSummary(scheduleInfo?.last_runs.heavy ?? null)}
+              </div>
+            </div>
+
+            {(scheduleInfo?.conflicts.length ?? 0) > 0 ? (
+              <p className="mt-2 text-[11.5px]" style={{ color: "#A32D2D" }}>
+                경고:{" "}
+                {scheduleInfo!.conflicts.map((c) => c.message).join(" · ")}
+              </p>
+            ) : null}
+          </BrainCard>
+
           <div className="mb-3 grid grid-cols-1 gap-2.5 min-[801px]:grid-cols-2">
             <BrainCard>
               <div className="flex flex-wrap items-center gap-2">
@@ -339,63 +671,94 @@ export function LunaBrainEval() {
             </BrainCard>
           </div>
 
-          <BrainCard>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="flex-1 text-[13px] font-bold">최근 실행</span>
-              <span className="text-[22px] font-bold">
-                {latestRun ? runScore(latestRun) : "—"}
-                <span className="text-[13px]" style={{ color: K.faint }}>
-                  /{latestRun ? runMax(latestRun) : "—"}
-                </span>
-              </span>
-              {latestRun?.tier ? (
-                <Badge kind={latestRun.tier === "heavy" ? "org" : "src"}>
-                  {latestRun.tier}
-                </Badge>
-              ) : null}
-              {delta != null && delta !== 0 ? (
-                <Badge kind={delta > 0 ? "ok" : "red"}>
-                  {delta > 0 ? `▲ ${delta}` : `▼ ${Math.abs(delta)}`}
-                </Badge>
-              ) : null}
-            </div>
-            <div className="mt-2.5 text-[11.5px]" style={{ color: K.faint }}>
-              필수 위반 시 즉시 알림 · 품질 미달은 자습 · 점수 상승은 알림 없음
-            </div>
-          </BrainCard>
+          <div className="mb-3 grid grid-cols-1 gap-2 min-[701px]:grid-cols-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runExam("light")}
+              className="rounded-[10px] border px-3 py-3 text-left disabled:opacity-50"
+              style={{ borderColor: K.line, background: K.panel }}
+            >
+              <div className="text-[13px] font-bold">light 실행</div>
+              <div className="mt-0.5 text-[12px]" style={{ color: K.sub }}>
+                {lightCount}문항 · 검색 없음
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: K.faint }}>
+                예상 200~300원
+              </div>
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runExam("heavy")}
+              className="rounded-[10px] border px-3 py-3 text-left disabled:opacity-50"
+              style={{ borderColor: K.line, background: K.panel }}
+            >
+              <div className="text-[13px] font-bold">heavy 실행</div>
+              <div className="mt-0.5 text-[12px]" style={{ color: K.sub }}>
+                {heavyCount}문항 · 검색 포함
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: K.faint }}>
+                예상 800~1,000원
+              </div>
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runExam("all")}
+              className="rounded-[10px] border px-3 py-3 text-left disabled:opacity-50"
+              style={{ borderColor: K.line, background: K.panel }}
+            >
+              <div className="text-[13px] font-bold">전체 실행</div>
+              <div className="mt-0.5 text-[12px]" style={{ color: K.sub }}>
+                {lightCount + heavyCount}문항
+              </div>
+              <div className="mt-1 text-[11px]" style={{ color: K.faint }}>
+                예상 1,000~1,300원
+              </div>
+            </button>
+          </div>
 
           <Toolbar>
             <div className="flex-1 text-[13px] font-bold">
-              최근 실행 결과{" "}
+              실행 결과{" "}
               <span
                 className="text-[11.5px] font-normal"
                 style={{ color: K.faint }}
               >
-                {latestRun
-                  ? `${formatDateTime(latestRun.finished_at ?? latestRun.started_at)}${
-                      latestRun.note ? ` · ${clipText(latestRun.note, 30)}` : ""
-                    }`
+                {selectedRun
+                  ? `${tierBadgeLabel(selectedRun.tier)} · ${formatDateTime(
+                      selectedRun.finished_at ?? selectedRun.started_at
+                    )}${
+                      selectedScore != null && selectedMax != null
+                        ? ` · ${selectedScore}/${selectedMax}점`
+                        : ""
+                    }${!selectedRun.tier ? " · 구 문항 기준" : ""}`
                   : "—"}
               </span>
             </div>
-            <select
-              className="rounded-md border px-2 py-1 text-[12px]"
-              style={{ borderColor: K.line, color: K.ink }}
-              value={runTier}
-              onChange={(e) =>
-                setRunTier(e.target.value as "all" | "light" | "heavy")
-              }
-              disabled={busy}
-            >
-              <option value="all">전체</option>
-              <option value="light">light만</option>
-              <option value="heavy">heavy만</option>
-            </select>
+            {doneRuns.length > 1 ? (
+              <select
+                className="max-w-[220px] rounded-md border px-2 py-1 text-[12px]"
+                style={{ borderColor: K.line, color: K.ink }}
+                value={selectedRun?.id ?? ""}
+                disabled={busy}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedRunId(id);
+                  void loadResultsFor(id);
+                }}
+              >
+                {doneRuns.slice(0, 12).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {tierBadgeLabel(r.tier)} {runScore(r)}/{runMax(r)} ·{" "}
+                    {formatDateTime(r.finished_at ?? r.started_at)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Btn onClick={() => setShowCases((v) => !v)}>
               문항 관리 {activeCases.length}
-            </Btn>
-            <Btn disabled={busy} onClick={() => void runNow()}>
-              {busy ? "실행 중…" : "지금 실행"}
             </Btn>
           </Toolbar>
 

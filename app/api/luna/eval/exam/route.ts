@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     };
     if (body.force === false) force = false;
     if (body.tier === "light" || body.tier === "heavy") tier = body.tier;
+    // tier 생략·"all" → 활성 전체(light+heavy)
   } catch {
     force = true;
   }
