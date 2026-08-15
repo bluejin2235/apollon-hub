@@ -106,7 +106,6 @@ async function completeOpenAI(opts: {
 
   const body: Record<string, unknown> = {
     model: opts.model,
-    max_tokens: opts.maxTokens,
     messages: [
       ...(opts.system?.trim()
         ? [{ role: "system", content: opts.system.trim() }]
@@ -114,6 +113,12 @@ async function completeOpenAI(opts: {
       { role: "user", content: opts.user }
     ]
   };
+  // gpt-5 / o-series 등은 max_tokens 거부 → max_completion_tokens
+  if (/^gpt-5|^o[1-4]|codex/i.test(opts.model)) {
+    body.max_completion_tokens = opts.maxTokens;
+  } else {
+    body.max_tokens = opts.maxTokens;
+  }
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools.map((t) => ({
       type: "function",
@@ -123,6 +128,10 @@ async function completeOpenAI(opts: {
         parameters: t.input_schema
       }
     }));
+    // gpt-5.6-luna 등: chat/completions + tools 시 reasoning_effort 필요
+    if (/^gpt-5|^o[1-4]/i.test(opts.model)) {
+      body.reasoning_effort = "none";
+    }
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
