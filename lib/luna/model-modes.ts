@@ -9,6 +9,11 @@ import {
   isPreferredProvider,
   type MarketModelRow
 } from "@/lib/luna/model-market";
+import {
+  isSlugCallable,
+  resolveApiModelId,
+  type ProviderModelCatalog
+} from "@/lib/luna/model-api-ids";
 
 function intel(row: MarketModelRow): number {
   return Number(row.intelligence_index) || 0;
@@ -41,8 +46,15 @@ function isReasoning(row: MarketModelRow): boolean {
   return row.is_reasoning === true;
 }
 
-function preferredOnly(rows: MarketModelRow[]): MarketModelRow[] {
-  return rows.filter((r) => isPreferredProvider(r.provider));
+function preferredOnly(
+  rows: MarketModelRow[],
+  catalog?: ProviderModelCatalog | null
+): MarketModelRow[] {
+  return rows.filter(
+    (r) =>
+      isPreferredProvider(r.provider) &&
+      isSlugCallable(r.provider, r.model_slug, catalog)
+  );
 }
 
 function minPrice(rows: MarketModelRow[]): MarketModelRow | null {
@@ -66,15 +78,21 @@ function topNByIntel(rows: MarketModelRow[], n: number): MarketModelRow[] {
   return [...rows].sort((a, b) => intel(b) - intel(a)).slice(0, n);
 }
 
-function poolA(rows: MarketModelRow[]): MarketModelRow[] {
-  return preferredOnly(rows).filter((r) => {
+function poolA(
+  rows: MarketModelRow[],
+  catalog?: ProviderModelCatalog | null
+): MarketModelRow[] {
+  return preferredOnly(rows, catalog).filter((r) => {
     const t = ttftSec(r);
     return !isReasoning(r) && t != null && t <= 3 && intel(r) >= 30;
   });
 }
 
-function poolB(rows: MarketModelRow[]): MarketModelRow[] {
-  return preferredOnly(rows).filter((r) => {
+function poolB(
+  rows: MarketModelRow[],
+  catalog?: ProviderModelCatalog | null
+): MarketModelRow[] {
+  return preferredOnly(rows, catalog).filter((r) => {
     const t = ttftSec(r);
     return !isReasoning(r) && t != null && t <= 1 && intel(r) >= 5;
   });
@@ -83,7 +101,16 @@ function poolB(rows: MarketModelRow[]): MarketModelRow[] {
 export function slugMatchesModel(slug: string, modelId: string): boolean {
   const a = slug.toLowerCase().replace(/[^a-z0-9]/g, "");
   const b = modelId.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return a.includes(b) || b.includes(a) || a === b;
+  if (a.includes(b) || b.includes(a) || a === b) return true;
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t && !/^\d{8,}$/.test(t))
+      .sort()
+      .join("");
+  return norm(slug) === norm(modelId) && norm(slug).length > 0;
 }
 
 export function findMarketRow(
@@ -143,13 +170,15 @@ export function buildSwapReason(
 
 /**
  * 모드별 등급 선정. 후보 없으면 null → 현재 모델 유지.
+ * catalog 가 있으면 실제 API 호출 불가 slug 는 제외.
  */
 export function pickForTierMode(
   tier: LunaTier,
   rows: MarketModelRow[],
-  mode: LunaCostMode
+  mode: LunaCostMode,
+  catalog?: ProviderModelCatalog | null
 ): MarketModelRow | null {
-  const pool = preferredOnly(rows);
+  const pool = preferredOnly(rows, catalog);
   if (pool.length === 0) return null;
 
   if (tier === "S") {
@@ -163,14 +192,14 @@ export function pickForTierMode(
   }
 
   if (tier === "A") {
-    const a = poolA(rows);
+    const a = poolA(rows, catalog);
     if (mode === "cheap") return minPrice(a);
     if (mode === "balanced") return maxValue(a);
     return maxIntel(a);
   }
 
   if (tier === "B") {
-    const b = poolB(rows);
+    const b = poolB(rows, catalog);
     if (mode === "cheap") return minPrice(b);
     if (mode === "balanced") return maxValue(b);
     return maxIntel(b);
@@ -183,6 +212,16 @@ export function pickForTierMode(
     return minPrice(pool.filter((r) => intel(r) >= 40));
   }
   return minPrice(topNByIntel(pool.filter((r) => intel(r) >= 20), 5));
+}
+
+/** 교체 적용 시 DB 에 넣을 실제 API model id */
+export function apiModelIdForRow(
+  row: MarketModelRow,
+  catalog?: ProviderModelCatalog | null
+): string {
+  return (
+    resolveApiModelId(row.provider, row.model_slug, catalog) ?? row.model_slug
+  );
 }
 
 /**
@@ -362,7 +401,8 @@ export function buildModePreview(
   usage: Array<{ tier: string; input_tokens: number; output_tokens: number }>,
   usdKrw: number,
   daysCovered = 28,
-  monthlyLimitKrw: number | null = null
+  monthlyLimitKrw: number | null = null,
+  catalog?: ProviderModelCatalog | null
 ): ModePickPreview {
   const currentByTier = {} as Record<LunaTier, string>;
   for (const t of LUNA_TIER_ORDER) {
@@ -377,7 +417,7 @@ export function buildModePreview(
   for (const tier of LUNA_TIER_ORDER) {
     const currentId = currentByTier[tier];
     const from = findMarketRow(market, currentId);
-    const candidate = pickForTierMode(tier, market, mode);
+    const candidate = pickForTierMode(tier, market, mode, catalog);
 
     let to: MarketModelRow | null = null;
     let reasonNote: string | undefined;
@@ -661,7 +701,8 @@ export async function applyCostMode(
   market: MarketModelRow[],
   usdKrw: number,
   usage: Array<{ tier: string; input_tokens: number; output_tokens: number }>,
-  monthlyLimitKrw: number | null = null
+  monthlyLimitKrw: number | null = null,
+  catalog?: ProviderModelCatalog | null
 ): Promise<{ ok: boolean; message: string; preview: ModePickPreview }> {
   const { data: tiers } = await admin
     .from("luna_engine_tiers")
@@ -677,7 +718,8 @@ export async function applyCostMode(
     usage,
     usdKrw,
     28,
-    monthlyLimitKrw
+    monthlyLimitKrw,
+    catalog
   );
 
   const currentPicks = {} as Record<LunaTier, MarketModelRow | null>;
@@ -722,12 +764,13 @@ export async function applyCostMode(
       ? toProvider
       : "anthropic";
 
+    const apiId = apiModelIdForRow(candidate, catalog);
     await admin
       .from("luna_engine_tiers")
       .update({
         provider,
-        model_id: candidate.model_slug,
-        model_label: candidate.model_slug,
+        model_id: apiId,
+        model_label: apiId,
         updated_at: new Date().toISOString()
       })
       .eq("tier", line.tier);
@@ -738,8 +781,8 @@ export async function applyCostMode(
       from_model_id: current.model_id,
       from_model_label: current.model_label,
       to_provider: provider,
-      to_model_id: candidate.model_slug,
-      to_model_label: candidate.model_slug,
+      to_model_id: apiId,
+      to_model_label: apiId,
       reason: `모드 변경: ${LUNA_COST_MODE_META[mode].label} · ${line.reason}`,
       savings_krw_month: null,
       exam_result: "pending"
@@ -751,4 +794,281 @@ export async function applyCostMode(
     message: `${LUNA_COST_MODE_META[mode].label} 모드로 적용했습니다`,
     preview
   };
+}
+
+export function modePickRuleLabel(tier: LunaTier, mode: LunaCostMode): string {
+  const modeLabel = LUNA_COST_MODE_META[mode].label;
+  let rule: string;
+  if (tier === "S") {
+    rule =
+      mode === "cheap"
+        ? "지능 50 이상 중 최저가"
+        : mode === "balanced"
+          ? "지능 상위 5 중 최저가"
+          : "최고 지능";
+  } else if (tier === "A") {
+    rule =
+      mode === "cheap"
+        ? "TTFT 3초 이하·지능 30 이상 비추론 중 최저가"
+        : mode === "balanced"
+          ? "TTFT 3초 이하·지능 30 이상 비추론 중 최고 가성비"
+          : "TTFT 3초 이하·지능 30 이상 비추론 중 최고 지능";
+  } else if (tier === "B") {
+    rule =
+      mode === "cheap"
+        ? "TTFT 1초 이하·지능 5 이상 비추론 중 최저가"
+        : mode === "balanced"
+          ? "TTFT 1초 이하·지능 5 이상 비추론 중 최고 가성비"
+          : "TTFT 1초 이하·지능 5 이상 비추론 중 최고 지능";
+  } else {
+    rule =
+      mode === "cheap"
+        ? "지능 20 이상 중 최저가"
+        : mode === "balanced"
+          ? "지능 40 이상 중 최저가"
+          : "지능 20 이상 상위 5 중 최저가";
+  }
+  return `${modeLabel} 모드: ${rule}`;
+}
+
+function emptyPoolMessage(tier: LunaTier, mode: LunaCostMode): string {
+  if (tier === "A") {
+    return "TTFT 3초 이하이면서 지능 30 이상인 모델이 없어요";
+  }
+  if (tier === "B") {
+    return "TTFT 1초 이하이면서 지능 5 이상인 모델이 없어요";
+  }
+  if (tier === "C") {
+    if (mode === "balanced") return "지능 40 이상인 모델이 없어요";
+    return "지능 20 이상인 모델이 없어요";
+  }
+  if (mode === "cheap") return "지능 50 이상인 모델이 없어요";
+  return "조건을 만족하는 후보가 없어요";
+}
+
+function poolForTierExplain(
+  tier: LunaTier,
+  rows: MarketModelRow[],
+  mode: LunaCostMode,
+  catalog?: ProviderModelCatalog | null
+): MarketModelRow[] {
+  if (tier === "A") return poolA(rows, catalog);
+  if (tier === "B") return poolB(rows, catalog);
+  const pool = preferredOnly(rows, catalog);
+  if (tier === "S") {
+    if (mode === "cheap") return pool.filter((r) => intel(r) >= 50);
+    if (mode === "balanced") return topNByIntel(pool, 5);
+    return pool;
+  }
+  if (mode === "cheap") return pool.filter((r) => intel(r) >= 20);
+  if (mode === "balanced") return pool.filter((r) => intel(r) >= 40);
+  return topNByIntel(
+    pool.filter((r) => intel(r) >= 20),
+    5
+  );
+}
+
+function sortPoolForMode(
+  tier: LunaTier,
+  pool: MarketModelRow[],
+  mode: LunaCostMode
+): MarketModelRow[] {
+  const byPrice = (a: MarketModelRow, b: MarketModelRow) =>
+    blendedUsd(a) - blendedUsd(b) || intel(b) - intel(a);
+  const byIntel = (a: MarketModelRow, b: MarketModelRow) =>
+    intel(b) - intel(a) || blendedUsd(a) - blendedUsd(b);
+  const byValue = (a: MarketModelRow, b: MarketModelRow) =>
+    valuePerCost(b) - valuePerCost(a) || blendedUsd(a) - blendedUsd(b);
+
+  if (tier === "A" || tier === "B") {
+    if (mode === "cheap") return [...pool].sort(byPrice);
+    if (mode === "balanced") return [...pool].sort(byValue);
+    return [...pool].sort(byIntel);
+  }
+  if (tier === "S") {
+    if (mode === "performance") return [...pool].sort(byIntel);
+    return [...pool].sort(byPrice);
+  }
+  if (mode === "performance") return [...pool].sort(byPrice);
+  return [...pool].sort(byPrice);
+}
+
+function formatSwapSummaryLine(
+  from: MarketModelRow | null,
+  to: MarketModelRow,
+  modeNote: string
+): string {
+  const fi = from?.intelligence_index ?? null;
+  const ti = to.intelligence_index;
+  const fb = from ? blendedUsd(from) : null;
+  const tb = blendedUsd(to);
+  const ft = from ? ttftSec(from) : null;
+  const tt = ttftSec(to);
+
+  const intelPct =
+    fi != null && Number(fi) > 0 && ti != null
+      ? Math.round(((Number(ti) - Number(fi)) / Number(fi)) * 100)
+      : null;
+  const pricePct =
+    fb != null && Number.isFinite(fb) && fb > 0 && Number.isFinite(tb)
+      ? Math.round(((tb - fb) / fb) * 100)
+      : null;
+
+  const pct = (n: number) =>
+    n >= 0 ? `+${n}%` : `−${Math.abs(n)}%`;
+
+  const intelPart = `지능 ${fmtNum(fi, 1)}→${fmtNum(ti, 1)}${
+    intelPct != null ? `(${pct(intelPct)})` : ""
+  }`;
+  const pricePart = `가격 ${
+    fb != null && Number.isFinite(fb) ? fmtUsd(fb) : "—"
+  }→${Number.isFinite(tb) ? fmtUsd(tb) : "—"}${
+    pricePct != null ? `(${pct(pricePct)})` : ""
+  }`;
+  const ttftPart = `TTFT ${
+    ft != null ? `${fmtNum(ft, 2)}` : "—"
+  }→${tt != null ? `${fmtNum(tt, 2)}` : "—"}초`;
+
+  return `${intelPart} · ${pricePart} · ${ttftPart} — ${modeNote}`;
+}
+
+function candidateShort(row: MarketModelRow): string {
+  const p = blendedUsd(row);
+  return `${row.model_slug} (지능 ${fmtNum(row.intelligence_index, 1)} · ${
+    Number.isFinite(p) ? fmtUsd(p) : "—"
+  })`;
+}
+
+export type TierExplainCandidate = {
+  model_slug: string;
+  provider: string;
+  intelligence_index: number | null;
+  price_blended: number | null;
+  ttft: number | null;
+  status: string;
+};
+
+export type TierExplanation = {
+  tier: LunaTier;
+  summary: string;
+  candidate_slug: string | null;
+  candidate_provider: string | null;
+  show_apply: boolean;
+  candidates: TierExplainCandidate[];
+};
+
+export function explainTierSelections(
+  market: MarketModelRow[],
+  tiers: Array<{ tier: string; model_id: string }>,
+  opts: {
+    mode: LunaCostMode;
+    auto_swap: boolean;
+    protect_s: boolean;
+    monthlyLimitKrw?: number | null;
+    catalog?: ProviderModelCatalog | null;
+  }
+): TierExplanation[] {
+  const mode = opts.mode;
+  const catalog = opts.catalog ?? null;
+  const out: TierExplanation[] = [];
+
+  for (const tier of LUNA_TIER_ORDER) {
+    const currentId =
+      String(tiers.find((x) => x.tier === tier)?.model_id ?? "") || "";
+    const from = findMarketRow(market, currentId);
+    const pool = poolForTierExplain(tier, market, mode, catalog);
+    const ranked = sortPoolForMode(tier, pool, mode);
+    const pick = pickForTierMode(tier, market, mode, catalog);
+    const rule = modePickRuleLabel(tier, mode);
+
+    const candidates: TierExplainCandidate[] = ranked.slice(0, 5).map((r) => {
+      const price = blendedUsd(r);
+      let status = "후보";
+      if (pick && slugMatchesModel(r.model_slug, pick.model_slug)) {
+        const check = validateModeCandidate(tier, r, {
+          mode,
+          from,
+          monthlyLimitKrw: opts.monthlyLimitKrw ?? null
+        });
+        status = check.ok ? "선정" : check.reason;
+      } else if (from && slugMatchesModel(r.model_slug, currentId)) {
+        status = "현재 사용";
+      } else {
+        const check = validateModeCandidate(tier, r, {
+          mode,
+          from,
+          monthlyLimitKrw: opts.monthlyLimitKrw ?? null
+        });
+        if (!check.ok) status = check.reason;
+        else if (pick) status = "순위 하위";
+        else status = "후보";
+      }
+      return {
+        model_slug: r.model_slug,
+        provider: (r.provider ?? "other").toLowerCase(),
+        intelligence_index: r.intelligence_index,
+        price_blended: Number.isFinite(price) ? price : null,
+        ttft: ttftSec(r),
+        status
+      };
+    });
+
+    let summary: string;
+    let candidate_slug: string | null = null;
+    let candidate_provider: string | null = null;
+    let show_apply = false;
+
+    if (!pick) {
+      summary = emptyPoolMessage(tier, mode);
+    } else if (currentId && slugMatchesModel(pick.model_slug, currentId)) {
+      const second = ranked.find(
+        (r) => !slugMatchesModel(r.model_slug, pick.model_slug)
+      );
+      summary = second
+        ? `현재가 최적입니다. 2위 후보 ${candidateShort(second)}보다 낫습니다`
+        : "현재가 최적입니다";
+    } else {
+      const check = validateModeCandidate(tier, pick, {
+        mode,
+        from,
+        monthlyLimitKrw: opts.monthlyLimitKrw ?? null
+      });
+      if (!check.ok) {
+        const reason = check.reason;
+        if (/가격|배|한도|상승/.test(reason)) {
+          summary = `후보 ${pick.model_slug} 가 있으나 ${reason.replace(/^가성비:\s*/, "").replace(/^가격 우선:\s*/, "").replace(/^성능 우선:\s*/, "")} 제외됐어요 (${LUNA_COST_MODE_META[mode].label} 모드 한도)`;
+          if (reason.includes("2") || reason.includes("200")) {
+            summary = `후보 ${pick.model_slug} 가 있으나 가격이 2배를 넘어 제외됐어요 (${LUNA_COST_MODE_META[mode].label} 모드 한도)`;
+          }
+        } else {
+          summary = `후보 ${pick.model_slug} 가 있으나 ${reason}으로 제외됐어요`;
+        }
+      } else if (tier === "S" && opts.protect_s) {
+        candidate_slug = apiModelIdForRow(pick, catalog);
+        candidate_provider = (pick.provider ?? "").toLowerCase();
+        show_apply = true;
+        summary = `S 등급은 보호되어 자동 교체하지 않습니다. 후보: ${candidateShort(pick)}`;
+      } else if (!opts.auto_swap) {
+        candidate_slug = apiModelIdForRow(pick, catalog);
+        candidate_provider = (pick.provider ?? "").toLowerCase();
+        show_apply = true;
+        summary = `자동 교체가 꺼져 있어요. 후보: ${candidateShort(pick)}`;
+      } else {
+        summary = formatSwapSummaryLine(from, pick, rule);
+        candidate_slug = apiModelIdForRow(pick, catalog);
+        candidate_provider = (pick.provider ?? "").toLowerCase();
+      }
+    }
+
+    out.push({
+      tier,
+      summary,
+      candidate_slug,
+      candidate_provider,
+      show_apply,
+      candidates
+    });
+  }
+
+  return out;
 }

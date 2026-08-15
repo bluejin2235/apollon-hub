@@ -21,11 +21,13 @@ import {
   buildSwapReason,
   estimateMonthlyKrwForPicks,
   findMarketRow,
+  apiModelIdForRow,
   pickForTierMode,
   slugMatchesModel,
   validateModeCandidate,
   valuePerCost
 } from "@/lib/luna/model-modes";
+import { fetchProviderModelCatalog } from "@/lib/luna/model-api-ids";
 
 export {
   blendedUsd,
@@ -176,13 +178,15 @@ export async function runModelInspect(
       String((tiers ?? []).find((x) => x.tier === t)?.model_id ?? "") || "";
   }
 
+  const catalog = await fetchProviderModelCatalog();
+
   for (const tier of LUNA_TIER_ORDER) {
     if (tier === "S" && settings.protect_s) continue;
     const current = (tiers ?? []).find((t) => t.tier === tier);
     if (!current) continue;
 
     const fromRow = findMarketRow(rows, String(current.model_id));
-    const candidate = pickForTierMode(tier, rows, mode);
+    const candidate = pickForTierMode(tier, rows, mode, catalog);
     if (!candidate) {
       console.info(`[luna/model-inspect] ${tier}: 후보 없음 (${mode})`);
       continue;
@@ -223,7 +227,7 @@ export async function runModelInspect(
       candidate,
       check.reasonNote
     );
-    proposals.push({ tier, to: candidate.model_slug, reason });
+    proposals.push({ tier, to: apiModelIdForRow(candidate, catalog), reason });
 
     if (!settings.auto_swap) {
       console.info(
@@ -244,10 +248,10 @@ export async function runModelInspect(
       savingsUsd != null ? Math.round(savingsUsd * usdKrw) : null;
 
     const toProvider = (candidate.provider ?? "anthropic").toLowerCase();
-    const toLabel = candidate.model_slug;
+    const apiId = apiModelIdForRow(candidate, catalog);
 
     console.info(
-      `[luna/model-inspect] ${tier}: 교체 (${mode}) ${current.model_id} → ${candidate.model_slug} | ${reason}`
+      `[luna/model-inspect] ${tier}: 교체 (${mode}) ${current.model_id} → ${apiId} (aa:${candidate.model_slug}) | ${reason}`
     );
 
     await admin
@@ -256,8 +260,8 @@ export async function runModelInspect(
         provider: ["openai", "google", "anthropic"].includes(toProvider)
           ? toProvider
           : "anthropic",
-        model_id: candidate.model_slug,
-        model_label: toLabel,
+        model_id: apiId,
+        model_label: apiId,
         updated_at: new Date().toISOString()
       })
       .eq("tier", tier);
@@ -268,8 +272,8 @@ export async function runModelInspect(
       from_model_id: current.model_id,
       from_model_label: current.model_label,
       to_provider: toProvider,
-      to_model_id: candidate.model_slug,
-      to_model_label: toLabel,
+      to_model_id: apiId,
+      to_model_label: apiId,
       reason: `${tier}등급 자동 점검(${mode}) · ${reason}`,
       savings_krw_month: savingsKrw,
       exam_result: "pending"
@@ -277,14 +281,14 @@ export async function runModelInspect(
 
     swapped.push({
       tier,
-      to: candidate.model_slug,
+      to: apiId,
       savings: savingsKrw
     });
 
     await lunaNotify(
       admin,
       "prompt_change",
-      `${tier}등급을 ${candidate.model_slug} 로 바꿨어요${
+      `${tier}등급을 ${apiId} 로 바꿨어요${
         savingsKrw != null
           ? `. 월 ₩${savingsKrw.toLocaleString("ko-KR")} 절감 예상`
           : ""

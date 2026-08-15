@@ -79,6 +79,22 @@ type ModePreview = {
   monthly_delta_pct: number | null;
 };
 
+type TierExplanation = {
+  tier: string;
+  summary: string;
+  candidate_slug: string | null;
+  candidate_provider: string | null;
+  show_apply: boolean;
+  candidates: Array<{
+    model_slug: string;
+    provider: string;
+    intelligence_index: number | null;
+    price_blended: number | null;
+    ttft: number | null;
+    status: string;
+  }>;
+};
+
 type Payload = {
   connections: {
     anthropic: boolean;
@@ -169,6 +185,7 @@ type Payload = {
   }>;
   settings: LunaModelCostSettings;
   alerts: LunaUsageAlerts;
+  tier_explanations?: TierExplanation[];
 };
 
 const TIER_STYLE: Record<string, { bg: string; color: string }> = {
@@ -245,6 +262,7 @@ export function LunaBrainModel() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [hoverSlug, setHoverSlug] = useState<string | null>(null);
   const [modePreview, setModePreview] = useState<ModePreview | null>(null);
+  const [explainOpen, setExplainOpen] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async (r: string = range) => {
     setLoading(true);
@@ -357,12 +375,20 @@ export function LunaBrainModel() {
     }
   }
 
-  async function saveTier(tier: string) {
-    const modelId = drafts[tier];
+  async function saveTier(
+    tier: string,
+    forced?: { model_id: string; provider: string }
+  ) {
+    const modelId = forced?.model_id ?? drafts[tier];
     if (!modelId || !data) return;
     const opt = (data.selectable ?? []).find((s) => s.model_slug === modelId);
-    if (!opt || opt.disabled) {
+    const provider = forced?.provider ?? opt?.provider;
+    if (!provider || (opt?.disabled && !forced)) {
       setNotice(opt?.disabled_reason ?? "선택할 수 없는 모델입니다");
+      return;
+    }
+    if (opt?.disabled) {
+      setNotice(opt.disabled_reason ?? "API 키 미등록");
       return;
     }
     setBusy(true);
@@ -376,7 +402,7 @@ export function LunaBrainModel() {
             tier_update: {
               tier,
               model_id: modelId,
-              provider: opt.provider
+              provider
             }
           })
         }
@@ -731,6 +757,10 @@ export function LunaBrainModel() {
               {data.tiers.map((t) => {
                 const draft = drafts[t.tier] ?? t.model_id;
                 const dirty = draft !== t.model_id;
+                const expl =
+                  data.tier_explanations?.find((e) => e.tier === t.tier) ??
+                  null;
+                const detailOpen = Boolean(explainOpen[t.tier]);
                 const groups = [
                   {
                     label: "Claude",
@@ -754,91 +784,219 @@ export function LunaBrainModel() {
                 return (
                   <div
                     key={t.tier}
-                    className="flex flex-wrap items-center gap-3 border-b px-[18px] py-3 last:border-b-0"
+                    className="border-b last:border-b-0"
                     style={{ borderColor: K.line2 }}
                   >
-                    <TierBadge tier={t.tier} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13.5px] font-semibold">
-                        {t.meta?.name ?? t.tier}
+                    <div className="flex flex-wrap items-center gap-3 px-[18px] py-3">
+                      <TierBadge tier={t.tier} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13.5px] font-semibold">
+                          {t.meta?.name ?? t.tier}
+                        </div>
+                        <div className="text-[11.5px]" style={{ color: K.sub }}>
+                          {t.meta?.desc}
+                        </div>
                       </div>
-                      <div className="text-[11.5px]" style={{ color: K.sub }}>
-                        {t.meta?.desc}
-                      </div>
-                    </div>
-                    <select
-                      className="max-w-[min(420px,100%)] rounded-lg border bg-white px-2 py-1.5 font-mono text-[12px]"
-                      style={{ borderColor: K.line, color: K.ink }}
-                      value={draft}
-                      disabled={busy}
-                      onChange={(e) =>
-                        setDrafts((d) => ({ ...d, [t.tier]: e.target.value }))
-                      }
-                    >
-                      {!groups.some((g) =>
-                        g.items.some((i) => i.model_slug === draft)
-                      ) ? (
-                        <option value={draft}>{draft || "—"}</option>
-                      ) : null}
-                      {groups.map((g) =>
-                        g.items.length ? (
-                          <optgroup key={g.label} label={g.label}>
-                            {g.items.map((s) => {
-                              const ttft =
-                                s.median_time_to_first_token_seconds != null
-                                  ? `${Number(s.median_time_to_first_token_seconds).toFixed(1)}초`
-                                  : "—";
-                              const price =
-                                s.price_blended != null
-                                  ? `$${Number(s.price_blended).toFixed(2)}`
-                                  : "—";
-                              const label = `${s.model_slug} · 지능 ${s.intelligence_index ?? "—"} · ${price} · ${ttft}${
-                                s.disabled
-                                  ? ` (${s.disabled_reason ?? "비활성"})`
-                                  : ""
-                              }`;
-                              return (
-                                <option
-                                  key={s.model_slug}
-                                  value={s.model_slug}
-                                  disabled={s.disabled}
-                                >
-                                  {label}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        ) : null
-                      )}
-                    </select>
-                    {dirty ? (
-                      <Btn
-                        primary
+                      <select
+                        className="max-w-[min(420px,100%)] rounded-lg border bg-white px-2 py-1.5 font-mono text-[12px]"
+                        style={{ borderColor: K.line, color: K.ink }}
+                        value={draft}
                         disabled={busy}
-                        onClick={() => void saveTier(t.tier)}
+                        onChange={(e) =>
+                          setDrafts((d) => ({ ...d, [t.tier]: e.target.value }))
+                        }
                       >
-                        저장
-                      </Btn>
-                    ) : null}
-                    <span
-                      className="rounded-[10px] px-[7px] py-px text-[10.5px]"
-                      style={{
-                        background:
-                          t.change_badge === "유지" ? K.chip : "#E1F5EE",
-                        color: t.change_badge === "유지" ? K.faint : "#0F6E56"
-                      }}
-                    >
-                      {t.change_badge}
-                    </span>
-                    <div className="w-24 text-right text-[12.5px]">
-                      <b className="font-semibold">{fmtWon(t.week_cost)}</b>
+                        {!groups.some((g) =>
+                          g.items.some((i) => i.model_slug === draft)
+                        ) ? (
+                          <option value={draft}>{draft || "—"}</option>
+                        ) : null}
+                        {groups.map((g) =>
+                          g.items.length ? (
+                            <optgroup key={g.label} label={g.label}>
+                              {g.items.map((s) => {
+                                const ttft =
+                                  s.median_time_to_first_token_seconds != null
+                                    ? `${Number(s.median_time_to_first_token_seconds).toFixed(1)}초`
+                                    : "—";
+                                const price =
+                                  s.price_blended != null
+                                    ? `$${Number(s.price_blended).toFixed(2)}`
+                                    : "—";
+                                const label = `${s.model_slug} · 지능 ${s.intelligence_index ?? "—"} · ${price} · ${ttft}${
+                                  s.disabled
+                                    ? ` (${s.disabled_reason ?? "비활성"})`
+                                    : ""
+                                }`;
+                                return (
+                                  <option
+                                    key={s.model_slug}
+                                    value={s.model_slug}
+                                    disabled={s.disabled}
+                                  >
+                                    {label}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          ) : null
+                        )}
+                      </select>
+                      {dirty ? (
+                        <Btn
+                          primary
+                          disabled={busy}
+                          onClick={() => void saveTier(t.tier)}
+                        >
+                          저장
+                        </Btn>
+                      ) : null}
                       <span
-                        className="block text-[10.5px]"
-                        style={{ color: K.faint }}
+                        className="rounded-[10px] px-[7px] py-px text-[10.5px]"
+                        style={{
+                          background:
+                            t.change_badge === "유지" ? K.chip : "#E1F5EE",
+                          color:
+                            t.change_badge === "유지" ? K.faint : "#0F6E56"
+                        }}
                       >
-                        이번 주
+                        {t.change_badge}
                       </span>
+                      <div className="w-24 text-right text-[12.5px]">
+                        <b className="font-semibold">{fmtWon(t.week_cost)}</b>
+                        <span
+                          className="block text-[10.5px]"
+                          style={{ color: K.faint }}
+                        >
+                          이번 주
+                        </span>
+                      </div>
                     </div>
+                    {expl ? (
+                      <div
+                        className="px-[18px] pb-3 pt-0 text-[11.5px] leading-relaxed"
+                        style={{ color: K.sub }}
+                      >
+                        <span>{expl.summary}</span>
+                        {expl.show_apply &&
+                        expl.candidate_slug &&
+                        expl.candidate_provider ? (
+                          <>
+                            {" "}
+                            <button
+                              type="button"
+                              className="cursor-pointer font-semibold hover:underline"
+                              style={{ color: K.luna }}
+                              disabled={busy}
+                              onClick={() =>
+                                void saveTier(t.tier, {
+                                  model_id: expl.candidate_slug!,
+                                  provider: expl.candidate_provider!
+                                })
+                              }
+                            >
+                              [이 모델로 바꾸기]
+                            </button>
+                          </>
+                        ) : null}
+                        {" · "}
+                        <button
+                          type="button"
+                          className="cursor-pointer hover:underline"
+                          style={{ color: K.luna }}
+                          onClick={() =>
+                            setExplainOpen((o) => ({
+                              ...o,
+                              [t.tier]: !o[t.tier]
+                            }))
+                          }
+                        >
+                          [근거 자세히]
+                        </button>
+                        {detailOpen ? (
+                          <div
+                            className="mt-2 overflow-x-auto rounded-lg border"
+                            style={{ borderColor: K.line }}
+                          >
+                            <table className="w-full border-collapse text-[11px]">
+                              <thead>
+                                <tr>
+                                  {[
+                                    "모델",
+                                    "공급사",
+                                    "지능",
+                                    "가격",
+                                    "TTFT",
+                                    "탈락 사유"
+                                  ].map((h) => (
+                                    <th
+                                      key={h}
+                                      className="border-b px-2 py-1.5 text-left font-semibold"
+                                      style={{
+                                        color: K.faint,
+                                        borderColor: K.line
+                                      }}
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {expl.candidates.map((c) => (
+                                  <tr key={c.model_slug}>
+                                    <td
+                                      className="border-b px-2 py-1.5 font-mono"
+                                      style={{ borderColor: K.line2 }}
+                                    >
+                                      {c.model_slug}
+                                    </td>
+                                    <td
+                                      className="border-b px-2 py-1.5"
+                                      style={{ borderColor: K.line2 }}
+                                    >
+                                      {c.provider}
+                                    </td>
+                                    <td
+                                      className="border-b px-2 py-1.5"
+                                      style={{ borderColor: K.line2 }}
+                                    >
+                                      {c.intelligence_index ?? "—"}
+                                    </td>
+                                    <td
+                                      className="border-b px-2 py-1.5"
+                                      style={{ borderColor: K.line2 }}
+                                    >
+                                      {c.price_blended != null
+                                        ? `$${Number(c.price_blended).toFixed(2)}`
+                                        : "—"}
+                                    </td>
+                                    <td
+                                      className="border-b px-2 py-1.5"
+                                      style={{ borderColor: K.line2 }}
+                                    >
+                                      {c.ttft != null
+                                        ? `${Number(c.ttft).toFixed(2)}초`
+                                        : "—"}
+                                    </td>
+                                    <td
+                                      className="border-b px-2 py-1.5"
+                                      style={{
+                                        borderColor: K.line2,
+                                        color:
+                                          c.status === "선정" ? K.luna : K.sub
+                                      }}
+                                    >
+                                      {c.status}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -858,7 +1016,21 @@ export function LunaBrainModel() {
                 data.market.rank_min_intelligence > 0
                   ? ` · 지능 ${data.market.rank_min_intelligence} 미만 제외`
                   : ""}{" "}
-                · Artificial Analysis 기준
+                ·{" "}
+                <button
+                  type="button"
+                  className="cursor-pointer hover:underline"
+                  style={{ color: "#534AB7", textDecoration: "none" }}
+                  onClick={() =>
+                    window.open(
+                      "https://artificialanalysis.ai/",
+                      "_blank",
+                      "noopener,noreferrer,width=1200,height=800"
+                    )
+                  }
+                >
+                  Artificial Analysis 기준 ↗
+                </button>
               </span>
               <span
                 className="ml-auto text-[11.5px]"
@@ -1719,6 +1891,24 @@ export function LunaBrainModel() {
               ) : null}
             </div>
           </section>
+
+          <p className="pt-2 text-center text-[11.5px]" style={{ color: K.faint }}>
+            모델 성능·가격 데이터 제공:{" "}
+            <button
+              type="button"
+              className="cursor-pointer hover:underline"
+              style={{ color: "#534AB7", textDecoration: "none" }}
+              onClick={() =>
+                window.open(
+                  "https://artificialanalysis.ai/",
+                  "_blank",
+                  "noopener,noreferrer,width=1200,height=800"
+                )
+              }
+            >
+              Artificial Analysis ↗
+            </button>
+          </p>
         </div>
       ) : null}
     </KnowledgeShell>

@@ -24,8 +24,10 @@ import {
   buildModePreview,
   ensureActiveModePeriod,
   estimateModeMonthlyCosts,
+  explainTierSelections,
   loadModeHistory
 } from "@/lib/luna/model-modes";
+import { fetchProviderModelCatalog } from "@/lib/luna/model-api-ids";
 import {
   brandCounts,
   buildCuratedDisplaySet,
@@ -493,6 +495,13 @@ export async function GET(request: NextRequest) {
     console.warn("[luna/model-cost] modes", err);
   }
 
+  let catalog = null;
+  try {
+    catalog = await fetchProviderModelCatalog();
+  } catch (err) {
+    console.warn("[luna/model-cost] api catalog", err);
+  }
+
   return NextResponse.json({
     connections: { ...connected, artificial_analysis: aaKey },
     fx: { usd_krw: usdKrw, date: fxDate },
@@ -580,6 +589,20 @@ export async function GET(request: NextRequest) {
     changes: changes ?? [],
     settings,
     alerts,
+    tier_explanations: explainTierSelections(
+      marketRows,
+      orderedTiers.map((t) => ({
+        tier: String(t.tier),
+        model_id: String(t.model_id)
+      })),
+      {
+        mode: settings.mode,
+        auto_swap: settings.auto_swap,
+        protect_s: settings.protect_s,
+        monthlyLimitKrw: alerts.monthly_limit,
+        catalog
+      }
+    ),
     model_options: LUNA_MODEL_OPTIONS
   });
 }
@@ -767,6 +790,8 @@ export async function POST(request: NextRequest) {
     const monthlyLimit = normalizeUsageAlerts(alertRow?.value ?? null)
       .monthly_limit;
 
+    const catalog = await fetchProviderModelCatalog();
+
     if (body.action === "preview_mode") {
       const { data: tiers } = await admin
         .from("luna_engine_tiers")
@@ -781,7 +806,8 @@ export async function POST(request: NextRequest) {
         usage,
         usdKrw,
         28,
-        monthlyLimit
+        monthlyLimit,
+        catalog
       );
       return NextResponse.json({ ok: true, preview });
     }
@@ -792,7 +818,8 @@ export async function POST(request: NextRequest) {
       marketRows,
       usdKrw,
       usage,
-      monthlyLimit
+      monthlyLimit,
+      catalog
     );
 
     const { data: settingsRow } = await admin
