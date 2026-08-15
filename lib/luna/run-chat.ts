@@ -1,6 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import {
+  hasManualConnectors,
+  resolveConnectorsAuto,
+  type ConnectorFlags
+} from "@/lib/luna/connector-routing";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
+import {
+  isKnowledgeDumpRequest,
+  KNOWLEDGE_DUMP_CLARIFY,
+  KNOWLEDGE_LIST_HARD_RULE,
+  sanitizeKnowledgeListAnswer,
+  selectLearningsForInject
+} from "@/lib/luna/knowledge-dump-guard";
 import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
 import {
   getPrompts,
@@ -18,6 +31,9 @@ const KEYWORD_EXTRACT_FALLBACK =
 
 const SYNTHESIS_OPINION_FALLBACK =
   "- 검색 결과 목록을 답변에 다시 나열하지 마세요. 화면에 이미 카드로 표시됩니다. 당신은 그 자료들을 종합한 판단과 의견만 쓰세요.";
+
+const CLARIFY_FALLBACK =
+  '질문이 모호하면 JSON만 응답: {"needs_clarify":true,"question":"...","options":["...","..."]}. 확실하면 {"needs_clarify":false}.';
 
 const SEARCH_REQUEST_KEYWORDS = ["찾아줘", "레퍼런스", "사례", "검색", "알려줘"] as const;
 
@@ -84,6 +100,49 @@ function getAnthropicClient(): Anthropic | null {
   return new Anthropic({ apiKey });
 }
 
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  const tryParse = (s: string): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(s) as unknown;
+      return v && typeof v === "object" && !Array.isArray(v)
+        ? (v as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence?.[1]) {
+    const fromFence = tryParse(fence[1].trim());
+    if (fromFence) return fromFence;
+  }
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) return tryParse(trimmed.slice(start, end + 1));
+  return null;
+}
+
+function resolveEvalConnectors(
+  message: string,
+  requested: LunaConnectors
+): ConnectorFlags {
+  const manual: ConnectorFlags = {
+    notion: requested.notion === true,
+    web: requested.web === true,
+    nas: requested.nas === true
+  };
+  if (hasManualConnectors(manual)) {
+    return manual;
+  }
+  return resolveConnectorsAuto(message, {
+    hasAttachments: false,
+    manual
+  }).connectors;
+}
+
 function buildSystemPrompt(opts: {
   identity: string;
   learnings: LearningRow[];
@@ -139,6 +198,7 @@ function buildSystemPrompt(opts: {
       "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
       "- 검색 결과가 없으면 '기능 준비 중', '연동이 안 되어 있다', '실시간으로 불러올 수 없다' 같은 말은 절대 하지 마세요. 대신 아폴론 관점에서 아는 내용으로 답하거나, 검색어를 어떻게 바꾸면 좋을지 제안하세요.\n" +
       `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
+      `${KNOWLEDGE_LIST_HARD_RULE}\n` +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
 
@@ -165,8 +225,51 @@ async function extractSearchKeywords(
   }
 }
 
+async function maybeClarify(
+  client: Anthropic,
+  userText: string,
+  clarifyPrompt: string
+): Promise<string | null> {
+  try {
+    const clarifyRes = await client.messages.create({
+      model: LUNA_MODEL,
+      max_tokens: 512,
+      system: clarifyPrompt.trim() || CLARIFY_FALLBACK,
+      messages: [{ role: "user", content: userText }]
+    });
+    const raw =
+      clarifyRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    const parsed = parseJsonObject(raw);
+    if (parsed) {
+      const needs = parsed.needs_clarify === true;
+      const question =
+        typeof parsed.question === "string" ? parsed.question.trim() : "";
+      const options = Array.isArray(parsed.options)
+        ? parsed.options
+            .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+            .map((o) => o.trim())
+            .slice(0, 5)
+        : [];
+      if (needs && question && options.length >= 2) {
+        return `${question}\n${options.map((o, i) => `${i + 1}. ${o}`).join("\n")}`;
+      }
+      return null;
+    }
+    const numbered = parseNumberedChoices(raw);
+    if (numbered && numbered.options.length >= 2) {
+      return `${numbered.body || "어느 쪽을 찾으시나요?"}\n${numbered.options
+        .map((o, i) => `${i + 1}. ${o}`)
+        .join("\n")}`;
+    }
+  } catch (err) {
+    console.error("[luna/run-chat] clarify", err);
+  }
+  return null;
+}
+
 /**
  * 단일 턴 LUNA 실행 (대화 이력/스킬/첨부 없음). 회귀 테스트용.
+ * 일반 대화와 동일하게: 커넥터 수동 우선 → 없으면 자동 라우팅 → 되묻기 → 검색 → 답변.
  * 메시지를 DB에 저장하지 않음.
  */
 export async function runLunaTurn(
@@ -180,13 +283,25 @@ export async function runLunaTurn(
     throw new Error("Claude API key is not configured");
   }
 
-  const notionEnabled = connectors.notion === true;
-  const webEnabled = connectors.web === true;
-  const nasEnabled = connectors.nas === true;
   const userText = message.trim();
   if (!userText) {
     throw new Error("message is required");
   }
+
+  if (isKnowledgeDumpRequest(userText)) {
+    return {
+      answer: KNOWLEDGE_DUMP_CLARIFY,
+      sources: [],
+      notionSources: [],
+      durationMs: Date.now() - startedAt,
+      modelLabel: LUNA_MODEL_LABEL
+    };
+  }
+
+  const resolved = resolveEvalConnectors(userText, connectors);
+  const notionEnabled = resolved.notion;
+  const webEnabled = resolved.web;
+  const nasEnabled = resolved.nas;
 
   const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
 
@@ -195,6 +310,8 @@ export async function runLunaTurn(
   const talkSearch = loadedPrompts[LUNA_PROMPT_KEYS.search]?.trim() || "";
   const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
   const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
+  const clarifyPrompt =
+    loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK;
   const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
   const synthesisOpinion =
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
@@ -203,6 +320,17 @@ export async function runLunaTurn(
   const connectorPrompts: string[] = [];
   if ((notionEnabled || nasEnabled || webEnabled) && talkSearch) {
     connectorPrompts.push(talkSearch);
+  }
+
+  const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
+  if (clarifyAnswer) {
+    return {
+      answer: clarifyAnswer,
+      sources: [],
+      notionSources: [],
+      durationMs: Date.now() - startedAt,
+      modelLabel: LUNA_MODEL_LABEL
+    };
   }
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
@@ -216,7 +344,10 @@ export async function runLunaTurn(
     .order("created_at", { ascending: false })
     .limit(10);
 
-  const learnings = (learningsData ?? []) as LearningRow[];
+  const learnings = selectLearningsForInject(
+    (learningsData ?? []) as LearningRow[],
+    userText
+  );
   const isSearchRequest = isSearchRequestMessage(userText);
 
   let notionSources: NotionSource[] = [];
@@ -281,8 +412,9 @@ export async function runLunaTurn(
     messages: [{ role: "user", content: userText }]
   });
 
-  const answer =
+  const rawAnswer =
     response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  const answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
 
   return {
     answer,

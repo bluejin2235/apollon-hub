@@ -51,6 +51,13 @@ import {
   type ConnectorFlags,
   type ConnectorRoutingResult
 } from "@/lib/luna/connector-routing";
+import {
+  isKnowledgeDumpRequest,
+  KNOWLEDGE_DUMP_CLARIFY,
+  KNOWLEDGE_LIST_HARD_RULE,
+  sanitizeKnowledgeListAnswer,
+  selectLearningsForInject
+} from "@/lib/luna/knowledge-dump-guard";
 import { buildUsedPromptRefs } from "@/lib/luna/used-prompts";
 
 export const runtime = "nodejs";
@@ -376,6 +383,8 @@ function buildStableSystemText(opts: {
       .join("\n");
     parts.push(`[아폴론에 대해 알고 있는 것]\n${learningBlock}`);
   }
+
+  parts.push(`[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`);
 
   for (const block of opts.connectorPrompts ?? []) {
     if (block.trim()) parts.push(block.trim());
@@ -757,18 +766,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: learningsError.message }, { status: 500 });
   }
   type LearningInjectRow = LearningRow & { id: string; use_count: number | null };
-  const learningsRows = (learningsData ?? []) as LearningInjectRow[];
-  const learnings = learningsRows.map((l) => ({
-    content: l.content,
-    category: l.category
-  }));
+  const learningsRowsAll = (learningsData ?? []) as LearningInjectRow[];
 
-  if (learningsRows.length > 0) {
+  if (learningsRowsAll.length > 0) {
     const nowIso = new Date().toISOString();
     void (async () => {
       try {
         await Promise.all(
-          learningsRows.map((row) =>
+          learningsRowsAll.slice(0, 10).map((row) =>
             admin
               .from("luna_learnings")
               .update({
@@ -887,6 +892,12 @@ export async function POST(request: NextRequest) {
 
   const userText =
     message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
+  const knowledgeDumpRequested = isKnowledgeDumpRequest(userText);
+  const learningsRows = selectLearningsForInject(learningsRowsAll, userText);
+  const learnings = learningsRows.map((l) => ({
+    content: l.content,
+    category: l.category
+  }));
   const searchIntentText =
     lastHadClarify && clarifyOriginalUser
       ? `원래 질문: ${clarifyOriginalUser}\n확인된 조건: ${userText}`
@@ -956,6 +967,40 @@ export async function POST(request: NextRequest) {
             attachments,
             attachmentMeta
           });
+          return;
+        }
+
+        // 지식 대량 인출 요청 — 나열 대신 범위 되묻기 (코드 가드)
+        if (knowledgeDumpRequested) {
+          pushStep("clarify", "done", "의도 확인");
+          const dumpNow = Date.now();
+          controller.enqueue(encoder.encode(KNOWLEDGE_DUMP_CLARIFY));
+          await admin.from("luna_messages").insert([
+            {
+              conversation_id: conversationId,
+              role: "user",
+              content: userText,
+              engine: usedEngine,
+              metadata: {},
+              created_at: new Date(dumpNow - 1000).toISOString()
+            },
+            {
+              conversation_id: conversationId,
+              role: "assistant",
+              content: KNOWLEDGE_DUMP_CLARIFY,
+              engine: usedEngine,
+              metadata: {
+                knowledge_dump_blocked: true,
+                model_label: tierB.model_label,
+                duration_ms: Date.now() - startedAt,
+                steps
+              },
+              created_at: new Date(dumpNow).toISOString()
+            }
+          ]);
+          await touchConversation();
+          scheduleConversationTitle(admin, conversationId);
+          controller.close();
           return;
         }
 
@@ -1706,6 +1751,13 @@ export async function POST(request: NextRequest) {
         pushStep("answer", "done", "정리 완료");
 
         const durationMs = Date.now() - startedAt;
+        const safeAssistantText = sanitizeKnowledgeListAnswer(
+          assistantText,
+          learnings
+        );
+        if (safeAssistantText !== assistantText) {
+          assistantText = safeAssistantText;
+        }
         const userMeta: Record<string, unknown> = {};
         const assistantMeta: Record<string, unknown> = {
           model_label: tierA.model_label,

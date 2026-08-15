@@ -141,7 +141,8 @@ function tierBadgeLabel(tier: string | null | undefined): string {
 
 function resultKind(
   result: EvalResult
-): "pass" | "partial" | "must_fail" | "fail" | "unknown" {
+): "pass" | "partial" | "must_fail" | "fail" | "error" | "unknown" {
+  if (result.verdict === "error") return "error";
   if (result.fail_kind === "must_pass") return "must_fail";
   if (result.fail_kind === "quality" || result.verdict === "partial") {
     return "partial";
@@ -916,7 +917,9 @@ export function LunaBrainEval() {
                           className="min-w-0 flex-1 truncate text-[13px]"
                           style={{
                             color:
-                              kind === "must_fail" || kind === "fail"
+                              kind === "must_fail" ||
+                              kind === "fail" ||
+                              kind === "error"
                                 ? K.sub
                                 : K.ink
                           }}
@@ -941,12 +944,15 @@ export function LunaBrainEval() {
                           <Badge kind="warn">품질미달</Badge>
                         ) : kind === "must_fail" ? (
                           <Badge kind="red">필수위반</Badge>
+                        ) : kind === "error" ? (
+                          <Badge kind="red">채점 실패</Badge>
                         ) : kind === "fail" ? (
                           <Badge kind="red">실패</Badge>
                         ) : (
                           <Badge kind="src">미채점</Badge>
                         )}
-                        {typeof result.score === "number" ? (
+                        {kind !== "error" &&
+                        typeof result.score === "number" ? (
                           <span
                             className="w-8 shrink-0 text-right text-[11px]"
                             style={{ color: K.faint }}

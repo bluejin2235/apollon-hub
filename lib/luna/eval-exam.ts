@@ -307,7 +307,7 @@ async function recomputeRunCountsFromAuto(
 }> {
   const { data: rows, error } = await admin
     .from("luna_eval_results")
-    .select("auto_pass, score, fail_kind")
+    .select("auto_pass, score, fail_kind, verdict")
     .eq("run_id", runId);
 
   if (error) {
@@ -319,7 +319,11 @@ async function recomputeRunCountsFromAuto(
   let score_sum = 0;
   let must_pass_violations = 0;
   let quality_misses = 0;
+  let scored = 0;
   for (const row of rows ?? []) {
+    // 채점/저장 실패(error)는 점수·합격 집계에서 제외
+    if (row.verdict === "error") continue;
+    scored += 1;
     const score =
       typeof row.score === "number"
         ? Number(row.score)
@@ -333,7 +337,7 @@ async function recomputeRunCountsFromAuto(
     if (row.fail_kind === "quality") quality_misses += 1;
   }
   const total = (rows ?? []).length;
-  const score_max = total;
+  const score_max = scored;
   await admin
     .from("luna_eval_runs")
     .update({
@@ -626,11 +630,55 @@ export async function executeEvalCase(
     nas: connectorsRaw.nas === true
   };
 
-  const result = await runLunaTurn(
-    admin,
-    evalCase.question as string,
-    connectors
-  );
+  let result: Awaited<ReturnType<typeof runLunaTurn>>;
+  try {
+    result = await runLunaTurn(
+      admin,
+      evalCase.question as string,
+      connectors
+    );
+  } catch (err) {
+    const reason =
+      err instanceof Error ? err.message.slice(0, 300) : "실행 실패";
+    const { data: errRow, error: errInsert } = await admin
+      .from("luna_eval_results")
+      .upsert(
+        {
+          run_id: runId,
+          case_id: caseId,
+          answer: "",
+          sources: [],
+          verdict: "error",
+          memo: null,
+          auto_pass: false,
+          auto_reason: reason,
+          score: null,
+          fail_kind: null,
+          duration_ms: null,
+          model_label: null
+        },
+        { onConflict: "run_id,case_id" }
+      )
+      .select(
+        "id, case_id, answer, auto_pass, auto_reason, score, fail_kind, duration_ms, model_label, verdict"
+      )
+      .single();
+    if (errInsert || !errRow) {
+      throw new Error(errInsert?.message || reason);
+    }
+    return {
+      id: errRow.id as string,
+      case_id: errRow.case_id as string,
+      answer: "",
+      auto_pass: false,
+      auto_reason: reason,
+      score: 0,
+      fail_kind: null,
+      duration_ms: 0,
+      model_label: ""
+    };
+  }
+
   const grade = await autoGradeAnswer(
     evalCase.question as string,
     (evalCase.expectation as string | null) ?? null,
@@ -670,7 +718,46 @@ export async function executeEvalCase(
     .single();
 
   if (insertError || !inserted) {
-    throw new Error(insertError?.message || "Failed to save result");
+    const saveReason = (
+      insertError?.message || "Failed to save result"
+    ).slice(0, 300);
+    const { data: errRow, error: errInsert } = await admin
+      .from("luna_eval_results")
+      .upsert(
+        {
+          run_id: runId,
+          case_id: caseId,
+          answer: result.answer,
+          sources: result.sources,
+          verdict: "error",
+          memo: null,
+          auto_pass: false,
+          auto_reason: saveReason,
+          score: null,
+          fail_kind: null,
+          duration_ms: result.durationMs,
+          model_label: result.modelLabel
+        },
+        { onConflict: "run_id,case_id" }
+      )
+      .select(
+        "id, case_id, answer, auto_pass, auto_reason, score, fail_kind, duration_ms, model_label, verdict"
+      )
+      .single();
+    if (errInsert || !errRow) {
+      throw new Error(errInsert?.message || saveReason);
+    }
+    return {
+      id: errRow.id as string,
+      case_id: errRow.case_id as string,
+      answer: (errRow.answer as string) ?? result.answer,
+      auto_pass: false,
+      auto_reason: saveReason,
+      score: 0,
+      fail_kind: null,
+      duration_ms: result.durationMs,
+      model_label: result.modelLabel
+    };
   }
 
   return {
@@ -843,12 +930,12 @@ export async function runEvalExam(
             case_id: c.id,
             answer: "",
             sources: [],
-            verdict: "fail",
+            verdict: "error",
             auto_pass: false,
             auto_reason:
               err instanceof Error ? err.message.slice(0, 300) : "실행 실패",
-            score: 0,
-            fail_kind: "must_pass",
+            score: null,
+            fail_kind: null,
             duration_ms: null,
             model_label: tierB.model_label
           },
