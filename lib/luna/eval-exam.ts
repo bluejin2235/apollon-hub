@@ -222,8 +222,8 @@ export async function autoGradeAnswer(
 
   let modelId = "claude-haiku-4-5-20251001";
   if (opts?.admin) {
-    const tierB = resolveAnthropicModel(await getTierModel(opts.admin, "B"));
-    modelId = tierB.model_id;
+    const tierC = resolveAnthropicModel(await getTierModel(opts.admin, "C"));
+    modelId = tierC.model_id;
   }
 
   const mustPass =
@@ -898,7 +898,7 @@ export async function runEvalExam(
       : opts.tier ?? null
   );
 
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
   const now = new Date().toISOString();
   const note =
     opts.note ??

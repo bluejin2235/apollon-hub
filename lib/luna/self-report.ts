@@ -211,10 +211,10 @@ export async function runWeeklySelfReport(
 
   let bodyText = "";
   if (client) {
-    const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+    const tierA = resolveAnthropicModel(await getTierModel(admin, "A"));
     try {
       const res = await client.messages.create({
-        model: tierB.model_id,
+        model: tierA.model_id,
         max_tokens: 1200,
         system,
         messages: [

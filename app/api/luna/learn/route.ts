@@ -299,7 +299,7 @@ export async function POST(request: NextRequest) {
   }
 
   const similar = await findSimilarActive(admin, text);
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
   const systemPrompt =
     (await getPrompt(admin, "knowledge.direct")).trim() || DIRECT_FALLBACK;
 

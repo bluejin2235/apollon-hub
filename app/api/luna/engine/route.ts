@@ -11,9 +11,16 @@ function envConnected(): Record<string, boolean> {
   return {
     anthropic: Boolean(process.env.hubtrendchat_claude?.trim()),
     openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
-    gemini: Boolean(process.env.GEMINI_API_KEY?.trim()),
+    gemini: Boolean(
+      process.env.GOOGLE_API_KEY?.trim() ||
+        process.env.GEMINI_API_KEY?.trim() ||
+        process.env.hubtrendchat_geminai?.trim()
+    ),
     tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
-    notion: Boolean(process.env.NOTION_TOKEN?.trim())
+    notion: Boolean(process.env.NOTION_TOKEN?.trim()),
+    artificial_analysis: Boolean(
+      process.env.ARTIFICIAL_ANALYSIS_API_KEY?.trim()
+    )
   };
 }
 
@@ -151,7 +158,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const tier = typeof body.tier === "string" ? body.tier.trim().toUpperCase() : "";
-  if (tier !== "A" && tier !== "B" && tier !== "C") {
+  if (tier !== "S" && tier !== "A" && tier !== "B" && tier !== "C") {
     return NextResponse.json({ error: "invalid tier" }, { status: 400 });
   }
 

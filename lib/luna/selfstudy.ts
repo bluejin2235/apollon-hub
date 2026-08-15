@@ -690,7 +690,7 @@ async function generateQuestions(
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.selfstudy)).trim() ||
     SELFSTUDY_FALLBACK;
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+  const tierB = resolveAnthropicModel(await getTierModel(admin, "C"));
 
   const evidenceBlock = stuck
     .map(

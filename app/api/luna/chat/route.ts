@@ -5,11 +5,13 @@ import { runAnalysisPipeline } from "@/lib/luna/analysis";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
   bumpUsageDaily,
+  emptyUsage,
   getTierModel,
   readUsage,
-  resolveAnthropicModel,
+  resolveProviderModel,
   type LunaUsageTokens
 } from "@/lib/luna/engine";
+import { llmStreamText } from "@/lib/luna/llm/client";
 import {
   mergeNotionSearchOutcomes,
   searchNotionPages,
@@ -668,8 +670,16 @@ export async function POST(request: NextRequest) {
   const skillIds = Array.from(
     new Set([...perspectiveIds, ...roleIds, ...taskIds])
   );
-  const tierA = resolveAnthropicModel(tierACfg);
-  const tierB = resolveAnthropicModel(tierBCfg);
+  const tierAResolved = resolveProviderModel(tierACfg);
+  const tierBResolved = resolveProviderModel(tierBCfg);
+  const tierA = {
+    model_id: tierAResolved.model_id,
+    model_label: tierAResolved.model_label || tierACfg.model_label
+  };
+  const tierB = {
+    model_id: tierBResolved.model_id,
+    model_label: tierBResolved.model_label || tierBCfg.model_label
+  };
 
   const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
 
@@ -1115,6 +1125,7 @@ export async function POST(request: NextRequest) {
                     keywords: kw,
                     queryText: searchIntentText,
                     model: tierB.model_id,
+                    provider: tierBResolved.provider,
                     exploreSystem: workserverExploreSystem,
                     onToolRound: (toolName) => {
                       pushStep("ws", "running", `Work서버 탐색 · ${toolName}`);
@@ -1542,20 +1553,72 @@ export async function POST(request: NextRequest) {
 
         let assistantText = "";
         const maxTokens = hasAttachments ? 8192 : 4096;
-        const anthropicStream = client.messages.stream({
-          model: tierA.model_id,
-          max_tokens: maxTokens,
-          system: systemPrompt,
-          messages: historyMessages
-        });
+        let answerUsage = emptyUsage();
 
-        anthropicStream.on("text", (textDelta) => {
-          assistantText += textDelta;
-          controller.enqueue(encoder.encode(textDelta));
-        });
+        if (tierAResolved.provider === "anthropic") {
+          const anthropicStream = client.messages.stream({
+            model: tierA.model_id,
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages: historyMessages
+          });
 
-        const finalMsg = await anthropicStream.finalMessage();
-        const answerUsage = readUsage(finalMsg.usage);
+          anthropicStream.on("text", (textDelta) => {
+            assistantText += textDelta;
+            controller.enqueue(encoder.encode(textDelta));
+          });
+
+          const finalMsg = await anthropicStream.finalMessage();
+          answerUsage = readUsage(finalMsg.usage);
+        } else {
+          const flatUser = historyMessages
+            .map((m) => {
+              const role = m.role;
+              let content = "";
+              if (typeof m.content === "string") {
+                content = m.content;
+              } else if (Array.isArray(m.content)) {
+                content = m.content
+                  .map((c) => {
+                    if (
+                      typeof c === "object" &&
+                      c &&
+                      "type" in c &&
+                      (c as { type: string }).type === "text"
+                    ) {
+                      return String((c as { text?: string }).text ?? "");
+                    }
+                    return "";
+                  })
+                  .join("\n");
+              }
+              return `${role}: ${content}`;
+            })
+            .join("\n\n");
+          const systemText = Array.isArray(systemPrompt)
+            ? systemPrompt.map((b) => b.text).join("\n\n")
+            : systemPrompt;
+          for await (const chunk of llmStreamText({
+            provider: tierAResolved.provider,
+            model_id: tierA.model_id,
+            system: systemText,
+            user: flatUser || userText,
+            maxTokens
+          })) {
+            if (chunk.delta) {
+              assistantText += chunk.delta;
+              controller.enqueue(encoder.encode(chunk.delta));
+            }
+            if (chunk.usage) answerUsage = chunk.usage;
+          }
+        }
+
+        bumpUsageDaily(admin, {
+          tier: "A",
+          model_id: tierA.model_id,
+          usage: answerUsage,
+          feature: "chat_answer"
+        });
         pushModelStep(modelSteps, admin, {
           label: "답변 생성",
           model: tierA.model_label,

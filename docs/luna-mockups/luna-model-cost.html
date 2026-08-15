@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 두뇌 &gt; 모델·비용 — 목업</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --up:#0F6E56; --up-soft:#E1F5EE;
+    --down:#A32D2D; --down-soft:#FCEBEB;
+    --brand-cl:#C96442; --brand-gpt:#0F9D77; --brand-gg:#3B6396;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .mocklabel{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+
+  .subtabs{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--luna)}
+
+  .sec{margin-bottom:22px}
+  .sechead{display:flex;align-items:baseline;gap:9px;margin-bottom:10px}
+  .sechead h3{font-size:14px;font-weight:700}
+  .sechead .desc{font-size:11.5px;color:var(--faint)}
+  .sechead .right{margin-left:auto;font-size:11.5px;color:var(--faint)}
+  .sechead .right a{color:var(--luna);cursor:pointer}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .pad{padding:16px 18px}
+
+  /* ── 1. 현재 배정 ── */
+  .tierrow{display:flex;align-items:center;gap:13px;padding:13px 18px;border-bottom:1px solid var(--line2)}
+  .tierrow:last-child{border-bottom:0}
+  .tg{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;
+    font-size:11.5px;font-weight:800;flex-shrink:0}
+  .tg.s{background:#EDE4FA;color:#5B3B96}
+  .tg.a{background:var(--luna-soft);color:var(--luna-ink)}
+  .tg.b{background:var(--up-soft);color:var(--up)}
+  .tg.c{background:#FAEEDA;color:#633806}
+  .tierrow .info{flex:1;min-width:0}
+  .tierrow .info .n{font-size:13.5px;font-weight:600}
+  .tierrow .info .d{font-size:11.5px;color:var(--sub);margin-top:1px}
+  .brand{font-size:9px;font-weight:700;border-radius:4px;padding:2px 5px;letter-spacing:.2px}
+  .b-cl{color:#A34F32;border:1px solid #E8CFC2}
+  .b-gpt{color:#0F7A5C;border:1px solid #C4E0D2}
+  .b-gg{color:#3B6396;border:1px solid #C7D5E8}
+  .tierrow .model{font-size:12.5px;font-family:var(--mono)}
+  .tierrow .cost{width:96px;text-align:right;font-size:12.5px}
+  .tierrow .cost b{font-weight:600}
+  .tierrow .cost .sm{display:block;font-size:10.5px;color:var(--faint)}
+  .chg{font-size:10.5px;padding:1px 7px;border-radius:10px;white-space:nowrap}
+  .chg.new{background:var(--up-soft);color:var(--up)}
+  .chg.keep{background:var(--chip);color:var(--faint)}
+
+  /* ── 2. 산점도 ── */
+  .scatter{position:relative;height:280px;margin:6px 12px 0 44px;border-left:1px solid var(--line);
+    border-bottom:1px solid var(--line)}
+  .grid{position:absolute;left:0;right:0;border-top:1px dashed var(--line2)}
+  .ylab{position:absolute;left:-40px;font-size:10px;color:var(--faint);transform:translateY(-50%)}
+  .xlab{position:absolute;bottom:-18px;font-size:10px;color:var(--faint);transform:translateX(-50%)}
+  .dot{position:absolute;width:11px;height:11px;border-radius:50%;transform:translate(-50%,50%);cursor:pointer}
+  .dot.cl{background:var(--brand-cl)}
+  .dot.gpt{background:var(--brand-gpt)}
+  .dot.gg{background:var(--brand-gg)}
+  .dot.mine{width:15px;height:15px;border:3px solid #fff;box-shadow:0 0 0 2px var(--luna)}
+  .dotlab{position:absolute;font-size:9.5px;color:var(--sub);transform:translate(-50%,50%);white-space:nowrap}
+  .axistitle{font-size:10.5px;color:var(--faint);text-align:center;margin-top:22px}
+  .yaxistitle{position:absolute;left:-38px;top:50%;font-size:10.5px;color:var(--faint);
+    transform:rotate(-90deg) translateX(50%);transform-origin:left center;white-space:nowrap}
+  .legend{display:flex;gap:14px;justify-content:center;margin-top:8px;font-size:11px;color:var(--sub)}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px}
+  .metricpick{display:flex;gap:5px}
+  .metricpick span{font-size:11px;padding:3px 10px;border-radius:20px;background:var(--chip);
+    color:var(--sub);cursor:pointer}
+  .metricpick span.on{background:var(--luna);color:#fff;font-weight:600}
+
+  /* ── 3. 순위표 ── */
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10.5px;color:var(--faint);font-weight:600;text-align:left;
+    padding:9px 10px;border-bottom:1px solid var(--line)}
+  th.r,td.r{text-align:right}
+  td{font-size:12.5px;padding:10px;border-bottom:1px solid var(--line2)}
+  tr:last-child td{border-bottom:0}
+  tr.mine{background:#FBFAFF}
+  .rank{width:26px;color:var(--faint);font-size:11px}
+  .delta{font-size:10.5px}
+  .delta.up{color:var(--up)}
+  .delta.down{color:var(--down)}
+  .delta.same{color:var(--faint)}
+  .usebadge{font-size:9.5px;background:var(--luna);color:#fff;padding:1px 6px;border-radius:8px;margin-left:5px}
+
+  /* ── 4. 가격 추이 ── */
+  .lines{position:relative;height:130px;margin:8px 12px 0 44px;border-left:1px solid var(--line);
+    border-bottom:1px solid var(--line)}
+  .lnote{display:flex;gap:16px;justify-content:center;margin-top:22px;font-size:11px;color:var(--sub)}
+
+  /* ── 5. 사용량 ── */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat .l{font-size:11.5px;color:var(--sub)}
+  .stat .v{font-size:20px;font-weight:700;margin-top:2px}
+  .stat .v small{font-size:11.5px;font-weight:600}
+  .stat .v small.up{color:var(--down)}
+  .stat .v small.down{color:var(--up)}
+  .bar{height:7px;border-radius:4px;background:var(--chip);overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+
+  /* ── 6. 교체 이력 ── */
+  .hist{display:flex;align-items:flex-start;gap:11px;padding:12px 18px;border-bottom:1px solid var(--line2)}
+  .hist:last-child{border-bottom:0}
+  .hist .when{width:52px;font-size:11px;color:var(--faint);flex-shrink:0;padding-top:2px}
+  .hist .body{flex:1}
+  .hist .t{font-size:13px}
+  .hist .t b{font-weight:600}
+  .hist .why{font-size:11.5px;color:var(--sub);margin-top:3px}
+  .res{font-size:10.5px;padding:1px 7px;border-radius:10px;white-space:nowrap}
+  .res.ok{background:var(--up-soft);color:var(--up)}
+  .res.bad{background:var(--down-soft);color:var(--down)}
+  .res.wait{background:#FAEEDA;color:#633806}
+
+  /* ── 7. 알림 설정 ── */
+  .fields{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .field label{font-size:11.5px;color:var(--sub);display:block;margin-bottom:4px}
+  .field input{width:100%;font-family:inherit;font-size:13px;border:1px solid var(--line);
+    border-radius:9px;padding:8px 11px;outline:none}
+  .btn{padding:8px 14px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btns{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .btns .note{font-size:11.5px;color:var(--faint)}
+
+  @media(max-width:900px){ .stats,.fields{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">PAGE — brain / model (모델·비용)</div>
+
+<div class="subtabs">
+  <div class="subtab">프롬프트 17</div>
+  <div class="subtab">자기개선</div>
+  <div class="subtab">성장 보고</div>
+  <div class="subtab on">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<!-- ═══ 1. 현재 배정 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>지금 쓰는 모델</h3>
+    <span class="desc">주 1회 자동 점검 후 가성비 기준으로 교체됩니다</span>
+    <span class="right">마지막 점검 8/10 · 다음 8/17 04:00 · <a>지금 점검</a></span>
+  </div>
+  <div class="card">
+    <div class="tierrow">
+      <span class="tg s">S</span>
+      <div class="info">
+        <div class="n">자기개선</div>
+        <div class="d">프롬프트를 스스로 고치는 일 · 주 1회 · 실수하면 안 됨</div>
+      </div>
+      <span class="brand b-cl">Claude</span>
+      <span class="model">Opus 4.6</span>
+      <span class="chg keep">유지</span>
+      <div class="cost"><b>₩120</b><span class="sm">이번 주</span></div>
+    </div>
+    <div class="tierrow">
+      <span class="tg a">A</span>
+      <div class="info">
+        <div class="n">사람이 읽는 결과물</div>
+        <div class="d">채팅 답변 · 후보 문답 · 주간 보고</div>
+      </div>
+      <span class="brand b-cl">Claude</span>
+      <span class="model">Sonnet 4.6</span>
+      <span class="chg keep">유지</span>
+      <div class="cost"><b>₩1,450</b><span class="sm">이번 주</span></div>
+    </div>
+    <div class="tierrow">
+      <span class="tg b">B</span>
+      <div class="info">
+        <div class="n">기계가 쓰는 실시간 판정</div>
+        <div class="d">되묻기 판정 · 검색어 정제 · 대화 제목</div>
+      </div>
+      <span class="brand b-gpt">GPT</span>
+      <span class="model">gpt-5-mini</span>
+      <span class="chg new">8/10 교체</span>
+      <div class="cost"><b>₩390</b><span class="sm">이번 주</span></div>
+    </div>
+    <div class="tierrow">
+      <span class="tg c">C</span>
+      <div class="info">
+        <div class="n">배치 · 사람 검토를 거침</div>
+        <div class="d">배움 포착 · 자습 · 회귀 채점 · 기억 정리 · 용어 윤문</div>
+      </div>
+      <span class="brand b-cl">Claude</span>
+      <span class="model">Haiku 4.5</span>
+      <span class="chg new">8/10 교체</span>
+      <div class="cost"><b>₩1,530</b><span class="sm">이번 주</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 2. 시장 현황 — 산점도 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>시장 현황</h3>
+    <span class="desc">상위 15개 · Artificial Analysis 기준</span>
+    <span class="right">8/15 04:00 갱신 · 환율 ₩1,382/USD (8/14)</span>
+  </div>
+  <div class="card pad">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:12px;color:var(--sub)">성능 축</span>
+      <div class="metricpick">
+        <span class="on">종합 지능</span>
+        <span>다국어</span>
+        <span>에이전트</span>
+      </div>
+      <span style="margin-left:auto;font-size:11px;color:var(--faint)">왼쪽 위일수록 가성비가 좋습니다</span>
+    </div>
+
+    <div style="position:relative">
+      <div class="yaxistitle">종합 지능 지수</div>
+      <div class="scatter">
+        <div class="grid" style="bottom:25%"></div>
+        <div class="grid" style="bottom:50%"></div>
+        <div class="grid" style="bottom:75%"></div>
+        <div class="ylab" style="bottom:0">40</div>
+        <div class="ylab" style="bottom:25%">50</div>
+        <div class="ylab" style="bottom:50%">60</div>
+        <div class="ylab" style="bottom:75%">70</div>
+        <div class="ylab" style="bottom:100%">80</div>
+        <div class="xlab" style="left:0">₩0</div>
+        <div class="xlab" style="left:25%">₩3천</div>
+        <div class="xlab" style="left:50%">₩7천</div>
+        <div class="xlab" style="left:75%">₩1.4만</div>
+        <div class="xlab" style="left:100%">₩3만</div>
+
+        <div class="dot gg" style="left:62%;bottom:88%"></div>
+        <div class="dotlab" style="left:62%;bottom:95%">Gemini 3 Pro</div>
+
+        <div class="dot cl mine" style="left:74%;bottom:82%"></div>
+        <div class="dotlab" style="left:74%;bottom:74%">Opus 4.6 · S</div>
+
+        <div class="dot gpt" style="left:55%;bottom:80%"></div>
+        <div class="dotlab" style="left:55%;bottom:87%">GPT-5.2</div>
+
+        <div class="dot cl mine" style="left:34%;bottom:70%"></div>
+        <div class="dotlab" style="left:34%;bottom:62%">Sonnet 4.6 · A</div>
+
+        <div class="dot gpt" style="left:28%;bottom:66%"></div>
+        <div class="dotlab" style="left:28%;bottom:73%">GPT-5.2 mini</div>
+
+        <div class="dot gg" style="left:20%;bottom:64%"></div>
+        <div class="dotlab" style="left:20%;bottom:71%">Gemini 3.5 Flash</div>
+
+        <div class="dot cl mine" style="left:13%;bottom:52%"></div>
+        <div class="dotlab" style="left:13%;bottom:44%">Haiku 4.5 · C</div>
+
+        <div class="dot gpt mine" style="left:8%;bottom:48%"></div>
+        <div class="dotlab" style="left:8%;bottom:40%">gpt-5-mini · B</div>
+
+        <div class="dot gg" style="left:5%;bottom:40%"></div>
+        <div class="dotlab" style="left:5%;bottom:33%">Gemini Flash Lite</div>
+
+        <div class="dot cl" style="left:88%;bottom:78%"></div>
+        <div class="dot gpt" style="left:44%;bottom:72%"></div>
+        <div class="dot gg" style="left:37%;bottom:60%"></div>
+        <div class="dot gpt" style="left:16%;bottom:56%"></div>
+        <div class="dot cl" style="left:48%;bottom:76%"></div>
+        <div class="dot gg" style="left:10%;bottom:46%"></div>
+      </div>
+      <div class="axistitle">100만 토큰당 비용 (입력·출력 혼합)</div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:var(--brand-cl)"></i>Claude</span>
+      <span><i style="background:var(--brand-gpt)"></i>GPT</span>
+      <span><i style="background:var(--brand-gg)"></i>Gemini</span>
+      <span><i style="background:#fff;box-shadow:0 0 0 2px var(--luna)"></i>지금 쓰는 것</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 3. 순위표 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>순위</h3>
+    <span class="desc">가성비 = 성능 ÷ 비용 · 지난주 대비 변동</span>
+  </div>
+  <div class="card">
+    <table>
+      <tr>
+        <th style="width:26px"></th>
+        <th>모델</th>
+        <th class="r">종합</th>
+        <th class="r">다국어</th>
+        <th class="r">에이전트</th>
+        <th class="r">100만 토큰</th>
+        <th class="r">가성비</th>
+        <th class="r" style="width:64px">변동</th>
+      </tr>
+      <tr>
+        <td class="rank">1</td>
+        <td><span class="brand b-gg">Gemini</span> 3.5 Flash</td>
+        <td class="r">64</td><td class="r">71</td><td class="r">58</td>
+        <td class="r">₩1,240</td><td class="r"><b>51.6</b></td>
+        <td class="r delta up">▲2</td>
+      </tr>
+      <tr class="mine">
+        <td class="rank">2</td>
+        <td><span class="brand b-gpt">GPT</span> gpt-5-mini<span class="usebadge">B</span></td>
+        <td class="r">48</td><td class="r">55</td><td class="r">44</td>
+        <td class="r">₩980</td><td class="r"><b>49.0</b></td>
+        <td class="r delta up">▲1</td>
+      </tr>
+      <tr class="mine">
+        <td class="rank">3</td>
+        <td><span class="brand b-cl">Claude</span> Haiku 4.5<span class="usebadge">C</span></td>
+        <td class="r">52</td><td class="r">63</td><td class="r">51</td>
+        <td class="r">₩1,660</td><td class="r"><b>31.3</b></td>
+        <td class="r delta same">—</td>
+      </tr>
+      <tr>
+        <td class="rank">4</td>
+        <td><span class="brand b-gpt">GPT</span> GPT-5.2 mini</td>
+        <td class="r">66</td><td class="r">68</td><td class="r">62</td>
+        <td class="r">₩2,760</td><td class="r"><b>23.9</b></td>
+        <td class="r delta down">▼1</td>
+      </tr>
+      <tr class="mine">
+        <td class="rank">5</td>
+        <td><span class="brand b-cl">Claude</span> Sonnet 4.6<span class="usebadge">A</span></td>
+        <td class="r">70</td><td class="r">76</td><td class="r">69</td>
+        <td class="r">₩4,150</td><td class="r"><b>16.9</b></td>
+        <td class="r delta same">—</td>
+      </tr>
+      <tr>
+        <td class="rank">6</td>
+        <td><span class="brand b-gg">Gemini</span> 3 Pro</td>
+        <td class="r">78</td><td class="r">79</td><td class="r">74</td>
+        <td class="r">₩8,290</td><td class="r"><b>9.4</b></td>
+        <td class="r delta up">▲3</td>
+      </tr>
+      <tr class="mine">
+        <td class="rank">7</td>
+        <td><span class="brand b-cl">Claude</span> Opus 4.6<span class="usebadge">S</span></td>
+        <td class="r">76</td><td class="r">80</td><td class="r">77</td>
+        <td class="r">₩20,730</td><td class="r"><b>3.7</b></td>
+        <td class="r delta same">—</td>
+      </tr>
+      <tr>
+        <td colspan="8" style="text-align:center;color:var(--faint);font-size:11.5px;padding:9px">
+          외 8개 · 모두 보기
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ 4. 가격 추이 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>가격 추이</h3>
+    <span class="desc">우리가 쓰는 4개 모델 · 최근 12주</span>
+  </div>
+  <div class="card pad">
+    <div style="position:relative">
+      <div class="lines">
+        <div class="grid" style="bottom:33%"></div>
+        <div class="grid" style="bottom:66%"></div>
+        <div class="ylab" style="bottom:0">₩0</div>
+        <div class="ylab" style="bottom:33%">₩7천</div>
+        <div class="ylab" style="bottom:66%">₩1.4만</div>
+        <div class="ylab" style="bottom:100%">₩2.1만</div>
+        <svg viewBox="0 0 400 130" preserveAspectRatio="none"
+             style="position:absolute;inset:0;width:100%;height:100%">
+          <polyline points="0,4 40,4 80,4 120,10 160,10 200,10 240,18 280,18 320,18 360,18 400,18"
+            fill="none" stroke="#C96442" stroke-width="1.6"/>
+          <polyline points="0,88 40,88 80,92 120,92 160,92 200,96 240,96 280,96 320,96 360,96 400,96"
+            fill="none" stroke="#C96442" stroke-width="1.6" stroke-dasharray="4 3"/>
+          <polyline points="0,104 40,104 80,104 120,110 160,110 200,110 240,112 280,116 320,116 360,116 400,116"
+            fill="none" stroke="#0F9D77" stroke-width="1.6"/>
+          <polyline points="0,112 40,112 80,114 120,114 160,118 200,118 240,120 280,120 320,122 360,122 400,122"
+            fill="none" stroke="#3B6396" stroke-width="1.6"/>
+        </svg>
+        <div class="xlab" style="left:0">5월</div>
+        <div class="xlab" style="left:33%">6월</div>
+        <div class="xlab" style="left:66%">7월</div>
+        <div class="xlab" style="left:100%">8월</div>
+      </div>
+    </div>
+    <div class="lnote">
+      <span style="color:#C96442">— Opus 4.6</span>
+      <span style="color:#C96442">--- Sonnet 4.6</span>
+      <span style="color:#0F9D77">— gpt-5-mini</span>
+      <span style="color:#3B6396">— Gemini Flash</span>
+    </div>
+    <p style="margin-top:10px;font-size:11.5px;color:var(--sub);text-align:center">
+      3개월 새 A등급 단가가 18% 내렸습니다. 같은 사용량이면 월 ₩2,600 절감.
+    </p>
+  </div>
+</div>
+
+<!-- ═══ 5. 우리 사용량 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>우리 사용량</h3>
+    <span class="desc">최근 7일 · 기능별</span>
+    <span class="right">7일 · 30일 · 전체</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="l">이번 주 비용</div><div class="v">₩3,490 <small class="down">▼31%</small></div></div>
+    <div class="stat"><div class="l">호출</div><div class="v">507회</div></div>
+    <div class="stat"><div class="l">토큰</div><div class="v">1.49M</div></div>
+    <div class="stat"><div class="l">월 예상</div><div class="v">₩14,900</div></div>
+  </div>
+
+  <div class="card">
+    <table>
+      <tr>
+        <th style="width:34px">등급</th>
+        <th>기능</th>
+        <th>모델</th>
+        <th class="r">호출</th>
+        <th class="r">토큰</th>
+        <th class="r">비용</th>
+        <th class="r" style="width:112px">비중</th>
+      </tr>
+      <tr>
+        <td><span class="tg a" style="width:20px;height:20px;font-size:10px">A</span></td>
+        <td>채팅 답변</td>
+        <td><span class="brand b-cl">Claude</span> Sonnet 4.6</td>
+        <td class="r">31</td><td class="r">98K</td><td class="r">₩1,120</td>
+        <td class="r">
+          <div class="bar"><i style="width:32%;background:var(--luna)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">32%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg a" style="width:20px;height:20px;font-size:10px">A</span></td>
+        <td>후보 문답</td>
+        <td><span class="brand b-cl">Claude</span> Sonnet 4.6</td>
+        <td class="r">9</td><td class="r">21K</td><td class="r">₩240</td>
+        <td class="r">
+          <div class="bar"><i style="width:7%;background:var(--luna)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">7%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg a" style="width:20px;height:20px;font-size:10px">A</span></td>
+        <td>주간 보고</td>
+        <td><span class="brand b-cl">Claude</span> Sonnet 4.6</td>
+        <td class="r">1</td><td class="r">8K</td><td class="r">₩90</td>
+        <td class="r">
+          <div class="bar"><i style="width:3%;background:var(--luna)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">3%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg b" style="width:20px;height:20px;font-size:10px">B</span></td>
+        <td>되묻기 판정</td>
+        <td><span class="brand b-gpt">GPT</span> gpt-5-mini</td>
+        <td class="r">186</td><td class="r">312K</td><td class="r">₩260</td>
+        <td class="r">
+          <div class="bar"><i style="width:7%;background:var(--up)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">7%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg b" style="width:20px;height:20px;font-size:10px">B</span></td>
+        <td>검색어 정제</td>
+        <td><span class="brand b-gpt">GPT</span> gpt-5-mini</td>
+        <td class="r">102</td><td class="r">88K</td><td class="r">₩90</td>
+        <td class="r">
+          <div class="bar"><i style="width:3%;background:var(--up)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">3%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg b" style="width:20px;height:20px;font-size:10px">B</span></td>
+        <td>대화 제목</td>
+        <td><span class="brand b-gpt">GPT</span> gpt-5-mini</td>
+        <td class="r">47</td><td class="r">12K</td><td class="r">₩40</td>
+        <td class="r">
+          <div class="bar"><i style="width:1%;background:var(--up)"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">1%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg c" style="width:20px;height:20px;font-size:10px">C</span></td>
+        <td>자습</td>
+        <td><span class="brand b-cl">Claude</span> Haiku 4.5</td>
+        <td class="r">62</td><td class="r">640K</td><td class="r">₩1,040</td>
+        <td class="r">
+          <div class="bar"><i style="width:30%;background:#BA7517"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">30%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg c" style="width:20px;height:20px;font-size:10px">C</span></td>
+        <td>배움 포착</td>
+        <td><span class="brand b-cl">Claude</span> Haiku 4.5</td>
+        <td class="r">48</td><td class="r">190K</td><td class="r">₩310</td>
+        <td class="r">
+          <div class="bar"><i style="width:9%;background:#BA7517"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">9%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg c" style="width:20px;height:20px;font-size:10px">C</span></td>
+        <td>회귀 채점</td>
+        <td><span class="brand b-cl">Claude</span> Haiku 4.5</td>
+        <td class="r">20</td><td class="r">98K</td><td class="r">₩160</td>
+        <td class="r">
+          <div class="bar"><i style="width:5%;background:#BA7517"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">5%</span>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="tg s" style="width:20px;height:20px;font-size:10px">S</span></td>
+        <td>자기개선</td>
+        <td><span class="brand b-cl">Claude</span> Opus 4.6</td>
+        <td class="r">1</td><td class="r">22K</td><td class="r">₩120</td>
+        <td class="r">
+          <div class="bar"><i style="width:3%;background:#5B3B96"></i></div>
+          <span style="font-size:10.5px;color:var(--faint)">3%</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ 6. 교체 이력 ═══ -->
+<div class="sec">
+  <div class="sechead">
+    <h3>교체 이력</h3>
+    <span class="desc">자동 교체 후 회귀 시험으로 계속 지켜봅니다</span>
+  </div>
+  <div class="card">
+    <div class="hist">
+      <div class="when">8/10</div>
+      <div class="body">
+        <div class="t"><span class="tg b" style="display:inline-grid;width:18px;height:18px;font-size:9px;vertical-align:-3px">B</span>
+          <b>Haiku 4.5 → gpt-5-mini</b></div>
+        <div class="why">같은 성능대에서 41% 저렴 · 월 ₩3,200 절감 예상</div>
+      </div>
+      <span class="res ok">시험 유지 12/12</span>
+    </div>
+    <div class="hist">
+      <div class="when">8/10</div>
+      <div class="body">
+        <div class="t"><span class="tg c" style="display:inline-grid;width:18px;height:18px;font-size:9px;vertical-align:-3px">C</span>
+          <b>Sonnet 4.6 → Haiku 4.5</b></div>
+        <div class="why">배치·검토를 거치는 작업이라 상위 모델이 불필요 · 월 ₩8,900 절감</div>
+      </div>
+      <span class="res ok">시험 11→12</span>
+    </div>
+    <div class="hist">
+      <div class="when">8/03</div>
+      <div class="body">
+        <div class="t"><span class="tg a" style="display:inline-grid;width:18px;height:18px;font-size:9px;vertical-align:-3px">A</span>
+          <b>Sonnet 4.6 → Gemini 3.5 Flash</b> <span style="color:var(--sub);font-size:12px">· 되돌림</span></div>
+        <div class="why">한국어 답변 품질이 떨어져 3일 만에 되돌렸습니다</div>
+      </div>
+      <span class="res bad">시험 12→8</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 7. 설정 ═══ -->
+<div class="sec">
+  <div class="sechead"><h3>설정</h3></div>
+  <div class="card pad">
+    <div style="font-size:12.5px;line-height:2.1;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" checked style="width:15px;height:15px">
+        <span>주 1회 자동 점검 후 등급별 모델을 자동 교체하고 리포트로 알림</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" checked style="width:15px;height:15px">
+        <span>교체 후 회귀 시험 점수가 떨어지면 되돌림 제안</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" style="width:15px;height:15px">
+        <span>S 등급은 자동 교체하지 않음 <span style="color:var(--faint);font-size:11.5px">(비용보다 정확성 우선)</span></span>
+      </div>
+    </div>
+    <div class="fields">
+      <div class="field"><label>일 한도</label><input value="₩3,000"></div>
+      <div class="field"><label>월 한도</label><input value="₩60,000"></div>
+      <div class="field"><label>급증 기준</label><input value="전일 대비 +200%"></div>
+    </div>
+    <div class="btns">
+      <button class="btn primary">저장</button>
+      <span class="note">한도를 넘으면 알림만 보냅니다. 서비스는 중단되지 않아요</span>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,5 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  llmComplete,
+  type LlmToolDef
+} from "@/lib/luna/llm/client";
+import type { ResolvedProviderModel } from "@/lib/luna/engine";
 import {
   listFolder,
   prepareSearchTerms,
@@ -25,7 +29,7 @@ export type WorkserverExploreRow = {
   variant_hidden?: number;
 };
 
-export const WORKSERVER_TOOLS: Anthropic.Tool[] = [
+export const WORKSERVER_TOOL_DEFS: LlmToolDef[] = [
   {
     name: "list_folder",
     description: "Work서버 특정 경로 바로 아래 항목 보기. 경로를 비우면 최상위",
@@ -83,19 +87,21 @@ export function finalizeWorkserverExploreRows(
 
 /**
  * 채팅·시험 공통 Work서버 탐색 (seed searchAll → 도구 루프 → refine → pipeline).
+ * Anthropic / OpenAI / Gemini 모두 llmComplete 경로.
  */
 export async function exploreWorkserverWithTools(
   admin: SupabaseClient,
-  client: Anthropic,
+  _client: unknown,
   opts: {
     keywords: string;
     queryText: string;
     model: string;
     exploreSystem: string;
+    provider?: ResolvedProviderModel["provider"];
     maxRounds?: number;
     timeoutMs?: number;
     onToolRound?: (toolName: string) => void;
-    onUsage?: (usage: Anthropic.Usage | undefined) => void;
+    onUsage?: (usage: unknown) => void;
   }
 ): Promise<{
   rows: WorkserverExploreRow[];
@@ -106,6 +112,7 @@ export async function exploreWorkserverWithTools(
   const loopStarted = Date.now();
   const timeoutMs = opts.timeoutMs ?? WS_TOOL_LOOP_MS;
   const maxRounds = opts.maxRounds ?? MAX_WS_TOOL_ROUNDS;
+  const provider = opts.provider ?? "anthropic";
   const collected = new Map<string, WorkserverExploreRow>();
   const toolCalls: Array<{ tool: string; input: unknown; result_count: number }> =
     [];
@@ -131,41 +138,29 @@ export async function exploreWorkserverWithTools(
     }
   }
 
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: "user",
-      content: `질문: ${queryText}\n검색 키워드 힌트: ${hintKeywords}\n(프로젝트명·문서명만 space로 구분해 search_all/search_in keywords에 넣으세요. 위치·알려줘 등은 제외)`
-    }
-  ];
+  let conversationHint = `질문: ${queryText}\n검색 키워드 힌트: ${hintKeywords}\n(프로젝트명·문서명만 space로 구분해 search_all/search_in keywords에 넣으세요. 위치·알려줘 등은 제외)`;
 
   for (let round = 0; round < maxRounds; round += 1) {
     if (Date.now() - loopStarted > timeoutMs) break;
 
-    const res = await client.messages.create({
-      model: opts.model,
-      max_tokens: 1024,
+    const res = await llmComplete({
+      provider,
+      model_id: opts.model,
       system:
         opts.exploreSystem.trim() ||
         "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요.",
-      tools: WORKSERVER_TOOLS,
-      messages
+      user: conversationHint,
+      maxTokens: 1024,
+      tools: WORKSERVER_TOOL_DEFS
     });
     opts.onUsage?.(res.usage);
 
-    const toolUses = res.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-    );
-    if (toolUses.length === 0) break;
+    if (res.toolCalls.length === 0) break;
 
-    messages.push({ role: "assistant", content: res.content });
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
+    const resultNotes: string[] = [];
+    for (const tu of res.toolCalls) {
       opts.onToolRound?.(tu.name);
-      const input =
-        tu.input && typeof tu.input === "object"
-          ? (tu.input as Record<string, unknown>)
-          : {};
+      const input = tu.input;
 
       let items: WorkserverItem[] = [];
       try {
@@ -206,15 +201,12 @@ export async function exploreWorkserverWithTools(
         const key = `${item.drive ?? ""}::${item.path}`;
         if (!collected.has(key)) collected.set(key, itemToRow(item));
       }
-
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: tu.id,
-        content: JSON.stringify(items)
-      });
+      resultNotes.push(
+        `${tu.name}(${JSON.stringify(input)}) → ${items.length}건\n${JSON.stringify(items).slice(0, 4000)}`
+      );
     }
 
-    messages.push({ role: "user", content: toolResults });
+    conversationHint = `${conversationHint}\n\n[이전 도구 결과]\n${resultNotes.join("\n")}\n\n필요하면 추가 도구를 호출하고, 충분하면 도구 없이 끝내세요.`;
   }
 
   const refined = refineWorkserverHits(

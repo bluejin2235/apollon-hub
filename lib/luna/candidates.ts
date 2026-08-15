@@ -257,7 +257,7 @@ export async function runDialogueTurn(
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.dialogue)).trim() ||
     DIALOGUE_FALLBACK;
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+  const tierA = resolveAnthropicModel(await getTierModel(admin, "A"));
 
   const thread = normalizeThread(opts.thread ?? []);
   const threadBlock =
@@ -289,7 +289,7 @@ JSON만: { "text": "확정 지식 한 문장" }`;
 
   try {
     const res = await client.messages.create({
-      model: tierB.model_id,
+      model: tierA.model_id,
       max_tokens: 512,
       system,
       messages: [{ role: "user", content: userPayload }]

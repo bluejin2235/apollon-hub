@@ -340,7 +340,7 @@ async function proposeUpgrade(
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.upgrade)).trim() ||
     UPGRADE_FALLBACK;
-  const tierB = resolveAnthropicModel(await getTierModel(admin, "B"));
+  const tierS = resolveAnthropicModel(await getTierModel(admin, "S"));
 
   const promptCatalog = (prompts as PromptRow[])
     .map(
@@ -378,7 +378,7 @@ async function proposeUpgrade(
   let raw = "";
   try {
     const res = await client.messages.create({
-      model: tierB.model_id,
+      model: tierS.model_id,
       max_tokens: 4096,
       system,
       messages: [

@@ -8,6 +8,7 @@ export const LUNA_LINKS = {
   brainUpgrade: "/settings?tab=luna&luna=brain&sub=upgrade",
   brainReport: "/settings?tab=luna&luna=brain&sub=report",
   brainEval: "/settings?tab=luna&luna=brain&sub=eval",
+  brainModel: "/settings?tab=luna&luna=brain&sub=model",
   knowledgeConflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
   knowledgeWorkserver: "/settings?tab=luna&luna=knowledge&sub=workserver"
 } as const;

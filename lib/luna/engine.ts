@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { LunaTier, LunaUsageFeature } from "@/lib/luna/brain-models";
 
-export type LunaTier = "A" | "B" | "C";
+export type { LunaTier } from "@/lib/luna/brain-models";
 
 export type LunaTierModel = {
   tier: LunaTier;
@@ -12,11 +13,35 @@ export type LunaTierModel = {
   note: string | null;
 };
 
+export type ResolvedProviderModel = {
+  provider: "anthropic" | "openai" | "google";
+  model_id: string;
+  model_label: string;
+  fallback_from?: string;
+};
+
 const FALLBACK: Pick<LunaTierModel, "model_id" | "model_label" | "provider"> = {
   model_id: "claude-sonnet-4-6",
   model_label: "Claude Sonnet 4.6",
   provider: "anthropic"
 };
+
+function hasProviderKey(provider: string): boolean {
+  if (provider === "anthropic") {
+    return Boolean(process.env.hubtrendchat_claude?.trim());
+  }
+  if (provider === "openai") {
+    return Boolean(process.env.OPENAI_API_KEY?.trim());
+  }
+  if (provider === "google") {
+    return Boolean(
+      process.env.GOOGLE_API_KEY?.trim() ||
+        process.env.GEMINI_API_KEY?.trim() ||
+        process.env.hubtrendchat_geminai?.trim()
+    );
+  }
+  return false;
+}
 
 export async function getTierModel(
   admin: SupabaseClient,
@@ -76,21 +101,52 @@ export async function getTierModel(
   }
 }
 
-/** OpenAI/Gemini 분기는 미구현 — anthropic 외에는 fallback 모델 사용. */
+/**
+ * 공급사 키 없으면 anthropic 으로 폴백하고 로그.
+ * (예전 resolveAnthropicModel 의 무조건 anthropic 폴백을 대체)
+ */
+export function resolveProviderModel(
+  tier: LunaTierModel
+): ResolvedProviderModel {
+  const raw = (tier.provider || "anthropic").toLowerCase().trim();
+  const provider =
+    raw === "openai" || raw === "google" || raw === "anthropic"
+      ? raw
+      : "anthropic";
+
+  if (!hasProviderKey(provider)) {
+    if (provider !== "anthropic") {
+      console.warn(
+        `[luna/engine] provider "${provider}" key missing; falling back to anthropic`
+      );
+    }
+    if (!hasProviderKey("anthropic")) {
+      console.error("[luna/engine] anthropic key also missing");
+    }
+    return {
+      provider: "anthropic",
+      model_id:
+        provider === "anthropic" ? tier.model_id : FALLBACK.model_id,
+      model_label:
+        provider === "anthropic" ? tier.model_label : FALLBACK.model_label,
+      fallback_from: provider !== "anthropic" ? provider : undefined
+    };
+  }
+
+  return {
+    provider,
+    model_id: tier.model_id,
+    model_label: tier.model_label
+  };
+}
+
+/** @deprecated 호환용 — resolveProviderModel 사용 */
 export function resolveAnthropicModel(tier: LunaTierModel): {
   model_id: string;
   model_label: string;
 } {
-  if (tier.provider !== "anthropic") {
-    console.warn(
-      `[luna/engine] provider "${tier.provider}" not implemented; falling back to anthropic`
-    );
-    return {
-      model_id: FALLBACK.model_id,
-      model_label: FALLBACK.model_label
-    };
-  }
-  return { model_id: tier.model_id, model_label: tier.model_label };
+  const resolved = resolveProviderModel(tier);
+  return { model_id: resolved.model_id, model_label: resolved.model_label };
 }
 
 export type LunaUsageTokens = {
@@ -117,9 +173,13 @@ export function readUsage(raw: unknown): LunaUsageTokens {
     cache_creation_input_tokens:
       typeof u.cache_creation_input_tokens === "number"
         ? u.cache_creation_input_tokens
-        : 0,
+        : typeof u.prompt_tokens === "number"
+          ? u.prompt_tokens
+          : 0,
     cache_read_input_tokens:
-      typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : 0
+      typeof u.cache_read_input_tokens === "number"
+        ? u.cache_read_input_tokens
+        : 0
   };
 }
 
@@ -130,6 +190,7 @@ export function bumpUsageDaily(
     tier: string;
     model_id: string;
     usage: LunaUsageTokens;
+    feature?: LunaUsageFeature | string | null;
   }
 ): void {
   const today = new Date().toISOString().slice(0, 10);
@@ -142,9 +203,22 @@ export function bumpUsageDaily(
         p_in: opts.usage.input_tokens,
         p_out: opts.usage.output_tokens,
         p_cw: opts.usage.cache_creation_input_tokens,
-        p_cr: opts.usage.cache_read_input_tokens
+        p_cr: opts.usage.cache_read_input_tokens,
+        p_feature: opts.feature ?? null
       });
-      if (error) console.error("[luna/engine] bumpUsageDaily", error);
+      if (error) {
+        // feature 인자 없는 구버전 RPC 폴백
+        const { error: err2 } = await admin.rpc("luna_bump_usage", {
+          p_date: today,
+          p_tier: opts.tier,
+          p_model_id: opts.model_id,
+          p_in: opts.usage.input_tokens,
+          p_out: opts.usage.output_tokens,
+          p_cw: opts.usage.cache_creation_input_tokens,
+          p_cr: opts.usage.cache_read_input_tokens
+        });
+        if (err2) console.error("[luna/engine] bumpUsageDaily", err2);
+      }
     } catch (err) {
       console.error("[luna/engine] bumpUsageDaily", err);
     }
