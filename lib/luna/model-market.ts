@@ -176,14 +176,37 @@ function parseCreator(o: Record<string, unknown>): string | null {
 function inferReasoning(
   o: Record<string, unknown>,
   slug: string,
-  name: string
+  name: string,
+  ttft: number | null
 ): boolean {
+  // Free 티어에는 보통 없음. 있으면 신뢰.
   if (typeof o.reasoning_model === "boolean") return o.reasoning_model;
   if (typeof o.is_reasoning === "boolean") return o.is_reasoning;
-  const s = `${slug} ${name}`.toLowerCase();
-  return /(?:^|[^a-z])(o1|o3|o4)(?:[^a-z]|$)|reasoning|thinking|reasoner|deepseek-r1|r1-/.test(
-    s
-  );
+
+  const slugL = slug.toLowerCase();
+  const nameL = name.toLowerCase();
+  const combined = `${slugL} ${nameL}`;
+
+  // false 를 먼저 (non-reasoning 이 reasoning 부분문자열을 포함)
+  if (
+    /non[\s_-]?reasoning/.test(combined) ||
+    /\bminimal\b/.test(combined) ||
+    /(^|-)low(-|$)/.test(slugL)
+  ) {
+    return false;
+  }
+
+  if (
+    /(^|[^a-z])reasoning([^a-z]|$)/.test(combined) ||
+    /thinking|adaptive/.test(combined) ||
+    /(^|-)(high|xhigh|max)(-|$)/.test(slugL) ||
+    /(?:^|[^a-z])(o1|o3|o4)(?:[^a-z]|$)/.test(slugL)
+  ) {
+    return true;
+  }
+
+  if (ttft != null && Number.isFinite(ttft) && ttft > 5) return true;
+  return false;
 }
 
 function parseMarketItem(
@@ -206,15 +229,15 @@ function parseMarketItem(
   const pricing =
     o.pricing && typeof o.pricing === "object"
       ? (o.pricing as Record<string, unknown>)
-      : o;
+      : {};
   const evals =
     o.evaluations && typeof o.evaluations === "object"
       ? (o.evaluations as Record<string, unknown>)
-      : o;
+      : {};
   const perf =
     o.performance && typeof o.performance === "object"
       ? (o.performance as Record<string, unknown>)
-      : o;
+      : {};
 
   const priceIn =
     num(pricing.price_1m_input_tokens) ??
@@ -224,11 +247,13 @@ function parseMarketItem(
     num(pricing.price_1m_output_tokens) ??
     num(pricing.output) ??
     num(o.price_output);
+  // 응답 blended 우선. 없으면 입력 3:출력 1 = 0.75·in + 0.25·out
+  const blendedFromApi =
+    num(pricing.price_1m_blended_3_to_1) ?? num(o.price_blended);
   const blended =
-    num(pricing.price_1m_blended_3_to_1) ??
-    num(o.price_blended) ??
+    blendedFromApi ??
     (priceIn != null && priceOut != null
-      ? (priceIn * 3 + priceOut) / 4
+      ? priceIn * 0.75 + priceOut * 0.25
       : null);
 
   const intelligence =
@@ -271,9 +296,17 @@ function parseMarketItem(
       num(o.price_cache_read),
     median_output_tokens_per_second: tps,
     median_time_to_first_token_seconds: ttft,
-    is_reasoning: inferReasoning(o, modelSlug, name),
+    is_reasoning: inferReasoning(o, modelSlug, name, ttft),
     fetched_at: fetchedAt
   };
+}
+
+/** 테스트/검증용 — parseMarketItem 래퍼 */
+export function parseMarketItemForTest(
+  item: unknown,
+  fetchedAt: string
+): MarketModelRow | null {
+  return parseMarketItem(item, fetchedAt);
 }
 
 export function isPreferredProvider(
@@ -313,19 +346,24 @@ export async function fetchAndCacheMarketModels(
         o.evaluations && typeof o.evaluations === "object"
           ? (o.evaluations as Record<string, unknown>)
           : {};
+      const pricing =
+        o.pricing && typeof o.pricing === "object"
+          ? (o.pricing as Record<string, unknown>)
+          : {};
+      const perf =
+        o.performance && typeof o.performance === "object"
+          ? (o.performance as Record<string, unknown>)
+          : {};
       console.info(
-        "[luna/market] AA sample fields",
+        "[luna/market] AA sample field keys",
         JSON.stringify({
-          slug: o.slug ?? o.id,
-          top_keys: Object.keys(o).slice(0, 30),
-          evaluation_keys: Object.keys(evals),
-          evaluation_sample: evals,
+          top_keys: Object.keys(o).sort(),
+          evaluation_keys: Object.keys(evals).sort(),
+          pricing_keys: Object.keys(pricing).sort(),
+          performance_keys: Object.keys(perf).sort(),
           has_reasoning_model: "reasoning_model" in o,
-          performance_keys:
-            o.performance && typeof o.performance === "object"
-              ? Object.keys(o.performance as object)
-              : []
-        }).slice(0, 2500)
+          has_is_reasoning: "is_reasoning" in o
+        })
       );
       loggedSample = true;
     }

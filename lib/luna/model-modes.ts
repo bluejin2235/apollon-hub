@@ -227,7 +227,13 @@ export function pickForTierMode(
   }
 
   if (tier === "B") {
-    const b = poolB(rows, catalog, m.B);
+    const aPick = pickForTierMode("A", rows, mode, catalog, mins);
+    let b = poolB(rows, catalog, m.B);
+    if (aPick) {
+      b = b.filter(
+        (r) => !slugMatchesModel(r.model_slug, aPick.model_slug)
+      );
+    }
     if (b.length === 0) return null;
     if (mode === "performance") return maxIntel(b);
     return minPrice(b);
@@ -878,9 +884,13 @@ export function modePickRuleLabel(
 function emptyPoolMessage(
   tier: LunaTier,
   mode: LunaCostMode,
-  mins?: LunaTierMinIntelligence | null
+  mins?: LunaTierMinIntelligence | null,
+  detail?: "b_same_as_a" | null
 ): string {
   const m = resolveMins(mins);
+  if (tier === "B" && detail === "b_same_as_a") {
+    return "B등급 조건을 만족하면서 A와 다른 모델이 없어 현재를 유지합니다";
+  }
   if (tier === "A") {
     return "TTFT 3초 이하인 비추론 모델이 없어요";
   }
@@ -908,7 +918,14 @@ function poolForTierExplain(
     if (mode === "balanced") return topPercentileByIntel(a, m.A_percentile);
     return a;
   }
-  if (tier === "B") return poolB(rows, catalog, m.B);
+  if (tier === "B") {
+    const aPick = pickForTierMode("A", rows, mode, catalog, mins);
+    let b = poolB(rows, catalog, m.B);
+    if (aPick) {
+      b = b.filter((r) => !slugMatchesModel(r.model_slug, aPick.model_slug));
+    }
+    return b;
+  }
   const pool = preferredOnly(rows, catalog);
   if (tier === "S") {
     if (mode === "cheap") return pool.filter((r) => intel(r) >= 50);
@@ -1096,7 +1113,21 @@ export function explainTierSelections(
     let show_apply = false;
 
     if (!pick) {
-      summary = emptyPoolMessage(tier, mode, mins);
+      let detail: "b_same_as_a" | null = null;
+      if (tier === "B") {
+        const aPick = pickForTierMode("A", market, mode, catalog, mins);
+        const rawB = poolB(market, catalog, m.B);
+        if (
+          aPick &&
+          rawB.some((r) => slugMatchesModel(r.model_slug, aPick.model_slug)) &&
+          rawB.filter(
+            (r) => !slugMatchesModel(r.model_slug, aPick.model_slug)
+          ).length === 0
+        ) {
+          detail = "b_same_as_a";
+        }
+      }
+      summary = emptyPoolMessage(tier, mode, mins, detail);
     } else if (currentId && slugMatchesModel(pick.model_slug, currentId)) {
       const second = displayPool.find(
         (r) => !slugMatchesModel(r.model_slug, pick.model_slug)
