@@ -38,7 +38,28 @@ type MarketRow = {
   multilingual_index: number | null;
   agentic_index: number | null;
   cost_krw: number | null;
+  price_blended?: number | null;
+  median_time_to_first_token_seconds?: number | null;
+  median_output_tokens_per_second?: number | null;
+  is_reasoning?: boolean | null;
   our_tiers: string[];
+  value?: number;
+};
+
+type SelectableModel = {
+  model_slug: string;
+  provider: string;
+  brand: string;
+  intelligence_index: number | null;
+  multilingual_index: number | null;
+  agentic_index: number | null;
+  price_blended: number | null;
+  cost_krw: number | null;
+  median_time_to_first_token_seconds: number | null;
+  median_output_tokens_per_second: number | null;
+  is_reasoning: boolean | null;
+  disabled: boolean;
+  disabled_reason: string | null;
 };
 
 type Payload = {
@@ -54,8 +75,10 @@ type Payload = {
     fetched_at: string | null;
     missing_key: boolean;
     error: string | null;
+    total_count?: number;
     rows: MarketRow[];
   };
+  selectable?: SelectableModel[];
   ranking: Array<{
     rank: number;
     model_slug: string;
@@ -74,6 +97,7 @@ type Payload = {
     cost_krw: number | null;
     fetched_at: string;
   }>;
+  history_weeks?: number;
   price_note: string | null;
   usage: {
     range: number;
@@ -167,14 +191,6 @@ function shortDate(iso: string | null | undefined): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function providerBrand(provider: string): string {
-  const p = provider.toLowerCase();
-  if (p.includes("anthropic")) return "Claude";
-  if (p.includes("openai")) return "GPT";
-  if (p.includes("google")) return "Gemini";
-  return "Other";
-}
-
 export function LunaBrainModel() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,10 +198,13 @@ export function LunaBrainModel() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState<"intel" | "multi" | "agent">("intel");
+  const [priceScale, setPriceScale] = useState<"linear" | "log">("linear");
   const [range, setRange] = useState<"7" | "30" | "all">("7");
   const [rankOpen, setRankOpen] = useState(false);
   const [settings, setSettings] = useState<LunaModelCostSettings | null>(null);
   const [alerts, setAlerts] = useState<LunaUsageAlerts | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [hoverSlug, setHoverSlug] = useState<string | null>(null);
 
   const load = useCallback(async (r: string = range) => {
     setLoading(true);
@@ -197,6 +216,7 @@ export function LunaBrainModel() {
       setData(json);
       setSettings(json.settings);
       setAlerts(json.alerts);
+      setDrafts({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
     } finally {
@@ -248,31 +268,126 @@ export function LunaBrainModel() {
     }
   }
 
+  async function saveTier(tier: string) {
+    const modelId = drafts[tier];
+    if (!modelId || !data) return;
+    const opt = (data.selectable ?? []).find((s) => s.model_slug === modelId);
+    if (!opt || opt.disabled) {
+      setNotice(opt?.disabled_reason ?? "선택할 수 없는 모델입니다");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      const res = await brainFetch<{ message?: string }>(
+        "/api/luna/brain/model-cost",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            tier_update: {
+              tier,
+              model_id: modelId,
+              provider: opt.provider
+            }
+          })
+        }
+      );
+      setNotice(
+        res.message ??
+          `${tier}등급을 ${modelId}로 바꿨어요. 회귀 시험으로 확인해 보세요`
+      );
+      await load(range);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "저장 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const scatter = useMemo(() => {
     const rows = data?.market.rows ?? [];
-    if (rows.length === 0) return [];
-    const costs = rows
-      .map((r) => r.cost_krw)
-      .filter((n): n is number => n != null && n > 0);
-    const scores = rows.map((r) => {
-      if (metric === "multi") return Number(r.multilingual_index) || 0;
-      if (metric === "agent") return Number(r.agentic_index) || 0;
-      return Number(r.intelligence_index) || 0;
+    if (rows.length === 0) return { points: [], xTicks: [] as number[], yTicks: [] as number[], metricLabel: "" };
+
+    const metricLabel =
+      metric === "multi"
+        ? "다국어 지수"
+        : metric === "agent"
+          ? "에이전트 지수"
+          : "종합 지능 지수";
+
+    const scored = rows.map((r) => {
+      const score =
+        metric === "multi"
+          ? Number(r.multilingual_index) || 0
+          : metric === "agent"
+            ? Number(r.agentic_index) || 0
+            : Number(r.intelligence_index) || 0;
+      const cost = r.cost_krw ?? 0;
+      return { ...r, score, cost };
     });
-    const maxC = Math.max(...costs, 1);
-    const minS = Math.min(...scores, 40);
-    const maxS = Math.max(...scores, 80);
-    return rows.map((r, i) => {
-      const cost = r.cost_krw ?? maxC;
-      const score = scores[i] ?? minS;
-      const x = Math.min(100, Math.max(0, (cost / maxC) * 100));
-      const y = Math.min(
-        100,
-        Math.max(0, ((score - minS) / Math.max(1, maxS - minS)) * 100)
-      );
-      return { ...r, x, y, score };
-    });
-  }, [data?.market.rows, metric]);
+
+    const costs = scored.map((r) => r.cost).filter((n) => n > 0);
+    const scores = scored.map((r) => r.score);
+    let minC = Math.min(...(costs.length ? costs : [0]));
+    let maxC = Math.max(...(costs.length ? costs : [1]));
+    let minS = Math.min(...scores);
+    let maxS = Math.max(...scores);
+    if (minC === maxC) {
+      minC = Math.max(0, minC * 0.9);
+      maxC = maxC * 1.1 || 1;
+    }
+    if (minS === maxS) {
+      minS = minS - 5;
+      maxS = maxS + 5;
+    }
+    const padC = (maxC - minC) * 0.05;
+    const padS = (maxS - minS) * 0.05 || 1;
+    minC = Math.max(0, minC - padC);
+    maxC = maxC + padC;
+    minS = minS - padS;
+    maxS = maxS + padS;
+
+    const mapX = (c: number) => {
+      if (priceScale === "log") {
+        const lo = Math.log10(Math.max(minC, 1));
+        const hi = Math.log10(Math.max(maxC, 10));
+        const v = Math.log10(Math.max(c, 1));
+        return ((v - lo) / Math.max(hi - lo, 1e-9)) * 100;
+      }
+      return ((c - minC) / Math.max(maxC - minC, 1)) * 100;
+    };
+    const mapY = (s: number) =>
+      ((s - minS) / Math.max(maxS - minS, 1)) * 100;
+
+    const xTicks =
+      priceScale === "log"
+        ? [minC, Math.sqrt(minC * maxC) || (minC + maxC) / 2, maxC].map((n) =>
+            Math.round(n)
+          )
+        : [minC, (minC + maxC) / 2, maxC].map((n) => Math.round(n));
+    const yTicks = [minS, (minS + maxS) / 2, maxS].map(
+      (n) => Math.round(n * 10) / 10
+    );
+
+    const byValue = [...scored].sort(
+      (a, b) => (b.value ?? 0) - (a.value ?? 0)
+    );
+    const labelSlugs = new Set(
+      [
+        ...byValue.slice(0, 5).map((r) => r.model_slug),
+        ...scored.filter((r) => r.our_tiers.length > 0).map((r) => r.model_slug)
+      ]
+    );
+
+    const points = scored.map((r) => ({
+      ...r,
+      x: Math.min(100, Math.max(0, mapX(Math.max(r.cost, minC)))),
+      y: Math.min(100, Math.max(0, mapY(r.score))),
+      showLabel: labelSlugs.has(r.model_slug)
+    }));
+
+    return { points, xTicks, yTicks, metricLabel, minC, maxC, minS, maxS };
+  }, [data?.market.rows, metric, priceScale]);
 
   const rankingVisible = rankOpen
     ? data?.ranking ?? []
@@ -319,46 +434,120 @@ export function LunaBrainModel() {
               className="overflow-hidden rounded-xl border"
               style={{ borderColor: K.line, background: K.panel }}
             >
-              {data.tiers.map((t) => (
-                <div
-                  key={t.tier}
-                  className="flex flex-wrap items-center gap-3 border-b px-[18px] py-3 last:border-b-0"
-                  style={{ borderColor: K.line2 }}
-                >
-                  <TierBadge tier={t.tier} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13.5px] font-semibold">
-                      {t.meta?.name ?? t.tier}
-                    </div>
-                    <div className="text-[11.5px]" style={{ color: K.sub }}>
-                      {t.meta?.desc}
-                    </div>
-                  </div>
-                  <Brand brand={providerBrand(t.provider)} />
-                  <span className="font-mono text-[12.5px]">
-                    {t.model_label || t.model_id || "—"}
-                  </span>
-                  <span
-                    className="rounded-[10px] px-[7px] py-px text-[10.5px]"
-                    style={{
-                      background:
-                        t.change_badge === "유지" ? K.chip : "#E1F5EE",
-                      color: t.change_badge === "유지" ? K.faint : "#0F6E56"
-                    }}
+              {data.tiers.map((t) => {
+                const draft = drafts[t.tier] ?? t.model_id;
+                const dirty = draft !== t.model_id;
+                const groups = [
+                  {
+                    label: "Claude",
+                    items: (data.selectable ?? []).filter(
+                      (s) => s.brand === "Claude"
+                    )
+                  },
+                  {
+                    label: "GPT",
+                    items: (data.selectable ?? []).filter(
+                      (s) => s.brand === "GPT"
+                    )
+                  },
+                  {
+                    label: "Gemini",
+                    items: (data.selectable ?? []).filter(
+                      (s) => s.brand === "Gemini"
+                    )
+                  }
+                ];
+                return (
+                  <div
+                    key={t.tier}
+                    className="flex flex-wrap items-center gap-3 border-b px-[18px] py-3 last:border-b-0"
+                    style={{ borderColor: K.line2 }}
                   >
-                    {t.change_badge}
-                  </span>
-                  <div className="w-24 text-right text-[12.5px]">
-                    <b className="font-semibold">{fmtWon(t.week_cost)}</b>
-                    <span
-                      className="block text-[10.5px]"
-                      style={{ color: K.faint }}
+                    <TierBadge tier={t.tier} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13.5px] font-semibold">
+                        {t.meta?.name ?? t.tier}
+                      </div>
+                      <div className="text-[11.5px]" style={{ color: K.sub }}>
+                        {t.meta?.desc}
+                      </div>
+                    </div>
+                    <select
+                      className="max-w-[min(420px,100%)] rounded-lg border bg-white px-2 py-1.5 font-mono text-[12px]"
+                      style={{ borderColor: K.line, color: K.ink }}
+                      value={draft}
+                      disabled={busy}
+                      onChange={(e) =>
+                        setDrafts((d) => ({ ...d, [t.tier]: e.target.value }))
+                      }
                     >
-                      이번 주
+                      {!groups.some((g) =>
+                        g.items.some((i) => i.model_slug === draft)
+                      ) ? (
+                        <option value={draft}>{draft || "—"}</option>
+                      ) : null}
+                      {groups.map((g) =>
+                        g.items.length ? (
+                          <optgroup key={g.label} label={g.label}>
+                            {g.items.map((s) => {
+                              const ttft =
+                                s.median_time_to_first_token_seconds != null
+                                  ? `${Number(s.median_time_to_first_token_seconds).toFixed(1)}초`
+                                  : "—";
+                              const price =
+                                s.price_blended != null
+                                  ? `$${Number(s.price_blended).toFixed(2)}`
+                                  : "—";
+                              const label = `${s.model_slug} · 지능 ${s.intelligence_index ?? "—"} · ${price} · ${ttft}${
+                                s.disabled
+                                  ? ` (${s.disabled_reason ?? "비활성"})`
+                                  : ""
+                              }`;
+                              return (
+                                <option
+                                  key={s.model_slug}
+                                  value={s.model_slug}
+                                  disabled={s.disabled}
+                                >
+                                  {label}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        ) : null
+                      )}
+                    </select>
+                    {dirty ? (
+                      <Btn
+                        primary
+                        disabled={busy}
+                        onClick={() => void saveTier(t.tier)}
+                      >
+                        저장
+                      </Btn>
+                    ) : null}
+                    <span
+                      className="rounded-[10px] px-[7px] py-px text-[10.5px]"
+                      style={{
+                        background:
+                          t.change_badge === "유지" ? K.chip : "#E1F5EE",
+                        color: t.change_badge === "유지" ? K.faint : "#0F6E56"
+                      }}
+                    >
+                      {t.change_badge}
                     </span>
+                    <div className="w-24 text-right text-[12.5px]">
+                      <b className="font-semibold">{fmtWon(t.week_cost)}</b>
+                      <span
+                        className="block text-[10.5px]"
+                        style={{ color: K.faint }}
+                      >
+                        이번 주
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -367,7 +556,11 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
               <h3 className="text-[14px] font-bold">시장 현황</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                상위 15개 · Artificial Analysis 기준
+                표시 상위 15개
+                {data.market.total_count
+                  ? ` · 후보 ${data.market.total_count}개`
+                  : ""}{" "}
+                · Artificial Analysis
               </span>
               <span
                 className="ml-auto text-[11.5px]"
@@ -402,7 +595,7 @@ export function LunaBrainModel() {
                     {(
                       [
                         ["intel", "종합 지능"],
-                        ["multi", "코딩"],
+                        ["multi", "다국어"],
                         ["agent", "에이전트"]
                       ] as const
                     ).map(([k, label]) => (
@@ -420,6 +613,29 @@ export function LunaBrainModel() {
                         {label}
                       </button>
                     ))}
+                    <span className="ml-2 text-[12px]" style={{ color: K.sub }}>
+                      가격 축
+                    </span>
+                    {(
+                      [
+                        ["linear", "선형"],
+                        ["log", "로그"]
+                      ] as const
+                    ).map(([k, label]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setPriceScale(k)}
+                        className="cursor-pointer rounded-full px-2.5 py-[3px] text-[11px]"
+                        style={{
+                          background: priceScale === k ? K.luna : K.chip,
+                          color: priceScale === k ? "#fff" : K.sub,
+                          fontWeight: priceScale === k ? 600 : 400
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
                     <span
                       className="ml-auto text-[11px]"
                       style={{ color: K.faint }}
@@ -427,66 +643,142 @@ export function LunaBrainModel() {
                       왼쪽 위일수록 가성비가 좋습니다
                     </span>
                   </div>
-                  <div className="relative ml-11 mt-1.5 h-[280px] border-b border-l"
-                    style={{ borderColor: K.line }}
-                  >
-                    {[25, 50, 75].map((p) => (
-                      <div
-                        key={p}
-                        className="absolute left-0 right-0 border-t border-dashed"
-                        style={{ bottom: `${p}%`, borderColor: K.line2 }}
-                      />
-                    ))}
-                    {scatter.map((d) => (
-                      <div key={d.model_slug}>
+                  <div className="relative mt-1 pl-12 pr-2">
+                    <div
+                      className="pointer-events-none absolute left-0 top-1/2 origin-center -translate-y-1/2 -rotate-90 whitespace-nowrap text-[10.5px]"
+                      style={{ color: K.faint }}
+                    >
+                      {scatter.metricLabel}
+                    </div>
+                    <div
+                      className="relative h-[300px] border-b border-l"
+                      style={{ borderColor: K.line }}
+                    >
+                      {scatter.yTicks.map((tick, i) => {
+                        const y =
+                          scatter.yTicks.length <= 1
+                            ? 50
+                            : (i / (scatter.yTicks.length - 1)) * 100;
+                        return (
+                          <div
+                            key={`y-${tick}-${i}`}
+                            className="absolute left-0 right-0 border-t border-dashed"
+                            style={{ bottom: `${y}%`, borderColor: K.line2 }}
+                          >
+                            <span
+                              className="absolute -left-11 -translate-y-1/2 text-[10px]"
+                              style={{ color: K.faint }}
+                            >
+                              {tick}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {scatter.points.map((d) => (
                         <div
-                          className="absolute rounded-full"
-                          title={d.model_slug}
+                          key={d.model_slug}
+                          className="absolute"
                           style={{
                             left: `${d.x}%`,
                             bottom: `${d.y}%`,
-                            width: d.our_tiers.length ? 15 : 11,
-                            height: d.our_tiers.length ? 15 : 11,
-                            transform: "translate(-50%, 50%)",
-                            background:
-                              d.brand === "Claude"
-                                ? "#C96442"
-                                : d.brand === "GPT"
-                                  ? "#0F9D77"
-                                  : "#3B6396",
-                            boxShadow: d.our_tiers.length
-                              ? "0 0 0 2px #534AB7"
-                              : undefined,
-                            border: d.our_tiers.length
-                              ? "3px solid #fff"
-                              : undefined
+                            transform: "translate(-50%, 50%)"
                           }}
-                        />
-                        {d.our_tiers.length ? (
+                          onMouseEnter={() => setHoverSlug(d.model_slug)}
+                          onMouseLeave={() => setHoverSlug(null)}
+                        >
                           <div
-                            className="absolute whitespace-nowrap text-[9.5px]"
+                            className="rounded-full"
                             style={{
-                              left: `${d.x}%`,
-                              bottom: `${Math.max(0, d.y - 8)}%`,
-                              transform: "translate(-50%, 50%)",
-                              color: K.sub
+                              width: d.our_tiers.length ? 15 : 11,
+                              height: d.our_tiers.length ? 15 : 11,
+                              background:
+                                d.brand === "Claude"
+                                  ? "#C96442"
+                                  : d.brand === "GPT"
+                                    ? "#0F9D77"
+                                    : "#3B6396",
+                              boxShadow: d.our_tiers.length
+                                ? "0 0 0 2px #534AB7"
+                                : undefined,
+                              border: d.our_tiers.length
+                                ? "3px solid #fff"
+                                : undefined
                             }}
+                          />
+                          {d.showLabel ? (
+                            <div
+                              className="absolute left-1/2 top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-[9.5px]"
+                              style={{ color: K.sub }}
+                            >
+                              {d.model_slug.split("/").pop()}
+                              {d.our_tiers.length
+                                ? ` · ${d.our_tiers.join("")}`
+                                : ""}
+                            </div>
+                          ) : null}
+                          {hoverSlug === d.model_slug ? (
+                            <div
+                              className="absolute bottom-full left-1/2 z-10 mb-2 w-[220px] -translate-x-1/2 rounded-lg border bg-white px-2.5 py-2 text-left text-[11px] shadow-md"
+                              style={{ borderColor: K.line, color: K.ink }}
+                            >
+                              <div className="font-semibold">
+                                {d.model_slug}
+                              </div>
+                              <div style={{ color: K.sub }}>{d.brand}</div>
+                              <div className="mt-1 space-y-0.5" style={{ color: K.sub }}>
+                                <div>지능 {d.intelligence_index ?? "—"}</div>
+                                <div>다국어 {d.multilingual_index ?? "—"}</div>
+                                <div>에이전트 {d.agentic_index ?? "—"}</div>
+                                <div>혼합가 {fmtWon(d.cost_krw)}</div>
+                                <div>
+                                  TTFT{" "}
+                                  {d.median_time_to_first_token_seconds != null
+                                    ? `${Number(d.median_time_to_first_token_seconds).toFixed(2)}s`
+                                    : "—"}
+                                </div>
+                                <div>
+                                  출력{" "}
+                                  {d.median_output_tokens_per_second != null
+                                    ? `${Math.round(Number(d.median_output_tokens_per_second))} t/s`
+                                    : "—"}
+                                </div>
+                                {d.our_tiers.length ? (
+                                  <div style={{ color: K.luna }}>
+                                    지금 {d.our_tiers.join(", ")}등급
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="relative mt-1 h-4">
+                      {scatter.xTicks.map((tick, i) => {
+                        const x =
+                          scatter.xTicks.length <= 1
+                            ? 50
+                            : (i / (scatter.xTicks.length - 1)) * 100;
+                        return (
+                          <span
+                            key={`x-${tick}-${i}`}
+                            className="absolute -translate-x-1/2 text-[10px]"
+                            style={{ left: `${x}%`, color: K.faint }}
                           >
-                            {d.model_slug.split("/").pop()} ·{" "}
-                            {d.our_tiers.join("")}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
+                            {fmtWon(tick)}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div
+                      className="mt-3 text-center text-[10.5px]"
+                      style={{ color: K.faint }}
+                    >
+                      100만 토큰당 비용 (원)
+                    </div>
                   </div>
                   <div
-                    className="mt-[22px] text-center text-[10.5px]"
-                    style={{ color: K.faint }}
-                  >
-                    100만 토큰당 비용 (입력·출력 혼합)
-                  </div>
-                  <div
-                    className="mt-2 flex justify-center gap-3.5 text-[11px]"
+                    className="mt-3 flex justify-center gap-3.5 text-[11px]"
                     style={{ color: K.sub }}
                   >
                     <span>
@@ -549,7 +841,7 @@ export function LunaBrainModel() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {["", "모델", "종합", "코딩", "에이전트", "100만 토큰", "가성비", "변동"].map(
+                      {["", "모델", "종합", "다국어", "에이전트", "100만 토큰", "가성비", "변동"].map(
                         (h, i) => (
                           <th
                             key={h || "r"}
@@ -653,7 +945,17 @@ export function LunaBrainModel() {
                       : "주간 스냅샷이 아직 없습니다"}
                 </p>
               ) : (
-                <PriceSparkline history={data.history} />
+                <>
+                  <PriceSparkline history={data.history} />
+                  <p
+                    className="mt-2.5 text-center text-[11.5px]"
+                    style={{ color: K.sub }}
+                  >
+                    {(data.history_weeks ?? 1) < 2
+                      ? "주간 스냅샷이 쌓이면 추이가 보입니다 (현재 1주치)"
+                      : `현재 ${data.history_weeks}주치 스냅샷`}
+                  </p>
+                </>
               )}
               {data.price_note ? (
                 <p
@@ -1082,12 +1384,29 @@ function PriceSparkline({
           className="absolute inset-0 h-full w-full"
         >
           {entries.map(([slug, pts], i) => {
-            if (pts.length < 2) return null;
+            if (pts.length === 0) return null;
             const minT = pts[0]!.t;
-            const maxT = pts[pts.length - 1]!.t || minT + 1;
+            const maxT =
+              pts.length >= 2
+                ? pts[pts.length - 1]!.t
+                : minT + 7 * 24 * 60 * 60 * 1000;
+            if (pts.length === 1) {
+              const p = pts[0]!;
+              const x = 200;
+              const y = 130 - (p.c / maxC) * 120;
+              return (
+                <circle
+                  key={slug}
+                  cx={x}
+                  cy={y}
+                  r={4}
+                  fill={colors[i % colors.length]}
+                />
+              );
+            }
             const points = pts
               .map((p) => {
-                const x = ((p.t - minT) / (maxT - minT)) * 400;
+                const x = ((p.t - minT) / Math.max(maxT - minT, 1)) * 400;
                 const y = 130 - (p.c / maxC) * 120;
                 return `${x},${y}`;
               })

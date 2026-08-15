@@ -309,8 +309,8 @@ export async function GET(request: NextRequest) {
     .filter(Boolean);
   const history = await loadMarketHistory(admin, ourSlugs, 12);
 
-  // 순위
-  const ranked = preferredRank(marketRows).map((r, i) => {
+  // 순위·산점도: 표시용 상위 15 (후보 풀은 market.all)
+  const rankedAll = preferredRank(marketRows).map((r, i) => {
     const ours = matchTierToSlug(r.model_slug, orderedTiers);
     return {
       rank: i + 1,
@@ -319,10 +319,52 @@ export async function GET(request: NextRequest) {
       cost_krw:
         r.price_blended != null
           ? Math.round(Number(r.price_blended) * usdKrw)
-          : null,
+          : r.price_input != null || r.price_output != null
+            ? Math.round(
+                (((Number(r.price_input) || 0) * 3 +
+                  (Number(r.price_output) || 0)) /
+                  4) *
+                  usdKrw
+              )
+            : null,
       value: Math.round(valuePerCost(r) * 10) / 10,
       our_tiers: ours,
       delta: null as number | null
+    };
+  });
+  const ranked = rankedAll.slice(0, 15);
+
+  const selectable = preferredRank(marketRows).map((r) => {
+    const blended =
+      r.price_blended ??
+      ((Number(r.price_input) || 0) * 3 + (Number(r.price_output) || 0)) / 4;
+    const provider = (r.provider ?? "other").toLowerCase();
+    const keyOk =
+      provider === "anthropic"
+        ? connected.anthropic
+        : provider === "openai"
+          ? connected.openai
+          : provider === "google"
+            ? connected.google
+            : false;
+    return {
+      model_slug: r.model_slug,
+      provider,
+      brand: brandOf(r.provider),
+      intelligence_index: r.intelligence_index,
+      multilingual_index: r.multilingual_index,
+      agentic_index: r.agentic_index,
+      price_blended: Number.isFinite(blended) ? blended : null,
+      cost_krw:
+        Number.isFinite(blended) && blended > 0
+          ? Math.round(blended * usdKrw)
+          : null,
+      median_time_to_first_token_seconds:
+        r.median_time_to_first_token_seconds,
+      median_output_tokens_per_second: r.median_output_tokens_per_second,
+      is_reasoning: r.is_reasoning,
+      disabled: !keyOk,
+      disabled_reason: keyOk ? null : "API 키 미등록"
     };
   });
 
@@ -376,6 +418,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const uniqueWeeks = new Set(
+    history.map((h) => String(h.fetched_at).slice(0, 10))
+  ).size;
+
   return NextResponse.json({
     connections: { ...connected, artificial_analysis: aaKey },
     fx: { usd_krw: usdKrw, date: fxDate },
@@ -394,6 +440,7 @@ export async function GET(request: NextRequest) {
     market: {
       fetched_at: marketFetchedAt,
       missing_key: !aaKey && marketRows.length === 0,
+      total_count: marketRows.length,
       error:
         marketRows.length > 0
           ? null
@@ -401,16 +448,24 @@ export async function GET(request: NextRequest) {
             (!aaKey
               ? "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY 없음"
               : "Artificial Analysis 조회 결과가 없습니다. [지금 점검]으로 다시 받아 보세요."),
-      rows: marketRows.map((r) => ({
-        ...r,
-        brand: brandOf(r.provider),
-        cost_krw:
-          r.price_blended != null
-            ? Math.round(Number(r.price_blended) * usdKrw)
-            : null,
-        our_tiers: matchTierToSlug(r.model_slug, orderedTiers)
+      rows: ranked.map((r) => ({
+        model_slug: r.model_slug,
+        provider: r.provider,
+        brand: r.brand,
+        intelligence_index: r.intelligence_index,
+        multilingual_index: r.multilingual_index,
+        agentic_index: r.agentic_index,
+        cost_krw: r.cost_krw,
+        price_blended: r.price_blended,
+        median_time_to_first_token_seconds:
+          r.median_time_to_first_token_seconds,
+        median_output_tokens_per_second: r.median_output_tokens_per_second,
+        is_reasoning: r.is_reasoning,
+        our_tiers: r.our_tiers,
+        value: r.value
       }))
     },
+    selectable,
     ranking: ranked,
     history: history.map((h) => ({
       ...h,
@@ -420,6 +475,7 @@ export async function GET(request: NextRequest) {
           ? Math.round(Number(h.price_blended) * usdKrw)
           : null
     })),
+    history_weeks: uniqueWeeks,
     price_note: priceNote,
     usage: {
       range,
@@ -493,6 +549,63 @@ export async function PATCH(request: NextRequest) {
       },
       { onConflict: "key" }
     );
+  }
+
+  if (body.tier_update && typeof body.tier_update === "object") {
+    const tu = body.tier_update as Record<string, unknown>;
+    const tier = String(tu.tier ?? "").toUpperCase();
+    const modelId = String(tu.model_id ?? "").trim();
+    const providerRaw = String(tu.provider ?? "").toLowerCase();
+    if (!["S", "A", "B", "C"].includes(tier) || !modelId) {
+      return NextResponse.json(
+        { error: "tier_update 형식 오류" },
+        { status: 400 }
+      );
+    }
+    const provider = ["anthropic", "openai", "google"].includes(providerRaw)
+      ? providerRaw
+      : "anthropic";
+
+    const { data: current } = await admin
+      .from("luna_engine_tiers")
+      .select("tier, provider, model_id, model_label")
+      .eq("tier", tier)
+      .maybeSingle();
+
+    if (!current) {
+      return NextResponse.json({ error: "등급 없음" }, { status: 404 });
+    }
+    if (String(current.model_id) === modelId) {
+      return NextResponse.json({ ok: true, message: "변경 없음" });
+    }
+
+    await admin
+      .from("luna_engine_tiers")
+      .update({
+        provider,
+        model_id: modelId,
+        model_label: modelId,
+        updated_at: new Date().toISOString()
+      })
+      .eq("tier", tier);
+
+    await admin.from("luna_model_changes").insert({
+      tier,
+      from_provider: current.provider,
+      from_model_id: current.model_id,
+      from_model_label: current.model_label,
+      to_provider: provider,
+      to_model_id: modelId,
+      to_model_label: modelId,
+      reason: "사람이 직접 변경",
+      savings_krw_month: null,
+      exam_result: "pending"
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: `${tier}등급을 ${modelId}로 바꿨어요. 회귀 시험으로 확인해 보세요`
+    });
   }
 
   return NextResponse.json({ ok: true });

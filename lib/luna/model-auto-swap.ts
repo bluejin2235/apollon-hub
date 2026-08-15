@@ -10,17 +10,21 @@ import {
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
 import {
   fetchAndCacheMarketModels,
+  isPreferredProvider,
   loadLatestMarketSnapshot,
   type MarketModelRow
 } from "@/lib/luna/model-market";
 
-function valueScore(row: MarketModelRow, metric: "intel" | "multi" | "agent"): number {
+function valueScore(
+  row: MarketModelRow,
+  metric: "intel" | "multi" | "agent"
+): number {
   if (metric === "multi") return Number(row.multilingual_index) || 0;
   if (metric === "agent") return Number(row.agentic_index) || 0;
   return Number(row.intelligence_index) || 0;
 }
 
-function blendedUsd(row: MarketModelRow): number {
+export function blendedUsd(row: MarketModelRow): number {
   if (row.price_blended != null && Number.isFinite(Number(row.price_blended))) {
     return Number(row.price_blended);
   }
@@ -41,14 +45,53 @@ export function valuePerCost(
 }
 
 function preferredOnly(rows: MarketModelRow[]): MarketModelRow[] {
-  return rows.filter((r) =>
-    ["anthropic", "openai", "google"].includes(
-      (r.provider ?? "").toLowerCase()
-    )
-  );
+  return rows.filter((r) => isPreferredProvider(r.provider));
 }
 
-function pickForTier(
+function ttftSec(row: MarketModelRow): number | null {
+  const v = row.median_time_to_first_token_seconds;
+  if (v == null || !Number.isFinite(Number(v))) return null;
+  return Number(v);
+}
+
+function isReasoning(row: MarketModelRow): boolean {
+  return row.is_reasoning === true;
+}
+
+function fmtNum(n: number | null | undefined, digits = 2): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return Number(n).toFixed(digits);
+}
+
+function fmtUsd(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return `$${n.toFixed(2)}`;
+}
+
+export function buildSwapReason(
+  from: MarketModelRow | null,
+  to: MarketModelRow
+): string {
+  const fi = from?.intelligence_index ?? null;
+  const ti = to.intelligence_index;
+  const fb = from ? blendedUsd(from) : null;
+  const tb = blendedUsd(to);
+  const ft = from ? ttftSec(from) : null;
+  const tt = ttftSec(to);
+  return `지능 ${fmtNum(fi, 1)}→${fmtNum(ti, 1)}, 혼합가 ${
+    fb != null && Number.isFinite(fb) ? fmtUsd(fb) : "—"
+  }→${Number.isFinite(tb) ? fmtUsd(tb) : "—"}, TTFT ${
+    ft != null ? `${fmtNum(ft, 2)}s` : "—"
+  }→${tt != null ? `${fmtNum(tt, 2)}s` : "—"}`;
+}
+
+/**
+ * S: 지능 최상위 (가격·지연 무시)
+ * A: TTFT≤3 & 비추론 중 지능 1위
+ * B: 가격 하위 20% & TTFT≤1 & 비추론 중 지능 1위
+ * C: 지능≥40 중 혼합 단가 최저
+ */
+export function pickForTier(
   tier: LunaTier,
   rows: MarketModelRow[]
 ): MarketModelRow | null {
@@ -56,26 +99,35 @@ function pickForTier(
   if (pool.length === 0) return null;
 
   if (tier === "S") {
-    return [...pool].sort(
-      (a, b) => valueScore(b, "intel") - valueScore(a, "intel")
-    )[0] ?? null;
+    return (
+      [...pool].sort(
+        (a, b) => valueScore(b, "intel") - valueScore(a, "intel")
+      )[0] ?? null
+    );
   }
 
   if (tier === "A") {
-    const sorted = [...pool].sort(
-      (a, b) => valueScore(b, "multi") - valueScore(a, "multi")
-    );
-    const cut = Math.max(1, Math.ceil(sorted.length * 0.3));
-    const top = sorted.slice(0, cut);
+    const eligible = pool.filter((r) => {
+      const t = ttftSec(r);
+      return !isReasoning(r) && t != null && t <= 3;
+    });
     return (
-      [...top].sort((a, b) => valuePerCost(b, "multi") - valuePerCost(a, "multi"))[0] ??
-      null
+      [...eligible].sort(
+        (a, b) => valueScore(b, "intel") - valueScore(a, "intel")
+      )[0] ?? null
     );
   }
 
   if (tier === "B") {
-    const byPrice = [...pool].sort((a, b) => blendedUsd(a) - blendedUsd(b));
-    const cut = Math.max(1, Math.ceil(byPrice.length * 0.3));
+    const withTtft = pool.filter((r) => {
+      const t = ttftSec(r);
+      return !isReasoning(r) && t != null && t <= 1;
+    });
+    if (withTtft.length === 0) return null;
+    const byPrice = [...withTtft].sort(
+      (a, b) => blendedUsd(a) - blendedUsd(b)
+    );
+    const cut = Math.max(1, Math.ceil(byPrice.length * 0.2));
     const cheap = byPrice.slice(0, cut);
     return (
       [...cheap].sort(
@@ -84,18 +136,89 @@ function pickForTier(
     );
   }
 
-  // C: 가성비 1위, 종합 지능 ≥ 45
-  const eligible = pool.filter((r) => valueScore(r, "intel") >= 45);
+  // C
+  const eligible = pool.filter((r) => valueScore(r, "intel") >= 40);
   const base = eligible.length > 0 ? eligible : pool;
   return (
-    [...base].sort((a, b) => valuePerCost(b) - valuePerCost(a))[0] ?? null
+    [...base].sort((a, b) => blendedUsd(a) - blendedUsd(b))[0] ?? null
   );
 }
 
-function slugMatchesModel(slug: string, modelId: string): boolean {
+/** 교체 전 검증 — 실패하면 교체하지 않음 */
+export function validateSwap(
+  tier: LunaTier,
+  from: MarketModelRow | null,
+  to: MarketModelRow
+): { ok: true } | { ok: false; reason: string } {
+  const toCost = blendedUsd(to);
+  const fromCost = from ? blendedUsd(from) : null;
+
+  // 어느 등급이든 가격이 현재보다 비싸면 금지
+  if (
+    fromCost != null &&
+    Number.isFinite(fromCost) &&
+    Number.isFinite(toCost) &&
+    toCost > fromCost + 1e-9
+  ) {
+    return {
+      ok: false,
+      reason: `가격 상승 금지 (${fmtUsd(fromCost)} → ${fmtUsd(toCost)})`
+    };
+  }
+
+  if (tier === "A") {
+    if (isReasoning(to)) {
+      return { ok: false, reason: "A등급은 비추론만" };
+    }
+    const t = ttftSec(to);
+    if (t == null) return { ok: false, reason: "A등급 TTFT 데이터 없음" };
+    if (t > 3) return { ok: false, reason: `A등급 TTFT>${t.toFixed(2)}s` };
+  }
+
+  if (tier === "B") {
+    if (isReasoning(to)) {
+      return { ok: false, reason: "B등급은 비추론만" };
+    }
+    const t = ttftSec(to);
+    if (t == null) return { ok: false, reason: "B등급 TTFT 데이터 없음" };
+    if (t > 1) return { ok: false, reason: `B등급 TTFT>${t.toFixed(2)}s` };
+    if (
+      fromCost != null &&
+      Number.isFinite(fromCost) &&
+      Number.isFinite(toCost) &&
+      toCost > fromCost + 1e-9
+    ) {
+      return { ok: false, reason: "B등급 혼합가 ≤ 현재" };
+    }
+  }
+
+  if (tier === "C") {
+    if (
+      fromCost != null &&
+      Number.isFinite(fromCost) &&
+      Number.isFinite(toCost) &&
+      toCost > fromCost + 1e-9
+    ) {
+      return { ok: false, reason: "C등급 혼합가 ≤ 현재" };
+    }
+  }
+
+  return { ok: true };
+}
+
+export function slugMatchesModel(slug: string, modelId: string): boolean {
   const a = slug.toLowerCase().replace(/[^a-z0-9]/g, "");
   const b = modelId.toLowerCase().replace(/[^a-z0-9]/g, "");
   return a.includes(b) || b.includes(a) || a === b;
+}
+
+export function findMarketRow(
+  rows: MarketModelRow[],
+  modelId: string
+): MarketModelRow | null {
+  return (
+    rows.find((r) => slugMatchesModel(r.model_slug, modelId)) ?? null
+  );
 }
 
 async function getSettings(
@@ -144,7 +267,6 @@ export async function runModelInspect(
   const { rows } = await loadLatestMarketSnapshot(admin);
   const usdKrw = opts?.usdKrw && opts.usdKrw > 0 ? opts.usdKrw : 1380;
 
-  // 시장 조회 실패 + 캐시도 없으면 교체 없이 사유만 반환
   if (!market.ok && rows.length === 0) {
     const now = new Date();
     const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -175,32 +297,46 @@ export async function runModelInspect(
 
   if (settings.auto_swap) {
     for (const tier of LUNA_TIER_ORDER) {
+      if (swapped.length >= 1) break; // 한 번에 최대 1개 등급
       if (tier === "S" && settings.protect_s) continue;
       const current = (tiers ?? []).find((t) => t.tier === tier);
       if (!current) continue;
+
+      const fromRow = findMarketRow(rows, String(current.model_id));
       const candidate = pickForTier(tier, rows);
-      if (!candidate) continue;
+      if (!candidate) {
+        console.info(`[luna/model-inspect] ${tier}: 후보 없음`);
+        continue;
+      }
       if (slugMatchesModel(candidate.model_slug, String(current.model_id))) {
+        console.info(`[luna/model-inspect] ${tier}: 유지 ${candidate.model_slug}`);
         continue;
       }
 
-      const fromCost = blendedUsd(
-        rows.find((r) =>
-          slugMatchesModel(r.model_slug, String(current.model_id))
-        ) ?? candidate
-      );
+      const check = validateSwap(tier, fromRow, candidate);
+      if (!check.ok) {
+        console.info(
+          `[luna/model-inspect] ${tier}: 교체 거부 → ${candidate.model_slug} (${check.reason})`
+        );
+        continue;
+      }
+
+      const fromCost = fromRow ? blendedUsd(fromRow) : Number.POSITIVE_INFINITY;
       const toCost = blendedUsd(candidate);
-      const savingsUsd = Number.isFinite(fromCost)
-        ? Math.max(0, fromCost - toCost) * 2
-        : null;
+      const savingsUsd =
+        Number.isFinite(fromCost) && Number.isFinite(toCost)
+          ? Math.max(0, fromCost - toCost) * 2
+          : null;
       const savingsKrw =
         savingsUsd != null ? Math.round(savingsUsd * usdKrw) : null;
 
       const toProvider = (candidate.provider ?? "anthropic").toLowerCase();
-      const toLabel =
-        candidate.creator
-          ? `${candidate.model_slug}`
-          : candidate.model_slug;
+      const toLabel = candidate.model_slug;
+      const reason = buildSwapReason(fromRow, candidate);
+
+      console.info(
+        `[luna/model-inspect] ${tier}: 교체 ${current.model_id} → ${candidate.model_slug} | ${reason}`
+      );
 
       await admin
         .from("luna_engine_tiers")
@@ -222,7 +358,7 @@ export async function runModelInspect(
         to_provider: toProvider,
         to_model_id: candidate.model_slug,
         to_model_label: toLabel,
-        reason: `${tier}등급 자동 점검 교체`,
+        reason: `${tier}등급 자동 점검 · ${reason}`,
         savings_krw_month: savingsKrw,
         exam_result: "pending"
       });
@@ -237,9 +373,11 @@ export async function runModelInspect(
         admin,
         "prompt_change",
         `${tier}등급을 ${candidate.model_slug} 로 바꿨어요${
-          savingsKrw != null ? `. 월 ₩${savingsKrw.toLocaleString("ko-KR")} 절감 예상` : ""
+          savingsKrw != null
+            ? `. 월 ₩${savingsKrw.toLocaleString("ko-KR")} 절감 예상`
+            : ""
         }`,
-        "두뇌 > 모델·비용에서 확인하세요.",
+        reason,
         {
           level: "info",
           link: LUNA_LINKS.brainModel,
@@ -251,7 +389,6 @@ export async function runModelInspect(
 
   const now = new Date();
   const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  // 다음 일요일 04:00 KST ≈ UTC 토 19:00 — 단순 +7일
   await saveSettings(admin, {
     ...settings,
     last_inspect_at: now.toISOString(),
@@ -264,7 +401,7 @@ export async function runModelInspect(
     ok: market.ok || rows.length > 0,
     message:
       swapped.length > 0
-        ? `${swapped.length}개 등급 교체`
+        ? `${swapped[0]!.tier}등급 → ${swapped[0]!.to}`
         : market.ok
           ? `점검 완료 · 교체 없음 · ${market.message}`
           : `${market.message} (캐시 ${rows.length}건으로 점검)`,

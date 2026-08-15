@@ -5,17 +5,22 @@ export type MarketModelRow = {
   creator: string | null;
   provider: string | null;
   intelligence_index: number | null;
-  /** Free API: artificial_analysis_coding_index (UI 라벨: 코딩) */
   multilingual_index: number | null;
   agentic_index: number | null;
   price_input: number | null;
   price_output: number | null;
   price_blended: number | null;
   price_cache_read: number | null;
+  median_output_tokens_per_second: number | null;
+  median_time_to_first_token_seconds: number | null;
+  is_reasoning: boolean | null;
   fetched_at: string;
 };
 
 const AA_BASE = "https://artificialanalysis.ai/api/v2";
+
+const MARKET_SELECT =
+  "model_slug, creator, provider, intelligence_index, multilingual_index, agentic_index, price_input, price_output, price_blended, price_cache_read, median_output_tokens_per_second, median_time_to_first_token_seconds, is_reasoning, fetched_at";
 
 function mapCreatorToProvider(creator: string | null | undefined): string {
   const c = (creator ?? "").toLowerCase();
@@ -62,7 +67,9 @@ async function fetchAaPage(
   apiKey: string,
   path: string,
   page: number
-): Promise<{ ok: true; json: AaPage } | { ok: false; status: number; body: string }> {
+): Promise<
+  { ok: true; json: AaPage } | { ok: false; status: number; body: string }
+> {
   const url = `${AA_BASE}${path}${path.includes("?") ? "&" : "?"}page=${page}`;
   const res = await fetch(url, {
     headers: { "x-api-key": apiKey },
@@ -97,7 +104,6 @@ async function fetchAaPage(
   }
 }
 
-/** Free → Pro → legacy 순으로 시도. Free 키가 Pro 경로면 403. */
 async function fetchAllAaModels(
   apiKey: string
 ): Promise<
@@ -116,7 +122,6 @@ async function fetchAllAaModels(
     const first = await fetchAaPage(apiKey, path, 1);
     if (!first.ok) {
       lastError = formatFetchError(first.status, first.body);
-      // 403 on Pro path → try next; 401 is fatal for all
       if (first.status === 401) {
         return { ok: false, message: lastError };
       }
@@ -155,7 +160,8 @@ async function fetchAllAaModels(
 
 function parseCreator(o: Record<string, unknown>): string | null {
   if (typeof o.creator === "string" && o.creator) return o.creator;
-  if (typeof o.organization === "string" && o.organization) return o.organization;
+  if (typeof o.organization === "string" && o.organization)
+    return o.organization;
   if (typeof o.vendor === "string" && o.vendor) return o.vendor;
   const mc = o.model_creator;
   if (mc && typeof mc === "object") {
@@ -165,6 +171,19 @@ function parseCreator(o: Record<string, unknown>): string | null {
     if (typeof c.id === "string" && c.id) return c.id;
   }
   return null;
+}
+
+function inferReasoning(
+  o: Record<string, unknown>,
+  slug: string,
+  name: string
+): boolean {
+  if (typeof o.reasoning_model === "boolean") return o.reasoning_model;
+  if (typeof o.is_reasoning === "boolean") return o.is_reasoning;
+  const s = `${slug} ${name}`.toLowerCase();
+  return /(?:^|[^a-z])(o1|o3|o4)(?:[^a-z]|$)|reasoning|thinking|reasoner|deepseek-r1|r1-/.test(
+    s
+  );
 }
 
 function parseMarketItem(
@@ -177,9 +196,10 @@ function parseMarketItem(
     (typeof o.slug === "string" && o.slug) ||
     (typeof o.model_slug === "string" && o.model_slug) ||
     (typeof o.id === "string" && o.id) ||
-    (typeof o.name === "string" && o.name) ||
     "";
-  if (!slug) return null;
+  const name = typeof o.name === "string" ? o.name : "";
+  if (!slug && !name) return null;
+  const modelSlug = slug || name;
 
   const creator = parseCreator(o);
   const provider = mapCreatorToProvider(creator);
@@ -190,6 +210,10 @@ function parseMarketItem(
   const evals =
     o.evaluations && typeof o.evaluations === "object"
       ? (o.evaluations as Record<string, unknown>)
+      : o;
+  const perf =
+    o.performance && typeof o.performance === "object"
+      ? (o.performance as Record<string, unknown>)
       : o;
 
   const priceIn =
@@ -207,30 +231,35 @@ function parseMarketItem(
       ? (priceIn * 3 + priceOut) / 4
       : null);
 
-  // Free catalog keys (docs):
-  // artificial_analysis_intelligence_index / coding_index / agentic_index
   const intelligence =
     num(evals.artificial_analysis_intelligence_index) ??
     num(evals.intelligence_index) ??
     num(o.intelligence_index) ??
     num(o.quality_index);
-  const codingOrMulti =
-    num(evals.artificial_analysis_coding_index) ??
+  // 다국어: coding 으로 대체하지 않음 (없으면 null)
+  const multilingual =
     num(evals.multilingual_index) ??
     num(evals.global_mmlu_lite) ??
-    num(o.multilingual_index) ??
-    num(o.coding_index);
+    num(evals["global_mmlu"]) ??
+    num(o.multilingual_index);
   const agentic =
     num(evals.artificial_analysis_agentic_index) ??
     num(evals.agentic_index) ??
     num(o.agentic_index);
 
+  const ttft =
+    num(perf.median_time_to_first_token_seconds) ??
+    num(o.median_time_to_first_token_seconds);
+  const tps =
+    num(perf.median_output_tokens_per_second) ??
+    num(o.median_output_tokens_per_second);
+
   return {
-    model_slug: slug,
+    model_slug: modelSlug,
     creator,
     provider,
     intelligence_index: intelligence,
-    multilingual_index: codingOrMulti,
+    multilingual_index: multilingual,
     agentic_index: agentic,
     price_input: priceIn,
     price_output: priceOut,
@@ -239,11 +268,22 @@ function parseMarketItem(
       num(pricing.price_1m_cache_hit_tokens) ??
       num(pricing.price_1m_cache_read) ??
       num(o.price_cache_read),
+    median_output_tokens_per_second: tps,
+    median_time_to_first_token_seconds: ttft,
+    is_reasoning: inferReasoning(o, modelSlug, name),
     fetched_at: fetchedAt
   };
 }
 
-/** Artificial Analysis → luna_model_market (상위 15, Claude/GPT/Gemini 우선) */
+export function isPreferredProvider(
+  provider: string | null | undefined
+): boolean {
+  return ["anthropic", "openai", "google"].includes(
+    (provider ?? "").toLowerCase()
+  );
+}
+
+/** Artificial Analysis → luna_model_market (Claude/GPT/Gemini 전체, 개수 제한 없음) */
 export async function fetchAndCacheMarketModels(
   admin: SupabaseClient
 ): Promise<{ ok: boolean; count: number; message: string }> {
@@ -263,85 +303,128 @@ export async function fetchAndCacheMarketModels(
   }
 
   const fetchedAt = new Date().toISOString();
-  const rows: MarketModelRow[] = [];
+  const preferred: MarketModelRow[] = [];
   for (const item of fetched.list) {
     const row = parseMarketItem(item, fetchedAt);
-    if (row) rows.push(row);
+    if (row && isPreferredProvider(row.provider)) preferred.push(row);
   }
 
-  // Claude / GPT / Gemini 우선 후 상위 15
-  const preferred = rows.filter((r) =>
-    ["anthropic", "openai", "google"].includes(r.provider ?? "")
-  );
-  const rest = rows.filter(
-    (r) => !["anthropic", "openai", "google"].includes(r.provider ?? "")
-  );
+  if (preferred.length === 0) {
+    return {
+      ok: false,
+      count: 0,
+      message: `Artificial Analysis 조회 실패 — Claude/GPT/Gemini 모델 없음 (${fetched.endpoint})`
+    };
+  }
+
   preferred.sort(
     (a, b) => (b.intelligence_index ?? 0) - (a.intelligence_index ?? 0)
   );
-  const top = [...preferred, ...rest].slice(0, 15);
 
-  if (top.length === 0) {
-    return {
-      ok: false,
-      count: 0,
-      message: `Artificial Analysis 조회 실패 — 파싱된 모델 없음 (${fetched.endpoint})`
-    };
-  }
+  // 대량 insert — 500건 단위 (마이그레이션 전이면 성능 컬럼 제외 재시도)
+  const basePayload = preferred.map((r) => ({
+    model_slug: r.model_slug,
+    creator: r.creator,
+    provider: r.provider,
+    intelligence_index: r.intelligence_index,
+    multilingual_index: r.multilingual_index,
+    agentic_index: r.agentic_index,
+    price_input: r.price_input,
+    price_output: r.price_output,
+    price_blended: r.price_blended,
+    price_cache_read: r.price_cache_read,
+    fetched_at: r.fetched_at
+  }));
+  const fullPayload = preferred.map((r, i) => ({
+    ...basePayload[i]!,
+    median_output_tokens_per_second: r.median_output_tokens_per_second,
+    median_time_to_first_token_seconds: r.median_time_to_first_token_seconds,
+    is_reasoning: r.is_reasoning
+  }));
 
-  const { error } = await admin.from("luna_model_market").insert(
-    top.map((r) => ({
-      model_slug: r.model_slug,
-      creator: r.creator,
-      provider: r.provider,
-      intelligence_index: r.intelligence_index,
-      multilingual_index: r.multilingual_index,
-      agentic_index: r.agentic_index,
-      price_input: r.price_input,
-      price_output: r.price_output,
-      price_blended: r.price_blended,
-      price_cache_read: r.price_cache_read,
-      fetched_at: r.fetched_at
-    }))
-  );
-
-  if (error) {
-    console.error("[luna/market] insert", error);
-    return {
-      ok: false,
-      count: 0,
-      message: `Artificial Analysis 조회 실패 — DB 저장 오류: ${error.message}`
-    };
+  let useFull = true;
+  for (let i = 0; i < preferred.length; i += 500) {
+    const chunk = (useFull ? fullPayload : basePayload).slice(i, i + 500);
+    const { error } = await admin.from("luna_model_market").insert(chunk);
+    if (error) {
+      if (
+        useFull &&
+        /median_|is_reasoning|column/i.test(error.message)
+      ) {
+        console.warn(
+          "[luna/market] perf columns missing — inserting without TTFT/reasoning"
+        );
+        useFull = false;
+        i -= 500;
+        continue;
+      }
+      console.error("[luna/market] insert", error);
+      return {
+        ok: false,
+        count: 0,
+        message: `Artificial Analysis 조회 실패 — DB 저장 오류: ${error.message}`
+      };
+    }
   }
 
   return {
     ok: true,
-    count: top.length,
-    message: `${top.length}개 캐시 (${fetched.endpoint})`
+    count: preferred.length,
+    message: `${preferred.length}개 캐시 (${fetched.endpoint})`
   };
 }
 
 export async function loadLatestMarketSnapshot(
   admin: SupabaseClient
 ): Promise<{ rows: MarketModelRow[]; fetched_at: string | null }> {
-  const { data, error } = await admin
+  const { data: latestRow, error: latestErr } = await admin
     .from("luna_model_market")
-    .select(
-      "model_slug, creator, provider, intelligence_index, multilingual_index, agentic_index, price_input, price_output, price_blended, price_cache_read, fetched_at"
-    )
+    .select("fetched_at")
     .order("fetched_at", { ascending: false })
-    .limit(60);
+    .limit(1)
+    .maybeSingle();
 
-  if (error) {
-    console.error("[luna/market] load", error);
+  if (latestErr) {
+    console.error("[luna/market] load latest", latestErr);
     return { rows: [], fetched_at: null };
   }
 
-  const latest = data?.[0]?.fetched_at as string | undefined;
+  const latest = latestRow?.fetched_at as string | undefined;
   if (!latest) return { rows: [], fetched_at: null };
 
-  const rows = (data ?? []).filter((r) => r.fetched_at === latest);
-  return { rows: rows as MarketModelRow[], fetched_at: latest };
+  const { data, error } = await admin
+    .from("luna_model_market")
+    .select(MARKET_SELECT)
+    .eq("fetched_at", latest)
+    .order("intelligence_index", { ascending: false })
+    .limit(2000);
+
+  if (error) {
+    // 마이그레이션 전: 구 컬럼만
+    const legacy = await admin
+      .from("luna_model_market")
+      .select(
+        "model_slug, creator, provider, intelligence_index, multilingual_index, agentic_index, price_input, price_output, price_blended, price_cache_read, fetched_at"
+      )
+      .eq("fetched_at", latest)
+      .order("intelligence_index", { ascending: false })
+      .limit(2000);
+    if (legacy.error) {
+      console.error("[luna/market] load", error, legacy.error);
+      return { rows: [], fetched_at: null };
+    }
+    return {
+      rows: (legacy.data ?? []).map((r) => ({
+        ...r,
+        median_output_tokens_per_second: null,
+        median_time_to_first_token_seconds: null,
+        is_reasoning: null
+      })) as MarketModelRow[],
+      fetched_at: latest
+    };
+  }
+
+  return { rows: (data ?? []) as MarketModelRow[], fetched_at: latest };
 }
 
 export async function loadMarketHistory(
@@ -355,9 +438,7 @@ export async function loadMarketHistory(
   ).toISOString();
   const { data, error } = await admin
     .from("luna_model_market")
-    .select(
-      "model_slug, creator, provider, intelligence_index, multilingual_index, agentic_index, price_input, price_output, price_blended, price_cache_read, fetched_at"
-    )
+    .select(MARKET_SELECT)
     .in("model_slug", modelSlugs)
     .gte("fetched_at", since)
     .order("fetched_at", { ascending: true });
