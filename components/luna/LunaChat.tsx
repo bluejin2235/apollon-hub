@@ -30,6 +30,7 @@ import {
   normalizeUsedPrompts,
   type UsedPromptRef
 } from "@/lib/luna/chat-response";
+import type { FeedbackReason } from "@/lib/luna/feedback";
 import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
 import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
 import { supabase } from "@/lib/supabase/client";
@@ -88,6 +89,7 @@ export type LunaChatMessage = {
   content: string;
   engine?: string | null;
   feedback?: "good" | "bad" | null;
+  feedbackReason?: FeedbackReason | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
@@ -328,6 +330,12 @@ export type LunaStreamEventResult =
       usedPrompts: UsedPromptRef[] | null;
       connectorRouting: LunaConnectorRoutingMeta | null;
     }
+  | {
+      kind: "ids";
+      buffer: string;
+      userMessageId: string;
+      assistantMessageId: string;
+    }
   | { kind: "text"; buffer: string };
 
 /** meta 이전: 줄 단위 JSON 이벤트 소비. meta 이후: 전체를 텍스트로. */
@@ -353,6 +361,22 @@ export function consumeLunaStreamEvents(
 
   try {
     const parsed = JSON.parse(firstLine) as Record<string, unknown>;
+    if (parsed.type === "ids") {
+      const userMessageId =
+        typeof parsed.user_message_id === "string" ? parsed.user_message_id.trim() : "";
+      const assistantMessageId =
+        typeof parsed.assistant_message_id === "string"
+          ? parsed.assistant_message_id.trim()
+          : "";
+      if (userMessageId && assistantMessageId) {
+        return {
+          kind: "ids",
+          buffer: rest,
+          userMessageId,
+          assistantMessageId
+        };
+      }
+    }
     if (parsed.type === "step") {
       const status = parsed.status;
       if (
@@ -924,6 +948,7 @@ export function LunaChat({
                 content={m.content}
                 engine={m.engine}
                 feedback={m.feedback}
+                feedbackReason={m.feedbackReason}
                 notionSources={m.notionSources}
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}

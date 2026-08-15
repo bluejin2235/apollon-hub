@@ -21,6 +21,7 @@ type Kind =
   | "search_zero"
   | "clarify_unresolved"
   | "correction"
+  | "thumbs_down"
   | "eval_quality";
 
 type Settings = {
@@ -34,6 +35,7 @@ type Settings = {
     clarify_unresolved: boolean;
     correction: boolean;
     eval_quality: boolean;
+    thumbs_down: boolean;
     knowledge_gap: boolean;
   };
   notify_done: boolean;
@@ -58,6 +60,7 @@ const CRITERIA: { key: Kind; label: string }[] = [
   { key: "search_zero", label: "검색 0건이었던 주제" },
   { key: "clarify_unresolved", label: "되물었지만 해소되지 않은 것" },
   { key: "correction", label: "정정받았지만 이해가 얕은 것" },
+  { key: "thumbs_down", label: "싫어요(👎)를 받은 답변" },
   { key: "eval_quality", label: "회귀 시험 품질 미달" }
 ];
 

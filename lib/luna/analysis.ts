@@ -224,6 +224,8 @@ export type RunAnalysisParams = {
   hasAttachments: boolean;
   attachments: AttachmentRow[];
   attachmentMeta: { id: string; file_name: string; mime_type: string }[];
+  userMessageId?: string;
+  assistantMessageId?: string;
 };
 
 export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<void> {
@@ -251,7 +253,9 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     nasEnabled,
     hasAttachments,
     attachments,
-    attachmentMeta
+    attachmentMeta,
+    userMessageId,
+    assistantMessageId
   } = params;
 
   const emit = (event: Record<string, unknown>) => {
@@ -863,6 +867,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   const insertNow = Date.now();
   const { error: insertError } = await admin.from("luna_messages").insert([
     {
+      ...(userMessageId ? { id: userMessageId } : {}),
       conversation_id: conversationId,
       role: "user",
       content: userText,
@@ -871,6 +876,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       created_at: new Date(insertNow - 1000).toISOString()
     },
     {
+      ...(assistantMessageId ? { id: assistantMessageId } : {}),
       conversation_id: conversationId,
       role: "assistant",
       content: assistantText,

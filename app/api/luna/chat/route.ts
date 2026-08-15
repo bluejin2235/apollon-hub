@@ -900,6 +900,14 @@ export async function POST(request: NextRequest) {
       };
 
       try {
+        const userMessageId = crypto.randomUUID();
+        const assistantMessageId = crypto.randomUUID();
+        emit(controller, encoder, {
+          type: "ids",
+          user_message_id: userMessageId,
+          assistant_message_id: assistantMessageId
+        });
+
         if (perspectiveIds.length + roleIds.length >= 2) {
           await runAnalysisPipeline({
             controller,
@@ -925,7 +933,9 @@ export async function POST(request: NextRequest) {
             nasEnabled,
             hasAttachments,
             attachments,
-            attachmentMeta
+            attachmentMeta,
+            userMessageId,
+            assistantMessageId
           });
           return;
         }
@@ -937,6 +947,7 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode(KNOWLEDGE_DUMP_CLARIFY));
           await admin.from("luna_messages").insert([
             {
+              id: userMessageId,
               conversation_id: conversationId,
               role: "user",
               content: userText,
@@ -945,6 +956,7 @@ export async function POST(request: NextRequest) {
               created_at: new Date(dumpNow - 1000).toISOString()
             },
             {
+              id: assistantMessageId,
               conversation_id: conversationId,
               role: "assistant",
               content: KNOWLEDGE_DUMP_CLARIFY,
@@ -1041,6 +1053,7 @@ export async function POST(request: NextRequest) {
             const clarifyNow = Date.now();
             await admin.from("luna_messages").insert([
               {
+                id: userMessageId,
                 conversation_id: conversationId,
                 role: "user",
                 content: userText,
@@ -1049,6 +1062,7 @@ export async function POST(request: NextRequest) {
                 created_at: new Date(clarifyNow - 1000).toISOString()
               },
               {
+                id: assistantMessageId,
                 conversation_id: conversationId,
                 role: "assistant",
                 content: clarifyQuestion,
@@ -1708,6 +1722,7 @@ export async function POST(request: NextRequest) {
         const insertNow = Date.now();
         const { error: insertError } = await admin.from("luna_messages").insert([
           {
+            id: userMessageId,
             conversation_id: conversationId,
             role: "user",
             content: userText,
@@ -1716,6 +1731,7 @@ export async function POST(request: NextRequest) {
             created_at: new Date(insertNow - 1000).toISOString()
           },
           {
+            id: assistantMessageId,
             conversation_id: conversationId,
             role: "assistant",
             content: assistantText,

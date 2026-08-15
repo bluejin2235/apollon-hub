@@ -22,6 +22,12 @@ import {
   parseAssumeMarkers,
   type UsedPromptRef
 } from "@/lib/luna/chat-response";
+import {
+  FEEDBACK_REASON_IDS,
+  FEEDBACK_REASON_LABELS,
+  isFeedbackReason,
+  type FeedbackReason
+} from "@/lib/luna/feedback";
 import { supabase } from "@/lib/supabase/client";
 
 export type LunaModelStep = {
@@ -77,6 +83,7 @@ type LunaMessageProps = {
   content: string;
   engine?: string | null;
   feedback?: "good" | "bad" | null;
+  feedbackReason?: FeedbackReason | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
@@ -858,24 +865,34 @@ function MessageActionsRow({
           <button
             type="button"
             aria-label="좋아요"
+            aria-pressed={feedback === "good"}
             disabled={busy}
             onClick={() => onFeedback("good")}
             className={`text-[15px] leading-none ${
               feedback === "good" ? "text-[#534AB7]" : "text-[#9aa0a8]"
             }`}
           >
-            <ThumbsUp className="h-[15px] w-[15px]" strokeWidth={1.75} />
+            <ThumbsUp
+              className="h-[15px] w-[15px]"
+              strokeWidth={1.75}
+              fill={feedback === "good" ? "currentColor" : "none"}
+            />
           </button>
           <button
             type="button"
             aria-label="싫어요"
+            aria-pressed={feedback === "bad"}
             disabled={busy}
             onClick={() => onFeedback("bad")}
             className={`text-[15px] leading-none ${
               feedback === "bad" ? "text-[#534AB7]" : "text-[#9aa0a8]"
             }`}
           >
-            <ThumbsDown className="h-[15px] w-[15px]" strokeWidth={1.75} />
+            <ThumbsDown
+              className="h-[15px] w-[15px]"
+              strokeWidth={1.75}
+              fill={feedback === "bad" ? "currentColor" : "none"}
+            />
           </button>
         </>
       ) : null}
@@ -889,6 +906,7 @@ export function LunaMessage({
   content,
   engine,
   feedback: initialFeedback = null,
+  feedbackReason: initialReason = null,
   notionSources = null,
   cards = null,
   sourceReasons = null,
@@ -912,6 +930,10 @@ export function LunaMessage({
   detailMeta = null
 }: LunaMessageProps) {
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
+  const [feedbackReason, setFeedbackReason] = useState<FeedbackReason | null>(
+    initialReason
+  );
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -985,28 +1007,72 @@ export function LunaMessage({
     }
   }
 
-  async function sendFeedback(next: "good" | "bad") {
+  // 같은 메시지에서 대화 리로드가 방금 저장한 로컬 평가를 덮어쓰지 않게, id 변경 시에만 동기화
+  useEffect(() => {
+    setFeedback(initialFeedback);
+    setFeedbackReason(initialReason);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- message identity only
+  }, [id]);
+
+  async function sendFeedback(
+    next: "good" | "bad" | null,
+    reason?: FeedbackReason | null
+  ) {
     if (!canFeedback || busy) return;
+    const prev = feedback;
+    const prevReason = feedbackReason;
     setBusy(true);
+    setFeedbackError(null);
     setFeedback(next);
+    if (next !== "bad") setFeedbackReason(null);
+    else if (reason) setFeedbackReason(reason);
     try {
-      const token = await getAccessToken();
-      if (!token) return;
+      let token = await getAccessToken();
+      if (!token) {
+        const refreshed = await supabase.auth.refreshSession();
+        token = refreshed.data.session?.access_token ?? null;
+      }
+      if (!token) {
+        setFeedback(prev);
+        setFeedbackReason(prevReason);
+        setFeedbackError("로그인이 필요합니다. 다시 로그인한 뒤 눌러 주세요.");
+        return;
+      }
       const res = await fetch("/api/luna/messages", {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message_id: id, feedback: next })
+        body: JSON.stringify({
+          message_id: id,
+          feedback: next,
+          ...(next === "bad" && reason ? { reason } : {})
+        })
       });
       if (!res.ok) {
-        console.error("[luna] feedback", await res.text());
-        setFeedback(initialFeedback);
+        const text = await res.text();
+        console.error("[luna] feedback", text);
+        setFeedback(prev);
+        setFeedbackReason(prevReason);
+        setFeedbackError(
+          res.status === 401
+            ? "로그인이 만료되었습니다. 다시 로그인해 주세요."
+            : "평가를 저장하지 못했습니다. 다시 눌러 주세요."
+        );
+        return;
       }
+      const json = (await res.json()) as {
+        feedback?: "good" | "bad" | null;
+        reason?: unknown;
+      };
+      setFeedback(json.feedback === "good" || json.feedback === "bad" ? json.feedback : null);
+      setFeedbackReason(isFeedbackReason(json.reason) ? json.reason : null);
     } catch (err) {
       console.error("[luna] feedback", err);
-      setFeedback(initialFeedback);
+      setFeedback(prev);
+      setFeedbackReason(prevReason);
+      setFeedbackError("네트워크 오류로 평가를 저장하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -1141,18 +1207,50 @@ export function LunaMessage({
           )
         ) : null}
 
-        {!isThinking && !clarify ? (
-          <MessageActionsRow
-            content={content}
-            cards={cardList}
-            notionSources={sources}
-            memoryCount={memoryCount ?? 0}
-            canFeedback={canFeedback}
-            feedback={feedback}
-            busy={busy}
-            onCopy={copyContent}
-            onFeedback={(next) => void sendFeedback(next)}
-          />
+        {!isThinking ? (
+          <>
+            <MessageActionsRow
+              content={content}
+              cards={cardList}
+              notionSources={sources}
+              memoryCount={memoryCount ?? 0}
+              canFeedback={canFeedback}
+              feedback={feedback}
+              busy={busy}
+              onCopy={copyContent}
+              onFeedback={(next) => {
+                if (feedback === next) void sendFeedback(null);
+                else void sendFeedback(next);
+              }}
+            />
+            {canFeedback && feedback === "bad" ? (
+              <div className="mt-1.5">
+                <p className="mb-1 text-[10.5px] text-[#9aa0a8]">
+                  무엇이 아쉬웠나요? (선택)
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {FEEDBACK_REASON_IDS.map((rid) => (
+                    <button
+                      key={rid}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void sendFeedback("bad", rid)}
+                      className={`rounded-full px-2 py-0.5 text-[11px] ${
+                        feedbackReason === rid
+                          ? "bg-[#534AB7] text-white"
+                          : "bg-[#f3f4f6] text-[#6b6f76]"
+                      }`}
+                    >
+                      {FEEDBACK_REASON_LABELS[rid]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {feedbackError ? (
+              <p className="mt-1 text-[11px] text-[#c23b3b]">{feedbackError}</p>
+            ) : null}
+          </>
         ) : null}
 
         {copied ? (

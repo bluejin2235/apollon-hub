@@ -25,6 +25,7 @@ import type {
 import { LunaShell } from "@/components/luna/LunaShell";
 import { LunaSidebar, type LunaConversation } from "@/components/luna/LunaSidebar";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import { isFeedbackReason } from "@/lib/luna/feedback";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -45,6 +46,27 @@ const DEFAULT_CONNECTORS: LunaConnectorsState = {
   web: false,
   nas: false
 };
+
+function mergeLocalFeedback(
+  prev: LunaChatMessage[],
+  next: LunaChatMessage[]
+): LunaChatMessage[] {
+  const local = new Map(
+    prev.map((m) => [m.id, { feedback: m.feedback, feedbackReason: m.feedbackReason }])
+  );
+  return next.map((m) => {
+    if (m.feedback) return m;
+    const loc = local.get(m.id);
+    if (loc?.feedback) {
+      return {
+        ...m,
+        feedback: loc.feedback,
+        feedbackReason: loc.feedbackReason ?? null
+      };
+    }
+    return m;
+  });
+}
 
 export default function LunaPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -101,14 +123,16 @@ export default function LunaPage() {
       return;
     }
 
-    setMessages(
-      (data ?? []).map((row) => {
+    const mapped: LunaChatMessage[] = (data ?? []).map((row) => {
         const meta =
           row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
             ? (row.metadata as Record<string, unknown>)
             : null;
         const fb = meta?.feedback;
         const feedback = fb === "good" || fb === "bad" ? fb : null;
+        const feedbackReason = isFeedbackReason(meta?.feedback_reason)
+          ? meta.feedback_reason
+          : null;
         const notionSources = normalizeNotionSources(meta?.notion_sources);
         let attachments: LunaAttachmentRef[] | null = null;
         const rawAttachments = meta?.attachments;
@@ -180,6 +204,7 @@ export default function LunaPage() {
           content,
           engine: (row.engine as string | null) ?? null,
           feedback,
+          feedbackReason,
           notionSources,
           cards: normalizeLunaCards(meta?.cards),
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),
@@ -197,8 +222,8 @@ export default function LunaPage() {
           wsToolCalls,
           connectorRouting: normalizeConnectorRouting(meta?.connector_routing)
         };
-      })
-    );
+      });
+    setMessages((prev) => mergeLocalFeedback(prev, mapped));
   }, []);
 
   useEffect(() => {
@@ -350,6 +375,8 @@ export default function LunaPage() {
 
       const userTempId = `temp-user-${Date.now()}`;
       const assistantTempId = `temp-assistant-${Date.now()}`;
+      let liveUserId = userTempId;
+      let liveAssistantId = assistantTempId;
 
       streamGuardConvRef.current =
         selectedConversationId ?? `pending-${assistantTempId}`;
@@ -434,7 +461,7 @@ export default function LunaPage() {
           console.error("[luna] chat", errText);
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantTempId
+              m.id === liveAssistantId
                 ? {
                     ...m,
                     isThinking: false,
@@ -468,7 +495,7 @@ export default function LunaPage() {
         const updateThinking = (extra?: Partial<LunaChatMessage>) => {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantTempId
+              m.id === liveAssistantId
                 ? {
                     ...m,
                     isThinking: true,
@@ -487,7 +514,7 @@ export default function LunaPage() {
         const upsertAssistant = (content: string, extra?: Partial<LunaChatMessage>) => {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantTempId
+              m.id === liveAssistantId
                 ? {
                     ...m,
                     content,
@@ -550,6 +577,21 @@ export default function LunaPage() {
               if (consumed.kind === "need_more") {
                 buffer = consumed.buffer;
                 keepParsing = false;
+                continue;
+              }
+              if (consumed.kind === "ids") {
+                buffer = consumed.buffer;
+                const prevUser = liveUserId;
+                const prevAsst = liveAssistantId;
+                liveUserId = consumed.userMessageId;
+                liveAssistantId = consumed.assistantMessageId;
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id === prevUser) return { ...m, id: liveUserId };
+                    if (m.id === prevAsst) return { ...m, id: liveAssistantId };
+                    return m;
+                  })
+                );
                 continue;
               }
               if (consumed.kind === "step") {
@@ -648,7 +690,7 @@ export default function LunaPage() {
         if (!assistantVisible && !streamEndedByClarify) {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantTempId
+              m.id === liveAssistantId
                 ? {
                     ...m,
                     isThinking: false,
@@ -660,6 +702,8 @@ export default function LunaPage() {
           );
         }
 
+        streamGuardConvRef.current = null;
+        await loadMessages(conversationId);
         try {
           await fetch("/api/luna/conversations/title", {
             method: "POST",
@@ -673,8 +717,6 @@ export default function LunaPage() {
           console.error("[luna] title", titleErr);
         }
         await loadConversations();
-        streamGuardConvRef.current = null;
-        await loadMessages(conversationId);
 
         const correctionIds = pendingCorrectionIdsRef.current;
         pendingCorrectionIdsRef.current = [];
@@ -698,7 +740,7 @@ export default function LunaPage() {
         console.error("[luna] chat stream", err);
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantTempId
+            m.id === liveAssistantId
               ? {
                   ...m,
                   isThinking: false,

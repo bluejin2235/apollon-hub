@@ -18,6 +18,7 @@ type Kind =
   | "search_zero"
   | "clarify_unresolved"
   | "correction"
+  | "thumbs_down"
   | "eval_quality";
 
 type Item = {
@@ -47,6 +48,7 @@ function kindBadge(kind: Kind): { label: string; badge: "warn" | "org" | "ok" | 
   if (kind === "clarify_unresolved")
     return { label: "되묻기 미해소", badge: "org" };
   if (kind === "eval_quality") return { label: "시험 품질", badge: "src" };
+  if (kind === "thumbs_down") return { label: "싫어요", badge: "warn" };
   return { label: "정정받음", badge: "ok" };
 }
 
@@ -165,13 +167,14 @@ export function LunaSelfstudyStuck() {
         고릅니다 — 임의 주제는 만들지 않아요.
       </InfoBar>
 
-      <div className="mb-3.5 grid grid-cols-2 gap-2.5 min-[901px]:grid-cols-4">
+      <div className="mb-3.5 grid grid-cols-2 gap-2.5 min-[901px]:grid-cols-3">
         <StatCard label="검색 0건" value={data?.counts.search_zero ?? "—"} />
         <StatCard
           label="되묻기 미해소"
           value={data?.counts.clarify_unresolved ?? "—"}
         />
         <StatCard label="정정받음" value={data?.counts.correction ?? "—"} />
+        <StatCard label="싫어요" value={data?.counts.thumbs_down ?? "—"} />
         <StatCard
           label="시험 품질"
           value={data?.counts.eval_quality ?? "—"}

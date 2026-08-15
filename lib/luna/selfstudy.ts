@@ -14,6 +14,7 @@ import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { lunaNotify } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { runLunaTurn } from "@/lib/luna/run-chat";
+import { FEEDBACK_REASON_LABELS, isFeedbackReason } from "@/lib/luna/feedback";
 import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
 
 export type {
@@ -33,6 +34,7 @@ const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"
 - 검색했지만 0건이었던 주제
 - 되물었지만 해소되지 않은 것
 - 사람에게 정정받은 것 중 아직 이해가 얕은 것
+- 사람이 👎(싫어요)를 누른 답변
 - 회귀 시험에서 품질이 미달한 것 (필수 위반은 제외 — 학습이 아니라 프롬프트 문제)
 
 각각에 대해 스스로 질문을 만든다 (오늘 실제로 막힌 것에서만. 임의 주제 선정 금지).
@@ -68,6 +70,7 @@ export type StuckKind =
   | "search_zero"
   | "clarify_unresolved"
   | "correction"
+  | "thumbs_down"
   | "eval_quality";
 
 export type StuckMoment = {
@@ -83,14 +86,16 @@ export type StuckMoment = {
   detail: string;
   snippet: string;
   at: string;
-  /** chat(대화) | eval(회귀 품질 미달) */
-  source?: "chat" | "eval";
+  /** chat(대화) | eval(회귀 품질 미달) | thumbs_down(싫어요) */
+  source?: "chat" | "eval" | "thumbs_down";
 };
 
 export type SelfstudyCriteria = {
   search_zero: boolean;
   clarify_unresolved: boolean;
   correction: boolean;
+  /** 사람이 답변에 👎를 누른 것 */
+  thumbs_down: boolean;
   /** 회귀 시험 품질 미달 */
   eval_quality: boolean;
   /** 아직 미구현 — 화면에서 비활성 */
@@ -121,6 +126,7 @@ export const SELFSTUDY_DEFAULT_SETTINGS: SelfstudySettings = {
     search_zero: true,
     clarify_unresolved: true,
     correction: true,
+    thumbs_down: true,
     eval_quality: true,
     knowledge_gap: false
   },
@@ -311,6 +317,7 @@ export function normalizeSelfstudySettings(raw: unknown): SelfstudySettings {
         d.criteria.clarify_unresolved
       ),
       correction: coerceBool(c.correction, d.criteria.correction),
+      thumbs_down: coerceBool(c.thumbs_down, d.criteria.thumbs_down),
       eval_quality: coerceBool(c.eval_quality, d.criteria.eval_quality),
       // 미구현 기능 — 저장값과 무관하게 항상 off
       knowledge_gap: false
@@ -501,6 +508,35 @@ export async function extractStuckMoments(
             ? meta.clarify
             : null;
 
+        if (meta?.feedback === "bad") {
+          const prevUser = [...list.slice(0, i)]
+            .reverse()
+            .find((x) => x.role === "user");
+          const asked = prevUser?.content || "";
+          const reasonRaw = meta.feedback_reason;
+          const reasonLabel = isFeedbackReason(reasonRaw)
+            ? FEEDBACK_REASON_LABELS[reasonRaw]
+            : null;
+          const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}. 질문: ${asked.slice(0, 200)} / 답: ${m.content.slice(0, 200)}`;
+          out.push({
+            key: stuckKey("thumbs_down", conversation_id, m.id),
+            kind: "thumbs_down",
+            conversation_id,
+            user_id,
+            user_name,
+            title: clip(asked, 60) || clip(m.content, 60),
+            detail: reasonLabel
+              ? `👎 ${reasonLabel}`
+              : "사람이 싫어요를 누른 답변",
+            snippet,
+            at:
+              typeof meta.feedback_at === "string" && meta.feedback_at
+                ? meta.feedback_at
+                : m.created_at,
+            source: "thumbs_down"
+          });
+        }
+
         if (searchAttempted(meta) && cardCount(meta) === 0) {
           const prevUser = [...list.slice(0, i)]
             .reverse()
@@ -584,6 +620,85 @@ export async function extractStuckMoments(
         });
       }
     }
+  }
+
+  // 오늘 대화 목록에 없는 방에서 오늘 👎 한 답변
+  try {
+    const { data: downMsgs } = await admin
+      .from("luna_messages")
+      .select("id, conversation_id, content, metadata, created_at")
+      .eq("role", "assistant")
+      .contains("metadata", { feedback: "bad" })
+      .limit(200);
+    const extraConvIds = Array.from(
+      new Set(
+        (downMsgs ?? [])
+          .map((r) => r.conversation_id as string)
+          .filter((id) => id && !byConv.has(id))
+      )
+    );
+    const extraUserByConv = new Map<string, string>();
+    if (extraConvIds.length > 0) {
+      const { data: extraConvs } = await admin
+        .from("luna_conversations")
+        .select("id, user_id")
+        .in("id", extraConvIds);
+      for (const c of extraConvs ?? []) {
+        extraUserByConv.set(c.id as string, c.user_id as string);
+      }
+      const extraUserIds = Array.from(
+        new Set([...extraUserByConv.values()].filter(Boolean))
+      );
+      if (extraUserIds.length > 0) {
+        const { data: extraProfiles } = await admin
+          .from("profiles")
+          .select("id, name")
+          .in("id", extraUserIds);
+        for (const p of extraProfiles ?? []) {
+          if (typeof p.name === "string" && p.name.trim()) {
+            nameByUser.set(p.id as string, p.name.trim());
+          }
+        }
+      }
+    }
+    for (const row of downMsgs ?? []) {
+      const conversation_id = row.conversation_id as string;
+      if (byConv.has(conversation_id)) continue;
+      const meta =
+        row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : {};
+      if (meta.feedback !== "bad") continue;
+      const at =
+        typeof meta.feedback_at === "string" && meta.feedback_at
+          ? meta.feedback_at
+          : typeof row.created_at === "string"
+            ? row.created_at
+            : "";
+      if (!at || at < startIso || at >= endIso) continue;
+      const user_id = extraUserByConv.get(conversation_id) ?? "";
+      const user_name = nameByUser.get(user_id) || "동료";
+      const reasonRaw = meta.feedback_reason;
+      const reasonLabel = isFeedbackReason(reasonRaw)
+        ? FEEDBACK_REASON_LABELS[reasonRaw]
+        : null;
+      const content = typeof row.content === "string" ? row.content : "";
+      const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}. 답: ${content.slice(0, 200)}`;
+      out.push({
+        key: stuckKey("thumbs_down", conversation_id, row.id as string),
+        kind: "thumbs_down",
+        conversation_id,
+        user_id,
+        user_name,
+        title: clip(content, 60),
+        detail: reasonLabel ? `👎 ${reasonLabel}` : "사람이 싫어요를 누른 답변",
+        snippet,
+        at,
+        source: "thumbs_down"
+      });
+    }
+  } catch (err) {
+    console.error("[luna/selfstudy] thumbs_down", err);
   }
 
   // 중복 스니펫 축소
@@ -844,6 +959,7 @@ export async function listTodayStuckMoments(
     search_zero: 0,
     clarify_unresolved: 0,
     correction: 0,
+    thumbs_down: 0,
     eval_quality: 0
   };
 
