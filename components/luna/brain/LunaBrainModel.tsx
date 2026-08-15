@@ -106,6 +106,9 @@ type Payload = {
     missing_key: boolean;
     error: string | null;
     total_count?: number;
+    display_count?: number;
+    brand_counts?: { Claude: number; GPT: number; Gemini: number };
+    history_default_on?: string[];
     rows: MarketRow[];
   };
   selectable?: SelectableModel[];
@@ -126,6 +129,7 @@ type Payload = {
     brand: string;
     cost_krw: number | null;
     fetched_at: string;
+    our_tiers?: string[];
   }>;
   history_weeks?: number;
   price_note: string | null;
@@ -229,6 +233,9 @@ export function LunaBrainModel() {
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState<"intel" | "multi" | "agent">("intel");
   const [priceScale, setPriceScale] = useState<"linear" | "log">("linear");
+  const [rankSort, setRankSort] = useState<
+    "value" | "intel" | "price" | "speed"
+  >("value");
   const [range, setRange] = useState<"7" | "30" | "all">("7");
   const [rankOpen, setRankOpen] = useState(false);
   const [settings, setSettings] = useState<LunaModelCostSettings | null>(null);
@@ -469,10 +476,37 @@ export function LunaBrainModel() {
     return { points, xTicks, yTicks, metricLabel, minC, maxC, minS, maxS };
   }, [data?.market.rows, metric, priceScale]);
 
+  const rankingSorted = useMemo(() => {
+    const rows = [...(data?.ranking ?? [])];
+    const ttftOf = (slug: string) => {
+      const row = data?.market.rows.find((r) => r.model_slug === slug);
+      const v = row?.median_time_to_first_token_seconds;
+      return v != null && Number.isFinite(Number(v))
+        ? Number(v)
+        : Number.POSITIVE_INFINITY;
+    };
+    rows.sort((a, b) => {
+      if (rankSort === "intel") {
+        return (
+          (Number(b.intelligence_index) || 0) -
+          (Number(a.intelligence_index) || 0)
+        );
+      }
+      if (rankSort === "price") {
+        return (a.cost_krw ?? Infinity) - (b.cost_krw ?? Infinity);
+      }
+      if (rankSort === "speed") {
+        return ttftOf(a.model_slug) - ttftOf(b.model_slug);
+      }
+      return (b.value || 0) - (a.value || 0);
+    });
+    return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [data?.ranking, data?.market.rows, rankSort]);
+
   const rankingVisible = rankOpen
-    ? data?.ranking ?? []
-    : (data?.ranking ?? []).slice(0, 7);
-  const rankingRest = Math.max(0, (data?.ranking.length ?? 0) - 7);
+    ? rankingSorted
+    : rankingSorted.slice(0, 7);
+  const rankingRest = Math.max(0, rankingSorted.length - 7);
 
   return (
     <KnowledgeShell>
@@ -750,11 +784,11 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
               <h3 className="text-[14px] font-bold">시장 현황</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                표시 상위 15개
+                Claude · GPT · Gemini {data.market.display_count ?? data.market.rows.length}개
                 {data.market.total_count
-                  ? ` · 후보 ${data.market.total_count}개`
+                  ? ` · ${data.market.total_count}개 중 선별`
                   : ""}{" "}
-                · Artificial Analysis
+                · Artificial Analysis 기준
               </span>
               <span
                 className="ml-auto text-[11.5px]"
@@ -980,21 +1014,21 @@ export function LunaBrainModel() {
                         className="mr-1 inline-block h-[9px] w-[9px] rounded-full"
                         style={{ background: "#C96442" }}
                       />
-                      Claude
+                      Claude {data.market.brand_counts?.Claude ?? 0}
                     </span>
                     <span>
                       <i
                         className="mr-1 inline-block h-[9px] w-[9px] rounded-full"
                         style={{ background: "#0F9D77" }}
                       />
-                      GPT
+                      GPT {data.market.brand_counts?.GPT ?? 0}
                     </span>
                     <span>
                       <i
                         className="mr-1 inline-block h-[9px] w-[9px] rounded-full"
                         style={{ background: "#3B6396" }}
                       />
-                      Gemini
+                      Gemini {data.market.brand_counts?.Gemini ?? 0}
                     </span>
                     <span>
                       <i
@@ -1011,10 +1045,34 @@ export function LunaBrainModel() {
 
           {/* 3. 순위 */}
           <section>
-            <div className="mb-2.5 flex items-baseline gap-2">
+            <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
               <h3 className="text-[14px] font-bold">순위</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                가성비 = 성능 ÷ 비용 · 지난주 대비 변동
+                산점도와 같은 15개
+              </span>
+              <span className="ml-auto flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ["value", "가성비"],
+                    ["intel", "지능"],
+                    ["price", "가격"],
+                    ["speed", "속도"]
+                  ] as const
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setRankSort(k)}
+                    className="cursor-pointer rounded-full px-2.5 py-[3px] text-[11px]"
+                    style={{
+                      background: rankSort === k ? K.luna : K.chip,
+                      color: rankSort === k ? "#fff" : K.sub,
+                      fontWeight: rankSort === k ? 600 : 400
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
               </span>
             </div>
             <div
@@ -1123,7 +1181,7 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex items-baseline gap-2">
               <h3 className="text-[14px] font-bold">가격 추이</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                우리가 쓰는 모델 · 최근 12주
+                산점도·순위와 같은 15개 · 최근 12주
               </span>
             </div>
             <div
@@ -1140,7 +1198,11 @@ export function LunaBrainModel() {
                 </p>
               ) : (
                 <>
-                  <PriceSparkline history={data.history} />
+                  <PriceSparkline
+                    history={data.history}
+                    models={data.market.rows}
+                    defaultOn={data.market.history_default_on ?? []}
+                  />
                   <p
                     className="mt-2.5 text-center text-[11.5px]"
                     style={{ color: K.sub }}
@@ -1596,15 +1658,74 @@ function ExamBadge({
 }
 
 function PriceSparkline({
-  history
+  history,
+  models,
+  defaultOn
 }: {
   history: Array<{
     model_slug: string;
     brand: string;
     cost_krw: number | null;
     fetched_at: string;
+    our_tiers?: string[];
   }>;
+  models: MarketRow[];
+  defaultOn: string[];
 }) {
+  const brandColor = (brand: string) =>
+    brand === "Claude"
+      ? "#C96442"
+      : brand === "GPT"
+        ? "#0F9D77"
+        : brand === "Gemini"
+          ? "#3B6396"
+          : "#534AB7";
+
+  const modelMeta = useMemo(() => {
+    const map = new Map<string, { brand: string; our: boolean }>();
+    for (const m of models) {
+      map.set(m.model_slug, {
+        brand: m.brand,
+        our: (m.our_tiers?.length ?? 0) > 0
+      });
+    }
+    for (const h of history) {
+      if (!map.has(h.model_slug)) {
+        map.set(h.model_slug, {
+          brand: h.brand,
+          our: (h.our_tiers?.length ?? 0) > 0
+        });
+      }
+    }
+    return map;
+  }, [models, history]);
+
+  const allSlugs = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of models) set.add(m.model_slug);
+    for (const h of history) set.add(h.model_slug);
+    return Array.from(set);
+  }, [models, history]);
+
+  const defaultKey = defaultOn.join("|");
+  const modelsKey = models.map((m) => m.model_slug).join("|");
+
+  const [visible, setVisible] = useState<Set<string>>(() => {
+    const init = new Set(defaultOn);
+    for (const m of models) {
+      if (m.our_tiers?.length) init.add(m.model_slug);
+    }
+    return init;
+  });
+
+  useEffect(() => {
+    const init = new Set(defaultOn);
+    for (const m of models) {
+      if (m.our_tiers?.length) init.add(m.model_slug);
+    }
+    setVisible(init);
+  }, [defaultKey, modelsKey, defaultOn, models]);
+
   const bySlug = new Map<string, Array<{ t: number; c: number }>>();
   for (const h of history) {
     if (h.cost_krw == null) continue;
@@ -1612,10 +1733,18 @@ function PriceSparkline({
     arr.push({ t: new Date(h.fetched_at).getTime(), c: h.cost_krw });
     bySlug.set(h.model_slug, arr);
   }
-  const colors = ["#C96442", "#0F9D77", "#3B6396", "#534AB7"];
-  const entries = Array.from(bySlug.entries()).slice(0, 4);
-  const allCosts = entries.flatMap(([, pts]) => pts.map((p) => p.c));
+
+  const activeEntries = allSlugs
+    .filter((s) => visible.has(s) && bySlug.has(s))
+    .map((s) => [s, bySlug.get(s)!] as const);
+
+  const allCosts = activeEntries.flatMap(([, pts]) => pts.map((p) => p.c));
   const maxC = Math.max(...allCosts, 1);
+  const allT = activeEntries.flatMap(([, pts]) => pts.map((p) => p.t));
+  const minT = allT.length ? Math.min(...allT) : Date.now();
+  const maxT = allT.length
+    ? Math.max(...allT)
+    : minT + 7 * 24 * 60 * 60 * 1000;
 
   return (
     <div>
@@ -1628,24 +1757,22 @@ function PriceSparkline({
           preserveAspectRatio="none"
           className="absolute inset-0 h-full w-full"
         >
-          {entries.map(([slug, pts], i) => {
-            if (pts.length === 0) return null;
-            const minT = pts[0]!.t;
-            const maxT =
-              pts.length >= 2
-                ? pts[pts.length - 1]!.t
-                : minT + 7 * 24 * 60 * 60 * 1000;
+          {activeEntries.map(([slug, pts]) => {
+            const meta = modelMeta.get(slug);
+            const color = brandColor(meta?.brand ?? "Other");
+            const bold = Boolean(meta?.our);
             if (pts.length === 1) {
               const p = pts[0]!;
-              const x = 200;
+              const x =
+                ((p.t - minT) / Math.max(maxT - minT, 1)) * 400 || 200;
               const y = 130 - (p.c / maxC) * 120;
               return (
                 <circle
                   key={slug}
                   cx={x}
                   cy={y}
-                  r={4}
-                  fill={colors[i % colors.length]}
+                  r={bold ? 5 : 3.5}
+                  fill={color}
                 />
               );
             }
@@ -1661,22 +1788,46 @@ function PriceSparkline({
                 key={slug}
                 points={points}
                 fill="none"
-                stroke={colors[i % colors.length]}
-                strokeWidth="1.6"
+                stroke={color}
+                strokeWidth={bold ? 2.6 : 1.4}
               />
             );
           })}
         </svg>
       </div>
       <div
-        className="mt-[22px] flex flex-wrap justify-center gap-4 text-[11px]"
+        className="mt-3 flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-[11px]"
         style={{ color: K.sub }}
       >
-        {entries.map(([slug], i) => (
-          <span key={slug} style={{ color: colors[i % colors.length] }}>
-            — {slug.split("/").pop()}
-          </span>
-        ))}
+        {allSlugs.map((slug) => {
+          const meta = modelMeta.get(slug);
+          const on = visible.has(slug);
+          const color = brandColor(meta?.brand ?? "Other");
+          return (
+            <button
+              key={slug}
+              type="button"
+              className="cursor-pointer rounded px-1.5 py-0.5"
+              style={{
+                color: on ? color : K.faint,
+                fontWeight: meta?.our ? 700 : 400,
+                textDecoration: on ? "none" : "line-through",
+                opacity: on ? 1 : 0.55
+              }}
+              onClick={() =>
+                setVisible((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(slug)) next.delete(slug);
+                  else next.add(slug);
+                  return next;
+                })
+              }
+            >
+              — {slug.split("/").pop()}
+              {meta?.our ? " · 사용 중" : ""}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

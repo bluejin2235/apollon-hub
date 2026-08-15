@@ -26,6 +26,11 @@ import {
   estimateModeMonthlyCosts,
   loadModeHistory
 } from "@/lib/luna/model-modes";
+import {
+  brandCounts,
+  buildCuratedDisplaySet,
+  defaultHistoryVisibleSlugs
+} from "@/lib/luna/model-display-set";
 import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
 import type { LunaCostMode } from "@/lib/luna/brain-models";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -315,32 +320,37 @@ export async function GET(request: NextRequest) {
   const ourSlugs = orderedTiers
     .map((t) => String(t.model_id))
     .filter(Boolean);
-  const history = await loadMarketHistory(admin, ourSlugs, 12);
 
-  // 순위·산점도: 표시용 상위 15 (후보 풀은 market.all)
-  const rankedAll = preferredRank(marketRows).map((r, i) => {
+  // 산점도·순위·추이 공통 15개
+  const curated = buildCuratedDisplaySet(marketRows, ourSlugs, 15);
+  const curatedSlugs = curated.map((r) => r.model_slug);
+  const history = await loadMarketHistory(admin, curatedSlugs, 12);
+  const counts = brandCounts(curated);
+  const historyDefaultOn = defaultHistoryVisibleSlugs(curated);
+
+  function enrich(r: MarketModelRow, rank: number) {
     const ours = matchTierToSlug(r.model_slug, orderedTiers);
+    const blended =
+      r.price_blended ??
+      ((Number(r.price_input) || 0) * 3 + (Number(r.price_output) || 0)) / 4;
     return {
-      rank: i + 1,
+      rank,
       ...r,
       brand: brandOf(r.provider),
       cost_krw:
-        r.price_blended != null
-          ? Math.round(Number(r.price_blended) * usdKrw)
-          : r.price_input != null || r.price_output != null
-            ? Math.round(
-                (((Number(r.price_input) || 0) * 3 +
-                  (Number(r.price_output) || 0)) /
-                  4) *
-                  usdKrw
-              )
-            : null,
+        Number.isFinite(blended) && blended > 0
+          ? Math.round(blended * usdKrw)
+          : null,
       value: Math.round(valuePerCost(r) * 10) / 10,
       our_tiers: ours,
       delta: null as number | null
     };
-  });
-  const ranked = rankedAll.slice(0, 15);
+  }
+
+  const ranked = curated
+    .map((r, i) => enrich(r, i + 1))
+    .sort((a, b) => b.value - a.value)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
 
   const selectable = preferredRank(marketRows).map((r) => {
     const blended =
@@ -375,6 +385,12 @@ export async function GET(request: NextRequest) {
       disabled_reason: keyOk ? null : "API 키 미등록"
     };
   });
+
+  console.info(
+    "[luna/model-cost] curated display",
+    curated.map((r) => `${r.provider}:${r.model_slug}`).join(", "),
+    counts
+  );
 
   const { data: settingsRow } = await admin
     .from("luna_settings")
@@ -489,6 +505,10 @@ export async function GET(request: NextRequest) {
       fetched_at: marketFetchedAt,
       missing_key: !aaKey && marketRows.length === 0,
       total_count: marketRows.length,
+      display_count: curated.length,
+      brand_counts: counts,
+      history_default_on: historyDefaultOn,
+      display_slugs: curatedSlugs,
       error:
         marketRows.length > 0
           ? null
@@ -521,7 +541,15 @@ export async function GET(request: NextRequest) {
       cost_krw:
         h.price_blended != null
           ? Math.round(Number(h.price_blended) * usdKrw)
-          : null
+          : h.price_input != null || h.price_output != null
+            ? Math.round(
+                (((Number(h.price_input) || 0) * 3 +
+                  (Number(h.price_output) || 0)) /
+                  4) *
+                  usdKrw
+              )
+            : null,
+      our_tiers: matchTierToSlug(h.model_slug, orderedTiers)
     })),
     history_weeks: uniqueWeeks,
     price_note: priceNote,
