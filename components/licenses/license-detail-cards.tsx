@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { syncServiceAssigneeId } from "@/lib/licenses/assignee-sync";
 import type { Profile } from "@/lib/licenses/types";
 import { insertServiceChangeLog } from "@/lib/licenses/service-change-log";
 import { supabase } from "@/lib/supabase/client";
@@ -142,6 +143,10 @@ export function ServiceManagersCard({
       setErr(error.message ?? "추가에 실패했습니다.");
       return;
     }
+    const syncError = await syncServiceAssigneeId(supabase, serviceId);
+    if (syncError.error) {
+      console.error("[license_managers] assignee_id sync failed", syncError.error);
+    }
     const addedName = profileDisplayName(profileMap, selectedId);
     await logServiceFieldChange(serviceId, [
       {
@@ -169,6 +174,10 @@ export function ServiceManagersCard({
     if (error) {
       console.error("[license_managers][delete]", error);
       return;
+    }
+    const syncError = await syncServiceAssigneeId(supabase, serviceId);
+    if (syncError.error) {
+      console.error("[license_managers] assignee_id sync failed", syncError.error);
     }
     await logServiceFieldChange(serviceId, [
       {

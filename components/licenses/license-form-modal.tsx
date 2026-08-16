@@ -19,6 +19,7 @@ import {
   insertServiceChangeLog
 } from "@/lib/licenses/service-change-log";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
+import { syncServiceAssigneeId } from "@/lib/licenses/assignee-sync";
 import { supabase } from "@/lib/supabase/client";
 
 const contractOptions: ContractType[] = ["월 구독", "년 구독", "영구 라이선스"];
@@ -171,11 +172,12 @@ async function insertLicenseManagers(
   serviceId: string,
   profileIds: string[]
 ): Promise<{ error: string | null }> {
-  if (profileIds.length === 0) return { error: null };
-
-  const rows = profileIds.map((profile_id) => ({ service_id: serviceId, profile_id }));
-  const { error } = await supabase.from("license_managers").insert(rows);
-  return { error: error?.message ?? null };
+  if (profileIds.length > 0) {
+    const rows = profileIds.map((profile_id) => ({ service_id: serviceId, profile_id }));
+    const { error } = await supabase.from("license_managers").insert(rows);
+    if (error) return { error: error.message };
+  }
+  return syncServiceAssigneeId(supabase, serviceId, profileIds[0] ?? null);
 }
 
 async function replaceLicenseManagers(

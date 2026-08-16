@@ -45,6 +45,7 @@ type ProfileRow = {
   id: string;
   email: string;
   name: string;
+  role: string | null;
 };
 
 function isSubscriptionLicense(service: License): boolean {
@@ -126,13 +127,14 @@ function contractTagHtml(contractType: string): string {
 
 function buildLicenseDigestHtml(params: {
   dateLabel: string;
-  memberName: string;
-  profileId: string;
+  subtitle: string;
+  ctaHref: string;
+  ctaLabel: string;
   snapshot: MailSnapshot;
   previous: MailSnapshot | null;
   changes: SnapshotChange[];
 }): string {
-  const { dateLabel, memberName, profileId, snapshot, previous, changes } = params;
+  const { dateLabel, subtitle, ctaHref, ctaLabel, snapshot, previous, changes } = params;
 
   const diff = previous != null ? snapshot.total_monthly_krw - previous.total_monthly_krw : null;
 
@@ -240,8 +242,6 @@ function buildLicenseDigestHtml(params: {
     </p>
   </div>`;
 
-  const memberUrl = `${HUB_MEMBERS_BASE}/${profileId}`;
-
   const bodyHtml = `${metricsHtml}${noChangesHtml}${removedHtml}
     <div style="margin-bottom: 12px;">
       <p style="margin: 0 0 12px; font-size: 14px; font-weight: 600; color: #5A5353;">라이선스 목록</p>
@@ -253,9 +253,9 @@ function buildLicenseDigestHtml(params: {
     headerBg: EMAIL_HEADER_LICENSE,
     headerLabel: "LICENSE MANAGER · 2주 결산",
     title: `라이선스 현황 — ${dateLabel}`,
-    subtitle: `${memberName}님의 이용 중인 라이선스 현황입니다.`,
+    subtitle,
     bodyHtml,
-    cta: { href: memberUrl, label: "내 라이선스 확인·수정하기" }
+    cta: { href: ctaHref, label: ctaLabel }
   });
 }
 
@@ -294,7 +294,7 @@ export async function GET(request: NextRequest) {
   const [profilesRes, managersRes, servicesRes, snapshotsRes] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, email, name")
+      .select("id, email, name, role")
       .eq("status", "근무")
       .neq("email", EXCLUDED_TEAM_EMAIL)
       .not("email", "is", null),
@@ -361,15 +361,29 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      const isSuperAdmin = profile.role === "슈퍼관리자";
       const serviceIds = serviceIdsByProfile.get(profile.id) ?? [];
-      const snapshot = buildMemberSnapshot(serviceIds, serviceMap);
+      if (!isSuperAdmin && serviceIds.length === 0) {
+        skipped += 1;
+        continue;
+      }
+
+      const snapshot = isSuperAdmin
+        ? buildMemberSnapshot([...serviceMap.keys()], serviceMap)
+        : buildMemberSnapshot(serviceIds, serviceMap);
       const previous = latestSnapshotByProfile.get(profile.id) ?? null;
       const changes = diffSnapshots(previous, snapshot);
+      const memberName = profile.name?.trim() || profile.email;
 
       const html = buildLicenseDigestHtml({
         dateLabel,
-        memberName: profile.name?.trim() || profile.email,
-        profileId: profile.id,
+        subtitle: isSuperAdmin
+          ? "전체 활성 구독 라이선스 현황입니다."
+          : `${memberName}님의 이용 중인 라이선스 현황입니다.`,
+        ctaHref: isSuperAdmin
+          ? "https://hub.apollonworks.com/licenses"
+          : `${HUB_MEMBERS_BASE}/${profile.id}`,
+        ctaLabel: isSuperAdmin ? "라이선스 매니저에서 보기" : "내 라이선스 확인·수정하기",
         snapshot,
         previous,
         changes

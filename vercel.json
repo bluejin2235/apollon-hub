@@ -17,6 +17,10 @@
       "schedule": "0 15 * * *"
     },
     {
+      "path": "/api/cron/license-expiry",
+      "schedule": "0 0 * * *"
+    },
+    {
       "path": "/api/cron/publishing-trigger",
       "schedule": "*/10 * * * *"
     },
