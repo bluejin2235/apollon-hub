@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
     dueToday.push({ service, milestone, daysUntil, managerNames });
   }
 
-  const emailItems = dueToday.filter((item) => item.milestone === "d30" || item.milestone === "d7");
+  const emailItems = dueToday.filter((item) => item.milestone === "d7");
   const inAppDayItems = dueToday.filter((item) => item.milestone === "d0");
   const inAppOverdueItems = dueToday.filter((item) => item.milestone === "overdue");
 

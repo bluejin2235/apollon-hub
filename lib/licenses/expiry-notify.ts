@@ -19,7 +19,7 @@ export const LICENSE_EXPIRY_FX_RATES = {
 
 export const HUB_LICENSES_URL = "https://hub.apollonworks.com/licenses";
 
-export type ExpiryMilestone = "d30" | "d7" | "d0" | "overdue";
+export type ExpiryMilestone = "d7" | "d0" | "overdue";
 
 export type ExpiryItem = {
   service: License;
@@ -54,7 +54,6 @@ export function calendarDaysUntil(endYmd: string, todayYmd: string): number {
 }
 
 export function milestoneForDaysUntil(daysUntil: number): ExpiryMilestone | null {
-  if (daysUntil === 30) return "d30";
   if (daysUntil === 7) return "d7";
   if (daysUntil === 0) return "d0";
   if (daysUntil <= -1 && daysUntil >= -7) return "overdue";
@@ -75,7 +74,6 @@ export function ddayLabel(daysUntil: number): string {
 }
 
 export function milestonePhrase(milestone: ExpiryMilestone, daysUntil: number): string {
-  if (milestone === "d30") return "만료 30일 전";
   if (milestone === "d7") return "만료 7일 전";
   if (milestone === "d0") return "오늘 만료";
   return `만료 ${-daysUntil}일 경과`;
