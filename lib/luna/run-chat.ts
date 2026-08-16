@@ -3,6 +3,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
+  CLARIFY_CONCEPT_GUARD,
+  isSpuriousProjectClarify,
+  shouldSkipProjectClarify
+} from "@/lib/luna/question-intent";
+import {
   formatConnectorRoutingSummary,
   hasManualConnectors,
   resolveConnectorsAuto,
@@ -34,7 +39,7 @@ export const LUNA_MODEL = "claude-sonnet-4-6";
 export const LUNA_MODEL_LABEL = "Claude Sonnet 4.6";
 
 const KEYWORD_EXTRACT_FALLBACK =
-  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
+  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 발주처·프로젝트 고유명사는 자르지 마세요. 롯데면세점을 롯데로, 스타에비뉴를 롯데로 줄이지 마세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
 
 const SYNTHESIS_OPINION_FALLBACK =
   "- 검색 결과 목록을 답변에 다시 나열하지 마세요. 화면에 이미 카드로 표시됩니다. 당신은 그 자료들을 종합한 판단과 의견만 쓰세요.";
@@ -262,11 +267,12 @@ async function maybeClarify(
   userText: string,
   clarifyPrompt: string
 ): Promise<string | null> {
+  if (shouldSkipProjectClarify(userText)) return null;
   try {
     const clarifyRes = await client.messages.create({
       model: LUNA_MODEL,
       max_tokens: 512,
-      system: clarifyPrompt.trim() || CLARIFY_FALLBACK,
+      system: `${clarifyPrompt.trim() || CLARIFY_FALLBACK}\n\n${CLARIFY_CONCEPT_GUARD}`,
       messages: [{ role: "user", content: userText }]
     });
     const raw =
@@ -283,12 +289,14 @@ async function maybeClarify(
             .slice(0, 5)
         : [];
       if (needs && question && options.length >= 2) {
+        if (isSpuriousProjectClarify(userText, options)) return null;
         return `${question}\n${options.map((o, i) => `${i + 1}. ${o}`).join("\n")}`;
       }
       return null;
     }
     const numbered = parseNumberedChoices(raw);
     if (numbered && numbered.options.length >= 2) {
+      if (isSpuriousProjectClarify(userText, numbered.options)) return null;
       return `${numbered.body || "어느 쪽을 찾으시나요?"}\n${numbered.options
         .map((o, i) => `${i + 1}. ${o}`)
         .join("\n")}`;

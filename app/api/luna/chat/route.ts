@@ -65,12 +65,17 @@ import {
   sanitizeKnowledgeListAnswer,
   selectLearningsForInject
 } from "@/lib/luna/knowledge-dump-guard";
+import {
+  CLARIFY_CONCEPT_GUARD,
+  isSpuriousProjectClarify,
+  shouldSkipProjectClarify
+} from "@/lib/luna/question-intent";
 import { buildUsedPromptRefs } from "@/lib/luna/used-prompts";
 
 export const runtime = "nodejs";
 
 const KEYWORD_EXTRACT_FALLBACK =
-  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
+  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 발주처·프로젝트 고유명사는 자르지 마세요. 롯데면세점을 롯데로, 스타에비뉴를 롯데로 줄이지 마세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
 
 const SYNTHESIS_OPINION_FALLBACK =
   "- 검색 결과 목록을 답변에 다시 나열하지 마세요. 화면에 이미 카드로 표시됩니다. 당신은 그 자료들을 종합한 판단과 의견만 쓰세요.";
@@ -688,7 +693,7 @@ export async function POST(request: NextRequest) {
   // 키워드/자체평가/재검색은 구조화 출력이 필요해 FALLBACK 유지. 검색 원칙은 talk.search.
   const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
   const clarifyPrompt =
-    loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK;
+    `${loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK}\n\n${CLARIFY_CONCEPT_GUARD}`;
   const selfEvalPrompt = SELF_EVAL_FALLBACK;
   console.log(
     "[luna/prompt] self_eval len",
@@ -997,7 +1002,10 @@ export async function POST(request: NextRequest) {
 
         // ——— 단계 1: 되묻기 ———
         const skipClarify =
-          hasAttachments || lastHadClarify || skillIds.length > 0;
+          hasAttachments ||
+          lastHadClarify ||
+          skillIds.length > 0 ||
+          shouldSkipProjectClarify(userText);
 
         if (skipClarify) {
           pushStep("clarify", "skip", "의도 확인");
@@ -1042,6 +1050,14 @@ export async function POST(request: NextRequest) {
                 clarifyQuestion = numbered.body || "어느 쪽을 찾으시나요?";
                 clarifyOptions = numbered.options.slice(0, 5);
               }
+            }
+            if (
+              needsClarify &&
+              isSpuriousProjectClarify(userText, clarifyOptions)
+            ) {
+              needsClarify = false;
+              clarifyQuestion = "";
+              clarifyOptions = [];
             }
           } catch (err) {
             console.error("[luna/chat] clarify", err);

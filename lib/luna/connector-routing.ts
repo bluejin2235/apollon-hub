@@ -1,4 +1,5 @@
 import type { LunaPromptRow } from "@/lib/luna/prompts";
+import { shouldSkipProjectClarify } from "@/lib/luna/question-intent";
 
 export type ConnectorFlags = {
   notion: boolean;
@@ -93,11 +94,11 @@ export function resolveConnectorsAuto(
     };
   }
 
-  if (INTERNAL_RULES_RE.test(text) && !SEARCH_INTENT_RE.test(text)) {
+  if (shouldSkipProjectClarify(text) || (INTERNAL_RULES_RE.test(text) && !SEARCH_INTENT_RE.test(text))) {
     return {
       connectors: NONE,
       reason: "internal_rules",
-      reasonLabel: "내부 규칙·용어"
+      reasonLabel: "개념·프로세스·내부 규칙"
     };
   }
 

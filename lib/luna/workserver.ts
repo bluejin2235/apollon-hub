@@ -1,4 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  applyNamedEntitiesToTerms,
+  loadNamedEntities,
+  NAMED_ENTITY_SEED,
+  pathVariantsForTerm,
+  type NamedEntity
+} from "@/lib/luna/named-entities";
 
 export type WorkserverItem = {
   drive: string | null;
@@ -249,6 +256,7 @@ const GENERIC_DOC_TERMS = new Set([
 
 /** 자연어 질문에서 path 검색에 쓰면 안 되는 조사·요청어 */
 const SEARCH_STOP_WORDS = new Set([
+  "프로젝트",
   "위치",
   "어디",
   "어디에",
@@ -315,31 +323,31 @@ function isSearchableToken(token: string): boolean {
 /** LLM/사용자 키워드에서 path AND 검색용 토큰만 추출 (2자 한글 포함) */
 export function prepareSearchTerms(
   keywords: string,
-  queryContext?: string
+  queryContext?: string,
+  entities: NamedEntity[] = NAMED_ENTITY_SEED
 ): string[] {
   const kwTerms = splitKeywords(keywords).filter(isSearchableToken);
   const ctxTerms = splitKeywords(queryContext ?? "").filter(isSearchableToken);
   const merged = [...new Set([...kwTerms, ...ctxTerms])];
-  return merged.slice(0, 8);
+  const restricted = applyNamedEntitiesToTerms(merged, queryContext ?? keywords, entities);
+  return restricted.filter(isSearchableToken).slice(0, 8);
 }
 
-/** 한 토큰에 대한 path 부분일치 패턴 (견적서→견적 등) */
-function pathMatchVariants(term: string): string[] {
-  const cleaned = cleanIlikeTerm(term.toLowerCase());
-  if (!cleaned) return [];
-  const variants = new Set<string>([cleaned]);
-  if (/[가-힣]{2,}서$/.test(cleaned)) {
-    variants.add(cleaned.slice(0, -1));
-  }
-  return [...variants].filter((v) => v.length >= 2 || /^\d+$/.test(v));
+/** 한 토큰에 대한 path 부분일치 패턴 (견적서→견적, 고유명사 별칭) */
+function pathMatchVariants(term: string, entities: NamedEntity[] = NAMED_ENTITY_SEED): string[] {
+  return pathVariantsForTerm(term, entities);
 }
 
 function haystack(row: NasRow): string {
   return `${row.path}\n${row.file_summary ?? ""}`.toLowerCase();
 }
 
-function termMatchesHaystack(h: string, term: string): boolean {
-  if (pathMatchVariants(term).some((v) => h.includes(v))) return true;
+function termMatchesHaystack(
+  h: string,
+  term: string,
+  entities: NamedEntity[] = NAMED_ENTITY_SEED
+): boolean {
+  if (pathMatchVariants(term, entities).some((v) => h.includes(v))) return true;
   const seasonM = term.replace(/\s+/g, "").match(/^시즌(\d+)$/i);
   if (seasonM?.[1]) return pathHasSeason(h, seasonM[1]);
   const sM = term.match(/^s(\d+)$/i);
@@ -347,10 +355,14 @@ function termMatchesHaystack(h: string, term: string): boolean {
   return false;
 }
 
-function matchesAll(row: NasRow, terms: string[]): boolean {
+function matchesAll(
+  row: NasRow,
+  terms: string[],
+  entities: NamedEntity[] = NAMED_ENTITY_SEED
+): boolean {
   if (terms.length === 0) return false;
   const h = haystack(row);
-  return terms.every((t) => termMatchesHaystack(h, t));
+  return terms.every((t) => termMatchesHaystack(h, t, entities));
 }
 
 function compareImportanceThenModified<
@@ -374,10 +386,6 @@ function underBase(row: NasRow, base: string): boolean {
   return row.path === base || row.path.startsWith(`${base}\\`);
 }
 
-function cleanIlikeTerm(term: string): string {
-  return term.replace(/[%_,]/g, "").trim();
-}
-
 /** SQL에서도 AND(ilike 연쇄). OR 완화 없음. */
 async function fetchCandidates(
   admin: SupabaseClient,
@@ -386,6 +394,7 @@ async function fetchCandidates(
     basePath?: string;
     drive?: string;
     limit: number;
+    entities?: NamedEntity[];
   }
 ): Promise<NasRow[]> {
   let query = admin
@@ -403,8 +412,9 @@ async function fetchCandidates(
     query = query.gte("path", base).lt("path", `${base}\uFFFF`);
   }
 
+  const entities = opts.entities ?? NAMED_ENTITY_SEED;
   for (const term of opts.terms) {
-    const variants = pathMatchVariants(term);
+    const variants = pathMatchVariants(term, entities);
     if (variants.length === 0) continue;
     if (variants.length === 1) {
       query = query.ilike("path", `%${variants[0]}%`);
@@ -581,7 +591,8 @@ async function progressiveAndSearch(
   queryText: string,
   opts: { basePath?: string; drive?: string }
 ): Promise<NasRow[]> {
-  const terms = prepareSearchTerms(keywords, queryText);
+  const entities = await loadNamedEntities(admin);
+  const terms = prepareSearchTerms(keywords, queryText, entities);
   if (terms.length === 0) {
     console.log("[luna/ws] match", "empty-terms", { keywords, queryText }, "→", 0);
     return [];
@@ -607,9 +618,10 @@ async function progressiveAndSearch(
       terms: stage.terms,
       basePath: opts.basePath,
       drive: opts.drive,
-      limit: 80
+      limit: 80,
+      entities
     });
-    let hits = rows.filter((r) => matchesAll(r, stage.terms));
+    let hits = rows.filter((r) => matchesAll(r, stage.terms, entities));
     hits = filterByIdentifiers(hits, queryText);
     hits = filterMediaExt(hits, queryText);
     if (
@@ -617,7 +629,7 @@ async function progressiveAndSearch(
       hits.every((r) => (r.type ?? "").toLowerCase() === "folder")
     ) {
       hits = await expandFoldersOneLevel(admin, hits, opts.drive);
-      hits = hits.filter((r) => matchesAll(r, stage.terms));
+      hits = hits.filter((r) => matchesAll(r, stage.terms, entities));
       hits = filterByIdentifiers(hits, queryText);
       hits = filterMediaExt(hits, queryText);
     }
