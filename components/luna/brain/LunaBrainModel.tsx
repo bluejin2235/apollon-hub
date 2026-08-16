@@ -177,6 +177,7 @@ type Payload = {
       tokens: number;
       cost: number;
       share: number;
+      cache_hit_rate: number;
     }>;
   };
   changes: Array<{
@@ -1570,7 +1571,7 @@ export function LunaBrainModel() {
               <table className="w-full border-collapse">
                 <thead>
                   <tr>
-                    {["등급", "기능", "모델", "호출", "토큰", "비용", "비중"].map(
+                    {["등급", "기능", "모델", "호출", "토큰", "캐시 적중률", "비용", "비중"].map(
                       (h, i) => (
                         <th
                           key={h}
@@ -1587,7 +1588,7 @@ export function LunaBrainModel() {
                   {data.usage.by_feature.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-3 py-6 text-center text-[12.5px]"
                         style={{ color: K.faint }}
                       >
@@ -1611,6 +1612,9 @@ export function LunaBrainModel() {
                         </td>
                         <td className="border-b px-2.5 py-2.5 text-right text-[12.5px]" style={{ borderColor: K.line2 }}>
                           {formatTokens(r.tokens)}
+                        </td>
+                        <td className="border-b px-2.5 py-2.5 text-right text-[12.5px]" style={{ borderColor: K.line2 }}>
+                          {r.cache_hit_rate > 0 ? `${r.cache_hit_rate}%` : "—"}
                         </td>
                         <td className="border-b px-2.5 py-2.5 text-right text-[12.5px]" style={{ borderColor: K.line2 }}>
                           {fmtWon(r.cost)}

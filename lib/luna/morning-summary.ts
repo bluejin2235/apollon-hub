@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
-import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
+import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
 
@@ -280,7 +280,7 @@ async function tierCostKrwForDate(
 ): Promise<number> {
   const { data, error } = await admin
     .from("luna_usage_daily")
-    .select("model_id, input_tokens, output_tokens")
+    .select("model_id, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens")
     .eq("tier", tier)
     .eq("date", date);
   if (error) {
@@ -289,11 +289,14 @@ async function tierCostKrwForDate(
   }
   let total = 0;
   for (const row of data ?? []) {
-    const tokens =
-      (Number(row.input_tokens) || 0) + (Number(row.output_tokens) || 0);
-    total += estimateKrwFromTokens(
+    total += estimateUsageKrw(
       String(row.model_id ?? ""),
-      tokens,
+      {
+        inputTokens: Number(row.input_tokens) || 0,
+        outputTokens: Number(row.output_tokens) || 0,
+        cacheWriteTokens: Number(row.cache_write_tokens) || 0,
+        cacheReadTokens: Number(row.cache_read_tokens) || 0
+      },
       usdKrw,
       null
     ).krw;

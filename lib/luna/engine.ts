@@ -60,7 +60,7 @@ export async function getTierModel(
         provider: FALLBACK.provider,
         model_id: FALLBACK.model_id,
         model_label: FALLBACK.model_label,
-        use_caching: false,
+        use_caching: tier === "A" || tier === "C",
         use_batch: false,
         note: null
       };
@@ -80,7 +80,8 @@ export async function getTierModel(
         typeof data?.model_label === "string" && data.model_label.trim()
           ? data.model_label.trim()
           : FALLBACK.model_label,
-      use_caching: data?.use_caching === true,
+      use_caching:
+        data == null ? tier === "A" || tier === "C" : data.use_caching === true,
       use_batch: data?.use_batch === true,
       note: typeof data?.note === "string" ? data.note : null
     };
@@ -91,7 +92,7 @@ export async function getTierModel(
       provider: FALLBACK.provider,
       model_id: FALLBACK.model_id,
       model_label: FALLBACK.model_label,
-      use_caching: false,
+      use_caching: tier === "A" || tier === "C",
       use_batch: false,
       note: null
     };
@@ -164,19 +165,59 @@ export function emptyUsage(): LunaUsageTokens {
 
 export function readUsage(raw: unknown): LunaUsageTokens {
   const u = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const creationObj =
+    u.cache_creation && typeof u.cache_creation === "object"
+      ? (u.cache_creation as Record<string, unknown>)
+      : null;
+  const creationFromObj =
+    (typeof creationObj?.ephemeral_5m_input_tokens === "number"
+      ? creationObj.ephemeral_5m_input_tokens
+      : 0) +
+    (typeof creationObj?.ephemeral_1h_input_tokens === "number"
+      ? creationObj.ephemeral_1h_input_tokens
+      : 0);
+  const cacheWrite =
+    typeof u.cache_creation_input_tokens === "number"
+      ? u.cache_creation_input_tokens
+      : creationFromObj;
   return {
     input_tokens: typeof u.input_tokens === "number" ? u.input_tokens : 0,
     output_tokens: typeof u.output_tokens === "number" ? u.output_tokens : 0,
-    cache_creation_input_tokens:
-      typeof u.cache_creation_input_tokens === "number"
-        ? u.cache_creation_input_tokens
-        : typeof u.prompt_tokens === "number"
-          ? u.prompt_tokens
-          : 0,
+    cache_creation_input_tokens: cacheWrite,
     cache_read_input_tokens:
       typeof u.cache_read_input_tokens === "number"
         ? u.cache_read_input_tokens
         : 0
+  };
+}
+
+export function readOpenAiUsage(raw: unknown): LunaUsageTokens {
+  const u = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const prompt = typeof u.prompt_tokens === "number" ? u.prompt_tokens : 0;
+  const details =
+    u.prompt_tokens_details && typeof u.prompt_tokens_details === "object"
+      ? (u.prompt_tokens_details as Record<string, unknown>)
+      : {};
+  const cached = typeof details.cached_tokens === "number" ? details.cached_tokens : 0;
+  return {
+    input_tokens: Math.max(0, prompt - cached),
+    output_tokens: typeof u.completion_tokens === "number" ? u.completion_tokens : 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: cached
+  };
+}
+
+export function readGeminiUsage(raw: unknown): LunaUsageTokens {
+  const u = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const prompt = typeof u.promptTokenCount === "number" ? u.promptTokenCount : 0;
+  const cached =
+    typeof u.cachedContentTokenCount === "number" ? u.cachedContentTokenCount : 0;
+  return {
+    input_tokens: Math.max(0, prompt - cached),
+    output_tokens:
+      typeof u.candidatesTokenCount === "number" ? u.candidatesTokenCount : 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: cached
   };
 }
 

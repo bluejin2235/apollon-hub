@@ -5,7 +5,43 @@ export type OfficialModelPrice = {
   output: number;
   /** cache hit / read */
   cache_read?: number;
+  /** cache write. 없으면 Claude 는 input×1.25, 그 외는 input */
+  cache_write?: number;
 };
+
+export type UsageTokenParts = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens?: number;
+  cacheReadTokens?: number;
+};
+
+export type MarketTokenRates = {
+  input?: number | null;
+  output?: number | null;
+  cache_read?: number | null;
+  blended?: number | null;
+};
+
+function isClaudeModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes("claude");
+}
+
+export function cacheWriteUsdPerM(
+  price: OfficialModelPrice,
+  modelId: string
+): number {
+  if (typeof price.cache_write === "number") return price.cache_write;
+  return isClaudeModel(modelId) ? price.input * 1.25 : price.input;
+}
+
+export function cacheReadUsdPerM(
+  price: OfficialModelPrice,
+  modelId: string
+): number {
+  if (typeof price.cache_read === "number") return price.cache_read;
+  return isClaudeModel(modelId) ? price.input * 0.1 : price.input * 0.5;
+}
 
 /**
  * model_id 부분 문자열 매칭용. 긴 키를 먼저 검사한다.
@@ -80,4 +116,67 @@ export function estimateKrwFromTokens(
     krw: Math.round((tokens / 1_000_000) * blended * usdKrw),
     usedOfficial: true
   };
+}
+
+function usdToKrw(usdPerM: number, tokens: number, usdKrw: number): number {
+  if (!tokens || usdPerM <= 0 || usdKrw <= 0) return 0;
+  return (tokens / 1_000_000) * usdPerM * usdKrw;
+}
+
+/** 캐시 쓰기·읽기 단가를 반영한 사용량 비용. */
+export function estimateUsageKrw(
+  modelId: string,
+  parts: UsageTokenParts,
+  usdKrw: number,
+  market?: MarketTokenRates | null
+): { krw: number; usedOfficial: boolean } {
+  const input = Math.max(0, parts.inputTokens || 0);
+  const output = Math.max(0, parts.outputTokens || 0);
+  const cacheWrite = Math.max(0, parts.cacheWriteTokens || 0);
+  const cacheRead = Math.max(0, parts.cacheReadTokens || 0);
+  if (input + output + cacheWrite + cacheRead === 0 || usdKrw <= 0) {
+    return { krw: 0, usedOfficial: false };
+  }
+
+  const official = resolveOfficialPrice(modelId);
+  const mIn = market?.input;
+  const mOut = market?.output;
+  const mRead = market?.cache_read;
+  const hasSplit =
+    (typeof mIn === "number" && mIn > 0) ||
+    (typeof mOut === "number" && mOut > 0) ||
+    official != null;
+
+  if (hasSplit) {
+    const inRate = (typeof mIn === "number" && mIn > 0 ? mIn : null) ?? official?.input ?? 0;
+    const outRate =
+      (typeof mOut === "number" && mOut > 0 ? mOut : null) ?? official?.output ?? 0;
+    const readRate =
+      (typeof mRead === "number" && mRead > 0 ? mRead : null) ??
+      (official ? cacheReadUsdPerM(official, modelId) : inRate * (isClaudeModel(modelId) ? 0.1 : 0.5));
+    const writeRate = official
+      ? cacheWriteUsdPerM(official, modelId)
+      : isClaudeModel(modelId)
+        ? inRate * 1.25
+        : inRate;
+    const usd =
+      usdToKrw(inRate, input, usdKrw) +
+      usdToKrw(outRate, output, usdKrw) +
+      usdToKrw(writeRate, cacheWrite, usdKrw) +
+      usdToKrw(readRate, cacheRead, usdKrw);
+    return {
+      krw: Math.round(usd),
+      usedOfficial: official != null && !(typeof mIn === "number" && mIn > 0)
+    };
+  }
+
+  const blended = market?.blended ?? null;
+  const all = input + output + cacheWrite + cacheRead;
+  return estimateKrwFromTokens(modelId, all, usdKrw, blended ?? null);
+}
+
+export function cacheHitRate(inputNoCache: number, cacheRead: number): number {
+  const den = Math.max(0, inputNoCache) + Math.max(0, cacheRead);
+  if (den <= 0) return 0;
+  return Math.round((cacheRead / den) * 1000) / 10;
 }

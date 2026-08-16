@@ -33,7 +33,7 @@ import {
   buildCuratedDisplaySet,
   defaultHistoryVisibleSlugs
 } from "@/lib/luna/model-display-set";
-import { estimateKrwFromTokens } from "@/lib/luna/model-pricing";
+import { cacheHitRate, estimateUsageKrw } from "@/lib/luna/model-pricing";
 import {
   findInspectScheduleConflict,
   nextInspectAt
@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
   const { data: usageRows } = await admin
     .from("luna_usage_daily")
     .select(
-      "date, tier, model_id, feature, calls, input_tokens, output_tokens"
+      "date, tier, model_id, feature, calls, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens"
     )
     .gte("date", from)
     .lte("date", today);
@@ -186,11 +186,20 @@ export async function GET(request: NextRequest) {
 
   // 비용 추정: 시장 blended USD 우선, 없으면 공급사 공식 단가
   const priceByModel = new Map<string, number>();
+  const ratesByModel = new Map<
+    string,
+    { input: number | null; output: number | null; cache_read: number | null }
+  >();
   for (const m of marketRows) {
     const blended =
       m.price_blended ??
       ((Number(m.price_input) || 0) * 3 + (Number(m.price_output) || 0)) / 4;
     if (blended) priceByModel.set(m.model_slug.toLowerCase(), blended);
+    ratesByModel.set(m.model_slug.toLowerCase(), {
+      input: m.price_input,
+      output: m.price_output,
+      cache_read: m.price_cache_read
+    });
   }
 
   function marketUsdPerM(modelId: string): number | null {
@@ -207,13 +216,43 @@ export async function GET(request: NextRequest) {
     return usdPerM ?? null;
   }
 
+  function marketRates(modelId: string) {
+    const key = modelId.toLowerCase();
+    let rates = ratesByModel.get(key);
+    if (!rates) {
+      for (const [slug, r] of ratesByModel) {
+        if (slug.includes(key) || key.includes(slug)) {
+          rates = r;
+          break;
+        }
+      }
+    }
+    return {
+      input: rates?.input ?? null,
+      output: rates?.output ?? null,
+      cache_read: rates?.cache_read ?? null,
+      blended: marketUsdPerM(modelId)
+    };
+  }
+
   let usedOfficialPricing = false;
-  function estimateKrw(modelId: string, tokens: number): number {
-    const { krw, usedOfficial } = estimateKrwFromTokens(
+  function estimateKrw(
+    modelId: string,
+    input: number,
+    output: number,
+    cacheWrite: number,
+    cacheRead: number
+  ): number {
+    const { krw, usedOfficial } = estimateUsageKrw(
       modelId,
-      tokens,
+      {
+        inputTokens: input,
+        outputTokens: output,
+        cacheWriteTokens: cacheWrite,
+        cacheReadTokens: cacheRead
+      },
       usdKrw,
-      marketUsdPerM(modelId)
+      marketRates(modelId)
     );
     if (usedOfficial && krw > 0) usedOfficialPricing = true;
     return krw;
@@ -234,16 +273,27 @@ export async function GET(request: NextRequest) {
       calls: number;
       tokens: number;
       cost: number;
+      input_tokens: number;
+      cache_read_tokens: number;
     }
   >();
   const byTierWeek = new Map<string, number>();
 
   for (const row of usageRows ?? []) {
     const date = String(row.date).slice(0, 10);
-    const tokens =
-      (Number(row.input_tokens) || 0) + (Number(row.output_tokens) || 0);
+    const input = Number(row.input_tokens) || 0;
+    const output = Number(row.output_tokens) || 0;
+    const cacheWrite = Number(row.cache_write_tokens) || 0;
+    const cacheRead = Number(row.cache_read_tokens) || 0;
+    const tokens = input + output + cacheWrite + cacheRead;
     const calls = Number(row.calls) || 0;
-    const cost = estimateKrw(String(row.model_id), tokens);
+    const cost = estimateKrw(
+      String(row.model_id),
+      input,
+      output,
+      cacheWrite,
+      cacheRead
+    );
     const tier = String(row.tier || "").toUpperCase();
 
     if (date >= weekFrom) {
@@ -267,11 +317,15 @@ export async function GET(request: NextRequest) {
         model_id: String(row.model_id),
         calls: 0,
         tokens: 0,
-        cost: 0
+        cost: 0,
+        input_tokens: 0,
+        cache_read_tokens: 0
       };
       cur.calls += calls;
       cur.tokens += tokens;
       cur.cost += cost;
+      cur.input_tokens += input;
+      cur.cache_read_tokens += cacheRead;
       byFeature.set(key, cur);
     }
   }
@@ -296,7 +350,8 @@ export async function GET(request: NextRequest) {
                 )) *
                 100
             )
-          : 0
+          : 0,
+      cache_hit_rate: cacheHitRate(r.input_tokens, r.cache_read_tokens)
     }));
 
   const weekChangePct =

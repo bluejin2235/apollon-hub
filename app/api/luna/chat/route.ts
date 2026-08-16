@@ -13,6 +13,13 @@ import {
 } from "@/lib/luna/engine";
 import { llmStreamText } from "@/lib/luna/llm/client";
 import {
+  buildCachedSystem,
+  formatGlossaryBlock,
+  formatLearningsBlock,
+  WORKSERVER_STRUCTURE,
+  type CachedSystemPayload
+} from "@/lib/luna/prompt-cache";
+import {
   mergeNotionSearchOutcomes,
   searchNotionPages,
   type NotionSearchOutcome,
@@ -139,8 +146,6 @@ type SourceReasons = {
   web?: string;
 };
 
-const CACHE_MIN_CHARS = 1200;
-
 function parseIdList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -151,7 +156,12 @@ function parseIdList(raw: unknown): string[] {
 function getAnthropicClient(): Anthropic | null {
   const apiKey = process.env.hubtrendchat_claude;
   if (!apiKey) return null;
-  return new Anthropic({ apiKey });
+  return new Anthropic({
+    apiKey,
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31"
+    }
+  });
 }
 
 function pathLastSegment(path: string): string {
@@ -321,32 +331,67 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   return null;
 }
 
-function buildStableSystemText(opts: {
-  identity: string;
-  learnings: LearningRow[];
-  skillPrompt?: string | null;
-  connectorPrompts?: string[];
+function buildL3PromptBlock(opts: {
+  understand?: string;
+  assume?: string;
+  search?: string;
+  answer?: string;
 }): string {
-  const parts: string[] = [opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT];
+  return [opts.understand, opts.assume, opts.search, opts.answer]
+    .map((s) => s?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+}
 
-  if (opts.learnings.length > 0) {
-    const learningBlock = opts.learnings
-      .map((l) => `- ${l.content} (${l.category})`)
-      .join("\n");
-    parts.push(`[아폴론에 대해 알고 있는 것]\n${learningBlock}`);
-  }
+function buildAnswerSystem(
+  opts: {
+    identity: string;
+    learnings: LearningRow[];
+    glossaryBlock?: string;
+    skillPrompt?: string | null;
+    l3Prompt?: string;
+    synthesisOpinion?: string;
+    notionSources?: NotionSource[];
+    cards?: LunaCard[];
+    nasResults?: NasDirectoryRow[];
+    nasSearchAttempted?: boolean;
+    reportContent?: string | null;
+    notionSearchAttempted?: boolean;
+    notionSearchStatus?: NotionSearchStatus;
+    notionSearchRounds?: number;
+  },
+  useCaching: boolean,
+  modelId: string
+): CachedSystemPayload {
+  const identity = opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
+  const block1 = [identity, WORKSERVER_STRUCTURE].filter(Boolean).join("\n\n");
+  const block2 = [opts.skillPrompt?.trim() ?? "", opts.l3Prompt?.trim() ?? ""]
+    .filter(Boolean)
+    .join("\n\n");
+  const block3 = [
+    formatLearningsBlock(opts.learnings),
+    opts.glossaryBlock?.trim() ?? "",
+    `[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const volatile = buildVolatileSystemText(opts);
 
-  parts.push(`[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`);
-
-  for (const block of opts.connectorPrompts ?? []) {
-    if (block.trim()) parts.push(block.trim());
-  }
-
-  if (opts.skillPrompt?.trim()) {
-    parts.push(opts.skillPrompt.trim());
-  }
-
-  return parts.join("\n\n");
+  const payload = buildCachedSystem(
+    [
+      { text: block1, cache: true },
+      { text: block2, cache: true },
+      { text: block3, cache: true },
+      { text: volatile, cache: false }
+    ],
+    { enabled: useCaching, modelId }
+  );
+  console.log("[luna/cache]", {
+    useCaching,
+    applied: payload.applied,
+    cacheChars: payload.cacheChars
+  });
+  return payload;
 }
 
 function buildVolatileSystemText(opts: {
@@ -412,8 +457,6 @@ function buildVolatileSystemText(opts: {
     );
   }
 
-  const opinionRule = opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
-
   parts.push(
     "[답변 규칙]\n" +
       "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
@@ -422,57 +465,11 @@ function buildVolatileSystemText(opts: {
       "  - 경로·파일명·폴더명을 절대 추측하거나 조합해서 만들지 않는다. 검색 결과에 없는 T:\\ 또는 P:\\ 경로를 답변에 쓰는 것은 금지다.\n" +
       "  - 대신 할 수 있는 것: ①검색 중 발견한 인접 자료(비슷한 프로젝트·상위 폴더)를 '대신 이런 것은 있다'로 제시 ②더 정확한 검색어 제안 ③담당자 확인 권유\n" +
       "  - '기능 준비 중/연동 안 됨' 같은 표현은 여전히 금지\n" +
-      `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
+      `${SYNTHESIS_OPINION_FALLBACK}\n` +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
 
   return parts.join("\n\n");
-}
-
-function buildAnswerSystem(
-  opts: {
-    identity: string;
-    learnings: LearningRow[];
-    skillPrompt?: string | null;
-    connectorPrompts?: string[];
-    synthesisOpinion?: string;
-    notionSources?: NotionSource[];
-    cards?: LunaCard[];
-    nasResults?: NasDirectoryRow[];
-    nasSearchAttempted?: boolean;
-    reportContent?: string | null;
-    notionSearchAttempted?: boolean;
-    notionSearchStatus?: NotionSearchStatus;
-    notionSearchRounds?: number;
-  },
-  useCaching: boolean
-): string | Anthropic.TextBlockParam[] {
-  const stable = buildStableSystemText(opts);
-  const volatile = buildVolatileSystemText(opts);
-  const cacheBlockLength = stable.length;
-  const applied = useCaching && cacheBlockLength >= CACHE_MIN_CHARS;
-
-  console.log("[luna/cache]", {
-    useCaching,
-    cacheBlockLength,
-    applied
-  });
-
-  if (applied) {
-    return [
-      {
-        type: "text",
-        text: stable,
-        cache_control: { type: "ephemeral" }
-      },
-      {
-        type: "text",
-        text: volatile
-      }
-    ];
-  }
-
-  return [stable, volatile].filter(Boolean).join("\n\n");
 }
 
 function pushModelStep(
@@ -699,16 +696,14 @@ export async function POST(request: NextRequest) {
     selfEvalPrompt.slice(0, 60)
   );
   const requeryPrompt = REQUERY_FALLBACK;
-  const synthesisOpinion =
-    [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
-    SYNTHESIS_OPINION_FALLBACK;
+  const l3Prompt = buildL3PromptBlock({
+    understand: loadedPrompts[LUNA_PROMPT_KEYS.understand],
+    assume: talkAssume,
+    search: talkSearch,
+    answer: talkAnswer
+  });
   const synthesisReason = SYNTHESIS_REASON_FALLBACK;
   const webSearchHint = "";
-
-  const connectorPrompts: string[] = [];
-  if ((notionEnabled || nasEnabled || webEnabled) && talkSearch) {
-    connectorPrompts.push(talkSearch);
-  }
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData, error: learningsError } = await admin
@@ -727,6 +722,30 @@ export async function POST(request: NextRequest) {
   }
   type LearningInjectRow = LearningRow & { id: string; use_count: number | null };
   const learningsRowsAll = (learningsData ?? []) as LearningInjectRow[];
+
+  let glossaryBlock = "";
+  {
+    let gq = await admin
+      .from("glossary_terms")
+      .select("term_ko, definition")
+      .is("deleted_at", null)
+      .order("term_ko")
+      .limit(60);
+    if (gq.error) {
+      gq = await admin
+        .from("glossary_terms")
+        .select("term_ko, definition")
+        .order("term_ko")
+        .limit(60);
+    }
+    if (gq.error) {
+      console.error("[luna/chat] glossary", gq.error);
+    } else {
+      glossaryBlock = formatGlossaryBlock(
+        (gq.data ?? []) as Array<{ term_ko?: string | null; definition?: string | null }>
+      );
+    }
+  }
 
   if (learningsRowsAll.length > 0) {
     const nowIso = new Date().toISOString();
@@ -1515,9 +1534,9 @@ export async function POST(request: NextRequest) {
           {
             identity,
             learnings,
+            glossaryBlock,
             skillPrompt,
-            connectorPrompts,
-            synthesisOpinion,
+            l3Prompt,
             notionSources,
             cards,
             nasResults,
@@ -1527,7 +1546,8 @@ export async function POST(request: NextRequest) {
             notionSearchStatus: notionSearchOutcome?.status,
             notionSearchRounds: notionSearchOutcome?.rounds ?? 0
           },
-          tierACfg.use_caching === true
+          tierACfg.use_caching === true,
+          tierA.model_id
         );
 
         const usedPrompts = buildUsedPromptRefs({
@@ -1573,7 +1593,7 @@ export async function POST(request: NextRequest) {
           const anthropicStream = client.messages.stream({
             model: tierA.model_id,
             max_tokens: maxTokens,
-            system: systemPrompt,
+            system: systemPrompt.anthropic || undefined,
             messages: historyMessages
           });
 
@@ -1609,15 +1629,13 @@ export async function POST(request: NextRequest) {
               return `${role}: ${content}`;
             })
             .join("\n\n");
-          const systemText = Array.isArray(systemPrompt)
-            ? systemPrompt.map((b) => b.text).join("\n\n")
-            : systemPrompt;
           for await (const chunk of llmStreamText({
             provider: tierAResolved.provider,
             model_id: tierA.model_id,
-            system: systemText,
+            system: systemPrompt.text,
             user: flatUser || userText,
-            maxTokens
+            maxTokens,
+            useCaching: systemPrompt.applied
           })) {
             if (chunk.delta) {
               assistantText += chunk.delta;

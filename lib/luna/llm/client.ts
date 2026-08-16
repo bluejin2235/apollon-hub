@@ -6,6 +6,8 @@ import {
   bumpUsageDaily,
   emptyUsage,
   getTierModel,
+  readGeminiUsage,
+  readOpenAiUsage,
   readUsage,
   resolveProviderModel,
   type LunaTier,
@@ -13,6 +15,11 @@ import {
   type ResolvedProviderModel
 } from "@/lib/luna/engine";
 import { lunaNotify } from "@/lib/luna/notify";
+import {
+  flattenSystem,
+  shouldApplyPromptCache,
+  wrapSystemForCache
+} from "@/lib/luna/prompt-cache";
 
 /** C등급 GPT 실패 시 즉시 대체 */
 const C_TIER_FALLBACK: ResolvedProviderModel = {
@@ -48,7 +55,12 @@ export type LlmCompleteResult = {
 function anthropicClient(): Anthropic | null {
   const apiKey = process.env.hubtrendchat_claude?.trim();
   if (!apiKey) return null;
-  return new Anthropic({ apiKey });
+  return new Anthropic({
+    apiKey,
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31"
+    }
+  });
 }
 
 function openaiKey(): string | null {
@@ -61,18 +73,30 @@ function googleKey(): string | null {
 
 async function completeAnthropic(opts: {
   model: string;
-  system?: string;
+  system?: string | Anthropic.TextBlockParam[];
   user: string;
   maxTokens: number;
   tools?: LlmToolDef[];
+  useCaching?: boolean;
 }): Promise<LlmCompleteResult> {
   const client = anthropicClient();
   if (!client) throw new Error("Claude API key is not configured");
 
+  let system: string | Anthropic.TextBlockParam[] | undefined;
+  if (Array.isArray(opts.system)) {
+    system = opts.system;
+  } else {
+    const wrapped = wrapSystemForCache(opts.system, {
+      enabled: opts.useCaching === true,
+      modelId: opts.model
+    });
+    system = wrapped.anthropic || undefined;
+  }
+
   const res = await client.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
-    system: opts.system?.trim() || undefined,
+    system: system || undefined,
     tools: opts.tools?.map((t) => ({
       name: t.name,
       description: t.description,
@@ -171,6 +195,7 @@ async function completeOpenAI(opts: {
     usage?: {
       prompt_tokens?: number;
       completion_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
     };
   };
 
@@ -195,12 +220,7 @@ async function completeOpenAI(opts: {
 
   return {
     text,
-    usage: {
-      input_tokens: json.usage?.prompt_tokens ?? 0,
-      output_tokens: json.usage?.completion_tokens ?? 0,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0
-    },
+    usage: readOpenAiUsage(json.usage),
     toolCalls,
     provider: "openai",
     model_id: opts.model,
@@ -260,6 +280,7 @@ async function completeGoogle(opts: {
     usageMetadata?: {
       promptTokenCount?: number;
       candidatesTokenCount?: number;
+      cachedContentTokenCount?: number;
     };
   };
 
@@ -278,12 +299,7 @@ async function completeGoogle(opts: {
 
   return {
     text,
-    usage: {
-      input_tokens: json.usageMetadata?.promptTokenCount ?? 0,
-      output_tokens: json.usageMetadata?.candidatesTokenCount ?? 0,
-      cache_creation_input_tokens: 0,
-      cache_read_input_tokens: 0
-    },
+    usage: readGeminiUsage(json.usageMetadata),
     toolCalls,
     provider: "google",
     model_id: opts.model,
@@ -295,17 +311,19 @@ export async function llmComplete(opts: {
   provider: ResolvedProviderModel["provider"];
   model_id: string;
   model_label?: string;
-  system?: string;
+  system?: string | Anthropic.TextBlockParam[];
   user: string;
   maxTokens?: number;
   tools?: LlmToolDef[];
+  useCaching?: boolean;
 }): Promise<LlmCompleteResult> {
   const maxTokens = opts.maxTokens ?? 2048;
+  const systemText = flattenSystem(opts.system);
   let result: LlmCompleteResult;
   if (opts.provider === "openai") {
     result = await completeOpenAI({
       model: opts.model_id,
-      system: opts.system,
+      system: systemText,
       user: opts.user,
       maxTokens,
       tools: opts.tools
@@ -313,7 +331,7 @@ export async function llmComplete(opts: {
   } else if (opts.provider === "google") {
     result = await completeGoogle({
       model: opts.model_id,
-      system: opts.system,
+      system: systemText,
       user: opts.user,
       maxTokens,
       tools: opts.tools
@@ -324,7 +342,8 @@ export async function llmComplete(opts: {
       system: opts.system,
       user: opts.user,
       maxTokens,
-      tools: opts.tools
+      tools: opts.tools,
+      useCaching: opts.useCaching
     });
   }
   return {
@@ -347,6 +366,12 @@ export async function lunaLlmComplete(
 ): Promise<LlmCompleteResult> {
   const tierModel = await getTierModel(admin, opts.tier);
   const resolved = resolveProviderModel(tierModel);
+  const useCaching = shouldApplyPromptCache({
+    tier: opts.tier,
+    useCaching: tierModel.use_caching,
+    modelId: resolved.model_id,
+    cacheableText: opts.system ?? ""
+  });
 
   try {
     const result = await llmComplete({
@@ -356,7 +381,8 @@ export async function lunaLlmComplete(
       system: opts.system,
       user: opts.user,
       maxTokens: opts.maxTokens,
-      tools: opts.tools
+      tools: opts.tools,
+      useCaching
     });
     bumpUsageDaily(admin, {
       tier: opts.tier,
@@ -391,6 +417,12 @@ export async function lunaLlmComplete(
       }
     );
 
+    const haikuCaching = shouldApplyPromptCache({
+      tier: opts.tier,
+      useCaching: tierModel.use_caching,
+      modelId: C_TIER_FALLBACK.model_id,
+      cacheableText: opts.system ?? ""
+    });
     const result = await llmComplete({
       provider: C_TIER_FALLBACK.provider,
       model_id: C_TIER_FALLBACK.model_id,
@@ -398,7 +430,8 @@ export async function lunaLlmComplete(
       system: opts.system,
       user: opts.user,
       maxTokens: opts.maxTokens,
-      tools: opts.tools
+      tools: opts.tools,
+      useCaching: haikuCaching
     });
     bumpUsageDaily(admin, {
       tier: opts.tier,
@@ -467,7 +500,11 @@ async function* streamOpenAI(opts: {
     if (data === "[DONE]") break;
     let json: {
       choices?: Array<{ delta?: { content?: string | null } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+      };
     };
     try {
       json = JSON.parse(data) as typeof json;
@@ -479,12 +516,7 @@ async function* streamOpenAI(opts: {
       yield { delta };
     }
     if (json.usage) {
-      usage = {
-        input_tokens: json.usage.prompt_tokens ?? 0,
-        output_tokens: json.usage.completion_tokens ?? 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0
-      };
+      usage = readOpenAiUsage(json.usage);
     }
   }
   yield { delta: "", usage: usage ?? emptyUsage() };
@@ -529,6 +561,7 @@ async function* streamGoogle(opts: {
       usageMetadata?: {
         promptTokenCount?: number;
         candidatesTokenCount?: number;
+        cachedContentTokenCount?: number;
       };
     };
     try {
@@ -543,12 +576,7 @@ async function* streamGoogle(opts: {
       }
     }
     if (json.usageMetadata) {
-      usage = {
-        input_tokens: json.usageMetadata.promptTokenCount ?? 0,
-        output_tokens: json.usageMetadata.candidatesTokenCount ?? 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0
-      };
+      usage = readGeminiUsage(json.usageMetadata);
     }
   }
   yield { delta: "", usage: usage ?? emptyUsage() };
@@ -615,19 +643,27 @@ function fallbackReasonLabel(err: unknown): string {
 export async function* llmStreamText(opts: {
   provider: ResolvedProviderModel["provider"];
   model_id: string;
-  system?: string;
+  system?: string | Anthropic.TextBlockParam[];
   user: string;
   maxTokens?: number;
+  useCaching?: boolean;
 }): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
   const maxTokens = opts.maxTokens ?? 4096;
+  const systemText = flattenSystem(opts.system);
 
   if (opts.provider === "anthropic") {
     const client = anthropicClient();
     if (!client) throw new Error("Claude API key is not configured");
+    const wrapped = Array.isArray(opts.system)
+      ? opts.system
+      : wrapSystemForCache(systemText, {
+          enabled: opts.useCaching === true,
+          modelId: opts.model_id
+        }).anthropic;
     const stream = client.messages.stream({
       model: opts.model_id,
       max_tokens: maxTokens,
-      system: opts.system?.trim() || undefined,
+      system: wrapped || undefined,
       messages: [{ role: "user", content: opts.user }]
     });
     for await (const event of stream) {
@@ -646,7 +682,7 @@ export async function* llmStreamText(opts: {
   if (opts.provider === "openai") {
     yield* streamOpenAI({
       model: opts.model_id,
-      system: opts.system,
+      system: systemText,
       user: opts.user,
       maxTokens
     });
@@ -655,7 +691,7 @@ export async function* llmStreamText(opts: {
 
   yield* streamGoogle({
     model: opts.model_id,
-    system: opts.system,
+    system: systemText,
     user: opts.user,
     maxTokens
   });

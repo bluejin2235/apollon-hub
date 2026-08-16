@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { cacheHitRate } from "@/lib/luna/model-pricing";
 
 export const runtime = "nodejs";
 
@@ -107,8 +108,7 @@ export async function GET(request: NextRequest) {
     byKey.set(key, prev);
   }
 
-  const cachePct =
-    totalInput > 0 ? Math.round((totalCacheRead / totalInput) * 1000) / 10 : 0;
+  const cachePct = cacheHitRate(totalInput, totalCacheRead);
 
   return NextResponse.json({
     connections: envConnected(),
