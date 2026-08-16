@@ -15,6 +15,7 @@ import { lunaNotify } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { runLunaTurn } from "@/lib/luna/run-chat";
 import { FEEDBACK_REASON_LABELS, isFeedbackReason } from "@/lib/luna/feedback";
+import { listOpenSelfstudyGoals } from "@/lib/luna/weekly-goals";
 import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
 
 export type {
@@ -71,7 +72,8 @@ export type StuckKind =
   | "clarify_unresolved"
   | "correction"
   | "thumbs_down"
-  | "eval_quality";
+  | "eval_quality"
+  | "weekly_goal";
 
 export type StuckMoment = {
   /** 오늘 안에서 안정적인 식별자 — 자습 제외 목록의 키 */
@@ -86,8 +88,8 @@ export type StuckMoment = {
   detail: string;
   snippet: string;
   at: string;
-  /** chat(대화) | eval(회귀 품질 미달) | thumbs_down(싫어요) */
-  source?: "chat" | "eval" | "thumbs_down";
+  /** chat(대화) | eval(회귀 품질 미달) | thumbs_down(싫어요) | goal(주간 목표) */
+  source?: "chat" | "eval" | "thumbs_down" | "goal";
 };
 
 export type SelfstudyCriteria = {
@@ -437,17 +439,16 @@ export async function extractStuckMoments(
 
   if (convErr) {
     console.error("[luna/selfstudy] conversations", convErr);
-    return [];
   }
-  if (!convs?.length) return [];
-
-  const convIds = convs.map((c) => c.id as string);
+  const convIds = (convs ?? []).map((c) => c.id as string);
   const userIds = Array.from(
-    new Set(convs.map((c) => c.user_id as string).filter(Boolean))
+    new Set((convs ?? []).map((c) => c.user_id as string).filter(Boolean))
   );
 
   const [{ data: profiles }, { data: messages, error: msgErr }] =
-    await Promise.all([
+    convIds.length === 0
+      ? [{ data: [] }, { data: [], error: null }]
+      : await Promise.all([
       admin.from("profiles").select("id, name").in("id", userIds),
       admin
         .from("luna_messages")
@@ -461,7 +462,6 @@ export async function extractStuckMoments(
 
   if (msgErr) {
     console.error("[luna/selfstudy] messages", msgErr);
-    return [];
   }
 
   const nameByUser = new Map<string, string>();
@@ -471,7 +471,7 @@ export async function extractStuckMoments(
     }
   }
   const userByConv = new Map<string, string>();
-  for (const c of convs) {
+  for (const c of convs ?? []) {
     userByConv.set(c.id as string, c.user_id as string);
   }
 
@@ -699,6 +699,26 @@ export async function extractStuckMoments(
     }
   } catch (err) {
     console.error("[luna/selfstudy] thumbs_down", err);
+  }
+
+  try {
+    const goalRows = await listOpenSelfstudyGoals(admin);
+    for (const g of goalRows) {
+      out.unshift({
+        key: `goal_${g.id}`,
+        kind: "weekly_goal",
+        conversation_id: "",
+        user_id: "",
+        user_name: "성장 목표",
+        title: g.goal,
+        detail: g.reason || "주간 목표에서 자습으로 전환됨",
+        snippet: `source=goal action_ref=${g.action_ref ?? g.id} metric=${g.metric_key ?? ""}`,
+        at: g.created_at,
+        source: "goal"
+      });
+    }
+  } catch (err) {
+    console.error("[luna/selfstudy] weekly goals", err);
   }
 
   // 중복 스니펫 축소
@@ -960,7 +980,8 @@ export async function listTodayStuckMoments(
     clarify_unresolved: 0,
     correction: 0,
     thumbs_down: 0,
-    eval_quality: 0
+    eval_quality: 0,
+    weekly_goal: 0
   };
 
   const items: StuckMomentView[] = moments.map((m) => {
@@ -968,7 +989,10 @@ export async function listTodayStuckMoments(
     const excluded = exclusions.has(m.key);
     const already_learned =
       m.kind === "correction" && resolvedConvs.has(m.conversation_id);
-    const criteriaOn = settings.criteria[m.kind];
+    const criteriaOn =
+      m.source === "goal" || m.kind === "weekly_goal"
+        ? true
+        : settings.criteria[m.kind as keyof typeof settings.criteria] === true;
     return {
       ...m,
       excluded,

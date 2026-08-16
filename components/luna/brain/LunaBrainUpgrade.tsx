@@ -65,10 +65,20 @@ type LastRun = {
   score_dropped?: boolean;
 } | null;
 
+type GoalProposal = {
+  id: string;
+  goal_id: string;
+  goal: string;
+  reason: string;
+  metric_key: string | null;
+  created_at: string;
+};
+
 type UpgradeResponse = {
   pending: Pending | null;
   last_run: LastRun;
   history: HistoryItem[];
+  goal_proposals?: GoalProposal[];
 };
 
 function promptLabel(item: HistoryItem): string {
@@ -197,6 +207,32 @@ export function LunaBrainUpgrade() {
       {!loading && !error ? (
         <>
           <SectionTitle>개선 대기</SectionTitle>
+          {(data?.goal_proposals ?? []).length > 0 ? (
+            <div className="mb-3">
+              {(data?.goal_proposals ?? []).map((p) => (
+                <BrainCard key={p.id} highlight>
+                  <CardTop>
+                    <Badge kind="wait">성장 목표</Badge>
+                    <span className="text-[13.5px] font-bold">{p.goal}</span>
+                  </CardTop>
+                  <p className="mb-2 text-[13px]" style={{ color: K.sub }}>
+                    {p.reason || "주간 목표에서 프롬프트 개선으로 전환됨"}
+                  </p>
+                  <BtnRow>
+                    <Btn
+                      disabled={busy}
+                      onClick={() =>
+                        router.push("/settings?tab=luna&luna=brain&sub=prompts")
+                      }
+                    >
+                      프롬프트에서 반영
+                    </Btn>
+                    <BtnNote>action_ref {p.id.slice(0, 8)}</BtnNote>
+                  </BtnRow>
+                </BrainCard>
+              ))}
+            </div>
+          ) : null}
           {pending ? (
             <BrainCard highlight>
               <CardTop>

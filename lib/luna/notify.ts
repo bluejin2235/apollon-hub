@@ -7,6 +7,7 @@ export const LUNA_LINKS = {
   candidatesPending: "/settings?tab=luna&luna=candidates&sub=pending",
   brainUpgrade: "/settings?tab=luna&luna=brain&sub=upgrade",
   brainReport: "/settings?tab=luna&luna=brain&sub=report",
+  selfstudyStuck: "/settings?tab=luna&luna=selfstudy&sub=stuck",
   brainEval: "/settings?tab=luna&luna=brain&sub=eval",
   brainModel: "/settings?tab=luna&luna=brain&sub=model",
   knowledgeConflict: "/settings?tab=luna&luna=knowledge&sub=conflict",

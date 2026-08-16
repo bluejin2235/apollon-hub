@@ -997,7 +997,7 @@ function LunaBrainImproveSection() {
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-[13px] font-semibold text-slate-900">
-            최근 주간 성장 보고
+            최근 주간 성장 루프
           </h3>
           {reportAt ? (
             <span className="text-[11px] text-slate-500">

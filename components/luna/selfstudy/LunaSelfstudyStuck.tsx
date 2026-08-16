@@ -8,8 +8,7 @@ import {
   ErrorLine,
   KnowledgeShell,
   LoadingLine,
-  StatCard,
-  StatGrid
+  StatCard
 } from "@/components/luna/knowledge/ui";
 import { getAccessToken, InfoBar } from "@/components/luna/selfstudy/shared";
 import { K } from "@/lib/luna/knowledge-format";
@@ -19,7 +18,8 @@ type Kind =
   | "clarify_unresolved"
   | "correction"
   | "thumbs_down"
-  | "eval_quality";
+  | "eval_quality"
+  | "weekly_goal";
 
 type Item = {
   key: string;
@@ -49,6 +49,7 @@ function kindBadge(kind: Kind): { label: string; badge: "warn" | "org" | "ok" | 
     return { label: "되묻기 미해소", badge: "org" };
   if (kind === "eval_quality") return { label: "시험 품질", badge: "src" };
   if (kind === "thumbs_down") return { label: "싫어요", badge: "warn" };
+  if (kind === "weekly_goal") return { label: "주간 목표", badge: "ok" };
   return { label: "정정받음", badge: "ok" };
 }
 

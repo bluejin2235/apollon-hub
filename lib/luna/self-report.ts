@@ -8,23 +8,50 @@ import {
 } from "@/lib/luna/morning-summary";
 import { LUNA_LINKS } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
+import { parseJsonObject } from "@/lib/luna/candidates";
 import { kstDayBounds, CORRECTION_RE } from "@/lib/luna/selfstudy";
+import {
+  ensureLunaGoal,
+  formatVerificationSection,
+  kstMondayDate,
+  listGoalsForWeek,
+  parseGoalDrafts,
+  saveGoalsForWeek,
+  shiftMondayDate,
+  snapshotMetrics,
+  verifyOpenGoalsForWeek,
+  type MetricKey
+} from "@/lib/luna/weekly-goals";
 
 const SETTINGS_LAST = "self_report_last";
 
-const REPORT_FALLBACK = `매주 한 번 블루진에게 보고한다:
-- 이번 주 확정된 지식 N건 (대표 3개)
-- 가장 많이 정정받은 유형 (= 내 약점)
-- 프롬프트 변경 내역과 결과 (예측 대비 실제)
-- 후보함 유입 추이 (줄고 있으면 성장 신호, 늘면 원인 짚기)
-- 다음 주에 스스로 개선하려는 것 한 가지
+const REPORT_FALLBACK = `매주 성장 루프를 돌린다. 서술로 끝내지 않는다.
 
-형식은 짧게. 숫자와 사례 중심. 잘한 척보다 약점을 정직하게.
-본문만 출력 (제목 없이 문단).
-제목(#)과 구분선(---)을 쓰지 않는다. 문단으로 자연스럽게 쓴다.
-표는 정말 비교가 필요할 때만 쓴다.
-지표는 화면 상단에 이미 표시되므로 본문에서 숫자를 반복하지 않는다.
-무엇을 배웠고, 무엇을 자주 틀렸고, 다음 주에 무엇을 하겠다를 쓴다.`;
+출력은 JSON 하나만.
+{
+  "body": "② 이번 주 요약만. 배운 것·자주 틀린 것. 짧게.",
+  "goals": [
+    {
+      "goal": "측정 가능한 한 문장",
+      "reason": "왜 이 목표인가",
+      "owner": "luna",
+      "metric_key": "search_zero_count",
+      "baseline": 12,
+      "target": 6,
+      "action_type": "selfstudy"
+    }
+  ]
+}
+
+규칙:
+- ① 지난주 검증은 시스템이 쓰므로 body 에 넣지 않는다.
+- ② 이번 주 요약만 body 에 쓴다. 지표 숫자를 반복하지 않는다.
+- ③ 다음 주 목표는 goals 배열. 최대 2개. owner=luna 1개는 필수. owner=human 은 있을 때만.
+- 목표는 측정 가능해야 한다. 검증할 수 없는 다짐은 쓰지 않는다. 나쁜 예: "확신 수준을 점검하겠다". 좋은 예: "검색 0건 사례를 12건에서 6건 이하로".
+- 루나가 고칠 수 없는 문제(데이터 정리, 기능 부재)는 owner=human, action_type=dev.
+- metric_key 는 제시된 목록만. baseline/target 은 숫자.
+- action_type 은 prompt | selfstudy | dev | none.
+- 제목(#)과 구분선(---)을 쓰지 않는다.`;
 
 export type SelfReportLast = {
   finished_at: string;
@@ -260,6 +287,7 @@ export async function runWeeklySelfReport(
   message: string;
   notification_id?: string | null;
   body?: string;
+  goals?: unknown[];
 }> {
   const week = kstWeekBounds();
   const today = kstDayBounds();
@@ -310,6 +338,13 @@ export async function runWeeklySelfReport(
     note: v.verify_note
   }));
 
+  const monday = kstMondayDate();
+  const prevMonday = shiftMondayDate(monday, -1);
+  const metrics = await snapshotMetrics(admin, monday);
+  const lastWeekVerified = await verifyOpenGoalsForWeek(admin, prevMonday);
+  const existingThisWeek = await listGoalsForWeek(admin, monday);
+  const hasOpenThisWeek = existingThisWeek.some((g) => g.status === "open");
+
   const stats = {
     confirmed_count: confirmedCount,
     top3,
@@ -325,6 +360,15 @@ export async function runWeeklySelfReport(
     candidate_inflow_prev_week: prevWeekInflow.total,
     week_start: week.startIso,
     week_end: week.endIso,
+    week_start_date: monday,
+    metrics,
+    last_week_verification: lastWeekVerified.map((g) => ({
+      goal: g.goal,
+      owner: g.owner,
+      status: g.status,
+      result_value: g.result_value,
+      result_note: g.result_note
+    })),
     generated_at: today.startIso
   };
 
@@ -333,41 +377,81 @@ export async function runWeeklySelfReport(
     (await getPrompt(admin, LUNA_PROMPT_KEYS.report)).trim() || REPORT_FALLBACK;
 
   let bodyText = "";
+  let parsedGoals = parseGoalDrafts([]);
   if (client) {
     const tierA = resolveAnthropicModel(await getTierModel(admin, "A"));
     try {
       const res = await client.messages.create({
         model: tierA.model_id,
-        max_tokens: 1200,
+        max_tokens: 2000,
         system,
         messages: [
           {
             role: "user",
-            content: `아래 주간 집계로 성장 보고 본문을 작성하세요.\n\n${JSON.stringify(stats, null, 2)}`
+            content: `아래 주간 집계로 성장 루프 JSON 을 작성하세요. ① 지난주 검증 본문은 넣지 마세요.\n\n${JSON.stringify(stats, null, 2)}`
           }
         ]
       });
-      bodyText =
+      const raw =
         res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+      const parsed = parseJsonObject(raw);
+      if (parsed) {
+        bodyText =
+          typeof parsed.body === "string"
+            ? parsed.body.trim()
+            : typeof parsed.report === "string"
+              ? parsed.report.trim()
+              : "";
+        parsedGoals = parseGoalDrafts(parsed.goals);
+      } else if (raw) {
+        bodyText = raw;
+      }
     } catch (err) {
       console.error("[luna/self-report] claude", err);
     }
   }
 
   if (!bodyText) {
+    const searchZero = metrics.search_zero_count ?? 0;
     bodyText = [
-      `이번 주 확정 지식 ${confirmedCount}건.`,
+      "이번 주는 배운 것과 자주 틀린 것을 짧게 남긴다.",
       top3.length
-        ? `대표: ${top3.map((t) => t.content).join(" / ")}`
-        : "대표 사례 없음.",
-      `정정 ${corrections.total}건 (고침 ${corrections.from_correction} · 👎 ${corrections.thumbs_down} · 정정 문장 ${corrections.user_correction}).`,
-      `후보함 유입 ${prevWeekInflow.total}→${thisWeekInflow.total} (확정 ${thisWeekInflow.confirmed} · 대기 ${thisWeekInflow.pending} · 폐기 ${thisWeekInflow.archived}).`,
+        ? `대표로 남은 지식: ${top3.map((t) => t.content).join(" / ")}`
+        : "대표로 확정된 사례는 적었다.",
       promptChanges.length
-        ? `프롬프트 자율 변경 ${promptChanges.length}건.`
-        : "프롬프트 자율 변경 없음.",
-      "다음 주 목표: 반복 정정 유형을 한 가지 줄이기."
-    ].join("\n");
+        ? "프롬프트를 스스로 손본 기록이 있다."
+        : "프롬프트 자율 변경은 없었다.",
+      searchZero > 0
+        ? "검색이 빈손으로 끝난 대화가 반복되면 다음 주 자습 주제로 삼는다."
+        : "검색 공백은 두드러지지 않았다.",
+      "다음 주에는 측정 가능한 약점 하나를 줄인다."
+    ].join("\n\n");
   }
+
+  const metricSnap = metrics as Partial<Record<MetricKey, number | null>>;
+  const drafts = ensureLunaGoal(parsedGoals, metricSnap);
+  let savedGoals = existingThisWeek.filter((g) => g.status === "open");
+  if (!hasOpenThisWeek) {
+    savedGoals = await saveGoalsForWeek(admin, monday, drafts, "luna");
+  }
+
+  const verification = formatVerificationSection(lastWeekVerified);
+  const goalLines = savedGoals.map((g) => {
+    const who = g.owner === "human" ? "블루진에게 요청" : "루나";
+    return `- [${who}] ${g.goal}`;
+  });
+  const reasonLines = savedGoals
+    .map((g) => g.reason)
+    .filter((r): r is string => Boolean(r && r.trim()));
+  const composed = [
+    verification,
+    bodyText.trim(),
+    goalLines.length > 0 ? `다음 주 목표\n${goalLines.join("\n")}` : "",
+    reasonLines.length > 0 ? `목표를 고른 이유\n${reasonLines.join("\n")}` : ""
+  ]
+    .filter((p) => p.trim())
+    .join("\n\n");
+  bodyText = composed;
 
   // 월요일 08:00 — 아침 요약과 시각이 겹치므로 밤사이 요약을 본문에 합친다
   let morningParts: string[] = [];
@@ -389,19 +473,20 @@ export async function runWeeklySelfReport(
     }
   }
 
-  const title = "루나 주간 성장 보고";
+  const title = "루나 주간 성장 루프";
   const { data: notif, error: notifErr } = await admin
     .from("hub_notifications")
     .insert({
       category: "luna_report",
       title,
-      body: bodyText.slice(0, 4000),
+      body: bodyText.slice(0, 12000),
       link: LUNA_LINKS.brainReport,
       level: "info",
       scope: "admin",
       meta: {
         event: "self_report",
         morning_parts: morningParts,
+        goal_ids: savedGoals.map((g) => g.id),
         ...stats
       }
     })
@@ -440,6 +525,7 @@ export async function runWeeklySelfReport(
     skipped: false,
     message: "주간 보고 제출",
     notification_id: last.notification_id,
-    body: bodyText
+    body: bodyText,
+    goals: savedGoals
   };
 }

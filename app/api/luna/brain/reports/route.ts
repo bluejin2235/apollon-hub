@@ -7,6 +7,12 @@ import {
   formatEvalScoreLine,
   loadLatestEvalTierScores
 } from "@/lib/luna/self-report";
+import {
+  attachCurrentValues,
+  kstMondayDate,
+  listGoalHistory,
+  listGoalsForWeek
+} from "@/lib/luna/weekly-goals";
 
 export const runtime = "nodejs";
 
@@ -38,13 +44,13 @@ function num(v: unknown): number | null {
 
 /** "8월 2주차" — 해당 주가 그 달의 몇 번째 주인지 (KST) */
 function weekLabel(iso: string | null): string {
-  if (!iso) return "성장 보고";
+  if (!iso) return "성장 루프";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "성장 보고";
+  if (Number.isNaN(d.getTime())) return "성장 루프";
   const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
   const month = kst.getUTCMonth() + 1;
   const nth = Math.floor((kst.getUTCDate() - 1) / 7) + 1;
-  return `${month}월 ${nth}주차 성장 보고`;
+  return `${month}월 ${nth}주차 성장 루프`;
 }
 
 export async function GET(request: NextRequest) {
@@ -110,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     items.push({
       id: row.id as string,
-      title: typeof row.title === "string" ? row.title : "루나 주간 성장 보고",
+      title: typeof row.title === "string" ? row.title : "루나 주간 성장 루프",
       body: typeof row.body === "string" ? row.body : "",
       published_at: publishedAt,
       week_label: weekLabel(weekStart ?? publishedAt),
@@ -125,8 +131,25 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const monday = kstMondayDate();
+  const [thisWeekGoals, history] = await Promise.all([
+    listGoalsForWeek(admin, monday),
+    listGoalHistory(admin, 40)
+  ]);
+  const currentGoals = await attachCurrentValues(
+    admin,
+    thisWeekGoals.filter((g) => g.status === "open"),
+    monday
+  );
+  const pastGoals = history.filter(
+    (g) => g.status !== "open" || g.week_start !== monday
+  );
+
   return NextResponse.json({
     latest: items[0] ?? null,
-    past: items.slice(1)
+    past: items.slice(1),
+    current_goals: currentGoals,
+    past_goals: pastGoals,
+    week_start: monday
   });
 }

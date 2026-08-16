@@ -3,6 +3,7 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import { formatPromptNumber } from "@/lib/luna/prompts";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
+import { listGoalPromptQueue } from "@/lib/luna/weekly-goals";
 
 export const runtime = "nodejs";
 
@@ -177,10 +178,13 @@ export async function GET(request: NextRequest) {
       }
     : null;
 
+  const goalProposals = await listGoalPromptQueue(admin);
+
   return NextResponse.json({
     pending,
     last_run: status.last_run,
-    history
+    history,
+    goal_proposals: goalProposals
   });
 }
 
