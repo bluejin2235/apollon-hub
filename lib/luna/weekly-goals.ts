@@ -22,7 +22,7 @@ export const METRIC_LABELS: Record<MetricKey, string> = {
   correction_count: "정정받음",
   thumbs_down_count: "싫어요",
   candidate_confirm_rate: "후보 확정률",
-  eval_light_score: "light 시험",
+  eval_light_score: "매일 점검",
   clarify_unresolved: "되묻기 미해소",
   selfstudy_confirmed: "자습 확정"
 };

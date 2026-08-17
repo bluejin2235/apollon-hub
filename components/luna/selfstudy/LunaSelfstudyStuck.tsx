@@ -47,7 +47,7 @@ function kindBadge(kind: Kind): { label: string; badge: "warn" | "org" | "ok" | 
   if (kind === "search_zero") return { label: "검색 0건", badge: "warn" };
   if (kind === "clarify_unresolved")
     return { label: "되묻기 미해소", badge: "org" };
-  if (kind === "eval_quality") return { label: "시험 품질", badge: "src" };
+  if (kind === "eval_quality") return { label: "더 잘할 수 있었음", badge: "src" };
   if (kind === "thumbs_down") return { label: "싫어요", badge: "warn" };
   if (kind === "weekly_goal") return { label: "주간 목표", badge: "ok" };
   return { label: "정정받음", badge: "ok" };
@@ -177,7 +177,7 @@ export function LunaSelfstudyStuck() {
         <StatCard label="정정받음" value={data?.counts.correction ?? "—"} />
         <StatCard label="싫어요" value={data?.counts.thumbs_down ?? "—"} />
         <StatCard
-          label="시험 품질"
+          label="더 잘할 수 있었음"
           value={data?.counts.eval_quality ?? "—"}
         />
       </div>

@@ -47,7 +47,7 @@ export const INSPECT_FORBIDDEN_SLOTS: Array<{
   },
   {
     key: "eval-light",
-    label: "회귀 시험",
+    label: "정기 점검",
     hour: CRON_EVAL_LIGHT_HOUR,
     minute: CRON_EVAL_LIGHT_MINUTE
   },

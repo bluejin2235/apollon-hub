@@ -36,7 +36,7 @@ const SELFSTUDY_FALLBACK = `오늘 대화 기록에서 "내가 막혔던 순간"
 - 되물었지만 해소되지 않은 것
 - 사람에게 정정받은 것 중 아직 이해가 얕은 것
 - 사람이 👎(싫어요)를 누른 답변
-- 회귀 시험에서 품질이 미달한 것 (필수 위반은 제외 — 학습이 아니라 프롬프트 문제)
+- 정기 점검에서 더 잘할 수 있었던 것 (지켜야 할 것을 어긴 것은 제외 — 학습이 아니라 프롬프트 문제)
 
 각각에 대해 스스로 질문을 만든다 (오늘 실제로 막힌 것에서만. 임의 주제 선정 금지).
 하루 최대 3문답. 막힌 것이 없었으면 빈 배열.
@@ -761,7 +761,7 @@ export async function extractStuckMoments(
         caseObj && typeof caseObj.category === "string"
           ? caseObj.category
           : "";
-      const snippet = `회귀 품질 미달${category ? ` [${category}]` : ""}: ${question}${reason ? ` — ${reason}` : ""}`;
+      const snippet = `점검 — 더 잘할 수 있었음${category ? ` [${category}]` : ""}: ${question}${reason ? ` — ${reason}` : ""}`;
       const key = stuckKey("eval_quality", `eval:${row.id}`, snippet);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -770,9 +770,9 @@ export async function extractStuckMoments(
         kind: "eval_quality",
         conversation_id: `eval:${row.id}`,
         user_id: "",
-        user_name: "회귀시험",
+        user_name: "정기점검",
         title: clip(question, 60),
-        detail: "시험 품질 미달 — 학습 재료",
+        detail: "더 잘할 수 있었음 — 학습 재료",
         snippet: clip(snippet, 400),
         at:
           typeof row.created_at === "string"

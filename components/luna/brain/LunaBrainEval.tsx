@@ -20,6 +20,7 @@ import {
   InfoBar
 } from "@/components/luna/brain/shared";
 import { K } from "@/lib/luna/knowledge-format";
+import { evalTierLabel } from "@/lib/luna/eval-labels";
 
 type EvalRun = {
   id: string;
@@ -132,11 +133,7 @@ function runMax(run: EvalRun): number {
 }
 
 function tierBadgeLabel(tier: string | null | undefined): string {
-  if (tier === "light") return "light";
-  if (tier === "heavy") return "heavy";
-  if (tier === "prompt") return "prompt";
-  if (tier === "mixed") return "전체";
-  return "구 문항 기준";
+  return evalTierLabel(tier);
 }
 
 function resultKind(
@@ -399,7 +396,7 @@ export function LunaBrainEval() {
       setNotice(
         res.skipped
           ? `건너뜀: ${res.reason ?? "실행 조건 미충족"}`
-          : `${tier === "all" ? "전체" : tier} 실행 완료 · ${score}점`
+          : `${tier === "all" ? "전체" : evalTierLabel(tier)} 실행 완료 · ${score}점`
       );
       if (res.run_id) setSelectedRunId(res.run_id);
       await load();
@@ -455,8 +452,8 @@ export function LunaBrainEval() {
   return (
     <KnowledgeShell>
       <InfoBar>
-        매일 light(검색 없음)·매주 heavy(검색 포함)로 나눕니다. 필수 위반은
-        프롬프트 문제, 품질 미달은 자습 재료입니다.
+        매일 점검(검색 없음)과 주간 점검(검색 포함)으로 나눕니다. 지켜야 할
+        것을 어긴 것은 프롬프트 문제, 더 잘할 수 있었음은 자습 재료입니다.
         {scheduleInfo?.cron_note ? (
           <>
             <br />
@@ -484,7 +481,7 @@ export function LunaBrainEval() {
               style={{ borderColor: K.line2 }}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <Badge kind="src">light</Badge>
+                <Badge kind="src">{evalTierLabel("light")}</Badge>
                 {editing === "light" ? (
                   <div className="flex flex-1 flex-wrap items-center gap-2">
                     <label className="flex items-center gap-1 text-[12px]">
@@ -550,7 +547,7 @@ export function LunaBrainEval() {
               style={{ borderColor: K.line2 }}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <Badge kind="org">heavy</Badge>
+                <Badge kind="org">{evalTierLabel("heavy")}</Badge>
                 {editing === "heavy" ? (
                   <div className="flex flex-1 flex-wrap items-center gap-2">
                     <label className="flex items-center gap-1 text-[12px]">
@@ -640,7 +637,7 @@ export function LunaBrainEval() {
           <div className="mb-3 grid grid-cols-1 gap-2.5 min-[801px]:grid-cols-2">
             <BrainCard>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge kind="src">light</Badge>
+                <Badge kind="src">{evalTierLabel("light")}</Badge>
                 <span className="flex-1 text-[13px] font-bold">점수 추이</span>
                 <span className="text-[11.5px]" style={{ color: K.faint }}>
                   12점 만점 · 매일
@@ -650,13 +647,13 @@ export function LunaBrainEval() {
                 <BarChart bars={lightTrend} height={56} />
               ) : (
                 <p className="mt-2.5 text-[12px]" style={{ color: K.faint }}>
-                  light 실행 기록이 없습니다.
+                  매일 점검 기록이 없습니다.
                 </p>
               )}
             </BrainCard>
             <BrainCard>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge kind="org">heavy</Badge>
+                <Badge kind="org">{evalTierLabel("heavy")}</Badge>
                 <span className="flex-1 text-[13px] font-bold">점수 추이</span>
                 <span className="text-[11.5px]" style={{ color: K.faint }}>
                   8점 만점 · 주간
@@ -666,7 +663,7 @@ export function LunaBrainEval() {
                 <BarChart bars={heavyTrend} height={56} />
               ) : (
                 <p className="mt-2.5 text-[12px]" style={{ color: K.faint }}>
-                  heavy 실행 기록이 없습니다.
+                  주간 점검 기록이 없습니다.
                 </p>
               )}
             </BrainCard>
@@ -680,7 +677,7 @@ export function LunaBrainEval() {
               className="rounded-[10px] border px-3 py-3 text-left disabled:opacity-50"
               style={{ borderColor: K.line, background: K.panel }}
             >
-              <div className="text-[13px] font-bold">light 실행</div>
+              <div className="text-[13px] font-bold">매일 점검</div>
               <div className="mt-0.5 text-[12px]" style={{ color: K.sub }}>
                 {lightCount}문항 · 검색 없음
               </div>
@@ -695,7 +692,7 @@ export function LunaBrainEval() {
               className="rounded-[10px] border px-3 py-3 text-left disabled:opacity-50"
               style={{ borderColor: K.line, background: K.panel }}
             >
-              <div className="text-[13px] font-bold">heavy 실행</div>
+              <div className="text-[13px] font-bold">주간 점검</div>
               <div className="mt-0.5 text-[12px]" style={{ color: K.sub }}>
                 {heavyCount}문항 · 검색 포함
               </div>
@@ -805,7 +802,7 @@ export function LunaBrainEval() {
                               <Badge
                                 kind={item.tier === "heavy" ? "org" : "src"}
                               >
-                                {item.tier}
+                                {evalTierLabel(item.tier)}
                               </Badge>
                             ) : null}
                             {item.category ? (
@@ -834,7 +831,7 @@ export function LunaBrainEval() {
                               className="mb-1 text-[11px] font-extrabold uppercase"
                               style={{ color: K.faint }}
                             >
-                              must_pass (필수)
+                              지켜야 할 것
                             </div>
                             <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed">
                               {item.must_pass?.trim() ||
@@ -845,7 +842,7 @@ export function LunaBrainEval() {
                               className="mb-1 mt-3 text-[11px] font-extrabold uppercase"
                               style={{ color: K.faint }}
                             >
-                              quality (품질)
+                              더 잘할 수 있었음
                             </div>
                             <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed">
                               {item.quality?.trim() || "—"}
@@ -932,7 +929,7 @@ export function LunaBrainEval() {
                               result.case.tier === "heavy" ? "org" : "src"
                             }
                           >
-                            {result.case.tier}
+                            {evalTierLabel(result.case.tier)}
                           </Badge>
                         ) : null}
                         {result.case?.category ? (
@@ -941,9 +938,9 @@ export function LunaBrainEval() {
                         {kind === "pass" ? (
                           <Badge kind="ok">합격</Badge>
                         ) : kind === "partial" ? (
-                          <Badge kind="warn">품질미달</Badge>
+                          <Badge kind="warn">더 잘할 수 있었음</Badge>
                         ) : kind === "must_fail" ? (
-                          <Badge kind="red">필수위반</Badge>
+                          <Badge kind="red">지켜야 할 것을 어김</Badge>
                         ) : kind === "error" ? (
                           <Badge kind="red">채점 실패</Badge>
                         ) : kind === "fail" ? (
@@ -1002,10 +999,10 @@ export function LunaBrainEval() {
                                 className="text-[12px] leading-relaxed"
                                 style={{ color: K.sub }}
                               >
-                                <b>필수</b>{" "}
+                                <b>지켜야 할 것</b>{" "}
                                 {result.case?.must_pass?.trim() || "—"}
                                 <br />
-                                <b>품질</b>{" "}
+                                <b>더 잘할 수 있었음</b>{" "}
                                 {result.case?.quality?.trim() || "—"}
                               </p>
                             </>
@@ -1020,7 +1017,7 @@ export function LunaBrainEval() {
                 className="mt-2.5 text-center text-[12px]"
                 style={{ color: K.faint }}
               >
-                행 클릭 시 답변·사유·필수/품질 기준
+                행 클릭 시 답변·사유·기준
               </p>
             </>
           )}

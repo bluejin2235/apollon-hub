@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel } from "@/lib/luna/engine";
 import { llmComplete, lunaLlmComplete } from "@/lib/luna/llm/client";
 import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
+import { evalTierLabel } from "@/lib/luna/eval-labels";
 import {
   runLunaTurn,
   type LunaConnectors
@@ -121,9 +122,9 @@ function formatRunLabel(date = new Date()): string {
 function triggerLabel(trigger: EvalExamTrigger): string {
   if (trigger === "prompt_change") return "프롬프트 변경";
   if (trigger === "consolidation") return "정리 완료";
-  if (trigger === "cron_light") return "매일 light";
-  if (trigger === "cron_heavy") return "주간 heavy";
-  return "수동 시험";
+  if (trigger === "cron_light") return "매일 점검";
+  if (trigger === "cron_heavy") return "주간 점검";
+  return "수동 점검";
 }
 
 export function categoriesForPromptKey(promptKey: string): string[] {
@@ -537,7 +538,7 @@ export async function finalizeEvalExam(
     const briefText = briefs
       .map(
         (b, i) =>
-          `${i + 1}. [${b.fail_kind === "must_pass" ? "필수" : "품질"}] ${b.question.slice(0, 60)}\n   → ${b.reason.slice(0, 100)}`
+          `${i + 1}. [${b.fail_kind === "must_pass" ? "지켜야 할 것" : "더 잘할 수 있었음"}] ${b.question.slice(0, 60)}\n   → ${b.reason.slice(0, 100)}`
       )
       .join("\n");
 
@@ -556,10 +557,10 @@ export async function finalizeEvalExam(
       let title: string;
       if (isHeavy) {
         title = prevLabel
-          ? `회귀 시험 heavy ${currLabel} (지난주 ${prevLabel})`
-          : `회귀 시험 heavy ${currLabel}`;
+          ? `주간 점검 ${currLabel} (지난주 ${prevLabel})`
+          : `주간 점검 ${currLabel}`;
       } else if (counts.must_pass_violations > 0) {
-        title = `시험 필수 위반 ${counts.must_pass_violations}건 — 되돌림을 검토하세요`;
+        title = `점검 — 지켜야 할 것 ${counts.must_pass_violations}건 어김`;
       } else {
         title = `점수 하락 ${prevLabel ?? "?"}→${currLabel}, 되돌림을 제안해요`;
       }
@@ -568,9 +569,9 @@ export async function finalizeEvalExam(
         isHeavy
           ? briefText ||
             `${currLabel} · ${triggerLabel(trigger)} · 실패 문항 없음`
-          : `${tier ? `[${tier}] ` : ""}${prevLabel ?? "?"} → ${currLabel} · ${triggerLabel(trigger)}`,
+          : `${tier ? `[${evalTierLabel(tier)}] ` : ""}${prevLabel ?? "?"} → ${currLabel} · ${triggerLabel(trigger)}`,
         !isHeavy ? briefText || null : null,
-        `두뇌 > 회귀 시험: ${LUNA_LINKS.brainEval}`
+        `두뇌 > 정기 점검: ${LUNA_LINKS.brainEval}`
       ].filter(Boolean);
 
       await lunaNotify(admin, "exam", title, bodyParts.join("\n"), {

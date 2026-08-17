@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       | null;
     const question = (Array.isArray(caseRaw) ? caseRaw[0] : caseRaw)?.question ?? "";
     const learningContent = [
-      `시험 피드백 (점수 ${score}/10)`,
+      `점검 피드백 (점수 ${score}/10)`,
       question ? `질문: ${question}` : null,
       `코멘트: ${comment}`
     ]

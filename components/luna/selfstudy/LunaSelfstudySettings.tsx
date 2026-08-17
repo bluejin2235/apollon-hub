@@ -61,7 +61,7 @@ const CRITERIA: { key: Kind; label: string }[] = [
   { key: "clarify_unresolved", label: "되물었지만 해소되지 않은 것" },
   { key: "correction", label: "정정받았지만 이해가 얕은 것" },
   { key: "thumbs_down", label: "싫어요(👎)를 받은 답변" },
-  { key: "eval_quality", label: "회귀 시험 품질 미달" }
+  { key: "eval_quality", label: "정기 점검 — 더 잘할 수 있었음" }
 ];
 
 function timeValue(h: number, m: number): string {

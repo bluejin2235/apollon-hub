@@ -25,8 +25,8 @@ const UPGRADE_FALLBACK = `내 판단(프롬프트)을 고칠 수 있는 근거�
 ② 반복된 정정 (같은 유형으로 3회 이상 고쳐진 것)
 미확정 후보, 단발 정정, 나의 추측으로는 고치지 않는다.
 
-회귀 시험 연속 실패는 보조 신호일 뿐이다. 시험 점수만으로 프롬프트를 고치지 않는다.
-시험에 최적화된 답만 하는 것을 막기 위함이다. 주 근거는 사람의 정정·확정 지식이다.
+정기 점검 연속 실패는 보조 신호일 뿐이다. 점검 점수만으로 프롬프트를 고치지 않는다.
+점검에 최적화된 답만 하는 것을 막기 위함이다. 주 근거는 사람의 정정·확정 지식이다.
 
 고칠 수 있는 범위: L2 관점, L3 대화, L4 배움.
 고칠 수 없는 것: L1 정체성, L5. 이것은 사람만 고친다.
@@ -366,14 +366,14 @@ async function proposeUpgrade(
           .join("\n")}`
       : "이번 주 확정 지식: 없음",
     evalStreaks.length
-      ? `회귀 시험 연속 실패 — 보조 신호(이것만으로 고치지 말 것):\n${evalStreaks
+      ? `정기 점검 연속 실패 — 보조 신호(이것만으로 고치지 말 것):\n${evalStreaks
           .slice(0, 8)
           .map(
             (e) =>
               `- ${e.streak}회 [${e.category ?? "?"}] ${e.question.slice(0, 80)} (${e.last_reason.slice(0, 80)})`
           )
           .join("\n")}`
-      : "회귀 시험 연속 실패: 없음"
+      : "정기 점검 연속 실패: 없음"
   ].join("\n\n");
 
   let raw = "";
@@ -619,7 +619,7 @@ export async function runSelfUpgrade(
       const prevLabel = `${exam.previous_score_sum ?? exam.previous_passed ?? "?"}/${exam.previous_score_max ?? exam.previous_total ?? "?"}`;
       const verifyNote =
         score_dropped || mustViolations > 0
-          ? `회귀 하락/필수위반 ${prevLabel} → ${scoreLabel}${mustViolations > 0 ? ` · 필수 ${mustViolations}건` : ""}`
+          ? `점검 하락 ${prevLabel} → ${scoreLabel}${mustViolations > 0 ? ` · 지켜야 할 것 ${mustViolations}건 어김` : ""}`
           : `예측 확인됨 ${scoreLabel}`;
 
       await admin
@@ -651,9 +651,9 @@ export async function runSelfUpgrade(
             admin,
             "exam",
             mustViolations > 0
-              ? `시험 필수 위반 ${mustViolations}건 — 되돌림을 검토하세요`
+              ? `점검 — 지켜야 할 것 ${mustViolations}건 어김`
               : `점수 하락 ${prevLabel}→${scoreLabel}, 되돌림을 제안해요`,
-            `「${title}」 v${nextVersion} 회귀. 두뇌에서 이전 버전으로 되돌릴 수 있어요.`,
+            `「${title}」 v${nextVersion} 점검 하락. 두뇌에서 이전 버전으로 되돌릴 수 있어요.`,
             {
               level: mustViolations > 0 ? "error" : "warn",
               meta: {
@@ -679,7 +679,7 @@ export async function runSelfUpgrade(
     ok: true,
     skipped: false,
     message: score_dropped
-      ? `개선 반영·회귀 하락 — 되돌림 제안 (v${nextVersion})`
+      ? `개선 반영·점검 하락 — 되돌림 제안 (v${nextVersion})`
       : `개선 반영 「${title}」 v${nextVersion}`,
     finished_at: new Date().toISOString(),
     prompt_id: target.id as string,

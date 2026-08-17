@@ -104,7 +104,7 @@ export const LUNA_TIER_META: LunaTierMeta[] = [
   {
     tier: "C",
     name: "배치 · 사람 검토를 거침",
-    desc: "배움 포착 · 자습 · 회귀 채점 · 기억 정리 · 용어 윤문"
+    desc: "배움 포착 · 자습 · 점검 채점 · 기억 정리 · 용어 윤문"
   }
 ];
 
@@ -133,7 +133,7 @@ export const LUNA_FEATURE_LABEL: Record<LunaUsageFeature, string> = {
   title: "대화 제목",
   selfstudy: "자습",
   learn_capture: "배움 포착",
-  eval_grade: "회귀 채점",
+  eval_grade: "점검 채점",
   consolidate: "기억 정리",
   glossary_polish: "용어 윤문",
   self_upgrade: "자기개선"

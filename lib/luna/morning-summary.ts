@@ -118,8 +118,8 @@ export async function collectMorningSummaryParts(
       .limit(1);
     const prevLabel = prevLight?.[0] ? runScoreLabel(prevLight[0]) : null;
     const line = prevLabel
-      ? `회귀 시험 light ${currLabel} (어제 ${prevLabel})`
-      : `회귀 시험 light ${currLabel}`;
+      ? `매일 점검 ${currLabel} (어제 ${prevLabel})`
+      : `매일 점검 ${currLabel}`;
     parts.push(withLink(line, LUNA_LINKS.brainEval));
   }
 
@@ -213,10 +213,10 @@ export async function collectMorningSummaryParts(
     if (typeof note === "string") {
       const m = note.match(/(\d+)\s*\/\s*(\d+)\s*→\s*(\d+)\s*\/\s*(\d+)/);
       if (m) {
-        examBit = ` (시험 ${m[1]}→${m[3]})`;
+        examBit = ` (점검 ${m[1]}→${m[3]})`;
       } else {
         const m2 = note.match(/(\d+)\s*→\s*(\d+)/);
-        if (m2) examBit = ` (시험 ${m2[1]}→${m2[2]})`;
+        if (m2) examBit = ` (점검 ${m2[1]}→${m2[2]})`;
       }
     }
     parts.push(
@@ -378,8 +378,8 @@ async function collectCTrialParts(
 
   parts.push(
     withLink(
-      `C등급 ${label} 시험 — 자습 ${qaCount}문답 · 지식후보 ${submitted}건 · 폴백 ${fallbacks}회 · 비용 ${costBit}${
-        lightLabel ? ` · light ${lightLabel}` : ""
+      `C등급 ${label} 점검 — 자습 ${qaCount}문답 · 지식후보 ${submitted}건 · 폴백 ${fallbacks}회 · 비용 ${costBit}${
+        lightLabel ? ` · 매일 점검 ${lightLabel}` : ""
       }`,
       LUNA_LINKS.brainModel
     )

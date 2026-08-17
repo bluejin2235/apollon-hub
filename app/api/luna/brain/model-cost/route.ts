@@ -785,7 +785,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `${tier}등급을 ${modelId}로 바꿨어요. 회귀 시험으로 확인해 보세요`
+      message: `${tier}등급을 ${modelId}로 바꿨어요. 정기 점검으로 확인해 보세요`
     });
   }
 

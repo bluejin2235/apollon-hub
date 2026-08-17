@@ -318,7 +318,7 @@ export function findScheduleConflicts(
         out.push({
           tier: "light",
           with: slot.key,
-          message: `light ${formatTimeHm(schedule.light.hour, schedule.light.minute)}이 ${slot.label}과 겹칩니다`
+          message: `매일 점검 ${formatTimeHm(schedule.light.hour, schedule.light.minute)}이 ${slot.label}과 겹칩니다`
         });
       }
     }
@@ -337,7 +337,7 @@ export function findScheduleConflicts(
         out.push({
           tier: "heavy",
           with: slot.key,
-          message: `heavy ${formatTimeHm(schedule.heavy.hour, schedule.heavy.minute)}이 ${slot.label}과 겹칩니다`
+          message: `주간 점검 ${formatTimeHm(schedule.heavy.hour, schedule.heavy.minute)}이 ${slot.label}과 겹칩니다`
         });
       }
     }
@@ -352,7 +352,7 @@ export function findScheduleConflicts(
     out.push({
       tier: "heavy",
       with: "light",
-      message: "light와 heavy 시각이 같습니다"
+      message: "매일 점검과 주간 점검 시각이 같습니다"
     });
   }
 

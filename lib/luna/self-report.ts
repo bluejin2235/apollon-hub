@@ -255,7 +255,7 @@ export async function loadLatestEvalTierScores(
 export function formatEvalScoreLine(scores: EvalTierScores): string {
   const light = scores.light ?? "—";
   const heavy = scores.heavy ?? "—";
-  return `light ${light} · heavy ${heavy}`;
+  return `매일 점검 ${light} · 주간 점검 ${heavy}`;
 }
 
 export async function getSelfReportStatus(

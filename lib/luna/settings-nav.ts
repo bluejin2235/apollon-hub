@@ -97,7 +97,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "upgrade", label: "자기개선" },
       { slug: "report", label: "성장 루프" },
       { slug: "model", label: "모델·비용" },
-      { slug: "eval", label: "회귀 시험" }
+      { slug: "eval", label: "정기 점검" }
     ]
   }
 ];

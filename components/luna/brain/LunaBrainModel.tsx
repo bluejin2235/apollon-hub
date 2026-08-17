@@ -423,7 +423,7 @@ export function LunaBrainModel() {
       );
       setNotice(
         res.message ??
-          `${tier}등급을 ${modelId}로 바꿨어요. 회귀 시험으로 확인해 보세요`
+          `${tier}등급을 ${modelId}로 바꿨어요. 정기 점검으로 확인해 보세요`
       );
       await load(range);
     } catch (err) {
@@ -1655,7 +1655,7 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex items-baseline gap-2">
               <h3 className="text-[14px] font-bold">모드 이력</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                기간별 비용·시험·피드백으로 적정선을 비교합니다
+                기간별 비용·점검·피드백으로 적정선을 비교합니다
               </span>
             </div>
             <div
@@ -1690,7 +1690,7 @@ export function LunaBrainModel() {
                       월 {fmtWon(m.est_monthly_krw)}
                     </span>
                     <span className="text-[12.5px]" style={{ color: K.sub }}>
-                      시험 {m.exam_score ?? "—"}
+                      점검 {m.exam_score ?? "—"}
                     </span>
                     <span className="text-[12.5px]" style={{ color: K.sub }}>
                       👍 {m.thumbs_up} / 👎 {m.thumbs_down}
@@ -1706,7 +1706,7 @@ export function LunaBrainModel() {
             <div className="mb-2.5 flex items-baseline gap-2">
               <h3 className="text-[14px] font-bold">교체 이력</h3>
               <span className="text-[11.5px]" style={{ color: K.faint }}>
-                자동 교체 후 회귀 시험으로 계속 지켜봅니다
+                자동 교체 후 정기 점검으로 계속 지켜봅니다
               </span>
             </div>
             <div
@@ -1902,7 +1902,7 @@ export function LunaBrainModel() {
                         ],
                         [
                           "revert_on_drop",
-                          "교체 후 회귀 시험 점수가 떨어지면 되돌림 제안"
+                          "교체 후 정기 점검 점수가 떨어지면 되돌림 제안"
                         ],
                         [
                           "protect_s",
@@ -2142,19 +2142,19 @@ function ExamBadge({
   let bg = "#FAEEDA";
   let color = "#633806";
   if (reverted || result === "down" || result === "revert") {
-    label = note || "시험 하락·되돌림";
+    label = note || "점검 하락 · 되돌림";
     bg = "#FCEBEB";
     color = "#A32D2D";
   } else if (result === "up") {
-    label = note || "시험 상승";
+    label = note || "점검 상승";
     bg = "#E1F5EE";
     color = "#0F6E56";
   } else if (result === "keep") {
-    label = note || "시험 유지";
+    label = note || "점검 유지";
     bg = "#E1F5EE";
     color = "#0F6E56";
   } else if (result === "pending") {
-    label = "시험 대기";
+    label = "점검 대기";
   }
   return (
     <span

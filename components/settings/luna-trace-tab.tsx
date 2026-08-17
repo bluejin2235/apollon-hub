@@ -184,7 +184,7 @@ export function LunaTraceTab() {
         return;
       }
       setAddedKeys((prev) => new Set(prev).add(key));
-      setToast("시험 문제로 추가했습니다");
+      setToast("점검 문항으로 추가했습니다");
     } finally {
       setAddingKey(null);
     }
@@ -429,7 +429,7 @@ export function LunaTraceTab() {
                     onClick={() => void addEvalCase(f)}
                     className="shrink-0 rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    {added ? "추가됨" : "시험 문제로 추가"}
+                    {added ? "추가됨" : "점검 문항으로 추가"}
                   </button>
                 </li>
               );

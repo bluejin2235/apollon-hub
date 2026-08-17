@@ -43,7 +43,7 @@ const NOTIFY_LABELS: Array<{ key: keyof NotifyEvents; label: string }> = [
   { key: "reflect", label: "리플렉션" },
   { key: "conflict", label: "충돌" },
   { key: "prompt_change", label: "프롬프트" },
-  { key: "exam", label: "시험" }
+  { key: "exam", label: "정기 점검" }
 ];
 
 const DEFAULT_NOTIFY: NotifyEvents = {

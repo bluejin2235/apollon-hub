@@ -244,7 +244,7 @@ export function LunaBrainPrompts() {
       });
       setOpenId(null);
       setDraft(null);
-      setNotice("저장했습니다. 회귀 시험이 자동 실행됩니다.");
+      setNotice("저장했습니다. 정기 점검이 자동 실행됩니다.");
       await load();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "저장하지 못했습니다.");
@@ -380,7 +380,7 @@ export function LunaBrainPrompts() {
                 </span>
               ) : (
                 <span className="text-[11.5px]" style={{ color: K.faint }}>
-                  저장하면 회귀 시험이 자동 실행됩니다
+                  저장하면 정기 점검이 자동 실행됩니다
                 </span>
               )}
             </div>

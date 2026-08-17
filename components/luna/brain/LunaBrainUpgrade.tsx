@@ -96,8 +96,8 @@ function ScoreBadge({ item }: { item: HistoryItem }) {
   if (item.score_to == null) return null;
   const score =
     item.score_from != null
-      ? `시험 ${item.score_from} → ${item.score_to}`
-      : `시험 ${item.score_to}${item.score_total ? `/${item.score_total}` : ""}`;
+      ? `점검 ${item.score_from} → ${item.score_to}`
+      : `점검 ${item.score_to}${item.score_total ? `/${item.score_total}` : ""}`;
   let suffix = "";
   if (item.reverted_later) suffix = " · 되돌림";
   else if (item.verify_result === "confirmed") suffix = " · 예측 확인";
@@ -252,7 +252,7 @@ export function LunaBrainUpgrade() {
                 <KvLine label="근거">{pending.reason || "—"}</KvLine>
                 <KvLine label="예측">{pending.prediction || "—"}</KvLine>
                 <KvLine label="결과">
-                  회귀 시험 점수가 떨어져 이전 버전으로 되돌리기를 제안합니다
+                  점검 점수가 떨어져 이전 버전으로 되돌리기를 제안합니다
                 </KvLine>
               </div>
               <BtnRow>

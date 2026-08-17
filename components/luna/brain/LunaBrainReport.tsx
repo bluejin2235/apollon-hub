@@ -73,7 +73,7 @@ const METRIC_OPTIONS = [
   { key: "correction_count", label: "정정받음" },
   { key: "thumbs_down_count", label: "싫어요" },
   { key: "candidate_confirm_rate", label: "후보 확정률" },
-  { key: "eval_light_score", label: "light 시험" },
+  { key: "eval_light_score", label: "매일 점검" },
   { key: "clarify_unresolved", label: "되묻기 미해소" },
   { key: "selfstudy_confirmed", label: "자습 확정" }
 ] as const;
@@ -332,8 +332,8 @@ export function LunaBrainReport() {
                 />
                 <Stat label="정정받음" value={latest.correction_count} />
                 <Stat
-                  label="시험 점수"
-                  display={latest.eval_score_line ?? "light — · heavy —"}
+                  label="점검 점수"
+                  display={latest.eval_score_line ?? "매일 점검 — · 주간 점검 —"}
                 />
               </div>
               {inflowLine ? (

@@ -1046,7 +1046,7 @@ function LunaBrainImproveSection() {
               되돌리기 제안
             </span>
             <span className="min-w-0 flex-1">
-              「{revertSuggestion.title}」 v{revertSuggestion.version} 회귀
+              「{revertSuggestion.title}」 v{revertSuggestion.version} 점검
               하락 — {revertSuggestion.reason.slice(0, 80)}
             </span>
             <button
@@ -1089,11 +1089,11 @@ function LunaBrainImproveSection() {
                       </span>
                       {dropped ? (
                         <span className="rounded bg-red-100 px-1.5 py-px text-[10px] font-medium text-red-800">
-                          회귀 하락
+                          점검 하락
                         </span>
                       ) : item.verify_result === "confirmed" ? (
                         <span className="rounded bg-emerald-100 px-1.5 py-px text-[10px] font-medium text-emerald-800">
-                          회귀 통과
+                          점검 통과
                         </span>
                       ) : null}
                       <span className="text-[10.5px] text-slate-400">
@@ -1110,7 +1110,7 @@ function LunaBrainImproveSection() {
                     ) : null}
                     {item.verify_note ? (
                       <p className="text-[11px] text-slate-500">
-                        회귀: {item.verify_note}
+                        점검: {item.verify_note}
                       </p>
                     ) : null}
                   </div>
@@ -1360,7 +1360,7 @@ function LunaStudyPanel() {
     { key: "reflect", label: "리플렉션" },
     { key: "conflict", label: "충돌" },
     { key: "prompt_change", label: "프롬프트" },
-    { key: "exam", label: "시험" }
+    { key: "exam", label: "정기 점검" }
   ];
 
   return (
