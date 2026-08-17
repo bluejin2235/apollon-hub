@@ -22,6 +22,7 @@ import {
   parseAssumeMarkers,
   type UsedPromptRef
 } from "@/lib/luna/chat-response";
+import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
   FEEDBACK_REASON_IDS,
   FEEDBACK_REASON_LABELS,
@@ -803,21 +804,59 @@ function DetailMetaFooter({
 }
 
 function UsedPromptsFooter({ usedPrompts }: { usedPrompts: UsedPromptRef[] }) {
-  const visible = usedPrompts.filter(
-    (p) => p.number !== "L1" && !p.number.startsWith("L1-")
-  );
-  if (visible.length === 0) return null;
+  const [open, setOpen] = useState(false);
+  const summary = summarizeUsedPrompts(usedPrompts);
+  if (summary.length === 0 && usedPrompts.length === 0) return null;
 
-  const desktopParts = visible.map((p) =>
+  const desktopParts = summary.map((p) =>
     p.number ? `${p.number} ${p.title}` : p.title
   );
-  const mobileParts = visible.map((p) => p.title);
+  const mobileParts = summary.map((p) => p.title);
+
+  const byStep = new Map<string, UsedPromptRef[]>();
+  for (const item of usedPrompts) {
+    const step = item.step || "기타";
+    const list = byStep.get(step) ?? [];
+    list.push(item);
+    byStep.set(step, list);
+  }
 
   return (
     <div className="mt-1.5 text-[10.5px] leading-[1.6] text-[#9aa0a8] max-md:text-[10px]">
-      <span>사용한 판단 · </span>
-      <span className="max-md:hidden">{desktopParts.join(" · ")}</span>
-      <span className="hidden max-md:inline">{mobileParts.join(" · ")}</span>
+      {summary.length > 0 ? (
+        <>
+          <span>사용한 판단 · </span>
+          <span className="max-md:hidden">{desktopParts.join(" · ")}</span>
+          <span className="hidden max-md:inline">{mobileParts.join(" · ")}</span>
+        </>
+      ) : (
+        <span>사용한 판단 · 정체성</span>
+      )}
+      <button
+        type="button"
+        className="ml-1.5 underline-offset-2 hover:underline"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "접기" : "자세히"}
+      </button>
+      {open ? (
+        <div className="mt-1.5 space-y-1 rounded-md border border-[#ececec] bg-[#fafafa] px-2 py-1.5 text-[10.5px] text-[#6b7178]">
+          {Array.from(byStep.entries()).map(([step, items]) => (
+            <div key={step}>
+              <div className="font-medium text-[#5c6168]">{step}</div>
+              <ul className="mt-0.5 list-disc pl-4">
+                {items.map((item) => (
+                  <li key={`${item.step}::${item.key}`}>
+                    {item.number ? `${item.number} ` : ""}
+                    {item.title}
+                    <span className="ml-1 text-[#9aa0a8]">{item.key}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

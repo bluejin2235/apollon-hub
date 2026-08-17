@@ -16,7 +16,6 @@ import {
   buildCachedSystem,
   formatGlossaryBlock,
   formatLearningsBlock,
-  WORKSERVER_STRUCTURE,
   type CachedSystemPayload
 } from "@/lib/luna/prompt-cache";
 import {
@@ -27,9 +26,10 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import {
-  getPrompts,
+  getPromptRows,
   LUNA_PROMPT_KEYS,
   LUNA_RUNTIME_PROMPT_KEYS,
+  type LunaLoadedPrompt,
   type LunaPromptKind,
   type LunaPromptLevel
 } from "@/lib/luna/prompts";
@@ -53,11 +53,11 @@ import {
   formatConnectorRoutingSummary,
   hasManualConnectors,
   hasManualSkills,
-  matchPerspectiveIdByDepartment,
   resolveConnectorsAuto,
   type ConnectorFlags,
   type ConnectorRoutingResult
 } from "@/lib/luna/connector-routing";
+import { resolveDepartmentLens } from "@/lib/luna/department-lens";
 import {
   isKnowledgeDumpRequest,
   KNOWLEDGE_DUMP_CLARIFY,
@@ -66,31 +66,30 @@ import {
   selectLearningsForInject
 } from "@/lib/luna/knowledge-dump-guard";
 import {
-  CLARIFY_CONCEPT_GUARD,
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
-import { buildUsedPromptRefs } from "@/lib/luna/used-prompts";
+import {
+  createPromptUsageLog,
+  recordPromptUse
+} from "@/lib/luna/used-prompts";
+import {
+  CLARIFY_CONCEPT_GUARD,
+  KEYWORD_EXTRACT_FALLBACK,
+  REQUERY_FALLBACK,
+  SELF_EVAL_FALLBACK,
+  SYNTHESIS_REASON_FALLBACK,
+  TYPE_FIND_FALLBACK,
+  WORKSERVER_STRUCTURE_FALLBACK
+} from "@/lib/luna/prompt-fallbacks";
 
 export const runtime = "nodejs";
-
-const KEYWORD_EXTRACT_FALLBACK =
-  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 발주처·프로젝트 고유명사는 자르지 마세요. 롯데면세점을 롯데로, 스타에비뉴를 롯데로 줄이지 마세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
 
 const SYNTHESIS_OPINION_FALLBACK =
   "- 검색 결과 목록을 답변에 다시 나열하지 마세요. 화면에 이미 카드로 표시됩니다. 당신은 그 자료들을 종합한 판단과 의견만 쓰세요.";
 
 const CLARIFY_FALLBACK =
   "사용자의 질문이 여러 방향으로 갈라질 수 있는지 판단하세요. 확실한 분기가 있을 때만 needs_clarify=true 로 하세요. JSON만 응답: {\"needs_clarify\":true|false,\"question\":\"...\",\"options\":[\"...\",\"...\",\"...\"]}";
-
-const SELF_EVAL_FALLBACK =
-  "질문과 찾은 자료 제목 목록을 보고 답변에 충분한지 판단하세요. JSON만: {\"sufficient\":true|false,\"missing\":\"부족하면 한 줄\"}";
-
-const REQUERY_FALLBACK =
-  "부족한 점을 보완할 새 검색어만 짧게 제안하세요. 검색어 문자열만 응답하세요.";
-
-const SYNTHESIS_REASON_FALLBACK =
-  "질문과 소스별 검색 결과를 보고, 각 소스를 왜 보여주는지 한 줄씩 쓰세요. JSON만: {\"notion\":\"...\",\"nas\":\"...\",\"web\":\"...\"}. 결과 없는 소스는 키를 생략. 각 값은 40자 이내. Work서버는 중요 표시가 아니라 왜 골랐는지에 집중.";
 
 const SEARCH_REQUEST_KEYWORDS = ["찾아줘", "레퍼런스", "사례", "검색", "알려줘"] as const;
 const SEARCH_BUDGET_MS = 45_000;
@@ -135,6 +134,8 @@ type PromptSkillRow = {
   content: string;
   is_active: boolean;
   sort_order: number | null;
+  prompt_key: string | null;
+  level: string | null;
 };
 
 type StepStatus = "running" | "done" | "skip";
@@ -156,6 +157,32 @@ function parseIdList(raw: unknown): string[] {
   return raw
     .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     .map((id) => id.trim());
+}
+
+function logPromptInject(opts: {
+  key: string;
+  step: string;
+  source: "db" | "fallback";
+  text: string;
+}) {
+  console.log("[luna/prompt] inject", {
+    key: opts.key,
+    step: opts.step,
+    source: opts.source,
+    len: opts.text.length,
+    head: opts.text.slice(0, 80)
+  });
+}
+
+function pickLoaded(
+  rows: Record<string, LunaLoadedPrompt>,
+  key: string,
+  fallback: string
+): { text: string; row: LunaLoadedPrompt | undefined; source: "db" | "fallback" } {
+  const row = rows[key];
+  const dbText = row?.content?.trim() ?? "";
+  if (dbText) return { text: dbText, row, source: "db" };
+  return { text: fallback, row, source: "fallback" };
 }
 
 function getAnthropicClient(): Anthropic | null {
@@ -355,6 +382,7 @@ function buildAnswerSystem(
     glossaryBlock?: string;
     skillPrompt?: string | null;
     l3Prompt?: string;
+    workserverStructure?: string;
     synthesisOpinion?: string;
     notionSources?: NotionSource[];
     cards?: LunaCard[];
@@ -369,7 +397,9 @@ function buildAnswerSystem(
   modelId: string
 ): CachedSystemPayload {
   const identity = opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const block1 = [identity, WORKSERVER_STRUCTURE].filter(Boolean).join("\n\n");
+  const structure =
+    opts.workserverStructure?.trim() || WORKSERVER_STRUCTURE_FALLBACK;
+  const block1 = [identity, structure].filter(Boolean).join("\n\n");
   const block2 = [opts.skillPrompt?.trim() ?? "", opts.l3Prompt?.trim() ?? ""]
     .filter(Boolean)
     .join("\n\n");
@@ -590,28 +620,17 @@ export async function POST(request: NextRequest) {
     profileResult,
     perspectivesResult,
     tierACfg,
-    tierBCfg,
-    l3PromptResult
+    tierBCfg
   ] = await Promise.all([
     admin.from("profiles").select("department").eq("id", user.id).maybeSingle(),
     admin
       .from("luna_prompts")
-      .select("id, title, kind")
+      .select("id, title, kind, prompt_key")
       .eq("level", "L2")
       .eq("kind", "perspective")
       .eq("is_active", true),
     getTierModel(admin, "A"),
-    getTierModel(admin, "B"),
-    admin
-      .from("luna_prompts")
-      .select("prompt_key, title, level, sort_order, kind")
-      .in("prompt_key", [
-        "talk.understand",
-        "talk.assume",
-        "talk.search",
-        "talk.answer"
-      ])
-      .eq("is_active", true)
+    getTierModel(admin, "B")
   ]);
 
   if (profileResult.error) {
@@ -620,13 +639,14 @@ export async function POST(request: NextRequest) {
   if (perspectivesResult.error) {
     console.error("[luna/chat] perspectives", perspectivesResult.error);
   }
-  if (l3PromptResult.error) {
-    console.error("[luna/chat] l3 prompts", l3PromptResult.error);
-  }
 
   const profile = profileResult.data;
-  const perspectives = perspectivesResult.data ?? [];
-  const l3PromptRows = l3PromptResult.data ?? [];
+  const perspectives = (perspectivesResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    kind: string;
+    prompt_key: string | null;
+  }>;
 
   const manualSkillIds = {
     perspective_ids: perspectiveIds,
@@ -635,12 +655,37 @@ export async function POST(request: NextRequest) {
   };
 
   if (!hasManualSkills(manualSkillIds)) {
-    const matched = matchPerspectiveIdByDepartment(
-      profile?.department,
-      perspectives
-    );
-    if (matched) {
-      perspectiveIds = [matched];
+    const resolved = await resolveDepartmentLens(admin, profile?.department);
+    if (!resolved.found) {
+      console.log("[luna/lens] no mapping", {
+        department: resolved.department || "(empty)",
+        source: resolved.source
+      });
+    } else if (!resolved.lensPromptKey) {
+      console.log("[luna/lens] mapped none", {
+        department: resolved.department,
+        source: resolved.source
+      });
+    } else {
+      const matched = perspectives.find(
+        (p) => p.prompt_key === resolved.lensPromptKey
+      );
+      if (matched) {
+        perspectiveIds = [matched.id];
+        console.log("[luna/lens] auto", {
+          department: resolved.department,
+          key: resolved.lensPromptKey,
+          id: matched.id,
+          title: matched.title,
+          source: resolved.source
+        });
+      } else {
+        console.log("[luna/lens] mapped key missing", {
+          department: resolved.department,
+          key: resolved.lensPromptKey,
+          source: resolved.source
+        });
+      }
     }
   }
 
@@ -683,31 +728,69 @@ export async function POST(request: NextRequest) {
     model_label: tierBResolved.model_label || tierBCfg.model_label
   };
 
-  const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
+  const promptRows = await getPromptRows(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
+  const usageLog = createPromptUsageLog();
 
-  const identity =
-    loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const talkSearch = loadedPrompts[LUNA_PROMPT_KEYS.search]?.trim() || "";
-  const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
-  const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
-  // 키워드/자체평가/재검색은 구조화 출력이 필요해 FALLBACK 유지. 검색 원칙은 talk.search.
-  const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
-  const clarifyPrompt =
-    `${loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK}\n\n${CLARIFY_CONCEPT_GUARD}`;
-  const selfEvalPrompt = SELF_EVAL_FALLBACK;
-  console.log(
-    "[luna/prompt] self_eval len",
-    selfEvalPrompt.length,
-    selfEvalPrompt.slice(0, 60)
+  const identityPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.identity,
+    LUNA_DEFAULT_IDENTITY_PROMPT
   );
-  const requeryPrompt = REQUERY_FALLBACK;
-  const l3Prompt = buildL3PromptBlock({
-    understand: loadedPrompts[LUNA_PROMPT_KEYS.understand],
-    assume: talkAssume,
-    search: talkSearch,
-    answer: talkAnswer
-  });
-  const synthesisReason = SYNTHESIS_REASON_FALLBACK;
+  const identity = identityPick.text;
+  const understandPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.understand,
+    CLARIFY_FALLBACK
+  );
+  const assumePick = pickLoaded(promptRows, LUNA_PROMPT_KEYS.assume, "");
+  const findPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.find,
+    TYPE_FIND_FALLBACK
+  );
+  const answerPick = pickLoaded(promptRows, LUNA_PROMPT_KEYS.answer, "");
+  const keywordPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.keywordExtract,
+    KEYWORD_EXTRACT_FALLBACK
+  );
+  const requeryPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.requery,
+    REQUERY_FALLBACK
+  );
+  const selfEvalPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.selfEval,
+    SELF_EVAL_FALLBACK
+  );
+  const synthesisPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.synthesis,
+    SYNTHESIS_REASON_FALLBACK
+  );
+  const guardPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.clarifyGuard,
+    CLARIFY_CONCEPT_GUARD
+  );
+  const structurePick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.workserverStructure,
+    WORKSERVER_STRUCTURE_FALLBACK
+  );
+
+  const keywordExtractPrompt = keywordPick.text;
+  const selfEvalPrompt = selfEvalPick.text;
+  const requeryPrompt = requeryPick.text;
+  const synthesisReason = synthesisPick.text;
+  const typeFindPrompt = findPick.text;
+  const workserverStructure = structurePick.text;
+  const talkAssume = assumePick.text;
+  const talkAnswer = answerPick.text;
+  const clarifyPrompt = [understandPick.text, guardPick.text]
+    .filter(Boolean)
+    .join("\n\n");
   const webSearchHint = "";
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
@@ -779,11 +862,12 @@ export async function POST(request: NextRequest) {
     level: LunaPromptLevel;
     sort_order: number;
     kind: LunaPromptKind;
+    prompt_key: string | null;
   }> = [];
   if (skillIds.length > 0) {
     const { data: skillData, error: skillError } = await admin
       .from("luna_prompts")
-      .select("id, title, kind, content, is_active, sort_order")
+      .select("id, title, kind, content, is_active, sort_order, prompt_key, level")
       .in("id", skillIds)
       .eq("level", "L2");
 
@@ -805,7 +889,8 @@ export async function POST(request: NextRequest) {
         title: row.title,
         level: "L2",
         sort_order: row.sort_order ?? 0,
-        kind: row.kind as LunaPromptKind
+        kind: row.kind as LunaPromptKind,
+        prompt_key: row.prompt_key
       });
     }
     for (const id of roleIds) {
@@ -816,7 +901,8 @@ export async function POST(request: NextRequest) {
         title: row.title,
         level: "L2",
         sort_order: row.sort_order ?? 0,
-        kind: row.kind as LunaPromptKind
+        kind: row.kind as LunaPromptKind,
+        prompt_key: row.prompt_key
       });
     }
     for (const id of taskIds) {
@@ -827,7 +913,8 @@ export async function POST(request: NextRequest) {
         title: row.title,
         level: "L2",
         sort_order: row.sort_order ?? 0,
-        kind: row.kind as LunaPromptKind
+        kind: row.kind as LunaPromptKind,
+        prompt_key: row.prompt_key
       });
     }
     skillPrompt = blocks.length > 0 ? blocks.join("\n\n") : null;
@@ -898,8 +985,6 @@ export async function POST(request: NextRequest) {
       const steps: StepRecord[] = [];
       const modelSteps: ModelStep[] = [];
       let searchRounds = 0;
-      let clarifyRan = false;
-      let searchRan = false;
 
       const pushStep = (key: string, status: StepStatus, label: string) => {
         const idx = steps.findIndex((s) => s.key === key);
@@ -1004,13 +1089,12 @@ export async function POST(request: NextRequest) {
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
-          skillIds.length > 0 ||
+          hasManualSkills(manualSkillIds) ||
           shouldSkipProjectClarify(userText);
 
         if (skipClarify) {
           pushStep("clarify", "skip", "의도 확인");
         } else {
-          clarifyRan = true;
           pushStep("clarify", "running", "의도 확인 중");
           let needsClarify = false;
           let clarifyQuestion = "";
@@ -1021,6 +1105,30 @@ export async function POST(request: NextRequest) {
               max_tokens: 512,
               system: clarifyPrompt,
               messages: [{ role: "user", content: userText }]
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.understand,
+              step: "되묻기 판단",
+              title: "질문 이해와 되묻기",
+              row: understandPick.row
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.clarifyGuard,
+              step: "되묻기 판단",
+              title: "되묻기 개념 가드",
+              row: guardPick.row
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.understand,
+              step: "되묻기 판단",
+              source: understandPick.source,
+              text: understandPick.text
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.clarifyGuard,
+              step: "되묻기 판단",
+              source: guardPick.source,
+              text: guardPick.text
             });
             pushModelStep(modelSteps, admin, {
               label: "되묻기 판단",
@@ -1107,7 +1215,8 @@ export async function POST(request: NextRequest) {
                   steps,
                   model_steps: modelSteps,
                   model_label: tierB.model_label,
-                  duration_ms: Date.now() - startedAt
+                  duration_ms: Date.now() - startedAt,
+                  used_prompts: usageLog.all()
                 },
                 created_at: new Date(clarifyNow).toISOString()
               }
@@ -1144,9 +1253,7 @@ export async function POST(request: NextRequest) {
           result_count: number;
         }> = [];
 
-        const workserverExploreSystem =
-          talkSearch ||
-          "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요.";
+        const workserverExploreSystem = typeFindPrompt;
 
         const skippedNotionOutcome = (): NotionSearchOutcome => ({ status: "skipped", sources: [], queries: [], rounds: 0 });
         const runConnectorSearch = async (kw: string) => {
@@ -1167,6 +1274,18 @@ export async function POST(request: NextRequest) {
             (async () => {
               if (!nasEnabled) return [] as NasDirectoryRow[];
               try {
+                recordPromptUse(usageLog, {
+                  key: LUNA_PROMPT_KEYS.find,
+                  step: "Work서버 탐색",
+                  title: "FIND 자료 찾기",
+                  row: findPick.row
+                });
+                logPromptInject({
+                  key: LUNA_PROMPT_KEYS.find,
+                  step: "Work서버 탐색",
+                  source: findPick.source,
+                  text: workserverExploreSystem
+                });
                 const explored = await exploreWorkserverWithTools(
                   admin,
                   client,
@@ -1233,7 +1352,6 @@ export async function POST(request: NextRequest) {
         };
 
         if (anySearch) {
-          searchRan = true;
           const searchParts: string[] = [];
           if (notionEnabled) searchParts.push("노션");
           if (nasEnabled) searchParts.push("Work서버");
@@ -1251,6 +1369,18 @@ export async function POST(request: NextRequest) {
               max_tokens: 64,
               system: keywordExtractPrompt,
               messages: [{ role: "user", content: searchIntentText || "문서" }]
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.keywordExtract,
+              step: "검색어 추출",
+              title: "검색어 추출",
+              row: keywordPick.row
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.keywordExtract,
+              step: "검색어 추출",
+              source: keywordPick.source,
+              text: keywordExtractPrompt
             });
             pushModelStep(modelSteps, admin, {
               label: "검색어 추출",
@@ -1339,6 +1469,18 @@ export async function POST(request: NextRequest) {
                     }
                   ]
                 });
+                recordPromptUse(usageLog, {
+                  key: LUNA_PROMPT_KEYS.selfEval,
+                  step: "자체 평가",
+                  title: "자체 평가",
+                  row: selfEvalPick.row
+                });
+                logPromptInject({
+                  key: LUNA_PROMPT_KEYS.selfEval,
+                  step: "자체 평가",
+                  source: selfEvalPick.source,
+                  text: selfEvalPrompt
+                });
                 pushModelStep(modelSteps, admin, {
                   label: "자체 평가",
                   model: tierB.model_label,
@@ -1388,6 +1530,18 @@ export async function POST(request: NextRequest) {
                     )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`
                   }
                 ]
+              });
+              recordPromptUse(usageLog, {
+                key: LUNA_PROMPT_KEYS.requery,
+                step: "재검색어 생성",
+                title: "재검색 키워드 재생성",
+                row: requeryPick.row
+              });
+              logPromptInject({
+                key: LUNA_PROMPT_KEYS.requery,
+                step: "재검색어 생성",
+                source: requeryPick.source,
+                text: requeryPrompt
               });
               pushModelStep(modelSteps, admin, {
                 label: "재검색어 생성",
@@ -1462,6 +1616,18 @@ export async function POST(request: NextRequest) {
               max_tokens: 256,
               system: synthesisReason,
               messages: [{ role: "user", content: reasonUser }]
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.synthesis,
+              step: "소스 이유",
+              title: "종합 사유",
+              row: synthesisPick.row
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.synthesis,
+              step: "소스 이유",
+              source: synthesisPick.source,
+              text: synthesisReason
             });
             pushModelStep(modelSteps, admin, {
               label: "소스 이유",
@@ -1546,6 +1712,13 @@ export async function POST(request: NextRequest) {
           historyMessages.push({ role: "user", content: userText });
         }
 
+        const l3Prompt = buildL3PromptBlock({
+          understand: understandPick.text,
+          assume: talkAssume,
+          search: anySearch ? typeFindPrompt : "",
+          answer: talkAnswer
+        });
+
         const systemPrompt = buildAnswerSystem(
           {
             identity,
@@ -1553,6 +1726,7 @@ export async function POST(request: NextRequest) {
             glossaryBlock,
             skillPrompt,
             l3Prompt,
+            workserverStructure,
             notionSources,
             cards,
             nasResults,
@@ -1566,16 +1740,81 @@ export async function POST(request: NextRequest) {
           tierA.model_id
         );
 
-        const usedPrompts = buildUsedPromptRefs({
-          clarifyRan: steps.some(
-            (s) => s.key === "clarify" && s.status === "done"
-          ),
-          searchRan:
-            searchRounds > 0 || notionSources.length + cards.length > 0,
-          answerRan: true,
-          l3Rows: l3PromptRows,
-          l2Skills: l2SkillRows
+        recordPromptUse(usageLog, {
+          key: LUNA_PROMPT_KEYS.identity,
+          step: "답변 생성",
+          title: "아폴론 정체성",
+          row: identityPick.row
         });
+        recordPromptUse(usageLog, {
+          key: LUNA_PROMPT_KEYS.workserverStructure,
+          step: "답변 생성",
+          title: "Work서버 구조 설명",
+          row: structurePick.row
+        });
+        for (const skill of l2SkillRows) {
+          recordPromptUse(usageLog, {
+            key: skill.prompt_key || `l2:${skill.title}`,
+            step: "답변 생성",
+            title: skill.title,
+            row: {
+              level: skill.level,
+              sort_order: skill.sort_order,
+              title: skill.title,
+              kind: skill.kind
+            }
+          });
+          logPromptInject({
+            key: skill.prompt_key || `l2:${skill.title}`,
+            step: "답변 생성",
+            source: "db",
+            text: skillPrompt ?? skill.title
+          });
+        }
+        recordPromptUse(usageLog, {
+          key: LUNA_PROMPT_KEYS.understand,
+          step: "답변 생성",
+          title: "질문 이해와 되묻기",
+          row: understandPick.row
+        });
+        if (talkAssume) {
+          recordPromptUse(usageLog, {
+            key: LUNA_PROMPT_KEYS.assume,
+            step: "답변 생성",
+            title: "가정 확인",
+            row: assumePick.row
+          });
+        }
+        if (anySearch && typeFindPrompt) {
+          recordPromptUse(usageLog, {
+            key: LUNA_PROMPT_KEYS.find,
+            step: "답변 생성",
+            title: "FIND 자료 찾기",
+            row: findPick.row
+          });
+          logPromptInject({
+            key: LUNA_PROMPT_KEYS.find,
+            step: "답변 생성",
+            source: findPick.source,
+            text: typeFindPrompt
+          });
+        }
+        if (talkAnswer) {
+          recordPromptUse(usageLog, {
+            key: LUNA_PROMPT_KEYS.answer,
+            step: "답변 생성",
+            title: "답변 원칙",
+            row: answerPick.row
+          });
+        }
+        logPromptInject({
+          key: LUNA_PROMPT_KEYS.identity,
+          step: "답변 생성",
+          source: identityPick.source,
+          text: identity
+        });
+
+        const usedPrompts = usageLog.all();
 
         const connectorRoutingMeta = connectorRouting
           ? {

@@ -3,6 +3,11 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
+  KEYWORD_EXTRACT_FALLBACK,
+  REQUERY_FALLBACK,
+  SELF_EVAL_FALLBACK
+} from "@/lib/luna/prompt-fallbacks";
+import {
   bumpUsageDaily,
   readUsage,
   type LunaUsageTokens
@@ -12,15 +17,6 @@ import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { searchYoutube } from "@/lib/luna/youtube";
-
-const KEYWORD_EXTRACT_FALLBACK =
-  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
-
-const SELF_EVAL_FALLBACK =
-  "질문과 찾은 자료 제목 목록을 보고 답변에 충분한지 판단하세요. JSON만: {\"sufficient\":true|false,\"missing\":\"부족하면 한 줄\"}";
-
-const REQUERY_FALLBACK =
-  "부족한 점을 보완할 새 검색어만 짧게 제안하세요. 검색어 문자열만 응답하세요.";
 
 const SUPERVISOR_FALLBACK =
   "여러 팀의 관점별 분석을 읽고, 공통점·차이·우선 판단을 정리한 통합 리포트를 작성하세요. 마크다운으로 본론 중심으로 쓰세요.";

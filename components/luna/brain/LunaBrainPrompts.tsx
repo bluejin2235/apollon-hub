@@ -24,6 +24,7 @@ import {
   type LunaPromptRow,
   type LunaPromptVersionRow
 } from "@/lib/luna/prompts";
+import { LunaDepartmentLens } from "@/components/luna/brain/LunaDepartmentLens";
 
 type PromptsResponse = {
   prompts?: LunaPromptRow[];
@@ -378,6 +379,8 @@ export function LunaBrainPrompts() {
       ) : null}
       {error ? <ErrorLine message={error} /> : null}
       {loading ? <LoadingLine /> : null}
+
+      {!loading && !error && !showAllHistory ? <LunaDepartmentLens /> : null}
 
       {!loading && !error && showAllHistory ? (
         allHistory.length === 0 ? (

@@ -1,4 +1,3 @@
-import type { LunaPromptRow } from "@/lib/luna/prompts";
 import { shouldSkipProjectClarify } from "@/lib/luna/question-intent";
 
 export type ConnectorFlags = {
@@ -172,28 +171,4 @@ export function hasManualSkills(ids: {
       ids.task_ids.length >
     0
   );
-}
-
-/** profiles.department → L2 관점 prompt id (제목 부분 일치) */
-export function matchPerspectiveIdByDepartment(
-  department: string | null | undefined,
-  perspectives: Pick<LunaPromptRow, "id" | "title">[]
-): string | null {
-  const d = (department ?? "").trim();
-  if (!d || perspectives.length === 0) return null;
-
-  const exact = perspectives.find((p) => p.title === d);
-  if (exact) return exact.id;
-
-  const byInclude = perspectives.find(
-    (p) => d.includes(p.title) || p.title.includes(d)
-  );
-  if (byInclude) return byInclude.id;
-
-  const normalized = d.replace(/\s+/g, "");
-  for (const p of perspectives) {
-    const t = p.title.replace(/\s+/g, "");
-    if (normalized.includes(t) || t.includes(normalized)) return p.id;
-  }
-  return null;
 }

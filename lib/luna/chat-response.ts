@@ -167,6 +167,8 @@ export type SourceBadgeCounts = {
 };
 
 export type UsedPromptRef = {
+  key: string;
+  step: string;
   number: string;
   title: string;
 };
@@ -190,8 +192,15 @@ export function normalizeUsedPrompts(raw: unknown): UsedPromptRef[] | null {
         : typeof row.prompt_title === "string"
           ? row.prompt_title.trim()
           : "";
+    const key =
+      typeof row.key === "string"
+        ? row.key.trim()
+        : typeof row.prompt_key === "string"
+          ? row.prompt_key.trim()
+          : "";
+    const step = typeof row.step === "string" ? row.step.trim() : "";
     if (!title) continue;
-    items.push({ number, title });
+    items.push({ key, step, number, title });
   }
   return items.length > 0 ? items : null;
 }

@@ -4,6 +4,8 @@ import {
   type NamedEntity
 } from "@/lib/luna/named-entities";
 
+export { CLARIFY_CONCEPT_GUARD } from "@/lib/luna/prompt-fallbacks";
+
 /** 누가/언제/어떻게형 개념·프로세스 질문 */
 const CONCEPT_PROCESS_RE =
   /누가|언제|어떻게|주관|참여해|참여하|역할이|절차|프로세스|게이트|뭐가 달라|차이가|무슨 뜻|무엇인가/;
@@ -35,7 +37,3 @@ export function isSpuriousProjectClarify(
   return PROJECT_PICKER_RE.test(joined);
 }
 
-export const CLARIFY_CONCEPT_GUARD = `
-프로젝트명이 문장에 없으면 인스파이어·해운대·더후 같은 프로젝트 선택지를 만들지 마라.
-누가/언제/어떻게 형태의 개념·프로세스 질문(주관, 참여, 역할, 절차)은 파일 검색이 아니라 일반 지식으로 먼저 답한다. needs_clarify=false.
-`.trim();

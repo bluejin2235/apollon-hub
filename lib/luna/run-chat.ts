@@ -3,7 +3,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
-  CLARIFY_CONCEPT_GUARD,
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
@@ -14,6 +13,11 @@ import {
   type ConnectorFlags
 } from "@/lib/luna/connector-routing";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
+import {
+  CLARIFY_CONCEPT_GUARD,
+  KEYWORD_EXTRACT_FALLBACK,
+  TYPE_FIND_FALLBACK
+} from "@/lib/luna/prompt-fallbacks";
 import {
   isKnowledgeDumpRequest,
   KNOWLEDGE_DUMP_CLARIFY,
@@ -37,9 +41,6 @@ import { searchYoutube } from "@/lib/luna/youtube";
 
 export const LUNA_MODEL = "claude-sonnet-4-6";
 export const LUNA_MODEL_LABEL = "Claude Sonnet 4.6";
-
-const KEYWORD_EXTRACT_FALLBACK =
-  "사용자의 메시지에서 웹/노션/유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 발주처·프로젝트 고유명사는 자르지 마세요. 롯데면세점을 롯데로, 스타에비뉴를 롯데로 줄이지 마세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.";
 
 const SYNTHESIS_OPINION_FALLBACK =
   "- 검색 결과 목록을 답변에 다시 나열하지 마세요. 화면에 이미 카드로 표시됩니다. 당신은 그 자료들을 종합한 판단과 의견만 쓰세요.";
@@ -272,7 +273,7 @@ async function maybeClarify(
     const clarifyRes = await client.messages.create({
       model: LUNA_MODEL,
       max_tokens: 512,
-      system: `${clarifyPrompt.trim() || CLARIFY_FALLBACK}\n\n${CLARIFY_CONCEPT_GUARD}`,
+      system: clarifyPrompt.trim() || CLARIFY_FALLBACK,
       messages: [{ role: "user", content: userText }]
     });
     const raw =
@@ -347,19 +348,25 @@ export async function runLunaTurn(
 
   const identity =
     loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const talkSearch = loadedPrompts[LUNA_PROMPT_KEYS.search]?.trim() || "";
+  const talkFind = loadedPrompts[LUNA_PROMPT_KEYS.find]?.trim() || TYPE_FIND_FALLBACK;
   const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
   const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
-  const clarifyPrompt =
-    loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK;
-  const keywordExtractPrompt = KEYWORD_EXTRACT_FALLBACK;
+  const clarifyPrompt = [
+    loadedPrompts[LUNA_PROMPT_KEYS.understand]?.trim() || CLARIFY_FALLBACK,
+    loadedPrompts[LUNA_PROMPT_KEYS.clarifyGuard]?.trim() || CLARIFY_CONCEPT_GUARD
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const keywordExtractPrompt =
+    loadedPrompts[LUNA_PROMPT_KEYS.keywordExtract]?.trim() ||
+    KEYWORD_EXTRACT_FALLBACK;
   const synthesisOpinion =
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
     SYNTHESIS_OPINION_FALLBACK;
 
   const connectorPrompts: string[] = [];
-  if ((notionEnabled || nasEnabled || webEnabled) && talkSearch) {
-    connectorPrompts.push(talkSearch);
+  if ((notionEnabled || nasEnabled || webEnabled) && talkFind) {
+    connectorPrompts.push(talkFind);
   }
 
   const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
@@ -419,9 +426,7 @@ export async function runLunaTurn(
         keywords: kw,
         queryText: userText,
         model: LUNA_MODEL,
-        exploreSystem:
-          talkSearch ||
-          "Work서버 폴더를 단계적으로 탐색해 관련 자료를 찾으세요."
+        exploreSystem: talkFind
       });
       nasResults = explored.rows;
       console.log(

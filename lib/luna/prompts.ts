@@ -14,7 +14,14 @@ export const LUNA_PROMPT_KEYS = {
   understand: "talk.understand",
   assume: "talk.assume",
   search: "talk.search",
+  find: "type.find",
   answer: "talk.answer",
+  keywordExtract: "search.keyword_extract",
+  requery: "search.requery",
+  selfEval: "eval.self",
+  synthesis: "answer.synthesis",
+  clarifyGuard: "talk.clarify_guard",
+  workserverStructure: "source.workserver_structure",
   capture: "learn.capture",
   dialogue: "learn.dialogue",
   selfstudy: "learn.selfstudy",
@@ -30,14 +37,34 @@ export const LUNA_RUNTIME_PROMPT_KEYS: LunaPromptKey[] = [
   LUNA_PROMPT_KEYS.identity,
   LUNA_PROMPT_KEYS.understand,
   LUNA_PROMPT_KEYS.assume,
-  LUNA_PROMPT_KEYS.search,
+  LUNA_PROMPT_KEYS.find,
   LUNA_PROMPT_KEYS.answer,
+  LUNA_PROMPT_KEYS.keywordExtract,
+  LUNA_PROMPT_KEYS.requery,
+  LUNA_PROMPT_KEYS.selfEval,
+  LUNA_PROMPT_KEYS.synthesis,
+  LUNA_PROMPT_KEYS.clarifyGuard,
+  LUNA_PROMPT_KEYS.workserverStructure,
   LUNA_PROMPT_KEYS.capture,
   LUNA_PROMPT_KEYS.dialogue,
   LUNA_PROMPT_KEYS.selfstudy,
   LUNA_PROMPT_KEYS.upgrade,
   LUNA_PROMPT_KEYS.report
 ];
+
+export type LunaLoadedPrompt = {
+  prompt_key: string;
+  content: string;
+  title: string;
+  level: LunaPromptLevel;
+  kind: LunaPromptKind;
+  sort_order: number;
+};
+
+export function withFallback(db: string | undefined, fallback: string): string {
+  const text = db?.trim() ?? "";
+  return text || fallback;
+}
 
 /** L1·L5 는 사람만 수정. 루나 자동 수정 API 에서 거부. */
 export function isHumanOnlyPromptLevel(level: string): boolean {
@@ -170,6 +197,45 @@ export async function getPrompts(
     return result;
   } catch (err) {
     console.error("[luna/prompts] getPrompts", err);
+    return result;
+  }
+}
+
+/** 여러 prompt_key 의 content+메타. 없으면 키만 빈 값. */
+export async function getPromptRows(
+  admin: SupabaseClient,
+  keys: string[]
+): Promise<Record<string, LunaLoadedPrompt>> {
+  const result: Record<string, LunaLoadedPrompt> = {};
+  if (keys.length === 0) return result;
+
+  try {
+    const { data, error } = await admin
+      .from("luna_prompts")
+      .select("prompt_key, content, title, level, kind, sort_order")
+      .in("prompt_key", keys)
+      .eq("is_active", true);
+
+    if (error) {
+      console.error("[luna/prompts] getPromptRows", error);
+      return result;
+    }
+
+    for (const row of data ?? []) {
+      const key = typeof row.prompt_key === "string" ? row.prompt_key : "";
+      if (!key) continue;
+      result[key] = {
+        prompt_key: key,
+        content: typeof row.content === "string" ? row.content : "",
+        title: typeof row.title === "string" ? row.title : key,
+        level: row.level as LunaPromptLevel,
+        kind: row.kind as LunaPromptKind,
+        sort_order: typeof row.sort_order === "number" ? row.sort_order : 0
+      };
+    }
+    return result;
+  } catch (err) {
+    console.error("[luna/prompts] getPromptRows", err);
     return result;
   }
 }

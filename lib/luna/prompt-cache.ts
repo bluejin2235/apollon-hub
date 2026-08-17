@@ -1,12 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { LunaTier } from "@/lib/luna/brain-models";
+import { WORKSERVER_STRUCTURE_FALLBACK } from "@/lib/luna/prompt-fallbacks";
 
 /** Anthropic 캐시 브레이크포인트 최대 4개. 우리는 고정 3 + 변동 0. */
 export const MAX_CACHE_BREAKPOINTS = 4;
 
-export const WORKSERVER_STRUCTURE = `[Work서버]
-T 드라이브는 진행 중 작업, P 드라이브는 보관·배포다.
-폴더 번호가 아니라 이름으로 판단한다. 실측된 경로는 검색 결과에만 있다.`;
+export const WORKSERVER_STRUCTURE = WORKSERVER_STRUCTURE_FALLBACK;
 
 export type CacheableBlock = {
   text: string;

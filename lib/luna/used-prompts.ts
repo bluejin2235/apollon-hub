@@ -1,67 +1,73 @@
 import { formatPromptNumber, type LunaPromptRow } from "@/lib/luna/prompts";
 
 export type UsedPromptRef = {
+  key: string;
+  step: string;
   number: string;
   title: string;
 };
 
-export function buildUsedPromptRefs(opts: {
-  clarifyRan: boolean;
-  searchRan: boolean;
-  answerRan: boolean;
-  l3Rows: Pick<LunaPromptRow, "prompt_key" | "title" | "level" | "sort_order">[];
-  l2Skills: Pick<LunaPromptRow, "title" | "level" | "sort_order" | "kind">[];
-}): UsedPromptRef[] {
-  const out: UsedPromptRef[] = [];
-  const l3ByKey = new Map(
-    opts.l3Rows
-      .filter((r) => r.prompt_key)
-      .map((r) => [r.prompt_key!, r])
-  );
+export type PromptUsageLog = {
+  record: (entry: UsedPromptRef) => void;
+  all: () => UsedPromptRef[];
+};
 
-  const pushL3 = (key: string, fallbackTitle: string) => {
-    const row = l3ByKey.get(key);
-    if (row) {
-      out.push({
-        number: formatPromptNumber(row),
-        title: row.title
-      });
-    } else {
-      out.push({ number: "", title: fallbackTitle });
-    }
-  };
+const IDENTITY_KEYS = new Set(["identity.apollon"]);
 
-  if (opts.clarifyRan) {
-    pushL3("talk.understand", "질문 이해");
-  }
-  if (opts.searchRan) {
-    pushL3("talk.search", "자료 찾기");
-  }
-  pushL3("talk.assume", "가정 확인");
-  if (opts.answerRan) {
-    pushL3("talk.answer", "답변 원칙");
-  }
+export function isIdentityUsedPrompt(item: UsedPromptRef): boolean {
+  if (IDENTITY_KEYS.has(item.key)) return true;
+  return item.number === "L1" || item.number.startsWith("L1-");
+}
 
-  for (const skill of opts.l2Skills) {
-    const suffix =
-      skill.kind === "perspective"
-        ? " 관점"
-        : skill.kind === "role"
-          ? " 역할"
-          : skill.kind === "task"
-            ? ""
-            : "";
-    out.push({
-      number: formatPromptNumber(skill),
-      title: `${skill.title}${suffix}`.trim()
-    });
-  }
-
+export function createPromptUsageLog(): PromptUsageLog {
+  const items: UsedPromptRef[] = [];
   const seen = new Set<string>();
-  return out.filter((item) => {
-    const key = `${item.number}::${item.title}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return item.title.length > 0;
+  return {
+    record(entry) {
+      const key = entry.key.trim();
+      const step = entry.step.trim();
+      const title = entry.title.trim();
+      if (!key || !step || !title) return;
+      const id = `${step}::${key}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      items.push({
+        key,
+        step,
+        number: entry.number.trim(),
+        title
+      });
+    },
+    all: () => items.slice()
+  };
+}
+
+export function recordPromptUse(
+  log: PromptUsageLog,
+  opts: {
+    key: string;
+    step: string;
+    title: string;
+    row?: Pick<LunaPromptRow, "level" | "sort_order" | "title" | "kind"> | null;
+  }
+) {
+  log.record({
+    key: opts.key,
+    step: opts.step,
+    number: opts.row ? formatPromptNumber(opts.row) : "",
+    title: opts.row?.title?.trim() || opts.title
   });
+}
+
+/** 요약 줄: L1 identity 생략, 같은 key 는 한 번만. */
+export function summarizeUsedPrompts(items: UsedPromptRef[]): UsedPromptRef[] {
+  const out: UsedPromptRef[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (isIdentityUsedPrompt(item)) continue;
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    out.push(item);
+  }
+  return out;
 }

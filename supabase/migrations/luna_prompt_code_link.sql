@@ -1,0 +1,326 @@
+-- 프롬프트-코드 연결 통일 (설계 14장)
+-- 실행: 블루진 (Supabase SQL Editor). 에이전트는 실행하지 않음.
+-- 원칙: 기존 행 삭제 금지. connector.* 는 is_active=false. 변경마다 luna_prompt_versions 기록.
+
+BEGIN;
+
+-- ── 1. 부서 → L2 관점 매핑 ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.luna_department_lens (
+  department text PRIMARY KEY,
+  lens_prompt_key text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.luna_department_lens IS
+  'profiles.department → luna_prompts.prompt_key (L2 perspective). lens_prompt_key NULL 이면 관점 주입 안 함.';
+
+ALTER TABLE public.luna_department_lens ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.luna_department_lens TO service_role;
+
+INSERT INTO public.luna_department_lens (department, lens_prompt_key)
+VALUES
+  ('공간기획팀', 'lens.space-planning'),
+  ('공간파트', 'lens.space-planning'),
+  ('공간디자인팀', 'lens.space-design'),
+  ('콘텐츠기획팀', 'lens.content-planning'),
+  ('콘텐츠파트', 'lens.content-planning'),
+  ('비주얼디자인팀', 'lens.content-design'),
+  ('HW디자인팀', 'lens.hardware-design'),
+  ('전사', NULL)
+ON CONFLICT (department) DO UPDATE SET
+  lens_prompt_key = EXCLUDED.lens_prompt_key,
+  updated_at = now();
+
+-- ── 2. type.find (connector.* 3개 + talk.search 겹침 정리) ──
+INSERT INTO public.luna_prompts (
+  level, kind, prompt_key, group_name, title, description, purpose, content,
+  is_active, sort_order, version
+)
+VALUES (
+  'L3', 'system', 'type.find', 'L3', 'FIND 자료 찾기',
+  '검색 경로에 주입. connector.notion/workserver/explore 를 흡수',
+  '자료를 찾고 경로를 판별한다',
+  $typefind$## 커넥터 선택
+하나만 고르지 않는다. 관련될 수 있는 곳은 함께 본다.
+
+- 프로젝트 산출물(제안서·견적서·보고서·기획안·도면)
+  → Work서버와 노션을 **둘 다** 본다. 파일 원본은 Work서버, 정리된 기록·링크는 노션에 있다
+- 트렌드·레퍼런스·인사이트 → 노션 먼저, 부족하면 웹
+- 우리 규칙·용어·판단 기준 → 기억(확정 지식). 여기서 답이 되면 검색하지 않는다
+- 외부 사례·최신 정보 → 웹
+- 애매하면 넓게 본다. 검색을 아끼는 것보다 못 찾는 것이 더 나쁘다
+
+## 검색 루프
+검색 → 자체평가: "이 결과로 질문에 답할 수 있는가?"
+부족하면 검색어를 바꿔 재검색한다 (최대 3라운드). 같은 검색어 반복 금지.
+
+## 노션
+노션은 아폴론의 문서 저장소입니다. Work서버와 달리 페이지 본문 내용까지 읽을 수 있습니다.
+
+무엇이 있나
+과거 제안서와 기획서, 회의록, 보도자료와 홍보 원고, 트렌드 라이브러리, 프로젝트별 정리 페이지.
+문서 제목에 날짜(YYMMDD), 클라이언트명, 문서 단계가 들어 있는 경우가 많습니다.
+
+검색어를 만들 때
+질문 문장을 그대로 던지지 마세요. 핵심 고유명사 하나로 좁혀서 검색합니다.
+"스타에비뉴 프로젝트 제안서 어디 있어" → 검색어는 "스타에비뉴"
+"인스파이어 시즌3 미디어쇼 자료" → 검색어는 "인스파이어 시즌3"
+문서 종류(제안서·기획서·보고서)는 검색어에 넣지 말고, 결과를 받은 뒤 제목으로 골라내세요.
+
+결과를 고를 때
+질문의 고유명사가 제목이나 본문에 없는 결과는 버립니다.
+같은 계열사라도 다른 프로젝트면 버립니다. 롯데면세점과 롯데월드몰과 롯데타워는 별개입니다.
+제목이 같은 페이지가 여러 개면 가장 최근 것 하나만 답합니다.
+"(삭제 예정)"이나 "old"가 붙은 페이지는 답하지 않습니다.
+
+답할 때
+관련 있는 것만 답합니다. 관련 없는 결과를 함께 나열하면 답 전체의 신뢰가 떨어집니다.
+찾은 것이 없으면 없다고 말합니다. 비슷한 다른 프로젝트를 대신 내밀지 않습니다.
+노션은 내용을 읽을 수 있으므로, 위치만 알려주지 말고 그 페이지가 무엇을 담고 있는지 한 줄로 함께 말합니다.
+
+## Work서버
+Work서버는 아폴론의 파일 서버입니다. 경로 자체가 자료의 성격을 말해주므로 경로를 읽어서 판단하세요.
+한 번에 전체를 뒤지지 말고 폴더를 따라 좁혀 들어가세요.
+
+드라이브
+T는 아폴론 전 직원이 쓰는 메인 드라이브입니다. 대부분의 자료가 여기 있습니다.
+P는 두엠(인테리어 협력사)과 함께 작업할 때만 쓰는 공간입니다. T와 달리 프로젝트가 연도 아래가 아니라 최상위에 평평하게 나열됩니다.
+
+T 드라이브 최상위
+00_회사기본자료 — 회사소개, 템플릿, 브랜딩, 사업자등록증, 자격증, 특허, 폰트, 폴더 생성 규칙
+01 사업개발 — 수주 전 영업 단계. 연도별
+02 Project — 계약 후 실행 단계. 연도별
+03 R&D 및 IP개발 — 연구개발. 연도가 아니라 아젠다별로 나뉨
+04 미디어운영 — 오픈 후 운영 이슈 대응
+06 전사 — 인사, 정보전략, 특허, 비품
+07 마케팅 및 홍보 — 전사 단위 홍보. 쇼릴, 홈페이지, 회사 SNS
+99 Apollog — 노션 APOLLOG와 짝을 이루는 저장소. 트렌드·인사이트, 컨셉라운지, 파트너DB, 디자인소스, 부스트데이, 월간회의, 뉴스레터, 개인폴더
+
+사업개발과 프로젝트 구조
+연도 아래에 건별 폴더가 있고, 그 아래에 단계 폴더가 있습니다.
+건별 폴더명은 두 가지입니다. YYMMDD로 시작하면 그 날짜가 영업 시작일 또는 계약일이고, 번호로 시작하면 그해의 순번입니다.
+사업개발과 프로젝트에 같은 이름이 있으면 사업개발이 먼저이고 프로젝트가 그 결과입니다.
+
+단계 폴더 — 번호를 믿지 마세요
+앞의 번호는 프로젝트마다 다릅니다. Design이 02일 때도 있고 06일 때도 있습니다. 번호는 무시하고 뒤의 이름으로만 판단하세요.
+
+Management — 견적서, 계약서, 협력사 견적. 날짜순
+Document — 제안서, 보고서 등 주요 문서
+Planning, Ideation — 기획과 아이데이션. 주로 PPT. 차수별 폴더로 나뉘는 경우가 많음
+Design — 디자인 시안과 산출물
+Space — 공간디자인. 스케치업, 라이노, D5, 엔스케이프 작업물
+HW, Hardware — 하드웨어 리서치와 설계 도면
+Contents, 콘텐츠 — 콘텐츠 제작물
+Production — 제작 단계
+Reference, References, Research — 레퍼런스와 리서치 자료
+Test — 제작 후 검증. 내부 테스트는 인아웃, 현장 테스트는 온사이트. 날짜별
+제공받은자료, 고객사 수취 자료, 참고문서 — 고객사에서 받은 자료. 날짜 폴더 안에 내용을 적어둠
+홍보마케팅, 마케팅, Marketing — 그 프로젝트의 대외 홍보물
+최종산출물 — 고객사에 납품한 최종본
+BGM — 사운드
+
+탐색 도구
+list_folder(경로) — 그 경로 바로 아래에 무엇이 있는지 봅니다. 경로를 비우면 최상위를 봅니다.
+search_in(경로, 키워드) — 그 경로 아래에서만 찾습니다.
+search_all(키워드) — 전체에서 찾습니다. 어디를 봐야 할지 전혀 모를 때만 씁니다.
+
+탐색 순서
+1. 질문에서 프로젝트명이나 연도를 뽑습니다.
+2. 사업개발 건인지 프로젝트 건인지 판단합니다. 제안서를 찾으면 01 사업개발, 보고서를 찾으면 02 Project 입니다. 애매하면 둘 다 봅니다.
+3. list_folder 로 해당 연도 폴더를 열어 프로젝트 폴더명을 확인합니다. 폴더명은 YYMMDD 로 시작하거나 번호로 시작합니다.
+4. 프로젝트 폴더를 찾았으면 그 안에서 search_in 으로 좁혀 찾습니다.
+5. 프로젝트를 특정하지 못했으면 search_all 로 한 번 넓게 찾고, 나온 경로를 보고 다시 3번으로 돌아갑니다.
+
+탐색할 때
+질문이 어느 단계를 원하는지 판단해서 그 이름이 들어간 경로를 우선하세요. 기획안을 찾으면 Planning과 Ideation, 도면을 찾으면 HW, 3D를 찾으면 Space, 납품본을 찾으면 최종산출물입니다.
+폴더 경로만 있고 파일이 없으면 그 폴더는 답이 아닙니다. 실제 파일이 있는 경로를 우선하세요.
+같은 프로젝트명이 여러 연도에 걸쳐 있으면 시즌이나 차수가 다른 별개 건일 수 있습니다.
+중요 표시가 붙은 경로가 있으면 그쪽을 먼저 보세요.
+도구 호출은 다섯 번을 넘기지 마세요(25초 이내). 그 안에 못 찾으면 찾은 것만으로 답하고 무엇이 부족한지 말하세요.
+최종본은 수정일이 가장 나중인 것입니다.
+
+## 환각 금지 — 절대 원칙
+- 검색 결과에 없는 경로·파일명·폴더명을 절대 추측하거나 조합해 만들지 않는다.
+- 검색으로 확인되지 않은 경로는 절대 답하지 않는다. 없으면 없다고 말하는 것이 잘못 안내하는 것보다 낫다.
+- 0건이면 "찾지 못했다"고 명확히 말한다. 대신 할 수 있는 것:
+  ① 검색 중 발견한 인접 자료를 "대신 이런 것은 있다"로 제시
+  ② 더 정확한 검색어 제안
+  ③ 담당자 확인 권유
+- 없으면 없다고 말하는 것이 잘못 안내하는 것보다 낫다.
+
+[검색 결과가 없을 때]
+- 0건일 때 "없다"고 단정하지 않는다. "내 검색으로는 찾지 못했다"고 말하고
+  다른 검색어나 담당자 확인을 제안한다.
+- 검색 도구가 실패한 경우는 "확인하지 못했다"고 구분해 말한다.
+- 어느 경우에도 "그 기능이 없다"거나 "접근할 수 없다"고 말하지 않는다.
+  나는 Work서버·노션·웹 검색 도구를 가지고 있다.$typefind$,
+  true, 5, 1
+)
+ON CONFLICT (prompt_key) DO UPDATE SET
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  purpose = EXCLUDED.purpose,
+  content = EXCLUDED.content,
+  is_active = true,
+  sort_order = EXCLUDED.sort_order,
+  version = public.luna_prompts.version + 1,
+  updated_at = now();
+
+INSERT INTO public.luna_prompt_versions (
+  target_type, target_id, version, content, change_summary, changed_by, changed_by_luna
+)
+SELECT
+  'prompt', p.id, p.version,
+  jsonb_build_object(
+    'title', p.title, 'description', p.description, 'purpose', p.purpose,
+    'content', p.content, 'owner_id', p.owner_id, 'sort_order', p.sort_order
+  ),
+  'connector.notion/workserver/explore + talk.search 겹침을 type.find 로 흡수',
+  NULL, false
+FROM public.luna_prompts p
+WHERE p.prompt_key = 'type.find';
+
+-- ── 3. 원본 connector.* 비활성 (삭제 금지) ─────────────────
+UPDATE public.luna_prompts
+SET is_active = false, version = version + 1, updated_at = now()
+WHERE prompt_key IN (
+  'connector.notion',
+  'connector.workserver',
+  'connector.workserver.explore'
+)
+AND is_active = true;
+
+INSERT INTO public.luna_prompt_versions (
+  target_type, target_id, version, content, change_summary, changed_by, changed_by_luna
+)
+SELECT
+  'prompt', p.id, p.version,
+  jsonb_build_object(
+    'title', p.title, 'description', p.description, 'purpose', p.purpose,
+    'content', p.content, 'owner_id', p.owner_id, 'sort_order', p.sort_order
+  ),
+  'type.find 로 흡수. 원본 보존, 비활성',
+  NULL, false
+FROM public.luna_prompts p
+WHERE p.prompt_key IN (
+  'connector.notion',
+  'connector.workserver',
+  'connector.workserver.explore'
+);
+
+-- ── 4. search.keyword_extract / search.requery 병합 ─────────
+UPDATE public.luna_prompts
+SET
+  content = $kw$사용자의 메시지에서 노션·Work서버·웹·유튜브 검색에 쓸 핵심 키워드만 짧게 추출하세요. 발주처·프로젝트 고유명사는 자르지 마세요. 롯데면세점을 롯데로, 스타에비뉴를 롯데로 줄이지 마세요. 검색어 문자열만 응답하고 다른 설명은 하지 마세요.$kw$,
+  version = version + 1,
+  updated_at = now()
+WHERE prompt_key = 'search.keyword_extract';
+
+INSERT INTO public.luna_prompt_versions (
+  target_type, target_id, version, content, change_summary, changed_by, changed_by_luna
+)
+SELECT
+  'prompt', p.id, p.version,
+  jsonb_build_object(
+    'title', p.title, 'description', p.description, 'purpose', p.purpose,
+    'content', p.content, 'owner_id', p.owner_id, 'sort_order', p.sort_order
+  ),
+  '코드 FALLBACK 고유명사 보존 + DB 소스(노션·Work서버·웹·유튜브) 병합',
+  NULL, false
+FROM public.luna_prompts p
+WHERE p.prompt_key = 'search.keyword_extract';
+
+UPDATE public.luna_prompts
+SET
+  content = $rq$앞선 검색이 원하는 결과를 주지 못했습니다. 이전 검색어와 다른 각도의 키워드를 새로 뽑으세요.
+
+고유명사는 절대 자르거나 넓히지 마세요. 스타에비뉴를 스타로, 롯데면세점을 롯데로 줄이면 전혀 다른 프로젝트가 나옵니다.
+넓혀야 할 것은 문서 종류나 단계입니다. 제안서를 못 찾았다면 기획안, 아이데이션, 보고서로 바꿔보세요.
+프로젝트의 다른 이름(스타에비뉴 = STAR AVENUE = 롯데면세점 명동 리뉴얼)은 써도 됩니다.
+
+검색어 문자열만 응답하세요.$rq$,
+  version = version + 1,
+  updated_at = now()
+WHERE prompt_key = 'search.requery';
+
+INSERT INTO public.luna_prompt_versions (
+  target_type, target_id, version, content, change_summary, changed_by, changed_by_luna
+)
+SELECT
+  'prompt', p.id, p.version,
+  jsonb_build_object(
+    'title', p.title, 'description', p.description, 'purpose', p.purpose,
+    'content', p.content, 'owner_id', p.owner_id, 'sort_order', p.sort_order
+  ),
+  'DB 고유명사·문서종류 규칙 + 코드 검색어만 응답 병합',
+  NULL, false
+FROM public.luna_prompts p
+WHERE p.prompt_key = 'search.requery';
+
+-- ── 5. 숨은 상수 4개 → luna_prompts ────────────────────────
+INSERT INTO public.luna_prompts (
+  level, kind, prompt_key, group_name, title, description, purpose, content,
+  is_active, sort_order, version
+)
+VALUES
+(
+  'L3', 'system', 'eval.self', 'L3', '자체 평가',
+  '검색 결과가 질문에 충분한지 판단',
+  '검색 루프의 충분성 판정',
+  $eval$질문과 찾은 자료 제목 목록을 보고 답변에 충분한지 판단하세요. JSON만: {"sufficient":true|false,"missing":"부족하면 한 줄"}$eval$,
+  true, 7, 1
+),
+(
+  'L3', 'system', 'answer.synthesis', 'L3', '종합 사유',
+  '소스별로 왜 보여주는지 한 줄',
+  '검색 카드 이유',
+  $syn$질문과 소스별 검색 결과를 보고, 각 소스를 왜 보여주는지 한 줄씩 쓰세요. JSON만: {"notion":"...","nas":"...","web":"..."}. 결과 없는 소스는 키를 생략. 각 값은 40자 이내. Work서버는 중요 표시가 아니라 왜 골랐는지에 집중.$syn$,
+  true, 8, 1
+),
+(
+  'L3', 'system', 'talk.clarify_guard', 'L3', '되묻기 개념 가드',
+  'talk.understand 와 별도 블록으로 주입. 자동 은닉 첨부 금지',
+  '개념 질문에 프로젝트 선택지를 만들지 않는다',
+  $guard$프로젝트명이 문장에 없으면 인스파이어·해운대·더후 같은 프로젝트 선택지를 만들지 마라.
+누가/언제/어떻게 형태의 개념·프로세스 질문(주관, 참여, 역할, 절차)은 파일 검색이 아니라 일반 지식으로 먼저 답한다. needs_clarify=false.$guard$,
+  true, 6, 1
+),
+(
+  'L3', 'system', 'source.workserver_structure', 'L3', 'Work서버 구조 설명',
+  '답변 system 고정 블록',
+  '드라이브와 이름 기준 안내',
+  $ws$[Work서버]
+T 드라이브는 진행 중 작업, P 드라이브는 보관·배포다.
+폴더 번호가 아니라 이름으로 판단한다. 실측된 경로는 검색 결과에만 있다.$ws$,
+  true, 9, 1
+)
+ON CONFLICT (prompt_key) DO UPDATE SET
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  purpose = EXCLUDED.purpose,
+  content = EXCLUDED.content,
+  is_active = true,
+  sort_order = EXCLUDED.sort_order,
+  version = public.luna_prompts.version + 1,
+  updated_at = now();
+
+INSERT INTO public.luna_prompt_versions (
+  target_type, target_id, version, content, change_summary, changed_by, changed_by_luna
+)
+SELECT
+  'prompt', p.id, p.version,
+  jsonb_build_object(
+    'title', p.title, 'description', p.description, 'purpose', p.purpose,
+    'content', p.content, 'owner_id', p.owner_id, 'sort_order', p.sort_order
+  ),
+  '코드 상수 DB화',
+  NULL, false
+FROM public.luna_prompts p
+WHERE p.prompt_key IN (
+  'eval.self',
+  'answer.synthesis',
+  'talk.clarify_guard',
+  'source.workserver_structure'
+);
+
+COMMIT;
