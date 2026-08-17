@@ -11,7 +11,7 @@ import {
   resolveProviderModel,
   type LunaUsageTokens
 } from "@/lib/luna/engine";
-import { llmStreamText } from "@/lib/luna/llm/client";
+import { llmStreamText, lunaLlmComplete } from "@/lib/luna/llm/client";
 import {
   buildCachedSystem,
   formatGlossaryBlock,
@@ -53,6 +53,26 @@ import {
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import {
+  classifiedRows,
+  classificationPublic,
+  emptyClassification,
+  formatLibraryBlock,
+  formatTypeCatalog,
+  formatTypeLabels,
+  isLowConfidence,
+  loadLibraryItems,
+  loadQuestionTypes,
+  matchLibraryItems,
+  parseClassificationJson,
+  recordUnclassifiedQuestion,
+  resolveClassification,
+  typesNeedLibrary,
+  typesNeedSearch,
+  typesSkipClarify,
+  type QuestionTypeRow
+} from "@/lib/luna/question-types";
+import {
+  applyTypeSearchOverride,
   formatConnectorRoutingSummary,
   hasManualConnectors,
   hasManualSkills,
@@ -82,7 +102,11 @@ import {
   REQUERY_FALLBACK,
   SELF_EVAL_FALLBACK,
   SYNTHESIS_REASON_FALLBACK,
+  TYPE_CLASSIFY_FALLBACK,
   TYPE_FIND_FALLBACK,
+  TYPE_KNOW_FALLBACK,
+  TYPE_LEARN_FALLBACK,
+  TYPE_MAKE_FALLBACK,
   WORKSERVER_STRUCTURE_FALLBACK
 } from "@/lib/luna/prompt-fallbacks";
 
@@ -369,10 +393,10 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 function buildL3PromptBlock(opts: {
   understand?: string;
   assume?: string;
-  search?: string;
+  typeBlocks?: string[];
   answer?: string;
 }): string {
-  return [opts.understand, opts.assume, opts.search, opts.answer]
+  return [opts.understand, opts.assume, ...(opts.typeBlocks ?? []), opts.answer]
     .map((s) => s?.trim() ?? "")
     .filter(Boolean)
     .join("\n\n");
@@ -751,6 +775,18 @@ export async function POST(request: NextRequest) {
     LUNA_PROMPT_KEYS.find,
     TYPE_FIND_FALLBACK
   );
+  const classifyPick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.classify,
+    TYPE_CLASSIFY_FALLBACK
+  );
+  const knowPick = pickLoaded(promptRows, LUNA_PROMPT_KEYS.know, TYPE_KNOW_FALLBACK);
+  const makePick = pickLoaded(promptRows, LUNA_PROMPT_KEYS.make, TYPE_MAKE_FALLBACK);
+  const learnTypePick = pickLoaded(
+    promptRows,
+    LUNA_PROMPT_KEYS.learn,
+    TYPE_LEARN_FALLBACK
+  );
   const answerPick = pickLoaded(promptRows, LUNA_PROMPT_KEYS.answer, "");
   const keywordPick = pickLoaded(
     promptRows,
@@ -795,6 +831,41 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join("\n\n");
   const webSearchHint = "";
+
+  const typePromptByKey: Record<
+    string,
+    { text: string; row: LunaLoadedPrompt | undefined; source: "db" | "fallback"; title: string }
+  > = {
+    [LUNA_PROMPT_KEYS.find]: {
+      text: findPick.text,
+      row: findPick.row,
+      source: findPick.source,
+      title: "FIND 자료 찾기"
+    },
+    [LUNA_PROMPT_KEYS.know]: {
+      text: knowPick.text,
+      row: knowPick.row,
+      source: knowPick.source,
+      title: "KNOW 답변"
+    },
+    [LUNA_PROMPT_KEYS.make]: {
+      text: makePick.text,
+      row: makePick.row,
+      source: makePick.source,
+      title: "MAKE 답변"
+    },
+    [LUNA_PROMPT_KEYS.learn]: {
+      text: learnTypePick.text,
+      row: learnTypePick.row,
+      source: learnTypePick.source,
+      title: "LEARN 답변"
+    }
+  };
+
+  const [{ types: questionTypes }, libraryItems] = await Promise.all([
+    loadQuestionTypes(admin, { activeOnly: true }),
+    loadLibraryItems(admin)
+  ]);
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData, error: learningsError } = await admin
@@ -1088,12 +1159,147 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        // ——— 단계 0: 유형 판정 ———
+        let classification = emptyClassification();
+        let classifiedTypeRows: QuestionTypeRow[] = [];
+        pushStep("classify", "running", "유형 판정 중");
+        try {
+          const classifyRes = await lunaLlmComplete(admin, {
+            tier: "C",
+            feature: "understand",
+            system: `${classifyPick.text}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
+            user: userText,
+            maxTokens: 256
+          });
+          recordPromptUse(usageLog, {
+            key: LUNA_PROMPT_KEYS.classify,
+            step: "유형 판정",
+            title: "유형 판정",
+            row: classifyPick.row
+          });
+          logPromptInject({
+            key: LUNA_PROMPT_KEYS.classify,
+            step: "유형 판정",
+            source: classifyPick.source,
+            text: classifyPick.text
+          });
+          pushModelStep(modelSteps, admin, {
+            label: "유형 판정",
+            model: classifyRes.model_label,
+            tier: "C",
+            model_id: classifyRes.model_id,
+            usage: classifyRes.usage
+          });
+          const parsed = parseClassificationJson(classifyRes.text);
+          classification = resolveClassification(parsed, questionTypes, {
+            forceSearch: hasManualConnectors(manualConnectorFlags)
+          });
+          console.log("[luna/classify]", {
+            types: classification.types,
+            reason: classification.reason,
+            confidence: classification.confidence,
+            switched: classification.switched
+          });
+        } catch (err) {
+          console.error("[luna/chat] classify", err);
+          classification = emptyClassification();
+        }
+        classifiedTypeRows = classifiedRows(questionTypes, classification.types);
+        if (isLowConfidence(classification)) {
+          void recordUnclassifiedQuestion(admin, {
+            question: userText,
+            classification,
+            conversationId
+          });
+        }
+        pushStep(
+          "classify",
+          "done",
+          formatTypeLabels(classifiedTypeRows) || "유형 미정"
+        );
+
+        const needsSearch = typesNeedSearch(classifiedTypeRows);
+        if (!hasManualConnectors(manualConnectorFlags)) {
+          connectorRouting = applyTypeSearchOverride(connectorRouting, {
+            needsSearch,
+            manual: false,
+            message: routingMessage,
+            hasAttachments
+          });
+          notionEnabled = connectorRouting.connectors.notion;
+          webEnabled = connectorRouting.connectors.web;
+          nasEnabled = connectorRouting.connectors.nas;
+        }
+
+        const libraryHits = typesNeedLibrary(classifiedTypeRows)
+          ? matchLibraryItems(libraryItems, userText)
+          : [];
+
         // ——— 단계 1: 되묻기 ———
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
           hasManualSkills(manualSkillIds) ||
-          shouldSkipProjectClarify(userText);
+          shouldSkipProjectClarify(userText) ||
+          typesSkipClarify(classifiedTypeRows);
+
+        if (
+          typesNeedLibrary(classifiedTypeRows) &&
+          libraryHits.length === 0 &&
+          !lastHadClarify &&
+          !hasAttachments
+        ) {
+          pushStep("clarify", "done", "양식 확인");
+          const makeQuestion = "어떤 양식으로 만들까요?";
+          const makeOptions =
+            libraryItems.length > 0
+              ? [
+                  ...libraryItems.slice(0, 3).map((i) => i.title),
+                  "기타 — 직접 입력"
+                ]
+              : ["기존 양식을 알려 주기", "초안만 잡아 주기", "기타 — 직접 입력"];
+          emit(controller, encoder, {
+            type: "clarify",
+            question: makeQuestion,
+            options: makeOptions
+          });
+          const makeNow = Date.now();
+          await admin.from("luna_messages").insert([
+            {
+              id: userMessageId,
+              conversation_id: conversationId,
+              role: "user",
+              content: userText,
+              engine: usedEngine,
+              metadata: {},
+              created_at: new Date(makeNow - 1000).toISOString()
+            },
+            {
+              id: assistantMessageId,
+              conversation_id: conversationId,
+              role: "assistant",
+              content: makeQuestion,
+              engine: usedEngine,
+              metadata: {
+                clarify: { question: makeQuestion, options: makeOptions },
+                steps,
+                model_steps: modelSteps,
+                model_label: tierB.model_label,
+                duration_ms: Date.now() - startedAt,
+                used_prompts: usageLog.all(),
+                classification: classificationPublic(
+                  classification,
+                  questionTypes
+                )
+              },
+              created_at: new Date(makeNow).toISOString()
+            }
+          ]);
+          await touchConversation();
+          scheduleConversationTitle(admin, conversationId);
+          controller.close();
+          return;
+        }
 
         if (skipClarify) {
           pushStep("clarify", "skip", "의도 확인");
@@ -1219,7 +1425,11 @@ export async function POST(request: NextRequest) {
                   model_steps: modelSteps,
                   model_label: tierB.model_label,
                   duration_ms: Date.now() - startedAt,
-                  used_prompts: usageLog.all()
+                  used_prompts: usageLog.all(),
+                  classification: classificationPublic(
+                    classification,
+                    questionTypes
+                  )
                 },
                 created_at: new Date(clarifyNow).toISOString()
               }
@@ -1240,7 +1450,7 @@ export async function POST(request: NextRequest) {
             (Boolean(clarifyOriginalUser) &&
               isSearchRequestMessage(clarifyOriginalUser!)));
         const anySearch =
-          notionEnabled || webEnabled || nasEnabled || isSearchRequest;
+          needsSearch && (notionEnabled || webEnabled || nasEnabled);
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
@@ -1710,10 +1920,24 @@ export async function POST(request: NextRequest) {
           historyMessages.push({ role: "user", content: userText });
         }
 
+        const typeBlocks: string[] = [];
+        for (const row of classifiedTypeRows) {
+          if (!row.prompt_key) {
+            const extra = [row.criteria, row.answer_form].filter(Boolean).join("\n");
+            if (extra) typeBlocks.push(`[유형 ${row.label}]\n${extra}`);
+            continue;
+          }
+          const pick = typePromptByKey[row.prompt_key];
+          if (pick?.text) typeBlocks.push(pick.text);
+        }
+        if (libraryHits.length > 0) {
+          typeBlocks.push(formatLibraryBlock(libraryHits));
+        }
+
         const l3Prompt = buildL3PromptBlock({
           understand: understandPick.text,
           assume: talkAssume,
-          search: anySearch ? typeFindPrompt : "",
+          typeBlocks,
           answer: talkAnswer
         });
 
@@ -1783,18 +2007,21 @@ export async function POST(request: NextRequest) {
             row: assumePick.row
           });
         }
-        if (anySearch && typeFindPrompt) {
+        for (const row of classifiedTypeRows) {
+          if (!row.prompt_key) continue;
+          const pick = typePromptByKey[row.prompt_key];
+          if (!pick?.text) continue;
           recordPromptUse(usageLog, {
-            key: LUNA_PROMPT_KEYS.find,
+            key: row.prompt_key,
             step: "답변 생성",
-            title: "FIND 자료 찾기",
-            row: findPick.row
+            title: pick.title,
+            row: pick.row
           });
           logPromptInject({
-            key: LUNA_PROMPT_KEYS.find,
+            key: row.prompt_key,
             step: "답변 생성",
-            source: findPick.source,
-            text: typeFindPrompt
+            source: pick.source,
+            text: pick.text
           });
         }
         if (talkAnswer) {
@@ -1835,7 +2062,8 @@ export async function POST(request: NextRequest) {
           memory_count: learningsRows.length,
           used_prompts: usedPrompts,
           auto_routing: autoRoutingUsed,
-          connector_routing: connectorRoutingMeta
+          connector_routing: connectorRoutingMeta,
+          classification: classificationPublic(classification, questionTypes)
         });
 
         let assistantText = "";
@@ -1973,6 +2201,10 @@ export async function POST(request: NextRequest) {
           assistantMeta.source_reasons = sourceReasons;
         }
         assistantMeta.used_prompts = usedPrompts;
+        assistantMeta.classification = classificationPublic(
+          classification,
+          questionTypes
+        );
         if (connectorRouting) {
           assistantMeta.connector_routing = {
             nas: nasEnabled,

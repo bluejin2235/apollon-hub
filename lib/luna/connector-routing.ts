@@ -16,7 +16,9 @@ export type ConnectorRoutingReason =
   | "trend_reference"
   | "external_latest"
   | "file_project"
-  | "ambiguous_wide";
+  | "ambiguous_wide"
+  | "type_no_search"
+  | "type_needs_search";
 
 export type ConnectorRoutingResult = {
   connectors: ConnectorFlags;
@@ -158,6 +160,55 @@ export function resolveConnectorsAuto(
 
 export function hasManualConnectors(c?: ConnectorFlags | null): boolean {
   return Boolean(c && (c.notion || c.web || c.nas));
+}
+
+/** 유형 판정 이후 검색 여부를 덮어쓴다. 수동 커넥터는 유지. */
+export function applyTypeSearchOverride(
+  current: ConnectorRoutingResult | null,
+  opts: {
+    needsSearch: boolean;
+    manual: boolean;
+    message: string;
+    hasAttachments: boolean;
+  }
+): ConnectorRoutingResult {
+  if (opts.manual && current) return current;
+  if (opts.hasAttachments) {
+    return {
+      connectors: NONE,
+      reason: "attachment",
+      reasonLabel: "첨부 파일 분석"
+    };
+  }
+  if (!opts.needsSearch) {
+    return {
+      connectors: NONE,
+      reason: "type_no_search",
+      reasonLabel: "유형 판정: 검색 없음"
+    };
+  }
+  if (
+    current &&
+    (current.connectors.nas || current.connectors.notion || current.connectors.web)
+  ) {
+    return current;
+  }
+  const routed = resolveConnectorsAuto(opts.message, {
+    hasAttachments: false,
+    manual: null
+  });
+  if (routed.connectors.nas || routed.connectors.notion || routed.connectors.web) {
+    return {
+      ...routed,
+      reason: "type_needs_search",
+      reasonLabel: `유형 판정: 검색 · ${routed.reasonLabel}`
+    };
+  }
+  return {
+    connectors: { nas: true, notion: true, web: false },
+    reason: "type_needs_search",
+    reasonLabel: "유형 판정: 검색"
+  };
 }
 
 export function hasManualSkills(ids: {

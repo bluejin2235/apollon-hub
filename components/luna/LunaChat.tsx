@@ -28,7 +28,9 @@ import {
   parseNumberedChoices,
   resolveChoiceInput,
   normalizeUsedPrompts,
-  type UsedPromptRef
+  normalizeClassification,
+  type UsedPromptRef,
+  type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
 import type { FeedbackReason } from "@/lib/luna/feedback";
 import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
@@ -108,6 +110,7 @@ export type LunaChatMessage = {
   /** reflect 후 다음 턴에 표시할 정정 후보 칩 */
   correctionCandidateIds?: string[] | null;
   usedPrompts?: UsedPromptRef[] | null;
+  classification?: LunaClassificationMeta | null;
   keywords?: string[] | null;
   wsToolCalls?: unknown[] | null;
   connectorRouting?: LunaConnectorRoutingMeta | null;
@@ -343,6 +346,7 @@ export type LunaStreamEventResult =
       memoryCount: number | null;
       usedPrompts: UsedPromptRef[] | null;
       connectorRouting: LunaConnectorRoutingMeta | null;
+      classification: LunaClassificationMeta | null;
     }
   | {
       kind: "ids";
@@ -474,7 +478,8 @@ export function consumeLunaStreamEvents(
             ? memoryCount
             : null,
         usedPrompts: normalizeUsedPrompts(parsed.used_prompts),
-        connectorRouting: normalizeConnectorRouting(parsed.connector_routing)
+        connectorRouting: normalizeConnectorRouting(parsed.connector_routing),
+        classification: normalizeClassification(parsed.classification)
       };
     }
   } catch {
@@ -979,6 +984,7 @@ export function LunaChat({
                 teams={m.teams}
                 memoryCount={m.memoryCount}
                 usedPrompts={m.usedPrompts}
+                classification={m.classification}
                 detailMeta={detailMeta}
                 correctionCandidateIds={m.correctionCandidateIds}
                 hideInlineClarifyOptions

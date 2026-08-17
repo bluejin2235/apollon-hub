@@ -21,6 +21,7 @@ export type LunaSelfstudySub = "history" | "stuck" | "settings";
 
 export type LunaBrainSub =
   | "prompts"
+  | "types"
   | "upgrade"
   | "report"
   | "model"
@@ -90,6 +91,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "두뇌",
     subs: [
       { slug: "prompts", label: "프롬프트" },
+      { slug: "types", label: "유형" },
       { slug: "upgrade", label: "자기개선" },
       { slug: "report", label: "성장 루프" },
       { slug: "model", label: "모델·비용" },

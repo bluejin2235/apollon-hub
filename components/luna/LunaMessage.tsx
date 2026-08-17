@@ -20,7 +20,8 @@ import type { LunaCard } from "@/lib/luna/tavily";
 import {
   countSourceBadges,
   parseAssumeMarkers,
-  type UsedPromptRef
+  type UsedPromptRef,
+  type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
@@ -107,6 +108,7 @@ type LunaMessageProps = {
   correctionCandidateIds?: string[] | null;
   onCorrectionCancel?: (candidateId: string) => void;
   usedPrompts?: UsedPromptRef[] | null;
+  classification?: LunaClassificationMeta | null;
   detailMeta?: LunaDetailMeta | null;
 };
 
@@ -803,10 +805,22 @@ function DetailMetaFooter({
   );
 }
 
-function UsedPromptsFooter({ usedPrompts }: { usedPrompts: UsedPromptRef[] }) {
+function UsedPromptsFooter({
+  usedPrompts,
+  classification
+}: {
+  usedPrompts: UsedPromptRef[];
+  classification?: LunaClassificationMeta | null;
+}) {
   const [open, setOpen] = useState(false);
   const summary = summarizeUsedPrompts(usedPrompts);
-  if (summary.length === 0 && usedPrompts.length === 0) return null;
+  const typeLabel =
+    classification?.labels?.length
+      ? classification.labels.join("+")
+      : classification?.types?.length
+        ? classification.types.join("+")
+        : "";
+  if (summary.length === 0 && usedPrompts.length === 0 && !typeLabel) return null;
 
   const desktopParts = summary.map((p) =>
     p.number ? `${p.number} ${p.title}` : p.title
@@ -823,12 +837,18 @@ function UsedPromptsFooter({ usedPrompts }: { usedPrompts: UsedPromptRef[] }) {
 
   return (
     <div className="mt-1.5 text-[10.5px] leading-[1.6] text-[#9aa0a8] max-md:text-[10px]">
+      {typeLabel ? <span>{typeLabel}</span> : null}
+      {typeLabel && (summary.length > 0 || usedPrompts.length > 0) ? (
+        <span> · </span>
+      ) : null}
       {summary.length > 0 ? (
         <>
           <span>사용한 판단 · </span>
           <span className="max-md:hidden">{desktopParts.join(" · ")}</span>
           <span className="hidden max-md:inline">{mobileParts.join(" · ")}</span>
         </>
+      ) : usedPrompts.length > 0 || typeLabel ? (
+        typeLabel ? null : <span>사용한 판단 · 정체성</span>
       ) : (
         <span>사용한 판단 · 정체성</span>
       )}
@@ -841,6 +861,29 @@ function UsedPromptsFooter({ usedPrompts }: { usedPrompts: UsedPromptRef[] }) {
       </button>
       {open ? (
         <div className="mt-1.5 space-y-1 rounded-md border border-[#ececec] bg-[#fafafa] px-2 py-1.5 text-[10.5px] text-[#6b7178]">
+          {classification ? (
+            <div>
+              <div className="font-medium text-[#5c6168]">유형 판정</div>
+              <ul className="mt-0.5 list-disc pl-4">
+                <li>
+                  유형: {typeLabel || "(없음)"}
+                  {classification.types.length > 0
+                    ? ` (${classification.types.join(", ")})`
+                    : ""}
+                </li>
+                {classification.reason ? (
+                  <li>근거: {classification.reason}</li>
+                ) : null}
+                <li>신뢰: {classification.confidence}</li>
+                <li>
+                  전환:{" "}
+                  {classification.switched
+                    ? classification.switch_reason || "있음"
+                    : "없음"}
+                </li>
+              </ul>
+            </div>
+          ) : null}
           {Array.from(byStep.entries()).map(([step, items]) => (
             <div key={step}>
               <div className="font-medium text-[#5c6168]">{step}</div>
@@ -966,6 +1009,7 @@ export function LunaMessage({
   correctionCandidateIds = null,
   onCorrectionCancel,
   usedPrompts = null,
+  classification = null,
   detailMeta = null
 }: LunaMessageProps) {
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
@@ -1316,8 +1360,12 @@ export function LunaMessage({
           </div>
         ) : null}
 
-        {!isThinking && usedPrompts && usedPrompts.length > 0 ? (
-          <UsedPromptsFooter usedPrompts={usedPrompts} />
+        {!isThinking &&
+        ((usedPrompts && usedPrompts.length > 0) || classification) ? (
+          <UsedPromptsFooter
+            usedPrompts={usedPrompts ?? []}
+            classification={classification}
+          />
         ) : null}
 
         {!isThinking && !clarify && modelLabel ? (

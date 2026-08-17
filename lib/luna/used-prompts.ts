@@ -13,10 +13,15 @@ export type PromptUsageLog = {
 };
 
 const IDENTITY_KEYS = new Set(["identity.apollon"]);
+const CLASSIFY_KEYS = new Set(["type.classify"]);
 
 export function isIdentityUsedPrompt(item: UsedPromptRef): boolean {
   if (IDENTITY_KEYS.has(item.key)) return true;
   return item.number === "L1" || item.number.startsWith("L1-");
+}
+
+export function isClassifyUsedPrompt(item: UsedPromptRef): boolean {
+  return CLASSIFY_KEYS.has(item.key);
 }
 
 export function createPromptUsageLog(): PromptUsageLog {
@@ -65,6 +70,7 @@ export function summarizeUsedPrompts(items: UsedPromptRef[]): UsedPromptRef[] {
   const seen = new Set<string>();
   for (const item of items) {
     if (isIdentityUsedPrompt(item)) continue;
+    if (isClassifyUsedPrompt(item)) continue;
     if (seen.has(item.key)) continue;
     seen.add(item.key);
     out.push(item);

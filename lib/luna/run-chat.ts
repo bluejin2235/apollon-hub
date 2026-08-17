@@ -7,6 +7,7 @@ import {
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
 import {
+  applyTypeSearchOverride,
   formatConnectorRoutingSummary,
   hasManualConnectors,
   resolveConnectorsAuto,
@@ -16,7 +17,11 @@ import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
   CLARIFY_CONCEPT_GUARD,
   KEYWORD_EXTRACT_FALLBACK,
-  TYPE_FIND_FALLBACK
+  TYPE_CLASSIFY_FALLBACK,
+  TYPE_FIND_FALLBACK,
+  TYPE_KNOW_FALLBACK,
+  TYPE_LEARN_FALLBACK,
+  TYPE_MAKE_FALLBACK
 } from "@/lib/luna/prompt-fallbacks";
 import {
   isKnowledgeDumpRequest,
@@ -44,6 +49,16 @@ import {
   type WorkserverExploreRow
 } from "@/lib/luna/workserver-explore";
 import { searchYoutube } from "@/lib/luna/youtube";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
+import {
+  classifiedRows,
+  formatTypeCatalog,
+  loadQuestionTypes,
+  parseClassificationJson,
+  resolveClassification,
+  typesNeedSearch,
+  typesSkipClarify
+} from "@/lib/luna/question-types";
 
 export const LUNA_MODEL = "claude-sonnet-4-6";
 export const LUNA_MODEL_LABEL = "Claude Sonnet 4.6";
@@ -349,16 +364,16 @@ export async function runLunaTurn(
     };
   }
 
-  const resolved = resolveEvalConnectors(userText, connectors);
-  const notionEnabled = resolved.notion;
-  const webEnabled = resolved.web;
-  const nasEnabled = resolved.nas;
-
   const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
 
   const identity =
     loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
   const talkFind = loadedPrompts[LUNA_PROMPT_KEYS.find]?.trim() || TYPE_FIND_FALLBACK;
+  const talkKnow = loadedPrompts[LUNA_PROMPT_KEYS.know]?.trim() || TYPE_KNOW_FALLBACK;
+  const talkMake = loadedPrompts[LUNA_PROMPT_KEYS.make]?.trim() || TYPE_MAKE_FALLBACK;
+  const talkLearn = loadedPrompts[LUNA_PROMPT_KEYS.learn]?.trim() || TYPE_LEARN_FALLBACK;
+  const classifyPrompt =
+    loadedPrompts[LUNA_PROMPT_KEYS.classify]?.trim() || TYPE_CLASSIFY_FALLBACK;
   const talkAnswer = loadedPrompts[LUNA_PROMPT_KEYS.answer]?.trim() || "";
   const talkAssume = loadedPrompts[LUNA_PROMPT_KEYS.assume]?.trim() || "";
   const clarifyPrompt = [
@@ -374,20 +389,81 @@ export async function runLunaTurn(
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
     SYNTHESIS_OPINION_FALLBACK;
 
+  const { types: questionTypes } = await loadQuestionTypes(admin, {
+    activeOnly: true
+  });
+  let classifiedSlugs: string[] = [];
+  try {
+    const classifyRes = await lunaLlmComplete(admin, {
+      tier: "C",
+      feature: "understand",
+      system: `${classifyPrompt}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
+      user: userText,
+      maxTokens: 256
+    });
+    const parsed = parseClassificationJson(classifyRes.text);
+    const classification = resolveClassification(parsed, questionTypes, {
+      forceSearch: hasManualConnectors({
+        notion: connectors.notion === true,
+        web: connectors.web === true,
+        nas: connectors.nas === true
+      })
+    });
+    classifiedSlugs = classification.types;
+    console.log("[luna/classify]", classification);
+  } catch (err) {
+    console.error("[luna/run-chat] classify", err);
+  }
+  const classifiedTypeRows = classifiedRows(questionTypes, classifiedSlugs);
+  const needsSearch = typesNeedSearch(classifiedTypeRows);
+
+  const initial = resolveEvalConnectors(userText, connectors);
+  const routed = applyTypeSearchOverride(
+    {
+      connectors: initial,
+      reason: "ambiguous_wide",
+      reasonLabel: "eval"
+    },
+    {
+      needsSearch,
+      manual: hasManualConnectors({
+        notion: connectors.notion === true,
+        web: connectors.web === true,
+        nas: connectors.nas === true
+      }),
+      message: userText,
+      hasAttachments: false
+    }
+  );
+  const notionEnabled = routed.connectors.notion;
+  const webEnabled = routed.connectors.web;
+  const nasEnabled = routed.connectors.nas;
+
+  const typePromptByKey: Record<string, string> = {
+    [LUNA_PROMPT_KEYS.find]: talkFind,
+    [LUNA_PROMPT_KEYS.know]: talkKnow,
+    [LUNA_PROMPT_KEYS.make]: talkMake,
+    [LUNA_PROMPT_KEYS.learn]: talkLearn
+  };
+
   const connectorPrompts: string[] = [];
-  if ((notionEnabled || nasEnabled || webEnabled) && talkFind) {
-    connectorPrompts.push(talkFind);
+  for (const row of classifiedTypeRows) {
+    if (!row.prompt_key) continue;
+    const text = typePromptByKey[row.prompt_key];
+    if (text) connectorPrompts.push(text);
   }
 
-  const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
-  if (clarifyAnswer) {
-    return {
-      answer: clarifyAnswer,
-      sources: [],
-      notionSources: [],
-      durationMs: Date.now() - startedAt,
-      modelLabel: LUNA_MODEL_LABEL
-    };
+  if (!typesSkipClarify(classifiedTypeRows)) {
+    const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
+    if (clarifyAnswer) {
+      return {
+        answer: clarifyAnswer,
+        sources: [],
+        notionSources: [],
+        durationMs: Date.now() - startedAt,
+        modelLabel: LUNA_MODEL_LABEL
+      };
+    }
   }
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
@@ -414,7 +490,7 @@ export async function runLunaTurn(
   let youtubeCards: LunaCard[] = [];
   let nasSearchAttempted = false;
 
-  if (notionEnabled || webEnabled || isSearchRequest || nasEnabled) {
+  if (needsSearch && (notionEnabled || webEnabled || nasEnabled)) {
     keywords = await extractSearchKeywords(client, userText, keywordExtractPrompt);
   }
 
@@ -425,7 +501,7 @@ export async function runLunaTurn(
   if (webEnabled) {
     webCards = await searchTavily(keywords || userText);
   }
-  if (isSearchRequest && keywords) {
+  if (needsSearch && isSearchRequest && keywords) {
     youtubeCards = await searchYoutube(keywords);
   }
   if (nasEnabled) {

@@ -118,6 +118,23 @@ export function FieldSelect({
   );
 }
 
+export function FieldTextarea({
+  className = "",
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      {...props}
+      className={`w-full rounded-[9px] border px-[11px] py-2 text-[13px] outline-none focus:border-[#d9d2ff] ${className}`}
+      style={{
+        borderColor: K.line,
+        background: K.panel,
+        color: K.ink
+      }}
+    />
+  );
+}
+
 export function Btn({
   children,
   primary,

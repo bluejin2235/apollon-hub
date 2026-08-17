@@ -15,7 +15,7 @@ import {
   type LunaAnalysisTeam,
   type LunaChatMessage
 } from "@/components/luna/LunaChat";
-import { normalizeUsedPrompts } from "@/lib/luna/chat-response";
+import { normalizeClassification, normalizeUsedPrompts } from "@/lib/luna/chat-response";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
 import type {
   LunaAttachmentRef,
@@ -220,7 +220,8 @@ export default function LunaPage() {
           memoryCount,
           usedPrompts: normalizeUsedPrompts(meta?.used_prompts),
           wsToolCalls,
-          connectorRouting: normalizeConnectorRouting(meta?.connector_routing)
+          connectorRouting: normalizeConnectorRouting(meta?.connector_routing),
+          classification: normalizeClassification(meta?.classification)
         };
       });
     setMessages((prev) => mergeLocalFeedback(prev, mapped));
@@ -489,6 +490,7 @@ export default function LunaPage() {
         let streamMemoryCount: number | null = null;
         let streamUsedPrompts: LunaChatMessage["usedPrompts"] = null;
         let streamConnectorRouting: LunaChatMessage["connectorRouting"] = null;
+        let streamClassification: LunaChatMessage["classification"] = null;
         let assistantContent = "";
         let assistantVisible = false;
 
@@ -528,6 +530,7 @@ export default function LunaPage() {
                     memoryCount: streamMemoryCount ?? m.memoryCount,
                     usedPrompts: streamUsedPrompts ?? m.usedPrompts,
                     connectorRouting: streamConnectorRouting ?? m.connectorRouting,
+                    classification: streamClassification ?? m.classification,
                     ...extra
                   }
                 : m
@@ -638,6 +641,7 @@ export default function LunaPage() {
                 }
                 streamUsedPrompts = consumed.usedPrompts;
                 streamConnectorRouting = consumed.connectorRouting;
+                streamClassification = consumed.classification;
                 metaReceived = true;
                 buffer = consumed.buffer;
                 assistantContent = buffer;

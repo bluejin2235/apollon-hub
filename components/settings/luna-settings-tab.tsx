@@ -14,6 +14,7 @@ import { LunaTalkSources } from "@/components/luna/talk/LunaTalkSources";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
+import { LunaBrainTypes } from "@/components/luna/brain/LunaBrainTypes";
 import { LunaBrainReport } from "@/components/luna/brain/LunaBrainReport";
 import { LunaBrainUpgrade } from "@/components/luna/brain/LunaBrainUpgrade";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
@@ -1596,6 +1597,7 @@ export function LunaSettingsTab() {
 
     if (menu === "brain") {
       if (sub === "prompts") return <LunaBrainPrompts />;
+      if (sub === "types") return <LunaBrainTypes />;
       if (sub === "upgrade") return <LunaBrainUpgrade />;
       if (sub === "model") return <LunaBrainModel />;
       if (sub === "eval") return <LunaBrainEval />;

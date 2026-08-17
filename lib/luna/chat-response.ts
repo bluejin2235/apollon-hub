@@ -173,7 +173,45 @@ export type UsedPromptRef = {
   title: string;
 };
 
-/** meta.used_prompts / metadata.used_prompts 정규화. */
+export type LunaClassificationMeta = {
+  types: string[];
+  labels: string[];
+  reason: string;
+  confidence: number;
+  switched: boolean;
+  switch_reason: string | null;
+};
+
+export function normalizeClassification(raw: unknown): LunaClassificationMeta | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const types = Array.isArray(row.types)
+    ? row.types.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    : [];
+  const labels = Array.isArray(row.labels)
+    ? row.labels.filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+    : [];
+  const reason = typeof row.reason === "string" ? row.reason.trim() : "";
+  const confidence =
+    typeof row.confidence === "number" && Number.isFinite(row.confidence)
+      ? row.confidence
+      : 0;
+  if (types.length === 0 && !reason && labels.length === 0) return null;
+  return {
+    types,
+    labels,
+    reason,
+    confidence,
+    switched: row.switched === true,
+    switch_reason:
+      typeof row.switch_reason === "string"
+        ? row.switch_reason
+        : typeof row.switchReason === "string"
+          ? row.switchReason
+          : null
+  };
+}
+
 export function normalizeUsedPrompts(raw: unknown): UsedPromptRef[] | null {
   if (!Array.isArray(raw)) return null;
   const items: UsedPromptRef[] = [];
