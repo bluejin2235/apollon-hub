@@ -53,13 +53,30 @@ export function recordPromptUse(
     key: string;
     step: string;
     title: string;
-    row?: Pick<LunaPromptRow, "level" | "sort_order" | "title" | "kind"> | null;
+    row?: Pick<
+      LunaPromptRow,
+      | "level"
+      | "sort_order"
+      | "title"
+      | "kind"
+      | "stage"
+      | "stage_order"
+      | "parent_key"
+    > | null;
   }
 ) {
   log.record({
     key: opts.key,
     step: opts.step,
-    number: opts.row ? formatPromptNumber(opts.row) : "",
+    number: formatPromptNumber({
+      level: opts.row?.level,
+      kind: opts.row?.kind,
+      sort_order: opts.row?.sort_order,
+      prompt_key: opts.key,
+      stage: opts.row?.stage ?? null,
+      stage_order: opts.row?.stage_order ?? null,
+      parent_key: opts.row?.parent_key ?? null
+    }),
     title: opts.row?.title?.trim() || opts.title
   });
 }

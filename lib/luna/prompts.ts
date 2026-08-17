@@ -1,4 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  applyPromptStageFields,
+  formatStageNumber,
+  type PromptNumberInput
+} from "@/lib/luna/prompt-stages";
 
 export type LunaPromptLevel = "L1" | "L2" | "L3" | "L4" | "L5";
 export type LunaPromptKind =
@@ -67,6 +72,9 @@ export type LunaLoadedPrompt = {
   level: LunaPromptLevel;
   kind: LunaPromptKind;
   sort_order: number;
+  stage?: number | null;
+  stage_order?: number | null;
+  parent_key?: string | null;
 };
 
 export function withFallback(db: string | undefined, fallback: string): string {
@@ -133,6 +141,9 @@ export type LunaPromptRow = {
   content: string;
   is_active: boolean;
   sort_order: number;
+  stage?: number | null;
+  stage_order?: number | null;
+  parent_key?: string | null;
   owner_id: string | null;
   version: number;
   created_at: string;
@@ -142,14 +153,9 @@ export type LunaPromptRow = {
   versions?: LunaPromptVersionRow[];
 };
 
-/** level / sort_order → L1-01, L2-01, L3-01, L4-01, L5-01 (체계 v2) */
-export function formatPromptNumber(p: {
-  level: string;
-  kind?: string;
-  sort_order: number | null | undefined;
-}): string {
-  const n = String(p.sort_order ?? 0).padStart(2, "0");
-  return `${p.level}-${n}`;
+/** 단계 번호 1-1, 4-2-a. 컬럼이 없으면 prompt_key 시드, 그것도 없으면 L1-01. */
+export function formatPromptNumber(p: PromptNumberInput): string {
+  return formatStageNumber(applyPromptStageFields(p));
 }
 
 /** luna_prompts 에서 prompt_key 로 active content 조회. 실패 시 "". */
@@ -220,25 +226,78 @@ export async function getPromptRows(
   try {
     const { data, error } = await admin
       .from("luna_prompts")
-      .select("prompt_key, content, title, level, kind, sort_order")
+      .select(
+        "prompt_key, content, title, level, kind, sort_order, stage, stage_order, parent_key"
+      )
       .in("prompt_key", keys)
       .eq("is_active", true);
 
     if (error) {
-      console.error("[luna/prompts] getPromptRows", error);
+      const missing =
+        error.code === "42703" ||
+        /stage|parent_key/i.test(error.message ?? "");
+      if (!missing) {
+        console.error("[luna/prompts] getPromptRows", error);
+        return result;
+      }
+      const retry = await admin
+        .from("luna_prompts")
+        .select("prompt_key, content, title, level, kind, sort_order")
+        .in("prompt_key", keys)
+        .eq("is_active", true);
+      if (retry.error) {
+        console.error("[luna/prompts] getPromptRows", retry.error);
+        return result;
+      }
+      for (const row of retry.data ?? []) {
+        const key = typeof row.prompt_key === "string" ? row.prompt_key : "";
+        if (!key) continue;
+        const staged = applyPromptStageFields({
+          prompt_key: key,
+          level: row.level as LunaPromptLevel,
+          kind: row.kind as LunaPromptKind,
+          sort_order: typeof row.sort_order === "number" ? row.sort_order : 0,
+          stage: null,
+          stage_order: null,
+          parent_key: null
+        });
+        result[key] = {
+          prompt_key: key,
+          content: typeof row.content === "string" ? row.content : "",
+          title: typeof row.title === "string" ? row.title : key,
+          level: staged.level as LunaPromptLevel,
+          kind: staged.kind as LunaPromptKind,
+          sort_order: staged.sort_order ?? 0,
+          stage: staged.stage,
+          stage_order: staged.stage_order,
+          parent_key: staged.parent_key
+        };
+      }
       return result;
     }
 
     for (const row of data ?? []) {
       const key = typeof row.prompt_key === "string" ? row.prompt_key : "";
       if (!key) continue;
+      const staged = applyPromptStageFields({
+        prompt_key: key,
+        level: row.level as LunaPromptLevel,
+        kind: row.kind as LunaPromptKind,
+        sort_order: typeof row.sort_order === "number" ? row.sort_order : 0,
+        stage: typeof row.stage === "number" ? row.stage : null,
+        stage_order: typeof row.stage_order === "number" ? row.stage_order : null,
+        parent_key: typeof row.parent_key === "string" ? row.parent_key : null
+      });
       result[key] = {
         prompt_key: key,
         content: typeof row.content === "string" ? row.content : "",
         title: typeof row.title === "string" ? row.title : key,
-        level: row.level as LunaPromptLevel,
-        kind: row.kind as LunaPromptKind,
-        sort_order: typeof row.sort_order === "number" ? row.sort_order : 0
+        level: staged.level as LunaPromptLevel,
+        kind: staged.kind as LunaPromptKind,
+        sort_order: staged.sort_order ?? 0,
+        stage: staged.stage,
+        stage_order: staged.stage_order,
+        parent_key: staged.parent_key
       };
     }
     return result;

@@ -99,17 +99,36 @@ export async function GET(request: NextRequest) {
     { title: string; number: string; version: number }
   >();
   if (promptIds.length > 0) {
-    const { data: prompts } = await admin
+    const staged = await admin
       .from("luna_prompts")
-      .select("id, title, level, kind, sort_order, version")
+      .select(
+        "id, title, level, kind, sort_order, version, prompt_key, stage, stage_order, parent_key"
+      )
       .in("id", promptIds);
+    let prompts = staged.data;
+    if (staged.error) {
+      const retry = await admin
+        .from("luna_prompts")
+        .select("id, title, level, kind, sort_order, version, prompt_key")
+        .in("id", promptIds);
+      prompts = (retry.data ?? []).map((p) => ({
+        ...p,
+        stage: null,
+        stage_order: null,
+        parent_key: null
+      }));
+    }
     for (const p of prompts ?? []) {
       promptById.set(p.id as string, {
         title: (p.title as string) || "제목 없음",
         number: formatPromptNumber({
           level: String(p.level),
           kind: typeof p.kind === "string" ? p.kind : undefined,
-          sort_order: typeof p.sort_order === "number" ? p.sort_order : null
+          sort_order: typeof p.sort_order === "number" ? p.sort_order : null,
+          prompt_key: typeof p.prompt_key === "string" ? p.prompt_key : null,
+          stage: typeof p.stage === "number" ? p.stage : null,
+          stage_order: typeof p.stage_order === "number" ? p.stage_order : null,
+          parent_key: typeof p.parent_key === "string" ? p.parent_key : null
         }),
         version: typeof p.version === "number" ? p.version : 0
       });

@@ -10,6 +10,7 @@ import type {
   LunaPromptVersionRow
 } from "@/lib/luna/prompts";
 import { isHumanOnlyPromptLevel } from "@/lib/luna/prompts";
+import { applyPromptStageFields } from "@/lib/luna/prompt-stages";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -29,8 +30,9 @@ const KIND_ORDER: Record<string, number> = {
   system: 4
 };
 
-const PROMPT_SELECT =
+const PROMPT_SELECT_BASE =
   "id, level, kind, prompt_key, group_name, title, description, purpose, content, is_active, sort_order, owner_id, version, created_at, updated_at";
+const PROMPT_SELECT = `${PROMPT_SELECT_BASE}, stage, stage_order, parent_key`;
 
 const GROUP_SELECT =
   "group_key, label, tagline, description, when_runs, sort_order";
@@ -122,13 +124,36 @@ export async function GET(request: NextRequest) {
     query = query.eq("level", "L2");
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error("[luna/prompts] GET", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const first = await query;
+  let data = first.data;
+  if (first.error) {
+    const missingCol =
+      first.error.code === "42703" ||
+      /stage|parent_key/i.test(first.error.message ?? "");
+    if (!missingCol) {
+      console.error("[luna/prompts] GET", first.error);
+      return NextResponse.json({ error: first.error.message }, { status: 500 });
+    }
+    let fallback = admin.from("luna_prompts").select(PROMPT_SELECT_BASE);
+    if (activeOnly) fallback = fallback.eq("is_active", true);
+    if (levelFilter === "L2") fallback = fallback.eq("level", "L2");
+    const retry = await fallback;
+    if (retry.error) {
+      console.error("[luna/prompts] GET", retry.error);
+      return NextResponse.json({ error: retry.error.message }, { status: 500 });
+    }
+    data = (retry.data ?? []) as typeof data;
   }
 
-  const prompts = sortPrompts((data ?? []) as LunaPromptRow[]);
+  const prompts = sortPrompts((data ?? []) as LunaPromptRow[]).map((p) =>
+    applyPromptStageFields({
+      ...p,
+      prompt_key: p.prompt_key,
+      stage: typeof p.stage === "number" ? p.stage : null,
+      stage_order: typeof p.stage_order === "number" ? p.stage_order : null,
+      parent_key: typeof p.parent_key === "string" ? p.parent_key : null
+    })
+  );
 
   const ids = prompts.map((p) => p.id);
 
@@ -290,7 +315,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data: current, error: curError } = await admin
     .from("luna_prompts")
-    .select(PROMPT_SELECT)
+    .select(PROMPT_SELECT_BASE)
     .eq("id", id)
     .maybeSingle();
 
@@ -326,7 +351,7 @@ export async function PATCH(request: NextRequest) {
         updated_at: new Date().toISOString()
       })
       .eq("id", id)
-      .select(PROMPT_SELECT)
+      .select(PROMPT_SELECT_BASE)
       .maybeSingle();
 
     if (error) {
@@ -385,7 +410,7 @@ export async function PATCH(request: NextRequest) {
       updated_at: now
     })
     .eq("id", id)
-    .select(PROMPT_SELECT)
+    .select(PROMPT_SELECT_BASE)
     .maybeSingle();
 
   if (updateError) {
