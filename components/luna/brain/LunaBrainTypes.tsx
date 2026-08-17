@@ -18,6 +18,7 @@ import type { QuestionTypeRow, UnclassifiedQuestionRow } from "@/lib/luna/questi
 type TypesPayload = {
   types?: QuestionTypeRow[];
   source?: string;
+  web_augment?: boolean;
   error?: string;
 };
 
@@ -54,6 +55,7 @@ export function LunaBrainTypes() {
   const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<string | "new" | null>(null);
   const [draft, setDraft] = useState<QuestionTypeRow>(EMPTY_DRAFT);
+  const [webAugment, setWebAugment] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -66,6 +68,7 @@ export function LunaBrainTypes() {
       ]);
       setTypes(typesJson.types ?? []);
       setSource(typesJson.source ?? "db");
+      setWebAugment(typesJson.web_augment !== false);
       setUnclassified(uncJson.questions ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "유형을 불러오지 못했습니다.");
@@ -102,7 +105,11 @@ export function LunaBrainTypes() {
       const isNew = selected === "new";
       await brainFetch("/api/luna/question-types", {
         method: isNew ? "POST" : "PATCH",
-        body: JSON.stringify(draft)
+        body: JSON.stringify(
+          draft.slug === "know"
+            ? { ...draft, web_augment: webAugment }
+            : draft
+        )
       });
       setNotice(isNew ? "유형을 추가했습니다." : "유형을 저장했습니다.");
       await load();
@@ -194,6 +201,9 @@ export function LunaBrainTypes() {
                     <Flag on={row.needs_search} label="검색" />
                     <Flag on={row.needs_library} label="양식" />
                     <Flag on={row.skip_clarify} label="되묻기 생략" />
+                    {row.slug === "know" ? (
+                      <Flag on={webAugment} label="웹 보강" />
+                    ) : null}
                     <span className="ml-auto">
                       <Btn
                         onClick={() => void toggleActive(row)}
@@ -309,6 +319,16 @@ export function LunaBrainTypes() {
                   />
                   되묻기 생략
                 </label>
+                {draft.slug === "know" ? (
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={webAugment}
+                      onChange={(e) => setWebAugment(e.target.checked)}
+                    />
+                    웹 보강
+                  </label>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 <Btn primary onClick={() => void save()} disabled={busy}>

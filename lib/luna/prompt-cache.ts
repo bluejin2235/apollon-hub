@@ -133,9 +133,8 @@ export function formatGlossaryBlock(
   for (const t of terms) {
     const name = (t.term_ko ?? "").trim();
     if (!name) continue;
-    const def = (t.definition ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const def = (t.definition ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
     lines.push(def ? `- ${name}: ${def}` : `- ${name}`);
-    if (lines.length >= 60) break;
   }
   if (lines.length === 0) return "";
   return `[용어사전]\n${lines.join("\n")}`;

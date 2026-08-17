@@ -18,7 +18,8 @@ export type ConnectorRoutingReason =
   | "file_project"
   | "ambiguous_wide"
   | "type_no_search"
-  | "type_needs_search";
+  | "type_needs_search"
+  | "web_augment";
 
 export type ConnectorRoutingResult = {
   connectors: ConnectorFlags;

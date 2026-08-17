@@ -15,7 +15,6 @@ import { llmStreamText, lunaLlmComplete } from "@/lib/luna/llm/client";
 import {
   buildCachedSystem,
   formatGlossaryBlock,
-  formatLearningsBlock,
   type CachedSystemPayload
 } from "@/lib/luna/prompt-cache";
 import {
@@ -85,9 +84,20 @@ import {
   isKnowledgeDumpRequest,
   KNOWLEDGE_DUMP_CLARIFY,
   KNOWLEDGE_LIST_HARD_RULE,
-  sanitizeKnowledgeListAnswer,
-  selectLearningsForInject
+  sanitizeKnowledgeListAnswer
 } from "@/lib/luna/knowledge-dump-guard";
+import {
+  formatMatchedLearningsBlock,
+  learningUsedInAnswer,
+  parseWebAugmentEnabled,
+  pickGlossaryForQuestion,
+  pickLearningsForQuestion,
+  shouldWebAugmentKnow,
+  splitKeywordQuery,
+  WEB_AUGMENT_SETTINGS_KEY,
+  type GlossaryMatchRow,
+  type LearningMatchRow
+} from "@/lib/luna/knowledge-match";
 import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
@@ -148,7 +158,6 @@ type AttachmentRow = {
   mime_type: string;
 };
 
-type LearningRow = { content: string; category: string };
 type MessageRow = {
   role: string;
   content: string;
@@ -405,7 +414,7 @@ function buildL3PromptBlock(opts: {
 function buildAnswerSystem(
   opts: {
     identity: string;
-    learnings: LearningRow[];
+    learningsBlock?: string;
     glossaryBlock?: string;
     skillPrompt?: string | null;
     l3Prompt?: string;
@@ -419,6 +428,7 @@ function buildAnswerSystem(
     notionSearchAttempted?: boolean;
     notionSearchStatus?: NotionSearchStatus;
     notionSearchRounds?: number;
+    webAugmented?: boolean;
   },
   useCaching: boolean,
   modelId: string
@@ -431,7 +441,7 @@ function buildAnswerSystem(
     .filter(Boolean)
     .join("\n\n");
   const block3 = [
-    formatLearningsBlock(opts.learnings),
+    opts.learningsBlock?.trim() ?? "",
     opts.glossaryBlock?.trim() ?? "",
     `[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`
   ]
@@ -467,11 +477,18 @@ function buildVolatileSystemText(opts: {
   notionSearchAttempted?: boolean;
   notionSearchStatus?: NotionSearchStatus;
   notionSearchRounds?: number;
+  webAugmented?: boolean;
 }): string {
   const parts: string[] = [];
 
   if (opts.reportContent?.trim()) {
     parts.push(`[이미 정리해둔 자료]\n${opts.reportContent.trim()}`);
+  }
+
+  if (opts.webAugmented) {
+    parts.push(
+      "[웹 검색 보강]\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."
+    );
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
@@ -870,65 +887,43 @@ export async function POST(request: NextRequest) {
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData, error: learningsError } = await admin
     .from("luna_learnings")
-    .select("id, content, category, use_count")
+    .select("id, content, category, importance, use_count, created_at")
     .eq("status", "active")
     .neq("category", "identity")
     .order("importance", { ascending: false })
-    .order("use_count", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(200);
 
   if (learningsError) {
     console.error("[luna/chat] learnings", learningsError);
     return NextResponse.json({ error: learningsError.message }, { status: 500 });
   }
-  type LearningInjectRow = LearningRow & { id: string; use_count: number | null };
-  const learningsRowsAll = (learningsData ?? []) as LearningInjectRow[];
+  const learningsRowsAll = (learningsData ?? []) as LearningMatchRow[];
 
-  let glossaryBlock = "";
+  let glossaryRows: GlossaryMatchRow[] = [];
   {
     let gq = await admin
       .from("glossary_terms")
-      .select("term_ko, definition")
-      .is("deleted_at", null)
-      .order("term_ko")
-      .limit(60);
+      .select("id, term_ko, term_en, synonyms, definition")
+      .is("deleted_at", null);
     if (gq.error) {
       gq = await admin
         .from("glossary_terms")
-        .select("term_ko, definition")
-        .order("term_ko")
-        .limit(60);
+        .select("id, term_ko, term_en, synonyms, definition");
     }
     if (gq.error) {
       console.error("[luna/chat] glossary", gq.error);
     } else {
-      glossaryBlock = formatGlossaryBlock(
-        (gq.data ?? []) as Array<{ term_ko?: string | null; definition?: string | null }>
-      );
+      glossaryRows = (gq.data ?? []) as GlossaryMatchRow[];
     }
   }
 
-  if (learningsRowsAll.length > 0) {
-    const nowIso = new Date().toISOString();
-    void (async () => {
-      try {
-        await Promise.all(
-          learningsRowsAll.slice(0, 10).map((row) =>
-            admin
-              .from("luna_learnings")
-              .update({
-                use_count: (row.use_count ?? 0) + 1,
-                last_used_at: nowIso
-              })
-              .eq("id", row.id)
-          )
-        );
-      } catch (err) {
-        console.error("[luna/chat] bump learning use_count", err);
-      }
-    })();
-  }
+  const { data: webAugmentRow } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+    .maybeSingle();
+  const webAugmentEnabled = parseWebAugmentEnabled(webAugmentRow?.value);
 
   let skillPrompt: string | null = null;
   const l2SkillRows: Array<{
@@ -1038,11 +1033,6 @@ export async function POST(request: NextRequest) {
   const userText =
     message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
   const knowledgeDumpRequested = isKnowledgeDumpRequest(userText);
-  const learningsRows = selectLearningsForInject(learningsRowsAll, userText);
-  const learnings = learningsRows.map((l) => ({
-    content: l.content,
-    category: l.category
-  }));
   const searchIntentText =
     lastHadClarify && clarifyOriginalUser
       ? `원래 질문: ${clarifyOriginalUser}\n확인된 조건: ${userText}`
@@ -1443,6 +1433,84 @@ export async function POST(request: NextRequest) {
           pushStep("clarify", "done", "의도 확인");
         }
 
+        // ——— 키워드 추출 (검색 여부와 무관) → 지식·용어 매칭 ———
+        let keywords = "";
+        try {
+          const kwRes = await client.messages.create({
+            model: tierB.model_id,
+            max_tokens: 64,
+            system: keywordExtractPrompt,
+            messages: [{ role: "user", content: searchIntentText || "문서" }]
+          });
+          recordPromptUse(usageLog, {
+            key: LUNA_PROMPT_KEYS.keywordExtract,
+            step: "검색어 추출",
+            title: "검색어 추출",
+            row: keywordPick.row
+          });
+          logPromptInject({
+            key: LUNA_PROMPT_KEYS.keywordExtract,
+            step: "검색어 추출",
+            source: keywordPick.source,
+            text: keywordExtractPrompt
+          });
+          pushModelStep(modelSteps, admin, {
+            label: "검색어 추출",
+            model: tierB.model_label,
+            tier: "B",
+            model_id: tierB.model_id,
+            usage: readUsage(kwRes.usage)
+          });
+          const kwText =
+            kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+          keywords =
+            kwText.replace(/^["']|["']$/g, "").trim() ||
+            searchIntentText.slice(0, 80);
+        } catch (err) {
+          console.error("[luna/chat] keyword extract", err);
+          keywords = searchIntentText.slice(0, 80);
+        }
+
+        const injectKeywords = splitKeywordQuery(keywords, searchIntentText);
+        const knowledgeInject = pickLearningsForQuestion(
+          learningsRowsAll,
+          injectKeywords,
+          { dump: knowledgeDumpRequested }
+        );
+        const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
+        const glossaryBlock = formatGlossaryBlock(matchedTerms);
+        const learnings = knowledgeInject.all.map((l) => ({
+          content: l.content,
+          category: l.category
+        }));
+        const learningsBlock = formatMatchedLearningsBlock({
+          matched: knowledgeInject.matched,
+          other: knowledgeInject.other
+        });
+        const injectedTerms = matchedTerms
+          .map((t) => (t.term_ko ?? "").trim())
+          .filter(Boolean);
+
+        let webAugmented = false;
+        if (
+          shouldWebAugmentKnow({
+            enabled: webAugmentEnabled,
+            typeSlugs: classification.types,
+            matchedKnowledge: knowledgeInject.matched.length,
+            matchedTerms: matchedTerms.length,
+            question: userText,
+            alreadyWeb: webEnabled
+          })
+        ) {
+          webEnabled = true;
+          webAugmented = true;
+          connectorRouting = {
+            connectors: { nas: nasEnabled, notion: notionEnabled, web: true },
+            reason: "web_augment",
+            reasonLabel: "알기: 지식 부족 · 웹 보강"
+          };
+        }
+
         // ——— 단계 2~5: 검색 루프 ———
         const isSearchRequest =
           !hasAttachments &&
@@ -1450,13 +1518,13 @@ export async function POST(request: NextRequest) {
             (Boolean(clarifyOriginalUser) &&
               isSearchRequestMessage(clarifyOriginalUser!)));
         const anySearch =
-          needsSearch && (notionEnabled || webEnabled || nasEnabled);
+          (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
+          (webAugmented && webEnabled);
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
         let cards: LunaCard[] = [];
         let nasResults: NasDirectoryRow[] = [];
-        let keywords = "";
         let usedReportId: string | null = null;
         let usedReportContent: string | null = null;
         const previousKeywords: string[] = [];
@@ -1575,42 +1643,6 @@ export async function POST(request: NextRequest) {
               : "검색 중";
 
           pushStep("search", "running", searchRunningLabel);
-
-          try {
-            const kwRes = await client.messages.create({
-              model: tierB.model_id,
-              max_tokens: 64,
-              system: keywordExtractPrompt,
-              messages: [{ role: "user", content: searchIntentText || "문서" }]
-            });
-            recordPromptUse(usageLog, {
-              key: LUNA_PROMPT_KEYS.keywordExtract,
-              step: "검색어 추출",
-              title: "검색어 추출",
-              row: keywordPick.row
-            });
-            logPromptInject({
-              key: LUNA_PROMPT_KEYS.keywordExtract,
-              step: "검색어 추출",
-              source: keywordPick.source,
-              text: keywordExtractPrompt
-            });
-            pushModelStep(modelSteps, admin, {
-              label: "검색어 추출",
-              model: tierB.model_label,
-              tier: "B",
-              model_id: tierB.model_id,
-              usage: readUsage(kwRes.usage)
-            });
-            const kwText =
-              kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-            keywords =
-              kwText.replace(/^["']|["']$/g, "").trim() ||
-              searchIntentText.slice(0, 80);
-          } catch (err) {
-            console.error("[luna/chat] keyword extract", err);
-            keywords = searchIntentText.slice(0, 80);
-          }
 
           try {
             const matched = await findSimilarReport(admin, keywords);
@@ -1944,7 +1976,7 @@ export async function POST(request: NextRequest) {
         const systemPrompt = buildAnswerSystem(
           {
             identity,
-            learnings,
+            learningsBlock,
             glossaryBlock,
             skillPrompt,
             l3Prompt,
@@ -1956,7 +1988,8 @@ export async function POST(request: NextRequest) {
             reportContent: usedReportContent,
             notionSearchAttempted: notionEnabled && anySearch,
             notionSearchStatus: notionSearchOutcome?.status,
-            notionSearchRounds: notionSearchOutcome?.rounds ?? 0
+            notionSearchRounds: notionSearchOutcome?.rounds ?? 0,
+            webAugmented
           },
           tierACfg.use_caching === true,
           tierA.model_id
@@ -2059,7 +2092,10 @@ export async function POST(request: NextRequest) {
           search_rounds: searchRounds,
           steps,
           source_reasons: sourceReasons,
-          memory_count: learningsRows.length,
+          memory_count: learnings.length,
+          injected_knowledge_ids: knowledgeInject.ids,
+          injected_terms: injectedTerms,
+          web_augmented: webAugmented,
           used_prompts: usedPrompts,
           auto_routing: autoRoutingUsed,
           connector_routing: connectorRoutingMeta,
@@ -2155,6 +2191,36 @@ export async function POST(request: NextRequest) {
         if (safeAssistantText !== assistantText) {
           assistantText = safeAssistantText;
         }
+        const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
+        if (webCardsUsed && !assistantText.includes("웹 검색으로 보강함")) {
+          const note = "\n\n웹 검색으로 보강함";
+          assistantText = `${assistantText.trim()}${note}`;
+          controller.enqueue(encoder.encode(note));
+        }
+        if (knowledgeInject.matched.length > 0) {
+          const nowIso = new Date().toISOString();
+          void (async () => {
+            try {
+              await Promise.all(
+                knowledgeInject.matched
+                  .filter((row) =>
+                    learningUsedInAnswer(row, assistantText, injectKeywords)
+                  )
+                  .map((row) =>
+                    admin
+                      .from("luna_learnings")
+                      .update({
+                        use_count: (row.use_count ?? 0) + 1,
+                        last_used_at: nowIso
+                      })
+                      .eq("id", row.id)
+                  )
+              );
+            } catch (err) {
+              console.error("[luna/chat] bump learning use_count", err);
+            }
+          })();
+        }
         const userMeta: Record<string, unknown> = {};
         const assistantMeta: Record<string, unknown> = {
           model_label: tierA.model_label,
@@ -2216,7 +2282,10 @@ export async function POST(request: NextRequest) {
           };
         }
         assistantMeta.auto_routing = autoRoutingUsed;
-        assistantMeta.memory_count = learningsRows.length;
+        assistantMeta.memory_count = learnings.length;
+        assistantMeta.injected_knowledge_ids = knowledgeInject.ids;
+        assistantMeta.injected_terms = injectedTerms;
+        if (webAugmented) assistantMeta.web_augmented = true;
         if (attachmentMeta.length > 0) {
           userMeta.attachments = attachmentMeta;
           assistantMeta.attachments = attachmentMeta;

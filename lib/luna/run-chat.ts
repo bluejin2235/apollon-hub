@@ -27,9 +27,21 @@ import {
   isKnowledgeDumpRequest,
   KNOWLEDGE_DUMP_CLARIFY,
   KNOWLEDGE_LIST_HARD_RULE,
-  sanitizeKnowledgeListAnswer,
-  selectLearningsForInject
+  sanitizeKnowledgeListAnswer
 } from "@/lib/luna/knowledge-dump-guard";
+import {
+  formatMatchedLearningsBlock,
+  learningUsedInAnswer,
+  parseWebAugmentEnabled,
+  pickGlossaryForQuestion,
+  pickLearningsForQuestion,
+  shouldWebAugmentKnow,
+  splitKeywordQuery,
+  WEB_AUGMENT_SETTINGS_KEY,
+  type GlossaryMatchRow,
+  type LearningMatchRow
+} from "@/lib/luna/knowledge-match";
+import { formatGlossaryBlock } from "@/lib/luna/prompt-cache";
 import {
   buildLocationAnswerRules,
   formatNotionSourcesForPrompt,
@@ -83,11 +95,12 @@ export type LunaRunResult = {
   notionSources: NotionSource[];
   durationMs: number;
   modelLabel: string;
+  injected_knowledge_ids?: string[];
+  injected_terms?: string[];
+  web_augmented?: boolean;
 };
 
 type NasDirectoryRow = WorkserverExploreRow;
-
-type LearningRow = { content: string; category: string };
 
 function isSearchRequestMessage(message: string): boolean {
   return SEARCH_REQUEST_KEYWORDS.some((kw) => message.includes(kw));
@@ -192,13 +205,15 @@ function resolveEvalConnectors(
 
 function buildSystemPrompt(opts: {
   identity: string;
-  learnings: LearningRow[];
+  learningsBlock?: string;
+  glossaryBlock?: string;
   connectorPrompts?: string[];
   synthesisOpinion?: string;
   notionSources?: NotionSource[];
   cards?: LunaCard[];
   nasResults?: NasDirectoryRow[];
   nasSearchAttempted?: boolean;
+  webAugmented?: boolean;
 }): string {
   const parts: string[] = [opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT];
 
@@ -206,11 +221,12 @@ function buildSystemPrompt(opts: {
     if (block.trim()) parts.push(block.trim());
   }
 
-  if (opts.learnings.length > 0) {
-    const learningBlock = opts.learnings
-      .map((l) => `- ${l.content} (${l.category})`)
-      .join("\n");
-    parts.push(`[아폴론에 대해 알고 있는 것]\n${learningBlock}`);
+  if (opts.learningsBlock?.trim()) parts.push(opts.learningsBlock.trim());
+  if (opts.glossaryBlock?.trim()) parts.push(opts.glossaryBlock.trim());
+  if (opts.webAugmented) {
+    parts.push(
+      "[웹 검색 보강]\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."
+    );
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
@@ -436,7 +452,7 @@ export async function runLunaTurn(
     }
   );
   const notionEnabled = routed.connectors.notion;
-  const webEnabled = routed.connectors.web;
+  let webEnabled = routed.connectors.web;
   const nasEnabled = routed.connectors.nas;
 
   const typePromptByKey: Record<string, string> = {
@@ -469,30 +485,80 @@ export async function runLunaTurn(
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData } = await admin
     .from("luna_learnings")
-    .select("content, category")
+    .select("id, content, category, importance, use_count, created_at")
     .eq("status", "active")
     .neq("category", "identity")
     .order("importance", { ascending: false })
-    .order("use_count", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(200);
 
-  const learnings = selectLearningsForInject(
-    (learningsData ?? []) as LearningRow[],
-    userText
+  let glossaryRows: GlossaryMatchRow[] = [];
+  {
+    let gq = await admin
+      .from("glossary_terms")
+      .select("id, term_ko, term_en, synonyms, definition")
+      .is("deleted_at", null);
+    if (gq.error) {
+      gq = await admin
+        .from("glossary_terms")
+        .select("id, term_ko, term_en, synonyms, definition");
+    }
+    if (!gq.error) glossaryRows = (gq.data ?? []) as GlossaryMatchRow[];
+  }
+
+  const { data: webAugmentRow } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+    .maybeSingle();
+  const webAugmentEnabled = parseWebAugmentEnabled(webAugmentRow?.value);
+
+  const keywords = await extractSearchKeywords(
+    client,
+    userText,
+    keywordExtractPrompt
   );
+  const injectKeywords = splitKeywordQuery(keywords, userText);
+  const knowledgeInject = pickLearningsForQuestion(
+    (learningsData ?? []) as LearningMatchRow[],
+    injectKeywords
+  );
+  const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
+  const injectedTerms = matchedTerms
+    .map((t) => (t.term_ko ?? "").trim())
+    .filter(Boolean);
+  const learnings = knowledgeInject.all.map((l) => ({
+    content: l.content,
+    category: l.category
+  }));
+  const learningsBlock = formatMatchedLearningsBlock({
+    matched: knowledgeInject.matched,
+    other: knowledgeInject.other
+  });
+  const glossaryBlock = formatGlossaryBlock(matchedTerms);
+
+  let webAugmented = false;
+  if (
+    shouldWebAugmentKnow({
+      enabled: webAugmentEnabled,
+      typeSlugs: classifiedSlugs,
+      matchedKnowledge: knowledgeInject.matched.length,
+      matchedTerms: matchedTerms.length,
+      question: userText,
+      alreadyWeb: webEnabled
+    })
+  ) {
+    webEnabled = true;
+    webAugmented = true;
+  }
+
   const isSearchRequest = isSearchRequestMessage(userText);
 
   let notionSources: NotionSource[] = [];
-  let keywords = "";
   let nasResults: NasDirectoryRow[] = [];
   let webCards: LunaCard[] = [];
   let youtubeCards: LunaCard[] = [];
   let nasSearchAttempted = false;
-
-  if (needsSearch && (notionEnabled || webEnabled || nasEnabled)) {
-    keywords = await extractSearchKeywords(client, userText, keywordExtractPrompt);
-  }
 
   if (notionEnabled && keywords) {
     const notionOutcome = await searchNotionPages(keywords, userText);
@@ -542,13 +608,15 @@ export async function runLunaTurn(
 
   const systemPrompt = buildSystemPrompt({
     identity,
-    learnings,
+    learningsBlock,
+    glossaryBlock,
     connectorPrompts,
     synthesisOpinion,
     notionSources,
     cards,
     nasResults,
-    nasSearchAttempted
+    nasSearchAttempted,
+    webAugmented
   });
 
   const response = await client.messages.create({
@@ -560,13 +628,40 @@ export async function runLunaTurn(
 
   const rawAnswer =
     response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-  const answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
+  let answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
+  const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
+  if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
+    answer = `${answer.trim()}\n\n웹 검색으로 보강함`;
+  }
+
+  if (knowledgeInject.matched.length > 0) {
+    const nowIso = new Date().toISOString();
+    const used = knowledgeInject.matched.filter((row) =>
+      learningUsedInAnswer(row, answer, injectKeywords)
+    );
+    if (used.length > 0) {
+      await Promise.all(
+        used.map((row) =>
+          admin
+            .from("luna_learnings")
+            .update({
+              use_count: (row.use_count ?? 0) + 1,
+              last_used_at: nowIso
+            })
+            .eq("id", row.id)
+        )
+      );
+    }
+  }
 
   return {
     answer,
     sources: cards,
     notionSources,
     durationMs: Date.now() - startedAt,
-    modelLabel: LUNA_MODEL_LABEL
+    modelLabel: LUNA_MODEL_LABEL,
+    injected_knowledge_ids: knowledgeInject.ids,
+    injected_terms: injectedTerms,
+    web_augmented: webAugmented
   };
 }

@@ -2,7 +2,7 @@
  * 사내 확정 지식 대량 인출 차단 (프롬프트 의존 X — 응답 생성 단계 가드).
  */
 
-export const MAX_KNOWLEDGE_LIST_ITEMS = 5;
+export const MAX_KNOWLEDGE_LIST_ITEMS = 10;
 
 export const KNOWLEDGE_DUMP_CLARIFY =
   "어떤 주제나 상황에 대한 지식이 필요하신가요? 범위가 너무 넓어서, 필요한 부분을 알려주시면 그걸로 답할게요.";

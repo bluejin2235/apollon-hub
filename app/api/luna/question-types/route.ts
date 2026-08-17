@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import {
+  parseWebAugmentEnabled,
+  WEB_AUGMENT_SETTINGS_KEY
+} from "@/lib/luna/knowledge-match";
+import {
   loadQuestionTypes,
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
@@ -67,7 +71,16 @@ export async function GET(request: NextRequest) {
     const { types, source } = await loadQuestionTypes(admin, {
       activeOnly
     });
-    return NextResponse.json({ types, source });
+    const { data: webRow } = await admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+      .maybeSingle();
+    return NextResponse.json({
+      types,
+      source,
+      web_augment: parseWebAugmentEnabled(webRow?.value)
+    });
   } catch (err) {
     console.error("[luna/question-types] GET", err);
     return NextResponse.json(
@@ -177,5 +190,29 @@ export async function PATCH(request: NextRequest) {
   if (!data) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ type: data });
+
+  let webAugment: boolean | undefined;
+  if (slug === "know" && typeof body.web_augment === "boolean") {
+    const { error: settingsError } = await admin.from("luna_settings").upsert(
+      {
+        key: WEB_AUGMENT_SETTINGS_KEY,
+        value: { enabled: body.web_augment },
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "key" }
+    );
+    if (settingsError) {
+      console.error("[luna/question-types] web_augment", settingsError);
+      return NextResponse.json(
+        { error: settingsError.message },
+        { status: 500 }
+      );
+    }
+    webAugment = body.web_augment;
+  }
+
+  return NextResponse.json({
+    type: data,
+    ...(webAugment !== undefined ? { web_augment: webAugment } : {})
+  });
 }
