@@ -92,6 +92,7 @@ export type LunaChatMessage = {
   engine?: string | null;
   feedback?: "good" | "bad" | null;
   feedbackReason?: FeedbackReason | null;
+  feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
@@ -968,6 +969,7 @@ export function LunaChat({
                 engine={m.engine}
                 feedback={m.feedback}
                 feedbackReason={m.feedbackReason}
+                feedbackNote={m.feedbackNote}
                 notionSources={m.notionSources}
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}

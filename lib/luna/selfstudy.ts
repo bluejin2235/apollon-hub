@@ -517,7 +517,10 @@ export async function extractStuckMoments(
           const reasonLabel = isFeedbackReason(reasonRaw)
             ? FEEDBACK_REASON_LABELS[reasonRaw]
             : null;
-          const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}. 질문: ${asked.slice(0, 200)} / 답: ${m.content.slice(0, 200)}`;
+          const noteRaw =
+            typeof meta.feedback_note === "string" ? meta.feedback_note.trim() : "";
+          const noteBit = noteRaw ? ` — ${noteRaw.slice(0, 200)}` : "";
+          const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}${noteBit}. 질문: ${asked.slice(0, 200)} / 답: ${m.content.slice(0, 200)}`;
           out.push({
             key: stuckKey("thumbs_down", conversation_id, m.id),
             kind: "thumbs_down",
@@ -525,9 +528,9 @@ export async function extractStuckMoments(
             user_id,
             user_name,
             title: clip(asked, 60) || clip(m.content, 60),
-            detail: reasonLabel
-              ? `👎 ${reasonLabel}`
-              : "사람이 싫어요를 누른 답변",
+            detail: [reasonLabel ? `👎 ${reasonLabel}` : "사람이 싫어요를 누른 답변", noteRaw]
+              .filter(Boolean)
+              .join(" · "),
             snippet,
             at:
               typeof meta.feedback_at === "string" && meta.feedback_at
@@ -683,7 +686,10 @@ export async function extractStuckMoments(
         ? FEEDBACK_REASON_LABELS[reasonRaw]
         : null;
       const content = typeof row.content === "string" ? row.content : "";
-      const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}. 답: ${content.slice(0, 200)}`;
+      const noteRaw =
+        typeof meta.feedback_note === "string" ? meta.feedback_note.trim() : "";
+      const noteBit = noteRaw ? ` — ${noteRaw.slice(0, 200)}` : "";
+      const snippet = `싫어요${reasonLabel ? ` (${reasonLabel})` : ""}${noteBit}. 답: ${content.slice(0, 200)}`;
       out.push({
         key: stuckKey("thumbs_down", conversation_id, row.id as string),
         kind: "thumbs_down",
@@ -691,7 +697,9 @@ export async function extractStuckMoments(
         user_id,
         user_name,
         title: clip(content, 60),
-        detail: reasonLabel ? `👎 ${reasonLabel}` : "사람이 싫어요를 누른 답변",
+        detail: [reasonLabel ? `👎 ${reasonLabel}` : "사람이 싫어요를 누른 답변", noteRaw]
+          .filter(Boolean)
+          .join(" · "),
         snippet,
         at,
         source: "thumbs_down"

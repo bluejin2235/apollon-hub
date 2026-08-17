@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import {
+  clipFeedbackNote,
   isFeedbackReason,
   type FeedbackReason
 } from "@/lib/luna/feedback";
@@ -13,6 +14,7 @@ export type SaveFeedbackResult =
       ok: true;
       feedback: MessageFeedbackValue;
       reason: FeedbackReason | null;
+      note: string | null;
     }
   | { ok: false; status: number; error: string };
 
@@ -29,6 +31,8 @@ export async function saveLunaMessageFeedback(
     messageId: string;
     feedback: MessageFeedbackValue;
     reason?: FeedbackReason | null;
+    /** undefined = 기존 유지, null/"" = 삭제 */
+    note?: string | null;
   }
 ): Promise<SaveFeedbackResult> {
   const messageId = opts.messageId.trim();
@@ -79,13 +83,20 @@ export async function saveLunaMessageFeedback(
     delete nextMeta.feedback;
     delete nextMeta.feedback_at;
     delete nextMeta.feedback_reason;
+    delete nextMeta.feedback_note;
   } else {
     nextMeta.feedback = opts.feedback;
     nextMeta.feedback_at = new Date().toISOString();
     if (opts.feedback === "bad") {
       if (opts.reason) nextMeta.feedback_reason = opts.reason;
+      if (opts.note !== undefined) {
+        const note = clipFeedbackNote(opts.note);
+        if (note) nextMeta.feedback_note = note;
+        else delete nextMeta.feedback_note;
+      }
     } else {
       delete nextMeta.feedback_reason;
+      delete nextMeta.feedback_note;
     }
   }
 
@@ -118,6 +129,7 @@ export async function saveLunaMessageFeedback(
     feedback: savedFeedback,
     reason: isFeedbackReason(savedMeta.feedback_reason)
       ? savedMeta.feedback_reason
-      : null
+      : null,
+    note: clipFeedbackNote(savedMeta.feedback_note)
   };
 }

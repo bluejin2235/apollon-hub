@@ -13,7 +13,7 @@ export type LunaKnowledgeSub =
   | "workserver"
   | "notion";
 
-export type LunaTalkSub = "history" | "sources" | "metrics";
+export type LunaTalkSub = "history" | "thumbs" | "sources" | "metrics";
 
 export type LunaCandidatesSub = "pending" | "mine" | "history";
 
@@ -64,6 +64,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "대화",
     subs: [
       { slug: "history", label: "대화 이력" },
+      { slug: "thumbs", label: "싫어요" },
       { slug: "sources", label: "구술·문서" },
       { slug: "metrics", label: "관측 지표" }
     ]

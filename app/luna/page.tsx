@@ -25,7 +25,7 @@ import type {
 import { LunaShell } from "@/components/luna/LunaShell";
 import { LunaSidebar, type LunaConversation } from "@/components/luna/LunaSidebar";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
-import { isFeedbackReason } from "@/lib/luna/feedback";
+import { clipFeedbackNote, isFeedbackReason } from "@/lib/luna/feedback";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -52,16 +52,30 @@ function mergeLocalFeedback(
   next: LunaChatMessage[]
 ): LunaChatMessage[] {
   const local = new Map(
-    prev.map((m) => [m.id, { feedback: m.feedback, feedbackReason: m.feedbackReason }])
+    prev.map((m) => [
+      m.id,
+      {
+        feedback: m.feedback,
+        feedbackReason: m.feedbackReason,
+        feedbackNote: m.feedbackNote
+      }
+    ])
   );
   return next.map((m) => {
-    if (m.feedback) return m;
     const loc = local.get(m.id);
+    if (m.feedback) {
+      return {
+        ...m,
+        feedbackReason: m.feedbackReason ?? loc?.feedbackReason ?? null,
+        feedbackNote: m.feedbackNote ?? loc?.feedbackNote ?? null
+      };
+    }
     if (loc?.feedback) {
       return {
         ...m,
         feedback: loc.feedback,
-        feedbackReason: loc.feedbackReason ?? null
+        feedbackReason: loc.feedbackReason ?? null,
+        feedbackNote: loc.feedbackNote ?? null
       };
     }
     return m;
@@ -133,6 +147,7 @@ export default function LunaPage() {
         const feedbackReason = isFeedbackReason(meta?.feedback_reason)
           ? meta.feedback_reason
           : null;
+        const feedbackNote = clipFeedbackNote(meta?.feedback_note);
         const notionSources = normalizeNotionSources(meta?.notion_sources);
         let attachments: LunaAttachmentRef[] | null = null;
         const rawAttachments = meta?.attachments;
@@ -205,6 +220,7 @@ export default function LunaPage() {
           engine: (row.engine as string | null) ?? null,
           feedback,
           feedbackReason,
+          feedbackNote,
           notionSources,
           cards: normalizeLunaCards(meta?.cards),
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),

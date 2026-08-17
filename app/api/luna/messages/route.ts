@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { isFeedbackReason } from "@/lib/luna/feedback";
+import { clipFeedbackNote, isFeedbackReason } from "@/lib/luna/feedback";
 import { saveLunaMessageFeedback } from "@/lib/luna/message-feedback";
 
 export const runtime = "nodejs";
@@ -9,6 +9,7 @@ type PatchBody = {
   message_id?: string;
   feedback?: string | null;
   reason?: string | null;
+  note?: string | null;
 };
 
 export async function PATCH(request: NextRequest) {
@@ -45,10 +46,15 @@ export async function PATCH(request: NextRequest) {
   }
 
   const reason = isFeedbackReason(body.reason) ? body.reason : null;
+  const note =
+    Object.prototype.hasOwnProperty.call(body, "note")
+      ? clipFeedbackNote(body.note)
+      : undefined;
   const result = await saveLunaMessageFeedback(admin, user, {
     messageId,
     feedback,
-    reason
+    reason,
+    ...(note !== undefined ? { note } : {})
   });
 
   if (!result.ok) {
@@ -58,6 +64,7 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({
     success: true,
     feedback: result.feedback,
-    reason: result.reason
+    reason: result.reason,
+    note: result.note
   });
 }

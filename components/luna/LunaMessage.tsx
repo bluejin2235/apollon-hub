@@ -25,6 +25,8 @@ import {
 } from "@/lib/luna/chat-response";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
+  clipFeedbackNote,
+  FEEDBACK_NOTE_MAX,
   FEEDBACK_REASON_IDS,
   FEEDBACK_REASON_LABELS,
   isFeedbackReason,
@@ -86,6 +88,7 @@ type LunaMessageProps = {
   engine?: string | null;
   feedback?: "good" | "bad" | null;
   feedbackReason?: FeedbackReason | null;
+  feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
@@ -989,6 +992,7 @@ export function LunaMessage({
   engine,
   feedback: initialFeedback = null,
   feedbackReason: initialReason = null,
+  feedbackNote: initialNote = null,
   notionSources = null,
   cards = null,
   sourceReasons = null,
@@ -1015,6 +1019,15 @@ export function LunaMessage({
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
   const [feedbackReason, setFeedbackReason] = useState<FeedbackReason | null>(
     initialReason
+  );
+  const [feedbackNote, setFeedbackNote] = useState<string | null>(
+    clipFeedbackNote(initialNote)
+  );
+  const [noteDraft, setNoteDraft] = useState(
+    () => clipFeedbackNote(initialNote) ?? ""
+  );
+  const [reasonPanelCollapsed, setReasonPanelCollapsed] = useState(
+    () => Boolean(clipFeedbackNote(initialNote))
   );
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1092,23 +1105,42 @@ export function LunaMessage({
 
   // 같은 메시지에서 대화 리로드가 방금 저장한 로컬 평가를 덮어쓰지 않게, id 변경 시에만 동기화
   useEffect(() => {
+    const note = clipFeedbackNote(initialNote);
     setFeedback(initialFeedback);
     setFeedbackReason(initialReason);
+    setFeedbackNote(note);
+    setNoteDraft(note ?? "");
+    setReasonPanelCollapsed(Boolean(note));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- message identity only
   }, [id]);
 
   async function sendFeedback(
     next: "good" | "bad" | null,
-    reason?: FeedbackReason | null
+    opts?: { reason?: FeedbackReason | null; note?: string; collapse?: boolean }
   ) {
     if (!canFeedback || busy) return;
     const prev = feedback;
     const prevReason = feedbackReason;
+    const prevNote = feedbackNote;
+    const prevDraft = noteDraft;
+    const prevCollapsed = reasonPanelCollapsed;
+    const reason = opts?.reason;
+    const noteToSend =
+      opts && Object.prototype.hasOwnProperty.call(opts, "note")
+        ? clipFeedbackNote(opts.note)
+        : undefined;
     setBusy(true);
     setFeedbackError(null);
     setFeedback(next);
-    if (next !== "bad") setFeedbackReason(null);
-    else if (reason) setFeedbackReason(reason);
+    if (next !== "bad") {
+      setFeedbackReason(null);
+      setFeedbackNote(null);
+      setNoteDraft("");
+      setReasonPanelCollapsed(false);
+    } else {
+      if (reason) setFeedbackReason(reason);
+      if (noteToSend !== undefined) setFeedbackNote(noteToSend);
+    }
     try {
       let token = await getAccessToken();
       if (!token) {
@@ -1118,6 +1150,9 @@ export function LunaMessage({
       if (!token) {
         setFeedback(prev);
         setFeedbackReason(prevReason);
+        setFeedbackNote(prevNote);
+        setNoteDraft(prevDraft);
+        setReasonPanelCollapsed(prevCollapsed);
         setFeedbackError("로그인이 필요합니다. 다시 로그인한 뒤 눌러 주세요.");
         return;
       }
@@ -1130,7 +1165,8 @@ export function LunaMessage({
         body: JSON.stringify({
           message_id: id,
           feedback: next,
-          ...(next === "bad" && reason ? { reason } : {})
+          ...(next === "bad" && reason ? { reason } : {}),
+          ...(next === "bad" && noteToSend !== undefined ? { note: noteToSend ?? "" } : {})
         })
       });
       if (!res.ok) {
@@ -1138,6 +1174,9 @@ export function LunaMessage({
         console.error("[luna] feedback", text);
         setFeedback(prev);
         setFeedbackReason(prevReason);
+        setFeedbackNote(prevNote);
+        setNoteDraft(prevDraft);
+        setReasonPanelCollapsed(prevCollapsed);
         setFeedbackError(
           res.status === 401
             ? "로그인이 만료되었습니다. 다시 로그인해 주세요."
@@ -1148,13 +1187,21 @@ export function LunaMessage({
       const json = (await res.json()) as {
         feedback?: "good" | "bad" | null;
         reason?: unknown;
+        note?: unknown;
       };
       setFeedback(json.feedback === "good" || json.feedback === "bad" ? json.feedback : null);
       setFeedbackReason(isFeedbackReason(json.reason) ? json.reason : null);
+      const savedNote = clipFeedbackNote(json.note);
+      setFeedbackNote(savedNote);
+      if (noteToSend !== undefined) setNoteDraft(savedNote ?? "");
+      if (opts?.collapse) setReasonPanelCollapsed(true);
     } catch (err) {
       console.error("[luna] feedback", err);
       setFeedback(prev);
       setFeedbackReason(prevReason);
+      setFeedbackNote(prevNote);
+      setNoteDraft(prevDraft);
+      setReasonPanelCollapsed(prevCollapsed);
       setFeedbackError("네트워크 오류로 평가를 저장하지 못했습니다.");
     } finally {
       setBusy(false);
@@ -1307,28 +1354,77 @@ export function LunaMessage({
               }}
             />
             {canFeedback && feedback === "bad" ? (
-              <div className="mt-1.5">
-                <p className="mb-1 text-[10.5px] text-[#9aa0a8]">
-                  무엇이 아쉬웠나요? (선택)
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {FEEDBACK_REASON_IDS.map((rid) => (
+              reasonPanelCollapsed ? (
+                <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">
+                  <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                    {feedbackReason ? (
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-[#534AB7]">
+                        {FEEDBACK_REASON_LABELS[feedbackReason]}
+                      </span>
+                    ) : null}
                     <button
-                      key={rid}
+                      type="button"
+                      className="ml-auto text-[11px] text-[#6b6f76] underline-offset-2 hover:underline"
+                      onClick={() => setReasonPanelCollapsed(false)}
+                    >
+                      다시 적기
+                    </button>
+                  </div>
+                  {feedbackNote ? (
+                    <p className="mt-1 whitespace-pre-wrap text-[12px] leading-[1.45] text-[#33363c]">
+                      {feedbackNote}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-1.5">
+                  <p className="mb-1 text-[10.5px] text-[#9aa0a8]">
+                    무엇이 아쉬웠나요?
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {FEEDBACK_REASON_IDS.map((rid) => (
+                      <button
+                        key={rid}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void sendFeedback("bad", { reason: rid })}
+                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          feedbackReason === rid
+                            ? "bg-[#534AB7] text-white"
+                            : "bg-[#f3f4f6] text-[#6b6f76]"
+                        }`}
+                      >
+                        {FEEDBACK_REASON_LABELS[rid]}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={noteDraft}
+                    maxLength={FEEDBACK_NOTE_MAX}
+                    disabled={busy}
+                    placeholder="직접 적어주세요 (선택)"
+                    onChange={(e) => setNoteDraft(e.target.value.slice(0, FEEDBACK_NOTE_MAX))}
+                    className="mt-1.5 w-full resize-none rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[12px] leading-[1.45] text-[#33363c] outline-none placeholder:text-[#9aa0a8] focus:border-[#c4bff0]"
+                    rows={2}
+                  />
+                  <div className="mt-1 flex items-center justify-end">
+                    <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void sendFeedback("bad", rid)}
-                      className={`rounded-full px-2 py-0.5 text-[11px] ${
-                        feedbackReason === rid
-                          ? "bg-[#534AB7] text-white"
-                          : "bg-[#f3f4f6] text-[#6b6f76]"
-                      }`}
+                      onClick={() =>
+                        void sendFeedback("bad", {
+                          reason: feedbackReason,
+                          note: noteDraft,
+                          collapse: true
+                        })
+                      }
+                      className="rounded-md bg-[#534AB7] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-60"
                     >
-                      {FEEDBACK_REASON_LABELS[rid]}
+                      남기기
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              )
             ) : null}
             {feedbackError ? (
               <p className="mt-1 text-[11px] text-[#c23b3b]">{feedbackError}</p>
