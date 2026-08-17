@@ -30,6 +30,28 @@ export type LibraryItem = {
   content: string;
 };
 
+export type LibraryAdminRow = LibraryItem & {
+  source_prompt_key: string | null;
+  is_active: boolean;
+  updated_at?: string;
+};
+
+export const LIBRARY_KIND_OPTIONS = [
+  { value: "template", label: "문서양식" },
+  { value: "analysis", label: "분석기준" },
+  { value: "tone", label: "톤가이드" }
+] as const;
+
+export type LibraryKind = (typeof LIBRARY_KIND_OPTIONS)[number]["value"];
+
+export function isLibraryKind(value: string): value is LibraryKind {
+  return LIBRARY_KIND_OPTIONS.some((k) => k.value === value);
+}
+
+export function libraryKindLabel(kind: string): string {
+  return LIBRARY_KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
+}
+
 export type UnclassifiedQuestionRow = {
   id: string;
   question: string;
@@ -354,28 +376,63 @@ export async function recordUnclassifiedQuestion(
   }
 }
 
+function mapLibraryRow(row: Record<string, unknown>): LibraryAdminRow {
+  return {
+    slug: asText(row.slug),
+    title: asText(row.title, asText(row.slug)),
+    kind: asText(row.kind, "template"),
+    content: asText(row.content),
+    source_prompt_key:
+      typeof row.source_prompt_key === "string" ? row.source_prompt_key : null,
+    is_active: asBool(row.is_active, true),
+    updated_at: typeof row.updated_at === "string" ? row.updated_at : undefined
+  };
+}
+
 export async function loadLibraryItems(
   admin: SupabaseClient
 ): Promise<LibraryItem[]> {
   try {
-    const { data, error } = await admin
-      .from("luna_library")
-      .select("slug, title, kind, content")
-      .eq("is_active", true)
-      .order("title", { ascending: true });
-    if (error) {
-      if (!isMissingTable(error)) console.error("[luna/library] load", error);
-      return [];
-    }
-    return (data ?? []).map((r) => ({
-      slug: asText((r as { slug?: unknown }).slug),
-      title: asText((r as { title?: unknown }).title),
-      kind: asText((r as { kind?: unknown }).kind, "template"),
-      content: asText((r as { content?: unknown }).content)
+    const { items } = await loadLibraryAdmin(admin, { activeOnly: true });
+    return items.map(({ slug, title, kind, content }) => ({
+      slug,
+      title,
+      kind,
+      content
     }));
   } catch (err) {
     console.error("[luna/library] load", err);
     return [];
+  }
+}
+
+export async function loadLibraryAdmin(
+  admin: SupabaseClient,
+  opts?: { activeOnly?: boolean }
+): Promise<{ items: LibraryAdminRow[]; tableReady: boolean }> {
+  try {
+    let q = admin
+      .from("luna_library")
+      .select(
+        "slug, title, kind, content, source_prompt_key, is_active, updated_at"
+      )
+      .order("title", { ascending: true });
+    if (opts?.activeOnly) {
+      q = q.eq("is_active", true);
+    }
+    const { data, error } = await q;
+    if (error) {
+      if (isMissingTable(error)) return { items: [], tableReady: false };
+      console.error("[luna/library] load", error);
+      throw new Error(error.message);
+    }
+    return {
+      items: (data ?? []).map((r) => mapLibraryRow(r as Record<string, unknown>)),
+      tableReady: true
+    };
+  } catch (err) {
+    console.error("[luna/library] load", err);
+    throw err;
   }
 }
 
