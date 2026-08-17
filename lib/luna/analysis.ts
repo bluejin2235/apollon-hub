@@ -12,7 +12,7 @@ import {
   readUsage,
   type LunaUsageTokens
 } from "@/lib/luna/engine";
-import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
+import { capNotionDisplaySources, formatNotionSourcesForPrompt, searchNotionPages, type NotionSource } from "@/lib/luna/notion";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
@@ -181,8 +181,8 @@ function pushModelStep(
 
 function formatMaterialsList(cards: LunaCard[], notionSources: NotionSource[]): string {
   const lines: string[] = [];
-  for (const s of notionSources) {
-    lines.push(`- [notion] ${s.title}: ${s.url}`);
+  if (notionSources.length > 0) {
+    lines.push(formatNotionSourcesForPrompt(notionSources));
   }
   for (const c of cards) {
     if (c.type === "notion") continue;
@@ -535,12 +535,10 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
         keywords = newKeywords;
         searchRounds += 1;
         batch = await runConnectorSearch(keywords);
-        notionSources = [
+        notionSources = capNotionDisplaySources([
           ...notionSources,
-          ...batch.notionSources.filter(
-            (s) => !notionSources.some((x) => x.url === s.url)
-          )
-        ];
+          ...batch.notionSources
+        ]);
         nasResults = [
           ...nasResults,
           ...batch.nasResults.filter(
@@ -559,7 +557,13 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
           return `- ${name} → T:\\${row.path.replace(/\//g, "\\")}`;
         })
         .join("\n");
-      materialsText += `\n[Work서버]\n${nasBlock}`;
+      const notionHasPath = notionSources.some((s) => (s.paths?.length ?? 0) > 0);
+      materialsText +=
+        `\n[Work서버]\n` +
+        (notionHasPath
+          ? "(노션에 기록된 경로가 있으면 그것을 우선한다)\n"
+          : "") +
+        nasBlock;
     }
 
     const materialCount = cards.length || notionSources.length;

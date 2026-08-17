@@ -19,7 +19,10 @@ import {
   type CachedSystemPayload
 } from "@/lib/luna/prompt-cache";
 import {
+  buildLocationAnswerRules,
+  formatNotionSourcesForPrompt,
   mergeNotionSearchOutcomes,
+  notionRecordedPaths,
   searchNotionPages,
   type NotionSearchOutcome,
   type NotionSearchStatus,
@@ -448,11 +451,8 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    const notionBlock = opts.notionSources
-      .map((s) => `- ${s.title} — ${s.url}`)
-      .join("\n");
     parts.push(
-      `[노션 검색 결과]\n${notionBlock}\n(답변 본문에 위 각 항목의 제목과 URL을 반드시 포함할 것. URL 없이 '노션에 정리되어 있다'고만 쓰지 말 것)`
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(opts.notionSources)}\n(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다.)`
     );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
@@ -473,6 +473,7 @@ function buildVolatileSystemText(opts: {
   }
 
   const nasResults = opts.nasResults ?? [];
+  const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults
       .map((row) => {
@@ -483,24 +484,26 @@ function buildVolatileSystemText(opts: {
       .join("\n");
     parts.push(
       "[Work서버 파일 위치]\n" +
-        "아래 경로만이 실측된 경로다. 이 목록에 없는 경로는 존재를 모르는 것이다.\n" +
+        (notionPaths.length > 0
+          ? "아래는 Work서버 인덱스 검색 결과다. 노션에 기록된 경로가 있으면 그것을 우선한다.\n"
+          : "아래 경로는 Work서버 인덱스에서 확인된 경로다. 목록에 없는 경로는 추측하지 않는다.\n") +
         nasBlock
     );
   } else if (opts.nasSearchAttempted) {
     parts.push(
-      "[Work서버 파일 위치]\n(검색 결과 없음 — 아래 규칙 3 적용)"
+      notionPaths.length > 0
+        ? "[Work서버 파일 위치]\n(인덱스 검색 0건 — 노션에 기록된 경로를 우선 사용한다. 찾지 못했다고 단정하지 말 것)"
+        : "[Work서버 파일 위치]\n(검색 결과 없음 — 노션 페이지가 있으면 그 링크는 제시하고, 경로는 추측하지 말 것)"
     );
   }
 
   parts.push(
-    "[답변 규칙]\n" +
-      "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
-      "- [노션 검색 결과]가 제공되면 각 페이지 제목과 URL을 답변 본문에 반드시 함께 쓴다.\n" +
-      "- 검색 결과가 없으면 반드시 '찾지 못했다'고 명확히 답한다.\n" +
-      "  - 경로·파일명·폴더명을 절대 추측하거나 조합해서 만들지 않는다. 검색 결과에 없는 T:\\ 또는 P:\\ 경로를 답변에 쓰는 것은 금지다.\n" +
-      "  - 대신 할 수 있는 것: ①검색 중 발견한 인접 자료(비슷한 프로젝트·상위 폴더)를 '대신 이런 것은 있다'로 제시 ②더 정확한 검색어 제안 ③담당자 확인 권유\n" +
-      "  - '기능 준비 중/연동 안 됨' 같은 표현은 여전히 금지\n" +
+    `${buildLocationAnswerRules({
+      hasNotionSources: (opts.notionSources?.length ?? 0) > 0,
+      hasNotionPaths: notionPaths.length > 0
+    })}\n` +
       `${SYNTHESIS_OPINION_FALLBACK}\n` +
+      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다.\n" +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
 
@@ -1575,12 +1578,7 @@ export async function POST(request: NextRequest) {
             pushStep("search", "running", searchRunningLabel);
             batch = await runConnectorSearch(keywords);
             notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome) : batch.notionOutcome;
-            notionSources = [
-              ...notionSources,
-              ...batch.notionSources.filter(
-                (s) => !notionSources.some((x) => x.url === s.url)
-              )
-            ];
+            notionSources = notionSearchOutcome.sources;
             nasResults = finalizeNasDirectoryRows([
               ...nasResults,
               ...batch.nasResults

@@ -246,11 +246,21 @@ export function NotionResultCard({ sources }: { sources: NotionSource[] }) {
                 borderBottom: isLast ? undefined : "1px solid #e7e8ec"
               }}
             >
-              <span
-                className="min-w-0 flex-1 truncate text-[13px] text-[#1c1d21]"
-                title={page.title}
-              >
-                {page.title}
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block truncate text-[13px] text-[#1c1d21]"
+                  title={page.title}
+                >
+                  {page.title}
+                </span>
+                {page.paths?.[0] ? (
+                  <span
+                    className="mt-0.5 block truncate text-[11px] text-[#6b6f76]"
+                    title={page.paths[0]}
+                  >
+                    {page.paths[0]}
+                  </span>
+                ) : null}
               </span>
               <ArrowUpRight
                 className="h-[15px] w-[15px] shrink-0 text-[#9aa0a8]"

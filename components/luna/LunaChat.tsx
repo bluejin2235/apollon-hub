@@ -214,6 +214,10 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
         url: string;
         id?: string;
         last_edited_time?: string | null;
+        excerpt?: string | null;
+        paths?: unknown;
+        dates?: unknown;
+        entities?: unknown;
       } =>
         Boolean(s) &&
         typeof s === "object" &&
@@ -226,6 +230,16 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
       id: typeof s.id === "string" ? s.id : "",
       ...(s.last_edited_time !== undefined
         ? { last_edited_time: s.last_edited_time }
+        : {}),
+      ...(typeof s.excerpt === "string" ? { excerpt: s.excerpt } : {}),
+      ...(Array.isArray(s.paths)
+        ? { paths: s.paths.filter((p): p is string => typeof p === "string") }
+        : {}),
+      ...(Array.isArray(s.dates)
+        ? { dates: s.dates.filter((d): d is string => typeof d === "string") }
+        : {}),
+      ...(Array.isArray(s.entities)
+        ? { entities: s.entities.filter((e): e is string => typeof e === "string") }
         : {})
     }));
   return sources.length > 0 ? sources : null;

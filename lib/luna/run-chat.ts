@@ -25,7 +25,13 @@ import {
   sanitizeKnowledgeListAnswer,
   selectLearningsForInject
 } from "@/lib/luna/knowledge-dump-guard";
-import { searchNotionPages, type NotionSource } from "@/lib/luna/notion";
+import {
+  buildLocationAnswerRules,
+  formatNotionSourcesForPrompt,
+  notionRecordedPaths,
+  searchNotionPages,
+  type NotionSource
+} from "@/lib/luna/notion";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
@@ -193,10 +199,7 @@ function buildSystemPrompt(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    const notionBlock = opts.notionSources
-      .map((s) => `- ${s.title}: ${s.url}`)
-      .join("\n");
-    parts.push(`[노션 검색 결과]\n${notionBlock}`);
+    parts.push(`[노션 검색 결과]\n${formatNotionSourcesForPrompt(opts.notionSources)}`);
   }
 
   if (opts.cards && opts.cards.length > 0) {
@@ -209,6 +212,7 @@ function buildSystemPrompt(opts: {
   }
 
   const nasResults = opts.nasResults ?? [];
+  const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults
       .map((row) => {
@@ -219,24 +223,30 @@ function buildSystemPrompt(opts: {
       .join("\n");
     parts.push(
       "[Work서버 파일 위치]\n" +
-        "아래 경로만이 검증된 경로다. 이 목록에 없는 경로는 존재를 모르는 것이다.\n" +
+        (notionPaths.length > 0
+          ? "아래는 Work서버 인덱스 검색 결과다. 노션에 기록된 경로가 있으면 그것을 우선한다.\n"
+          : "아래 경로는 Work서버 인덱스에서 확인된 경로다. 목록에 없는 경로는 추측하지 않는다.\n") +
         nasBlock
     );
   } else if (opts.nasSearchAttempted) {
     parts.push(
-      "[Work서버 파일 위치]\n(검색 결과 없음 — 찾지 못했다고 명확히 답하고 경로를 추측하지 마세요)"
+      notionPaths.length > 0
+        ? "[Work서버 파일 위치]\n(인덱스 검색 0건 — 노션에 기록된 경로를 우선 사용한다. 찾지 못했다고 단정하지 말 것)"
+        : "[Work서버 파일 위치]\n(검색 결과 없음 — 찾지 못했다고 명확히 답하고 경로를 추측하지 마세요)"
     );
   }
 
   const opinionRule = opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
 
   parts.push(
-    "[답변 규칙]\n" +
-      "- 위에 제공된 검색 결과가 있으면 그것을 근거로 답하세요.\n" +
-      "- 검색 결과가 없으면 반드시 '찾지 못했다'고 명확히 답한다. 경로·파일명을 추측하지 마세요.\n" +
+    `${buildLocationAnswerRules({
+      hasNotionSources: (opts.notionSources?.length ?? 0) > 0,
+      hasNotionPaths: notionPaths.length > 0
+    })}\n` +
       "- '기능 준비 중', '연동이 안 되어 있다', '검색 실패'처럼 시스템 장애로 단정하지 마세요.\n" +
       `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
       `${KNOWLEDGE_LIST_HARD_RULE}\n` +
+      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다.\n" +
       "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
 
