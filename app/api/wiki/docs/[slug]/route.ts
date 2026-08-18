@@ -8,6 +8,7 @@ import {
   canViewWikiDoc
 } from "@/lib/wiki/permissions";
 import { parseRelated, parseSections } from "@/lib/wiki/sections";
+import { normalizeWikiKind } from "@/lib/wiki/types";
 import {
   deleteWikiDoc,
   loadWikiDoc,
@@ -102,7 +103,10 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
             slug,
             {
               title: typeof body.title === "string" ? body.title : undefined,
-              kind: typeof body.kind === "string" ? body.kind : undefined,
+              kind:
+                typeof body.kind === "string"
+                  ? normalizeWikiKind(doc.category, body.kind)
+                  : undefined,
               summary:
                 typeof body.summary === "string" ? body.summary : undefined,
               related: body.related !== undefined ? parseRelated(body.related) : undefined,

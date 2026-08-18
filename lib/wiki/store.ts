@@ -146,10 +146,9 @@ export async function loadWikiNavCounts(
   }
 
   const { items, wikiReady } = await loadWikiDocs(admin, { activeOnly: true });
-  const visible =
-    opts?.isSuperAdmin === false
-      ? items.filter((d) => d.visible_to_staff !== false)
-      : items;
+  const visible = opts?.isSuperAdmin
+    ? items
+    : items.filter((d) => d.visible_to_staff !== false);
   const forms = visible.filter((d) => d.category === "forms").length;
   const standards = visible.filter((d) => d.category === "standards").length;
   const rules = visible.filter((d) => d.category === "rules").length;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiWhen, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import {
   WIKI_CATEGORY_META,
@@ -122,39 +123,47 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
           className="overflow-hidden rounded-[11px] border"
           style={{ borderColor: W.line }}
         >
-          {filtered.map((row) => (
-            <Link
-              key={row.slug}
-              href={wikiDocPath(category, row.slug)}
-              className="flex items-center gap-[11px] border-b px-[14px] py-3 last:border-b-0"
-              style={{ borderColor: W.line2 }}
-            >
-              <span className="min-w-[126px] text-[13px] font-semibold">
-                {row.title}
-              </span>
-              <span
-                className="min-w-0 flex-1 truncate text-[11.5px]"
-                style={{ color: W.sub }}
+          {filtered.map((row) => {
+            const isPrivate = row.visible_to_staff === false;
+            return (
+              <Link
+                key={row.slug}
+                href={wikiDocPath(category, row.slug)}
+                className="flex items-center gap-[11px] border-b px-[14px] py-3 last:border-b-0"
+                style={{
+                  borderColor: W.line2,
+                  background: isPrivate ? W.lockBg : undefined,
+                  opacity: isPrivate ? 0.92 : 1
+                }}
               >
-                {row.summary || "—"}
-              </span>
-              <span
-                className="rounded-[5px] px-1.5 py-0.5 text-[9px]"
-                style={{ background: W.chip, color: W.faint }}
-              >
-                {wikiKindLabel(category, row.kind)}
-              </span>
-              <span className="text-[10px]" style={{ color: W.faint }}>
-                {wikiEditorLabel(row.updated_by, row.updated_by_name)}
-              </span>
-              <span
-                className="w-10 text-right text-[10px]"
-                style={{ color: W.faint }}
-              >
-                {formatWikiWhen(row.updated_at)}
-              </span>
-            </Link>
-          ))}
+                <span className="min-w-[126px] text-[13px] font-semibold">
+                  {row.title}
+                </span>
+                <span
+                  className="min-w-0 flex-1 truncate text-[11.5px]"
+                  style={{ color: W.sub }}
+                >
+                  {row.summary || "—"}
+                </span>
+                {isPrivate ? <WikiStaffHiddenMark /> : null}
+                <span
+                  className="rounded-[5px] px-1.5 py-0.5 text-[9px]"
+                  style={{ background: W.chip, color: W.faint }}
+                >
+                  {wikiKindLabel(category, row.kind)}
+                </span>
+                <span className="text-[10px]" style={{ color: W.faint }}>
+                  {wikiEditorLabel(row.updated_by, row.updated_by_name)}
+                </span>
+                <span
+                  className="w-10 text-right text-[10px]"
+                  style={{ color: W.faint }}
+                >
+                  {formatWikiWhen(row.updated_at)}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
 

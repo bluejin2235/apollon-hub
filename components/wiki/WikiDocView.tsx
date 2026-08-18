@@ -7,6 +7,7 @@ import { WikiDiffView } from "@/components/wiki/WikiDiffView";
 import { WikiMarkdown } from "@/components/wiki/WikiMarkdown";
 import { WikiSectionEditor } from "@/components/wiki/WikiSectionEditor";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiStamp, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import { formatDiffCounts } from "@/lib/wiki/diff";
 import { WIKI_RULES_LOCK_MESSAGE } from "@/lib/wiki/permissions";
@@ -257,6 +258,11 @@ export function WikiDocView({
         >
           {wikiKindLabel(category, doc.kind)}
         </span>
+        {doc.visible_to_staff === false ? (
+          <span className="ml-1.5 align-[6px] inline-flex">
+            <WikiStaffHiddenMark />
+          </span>
+        ) : null}
         {category === "rules" ? (
           <span
             className="ml-1.5 align-[6px] rounded-[9px] px-2 py-[3px] text-[10px] font-bold"
@@ -266,6 +272,14 @@ export function WikiDocView({
           </span>
         ) : null}
       </h1>
+      {doc.visible_to_staff === false ? (
+        <p
+          className="mb-3 mt-2 rounded-[10px] px-[13px] py-2.5 text-[11.5px]"
+          style={{ background: W.lockBg, color: W.lock }}
+        >
+          🔒 직원에게 안 보임. 슈퍼관리자만 이 문서를 볼 수 있습니다. 루나는 계속 참고합니다.
+        </p>
+      ) : null}
       <p className="mb-3 mt-1 text-[11px]" style={{ color: W.faint }}>
         {formatWikiStamp(doc.updated_at, doc.updated_by_name, doc.updated_by)} · {doc.version}판
         {typeof doc.use_count === "number" ? ` · 루나가 ${doc.use_count}번 사용` : ""}

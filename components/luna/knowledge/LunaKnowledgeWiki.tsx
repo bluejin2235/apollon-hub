@@ -1,9 +1,9 @@
 "use client";
 
-import { Lock } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
 import { WikiSectionEditor } from "@/components/wiki/WikiSectionEditor";
+import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiWhen, W } from "@/components/wiki/wiki-theme";
 import {
   ErrorLine,
@@ -278,37 +278,41 @@ export function LunaKnowledgeWiki() {
                   opacity: isPrivate ? 0.92 : 1
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => toggleRow(row.slug)}
-                  className="flex w-full items-center gap-2 px-4 py-3 text-left"
-                >
-                  {isPrivate ? (
-                    <Lock
-                      className="h-3.5 w-3.5 shrink-0"
-                      style={{ color: W.lock }}
-                      strokeWidth={1.75}
-                      aria-hidden
-                    />
-                  ) : null}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] font-semibold">{row.title}</span>
-                    <span
-                      className="mt-0.5 block truncate text-[11.5px]"
-                      style={{ color: K.sub }}
-                    >
-                      {row.summary || "—"}
-                    </span>
-                  </span>
-                  <span
-                    className="hidden shrink-0 rounded-[5px] px-1.5 py-0.5 text-[9px] sm:inline"
-                    style={{ background: K.chip, color: K.faint }}
+                <div className="flex w-full items-center gap-2 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleRow(row.slug)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    aria-expanded={expanded}
                   >
-                    {wikiKindLabel(category, row.kind)}
-                  </span>
-                  <span className="shrink-0 text-[10px]" style={{ color: K.faint }}>
-                    {formatWikiWhen(row.updated_at)}
-                  </span>
+                    {isPrivate ? <WikiStaffHiddenMark compact /> : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold">{row.title}</span>
+                      <span
+                        className="mt-0.5 block truncate text-[11.5px]"
+                        style={{ color: K.sub }}
+                      >
+                        {row.summary || "—"}
+                      </span>
+                    </span>
+                    {isPrivate ? (
+                      <span
+                        className="hidden shrink-0 text-[9px] font-semibold sm:inline"
+                        style={{ color: W.lock }}
+                      >
+                        직원에게 안 보임
+                      </span>
+                    ) : null}
+                    <span
+                      className="hidden shrink-0 rounded-[5px] px-1.5 py-0.5 text-[9px] sm:inline"
+                      style={{ background: K.chip, color: K.faint }}
+                    >
+                      {wikiKindLabel(category, row.kind)}
+                    </span>
+                    <span className="shrink-0 text-[10px]" style={{ color: K.faint }}>
+                      {formatWikiWhen(row.updated_at)}
+                    </span>
+                  </button>
                   {canToggleVisibility ? (
                     <VisibilityToggle
                       visible={row.visible_to_staff !== false}
@@ -321,7 +325,7 @@ export function LunaKnowledgeWiki() {
                       {isPrivate ? "비공개" : "공개"}
                     </span>
                   )}
-                </button>
+                </div>
 
                 {expanded ? (
                   <div

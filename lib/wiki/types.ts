@@ -78,6 +78,30 @@ export const WIKI_KIND_OPTIONS: Record<
   rules: [{ value: "policy", label: "규정" }]
 };
 
+/** 잘못된/옛 값이 들어오면 허용값으로 맞춘다. */
+export const WIKI_KIND_ALIASES: Record<string, string> = {
+  standard: "analysis",
+  standards: "analysis"
+};
+
+export function isAllowedWikiKind(
+  category: WikiCategory,
+  kind: string
+): boolean {
+  return WIKI_KIND_OPTIONS[category].some((k) => k.value === kind);
+}
+
+export function defaultWikiKind(category: WikiCategory): string {
+  return WIKI_KIND_OPTIONS[category][0]!.value;
+}
+
+export function normalizeWikiKind(category: WikiCategory, kind: string): string {
+  const trimmed = kind.trim();
+  const aliased = WIKI_KIND_ALIASES[trimmed] ?? trimmed;
+  if (isAllowedWikiKind(category, aliased)) return aliased;
+  return defaultWikiKind(category);
+}
+
 export const WIKI_CATEGORY_META: Record<
   WikiCategory,
   { label: string; path: string; blurb: string; anyoneEdits: boolean }
@@ -107,14 +131,18 @@ export function isWikiCategory(value: string): value is WikiCategory {
 }
 
 export function wikiKindLabel(category: WikiCategory, kind: string): string {
+  const value = normalizeWikiKind(category, kind);
   return (
-    WIKI_KIND_OPTIONS[category].find((k) => k.value === kind)?.label ?? kind
+    WIKI_KIND_OPTIONS[category].find((k) => k.value === value)?.label ??
+    WIKI_CATEGORY_META[category].label
   );
 }
 
 export function inferWikiCategory(kind: string, slug?: string): WikiCategory {
   if (slug === "rfp_analysis") return "standards";
-  if (kind === "analysis" || kind === "tone") return "standards";
+  if (kind === "analysis" || kind === "tone" || kind === "standard") {
+    return "standards";
+  }
   if (kind === "policy") return "rules";
   return "forms";
 }

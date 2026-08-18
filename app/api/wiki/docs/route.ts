@@ -10,7 +10,7 @@ import { createWikiDoc, listItems, loadWikiDocs } from "@/lib/wiki/store";
 import {
   isWikiCategory,
   makeWikiSlug,
-  WIKI_KIND_OPTIONS,
+  normalizeWikiKind,
   WIKI_SLUG_RE,
   type WikiCategory
 } from "@/lib/wiki/types";
@@ -78,10 +78,8 @@ export async function POST(request: NextRequest) {
   if (!title) {
     return NextResponse.json({ error: "제목이 필요합니다." }, { status: 400 });
   }
-  const kindOpts = WIKI_KIND_OPTIONS[category];
   const kindRaw = typeof body.kind === "string" ? body.kind.trim() : "";
-  const kind =
-    kindOpts.find((k) => k.value === kindRaw)?.value ?? kindOpts[0]!.value;
+  const kind = normalizeWikiKind(category, kindRaw);
   let slug =
     typeof body.slug === "string" && body.slug.trim()
       ? body.slug.trim().toLowerCase()
