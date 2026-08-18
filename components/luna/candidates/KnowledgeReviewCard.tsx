@@ -6,6 +6,7 @@ import type {
   ReviewProposal
 } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
+import { stripConfirmClaimDisplay } from "@/lib/luna/candidate-format";
 import { formatKoreanDay, K, sourceLabel } from "@/lib/luna/knowledge-format";
 
 const OLD = { ink: "#8A6D2F", bg: "#FAF7EE" };
@@ -125,7 +126,7 @@ export function KnowledgeReviewCard({
                 이미 아는 것
               </div>
               <div className="text-[12.5px] leading-[1.75]">
-                {item.duplicate.content}
+                {stripConfirmClaimDisplay(item.duplicate.content)}
               </div>
               {existingMeta ? (
                 <div className="mt-1.5 text-[10px]" style={{ color: K.faint }}>
@@ -143,7 +144,9 @@ export function KnowledgeReviewCard({
               >
                 새로 들은 것
               </div>
-              <div className="text-[12.5px] leading-[1.75]">{item.content}</div>
+              <div className="text-[12.5px] leading-[1.75]">
+                {stripConfirmClaimDisplay(item.content)}
+              </div>
               {incomingMeta ? (
                 <div className="mt-1.5 text-[10px]" style={{ color: K.faint }}>
                   {incomingMeta}
@@ -198,7 +201,7 @@ export function KnowledgeReviewCard({
               {reason || "어느 쪽이 맞는지 골라 주세요."}
             </p>
           ) : (
-            <div className="text-[13px] leading-[1.8]">{sentence}</div>
+            <div className="text-[13px] leading-[1.8]">{stripConfirmClaimDisplay(sentence)}</div>
           )}
           {kind !== "conflict" && reason ? (
             <p className="mt-2 text-[11px] leading-[1.6]" style={{ color: K.faint }}>

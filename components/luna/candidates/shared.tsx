@@ -20,6 +20,7 @@ import {
   parseGlossaryMeta,
   scopeBadgeLabel,
   selfstudyQuestion,
+  stripConfirmClaimDisplay,
   type GlossaryEditDraft
 } from "@/lib/luna/candidate-format";
 import { clipText, K, sourceLabel } from "@/lib/luna/knowledge-format";
@@ -215,7 +216,7 @@ export function ThreadBlock({ thread }: { thread: ThreadTurn[] }) {
           style={{ color: t.role === "human" ? K.ink : K.sub }}
         >
           {t.role === "human" ? "나: " : "루나: "}
-          {t.text}
+          {stripConfirmClaimDisplay(t.text)}
         </p>
       ))}
     </div>

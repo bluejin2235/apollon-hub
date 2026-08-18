@@ -497,12 +497,12 @@ export function LunaCandidatesPending() {
           const reviseDraft = reviseOpen[item.id];
           const editingGlossary = glossaryEdit[item.id];
           const cardError = cardErrors[item.id];
-
-          if (
+          const useReviewCard =
             kind !== "glossary" &&
             kind !== "selfstudy" &&
-            !(kind === "dialogue" && item.thread.length > 0)
-          ) {
+            item.source !== "question";
+
+          if (useReviewCard) {
             return (
               <KnowledgeReviewCard
                 item={item}

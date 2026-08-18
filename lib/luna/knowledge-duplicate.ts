@@ -38,7 +38,27 @@ export type DuplicateDecision =
   | "accept_existing"
   | "accept_new";
 
-const SIMILAR_THRESHOLD = 0.28;
+const SIMILAR_THRESHOLD = 0.38;
+
+const TOPIC_STOP = new Set([
+  "아폴론",
+  "apollon",
+  "apollo",
+  "한다",
+  "있다",
+  "없다",
+  "위한",
+  "통해",
+  "대한",
+  "그리고",
+  "또는",
+  "하는",
+  "되어",
+  "된다",
+  "이다",
+  "있는",
+  "없는"
+]);
 
 const PROPOSE_FALLBACK = `두 지식을 비교해 한 가지로 판정한다.
 
@@ -150,6 +170,20 @@ export function knowledgeSimilarity(a: string, b: string): number {
   return tok * 0.55 + bi * 0.45;
 }
 
+export function isSameTopic(a: string, b: string): boolean {
+  const ta = tokens(a).filter((t) => t.length >= 3 && !TOPIC_STOP.has(t));
+  const tb = new Set(tokens(b).filter((t) => t.length >= 3 && !TOPIC_STOP.has(t)));
+  const seen = new Set<string>();
+  let hit = 0;
+  for (const t of ta) {
+    if (!tb.has(t) || seen.has(t)) continue;
+    seen.add(t);
+    hit += 1;
+    if (hit >= 2) return true;
+  }
+  return false;
+}
+
 export function findDuplicateMatches(
   content: string,
   actives: ActiveKnowledge[],
@@ -158,12 +192,24 @@ export function findDuplicateMatches(
   const scored: DuplicateMatch[] = [];
   for (const row of actives) {
     if (excludeId && row.id === excludeId) continue;
+    if (!isSameTopic(content, row.content)) continue;
     const score = knowledgeSimilarity(content, row.content);
     if (score < SIMILAR_THRESHOLD) continue;
     scored.push({ ...row, score });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored;
+}
+
+export function pickOldestActive<T extends { created_at: string | null }>(
+  rows: T[]
+): T | null {
+  if (rows.length === 0) return null;
+  return [...rows].sort((a, b) => {
+    const ta = a.created_at ? Date.parse(a.created_at) : Number.POSITIVE_INFINITY;
+    const tb = b.created_at ? Date.parse(b.created_at) : Number.POSITIVE_INFINITY;
+    return ta - tb;
+  })[0]!;
 }
 
 function tokenCoverage(longer: string, source: string): number {
@@ -397,12 +443,13 @@ export function pickOldestKeep<T extends { id: string; created_at: string | null
   existing: T,
   incoming: T
 ): T {
+  const existingActive = existing.status === "active";
+  const incomingActive = incoming.status === "active";
+  if (existingActive && !incomingActive) return existing;
+  if (incomingActive && !existingActive) return incoming;
   const te = existing.created_at ? Date.parse(existing.created_at) : Number.POSITIVE_INFINITY;
   const ti = incoming.created_at ? Date.parse(incoming.created_at) : Number.POSITIVE_INFINITY;
-  if (te < ti) return existing;
   if (ti < te) return incoming;
-  if (existing.status === "active" && incoming.status !== "active") return existing;
-  if (incoming.status === "active" && existing.status !== "active") return incoming;
   return existing;
 }
 
@@ -422,6 +469,20 @@ export async function loadActiveKnowledge(
   return ((data ?? []) as ActiveKnowledge[]).filter(
     (r) => typeof r.content === "string" && r.content.trim().length > 0
   );
+}
+
+export async function tryMarkNotDuplicate(
+  admin: SupabaseClient,
+  candidateId: string
+): Promise<void> {
+  const error = await updateLearning(admin, candidateId, {
+    review_reason: "new",
+    duplicate_of: null,
+    merge_target: null
+  });
+  if (error) {
+    console.error("[luna/knowledge-duplicate] mark new", error);
+  }
 }
 
 export async function trySetDuplicateOf(
@@ -473,17 +534,18 @@ export async function attachCandidateDuplicate(
   }
   const actives = await loadActiveKnowledge(admin);
   const matches = findDuplicateMatches(row.content, actives, row.id);
-  const best = matches[0];
-  if (!best) return { identicalDropped: false, matchId: null };
-  if (isIdenticalKnowledge(row.content, best.content)) {
+  const identical = matches.find((m) => isIdenticalKnowledge(row.content, m.content));
+  if (identical) {
     const { error } = await admin.from("luna_learnings").delete().eq("id", row.id);
     if (error) {
       console.error("[luna/knowledge-duplicate] drop identical", error);
     }
-    return { identicalDropped: true, matchId: best.id };
+    return { identicalDropped: true, matchId: identical.id };
   }
-  await trySetDuplicateOf(admin, row.id, best.id);
-  return { identicalDropped: false, matchId: best.id };
+  const primary = pickOldestActive(matches);
+  if (!primary) return { identicalDropped: false, matchId: null };
+  await trySetDuplicateOf(admin, row.id, primary.id);
+  return { identicalDropped: false, matchId: primary.id };
 }
 
 async function nextVersionNumber(
@@ -587,12 +649,21 @@ export async function applyDuplicateDecision(
 ): Promise<{ ok: true; keep_id: string } | { ok: false; error: string }> {
   const incomingOriginal = opts.candidate.content.trim();
   const existingContent = opts.existing.content.trim();
-  const keep = pickOldestKeep(
-    { ...opts.existing, status: opts.existing.status ?? "active" },
-    { ...opts.candidate, status: opts.candidate.status ?? "candidate" }
-  );
-  const dropId = keep.id === opts.existing.id ? opts.candidate.id : opts.existing.id;
+  const existingActive = (opts.existing.status ?? "active") === "active";
+  // 대표는 활성만. 후보가 더 오래돼도 활성을 지우고 후보를 남기지 않는다.
+  const keep = existingActive
+    ? opts.existing
+    : pickOldestKeep(
+        { ...opts.existing, status: opts.existing.status ?? "candidate" },
+        { ...opts.candidate, status: opts.candidate.status ?? "candidate" }
+      );
+  const dropId =
+    keep.id === opts.existing.id ? opts.candidate.id : opts.existing.id;
   const nowIso = new Date().toISOString();
+
+  if (existingActive && dropId === opts.existing.id) {
+    return { ok: false, error: "활성 지식은 대표에서 제외할 수 없습니다" };
+  }
 
   if (opts.decision === "keep_both") {
     const error = await updateLearning(admin, opts.candidate.id, {
@@ -661,6 +732,10 @@ export async function applyDuplicateDecision(
     return { ok: true, keep_id: keep.id };
   }
 
+  // 활성이 없고 후보끼리만 겹칠 때: 오래된 후보를 남긴다.
+  if (existingActive) {
+    return { ok: false, error: "후보를 대표로 남길 수 없습니다" };
+  }
   const promoteError = await updateLearning(admin, opts.candidate.id, {
     content: nextContent,
     status: "active",
@@ -674,8 +749,8 @@ export async function applyDuplicateDecision(
     importance: 4
   });
   if (promoteError) return { ok: false, error: promoteError.message };
-  const dropped = await deleteLearning(admin, opts.existing.id);
-  if (dropped.error) return { ok: false, error: dropped.error };
+  const droppedOther = await deleteLearning(admin, opts.existing.id);
+  if (droppedOther.error) return { ok: false, error: droppedOther.error };
   return { ok: true, keep_id: opts.candidate.id };
 }
 

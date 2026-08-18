@@ -14,10 +14,13 @@ import {
   dropIdenticalCandidate,
   findDuplicateMatches,
   isIdenticalKnowledge,
+  isSameTopic,
   loadActiveKnowledge,
+  pickOldestActive,
   proposalMetaPatch,
   proposeDuplicate,
   proposeNewKnowledge,
+  tryMarkNotDuplicate,
   trySetDuplicateOf,
   type ActiveKnowledge,
   type DuplicateProposal
@@ -187,13 +190,23 @@ export async function GET(request: NextRequest) {
       (typeof row.duplicate_of === "string" && row.duplicate_of) ||
       (typeof row.merge_target === "string" && row.merge_target) ||
       "";
-    if (!matchId || !activeById.has(matchId)) {
-      const matches = findDuplicateMatches(row.content, actives, row.id);
-      matchId = matches[0]?.id ?? "";
+    let existing = matchId ? activeById.get(matchId) ?? null : null;
+    if (existing && !isSameTopic(row.content, existing.content)) {
+      await tryMarkNotDuplicate(admin, row.id);
+      row.duplicate_of = null;
+      row.merge_target = null;
+      row.review_reason = "new";
+      existing = null;
+      matchId = "";
     }
-    if (matchId) {
-      const existing = activeById.get(matchId);
-      if (existing && isIdenticalKnowledge(row.content, existing.content)) {
+    if (!matchId || !existing) {
+      const matches = findDuplicateMatches(row.content, actives, row.id);
+      const primary = pickOldestActive(matches);
+      matchId = primary?.id ?? "";
+      existing = primary ?? null;
+    }
+    if (matchId && existing) {
+      if (isIdenticalKnowledge(row.content, existing.content)) {
         await dropIdenticalCandidate(admin, row.id);
         continue;
       }

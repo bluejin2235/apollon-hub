@@ -64,6 +64,17 @@ export function looksLikeDefinitionSentence(text: string): boolean {
   return false;
 }
 
+/** 표시용. 옛 thread 의 '확정했어요:' 접두어만 뗀다. 데이터는 건드리지 않는다. */
+export function stripConfirmClaimDisplay(text: string): string {
+  return text
+    .trim()
+    .replace(
+      /^(확정했어요|등록했어요|저장했어요|기억으로 확정했어요)\s*[:：]?\s*/,
+      ""
+    )
+    .trim();
+}
+
 export function parseGlossaryMeta(
   meta: Record<string, unknown> | null | undefined,
   content: string
