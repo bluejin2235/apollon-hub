@@ -520,6 +520,7 @@ type LunaChatProps = {
   /** reflect 가 정정 후보를 만들면, 다음 답변 칩용으로 전달 */
   onReflectCorrections?: (candidateIds: string[]) => void;
   onClearCorrection?: (messageId: string, candidateId: string) => void;
+  initialDraft?: string;
 };
 
 export function LunaChat({
@@ -534,7 +535,8 @@ export function LunaChat({
   onEnsureConversation,
   onRenameTitle,
   onReflectCorrections,
-  onClearCorrection
+  onClearCorrection,
+  initialDraft
 }: LunaChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const bottomUiRef = useRef<HTMLDivElement>(null);
@@ -888,6 +890,7 @@ export function LunaChat({
             conversationId={conversation?.id ?? null}
             onEnsureConversation={onEnsureConversation}
             focusTick={focusTick}
+            initialDraft={initialDraft}
           />
         </div>
       }

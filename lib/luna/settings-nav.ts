@@ -9,6 +9,7 @@ export type LunaMenuSlug =
 export type LunaKnowledgeSub =
   | "confirmed"
   | "glossary"
+  | "wiki"
   | "conflict"
   | "workserver"
   | "notion";
@@ -22,7 +23,6 @@ export type LunaSelfstudySub = "history" | "stuck" | "settings";
 export type LunaBrainSub =
   | "prompts"
   | "types"
-  | "library"
   | "upgrade"
   | "report"
   | "model"
@@ -54,6 +54,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     subs: [
       { slug: "confirmed", label: "확정 지식" },
       { slug: "glossary", label: "용어사전" },
+      { slug: "wiki", label: "위키" },
       { slug: "conflict", label: "충돌 보류함" },
       { slug: "workserver", label: "Work서버" },
       { slug: "notion", label: "노션" }
@@ -94,7 +95,6 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     subs: [
       { slug: "prompts", label: "프롬프트" },
       { slug: "types", label: "유형" },
-      { slug: "library", label: "라이브러리" },
       { slug: "upgrade", label: "자기개선" },
       { slug: "report", label: "성장 루프" },
       { slug: "model", label: "모델·비용" },
@@ -253,6 +253,11 @@ export function canonicalLunaSettingsUrl(
   // 구 지식>원문 → 대화>구술·문서
   if (rawMenu === "knowledge" && rawSub === "sources") {
     return buildLunaSettingsUrl("talk", "sources");
+  }
+
+  // 구 두뇌>라이브러리 → 지식>위키
+  if (rawMenu === "brain" && rawSub === "library") {
+    return buildLunaSettingsUrl("knowledge", "wiki");
   }
 
   // Legacy-only params (memory, nas, teach, …) — not canonical menu slugs.

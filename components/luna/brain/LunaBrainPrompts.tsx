@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Badge,
   Btn,
@@ -152,12 +153,10 @@ export function LunaBrainPrompts() {
           brainFetch<{ types?: Array<{ is_active?: boolean }> }>(
             "/api/luna/question-types?active=true"
           ),
-          brainFetch<{ items?: Array<{ is_active?: boolean }> }>("/api/luna/library")
+          brainFetch<{ forms?: number }>("/api/wiki/nav")
         ]);
         setTypeCount((typesJson.types ?? []).length);
-        setLibraryCount(
-          (libJson.items ?? []).filter((i) => i.is_active !== false).length
-        );
+        setLibraryCount(typeof libJson.forms === "number" ? libJson.forms : null);
       } catch {
         /* optional meta */
       }
@@ -527,7 +526,11 @@ export function LunaBrainPrompts() {
             className="mt-1.5 text-[10.5px]"
             style={{ color: K.faint, marginLeft: 53 }}
           >
-            양식은 <b style={{ color: K.ink }}>라이브러리</b> 탭에서 관리
+            양식은{" "}
+            <Link href="/wiki/forms" style={{ color: K.luna, fontWeight: 700 }}>
+              Wikipedia
+            </Link>
+            에서 관리
             {libraryCount != null ? ` · 현재 ${libraryCount}개` : ""}
           </p>
         ) : null}

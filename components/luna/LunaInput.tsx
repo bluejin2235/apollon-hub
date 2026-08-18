@@ -55,6 +55,7 @@ type LunaInputProps = {
   conversationId: string | null;
   onEnsureConversation: () => Promise<string | null>;
   focusTick?: number;
+  initialDraft?: string;
 };
 
 const EMPTY_CONNECTORS: LunaConnectorsState = {
@@ -99,9 +100,10 @@ export function LunaInput({
   disabled,
   conversationId,
   onEnsureConversation,
-  focusTick = 0
+  focusTick = 0,
+  initialDraft = ""
 }: LunaInputProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialDraft);
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
   const [perspectiveOn, setPerspectiveOn] = useState<Record<string, boolean>>({});
   const [roleOn, setRoleOn] = useState<Record<string, boolean>>({});
@@ -132,6 +134,17 @@ export function LunaInput({
   const perspectiveSkills = l2Active.filter((p) => p.kind === "perspective");
   const roleSkills = l2Active.filter((p) => p.kind === "role");
   const taskSkills = l2Active.filter((p) => p.kind === "task");
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    setValue(initialDraft);
+    requestAnimationFrame(resizeTextarea);
+  }, [initialDraft]);
+
+  useEffect(() => {
+    if (!focusTick) return;
+    textareaRef.current?.focus();
+  }, [focusTick]);
 
   useEffect(() => {
     if (!focusTick) return;

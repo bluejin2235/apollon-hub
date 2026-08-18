@@ -3,6 +3,7 @@ import { LUNA_LINKS, lunaNotify } from "@/lib/luna/notify";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
+import { collectWikiMorningLine } from "@/lib/wiki/notify";
 
 const USD_KRW_FALLBACK = 1350;
 
@@ -245,6 +246,11 @@ export async function collectMorningSummaryParts(
   // 6) C등급 GPT 시험 운영 지표
   const cTrial = await collectCTrialParts(admin, startIso, endIso);
   parts.push(...cTrial);
+
+  const wikiLine = await collectWikiMorningLine(admin, startIso, endIso);
+  if (wikiLine) {
+    parts.push(withLink(wikiLine, "/wiki"));
+  }
 
   return { parts, dateLabel, startIso, endIso };
 }

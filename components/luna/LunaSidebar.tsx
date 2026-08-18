@@ -78,7 +78,10 @@ export function LunaSidebar({
   const router = useRouter();
   const pathname = usePathname();
   const glossaryActive =
-    pathname === "/glossary" || (pathname?.startsWith("/glossary/") ?? false);
+    pathname === "/wiki/terms" ||
+    pathname === "/glossary" ||
+    (pathname?.startsWith("/wiki/") ?? false) ||
+    (pathname?.startsWith("/glossary/") ?? false);
   const managed = conversationsProp !== undefined;
 
   const [ownConversations, setOwnConversations] = useState<LunaConversation[]>([]);
@@ -430,7 +433,7 @@ export function LunaSidebar({
       <div className="mt-4 border-t border-[#eef0f3] pt-2">
         <button
           type="button"
-          onClick={() => router.push("/glossary")}
+          onClick={() => router.push("/wiki/terms")}
           className={`flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] transition ${
             glossaryActive
               ? "bg-[#EEEDFE] font-bold text-[#3C3489]"
@@ -438,7 +441,7 @@ export function LunaSidebar({
           }`}
         >
           <BookOpen className="h-4 w-4 shrink-0 opacity-75" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate">용어사전</span>
+          <span className="min-w-0 flex-1 truncate">Wikipedia</span>
           {termCandidates > 0 ? (
             <span
               className="shrink-0 rounded-[20px] px-[7px] py-px text-[10px] font-extrabold"

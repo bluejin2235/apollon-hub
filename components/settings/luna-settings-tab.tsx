@@ -6,6 +6,7 @@ import LunaSettingsHome from "@/components/luna/LunaSettingsHome";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
+import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
 import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
 import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
@@ -16,7 +17,6 @@ import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
 import { LunaBrainTypes } from "@/components/luna/brain/LunaBrainTypes";
-import { LunaBrainLibrary } from "@/components/luna/brain/LunaBrainLibrary";
 import { LunaBrainReport } from "@/components/luna/brain/LunaBrainReport";
 import { LunaBrainUpgrade } from "@/components/luna/brain/LunaBrainUpgrade";
 import { LunaSettingsNav } from "@/components/settings/luna-settings-nav";
@@ -1574,6 +1574,7 @@ export function LunaSettingsTab() {
     if (menu === "knowledge") {
       if (sub === "confirmed") return <LunaKnowledgeTab />;
       if (sub === "glossary") return <LunaKnowledgeGlossary />;
+      if (sub === "wiki") return <LunaKnowledgeWiki />;
       if (sub === "conflict") return <LunaKnowledgeConflict />;
       if (sub === "workserver") return <LunaKnowledgeWorkserver />;
       if (sub === "notion") return <LunaKnowledgeNotion />;
@@ -1601,7 +1602,6 @@ export function LunaSettingsTab() {
     if (menu === "brain") {
       if (sub === "prompts") return <LunaBrainPrompts />;
       if (sub === "types") return <LunaBrainTypes />;
-      if (sub === "library") return <LunaBrainLibrary />;
       if (sub === "upgrade") return <LunaBrainUpgrade />;
       if (sub === "model") return <LunaBrainModel />;
       if (sub === "eval") return <LunaBrainEval />;

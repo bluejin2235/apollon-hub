@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadWikiDocs } from "@/lib/wiki/store";
 
 export type QuestionTypeRow = {
   slug: string;
@@ -393,13 +394,15 @@ export async function loadLibraryItems(
   admin: SupabaseClient
 ): Promise<LibraryItem[]> {
   try {
-    const { items } = await loadLibraryAdmin(admin, { activeOnly: true });
-    return items.map(({ slug, title, kind, content }) => ({
-      slug,
-      title,
-      kind,
-      content
-    }));
+    const { items } = await loadWikiDocs(admin, { activeOnly: true });
+    return items
+      .filter((d) => d.category === "forms" || d.category === "standards")
+      .map((d) => ({
+        slug: d.slug,
+        title: d.title,
+        kind: d.kind,
+        content: d.content
+      }));
   } catch (err) {
     console.error("[luna/library] load", err);
     return [];

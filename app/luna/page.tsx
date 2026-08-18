@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   consumeLunaStreamEvents,
   LunaChat,
@@ -83,6 +84,8 @@ function mergeLocalFeedback(
 }
 
 export default function LunaPage() {
+  const searchParams = useSearchParams();
+  const initialDraft = searchParams.get("q") ?? "";
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<LunaConversation[]>([]);
@@ -831,6 +834,7 @@ export default function LunaPage() {
             onOpenMenu={() => setDrawerOpen(true)}
             sending={sending}
             showMobileHeader
+            initialDraft={initialDraft}
             onEnsureConversation={ensureConversation}
             onRenameTitle={
               selectedConversation

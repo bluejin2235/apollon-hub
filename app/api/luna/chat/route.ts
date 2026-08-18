@@ -51,6 +51,7 @@ import {
 } from "@/lib/luna/workserver-explore";
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import { bumpWikiUseCount } from "@/lib/wiki/store";
 import {
   classifiedRows,
   classificationPublic,
@@ -2220,6 +2221,12 @@ export async function POST(request: NextRequest) {
               console.error("[luna/chat] bump learning use_count", err);
             }
           })();
+        }
+        if (libraryHits.length > 0) {
+          void bumpWikiUseCount(
+            admin,
+            libraryHits.map((i) => i.slug)
+          ).catch((err) => console.error("[luna/chat] bump wiki use_count", err));
         }
         const userMeta: Record<string, unknown> = {};
         const assistantMeta: Record<string, unknown> = {
