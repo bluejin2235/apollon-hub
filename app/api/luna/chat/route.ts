@@ -52,6 +52,7 @@ import {
 import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import { bumpWikiUseCount } from "@/lib/wiki/store";
+import { loadWikiDocs } from "@/lib/wiki/store";
 import {
   classifiedRows,
   classificationPublic,
@@ -71,6 +72,12 @@ import {
   typesSkipClarify,
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
+import {
+  formatWikiSectionsBlock,
+  matchWikiSections,
+  wikiSourceUsedInAnswer,
+  type WikiSourceRef
+} from "@/lib/luna/wiki-match";
 import {
   applyTypeSearchOverride,
   formatConnectorRoutingSummary,
@@ -417,6 +424,7 @@ function buildAnswerSystem(
     identity: string;
     learningsBlock?: string;
     glossaryBlock?: string;
+    wikiSectionsBlock?: string;
     skillPrompt?: string | null;
     l3Prompt?: string;
     workserverStructure?: string;
@@ -442,8 +450,9 @@ function buildAnswerSystem(
     .filter(Boolean)
     .join("\n\n");
   const block3 = [
-    opts.learningsBlock?.trim() ?? "",
     opts.glossaryBlock?.trim() ?? "",
+    opts.wikiSectionsBlock?.trim() ?? "",
+    opts.learningsBlock?.trim() ?? "",
     `[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`
   ]
     .filter(Boolean)
@@ -880,10 +889,12 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  const [{ types: questionTypes }, libraryItems] = await Promise.all([
+  const [{ types: questionTypes }, libraryItems, wikiLoaded] = await Promise.all([
     loadQuestionTypes(admin, { activeOnly: true }),
-    loadLibraryItems(admin)
+    loadLibraryItems(admin),
+    loadWikiDocs(admin, { activeOnly: true })
   ]);
+  const wikiDocs = wikiLoaded.items;
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   const { data: learningsData, error: learningsError } = await admin
@@ -1479,7 +1490,11 @@ export async function POST(request: NextRequest) {
           { dump: knowledgeDumpRequested }
         );
         const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
+        const wikiSources: WikiSourceRef[] = classification.types.includes("know")
+          ? matchWikiSections(wikiDocs, injectKeywords, userText)
+          : [];
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
+        const wikiSectionsBlock = formatWikiSectionsBlock(wikiSources);
         const learnings = knowledgeInject.all.map((l) => ({
           content: l.content,
           category: l.category
@@ -1979,6 +1994,7 @@ export async function POST(request: NextRequest) {
             identity,
             learningsBlock,
             glossaryBlock,
+            wikiSectionsBlock,
             skillPrompt,
             l3Prompt,
             workserverStructure,
@@ -2096,6 +2112,7 @@ export async function POST(request: NextRequest) {
           memory_count: learnings.length,
           injected_knowledge_ids: knowledgeInject.ids,
           injected_terms: injectedTerms,
+          wiki_sources: wikiSources,
           web_augmented: webAugmented,
           used_prompts: usedPrompts,
           auto_routing: autoRoutingUsed,
@@ -2222,7 +2239,18 @@ export async function POST(request: NextRequest) {
             }
           })();
         }
-        if (libraryHits.length > 0) {
+        const usedWikiSlugs = Array.from(
+          new Set(
+            wikiSources
+              .filter((hit) => wikiSourceUsedInAnswer(hit, assistantText))
+              .map((hit) => hit.slug)
+          )
+        );
+        if (usedWikiSlugs.length > 0) {
+          void bumpWikiUseCount(admin, usedWikiSlugs).catch((err) =>
+            console.error("[luna/chat] bump wiki use_count", err)
+          );
+        } else if (libraryHits.length > 0) {
           void bumpWikiUseCount(
             admin,
             libraryHits.map((i) => i.slug)
@@ -2260,6 +2288,9 @@ export async function POST(request: NextRequest) {
         }
         if (notionSources.length > 0) {
           assistantMeta.notion_sources = notionSources;
+        }
+        if (wikiSources.length > 0) {
+          assistantMeta.wiki_sources = wikiSources;
         }
         if (wsToolCalls.length > 0) {
           assistantMeta.ws_tool_calls = wsToolCalls;

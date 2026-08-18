@@ -18,6 +18,7 @@ import {
 } from "@/components/luna/LunaChat";
 import { normalizeClassification, normalizeUsedPrompts } from "@/lib/luna/chat-response";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
+import { normalizeWikiSources } from "@/lib/luna/wiki-match";
 import type {
   LunaAttachmentRef,
   LunaConnectorsState,
@@ -152,6 +153,7 @@ export default function LunaPage() {
           : null;
         const feedbackNote = clipFeedbackNote(meta?.feedback_note);
         const notionSources = normalizeNotionSources(meta?.notion_sources);
+        const wikiSources = normalizeWikiSources(meta?.wiki_sources);
         let attachments: LunaAttachmentRef[] | null = null;
         const rawAttachments = meta?.attachments;
         if (Array.isArray(rawAttachments)) {
@@ -225,6 +227,7 @@ export default function LunaPage() {
           feedbackReason,
           feedbackNote,
           notionSources,
+          wikiSources,
           cards: normalizeLunaCards(meta?.cards),
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),
           attachments,
@@ -501,6 +504,7 @@ export default function LunaPage() {
         let streamEndedByClarify = false;
         let streamCards: LunaChatMessage["cards"] = null;
         let streamNotionSources: LunaChatMessage["notionSources"] = null;
+        let streamWikiSources: LunaChatMessage["wikiSources"] = null;
         let streamSourceReasons: LunaChatMessage["sourceReasons"] = null;
         let streamSteps: LunaProgressStep[] = [];
         let streamMode: LunaChatMessage["mode"] = null;
@@ -541,6 +545,7 @@ export default function LunaPage() {
                     content,
                     cards: streamCards ?? m.cards,
                     notionSources: streamNotionSources ?? m.notionSources,
+                    wikiSources: streamWikiSources ?? m.wikiSources,
                     sourceReasons: streamSourceReasons ?? m.sourceReasons,
                     steps: streamSteps.length > 0 ? streamSteps : m.steps,
                     searchRounds: streamSearchRounds ?? m.searchRounds,
@@ -646,6 +651,7 @@ export default function LunaPage() {
               if (consumed.kind === "meta") {
                 streamCards = consumed.cards;
                 streamNotionSources = consumed.notionSources;
+                streamWikiSources = consumed.wikiSources;
                 streamSourceReasons = consumed.sourceReasons;
                 streamMemoryCount = consumed.memoryCount;
                 if (consumed.mode === "analysis") streamMode = "analysis";

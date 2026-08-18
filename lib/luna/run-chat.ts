@@ -42,6 +42,13 @@ import {
   type LearningMatchRow
 } from "@/lib/luna/knowledge-match";
 import { formatGlossaryBlock } from "@/lib/luna/prompt-cache";
+import { loadWikiDocs, bumpWikiUseCount } from "@/lib/wiki/store";
+import {
+  formatWikiSectionsBlock,
+  matchWikiSections,
+  wikiSourceUsedInAnswer,
+  type WikiSourceRef
+} from "@/lib/luna/wiki-match";
 import {
   buildLocationAnswerRules,
   formatNotionSourcesForPrompt,
@@ -93,6 +100,7 @@ export type LunaRunResult = {
   answer: string;
   sources: LunaCard[];
   notionSources: NotionSource[];
+  wikiSources?: WikiSourceRef[];
   durationMs: number;
   modelLabel: string;
   injected_knowledge_ids?: string[];
@@ -207,6 +215,7 @@ function buildSystemPrompt(opts: {
   identity: string;
   learningsBlock?: string;
   glossaryBlock?: string;
+  wikiSectionsBlock?: string;
   connectorPrompts?: string[];
   synthesisOpinion?: string;
   notionSources?: NotionSource[];
@@ -221,8 +230,9 @@ function buildSystemPrompt(opts: {
     if (block.trim()) parts.push(block.trim());
   }
 
-  if (opts.learningsBlock?.trim()) parts.push(opts.learningsBlock.trim());
   if (opts.glossaryBlock?.trim()) parts.push(opts.glossaryBlock.trim());
+  if (opts.wikiSectionsBlock?.trim()) parts.push(opts.wikiSectionsBlock.trim());
+  if (opts.learningsBlock?.trim()) parts.push(opts.learningsBlock.trim());
   if (opts.webAugmented) {
     parts.push(
       "[웹 검색 보강]\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."
@@ -405,9 +415,13 @@ export async function runLunaTurn(
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
     SYNTHESIS_OPINION_FALLBACK;
 
-  const { types: questionTypes } = await loadQuestionTypes(admin, {
-    activeOnly: true
-  });
+  const [{ types: questionTypes }, wikiLoaded] = await Promise.all([
+    loadQuestionTypes(admin, {
+      activeOnly: true
+    }),
+    loadWikiDocs(admin, { activeOnly: true })
+  ]);
+  const wikiDocs = wikiLoaded.items;
   let classifiedSlugs: string[] = [];
   try {
     const classifyRes = await lunaLlmComplete(admin, {
@@ -524,6 +538,9 @@ export async function runLunaTurn(
     injectKeywords
   );
   const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
+  const wikiSources = classifiedSlugs.includes("know")
+    ? matchWikiSections(wikiDocs, injectKeywords, userText)
+    : [];
   const injectedTerms = matchedTerms
     .map((t) => (t.term_ko ?? "").trim())
     .filter(Boolean);
@@ -536,6 +553,7 @@ export async function runLunaTurn(
     other: knowledgeInject.other
   });
   const glossaryBlock = formatGlossaryBlock(matchedTerms);
+  const wikiSectionsBlock = formatWikiSectionsBlock(wikiSources);
 
   let webAugmented = false;
   if (
@@ -610,6 +628,7 @@ export async function runLunaTurn(
     identity,
     learningsBlock,
     glossaryBlock,
+    wikiSectionsBlock,
     connectorPrompts,
     synthesisOpinion,
     notionSources,
@@ -653,11 +672,20 @@ export async function runLunaTurn(
       );
     }
   }
+  const usedWikiSlugs = Array.from(
+    new Set(
+      wikiSources.filter((hit) => wikiSourceUsedInAnswer(hit, answer)).map((hit) => hit.slug)
+    )
+  );
+  if (usedWikiSlugs.length > 0) {
+    await bumpWikiUseCount(admin, usedWikiSlugs);
+  }
 
   return {
     answer,
     sources: cards,
     notionSources,
+    wikiSources,
     durationMs: Date.now() - startedAt,
     modelLabel: LUNA_MODEL_LABEL,
     injected_knowledge_ids: knowledgeInject.ids,

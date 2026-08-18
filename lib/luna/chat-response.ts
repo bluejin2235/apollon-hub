@@ -161,6 +161,7 @@ export function parseAssumeMarkers(text: string): ParsedAssume {
 
 export type SourceBadgeCounts = {
   memory: number;
+  wiki: number;
   nas: number;
   notion: number;
   web: number;
@@ -246,6 +247,7 @@ export function normalizeUsedPrompts(raw: unknown): UsedPromptRef[] | null {
 export function countSourceBadges(opts: {
   cards?: Array<{ type: string }> | null;
   notionSources?: unknown[] | null;
+  wikiSources?: unknown[] | null;
   memoryCount?: number | null;
 }): SourceBadgeCounts {
   const cards = opts.cards ?? [];
@@ -262,6 +264,7 @@ export function countSourceBadges(opts: {
   }
   return {
     memory: Math.max(0, opts.memoryCount ?? 0),
+    wiki: Array.isArray(opts.wikiSources) ? opts.wikiSources.length : 0,
     nas,
     notion,
     web

@@ -17,6 +17,7 @@ import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import { groupNasCardsByFolder, type LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
+import type { WikiSourceRef } from "@/lib/luna/wiki-match";
 import {
   countSourceBadges,
   parseAssumeMarkers,
@@ -90,6 +91,7 @@ type LunaMessageProps = {
   feedbackReason?: FeedbackReason | null;
   feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
+  wikiSources?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode?: LunaNasDriveMode;
@@ -464,30 +466,73 @@ function InlineThinkingProgress({
 function SourceBadgeRow({
   cards,
   notionSources,
-  memoryCount
+  wikiSources,
+  memoryCount,
+  wikiOpen,
+  onToggleWiki
 }: {
   cards: LunaCard[];
   notionSources: NotionSource[];
+  wikiSources: WikiSourceRef[];
   memoryCount: number;
+  wikiOpen: boolean;
+  onToggleWiki: () => void;
 }) {
-  const counts = countSourceBadges({ cards, notionSources, memoryCount });
+  const counts = countSourceBadges({ cards, notionSources, wikiSources, memoryCount });
   const items: { label: string; n: number }[] = [];
   if (counts.nas > 0) items.push({ label: "Work서버", n: counts.nas });
+  if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
   if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
   if (items.length === 0) return null;
   return (
     <>
-      {items.map((it) => (
-        <span
-          key={it.label}
-          className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
-        >
-          {it.label} {it.n}건
-        </span>
-      ))}
+      {items.map((it) =>
+        it.label === "위키" ? (
+          <button
+            key={it.label}
+            type="button"
+            onClick={onToggleWiki}
+            className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
+          >
+            {it.label} {it.n}건{wikiOpen ? " 접기" : ""}
+          </button>
+        ) : (
+          <span
+            key={it.label}
+            className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
+          >
+            {it.label} {it.n}건
+          </span>
+        )
+      )}
     </>
+  );
+}
+
+function WikiSourcesPanel({ wikiSources }: { wikiSources: WikiSourceRef[] }) {
+  if (wikiSources.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-[#e7e8ec] bg-[#fafbfc] p-2.5">
+      <div className="mb-1.5 text-[11px] font-semibold text-[#6b6f76]">위키 출처</div>
+      <div className="space-y-1.5">
+        {wikiSources.map((src) => (
+          <a
+            key={`${src.slug}:${src.section_id}`}
+            href={src.path}
+            className="block rounded-md px-1.5 py-1 text-[12px] text-slate-700 hover:bg-white"
+          >
+            <div className="font-medium">
+              {src.title} · {src.section_title}
+            </div>
+            <div className="text-[11px] text-[#7b8088]">
+              score {src.score} · {src.path}
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -911,29 +956,38 @@ function MessageActionsRow({
   content,
   cards,
   notionSources,
+  wikiSources,
   memoryCount,
   canFeedback,
   feedback,
   busy,
   onCopy,
-  onFeedback
+  onFeedback,
+  wikiOpen,
+  onToggleWiki
 }: {
   content: string;
   cards: LunaCard[];
   notionSources: NotionSource[];
+  wikiSources: WikiSourceRef[];
   memoryCount: number;
   canFeedback: boolean;
   feedback: "good" | "bad" | null;
   busy: boolean;
   onCopy: () => void;
   onFeedback: (next: "good" | "bad") => void;
+  wikiOpen: boolean;
+  onToggleWiki: () => void;
 }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-[7px]">
       <SourceBadgeRow
         cards={cards}
         notionSources={notionSources}
+        wikiSources={wikiSources}
         memoryCount={memoryCount}
+        wikiOpen={wikiOpen}
+        onToggleWiki={onToggleWiki}
       />
       {content ? (
         <button
@@ -994,6 +1048,7 @@ export function LunaMessage({
   feedbackReason: initialReason = null,
   feedbackNote: initialNote = null,
   notionSources = null,
+  wikiSources = null,
   cards = null,
   sourceReasons = null,
   nasDriveMode = "office",
@@ -1033,6 +1088,7 @@ export function LunaMessage({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [wikiOpen, setWikiOpen] = useState(false);
   const [dismissedChips, setDismissedChips] = useState<string[]>([]);
   const canFeedback =
     role === "assistant" && Boolean(id) && !id.startsWith("temp-") && !isThinking;
@@ -1040,6 +1096,7 @@ export function LunaMessage({
     () => notionSources?.filter((s) => s.title && s.url) ?? [],
     [notionSources]
   );
+  const wikiRefs = useMemo(() => wikiSources ?? [], [wikiSources]);
   const cardList = useMemo(
     () => (cards ?? []).filter((c) => c.title),
     [cards]
@@ -1343,16 +1400,20 @@ export function LunaMessage({
               content={content}
               cards={cardList}
               notionSources={sources}
+              wikiSources={wikiRefs}
               memoryCount={memoryCount ?? 0}
               canFeedback={canFeedback}
               feedback={feedback}
               busy={busy}
               onCopy={copyContent}
+              wikiOpen={wikiOpen}
+              onToggleWiki={() => setWikiOpen((open) => !open)}
               onFeedback={(next) => {
                 if (feedback === next) void sendFeedback(null);
                 else void sendFeedback(next);
               }}
             />
+            {wikiOpen ? <WikiSourcesPanel wikiSources={wikiRefs} /> : null}
             {canFeedback && feedback === "bad" ? (
               reasonPanelCollapsed ? (
                 <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">

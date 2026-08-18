@@ -24,6 +24,7 @@ import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
+import { normalizeWikiSources, type WikiSourceRef } from "@/lib/luna/wiki-match";
 import {
   parseNumberedChoices,
   resolveChoiceInput,
@@ -94,6 +95,7 @@ export type LunaChatMessage = {
   feedbackReason?: FeedbackReason | null;
   feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
+  wikiSources?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
   attachments?: LunaAttachmentRef[] | null;
@@ -339,6 +341,7 @@ export type LunaStreamEventResult =
       buffer: string;
       cards: LunaCard[] | null;
       notionSources: NotionSource[] | null;
+      wikiSources: WikiSourceRef[] | null;
       sourceReasons: LunaSourceReasons | null;
       mode: "analysis" | null;
       teams: LunaAnalysisTeam[] | null;
@@ -466,6 +469,7 @@ export function consumeLunaStreamEvents(
         buffer: rest,
         cards: normalizeLunaCards(parsed.cards),
         notionSources: normalizeNotionSources(parsed.notion_sources),
+        wikiSources: normalizeWikiSources(parsed.wiki_sources),
         sourceReasons: normalizeSourceReasons(parsed.source_reasons),
         mode: parsed.mode === "analysis" ? "analysis" : null,
         teams: normalizeAnalysisTeams(parsed.teams),
@@ -974,6 +978,7 @@ export function LunaChat({
                 feedbackReason={m.feedbackReason}
                 feedbackNote={m.feedbackNote}
                 notionSources={m.notionSources}
+                wikiSources={m.wikiSources}
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}
                 nasDriveMode={nasDriveMode}
