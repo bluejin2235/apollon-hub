@@ -1,8 +1,8 @@
-import type { WikiCategory } from "@/lib/wiki/types";
+﻿import type { WikiCategory } from "@/lib/wiki/types";
 
 /** profiles.role = '슈퍼관리자' → 요구사항의 「관리자」 */
 export function isWikiSuperAdmin(role: string | null | undefined): boolean {
-  return role === "슈퍼관리자";
+  return String(role ?? "").trim() === "슈퍼관리자";
 }
 
 /** profiles.role = '멤버' → 요구사항의 「직원」 */

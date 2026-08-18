@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { WikiDiffView } from "@/components/wiki/WikiDiffView";
 import { WikiMarkdown } from "@/components/wiki/WikiMarkdown";
 import { WikiSectionEditor } from "@/components/wiki/WikiSectionEditor";
-import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { wikiFetch, WikiApiError } from "@/components/wiki/wiki-fetch";
 import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiStamp, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import { formatDiffCounts } from "@/lib/wiki/diff";
@@ -49,6 +49,7 @@ export function WikiDocView({
   const [wikiReady, setWikiReady] = useState(true);
   const [tab, setTab] = useState<Tab>("read");
   const [error, setError] = useState("");
+  const [missing, setMissing] = useState(false);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -63,13 +64,14 @@ export function WikiDocView({
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setMissing(false);
     try {
       const json = await wikiFetch<DocPayload>(
         `/api/wiki/docs/${encodeURIComponent(slug)}`
       );
       if (!json.item || json.item.category !== category) {
         setDoc(null);
-        setError("문서를 찾지 못했습니다.");
+        setMissing(true);
         return;
       }
       setDoc(json.item);
@@ -77,7 +79,13 @@ export function WikiDocView({
       setCanDelete(json.can_delete === true);
       setWikiReady(json.wiki_ready !== false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
+      setDoc(null);
+      if (err instanceof WikiApiError && err.status === 404) {
+        setMissing(true);
+        setError("");
+      } else {
+        setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
+      }
     } finally {
       setLoading(false);
     }
@@ -220,6 +228,28 @@ export function WikiDocView({
       </div>
     );
   }
+  if (missing) {
+    return (
+      <div className="px-[22px] py-10">
+        <p className="text-[12px] font-bold" style={{ color: W.faint }}>
+          404
+        </p>
+        <h1 className="mt-1 text-[22px] font-extrabold tracking-[-0.3px]">
+          문서를 찾을 수 없습니다
+        </h1>
+        <p className="mt-2 text-[13px]" style={{ color: W.sub }}>
+          없거나, 직원에게 열려 있지 않은 문서입니다.
+        </p>
+        <Link
+          href={meta.path}
+          className="mt-4 inline-block text-[13px] font-semibold"
+          style={{ color: W.luna }}
+        >
+          {meta.label} 목록으로
+        </Link>
+      </div>
+    );
+  }
   if (!doc) {
     return (
       <div className="px-[22px] py-6 text-[12px]" style={{ color: W.del }}>
@@ -305,17 +335,6 @@ export function WikiDocView({
         <TabBtn on={tab === "history"} onClick={() => setTab("history")}>
           변경 이력
         </TabBtn>
-        {category !== "rules" ? (
-          <div className="ml-auto flex items-center gap-[7px] pb-1.5">
-            <Link
-              href={`/luna?q=${encodeURIComponent(wikiMakePrompt(doc.title))}`}
-              className="rounded-[9px] border px-[9px] py-1 text-[10.5px] font-semibold"
-              style={{ borderColor: W.line, color: "#33363c" }}
-            >
-              루나에게 이걸로 만들어달라기
-            </Link>
-          </div>
-        ) : null}
       </div>
 
       {locked && category === "rules" ? (
@@ -444,6 +463,16 @@ export function WikiDocView({
                 ? "규정이 바뀌면 전원에게 알림이 갑니다"
                 : "수정은 검토 없이 바로 반영되고, 모든 변경은 이력으로 남습니다"}
             </p>
+            {category !== "rules" ? (
+              <Link
+                href={`/luna?q=${encodeURIComponent(wikiMakePrompt(doc.title))}`}
+                prefetch={false}
+                className="mt-2 inline-block rounded-[9px] border px-[9px] py-1 text-[10.5px] font-semibold"
+                style={{ borderColor: W.line, color: "#33363c" }}
+              >
+                루나에게 이걸로 만들어달라기
+              </Link>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {canEdit ? (
                 <button

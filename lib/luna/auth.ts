@@ -15,5 +15,5 @@ export async function isSuperAdminUser(
     console.error("[luna] isSuperAdminUser", error);
     return false;
   }
-  return data?.role === "슈퍼관리자";
+  return String(data?.role ?? "").trim() === "슈퍼관리자";
 }

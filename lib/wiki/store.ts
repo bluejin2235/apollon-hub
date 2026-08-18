@@ -188,16 +188,58 @@ export async function loadWikiDocs(
   return { items, wikiReady, tableReady: true };
 }
 
+async function fetchWikiRowBySlug(
+  admin: SupabaseClient,
+  slug: string
+): Promise<{
+  row: Record<string, unknown> | null;
+  wikiReady: boolean;
+  tableReady: boolean;
+}> {
+  const run = (select: string) =>
+    admin.from("luna_library").select(select).eq("slug", slug).maybeSingle();
+
+  let wikiReady = true;
+  let res = await run(FULL_SELECT);
+  if (res.error && isMissingWikiSchema(res.error)) {
+    wikiReady = false;
+    res = await run(BASE_SELECT);
+  }
+  if (res.error) {
+    const code = String(res.error.code ?? "");
+    if (code === "42P01" || code === "PGRST205") {
+      return { row: null, wikiReady: false, tableReady: false };
+    }
+    throw new Error(res.error.message);
+  }
+  return {
+    row: (res.data as Record<string, unknown> | null) ?? null,
+    wikiReady,
+    tableReady: true
+  };
+}
+
 export async function loadWikiDoc(
   admin: SupabaseClient,
   slug: string
 ): Promise<{ doc: WikiDoc | null; wikiReady: boolean; tableReady: boolean }> {
-  const { items, wikiReady, tableReady } = await loadWikiDocs(admin);
-  if (!tableReady) return { doc: null, wikiReady, tableReady };
+  let decoded = slug.trim();
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    /* keep trimmed */
+  }
+  let result = await fetchWikiRowBySlug(admin, decoded);
+  if (!result.row && decoded !== slug.trim()) {
+    result = await fetchWikiRowBySlug(admin, slug.trim());
+  }
+  if (!result.tableReady) {
+    return { doc: null, wikiReady: result.wikiReady, tableReady: false };
+  }
   return {
-    doc: items.find((d) => d.slug === slug) ?? null,
-    wikiReady,
-    tableReady
+    doc: result.row ? mapDoc(result.row, result.wikiReady) : null,
+    wikiReady: result.wikiReady,
+    tableReady: true
   };
 }
 
