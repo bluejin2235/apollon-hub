@@ -154,6 +154,7 @@ export default function LunaPage() {
         const feedbackNote = clipFeedbackNote(meta?.feedback_note);
         const notionSources = normalizeNotionSources(meta?.notion_sources);
         const wikiSources = normalizeWikiSources(meta?.wiki_sources);
+        const privateWikiRefs = normalizeWikiSources(meta?.private_wiki_refs);
         let attachments: LunaAttachmentRef[] | null = null;
         const rawAttachments = meta?.attachments;
         if (Array.isArray(rawAttachments)) {
@@ -228,6 +229,7 @@ export default function LunaPage() {
           feedbackNote,
           notionSources,
           wikiSources,
+          privateWikiRefs,
           cards: normalizeLunaCards(meta?.cards),
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),
           attachments,

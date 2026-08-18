@@ -96,6 +96,7 @@ export type LunaChatMessage = {
   feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
   wikiSources?: WikiSourceRef[] | null;
+  privateWikiRefs?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
   attachments?: LunaAttachmentRef[] | null;
@@ -979,6 +980,7 @@ export function LunaChat({
                 feedbackNote={m.feedbackNote}
                 notionSources={m.notionSources}
                 wikiSources={m.wikiSources}
+                privateWikiRefs={m.privateWikiRefs}
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}
                 nasDriveMode={nasDriveMode}

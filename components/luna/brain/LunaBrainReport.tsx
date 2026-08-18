@@ -320,7 +320,7 @@ export function LunaBrainReport() {
               </CardTop>
 
               <div className="mb-2 grid grid-cols-2 gap-2.5 min-[901px]:grid-cols-4">
-                <Stat label="확정 지식" value={latest.confirmed_count} />
+                <Stat label="아폴론 지식" value={latest.confirmed_count} />
                 <Stat
                   label="후보 유입"
                   value={latest.inflow}

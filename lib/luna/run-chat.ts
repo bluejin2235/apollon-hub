@@ -46,6 +46,7 @@ import { loadWikiDocs, bumpWikiUseCount } from "@/lib/wiki/store";
 import {
   formatWikiSectionsBlock,
   matchWikiSections,
+  splitWikiSourcesByVisibility,
   wikiSourceUsedInAnswer,
   type WikiSourceRef
 } from "@/lib/luna/wiki-match";
@@ -101,6 +102,7 @@ export type LunaRunResult = {
   sources: LunaCard[];
   notionSources: NotionSource[];
   wikiSources?: WikiSourceRef[];
+  privateWikiRefs?: WikiSourceRef[];
   durationMs: number;
   modelLabel: string;
   injected_knowledge_ids?: string[];
@@ -541,6 +543,8 @@ export async function runLunaTurn(
   const wikiSources = classifiedSlugs.includes("know")
     ? matchWikiSections(wikiDocs, injectKeywords, userText)
     : [];
+  const { public: publicWikiSources, private: privateWikiRefs } =
+    splitWikiSourcesByVisibility(wikiSources);
   const injectedTerms = matchedTerms
     .map((t) => (t.term_ko ?? "").trim())
     .filter(Boolean);
@@ -685,7 +689,8 @@ export async function runLunaTurn(
     answer,
     sources: cards,
     notionSources,
-    wikiSources,
+    wikiSources: publicWikiSources,
+    privateWikiRefs: privateWikiRefs.length > 0 ? privateWikiRefs : undefined,
     durationMs: Date.now() - startedAt,
     modelLabel: LUNA_MODEL_LABEL,
     injected_knowledge_ids: knowledgeInject.ids,

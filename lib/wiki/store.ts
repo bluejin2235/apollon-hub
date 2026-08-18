@@ -19,7 +19,7 @@ import {
 } from "@/lib/wiki/types";
 
 const FULL_SELECT =
-  "slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, updated_at, updated_by, updated_by_name, history";
+  "slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
 const BASE_SELECT =
   "slug, title, kind, content, source_prompt_key, is_active, updated_at";
 
@@ -97,6 +97,7 @@ function mapDoc(row: Record<string, unknown>, wikiReady: boolean): WikiDoc {
         ? row.version
         : 1,
     is_active: row.is_active !== false,
+    visible_to_staff: row.visible_to_staff !== false,
     updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
     updated_by: typeof row.updated_by === "string" ? row.updated_by : null,
     updated_by_name:
@@ -113,6 +114,7 @@ function toListItem(doc: WikiDoc): WikiDocListItem {
     kind: doc.kind,
     summary: doc.summary,
     is_active: doc.is_active,
+    visible_to_staff: doc.visible_to_staff,
     updated_at: doc.updated_at,
     updated_by: doc.updated_by,
     updated_by_name: doc.updated_by_name
@@ -120,7 +122,8 @@ function toListItem(doc: WikiDoc): WikiDocListItem {
 }
 
 export async function loadWikiNavCounts(
-  admin: SupabaseClient
+  admin: SupabaseClient,
+  opts?: { isSuperAdmin?: boolean }
 ): Promise<{
   terms: number;
   forms: number;
@@ -143,9 +146,13 @@ export async function loadWikiNavCounts(
   }
 
   const { items, wikiReady } = await loadWikiDocs(admin, { activeOnly: true });
-  const forms = items.filter((d) => d.category === "forms").length;
-  const standards = items.filter((d) => d.category === "standards").length;
-  const rules = items.filter((d) => d.category === "rules").length;
+  const visible =
+    opts?.isSuperAdmin === false
+      ? items.filter((d) => d.visible_to_staff !== false)
+      : items;
+  const forms = visible.filter((d) => d.category === "forms").length;
+  const standards = visible.filter((d) => d.category === "standards").length;
+  const rules = visible.filter((d) => d.category === "rules").length;
   return { terms, forms, standards, rules, wikiReady };
 }
 
@@ -288,6 +295,7 @@ export async function createWikiDoc(
       use_count: 0,
       version: 1,
       is_active: true,
+      visible_to_staff: true,
       updated_at: now,
       updated_by: input.userId,
       updated_by_name: name,
@@ -307,6 +315,7 @@ export type WikiSaveMeta = {
   related?: WikiRelated[];
   sections?: WikiSection[];
   is_active?: boolean;
+  visible_to_staff?: boolean;
   change_note?: string;
 };
 
@@ -330,6 +339,10 @@ export async function saveWikiDoc(
   const nextRelated = patch.related ?? prev.related;
   const nextActive =
     typeof patch.is_active === "boolean" ? patch.is_active : prev.is_active;
+  const nextVisible =
+    typeof patch.visible_to_staff === "boolean"
+      ? patch.visible_to_staff
+      : prev.visible_to_staff;
 
   const counts = diffCounts(
     sectionsPlain(prev.sections),
@@ -373,6 +386,7 @@ export async function saveWikiDoc(
       sections: nextSections,
       content,
       is_active: nextActive,
+      visible_to_staff: nextVisible,
       version: nextVersion,
       updated_at: now,
       updated_by: userId,

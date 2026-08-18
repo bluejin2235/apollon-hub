@@ -330,7 +330,7 @@ export function LunaKnowledgeTab() {
             setSort(e.target.value as SortKey);
           }}
         >
-          <option value="recent">최근 확정순</option>
+          <option value="recent">최근 등록순</option>
           <option value="most_used">많이 쓰인 순</option>
           <option value="oldest">오래된 순</option>
         </FieldSelect>
@@ -350,7 +350,7 @@ export function LunaKnowledgeTab() {
             {items.length === 0 ? (
               <ListItem>
                 <p className="text-[13px]" style={{ color: K.faint }}>
-                  확정 지식이 없습니다.
+                  아폴론 지식이 없습니다.
                 </p>
               </ListItem>
             ) : (
@@ -441,7 +441,7 @@ export function LunaKnowledgeTab() {
                           </div>
                           <div>
                             사용 {uses}회 · 최근 사용{" "}
-                            {formatKnowledgeDate(item.last_used_at)} · 확정{" "}
+                            {formatKnowledgeDate(item.last_used_at)} · 등록{" "}
                             {formatKnowledgeDate(
                               item.resolved_at ?? item.created_at
                             )}{" "}

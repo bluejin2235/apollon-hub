@@ -21,7 +21,19 @@ export type WikiSourceRef = {
   matched_keywords: string[];
   excerpt: string;
   path: string;
+  visible_to_staff: boolean;
+  cite_publicly: boolean;
 };
+
+export function splitWikiSourcesByVisibility(sources: WikiSourceRef[]): {
+  public: WikiSourceRef[];
+  private: WikiSourceRef[];
+} {
+  return {
+    public: sources.filter((s) => s.cite_publicly !== false),
+    private: sources.filter((s) => s.cite_publicly === false)
+  };
+}
 
 function enrichKeywords(keywords: string[], questionText?: string): string[] {
   const merged = [...keywords];
@@ -120,6 +132,7 @@ export function matchWikiSections(
     for (const section of doc.sections) {
       const hit = scoreSection(doc, section, enriched);
       if (hit.score < 1) continue;
+      const visible = doc.visible_to_staff !== false;
       scored.push({
         slug: doc.slug,
         title: doc.title,
@@ -130,6 +143,8 @@ export function matchWikiSections(
         matched_keywords: hit.matched_keywords,
         excerpt: clipSectionBody(section.body),
         path: wikiDocPath(doc.category, doc.slug),
+        visible_to_staff: visible,
+        cite_publicly: visible,
         title_score: hit.title_score,
         body_score: hit.body_score,
         doc_title_score: hit.doc_title_score,
@@ -169,17 +184,24 @@ export function formatWikiSectionsBlock(hits: WikiSourceRef[]): string {
   if (hits.length === 0) return "";
   return [
     "[위키 문서 절]",
-    ...hits.map(
-      (hit) =>
-        `- 「${hit.title}」 문서의 「${hit.section_title}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 위키를 썼다면 문서명을 밝혀라.)`
-    )
+    ...hits.map((hit) => {
+      if (hit.cite_publicly === false) {
+        return `- 내부 기준 · 「${hit.section_title}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 내부 기준을 썼다면 문서명은 밝히지 마라.)`;
+      }
+      return `- 「${hit.title}」 문서의 「${hit.section_title}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 위키를 썼다면 문서명을 밝혀라.)`;
+    })
   ].join("\n\n");
 }
 
 export function wikiSourceUsedInAnswer(hit: WikiSourceRef, answer: string): boolean {
   const text = answer.trim();
   if (!text) return false;
-  if (text.includes(`「${hit.title}」`) || text.includes(hit.title)) return true;
+  if (
+    hit.cite_publicly !== false &&
+    (text.includes(`「${hit.title}」`) || text.includes(hit.title))
+  ) {
+    return true;
+  }
   if (text.includes(`「${hit.section_title}」`) || text.includes(hit.section_title)) return true;
   const excerpt = hit.excerpt.replace(/\s+/g, " ").trim();
   if (excerpt.length >= 12 && text.includes(excerpt.slice(0, Math.min(36, excerpt.length)))) {
@@ -214,6 +236,11 @@ export function normalizeWikiSources(raw: unknown): WikiSourceRef[] | null {
     const matched_keywords = Array.isArray(row.matched_keywords)
       ? row.matched_keywords.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
       : [];
+    const visibleRaw = row.visible_to_staff;
+    const citeRaw = row.cite_publicly;
+    const visible_to_staff = visibleRaw === false ? false : true;
+    const cite_publicly =
+      citeRaw === false ? false : citeRaw === true ? true : visible_to_staff;
     if (!category || !slug || !title || !section_id || !section_title || !path) continue;
     out.push({
       slug,
@@ -224,7 +251,9 @@ export function normalizeWikiSources(raw: unknown): WikiSourceRef[] | null {
       score: Number.isFinite(score) ? score : 0,
       matched_keywords,
       excerpt,
-      path
+      path,
+      visible_to_staff,
+      cite_publicly
     });
   }
   return out.length > 0 ? out : null;

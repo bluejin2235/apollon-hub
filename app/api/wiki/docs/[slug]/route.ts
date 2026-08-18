@@ -3,7 +3,9 @@ import { requireWikiUser, wikiMissingResponse } from "@/lib/wiki/api";
 import { notifyWikiRuleChange } from "@/lib/wiki/notify";
 import {
   canDeleteWiki,
-  canEditWikiCategory
+  canEditWikiCategory,
+  canToggleWikiVisibility,
+  canViewWikiDoc
 } from "@/lib/wiki/permissions";
 import { parseRelated, parseSections } from "@/lib/wiki/sections";
 import {
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         { status: 503 }
       );
     }
-    if (!doc) {
+    if (!doc || !canViewWikiDoc(doc, gate.isAdmin)) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
     return NextResponse.json({
@@ -37,7 +39,8 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       wiki_ready: wikiReady,
       is_admin: gate.isAdmin,
       can_edit: canEditWikiCategory(doc.category, gate.isAdmin),
-      can_delete: canDeleteWiki(gate.isAdmin)
+      can_delete: canDeleteWiki(gate.isAdmin),
+      can_toggle_visibility: canToggleWikiVisibility(gate.isAdmin)
     });
   } catch (err) {
     console.error("[wiki/docs] GET one", err);
@@ -66,10 +69,28 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
     const doc = loaded.doc;
-    if (!canEditWikiCategory(doc.category, gate.isAdmin)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!canViewWikiDoc(doc, gate.isAdmin)) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     }
     if (!loaded.wikiReady) return wikiMissingResponse();
+
+    const togglingVisibility = typeof body.visible_to_staff === "boolean";
+    if (togglingVisibility && !canToggleWikiVisibility(gate.isAdmin)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const editingContent =
+      body.title !== undefined ||
+      body.kind !== undefined ||
+      body.summary !== undefined ||
+      body.related !== undefined ||
+      body.sections !== undefined ||
+      body.is_active !== undefined ||
+      typeof body.revert_to === "number";
+
+    if (editingContent && !canEditWikiCategory(doc.category, gate.isAdmin)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const revertTo =
       typeof body.revert_to === "number" ? body.revert_to : null;
@@ -89,6 +110,9 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
                 body.sections !== undefined ? parseSections(body.sections) : undefined,
               is_active:
                 typeof body.is_active === "boolean" ? body.is_active : undefined,
+              visible_to_staff: togglingVisibility
+                ? body.visible_to_staff === true
+                : undefined,
               change_note:
                 typeof body.change_note === "string" ? body.change_note : undefined
             },

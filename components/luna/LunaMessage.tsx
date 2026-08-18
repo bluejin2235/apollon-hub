@@ -92,6 +92,7 @@ type LunaMessageProps = {
   feedbackNote?: string | null;
   notionSources?: NotionSource[] | null;
   wikiSources?: WikiSourceRef[] | null;
+  privateWikiRefs?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode?: LunaNasDriveMode;
@@ -467,6 +468,7 @@ function SourceBadgeRow({
   cards,
   notionSources,
   wikiSources,
+  privateWikiRefs,
   memoryCount,
   wikiOpen,
   onToggleWiki
@@ -474,14 +476,22 @@ function SourceBadgeRow({
   cards: LunaCard[];
   notionSources: NotionSource[];
   wikiSources: WikiSourceRef[];
+  privateWikiRefs: WikiSourceRef[];
   memoryCount: number;
   wikiOpen: boolean;
   onToggleWiki: () => void;
 }) {
-  const counts = countSourceBadges({ cards, notionSources, wikiSources, memoryCount });
-  const items: { label: string; n: number }[] = [];
+  const counts = countSourceBadges({
+    cards,
+    notionSources,
+    wikiSources,
+    privateWikiRefs,
+    memoryCount
+  });
+  const items: { label: string; n: number; toggle?: boolean }[] = [];
   if (counts.nas > 0) items.push({ label: "Work서버", n: counts.nas });
-  if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki });
+  if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki, toggle: true });
+  if (counts.internal > 0) items.push({ label: "내부", n: counts.internal, toggle: true });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
   if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
@@ -489,7 +499,7 @@ function SourceBadgeRow({
   return (
     <>
       {items.map((it) =>
-        it.label === "위키" ? (
+        it.toggle ? (
           <button
             key={it.label}
             type="button"
@@ -511,8 +521,14 @@ function SourceBadgeRow({
   );
 }
 
-function WikiSourcesPanel({ wikiSources }: { wikiSources: WikiSourceRef[] }) {
-  if (wikiSources.length === 0) return null;
+function WikiSourcesPanel({
+  wikiSources,
+  privateWikiRefs
+}: {
+  wikiSources: WikiSourceRef[];
+  privateWikiRefs: WikiSourceRef[];
+}) {
+  if (wikiSources.length === 0 && privateWikiRefs.length === 0) return null;
   return (
     <div className="mt-2 rounded-lg border border-[#e7e8ec] bg-[#fafbfc] p-2.5">
       <div className="mb-1.5 text-[11px] font-semibold text-[#6b6f76]">위키 출처</div>
@@ -530,6 +546,15 @@ function WikiSourcesPanel({ wikiSources }: { wikiSources: WikiSourceRef[] }) {
               score {src.score} · {src.path}
             </div>
           </a>
+        ))}
+        {privateWikiRefs.map((src) => (
+          <div
+            key={`private:${src.slug}:${src.section_id}`}
+            className="rounded-md px-1.5 py-1 text-[12px] text-slate-600"
+          >
+            <div className="font-medium">내부 기준 · {src.section_title}</div>
+            <div className="text-[11px] text-[#7b8088]">score {src.score}</div>
+          </div>
         ))}
       </div>
     </div>
@@ -957,6 +982,7 @@ function MessageActionsRow({
   cards,
   notionSources,
   wikiSources,
+  privateWikiRefs,
   memoryCount,
   canFeedback,
   feedback,
@@ -970,6 +996,7 @@ function MessageActionsRow({
   cards: LunaCard[];
   notionSources: NotionSource[];
   wikiSources: WikiSourceRef[];
+  privateWikiRefs: WikiSourceRef[];
   memoryCount: number;
   canFeedback: boolean;
   feedback: "good" | "bad" | null;
@@ -985,6 +1012,7 @@ function MessageActionsRow({
         cards={cards}
         notionSources={notionSources}
         wikiSources={wikiSources}
+        privateWikiRefs={privateWikiRefs}
         memoryCount={memoryCount}
         wikiOpen={wikiOpen}
         onToggleWiki={onToggleWiki}
@@ -1049,6 +1077,7 @@ export function LunaMessage({
   feedbackNote: initialNote = null,
   notionSources = null,
   wikiSources = null,
+  privateWikiRefs = null,
   cards = null,
   sourceReasons = null,
   nasDriveMode = "office",
@@ -1097,6 +1126,7 @@ export function LunaMessage({
     [notionSources]
   );
   const wikiRefs = useMemo(() => wikiSources ?? [], [wikiSources]);
+  const privateRefs = useMemo(() => privateWikiRefs ?? [], [privateWikiRefs]);
   const cardList = useMemo(
     () => (cards ?? []).filter((c) => c.title),
     [cards]
@@ -1401,6 +1431,7 @@ export function LunaMessage({
               cards={cardList}
               notionSources={sources}
               wikiSources={wikiRefs}
+              privateWikiRefs={privateRefs}
               memoryCount={memoryCount ?? 0}
               canFeedback={canFeedback}
               feedback={feedback}
@@ -1413,7 +1444,9 @@ export function LunaMessage({
                 else void sendFeedback(next);
               }}
             />
-            {wikiOpen ? <WikiSourcesPanel wikiSources={wikiRefs} /> : null}
+            {wikiOpen ? (
+              <WikiSourcesPanel wikiSources={wikiRefs} privateWikiRefs={privateRefs} />
+            ) : null}
             {canFeedback && feedback === "bad" ? (
               reasonPanelCollapsed ? (
                 <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">

@@ -162,6 +162,7 @@ export function parseAssumeMarkers(text: string): ParsedAssume {
 export type SourceBadgeCounts = {
   memory: number;
   wiki: number;
+  internal: number;
   nas: number;
   notion: number;
   web: number;
@@ -244,10 +245,17 @@ export function normalizeUsedPrompts(raw: unknown): UsedPromptRef[] | null {
   return items.length > 0 ? items : null;
 }
 
+function isPublicWikiSource(row: unknown): boolean {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return true;
+  const cite = (row as { cite_publicly?: unknown }).cite_publicly;
+  return cite !== false;
+}
+
 export function countSourceBadges(opts: {
   cards?: Array<{ type: string }> | null;
   notionSources?: unknown[] | null;
   wikiSources?: unknown[] | null;
+  privateWikiRefs?: unknown[] | null;
   memoryCount?: number | null;
 }): SourceBadgeCounts {
   const cards = opts.cards ?? [];
@@ -262,9 +270,18 @@ export function countSourceBadges(opts: {
   if (notion === 0 && Array.isArray(opts.notionSources)) {
     notion = opts.notionSources.length;
   }
+  const wikiFromMeta = Array.isArray(opts.wikiSources)
+    ? opts.wikiSources.filter(isPublicWikiSource).length
+    : 0;
+  const internalFromMeta = Array.isArray(opts.privateWikiRefs)
+    ? opts.privateWikiRefs.length
+    : Array.isArray(opts.wikiSources)
+      ? opts.wikiSources.filter((row) => !isPublicWikiSource(row)).length
+      : 0;
   return {
     memory: Math.max(0, opts.memoryCount ?? 0),
-    wiki: Array.isArray(opts.wikiSources) ? opts.wikiSources.length : 0,
+    wiki: wikiFromMeta,
+    internal: internalFromMeta,
     nas,
     notion,
     web

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apollon Wikipedia — 최종</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --lock:#8A6D2F; --lock-bg:#FAF3E2;
+    --warn:#C0392B; --warn-bg:#FDECEA;
+    --add:#0F6E56; --add-bg:#EAF7F2;
+    --del:#A32D2D; --del-bg:#FCEFEF;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:980px;margin:0 auto}
+  .mocklabel{margin:0 0 7px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:9px;line-height:1.6}
+  .urlbar{font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:9px;
+    background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  .secthead{font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.4px;margin:32px 0 8px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:11px;padding:13px 20px;border-bottom:1px solid var(--line)}
+  .logo{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:12px;font-weight:800}
+  .hubname{font-size:14px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:11px;font-size:11.5px;color:var(--sub)}
+  .hubright .ic{width:24px;height:24px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:11px;color:var(--faint)}
+
+  .page{display:flex;min-height:470px}
+  .side{width:184px;border-right:1px solid var(--line);padding:15px 0;flex-shrink:0;
+    display:flex;flex-direction:column}
+  .sidetop{padding:0 13px 11px;display:flex;align-items:center;gap:8px}
+  .sidetop .mark{width:23px;height:23px;border-radius:7px;background:var(--luna);
+    color:#fff;display:grid;place-items:center;font-size:11px}
+  .sidetop .nm{font-size:13.5px;font-weight:700}
+  .backrow{padding:0 9px 11px;border-bottom:1px solid var(--line2);margin-bottom:11px}
+  .backrow .b{padding:6px 9px;border-radius:8px;font-size:12px;color:var(--luna);
+    font-weight:600;cursor:pointer;background:var(--luna-soft)}
+  .navsec{padding:0 9px;margin-bottom:12px}
+  .navlabel{font-size:9.5px;color:var(--faint);padding:0 9px;margin-bottom:5px}
+  .nav{display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:8px;
+    font-size:12px;color:var(--sub);cursor:pointer;margin-bottom:1px}
+  .nav.on{background:var(--luna-soft);color:var(--luna-ink);font-weight:700}
+  .nav .n{margin-left:auto;font-size:10px;color:var(--faint)}
+  .main{flex:1;min-width:0}
+
+  /* ── 용어사전 (현재 그대로) ── */
+  .gwrap{display:flex;height:100%}
+  .glist{width:290px;border-right:1px solid var(--line);padding:15px 16px;flex-shrink:0}
+  .ghead{display:flex;align-items:flex-start;gap:10px;padding:15px 16px 0;grid-column:1/-1}
+  .gtitle{font-size:16px;font-weight:800}
+  .gsub{font-size:11px;color:var(--faint);margin-top:2px}
+  .gchk{margin-left:auto;font-size:11px;background:var(--warn-bg);color:var(--warn);
+    padding:5px 11px;border-radius:16px;font-weight:700}
+  .grow1{display:flex;gap:7px;margin-bottom:12px}
+  .gsearch{flex:1;border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+    font-size:12px;color:var(--faint)}
+  .gadd{background:var(--luna);color:#fff;border-radius:9px;padding:7px 13px;
+    font-size:12px;font-weight:700;white-space:nowrap}
+  .glabel{font-size:10.5px;color:var(--faint);margin-bottom:6px}
+  .gchips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:13px}
+  .gchips span{font-size:11px;padding:5px 11px;border-radius:16px;background:var(--chip);color:var(--sub)}
+  .gchips span.on{background:var(--luna);color:#fff;font-weight:600}
+  .gitems{border-top:1px solid var(--line2);padding-top:9px}
+  .gitem{padding:8px 9px;border-radius:8px;margin-bottom:2px}
+  .gitem.on{background:var(--luna-soft)}
+  .gitem .k{font-size:13px;font-weight:700}
+  .gitem .e{font-size:11px;color:var(--faint);margin-top:1px}
+  .gdetail{flex:1;padding:15px 18px;min-width:0}
+  .gdname{font-size:22px;font-weight:800}
+  .gdcat{display:inline-block;font-size:10px;background:var(--chip);color:var(--sub);
+    padding:3px 9px;border-radius:9px;margin:7px 0 13px}
+  .glangs{display:flex;gap:8px;margin-bottom:13px}
+  .glang{flex:1;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  .glang .l{font-size:9.5px;color:var(--faint);margin-bottom:4px}
+  .glang .v{font-size:13.5px;font-weight:700;line-height:1.4}
+  .gdefbox{border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:13px}
+  .gdefbox .l{font-size:9.5px;color:var(--faint);margin-bottom:5px}
+  .gdefbox .v{font-size:12.5px;line-height:1.8}
+  .gacts{display:flex;gap:7px;margin-bottom:8px}
+  .gnote{font-size:10.5px;color:var(--faint);line-height:1.6;margin-bottom:14px}
+  .ghist{border-top:1px solid var(--line2);padding-top:11px}
+  .ghist .l{font-size:10.5px;color:var(--faint);margin-bottom:8px}
+  .ghrow{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:5px 0}
+  .ghrow .av{width:20px;height:20px;border-radius:50%;background:var(--chip);
+    display:grid;place-items:center;font-size:9px;color:var(--sub)}
+  .ghrow .who{font-weight:700}
+  .ghrow .v{color:var(--faint);font-size:10.5px}
+  .ghrow .t{margin-left:auto;color:var(--faint);font-size:10.5px}
+
+  .btn{padding:7px 12px;border-radius:9px;font-size:11.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;white-space:nowrap}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.danger{background:var(--warn-bg);color:var(--warn);border-color:#F5D5D0}
+  .btn.sm{padding:4px 9px;font-size:10.5px}
+  .btn.off{opacity:.4;cursor:not-allowed}
+
+  /* ── 문서형 (양식·기준·규정) ── */
+  .doc{flex:1;min-width:0;padding:16px 22px}
+  .crumb{font-size:11px;color:var(--faint);margin-bottom:9px}
+  .crumb a{color:var(--luna);text-decoration:none}
+  .crumb .sep{margin:0 5px;color:var(--line)}
+  .doctitle{font-size:22px;font-weight:800;letter-spacing:-.3px}
+  .doctitle .cat{font-size:10px;font-weight:700;background:var(--chip);color:var(--sub);
+    padding:3px 8px;border-radius:9px;vertical-align:6px;margin-left:8px}
+  .doctitle .lock{font-size:10px;font-weight:700;background:var(--lock-bg);color:var(--lock);
+    padding:3px 8px;border-radius:9px;vertical-align:6px;margin-left:6px}
+  .docmeta{font-size:11px;color:var(--faint);margin:4px 0 12px}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:17px}
+  .tab{font-size:12.5px;padding:8px 14px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--ink);font-weight:700;border-bottom-color:var(--luna)}
+  .tabs .right{margin-left:auto;display:flex;align-items:center;gap:7px;padding-bottom:6px}
+
+  .sec{margin-bottom:20px}
+  .sech{display:flex;align-items:baseline;gap:9px;padding-bottom:5px;
+    border-bottom:1px solid var(--line2);margin-bottom:8px}
+  .sech h3{font-size:15px;font-weight:700}
+  .sech .edit{margin-left:auto;font-size:11px;color:var(--luna);cursor:pointer}
+  .secbody{font-size:13px;line-height:1.9;color:#2a2c31}
+  .secbody b{font-weight:600}
+  .secbody ul{margin:5px 0 0 17px}
+  .link{color:var(--luna);text-decoration:none;border-bottom:1px solid #DDD9F2}
+
+  .doclist{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:14px}
+  .drow{display:flex;align-items:center;gap:11px;padding:12px 14px;
+    border-bottom:1px solid var(--line2);cursor:pointer}
+  .drow:last-child{border-bottom:0}
+  .drow .t{font-size:13px;font-weight:600;min-width:126px}
+  .drow .s{flex:1;font-size:11.5px;color:var(--sub);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .drow .g{font-size:9px;padding:2px 6px;border-radius:5px;background:var(--chip);color:var(--faint)}
+  .drow .w{font-size:10px;color:var(--faint)}
+  .drow .d{font-size:10px;color:var(--faint);width:40px;text-align:right}
+
+  .footbox{border-top:1px solid var(--line);margin-top:22px;padding-top:13px}
+  .footrow{font-size:11.5px;color:var(--sub);margin-bottom:6px}
+  .footrow b{color:var(--ink);font-weight:600}
+  .footrow a{color:var(--luna);text-decoration:none;margin-right:9px}
+
+  /* 편집 */
+  .editbox{border:1px solid var(--luna);border-radius:11px;overflow:hidden}
+  .editbar{background:var(--luna-soft);padding:9px 13px;font-size:11.5px;
+    color:var(--luna-ink);font-weight:600;display:flex;gap:8px}
+  .editbar .x{margin-left:auto;cursor:pointer;color:var(--sub)}
+  .editarea{padding:13px;font-size:13px;line-height:1.9;color:#2a2c31;
+    background:#FCFCFD;min-height:110px;white-space:pre-wrap}
+  .editarea .cursor{border-left:1.5px solid var(--luna);margin-left:1px}
+  .editfoot{border-top:1px solid var(--line);padding:11px 13px}
+  .sumlabel{font-size:11px;color:var(--sub);margin-bottom:5px}
+  .suminput{border:1px solid var(--line);border-radius:8px;padding:8px 11px;
+    font-size:12px;color:var(--faint);margin-bottom:10px}
+  .editacts{display:flex;gap:7px;align-items:center}
+  .editacts .hint{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .toolbar2{display:flex;gap:3px;padding:7px 13px;border-bottom:1px solid var(--line2);background:#FBFBFC}
+  .toolbar2 span{font-size:11px;padding:3px 8px;border-radius:6px;color:var(--sub);cursor:pointer}
+  .toolbar2 span:hover{background:var(--chip)}
+
+  .lockbar{background:var(--lock-bg);border:1px solid #EADFC0;border-radius:10px;
+    padding:10px 13px;font-size:11.5px;color:var(--lock);margin-bottom:15px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 1. 용어사전 ══════ -->
+<div class="mocklabel">화면 1 — 용어사전 (지금 그대로. 바꾸지 않음)</div>
+<div class="note">이름만 「Apollon Wikipedia · 용어사전」이 되고 사이드바가 붙습니다. 안쪽은 손대지 않습니다.</div>
+<div class="urlbar">localhost:3000/wiki/terms</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="page">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav on">용어사전 <span class="n">389</span></div>
+        <div class="nav">양식 <span class="n">4</span></div>
+        <div class="nav">기준 <span class="n">2</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">규정 🔒 <span class="n">3</span></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="ghead">
+        <div>
+          <div class="gtitle">용어사전</div>
+          <div class="gsub">아폴론 공통 용어를 한 곳에서 · 누구나 수정, 이력 기록</div>
+        </div>
+        <div class="gchk">확인 필요 7</div>
+      </div>
+
+      <div class="gwrap" style="margin-top:13px">
+        <div class="glist">
+          <div class="grow1">
+            <div class="gsearch">용어·동의어 검색</div>
+            <div class="gadd">+ 추가</div>
+          </div>
+          <div class="glabel">분류</div>
+          <div class="gchips">
+            <span class="on">전체 389</span><span>공통 154</span><span>공간 116</span>
+            <span>HW 69</span><span>콘텐츠 53</span><span>기타 0</span>
+          </div>
+          <div class="glabel">색인</div>
+          <div class="gchips">
+            <span class="on">전체</span><span>가나다</span><span>ABC</span><span>123</span>
+          </div>
+          <div class="gitems">
+            <div class="gitem on"><div class="k">1%법</div><div class="e">Art in Architecture</div></div>
+            <div class="gitem"><div class="k">3D 매핑</div><div class="e">3D Mapping · 三维精准投影</div></div>
+            <div class="gitem"><div class="k">3D 모델링</div><div class="e">3D Modeling</div></div>
+            <div class="gitem"><div class="k">감리</div><div class="e">Supervision</div></div>
+          </div>
+        </div>
+
+        <div class="gdetail">
+          <div class="gdname">1%법</div>
+          <div class="gdcat">공통</div>
+          <div class="glangs">
+            <div class="glang"><div class="l">한국어</div><div class="v">1%법</div></div>
+            <div class="glang"><div class="l">ENGLISH</div><div class="v">Art in Architecture</div></div>
+            <div class="glang"><div class="l">中文</div><div class="v">—</div></div>
+          </div>
+          <div class="gdefbox">
+            <div class="l">정의</div>
+            <div class="v">건축물 미술작품 제도. 일정 규모 이상 건축물에 미술작품 설치를
+              의무화하는 제도로, 미디어 조형물 도입의 제도적 예산 경로가 된다.</div>
+          </div>
+          <div class="gacts">
+            <div class="btn primary">수정하기</div>
+            <div class="btn danger">삭제</div>
+          </div>
+          <div class="gacts"><div class="btn">루나에게 물어보기</div></div>
+          <p class="gnote">수정은 검토 없이 바로 반영되고, 모든 변경은 이력으로 남습니다</p>
+          <div class="ghist">
+            <div class="l">변경 이력</div>
+            <div class="ghrow">
+              <span class="av">이택</span><span class="who">이택진</span>
+              <span class="v">v1 · 현재</span><span class="t">08.16</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 2. 양식 목록 ══════ -->
+<div class="secthead">화면 2 — 양식 목록</div>
+<div class="urlbar">localhost:3000/wiki/forms</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="page" style="min-height:340px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">389</span></div>
+        <div class="nav on">양식 <span class="n">4</span></div>
+        <div class="nav">기준 <span class="n">2</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">규정 🔒 <span class="n">3</span></div>
+      </div>
+    </div>
+
+    <div class="doc">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span>양식</div>
+      <h1 class="doctitle" style="font-size:19px">양식</h1>
+      <p class="docmeta">문서를 만들 때 꺼내 쓰는 뼈대. 루나가 「만들기」 요청에 이걸 씁니다 · 누구나 고칠 수 있어요</p>
+
+      <div style="display:flex;gap:7px;margin-bottom:13px">
+        <div class="gsearch" style="flex:1">양식 이름으로 찾기</div>
+        <div class="btn primary">+ 새 양식</div>
+      </div>
+
+      <div class="doclist">
+        <div class="drow">
+          <span class="t">견적서 목차</span>
+          <span class="s">고객용 견적서에 들어가는 항목과 순서</span>
+          <span class="g">문서 양식</span><span class="w">이택진</span><span class="d">8/18</span>
+        </div>
+        <div class="drow">
+          <span class="t">제안서 목차</span>
+          <span class="s">제안 단계 문서의 표준 구성</span>
+          <span class="g">문서 양식</span><span class="w">이택진</span><span class="d">8/18</span>
+        </div>
+        <div class="drow">
+          <span class="t">OT 체크리스트</span>
+          <span class="s">오리엔테이션에서 확인해야 할 것</span>
+          <span class="g">체크리스트</span><span class="w">—</span><span class="d">—</span>
+        </div>
+        <div class="drow">
+          <span class="t">착수 체크리스트</span>
+          <span class="s">착수 전 준비해야 할 산출물</span>
+          <span class="g">체크리스트</span><span class="w">—</span><span class="d">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 3. 문서 보기 ══════ -->
+<div class="secthead">화면 3 — 문서 보기 (누구나 고칠 수 있음)</div>
+<div class="urlbar">localhost:3000/wiki/forms/quote-toc</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="page">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">389</span></div>
+        <div class="nav on">양식 <span class="n">4</span></div>
+        <div class="nav">기준 <span class="n">2</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">규정 🔒 <span class="n">3</span></div>
+      </div>
+    </div>
+
+    <div class="doc">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>양식</a><span class="sep">›</span>견적서 목차</div>
+      <h1 class="doctitle">견적서 목차 <span class="cat">문서 양식</span></h1>
+      <p class="docmeta">이택진이 8월 18일 14:20에 마지막으로 고침 · 3판 · 루나가 12번 사용</p>
+
+      <div class="tabs">
+        <div class="tab on">읽기</div>
+        <div class="tab">고치기</div>
+        <div class="tab">변경 이력</div>
+        <div class="right"><span class="btn sm">루나에게 이걸로 만들어달라기</span></div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>언제 쓰나</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          고객사에 제출하는 견적서를 만들 때. 내부 산출용 시트는 별도이며 이 목차를 쓰지 않는다.
+          <a class="link">공헌이익</a>은 고객 문서에 넣지 않는다.
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>구성</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          <ul>
+            <li><b>표지</b> — 프로젝트명, 발주처, 작성일, 유효기간</li>
+            <li><b>사업 개요</b> — 범위와 전제</li>
+            <li><b>공종별 산출</b> — 공간 / 하드웨어 / 콘텐츠 / 설치 / 운영</li>
+            <li><b>합계</b> — 판매가 기준</li>
+            <li><b>별첨</b> — 제외 항목, 지불 조건</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>넣지 않는 것</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          원가, 목표 공헌이익률, 협력사별 단가.
+          고객이 원가를 요청하면 항목별 구성비까지만 설명한다.
+        </div>
+      </div>
+
+      <div class="footbox">
+        <p class="footrow"><b>관련</b>
+          <a>견적서</a><a>공헌이익</a><a>RFP 분석 기준</a><a>제안서 목차</a></p>
+        <p class="footrow" style="color:var(--faint)">
+          수정은 검토 없이 바로 반영되고, 모든 변경은 이력으로 남습니다</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 4. 절 고치기 ══════ -->
+<div class="secthead">화면 4 — 그 절만 고치기 (본문 클릭 → 그 자리에서)</div>
+<div class="urlbar">localhost:3000/wiki/forms/quote-toc/edit?section=3</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="page" style="min-height:420px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">389</span></div>
+        <div class="nav on">양식 <span class="n">4</span></div>
+        <div class="nav">기준 <span class="n">2</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">규정 🔒 <span class="n">3</span></div>
+      </div>
+    </div>
+
+    <div class="doc">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>양식</a><span class="sep">›</span>
+        <a>견적서 목차</a><span class="sep">›</span>고치기</div>
+      <h1 class="doctitle" style="font-size:19px">견적서 목차</h1>
+      <p class="docmeta">「넣지 않는 것」만 고치는 중 · 다른 부분은 그대로 둡니다</p>
+
+      <div class="editbox">
+        <div class="editbar"><span>넣지 않는 것</span><span class="x">✕ 취소</span></div>
+        <div class="toolbar2">
+          <span><b>B</b></span><span><i>I</i></span><span>• 목록</span>
+          <span>1. 번호</span><span>🔗 연결</span>
+        </div>
+        <div class="editarea">원가, 목표 공헌이익률, 협력사별 단가.
+고객이 원가를 요청하면 항목별 구성비까지만 설명한다.
+
+협력사 견적 원본도 첨부하지 않는다.<span class="cursor"></span></div>
+        <div class="editfoot">
+          <p class="sumlabel">무엇을 왜 바꾸셨나요? <span style="color:var(--faint)">이력에 남습니다</span></p>
+          <div class="suminput">예) 협력사 견적 원본 첨부 금지를 추가</div>
+          <div class="editacts">
+            <span class="btn primary">저장</span>
+            <span class="btn">바뀐 곳 보기</span>
+            <span class="btn">취소</span>
+            <span class="hint">저장하면 루나가 바로 이 내용을 씁니다</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 5. 규정 ══════ -->
+<div class="secthead">화면 5 — 규정 (팀원 화면 · 고치기 불가)</div>
+<div class="urlbar">localhost:3000/wiki/rules/security</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="page" style="min-height:380px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">389</span></div>
+        <div class="nav">양식 <span class="n">4</span></div>
+        <div class="nav">기준 <span class="n">2</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav on">규정 🔒 <span class="n">3</span></div>
+      </div>
+    </div>
+
+    <div class="doc">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>규정</a><span class="sep">›</span>보안 지침</div>
+      <h1 class="doctitle">보안 지침 <span class="lock">🔒 관리자만</span></h1>
+      <p class="docmeta">이택진이 8월 12일에 마지막으로 고침 · 1판</p>
+
+      <div class="tabs">
+        <div class="tab on">읽기</div>
+        <div class="tab" style="opacity:.35">고치기</div>
+        <div class="tab">변경 이력</div>
+      </div>
+
+      <div class="lockbar">
+        🔒 이 문서는 관리자만 고칠 수 있습니다. 고쳐야 할 내용이 있으면 관리자에게 알려주세요.
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>고객사 자료</h3></div>
+        <div class="secbody">
+          고객사에서 받은 자료는 프로젝트 폴더 안에만 둔다.
+          개인 폴더나 외부 저장소에 복사하지 않는다.
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>외부 공유</h3></div>
+        <div class="secbody">
+          제안서·견적서를 외부에 공유할 때는 담당 SV의 확인을 받는다.
+          링크 공유는 만료일을 설정한다.
+        </div>
+      </div>
+
+      <div class="footbox">
+        <p class="footrow" style="color:var(--faint)">
+          규정이 바뀌면 전원에게 알림이 갑니다</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

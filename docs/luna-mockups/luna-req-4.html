@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개발 요건 4건 — 화면·URL</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --lock:#8A6D2F; --lock-bg:#FAF3E2;
+    --old:#8A6D2F; --old-bg:#FAF7EE;
+    --new:#0F6E56; --new-bg:#EAF7F2;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:940px;margin:0 auto}
+  .mocklabel{margin:0 0 7px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:9px;line-height:1.6}
+  .urlbar{font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:9px;
+    background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  .secthead{font-size:13px;font-weight:800;color:var(--ink);margin:34px 0 4px;
+    padding-top:20px;border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:11px;padding:12px 19px;border-bottom:1px solid var(--line)}
+  .logo{width:23px;height:23px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .hubname{font-size:13.5px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--sub)}
+  .hubright .ic{width:23px;height:23px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:10px;color:var(--faint)}
+
+  .body{padding:17px 21px}
+  .ptitle{font-size:16px;font-weight:800;margin-bottom:3px}
+  .pdesc{font-size:11.5px;color:var(--sub);margin-bottom:15px}
+
+  .btn{padding:7px 13px;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;white-space:nowrap}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ghost{background:transparent}
+  .btn.sm{padding:4px 10px;font-size:11px}
+
+  /* ── 중복 비교 ── */
+  .cand{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+  .candtop{padding:11px 15px;background:#FBFBFC;border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;gap:8px}
+  .candtop .tag{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px;
+    background:var(--lock-bg);color:var(--lock)}
+  .candtop .t{font-size:12px;font-weight:600}
+  .candtop .n{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .candbody{padding:15px}
+  .cmp{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .cmpcol{flex:1;padding:12px 14px}
+  .cmpcol:first-child{border-right:1px solid var(--line);background:var(--old-bg)}
+  .cmpcol:last-child{background:var(--new-bg)}
+  .cmpcol .l{font-size:10px;font-weight:700;margin-bottom:6px}
+  .cmpcol:first-child .l{color:var(--old)}
+  .cmpcol:last-child .l{color:var(--new)}
+  .cmpcol .v{font-size:12.5px;line-height:1.75}
+  .cmpcol .meta{font-size:10px;color:var(--faint);margin-top:7px}
+
+  .propose{border:1px solid var(--luna-soft);background:#FCFBFF;border-radius:10px;
+    padding:13px 15px;margin-bottom:13px}
+  .propose .h{font-size:11px;color:var(--luna-ink);font-weight:700;margin-bottom:7px;
+    display:flex;align-items:center;gap:6px}
+  .propose .v{font-size:13px;line-height:1.8}
+  .propose .why{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.6}
+  .acts{display:flex;gap:7px;align-items:center}
+  .acts .sp{flex:1}
+
+  .more{border-top:1px solid var(--line2);margin-top:13px;padding-top:12px}
+  .more .h{font-size:11px;color:var(--sub);margin-bottom:8px}
+  .moreopts{display:flex;gap:6px;flex-wrap:wrap}
+  .moreopts span{font-size:11.5px;padding:6px 12px;border-radius:9px;
+    border:1px solid var(--line);cursor:pointer}
+
+  /* ── 용어 하이라이트 ── */
+  .prose{font-size:13.5px;line-height:2;color:#2a2c31;max-width:600px}
+  .term{border-bottom:1px dotted #B9B4D8;cursor:pointer;padding-bottom:1px}
+  .term.act{border-bottom-color:var(--luna);border-bottom-style:solid}
+  .pop{border:1px solid var(--line);border-radius:12px;padding:14px 16px;width:290px;
+    box-shadow:0 8px 24px rgba(0,0,0,.09);background:var(--panel);margin-top:9px}
+  .poptop{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .poptop .k{font-size:15px;font-weight:800}
+  .poptop .c{font-size:9.5px;background:var(--chip);color:var(--sub);padding:2px 7px;border-radius:9px}
+  .poptop .e{margin-left:auto;font-size:11px;color:var(--luna);cursor:pointer;font-weight:600}
+  .popdef{font-size:12.5px;line-height:1.8;color:#2a2c31}
+  .popmeta{font-size:10px;color:var(--faint);margin-top:9px;padding-top:8px;
+    border-top:1px solid var(--line2)}
+  .popedit{border:1px solid var(--luna);border-radius:9px;padding:9px 11px;
+    font-size:12.5px;line-height:1.75;background:#FCFCFD;min-height:70px}
+  .popacts{display:flex;gap:6px;margin-top:9px}
+
+  /* ── HR ── */
+  .bub{background:#F7F6FC;border:1px solid #E8E5F4;border-radius:6px 18px 18px 18px;
+    padding:14px 17px;font-size:13.5px;line-height:1.8;max-width:580px}
+  .evi{border:1px solid var(--line);border-radius:10px;margin-top:11px;max-width:580px;overflow:hidden}
+  .evitop{padding:9px 13px;font-size:11.5px;color:var(--sub);cursor:pointer;
+    display:flex;align-items:center;gap:7px;background:#FBFBFC}
+  .evitop .n{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .evibody{padding:12px 14px;border-top:1px solid var(--line2);
+    font-size:12px;line-height:1.85;color:var(--sub)}
+  .evibody .art{font-weight:700;color:var(--ink);display:block;margin-bottom:5px}
+
+  .warnbox{background:var(--lock-bg);border:1px solid #EADFC0;border-radius:10px;
+    padding:11px 14px;font-size:12px;color:var(--lock);line-height:1.7;max-width:580px;margin-top:11px}
+
+  /* ── 밤 정리 ── */
+  .nightrow{display:flex;align-items:flex-start;gap:11px;padding:12px 14px;
+    border-bottom:1px solid var(--line2)}
+  .nightrow:last-child{border-bottom:0}
+  .nightrow .ico{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;
+    font-size:10px;flex-shrink:0;font-weight:700}
+  .nightrow .ico.auto{background:var(--new-bg);color:var(--new)}
+  .nightrow .ico.ask{background:var(--lock-bg);color:var(--lock)}
+  .nightrow .c{flex:1}
+  .nightrow .t{font-size:12.5px;line-height:1.7}
+  .nightrow .s{font-size:11px;color:var(--faint);margin-top:3px}
+
+  .urltable{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px}
+  .urltable table{width:100%;border-collapse:collapse}
+  .urltable th{font-size:10.5px;color:var(--faint);text-align:left;padding:7px 9px;
+    border-bottom:1px solid var(--line);font-weight:600}
+  .urltable td{font-size:12px;padding:8px 9px;border-bottom:1px solid var(--line2)}
+  .urltable td:first-child{font-family:var(--mono);font-size:11px;color:var(--luna-ink);width:40%}
+  .urltable tr:last-child td{border-bottom:0}
+  .urltable .new{font-size:9px;background:var(--new-bg);color:var(--new);
+    padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ URL ══════ -->
+<div class="mocklabel">URL 정리</div>
+<div class="urltable">
+  <table>
+    <tr><th>주소</th><th>무엇</th></tr>
+    <tr><td>/settings?tab=luna&luna=candidates</td><td>지식후보 — 중복 비교·제안 추가<span class="new">변경</span></td></tr>
+    <tr><td>/wiki/terms</td><td>용어사전 — 본문 하이라이트<span class="new">변경</span></td></tr>
+    <tr><td>/wiki/forms/{slug}</td><td>양식 문서 — 본문 하이라이트<span class="new">변경</span></td></tr>
+    <tr><td>/wiki/standards/{slug}</td><td>기준 문서 — 본문 하이라이트<span class="new">변경</span></td></tr>
+    <tr><td>/wiki/rules</td><td>규정 목록 — HR 문서 들어감<span class="new">변경</span></td></tr>
+    <tr><td>/wiki/rules/{slug}</td><td>규정 문서 — 요약 + 원문 근거<span class="new">변경</span></td></tr>
+    <tr><td>/luna</td><td>채팅 — 답변에 하이라이트<span class="new">변경</span></td></tr>
+    <tr><td>/settings?tab=luna&luna=brain&sub=types</td><td>유형 — 알기에 규정 조회 추가<span class="new">변경</span></td></tr>
+  </table>
+  <p style="font-size:11px;color:var(--faint);margin-top:10px;line-height:1.6">
+    새 주소는 없습니다. 기존 화면 안에서 바뀝니다.
+  </p>
+</div>
+
+
+<!-- ══════ 1. 지식후보 중복 ══════ -->
+<div class="secthead">① 지식후보 — 중복 비교와 제안</div>
+<p class="sectsub">지금 8건이 「중복」으로 대기 중인데 무엇과 겹치는지 안 보입니다.</p>
+<div class="urlbar">localhost:3000/settings?tab=luna&luna=candidates</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="ptitle">지식후보</div>
+    <p class="pdesc">확인이 필요한 8건 · 중복 5 · 새 지식 3</p>
+
+    <div class="cand">
+      <div class="candtop">
+        <span class="tag">겹침</span>
+        <span class="t">아폴론 지식과 비슷한 내용이에요</span>
+        <span class="n">1 / 8</span>
+      </div>
+      <div class="candbody">
+        <div class="cmp">
+          <div class="cmpcol">
+            <div class="l">이미 아는 것</div>
+            <div class="v">Media Space는 2024년부터 매출이 발생하기 시작한 신규 사업 영역이다.</div>
+            <div class="meta">8월 13일 · 3번 고쳐짐</div>
+          </div>
+          <div class="cmpcol">
+            <div class="l">새로 들은 것</div>
+            <div class="v">Media Space는 리뉴얼 시장 진입을 위해 만든 신규 사업이다.</div>
+            <div class="meta">오늘 · 대화에서</div>
+          </div>
+        </div>
+
+        <div class="propose">
+          <div class="h">🌙 이렇게 하려고 해요</div>
+          <div class="v">Media Space는 리뉴얼 시장 진입을 위해 만든 신규 사업으로,
+            2024년부터 매출이 발생하기 시작했다.</div>
+          <p class="why">같은 사업을 두고 하나는 시기를, 하나는 목적을 말하고 있어요.
+            한 문장으로 다시 썼습니다. 오래된 쪽에 기록을 남기고 새 후보는 지웁니다.</p>
+        </div>
+
+        <div class="acts">
+          <span class="btn primary">맞아요</span>
+          <span class="btn">아니에요</span>
+          <span class="sp"></span>
+          <span class="btn ghost">나중에</span>
+        </div>
+
+        <div class="more">
+          <div class="h">「아니에요」를 누르면</div>
+          <div class="moreopts">
+            <span>둘 다 남기기</span>
+            <span>새 것으로 바꾸기</span>
+            <span>새 것 버리기</span>
+            <span>직접 고쳐 쓰기</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cand">
+      <div class="candtop">
+        <span class="tag" style="background:var(--new-bg);color:var(--new)">새 지식</span>
+        <span class="t">처음 듣는 내용이에요</span>
+        <span class="n">2 / 8</span>
+      </div>
+      <div class="candbody">
+        <div class="propose">
+          <div class="h">🌙 이렇게 이해했어요</div>
+          <div class="v">제작사는 컨셉과 방향이 나온 뒤에 선정한다.
+            먼저 정해두지 않고, 그 방향을 가장 잘 만들 수 있는 영상사를 찾는다.</div>
+          <p class="why">아폴론이 어떻게 일하는지에 대한 판단 기준이라 오래 쓸 수 있어요.</p>
+        </div>
+        <div class="acts">
+          <span class="btn primary">맞아요</span>
+          <span class="btn">아니에요</span>
+          <span class="sp"></span>
+          <span class="btn ghost">나중에</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 2. 용어 하이라이트 ══════ -->
+<div class="secthead">② 용어 하이라이트 — 위키와 루나 답변</div>
+<p class="sectsub">본문의 용어에 점선 밑줄. 클릭하면 팝업, 팝업 안에서 바로 수정.</p>
+<div class="urlbar">localhost:3000/wiki/standards/rfp_analysis</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="ptitle" style="font-size:15px">읽는 중</div>
+    <p class="pdesc">점선 밑줄이 그어진 말을 누르면 뜻이 나옵니다</p>
+
+    <div class="prose">
+      아폴론은 건축·인테리어 자격이 없어 법정 <span class="term act">감리</span>를 직접 수행할 수 없다.
+      <span class="term">컨소시엄</span>으로 진행하며, 하드웨어 구축 시 설계안 준수를 확인하는 감리는 직접 한다.
+      <span class="term">마스터플랜</span> 단계에서는 <span class="term">프리프로덕션</span>과 도면화가 함께 진행된다.
+    </div>
+
+    <div style="display:flex;gap:18px;margin-top:6px">
+      <div class="pop">
+        <div class="poptop">
+          <span class="k">감리</span>
+          <span class="c">공통</span>
+          <span class="e">수정</span>
+        </div>
+        <div class="popdef">
+          공사나 설치 과정이 설계도와 계약 조건대로 진행되는지 확인·조정하는 업무.
+          인테리어 감리와 기술감리로 나뉜다.
+        </div>
+        <div class="popmeta">이택진 · 8월 17일 · v2</div>
+      </div>
+
+      <div class="pop">
+        <div class="poptop">
+          <span class="k">감리</span>
+          <span class="c">공통</span>
+          <span class="e" style="color:var(--faint)">읽기로</span>
+        </div>
+        <div class="popedit">공사나 설치 과정이 설계도와 계약 조건대로 진행되는지 확인·조정하는 업무.
+인테리어 감리와 기술감리로 나뉜다.</div>
+        <div class="popacts">
+          <span class="btn primary sm">저장</span>
+          <span class="btn sm">취소</span>
+        </div>
+        <div class="popmeta">고치면 바로 반영되고 이력이 남습니다</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="urlbar" style="margin-top:14px">localhost:3000/luna</div>
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="body">
+    <div class="bub">
+      <span class="term">감리</span>는 공사 과정이 설계도와 계약 조건대로 진행되는지 확인하는 업무예요.
+      아폴론은 자격이 없어 법정 감리는 직접 못 하고 <span class="term">컨소시엄</span>으로 진행합니다.
+      하드웨어 구축 시 설계안 준수를 확인하는 감리는 직접 해요.
+    </div>
+    <p style="font-size:11px;color:var(--faint);margin-top:9px">
+      글자가 다 나온 뒤에 밑줄이 나타납니다. 화면이 다시 뜨지 않습니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 3. HR ══════ -->
+<div class="secthead">③ HR 문서 — 요약 먼저, 근거는 접어서</div>
+<p class="sectsub">규정 카테고리에 들어가고, 「알기」가 이것도 봅니다.</p>
+<div class="urlbar">localhost:3000/luna</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 팀원</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <p style="font-size:11.5px;color:var(--faint);margin-bottom:10px">연차는 며칠이야?</p>
+
+    <div class="bub">
+      입사 1년 미만이면 한 달 개근할 때마다 1일씩 생기고,
+      1년 이상이면 한 해에 15일이 생겨요.
+      3년 이상 근무하면 2년마다 1일씩 늘어납니다.
+    </div>
+
+    <div class="evi">
+      <div class="evitop">
+        <span>▸</span><span>근거 보기</span>
+        <span class="n">취업규칙 제23조</span>
+      </div>
+      <div class="evibody">
+        <span class="art">제23조 (연차유급휴가)</span>
+        ① 회사는 1년간 80퍼센트 이상 출근한 직원에게 15일의 유급휴가를 준다.<br>
+        ② 계속 근로기간이 1년 미만인 직원에게는 1개월 개근 시 1일의 유급휴가를 준다.<br>
+        ③ 3년 이상 근속한 직원에게는 최초 1년을 초과하는 매 2년마다 1일을 가산한다.
+      </div>
+    </div>
+
+    <p style="font-size:11.5px;color:var(--faint);margin:20px 0 10px">내 연차 며칠 남았어?</p>
+
+    <div class="bub">
+      규정상 연차는 위와 같이 생기는데, <b>남은 일수는 제가 알 수 없어요.</b>
+      개인별 사용 내역은 인사 담당자에게 확인해 주세요.
+    </div>
+
+    <div class="warnbox">
+      🔒 인사 규정은 정확해야 해서, 문서에 없는 내용은 추측하지 않습니다.
+      근거를 찾지 못하면 답하지 않고 담당자를 안내합니다.
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 4. 밤 정리 ══════ -->
+<div class="secthead">④ 지식·용어 갈라 담기 — 밤 정리에 얹기</div>
+<p class="sectsub">매일 03:30 기억 정리에서, 그날 새로 생긴 용어를 기준으로 지식을 훑습니다.</p>
+<div class="urlbar">localhost:3000/settings?tab=luna&luna=candidates — 아침에 여기로 옵니다</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="ptitle" style="font-size:15px">밤사이 정리한 것</div>
+    <p class="pdesc">8월 19일 03:30 · 새 용어 3개를 기준으로 아폴론 지식 72건을 훑었습니다</p>
+
+    <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden">
+      <div class="nightrow">
+        <span class="ico auto">✓</span>
+        <div class="c">
+          <div class="t">「가상 테스트」 정의를 용어사전으로 옮겼어요</div>
+          <div class="s">지식에 있던 정의 부분을 빼고, 판단 부분만 남겼습니다 · 자동 처리</div>
+        </div>
+      </div>
+      <div class="nightrow">
+        <span class="ico auto">✓</span>
+        <div class="c">
+          <div class="t">「온사이트 테스트」 지식 2건을 하나로 합쳤어요</div>
+          <div class="s">같은 문장이라 오래된 쪽에 기록을 남기고 정리했습니다 · 자동 처리</div>
+        </div>
+      </div>
+      <div class="nightrow">
+        <span class="ico ask">?</span>
+        <div class="c">
+          <div class="t">「컨소시엄」은 어떻게 할지 물어볼게요</div>
+          <div class="s">용어 정의인지 판단 기준인지 애매해서 후보함에 올렸습니다</div>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-size:11px;color:var(--faint);margin-top:12px;line-height:1.7">
+      단순한 것은 알아서 정리하고, 애매한 것만 후보함으로 올립니다.<br>
+      결과는 아침 요약에도 한 줄로 들어갑니다.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

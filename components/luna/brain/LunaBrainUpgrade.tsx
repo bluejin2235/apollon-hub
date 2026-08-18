@@ -192,7 +192,7 @@ export function LunaBrainUpgrade() {
   return (
     <KnowledgeShell>
       <InfoBar>
-        루나는 확정된 지식과 3회 이상 반복된 정정만을 근거로 L2~L4를 스스로 고칩니다.
+        루나는 아폴론 지식과 3회 이상 반복된 정정만을 근거로 L2~L4를 스스로 고칩니다.
         L1·L5는 사람만 수정합니다.
       </InfoBar>
 

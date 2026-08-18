@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>두뇌 &gt; 프롬프트 — 생각의 순서</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --star:#B0552F; --star-bg:#FAEEDA;
+    --off:#adb2b8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:24px}
+  .wrap{max-width:820px;margin:0 auto}
+  .mocklabel{margin:0 0 14px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+
+  .subtabs{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .subtab{font-size:13px;padding:9px 2px;color:var(--sub);cursor:pointer}
+  .subtab.on{color:var(--ink);font-weight:700;border-bottom:2px solid var(--luna)}
+
+  .topbar{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+  .search{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:9px 13px;font-size:13px;color:var(--faint)}
+  .btn{padding:8px 13px;border-radius:9px;font-size:12.5px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;white-space:nowrap}
+
+  /* ── 단계 ── */
+  .stage{margin-bottom:26px}
+  .stagehead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  .stagenum{width:22px;height:22px;border-radius:50%;background:var(--luna);color:#fff;
+    font-size:11px;font-weight:800;display:grid;place-items:center;flex-shrink:0}
+  .stagehead h3{font-size:15px;font-weight:700}
+  .stagehead .q{font-size:12.5px;color:var(--sub)}
+  .stagedesc{margin:0 0 10px 32px;font-size:11.5px;color:var(--faint);line-height:1.6}
+
+  /* ── 프롬프트 카드 ── */
+  .cards{margin-left:32px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:13px 15px;margin-bottom:8px}
+  .card.star{border-color:#E0C79B;background:#FFFDF8}
+  .card.off{opacity:.5}
+  .crow{display:flex;align-items:center;gap:9px}
+  .cnum{font-size:10.5px;font-family:var(--mono);color:var(--faint);width:44px;flex-shrink:0}
+  .ctitle{font-size:14px;font-weight:600;flex:1;min-width:0}
+  .ctitle .badge{font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:5px;
+    margin-left:7px;vertical-align:2px}
+  .badge.core{background:var(--star-bg);color:var(--star)}
+  .badge.always{background:var(--luna-soft);color:var(--luna-ink)}
+  .clen{font-size:10.5px;color:var(--faint)}
+  .ctoggle{width:32px;height:18px;border-radius:10px;background:var(--luna);position:relative;flex-shrink:0}
+  .ctoggle::after{content:'';position:absolute;right:2px;top:2px;width:14px;height:14px;
+    border-radius:50%;background:#fff}
+  .ctoggle.off{background:var(--off)}
+  .ctoggle.off::after{left:2px;right:auto}
+  .cdesc{margin:5px 0 0 53px;font-size:11.5px;color:var(--sub);line-height:1.6}
+  .cmeta{margin:6px 0 0 53px;font-size:10.5px;color:var(--faint)}
+
+  /* 하위 단계 (찾기 안의 세부) */
+  .sub{margin:8px 0 0 53px;border-left:2px solid var(--line);padding-left:12px}
+  .subhead{font-size:10.5px;color:var(--faint);margin-bottom:6px}
+  .subrow{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px}
+  .subrow .n{font-size:10px;font-family:var(--mono);color:var(--faint);width:44px}
+  .subrow .t{flex:1;color:var(--sub)}
+  .subrow .l{font-size:10px;color:var(--faint)}
+
+  /* 부서 표시 */
+  .depts{display:flex;gap:4px;margin:6px 0 0 53px;flex-wrap:wrap}
+  .dept{font-size:10px;background:var(--chip);color:var(--sub);padding:2px 7px;border-radius:9px}
+
+  .note{margin:10px 0 0 32px;font-size:11px;color:var(--faint);line-height:1.6}
+  .divider{height:1px;background:var(--line);margin:26px 0}
+
+  .foothelp{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:14px 16px;font-size:12px;color:var(--sub);line-height:1.75}
+  .foothelp b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">두뇌 &gt; 프롬프트 — 생각의 순서대로</div>
+
+<div class="subtabs">
+  <div class="subtab on">프롬프트</div>
+  <div class="subtab">유형</div>
+  <div class="subtab">라이브러리</div>
+  <div class="subtab">자기개선</div>
+  <div class="subtab">성장 루프</div>
+  <div class="subtab">모델·비용</div>
+  <div class="subtab">회귀 시험</div>
+</div>
+
+<div class="topbar">
+  <div class="search">이름으로 찾기</div>
+  <div class="btn">변경 이력</div>
+  <div class="btn">꺼진 것 보기 (6)</div>
+</div>
+
+
+<!-- ═══ 1 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">1</span>
+    <h3>나는 누구인가</h3>
+    <span class="q">언제나 먼저 읽는다</span>
+  </div>
+  <p class="stagedesc">아폴론이 어떤 회사이고 루나가 무엇을 하는 존재인지. 모든 답변의 바탕.</p>
+  <div class="cards">
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">1-1</span>
+        <span class="ctitle">아폴론 정체성 <span class="badge always">항상</span></span>
+        <span class="clen">1,240자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">우리는 무엇을 만드는 회사인가. 루나는 무엇을 하는 존재인가.</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ 2 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">2</span>
+    <h3>누가 묻고 있는가</h3>
+    <span class="q">묻는 사람의 부서로 자동 선택</span>
+  </div>
+  <p class="stagedesc">같은 질문도 직능에 따라 필요한 답이 다르다. 부서는 각 관점 안에 적혀 있다.</p>
+  <div class="cards">
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-1</span>
+        <span class="ctitle">공간기획 관점</span>
+        <span class="clen">890자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">동선·집객·테넌트 관점으로 본다.</p>
+      <div class="depts"><span class="dept">공간기획팀</span><span class="dept">공간파트</span><span class="dept">+ 부서 추가</span></div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-2</span>
+        <span class="ctitle">공간디자인 관점</span>
+        <span class="clen">760자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">마감·구조·시공 관점으로 본다.</p>
+      <div class="depts"><span class="dept">공간디자인팀</span><span class="dept">+ 부서 추가</span></div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-3</span>
+        <span class="ctitle">콘텐츠기획 관점</span>
+        <span class="clen">820자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">서사·체험 흐름 관점으로 본다.</p>
+      <div class="depts"><span class="dept">콘텐츠기획팀</span><span class="dept">콘텐츠파트</span><span class="dept">+ 부서 추가</span></div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-4</span>
+        <span class="ctitle">콘텐츠디자인 관점</span>
+        <span class="clen">700자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">비주얼·모션 관점으로 본다.</p>
+      <div class="depts"><span class="dept">비주얼디자인팀</span><span class="dept">+ 부서 추가</span></div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-5</span>
+        <span class="ctitle">하드웨어디자인 관점</span>
+        <span class="clen">910자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">사양·설치·유지보수 관점으로 본다.</p>
+      <div class="depts"><span class="dept">HW디자인팀</span><span class="dept">+ 부서 추가</span></div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">2-6</span>
+        <span class="ctitle">역할 관점 <span class="badge always">직접 지정 시</span></span>
+        <span class="clen">2,217자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">BD·SV·CD·AD·SD 다섯 역할의 판단 기준. 부서와 무관하게 사람이 고를 때 쓴다.</p>
+    </div>
+
+  </div>
+  <p class="note">부서가 매핑되지 않은 사람(전사 등)은 관점 없이 답한다.</p>
+</div>
+
+
+<!-- ═══ 3 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">3</span>
+    <h3>이 질문이 무엇을 원하는가</h3>
+    <span class="q">모든 갈림길이 여기서 정해진다</span>
+  </div>
+  <p class="stagedesc">가장 중요한 단계. 여기서 유형이 정해지면 그 뒤 경로가 전부 달라진다.</p>
+  <div class="cards">
+    <div class="card star">
+      <div class="crow">
+        <span class="cnum">3-1</span>
+        <span class="ctitle">유형 판정 <span class="badge core">핵심</span></span>
+        <span class="clen">840자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">판정하는 방법. 겹칠 때·모를 때·맥락을 어떻게 다루는가.</p>
+      <p class="cmeta">유형이 무엇인지는 <b>유형</b> 탭에서 정한다 · 현재 5종 · 판정 모델 Haiku 4.5</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ 4 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">4</span>
+    <h3>유형에 맞게 답한다</h3>
+    <span class="q">판정된 것만 읽는다</span>
+  </div>
+  <p class="stagedesc">네 갈래. 각자 보는 곳과 답하는 형태가 다르다.</p>
+  <div class="cards">
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">4-1</span>
+        <span class="ctitle">알기 — 개념을 설명한다</span>
+        <span class="clen">420자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">용어사전과 확정 지식으로 답한다. 검색하지 않는다. 부족하면 웹으로 보강.</p>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">4-2</span>
+        <span class="ctitle">찾기 — 자료를 찾는다</span>
+        <span class="clen">3,629자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">Work서버와 노션을 함께 본다. 노션 본문에 적힌 경로를 우선한다.</p>
+      <div class="sub">
+        <div class="subhead">찾는 동안 쓰는 것</div>
+        <div class="subrow"><span class="n">4-2-a</span><span class="t">검색어 만들기</span><span class="l">135자</span></div>
+        <div class="subrow"><span class="n">4-2-b</span><span class="t">Work서버 구조 이해</span><span class="l">130자</span></div>
+        <div class="subrow"><span class="n">4-2-c</span><span class="t">충분한지 스스로 확인</span><span class="l">110자</span></div>
+        <div class="subrow"><span class="n">4-2-d</span><span class="t">부족하면 다시 찾기</span><span class="l">255자</span></div>
+        <div class="subrow"><span class="n">4-2-e</span><span class="t">왜 이걸 보여주는지 설명</span><span class="l">180자</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">4-3</span>
+        <span class="ctitle">만들기 — 산출물을 만든다</span>
+        <span class="clen">380자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">라이브러리의 양식을 꺼내 확정 지식으로 채운다. 양식이 없으면 되묻는다.</p>
+      <p class="cmeta">양식은 <b>라이브러리</b> 탭에서 관리 · 현재 1개</p>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">4-4</span>
+        <span class="ctitle">배우기 — 알려준 것을 받아 적는다</span>
+        <span class="clen">340자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">검색하지 않는다. 이해한 것을 다시 말해 확인받고 후보로 올린다.</p>
+    </div>
+
+  </div>
+  <p class="note">인사·잡담으로 판정되면 아무 프롬프트도 읽지 않고 짧게 답한다.</p>
+</div>
+
+
+<!-- ═══ 5 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">5</span>
+    <h3>답할 때 지키는 것</h3>
+    <span class="q">유형과 무관하게 항상</span>
+  </div>
+  <p class="stagedesc">어떤 유형이든 답을 쓸 때 공통으로 지킨다.</p>
+  <div class="cards">
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">5-1</span>
+        <span class="ctitle">모호하면 되묻는다 <span class="badge always">항상</span></span>
+        <span class="clen">1,227자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">확신이 없을 때 선택지를 주고 묻는다. 이미 말한 것은 다시 묻지 않는다.
+        프로젝트명이 없으면 프로젝트 선택지를 만들지 않는다.</p>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">5-2</span>
+        <span class="ctitle">가정을 밝힌다 <span class="badge always">항상</span></span>
+        <span class="clen">340자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">어떤 해석으로 답했는지 마지막에 한 줄로 남긴다.</p>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">5-3</span>
+        <span class="ctitle">답변 원칙 <span class="badge always">항상</span></span>
+        <span class="clen">699자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">3~6줄. 결론부터. 자기 해설 금지. 카드로 나오는 것을 본문에 반복하지 않는다.</p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ═══ 6 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">6</span>
+    <h3>답한 뒤에 배운다</h3>
+    <span class="q">대화가 끝나고</span>
+  </div>
+  <p class="stagedesc">대화에서 배울 것을 골라 후보로 올린다. 확정은 사람이 한다.</p>
+  <div class="cards">
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">6-1</span>
+        <span class="ctitle">무엇을 배울지 고른다</span>
+        <span class="clen">1,109자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">내년에도 맞는 말인가, 검색으로는 알 수 없는 것인가. 둘 다 예일 때만 후보로.</p>
+    </div>
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">6-2</span>
+        <span class="ctitle">후보를 두고 사람과 문답한다</span>
+        <span class="clen">680자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">이렇게 이해했는데 맞나요. 확정했다고 스스로 말하지 않는다.</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ 7 ═══ -->
+<div class="stage">
+  <div class="stagehead">
+    <span class="stagenum">7</span>
+    <h3>스스로 자란다</h3>
+    <span class="q">밤과 주말에</span>
+  </div>
+  <p class="stagedesc">사람이 없을 때 혼자 공부하고 스스로를 고친다.</p>
+  <div class="cards">
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">7-1</span>
+        <span class="ctitle">밤에 혼자 공부한다</span>
+        <span class="clen">760자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">그날 막혔던 것을 주제로 스스로 묻고 답을 찾는다. 매일 03:00</p>
+    </div>
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">7-2</span>
+        <span class="ctitle">스스로를 고친다</span>
+        <span class="clen">920자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">같은 실수가 반복되면 원인이 되는 프롬프트를 고쳐 제안한다. 일요일 04:00</p>
+    </div>
+    <div class="card">
+      <div class="crow">
+        <span class="cnum">7-3</span>
+        <span class="ctitle">한 주를 돌아본다</span>
+        <span class="clen">346자</span>
+        <span class="ctoggle"></span>
+      </div>
+      <p class="cdesc">지난주 목표를 검증하고 다음 주 목표를 세운다. 월요일 08:00</p>
+    </div>
+  </div>
+</div>
+
+
+<div class="divider"></div>
+
+<div class="foothelp">
+  <b>이 화면을 읽는 법</b><br>
+  위에서 아래로가 루나가 생각하는 순서입니다. 질문을 받으면 1번부터 차례로 지나갑니다.<br>
+  <b>3번</b>에서 유형이 정해지고, <b>4번</b>에서 그 유형에 맞는 것 하나만 읽습니다.<br>
+  <span style="color:var(--star)">핵심</span> 표시는 여기가 잘못되면 뒤가 전부 어긋나는 자리입니다.<br>
+  <b>항상</b> 표시는 유형과 무관하게 매번 읽는 것입니다.
+</div>
+
+</div>
+</body>
+</html>

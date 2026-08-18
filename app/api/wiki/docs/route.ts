@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWikiUser, wikiMissingResponse } from "@/lib/wiki/api";
-import { canEditWikiCategory } from "@/lib/wiki/permissions";
+import {
+  canEditWikiCategory,
+  canToggleWikiVisibility,
+  filterVisibleWikiDocs
+} from "@/lib/wiki/permissions";
 import { emptySection } from "@/lib/wiki/sections";
 import { createWikiDoc, listItems, loadWikiDocs } from "@/lib/wiki/store";
 import {
@@ -32,12 +36,14 @@ export async function GET(request: NextRequest) {
         { status: 503 }
       );
     }
+    const visible = filterVisibleWikiDocs(items, gate.isAdmin);
     return NextResponse.json({
-      items: listItems(items),
+      items: listItems(visible),
       wiki_ready: wikiReady,
       table_ready: true,
       is_admin: gate.isAdmin,
-      can_edit: category ? canEditWikiCategory(category, gate.isAdmin) : true
+      can_edit: category ? canEditWikiCategory(category, gate.isAdmin) : true,
+      can_toggle_visibility: canToggleWikiVisibility(gate.isAdmin)
     });
   } catch (err) {
     console.error("[wiki/docs] GET", err);

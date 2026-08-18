@@ -8,7 +8,9 @@ export async function GET(request: NextRequest) {
   const gate = await requireWikiUser(request);
   if ("error" in gate) return gate.error;
   try {
-    const counts = await loadWikiNavCounts(gate.admin);
+    const counts = await loadWikiNavCounts(gate.admin, {
+      isSuperAdmin: gate.isAdmin
+    });
     return NextResponse.json({
       ...counts,
       is_admin: gate.isAdmin

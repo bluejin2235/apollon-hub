@@ -71,7 +71,7 @@ export const QUESTION_TYPE_SEED: QuestionTypeRow[] = [
     label: "알기",
     criteria:
       "개념·용어·프로세스·역할·차이를 묻는 질문. 자료를 찾거나 만들지 않는다.",
-    sources: "기억(확정 지식), 일반 지식. 검색 없음.",
+    sources: "기억(아폴론 지식), 일반 지식. 검색 없음.",
     answer_form: "정의 먼저, 아폴론 맥락이 있으면 한 줄.",
     prompt_key: "type.know",
     needs_search: false,

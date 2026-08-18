@@ -117,3 +117,31 @@ export async function collectWikiMorningLine(
   const names = shown.map((b) => `${b.title}(${b.name})`).join(" · ");
   return `어제 위키가 ${bits.length}건 바뀌었어요: ${names}`;
 }
+
+export async function notifyPrivateWikiOveruse(
+  admin: SupabaseClient,
+  opts: {
+    conversationId: string;
+    userName: string;
+    slug: string;
+    docTitle: string;
+    count: number;
+  }
+): Promise<void> {
+  const { error } = await admin.from("hub_notifications").insert({
+    category: "wiki_private_overuse",
+    title: `내부 문서 과다 인용: ${opts.docTitle}`,
+    body: `${opts.userName}님의 대화에서 「${opts.docTitle}」 내부 기준이 ${opts.count}회 인용되었습니다.`,
+    link: `/luna?c=${opts.conversationId}`,
+    level: "warn",
+    scope: "admin",
+    meta: {
+      slug: opts.slug,
+      conversation_id: opts.conversationId,
+      count: opts.count
+    }
+  });
+  if (error) {
+    console.error("[wiki] private overuse notify", error);
+  }
+}

@@ -75,9 +75,11 @@ import {
 import {
   formatWikiSectionsBlock,
   matchWikiSections,
+  splitWikiSourcesByVisibility,
   wikiSourceUsedInAnswer,
   type WikiSourceRef
 } from "@/lib/luna/wiki-match";
+import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
 import {
   applyTypeSearchOverride,
   formatConnectorRoutingSummary,
@@ -1493,6 +1495,8 @@ export async function POST(request: NextRequest) {
         const wikiSources: WikiSourceRef[] = classification.types.includes("know")
           ? matchWikiSections(wikiDocs, injectKeywords, userText)
           : [];
+        const { public: publicWikiSources, private: privateWikiRefs } =
+          splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
         const wikiSectionsBlock = formatWikiSectionsBlock(wikiSources);
         const learnings = knowledgeInject.all.map((l) => ({
@@ -2112,7 +2116,7 @@ export async function POST(request: NextRequest) {
           memory_count: learnings.length,
           injected_knowledge_ids: knowledgeInject.ids,
           injected_terms: injectedTerms,
-          wiki_sources: wikiSources,
+          wiki_sources: publicWikiSources,
           web_augmented: webAugmented,
           used_prompts: usedPrompts,
           auto_routing: autoRoutingUsed,
@@ -2289,8 +2293,14 @@ export async function POST(request: NextRequest) {
         if (notionSources.length > 0) {
           assistantMeta.notion_sources = notionSources;
         }
-        if (wikiSources.length > 0) {
-          assistantMeta.wiki_sources = wikiSources;
+        const usedPrivateRefs = privateWikiRefs.filter((hit) =>
+          wikiSourceUsedInAnswer(hit, assistantText)
+        );
+        if (publicWikiSources.length > 0) {
+          assistantMeta.wiki_sources = publicWikiSources;
+        }
+        if (usedPrivateRefs.length > 0) {
+          assistantMeta.private_wiki_refs = usedPrivateRefs;
         }
         if (wsToolCalls.length > 0) {
           assistantMeta.ws_tool_calls = wsToolCalls;
@@ -2353,6 +2363,23 @@ export async function POST(request: NextRequest) {
 
         if (insertError) {
           console.error("[luna/chat] insert messages", insertError);
+        } else if (usedPrivateRefs.length > 0) {
+          const { data: profileRow } = await admin
+            .from("profiles")
+            .select("name")
+            .eq("id", user.id)
+            .maybeSingle();
+          const userName =
+            typeof profileRow?.name === "string" && profileRow.name.trim()
+              ? profileRow.name.trim()
+              : "알 수 없음";
+          void checkAndNotifyPrivateWikiOveruse(admin, {
+            conversationId,
+            userName,
+            usedPrivateRefs
+          }).catch((err) =>
+            console.error("[luna/chat] private wiki overuse", err)
+          );
         }
 
         await touchConversation();

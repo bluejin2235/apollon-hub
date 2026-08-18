@@ -1038,7 +1038,7 @@ function LunaBrainImproveSection() {
           </button>
         </div>
         <p className="mt-1 text-[11px] text-slate-500">
-          확정 지식·반복 정정(3회+)만 근거. L2·L3·L4 한 건씩. 일요일 04:00 KST.
+          아폴론 지식·반복 정정(3회+)만 근거. L2·L3·L4 한 건씩. 일요일 04:00 KST.
         </p>
 
         {revertSuggestion ? (

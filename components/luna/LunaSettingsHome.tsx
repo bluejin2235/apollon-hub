@@ -30,7 +30,7 @@ const C = {
 } as const;
 
 const CARD_CAP = {
-  knowledge: "확정된 것만 · 슈퍼관리자 열람",
+  knowledge: "아폴론 지식만 · 슈퍼관리자 열람",
   talk: "모르면 묻고 · 정정은 줍는다",
   candidates: "유일한 관문",
   selfstudy: "그날 막힌 것만 · 결과는 지식후보로",
@@ -186,7 +186,7 @@ function ReturnLine() {
         className="absolute left-1/2 top-px -translate-x-1/2 px-2.5 text-[11.5px] text-[#9aa0a8]"
         style={{ background: C.bg }}
       >
-        확정된 지식만 기억으로
+        아폴론 지식만 기억으로
       </span>
     </div>
   );
@@ -305,7 +305,7 @@ function KnowledgeCard({ k }: { k: LunaDashboard["knowledge"] }) {
                 ? `${clip(k.top_used.content, 20)} · ${k.top_used.use_count}회`
                 : "—"}
             </Row>
-            <Row label="최근 확정">
+            <Row label="최근 아폴론 지식">
               {k.latest_confirmed
                 ? clip(k.latest_confirmed.content, 28)
                 : "—"}

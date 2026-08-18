@@ -43,6 +43,7 @@ export type WikiDoc = {
   use_count: number;
   version: number;
   is_active: boolean;
+  visible_to_staff: boolean;
   updated_at: string | null;
   updated_by: string | null;
   updated_by_name: string | null;
@@ -56,6 +57,7 @@ export type WikiDocListItem = {
   kind: string;
   summary: string;
   is_active: boolean;
+  visible_to_staff: boolean;
   updated_at: string | null;
   updated_by: string | null;
   updated_by_name: string | null;

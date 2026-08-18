@@ -52,7 +52,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     slug: "knowledge",
     label: "지식",
     subs: [
-      { slug: "confirmed", label: "확정 지식" },
+      { slug: "confirmed", label: "아폴론 지식" },
       { slug: "glossary", label: "용어사전" },
       { slug: "wiki", label: "위키" },
       { slug: "conflict", label: "충돌 보류함" },
