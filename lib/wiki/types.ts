@@ -57,6 +57,7 @@ export type WikiDocListItem = {
   summary: string;
   is_active: boolean;
   updated_at: string | null;
+  updated_by: string | null;
   updated_by_name: string | null;
 };
 

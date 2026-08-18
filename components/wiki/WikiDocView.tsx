@@ -7,7 +7,7 @@ import { WikiDiffView } from "@/components/wiki/WikiDiffView";
 import { WikiMarkdown } from "@/components/wiki/WikiMarkdown";
 import { WikiSectionEditor } from "@/components/wiki/WikiSectionEditor";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
-import { formatWikiStamp, W } from "@/components/wiki/wiki-theme";
+import { formatWikiStamp, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import { formatDiffCounts } from "@/lib/wiki/diff";
 import { WIKI_RULES_LOCK_MESSAGE } from "@/lib/wiki/permissions";
 import { emptySection, sectionsPlain } from "@/lib/wiki/sections";
@@ -267,7 +267,7 @@ export function WikiDocView({
         ) : null}
       </h1>
       <p className="mb-3 mt-1 text-[11px]" style={{ color: W.faint }}>
-        {formatWikiStamp(doc.updated_at, doc.updated_by_name)} · {doc.version}판
+        {formatWikiStamp(doc.updated_at, doc.updated_by_name, doc.updated_by)} · {doc.version}판
         {typeof doc.use_count === "number" ? ` · 루나가 ${doc.use_count}번 사용` : ""}
       </p>
 
@@ -681,7 +681,9 @@ function HistoryPanel({
                   }}
                 />
                 <span className="w-10 font-bold">v{h.version}</span>
-                <span className="font-semibold">{h.by_name}</span>
+                <span className="font-semibold">
+                  {wikiEditorLabel(h.by, h.by_name)}
+                </span>
                 <span className="min-w-0 flex-1 truncate" style={{ color: W.sub }}>
                   {h.summary || "수정"}
                 </span>

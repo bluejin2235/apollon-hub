@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
-import { formatWikiWhen, W } from "@/components/wiki/wiki-theme";
+import { formatWikiWhen, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import {
   WIKI_CATEGORY_META,
   WIKI_KIND_OPTIONS,
@@ -145,7 +145,7 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
                 {wikiKindLabel(category, row.kind)}
               </span>
               <span className="text-[10px]" style={{ color: W.faint }}>
-                {row.updated_by_name || "—"}
+                {wikiEditorLabel(row.updated_by, row.updated_by_name)}
               </span>
               <span
                 className="w-10 text-right text-[10px]"

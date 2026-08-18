@@ -55,7 +55,7 @@ function parseHistory(raw: unknown): WikiHistoryEntry[] {
       version,
       at: asText(row.at, new Date().toISOString()),
       by: typeof row.by === "string" ? row.by : null,
-      by_name: asText(row.by_name, "알 수 없음"),
+      by_name: asText(row.by_name),
       summary: asText(row.summary),
       added: typeof row.added === "number" ? row.added : 0,
       removed: typeof row.removed === "number" ? row.removed : 0,
@@ -114,6 +114,7 @@ function toListItem(doc: WikiDoc): WikiDocListItem {
     summary: doc.summary,
     is_active: doc.is_active,
     updated_at: doc.updated_at,
+    updated_by: doc.updated_by,
     updated_by_name: doc.updated_by_name
   };
 }
