@@ -6,6 +6,7 @@ import type {
   ReviewProposal
 } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
+import { FEEDBACK_NOTE_MAX } from "@/lib/luna/feedback";
 import { stripConfirmClaimDisplay } from "@/lib/luna/candidate-format";
 import { formatKoreanDay, K, sourceLabel } from "@/lib/luna/knowledge-format";
 
@@ -21,7 +22,8 @@ export type KnowledgeReviewAction =
   | "rewrite"
   | "accept_existing"
   | "accept_new"
-  | "later";
+  | "later"
+  | "reject";
 
 export function KnowledgeReviewCard({
   item,
@@ -32,12 +34,20 @@ export function KnowledgeReviewCard({
   item: CandidateRow;
   busy: boolean;
   error?: string;
-  onAction: (action: KnowledgeReviewAction, text?: string) => void;
+  onAction: (
+    action: KnowledgeReviewAction,
+    text?: string,
+    rejectNote?: string
+  ) => void;
 }) {
   const [noOpen, setNoOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState("");
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [choice, setChoice] = useState<
+    "keep_both" | "replace_with_new" | "discard_new" | "rewrite" | null
+  >(null);
+  const [rejectNote, setRejectNote] = useState("");
 
   const isDup = Boolean(item.duplicate);
   const proposal: ReviewProposal | null = item.proposal ?? null;
@@ -68,11 +78,37 @@ export function KnowledgeReviewCard({
     .filter((v) => v && v !== "—")
     .join(" · ");
 
-  function openEdit() {
-    setEditText(sentence);
-    setEditOpen(true);
-    setNoOpen(true);
+  function pickChoice(
+    next: "keep_both" | "replace_with_new" | "discard_new" | "rewrite"
+  ) {
+    setChoice((prev) => (prev === next ? null : next));
+    if (next === "rewrite") {
+      setEditText((t) => t || sentence);
+      setEditOpen(true);
+    } else {
+      setEditOpen(false);
+    }
   }
+
+  function submitNo() {
+    const note = rejectNote.trim().slice(0, FEEDBACK_NOTE_MAX);
+    if (choice === "rewrite") {
+      const sentenceText = editText.trim();
+      if (!sentenceText) return;
+      onAction("rewrite", sentenceText, note || undefined);
+      return;
+    }
+    if (choice) {
+      onAction(choice, undefined, note || undefined);
+      return;
+    }
+    if (note) onAction("reject", undefined, note);
+  }
+
+  const canSubmitNo =
+    choice === "rewrite"
+      ? Boolean(editText.trim())
+      : Boolean(choice || rejectNote.trim());
 
   return (
     <article
@@ -260,26 +296,29 @@ export function KnowledgeReviewCard({
             style={{ borderTop: `1px solid ${K.line2}` }}
           >
             <div className="mb-2 text-[11px]" style={{ color: K.sub }}>
-              다른 방법으로 처리할까요?
+              무엇이 아니었나요?
             </div>
             <div className="flex flex-wrap gap-1.5">
               {isDup ? (
                 <>
                   <MoreOpt
                     disabled={busy}
-                    onClick={() => onAction("keep_both")}
+                    selected={choice === "keep_both"}
+                    onClick={() => pickChoice("keep_both")}
                   >
                     둘 다 남기기
                   </MoreOpt>
                   <MoreOpt
                     disabled={busy}
-                    onClick={() => onAction("replace_with_new")}
+                    selected={choice === "replace_with_new"}
+                    onClick={() => pickChoice("replace_with_new")}
                   >
                     새 것으로 바꾸기
                   </MoreOpt>
                   <MoreOpt
                     disabled={busy}
-                    onClick={() => onAction("discard_new")}
+                    selected={choice === "discard_new"}
+                    onClick={() => pickChoice("discard_new")}
                   >
                     새 것 버리기
                   </MoreOpt>
@@ -287,12 +326,17 @@ export function KnowledgeReviewCard({
               ) : (
                 <MoreOpt
                   disabled={busy}
-                  onClick={() => onAction("discard_new")}
+                  selected={choice === "discard_new"}
+                  onClick={() => pickChoice("discard_new")}
                 >
                   버리기
                 </MoreOpt>
               )}
-              <MoreOpt disabled={busy} onClick={openEdit}>
+              <MoreOpt
+                disabled={busy}
+                selected={choice === "rewrite"}
+                onClick={() => pickChoice("rewrite")}
+              >
                 직접 고쳐 쓰기
               </MoreOpt>
             </div>
@@ -308,20 +352,31 @@ export function KnowledgeReviewCard({
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
                 />
-                <div className="mt-2 flex gap-2">
-                  <Btn
-                    primary
-                    disabled={busy || !editText.trim()}
-                    onClick={() => onAction("rewrite", editText.trim())}
-                  >
-                    이 문장으로
-                  </Btn>
-                  <Btn disabled={busy} onClick={() => setEditOpen(false)}>
-                    취소
-                  </Btn>
-                </div>
               </div>
             ) : null}
+            <textarea
+              className="mt-2.5 w-full rounded-[9px] border px-2.5 py-2 text-[12.5px] leading-[1.75]"
+              style={{
+                borderColor: K.line,
+                background: "#FCFCFD",
+                minHeight: 64
+              }}
+              maxLength={FEEDBACK_NOTE_MAX}
+              placeholder="왜 그런지 적어주세요 (선택)"
+              value={rejectNote}
+              onChange={(e) =>
+                setRejectNote(e.target.value.slice(0, FEEDBACK_NOTE_MAX))
+              }
+            />
+            <div className="mt-2 flex justify-end">
+              <Btn
+                primary
+                disabled={busy || !canSubmitNo}
+                onClick={submitNo}
+              >
+                {busy ? "처리 중…" : "처리"}
+              </Btn>
+            </div>
           </div>
         ) : null}
       </div>
@@ -332,10 +387,12 @@ export function KnowledgeReviewCard({
 function MoreOpt({
   children,
   disabled,
+  selected,
   onClick
 }: {
   children: string;
   disabled?: boolean;
+  selected?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -344,7 +401,12 @@ function MoreOpt({
       disabled={disabled}
       onClick={onClick}
       className="rounded-[9px] border px-3 py-1.5 text-[11.5px] disabled:opacity-50"
-      style={{ borderColor: K.line, background: K.panel, color: "#33363c" }}
+      style={{
+        borderColor: selected ? K.luna : K.line,
+        background: selected ? "#FCFBFF" : K.panel,
+        color: "#33363c",
+        fontWeight: selected ? 700 : 400
+      }}
     >
       {children}
     </button>

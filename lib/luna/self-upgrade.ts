@@ -16,17 +16,19 @@ import {
   isHumanOnlyPromptLevel,
   LUNA_PROMPT_KEYS
 } from "@/lib/luna/prompts";
+import { hasRejectMeta, rejectActionLabel } from "@/lib/luna/reject-note";
 
 const SETTINGS_LAST = "self_upgrade_last_run";
 const SETTINGS_REVERT = "self_upgrade_revert_suggestion";
 
-const UPGRADE_FALLBACK = `내 판단(프롬프트)을 고칠 수 있는 근거는 두 가지뿐이다:
+const UPGRADE_FALLBACK = `내 판단(프롬프트)을 고칠 수 있는 근거는 세 가지다:
 ① 확정된 지식 (후보함을 통과한 것)
 ② 반복된 정정 (같은 유형으로 3회 이상 고쳐진 것)
+③ 지식후보 거절 이유 (사람이 [아니에요]에 남긴 선택·글). 같은 이유가 반복되면 판정 로직이나 프롬프트 문제다.
 미확정 후보, 단발 정정, 나의 추측으로는 고치지 않는다.
 
 정기 점검 연속 실패는 보조 신호일 뿐이다. 점검 점수만으로 프롬프트를 고치지 않는다.
-점검에 최적화된 답만 하는 것을 막기 위함이다. 주 근거는 사람의 정정·확정 지식이다.
+점검에 최적화된 답만 하는 것을 막기 위함이다. 주 근거는 사람의 정정·확정 지식·거절 이유이다.
 
 고칠 수 있는 범위: L2 관점, L3 대화, L4 배움.
 고칠 수 없는 것: L1 정체성, L5. 이것은 사람만 고친다.
@@ -217,9 +219,16 @@ type CorrectionCluster = {
   samples: string[];
 };
 
+type RejectEvidence = {
+  content: string;
+  action: string;
+  note: string;
+};
+
 async function collectTriggers(admin: SupabaseClient): Promise<{
   clusters: CorrectionCluster[];
   confirmed: Array<{ content: string; category: string }>;
+  rejects: RejectEvidence[];
   eval_streaks: Array<{
     case_id: string;
     question: string;
@@ -242,11 +251,12 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
 
   if (error) {
     console.error("[luna/self-upgrade] collect", error);
-    return { clusters: [], confirmed: [], eval_streaks: [] };
+    return { clusters: [], confirmed: [], rejects: [], eval_streaks: [] };
   }
 
   const correctionByCat = new Map<string, string[]>();
   const confirmed: Array<{ content: string; category: string }> = [];
+  const rejects: RejectEvidence[] = [];
 
   for (const row of rows ?? []) {
     const category =
@@ -280,6 +290,18 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
       list.push(content.slice(0, 200));
       correctionByCat.set(category, list);
     }
+
+    if (hasRejectMeta(meta)) {
+      const action =
+        typeof meta.reject_action === "string" ? meta.reject_action : "";
+      const note =
+        typeof meta.reject_note === "string" ? meta.reject_note.trim() : "";
+      rejects.push({
+        content: content.slice(0, 200),
+        action: rejectActionLabel(action) || action || "선택 없음",
+        note: note.slice(0, 200)
+      });
+    }
   }
 
   const clusters: CorrectionCluster[] = [];
@@ -299,6 +321,7 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
   return {
     clusters,
     confirmed: confirmed.slice(0, 30),
+    rejects: rejects.slice(0, 40),
     eval_streaks
   };
 }
@@ -307,6 +330,7 @@ async function proposeUpgrade(
   admin: SupabaseClient,
   clusters: CorrectionCluster[],
   confirmed: Array<{ content: string; category: string }>,
+  rejects: RejectEvidence[],
   evalStreaks: Array<{
     question: string;
     category: string | null;
@@ -365,6 +389,15 @@ async function proposeUpgrade(
           .map((c) => `- [${c.category}] ${c.content}`)
           .join("\n")}`
       : "이번 주 확정 지식: 없음",
+    rejects.length
+      ? `지식후보 거절 이유 — 같은 이유가 반복되면 판정·프롬프트 문제:\n${rejects
+          .slice(0, 20)
+          .map(
+            (r) =>
+              `- [${r.action}] ${r.content || "(내용 없음)"}${r.note ? ` — "${r.note}"` : ""}`
+          )
+          .join("\n")}`
+      : "지식후보 거절 이유: 없음",
     evalStreaks.length
       ? `정기 점검 연속 실패 — 보조 신호(이것만으로 고치지 말 것):\n${evalStreaks
           .slice(0, 8)
@@ -437,13 +470,13 @@ export async function runSelfUpgrade(
   opts?: { notify?: boolean }
 ): Promise<SelfUpgradeResult> {
   const notify = opts?.notify !== false;
-  const { clusters, confirmed, eval_streaks } = await collectTriggers(admin);
+  const { clusters, confirmed, rejects, eval_streaks } = await collectTriggers(admin);
 
-  if (clusters.length === 0 && confirmed.length === 0) {
+  if (clusters.length === 0 && confirmed.length === 0 && rejects.length === 0) {
     const result: SelfUpgradeResult = {
       ok: true,
       skipped: true,
-      message: "개선 근거 없음 (반복 정정·확정 지식 부족)"
+      message: "개선 근거 없음 (반복 정정·확정 지식·거절 이유 부족)"
     };
     await saveSetting(admin, SETTINGS_LAST, {
       ...result,
@@ -456,6 +489,7 @@ export async function runSelfUpgrade(
     admin,
     clusters,
     confirmed,
+    rejects,
     eval_streaks
   );
   if (!proposal) {

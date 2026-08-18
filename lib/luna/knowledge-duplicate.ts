@@ -623,6 +623,27 @@ async function deleteLearning(
   return { error: null };
 }
 
+async function archiveDroppedCandidate(
+  admin: SupabaseClient,
+  opts: {
+    id: string;
+    meta: Record<string, unknown>;
+    userId: string;
+    nowIso: string;
+  }
+): Promise<{ error: string | null }> {
+  const error = await updateLearning(admin, opts.id, {
+    status: "archived",
+    review_reason: null,
+    merge_target: null,
+    duplicate_of: null,
+    meta: opts.meta,
+    resolved_by: opts.userId,
+    resolved_at: opts.nowIso
+  });
+  return { error: error?.message ?? null };
+}
+
 export async function dropIdenticalCandidate(
   admin: SupabaseClient,
   candidateId: string
@@ -645,6 +666,8 @@ export async function applyDuplicateDecision(
     decision: DuplicateDecision;
     sentence?: string;
     userId: string;
+    /** [아니에요] 기록(meta.reject_*)을 남기려면 후보를 지우지 않고 보관한다. */
+    archiveDrop?: boolean;
   }
 ): Promise<{ ok: true; keep_id: string } | { ok: false; error: string }> {
   const incomingOriginal = opts.candidate.content.trim();
@@ -671,6 +694,7 @@ export async function applyDuplicateDecision(
       review_reason: null,
       merge_target: null,
       duplicate_of: null,
+      meta: opts.candidate.meta,
       resolved_by: opts.userId,
       resolved_at: nowIso,
       confidence: 4,
@@ -681,7 +705,15 @@ export async function applyDuplicateDecision(
   }
 
   if (opts.decision === "discard_new" || opts.decision === "accept_existing") {
-    const dropped = await deleteLearning(admin, opts.candidate.id);
+    const dropped =
+      opts.archiveDrop && opts.decision === "discard_new"
+        ? await archiveDroppedCandidate(admin, {
+            id: opts.candidate.id,
+            meta: opts.candidate.meta,
+            userId: opts.userId,
+            nowIso
+          })
+        : await deleteLearning(admin, opts.candidate.id);
     if (dropped.error) return { ok: false, error: dropped.error };
     return { ok: true, keep_id: opts.existing.id };
   }
@@ -727,7 +759,14 @@ export async function applyDuplicateDecision(
       resolved_at: nowIso
     });
     if (keepError) return { ok: false, error: keepError.message };
-    const dropped = await deleteLearning(admin, opts.candidate.id);
+    const dropped = opts.archiveDrop
+      ? await archiveDroppedCandidate(admin, {
+          id: opts.candidate.id,
+          meta: opts.candidate.meta,
+          userId: opts.userId,
+          nowIso
+        })
+      : await deleteLearning(admin, opts.candidate.id);
     if (dropped.error) return { ok: false, error: dropped.error };
     return { ok: true, keep_id: keep.id };
   }
@@ -743,6 +782,7 @@ export async function applyDuplicateDecision(
     merge_target: null,
     duplicate_of: null,
     merged_from: mergedFrom,
+    meta: opts.candidate.meta,
     resolved_by: opts.userId,
     resolved_at: nowIso,
     confidence: 4,

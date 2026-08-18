@@ -35,6 +35,12 @@ import {
   loadActiveKnowledge,
   type DuplicateDecision
 } from "@/lib/luna/knowledge-duplicate";
+import {
+  clipRejectNote,
+  hasRejectMeta,
+  isRejectAction,
+  mergeRejectMeta
+} from "@/lib/luna/reject-note";
 export const runtime = "nodejs";
 
 type Action =
@@ -59,6 +65,7 @@ type Body = {
   id?: string;
   action?: string;
   text?: string;
+  reject_note?: string;
   glossary?: GlossaryPatch;
 };
 
@@ -132,6 +139,7 @@ export async function POST(request: NextRequest) {
       : null;
   let text = typeof body.text === "string" ? body.text.trim() : "";
   const glossaryPatch = normalizeGlossaryPatch(body.glossary);
+  const rejectNote = clipRejectNote(body.reject_note);
 
   if (!id || !action) {
     return NextResponse.json(
@@ -193,10 +201,29 @@ export async function POST(request: NextRequest) {
     typeof current.raw_input === "string" ? current.raw_input.trim() : "";
   const createdAt =
     typeof current.created_at === "string" ? current.created_at : null;
-  const prevMeta =
+  let prevMeta =
     current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
       ? (current.meta as Record<string, unknown>)
       : {};
+  const isNoPath =
+    action === "keep_both" ||
+    action === "replace_with_new" ||
+    action === "discard_new" ||
+    action === "rewrite" ||
+    action === "reject";
+  if (isNoPath) {
+    prevMeta = mergeRejectMeta(
+      prevMeta,
+      isRejectAction(action) ? action : null,
+      rejectNote
+    );
+  }
+  if (action === "reject" && !hasRejectMeta(prevMeta)) {
+    return NextResponse.json(
+      { error: "선택지 또는 거절 이유가 필요합니다" },
+      { status: 400 }
+    );
+  }
 
   if (action === "later") {
     const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -281,7 +308,8 @@ export async function POST(request: NextRequest) {
       existing,
       decision,
       sentence,
-      userId: user.id
+      userId: user.id,
+      archiveDrop: isNoPath && hasRejectMeta(prevMeta)
     });
     if (!applied.ok) {
       return NextResponse.json({ error: applied.error }, { status: 500 });
@@ -295,6 +323,26 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "discard_new") {
+    if (hasRejectMeta(prevMeta)) {
+      const { error } = await admin
+        .from("luna_learnings")
+        .update({
+          status: "archived",
+          review_reason: null,
+          merge_target: null,
+          duplicate_of: null,
+          meta: prevMeta,
+          resolved_by: user.id,
+          resolved_at: new Date().toISOString()
+        })
+        .eq("id", id)
+        .eq("status", "candidate");
+      if (error) {
+        console.error("[luna/candidates/respond] discard new", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ id, status: "archived" });
+    }
     const { error } = await admin.from("luna_learnings").delete().eq("id", id);
     if (error) {
       console.error("[luna/candidates/respond] discard new", error);
@@ -324,11 +372,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "reject") {
-    // 중복 후보 반려: 후보만 archived (본문 merge_target 은 그대로)
     const { data, error } = await admin
       .from("luna_learnings")
       .update({
         status: "archived",
+        meta: prevMeta,
         resolved_by: user.id,
         resolved_at: new Date().toISOString()
       })
@@ -571,6 +619,8 @@ export async function POST(request: NextRequest) {
   if (glossaryPatch && isGlossary) {
     confirmPatch.meta = meta;
     confirmPatch.category = "term";
+  } else if (hasRejectMeta(meta)) {
+    confirmPatch.meta = meta;
   }
 
   const { data, error } = await admin

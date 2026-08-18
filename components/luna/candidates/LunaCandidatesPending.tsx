@@ -343,7 +343,8 @@ export function LunaCandidatesPending() {
   async function reviewAction(
     id: string,
     action: KnowledgeReviewAction,
-    text?: string
+    text?: string,
+    rejectNote?: string
   ) {
     const token = await getAccessToken();
     if (!token) {
@@ -360,7 +361,12 @@ export function LunaCandidatesPending() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ id, action, text })
+        body: JSON.stringify({
+          id,
+          action,
+          text,
+          reject_note: rejectNote || undefined
+        })
       });
       const json = (await res.json().catch(() => null)) as {
         error?: string;
@@ -379,6 +385,8 @@ export function LunaCandidatesPending() {
         setMessage("나중에 다시 볼게요");
       } else if (action === "keep_both") {
         setMessage("둘 다 남겼어요");
+      } else if (action === "reject") {
+        setMessage("거절 이유를 남겼어요");
       } else if (action === "discard_new" || action === "accept_existing") {
         setMessage("새 후보를 지웠어요");
       } else if (json?.keep_id || json?.merged_into) {
@@ -562,9 +570,9 @@ export function LunaCandidatesPending() {
                   item={item}
                   busy={busy}
                   error={cardError}
-                  onAction={(action, text) =>
-                    void reviewAction(item.id, action, text)
-                  }
+                onAction={(action, text, rejectNote) =>
+                  void reviewAction(item.id, action, text, rejectNote)
+                }
                 />
               </CardStackItem>
             );
