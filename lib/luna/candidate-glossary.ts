@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GlossaryDupResult } from "@/lib/glossary/duplicate";
 import {
+  bumpGlossaryVersion,
   checkGlossaryDuplicate,
   insertGlossaryTerm,
   normalizeIncomingFields
@@ -25,7 +26,7 @@ export async function tryRegisterGlossaryFromCandidate(
   userId: string,
   meta: Record<string, unknown> | null | undefined,
   content: string,
-  opts?: { allowDuplicateUpdate?: boolean }
+  opts?: { allowDuplicateUpdate?: boolean; existingId?: string | null }
 ): Promise<GlossaryRegisterResult> {
   const draft = parseGlossaryMeta(meta, content);
   if (!draft.term_ko.trim()) {
@@ -34,6 +35,27 @@ export async function tryRegisterGlossaryFromCandidate(
 
   try {
     const incoming = normalizeIncomingFields(draft);
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("name")
+      .eq("id", userId)
+      .maybeSingle();
+    const editorName = ((profile?.name as string) || "").trim() || null;
+
+    if (opts?.existingId) {
+      const updated = await bumpGlossaryVersion(admin, {
+        termId: opts.existingId,
+        fields: incoming,
+        userId,
+        editorName,
+        changeNote: "지식후보 확정 — 기존 뜻 갱신"
+      });
+      if ("error" in updated) {
+        return { registered: false, notice: updated.error };
+      }
+      return { registered: true, term_id: updated.id };
+    }
+
     const dup = await checkGlossaryDuplicate(admin, incoming, null);
     if (dup.conflicts) {
       if (!opts?.allowDuplicateUpdate) {
@@ -42,15 +64,7 @@ export async function tryRegisterGlossaryFromCandidate(
           conflict: { ...dup, incoming }
         };
       }
-      // legacy path unused — 충돌 시 팝업으로 처리
     }
-
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("name")
-      .eq("id", userId)
-      .maybeSingle();
-    const editorName = ((profile?.name as string) || "").trim() || null;
 
     const result = await insertGlossaryTerm(admin, {
       fields: incoming,

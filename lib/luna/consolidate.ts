@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { triggerAutoExam } from "@/lib/luna/eval-exam";
 import { LUNA_MODEL } from "@/lib/luna/run-chat";
 import { lunaNotify } from "@/lib/luna/notify";
+import { splitDefinitionFromKnowledge } from "@/lib/luna/consolidate-terms";
 
 export type ConsolidationTrigger = "volume" | "backstop" | "manual";
 
@@ -51,6 +52,11 @@ export type ConsolidationRunResult = {
   merged_candidates?: number;
   stale_candidates?: number;
   conflict_candidates?: number;
+  term_split?: {
+    new_terms: number;
+    auto: number;
+    ask: number;
+  };
   reason?: string;
   error?: string;
 };
@@ -364,9 +370,19 @@ export async function runConsolidation(
   admin: SupabaseClient,
   opts: { force?: boolean } = {}
 ): Promise<ConsolidationRunResult> {
+  const termSplit = await splitDefinitionFromKnowledge(admin);
   const trigger = await decideConsolidationTrigger(admin, Boolean(opts.force));
   if (!trigger) {
-    return { skipped: true, trigger: null, reason: "thresholds not met" };
+    return {
+      skipped: true,
+      trigger: null,
+      reason: "thresholds not met",
+      term_split: {
+        new_terms: termSplit.new_terms,
+        auto: termSplit.auto,
+        ask: termSplit.ask
+      }
+    };
   }
 
   const { data: runRow, error: runInsertError } = await admin
@@ -672,7 +688,12 @@ export async function runConsolidation(
       scanned,
       merged_candidates: mergedCandidates,
       stale_candidates: staleCandidates,
-      conflict_candidates: conflictCandidates
+      conflict_candidates: conflictCandidates,
+      term_split: {
+        new_terms: termSplit.new_terms,
+        auto: termSplit.auto,
+        ask: termSplit.ask
+      }
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Consolidation failed";

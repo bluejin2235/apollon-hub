@@ -50,6 +50,18 @@ export type CandidateRow = {
   raw_input: string | null;
   is_glossary: boolean;
   glossary_already_exists?: boolean;
+  glossary_match?: {
+    id: string;
+    term_ko: string;
+    definition: string;
+    version: number;
+    updated_at: string | null;
+  } | null;
+  glossary_proposal?: {
+    term_ko: string;
+    definition: string;
+    mode: "insert" | "update";
+  } | null;
   is_my_turn: boolean;
   duplicate?: DuplicateCompare | null;
   proposal?: ReviewProposal | null;

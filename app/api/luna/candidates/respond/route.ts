@@ -59,6 +59,7 @@ type GlossaryPatch = {
   categories?: unknown;
   category?: unknown;
   synonyms?: unknown;
+  existing_id?: string;
 };
 
 type Body = {
@@ -139,6 +140,10 @@ export async function POST(request: NextRequest) {
       : null;
   let text = typeof body.text === "string" ? body.text.trim() : "";
   const glossaryPatch = normalizeGlossaryPatch(body.glossary);
+  const glossaryExistingId =
+    typeof body.glossary?.existing_id === "string"
+      ? body.glossary.existing_id.trim()
+      : "";
   const rejectNote = clipRejectNote(body.reject_note);
 
   if (!id || !action) {
@@ -557,7 +562,12 @@ export async function POST(request: NextRequest) {
 
     const incoming = normalizeIncomingFields(draft);
     const dup = await checkGlossaryDuplicate(admin, incoming, null);
-    if (dup.conflicts && dup.primary && dup.existing) {
+    if (
+      !glossaryExistingId &&
+      dup.conflicts &&
+      dup.primary &&
+      dup.existing
+    ) {
       const merge_draft = await buildGlossaryMergeDraft(
         toFieldValues(dup.existing),
         incoming
@@ -607,16 +617,63 @@ export async function POST(request: NextRequest) {
     makeTurn("luna", understoodAsk(polished))
   ];
 
+  let glossary_registered: boolean | undefined;
+  let glossary_notice: string | undefined;
+  if (isGlossary) {
+    const glossaryResult = await tryRegisterGlossaryFromCandidate(
+      admin,
+      user.id,
+      meta,
+      polished,
+      { existingId: glossaryExistingId || null }
+    );
+    glossary_registered = glossaryResult.registered;
+    if (glossaryResult.notice) glossary_notice = glossaryResult.notice;
+    if (
+      glossaryResult.conflict?.conflicts &&
+      glossaryResult.conflict.primary &&
+      glossaryResult.conflict.existing
+    ) {
+      const merge_draft = await buildGlossaryMergeDraft(
+        toFieldValues(glossaryResult.conflict.existing),
+        glossaryResult.conflict.incoming
+      );
+      return NextResponse.json(
+        {
+          error: "glossary_duplicate",
+          conflicts: true,
+          primary: glossaryResult.conflict.primary,
+          others: glossaryResult.conflict.others,
+          existing: glossaryResult.conflict.existing,
+          incoming: glossaryResult.conflict.incoming,
+          merge_draft
+        },
+        { status: 409 }
+      );
+    }
+    if (!glossaryResult.registered) {
+      return NextResponse.json(
+        { error: glossary_notice || "용어사전 등록에 실패했습니다." },
+        { status: 400 }
+      );
+    }
+    meta = {
+      ...meta,
+      glossary_registered: true,
+      glossary_term_id: glossaryResult.term_id ?? null
+    };
+  }
+
   const confirmPatch: Record<string, unknown> = {
     content: polished,
-    status: "active",
+    status: isGlossary ? "archived" : "active",
     thread: finalThread,
     confidence: 4,
     importance: 4,
     resolved_by: user.id,
     resolved_at: new Date().toISOString()
   };
-  if (glossaryPatch && isGlossary) {
+  if (isGlossary) {
     confirmPatch.meta = meta;
     confirmPatch.category = "term";
   } else if (hasRejectMeta(meta)) {
@@ -637,26 +694,6 @@ export async function POST(request: NextRequest) {
   }
   if (!data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  let glossary_registered: boolean | undefined;
-  let glossary_notice: string | undefined;
-  if (isGlossary) {
-    const glossaryResult = await tryRegisterGlossaryFromCandidate(
-      admin,
-      user.id,
-      meta,
-      polished
-    );
-    glossary_registered = glossaryResult.registered;
-    if (glossaryResult.notice) glossary_notice = glossaryResult.notice;
-    if (glossaryResult.conflict?.conflicts) {
-      // 경합으로 확정 후 충돌 — 후보를 archived 로 되돌리지 않고 안내만
-      glossary_notice =
-        glossary_notice ||
-        glossaryResult.conflict.primary?.message ||
-        "용어사전 중복이 감지되어 등록을 건너뛰었습니다.";
-    }
   }
 
   return NextResponse.json({

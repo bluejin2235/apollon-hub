@@ -12,6 +12,7 @@ import {
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import {
   collectExistingTermKeys,
+  parseCaptureKind,
   processCaptureItems,
   type ProcessedCaptureItem,
   type RawCaptureItem
@@ -28,6 +29,13 @@ const REFLECT_LOCK_MS = 120_000;
 
 const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었는지 판정하고, 있으면 지식 후보를 만든다.
 
+용어사전이 우선이고, 아폴론 지식은 그 위에 쌓인다.
+각 후보의 capture_kind 를 반드시 정한다.
+- term: "X는 무엇인가" — 뜻, 구성, 범위. 용어사전 후보.
+- knowledge: "우리는 어떻게 하는가" — 기준, 방식, 사례. 지식 후보.
+- both: 한 문장에 정의와 판단이 섞여 있으면 갈라서 양쪽에 넣는다.
+  definition 에는 뜻만, knowledge 에는 판단만.
+
 후보로 올리는 것:
 ① 사람의 정정 — 내 답을 고쳐준 것 ("아니라 ~야", "그게 아니고") : 최우선
 ② 새 사실·용어·절차 — 아폴론의 일하는 방식, 프로젝트 정보, 용어 정의
@@ -40,7 +48,6 @@ const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었
 - 확신이 서지 않는 애매한 추측
 
 후보 형식: 지식 한 문장 + 근거 원문(누가·언제 말했는지) + 조직/개인 구분 제안.
-용어 정의·구분("A는 B다", "A는 C가 아니라 D")은 category=term 으로 1건만 올리세요. 같은 내용을 general 과 term 에 중복 올리지 마세요. term_ko 를 반드로 채우세요.
 하루에 같은 대화에서 후보는 최대 3건. 양보다 정확함.
 
 확인이 필요한 질문은 별도로 최대 1건 (question). 본인(대화 상대)만 답할 수 있는 사실·선호·절차 확인에 한정.
@@ -55,7 +62,18 @@ const CAPTURE_USER_SUFFIX = `
 형식:
 {
   "candidates": [
-    { "content": "지식 한 문장(용어 정의면 정의만, 용어명 제외)", "evidence": "근거 원문", "scope_suggestion": "org"|"personal", "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general", "from_correction": true|false, "term_ko": "용어명(용어일 때 필수)", "term_en": "원어(약어일 때)" }
+    {
+      "capture_kind": "term"|"knowledge"|"both",
+      "content": "한 문장",
+      "definition": "뜻만 (term/both일 때)",
+      "knowledge": "판단만 (both일 때)",
+      "evidence": "근거 원문",
+      "scope_suggestion": "org"|"personal",
+      "category": "term"|"criterion"|"workflow"|"client"|"preference"|"general",
+      "from_correction": true|false,
+      "term_ko": "용어명(term/both일 때 필수)",
+      "term_en": "원어(약어일 때)"
+    }
   ],
   "question": null | {
     "ask": "사람에게 물을 짧은 질문 (한 문장)",
@@ -66,6 +84,7 @@ const CAPTURE_USER_SUFFIX = `
 }
 candidates 최대 3건. 사람의 정정("아니라", "그게 아니고" 등)이 있으면 최우선으로 올리세요.
 question 은 확인이 꼭 필요할 때만 1건, 아니면 null. 본인만 답할 수 있는 내용만.
+capture_kind 는 키워드가 아니라 문장 성격으로 판정하세요. 정의면 term, 우리 방식·기준·사례면 knowledge, 섞이면 both.
 레거시로 배열만 줘도 candidates 로 처리합니다.`;
 
 type ReflectBody = { conversation_id?: string };
@@ -99,7 +118,10 @@ function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
-    const content = typeof row.content === "string" ? row.content.trim() : "";
+    const content =
+      (typeof row.content === "string" ? row.content.trim() : "") ||
+      (typeof row.definition === "string" ? row.definition.trim() : "") ||
+      (typeof row.knowledge === "string" ? row.knowledge.trim() : "");
     if (!content) continue;
     const categoryRaw =
       typeof row.category === "string" ? row.category.trim() : "general";
@@ -120,14 +142,22 @@ function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
       typeof row.term_ko === "string" ? row.term_ko.trim() || null : null;
     const term_en =
       typeof row.term_en === "string" ? row.term_en.trim() || null : null;
+    const definition =
+      typeof row.definition === "string" ? row.definition.trim() || null : null;
+    const knowledge =
+      typeof row.knowledge === "string" ? row.knowledge.trim() || null : null;
+    const capture_kind = parseCaptureKind(row.capture_kind, categoryRaw);
     out.push({
       content,
       evidence,
       scope_suggestion,
       category: categoryRaw || "general",
       from_correction: fromCorrection,
+      capture_kind,
       term_ko,
-      term_en
+      term_en,
+      definition,
+      knowledge
     });
     if (out.length >= 3) break;
   }

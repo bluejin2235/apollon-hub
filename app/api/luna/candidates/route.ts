@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { hasAnyGlossaryOverlap } from "@/lib/glossary/duplicate";
+import { findGlossaryDuplicates } from "@/lib/glossary/duplicate";
 import { loadActiveGlossaryTerms } from "@/lib/glossary/duplicate-service";
 import { isGlossaryCandidate, parseGlossaryMeta } from "@/lib/luna/candidate-format";
 import {
@@ -84,6 +84,18 @@ export type CandidateItem = Omit<LearningRow, "source"> & {
   source_title: string | null;
   is_glossary: boolean;
   glossary_already_exists: boolean;
+  glossary_match: {
+    id: string;
+    term_ko: string;
+    definition: string;
+    version: number;
+    updated_at: string | null;
+  } | null;
+  glossary_proposal: {
+    term_ko: string;
+    definition: string;
+    mode: "insert" | "update";
+  } | null;
   is_my_turn: boolean;
   duplicate: DuplicateCompare | null;
   proposal: ReviewProposal | null;
@@ -352,9 +364,26 @@ export async function GET(request: NextRequest) {
       thread[thread.length - 1]?.role === "luna";
     const isGlossary = isGlossaryCandidate(r.meta, r.category);
     let glossary_already_exists = false;
+    let glossary_match: CandidateItem["glossary_match"] = null;
+    let glossary_proposal: CandidateItem["glossary_proposal"] = null;
     if (isGlossary) {
       const draft = parseGlossaryMeta(r.meta, r.content);
-      glossary_already_exists = hasAnyGlossaryOverlap(draft, glossaryTerms);
+      const dup = findGlossaryDuplicates(draft, glossaryTerms);
+      glossary_already_exists = dup.conflicts;
+      if (dup.existing) {
+        glossary_match = {
+          id: dup.existing.id,
+          term_ko: dup.existing.term_ko,
+          definition: dup.existing.definition ?? "",
+          version: dup.existing.version,
+          updated_at: dup.existing.updated_at
+        };
+      }
+      glossary_proposal = {
+        term_ko: draft.term_ko,
+        definition: draft.definition,
+        mode: glossary_match ? "update" : "insert"
+      };
     }
 
     const matchId = r.duplicate_of || r.merge_target;
@@ -400,6 +429,8 @@ export async function GET(request: NextRequest) {
       thread,
       is_glossary: isGlossary,
       glossary_already_exists,
+      glossary_match,
+      glossary_proposal,
       is_my_turn: isMyTurn,
       author_name: r.author_id ? nameMap.get(r.author_id) ?? null : null,
       assigned_name: r.assigned_to ? nameMap.get(r.assigned_to) ?? null : null,

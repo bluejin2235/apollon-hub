@@ -189,14 +189,17 @@ export async function createCandidate(
     input.meta && typeof input.meta === "object" && !Array.isArray(input.meta)
       ? { ...input.meta }
       : {};
-  // 용어 후보: term_ko 가 있을 때만 glossary — 없으면 일반 지식
+  // 용어 후보는 용어명 유무와 관계없이 용어 칩으로 보낸다. 이름은 화면에서 고칠 수 있다.
   const termKo =
     typeof baseMeta.term_ko === "string" ? baseMeta.term_ko.trim() : "";
-  if (category === "term" && !termKo) {
-    category = "general";
-    delete baseMeta.kind;
-  } else if (category === "term" && termKo) {
+  const wantsGlossary =
+    baseMeta.kind === "glossary" ||
+    category === "term" ||
+    baseMeta.capture_kind === "term";
+  if (wantsGlossary) {
+    category = "term";
     baseMeta.kind = "glossary";
+    if (termKo) baseMeta.term_ko = termKo;
     if (typeof baseMeta.definition !== "string" || !String(baseMeta.definition).trim()) {
       baseMeta.definition = content;
     }

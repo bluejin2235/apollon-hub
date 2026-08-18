@@ -2,14 +2,19 @@
 import { sanitizeGlossaryField } from "@/lib/luna/candidate-format";
 import { extractKeyNouns } from "@/lib/luna/reflect-guard";
 
+export type CaptureKind = "term" | "knowledge" | "both";
+
 export type RawCaptureItem = {
   content: string;
   evidence: string | null;
   scope_suggestion: "org" | "personal" | null;
   category: string;
   from_correction: boolean;
+  capture_kind?: CaptureKind | null;
   term_ko?: string | null;
   term_en?: string | null;
+  definition?: string | null;
+  knowledge?: string | null;
 };
 
 export type ProcessedCaptureItem = RawCaptureItem & {
@@ -17,21 +22,10 @@ export type ProcessedCaptureItem = RawCaptureItem & {
   meta: Record<string, unknown>;
 };
 
-const KNOWLEDGE_NOT_TERM =
-  /(?:선금|수금|착수|절차|순서|먼저|다음에|후에|~면|으면|줄면|늘면|판단|기준|조정|\d+\s*개(?:다|이다|예요|입니다))/;
-
-const TERM_DEFINITION =
-  /(?:는|은|이)\s+(?:[^。]{0,40}(?:아니(?:라|다|며|고|죠|요|습니다)|동일|같은\s+(?:사람|역할|뜻|의미)|의미(?:하|로)|뜻(?:이|은|은)|역할|오너|담당|단계|범위|정의|맡(?:는|음|기)|포함|해당))/;
-
-const TERM_CONTRAST = /(?:와|과)\s+[A-Za-z가-힣]{1,20}(?:의\s+)?차이/;
-const TERM_NOT_X_BUT_Y = /(?:가|이)\s+아니(?:라|고)/;
-
-export function isTermDefinitionContent(content: string, category?: string): boolean {
-  const t = content.trim();
-  if (!t) return false;
-  if (category === "term") return !KNOWLEDGE_NOT_TERM.test(t);
-  if (KNOWLEDGE_NOT_TERM.test(t)) return false;
-  return TERM_DEFINITION.test(t) || TERM_CONTRAST.test(t) || TERM_NOT_X_BUT_Y.test(t);
+export function parseCaptureKind(raw: unknown, category?: string): CaptureKind {
+  if (raw === "term" || raw === "knowledge" || raw === "both") return raw;
+  if (category === "term") return "term";
+  return "knowledge";
 }
 
 function findEnglishForAbbrev(text: string, abbrev: string): string | null {
@@ -89,8 +83,7 @@ export function extractTermFromCapture(
 
 export function stripTermLeadFromDefinition(
   content: string,
-  term_ko: string,
-  term_en: string | null
+  term_ko: string
 ): string {
   let def = content.trim();
   const esc = term_ko.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
@@ -115,12 +108,13 @@ function sharesTermWithContent(term_ko: string, text: string): boolean {
 function buildGlossaryMeta(
   item: RawCaptureItem,
   term_ko: string,
-  term_en: string | null
+  term_en: string | null,
+  definition: string
 ): Record<string, unknown> {
-  const definition = stripTermLeadFromDefinition(item.content, term_ko, term_en);
   const categories = normalizeCategories(undefined, "common");
   const meta: Record<string, unknown> = {
     kind: "glossary",
+    capture_kind: item.capture_kind ?? "term",
     term_ko,
     term_en: term_en || null,
     term_zh: null,
@@ -132,6 +126,62 @@ function buildGlossaryMeta(
   return meta;
 }
 
+function toGlossaryItem(
+  item: RawCaptureItem,
+  transcript: string,
+  existingTermKeys: Set<string>,
+  glossaryByTerm: Map<string, ProcessedCaptureItem>
+): ProcessedCaptureItem | null {
+  const extracted = extractTermFromCapture(
+    item.definition || item.content,
+    item.evidence,
+    transcript,
+    item.term_ko,
+    item.term_en
+  );
+  const term_ko = extracted?.term_ko?.trim() || "";
+  const term_en = extracted?.term_en ?? null;
+  if (!term_ko) {
+    return {
+      ...item,
+      category: "term",
+      content: (item.definition || item.content).trim(),
+      meta: {
+        kind: "glossary",
+        capture_kind: item.capture_kind ?? "term",
+        definition: (item.definition || item.content).trim(),
+        ...(item.from_correction ? { from_correction: true } : {})
+      }
+    };
+  }
+  const key = termKey(term_ko);
+  if (existingTermKeys.has(key) || glossaryByTerm.has(key)) return null;
+  const definition = (
+    item.definition?.trim() ||
+    stripTermLeadFromDefinition(item.content, term_ko)
+  ).trim();
+  const row: ProcessedCaptureItem = {
+    ...item,
+    category: "term",
+    content: definition,
+    meta: buildGlossaryMeta(item, term_ko, term_en, definition)
+  };
+  glossaryByTerm.set(key, row);
+  return row;
+}
+
+function toKnowledgeItem(item: RawCaptureItem, content: string): ProcessedCaptureItem {
+  return {
+    ...item,
+    content: content.trim() || item.content,
+    category: item.category === "term" ? "general" : item.category,
+    meta: {
+      capture_kind: item.capture_kind ?? "knowledge",
+      ...(item.from_correction ? { from_correction: true } : {})
+    }
+  };
+}
+
 export function processCaptureItems(
   items: RawCaptureItem[],
   transcript: string,
@@ -139,59 +189,40 @@ export function processCaptureItems(
 ): ProcessedCaptureItem[] {
   const glossaryByTerm = new Map<string, ProcessedCaptureItem>();
   const knowledge: ProcessedCaptureItem[] = [];
+  const glossary: ProcessedCaptureItem[] = [];
 
   for (const item of items) {
-    const asTerm =
-      item.category === "term" || isTermDefinitionContent(item.content, item.category);
+    const kind = parseCaptureKind(item.capture_kind, item.category);
 
-    if (asTerm) {
-      const extracted = extractTermFromCapture(
-        item.content,
-        item.evidence,
-        transcript,
-        item.term_ko,
-        item.term_en
-      );
-      if (!extracted?.term_ko) {
-        knowledge.push({
-          ...item,
-          category: item.category === "term" ? "general" : item.category,
-          meta: item.from_correction ? { from_correction: true } : {}
-        });
-        continue;
-      }
-
-      const key = termKey(extracted.term_ko);
-      if (existingTermKeys.has(key) || glossaryByTerm.has(key)) continue;
-
-      glossaryByTerm.set(key, {
-        ...item,
-        category: "term",
-        content: stripTermLeadFromDefinition(
-          item.content,
-          extracted.term_ko,
-          extracted.term_en
-        ),
-        meta: buildGlossaryMeta(item, extracted.term_ko, extracted.term_en)
-      });
-      continue;
+    if (kind === "term" || kind === "both") {
+      const g = toGlossaryItem(item, transcript, existingTermKeys, glossaryByTerm);
+      if (g) glossary.push(g);
     }
 
-    knowledge.push({
-      ...item,
-      meta: item.from_correction ? { from_correction: true } : {}
-    });
+    if (kind === "knowledge" || kind === "both") {
+      const definition = item.definition?.trim() || "";
+      const judgment =
+        kind === "both"
+          ? item.knowledge?.trim() ||
+            (item.content.trim() && item.content.trim() !== definition
+              ? item.content.trim()
+              : "")
+          : item.content;
+      if (kind === "knowledge" || judgment) {
+        knowledge.push(toKnowledgeItem(item, judgment || item.content));
+      }
+    }
   }
 
-  const glossaryTerms = [...glossaryByTerm.values()];
-  const filteredKnowledge = knowledge.filter((k) =>
-    !glossaryTerms.some((g) => {
+  const filteredKnowledge = knowledge.filter((k) => {
+    if (k.meta.capture_kind === "both") return true;
+    return !glossary.some((g) => {
       const ko = typeof g.meta.term_ko === "string" ? g.meta.term_ko : "";
       return ko && sharesTermWithContent(ko, k.content);
-    })
-  );
+    });
+  });
 
-  return [...glossaryTerms, ...filteredKnowledge];
+  return [...glossary, ...filteredKnowledge];
 }
 
 export function collectExistingTermKeys(

@@ -10,8 +10,6 @@ import {
   ConversationLink,
   ErrorLine,
   FilterChip,
-  GlossaryCardBody,
-  GlossaryEditForm,
   KnowledgeShell,
   LoadingLine,
   ReplyRow,
@@ -28,10 +26,10 @@ import {
   KnowledgeReviewCard,
   type KnowledgeReviewAction
 } from "@/components/luna/candidates/KnowledgeReviewCard";
+import { TermReviewCard } from "@/components/luna/candidates/TermReviewCard";
 import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
 import type { GlossaryFieldValues } from "@/lib/glossary/types";
 import {
-  openGlossaryEditDraft,
   parseGlossaryMeta,
   selfstudyQuestion,
   candidateMetaLine,
@@ -84,14 +82,18 @@ const FILTERS: { key: PendingFilter; label: string; countKey: keyof Counts }[] =
   { key: "interview", label: "구술·문서", countKey: "interview" },
   { key: "glossary", label: "용어", countKey: "glossary" }
 ];
-function toGlossaryPayload(draft: GlossaryEditDraft) {
+function toGlossaryPayload(
+  draft: GlossaryEditDraft,
+  existingId?: string | null
+) {
   return {
     term_ko: draft.term_ko.trim(),
     term_en: draft.term_en.trim() || null,
     term_zh: draft.term_zh.trim() || null,
     definition: draft.definition.trim(),
     categories: draft.categories,
-    synonyms: draft.synonyms
+    synonyms: draft.synonyms,
+    existing_id: existingId || undefined
   };
 }
 
@@ -111,9 +113,6 @@ export function LunaCandidatesPending() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reviseOpen, setReviseOpen] = useState<Record<string, string>>({});
-  const [glossaryEdit, setGlossaryEdit] = useState<
-    Record<string, GlossaryEditDraft>
-  >({});
   const [replyDraft, setReplyDraft] = useState<Record<string, string>>({});
   const [dupPayload, setDupPayload] = useState<GlossaryDuplicatePayload | null>(
     null
@@ -163,11 +162,6 @@ export function LunaCandidatesPending() {
     const gone = items.find((c) => c.id === id);
     setItems((prev) => prev.filter((c) => c.id !== id));
     setReviseOpen((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    setGlossaryEdit((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
@@ -233,7 +227,12 @@ export function LunaCandidatesPending() {
           id,
           action,
           text,
-          glossary: glossary ? toGlossaryPayload(glossary) : undefined
+          glossary: glossary
+            ? toGlossaryPayload(
+                glossary,
+                items.find((c) => c.id === id)?.glossary_match?.id
+              )
+            : undefined
         })
       });
       const json = (await res.json().catch(() => null)) as {
@@ -298,11 +297,6 @@ export function LunaCandidatesPending() {
           )
         );
         setReviseOpen((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setGlossaryEdit((prev) => {
           const next = { ...prev };
           delete next[id];
           return next;
@@ -478,11 +472,6 @@ export function LunaCandidatesPending() {
       const doneId = dupPayload.candidate_id;
       setDupPayload(null);
       setDupError("");
-      setGlossaryEdit((prev) => {
-        const next = { ...prev };
-        delete next[doneId];
-        return next;
-      });
       setMessage(json?.message ?? "처리했습니다.");
       dismissItem(doneId);
     } catch (err) {
@@ -541,7 +530,6 @@ export function LunaCandidatesPending() {
           });
           const busy = busyId === item.id;
           const glossary = parseGlossaryMeta(item.meta, item.content);
-          const confirmDraft = asConfirmDraft(glossary);
           const scopeLabel = scopeBadgeLabel(
             item.scope_suggestion,
             kind === "glossary" ? glossary.categories : undefined
@@ -556,12 +544,33 @@ export function LunaCandidatesPending() {
 
           const isDuplicate = item.review_reason === "duplicate" || Boolean(item.duplicate);
           const reviseDraft = reviseOpen[item.id];
-          const editingGlossary = glossaryEdit[item.id];
           const cardError = cardErrors[item.id];
           const useReviewCard =
             kind !== "glossary" &&
             kind !== "selfstudy" &&
             item.source !== "question";
+
+          if (kind === "glossary") {
+            return (
+              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+                <TermReviewCard
+                  item={item}
+                  busy={busy}
+                  error={cardError}
+                  onAccept={() =>
+                    void respond(
+                      item.id,
+                      "confirm",
+                      undefined,
+                      asConfirmDraft(glossary)
+                    )
+                  }
+                  onReject={() => void respond(item.id, "reject")}
+                  onLater={() => void reviewAction(item.id, "later")}
+                />
+              </CardStackItem>
+            );
+          }
 
           if (useReviewCard) {
             return (
@@ -582,20 +591,10 @@ export function LunaCandidatesPending() {
               ? (item.raw_input?.trim() || item.content)
               : item.content;
             setReviseOpen((p) => ({ ...p, [item.id]: initial }));
-            setGlossaryEdit((p) => {
-              const n = { ...p };
-              delete n[item.id];
-              return n;
-            });
             setCardErrors((p) => ({ ...p, [item.id]: "" }));
           };
           const closeRevise = () => {
             setReviseOpen((p) => {
-              const n = { ...p };
-              delete n[item.id];
-              return n;
-            });
-            setGlossaryEdit((p) => {
               const n = { ...p };
               delete n[item.id];
               return n;
@@ -636,119 +635,6 @@ export function LunaCandidatesPending() {
                 </div>
               </div>
             ) : null;
-
-          if (kind === "glossary") {
-            const activeDraft = editingGlossary ?? confirmDraft;
-            const registerBlocked = !activeDraft.term_ko.trim();
-
-            return (
-              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
-              <CandidateCardShell>
-                <div className="flex flex-wrap items-center gap-2">
-                  <SourceBadge
-                    source={item.source}
-                    glossary
-                    sourceId={item.source_id}
-                    sourceTitle={item.source_title}
-                  />
-                  <span className="text-[11.5px]" style={{ color: K.faint }}>
-                    {metaLine}
-                    {item.source_conversation_id ? (
-                      <>
-                        {" · "}
-                        <ConversationLink conversationId={item.source_conversation_id}>
-                          원문 보기
-                        </ConversationLink>
-                      </>
-                    ) : null}
-                  </span>
-                  <ScopeBadge label={scopeLabel} />
-                </div>
-                {editingGlossary ? (
-                  <GlossaryEditForm
-                    draft={editingGlossary}
-                    evidence={item.evidence}
-                    onChange={(next) =>
-                      setGlossaryEdit((p) => ({ ...p, [item.id]: next }))
-                    }
-                  />
-                ) : (
-                  <GlossaryCardBody
-                    meta={item.meta}
-                    content={item.content}
-                    evidence={item.evidence}
-                    alreadyInGlossary={item.glossary_already_exists}
-                  />
-                )}
-                {cardError ? (
-                  <p className="mt-2 text-[12px]" style={{ color: K.danger }}>
-                    {cardError}
-                  </p>
-                ) : null}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {editingGlossary ? (
-                    <>
-                      <Btn
-                        primary
-                        disabled={busy || !editingGlossary.term_ko.trim()}
-                        onClick={() =>
-                          void respond(
-                            item.id,
-                            "confirm",
-                            undefined,
-                            editingGlossary
-                          )
-                        }
-                      >
-                        {busy ? "저장 중…" : "저장 · 확정"}
-                      </Btn>
-                      <Btn disabled={busy} onClick={closeRevise}>
-                        취소
-                      </Btn>
-                    </>
-                  ) : (
-                    <>
-                      <Btn
-                        primary
-                        disabled={busy || registerBlocked}
-                        onClick={() =>
-                          void respond(item.id, "confirm", undefined, confirmDraft)
-                        }
-                      >
-                        {busy ? "등록 중…" : "맞아요 → 용어사전 등록"}
-                      </Btn>
-                      {registerBlocked ? (
-                        <span
-                          className="text-[11.5px]"
-                          style={{ color: K.faint }}
-                        >
-                          용어명이 비어 있어 바로 등록할 수 없어요
-                        </span>
-                      ) : null}
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          setGlossaryEdit((p) => ({
-                            ...p,
-                            [item.id]: openGlossaryEditDraft(glossary)
-                          }))
-                        }
-                      >
-                        고쳐서 확정
-                      </Btn>
-                      <Btn
-                        disabled={busy}
-                        onClick={() => void respond(item.id, "reject")}
-                      >
-                        아니에요
-                      </Btn>
-                    </>
-                  )}
-                </div>
-              </CandidateCardShell>
-              </CardStackItem>
-            );
-          }
 
           if (kind === "selfstudy") {
             const q = selfstudyQuestion(item.meta);
