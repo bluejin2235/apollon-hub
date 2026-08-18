@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   GlossaryDuplicateDialog,
   type GlossaryDuplicatePayload
@@ -56,6 +56,25 @@ type QueueCounts = {
   fresh: number;
 };
 
+const PAGE_SIZE = 20;
+
+function CardStackItem({
+  showDivider,
+  children
+}: {
+  showDivider: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      {showDivider ? (
+        <div className="my-3.5 h-px" style={{ background: K.line }} />
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
 const FILTERS: { key: PendingFilter; label: string; countKey: keyof Counts }[] = [
   { key: "all", label: "전체", countKey: "all" },
   { key: "chat", label: "대화에서", countKey: "chat" },
@@ -102,6 +121,7 @@ export function LunaCandidatesPending() {
   const [dupBusy, setDupBusy] = useState(false);
   const [dupError, setDupError] = useState("");
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
 
   const load = useCallback(async (f: PendingFilter) => {
     const token = await getAccessToken();
@@ -135,8 +155,58 @@ export function LunaCandidatesPending() {
   }, []);
 
   useEffect(() => {
+    setVisibleLimit(PAGE_SIZE);
     void load(filter);
   }, [filter, load]);
+
+  function dismissItem(id: string) {
+    const gone = items.find((c) => c.id === id);
+    setItems((prev) => prev.filter((c) => c.id !== id));
+    setReviseOpen((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setGlossaryEdit((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setReplyDraft((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setCardErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!gone) return;
+    const isGlossary = gone.is_glossary;
+    const isDup =
+      gone.review_reason === "duplicate" || Boolean(gone.duplicate);
+    setQueue((q) => {
+      if (!q) return q;
+      return {
+        total: Math.max(0, q.total - 1),
+        duplicate:
+          !isGlossary && isDup ? Math.max(0, q.duplicate - 1) : q.duplicate,
+        fresh: !isGlossary && !isDup ? Math.max(0, q.fresh - 1) : q.fresh
+      };
+    });
+    setCounts((c) => {
+      if (!c) return c;
+      const next = { ...c, all: Math.max(0, c.all - 1) };
+      if (gone.source === "chat") next.chat = Math.max(0, c.chat - 1);
+      if (gone.source === "selfstudy") next.selfstudy = Math.max(0, c.selfstudy - 1);
+      if (gone.source === "question") next.question = Math.max(0, c.question - 1);
+      if (gone.source === "direct") next.direct = Math.max(0, c.direct - 1);
+      if (gone.source === "interview") next.interview = Math.max(0, c.interview - 1);
+      if (isGlossary) next.glossary = Math.max(0, c.glossary - 1);
+      return next;
+    });
+  }
 
   async function respond(
     id: string,
@@ -251,22 +321,6 @@ export function LunaCandidatesPending() {
         return;
       }
 
-      setItems((prev) => prev.filter((c) => c.id !== id));
-      setReviseOpen((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-      setGlossaryEdit((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-        setCardErrors((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
       if (action === "confirm") {
         if (json.merged_into) {
           setMessage("중복 후보를 본문에 병합했어요");
@@ -278,7 +332,7 @@ export function LunaCandidatesPending() {
           setMessage("기억을 확정했습니다");
         }
       }
-      void load(filter);
+      dismissItem(id);
     } catch {
       setCardErrors((prev) => ({ ...prev, [id]: "네트워크 오류" }));
     } finally {
@@ -332,7 +386,7 @@ export function LunaCandidatesPending() {
       } else {
         setMessage("기억을 확정했습니다");
       }
-      void load(filter);
+      dismissItem(id);
     } catch {
       setCardErrors((prev) => ({ ...prev, [id]: "네트워크 오류" }));
     } finally {
@@ -416,14 +470,13 @@ export function LunaCandidatesPending() {
       const doneId = dupPayload.candidate_id;
       setDupPayload(null);
       setDupError("");
-      setItems((prev) => prev.filter((c) => c.id !== doneId));
       setGlossaryEdit((prev) => {
         const next = { ...prev };
         delete next[doneId];
         return next;
       });
       setMessage(json?.message ?? "처리했습니다.");
-      void load(filter);
+      dismissItem(doneId);
     } catch (err) {
       setDupError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {
@@ -470,8 +523,8 @@ export function LunaCandidatesPending() {
           대기 중인 후보가 없습니다
         </p>
       ) : (
-        (() => {
-          const item = items[0]!;
+        <>
+        {items.slice(0, visibleLimit).map((item, cardIndex) => {
           const kind = getCandidateCardKind({
             source: item.source,
             category: item.category,
@@ -504,16 +557,16 @@ export function LunaCandidatesPending() {
 
           if (useReviewCard) {
             return (
-              <KnowledgeReviewCard
-                item={item}
-                index={0}
-                total={items.length}
-                busy={busy}
-                error={cardError}
-                onAction={(action, text) =>
-                  void reviewAction(item.id, action, text)
-                }
-              />
+              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+                <KnowledgeReviewCard
+                  item={item}
+                  busy={busy}
+                  error={cardError}
+                  onAction={(action, text) =>
+                    void reviewAction(item.id, action, text)
+                  }
+                />
+              </CardStackItem>
             );
           }
           const openRevise = () => {
@@ -581,7 +634,8 @@ export function LunaCandidatesPending() {
             const registerBlocked = !activeDraft.term_ko.trim();
 
             return (
-              <CandidateCardShell key={item.id}>
+              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+              <CandidateCardShell>
                 <div className="flex flex-wrap items-center gap-2">
                   <SourceBadge
                     source={item.source}
@@ -684,13 +738,15 @@ export function LunaCandidatesPending() {
                   )}
                 </div>
               </CandidateCardShell>
+              </CardStackItem>
             );
           }
 
           if (kind === "selfstudy") {
             const q = selfstudyQuestion(item.meta);
             return (
-              <CandidateCardShell key={item.id}>
+              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+              <CandidateCardShell>
                 <div className="flex flex-wrap items-center gap-2">
                   <SourceBadge
                     source={item.source}
@@ -745,13 +801,15 @@ export function LunaCandidatesPending() {
                   </div>
                 ) : null}
               </CandidateCardShell>
+              </CardStackItem>
             );
           }
 
           if (kind === "dialogue" && item.thread.length > 0) {
             const turnN = Math.max(1, Math.ceil(item.thread.length / 2));
             return (
-              <CandidateCardShell key={item.id} highlight={item.is_my_turn}>
+              <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+              <CandidateCardShell highlight={item.is_my_turn}>
                 <div className="flex flex-wrap items-center gap-2">
                   <SourceBadge
                     source={item.source}
@@ -801,11 +859,13 @@ export function LunaCandidatesPending() {
                   </div>
                 ) : null}
               </CandidateCardShell>
+              </CardStackItem>
             );
           }
 
           return (
-            <CandidateCardShell key={item.id}>
+            <CardStackItem key={item.id} showDivider={cardIndex > 0}>
+            <CandidateCardShell>
               <div className="flex flex-wrap items-center gap-2">
                 <SourceBadge
                   source={item.source}
@@ -858,8 +918,24 @@ export function LunaCandidatesPending() {
                 </div>
               ) : null}
             </CandidateCardShell>
+            </CardStackItem>
           );
-        })()
+        })}
+        {items.length > visibleLimit ? (
+          <button
+            type="button"
+            className="mt-3.5 w-full rounded-[10px] py-2.5 text-[12.5px] font-bold"
+            style={{
+              border: `1px solid ${K.line}`,
+              color: K.sub,
+              background: K.panel
+            }}
+            onClick={() => setVisibleLimit((n) => n + PAGE_SIZE)}
+          >
+            더 보기
+          </button>
+        ) : null}
+        </>
       )}
 
       <GlossaryDuplicateDialog

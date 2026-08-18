@@ -25,15 +25,11 @@ export type KnowledgeReviewAction =
 
 export function KnowledgeReviewCard({
   item,
-  index,
-  total,
   busy,
   error,
   onAction
 }: {
   item: CandidateRow;
-  index: number;
-  total: number;
   busy: boolean;
   error?: string;
   onAction: (action: KnowledgeReviewAction, text?: string) => void;
@@ -101,9 +97,6 @@ export function KnowledgeReviewCard({
           {tag}
         </span>
         <span className="text-[12px] font-semibold">{title}</span>
-        <span className="ml-auto text-[10.5px]" style={{ color: K.faint }}>
-          {index + 1} / {total}
-        </span>
       </div>
 
       <div className="px-[15px] py-[15px]">

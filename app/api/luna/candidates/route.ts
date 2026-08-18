@@ -323,16 +323,21 @@ export async function GET(request: NextRequest) {
 
   const glossaryTerms = await loadActiveGlossaryTerms(admin);
 
+  const PROPOSE_LIMIT = 20;
   const proposeIndexes = new Set<number>();
   if (proposeAll) {
     filtered.forEach((r, i) => {
       if (!isGlossaryCandidate(r.meta, r.category)) proposeIndexes.add(i);
     });
   } else {
-    const first = filtered.findIndex(
-      (r) => !isGlossaryCandidate(r.meta, r.category)
-    );
-    if (first >= 0) proposeIndexes.add(first);
+    let n = 0;
+    for (let i = 0; i < filtered.length; i += 1) {
+      if (n >= PROPOSE_LIMIT) break;
+      const row = filtered[i]!;
+      if (isGlossaryCandidate(row.meta, row.category)) continue;
+      proposeIndexes.add(i);
+      n += 1;
+    }
   }
 
   const items: CandidateItem[] = [];
