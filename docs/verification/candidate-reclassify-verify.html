@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"/>
+<title>지식후보 재분류 검증</title>
+<style>
+  *{box-sizing:border-box} body{font-family:system-ui,sans-serif;background:#f4f4f5;margin:0;padding:24px;color:#111}
+  h1{font-size:18px;margin:0 0 8px} .sub{color:#666;font-size:13px;margin-bottom:20px}
+  .filters{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+  .f{padding:6px 12px;border-radius:999px;border:1px solid #ddd;background:#fff;font-size:12px}
+  .f.active{background:#faf3e2;border-color:#d4bc7a;font-weight:700;color:#8a6d2f}
+  .section{margin-bottom:32px} .section h2{font-size:14px;margin:0 0 12px;color:#444}
+  .card{border:1px solid #e5e5e5;border-radius:12px;background:#fff;margin-bottom:16px;overflow:hidden}
+  .card-head{padding:11px 15px;background:#fbfbfd;border-bottom:1px solid #eee;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
+  .chip-term,.chip-know{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:9px}
+  .chip-term{background:#faf3e2;color:#8a6d2f} .chip-know{background:#eaf7f2;color:#0f6e56}
+  .card-body{padding:15px} .compare{display:flex;border:1px solid #e5e5e5;border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .col{flex:1;padding:12px 14px;font-size:12.5px;line-height:1.75}
+  .old{background:#faf7ee;border-right:1px solid #e5e5e5} .new{background:#eaf7f2}
+  .lbl{font-size:10px;font-weight:700;margin-bottom:6px} .old .lbl{color:#8a6d2f} .new .lbl{color:#0f6e56}
+  .proposal{border:1px solid #e8e0ff;background:#fcfaff;border-radius:10px;padding:13px 15px;margin-bottom:14px;font-size:13px;line-height:1.8}
+  .lbl-luna{font-size:11px;font-weight:700;color:#5b4bb7;margin-bottom:6px}
+  .hint{font-size:11px;color:#888;margin-top:8px}
+  .solo{font-size:13px;line-height:1.75;margin-bottom:14px}
+  .actions{display:flex;gap:7px;align-items:center} .sp{flex:1}
+  button{border:1px solid #ddd;background:#fff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:default}
+  button.primary{background:#111;color:#fff;border-color:#111}
+  button.ghost{background:transparent;border:none;color:#999}
+</style></head><body>
+  <h1>지식후보 — 재분류 검증 (2026-08-18)</h1>
+  <p class="sub">용어 3 · 지식 4 · /settings?tab=luna&amp;luna=candidates</p>
+  
+    <div class="filters">
+      <span class="f">전체 7</span>
+      <span class="f">대화에서</span>
+      <span class="f active">용어 3</span>
+      <span class="f">알려주기</span>
+    </div>
+  <div class="section"><h2>용어 필터 (3건) — TermReviewCard</h2>
+  <article class="card term">
+    <div class="card-head"><span class="chip-term">용어</span> 용어사전에 넣을까요?</div>
+    <div class="card-body">
+      <div class="compare">
+        <div class="col old"><div class="lbl">이미 있는 뜻</div><div>아직 없는 용어예요</div></div>
+        <div class="col new"><div class="lbl">새로 들은 뜻</div><div>컨셉 확정 후 건축·인테리어·HW의 기본설계와 실시설계, 콘텐츠 프리프로덕션이 이루어지는 아폴론 고유 단계</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div>
+        <strong>마스터플랜</strong><div>컨셉 확정 후 건축·인테리어·HW의 기본설계와 실시설계, 콘텐츠 프리프로덕션이 이루어지는 아폴론 고유 단계</div>
+        <div class="hint">→ 용어사전에 새로 추가</div>
+      </div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article>
+  <article class="card term">
+    <div class="card-head"><span class="chip-term">용어</span> 용어사전에 넣을까요?</div>
+    <div class="card-body">
+      <div class="compare">
+        <div class="col old"><div class="lbl">이미 있는 뜻</div><div>아직 없는 용어예요</div></div>
+        <div class="col new"><div class="lbl">새로 들은 뜻</div><div>프로덕션 중간 버전을 실제 현장에 올려 테스트하며, 인사이트·고객 의견을 받아 다음 퀄리티로 디벨롭하는 것</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div>
+        <strong>On-site 테스트</strong><div>프로덕션 중간 버전을 실제 현장에 올려 테스트하며, 인사이트·고객 의견을 받아 다음 퀄리티로 디벨롭하는 것</div>
+        <div class="hint">→ 용어사전에 새로 추가</div>
+      </div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article>
+  <article class="card term">
+    <div class="card-head"><span class="chip-term">용어</span> 용어사전에 넣을까요?</div>
+    <div class="card-body">
+      <div class="compare">
+        <div class="col old"><div class="lbl">이미 있는 뜻</div><div>아폴론의 핵심 상품. 개별 콘텐츠가 아니라 공간을 대표·상징하고 고객 재방문을 유도하는 디지털 키테넌트를 뜻한다.</div></div>
+        <div class="col new"><div class="lbl">새로 들은 뜻</div><div>공간을 대표·상징하고 고객 재방문을 유도하는 디지털 키테넌트. 아폴론의 핵심 상품이다.</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div>
+        <strong>이머시브 앵커테넌트</strong><div>공간을 대표·상징하고 고객 재방문을 유도하는 디지털 키테넌트. 아폴론의 핵심 상품이다.</div>
+        <div class="hint">→ 기존 뜻을 이렇게 바꾸기</div>
+      </div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article></div>
+  <div class="section"><h2>지식 후보 (4건) — KnowledgeReviewCard</h2>
+  <article class="card know">
+    <div class="card-head"><span class="chip-know">지식</span> 이렇게 이해했어요</div>
+    <div class="card-body"><div class="compare">
+        <div class="col old"><div class="lbl">이미 아는 것</div><div>온라인 커머스와 OTT 확산으로 약화된 전통 키테넌트(백화점·영화관·F&amp;B)를 보완하기 위해 쇼핑몰은 경험형 테넌트(experience-driven tenancy)로 방문객이 머물 이유를 설계하고 체류 시간 연장과 동선 견인을 통해 가치를 창출하며, 대표적인 표준 레퍼런스로 코엑스 별마당도서관·더현대 사운드포레스트·싱가포르 주얼 창이 공항이 있다.</div></div>
+        <div class="col new"><div class="lbl">새로 들은 것</div><div>경험형 테넌트(experience-driven tenancy) 표준 레퍼런스: 코엑스 별마당도서관, 더현대 사운드포레스트, 싱가포르 주얼 창이 공항</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div><div>경험형 테넌트(experience-driven tenancy) 표준 레퍼런스: 코엑스 별마당도서관, 더현대 사운드포레스트, 싱가포르 주얼 창이 공항…</div></div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article>
+  <article class="card know">
+    <div class="card-head"><span class="chip-know">지식</span> 이렇게 이해했어요</div>
+    <div class="card-body"><div class="compare">
+        <div class="col old"><div class="lbl">이미 아는 것</div><div>미디어아키텍처 사업에서 아폴론은 시행사·건축주와 직접 계약해 건축설계사(삼우·희림·디에이 등)와 동등한 파트너로서 설계·디자인 주도권을 확보하는 것이 유리하며(예: 트렌디&amp;유스타운), 건축설계사와 계약하면 최종 고객사인 시행사와 직접 소통하지 못하고 설계사의 디자인 방향과 요구사항에 맞춰야 한다.</div></div>
+        <div class="col new"><div class="lbl">새로 들은 것</div><div>아폴론은 시행사·건축주와 직접 계약하는 편이 유리하며, 설계사와의 계약은 최종 고객사인 시행사와 직접 커뮤니케이션 못하고 설계사의 요구사항을 맞추어야 해서 어려움이 있다.</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div><div>아폴론은 시행사·건축주와 직접 계약하는 편이 유리하며, 설계사와의 계약은 최종 고객사인 시행사와 직접 커뮤니케이션 못하고 설계사의 요구사항을 맞추어야 해서 어려움이 있다.…</div></div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article>
+  <article class="card know">
+    <div class="card-head"><span class="chip-know">지식</span> 이렇게 이해했어요</div>
+    <div class="card-body"><div class="solo">인스파이어 리조트 오로라(Inspire Resort Aurora)는 APOLLON의 바이럴 마케팅 성공 사례 레퍼런스이자 SNS 인증샷 성지로 보도됨(출처: APOLLON Company Brief 2026.08.10)</div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div><div>인스파이어 리조트 오로라(Inspire Resort Aurora)는 APOLLON의 바이럴 마케팅 성공 사례 레퍼런스이자 SNS 인증샷 성지로 보도됨(출처: APOLLON Company Brief 2026.08.10…</div></div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article>
+  <article class="card know">
+    <div class="card-head"><span class="chip-know">지식</span> 이렇게 이해했어요</div>
+    <div class="card-body"><div class="compare">
+        <div class="col old"><div class="lbl">이미 아는 것</div><div>1%법 미디어 조형물 사업의 핵심 절차는 설치 가능성 검토→심의 대응→설치/납품→운영/사후관리이며, 심의가 관문 역할을 하고, APOLLON이 전 과정 대행 서비스를 제공한다.</div></div>
+        <div class="col new"><div class="lbl">새로 들은 것</div><div>옥외광고물(미디어 조형물) 납품 시 심의 승인 도서와 실제 설치물의 동일성을 준수하고 승인 기준을 이행해야 함</div></div>
+      </div>
+      <div class="proposal"><div class="lbl-luna">🌙 이렇게 하려고 해요</div><div>옥외광고물(미디어 조형물) 납품 시 심의 승인 도서와 실제 설치물의 동일성을 준수하고 승인 기준을 이행해야 함…</div></div>
+      <div class="actions"><button class="primary">맞아요</button><button>아니에요</button><span class="sp"></span><button class="ghost">나중에</button></div>
+    </div>
+  </article></div>
+</body></html>
