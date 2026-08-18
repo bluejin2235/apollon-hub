@@ -45,10 +45,29 @@ export type CandidateRow = {
   meta: Record<string, unknown> | null;
   review_reason: string | null;
   merge_target: string | null;
+  duplicate_of: string | null;
   raw_input: string | null;
   is_glossary: boolean;
   glossary_already_exists?: boolean;
   is_my_turn: boolean;
+  duplicate?: DuplicateCompare | null;
+  proposal?: ReviewProposal | null;
+};
+
+export type DuplicateCompare = {
+  id: string;
+  content: string;
+  created_at: string | null;
+  source: string | null;
+  version_count: number;
+  extra_count: number;
+  extras: { id: string; content: string }[];
+};
+
+export type ReviewProposal = {
+  kind: "rewrite" | "update" | "keep_both" | "conflict" | "identical" | "new";
+  sentence: string;
+  reason: string;
 };
 
 export async function getAccessToken(): Promise<string | null> {

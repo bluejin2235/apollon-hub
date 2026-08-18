@@ -28,9 +28,22 @@ import {
   understoodAsk,
   type ThreadTurn
 } from "@/lib/luna/candidates";
+import {
+  applyDuplicateDecision,
+  cachedProposal,
+  findDuplicateMatches,
+  loadActiveKnowledge,
+  type DuplicateDecision
+} from "@/lib/luna/knowledge-duplicate";
 export const runtime = "nodejs";
 
-type Action = "confirm" | "revise" | "reject" | "not_needed";
+type Action =
+  | "confirm"
+  | "revise"
+  | "reject"
+  | "not_needed"
+  | "later"
+  | DuplicateDecision;
 
 type GlossaryPatch = {
   term_ko?: string;
@@ -106,10 +119,18 @@ export async function POST(request: NextRequest) {
     actionRaw === "confirm" ||
     actionRaw === "revise" ||
     actionRaw === "reject" ||
-    actionRaw === "not_needed"
-      ? actionRaw
+    actionRaw === "not_needed" ||
+    actionRaw === "later" ||
+    actionRaw === "accept_proposal" ||
+    actionRaw === "keep_both" ||
+    actionRaw === "replace_with_new" ||
+    actionRaw === "discard_new" ||
+    actionRaw === "rewrite" ||
+    actionRaw === "accept_existing" ||
+    actionRaw === "accept_new"
+      ? (actionRaw as Action)
       : null;
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  let text = typeof body.text === "string" ? body.text.trim() : "";
   const glossaryPatch = normalizeGlossaryPatch(body.glossary);
 
   if (!id || !action) {
@@ -125,13 +146,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: current, error: loadError } = await admin
+  let { data: current, error: loadError } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, raw_input"
+      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, duplicate_of, raw_input, created_at, merged_from"
     )
     .eq("id", id)
     .maybeSingle();
+
+  if (loadError && /duplicate_of/i.test(loadError.message)) {
+    const retry = await admin
+      .from("luna_learnings")
+      .select(
+        "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, raw_input, created_at, merged_from"
+      )
+      .eq("id", id)
+      .maybeSingle();
+    current = retry.data
+      ? { ...retry.data, duplicate_of: null }
+      : retry.data;
+    loadError = retry.error;
+  }
 
   if (loadError) {
     console.error("[luna/candidates/respond] load", loadError);
@@ -150,12 +185,143 @@ export async function POST(request: NextRequest) {
     typeof current.review_reason === "string" ? current.review_reason : null;
   const mergeTarget =
     typeof current.merge_target === "string" ? current.merge_target.trim() : "";
+  const duplicateOf =
+    typeof (current as { duplicate_of?: string | null }).duplicate_of === "string"
+      ? String((current as { duplicate_of?: string | null }).duplicate_of).trim()
+      : "";
   const rawInput =
     typeof current.raw_input === "string" ? current.raw_input.trim() : "";
+  const createdAt =
+    typeof current.created_at === "string" ? current.created_at : null;
   const prevMeta =
     current.meta && typeof current.meta === "object" && !Array.isArray(current.meta)
       ? (current.meta as Record<string, unknown>)
       : {};
+
+  if (action === "later") {
+    const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await admin
+      .from("luna_learnings")
+      .update({ snoozed_until: until })
+      .eq("id", id)
+      .eq("status", "candidate");
+    if (error) {
+      console.error("[luna/candidates/respond] later", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, action: "later", snoozed_until: until });
+  }
+
+  const isDuplicateRow =
+    reviewReason === "duplicate" || Boolean(duplicateOf || mergeTarget);
+
+  if (
+    isDuplicateRow &&
+    (action === "accept_proposal" ||
+      action === "keep_both" ||
+      action === "replace_with_new" ||
+      action === "discard_new" ||
+      action === "rewrite" ||
+      action === "accept_existing" ||
+      action === "accept_new" ||
+      action === "confirm")
+  ) {
+    const actives = await loadActiveKnowledge(admin);
+    let matchId = duplicateOf || mergeTarget;
+    let existing = matchId
+      ? actives.find((a) => a.id === matchId) ?? null
+      : null;
+    if (!existing) {
+      existing = findDuplicateMatches(content, actives, id)[0] ?? null;
+      matchId = existing?.id ?? "";
+    }
+    if (!existing) {
+      return NextResponse.json(
+        { error: "겹치는 기존 지식을 찾지 못했습니다" },
+        { status: 404 }
+      );
+    }
+
+    let decision: DuplicateDecision;
+    let sentence = text;
+    if (action === "confirm" || action === "accept_proposal") {
+      const cached = cachedProposal(prevMeta, existing.content, content);
+      const kind = cached?.kind ?? "rewrite";
+      if (kind === "keep_both") decision = "keep_both";
+      else if (kind === "conflict") {
+        return NextResponse.json(
+          { error: "어느 쪽이 맞는지 골라 주세요" },
+          { status: 400 }
+        );
+      } else if (kind === "update") {
+        decision = "accept_proposal";
+        sentence = cached?.sentence || content;
+      } else {
+        decision = "accept_proposal";
+        sentence = cached?.sentence || rawInput || content;
+      }
+    } else if (action === "rewrite") {
+      decision = "rewrite";
+      if (!sentence) {
+        return NextResponse.json({ error: "고친 문장이 필요합니다" }, { status: 400 });
+      }
+    } else {
+      decision = action;
+    }
+
+    const applied = await applyDuplicateDecision(admin, {
+      candidate: {
+        id,
+        content,
+        created_at: createdAt,
+        status: "candidate",
+        meta: prevMeta,
+        merged_from: (current as { merged_from?: unknown }).merged_from
+      },
+      existing,
+      decision,
+      sentence,
+      userId: user.id
+    });
+    if (!applied.ok) {
+      return NextResponse.json({ error: applied.error }, { status: 500 });
+    }
+    return NextResponse.json({
+      id,
+      status: decision === "keep_both" ? "active" : "deleted",
+      merged_into: applied.keep_id,
+      keep_id: applied.keep_id
+    });
+  }
+
+  if (action === "discard_new") {
+    const { error } = await admin.from("luna_learnings").delete().eq("id", id);
+    if (error) {
+      console.error("[luna/candidates/respond] discard new", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ id, status: "deleted" });
+  }
+
+  if (action === "accept_proposal") {
+    const cachedNew = prevMeta.luna_new_review;
+    if (cachedNew && typeof cachedNew === "object" && !Array.isArray(cachedNew)) {
+      const s = (cachedNew as Record<string, unknown>).sentence;
+      if (typeof s === "string" && s.trim()) {
+        text = s.trim();
+      }
+    }
+  } else if (
+    action === "keep_both" ||
+    action === "replace_with_new" ||
+    action === "accept_existing" ||
+    action === "accept_new"
+  ) {
+    return NextResponse.json(
+      { error: "이 후보는 겹침이 아니라 그 처리를 할 수 없습니다" },
+      { status: 400 }
+    );
+  }
 
   if (action === "reject") {
     // 중복 후보 반려: 후보만 archived (본문 merge_target 은 그대로)
@@ -309,117 +475,6 @@ export async function POST(request: NextRequest) {
       status: data?.status ?? "candidate",
       content: data?.content,
       thread: normalizeThread(data?.thread)
-    });
-  }
-
-  // confirm — 정리 중복 후보: 본문에 병합 후 후보는 archived
-  if (reviewReason === "duplicate" && mergeTarget) {
-    const merged = (text || rawInput || content).trim();
-    if (!merged) {
-      return NextResponse.json(
-        { error: "duplicate candidate missing merge draft" },
-        { status: 400 }
-      );
-    }
-
-    const { data: keepRow, error: keepLoadError } = await admin
-      .from("luna_learnings")
-      .select("id, content, status")
-      .eq("id", mergeTarget)
-      .eq("status", "active")
-      .maybeSingle();
-
-    if (keepLoadError) {
-      console.error("[luna/candidates/respond] duplicate keep load", keepLoadError);
-      return NextResponse.json({ error: keepLoadError.message }, { status: 500 });
-    }
-    if (!keepRow) {
-      return NextResponse.json(
-        { error: "merge_target not found or not active" },
-        { status: 404 }
-      );
-    }
-
-    const { data: lastVer } = await admin
-      .from("luna_learning_versions")
-      .select("version")
-      .eq("learning_id", mergeTarget)
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const nextVersion =
-      typeof lastVer?.version === "number" && Number.isFinite(lastVer.version)
-        ? lastVer.version + 1
-        : 1;
-
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("name")
-      .eq("id", user.id)
-      .maybeSingle();
-    const editorName =
-      typeof profile?.name === "string" && profile.name.trim()
-        ? profile.name.trim()
-        : null;
-
-    const { error: verError } = await admin.from("luna_learning_versions").insert({
-      learning_id: mergeTarget,
-      version: nextVersion,
-      content: typeof keepRow.content === "string" ? keepRow.content : "",
-      status: "active",
-      change_note: "중복 병합",
-      edited_by: user.id,
-      editor_name: editorName
-    });
-    if (verError) {
-      console.error("[luna/candidates/respond] duplicate version", verError);
-      return NextResponse.json({ error: verError.message }, { status: 500 });
-    }
-
-    const nowIso = new Date().toISOString();
-    const { error: keepError } = await admin
-      .from("luna_learnings")
-      .update({
-        content: merged,
-        resolved_by: user.id,
-        resolved_at: nowIso
-      })
-      .eq("id", mergeTarget)
-      .eq("status", "active");
-
-    if (keepError) {
-      console.error("[luna/candidates/respond] duplicate keep update", keepError);
-      return NextResponse.json({ error: keepError.message }, { status: 500 });
-    }
-
-    const { data, error } = await admin
-      .from("luna_learnings")
-      .update({
-        status: "archived",
-        meta: { ...prevMeta, merged_into: mergeTarget },
-        resolved_by: user.id,
-        resolved_at: nowIso
-      })
-      .eq("id", id)
-      .eq("status", "candidate")
-      .select("id, status, content, thread, meta")
-      .maybeSingle();
-
-    if (error) {
-      console.error("[luna/candidates/respond] duplicate archive", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    if (!data) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      id: data.id,
-      status: data.status,
-      content: data.content,
-      thread: normalizeThread(data.thread),
-      meta: data.meta,
-      merged_into: mergeTarget
     });
   }
 

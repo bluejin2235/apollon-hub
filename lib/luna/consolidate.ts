@@ -563,17 +563,28 @@ export async function runConsolidation(
     let mergedCandidates = 0;
     for (const d of dupPlans) {
       for (const mid of d.merge_ids) {
-        const { error } = await admin
+        const patch: Record<string, unknown> = {
+          status: "candidate",
+          review_reason: "duplicate",
+          merge_target: d.keep_id,
+          duplicate_of: d.keep_id,
+          raw_input: d.merged_content,
+          origin: "direct"
+        };
+        let { error } = await admin
           .from("luna_learnings")
-          .update({
-            status: "candidate",
-            review_reason: "duplicate",
-            merge_target: d.keep_id,
-            raw_input: d.merged_content,
-            origin: "direct"
-          })
+          .update(patch)
           .eq("id", mid)
           .eq("status", "active");
+        if (error && /duplicate_of/i.test(error.message)) {
+          const rest = { ...patch };
+          delete rest.duplicate_of;
+          ({ error } = await admin
+            .from("luna_learnings")
+            .update(rest)
+            .eq("id", mid)
+            .eq("status", "active"));
+        }
         if (error) {
           throw new Error(error.message);
         }

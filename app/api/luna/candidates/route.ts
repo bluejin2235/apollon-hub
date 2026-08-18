@@ -9,6 +9,19 @@ import {
   type CandidateSource,
   type ThreadTurn
 } from "@/lib/luna/candidates";
+import {
+  cachedProposal,
+  dropIdenticalCandidate,
+  findDuplicateMatches,
+  isIdenticalKnowledge,
+  loadActiveKnowledge,
+  proposalMetaPatch,
+  proposeDuplicate,
+  proposeNewKnowledge,
+  trySetDuplicateOf,
+  type ActiveKnowledge,
+  type DuplicateProposal
+} from "@/lib/luna/knowledge-duplicate";
 
 export const runtime = "nodejs";
 
@@ -40,7 +53,24 @@ type LearningRow = {
   meta: Record<string, unknown> | null;
   review_reason: string | null;
   merge_target: string | null;
+  duplicate_of: string | null;
   raw_input: string | null;
+};
+
+export type DuplicateCompare = {
+  id: string;
+  content: string;
+  created_at: string | null;
+  source: string | null;
+  version_count: number;
+  extra_count: number;
+  extras: { id: string; content: string }[];
+};
+
+export type ReviewProposal = {
+  kind: DuplicateProposal["kind"] | "new";
+  sentence: string;
+  reason: string;
 };
 
 export type CandidateItem = Omit<LearningRow, "source"> & {
@@ -52,6 +82,8 @@ export type CandidateItem = Omit<LearningRow, "source"> & {
   is_glossary: boolean;
   glossary_already_exists: boolean;
   is_my_turn: boolean;
+  duplicate: DuplicateCompare | null;
+  proposal: ReviewProposal | null;
 };
 
 export type CandidateCounts = {
@@ -64,11 +96,25 @@ export type CandidateCounts = {
   glossary: number;
 };
 
+const SELECT_WITH_DUP =
+  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, duplicate_of, raw_input";
+const SELECT_NO_DUP =
+  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, raw_input";
+
 function isSnoozed(row: LearningRow): boolean {
   if (!row.snoozed_until) return false;
   const until = new Date(String(row.snoozed_until)).getTime();
   return Number.isFinite(until) && until > Date.now();
 }
+
+function asMeta(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
+type AdminClient = NonNullable<ReturnType<typeof getServiceSupabase>>;
 
 export async function GET(request: NextRequest) {
   const user = await getApiUser(request);
@@ -90,26 +136,79 @@ export async function GET(request: NextRequest) {
     filterRaw === "glossary"
       ? filterRaw
       : "all";
+  const proposeAll = request.nextUrl.searchParams.get("propose_all") === "1";
 
-  const { data, error } = await admin
+  const listed = await admin
     .from("luna_learnings")
-    .select(
-      "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, raw_input"
-    )
+    .select(SELECT_WITH_DUP)
     .eq("status", "candidate")
     .neq("category", "identity")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
 
-  if (error) {
-    console.error("[luna/candidates] list", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  let listedError = listed.error;
+  let listedData = listed.data as LearningRow[] | null;
+
+  if (listedError && /duplicate_of/i.test(listedError.message)) {
+    const fallback = await admin
+      .from("luna_learnings")
+      .select(SELECT_NO_DUP)
+      .eq("status", "candidate")
+      .neq("category", "identity")
+      .order("created_at", { ascending: true });
+    listedError = fallback.error;
+    listedData = ((fallback.data ?? []) as Omit<LearningRow, "duplicate_of">[]).map(
+      (r) => ({ ...r, duplicate_of: null })
+    );
   }
 
-  const allRows = (data ?? []) as LearningRow[];
+  if (listedError) {
+    console.error("[luna/candidates] list", listedError);
+    return NextResponse.json({ error: listedError.message }, { status: 500 });
+  }
+
+  const allRows = (listedData ?? []).map((r) => ({
+    ...r,
+    duplicate_of: r.duplicate_of ?? null
+  }));
   const rows = allRows.filter((r) => !isSnoozed(r));
 
+  const actives = await loadActiveKnowledge(admin);
+  const activeById = new Map(actives.map((a) => [a.id, a]));
+
+  const surviving: LearningRow[] = [];
+  for (const row of rows) {
+    const isGlossary = isGlossaryCandidate(row.meta, row.category);
+    if (isGlossary) {
+      surviving.push(row);
+      continue;
+    }
+
+    let matchId =
+      (typeof row.duplicate_of === "string" && row.duplicate_of) ||
+      (typeof row.merge_target === "string" && row.merge_target) ||
+      "";
+    if (!matchId || !activeById.has(matchId)) {
+      const matches = findDuplicateMatches(row.content, actives, row.id);
+      matchId = matches[0]?.id ?? "";
+    }
+    if (matchId) {
+      const existing = activeById.get(matchId);
+      if (existing && isIdenticalKnowledge(row.content, existing.content)) {
+        await dropIdenticalCandidate(admin, row.id);
+        continue;
+      }
+      if (row.duplicate_of !== matchId || row.review_reason !== "duplicate") {
+        await trySetDuplicateOf(admin, row.id, matchId);
+        row.duplicate_of = matchId;
+        row.merge_target = matchId;
+        row.review_reason = "duplicate";
+      }
+    }
+    surviving.push(row);
+  }
+
   const counts: CandidateCounts = {
-    all: rows.length,
+    all: surviving.length,
     chat: 0,
     selfstudy: 0,
     question: 0,
@@ -117,17 +216,24 @@ export async function GET(request: NextRequest) {
     interview: 0,
     glossary: 0
   };
-  for (const r of rows) {
+  let duplicateCount = 0;
+  let freshCount = 0;
+  for (const r of surviving) {
     const src = resolveCandidateSource(r.source, r.origin);
     if (src === "chat") counts.chat += 1;
     if (src === "selfstudy") counts.selfstudy += 1;
     if (src === "question") counts.question += 1;
     if (src === "direct") counts.direct += 1;
     if (src === "interview") counts.interview += 1;
-    if (isGlossaryCandidate(r.meta, r.category)) counts.glossary += 1;
+    const glossary = isGlossaryCandidate(r.meta, r.category);
+    if (glossary) counts.glossary += 1;
+    const isDup =
+      r.review_reason === "duplicate" || Boolean(r.duplicate_of || r.merge_target);
+    if (!glossary && isDup) duplicateCount += 1;
+    if (!glossary && !isDup) freshCount += 1;
   }
 
-  let filtered = rows;
+  let filtered = surviving;
   if (
     filter === "chat" ||
     filter === "selfstudy" ||
@@ -135,11 +241,11 @@ export async function GET(request: NextRequest) {
     filter === "direct" ||
     filter === "interview"
   ) {
-    filtered = rows.filter(
+    filtered = surviving.filter(
       (r) => resolveCandidateSource(r.source, r.origin) === filter
     );
   } else if (filter === "glossary") {
-    filtered = rows.filter((r) => isGlossaryCandidate(r.meta, r.category));
+    filtered = surviving.filter((r) => isGlossaryCandidate(r.meta, r.category));
   }
 
   const nameIds = Array.from(
@@ -182,9 +288,43 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const matchIds = Array.from(
+    new Set(
+      filtered
+        .map((r) => r.duplicate_of || r.merge_target)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+  const versionCount = new Map<string, number>();
+  if (matchIds.length > 0) {
+    const { data: versions } = await admin
+      .from("luna_learning_versions")
+      .select("learning_id")
+      .in("learning_id", matchIds);
+    for (const v of versions ?? []) {
+      const id = typeof v.learning_id === "string" ? v.learning_id : "";
+      if (!id) continue;
+      versionCount.set(id, (versionCount.get(id) ?? 0) + 1);
+    }
+  }
+
   const glossaryTerms = await loadActiveGlossaryTerms(admin);
 
-  const items: CandidateItem[] = filtered.map((r) => {
+  const proposeIndexes = new Set<number>();
+  if (proposeAll) {
+    filtered.forEach((r, i) => {
+      if (!isGlossaryCandidate(r.meta, r.category)) proposeIndexes.add(i);
+    });
+  } else {
+    const first = filtered.findIndex(
+      (r) => !isGlossaryCandidate(r.meta, r.category)
+    );
+    if (first >= 0) proposeIndexes.add(first);
+  }
+
+  const items: CandidateItem[] = [];
+  for (let i = 0; i < filtered.length; i += 1) {
+    const r = filtered[i]!;
     const source = resolveCandidateSource(r.source, r.origin);
     const thread = normalizeThread(r.thread);
     const isMyTurn =
@@ -198,7 +338,42 @@ export async function GET(request: NextRequest) {
       const draft = parseGlossaryMeta(r.meta, r.content);
       glossary_already_exists = hasAnyGlossaryOverlap(draft, glossaryTerms);
     }
-    return {
+
+    const matchId = r.duplicate_of || r.merge_target;
+    const existing = matchId ? activeById.get(matchId) ?? null : null;
+    let duplicate: DuplicateCompare | null = null;
+    if (existing) {
+      const extras = findDuplicateMatches(r.content, actives, r.id).filter(
+        (m) => m.id !== existing.id
+      );
+      duplicate = {
+        id: existing.id,
+        content: existing.content,
+        created_at: existing.created_at,
+        source: existing.source ?? null,
+        version_count: versionCount.get(existing.id) ?? 0,
+        extra_count: extras.length,
+        extras: extras.slice(0, 5).map((m) => ({
+          id: m.id,
+          content: m.content
+        }))
+      };
+    }
+
+    let proposal: ReviewProposal | null = null;
+    if (proposeIndexes.has(i) && !isGlossary) {
+      proposal = await buildProposal(admin, r, existing);
+      if (proposal?.kind === "identical") {
+        continue;
+      }
+    } else if (existing) {
+      const cached = cachedProposal(r.meta, existing.content, r.content);
+      if (cached && cached.kind !== "identical") {
+        proposal = cached;
+      }
+    }
+
+    items.push({
       ...r,
       source,
       source_title: r.source_id
@@ -209,22 +384,88 @@ export async function GET(request: NextRequest) {
       glossary_already_exists,
       is_my_turn: isMyTurn,
       author_name: r.author_id ? nameMap.get(r.author_id) ?? null : null,
-      assigned_name: r.assigned_to ? nameMap.get(r.assigned_to) ?? null : null
-    };
-  });
+      assigned_name: r.assigned_to ? nameMap.get(r.assigned_to) ?? null : null,
+      duplicate,
+      proposal
+    });
+  }
 
-  const myTurnCount = rows.filter(
+  const myTurnCount = surviving.filter(
     (r) =>
       resolveCandidateSource(r.source, r.origin) === "question" &&
-      r.assigned_to === user.id &&
-      !isSnoozed(r)
+      r.assigned_to === user.id
   ).length;
 
   return NextResponse.json({
     items,
     count: items.length,
     counts,
+    queue: {
+      total: surviving.length,
+      duplicate: duplicateCount,
+      fresh: freshCount
+    },
     my_turn_count: myTurnCount,
     current_user_id: user.id
   });
+}
+
+async function buildProposal(
+  admin: AdminClient,
+  row: LearningRow,
+  existing: ActiveKnowledge | null
+): Promise<ReviewProposal | null> {
+  const meta = asMeta(row.meta);
+
+  if (existing) {
+    const cached = cachedProposal(meta, existing.content, row.content);
+    if (cached && cached.kind !== "identical") return cached;
+    const proposal = await proposeDuplicate(admin, {
+      existing: existing.content,
+      incoming: row.content,
+      mergeDraft: row.raw_input
+    });
+    if (proposal.kind === "identical") {
+      await dropIdenticalCandidate(admin, row.id);
+      return proposal;
+    }
+    const nextMeta = proposalMetaPatch(meta, existing.content, row.content, proposal);
+    await admin
+      .from("luna_learnings")
+      .update({ meta: nextMeta })
+      .eq("id", row.id);
+    return proposal;
+  }
+
+  const cachedNew = meta.luna_new_review;
+  if (cachedNew && typeof cachedNew === "object" && !Array.isArray(cachedNew)) {
+    const obj = cachedNew as Record<string, unknown>;
+    if (
+      typeof obj.sentence === "string" &&
+      obj.incoming_norm === row.content.replace(/\s+/g, " ").trim().toLowerCase()
+    ) {
+      return {
+        kind: "new",
+        sentence: obj.sentence,
+        reason: typeof obj.reason === "string" ? obj.reason : ""
+      };
+    }
+  }
+
+  const fresh = await proposeNewKnowledge(admin, row.content);
+  await admin
+    .from("luna_learnings")
+    .update({
+      meta: {
+        ...meta,
+        luna_new_review: {
+          sentence: fresh.sentence,
+          reason: fresh.reason,
+          incoming_norm: row.content.replace(/\s+/g, " ").trim().toLowerCase(),
+          at: new Date().toISOString()
+        }
+      }
+    })
+    .eq("id", row.id);
+  return { kind: "new", ...fresh };
 }

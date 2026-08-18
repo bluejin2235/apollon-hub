@@ -232,8 +232,23 @@ export async function createCandidate(
     return null;
   }
 
+  const createdId = data.id as string;
+  try {
+    const { attachCandidateDuplicate } = await import(
+      "@/lib/luna/knowledge-duplicate"
+    );
+    await attachCandidateDuplicate(admin, {
+      id: createdId,
+      content: data.content as string,
+      category,
+      meta: baseMeta
+    });
+  } catch (err) {
+    console.error("[luna/candidates] attach duplicate", err);
+  }
+
   return {
-    id: data.id as string,
+    id: createdId,
     content: data.content as string,
     thread: normalizeThread(data.thread)
   };

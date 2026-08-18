@@ -24,6 +24,10 @@ import {
   type CandidateRow
 } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
+import {
+  KnowledgeReviewCard,
+  type KnowledgeReviewAction
+} from "@/components/luna/candidates/KnowledgeReviewCard";
 import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
 import type { GlossaryFieldValues } from "@/lib/glossary/types";
 import {
@@ -44,6 +48,12 @@ type Counts = {
   direct: number;
   interview: number;
   glossary: number;
+};
+
+type QueueCounts = {
+  total: number;
+  duplicate: number;
+  fresh: number;
 };
 
 const FILTERS: { key: PendingFilter; label: string; countKey: keyof Counts }[] = [
@@ -78,6 +88,7 @@ export function LunaCandidatesPending() {
   const [filter, setFilter] = useState<PendingFilter>("all");
   const [items, setItems] = useState<CandidateRow[]>([]);
   const [counts, setCounts] = useState<Counts | null>(null);
+  const [queue, setQueue] = useState<QueueCounts | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reviseOpen, setReviseOpen] = useState<Record<string, string>>({});
@@ -111,9 +122,11 @@ export function LunaCandidatesPending() {
       const json = (await res.json()) as {
         items?: CandidateRow[];
         counts?: Counts;
+        queue?: QueueCounts;
       };
       setItems(json.items ?? []);
       setCounts(json.counts ?? null);
+      setQueue(json.queue ?? null);
     } catch {
       setError("네트워크 오류");
     } finally {
@@ -273,6 +286,60 @@ export function LunaCandidatesPending() {
     }
   }
 
+  async function reviewAction(
+    id: string,
+    action: KnowledgeReviewAction,
+    text?: string
+  ) {
+    const token = await getAccessToken();
+    if (!token) {
+      setCardErrors((prev) => ({ ...prev, [id]: "로그인이 필요합니다" }));
+      return;
+    }
+    setBusyId(id);
+    setMessage("");
+    setCardErrors((prev) => ({ ...prev, [id]: "" }));
+    try {
+      const res = await fetch("/api/luna/candidates/respond", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ id, action, text })
+      });
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+        merged_into?: string;
+        keep_id?: string;
+        status?: string;
+      } | null;
+      if (!res.ok) {
+        setCardErrors((prev) => ({
+          ...prev,
+          [id]: json?.error ?? `처리 실패 (${res.status})`
+        }));
+        return;
+      }
+      if (action === "later") {
+        setMessage("나중에 다시 볼게요");
+      } else if (action === "keep_both") {
+        setMessage("둘 다 남겼어요");
+      } else if (action === "discard_new" || action === "accept_existing") {
+        setMessage("새 후보를 지웠어요");
+      } else if (json?.keep_id || json?.merged_into) {
+        setMessage("오래된 지식에 기록을 남기고 후보를 지웠어요");
+      } else {
+        setMessage("기억을 확정했습니다");
+      }
+      void load(filter);
+    } catch {
+      setCardErrors((prev) => ({ ...prev, [id]: "네트워크 오류" }));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function resolveGlossaryDup(args: {
     action: "merge" | "replace" | "keep" | "register";
     merged: GlossaryFieldValues;
@@ -375,6 +442,11 @@ export function LunaCandidatesPending() {
   return (
     <KnowledgeShell>
       {error ? <ErrorLine message={error} /> : null}
+      <div className="mb-1 text-[16px] font-extrabold">지식후보</div>
+      <p className="mb-3.5 text-[11.5px]" style={{ color: K.sub }}>
+        확인이 필요한 {queue?.total ?? items.length}건
+        {queue ? ` · 중복 ${queue.duplicate} · 새 지식 ${queue.fresh}` : ""}
+      </p>
       {message ? (
         <p className="mb-2 text-[12px]" style={{ color: K.sub }}>
           {message}
@@ -398,7 +470,8 @@ export function LunaCandidatesPending() {
           대기 중인 후보가 없습니다
         </p>
       ) : (
-        items.map((item) => {
+        (() => {
+          const item = items[0]!;
           const kind = getCandidateCardKind({
             source: item.source,
             category: item.category,
@@ -420,10 +493,29 @@ export function LunaCandidatesPending() {
             meta: item.meta
           });
 
-          const isDuplicate = item.review_reason === "duplicate";
+          const isDuplicate = item.review_reason === "duplicate" || Boolean(item.duplicate);
           const reviseDraft = reviseOpen[item.id];
           const editingGlossary = glossaryEdit[item.id];
           const cardError = cardErrors[item.id];
+
+          if (
+            kind !== "glossary" &&
+            kind !== "selfstudy" &&
+            !(kind === "dialogue" && item.thread.length > 0)
+          ) {
+            return (
+              <KnowledgeReviewCard
+                item={item}
+                index={0}
+                total={items.length}
+                busy={busy}
+                error={cardError}
+                onAction={(action, text) =>
+                  void reviewAction(item.id, action, text)
+                }
+              />
+            );
+          }
           const openRevise = () => {
             const initial = isDuplicate
               ? (item.raw_input?.trim() || item.content)
@@ -767,7 +859,7 @@ export function LunaCandidatesPending() {
               ) : null}
             </CandidateCardShell>
           );
-        })
+        })()
       )}
 
       <GlossaryDuplicateDialog

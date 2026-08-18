@@ -7,6 +7,22 @@ export function formatKnowledgeDate(iso: string | null | undefined): string {
   ).padStart(2, "0")}`;
 }
 
+export function formatKoreanDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(d, now)) return "오늘";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return "어제";
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
 export function formatShortDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
