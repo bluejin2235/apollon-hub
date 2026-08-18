@@ -284,7 +284,7 @@ export function LunaTeachTab() {
       // confirm / reject / not_needed → 목록에서 제거
       setCandidates((prev) => prev.filter((c) => c.id !== id));
       if (action === "confirm") {
-        setMessage("기억으로 확정했어요");
+        setMessage("기억을 확정했습니다");
         await loadTeach(token);
       }
     } finally {

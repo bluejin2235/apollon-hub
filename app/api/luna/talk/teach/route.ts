@@ -3,9 +3,9 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import {
   createCandidate,
-  firstTurnFallback,
   makeTurn,
-  runDialogueTurn
+  runDialogueTurn,
+  understoodAsk
 } from "@/lib/luna/candidates";
 
 export const runtime = "nodejs";
@@ -92,12 +92,13 @@ export async function POST(request: NextRequest) {
     .join("\n")
     .slice(0, 500);
 
-  const lunaFirst =
+  const lunaFirst = understoodAsk(
     (await runDialogueTurn(admin, {
       mode: "first",
       content: draft,
       evidence
-    })) || firstTurnFallback(draft);
+    })) || draft
+  );
 
   const created = await createCandidate(admin, {
     content: draft,

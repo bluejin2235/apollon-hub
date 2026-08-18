@@ -258,11 +258,11 @@ export function LunaCandidatesPending() {
         if (json.merged_into) {
           setMessage("중복 후보를 본문에 병합했어요");
         } else if (json.glossary_registered) {
-          setMessage("용어사전에 등록했어요");
+          setMessage("용어사전에 등록했습니다");
         } else if (json.glossary_notice) {
-          setMessage(`기억으로 확정했어요 (${json.glossary_notice})`);
+          setMessage(`기억을 확정했습니다 (${json.glossary_notice})`);
         } else {
-          setMessage("기억으로 확정했어요");
+          setMessage("기억을 확정했습니다");
         }
       }
       void load(filter);

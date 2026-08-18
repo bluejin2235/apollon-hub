@@ -49,12 +49,13 @@ export type CreateCandidateInput = {
 
 const DIALOGUE_FALLBACK = `후보함에서 사람과 대화할 때의 원칙:
 
-1. 내 이해를 한 문장으로 요약해 되묻는다: "~라고 이해했는데 맞아요?"
+1. 내 이해를 재진술하고 확정을 부탁한다. '확정했어요'라고 말하지 않는다.
 2. 사람이 고쳐주면 고친 내용을 반영해 다시 한 문장으로 정리하고 재확인한다.
 3. 3번 안에 수렴하지 못하면: "제가 계속 못 알아듣네요.
    직접 한 문장으로 써 주시겠어요?" 로 전환한다.
-4. 확정되면 감사를 짧게. 확정된 문장이 그대로 기억이 되므로,
-   최종 문장은 나중에 검색으로 찾기 쉬운 형태(용어 포함)로 다듬는다.
+4. 사람이 확정 버튼을 누르기 전에는 절대 '확정했어요', '등록했어요', '저장했어요'라고 말하지 않는다.
+   후보다. 이해한 내용을 재진술하고 확정을 부탁한다.
+5. 원문을 글자 그대로 복사하지 않는다. 핵심만 재진술한다.
 
 사람의 시간은 비싸다. 문답은 짧게, 한 번에 하나만.`;
 
@@ -142,6 +143,33 @@ export function makeTurn(
     text: text.trim(),
     at: at ?? new Date().toISOString()
   };
+}
+
+const CONFIRM_CLAIM_RE =
+  /^(확정했어요|등록했어요|저장했어요|기억으로 확정했어요)\s*[:：]?\s*/;
+
+/** 루나가 확정·등록했다고 단정하는 접두어를 떼고 본문만 남긴다. */
+export function stripConfirmClaim(text: string): string {
+  return text.trim().replace(CONFIRM_CLAIM_RE, "").trim();
+}
+
+/**
+ * 후보 문답용. 확정은 사람이 한다.
+ * LLM 실패 시에만 쓰며, 원문 복사를 최소화하려고 초안을 그대로 인용한다.
+ */
+export function understoodAsk(content: string): string {
+  const body = stripConfirmClaim(content);
+  if (
+    /이해했어요|이해했는데/.test(body) &&
+    /맞으면 확정|맞아요\?|맞나요/.test(body)
+  ) {
+    return body;
+  }
+  return `이렇게 이해했어요: ${body}\n맞으면 확정해 주세요.`;
+}
+
+export function firstTurnFallback(content: string): string {
+  return understoodAsk(content);
 }
 
 function originForSource(source: CandidateSource): "auto" | "direct" {
@@ -265,14 +293,14 @@ export async function runDialogueTurn(
 
   let instruction = "";
   if (opts.mode === "first") {
-    instruction = `사람이 알려준/포착한 지식을 한 문장으로 이해하고 되묻으세요.
-JSON만: { "text": "이렇게 이해했어요: … 맞아요?" }`;
+    instruction = `사람이 알려준/포착한 지식을 재진술하고 확정을 부탁하세요. 원문을 그대로 복사하지 마세요. '확정했어요'라고 말하지 마세요.
+JSON만: { "text": "이렇게 이해했어요: …\\n맞으면 확정해 주세요." }`;
   } else if (opts.mode === "revise") {
-    instruction = `사람의 수정을 반영해 이해를 한 문장으로 다시 정리하고 재확인하세요.
-JSON만: { "text": "…라고 이해했는데 맞아요?" }`;
+    instruction = `사람의 수정을 반영해 재진술하고 재확인하세요. 원문 복사 금지. '확정했어요'라고 말하지 마세요.
+JSON만: { "text": "이렇게 이해했어요: …\\n맞으면 확정해 주세요." }`;
   } else {
-    instruction = `확정할 최종 지식 문장을 검색하기 쉬운 형태(용어 포함)로 다듬으세요.
-JSON만: { "text": "확정 지식 한 문장" }`;
+    instruction = `지식을 검색하기 쉬운 한 문장으로 재진술하세요. 원문 복사 금지. '확정했어요'나 '등록했어요'라고 말하지 마세요. 확인 요청 문구는 넣지 마세요.
+JSON만: { "text": "재진술한 지식 한 문장" }`;
   }
 
   const userPayload = [
@@ -297,16 +325,12 @@ JSON만: { "text": "확정 지식 한 문장" }`;
     const parsed = parseJsonObject(raw);
     const text =
       typeof parsed?.text === "string" ? parsed.text.trim() : "";
-    if (text) return text;
+    if (text) return stripConfirmClaim(text);
     // JSON 실패 시 모델이 문장만 준 경우
-    if (raw && !raw.includes("{")) return raw.slice(0, 500);
+    if (raw && !raw.includes("{")) return stripConfirmClaim(raw.slice(0, 500));
     return null;
   } catch (err) {
     console.error("[luna/candidates] dialogue", err);
     return null;
   }
-}
-
-export function firstTurnFallback(content: string): string {
-  return `이렇게 이해했어요: ${content.trim()} 맞아요?`;
 }

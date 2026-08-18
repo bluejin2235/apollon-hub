@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   createCandidate,
-  firstTurnFallback,
   makeTurn,
-  runDialogueTurn
+  runDialogueTurn,
+  understoodAsk
 } from "@/lib/luna/candidates";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompt } from "@/lib/luna/prompts";
@@ -374,12 +374,13 @@ export async function POST(request: NextRequest) {
   }
 
   const insertContent = content || text;
-  const lunaFirst =
+  const lunaFirst = understoodAsk(
     (await runDialogueTurn(admin, {
       mode: "first",
       content: insertContent,
       evidence: text
-    })) || firstTurnFallback(insertContent);
+    })) || insertContent
+  );
 
   const created = await createCandidate(admin, {
     content: insertContent,

@@ -24,6 +24,8 @@ import {
   makeTurn,
   normalizeThread,
   runDialogueTurn,
+  stripConfirmClaim,
+  understoodAsk,
   type ThreadTurn
 } from "@/lib/luna/candidates";
 export const runtime = "nodejs";
@@ -274,14 +276,15 @@ export async function POST(request: NextRequest) {
     }
 
     const nextThread: ThreadTurn[] = [...thread, makeTurn("human", text)];
-    const lunaText =
+    const lunaText = understoodAsk(
       (await runDialogueTurn(admin, {
         mode: "revise",
         content,
         thread: nextThread,
         humanText: text,
         evidence
-      })) || `고친 내용으로 이렇게 이해했어요: ${text} 맞아요?`;
+      })) || text
+    );
     nextThread.push(makeTurn("luna", lunaText));
 
     // 사람 수정문을 초안에 반영 (확정 전 작업본)
@@ -471,21 +474,26 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 용어형·직접 수정본은 AI 윤문 없이 확정. 맞아요만 윤문 허용.
+  // 용어형·직접 수정본도 원문 복사 없이 재진술. 맞아요만 윤문 허용이 아니라 LLM 우선.
   const polished = isGlossary
-    ? (
-        (typeof meta.definition === "string" && meta.definition.trim()) ||
-        text ||
-        workingContent
-      ).trim()
-    : text
-      ? text
-      : (await runDialogueTurn(admin, {
+    ? stripConfirmClaim(
+        (
+          (typeof meta.definition === "string" && meta.definition.trim()) ||
+          text ||
+          workingContent
+        ).trim()
+      )
+    : stripConfirmClaim(
+        (await runDialogueTurn(admin, {
           mode: "confirm",
           content: workingContent,
-          thread,
+          thread: text ? [...thread, makeTurn("human", text)] : thread,
+          humanText: text || undefined,
           evidence
-        })) || workingContent.trim();
+        })) ||
+          text ||
+          workingContent.trim()
+      );
 
   let finalThread = thread;
   if (text) {
@@ -493,12 +501,7 @@ export async function POST(request: NextRequest) {
   }
   finalThread = [
     ...finalThread,
-    makeTurn(
-      "luna",
-      isGlossary
-        ? `용어사전에 등록했어요: ${polished}`
-        : `확정했어요: ${polished}`
-    )
+    makeTurn("luna", understoodAsk(polished))
   ];
 
   const confirmPatch: Record<string, unknown> = {

@@ -4,6 +4,8 @@ import {
   makeTurn,
   normalizeThread,
   runDialogueTurn,
+  stripConfirmClaim,
+  understoodAsk,
   type ThreadTurn
 } from "@/lib/luna/candidates";
 
@@ -113,16 +115,17 @@ export async function POST(request: NextRequest) {
   const nextThread: ThreadTurn[] = [...thread, makeTurn("human", humanText)];
 
   if (action === "yes") {
-    const polished =
+    const polished = stripConfirmClaim(
       (await runDialogueTurn(admin, {
         mode: "confirm",
         content,
         thread: nextThread,
         humanText,
         evidence
-      })) || content.trim();
+      })) || content.trim()
+    );
 
-    nextThread.push(makeTurn("luna", `확정했어요: ${polished}`));
+    nextThread.push(makeTurn("luna", understoodAsk(polished)));
 
     const { error } = await admin
       .from("luna_learnings")
@@ -149,22 +152,23 @@ export async function POST(request: NextRequest) {
       action: "yes",
       status: "active",
       content: polished,
-      message: "고마워요, 배웠어요!"
+      message: "고마워요. 기억으로 넣었습니다."
     });
   }
 
   // answer / no → 문답 계속 (후보함에서 이어감)
-  const lunaText =
+  const rawLuna =
     (await runDialogueTurn(admin, {
       mode: "revise",
       content,
       thread: nextThread,
       humanText,
       evidence
-    })) ||
-    (action === "no"
-      ? "알겠어요. 어떻게 고치면 좋을까요?"
-      : `이렇게 이해했어요: ${humanText} 맞아요?`);
+    })) || null;
+  const lunaText =
+    action === "no"
+      ? rawLuna || "알겠어요. 어떻게 고치면 좋을까요?"
+      : understoodAsk(rawLuna || humanText);
 
   nextThread.push(makeTurn("luna", lunaText));
 
@@ -191,6 +195,6 @@ export async function POST(request: NextRequest) {
     status: "candidate",
     content: nextContent,
     thread: nextThread,
-    message: "고마워요, 배웠어요!"
+    message: "반영했어요. 맞으면 확정해 주세요."
   });
 }

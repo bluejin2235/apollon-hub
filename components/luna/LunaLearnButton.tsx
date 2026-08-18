@@ -91,7 +91,9 @@ export function LunaLearnButton() {
   const [candidateCount, setCandidateCount] = useState(0);
   const [userName, setUserName] = useState("님");
   const [questionAnswerDraft, setQuestionAnswerDraft] = useState("");
-  const [thanksMessage, setThanksMessage] = useState("고마워요, 배웠어요!");
+  const [thanksMessage, setThanksMessage] = useState(
+    "후보함에 넣었어요. 맞으면 확정해 주세요."
+  );
   const panelRef = useRef<HTMLDivElement>(null);
   const fabWrapRef = useRef<HTMLDivElement>(null);
 
@@ -300,7 +302,9 @@ export function LunaLearnButton() {
         void loadPending();
         return;
       }
-      setThanksMessage(data.message?.trim() || "고마워요, 배웠어요!");
+      setThanksMessage(
+        data.message?.trim() || "후보함에 넣었어요. 맞으면 확정해 주세요."
+      );
       setPendingQuestion(null);
       setPhase("question_thanks");
       void loadPending();

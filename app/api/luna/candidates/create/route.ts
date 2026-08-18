@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   createCandidate,
-  firstTurnFallback,
   makeTurn,
   normalizeThread,
   runDialogueTurn,
+  understoodAsk,
   type CandidateSource,
   type ScopeSuggestion
 } from "@/lib/luna/candidates";
@@ -75,12 +75,13 @@ export async function POST(request: NextRequest) {
 
   let thread = normalizeThread([]);
   if (withFirstTurn) {
-    const lunaText =
+    const lunaText = understoodAsk(
       (await runDialogueTurn(admin, {
         mode: "first",
         content,
         evidence: body.evidence
-      })) || firstTurnFallback(content);
+      })) || content
+    );
     thread = [makeTurn("luna", lunaText)];
   }
 
