@@ -436,6 +436,10 @@ export function LunaInput({
         </div>
       </div>
 
+      <p className="mt-2 text-center text-[11px] leading-snug text-[#9AA0A8]">
+        루나는 아직 배우는 중이라 틀릴 수 있어요. 중요한 내용은 확인해 주세요.
+      </p>
+
       {attachments.length > 0 || uploading ? (
         <div className="mt-1.5 flex flex-wrap gap-1 px-1">
           {attachments.map((att) => (
