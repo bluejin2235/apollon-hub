@@ -17,18 +17,16 @@ import {
 import { GlossaryTermPopup } from "@/components/glossary/GlossaryTermPopup";
 import { supabase } from "@/lib/supabase/client";
 
-type GlossaryHighlightContextValue = {
+type GlossaryHighlightData = {
   termsById: Map<string, GlossaryHighlightTerm>;
   needles: HighlightNeedle[];
-  activeTermId: string | null;
   openTerm: (termId: string, anchor: HTMLElement) => void;
   closeTerm: () => void;
   patchTerm: (term: GlossaryHighlightTerm) => void;
 };
 
-const GlossaryHighlightContext = createContext<GlossaryHighlightContextValue | null>(
-  null
-);
+const GlossaryHighlightDataContext = createContext<GlossaryHighlightData | null>(null);
+const GlossaryHighlightActiveContext = createContext<string | null>(null);
 
 async function accessToken(): Promise<string | null> {
   const {
@@ -96,32 +94,44 @@ export function GlossaryHighlightProvider({ children }: { children: ReactNode })
     });
   }, []);
 
-  const value = useMemo(
+  const data = useMemo(
     () => ({
       termsById,
       needles,
-      activeTermId,
       openTerm,
       closeTerm,
       patchTerm
     }),
-    [termsById, needles, activeTermId, openTerm, closeTerm, patchTerm]
+    [termsById, needles, openTerm, closeTerm, patchTerm]
   );
 
   return (
-    <GlossaryHighlightContext.Provider value={value}>
-      {children}
-      <GlossaryTermPopup
-        termId={activeTermId}
-        term={activeTermId ? termsById.get(activeTermId) ?? null : null}
-        anchor={anchor}
-        onClose={closeTerm}
-        onSaved={patchTerm}
-      />
-    </GlossaryHighlightContext.Provider>
+    <GlossaryHighlightDataContext.Provider value={data}>
+      <GlossaryHighlightActiveContext.Provider value={activeTermId}>
+        {children}
+        <GlossaryTermPopup
+          termId={activeTermId}
+          term={activeTermId ? termsById.get(activeTermId) ?? null : null}
+          anchor={anchor}
+          onClose={closeTerm}
+          onSaved={patchTerm}
+        />
+      </GlossaryHighlightActiveContext.Provider>
+    </GlossaryHighlightDataContext.Provider>
   );
 }
 
+export function useGlossaryHighlightData() {
+  return useContext(GlossaryHighlightDataContext);
+}
+
+export function useGlossaryHighlightActive() {
+  return useContext(GlossaryHighlightActiveContext);
+}
+
 export function useGlossaryHighlight() {
-  return useContext(GlossaryHighlightContext);
+  const data = useGlossaryHighlightData();
+  const activeTermId = useGlossaryHighlightActive();
+  if (!data) return null;
+  return { ...data, activeTermId };
 }

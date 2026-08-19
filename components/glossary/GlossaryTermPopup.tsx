@@ -38,7 +38,7 @@ async function token(): Promise<string | null> {
 export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Props) {
   const popRef = useRef<HTMLDivElement>(null);
   const openedFor = useRef<string | null>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,6 +52,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
       setDraft("");
       setError("");
       setEditorName(null);
+      setPos(null);
       return;
     }
     if (openedFor.current === termId) return;
@@ -91,22 +92,41 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
   }, [termId, onSaved]);
 
   useLayoutEffect(() => {
-    if (!anchor || !popRef.current) return;
-    const r = anchor.getBoundingClientRect();
-    const pop = popRef.current.getBoundingClientRect();
-    const margin = 8;
-    let left = r.left;
-    let top = r.bottom + 9;
-    if (left + pop.width > window.innerWidth - margin) {
-      left = window.innerWidth - pop.width - margin;
+    if (!anchor || !popRef.current || !termId) return;
+
+    function place() {
+      const el = popRef.current;
+      if (!anchor || !el) return;
+      if (!anchor.isConnected) {
+        onClose();
+        return;
+      }
+      const r = anchor.getBoundingClientRect();
+      const pop = el.getBoundingClientRect();
+      const margin = 8;
+      const gap = 9;
+      let left = r.left;
+      let top = r.bottom + gap;
+      if (left + pop.width > window.innerWidth - margin) {
+        left = window.innerWidth - pop.width - margin;
+      }
+      if (left < margin) left = margin;
+      const overflowBottom = top + pop.height > window.innerHeight - margin;
+      if (overflowBottom) {
+        top = r.top - pop.height - gap;
+      }
+      if (top < margin) top = margin;
+      setPos({ top, left });
     }
-    if (left < margin) left = margin;
-    if (top + pop.height > window.innerHeight - margin) {
-      top = r.top - pop.height - 9;
-    }
-    if (top < margin) top = margin;
-    setPos({ top, left });
-  }, [anchor, termId, editing, term?.definition]);
+
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [anchor, termId, editing, term?.definition, onClose]);
 
   useEffect(() => {
     if (!termId) return;
@@ -193,7 +213,11 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
       role="dialog"
       aria-label={`${title} 뜻`}
       className="fixed z-[80] w-[290px] rounded-xl border border-[#e7e8ec] bg-white px-4 py-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.09)]"
-      style={{ top: pos.top, left: pos.left }}
+      style={{
+        top: pos?.top ?? 0,
+        left: pos?.left ?? 0,
+        visibility: pos ? "visible" : "hidden"
+      }}
     >
       <div className="mb-2 flex items-center gap-2">
         <span className="text-[15px] font-extrabold text-[#1c1d21]">{title}</span>

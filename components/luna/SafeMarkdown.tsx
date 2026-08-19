@@ -184,11 +184,19 @@ export function SafeMarkdown({
     </div>
   );
   if (!highlightTerms) return markdown;
-  return <SafeMarkdownHighlightRoot>{markdown}</SafeMarkdownHighlightRoot>;
+  return (
+    <SafeMarkdownHighlightRoot resetKey={text}>{markdown}</SafeMarkdownHighlightRoot>
+  );
 }
 
-function SafeMarkdownHighlightRoot({ children }: { children: ReactNode }) {
+function SafeMarkdownHighlightRoot({
+  resetKey,
+  children
+}: {
+  resetKey: string;
+  children: ReactNode;
+}) {
   const outer = useHighlightUsed();
   if (outer) return <>{children}</>;
-  return <HighlightScope>{children}</HighlightScope>;
+  return <HighlightScope resetKey={resetKey}>{children}</HighlightScope>;
 }

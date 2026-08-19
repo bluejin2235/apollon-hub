@@ -127,5 +127,5 @@ export function LunaMarkdown({
   );
 
   if (!allowTerms) return inner;
-  return <HighlightScope>{inner}</HighlightScope>;
+  return <HighlightScope resetKey={content}>{inner}</HighlightScope>;
 }
