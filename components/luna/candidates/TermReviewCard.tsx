@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
 import type { CandidateRow } from "@/components/luna/candidates/shared";
 import { Btn } from "@/components/luna/knowledge/ui";
 import { parseGlossaryMeta } from "@/lib/luna/candidate-format";
@@ -9,21 +10,57 @@ const OLD = { ink: "#8A6D2F", bg: "#FAF7EE" };
 const NEW = { ink: "#0F6E56", bg: "#EAF7F2" };
 const LOCK = { ink: "#8A6D2F", bg: "#FAF3E2" };
 
+function AutoGrowTextarea({
+  value,
+  onChange,
+  disabled
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={2}
+      disabled={disabled}
+      className="w-full rounded-[9px] border px-2.5 py-2 text-[13px] leading-[1.8]"
+      style={{
+        borderColor: K.luna,
+        background: "#FCFCFD",
+        overflow: "hidden",
+        resize: "none"
+      }}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 export function TermReviewCard({
   item,
   busy,
   error,
   onAccept,
-  onReject,
-  onLater
+  onRegister,
+  onDelete
 }: {
   item: CandidateRow;
   busy: boolean;
   error?: string;
   onAccept: () => void;
-  onReject: () => void;
-  onLater: () => void;
+  onRegister: (definition: string) => void;
+  onDelete: () => void;
 }) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [editText, setEditText] = useState("");
   const draft = parseGlossaryMeta(item.meta, item.content);
   const match = item.glossary_match ?? null;
   const askedTerm =
@@ -156,7 +193,15 @@ export function TermReviewCard({
             🌙 이렇게 하려고 해요
           </div>
           <div className="text-[13px] font-semibold leading-[1.8]">{termName}</div>
-          <div className="text-[13px] leading-[1.8]">{definition}</div>
+          {editOpen ? (
+            <AutoGrowTextarea
+              value={editText}
+              onChange={setEditText}
+              disabled={busy}
+            />
+          ) : (
+            <div className="text-[13px] leading-[1.8]">{definition}</div>
+          )}
           <p className="mt-2 text-[11px] leading-[1.6]" style={{ color: K.faint }}>
             → {modeLabel}
           </p>
@@ -168,18 +213,38 @@ export function TermReviewCard({
           </p>
         ) : null}
 
-        <div className="flex items-center gap-[7px]">
-          <Btn primary disabled={busy} onClick={onAccept}>
-            {busy ? "처리 중…" : "맞아요"}
-          </Btn>
-          <Btn disabled={busy} onClick={onReject}>
-            아니에요
-          </Btn>
-          <span className="flex-1" />
-          <Btn disabled={busy} className="bg-transparent" onClick={onLater}>
-            나중에
-          </Btn>
-        </div>
+        {editOpen ? (
+          <div className="flex items-center gap-[7px]">
+            <Btn
+              primary
+              disabled={busy || !editText.trim()}
+              onClick={() => onRegister(editText.trim())}
+            >
+              {busy ? "처리 중…" : "이대로 등록"}
+            </Btn>
+            <Btn disabled={busy} onClick={() => setEditOpen(false)}>
+              취소
+            </Btn>
+          </div>
+        ) : (
+          <div className="flex items-center gap-[7px]">
+            <Btn primary disabled={busy} onClick={onAccept}>
+              {busy ? "처리 중…" : "맞아요"}
+            </Btn>
+            <Btn
+              disabled={busy}
+              onClick={() => {
+                setEditText(definition);
+                setEditOpen(true);
+              }}
+            >
+              수정
+            </Btn>
+            <Btn disabled={busy} onClick={onDelete}>
+              삭제
+            </Btn>
+          </div>
+        )}
       </div>
     </article>
   );

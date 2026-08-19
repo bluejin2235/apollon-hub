@@ -185,7 +185,7 @@ export async function createCandidate(
 
   const thread = normalizeThread(input.thread ?? []);
   let category = (input.category?.trim() || "general").slice(0, 64);
-  const baseMeta =
+  let baseMeta =
     input.meta && typeof input.meta === "object" && !Array.isArray(input.meta)
       ? { ...input.meta }
       : {};
@@ -206,6 +206,19 @@ export async function createCandidate(
       }
     }
   }
+
+  const { gateNewCandidate } = await import("@/lib/luna/candidate-wiki-filter");
+  const gated = await gateNewCandidate(admin, {
+    content,
+    source: input.source,
+    category,
+    meta: baseMeta,
+    evidence: input.evidence,
+    raw_input: input.raw_input,
+    sourceConversationId: input.source_conversation_id
+  });
+  if (!gated.ok) return null;
+  baseMeta = { ...gated.meta, wiki_overlap_checked: true, wiki_overlap_v: 3 };
 
   const row = {
     content,

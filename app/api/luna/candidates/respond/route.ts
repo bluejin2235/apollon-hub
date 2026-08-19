@@ -69,6 +69,9 @@ type Body = {
   text?: string;
   reject_note?: string;
   glossary?: GlossaryPatch;
+  category?: string;
+  importance?: number;
+  as_is?: boolean;
 };
 
 function normalizeGlossaryPatch(
@@ -143,6 +146,16 @@ export async function POST(request: NextRequest) {
       ? (actionRaw as Action)
       : null;
   let text = typeof body.text === "string" ? body.text.trim() : "";
+  const asIs = body.as_is === true;
+  const bodyCategory =
+    typeof body.category === "string" ? body.category.trim() : "";
+  const bodyImportance =
+    typeof body.importance === "number" &&
+    Number.isInteger(body.importance) &&
+    body.importance >= 1 &&
+    body.importance <= 5
+      ? body.importance
+      : null;
   const glossaryPatch = normalizeGlossaryPatch(body.glossary);
   const glossaryExistingId =
     typeof body.glossary?.existing_id === "string"
@@ -166,7 +179,7 @@ export async function POST(request: NextRequest) {
   let { data: current, error: loadError } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, duplicate_of, raw_input, created_at, merged_from"
+      "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, duplicate_of, raw_input, created_at, merged_from, importance"
     )
     .eq("id", id)
     .maybeSingle();
@@ -175,7 +188,7 @@ export async function POST(request: NextRequest) {
     const retry = await admin
       .from("luna_learnings")
       .select(
-        "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, raw_input, created_at, merged_from"
+        "id, content, status, source, evidence, thread, meta, author_id, assigned_to, category, review_reason, merge_target, raw_input, created_at, merged_from, importance"
       )
       .eq("id", id)
       .maybeSingle();
@@ -280,7 +293,10 @@ export async function POST(request: NextRequest) {
 
     let decision: DuplicateDecision;
     let sentence = text;
-    if (action === "confirm" || action === "accept_proposal") {
+    if (asIs && text) {
+      decision = "rewrite";
+      sentence = text;
+    } else if (action === "confirm" || action === "accept_proposal") {
       const cached = cachedProposal(prevMeta, existing.content, content);
       const kind = cached?.kind ?? "rewrite";
       if (kind === "keep_both") decision = "keep_both";
@@ -332,7 +348,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "discard_new") {
-    if (hasRejectMeta(prevMeta)) {
+    if (rejectNote) {
       const { error } = await admin
         .from("luna_learnings")
         .update({
@@ -592,6 +608,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 용어형·직접 수정본도 원문 복사 없이 재진술. 맞아요만 윤문 허용이 아니라 LLM 우선.
+  // [수정] 이대로 등록은 사람이 고친 문장을 그대로 저장한다.
   const polished = isGlossary
     ? stripConfirmClaim(
         (
@@ -600,17 +617,19 @@ export async function POST(request: NextRequest) {
           workingContent
         ).trim()
       )
-    : stripConfirmClaim(
-        (await runDialogueTurn(admin, {
-          mode: "confirm",
-          content: workingContent,
-          thread: text ? [...thread, makeTurn("human", text)] : thread,
-          humanText: text || undefined,
-          evidence
-        })) ||
-          text ||
-          workingContent.trim()
-      );
+    : asIs
+      ? stripConfirmClaim((text || workingContent).trim())
+      : stripConfirmClaim(
+          (await runDialogueTurn(admin, {
+            mode: "confirm",
+            content: workingContent,
+            thread: text ? [...thread, makeTurn("human", text)] : thread,
+            humanText: text || undefined,
+            evidence
+          })) ||
+            text ||
+            workingContent.trim()
+        );
 
   let finalThread = thread;
   if (text) {
@@ -668,20 +687,39 @@ export async function POST(request: NextRequest) {
     };
   }
 
+  const nextCategory = ["general", "criterion", "workflow", "client", "preference", "term"].includes(
+    bodyCategory
+  )
+    ? bodyCategory
+    : typeof current.category === "string"
+      ? current.category
+      : "general";
+  const currentImportance = Number(
+    (current as { importance?: number | null }).importance
+  );
+  const nextImportance =
+    bodyImportance ??
+    (Number.isFinite(currentImportance) && currentImportance >= 1
+      ? currentImportance
+      : 3);
+
   const confirmPatch: Record<string, unknown> = {
     content: polished,
     status: isGlossary ? "archived" : "active",
     thread: finalThread,
     confidence: 4,
-    importance: 4,
+    importance: isGlossary ? 4 : nextImportance,
     resolved_by: user.id,
     resolved_at: new Date().toISOString()
   };
   if (isGlossary) {
     confirmPatch.meta = meta;
     confirmPatch.category = "term";
-  } else if (hasRejectMeta(meta)) {
-    confirmPatch.meta = meta;
+  } else {
+    confirmPatch.category = nextCategory === "term" ? "general" : nextCategory;
+    if (hasRejectMeta(meta)) {
+      confirmPatch.meta = meta;
+    }
   }
 
   const { data, error } = await admin

@@ -22,6 +22,13 @@ import {
   filterNewCaptureItems,
   reflectCandidateCap
 } from "@/lib/luna/reflect-guard";
+import {
+  looksLikeCorrection,
+  looksLikeHumanTeach,
+  newSliceHasHumanTeachOrCorrection,
+  newSliceUsedKnownSources,
+  recordCandidateFilter
+} from "@/lib/luna/candidate-wiki-filter";
 
 export const runtime = "nodejs";
 
@@ -89,7 +96,12 @@ capture_kind 는 키워드가 아니라 문장 성격으로 판정하세요. 정
 레거시로 배열만 줘도 candidates 로 처리합니다.`;
 
 type ReflectBody = { conversation_id?: string };
-type MessageRow = { role: string; content: string; created_at?: string };
+type MessageRow = {
+  role: string;
+  content: string;
+  created_at?: string;
+  metadata?: unknown;
+};
 
 type CaptureItem = RawCaptureItem;
 
@@ -323,7 +335,7 @@ export async function POST(request: NextRequest) {
   try {
     const { data: messagesData, error: messagesError } = await admin
       .from("luna_messages")
-      .select("role, content, created_at")
+      .select("role, content, created_at, metadata")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
 
@@ -376,6 +388,25 @@ export async function POST(request: NextRequest) {
     }
 
     const newMessages = messages.slice(watermark);
+    const wikiBacked = newSliceUsedKnownSources(newMessages);
+    const humanTeach = newSliceHasHumanTeachOrCorrection(newMessages);
+    if (wikiBacked && !humanTeach) {
+      await recordCandidateFilter(admin, "wiki_injected");
+      await finishReflectWatermark(
+        admin,
+        conversationId,
+        user.id,
+        messages.length
+      );
+      return NextResponse.json({
+        saved: 0,
+        skipped: "wiki_injected",
+        ids: [],
+        correction_ids: [],
+        question_id: null
+      });
+    }
+
     const transcript = buildTranscript(newMessages);
     const priorNote =
       watermark > 0
@@ -422,7 +453,24 @@ export async function POST(request: NextRequest) {
 
     const existingTermKeys = collectExistingTermKeys(existingRowsList);
     const processed = processCaptureItems(items, transcript, existingTermKeys);
-    const toCreate = filterNewCaptureItems(processed, existingContents, room);
+    const keepProcessed = wikiBacked
+      ? processed.filter((item) => {
+          if (item.from_correction) return true;
+          const blob = `${item.content}\n${item.evidence ?? ""}`;
+          return looksLikeCorrection(blob) || looksLikeHumanTeach(blob);
+        })
+      : processed;
+    if (wikiBacked) {
+      const dropped = processed.length - keepProcessed.length;
+      for (let i = 0; i < dropped; i += 1) {
+        await recordCandidateFilter(admin, "wiki_injected");
+      }
+    }
+    const toCreate = filterNewCaptureItems(
+      keepProcessed,
+      existingContents,
+      room
+    );
 
     let saved = 0;
     const ids: string[] = [];
@@ -449,7 +497,7 @@ export async function POST(request: NextRequest) {
     }
 
     let questionId: string | null = null;
-    if (parsedQuestion) {
+    if (parsedQuestion && !wikiBacked) {
       const alreadyOpen = await hasOpenAssignedQuestion(admin, user.id);
       if (!alreadyOpen) {
         const ask = parsedQuestion.ask.trim();

@@ -25,13 +25,16 @@ export async function captureTermMeaningQuestion(opts: {
   answer: string;
   classifiedTypes: string[];
   glossaryRows: GlossaryRow[];
+  skipKnownSources?: boolean;
 }): Promise<{ id: string; asked_count: number; created: boolean } | null> {
+  if (opts.skipKnownSources) return null;
   if (!opts.classifiedTypes.includes("know")) return null;
   const askedTerm = parseTermMeaningQuestion(opts.question);
   if (!askedTerm) return null;
   if (glossaryHasFilledDefinition(askedTerm, opts.glossaryRows)) return null;
 
   const draft = draftDefinitionFromAnswer(opts.answer);
+  if (draft.trim().length < 15) return null;
   const askedKey = askedTermKeyFromMeta({ asked_term: askedTerm });
 
   const { data: existingRows, error } = await opts.admin
@@ -91,7 +94,7 @@ export async function captureTermMeaningQuestion(opts: {
   };
 
   const created = await createCandidate(opts.admin, {
-    content: askedTerm,
+    content: draft.trim() || askedTerm,
     evidence: `질문: ${opts.question.trim()}`,
     category: "term",
     source: "chat",

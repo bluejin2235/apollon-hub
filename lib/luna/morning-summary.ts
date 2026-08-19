@@ -194,6 +194,14 @@ export async function collectMorningSummaryParts(
     );
   }
 
+  const { candidateFilterMorningLine } = await import(
+    "@/lib/luna/candidate-wiki-filter"
+  );
+  const filterLine = await candidateFilterMorningLine(admin);
+  if (filterLine) {
+    parts.push(withLink(filterLine, LUNA_LINKS.candidatesPending));
+  }
+
   // 5) 자기개선 — 개선함(버전) 또는 개선할 것 없음(last_run skip)
   const { data: upgrades, error: upErr } = await admin
     .from("luna_prompt_versions")

@@ -48,6 +48,7 @@ export type CandidateRow = {
   merge_target: string | null;
   duplicate_of: string | null;
   raw_input: string | null;
+  importance?: number | null;
   is_glossary: boolean;
   glossary_already_exists?: boolean;
   glossary_match?: {

@@ -26,6 +26,7 @@ import {
   type ActiveKnowledge,
   type DuplicateProposal
 } from "@/lib/luna/knowledge-duplicate";
+import { rejudgePendingCandidates } from "@/lib/luna/candidate-wiki-filter";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,7 @@ type LearningRow = {
   merge_target: string | null;
   duplicate_of: string | null;
   raw_input: string | null;
+  importance: number | null;
 };
 
 export type DuplicateCompare = {
@@ -113,9 +115,9 @@ export type CandidateCounts = {
 };
 
 const SELECT_WITH_DUP =
-  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, duplicate_of, raw_input";
+  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, duplicate_of, raw_input, importance";
 const SELECT_NO_DUP =
-  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, raw_input";
+  "id, content, category, status, source, origin, evidence, scope_suggestion, thread, author_id, assigned_to, source_conversation_id, source_id, created_at, snoozed_until, meta, review_reason, merge_target, raw_input, importance";
 
 function isSnoozed(row: LearningRow): boolean {
   if (!row.snoozed_until) return false;
@@ -144,6 +146,8 @@ export async function GET(request: NextRequest) {
   if (!(await hasLunaAccess(admin, user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  await rejudgePendingCandidates(admin);
 
   const filterRaw = request.nextUrl.searchParams.get("filter") ?? "all";
   const filter: PendingFilter =

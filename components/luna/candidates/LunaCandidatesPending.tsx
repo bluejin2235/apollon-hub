@@ -24,7 +24,8 @@ import {
 import { Btn } from "@/components/luna/knowledge/ui";
 import {
   KnowledgeReviewCard,
-  type KnowledgeReviewAction
+  type KnowledgeReviewAction,
+  type KnowledgeRegisterOpts
 } from "@/components/luna/candidates/KnowledgeReviewCard";
 import { TermReviewCard } from "@/components/luna/candidates/TermReviewCard";
 import type { GlossaryDupMatch, GlossaryDupTerm } from "@/lib/glossary/duplicate";
@@ -338,7 +339,8 @@ export function LunaCandidatesPending() {
     id: string,
     action: KnowledgeReviewAction,
     text?: string,
-    rejectNote?: string
+    rejectNote?: string,
+    opts?: KnowledgeRegisterOpts
   ) {
     const token = await getAccessToken();
     if (!token) {
@@ -359,7 +361,10 @@ export function LunaCandidatesPending() {
           id,
           action,
           text,
-          reject_note: rejectNote || undefined
+          reject_note: rejectNote || undefined,
+          as_is: opts?.as_is || undefined,
+          category: opts?.category || undefined,
+          importance: opts?.importance ?? undefined
         })
       });
       const json = (await res.json().catch(() => null)) as {
@@ -382,7 +387,7 @@ export function LunaCandidatesPending() {
       } else if (action === "reject") {
         setMessage("거절 이유를 남겼어요");
       } else if (action === "discard_new" || action === "accept_existing") {
-        setMessage("새 후보를 지웠어요");
+        setMessage("후보를 지웠어요");
       } else if (json?.keep_id || json?.merged_into) {
         setMessage("오래된 지식에 기록을 남기고 후보를 지웠어요");
       } else {
@@ -565,8 +570,13 @@ export function LunaCandidatesPending() {
                       asConfirmDraft(glossary)
                     )
                   }
-                  onReject={() => void respond(item.id, "reject")}
-                  onLater={() => void reviewAction(item.id, "later")}
+                  onRegister={(definition) =>
+                    void respond(item.id, "confirm", undefined, {
+                      ...asConfirmDraft(glossary),
+                      definition
+                    })
+                  }
+                  onDelete={() => void reviewAction(item.id, "discard_new")}
                 />
               </CardStackItem>
             );
@@ -579,8 +589,8 @@ export function LunaCandidatesPending() {
                   item={item}
                   busy={busy}
                   error={cardError}
-                onAction={(action, text, rejectNote) =>
-                  void reviewAction(item.id, action, text, rejectNote)
+                onAction={(action, text, rejectNote, opts) =>
+                  void reviewAction(item.id, action, text, rejectNote, opts)
                 }
                 />
               </CardStackItem>

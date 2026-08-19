@@ -2353,7 +2353,9 @@ export async function POST(request: NextRequest) {
             question: userText,
             answer: assistantText,
             classifiedTypes: classification.types,
-            glossaryRows
+            glossaryRows,
+            skipKnownSources:
+              publicWikiSources.length > 0 || knowledgeInject.ids.length > 0
           });
         } catch (err) {
           console.error("[luna/chat] capture term question", err);
