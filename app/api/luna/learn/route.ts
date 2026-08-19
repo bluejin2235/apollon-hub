@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
 import {
   createCandidate,
   makeTurn,
@@ -206,6 +207,9 @@ export async function GET(request: NextRequest) {
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const weekCount = await countWeekDirect(admin, user.id);
   return NextResponse.json({ week_count: weekCount });
@@ -219,6 +223,9 @@ export async function PATCH(request: NextRequest) {
   const admin = getServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: { id?: string; category?: string };
@@ -261,6 +268,9 @@ export async function POST(request: NextRequest) {
   const admin = getServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: { text?: string; category?: string; force?: string };

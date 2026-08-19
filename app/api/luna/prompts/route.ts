@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
 import { triggerAutoExam } from "@/lib/luna/eval-exam";
 import { lunaNotify } from "@/lib/luna/notify";
 import type {
@@ -75,6 +76,9 @@ export async function GET(request: NextRequest) {
   const admin = getServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const isAdmin = await isSuperAdminUser(admin, user);

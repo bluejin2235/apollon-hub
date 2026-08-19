@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
 import { clipFeedbackNote, isFeedbackReason } from "@/lib/luna/feedback";
 import { saveLunaMessageFeedback } from "@/lib/luna/message-feedback";
 
@@ -21,6 +22,9 @@ export async function PATCH(request: NextRequest) {
   const admin = getServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: PatchBody;

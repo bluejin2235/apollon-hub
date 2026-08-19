@@ -8,6 +8,7 @@ import { HubBoardDetailModal } from "@/components/hub/hub-board-detail-modal";
 import { HubPostWriteModal } from "@/components/hub/hub-post-write-modal";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { useHasLunaAccess } from "@/lib/luna/use-has-luna-access";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
 
@@ -217,6 +218,7 @@ const C = {
 
 export default function ServiceHubPage() {
   const { status, profile } = useRequirePortalSession();
+  const lunaAccess = useHasLunaAccess(profile?.id, profile?.role);
 
   const [clock, setClock] = useState(clockStr());
   const [lunaRoomHref, setLunaRoomHref] = useState("/research");
@@ -767,13 +769,19 @@ export default function ServiceHubPage() {
           </div>
         </div>
 
-        {profile?.role === "슈퍼관리자" ? (
-          <div className="pt-6 text-center">
+        {lunaAccess.allowed ? (
+          <div className="flex justify-center gap-4 pt-6">
             <Link
               href="/luna"
               style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none" }}
             >
               007
+            </Link>
+            <Link
+              href="/wiki"
+              style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none" }}
+            >
+              위키
             </Link>
           </div>
         ) : null}

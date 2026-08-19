@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,9 @@ async function requireUser(request: NextRequest) {
     return {
       error: NextResponse.json({ error: "Server configuration error" }, { status: 500 })
     };
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
   return { user, admin };
 }

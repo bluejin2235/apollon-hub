@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { LunaDashboard } from "@/lib/luna/dashboard-types";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { supabase } from "@/lib/supabase/client";
+import { LunaBetaAccessPanel } from "@/components/luna/LunaBetaAccessPanel";
 
 const C = {
   bg: "#f5f6f8",
@@ -669,6 +670,8 @@ export default function LunaSettingsHome() {
             <SelfstudyCard s={s} />
             <BrainCard b={b} />
           </div>
+
+          <LunaBetaAccessPanel />
         </>
       ) : null}
     </div>

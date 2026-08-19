@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
 import type { User } from "@supabase/supabase-js";
 
 export async function requireWikiUser(request: NextRequest): Promise<
@@ -20,6 +21,9 @@ export async function requireWikiUser(request: NextRequest): Promise<
     return {
       error: NextResponse.json({ error: "Server configuration error" }, { status: 500 })
     };
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
   const isAdmin = await isSuperAdminUser(admin, user);
   return { user, admin, isAdmin };

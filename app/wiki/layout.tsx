@@ -8,13 +8,19 @@ import { WikiShell } from "@/components/wiki/WikiShell";
 import { GlossaryHighlightProvider } from "@/components/glossary/GlossaryHighlightProvider";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
+import { useRedirectUnlessLunaAccess } from "@/lib/luna/use-has-luna-access";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 
 export default function WikiLayout({ children }: { children: ReactNode }) {
   const { status, profile } = useRequirePortalSession();
+  const access = useRedirectUnlessLunaAccess(
+    profile?.id,
+    profile?.role,
+    status === "ready"
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  if (status === "checking") {
+  if (status === "checking" || !access.ready || !access.allowed) {
     return <PortalAuthChecking />;
   }
 
