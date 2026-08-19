@@ -506,7 +506,15 @@ async function updateLearning(
   patch: Record<string, unknown>
 ): Promise<{ message: string } | null> {
   const { error } = await admin.from("luna_learnings").update(patch).eq("id", id);
-  if (!error) return null;
+  if (!error) {
+    if (patch.status === "active") {
+      const { scheduleEmbedding, upsertLearningEmbedding } = await import(
+        "@/lib/luna/embedding-store"
+      );
+      scheduleEmbedding(() => upsertLearningEmbedding(admin, id));
+    }
+    return null;
+  }
   if (/duplicate_of/i.test(error.message) && "duplicate_of" in patch) {
     const rest = { ...patch };
     delete rest.duplicate_of;
@@ -514,7 +522,15 @@ async function updateLearning(
       .from("luna_learnings")
       .update(rest)
       .eq("id", id);
-    if (!fallbackError) return null;
+    if (!fallbackError) {
+      if (patch.status === "active") {
+        const { scheduleEmbedding, upsertLearningEmbedding } = await import(
+          "@/lib/luna/embedding-store"
+        );
+        scheduleEmbedding(() => upsertLearningEmbedding(admin, id));
+      }
+      return null;
+    }
     return fallbackError;
   }
   return error;

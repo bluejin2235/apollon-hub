@@ -286,6 +286,10 @@ export async function insertGlossaryTerm(
   if (verErr) {
     return { error: verErr.message };
   }
+  const { scheduleEmbedding, upsertGlossaryEmbedding } = await import(
+    "@/lib/luna/embedding-store"
+  );
+  scheduleEmbedding(() => upsertGlossaryEmbedding(admin, data.id as string));
   return { id: data.id as string, version: 1 };
 }
 

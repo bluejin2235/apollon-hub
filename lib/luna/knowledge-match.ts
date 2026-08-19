@@ -1,9 +1,11 @@
 /**
- * 확정 지식·용어사전 주입: 질문 키워드 매칭.
- * 임베딩 없음. 검색 여부와 무관하게 키워드만 쓴다.
+ * 확정 지식·용어사전 주입: 키워드 + (선택) 임베딩.
+ * 임베딩 실패 시 키워드만으로 동작한다.
  */
 
 import { normalizeSynonyms } from "@/lib/glossary/synonyms";
+import { fuseKeywordAndEmbedding, type MatchVia } from "@/lib/luna/embedding";
+import type { IdEmbeddingHit } from "@/lib/luna/embedding-search";
 
 export const MATCHED_LEARNING_MAX = 8;
 export const INJECT_LEARNING_MAX = 10;
@@ -79,6 +81,9 @@ export type LearningMatchRow = {
   importance: number | null;
   use_count: number | null;
   created_at?: string | null;
+  match_via?: MatchVia;
+  keyword_score?: number;
+  embedding_score?: number;
 };
 
 export type GlossaryMatchRow = {
@@ -87,6 +92,9 @@ export type GlossaryMatchRow = {
   term_en?: string | null;
   synonyms?: unknown;
   definition?: string | null;
+  match_via?: MatchVia;
+  keyword_score?: number;
+  embedding_score?: number;
 };
 
 export type KnowledgeInjectResult = {
@@ -207,17 +215,33 @@ function scoreAgainstKeywords(text: string, keywords: string[]): number {
 export function pickLearningsForQuestion(
   rows: LearningMatchRow[],
   keywords: string[],
-  opts?: { dump?: boolean }
+  opts?: { dump?: boolean; embeddingHits?: IdEmbeddingHit[] | null }
 ): KnowledgeInjectResult {
   if (opts?.dump) {
     return { matched: [], other: [], all: [], ids: [] };
   }
+  const simById = new Map<string, number>();
+  for (const hit of opts?.embeddingHits ?? []) {
+    simById.set(hit.id, hit.similarity);
+  }
   const scored = rows
-    .map((row) => ({
-      row,
-      score: scoreAgainstKeywords(row.content, keywords)
-    }))
-    .filter((x) => x.score >= 1)
+    .map((row) => {
+      const keywordScore = scoreAgainstKeywords(row.content, keywords);
+      const fused = fuseKeywordAndEmbedding({
+        keywordScore,
+        similarity: simById.get(row.id)
+      });
+      return {
+        row: {
+          ...row,
+          match_via: fused.match_via,
+          keyword_score: fused.keyword_score,
+          embedding_score: fused.embedding_score
+        },
+        score: fused.score
+      };
+    })
+    .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || (b.row.importance ?? 0) - (a.row.importance ?? 0));
   const matched = scored.slice(0, MATCHED_LEARNING_MAX).map((x) => x.row);
   const matchedIds = new Set(matched.map((r) => r.id));
@@ -244,9 +268,13 @@ export function pickLearningsForQuestion(
 
 export function pickGlossaryForQuestion(
   rows: GlossaryMatchRow[],
-  keywords: string[]
+  keywords: string[],
+  embeddingHits?: IdEmbeddingHit[] | null
 ): GlossaryMatchRow[] {
-  if (keywords.length === 0) return [];
+  const simById = new Map<string, number>();
+  for (const hit of embeddingHits ?? []) {
+    simById.set(hit.id, hit.similarity);
+  }
   const hits: Array<{ row: GlossaryMatchRow; score: number }> = [];
   for (const row of rows) {
     const fields = [
@@ -257,8 +285,21 @@ export function pickGlossaryForQuestion(
       .map((s) => s.trim())
       .filter(Boolean);
     const hay = fields.join("\n");
-    const score = scoreAgainstKeywords(hay, keywords);
-    if (score >= 1) hits.push({ row, score });
+    const keywordScore = keywords.length > 0 ? scoreAgainstKeywords(hay, keywords) : 0;
+    const fused = fuseKeywordAndEmbedding({
+      keywordScore,
+      similarity: row.id ? simById.get(row.id) : undefined
+    });
+    if (fused.score <= 0) continue;
+    hits.push({
+      row: {
+        ...row,
+        match_via: fused.match_via,
+        keyword_score: fused.keyword_score,
+        embedding_score: fused.embedding_score
+      },
+      score: fused.score
+    });
   }
   hits.sort((a, b) => b.score - a.score);
   return hits.map((h) => h.row);

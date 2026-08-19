@@ -42,6 +42,8 @@ export type WikiHistoryEntry = {
 };
 
 export type WikiDoc = {
+  /** luna_library.id — 임베딩 조인용. 구스키마면 없을 수 있다. */
+  id?: string | null;
   slug: string;
   title: string;
   menu_slug: string;

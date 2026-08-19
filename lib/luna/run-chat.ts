@@ -41,6 +41,7 @@ import {
   type GlossaryMatchRow,
   type LearningMatchRow
 } from "@/lib/luna/knowledge-match";
+import { retrieveKnowledgeEmbeddings } from "@/lib/luna/embedding-retrieve";
 import { formatGlossaryBlock } from "@/lib/luna/prompt-cache";
 import { loadWikiDocs, bumpWikiUseCount } from "@/lib/wiki/store";
 import {
@@ -535,14 +536,21 @@ export async function runLunaTurn(
     keywordExtractPrompt
   );
   const injectKeywords = splitKeywordQuery(keywords, userText, glossaryRows);
+  const emb = await retrieveKnowledgeEmbeddings(admin, userText);
   const knowledgeInject = pickLearningsForQuestion(
     (learningsData ?? []) as LearningMatchRow[],
-    injectKeywords
+    injectKeywords,
+    { embeddingHits: emb.learning }
   );
-  const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
-  const wikiSources = classifiedSlugs.includes("know")
-    ? matchWikiSections(wikiDocs, injectKeywords, userText)
-    : [];
+  const matchedTerms = pickGlossaryForQuestion(
+    glossaryRows,
+    injectKeywords,
+    emb.glossary
+  );
+  const wikiSources =
+    classifiedSlugs.includes("know") || classifiedSlugs.includes("find")
+      ? matchWikiSections(wikiDocs, injectKeywords, userText, emb.wiki)
+      : [];
   const { public: publicWikiSources, private: privateWikiRefs } =
     splitWikiSourcesByVisibility(wikiSources);
   const injectedTerms = matchedTerms

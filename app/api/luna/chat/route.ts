@@ -110,6 +110,10 @@ import {
   type LearningMatchRow
 } from "@/lib/luna/knowledge-match";
 import {
+  maxSimilarityByLibrary,
+  retrieveKnowledgeEmbeddings
+} from "@/lib/luna/embedding-retrieve";
+import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
@@ -1236,8 +1240,13 @@ export async function POST(request: NextRequest) {
           nasEnabled = connectorRouting.connectors.nas;
         }
 
+        const knowledgeEmb = await retrieveKnowledgeEmbeddings(admin, userText);
         const libraryHits = typesNeedLibrary(classifiedTypeRows)
-          ? matchLibraryItems(libraryItems, userText)
+          ? matchLibraryItems(
+              libraryItems,
+              userText,
+              maxSimilarityByLibrary(knowledgeEmb.wiki)
+            )
           : [];
 
         // ——— 단계 1: 되묻기 ———
@@ -1494,12 +1503,26 @@ export async function POST(request: NextRequest) {
         const knowledgeInject = pickLearningsForQuestion(
           learningsRowsAll,
           injectKeywords,
-          { dump: knowledgeDumpRequested }
+          {
+            dump: knowledgeDumpRequested,
+            embeddingHits: knowledgeEmb.learning
+          }
         );
-        const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
-        const wikiSources: WikiSourceRef[] = classification.types.includes("know")
-          ? matchWikiSections(wikiDocs, injectKeywords, userText)
-          : [];
+        const matchedTerms = pickGlossaryForQuestion(
+          glossaryRows,
+          injectKeywords,
+          knowledgeEmb.glossary
+        );
+        const wikiSources: WikiSourceRef[] =
+          classification.types.includes("know") ||
+          classification.types.includes("find")
+            ? matchWikiSections(
+                wikiDocs,
+                injectKeywords,
+                userText,
+                knowledgeEmb.wiki
+              )
+            : [];
         const { public: publicWikiSources, private: privateWikiRefs } =
           splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);

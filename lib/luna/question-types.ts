@@ -25,10 +25,15 @@ export type QuestionClassification = {
 };
 
 export type LibraryItem = {
+  id?: string | null;
   slug: string;
   title: string;
   kind: string;
   content: string;
+  match_via?: "keyword" | "embedding" | "both";
+  keyword_score?: number;
+  embedding_score?: number;
+  score?: number;
 };
 
 export type LibraryAdminRow = LibraryItem & {
@@ -398,6 +403,7 @@ export async function loadLibraryItems(
     return items
       .filter((d) => d.menu_slug !== "rules")
       .map((d) => ({
+        id: d.id ?? null,
         slug: d.slug,
         title: d.title,
         kind: d.kind,
@@ -441,14 +447,44 @@ export async function loadLibraryAdmin(
 
 export function matchLibraryItems(
   items: LibraryItem[],
-  question: string
+  question: string,
+  embeddingByLibraryId?: Map<string, number> | null
 ): LibraryItem[] {
   const q = question.toLowerCase().replace(/\s+/g, "");
-  if (!q) return [];
-  return items.filter((item) => {
+  const scored: Array<LibraryItem & { _score: number }> = [];
+  for (const item of items) {
     const hay = `${item.slug} ${item.title} ${item.kind}`.toLowerCase().replace(/\s+/g, "");
-    if (!hay) return false;
-    return hay.includes(q) || q.includes(hay) || tokenOverlap(q, hay);
+    let keywordScore = 0;
+    if (q && hay) {
+      if (hay.includes(q) || q.includes(hay) || tokenOverlap(q, hay)) {
+        keywordScore = 3;
+      }
+    }
+    const sim = item.id ? embeddingByLibraryId?.get(item.id) : undefined;
+    const embedding_score =
+      typeof sim === "number" && sim >= 0.35 ? sim * 10 : 0;
+    const keyword_score = keywordScore;
+    const score = keyword_score + embedding_score;
+    if (score <= 0) continue;
+    const match_via =
+      keyword_score > 0 && embedding_score > 0
+        ? "both"
+        : embedding_score > 0
+          ? "embedding"
+          : "keyword";
+    scored.push({
+      ...item,
+      score,
+      keyword_score,
+      embedding_score,
+      match_via,
+      _score: score
+    });
+  }
+  scored.sort((a, b) => b._score - a._score);
+  return scored.map(({ _score, ...rest }) => {
+    void _score;
+    return rest;
   });
 }
 

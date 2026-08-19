@@ -526,6 +526,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const { scheduleEmbedding, upsertGlossaryEmbedding } = await import(
+    "@/lib/luna/embedding-store"
+  );
+  scheduleEmbedding(() => upsertGlossaryEmbedding(admin, saved.id));
+
   return NextResponse.json({ term: saved });
 }
 

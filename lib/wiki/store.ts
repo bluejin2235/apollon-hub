@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { scheduleEmbedding, upsertWikiDocEmbeddings } from "@/lib/luna/embedding-store";
 import { diffCounts } from "@/lib/wiki/diff";
 import {
   contentToSections,
@@ -18,11 +19,11 @@ import {
 } from "@/lib/wiki/types";
 
 const FULL_SELECT =
-  "slug, title, kind, content, summary, menu_slug, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
+  "id, slug, title, kind, content, summary, menu_slug, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
 const FULL_SELECT_LEGACY =
-  "slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
+  "id, slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
 const BASE_SELECT =
-  "slug, title, kind, content, source_prompt_key, is_active, updated_at";
+  "id, slug, title, kind, content, source_prompt_key, is_active, updated_at";
 
 export function isMissingWikiSchema(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -88,6 +89,7 @@ function mapDoc(row: Record<string, unknown>, wikiReady: boolean): WikiDoc {
   let sections = wikiReady ? parseSections(row.sections) : [];
   if (sections.length === 0 && content) sections = contentToSections(content);
   return {
+    id: typeof row.id === "string" ? row.id : null,
     slug,
     title: asText(row.title, slug),
     menu_slug,
@@ -372,7 +374,17 @@ export async function createWikiDoc(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("저장하지 못했습니다.");
-  return mapDoc(data as Record<string, unknown>, true);
+  const doc = mapDoc(data as Record<string, unknown>, true);
+  if (doc.id) {
+    scheduleEmbedding(() =>
+      upsertWikiDocEmbeddings(admin, {
+        libraryId: doc.id!,
+        docTitle: doc.title,
+        sections: doc.sections
+      })
+    );
+  }
+  return doc;
 }
 
 export type WikiSaveMeta = {
@@ -490,7 +502,17 @@ export async function saveWikiDoc(
   }
   if (error) throw new Error(error.message);
   if (!data) throw new Error("not found");
-  return mapDoc(data, true);
+  const doc = mapDoc(data, true);
+  if (doc.id) {
+    scheduleEmbedding(() =>
+      upsertWikiDocEmbeddings(admin, {
+        libraryId: doc.id!,
+        docTitle: doc.title,
+        sections: doc.sections
+      })
+    );
+  }
+  return doc;
 }
 
 export async function revertWikiDoc(

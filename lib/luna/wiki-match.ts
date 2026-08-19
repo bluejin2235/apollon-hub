@@ -1,3 +1,5 @@
+import { fuseKeywordAndEmbedding, type MatchVia } from "@/lib/luna/embedding";
+import type { WikiEmbeddingHit } from "@/lib/luna/embedding-search";
 import { wikiDocPath, type WikiDoc } from "@/lib/wiki/types";
 
 export type WikiSourceRef = {
@@ -12,6 +14,10 @@ export type WikiSourceRef = {
   path: string;
   visible_to_staff: boolean;
   cite_publicly: boolean;
+  /** 디버깅용. 화면 출처에는 안 씀. */
+  match_via?: MatchVia;
+  keyword_score?: number;
+  embedding_score?: number;
 };
 
 export const WIKI_SECTION_MAX = 3;
@@ -149,47 +155,52 @@ function scoreSection(
   };
 }
 
-export function matchWikiSections(
-  docs: WikiDoc[],
-  keywords: string[],
-  questionText?: string
-): WikiSourceRef[] {
-  const enriched = enrichKeywords(keywords, questionText);
-  if (enriched.length === 0) return [];
-  const weights = keywordWeights(docs, enriched);
-  const scored: Array<
-    WikiSourceRef & {
-      title_score: number;
-      body_score: number;
-      doc_title_score: number;
-      summary_score: number;
-    }
-  > = [];
-  for (const doc of docs) {
-    if (!doc.is_active) continue;
-    for (const section of doc.sections) {
-      const hit = scoreSection(doc, section, enriched, weights);
-      if (hit.score < 1) continue;
-      const visible = doc.visible_to_staff !== false;
-      scored.push({
-        slug: doc.slug,
-        title: doc.title,
-        category: doc.menu_slug,
-        section_id: section.id,
-        section_title: section.title,
-        score: hit.score,
-        matched_keywords: hit.matched_keywords,
-        excerpt: clipSectionBody(section.body),
-        path: wikiDocPath(doc.slug),
-        visible_to_staff: visible,
-        cite_publicly: visible,
-        title_score: hit.title_score,
-        body_score: hit.body_score,
-        doc_title_score: hit.doc_title_score,
-        summary_score: hit.summary_score
-      });
-    }
-  }
+type ScoredWiki = WikiSourceRef & {
+  title_score: number;
+  body_score: number;
+  doc_title_score: number;
+  summary_score: number;
+};
+
+function toSourceRef(
+  doc: WikiDoc,
+  section: WikiDoc["sections"][number],
+  fused: {
+    score: number;
+    keyword_score: number;
+    embedding_score: number;
+    match_via: MatchVia;
+  },
+  matched_keywords: string[],
+  title_score: number,
+  body_score: number,
+  doc_title_score: number,
+  summary_score: number
+): ScoredWiki {
+  const visible = doc.visible_to_staff !== false;
+  return {
+    slug: doc.slug,
+    title: doc.title,
+    category: doc.menu_slug,
+    section_id: section.id,
+    section_title: section.title,
+    score: fused.score,
+    matched_keywords,
+    excerpt: clipSectionBody(section.body),
+    path: wikiDocPath(doc.slug),
+    visible_to_staff: visible,
+    cite_publicly: visible,
+    match_via: fused.match_via,
+    keyword_score: fused.keyword_score,
+    embedding_score: fused.embedding_score,
+    title_score,
+    body_score,
+    doc_title_score,
+    summary_score
+  };
+}
+
+function pickTopWiki(scored: ScoredWiki[]): WikiSourceRef[] {
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (b.title_score !== a.title_score) return b.title_score - a.title_score;
@@ -209,11 +220,107 @@ export function matchWikiSections(
   for (const row of focused) {
     const docCount = perDoc.get(row.slug) ?? 0;
     if (docCount >= WIKI_SECTIONS_PER_DOC_MAX) continue;
-    picked.push(row);
+    const {
+      title_score: _t,
+      body_score: _b,
+      doc_title_score: _d,
+      summary_score: _s,
+      ...pub
+    } = row;
+    void _t;
+    void _b;
+    void _d;
+    void _s;
+    picked.push(pub);
     perDoc.set(row.slug, docCount + 1);
     if (picked.length >= WIKI_SECTION_MAX) break;
   }
   return picked;
+}
+
+/**
+ * 키워드 + (선택) 임베딩 유사도를 합쳐 상위 절을 고른다.
+ * embeddingHits 가 없거나 실패해도 키워드만으로 동작한다.
+ */
+export function matchWikiSections(
+  docs: WikiDoc[],
+  keywords: string[],
+  questionText?: string,
+  embeddingHits?: WikiEmbeddingHit[] | null
+): WikiSourceRef[] {
+  const enriched = enrichKeywords(keywords, questionText);
+  const weights = keywordWeights(docs, enriched);
+  const byLib = new Map<string, WikiDoc>();
+  for (const doc of docs) {
+    if (doc.id) byLib.set(doc.id, doc);
+  }
+
+  const fused = new Map<string, ScoredWiki>();
+
+  for (const doc of docs) {
+    if (!doc.is_active) continue;
+    for (const section of doc.sections) {
+      const hit = scoreSection(doc, section, enriched, weights);
+      if (hit.score < 1) continue;
+      const key = `${doc.id ?? doc.slug}::${section.id}`;
+      const f = fuseKeywordAndEmbedding({
+        keywordScore: hit.score,
+        similarity: null
+      });
+      fused.set(
+        key,
+        toSourceRef(
+          doc,
+          section,
+          f,
+          hit.matched_keywords,
+          hit.title_score,
+          hit.body_score,
+          hit.doc_title_score,
+          hit.summary_score
+        )
+      );
+    }
+  }
+
+  for (const emb of embeddingHits ?? []) {
+    const doc = byLib.get(emb.library_id);
+    if (!doc || !doc.is_active) continue;
+    const section = doc.sections.find((s) => s.id === emb.section_id);
+    if (!section) continue;
+    const key = `${doc.id}::${section.id}`;
+    const prev = fused.get(key);
+    const keywordScore = prev?.keyword_score ?? 0;
+    const title_score = prev?.title_score ?? 0;
+    const body_score = prev?.body_score ?? 0;
+    const doc_title_score = prev?.doc_title_score ?? 0;
+    const summary_score = prev?.summary_score ?? 0;
+    const matched = prev?.matched_keywords ?? [];
+    const f = fuseKeywordAndEmbedding({
+      keywordScore,
+      similarity: emb.similarity
+    });
+    if (f.score <= 0) continue;
+    fused.set(
+      key,
+      toSourceRef(
+        doc,
+        section,
+        f,
+        matched,
+        title_score,
+        body_score,
+        doc_title_score,
+        summary_score
+      )
+    );
+  }
+
+  if (enriched.length === 0 && (!embeddingHits || embeddingHits.length === 0)) {
+    return [];
+  }
+
+  return pickTopWiki(Array.from(fused.values()).filter((r) => r.score > 0));
 }
 
 export function formatWikiSectionsBlock(hits: WikiSourceRef[]): string {
