@@ -363,6 +363,7 @@ function OpinionBlock({ content }: { content: string }) {
         <SafeMarkdown
           content={body}
           compact
+          highlightTerms
           className="text-[13px] leading-[1.65] text-[#26215C]"
         />
       ) : null}

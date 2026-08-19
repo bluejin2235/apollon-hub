@@ -6,6 +6,7 @@ import { PortalHeader } from "@/components/portal/portal-header";
 import { signOutAndRedirectToLogin } from "@/lib/auth/logout";
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
+import { GlossaryHighlightProvider } from "@/components/glossary/GlossaryHighlightProvider";
 
 export default function LunaLayout({ children }: { children: ReactNode }) {
   const { status, profile } = useRequirePortalSession();
@@ -17,6 +18,7 @@ export default function LunaLayout({ children }: { children: ReactNode }) {
   const userInfoLine = profile ? formatPortalHeaderUserInfo(profile) : "- / - / -";
 
   return (
+    <GlossaryHighlightProvider>
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-white">
       <PortalHeader
         userInfoLine={userInfoLine}
@@ -26,5 +28,6 @@ export default function LunaLayout({ children }: { children: ReactNode }) {
         {children}
       </div>
     </div>
+    </GlossaryHighlightProvider>
   );
 }

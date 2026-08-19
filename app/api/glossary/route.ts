@@ -198,6 +198,28 @@ async function insertVersion(
   return error;
 }
 
+async function getHighlightTerms(
+  admin: NonNullable<ReturnType<typeof getServiceSupabase>>
+) {
+  const select =
+    "id, term_ko, term_en, term_zh, categories, synonyms, definition, version, updated_at, updated_by";
+  let q = await admin
+    .from("glossary_terms")
+    .select(select)
+    .is("deleted_at", null)
+    .order("term_ko", { ascending: true });
+  if (q.error && isMissingColumnError(q.error)) {
+    q = await admin.from("glossary_terms").select(select).order("term_ko", { ascending: true });
+  }
+  if (q.error) {
+    console.error("[glossary] GET highlight", q.error);
+    return NextResponse.json({ terms: [] });
+  }
+  return NextResponse.json({
+    terms: (q.data ?? []).map((t) => mapTermRow(t as Record<string, unknown>))
+  });
+}
+
 export async function GET(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
@@ -206,6 +228,10 @@ export async function GET(request: NextRequest) {
   const admin = getServiceSupabase();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  if (request.nextUrl.searchParams.get("highlight") === "1") {
+    return getHighlightTerms(admin);
   }
 
   const canDelete = await isSuperAdminUser(admin, user);

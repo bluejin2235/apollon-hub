@@ -21,6 +21,7 @@ type LunaMarkdownProps = {
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   source?: string;
+  highlightTerms?: boolean;
 };
 
 function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
@@ -47,8 +48,10 @@ export function LunaMarkdown({
   onCopyToast,
   notionSources = null,
   cards = null,
-  source = "luna-md"
+  source = "luna-md",
+  highlightTerms
 }: LunaMarkdownProps) {
+  const allowTerms = highlightTerms ?? source !== "stream";
   const layout = useMemo(
     () =>
       composeLunaResultLayout({
@@ -80,7 +83,9 @@ export function LunaMarkdown({
           }`}
         >
           <div className="min-w-0 flex-1 [&_p]:mb-0">
-            {lead ? <SafeMarkdown content={lead} variant="luna" /> : null}
+            {lead ? (
+              <SafeMarkdown content={lead} variant="luna" highlightTerms={allowTerms} />
+            ) : null}
           </div>
           {showDriveToggle ? (
             <NasDriveModeToggle
@@ -112,7 +117,7 @@ export function LunaMarkdown({
 
       {body ? (
         <div className={hasNas || hasNotion ? "mt-[18px]" : undefined}>
-          <SafeMarkdown content={body} variant="luna" />
+          <SafeMarkdown content={body} variant="luna" highlightTerms={allowTerms} />
         </div>
       ) : null}
 
