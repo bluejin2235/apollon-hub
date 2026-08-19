@@ -1485,7 +1485,11 @@ export async function POST(request: NextRequest) {
           keywords = searchIntentText.slice(0, 80);
         }
 
-        const injectKeywords = splitKeywordQuery(keywords, searchIntentText);
+        const injectKeywords = splitKeywordQuery(
+          keywords,
+          searchIntentText,
+          glossaryRows
+        );
         const knowledgeInject = pickLearningsForQuestion(
           learningsRowsAll,
           injectKeywords,

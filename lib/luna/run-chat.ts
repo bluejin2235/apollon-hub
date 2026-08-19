@@ -534,7 +534,7 @@ export async function runLunaTurn(
     userText,
     keywordExtractPrompt
   );
-  const injectKeywords = splitKeywordQuery(keywords, userText);
+  const injectKeywords = splitKeywordQuery(keywords, userText, glossaryRows);
   const knowledgeInject = pickLearningsForQuestion(
     (learningsData ?? []) as LearningMatchRow[],
     injectKeywords

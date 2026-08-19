@@ -44,8 +44,29 @@ const STOPWORDS = new Set([
   "해줘"
 ]);
 
-const PARTICLE_RE =
-  /(은|는|이|가|을|를|에|의|와|과|도|만|로|으로|부터|까지|에서|에게|한테|께|야|아|요|다|까|지)$/;
+/** 긴 조사부터. 2글자 이하로 줄어드는 절단은 하지 않는다. */
+const PARTICLES = [
+  "에서",
+  "으로",
+  "은",
+  "는",
+  "이",
+  "가",
+  "을",
+  "를",
+  "의",
+  "에",
+  "로",
+  "와",
+  "과",
+  "도",
+  "만"
+] as const;
+const PARTICLE_RE = new RegExp(`(${PARTICLES.join("|")})$`);
+
+function compactToken(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, "");
+}
 
 const INTERNAL_Q_RE = /우리|아폴론|apollon|사내|워크서버|work서버|노션/i;
 const GENERAL_INFO_RE =
@@ -75,6 +96,25 @@ export type KnowledgeInjectResult = {
   ids: string[];
 };
 
+function glossaryProtectSet(
+  rows: GlossaryMatchRow[] | undefined
+): Set<string> {
+  const set = new Set<string>();
+  if (!rows) return set;
+  for (const row of rows) {
+    const fields = [
+      row.term_ko ?? "",
+      row.term_en ?? "",
+      ...normalizeSynonyms(row.synonyms)
+    ];
+    for (const field of fields) {
+      const key = compactToken(field.trim());
+      if (key.length >= 2) set.add(key);
+    }
+  }
+  return set;
+}
+
 export function parseWebAugmentEnabled(raw: unknown): boolean {
   if (raw == null) return true;
   if (typeof raw === "boolean") return raw;
@@ -85,23 +125,31 @@ export function parseWebAugmentEnabled(raw: unknown): boolean {
   return true;
 }
 
-export function splitKeywordQuery(extracted: string, fallbackText: string): string[] {
-  const fromExtract = tokenizeKeywords(extracted);
+export function splitKeywordQuery(
+  extracted: string,
+  fallbackText: string,
+  glossary?: GlossaryMatchRow[]
+): string[] {
+  const protectedTokens = glossaryProtectSet(glossary);
+  const fromExtract = tokenizeKeywords(extracted, protectedTokens);
   if (fromExtract.length > 0) return fromExtract;
-  return tokenizeKeywords(fallbackNouns(fallbackText).join(" "));
+  return tokenizeKeywords(
+    fallbackNouns(fallbackText, protectedTokens).join(" "),
+    protectedTokens
+  );
 }
 
-function tokenizeKeywords(raw: string): string[] {
+function tokenizeKeywords(raw: string, protectedTokens: Set<string>): string[] {
   const text = raw.replace(/^["']|["']$/g, "").trim();
   if (!text) return [];
   const parts = text
     .split(/[\s,./|·•]+/)
-    .map((p) => stripParticles(p.trim()))
+    .map((p) => stripParticles(p.trim(), protectedTokens))
     .filter((p) => p.length >= 2 && !STOPWORDS.has(p));
   const extra = text.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [];
   const merged = [...parts];
   for (const e of extra) {
-    const t = stripParticles(e);
+    const t = stripParticles(e, protectedTokens);
     if (t.length >= 2 && !STOPWORDS.has(t)) merged.push(t);
   }
   const seen = new Set<string>();
@@ -115,18 +163,23 @@ function tokenizeKeywords(raw: string): string[] {
   return out;
 }
 
-function stripParticles(token: string): string {
+function stripParticles(token: string, protectedTokens: Set<string>): string {
   let t = token.replace(/[?!.…,'"“”‘’]/g, "");
+  if (protectedTokens.has(compactToken(t))) return t;
   let prev = "";
-  while (t !== prev && t.length > 2) {
+  while (t !== prev) {
     prev = t;
-    t = t.replace(PARTICLE_RE, "");
+    const next = t.replace(PARTICLE_RE, "");
+    if (next === t) break;
+    if (next.length <= 2) break;
+    if (protectedTokens.has(compactToken(t))) break;
+    t = next;
   }
   return t;
 }
 
-function fallbackNouns(message: string): string[] {
-  return tokenizeKeywords(message);
+function fallbackNouns(message: string, protectedTokens: Set<string>): string[] {
+  return tokenizeKeywords(message, protectedTokens);
 }
 
 export function scoreKeywordHit(haystack: string, keyword: string): number {

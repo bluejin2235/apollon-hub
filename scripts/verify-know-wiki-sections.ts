@@ -88,7 +88,7 @@ async function main() {
     });
     const keywordText =
       kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-    const injectKeywords = splitKeywordQuery(keywordText, question);
+    const injectKeywords = splitKeywordQuery(keywordText, question, glossaryRows);
     const wikiSources = matchWikiSections(wikiDocs, injectKeywords, question);
     const matchedTerms = pickGlossaryForQuestion(glossaryRows, injectKeywords);
     const knowledgeInject = pickLearningsForQuestion(learningsRows, injectKeywords);

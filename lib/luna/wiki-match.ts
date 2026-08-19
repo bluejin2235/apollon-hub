@@ -35,15 +35,17 @@ export function splitWikiSourcesByVisibility(sources: WikiSourceRef[]): {
   };
 }
 
+const COMMON_KEYWORD_DOC_RATIO = 0.3;
+
 function enrichKeywords(keywords: string[], questionText?: string): string[] {
   const merged = [...keywords];
-  const seen = new Set(merged.map((k) => normalizeText(k)));
+  const seen = new Set(merged.map((k) => compactText(k)));
   const question = questionText?.trim() ?? "";
   if (!question) return merged;
   for (const hint of QUESTION_ALIAS_HINTS) {
     if (!hint.pattern.test(question)) continue;
     for (const alias of hint.aliases) {
-      const key = normalizeText(alias);
+      const key = compactText(alias);
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(alias);
@@ -52,15 +54,40 @@ function enrichKeywords(keywords: string[], questionText?: string): string[] {
   return merged;
 }
 
-function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, " ").trim();
+function compactText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, "");
 }
 
 function includesKeyword(text: string, keyword: string): boolean {
-  const hay = normalizeText(text);
-  const needle = normalizeText(keyword);
+  const hay = compactText(text);
+  const needle = compactText(keyword);
   if (needle.length < 2) return false;
   return hay.includes(needle);
+}
+
+function docHasKeyword(doc: WikiDoc, keyword: string): boolean {
+  if (includesKeyword(doc.title, keyword) || includesKeyword(doc.summary, keyword)) {
+    return true;
+  }
+  return doc.sections.some(
+    (section) =>
+      includesKeyword(section.title, keyword) || includesKeyword(section.body, keyword)
+  );
+}
+
+function keywordWeights(docs: WikiDoc[], keywords: string[]): Map<string, number> {
+  const active = docs.filter((d) => d.is_active);
+  const total = active.length;
+  const weights = new Map<string, number>();
+  for (const keyword of keywords) {
+    if (total === 0) {
+      weights.set(keyword, 1);
+      continue;
+    }
+    const hits = active.filter((d) => docHasKeyword(d, keyword)).length;
+    weights.set(keyword, hits / total >= COMMON_KEYWORD_DOC_RATIO ? 1 / 3 : 1);
+  }
+  return weights;
 }
 
 function clipSectionBody(body: string): string {
@@ -69,7 +96,12 @@ function clipSectionBody(body: string): string {
   return `${trimmed.slice(0, WIKI_SECTION_BODY_MAX).trim()}...`;
 }
 
-function scoreSection(doc: WikiDoc, section: WikiDoc["sections"][number], keywords: string[]) {
+function scoreSection(
+  doc: WikiDoc,
+  section: WikiDoc["sections"][number],
+  keywords: string[],
+  weights: Map<string, number>
+) {
   let score = 0;
   let title_score = 0;
   let body_score = 0;
@@ -79,25 +111,30 @@ function scoreSection(doc: WikiDoc, section: WikiDoc["sections"][number], keywor
   for (const keyword of keywords) {
     const kw = keyword.trim();
     if (kw.length < 2) continue;
+    const w = weights.get(kw) ?? 1;
     let hit = false;
     if (includesKeyword(section.title, kw)) {
-      score += 3;
-      title_score += 3;
+      const add = 3 * w;
+      score += add;
+      title_score += add;
       hit = true;
     }
     if (includesKeyword(section.body, kw)) {
-      score += 2;
-      body_score += 2;
+      const add = 2 * w;
+      score += add;
+      body_score += add;
       hit = true;
     }
     if (includesKeyword(doc.title, kw)) {
-      score += 2;
-      doc_title_score += 2;
+      const add = 2 * w;
+      score += add;
+      doc_title_score += add;
       hit = true;
     }
     if (includesKeyword(doc.summary, kw)) {
-      score += 1;
-      summary_score += 1;
+      const add = 1 * w;
+      score += add;
+      summary_score += add;
       hit = true;
     }
     if (hit) matched.add(kw);
@@ -119,6 +156,7 @@ export function matchWikiSections(
 ): WikiSourceRef[] {
   const enriched = enrichKeywords(keywords, questionText);
   if (enriched.length === 0) return [];
+  const weights = keywordWeights(docs, enriched);
   const scored: Array<
     WikiSourceRef & {
       title_score: number;
@@ -130,7 +168,7 @@ export function matchWikiSections(
   for (const doc of docs) {
     if (!doc.is_active) continue;
     for (const section of doc.sections) {
-      const hit = scoreSection(doc, section, enriched);
+      const hit = scoreSection(doc, section, enriched, weights);
       if (hit.score < 1) continue;
       const visible = doc.visible_to_staff !== false;
       scored.push({
@@ -152,9 +190,7 @@ export function matchWikiSections(
       });
     }
   }
-  const titleFocused = scored.some((row) => row.title_score > 0);
-  const narrowed = titleFocused ? scored.filter((row) => row.title_score > 0) : scored;
-  narrowed.sort((a, b) => {
+  scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (b.title_score !== a.title_score) return b.title_score - a.title_score;
     if (b.body_score !== a.body_score) return b.body_score - a.body_score;
@@ -164,9 +200,9 @@ export function matchWikiSections(
     return a.title.localeCompare(b.title, "ko");
   });
   const focused =
-    narrowed.length >= 2 && narrowed[0] && narrowed[1] && narrowed[0].score - narrowed[1].score >= 3
-      ? narrowed.filter((row) => row.score === narrowed[0]!.score)
-      : narrowed;
+    scored.length >= 2 && scored[0] && scored[1] && scored[0].score - scored[1].score >= 3
+      ? scored.filter((row) => row.score === scored[0]!.score)
+      : scored;
 
   const perDoc = new Map<string, number>();
   const picked: WikiSourceRef[] = [];
