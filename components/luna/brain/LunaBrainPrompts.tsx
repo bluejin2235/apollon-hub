@@ -527,7 +527,7 @@ export function LunaBrainPrompts() {
             style={{ color: K.faint, marginLeft: 53 }}
           >
             양식은{" "}
-            <Link href="/wiki/forms" style={{ color: K.luna, fontWeight: 700 }}>
+            <Link href="/wiki" style={{ color: K.luna, fontWeight: 700 }}>
               Wikipedia
             </Link>
             에서 관리

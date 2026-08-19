@@ -12,15 +12,11 @@ import {
 } from "@/components/luna/knowledge/ui";
 import { K } from "@/lib/luna/knowledge-format";
 import {
-  WIKI_CATEGORY_META,
-  wikiKindLabel,
-  type WikiCategory,
   type WikiDoc,
   type WikiDocListItem,
+  type WikiMenu,
   type WikiSection
 } from "@/lib/wiki/types";
-
-const CATEGORIES: WikiCategory[] = ["forms", "standards", "rules"];
 
 type ListPayload = {
   items?: WikiDocListItem[];
@@ -71,7 +67,8 @@ function VisibilityToggle({
 }
 
 export function LunaKnowledgeWiki() {
-  const [category, setCategory] = useState<WikiCategory>("forms");
+  const [menuSlug, setMenuSlug] = useState("projects");
+  const [menus, setMenus] = useState<WikiMenu[]>([]);
   const [items, setItems] = useState<WikiDocListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,14 +87,14 @@ export function LunaKnowledgeWiki() {
   const [busy, setBusy] = useState(false);
   const [toggleBusy, setToggleBusy] = useState<string | null>(null);
 
-  const categoryMeta = WIKI_CATEGORY_META[category];
+  const menu = menus.find((m) => m.slug === menuSlug) ?? null;
 
   const loadList = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const json = await wikiFetch<ListPayload>(
-        `/api/wiki/docs?category=${category}&include_inactive=1`
+        `/api/wiki/docs?menu=${encodeURIComponent(menuSlug)}&include_inactive=1`
       );
       setItems(json.items ?? []);
       setCanToggleVisibility(json.can_toggle_visibility === true);
@@ -107,7 +104,19 @@ export function LunaKnowledgeWiki() {
     } finally {
       setLoading(false);
     }
-  }, [category]);
+  }, [menuSlug]);
+
+  useEffect(() => {
+    void wikiFetch<{ menus?: WikiMenu[] }>("/api/wiki/nav")
+      .then((n) => {
+        const list = n.menus ?? [];
+        setMenus(list);
+        setMenuSlug((cur) =>
+          list.some((m) => m.slug === cur) ? cur : list[0]?.slug ?? cur
+        );
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void loadList();
@@ -123,7 +132,7 @@ export function LunaKnowledgeWiki() {
       const json = await wikiFetch<DocPayload>(
         `/api/wiki/docs/${encodeURIComponent(slug)}`
       );
-      if (!json.item || json.item.category !== category) {
+      if (!json.item || json.item.menu_slug !== menuSlug) {
         setExpandedDoc(null);
         setExpandError("문서를 찾지 못했습니다.");
         return;
@@ -214,7 +223,7 @@ export function LunaKnowledgeWiki() {
   return (
     <KnowledgeShell>
       <p className="mb-3 text-[12.5px]" style={{ color: K.sub }}>
-        양식·기준·규정을 여기서 고칩니다. 저장하면 루나가 바로 씁니다. 슈퍼관리자만
+        위키 문서를 여기서 고칩니다. 저장하면 루나가 바로 씁니다. 슈퍼관리자만
         문서별 공개(직원 노출)를 바꿀 수 있습니다.
       </p>
 
@@ -228,29 +237,28 @@ export function LunaKnowledgeWiki() {
       ) : null}
 
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {CATEGORIES.map((cat) => {
-          const meta = WIKI_CATEGORY_META[cat];
-          const active = category === cat;
+        {menus.map((m) => {
+          const active = menuSlug === m.slug;
           return (
             <button
-              key={cat}
+              key={m.slug}
               type="button"
-              onClick={() => setCategory(cat)}
+              onClick={() => setMenuSlug(m.slug)}
               className="rounded-[20px] px-3 py-1 text-[12px] font-semibold"
               style={{
                 background: active ? K.lunaSoft : K.chip,
                 color: active ? K.lunaInk : K.sub
               }}
             >
-              {meta.label}
+              {m.name}
             </button>
           );
         })}
       </div>
 
-      <h2 className="mb-1 text-[15px] font-bold">{categoryMeta.label}</h2>
+      <h2 className="mb-1 text-[15px] font-bold">{menu?.name ?? "위키"}</h2>
       <p className="mb-3 text-[11px]" style={{ color: K.faint }}>
-        {categoryMeta.blurb}
+        {menu?.description ?? ""}
       </p>
 
       {error ? <ErrorLine message={error} /> : null}
@@ -303,12 +311,6 @@ export function LunaKnowledgeWiki() {
                         직원에게 안 보임
                       </span>
                     ) : null}
-                    <span
-                      className="hidden shrink-0 rounded-[5px] px-1.5 py-0.5 text-[9px] sm:inline"
-                      style={{ background: K.chip, color: K.faint }}
-                    >
-                      {wikiKindLabel(category, row.kind)}
-                    </span>
                     <span className="shrink-0 text-[10px]" style={{ color: K.faint }}>
                       {formatWikiWhen(row.updated_at)}
                     </span>

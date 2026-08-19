@@ -1,12 +1,21 @@
-export const WIKI_CATEGORIES = ["forms", "standards", "rules"] as const;
-export type WikiCategory = (typeof WIKI_CATEGORIES)[number];
+export type WikiMenuEditableBy = "all" | "admin";
+
+export type WikiMenu = {
+  slug: string;
+  name: string;
+  description: string;
+  editable_by: WikiMenuEditableBy;
+  sort_order: number;
+  is_active: boolean;
+  doc_count?: number;
+};
 
 export type WikiRelatedKind = "doc" | "term";
 
 export type WikiRelated = {
   kind: WikiRelatedKind;
   title: string;
-  category?: WikiCategory;
+  menu_slug?: string;
   slug?: string;
 };
 
@@ -29,12 +38,13 @@ export type WikiHistoryEntry = {
   summary_text: string;
   related: WikiRelated[];
   sections: WikiSection[];
+  menu_slug?: string;
 };
 
 export type WikiDoc = {
   slug: string;
   title: string;
-  category: WikiCategory;
+  menu_slug: string;
   kind: string;
   summary: string;
   content: string;
@@ -53,7 +63,7 @@ export type WikiDoc = {
 export type WikiDocListItem = {
   slug: string;
   title: string;
-  category: WikiCategory;
+  menu_slug: string;
   kind: string;
   summary: string;
   is_active: boolean;
@@ -63,106 +73,167 @@ export type WikiDocListItem = {
   updated_by_name: string | null;
 };
 
-export const WIKI_KIND_OPTIONS: Record<
-  WikiCategory,
-  ReadonlyArray<{ value: string; label: string }>
-> = {
-  forms: [
-    { value: "template", label: "문서 양식" },
-    { value: "checklist", label: "체크리스트" }
-  ],
-  standards: [
-    { value: "analysis", label: "분석기준" },
-    { value: "tone", label: "톤가이드" }
-  ],
-  rules: [{ value: "policy", label: "규정" }]
+/** 문서 slug 로 쓸 수 없는 경로 조각 */
+export const WIKI_RESERVED_SLUGS = new Set([
+  "terms",
+  "list",
+  "new",
+  "menus",
+  "forms",
+  "standards",
+  "rules"
+]);
+
+export const WIKI_OLD_CATEGORY_TO_LIST: Record<string, string> = {
+  forms: "projects",
+  standards: "workflow",
+  rules: "rules"
 };
 
-/** 잘못된/옛 값이 들어오면 허용값으로 맞춘다. */
-export const WIKI_KIND_ALIASES: Record<string, string> = {
-  standard: "analysis",
-  standards: "analysis"
+export const WIKI_SLUG_RE = /^[a-z][a-z0-9-]{1,48}$/;
+
+const WIKI_SLUG_MAP: Record<string, string> = {
+  "project-gwangan-kcc-switzen": "gwangan-kcc-switzen",
+  project_gwangan_kcc_switzen: "gwangan-kcc-switzen",
+  "media-architecture-business": "media-architecture",
+  media_architecture_business: "media-architecture",
+  rfp_analysis: "rfp-analysis",
+  ai_masterplan: "ai-masterplan"
 };
 
-export function isAllowedWikiKind(
-  category: WikiCategory,
-  kind: string
-): boolean {
-  return WIKI_KIND_OPTIONS[category].some((k) => k.value === kind);
+/** 밑줄→하이픈, project-/business- 접두어 제거, 지정 매핑 */
+export function wikiCanonicalSlug(old: string): string {
+  const s = old.trim().toLowerCase();
+  if (!s) return s;
+  if (WIKI_SLUG_MAP[s]) return WIKI_SLUG_MAP[s];
+  return s.replace(/_/g, "-").replace(/^project-/, "").replace(/^business-/, "");
 }
 
-export function defaultWikiKind(category: WikiCategory): string {
-  return WIKI_KIND_OPTIONS[category][0]!.value;
+export function wikiSlugLookupKeys(input: string): string[] {
+  const raw = input.trim();
+  if (!raw) return [];
+  const can = wikiCanonicalSlug(raw);
+  const keys = [
+    raw,
+    can,
+    raw.replace(/-/g, "_"),
+    can.replace(/-/g, "_"),
+    `project-${can}`,
+    `business-${can}`,
+    `${can}-business`
+  ];
+  return [...new Set(keys.filter(Boolean))];
 }
 
-export function normalizeWikiKind(category: WikiCategory, kind: string): string {
-  const trimmed = kind.trim();
-  const aliased = WIKI_KIND_ALIASES[trimmed] ?? trimmed;
-  if (isAllowedWikiKind(category, aliased)) return aliased;
-  return defaultWikiKind(category);
-}
+export const WIKI_MENU_SLUGS = [
+  "projects",
+  "business",
+  "workflow",
+  "identity",
+  "rules"
+] as const;
 
-export const WIKI_CATEGORY_META: Record<
-  WikiCategory,
-  { label: string; path: string; blurb: string; anyoneEdits: boolean }
-> = {
-  forms: {
-    label: "양식",
-    path: "/wiki/forms",
-    blurb: "문서를 만들 때 꺼내 쓰는 뼈대. 루나가 「만들기」 요청에 이걸 씁니다 · 누구나 고칠 수 있어요",
-    anyoneEdits: true
-  },
-  standards: {
-    label: "기준",
-    path: "/wiki/standards",
-    blurb: "일할 때 맞춰 보는 기준. 루나가 분석·작성에 이걸 씁니다 · 누구나 고칠 수 있어요",
-    anyoneEdits: true
-  },
-  rules: {
-    label: "규정",
-    path: "/wiki/rules",
-    blurb: "아폴론이 지키는 규칙. 바뀌면 전원에게 알림이 갑니다",
-    anyoneEdits: false
+export type WikiMenuSlug = (typeof WIKI_MENU_SLUGS)[number];
+
+/** 제목·옛 category 로 메뉴를 고른다. 본문은 건드리지 않는다. */
+export function inferWikiMenuSlug(
+  title: string,
+  rawMenu: string,
+  kind = ""
+): string {
+  const raw = rawMenu.trim();
+  if ((WIKI_MENU_SLUGS as readonly string[]).includes(raw)) return raw;
+  const t = title;
+  if (
+    /광안리|KCC 스위첸|스위첸|북한강|스타벅스|아시아미디어|아시아 미디어|LUNAR|스타에비뉴|트렌디|유스타운/i.test(
+      t
+    )
+  ) {
+    return "projects";
   }
-};
-
-export function isWikiCategory(value: string): value is WikiCategory {
-  return (WIKI_CATEGORIES as readonly string[]).includes(value);
-}
-
-export function wikiKindLabel(category: WikiCategory, kind: string): string {
-  const value = normalizeWikiKind(category, kind);
-  return (
-    WIKI_KIND_OPTIONS[category].find((k) => k.value === value)?.label ??
-    WIKI_CATEGORY_META[category].label
-  );
-}
-
-export function inferWikiCategory(kind: string, slug?: string): WikiCategory {
-  if (slug === "rfp_analysis") return "standards";
-  if (kind === "analysis" || kind === "tone" || kind === "standard") {
-    return "standards";
+  if (
+    /미디어 아키텍처|미디어아키텍처|미디어 스페이스|미디어스페이스|미디어 조형|미디어조형|미디어 콘텐츠|미디어콘텐츠/i.test(
+      t
+    )
+  ) {
+    return "business";
   }
-  if (kind === "policy") return "rules";
-  return "forms";
+  if (/견적|계약|RFP|마스터플랜|마스터 플랜/i.test(t)) return "workflow";
+  if (/정체성|아폴론이 누구/i.test(t)) return "identity";
+  if (/근태|연차|임금|경비|복지|정보보안|정보 보안|괴롭힘/i.test(t)) {
+    return "rules";
+  }
+  if (raw === "standards") return "workflow";
+  if (raw === "forms" || raw === "form") return "projects";
+  if (raw === "rules" || kind === "policy") return "rules";
+  return "projects";
 }
 
-export function wikiDocPath(category: WikiCategory, slug: string): string {
-  return `/wiki/${category}/${encodeURIComponent(slug)}`;
+export const WIKI_SEED_MENUS: WikiMenu[] = [
+  {
+    slug: "projects",
+    name: "프로젝트 사례",
+    description: "우리가 한 일. 무엇을 만들었고 무엇을 배웠나",
+    editable_by: "all",
+    sort_order: 10,
+    is_active: true
+  },
+  {
+    slug: "business",
+    name: "사업 영역",
+    description: "아폴론이 하는 일의 범위",
+    editable_by: "all",
+    sort_order: 20,
+    is_active: true
+  },
+  {
+    slug: "workflow",
+    name: "일하는 방식",
+    description: "견적·계약·분석처럼 반복하는 방법",
+    editable_by: "all",
+    sort_order: 30,
+    is_active: true
+  },
+  {
+    slug: "identity",
+    name: "회사 기준",
+    description: "우리가 누구이고 무엇을 지키는가",
+    editable_by: "all",
+    sort_order: 40,
+    is_active: true
+  },
+  {
+    slug: "rules",
+    name: "인사·규정",
+    description: "아폴론이 지키는 규칙. 바뀌면 전원에게 알림이 갑니다",
+    editable_by: "admin",
+    sort_order: 50,
+    is_active: true
+  }
+];
+
+export function makeWikiSlug(title: string): string {
+  const ascii = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  if (WIKI_SLUG_RE.test(ascii) && !WIKI_RESERVED_SLUGS.has(ascii)) return ascii;
+  return `d${Date.now().toString(36)}`;
+}
+
+export function wikiDocPath(slug: string): string {
+  return `/wiki/${encodeURIComponent(wikiCanonicalSlug(slug))}`;
+}
+
+export function wikiListPath(menuSlug: string): string {
+  return `/wiki/list/${encodeURIComponent(menuSlug)}`;
 }
 
 export function wikiMakePrompt(title: string): string {
   return `「${title}」 양식으로 만들어줘`;
 }
 
-export const WIKI_SLUG_RE = /^[a-z][a-z0-9_-]{1,48}$/;
-
-export function makeWikiSlug(title: string): string {
-  const ascii = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-  if (WIKI_SLUG_RE.test(ascii)) return ascii;
-  return `d${Date.now().toString(36)}`;
+export function menuAnyoneEdits(menu: WikiMenu | null | undefined): boolean {
+  return menu?.editable_by !== "admin";
 }

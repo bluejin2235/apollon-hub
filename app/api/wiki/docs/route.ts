@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWikiUser, wikiMissingResponse } from "@/lib/wiki/api";
+import { loadWikiMenu } from "@/lib/wiki/menus";
 import {
-  canEditWikiCategory,
+  canCreateInWikiMenu,
   canToggleWikiVisibility,
   filterVisibleWikiDocs
 } from "@/lib/wiki/permissions";
 import { emptySection } from "@/lib/wiki/sections";
 import { createWikiDoc, listItems, loadWikiDocs } from "@/lib/wiki/store";
 import {
-  isWikiCategory,
   makeWikiSlug,
-  normalizeWikiKind,
-  WIKI_SLUG_RE,
-  type WikiCategory
+  WIKI_RESERVED_SLUGS,
+  WIKI_SLUG_RE
 } from "@/lib/wiki/types";
 
 export const runtime = "nodejs";
@@ -20,14 +19,14 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const gate = await requireWikiUser(request);
   if ("error" in gate) return gate.error;
-  const categoryRaw = request.nextUrl.searchParams.get("category") ?? "";
-  const category = isWikiCategory(categoryRaw) ? categoryRaw : undefined;
+  const menuSlug = request.nextUrl.searchParams.get("menu") ?? "";
   const includeInactive =
     request.nextUrl.searchParams.get("include_inactive") === "1" &&
     gate.isAdmin;
   try {
+    const menu = menuSlug ? await loadWikiMenu(gate.admin, menuSlug) : null;
     const { items, wikiReady, tableReady } = await loadWikiDocs(gate.admin, {
-      category,
+      menuSlug: menuSlug || undefined,
       activeOnly: !includeInactive
     });
     if (!tableReady) {
@@ -39,10 +38,12 @@ export async function GET(request: NextRequest) {
     const visible = filterVisibleWikiDocs(items, gate.isAdmin);
     return NextResponse.json({
       items: listItems(visible),
+      menu,
       wiki_ready: wikiReady,
       table_ready: true,
       is_admin: gate.isAdmin,
-      can_edit: category ? canEditWikiCategory(category, gate.isAdmin) : true,
+      can_edit: menu ? canCreateInWikiMenu(menu, gate.isAdmin) || (menu.editable_by === "admin" && gate.isAdmin) : true,
+      can_create: menu ? canCreateInWikiMenu(menu, gate.isAdmin) : true,
       can_toggle_visibility: canToggleWikiVisibility(gate.isAdmin)
     });
   } catch (err) {
@@ -65,26 +66,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const categoryRaw = typeof body.category === "string" ? body.category : "";
-  if (!isWikiCategory(categoryRaw)) {
-    return NextResponse.json({ error: "category 가 올바르지 않습니다." }, { status: 400 });
+  const menuSlug =
+    (typeof body.menu_slug === "string" && body.menu_slug.trim()) ||
+    (typeof body.category === "string" && body.category.trim()) ||
+    "";
+  const menu = menuSlug ? await loadWikiMenu(gate.admin, menuSlug) : null;
+  if (!menu) {
+    return NextResponse.json({ error: "메뉴가 올바르지 않습니다." }, { status: 400 });
   }
-  const category: WikiCategory = categoryRaw;
-  if (!canEditWikiCategory(category, gate.isAdmin)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!canCreateInWikiMenu(menu, gate.isAdmin)) {
+    return NextResponse.json(
+      { error: "이 메뉴에는 새 문서를 만들 수 없습니다." },
+      { status: 403 }
+    );
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) {
     return NextResponse.json({ error: "제목이 필요합니다." }, { status: 400 });
   }
-  const kindRaw = typeof body.kind === "string" ? body.kind.trim() : "";
-  const kind = normalizeWikiKind(category, kindRaw);
   let slug =
     typeof body.slug === "string" && body.slug.trim()
       ? body.slug.trim().toLowerCase()
       : makeWikiSlug(title);
-  if (!WIKI_SLUG_RE.test(slug)) slug = makeWikiSlug(title);
+  if (!WIKI_SLUG_RE.test(slug) || WIKI_RESERVED_SLUGS.has(slug)) {
+    slug = makeWikiSlug(title);
+  }
   const summary = typeof body.summary === "string" ? body.summary.trim() : "";
   const firstTitle =
     typeof body.section_title === "string" && body.section_title.trim()
@@ -96,8 +103,8 @@ export async function POST(request: NextRequest) {
     const doc = await createWikiDoc(gate.admin, {
       slug,
       title,
-      category,
-      kind,
+      menu_slug: menu.slug,
+      kind: "note",
       summary,
       sections: [{ ...emptySection(firstTitle), body: firstBody }],
       userId: gate.user.id

@@ -34,17 +34,17 @@ export function parseRelated(raw: unknown): WikiRelated[] {
     const title = typeof row.title === "string" ? row.title.trim() : "";
     if (!title) continue;
     const kind = row.kind === "term" ? "term" : "doc";
-    const category =
-      row.category === "forms" ||
-      row.category === "standards" ||
-      row.category === "rules"
-        ? row.category
-        : undefined;
+    const menu_slug =
+      typeof row.menu_slug === "string" && row.menu_slug.trim()
+        ? row.menu_slug.trim()
+        : typeof row.category === "string" && row.category.trim()
+          ? row.category.trim()
+          : undefined;
     const slug = typeof row.slug === "string" ? row.slug.trim() : "";
     out.push({
       kind,
       title,
-      category,
+      menu_slug,
       slug: slug || undefined
     });
   }

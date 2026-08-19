@@ -8,9 +8,8 @@ import {
   sectionsToContent
 } from "@/lib/wiki/sections";
 import {
-  inferWikiCategory,
-  isWikiCategory,
-  type WikiCategory,
+  inferWikiMenuSlug,
+  wikiSlugLookupKeys,
   type WikiDoc,
   type WikiDocListItem,
   type WikiHistoryEntry,
@@ -19,6 +18,8 @@ import {
 } from "@/lib/wiki/types";
 
 const FULL_SELECT =
+  "slug, title, kind, content, summary, menu_slug, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
+const FULL_SELECT_LEGACY =
   "slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
 const BASE_SELECT =
   "slug, title, kind, content, source_prompt_key, is_active, updated_at";
@@ -63,26 +64,33 @@ function parseHistory(raw: unknown): WikiHistoryEntry[] {
       kind: asText(row.kind),
       summary_text: asText(row.summary_text),
       related: parseRelated(row.related),
-      sections: parseSections(row.sections)
+      sections: parseSections(row.sections),
+      menu_slug:
+        typeof row.menu_slug === "string"
+          ? row.menu_slug
+          : typeof row.category === "string"
+            ? row.category
+            : undefined
     });
   }
   return out.sort((a, b) => b.version - a.version);
 }
 
 function mapDoc(row: Record<string, unknown>, wikiReady: boolean): WikiDoc {
-  const kind = asText(row.kind, "template");
+  const kind = asText(row.kind, "note");
   const slug = asText(row.slug);
-  const categoryRaw = asText(row.category);
-  const category = isWikiCategory(categoryRaw)
-    ? categoryRaw
-    : inferWikiCategory(kind, slug);
+  const menu_slug = inferWikiMenuSlug(
+    asText(row.title, slug),
+    asText(row.menu_slug) || asText(row.category),
+    kind
+  );
   const content = asText(row.content);
   let sections = wikiReady ? parseSections(row.sections) : [];
   if (sections.length === 0 && content) sections = contentToSections(content);
   return {
     slug,
     title: asText(row.title, slug),
-    category,
+    menu_slug,
     kind,
     summary: asText(row.summary),
     content: sections.length > 0 ? sectionsToContent(sections) : content,
@@ -110,7 +118,7 @@ function toListItem(doc: WikiDoc): WikiDocListItem {
   return {
     slug: doc.slug,
     title: doc.title,
-    category: doc.category,
+    menu_slug: doc.menu_slug,
     kind: doc.kind,
     summary: doc.summary,
     is_active: doc.is_active,
@@ -121,43 +129,22 @@ function toListItem(doc: WikiDoc): WikiDocListItem {
   };
 }
 
-export async function loadWikiNavCounts(
-  admin: SupabaseClient,
-  opts?: { isSuperAdmin?: boolean }
-): Promise<{
-  terms: number;
-  forms: number;
-  standards: number;
-  rules: number;
-  wikiReady: boolean;
-}> {
-  let terms = 0;
-  {
-    let q = await admin
+export async function loadWikiTermCount(admin: SupabaseClient): Promise<number> {
+  let q = await admin
+    .from("glossary_terms")
+    .select("id", { count: "exact", head: true })
+    .is("deleted_at", null);
+  if (q.error) {
+    q = await admin
       .from("glossary_terms")
-      .select("id", { count: "exact", head: true })
-      .is("deleted_at", null);
-    if (q.error) {
-      q = await admin
-        .from("glossary_terms")
-        .select("id", { count: "exact", head: true });
-    }
-    terms = q.count ?? 0;
+      .select("id", { count: "exact", head: true });
   }
-
-  const { items, wikiReady } = await loadWikiDocs(admin, { activeOnly: true });
-  const visible = opts?.isSuperAdmin
-    ? items
-    : items.filter((d) => d.visible_to_staff !== false);
-  const forms = visible.filter((d) => d.category === "forms").length;
-  const standards = visible.filter((d) => d.category === "standards").length;
-  const rules = visible.filter((d) => d.category === "rules").length;
-  return { terms, forms, standards, rules, wikiReady };
+  return q.count ?? 0;
 }
 
 export async function loadWikiDocs(
   admin: SupabaseClient,
-  opts?: { category?: WikiCategory; activeOnly?: boolean }
+  opts?: { menuSlug?: string; activeOnly?: boolean }
 ): Promise<{ items: WikiDoc[]; wikiReady: boolean; tableReady: boolean }> {
   const run = async (select: string) => {
     let q = admin.from("luna_library").select(select).order("title", {
@@ -169,6 +156,9 @@ export async function loadWikiDocs(
 
   let wikiReady = true;
   let res = await run(FULL_SELECT);
+  if (res.error && isMissingWikiSchema(res.error)) {
+    res = await run(FULL_SELECT_LEGACY);
+  }
   if (res.error && isMissingWikiSchema(res.error)) {
     wikiReady = false;
     res = await run(BASE_SELECT);
@@ -182,8 +172,8 @@ export async function loadWikiDocs(
   }
   const rows = (res.data ?? []) as unknown as Record<string, unknown>[];
   let items = rows.map((r) => mapDoc(r, wikiReady));
-  if (opts?.category) {
-    items = items.filter((d) => d.category === opts.category);
+  if (opts?.menuSlug) {
+    items = items.filter((d) => d.menu_slug === opts.menuSlug);
   }
   return { items, wikiReady, tableReady: true };
 }
@@ -202,6 +192,9 @@ async function fetchWikiRowBySlug(
   let wikiReady = true;
   let res = await run(FULL_SELECT);
   if (res.error && isMissingWikiSchema(res.error)) {
+    res = await run(FULL_SELECT_LEGACY);
+  }
+  if (res.error && isMissingWikiSchema(res.error)) {
     wikiReady = false;
     res = await run(BASE_SELECT);
   }
@@ -219,6 +212,23 @@ async function fetchWikiRowBySlug(
   };
 }
 
+export async function resolveWikiSlugAlias(
+  admin: SupabaseClient,
+  alias: string
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("luna_wiki_slug_aliases")
+    .select("slug")
+    .eq("alias", alias)
+    .maybeSingle();
+  if (error) {
+    if (isMissingWikiSchema(error)) return null;
+    console.error("[wiki] alias", error);
+    return null;
+  }
+  return typeof data?.slug === "string" ? data.slug : null;
+}
+
 export async function loadWikiDoc(
   admin: SupabaseClient,
   slug: string
@@ -229,9 +239,23 @@ export async function loadWikiDoc(
   } catch {
     /* keep trimmed */
   }
+  const keys = wikiSlugLookupKeys(decoded);
   let result = await fetchWikiRowBySlug(admin, decoded);
-  if (!result.row && decoded !== slug.trim()) {
-    result = await fetchWikiRowBySlug(admin, slug.trim());
+  if (!result.row) {
+    for (const key of keys) {
+      if (key === decoded) continue;
+      result = await fetchWikiRowBySlug(admin, key);
+      if (result.row) break;
+    }
+  }
+  if (!result.row) {
+    for (const key of keys) {
+      const aliased = await resolveWikiSlugAlias(admin, key);
+      if (aliased && aliased !== key) {
+        result = await fetchWikiRowBySlug(admin, aliased);
+        if (result.row) break;
+      }
+    }
   }
   if (!result.tableReady) {
     return { doc: null, wikiReady: result.wikiReady, tableReady: false };
@@ -284,7 +308,8 @@ function snapshot(
     kind: doc.kind,
     summary_text: doc.summary,
     related: doc.related,
-    sections: doc.sections
+    sections: doc.sections,
+    menu_slug: doc.menu_slug
   };
 }
 
@@ -293,7 +318,7 @@ export async function createWikiDoc(
   input: {
     slug: string;
     title: string;
-    category: WikiCategory;
+    menu_slug: string;
     kind: string;
     summary?: string;
     sections: WikiSection[];
@@ -319,7 +344,8 @@ export async function createWikiDoc(
       kind: input.kind,
       summary_text: input.summary ?? "",
       related: input.related ?? [],
-      sections
+      sections,
+      menu_slug: input.menu_slug
     }
   ];
   const { data, error } = await admin
@@ -329,7 +355,7 @@ export async function createWikiDoc(
       title: input.title,
       kind: input.kind,
       content,
-      category: input.category,
+      menu_slug: input.menu_slug,
       summary: input.summary ?? "",
       sections,
       related: input.related ?? [],
@@ -355,6 +381,7 @@ export type WikiSaveMeta = {
   summary?: string;
   related?: WikiRelated[];
   sections?: WikiSection[];
+  menu_slug?: string;
   is_active?: boolean;
   visible_to_staff?: boolean;
   change_note?: string;
@@ -375,6 +402,7 @@ export async function saveWikiDoc(
   const nextSections = patch.sections ?? prev.sections;
   const nextTitle = patch.title?.trim() || prev.title;
   const nextKind = patch.kind?.trim() || prev.kind;
+  const nextMenu = patch.menu_slug?.trim() || prev.menu_slug;
   const nextSummary =
     typeof patch.summary === "string" ? patch.summary : prev.summary;
   const nextRelated = patch.related ?? prev.related;
@@ -410,36 +438,59 @@ export async function saveWikiDoc(
   });
   historyEntry.title = nextTitle;
   historyEntry.kind = nextKind;
+  historyEntry.menu_slug = nextMenu;
   historyEntry.summary_text = nextSummary;
   historyEntry.related = nextRelated;
   historyEntry.sections = nextSections;
 
   const history = [historyEntry, ...prev.history].slice(0, 80);
   const content = sectionsToContent(nextSections);
+  const moving = Boolean(patch.menu_slug?.trim()) && nextMenu !== prev.menu_slug;
 
-  const { data, error } = await admin
+  const payload: Record<string, unknown> = {
+    title: nextTitle,
+    kind: nextKind,
+    menu_slug: nextMenu,
+    summary: nextSummary,
+    related: nextRelated,
+    sections: nextSections,
+    content,
+    is_active: nextActive,
+    visible_to_staff: nextVisible,
+    version: nextVersion,
+    updated_at: now,
+    updated_by: userId,
+    updated_by_name: name,
+    history
+  };
+
+  const first = await admin
     .from("luna_library")
-    .update({
-      title: nextTitle,
-      kind: nextKind,
-      summary: nextSummary,
-      related: nextRelated,
-      sections: nextSections,
-      content,
-      is_active: nextActive,
-      visible_to_staff: nextVisible,
-      version: nextVersion,
-      updated_at: now,
-      updated_by: userId,
-      updated_by_name: name,
-      history
-    })
-    .eq("slug", slug)
+    .update(payload)
+    .eq("slug", prev.slug)
     .select(FULL_SELECT)
     .maybeSingle();
+  let data: Record<string, unknown> | null =
+    (first.data as Record<string, unknown> | null) ?? null;
+  let error = first.error;
+  if (error && isMissingWikiSchema(error)) {
+    if (moving) {
+      throw new Error("메뉴 옮기기는 wiki_menus / wiki_menu_slug 마이그레이션 후에 가능합니다.");
+    }
+    const { menu_slug: _omit, ...legacyPayload } = payload;
+    void _omit;
+    const retry = await admin
+      .from("luna_library")
+      .update(legacyPayload)
+      .eq("slug", prev.slug)
+      .select(FULL_SELECT_LEGACY)
+      .maybeSingle();
+    data = (retry.data as Record<string, unknown> | null) ?? null;
+    error = retry.error;
+  }
   if (error) throw new Error(error.message);
   if (!data) throw new Error("not found");
-  return mapDoc(data as Record<string, unknown>, true);
+  return mapDoc(data, true);
 }
 
 export async function revertWikiDoc(

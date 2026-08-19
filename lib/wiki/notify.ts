@@ -13,10 +13,10 @@ export async function notifyWikiRuleChange(
     category: "wiki_rules",
     title: `규정이 바뀌었어요: ${opts.title}`,
     body: `${opts.editorName}이 「${opts.title}」을 고쳤습니다.`,
-    link: wikiDocPath("rules", opts.slug),
+    link: wikiDocPath(opts.slug),
     level: "info",
     scope: "all",
-    meta: { slug: opts.slug, category: "rules" }
+    meta: { slug: opts.slug, menu_slug: "rules" }
   });
   if (error) {
     console.error("[wiki] rule notify", error);
@@ -83,8 +83,7 @@ export async function collectWikiMorningLine(
   {
     const lib = await admin
       .from("luna_library")
-      .select("slug, title, category, updated_at, updated_by_name")
-      .in("category", ["forms", "standards"])
+      .select("slug, title, menu_slug, updated_at, updated_by_name")
       .gte("updated_at", startIso)
       .lt("updated_at", endIso)
       .order("updated_at", { ascending: false })

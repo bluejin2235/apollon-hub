@@ -1,6 +1,4 @@
-﻿import type { WikiCategory } from "@/lib/wiki/types";
-
-/** profiles.role = '슈퍼관리자' → 요구사항의 「관리자」 */
+﻿/** profiles.role = '슈퍼관리자' → 요구사항의 「관리자」 */
 export function isWikiSuperAdmin(role: string | null | undefined): boolean {
   return String(role ?? "").trim() === "슈퍼관리자";
 }
@@ -16,14 +14,6 @@ export function canViewWikiDoc(
 ): boolean {
   if (isSuperAdmin) return true;
   return doc.visible_to_staff !== false;
-}
-
-export function canEditWikiCategory(
-  category: WikiCategory,
-  isSuperAdmin: boolean
-): boolean {
-  if (category === "rules") return isSuperAdmin;
-  return true;
 }
 
 export function canToggleWikiVisibility(isSuperAdmin: boolean): boolean {

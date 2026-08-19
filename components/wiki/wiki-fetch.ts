@@ -38,3 +38,28 @@ export async function wikiFetch<T>(
   }
   return json as T;
 }
+
+export async function wikiUploadFile(
+  file: File,
+  slug: string
+): Promise<{ url: string; path: string }> {
+  const token = await wikiToken();
+  if (!token) throw new WikiApiError("로그인이 필요합니다.", 401);
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("slug", slug);
+  const res = await fetch("/api/wiki/upload", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd
+  });
+  const json = (await res.json().catch(() => null)) as {
+    url?: string;
+    path?: string;
+    error?: string;
+  } | null;
+  if (!res.ok || !json?.url) {
+    throw new WikiApiError(json?.error ?? "업로드에 실패했습니다.", res.status);
+  }
+  return { url: json.url, path: json.path ?? "" };
+}

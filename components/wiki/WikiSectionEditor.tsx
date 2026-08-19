@@ -1,42 +1,12 @@
 "use client";
 
-import { useRef } from "react";
+import { WikiBodyEditor } from "@/components/wiki/WikiBodyEditor";
 import { W } from "@/components/wiki/wiki-theme";
-
-function wrapSelection(
-  el: HTMLTextAreaElement,
-  before: string,
-  after: string,
-  placeholder = ""
-): string {
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const value = el.value;
-  const selected = value.slice(start, end) || placeholder;
-  const next =
-    value.slice(0, start) + before + selected + after + value.slice(end);
-  return next;
-}
-
-function prefixLines(el: HTMLTextAreaElement, prefix: string): string {
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const value = el.value;
-  const from = value.lastIndexOf("\n", start - 1) + 1;
-  const block = value.slice(from, end);
-  const nextBlock = block
-    .split("\n")
-    .map((line, i) =>
-      prefix === "1. "
-        ? `${i + 1}. ${line.replace(/^\s*([0-9]+\.\s+|[-*]\s+)/, "")}`
-        : `${prefix}${line.replace(/^\s*([0-9]+\.\s+|[-*]\s+)/, "")}`
-    )
-    .join("\n");
-  return value.slice(0, from) + nextBlock + value.slice(end);
-}
 
 export function WikiSectionEditor({
   heading,
+  headingValue,
+  onHeadingChange,
   value,
   onChange,
   onCancel,
@@ -46,9 +16,12 @@ export function WikiSectionEditor({
   onToggleDiff,
   showDiff,
   busy,
+  slug,
   hint = "저장하면 루나가 바로 이 내용을 씁니다"
 }: {
   heading: string;
+  headingValue?: string;
+  onHeadingChange?: (next: string) => void;
   value: string;
   onChange: (next: string) => void;
   onCancel: () => void;
@@ -58,34 +31,29 @@ export function WikiSectionEditor({
   onToggleDiff: () => void;
   showDiff: boolean;
   busy?: boolean;
+  slug?: string;
   hint?: string;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  function apply(fn: (el: HTMLTextAreaElement) => string) {
-    const el = ref.current;
-    if (!el) return;
-    onChange(fn(el));
-  }
-
-  function link() {
-    const el = ref.current;
-    if (!el) return;
-    const href = window.prompt("연결할 주소", "/wiki/");
-    if (!href) return;
-    onChange(wrapSelection(el, "[", `](${href})`, "이름"));
-  }
-
   return (
     <div
       className="overflow-hidden rounded-[11px] border"
       style={{ borderColor: W.luna }}
     >
       <div
-        className="flex gap-2 px-[13px] py-[9px] text-[11.5px] font-semibold"
+        className="flex items-center gap-2 px-3 py-2 text-[11.5px] font-semibold"
         style={{ background: W.lunaSoft, color: W.lunaInk }}
       >
-        <span>{heading}</span>
+        <span>절 제목</span>
+        {onHeadingChange ? (
+          <input
+            value={headingValue ?? heading}
+            onChange={(e) => onHeadingChange(e.target.value)}
+            className="rounded-md border bg-white px-2 py-[3px] text-[12px] font-bold outline-none"
+            style={{ borderColor: "#CFC9EC", width: 180 }}
+          />
+        ) : (
+          <span>{heading}</span>
+        )}
         <button
           type="button"
           className="ml-auto"
@@ -95,36 +63,16 @@ export function WikiSectionEditor({
           ✕ 취소
         </button>
       </div>
-      <div
-        className="flex gap-[3px] border-b px-[13px] py-[7px]"
-        style={{ borderColor: W.line2, background: "#FBFBFC" }}
-      >
-        <Tool onClick={() => apply((el) => wrapSelection(el, "**", "**"))}>
-          <b>B</b>
-        </Tool>
-        <Tool onClick={() => apply((el) => wrapSelection(el, "*", "*"))}>
-          <i>I</i>
-        </Tool>
-        <Tool onClick={() => apply((el) => prefixLines(el, "- "))}>• 목록</Tool>
-        <Tool onClick={() => apply((el) => prefixLines(el, "1. "))}>1. 번호</Tool>
-        <Tool onClick={link}>🔗 연결</Tool>
-      </div>
-      <textarea
-        ref={ref}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="min-h-[110px] w-full resize-y bg-[#FCFCFD] px-[13px] py-[13px] text-[13px] leading-[1.9] outline-none"
-        style={{ color: "#2a2c31" }}
-      />
+      <WikiBodyEditor value={value} onChange={onChange} slug={slug ?? "misc"} />
       <div className="border-t px-[13px] py-[11px]" style={{ borderColor: W.line }}>
         <p className="mb-1 text-[11px]" style={{ color: W.sub }}>
           무엇을 왜 바꾸셨나요?{" "}
-          <span style={{ color: W.faint }}>이력에 남습니다 · 안 적어도 됩니다</span>
+          <span style={{ color: W.faint }}>이력에 남습니다</span>
         </p>
         <input
           value={changeNote}
           onChange={(e) => onChangeNote(e.target.value)}
-          placeholder="예) 협력사 견적 원본 첨부 금지를 추가"
+          placeholder="예) 유튜브 영상 추가"
           className="mb-2.5 w-full rounded-lg border px-[11px] py-2 text-[12px] outline-none"
           style={{ borderColor: W.line, color: W.ink }}
         />
@@ -160,24 +108,5 @@ export function WikiSectionEditor({
         </div>
       </div>
     </div>
-  );
-}
-
-function Tool({
-  children,
-  onClick
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md px-2 py-[3px] text-[11px] hover:bg-[#f1f2f5]"
-      style={{ color: W.sub }}
-    >
-      {children}
-    </button>
   );
 }

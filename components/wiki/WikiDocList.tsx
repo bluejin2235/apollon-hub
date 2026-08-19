@@ -6,48 +6,45 @@ import { wikiFetch } from "@/components/wiki/wiki-fetch";
 import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiWhen, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import {
-  WIKI_CATEGORY_META,
-  WIKI_KIND_OPTIONS,
   wikiDocPath,
-  wikiKindLabel,
-  type WikiCategory,
-  type WikiDocListItem
+  type WikiDocListItem,
+  type WikiMenu
 } from "@/lib/wiki/types";
 
 type ListPayload = {
   items?: WikiDocListItem[];
-  can_edit?: boolean;
-  is_admin?: boolean;
+  menu?: WikiMenu | null;
+  can_create?: boolean;
   wiki_ready?: boolean;
   error?: string;
 };
 
-export function WikiDocList({ category }: { category: WikiCategory }) {
-  const meta = WIKI_CATEGORY_META[category];
+export function WikiDocList({ menuSlug }: { menuSlug: string }) {
   const [items, setItems] = useState<WikiDocListItem[]>([]);
+  const [menu, setMenu] = useState<WikiMenu | null>(null);
   const [query, setQuery] = useState("");
-  const [canEdit, setCanEdit] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [wikiReady, setWikiReady] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const json = await wikiFetch<ListPayload>(
-        `/api/wiki/docs?category=${category}`
+        `/api/wiki/docs?menu=${encodeURIComponent(menuSlug)}`
       );
       setItems(json.items ?? []);
-      setCanEdit(json.can_edit === true);
+      setMenu(json.menu ?? null);
+      setCanCreate(json.can_create === true);
       setWikiReady(json.wiki_ready !== false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
-  }, [category]);
+  }, [menuSlug]);
 
   useEffect(() => {
     void load();
@@ -59,6 +56,9 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
     return `${row.title} ${row.summary}`.toLowerCase().includes(q);
   });
 
+  const label = menu?.name ?? menuSlug;
+  const anyone = menu?.editable_by !== "admin";
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
       <div className="mb-2 text-[11px]" style={{ color: W.faint }}>
@@ -68,11 +68,12 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
         </span>
-        {meta.label}
+        {label}
       </div>
-      <h1 className="text-[19px] font-extrabold tracking-[-0.3px]">{meta.label}</h1>
+      <h1 className="text-[19px] font-extrabold tracking-[-0.3px]">{label}</h1>
       <p className="mb-3 mt-1 text-[11px]" style={{ color: W.faint }}>
-        {meta.blurb}
+        {menu?.description ?? ""}
+        {menu ? ` · ${anyone ? "누구나 고칠 수 있어요" : "관리자만"}` : ""}
       </p>
 
       {!wikiReady ? (
@@ -80,8 +81,7 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
           className="mb-3 rounded-[10px] px-[13px] py-2.5 text-[11.5px]"
           style={{ background: W.lockBg, color: W.lock }}
         >
-          위키 마이그레이션 SQL을 실행하면 절 단위 편집·이력이 켜집니다. 지금은
-          기존 라이브러리 본문을 읽기만 합니다.
+          위키 마이그레이션 SQL을 실행하면 절 단위 편집·이력이 켜집니다.
         </p>
       ) : null}
       {error ? (
@@ -94,19 +94,18 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`${meta.label} 이름으로 찾기`}
+          placeholder="이름으로 찾기"
           className="flex-1 rounded-[9px] border px-[11px] py-[7px] text-[12px] outline-none"
           style={{ borderColor: W.line, color: W.ink }}
         />
-        {canEdit ? (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
+        {canCreate ? (
+          <Link
+            href={`/wiki/new?menu=${encodeURIComponent(menuSlug)}`}
             className="whitespace-nowrap rounded-[9px] px-[13px] py-[7px] text-[12px] font-bold text-white"
             style={{ background: W.luna }}
           >
-            + 새 {meta.label}
-          </button>
+            ＋ 새 문서
+          </Link>
         ) : null}
       </div>
 
@@ -128,7 +127,7 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
             return (
               <Link
                 key={row.slug}
-                href={wikiDocPath(category, row.slug)}
+                href={wikiDocPath(row.slug)}
                 className="flex items-center gap-[11px] border-b px-[14px] py-3 last:border-b-0"
                 style={{
                   borderColor: W.line2,
@@ -136,27 +135,21 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
                   opacity: isPrivate ? 0.92 : 1
                 }}
               >
-                <span className="min-w-[126px] text-[13px] font-semibold">
+                <span className="min-w-[150px] text-[13px] font-semibold">
                   {row.title}
                 </span>
                 <span
-                  className="min-w-0 flex-1 truncate text-[11.5px]"
+                  className="min-w-0 flex-1 truncate text-[11px]"
                   style={{ color: W.sub }}
                 >
                   {row.summary || "—"}
                 </span>
                 {isPrivate ? <WikiStaffHiddenMark /> : null}
-                <span
-                  className="rounded-[5px] px-1.5 py-0.5 text-[9px]"
-                  style={{ background: W.chip, color: W.faint }}
-                >
-                  {wikiKindLabel(category, row.kind)}
-                </span>
                 <span className="text-[10px]" style={{ color: W.faint }}>
                   {wikiEditorLabel(row.updated_by, row.updated_by_name)}
                 </span>
                 <span
-                  className="w-10 text-right text-[10px]"
+                  className="w-[38px] text-right text-[10px]"
                   style={{ color: W.faint }}
                 >
                   {formatWikiWhen(row.updated_at)}
@@ -166,143 +159,6 @@ export function WikiDocList({ category }: { category: WikiCategory }) {
           })}
         </div>
       )}
-
-      {creating ? (
-        <NewDocModal
-          category={category}
-          onClose={() => setCreating(false)}
-          onCreated={() => {
-            setCreating(false);
-            void load();
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function NewDocModal({
-  category,
-  onClose,
-  onCreated
-}: {
-  category: WikiCategory;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const kinds = WIKI_KIND_OPTIONS[category];
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState(kinds[0]!.value);
-  const [summary, setSummary] = useState("");
-  const [sectionTitle, setSectionTitle] = useState("본문");
-  const [sectionBody, setSectionBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function save() {
-    setBusy(true);
-    setError("");
-    try {
-      await wikiFetch("/api/wiki/docs", {
-        method: "POST",
-        body: JSON.stringify({
-          category,
-          title,
-          kind,
-          summary,
-          section_title: sectionTitle,
-          section_body: sectionBody
-        })
-      });
-      onCreated();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "만들지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
-        <h2 className="text-sm font-semibold">새 {WIKI_CATEGORY_META[category].label}</h2>
-        {error ? (
-          <p className="mt-2 text-[12px]" style={{ color: W.del }}>
-            {error}
-          </p>
-        ) : null}
-        <label className="mt-3 block text-[12px]" style={{ color: W.sub }}>
-          제목
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: W.line }}
-            autoFocus
-          />
-        </label>
-        <label className="mt-2 block text-[12px]" style={{ color: W.sub }}>
-          종류
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: W.line }}
-          >
-            {kinds.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-2 block text-[12px]" style={{ color: W.sub }}>
-          한 줄 설명
-          <input
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: W.line }}
-          />
-        </label>
-        <label className="mt-2 block text-[12px]" style={{ color: W.sub }}>
-          첫 절 제목
-          <input
-            value={sectionTitle}
-            onChange={(e) => setSectionTitle(e.target.value)}
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: W.line }}
-          />
-        </label>
-        <label className="mt-2 block text-[12px]" style={{ color: W.sub }}>
-          첫 절 내용
-          <textarea
-            value={sectionBody}
-            onChange={(e) => setSectionBody(e.target.value)}
-            className="mt-1 min-h-[80px] w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: W.line }}
-          />
-        </label>
-        <div className="mt-3 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm"
-            style={{ color: W.sub }}
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            disabled={busy || !title.trim()}
-            onClick={() => void save()}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-            style={{ background: W.luna }}
-          >
-            만들기
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

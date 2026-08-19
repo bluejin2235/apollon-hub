@@ -1,4 +1,18 @@
-import { wikiDocPath, type WikiCategory, type WikiDoc } from "@/lib/wiki/types";
+import { wikiDocPath, type WikiDoc } from "@/lib/wiki/types";
+
+export type WikiSourceRef = {
+  slug: string;
+  title: string;
+  category: string;
+  section_id: string;
+  section_title: string;
+  score: number;
+  matched_keywords: string[];
+  excerpt: string;
+  path: string;
+  visible_to_staff: boolean;
+  cite_publicly: boolean;
+};
 
 export const WIKI_SECTION_MAX = 3;
 export const WIKI_SECTIONS_PER_DOC_MAX = 2;
@@ -10,20 +24,6 @@ const QUESTION_ALIAS_HINTS: Array<{ pattern: RegExp; aliases: string[] }> = [
   { pattern: /입력|받으면|받을\s*때/, aliases: ["입력", "입력 처리"] },
   { pattern: /출력|결과물|산출/, aliases: ["출력", "출력 형식"] }
 ];
-
-export type WikiSourceRef = {
-  slug: string;
-  title: string;
-  category: WikiCategory;
-  section_id: string;
-  section_title: string;
-  score: number;
-  matched_keywords: string[];
-  excerpt: string;
-  path: string;
-  visible_to_staff: boolean;
-  cite_publicly: boolean;
-};
 
 export function splitWikiSourcesByVisibility(sources: WikiSourceRef[]): {
   public: WikiSourceRef[];
@@ -174,13 +174,13 @@ export function matchWikiSections(
       scored.push({
         slug: doc.slug,
         title: doc.title,
-        category: doc.category,
+        category: doc.menu_slug,
         section_id: section.id,
         section_title: section.title,
         score: hit.score,
         matched_keywords: hit.matched_keywords,
         excerpt: clipSectionBody(section.body),
-        path: wikiDocPath(doc.category, doc.slug),
+        path: wikiDocPath(doc.slug),
         visible_to_staff: visible,
         cite_publicly: visible,
         title_score: hit.title_score,
@@ -252,10 +252,9 @@ export function normalizeWikiSources(raw: unknown): WikiSourceRef[] | null {
   for (const item of raw) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const row = item as Record<string, unknown>;
-    const category =
-      row.category === "forms" || row.category === "standards" || row.category === "rules"
-        ? row.category
-        : null;
+    const categoryRaw =
+      typeof row.category === "string" ? row.category.trim() : "";
+    const category = categoryRaw || "projects";
     const slug = typeof row.slug === "string" ? row.slug.trim() : "";
     const title = typeof row.title === "string" ? row.title.trim() : "";
     const section_id = typeof row.section_id === "string" ? row.section_id.trim() : "";
@@ -277,7 +276,7 @@ export function normalizeWikiSources(raw: unknown): WikiSourceRef[] | null {
     const visible_to_staff = visibleRaw === false ? false : true;
     const cite_publicly =
       citeRaw === false ? false : citeRaw === true ? true : visible_to_staff;
-    if (!category || !slug || !title || !section_id || !section_title || !path) continue;
+    if (!slug || !title || !section_id || !section_title || !path) continue;
     out.push({
       slug,
       title,

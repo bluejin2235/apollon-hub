@@ -396,7 +396,7 @@ export async function loadLibraryItems(
   try {
     const { items } = await loadWikiDocs(admin, { activeOnly: true });
     return items
-      .filter((d) => d.category === "forms" || d.category === "standards")
+      .filter((d) => d.menu_slug !== "rules")
       .map((d) => ({
         slug: d.slug,
         title: d.title,

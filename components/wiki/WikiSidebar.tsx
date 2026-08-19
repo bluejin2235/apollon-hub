@@ -5,47 +5,37 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
 import { W } from "@/components/wiki/wiki-theme";
-import { WIKI_CATEGORY_META, type WikiCategory } from "@/lib/wiki/types";
+import type { WikiMenu } from "@/lib/wiki/types";
 
 type NavPayload = {
   terms?: number;
-  forms?: number;
-  standards?: number;
-  rules?: number;
+  menus?: WikiMenu[];
+  is_admin?: boolean;
 };
-
-const OPEN_ITEMS: { category: WikiCategory | "terms"; label: string; href: string }[] =
-  [
-    { category: "terms", label: "용어사전", href: "/wiki/terms" },
-    { category: "forms", label: WIKI_CATEGORY_META.forms.label, href: "/wiki/forms" },
-    {
-      category: "standards",
-      label: WIKI_CATEGORY_META.standards.label,
-      href: "/wiki/standards"
-    }
-  ];
 
 export function WikiSidebar() {
   const pathname = usePathname() ?? "";
   const router = useRouter();
-  const [counts, setCounts] = useState<NavPayload>({});
+  const [nav, setNav] = useState<NavPayload>({});
 
   useEffect(() => {
     void wikiFetch<NavPayload>("/api/wiki/nav")
-      .then(setCounts)
+      .then(setNav)
       .catch(() => undefined);
   }, [pathname]);
+
+  const menus = (nav.menus ?? []).filter((m) => m.is_active);
+  const openMenus = menus.filter((m) => m.editable_by !== "admin");
+  const lockedMenus = menus.filter((m) => m.editable_by === "admin");
 
   function isOn(href: string): boolean {
     if (href === "/wiki/terms") {
       return pathname === "/wiki/terms" || pathname.startsWith("/wiki/terms/");
     }
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
-
-  function countFor(key: WikiCategory | "terms"): number | undefined {
-    if (key === "terms") return counts.terms;
-    return counts[key];
+    if (href.startsWith("/wiki/list/")) {
+      return pathname === href || pathname.startsWith(`${href}/`);
+    }
+    return pathname === href;
   }
 
   return (
@@ -79,37 +69,59 @@ export function WikiSidebar() {
       </div>
 
       <div className="mb-3 px-[9px]">
-        <div
-          className="mb-1 px-[9px] text-[9.5px]"
-          style={{ color: W.faint }}
-        >
+        <div className="mb-1 px-[9px] text-[9.5px]" style={{ color: W.faint }}>
           누구나 고칠 수 있어요
         </div>
-        {OPEN_ITEMS.map((item) => (
+        <NavLink
+          href="/wiki/terms"
+          label="용어사전"
+          count={nav.terms}
+          active={isOn("/wiki/terms")}
+        />
+        {openMenus.map((m) => (
           <NavLink
-            key={item.href}
-            href={item.href}
-            label={item.label}
-            count={countFor(item.category)}
-            active={isOn(item.href)}
+            key={m.slug}
+            href={`/wiki/list/${m.slug}`}
+            label={m.name}
+            count={m.doc_count}
+            active={isOn(`/wiki/list/${m.slug}`)}
           />
         ))}
       </div>
 
-      <div className="px-[9px]">
-        <div
-          className="mb-1 px-[9px] text-[9.5px]"
-          style={{ color: W.faint }}
-        >
-          읽기만 가능해요
+      {lockedMenus.length > 0 ? (
+        <div className="px-[9px]">
+          <div className="mb-1 px-[9px] text-[9.5px]" style={{ color: W.faint }}>
+            읽기만 가능해요
+          </div>
+          {lockedMenus.map((m) => (
+            <NavLink
+              key={m.slug}
+              href={`/wiki/list/${m.slug}`}
+              label={`${m.name} 🔒`}
+              count={m.doc_count}
+              active={isOn(`/wiki/list/${m.slug}`)}
+            />
+          ))}
         </div>
-        <NavLink
-          href="/wiki/rules"
-          label="규정 🔒"
-          count={counts.rules}
-          active={isOn("/wiki/rules")}
-        />
-      </div>
+      ) : null}
+
+      {nav.is_admin ? (
+        <div
+          className="mt-auto border-t px-[13px] py-2.5"
+          style={{ borderColor: W.line2 }}
+        >
+          <Link
+            href="/wiki/menus"
+            className="text-[11px] font-semibold"
+            style={{
+              color: pathname.startsWith("/wiki/menus") ? W.lunaInk : W.luna
+            }}
+          >
+            ＋ 메뉴 관리
+          </Link>
+        </div>
+      ) : null}
     </aside>
   );
 }
