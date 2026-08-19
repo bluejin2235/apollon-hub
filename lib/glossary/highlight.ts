@@ -40,10 +40,15 @@ function compactIndexMap(text: string): { compact: string; map: number[] } {
   return { compact, map };
 }
 
+export function hasDefinition(term: { definition?: string | null }): boolean {
+  return Boolean((term.definition ?? "").trim());
+}
+
 export function buildHighlightNeedles(terms: GlossaryHighlightTerm[]): HighlightNeedle[] {
   const needles: HighlightNeedle[] = [];
   const seen = new Set<string>();
   for (const term of terms) {
+    if (!hasDefinition(term)) continue;
     const parts = [term.term_ko, term.term_en, ...(term.synonyms ?? [])];
     for (const part of parts) {
       const raw = (part ?? "").trim();

@@ -36,10 +36,7 @@ function renderSpans(
       <button
         key={`${span.termId}-${span.start}-${i}`}
         type="button"
-        className={`luna-term-mark cursor-pointer border-0 bg-transparent p-0 font-inherit text-inherit ${
-          active ? "border-solid border-[#534AB7]" : "border-dotted border-[#B9B4D8]"
-        }`}
-        style={{ borderBottomWidth: 1, borderBottomStyle: active ? "solid" : "dotted", paddingBottom: 1 }}
+        className={`luna-term-mark${active ? " is-active" : ""}`}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();

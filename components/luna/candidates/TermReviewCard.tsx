@@ -26,13 +26,25 @@ export function TermReviewCard({
 }) {
   const draft = parseGlossaryMeta(item.meta, item.content);
   const match = item.glossary_match ?? null;
+  const askedTerm =
+    typeof item.meta?.asked_term === "string" && item.meta.asked_term.trim()
+      ? item.meta.asked_term.trim()
+      : "";
+  const askedCountRaw = Number(item.meta?.asked_count);
+  const askedCount =
+    Number.isFinite(askedCountRaw) && askedCountRaw > 0 ? askedCountRaw : null;
   const proposal = item.glossary_proposal ?? {
     term_ko: draft.term_ko,
     definition: draft.definition,
     mode: match ? ("update" as const) : ("insert" as const)
   };
-  const termName = proposal.term_ko || draft.term_ko || "용어";
-  const definition = proposal.definition || draft.definition || item.content;
+  const termName = askedTerm || proposal.term_ko || draft.term_ko || "용어";
+  const definition =
+    (typeof item.meta?.draft_definition === "string" &&
+      item.meta.draft_definition.trim()) ||
+    proposal.definition ||
+    draft.definition ||
+    item.content;
   const modeLabel =
     proposal.mode === "update"
       ? "기존 뜻을 이렇게 바꾸기"
@@ -64,10 +76,32 @@ export function TermReviewCard({
         >
           용어
         </span>
-        <span className="text-[12px] font-semibold">용어사전에 넣을까요?</span>
+        <span className="text-[12px] font-semibold">
+          {askedTerm ? `${termName} 뜻을 물었습니다` : "용어사전에 넣을까요?"}
+        </span>
+        {askedCount ? (
+          <span className="ml-auto text-[10.5px]" style={{ color: K.faint }}>
+            {askedCount}회 질문
+          </span>
+        ) : (
+          <span className="ml-auto text-[10.5px]" style={{ color: K.faint }}>
+            {item.author_name ? `${item.author_name}와의 대화` : ""}
+          </span>
+        )}
       </div>
 
       <div className="px-[15px] py-[15px]">
+        {askedTerm ? (
+          <p className="mb-3 text-[11.5px]" style={{ color: K.faint }}>
+            {[
+              item.author_name ? `${item.author_name}이 물음` : null,
+              formatKoreanDay(item.created_at),
+              askedCount && askedCount > 1 ? `${askedCount}회` : null
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        ) : null}
         <div
           className="mb-3.5 flex overflow-hidden rounded-[10px]"
           style={{ border: `1px solid ${K.line}` }}
@@ -102,7 +136,7 @@ export function TermReviewCard({
               className="mb-1.5 text-[10px] font-bold"
               style={{ color: NEW.ink }}
             >
-              새로 들은 뜻
+              {askedTerm ? "정의 초안" : "새로 들은 뜻"}
             </div>
             <div className="text-[12.5px] leading-[1.75]">{definition}</div>
           </div>

@@ -83,7 +83,12 @@ export function GlossaryHighlightProvider({ children }: { children: ReactNode })
 
   const patchTerm = useCallback((term: GlossaryHighlightTerm) => {
     setTerms((prev) => {
+      const defined = Boolean((term.definition ?? "").trim());
       const idx = prev.findIndex((t) => t.id === term.id);
+      if (!defined) {
+        if (idx < 0) return prev;
+        return prev.filter((t) => t.id !== term.id);
+      }
       if (idx < 0) return [...prev, term];
       const next = [...prev];
       next[idx] = { ...next[idx], ...term };

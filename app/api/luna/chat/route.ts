@@ -80,6 +80,7 @@ import {
   type WikiSourceRef
 } from "@/lib/luna/wiki-match";
 import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
+import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
   applyTypeSearchOverride,
   formatConnectorRoutingSummary,
@@ -2305,6 +2306,30 @@ export async function POST(request: NextRequest) {
         }
         if (usedPrivateRefs.length > 0) {
           assistantMeta.private_wiki_refs = usedPrivateRefs;
+        }
+
+        try {
+          const { data: askerProfile } = await admin
+            .from("profiles")
+            .select("name")
+            .eq("id", user.id)
+            .maybeSingle();
+          const askerName =
+            typeof askerProfile?.name === "string" && askerProfile.name.trim()
+              ? askerProfile.name.trim()
+              : null;
+          await captureTermMeaningQuestion({
+            admin,
+            userId: user.id,
+            userName: askerName,
+            conversationId,
+            question: userText,
+            answer: assistantText,
+            classifiedTypes: classification.types,
+            glossaryRows
+          });
+        } catch (err) {
+          console.error("[luna/chat] capture term question", err);
         }
         if (wsToolCalls.length > 0) {
           assistantMeta.ws_tool_calls = wsToolCalls;

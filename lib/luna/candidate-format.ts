@@ -90,6 +90,7 @@ export function parseGlossaryMeta(
   const categories = normalizeCategories(m.categories, m.category);
   const definitionFromMeta =
     (typeof m.definition === "string" && m.definition.trim()) ||
+    (typeof m.draft_definition === "string" && m.draft_definition.trim()) ||
     (typeof m.definition_draft === "string" && m.definition_draft.trim()) ||
     "";
   let definition = definitionFromMeta || content.trim();
@@ -108,6 +109,12 @@ export function parseGlossaryMeta(
     definition = definitionFromMeta || term_ko || content.trim();
     term_ko = "";
   }
+
+  const askedTerm =
+    typeof m.asked_term === "string" && m.asked_term.trim()
+      ? m.asked_term.trim()
+      : "";
+  if (askedTerm) term_ko = askedTerm;
 
   term_ko = sanitizeGlossaryField("term_ko", term_ko);
   const term_en =
@@ -236,6 +243,10 @@ export function candidateMetaLine(input: {
   }
   const when = formatShortDate(input.created_at);
   if (when !== "—") parts.push(when);
+  const askedCount = Number(input.meta?.asked_count);
+  if (Number.isFinite(askedCount) && askedCount > 0) {
+    parts.push(`${askedCount}회 질문`);
+  }
   if (input.source === "selfstudy" && input.evidence) {
     const hint = input.evidence.replace(/^출처:\s*/, "").trim();
     if (hint) parts.push(clipText(hint, 40));

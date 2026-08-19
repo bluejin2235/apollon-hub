@@ -980,7 +980,7 @@ export function GlossaryBrowser({
                   </p>
                 ) : (
                   <p className="text-[13px]" style={{ color: C.faint }}>
-                    정의가 아직 없습니다. 아는 분이 채워 주세요.
+                    아직 뜻이 없어요. 적어주시겠어요?
                   </p>
                 )}
               </div>

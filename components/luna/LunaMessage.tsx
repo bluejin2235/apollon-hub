@@ -385,7 +385,7 @@ function OpinionBlock({ content }: { content: string }) {
 }
 
 const LUNA_BUBBLE_CLASS =
-  "rounded-[6px_18px_18px_18px] border border-[#E8E5F4] bg-[#F7F6FC] px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
+  "luna-term-on-bubble rounded-[6px_18px_18px_18px] border border-[#E8E5F4] bg-[#F7F6FC] px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
 
 function LunaAvatar() {
   return (

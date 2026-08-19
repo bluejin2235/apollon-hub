@@ -107,6 +107,27 @@ body {
 }
 .luna-term-mark {
   animation: luna-term-in 150ms ease-out;
+  display: inline;
+  margin: 0 -1px;
+  padding: 1px 3px;
+  border: 0;
+  border-bottom: 1.5px solid #b9b4d8;
+  border-radius: 3px;
+  background: #f0eefa;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+.luna-term-mark.is-active {
+  border-bottom-color: #5b52a8;
+  border-bottom-style: solid;
+}
+/* 루나 말풍선(#F7F6FC) 위에서 #F0EEFA 가 묻히지 않게 */
+.luna-term-on-bubble .luna-term-mark {
+  background: #e4e0f4;
 }
 
 @media (max-width: 767px) {

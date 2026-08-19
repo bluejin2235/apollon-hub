@@ -215,9 +215,13 @@ async function getHighlightTerms(
     console.error("[glossary] GET highlight", q.error);
     return NextResponse.json({ terms: [] });
   }
-  return NextResponse.json({
-    terms: (q.data ?? []).map((t) => mapTermRow(t as Record<string, unknown>))
-  });
+  const terms = (q.data ?? [])
+    .filter((row) => {
+      const def = (row as { definition?: unknown }).definition;
+      return typeof def === "string" && def.trim().length > 0;
+    })
+    .map((t) => mapTermRow(t as Record<string, unknown>));
+  return NextResponse.json({ terms });
 }
 
 export async function GET(request: NextRequest) {

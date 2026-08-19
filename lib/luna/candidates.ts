@@ -201,7 +201,9 @@ export async function createCandidate(
     baseMeta.kind = "glossary";
     if (termKo) baseMeta.term_ko = termKo;
     if (typeof baseMeta.definition !== "string" || !String(baseMeta.definition).trim()) {
-      baseMeta.definition = content;
+      if (!baseMeta.asked_term) {
+        baseMeta.definition = content;
+      }
     }
   }
 

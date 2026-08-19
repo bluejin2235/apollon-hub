@@ -13,8 +13,6 @@ type Props = {
   onSaved: (term: GlossaryHighlightTerm) => void;
 };
 
-const EMPTY_DEF = "아직 뜻이 없어요. 적어주시겠어요?";
-
 function formatMetaDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -47,8 +45,6 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
   const [error, setError] = useState("");
   const [editorName, setEditorName] = useState<string | null>(null);
 
-  const empty = !(term?.definition ?? "").trim();
-
   useEffect(() => {
     if (!termId || !term) {
       openedFor.current = null;
@@ -61,7 +57,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
     if (openedFor.current === termId) return;
     openedFor.current = termId;
     setDraft(term.definition ?? "");
-    setEditing(!(term.definition ?? "").trim());
+    setEditing(false);
     setError("");
     setEditorName(null);
   }, [term, termId]);
@@ -182,6 +178,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
         updated_at: new Date().toISOString()
       });
       setEditing(false);
+      if (!draft.trim()) onClose();
     } catch (err) {
       console.error("[glossary] popup save", err);
       setError("저장하지 못했습니다.");
@@ -207,7 +204,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
           type="button"
           className="ml-auto text-[11px] font-semibold text-[#534AB7]"
           onClick={() => {
-            if (editing && !empty) {
+            if (editing) {
               setDraft(term.definition ?? "");
               setEditing(false);
             } else {
@@ -224,7 +221,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             className="min-h-[70px] w-full rounded-[9px] border border-[#534AB7] bg-[#FCFCFD] px-2.5 py-2 text-[12.5px] leading-[1.75] text-[#1c1d21]"
-            placeholder={EMPTY_DEF}
+            placeholder="뜻을 고칠 수 있습니다"
           />
           <div className="mt-2.5 flex gap-1.5">
             <button
@@ -240,8 +237,7 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
               disabled={busy}
               onClick={() => {
                 setDraft(term.definition ?? "");
-                setEditing(empty);
-                if (empty) onClose();
+                setEditing(false);
               }}
               className="rounded-lg border border-[#e7e8ec] px-2.5 py-1 text-[12px] text-[#1c1d21]"
             >
@@ -254,8 +250,8 @@ export function GlossaryTermPopup({ termId, term, anchor, onClose, onSaved }: Pr
         </>
       ) : (
         <>
-          <p className="text-[12.5px] leading-[1.8] text-[#2a2c31]">
-            {(term.definition ?? "").trim() || EMPTY_DEF}
+          <p className="whitespace-pre-wrap text-[12.5px] leading-[1.8] text-[#2a2c31]">
+            {(term.definition ?? "").trim()}
           </p>
           {metaBits.length > 0 ? (
             <p className="mt-2.5 border-t border-[#eef0f3] pt-2 text-[10px] text-[#9aa0a8]">
