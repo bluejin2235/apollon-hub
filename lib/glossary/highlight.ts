@@ -128,6 +128,7 @@ function findTermSpansInChunk(
       from = at + 1;
     }
   }
+  spans.sort((a, b) => a.start - b.start || a.end - b.end);
   return spans;
 }
 

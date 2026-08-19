@@ -131,9 +131,13 @@ function HighlightedLine({ text }: { text: string }) {
   }, [text, needles, resetKey, bag]);
 
   if (spans.length === 0) return text;
+  // findTermSpans 는 최장일치 순으로 모으므로, 화면 조립 전에 위치순 정렬이 필요하다.
+  // 정렬하지 않으면 cursor 가 뒤로 갔 뒤 앞쪽 스팬을 다시 붙여 본문이 중복된다.
+  const ordered = [...spans].sort((a, b) => a.start - b.start || a.end - b.end);
   const out: ReactNode[] = [];
   let cursor = 0;
-  spans.forEach((span, i) => {
+  ordered.forEach((span, i) => {
+    if (span.start < cursor) return;
     if (span.start > cursor) out.push(text.slice(cursor, span.start));
     out.push(
       <TermMark
