@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useMemo } from "react";
+import { HighlightScope } from "@/components/glossary/HighlightPhrase";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import {
   NasDriveModeToggle,
@@ -69,7 +70,7 @@ export function LunaMarkdown({
   const hasNotion = notionItems.length > 0;
   const showDriveToggle = hasNas;
 
-  return (
+  const inner = (
     <div
       className={`break-words ${className}`.trim()}
       data-luna-render={source}
@@ -124,4 +125,7 @@ export function LunaMarkdown({
       <AssumeBlocks assumptions={assume} />
     </div>
   );
+
+  if (!allowTerms) return inner;
+  return <HighlightScope>{inner}</HighlightScope>;
 }

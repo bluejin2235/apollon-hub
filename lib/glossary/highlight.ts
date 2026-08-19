@@ -64,34 +64,38 @@ export function buildHighlightNeedles(terms: GlossaryHighlightTerm[]): Highlight
   return needles;
 }
 
-const SENTENCE_RE = /[^.!?。？！\n]+(?:[.!?。？！\n]+|$)/g;
+export function isSourceLine(line: string): boolean {
+  return /^\s*출처\s*[:：]/.test(line);
+}
 
-export function findTermSpans(text: string, needles: HighlightNeedle[]): HighlightSpan[] {
+export function isSourceBlock(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (isSourceLine(t)) return true;
+  const lines = t.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(isSourceLine);
+}
+
+/** 렌더 단위 전체에서 용어당 첫 번째만. alreadyUsed 는 앞 노드에서 이미 표시한 용어. */
+export function findTermSpans(
+  text: string,
+  needles: HighlightNeedle[],
+  alreadyUsed?: ReadonlySet<string>
+): HighlightSpan[] {
   if (!text || needles.length === 0) return [];
-  const spans: HighlightSpan[] = [];
-  const chunks = text.match(SENTENCE_RE);
-  if (!chunks) {
-    return findTermSpansInChunk(text, 0, needles);
-  }
-  let offset = 0;
-  for (const chunk of chunks) {
-    const at = text.indexOf(chunk, offset);
-    const start = at < 0 ? offset : at;
-    spans.push(...findTermSpansInChunk(chunk, start, needles));
-    offset = start + chunk.length;
-  }
-  return spans.sort((a, b) => a.start - b.start);
+  return findTermSpansInChunk(text, 0, needles, alreadyUsed);
 }
 
 function findTermSpansInChunk(
   chunk: string,
   base: number,
-  needles: HighlightNeedle[]
+  needles: HighlightNeedle[],
+  alreadyUsed?: ReadonlySet<string>
 ): HighlightSpan[] {
   const { compact, map } = compactIndexMap(chunk);
   if (!compact) return [];
   const occupied = new Uint8Array(compact.length);
-  const used = new Set<string>();
+  const used = new Set<string>(alreadyUsed);
   const spans: HighlightSpan[] = [];
 
   for (const needle of needles) {

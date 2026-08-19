@@ -4,8 +4,8 @@ import Link from "next/link";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { HighlightPhrase } from "@/components/glossary/HighlightPhrase";
-import { prepareMarkdownEmphasis } from "@/lib/glossary/highlight";
+import { HighlightPhrase, HighlightScope, flattenPlain, useHighlightUsed } from "@/components/glossary/HighlightPhrase";
+import { isSourceBlock, prepareMarkdownEmphasis } from "@/lib/glossary/highlight";
 import type { ReactNode } from "react";
 
 function safeHref(href: string | undefined): string | undefined {
@@ -17,6 +17,7 @@ function safeHref(href: string | undefined): string | undefined {
 
 function wrap(highlight: boolean, children: ReactNode) {
   if (!highlight) return children;
+  if (isSourceBlock(flattenPlain(children))) return children;
   return <HighlightPhrase>{children}</HighlightPhrase>;
 }
 
@@ -171,7 +172,7 @@ export function SafeMarkdown({
 }: SafeMarkdownProps) {
   const text = prepareMarkdownEmphasis(content.trimEnd());
   if (!text) return null;
-  return (
+  const markdown = (
     <div className={`break-words ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -182,4 +183,12 @@ export function SafeMarkdown({
       </ReactMarkdown>
     </div>
   );
+  if (!highlightTerms) return markdown;
+  return <SafeMarkdownHighlightRoot>{markdown}</SafeMarkdownHighlightRoot>;
+}
+
+function SafeMarkdownHighlightRoot({ children }: { children: ReactNode }) {
+  const outer = useHighlightUsed();
+  if (outer) return <>{children}</>;
+  return <HighlightScope>{children}</HighlightScope>;
 }
