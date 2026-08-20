@@ -10,12 +10,13 @@ export function isListingQuestion(text: string): boolean {
   return LISTING_QUESTION_RE.test(t);
 }
 
-/** 목록형이면 find를 빼고 know를 보장한다. */
+/** 목록형이면 find를 빼고 know를 보장한다. questionText 또는 listing 플래그로 적용. */
 export function applyListingTypeOverride(
   types: string[],
-  questionText: string
+  questionText: string,
+  listing = isListingQuestion(questionText)
 ): { types: string[]; switched: boolean } {
-  if (!isListingQuestion(questionText)) {
+  if (!listing) {
     return { types, switched: false };
   }
   const next = types.filter((t) => t !== "find" && t !== "smalltalk");

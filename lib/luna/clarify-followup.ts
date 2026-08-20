@@ -73,6 +73,69 @@ export function combineClarifyFollowup(
   return `${original}\n조건: ${resolved}`;
 }
 
+/** 대화에서 첫 되묻기 직전 user — 연속 되묻기에도 최초 질문을 유지한다. */
+export function findClarifyRootUser(
+  recent: Array<{ role: string; content?: string; metadata?: unknown }>
+): string | null {
+  for (let i = 0; i < recent.length; i += 1) {
+    const m = recent[i]!;
+    if (m.role !== "assistant") continue;
+    const meta = m.metadata;
+    if (!meta || typeof meta !== "object" || !(meta as { clarify?: unknown }).clarify) {
+      continue;
+    }
+    for (let j = i - 1; j >= 0; j -= 1) {
+      if (recent[j]!.role === "user") {
+        return recent[j]!.content?.trim() || null;
+      }
+    }
+  }
+  return null;
+}
+
+/** 이미 한 번이라도 되묻기가 나갔으면 true (마지막 턴만이 아님). */
+export function conversationHadClarify(
+  recent: Array<{ role: string; metadata?: unknown }>
+): boolean {
+  return recent.some(
+    (m) =>
+      m.role === "assistant" &&
+      m.metadata &&
+      typeof m.metadata === "object" &&
+      Boolean((m.metadata as { clarify?: unknown }).clarify)
+  );
+}
+
+/** 목록형: 최초 질문·대화 기록·현재 문장 순으로 판정한다. */
+export function resolveListingQuestion(
+  recent: Array<{ role: string; content?: string; metadata?: unknown }>,
+  searchIntentText: string
+): { listing: boolean; rootText: string } {
+  const rootFromClarify = findClarifyRootUser(recent);
+  const firstUser =
+    recent.find((m) => m.role === "user")?.content?.trim() ?? "";
+  const rootText =
+    rootFromClarify ||
+    firstUser ||
+    searchIntentText.split("\n")[0]?.trim() ||
+    searchIntentText;
+
+  const persisted = recent.some(
+    (m) =>
+      m.metadata &&
+      typeof m.metadata === "object" &&
+      (m.metadata as { listing_question?: boolean }).listing_question === true
+  );
+
+  const listing =
+    persisted ||
+    isListingQuestion(rootText) ||
+    isListingQuestion(searchIntentText.split("\n")[0] ?? "") ||
+    isListingQuestion(searchIntentText);
+
+  return { listing, rootText };
+}
+
 export function typesNeedWikiLookup(types: string[]): boolean {
   return types.includes("know") || types.includes("find");
 }

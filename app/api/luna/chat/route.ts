@@ -92,8 +92,11 @@ import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
   CLARIFY_FOLLOWUP_RULE,
   combineClarifyFollowup,
+  conversationHadClarify,
   ensureClarifyFollowupTypes,
+  findClarifyRootUser,
   parseClarifyOptions,
+  resolveListingQuestion,
   typesNeedWikiLookup
 } from "@/lib/luna/clarify-followup";
 import {
@@ -372,23 +375,6 @@ function buildSourceReasonUserMessage(
     parts.push(`웹:\n${webTitles.map((t) => `- ${t}`).join("\n")}`);
   }
   return parts.join("\n\n");
-}
-
-/** clarify assistant 바로 앞 user 메시지 content */
-function findClarifyOriginalUser(recent: MessageRow[]): string | null {
-  for (let i = recent.length - 1; i >= 0; i -= 1) {
-    const m = recent[i]!;
-    if (m.role !== "assistant") continue;
-    const meta = m.metadata;
-    if (!meta || typeof meta !== "object" || !meta.clarify) continue;
-    for (let j = i - 1; j >= 0; j -= 1) {
-      if (recent[j]!.role === "user") {
-        const content = recent[j]!.content?.trim();
-        return content || null;
-      }
-    }
-  }
-  return null;
 }
 
 function formatCardLineForEval(card: LunaCard): string {
@@ -1072,9 +1058,7 @@ export async function POST(request: NextRequest) {
       typeof lastAssistant.metadata === "object" &&
       lastAssistant.metadata.clarify
   );
-  const clarifyOriginalUser = lastHadClarify
-    ? findClarifyOriginalUser(recent)
-    : null;
+  const clarifyRootUser = lastHadClarify ? findClarifyRootUser(recent) : null;
   const clarifyOptions = lastHadClarify
     ? parseClarifyOptions(lastAssistant?.metadata)
     : [];
@@ -1083,9 +1067,15 @@ export async function POST(request: NextRequest) {
     message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
   const knowledgeDumpRequested = isKnowledgeDumpRequest(userText);
   const clarifyFollowupQuery = lastHadClarify
-    ? combineClarifyFollowup(clarifyOriginalUser, userText, clarifyOptions)
+    ? combineClarifyFollowup(clarifyRootUser, userText, clarifyOptions) ??
+      (clarifyRootUser
+        ? `${clarifyRootUser}\n조건: ${userText.trim()}`
+        : null)
     : null;
   const searchIntentText = clarifyFollowupQuery || userText;
+  const listingCtx = resolveListingQuestion(recent, searchIntentText);
+  const listingQuestion = listingCtx.listing;
+  const listingSourceText = listingCtx.rootText;
   const attachmentMeta = attachments.map((a) => ({
     id: a.id,
     file_name: a.file_name,
@@ -1244,10 +1234,10 @@ export async function POST(request: NextRequest) {
           console.error("[luna/chat] classify", err);
           classification = emptyClassification();
         }
-        if (clarifyFollowupQuery) {
+        if (lastHadClarify && clarifyRootUser) {
           const forced = ensureClarifyFollowupTypes(
             classification.types,
-            clarifyOriginalUser
+            clarifyRootUser
           );
           if (forced.switched) {
             classification = {
@@ -1260,12 +1250,10 @@ export async function POST(request: NextRequest) {
             };
           }
         }
-        const listingSourceText =
-          clarifyOriginalUser?.trim() || searchIntentText;
-        const listingQuestion = isListingQuestion(listingSourceText);
         const listingOverride = applyListingTypeOverride(
           classification.types,
-          listingSourceText
+          listingSourceText,
+          listingQuestion
         );
         if (listingOverride.switched) {
           classification = {
@@ -1302,6 +1290,16 @@ export async function POST(request: NextRequest) {
           webEnabled = connectorRouting.connectors.web;
           nasEnabled = connectorRouting.connectors.nas;
         }
+        if (listingQuestion && !hasManualConnectors(manualConnectorFlags)) {
+          notionEnabled = false;
+          webEnabled = false;
+          nasEnabled = false;
+          connectorRouting = {
+            connectors: { nas: false, notion: false, web: false },
+            reason: "wiki_covers_know",
+            reasonLabel: "목록형: 위키·지식으로 답"
+          };
+        }
 
         const knowledgeEmb = await retrieveKnowledgeEmbeddings(
           admin,
@@ -1319,6 +1317,7 @@ export async function POST(request: NextRequest) {
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
+          conversationHadClarify(recent) ||
           hasManualSkills(manualSkillIds) ||
           shouldSkipProjectClarify(userText) ||
           typesSkipClarify(classifiedTypeRows);
@@ -1584,7 +1583,7 @@ export async function POST(request: NextRequest) {
             ? matchWikiSections(
                 wikiDocs,
                 injectKeywords,
-                searchIntentText,
+                listingQuestion ? listingSourceText : searchIntentText,
                 knowledgeEmb.wiki,
                 listingQuestion ? LISTING_WIKI_LIMITS : undefined
               )
@@ -1651,15 +1650,32 @@ export async function POST(request: NextRequest) {
           };
         }
 
+        if (
+          listingQuestion &&
+          !hasManualConnectors(manualConnectorFlags)
+        ) {
+          notionEnabled = false;
+          nasEnabled = false;
+          webEnabled = false;
+          webAugmented = false;
+          connectorRouting = {
+            connectors: { nas: false, notion: false, web: false },
+            reason: "wiki_covers_know",
+            reasonLabel: "목록형: 위키·지식으로 답"
+          };
+        }
+
         // ——— 단계 2~5: 검색 루프 ———
         const isSearchRequest =
           !hasAttachments &&
+          !listingQuestion &&
           (isSearchRequestMessage(userText) ||
-            (Boolean(clarifyOriginalUser) &&
-              isSearchRequestMessage(clarifyOriginalUser!)));
+            (Boolean(clarifyRootUser) &&
+              isSearchRequestMessage(clarifyRootUser!)));
         const anySearch =
-          (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
-          (webAugmented && webEnabled);
+          !listingQuestion &&
+          ((needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
+            (webAugmented && webEnabled));
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
@@ -2399,6 +2415,9 @@ export async function POST(request: NextRequest) {
         if (clarifyFollowupQuery) {
           assistantMeta.clarify_followup = true;
           assistantMeta.search_intent = searchIntentText;
+        }
+        if (listingQuestion) {
+          assistantMeta.listing_question = true;
         }
         if (
           perspectiveIds.length > 0 ||
