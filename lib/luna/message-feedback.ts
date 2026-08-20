@@ -6,6 +6,7 @@ import {
   isFeedbackReason,
   type FeedbackReason
 } from "@/lib/luna/feedback";
+import { recordLunaFailure } from "@/lib/luna/failures";
 
 export type MessageFeedbackValue = "good" | "bad" | null;
 
@@ -42,7 +43,7 @@ export async function saveLunaMessageFeedback(
 
   const { data: message, error: msgError } = await admin
     .from("luna_messages")
-    .select("id, conversation_id, role, metadata")
+    .select("id, conversation_id, role, content, created_at, metadata")
     .eq("id", messageId)
     .maybeSingle();
 
@@ -122,6 +123,31 @@ export async function saveLunaMessageFeedback(
       : null;
   if (opts.feedback !== savedFeedback) {
     return { ok: false, status: 500, error: "Update did not persist" };
+  }
+
+  if (savedFeedback === "bad") {
+    const { data: priorUser } = await admin
+      .from("luna_messages")
+      .select("content")
+      .eq("conversation_id", message.conversation_id)
+      .eq("role", "user")
+      .lt("created_at", message.created_at as string)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    void recordLunaFailure(admin, {
+      messageId,
+      conversationId: message.conversation_id as string,
+      askedBy: conversation.user_id as string,
+      question: typeof priorUser?.content === "string" ? priorUser.content : "",
+      answerExcerpt: typeof message.content === "string" ? message.content : "",
+      kind: "human",
+      signal: "thumbs_down",
+      sourceRef: {
+        feedback_reason: savedMeta.feedback_reason ?? null,
+        feedback_note: savedMeta.feedback_note ?? null
+      }
+    }).catch((err) => console.error("[luna/messages] failure thumbs_down", err));
   }
 
   return {

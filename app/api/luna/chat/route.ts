@@ -73,6 +73,13 @@ import {
   typesSkipClarify,
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
+import { scoreAnswerSelf } from "@/lib/luna/answer-self-score";
+import {
+  isAnswerScoresVisible,
+  recordAutoFailuresFromAnswer,
+  recordLunaFailure
+} from "@/lib/luna/failures";
+import { CORRECTION_RE } from "@/lib/luna/selfstudy";
 import {
   formatWikiSectionsBlock,
   LISTING_WIKI_LIMITS,
@@ -193,6 +200,7 @@ type AttachmentRow = {
 };
 
 type MessageRow = {
+  id?: string;
   role: string;
   content: string;
   metadata?: Record<string, unknown> | null;
@@ -1066,7 +1074,7 @@ export async function POST(request: NextRequest) {
 
   const { data: recentData, error: recentError } = await admin
     .from("luna_messages")
-    .select("role, content, metadata")
+    .select("id, role, content, metadata")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -1106,6 +1114,27 @@ export async function POST(request: NextRequest) {
     file_name: a.file_name,
     mime_type: a.mime_type
   }));
+
+  if (CORRECTION_RE.test(userText) && lastAssistant?.id) {
+    const asstIdx = recent.findIndex((m) => m.id === lastAssistant.id);
+    let priorQuestion = "";
+    for (let i = asstIdx - 1; i >= 0; i -= 1) {
+      const row = recent[i];
+      if (row?.role === "user") {
+        priorQuestion = row.content;
+        break;
+      }
+    }
+    void recordLunaFailure(admin, {
+      messageId: lastAssistant.id,
+      conversationId,
+      askedBy: user.id,
+      question: priorQuestion,
+      answerExcerpt: lastAssistant.content,
+      kind: "human",
+      signal: "correction"
+    }).catch((err) => console.error("[luna/chat] correction failure", err));
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -2548,6 +2577,23 @@ export async function POST(request: NextRequest) {
           assistantMeta.attachments = attachmentMeta;
         }
 
+        const showScores = await isAnswerScoresVisible(admin);
+        assistantMeta.answer_scores_visible = showScores;
+        let selfScore: Awaited<ReturnType<typeof scoreAnswerSelf>> = null;
+        try {
+          selfScore = await scoreAnswerSelf(admin, {
+            question: searchIntentText,
+            answer: assistantText
+          });
+        } catch (err) {
+          console.error("[luna/chat] self score", err);
+        }
+        if (selfScore) {
+          assistantMeta.intent_score = selfScore.intent_score;
+          assistantMeta.confidence_score = selfScore.confidence_score;
+          assistantMeta.self_note = selfScore.self_note;
+        }
+
         const insertNow = Date.now();
         const { error: insertError } = await admin.from("luna_messages").insert([
           {
@@ -2572,7 +2618,33 @@ export async function POST(request: NextRequest) {
 
         if (insertError) {
           console.error("[luna/chat] insert messages", insertError);
-        } else if (usedPrivateRefs.length > 0) {
+        } else {
+          void recordAutoFailuresFromAnswer(admin, {
+            messageId: assistantMessageId,
+            conversationId,
+            askedBy: user.id,
+            question: searchIntentText,
+            answer: assistantText,
+            intentScore: selfScore?.intent_score ?? null,
+            confidenceScore: selfScore?.confidence_score ?? null,
+            selfNote: selfScore?.self_note ?? null,
+            types: classification.types,
+            sourcesUsed: {
+              wiki: publicWikiSources.length,
+              notion: notionSources.length,
+              memory: learnings.length,
+              cards: cards.length
+            },
+            durationMs,
+            classifyConfidence: classification.confidence,
+            searchAttempted: searchRounds > 0,
+            searchResultCount:
+              cards.length + notionSources.length + publicWikiSources.length
+          }).catch((err) =>
+            console.error("[luna/chat] auto failures", err)
+          );
+        }
+        if (!insertError && usedPrivateRefs.length > 0) {
           const { data: profileRow } = await admin
             .from("profiles")
             .select("name")

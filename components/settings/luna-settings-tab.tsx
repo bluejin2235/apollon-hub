@@ -12,7 +12,7 @@ import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowled
 import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
 import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
 import { LunaTalkSources } from "@/components/luna/talk/LunaTalkSources";
-import { LunaTalkThumbs } from "@/components/luna/talk/LunaTalkThumbs";
+import { LunaFailures } from "@/components/luna/failures/LunaFailures";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
@@ -1582,9 +1582,12 @@ export function LunaSettingsTab() {
 
     if (menu === "talk") {
       if (sub === "history") return <LunaTalkHistory />;
-      if (sub === "thumbs") return <LunaTalkThumbs />;
       if (sub === "sources") return <LunaTalkSources />;
       if (sub === "metrics") return <LunaTalkMetrics />;
+    }
+
+    if (menu === "failures") {
+      return <LunaFailures />;
     }
 
     if (menu === "candidates") {

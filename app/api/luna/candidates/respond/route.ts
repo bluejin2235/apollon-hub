@@ -42,6 +42,7 @@ import {
   isRejectAction,
   mergeRejectMeta
 } from "@/lib/luna/reject-note";
+import { recordLunaFailure } from "@/lib/luna/failures";
 export const runtime = "nodejs";
 
 type Action =
@@ -373,6 +374,16 @@ export async function POST(request: NextRequest) {
       console.error("[luna/candidates/respond] discard new", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    void recordLunaFailure(admin, {
+      askedBy: user.id,
+      question: content,
+      answerExcerpt: content,
+      kind: "human",
+      signal: "candidate_deleted",
+      sourceRef: { candidate_id: id }
+    }).catch((err) =>
+      console.error("[luna/candidates/respond] failure discard", err)
+    );
     return NextResponse.json({ id, status: "deleted" });
   }
 

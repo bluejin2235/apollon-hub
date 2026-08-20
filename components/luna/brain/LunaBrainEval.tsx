@@ -20,8 +20,6 @@ import {
   InfoBar
 } from "@/components/luna/brain/shared";
 import { K } from "@/lib/luna/knowledge-format";
-import { LunaTalkThumbs } from "@/components/luna/talk/LunaTalkThumbs";
-import { LunaRejectReasons } from "@/components/luna/brain/LunaRejectReasons";
 import { evalTierLabel } from "@/lib/luna/eval-labels";
 
 type EvalRun = {
@@ -1025,13 +1023,6 @@ export function LunaBrainEval() {
           )}
         </>
       ) : null}
-
-      <LunaRejectReasons />
-
-      <div className="mt-8">
-        <h3 className="mb-2 text-[13px] font-bold">싫어요 기록</h3>
-        <LunaTalkThumbs embedded />
-      </div>
     </KnowledgeShell>
   );
 }

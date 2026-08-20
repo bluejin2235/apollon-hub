@@ -4,6 +4,7 @@ import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
 import { collectWikiMorningLine } from "@/lib/wiki/notify";
+import { countFailuresSince } from "@/lib/luna/failures";
 
 const USD_KRW_FALLBACK = 1350;
 
@@ -200,6 +201,16 @@ export async function collectMorningSummaryParts(
   const filterLine = await candidateFilterMorningLine(admin);
   if (filterLine) {
     parts.push(withLink(filterLine, LUNA_LINKS.candidatesPending));
+  }
+
+  const failuresYesterday = await countFailuresSince(admin, startIso, endIso);
+  if (failuresYesterday > 0) {
+    parts.push(
+      withLink(
+        `어제 확인할 것이 ${failuresYesterday}건 쌓였어요`,
+        LUNA_LINKS.failures
+      )
+    );
   }
 
   // 5) 자기개선 — 개선함(버전) 또는 개선할 것 없음(last_run skip)

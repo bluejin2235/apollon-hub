@@ -116,6 +116,10 @@ type LunaMessageProps = {
   usedPrompts?: UsedPromptRef[] | null;
   classification?: LunaClassificationMeta | null;
   detailMeta?: LunaDetailMeta | null;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  selfNote?: string | null;
+  showAnswerScores?: boolean;
 };
 
 const CARD_SECTION_ORDER: LunaCard["type"][] = ["notion", "nas", "web", "youtube"];
@@ -472,7 +476,11 @@ function SourceBadgeRow({
   privateWikiRefs,
   memoryCount,
   wikiOpen,
-  onToggleWiki
+  onToggleWiki,
+  intentScore,
+  confidenceScore,
+  selfNote,
+  showScores
 }: {
   cards: LunaCard[];
   notionSources: NotionSource[];
@@ -481,6 +489,10 @@ function SourceBadgeRow({
   memoryCount: number;
   wikiOpen: boolean;
   onToggleWiki: () => void;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  selfNote?: string | null;
+  showScores?: boolean;
 }) {
   const counts = countSourceBadges({
     cards,
@@ -496,7 +508,12 @@ function SourceBadgeRow({
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
   if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
-  if (items.length === 0) return null;
+  const lowIntent = typeof intentScore === "number" && intentScore < 5;
+  const lowConf = typeof confidenceScore === "number" && confidenceScore < 5;
+  const hasScores =
+    showScores &&
+    (typeof intentScore === "number" || typeof confidenceScore === "number");
+  if (items.length === 0 && !hasScores) return null;
   return (
     <>
       {items.map((it) =>
@@ -518,6 +535,33 @@ function SourceBadgeRow({
           </span>
         )
       )}
+      {hasScores && typeof intentScore === "number" ? (
+        <span
+          className={`rounded-[10px] border px-2 py-px text-[10.5px] ${
+            lowIntent
+              ? "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
+              : "border-[#e7e8ec] bg-[#f5f6f8] text-[#6b6f76]"
+          }`}
+        >
+          의도 {intentScore}
+        </span>
+      ) : null}
+      {hasScores && typeof confidenceScore === "number" ? (
+        <span
+          className={`rounded-[10px] border px-2 py-px text-[10.5px] ${
+            lowConf
+              ? "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
+              : "border-[#e7e8ec] bg-[#f5f6f8] text-[#6b6f76]"
+          }`}
+        >
+          자신감 {confidenceScore}
+        </span>
+      ) : null}
+      {hasScores && (lowIntent || lowConf) && selfNote ? (
+        <span className="w-full basis-full text-[11px] italic text-[#b45309]">
+          {selfNote}
+        </span>
+      ) : null}
     </>
   );
 }
@@ -991,7 +1035,11 @@ function MessageActionsRow({
   onCopy,
   onFeedback,
   wikiOpen,
-  onToggleWiki
+  onToggleWiki,
+  intentScore,
+  confidenceScore,
+  selfNote,
+  showScores
 }: {
   content: string;
   cards: LunaCard[];
@@ -1006,6 +1054,10 @@ function MessageActionsRow({
   onFeedback: (next: "good" | "bad") => void;
   wikiOpen: boolean;
   onToggleWiki: () => void;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  selfNote?: string | null;
+  showScores?: boolean;
 }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-[7px]">
@@ -1017,6 +1069,10 @@ function MessageActionsRow({
         memoryCount={memoryCount}
         wikiOpen={wikiOpen}
         onToggleWiki={onToggleWiki}
+        intentScore={intentScore}
+        confidenceScore={confidenceScore}
+        selfNote={selfNote}
+        showScores={showScores}
       />
       {content ? (
         <button
@@ -1099,7 +1155,11 @@ export function LunaMessage({
   onCorrectionCancel,
   usedPrompts = null,
   classification = null,
-  detailMeta = null
+  detailMeta = null,
+  intentScore = null,
+  confidenceScore = null,
+  selfNote = null,
+  showAnswerScores = false
 }: LunaMessageProps) {
   const [feedback, setFeedback] = useState<"good" | "bad" | null>(initialFeedback);
   const [feedbackReason, setFeedbackReason] = useState<FeedbackReason | null>(
@@ -1440,6 +1500,10 @@ export function LunaMessage({
               onCopy={copyContent}
               wikiOpen={wikiOpen}
               onToggleWiki={() => setWikiOpen((open) => !open)}
+              intentScore={intentScore}
+              confidenceScore={confidenceScore}
+              selfNote={selfNote}
+              showScores={showAnswerScores}
               onFeedback={(next) => {
                 if (feedback === next) void sendFeedback(null);
                 else void sendFeedback(next);

@@ -82,4 +82,7 @@ export type LunaDashboard = {
     tokens_delta: number | null;
     tokens_delta_pct: number | null;
   };
+  failures: {
+    open: number;
+  };
 };

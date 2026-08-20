@@ -14,6 +14,7 @@ type BadgeCounts = {
   brainPending: number;
   knowledgeConflict: number;
   selfstudyStuck: number;
+  failuresOpen: number;
 };
 
 type Props = {
@@ -44,7 +45,8 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
     candidatesPending: 0,
     brainPending: 0,
     knowledgeConflict: 0,
-    selfstudyStuck: 0
+    selfstudyStuck: 0,
+    failuresOpen: 0
   });
 
   useEffect(() => {
@@ -61,12 +63,14 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
           brain?: { revert_pending?: number };
           knowledge?: { conflict_count?: number };
           selfstudy?: { stuck_today?: number };
+          failures?: { open?: number };
         };
         setBadges({
           candidatesPending: json.candidates?.pending ?? 0,
           brainPending: json.brain?.revert_pending ?? 0,
           knowledgeConflict: json.knowledge?.conflict_count ?? 0,
-          selfstudyStuck: json.selfstudy?.stuck_today ?? 0
+          selfstudyStuck: json.selfstudy?.stuck_today ?? 0,
+          failuresOpen: json.failures?.open ?? 0
         });
       } catch {
         /* ignore */
@@ -87,9 +91,11 @@ export function LunaSettingsNav({ menu, sub, onMenuChange, onSubChange }: Props)
           const badge =
             item.slug === "candidates"
               ? badges.candidatesPending
-              : item.slug === "brain"
-                ? badges.brainPending
-                : 0;
+              : item.slug === "failures"
+                ? badges.failuresOpen
+                : item.slug === "brain"
+                  ? badges.brainPending
+                  : 0;
           return (
             <button
               key={item.slug}

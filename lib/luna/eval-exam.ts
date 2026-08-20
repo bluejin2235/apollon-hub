@@ -7,6 +7,7 @@ import {
   runLunaTurn,
   type LunaConnectors
 } from "@/lib/luna/run-chat";
+import { recordLunaFailure } from "@/lib/luna/failures";
 
 export type EvalExamTrigger =
   | "manual"
@@ -712,6 +713,23 @@ export async function executeEvalCase(
       quality: (evalCase.quality as string | null) ?? null
     }
   );
+
+  if (grade.score < 1) {
+    void recordLunaFailure(admin, {
+      question: evalCase.question as string,
+      answerExcerpt: result.answer,
+      kind: "auto",
+      signal: "eval_fail",
+      durationMs: result.durationMs,
+      sourceRef: {
+        run_id: runId,
+        case_id: caseId,
+        fail_kind: grade.fail_kind,
+        reason: grade.reason,
+        score: grade.score
+      }
+    }).catch((err) => console.error("[luna/eval-exam] failure", err));
+  }
 
   const verdict =
     grade.score >= 1 ? "pass" : grade.fail_kind === "quality" ? "partial" : "fail";

@@ -4,6 +4,7 @@ export type LunaMenuSlug =
   | "talk"
   | "candidates"
   | "selfstudy"
+  | "failures"
   | "brain";
 
 export type LunaKnowledgeSub =
@@ -14,7 +15,7 @@ export type LunaKnowledgeSub =
   | "workserver"
   | "notion";
 
-export type LunaTalkSub = "history" | "thumbs" | "sources" | "metrics";
+export type LunaTalkSub = "history" | "sources" | "metrics";
 
 export type LunaCandidatesSub = "pending" | "mine" | "history";
 
@@ -65,7 +66,6 @@ export const LUNA_MENUS: LunaMenuDef[] = [
     label: "대화",
     subs: [
       { slug: "history", label: "대화 이력" },
-      { slug: "thumbs", label: "싫어요" },
       { slug: "sources", label: "구술·문서" },
       { slug: "metrics", label: "관측 지표" }
     ]
@@ -89,6 +89,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "history", label: "처리 이력" }
     ]
   },
+  { slug: "failures", label: "실패 수집" },
   {
     slug: "brain",
     label: "두뇌",
@@ -248,6 +249,11 @@ export function canonicalLunaSettingsUrl(
 
   if (rawMenu === "home") {
     return buildLunaSettingsUrl("dashboard");
+  }
+
+  // 구 대화>싫어요 → 실패 수집
+  if (rawMenu === "talk" && rawSub === "thumbs") {
+    return buildLunaSettingsUrl("failures");
   }
 
   // 구 지식>원문 → 대화>구술·문서

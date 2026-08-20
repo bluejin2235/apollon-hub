@@ -219,6 +219,20 @@ export default function LunaPage() {
           wsToolCalls = wsRaw;
         }
 
+        const intentRaw = meta?.intent_score;
+        let intentScore: number | null = null;
+        if (typeof intentRaw === "number" && Number.isFinite(intentRaw)) {
+          intentScore = Math.round(intentRaw);
+        }
+        const confRaw = meta?.confidence_score;
+        let confidenceScore: number | null = null;
+        if (typeof confRaw === "number" && Number.isFinite(confRaw)) {
+          confidenceScore = Math.round(confRaw);
+        }
+        const selfNote =
+          typeof meta?.self_note === "string" ? meta.self_note.trim() : null;
+        const showAnswerScores = meta?.answer_scores_visible !== false;
+
         return {
           id: row.id as string,
           role: row.role as "user" | "assistant",
@@ -245,7 +259,11 @@ export default function LunaPage() {
           usedPrompts: normalizeUsedPrompts(meta?.used_prompts),
           wsToolCalls,
           connectorRouting: normalizeConnectorRouting(meta?.connector_routing),
-          classification: normalizeClassification(meta?.classification)
+          classification: normalizeClassification(meta?.classification),
+          intentScore,
+          confidenceScore,
+          selfNote,
+          showAnswerScores
         };
       });
     setMessages((prev) => mergeLocalFeedback(prev, mapped));

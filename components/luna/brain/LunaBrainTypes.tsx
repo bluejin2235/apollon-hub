@@ -11,20 +11,15 @@ import {
   ListCard,
   LoadingLine
 } from "@/components/luna/knowledge/ui";
-import { brainFetch, formatDateTime, SectionTitle } from "@/components/luna/brain/shared";
+import { brainFetch, SectionTitle } from "@/components/luna/brain/shared";
 import { K } from "@/lib/luna/knowledge-format";
-import type { QuestionTypeRow, UnclassifiedQuestionRow } from "@/lib/luna/question-types";
+import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
+import type { QuestionTypeRow } from "@/lib/luna/question-types";
 
 type TypesPayload = {
   types?: QuestionTypeRow[];
   source?: string;
   web_augment?: boolean;
-  error?: string;
-};
-
-type UnclassifiedPayload = {
-  questions?: UnclassifiedQuestionRow[];
-  table_ready?: boolean;
   error?: string;
 };
 
@@ -49,7 +44,6 @@ function Flag({ on, label }: { on: boolean; label: string }) {
 export function LunaBrainTypes() {
   const [types, setTypes] = useState<QuestionTypeRow[]>([]);
   const [source, setSource] = useState("seed");
-  const [unclassified, setUnclassified] = useState<UnclassifiedQuestionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -62,14 +56,12 @@ export function LunaBrainTypes() {
     setLoading(true);
     setError("");
     try {
-      const [typesJson, uncJson] = await Promise.all([
-        brainFetch<TypesPayload>("/api/luna/question-types?active=false"),
-        brainFetch<UnclassifiedPayload>("/api/luna/unclassified?status=pending")
-      ]);
+      const typesJson = await brainFetch<TypesPayload>(
+        "/api/luna/question-types?active=false"
+      );
       setTypes(typesJson.types ?? []);
       setSource(typesJson.source ?? "db");
       setWebAugment(typesJson.web_augment !== false);
-      setUnclassified(uncJson.questions ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "유형을 불러오지 못했습니다.");
     } finally {
@@ -87,11 +79,10 @@ export function LunaBrainTypes() {
     setNotice("");
   }
 
-  function openNew(from?: UnclassifiedQuestionRow) {
+  function openNew() {
     setSelected("new");
     setDraft({
       ...EMPTY_DRAFT,
-      criteria: from ? `예: ${from.question}` : "",
       label: ""
     });
     setNotice("");
@@ -134,18 +125,6 @@ export function LunaBrainTypes() {
       setError(err instanceof Error ? err.message : "상태를 바꾸지 못했습니다.");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function dismissUnclassified(id: string) {
-    try {
-      await brainFetch("/api/luna/unclassified", {
-        method: "PATCH",
-        body: JSON.stringify({ id, status: "dismissed" })
-      });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "처리하지 못했습니다.");
     }
   }
 
@@ -341,30 +320,15 @@ export function LunaBrainTypes() {
 
           <SectionTitle>미분류 질문</SectionTitle>
           <p className="mb-2 text-[12px]" style={{ color: K.faint }}>
-            판정 신뢰가 낮거나 유형이 비었던 질문입니다. 새 유형 후보로 삼을 수 있습니다.
+            판정 신뢰가 낮았던 질문은{" "}
+            <a
+              href={buildLunaSettingsUrl("failures")}
+              className="font-semibold text-[#534AB7] underline"
+            >
+              실패 수집
+            </a>
+            에서 봅니다.
           </p>
-          {unclassified.length === 0 ? (
-            <p className="text-[12px]" style={{ color: K.faint }}>
-              대기 중인 미분류 질문이 없습니다.
-            </p>
-          ) : (
-            unclassified.map((q) => (
-              <ListCard key={q.id}>
-                <div className="text-[13px]">{q.question}</div>
-                <div className="mt-1 text-[11.5px]" style={{ color: K.faint }}>
-                  {formatDateTime(q.created_at)}
-                  {q.reason ? ` · ${q.reason}` : ""}
-                  {q.confidence != null ? ` · ${q.confidence}` : ""}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <Btn primary onClick={() => openNew(q)}>
-                    유형 후보로
-                  </Btn>
-                  <Btn onClick={() => void dismissUnclassified(q.id)}>무시</Btn>
-                </div>
-              </ListCard>
-            ))
-          )}
         </>
       )}
     </KnowledgeShell>

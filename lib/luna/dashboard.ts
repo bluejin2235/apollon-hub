@@ -8,6 +8,7 @@ import {
   getSelfstudyStatus,
   kstDayBounds
 } from "@/lib/luna/selfstudy";
+import { countOpenFailures } from "@/lib/luna/failures";
 import type { LunaDashboard } from "@/lib/luna/dashboard-types";
 
 export type { LunaDashboard } from "@/lib/luna/dashboard-types";
@@ -120,8 +121,9 @@ async function countCorrections(
   const { data, error } = await admin
     .from("luna_learnings")
     .select("meta, thread")
-    .gte("updated_at", startIso)
-    .lt("updated_at", endIso)
+    .or(
+      `and(resolved_at.gte."${startIso}",resolved_at.lt."${endIso}"),and(created_at.gte."${startIso}",created_at.lt."${endIso}")`
+    )
     .neq("category", "identity")
     .limit(500);
   if (error) {
@@ -631,6 +633,7 @@ export async function buildLunaDashboard(
   }
 
   const myTurn = mineRes.count ?? 0;
+  const failuresOpen = await countOpenFailures(admin);
 
   return {
     generated_at: new Date().toISOString(),
@@ -716,6 +719,9 @@ export async function buildLunaDashboard(
       tokens_prev_week: tokensPrev,
       tokens_delta: tokensDelta,
       tokens_delta_pct: tokensDeltaPct
+    },
+    failures: {
+      open: failuresOpen
     }
   };
 }

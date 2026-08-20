@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordLunaFailure } from "@/lib/luna/failures";
 import { loadWikiDocs } from "@/lib/wiki/store";
 
 export type QuestionTypeRow = {
@@ -377,6 +378,17 @@ export async function recordUnclassifiedQuestion(
     if (error && !isMissingTable(error)) {
       console.error("[luna/types] unclassified insert", error);
     }
+    void recordLunaFailure(admin, {
+      conversationId: opts.conversationId ?? null,
+      question: opts.question,
+      kind: "auto",
+      signal: "unclassified",
+      sourceRef: {
+        types: opts.classification.types,
+        confidence: opts.classification.confidence,
+        reason: opts.classification.reason ?? null
+      }
+    }).catch((err) => console.error("[luna/types] failure unclassified", err));
   } catch (err) {
     console.error("[luna/types] unclassified insert", err);
   }

@@ -11,7 +11,8 @@ export const LUNA_LINKS = {
   brainEval: "/settings?tab=luna&luna=brain&sub=eval",
   brainModel: "/settings?tab=luna&luna=brain&sub=model",
   knowledgeConflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
-  knowledgeWorkserver: "/settings?tab=luna&luna=knowledge&sub=workserver"
+  knowledgeWorkserver: "/settings?tab=luna&luna=knowledge&sub=workserver",
+  failures: "/settings?tab=luna&luna=failures"
 } as const;
 
 export type LunaNotifyEvent =

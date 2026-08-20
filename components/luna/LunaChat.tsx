@@ -118,6 +118,10 @@ export type LunaChatMessage = {
   keywords?: string[] | null;
   wsToolCalls?: unknown[] | null;
   connectorRouting?: LunaConnectorRoutingMeta | null;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  selfNote?: string | null;
+  showAnswerScores?: boolean;
 };
 
 export type { LunaSourceReasons };
@@ -998,6 +1002,10 @@ export function LunaChat({
                 usedPrompts={m.usedPrompts}
                 classification={m.classification}
                 detailMeta={detailMeta}
+                intentScore={m.intentScore}
+                confidenceScore={m.confidenceScore}
+                selfNote={m.selfNote}
+                showAnswerScores={m.showAnswerScores}
                 correctionCandidateIds={m.correctionCandidateIds}
                 hideInlineClarifyOptions
                 onCorrectionCancel={

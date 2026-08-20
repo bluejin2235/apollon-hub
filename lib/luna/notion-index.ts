@@ -239,7 +239,7 @@ export async function buildMetaGraph(
   const meta = new Map<string, NotionSearchObject>();
   for (const item of searchResults) meta.set(item.id, item);
 
-  let pending = new Set<string>();
+  const pending = new Set<string>();
   const addParent = (item: NotionSearchObject) => {
     const p = item.parent;
     if (!p) return;
