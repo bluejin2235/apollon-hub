@@ -80,6 +80,7 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "settings", label: "자습 설정" }
     ]
   },
+  { slug: "failures", label: "실패 수집" },
   {
     slug: "candidates",
     label: "지식후보",
@@ -89,7 +90,6 @@ export const LUNA_MENUS: LunaMenuDef[] = [
       { slug: "history", label: "처리 이력" }
     ]
   },
-  { slug: "failures", label: "실패 수집" },
   {
     slug: "brain",
     label: "두뇌",

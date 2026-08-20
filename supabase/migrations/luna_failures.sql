@@ -36,10 +36,21 @@ create table if not exists public.luna_failures (
   improve_target text check (
     improve_target is null or improve_target in ('knowledge', 'dev_wiki', 'prompt')
   ),
+  db_fixes jsonb not null default '[]'::jsonb,
+  dev_prompt text,
+  db_done_at timestamptz,
+  dev_done_at timestamptz,
+  dev_fixed_at timestamptz,
   source_ref jsonb not null default '{}',
   resolved_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.luna_failures add column if not exists db_fixes jsonb not null default '[]'::jsonb;
+alter table public.luna_failures add column if not exists dev_prompt text;
+alter table public.luna_failures add column if not exists db_done_at timestamptz;
+alter table public.luna_failures add column if not exists dev_done_at timestamptz;
+alter table public.luna_failures add column if not exists dev_fixed_at timestamptz;
 
 create index if not exists luna_failures_verdict_created_idx
   on public.luna_failures (verdict, created_at desc);
