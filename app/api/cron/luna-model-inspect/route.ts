@@ -10,6 +10,8 @@ import {
   alreadyInspectedTodayKst,
   shouldRunInspectNow
 } from "@/lib/luna/model-inspect-schedule";
+import { kstIsoDate } from "@/lib/fx/dates";
+import { getRateForDateOrFallback } from "@/lib/fx/get-rate-for-date";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -64,16 +66,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const { data: fx } = await admin
-      .from("fx_daily_rates")
-      .select("usd_krw")
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const usdKrw =
-      fx?.usd_krw != null && Number.isFinite(Number(fx.usd_krw))
-        ? Number(fx.usd_krw)
-        : 1380;
+    const usdKrw = await getRateForDateOrFallback(admin, kstIsoDate());
     const result = await runModelInspect(admin, { usdKrw });
     console.log("[luna-model-inspect] cron", result);
     return NextResponse.json({ ...result, schedule });

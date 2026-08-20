@@ -12,7 +12,7 @@ import {
 } from "@/lib/arte/api-usage";
 import { applyApiKeyAlias, fetchApiKeyAliasLookup } from "@/lib/arte/api-key-aliases";
 import { fetchOpenAiKeyNameLookup } from "@/lib/arte/openai-key-name-map";
-import { fetchLiveUsdKrwRateForUpload } from "@/lib/arte/usd-krw-rate";
+import { getRatesForDates, USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
 import { supabase } from "@/lib/supabase/client";
 
 const PROVIDERS: { id: ApiUsageProvider; label: string }[] = [
@@ -103,13 +103,16 @@ export function ApiUsageUpload({ onSaved, variant = "page" }: Props) {
     } = await supabase.auth.getSession();
     const uploadedBy = session?.user?.id ?? null;
     const uploadedAt = new Date().toISOString();
-    const usd_krw_rate = await fetchLiveUsdKrwRateForUpload();
+    const rateMap = await getRatesForDates(
+      supabase,
+      preview.map((r) => r.date)
+    );
 
     const payload = preview.map((r) =>
       buildApiUsageUpsertPayload(r, {
         uploaded_by: uploadedBy,
         created_at: uploadedAt,
-        usd_krw_rate
+        usd_krw_rate: rateMap.get(r.date) ?? USD_KRW_FALLBACK
       })
     );
 

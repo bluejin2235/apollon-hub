@@ -40,44 +40,18 @@ import {
 } from "@/lib/luna/model-inspect-schedule";
 import type { LunaCostMode } from "@/lib/luna/brain-models";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findPrevConfirmedRate, USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
-
-const USD_KRW_FALLBACK = 1380;
 
 async function loadFx(admin: SupabaseClient): Promise<{
   usd_krw: number;
   date: string | null;
 }> {
-  // 전날 우선, 없으면 가장 최근 usd_krw
-  const yesterday = kstDate(-1);
-  const { data: yRow } = await admin
-    .from("fx_daily_rates")
-    .select("date, usd_krw")
-    .eq("date", yesterday)
-    .maybeSingle();
-  if (yRow?.usd_krw != null && Number.isFinite(Number(yRow.usd_krw))) {
-    return {
-      usd_krw: Number(yRow.usd_krw),
-      date: typeof yRow.date === "string" ? yRow.date : yesterday
-    };
-  }
-
-  const { data, error } = await admin
-    .from("fx_daily_rates")
-    .select("date, usd_krw")
-    .not("usd_krw", "is", null)
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || data?.usd_krw == null) {
-    return { usd_krw: USD_KRW_FALLBACK, date: null };
-  }
-  return {
-    usd_krw: Number(data.usd_krw),
-    date: typeof data.date === "string" ? data.date : null
-  };
+  const hit = await findPrevConfirmedRate(admin, kstDate(0));
+  if (!hit) return { usd_krw: USD_KRW_FALLBACK, date: null };
+  return { usd_krw: hit.usd_krw, date: hit.date };
 }
 
 function kstDate(offsetDays = 0): string {

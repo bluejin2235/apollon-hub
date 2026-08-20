@@ -5,8 +5,8 @@ import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import { getSelfstudyStatus } from "@/lib/luna/selfstudy";
 import { collectWikiMorningLine } from "@/lib/wiki/notify";
 import { countFailuresSince } from "@/lib/luna/failures";
-
-const USD_KRW_FALLBACK = 1350;
+import { kstIsoDate } from "@/lib/fx/dates";
+import { getRateForDateOrFallback } from "@/lib/fx/get-rate-for-date";
 
 export type MorningSummaryResult = {
   ok: boolean;
@@ -284,17 +284,7 @@ function kstDateOffset(days: number, now = new Date()): string {
 }
 
 async function loadUsdKrw(admin: SupabaseClient): Promise<number> {
-  const { data } = await admin
-    .from("fx_daily_rates")
-    .select("usd_krw")
-    .not("usd_krw", "is", null)
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (data?.usd_krw != null && Number.isFinite(Number(data.usd_krw))) {
-    return Number(data.usd_krw);
-  }
-  return USD_KRW_FALLBACK;
+  return getRateForDateOrFallback(admin, kstIsoDate());
 }
 
 async function tierCostKrwForDate(

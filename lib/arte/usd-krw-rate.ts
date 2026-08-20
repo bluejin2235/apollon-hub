@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getRateForDate, USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
 
-export const USD_KRW_FALLBACK = 1380;
+export { USD_KRW_FALLBACK };
 
 const API_URL = "https://open.er-api.com/v6/latest/USD";
 
@@ -58,30 +59,10 @@ export async function fetchLiveUsdKrwRateForUpload(): Promise<number> {
   return USD_KRW_FALLBACK;
 }
 
-/** 결제일 기준 USD→KRW 환율 (usd_krw_rates 테이블 → API → credit_records → fallback) */
+/** 결제일 기준 USD→KRW: 전일 이전 가장 최근 확정 환율 (fx_daily_rates) */
 export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
-  const month = dateIso.slice(0, 7);
-  const { data } = await supabase
-    .from("usd_krw_rates")
-    .select("rate")
-    .lte("month", month)
-    .order("month", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (data?.rate != null && Number.isFinite(Number(data.rate))) {
-    return Number(data.rate);
-  }
-
-  try {
-    return await fetchUsdKrwRate();
-  } catch (e) {
-    console.error("[arte] fetchUsdKrwRateForDate API failed", e);
-  }
-
-  const creditRate = await fetchLatestCreditUsdKrwRate();
-  if (creditRate != null) return creditRate;
-
+  const rate = await getRateForDate(supabase, dateIso);
+  if (rate != null) return rate;
   return USD_KRW_FALLBACK;
 }
 
