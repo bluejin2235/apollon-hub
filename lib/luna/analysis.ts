@@ -12,7 +12,8 @@ import {
   readUsage,
   type LunaUsageTokens
 } from "@/lib/luna/engine";
-import { capNotionDisplaySources, formatNotionSourcesForPrompt, searchNotionPages, type NotionSource } from "@/lib/luna/notion";
+import { capNotionDisplaySources, formatNotionSourcesForPrompt, type NotionSource } from "@/lib/luna/notion";
+import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
@@ -363,7 +364,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     const runConnectorSearch = async (kw: string) => {
       const [notionRes, webRes, youtubeRes, nasRes] = await Promise.all([
         notionEnabled && kw
-          ? searchNotionPages(kw, userText).then((o) => o.sources)
+          ? searchNotionForLuna(admin, kw, userText).then((o) => o.sources)
           : Promise.resolve([] as NotionSource[]),
         webEnabled
           ? searchTavily(kw || userText)

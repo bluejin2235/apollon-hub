@@ -55,9 +55,9 @@ import {
   buildLocationAnswerRules,
   formatNotionSourcesForPrompt,
   notionRecordedPaths,
-  searchNotionPages,
   type NotionSource
 } from "@/lib/luna/notion";
+import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
@@ -591,7 +591,9 @@ export async function runLunaTurn(
   let nasSearchAttempted = false;
 
   if (notionEnabled && keywords) {
-    const notionOutcome = await searchNotionPages(keywords, userText);
+    const notionOutcome = await searchNotionForLuna(admin, keywords, userText, {
+      queryEmbedding: emb.queryEmbedding
+    });
     notionSources = notionOutcome.sources;
   }
   if (webEnabled) {

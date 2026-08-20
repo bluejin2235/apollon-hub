@@ -23,11 +23,11 @@ import {
   formatNotionSourcesForPrompt,
   mergeNotionSearchOutcomes,
   notionRecordedPaths,
-  searchNotionPages,
   type NotionSearchOutcome,
   type NotionSearchStatus,
   type NotionSource
 } from "@/lib/luna/notion";
+import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
   getPromptRows,
   LUNA_PROMPT_KEYS,
@@ -1665,6 +1665,24 @@ export async function POST(request: NextRequest) {
               : "알기: 위키로 충분"
           };
         }
+        // KNOW: 위키를 본 뒤·웹 보강 전에 노션 색인도 본다 (목록형 제외, 색인은 빠름)
+        if (
+          classification.types.includes("know") &&
+          !listingQuestion &&
+          !hasManualConnectors(manualConnectorFlags) &&
+          wikiSources.length > 0
+        ) {
+          notionEnabled = true;
+          if (connectorRouting) {
+            connectorRouting = {
+              ...connectorRouting,
+              connectors: {
+                ...connectorRouting.connectors,
+                notion: true
+              }
+            };
+          }
+        }
         const { public: publicWikiSources, private: privateWikiRefs } =
           splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
@@ -1696,9 +1714,10 @@ export async function POST(request: NextRequest) {
           })
         ) {
           webEnabled = true;
+          notionEnabled = true;
           webAugmented = true;
           connectorRouting = {
-            connectors: { nas: nasEnabled, notion: notionEnabled, web: true },
+            connectors: { nas: nasEnabled, notion: true, web: true },
             reason: "web_augment",
             reasonLabel: "알기: 지식 부족 · 웹 보강"
           };
@@ -1729,7 +1748,8 @@ export async function POST(request: NextRequest) {
         const anySearch =
           !listingQuestion &&
           ((needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
-            (webAugmented && webEnabled));
+            (webAugmented && (webEnabled || notionEnabled)) ||
+            (notionEnabled && classification.types.includes("know")));
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
@@ -1750,7 +1770,9 @@ export async function POST(request: NextRequest) {
         const runConnectorSearch = async (kw: string) => {
           const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
             notionEnabled && kw
-              ? searchNotionPages(kw, searchIntentText)
+              ? searchNotionForLuna(admin, kw, searchIntentText, {
+                  queryEmbedding: knowledgeEmb.queryEmbedding
+                })
               : Promise.resolve(skippedNotionOutcome()),
             webEnabled
               ? (() => {

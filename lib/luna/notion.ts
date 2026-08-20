@@ -13,6 +13,13 @@ export type NotionSource = {
   paths?: string[];
   dates?: string[];
   entities?: string[];
+  /** 색인 매칭 절(블록) 요약 */
+  section?: string | null;
+  /** 부모·형제 페이지 계층 */
+  hierarchy?: string | null;
+  /** Work서버 경로 (luna_notion_pages.nas_path) */
+  nas_path?: string | null;
+  similarity?: number;
 };
 
 export type NotionSearchStatus = "ok" | "empty" | "skipped" | "error";
@@ -499,16 +506,47 @@ function toPublicSource(source: NotionSource): NotionSource {
     excerpt: source.excerpt,
     paths: source.paths,
     dates: source.dates,
-    entities: source.entities
+    entities: source.entities,
+    section: source.section,
+    hierarchy: source.hierarchy,
+    nas_path: source.nas_path,
+    similarity: source.similarity
   };
+}
+
+/** 지정 페이지 본문만 Notion API로 다시 읽는다 (색인 최근 수정분 갱신). */
+export async function fetchNotionPagesLive(
+  pages: Array<Pick<NotionSource, "id" | "title" | "url" | "last_edited_time">>
+): Promise<NotionSource[]> {
+  const token = process.env.NOTION_TOKEN;
+  if (!token || pages.length === 0) return [];
+  const stubs: NotionSource[] = pages
+    .filter((p) => p.id && p.url)
+    .map((p) => ({
+      title: p.title || EMPTY_TITLE,
+      url: p.url,
+      id: p.id,
+      last_edited_time: p.last_edited_time ?? null
+    }));
+  if (stubs.length === 0) return [];
+  const enriched = await enrichSourcesWithBodies(stubs, token);
+  return enriched.map((s) => toPublicSource(s));
 }
 
 function preferNotionSource(a: NotionSource, b: NotionSource): NotionSource {
   const ap = a.paths?.length ?? 0;
   const bp = b.paths?.length ?? 0;
-  if (bp !== ap) return bp > ap ? b : a;
-  if ((b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)) return b;
-  return a;
+  let pick = a;
+  if (bp !== ap) pick = bp > ap ? b : a;
+  else if ((b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)) pick = b;
+  else if ((b.similarity ?? 0) > (a.similarity ?? 0)) pick = b;
+  return {
+    ...pick,
+    section: pick.section ?? a.section ?? b.section,
+    hierarchy: pick.hierarchy ?? a.hierarchy ?? b.hierarchy,
+    nas_path: pick.nas_path ?? a.nas_path ?? b.nas_path,
+    similarity: Math.max(a.similarity ?? 0, b.similarity ?? 0) || pick.similarity
+  };
 }
 
 export function capNotionDisplaySources(sources: NotionSource[]): NotionSource[] {
@@ -594,7 +632,17 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
   return sources
     .map((s) => {
       const lines = [`- ${s.title} — ${s.url}`];
+      if (s.section) {
+        lines.push(`  절: ${s.section}`);
+      }
+      if (s.hierarchy) {
+        lines.push(`  ${s.hierarchy.replace(/\n/g, "\n  ")}`);
+      }
+      if (s.nas_path) {
+        lines.push(`  Work서버 경로: ${s.nas_path}`);
+      }
       for (const p of s.paths ?? []) {
+        if (s.nas_path && p === s.nas_path) continue;
         lines.push(`  기록된 경로: ${p}`);
       }
       if (s.dates?.length) {
@@ -612,7 +660,11 @@ export function notionRecordedPaths(sources: NotionSource[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const s of sources) {
-    for (const p of s.paths ?? []) {
+    const candidates = [
+      ...(s.nas_path ? [s.nas_path] : []),
+      ...(s.paths ?? [])
+    ];
+    for (const p of candidates) {
       const key = p.replace(/\s+/g, " ").trim().toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);

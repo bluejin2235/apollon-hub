@@ -477,6 +477,8 @@ function SourceBadgeRow({
   memoryCount,
   wikiOpen,
   onToggleWiki,
+  notionOpen,
+  onToggleNotion,
   intentScore,
   confidenceScore,
   selfNote,
@@ -489,6 +491,8 @@ function SourceBadgeRow({
   memoryCount: number;
   wikiOpen: boolean;
   onToggleWiki: () => void;
+  notionOpen: boolean;
+  onToggleNotion: () => void;
   intentScore?: number | null;
   confidenceScore?: number | null;
   selfNote?: string | null;
@@ -501,12 +505,18 @@ function SourceBadgeRow({
     privateWikiRefs,
     memoryCount
   });
-  const items: { label: string; n: number; toggle?: boolean }[] = [];
+  const items: {
+    label: string;
+    n: number;
+    toggle?: "wiki" | "notion";
+  }[] = [];
   if (counts.nas > 0) items.push({ label: "Work서버", n: counts.nas });
-  if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki, toggle: true });
-  if (counts.internal > 0) items.push({ label: "내부", n: counts.internal, toggle: true });
+  if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki, toggle: "wiki" });
+  if (counts.internal > 0)
+    items.push({ label: "내부", n: counts.internal, toggle: "wiki" });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
-  if (counts.notion > 0) items.push({ label: "노션", n: counts.notion });
+  if (counts.notion > 0)
+    items.push({ label: "노션", n: counts.notion, toggle: "notion" });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
   const lowIntent = typeof intentScore === "number" && intentScore < 5;
   const lowConf = typeof confidenceScore === "number" && confidenceScore < 5;
@@ -521,10 +531,14 @@ function SourceBadgeRow({
           <button
             key={it.label}
             type="button"
-            onClick={onToggleWiki}
+            onClick={it.toggle === "notion" ? onToggleNotion : onToggleWiki}
             className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
           >
-            {it.label} {it.n}건{wikiOpen ? " 접기" : ""}
+            {it.label} {it.n}건
+            {(it.toggle === "wiki" && wikiOpen) ||
+            (it.toggle === "notion" && notionOpen)
+              ? " 접기"
+              : ""}
           </button>
         ) : (
           <span
@@ -563,6 +577,46 @@ function SourceBadgeRow({
         </span>
       ) : null}
     </>
+  );
+}
+
+function NotionSourcesPanel({ sources }: { sources: NotionSource[] }) {
+  if (sources.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-[#e7e8ec] bg-[#fafbfc] p-2.5">
+      <div className="mb-1.5 text-[11px] font-semibold text-[#6b6f76]">노션 출처</div>
+      <div className="space-y-1.5">
+        {sources.map((src) => (
+          <div
+            key={src.id || src.url}
+            className="rounded-md px-1.5 py-1 text-[12px] text-slate-700"
+          >
+            <a
+              href={src.url}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-[#534AB7] hover:underline"
+            >
+              {src.title}
+              {src.section ? ` · ${src.section}` : ""}
+            </a>
+            {src.nas_path || (src.paths && src.paths[0]) ? (
+              <div className="mt-0.5 break-all text-[11px] text-[#6b6f76]">
+                {src.nas_path || src.paths?.[0]}
+              </div>
+            ) : null}
+            <a
+              href={src.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 block truncate text-[11px] text-[#9aa0a8] hover:underline"
+            >
+              {src.url}
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1036,6 +1090,8 @@ function MessageActionsRow({
   onFeedback,
   wikiOpen,
   onToggleWiki,
+  notionOpen,
+  onToggleNotion,
   intentScore,
   confidenceScore,
   selfNote,
@@ -1054,6 +1110,8 @@ function MessageActionsRow({
   onFeedback: (next: "good" | "bad") => void;
   wikiOpen: boolean;
   onToggleWiki: () => void;
+  notionOpen: boolean;
+  onToggleNotion: () => void;
   intentScore?: number | null;
   confidenceScore?: number | null;
   selfNote?: string | null;
@@ -1069,6 +1127,8 @@ function MessageActionsRow({
         memoryCount={memoryCount}
         wikiOpen={wikiOpen}
         onToggleWiki={onToggleWiki}
+        notionOpen={notionOpen}
+        onToggleNotion={onToggleNotion}
         intentScore={intentScore}
         confidenceScore={confidenceScore}
         selfNote={selfNote}
@@ -1179,6 +1239,7 @@ export function LunaMessage({
   const [copied, setCopied] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [wikiOpen, setWikiOpen] = useState(false);
+  const [notionOpen, setNotionOpen] = useState(false);
   const [dismissedChips, setDismissedChips] = useState<string[]>([]);
   const canFeedback =
     role === "assistant" && Boolean(id) && !id.startsWith("temp-") && !isThinking;
@@ -1500,6 +1561,8 @@ export function LunaMessage({
               onCopy={copyContent}
               wikiOpen={wikiOpen}
               onToggleWiki={() => setWikiOpen((open) => !open)}
+              notionOpen={notionOpen}
+              onToggleNotion={() => setNotionOpen((open) => !open)}
               intentScore={intentScore}
               confidenceScore={confidenceScore}
               selfNote={selfNote}
@@ -1512,6 +1575,7 @@ export function LunaMessage({
             {wikiOpen ? (
               <WikiSourcesPanel wikiSources={wikiRefs} privateWikiRefs={privateRefs} />
             ) : null}
+            {notionOpen ? <NotionSourcesPanel sources={sources} /> : null}
             {canFeedback && feedback === "bad" ? (
               reasonPanelCollapsed ? (
                 <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">

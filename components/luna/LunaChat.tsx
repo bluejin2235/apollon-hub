@@ -229,6 +229,10 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
         paths?: unknown;
         dates?: unknown;
         entities?: unknown;
+        section?: string | null;
+        hierarchy?: string | null;
+        nas_path?: string | null;
+        similarity?: number;
       } =>
         Boolean(s) &&
         typeof s === "object" &&
@@ -251,7 +255,11 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
         : {}),
       ...(Array.isArray(s.entities)
         ? { entities: s.entities.filter((e): e is string => typeof e === "string") }
-        : {})
+        : {}),
+      ...(typeof s.section === "string" ? { section: s.section } : {}),
+      ...(typeof s.hierarchy === "string" ? { hierarchy: s.hierarchy } : {}),
+      ...(typeof s.nas_path === "string" ? { nas_path: s.nas_path } : {}),
+      ...(typeof s.similarity === "number" ? { similarity: s.similarity } : {})
     }));
   return sources.length > 0 ? sources : null;
 }
