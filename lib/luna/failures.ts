@@ -77,6 +77,7 @@ export type FailureRow = {
   resolved_at: string | null;
   created_at: string;
   asked_by_name?: string | null;
+  human_note?: string | null;
 };
 
 export type FailurePromptGroup = {
@@ -395,11 +396,20 @@ export async function listLunaFailures(
       if (p.id && p.name) names.set(p.id as string, p.name as string);
     }
   }
-  return rows.map((r) => ({
-    ...r,
-    db_fixes: normalizeFailureDbFixes((r as { db_fixes?: unknown }).db_fixes),
-    asked_by_name: r.asked_by ? names.get(r.asked_by) ?? null : null
-  }));
+  return rows.map((r) => {
+    const ref =
+      r.source_ref && typeof r.source_ref === "object" && !Array.isArray(r.source_ref)
+        ? r.source_ref
+        : {};
+    const humanNote =
+      typeof ref.feedback_note === "string" ? ref.feedback_note.trim() : "";
+    return {
+      ...r,
+      db_fixes: normalizeFailureDbFixes((r as { db_fixes?: unknown }).db_fixes),
+      asked_by_name: r.asked_by ? names.get(r.asked_by) ?? null : null,
+      human_note: humanNote || null
+    };
+  });
 }
 
 export type FailureCluster = {
@@ -596,4 +606,202 @@ export async function isAnswerScoresVisible(admin: SupabaseClient): Promise<bool
     .maybeSingle();
   const v = data?.value as { visible?: boolean } | null;
   return v?.visible !== false;
+}
+
+export type FailureThreadBubble = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  duration_ms: number | null;
+  wiki: number;
+  memory: number;
+  web: number;
+  notion: number;
+  intent: number | null;
+  confidence: number | null;
+};
+
+export type FailureThreadTurn = {
+  user: FailureThreadBubble | null;
+  assistant: FailureThreadBubble | null;
+};
+
+export type FailureThreadPayload = {
+  before: FailureThreadTurn[];
+  focus: FailureThreadTurn | null;
+  after: FailureThreadTurn[];
+};
+
+function asMetaObj(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
+function countsFromMeta(meta: Record<string, unknown>): {
+  wiki: number;
+  memory: number;
+  web: number;
+  notion: number;
+  duration_ms: number | null;
+  intent: number | null;
+  confidence: number | null;
+} {
+  const wiki = Array.isArray(meta.wiki_sources) ? meta.wiki_sources.length : 0;
+  const memory = typeof meta.memory_count === "number" ? meta.memory_count : 0;
+  const notionArr = Array.isArray(meta.notion_sources) ? meta.notion_sources : [];
+  const cards = Array.isArray(meta.cards) ? meta.cards : [];
+  let web = 0;
+  let notion = notionArr.length;
+  for (const c of cards) {
+    if (!c || typeof c !== "object") continue;
+    const type = (c as { type?: string }).type;
+    if (type === "web" || type === "youtube") web += 1;
+    if (type === "notion") notion += 1;
+  }
+  return {
+    wiki,
+    memory,
+    web,
+    notion,
+    duration_ms:
+      typeof meta.duration_ms === "number" && Number.isFinite(meta.duration_ms)
+        ? meta.duration_ms
+        : null,
+    intent: clipScore(meta.intent_score),
+    confidence: clipScore(meta.confidence_score)
+  };
+}
+
+function toBubble(row: {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+  metadata: unknown;
+}): FailureThreadBubble {
+  const meta = asMetaObj(row.metadata);
+  const c = countsFromMeta(meta);
+  return {
+    id: row.id,
+    role: row.role === "user" ? "user" : "assistant",
+    content: typeof row.content === "string" ? row.content : "",
+    created_at: row.created_at,
+    duration_ms: c.duration_ms,
+    wiki: c.wiki,
+    memory: c.memory,
+    web: c.web,
+    notion: c.notion,
+    intent: c.intent,
+    confidence: c.confidence
+  };
+}
+
+function pairTurns(
+  msgs: FailureThreadBubble[]
+): FailureThreadTurn[] {
+  const turns: FailureThreadTurn[] = [];
+  for (const m of msgs) {
+    if (m.role === "user") {
+      turns.push({ user: m, assistant: null });
+      continue;
+    }
+    const last = turns[turns.length - 1];
+    if (last && !last.assistant) last.assistant = m;
+    else turns.push({ user: null, assistant: m });
+  }
+  return turns;
+}
+
+/** 실패 메시지 기준으로 앞뒤 2턴씩. */
+export async function loadFailureThread(
+  admin: SupabaseClient,
+  row: FailureRow
+): Promise<FailureThreadPayload> {
+  const fallbackFocus: FailureThreadTurn = {
+    user: row.question
+      ? {
+          id: "q",
+          role: "user",
+          content: row.question,
+          created_at: row.created_at,
+          duration_ms: null,
+          wiki: 0,
+          memory: 0,
+          web: 0,
+          notion: 0,
+          intent: null,
+          confidence: null
+        }
+      : null,
+    assistant: {
+      id: row.message_id ?? "a",
+      role: "assistant",
+      content: row.answer_excerpt || "",
+      created_at: row.created_at,
+      duration_ms: row.duration_ms,
+      wiki: typeof row.sources_used?.wiki === "number" ? row.sources_used.wiki : 0,
+      memory: typeof row.sources_used?.memory === "number" ? row.sources_used.memory : 0,
+      web: typeof row.sources_used?.web === "number" ? row.sources_used.web : 0,
+      notion: typeof row.sources_used?.notion === "number" ? row.sources_used.notion : 0,
+      intent: row.intent_score,
+      confidence: row.confidence_score
+    }
+  };
+
+  if (!row.conversation_id) {
+    return { before: [], focus: fallbackFocus, after: [] };
+  }
+
+  const { data, error } = await admin
+    .from("luna_messages")
+    .select("id, role, content, created_at, metadata")
+    .eq("conversation_id", row.conversation_id)
+    .order("created_at", { ascending: true })
+    .limit(200);
+  if (error || !data || data.length === 0) {
+    return { before: [], focus: fallbackFocus, after: [] };
+  }
+
+  const bubbles = data.map((m) =>
+    toBubble({
+      id: String(m.id),
+      role: String(m.role ?? ""),
+      content: typeof m.content === "string" ? m.content : "",
+      created_at: String(m.created_at),
+      metadata: m.metadata
+    })
+  );
+  const turns = pairTurns(bubbles);
+  let idx = -1;
+  if (row.message_id) {
+    idx = turns.findIndex((t) => t.assistant?.id === row.message_id);
+  }
+  if (idx < 0 && row.question.trim()) {
+    const q = row.question.replace(/\s+/g, " ").trim();
+    idx = turns.findIndex(
+      (t) => (t.user?.content.replace(/\s+/g, " ").trim() ?? "") === q
+    );
+  }
+  if (idx < 0) {
+    idx = turns.length - 1;
+  }
+
+  const focus = turns[idx] ?? fallbackFocus;
+  if (focus.assistant && row.duration_ms && !focus.assistant.duration_ms) {
+    focus.assistant.duration_ms = row.duration_ms;
+  }
+  if (focus.assistant) {
+    if (row.intent_score != null) focus.assistant.intent = row.intent_score;
+    if (row.confidence_score != null) {
+      focus.assistant.confidence = row.confidence_score;
+    }
+  }
+
+  return {
+    before: turns.slice(Math.max(0, idx - 2), idx),
+    focus,
+    after: turns.slice(idx + 1, idx + 3)
+  };
 }
