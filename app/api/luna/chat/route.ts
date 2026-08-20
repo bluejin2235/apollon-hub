@@ -83,7 +83,8 @@ import {
 } from "@/lib/luna/wiki-match";
 import {
   applyListingTypeOverride,
-  isListingQuestion,
+  formatListingWikiChecklist,
+  listingAnswerRuleWithWikiCount,
   shouldSkipFindConnectors,
   wikiCoversKnowIntent
 } from "@/lib/luna/listing-question";
@@ -420,8 +421,16 @@ function buildL3PromptBlock(opts: {
   assume?: string;
   typeBlocks?: string[];
   answer?: string;
+  /** talk.answer 뒤 — 목록형일 때 나열 규칙이 답변 원칙을 덮어쓴다 */
+  listingRule?: string;
 }): string {
-  return [opts.understand, opts.assume, ...(opts.typeBlocks ?? []), opts.answer]
+  return [
+    opts.understand,
+    opts.assume,
+    ...(opts.typeBlocks ?? []),
+    opts.answer,
+    opts.listingRule
+  ]
     .map((s) => s?.trim() ?? "")
     .filter(Boolean)
     .join("\n\n");
@@ -447,6 +456,9 @@ function buildAnswerSystem(
     notionSearchRounds?: number;
     webAugmented?: boolean;
     clarifyFollowup?: boolean;
+    listingQuestion?: boolean;
+    listingRule?: string;
+    listingChecklist?: string;
   },
   useCaching: boolean,
   modelId: string
@@ -468,7 +480,10 @@ function buildAnswerSystem(
     .join("\n\n");
   const volatile = buildVolatileSystemText({
     ...opts,
-    clarifyFollowup: opts.clarifyFollowup
+    clarifyFollowup: opts.clarifyFollowup,
+    listingQuestion: opts.listingQuestion,
+    listingRule: opts.listingRule,
+    listingChecklist: opts.listingChecklist
   });
 
   const payload = buildCachedSystem(
@@ -501,11 +516,21 @@ function buildVolatileSystemText(opts: {
   notionSearchRounds?: number;
   webAugmented?: boolean;
   clarifyFollowup?: boolean;
+  listingQuestion?: boolean;
+  listingRule?: string;
+  listingChecklist?: string;
 }): string {
   const parts: string[] = [];
 
   if (opts.clarifyFollowup) {
     parts.push(CLARIFY_FOLLOWUP_RULE);
+  }
+
+  if (opts.listingQuestion && opts.listingRule?.trim()) {
+    parts.push(opts.listingRule.trim());
+  }
+  if (opts.listingQuestion && opts.listingChecklist?.trim()) {
+    parts.push(opts.listingChecklist.trim());
   }
 
   if (opts.reportContent?.trim()) {
@@ -2122,11 +2147,21 @@ export async function POST(request: NextRequest) {
           typeBlocks.push(formatLibraryBlock(libraryHits));
         }
 
+        const listingRule = listingQuestion
+          ? listingAnswerRuleWithWikiCount(
+              new Set(wikiSources.map((s) => s.slug)).size
+            )
+          : undefined;
+        const listingChecklist = listingQuestion
+          ? formatListingWikiChecklist(wikiSources)
+          : undefined;
+
         const l3Prompt = buildL3PromptBlock({
           understand: understandPick.text,
           assume: talkAssume,
           typeBlocks,
-          answer: talkAnswer
+          answer: listingQuestion ? undefined : talkAnswer,
+          listingRule
         });
 
         const systemPrompt = buildAnswerSystem(
@@ -2147,7 +2182,10 @@ export async function POST(request: NextRequest) {
             notionSearchStatus: notionSearchOutcome?.status,
             notionSearchRounds: notionSearchOutcome?.rounds ?? 0,
             webAugmented,
-            clarifyFollowup: Boolean(clarifyFollowupQuery)
+            clarifyFollowup: Boolean(clarifyFollowupQuery),
+            listingQuestion,
+            listingRule,
+            listingChecklist
           },
           tierACfg.use_caching === true,
           tierA.model_id
