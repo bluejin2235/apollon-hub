@@ -58,6 +58,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
@@ -243,11 +244,15 @@ function buildSystemPrompt(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    parts.push(`[노션 검색 결과]\n${formatNotionSourcesForPrompt(opts.notionSources)}`);
+    const forLlm = takeTopNotionSourcesForLlm(opts.notionSources);
+    parts.push(
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`
+    );
   }
 
   if (opts.cards && opts.cards.length > 0) {
-    const cardBlock = opts.cards
+    const topCards = opts.cards.slice(0, 3);
+    const cardBlock = topCards
       .map((c) =>
         c.url ? `- [${c.type}] ${c.title}: ${c.url}` : `- [${c.type}] ${c.title}: ${c.description}`
       )
@@ -255,7 +260,7 @@ function buildSystemPrompt(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  const nasResults = opts.nasResults ?? [];
+  const nasResults = (opts.nasResults ?? []).slice(0, 3);
   const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults

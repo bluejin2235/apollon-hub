@@ -27,6 +27,8 @@ export type SourcePackItem = {
   parentId: string | null;
   pathTitles: string[];
   dateKey: number;
+  /** 노션 유사도 등 — 표시 계층용 */
+  score: number;
 };
 
 export type SourcePackProject = {
@@ -38,6 +40,7 @@ export type SourcePackProject = {
   notion: { title: string; url: string; id: string } | null;
   folder: SourcePackItem["folder"];
   children: SourcePackItem[];
+  score: number;
 };
 
 export type SourcePackView =
@@ -46,6 +49,12 @@ export type SourcePackView =
 
 const MAX_FILES_SHOWN = 3;
 const PROJECT_MIN_CHILDREN = 3;
+
+/** 표시 계층 임계값 — 바꾸지 말 것 */
+export const PACK_SCORE_RECOMMENDED = 0.7;
+export const PACK_SCORE_MID = 0.5;
+/** LLM 프롬프트에 넣는 자료 상한 */
+export const PACK_LLM_TOP_N = 3;
 
 export function normalizeWorkPath(path: string): string {
   return path
@@ -298,22 +307,39 @@ function packFromNotion(
     notion: { title: source.title, url: source.url, id: source.id },
     files: shown,
     filesMore: Math.max(0, files.length - shown.length),
-    folder: folderFull ? toFolder(folderFull) : null,
+    folder:
+      onlySide === "notion" ? null : folderFull ? toFolder(folderFull) : null,
     parentId: source.parent_id ?? null,
     pathTitles: source.path_titles ?? [],
-    dateKey: notionDateKey(source.title)
+    dateKey: notionDateKey(source.title),
+    score: typeof source.similarity === "number" ? source.similarity : 0
   };
 }
 
-function packFromNasOnly(entry: NasEntry): SourcePackItem {
+function packFromNasOnly(
+  entry: NasEntry,
+  rank: number,
+  /** 노션 히트가 없을 때만 추천(≥0.7) 가능 */
+  allowRecommend: boolean
+): SourcePackItem {
   const title = entry.isFile
     ? entry.card.title || fileNameOf(entry.full)
     : entry.card.title || fileNameOf(entry.full);
   const folderFull = folderOfFullPath(entry.full, entry.isFile);
+  const important = entry.card.description?.startsWith("★ ") === true;
+  const score = allowRecommend
+    ? Math.max(0.35, (important ? 0.82 : 0.78) - rank * 0.1)
+    : Math.max(0.35, 0.48 - rank * 0.03);
+  const crumb = folderFull
+    .replace(/^[A-Za-z]:\\/, "")
+    .split("\\")
+    .filter(Boolean)
+    .slice(-2)
+    .join(" › ");
   return {
     id: `nas:${entry.norm}`,
     title,
-    subtitle: "Work서버에만 있음 · 노션 기록 없음",
+    subtitle: crumb || "Work서버",
     badge: null,
     body: null,
     onlySide: "nas",
@@ -323,7 +349,8 @@ function packFromNasOnly(entry: NasEntry): SourcePackItem {
     folder: toFolder(folderFull),
     parentId: null,
     pathTitles: [],
-    dateKey: notionDateKey(title)
+    dateKey: notionDateKey(title),
+    score
   };
 }
 
@@ -376,6 +403,8 @@ export function buildSourcePacks(
     items.push(packFromNotion(source, matched));
   }
 
+  const allowNasRecommend = notions.length === 0;
+  let nasOnlyRank = 0;
   for (const entry of nasEntries) {
     if (entry.used) continue;
     // 상위 폴더(노션 경로의 조상)는 따로 보여주지 않음
@@ -386,7 +415,8 @@ export function buildSourcePacks(
       entry.used = true;
       continue;
     }
-    items.push(packFromNasOnly(entry));
+    items.push(packFromNasOnly(entry, nasOnlyRank, allowNasRecommend));
+    nasOnlyRank += 1;
   }
 
   return groupPacksIntoProjects(items, notions);
@@ -454,7 +484,8 @@ function groupPacksIntoProjects(
           : parentSelf?.folder ??
             children.find((m) => m.folder)?.folder ??
             null,
-        children
+        children,
+        score: Math.max(...children.map((c) => c.score), parentSelf?.score ?? 0)
       });
       continue;
     }
@@ -490,4 +521,125 @@ export function countSourcePackMaterialsFromMeta(
   const hasNas = (cards ?? []).some((c) => c.type === "nas");
   if (!hasNotion && !hasNas) return 0;
   return countSourcePackMaterials(buildSourcePacks(notionSources, cards));
+}
+
+export type SourcePackTiers = {
+  recommended: SourcePackItem | null;
+  mid: SourcePackItem[];
+  weak: SourcePackItem[];
+  maxScore: number;
+  lowConfidence: boolean;
+};
+
+function viewToDisplayItem(view: SourcePackView): SourcePackItem {
+  if (view.kind === "item") return view;
+  const hasWork = Boolean(view.folder) || view.children.some(
+    (c) => c.files.length > 0 || c.folder
+  );
+  const onlySide: SourcePackItem["onlySide"] = !view.notion && hasWork
+    ? "nas"
+    : view.notion && !hasWork
+      ? "notion"
+      : null;
+  return {
+    id: view.id,
+    title: view.title,
+    subtitle: view.subtitle,
+    badge: view.badge,
+    body: null,
+    onlySide,
+    notion: view.notion,
+    files: [],
+    filesMore: 0,
+    folder: view.folder,
+    parentId: null,
+    pathTitles: [],
+    dateKey: notionDateKey(view.title),
+    score: view.score
+  };
+}
+
+/** 정확도 순 세 층 — 추천(≥0.7) / 그 다음(0.5~0.7) / 약함(<0.5) */
+export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
+  const flat = views
+    .map(viewToDisplayItem)
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, "ko"));
+  const maxScore = flat.reduce((m, x) => Math.max(m, x.score), 0);
+  const lowConfidence = maxScore < PACK_SCORE_MID;
+
+  if (flat.length === 0) {
+    return {
+      recommended: null,
+      mid: [],
+      weak: [],
+      maxScore: 0,
+      lowConfidence: true
+    };
+  }
+
+  if (lowConfidence) {
+    return {
+      recommended: null,
+      mid: flat.slice(0, 2),
+      weak: flat.slice(2),
+      maxScore,
+      lowConfidence: true
+    };
+  }
+
+  let recommended: SourcePackItem | null = null;
+  const mid: SourcePackItem[] = [];
+  const weak: SourcePackItem[] = [];
+  for (const item of flat) {
+    if (
+      !recommended &&
+      item.score >= PACK_SCORE_RECOMMENDED
+    ) {
+      recommended = item;
+      continue;
+    }
+    if (
+      mid.length < 2 &&
+      item.score >= PACK_SCORE_MID &&
+      item.score < PACK_SCORE_RECOMMENDED
+    ) {
+      mid.push(item);
+      continue;
+    }
+    if (recommended && item.id === recommended.id) continue;
+    if (mid.some((m) => m.id === item.id)) continue;
+    // 0.7 이상이지만 추천 자리 이미 씀 → mid 후보로 (여유 있으면)
+    if (
+      item.score >= PACK_SCORE_RECOMMENDED &&
+      mid.length < 2
+    ) {
+      mid.push(item);
+      continue;
+    }
+    weak.push(item);
+  }
+
+  return { recommended, mid, weak, maxScore, lowConfidence: false };
+}
+
+/** LLM 프롬프트용 — 유사도 상위 N건만 */
+export function takeTopNotionSourcesForLlm(
+  sources: NotionSource[] | null | undefined,
+  n = PACK_LLM_TOP_N
+): NotionSource[] {
+  const list = [...(sources ?? [])];
+  list.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+  return list.slice(0, n);
+}
+
+export function maxNotionSimilarity(
+  sources: NotionSource[] | null | undefined
+): number {
+  let max = 0;
+  for (const s of sources ?? []) {
+    if (typeof s.similarity === "number" && s.similarity > max) {
+      max = s.similarity;
+    }
+  }
+  return max;
 }

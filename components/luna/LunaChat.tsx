@@ -47,6 +47,17 @@ async function getAccessToken(): Promise<string | null> {
 
 const reflectingConversationIds = new Set<string>();
 
+function hintFromUserQuery(q: string): string {
+  return q
+    .trim()
+    .replace(/[?？]/g, "")
+    .replace(/\s*(찾아줘|어디\s*있어|모아줘|어떻게\s*돼가|며칠.*)$/u, "")
+    .replace(/\s*자료\s*$/u, "")
+    .replace(/^(작년|올해|최근)\s*/u, "")
+    .trim()
+    .slice(0, 24);
+}
+
 async function callReflect(
   conversationId: string
 ): Promise<{ correctionIds: string[] }> {
@@ -981,7 +992,7 @@ export function LunaChat({
         </div>
       ) : (
         <div className="pb-2">
-          {messages.map((m) => {
+          {messages.map((m, index) => {
             const isThinking =
               m.isThinking === true || m.metadata?.isThinking === true;
             const detailMeta: LunaDetailMeta = {
@@ -990,6 +1001,9 @@ export function LunaChat({
               wsSearches: m.wsToolCalls,
               connectorRouting: m.connectorRouting
             };
+            const prevUser = [...messages.slice(0, index)]
+              .reverse()
+              .find((x) => x.role === "user");
             return (
               <LunaMessage
                 key={m.id}
@@ -1005,6 +1019,11 @@ export function LunaChat({
                 privateWikiRefs={m.privateWikiRefs}
                 cards={m.cards}
                 sourceReasons={m.sourceReasons}
+                queryHint={
+                  m.role === "assistant" && prevUser?.content
+                    ? hintFromUserQuery(prevUser.content)
+                    : null
+                }
                 nasDriveMode={nasDriveMode}
                 onNasDriveModeChange={handleNasDriveModeChange}
                 attachments={m.attachments}

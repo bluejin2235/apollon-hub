@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자료 카드 v3</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --notion:#37352F; --nas:#5B6472;
+    --hi:#0F6E56; --hi-bg:#E6F5EF;
+    --warn:#B0782B;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:820px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:30px 0 4px;padding-top:18px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:21px;height:21px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:10px;font-weight:800}
+  .hubname{font-size:12.5px;font-weight:800}
+  .hubright{margin-left:auto;font-size:11px;color:var(--sub)}
+  .body{padding:18px 22px}
+
+  .userq{background:var(--luna);color:#fff;border-radius:16px 16px 4px 16px;
+    padding:10px 15px;font-size:13.5px;display:inline-block;float:right;margin-bottom:16px}
+  .clr{clear:both}
+
+  .lead{font-size:13.5px;line-height:1.85;color:#2a2c31;margin-bottom:14px}
+  .lead b{font-weight:700}
+
+  /* 추천 자료 */
+  .top{border:1.5px solid var(--hi);border-radius:12px;overflow:hidden;margin-bottom:9px}
+  .tophead{padding:10px 15px;background:var(--hi-bg);display:flex;align-items:center;gap:8px}
+  .tophead .m{font-size:10px;font-weight:800;color:var(--hi);letter-spacing:.3px}
+  .tophead .sp{flex:1}
+  .tophead .sc{font-size:10px;color:var(--hi);opacity:.7}
+  .topbody{padding:13px 15px}
+  .topbody .t{font-size:14.5px;font-weight:700;line-height:1.45;margin-bottom:4px}
+  .topbody .s{font-size:11px;color:var(--faint);margin-bottom:9px}
+  .topbody .d{font-size:12.5px;line-height:1.8;color:#2a2c31}
+  .topbody .miss{font-size:11px;color:var(--warn);margin-top:8px}
+
+  .links{border-top:1px solid var(--line2)}
+  .lrow{display:flex;align-items:center;gap:9px;padding:8px 15px;font-size:11.5px;
+    cursor:pointer;border-bottom:1px solid var(--line2)}
+  .lrow:last-child{border-bottom:0}
+  .lrow:hover{background:#FBFAFF}
+  .lrow2{align-items:flex-start;padding:9px 15px}
+  .lrow2 .lb{margin-top:1px}
+  .lb{font-size:9px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
+  .lb.notion{background:#EFEFED;color:var(--notion)}
+  .lb.file{background:#EDEFF2;color:var(--nas)}
+  .lrow .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .v2{flex:1;min-width:0}
+  .v2 .p{font-family:var(--mono);font-size:10px;color:var(--faint);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .v2 .f{font-size:11.5px;margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lrow .go{color:var(--faint);font-size:11px}
+
+  /* 중간 */
+  .mid{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:7px;
+    cursor:pointer;display:flex;align-items:center;gap:10px}
+  .mid:hover{background:#FBFAFF;border-color:#D9D4EE}
+  .mid .ic{font-size:13px;opacity:.6}
+  .mid .c{flex:1;min-width:0}
+  .mid .t{font-size:12.5px;font-weight:600;line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mid .s{font-size:10.5px;color:var(--faint);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mid .tags{display:flex;gap:4px;flex-shrink:0}
+
+  /* 접기 */
+  .fold{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:9px}
+  .foldhead{padding:9px 14px;font-size:11.5px;color:var(--sub);cursor:pointer;
+    display:flex;align-items:center;gap:7px;background:#FBFBFC}
+  .foldhead .n{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .foldbody{border-top:1px solid var(--line2)}
+  .frow{padding:8px 14px;border-bottom:1px solid var(--line2);font-size:11.5px;
+    display:flex;align-items:center;gap:9px;cursor:pointer;color:var(--sub)}
+  .frow:last-child{border-bottom:0}
+  .frow .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* 하단 바 */
+  .footbar{display:flex;align-items:center;gap:7px;margin-top:14px;flex-wrap:wrap}
+  .pill{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--chip);
+    color:var(--sub)}
+  .footbar .icons{display:flex;gap:9px;margin-left:4px;color:var(--faint);font-size:13px}
+  .footbar .icons span{cursor:pointer}
+  .footbar .stat{margin-left:auto;font-size:10.5px;color:var(--faint);
+    display:flex;gap:11px;align-items:center}
+  .footbar .stat b{color:var(--sub);font-weight:600}
+  .footbar .stat .g{color:var(--hi);font-weight:700}
+  .footbar .stat .w{color:var(--warn);font-weight:700}
+
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 1 ══════ -->
+<div class="mocklabel">① 노션과 워크에 둘 다 있을 때</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">롯데타워 1차 아이데이션 자료 찾아줘</div>
+    <div class="clr"></div>
+
+    <div class="lead">
+      <b>2025년 서울스카이 리뉴얼</b>의 1차 아이데이션이에요.
+      랜드마크 리뉴얼로 새로운 경험과 차별화 콘텐츠를 제안했습니다.
+    </div>
+
+    <div class="top">
+      <div class="tophead">
+        <span class="m">추천 자료</span><span class="sp"></span><span class="sc">0.82</span>
+      </div>
+      <div class="topbody">
+        <div class="t">251209 롯데타워 서울스카이 리뉴얼 _ 1st Ideation</div>
+        <div class="s">2025.12.09 · 롯데타워 서울스카이 리뉴얼 › 1st Ideation</div>
+        <div class="d">서울 한복판의 메인 랜드마크 'Lotte Tower Seoul Sky' 리뉴얼을 통한
+          새로운 경험 및 차별화 콘텐츠 제공을 목표로 제안했다.</div>
+      </div>
+      <div class="links">
+        <div class="lrow">
+          <span class="lb notion">노션</span>
+          <span class="v">251209 롯데타워 서울스카이 리뉴얼 _ 1st Ideation</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="lrow lrow2">
+          <span class="lb file">워크</span>
+          <div class="v2">
+            <div class="p">P:\01 사업개발\251202 롯데타워…\251208 1st Ideation</div>
+            <div class="f">251209 롯데타워_서울스카이 리뉴얼_1st Ideation_1팀_FIN.pdf</div>
+          </div>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mid">
+      <span class="ic">📄</span>
+      <div class="c">
+        <div class="t">251209 롯데타워 서울스카이 리뉴얼 아이데이션</div>
+        <div class="s">같은 날 · 아이데이션 정리본</div>
+      </div>
+      <div class="tags"><span class="lb notion">노션</span></div>
+    </div>
+
+    <div class="mid">
+      <span class="ic">📂</span>
+      <div class="c">
+        <div class="t">251202 롯데타워 서울스카이 리뉴얼</div>
+        <div class="s">프로젝트 전체 · 자료 4건</div>
+      </div>
+      <div class="tags"><span class="lb notion">노션</span><span class="lb file">워크</span></div>
+    </div>
+
+    <div class="fold">
+      <div class="foldhead"><span>▸</span> 관련이 약한 자료 <span class="n">8건</span></div>
+    </div>
+
+    <div class="footbar">
+      <span class="pill">자료 11건</span>
+      <span class="pill">위키 3건</span>
+      <span class="pill">기억 10건</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat">
+        <span><b>8.4초</b></span>
+        <span>의도 <span class="g">9/10</span></span>
+        <span>자신감 <span class="g">8/10</span></span>
+      </span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 2 ══════ -->
+<div class="secthead">② 워크에만 있을 때</div>
+<p class="sectsub">노션에 기록이 없는 자료입니다. 파일명과 폴더만 보여줍니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">인스파이어 시즌3 수행계획서 어디 있어?</div>
+    <div class="clr"></div>
+
+    <div class="lead">
+      Work서버에 <b>수행계획서</b>가 있어요. 노션에는 기록이 없습니다.
+    </div>
+
+    <div class="top">
+      <div class="tophead">
+        <span class="m">추천 자료</span><span class="sp"></span><span class="sc">0.79</span>
+      </div>
+      <div class="topbody">
+        <div class="t">인스파이어 시즌3_수행계획서_v2.pptx</div>
+        <div class="s">2025.03 · 인스파이어 시즌3 › 01 Document</div>
+        <div class="miss">노션 기록 없음 — 파일만 확인됩니다</div>
+      </div>
+      <div class="links">
+        <div class="lrow lrow2">
+          <span class="lb file">워크</span>
+          <div class="v2">
+            <div class="p">T:\02 Project\2025\250310 인스파이어 시즌3\01 Document</div>
+            <div class="f">인스파이어 시즌3_수행계획서_v2.pptx</div>
+          </div>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mid">
+      <span class="ic">📄</span>
+      <div class="c">
+        <div class="t">인스파이어 시즌3_수행계획서_v1.pptx</div>
+        <div class="s">이전 버전 · 같은 폴더</div>
+      </div>
+      <div class="tags"><span class="lb file">워크</span></div>
+    </div>
+
+    <div class="fold">
+      <div class="foldhead"><span>▸</span> 관련이 약한 자료 <span class="n">5건</span></div>
+    </div>
+
+    <div class="footbar">
+      <span class="pill">자료 7건</span>
+      <span class="pill">기억 4건</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat">
+        <span><b>6.1초</b></span>
+        <span>의도 <span class="g">9/10</span></span>
+        <span>자신감 <span class="g">8/10</span></span>
+      </span>
+    </div>
+
+    <p class="helper">
+      <b>노션 기록 없음</b>이라고 밝혀두면 어디에 정리가 빠졌는지도 드러납니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 3 ══════ -->
+<div class="secthead">③ 노션에만 있을 때</div>
+<p class="sectsub">진행 중이라 아직 Work서버에 폴더가 없는 경우입니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">WTCS 무역센터 건 어떻게 돼가?</div>
+    <div class="clr"></div>
+
+    <div class="lead">
+      <b>무역센터 외벽 미디어 구축 컨설팅</b> 제안이 진행 중이에요.
+    </div>
+
+    <div class="top">
+      <div class="tophead">
+        <span class="m">추천 자료</span><span class="sp"></span><span class="sc">0.86</span>
+      </div>
+      <div class="topbody">
+        <div class="t">260513 WTCS 무역센터 미디어 구축 컨설팅</div>
+        <div class="s">2026.05.13 · 진행 중 사업개발</div>
+        <div class="d">무역센터 외벽 미디어 구축에 대한 컨설팅 제안.
+          발주처와 범위를 협의 중이다.</div>
+        <div class="miss">Work서버 폴더 없음 — 아직 자료가 만들어지지 않았습니다</div>
+      </div>
+      <div class="links">
+        <div class="lrow">
+          <span class="lb notion">노션</span>
+          <span class="v">260513 WTCS 무역센터 미디어 구축 컨설팅</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="footbar">
+      <span class="pill">자료 1건</span>
+      <span class="pill">기억 6건</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat">
+        <span><b>5.4초</b></span>
+        <span>의도 <span class="g">9/10</span></span>
+        <span>자신감 <span class="g">9/10</span></span>
+      </span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 4 ══════ -->
+<div class="secthead">④ 점수가 낮을 때</div>
+<p class="sectsub">억지로 추천하지 않습니다. 하단 점수도 색이 달라집니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">작년 미디어파사드 자료 모아줘</div>
+    <div class="clr"></div>
+
+    <div class="lead">
+      「미디어파사드」로는 확실한 자료를 못 찾았어요.
+      비슷한 것들을 모아봤는데 맞는지 봐주세요.
+    </div>
+
+    <div class="mid">
+      <span class="ic">📂</span>
+      <div class="c">
+        <div class="t">240312 롯데월드타워 미디어아키텍처 구축</div>
+        <div class="s">2024년 · 외벽 미디어 · 자료 3건</div>
+      </div>
+      <div class="tags"><span class="lb file">워크</span></div>
+    </div>
+
+    <div class="mid">
+      <span class="ic">📄</span>
+      <div class="c">
+        <div class="t">260108 해운대구남로 미디어쇼</div>
+        <div class="s">2026년 · 진행 중</div>
+      </div>
+      <div class="tags"><span class="lb notion">노션</span></div>
+    </div>
+
+    <div class="fold">
+      <div class="foldhead"><span>▸</span> 관련이 약한 자료 <span class="n">12건</span></div>
+    </div>
+
+    <div class="footbar">
+      <span class="pill">자료 14건</span>
+      <span class="pill">기억 8건</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat">
+        <span><b>7.2초</b></span>
+        <span>의도 <span class="w">5/10</span></span>
+        <span>자신감 <span class="w">4/10</span></span>
+      </span>
+    </div>
+
+    <p class="helper">
+      점수가 5 미만이면 실패 수집에 자동으로 쌓입니다.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

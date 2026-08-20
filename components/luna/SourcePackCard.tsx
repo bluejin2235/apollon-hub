@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   buildSourcePacks,
-  type SourcePackItem,
-  type SourcePackView
+  tierSourcePacks,
+  type SourcePackItem
 } from "@/lib/luna/source-pack";
 import {
   formatNasFolderPath,
@@ -13,51 +13,184 @@ import {
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
 
-function LinkRow({
-  kind,
-  label,
-  href,
-  path,
-  onCopy
-}: {
-  kind: "notion" | "file" | "folder";
-  label: string;
-  href?: string | null;
-  path?: string | null;
-  onCopy?: (message: string) => void;
-}) {
-  const lbClass =
-    kind === "notion"
-      ? "bg-[#EFEFED] text-[#37352F]"
-      : "bg-[#E9F1F9] text-[#2E6FA8]";
-  const kindLabel =
-    kind === "notion" ? "노션" : kind === "file" ? "파일" : "폴더";
-  const isPath = kind === "folder";
+function SourceTags({ item }: { item: SourcePackItem }) {
+  return (
+    <div className="flex shrink-0 gap-1">
+      {item.notion ? (
+        <span className="rounded-md bg-[#EFEFED] px-[7px] py-0.5 text-[9px] font-bold text-[#37352F]">
+          노션
+        </span>
+      ) : null}
+      {item.files.length > 0 || item.folder ? (
+        <span className="rounded-md bg-[#EDEFF2] px-[7px] py-0.5 text-[9px] font-bold text-[#5B6472]">
+          워크
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
-  const inner = (
+function WorkLinkRows({
+  item,
+  mode,
+  onCopyToast
+}: {
+  item: SourcePackItem;
+  mode: LunaNasDriveMode;
+  onCopyToast?: (message: string) => void;
+}) {
+  const folderPath = item.folder
+    ? formatNasFolderPath(
+        item.folder.drive,
+        item.folder.rawPath,
+        mode,
+        false
+      ).replace(/\\+$/, "")
+    : null;
+  const files = item.files.length > 0 ? item.files : [];
+
+  if (files.length === 0 && !folderPath) return null;
+
+  const rows =
+    files.length > 0
+      ? files.map((f) => ({
+          path: folderPath || f.fullPath.replace(/\\[^\\]+$/, ""),
+          name: f.name,
+          copy: f.fullPath
+        }))
+      : folderPath
+        ? [{ path: folderPath, name: null as string | null, copy: folderPath }]
+        : [];
+
+  return (
     <>
-      <span
-        className={`shrink-0 rounded-[7px] px-[7px] py-0.5 text-[9.5px] font-bold ${lbClass}`}
-      >
-        {kindLabel}
-      </span>
-      <span
-        className={`min-w-0 flex-1 truncate ${
-          isPath
-            ? "font-mono text-[10.5px] text-[#6b6f76]"
-            : "text-[11.5px] text-[#1c1d21]"
-        }`}
-        title={label}
-      >
-        {label}
-      </span>
-      <span className="shrink-0 text-[11px] text-[#9aa0a8]">↗</span>
+      {rows.map((row) => (
+        <button
+          key={`${row.path}-${row.name ?? "folder"}`}
+          type="button"
+          className="flex w-full cursor-pointer items-start gap-[9px] border-b border-[#eef0f3] px-[15px] py-[9px] text-left last:border-b-0 hover:bg-[#FBFAFF]"
+          onClick={() => {
+            void navigator.clipboard.writeText(row.copy).then(() => {
+              onCopyToast?.("경로 복사됨");
+            });
+          }}
+        >
+          <span className="mt-0.5 shrink-0 rounded-md bg-[#EDEFF2] px-[7px] py-0.5 text-[9px] font-bold text-[#5B6472]">
+            워크
+          </span>
+          <div className="min-w-0 flex-1">
+            <div
+              className="truncate font-mono text-[10px] text-[#9aa0a8]"
+              title={row.path}
+            >
+              {row.path}
+            </div>
+            {row.name ? (
+              <div className="mt-0.5 truncate text-[11.5px] text-[#1c1d21]">
+                {row.name}
+              </div>
+            ) : null}
+          </div>
+          <span className="shrink-0 text-[11px] text-[#9aa0a8]">↗</span>
+        </button>
+      ))}
+      {item.filesMore > 0 ? (
+        <div className="px-[15px] py-2 text-[11px] text-[#9aa0a8]">
+          외 {item.filesMore}개
+        </div>
+      ) : null}
     </>
   );
+}
 
+function RecommendedCard({
+  item,
+  mode,
+  onCopyToast
+}: {
+  item: SourcePackItem;
+  mode: LunaNasDriveMode;
+  onCopyToast?: (message: string) => void;
+}) {
+  return (
+    <div className="mb-2 overflow-hidden rounded-xl border-[1.5px] border-[#0F6E56]">
+      <div className="flex items-center gap-2 bg-[#E6F5EF] px-[15px] py-2.5">
+        <span className="text-[10px] font-extrabold tracking-wide text-[#0F6E56]">
+          추천 자료
+        </span>
+        <span className="flex-1" />
+        <span className="text-[10px] text-[#0F6E56] opacity-70">
+          {item.score.toFixed(2)}
+        </span>
+      </div>
+      <div className="px-[15px] py-3.5">
+        <div className="mb-1 text-[14.5px] font-bold leading-snug text-[#1c1d21]">
+          {item.title}
+        </div>
+        <div className="mb-2 text-[11px] text-[#9aa0a8]">{item.subtitle}</div>
+        {item.body ? (
+          <div className="text-[12.5px] leading-[1.8] text-[#2a2c31]">
+            {item.body}
+          </div>
+        ) : null}
+        {item.onlySide === "nas" ? (
+          <div className="mt-2 text-[11px] text-[#B0782B]">
+            노션 기록 없음 — 파일만 확인됩니다
+          </div>
+        ) : null}
+        {item.onlySide === "notion" ? (
+          <div className="mt-2 text-[11px] text-[#B0782B]">
+            Work서버 폴더 없음 — 아직 자료가 만들어지지 않았습니다
+          </div>
+        ) : null}
+      </div>
+      <div className="border-t border-[#eef0f3]">
+        {item.notion ? (
+          <a
+            href={item.notion.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-[9px] border-b border-[#eef0f3] px-[15px] py-2 text-[11.5px] hover:bg-[#FBFAFF]"
+          >
+            <span className="shrink-0 rounded-md bg-[#EFEFED] px-[7px] py-0.5 text-[9px] font-bold text-[#37352F]">
+              노션
+            </span>
+            <span className="min-w-0 flex-1 truncate">{item.notion.title}</span>
+            <span className="text-[#9aa0a8]">↗</span>
+          </a>
+        ) : null}
+        {item.onlySide === "notion" ? null : (
+          <WorkLinkRows item={item} mode={mode} onCopyToast={onCopyToast} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MidCard({
+  item
+}: {
+  item: SourcePackItem;
+}) {
+  const href = item.notion?.url;
+  const inner = (
+    <>
+      <span className="text-[13px] opacity-60">
+        {item.files.length || item.folder ? "📂" : "📄"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12.5px] font-semibold leading-snug text-[#1c1d21]">
+          {item.title}
+        </div>
+        <div className="mt-0.5 truncate text-[10.5px] text-[#9aa0a8]">
+          {item.subtitle}
+        </div>
+      </div>
+      <SourceTags item={item} />
+    </>
+  );
   const className =
-    "flex cursor-pointer items-center gap-[9px] border-b border-[#eef0f3] px-[15px] py-[9px] text-[11.5px] last:border-b-0 hover:bg-[#F7F6FC]";
-
+    "mb-1.5 flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-[#e7e8ec] px-3.5 py-2.5 hover:border-[#D9D4EE] hover:bg-[#FBFAFF]";
   if (href) {
     return (
       <a
@@ -70,208 +203,58 @@ function LinkRow({
       </a>
     );
   }
-
-  return (
-    <button
-      type="button"
-      className={`${className} w-full text-left`}
-      onClick={() => {
-        if (!path) return;
-        void navigator.clipboard.writeText(path).then(() => {
-          onCopy?.("경로 복사됨");
-        });
-      }}
-    >
-      {inner}
-    </button>
-  );
+  return <div className={className}>{inner}</div>;
 }
 
-function ItemPackCard({
-  pack,
-  mode,
-  onCopyToast
-}: {
-  pack: SourcePackItem;
-  mode: LunaNasDriveMode;
-  onCopyToast?: (message: string) => void;
-}) {
-  const folderCopyPath = pack.folder
-    ? formatNasFolderPath(
-        pack.folder.drive,
-        pack.folder.rawPath,
-        mode,
-        false
-      )
-    : null;
-
+function WeakFold({ items }: { items: SourcePackItem[] }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
   return (
-    <div className="mb-2.5 overflow-hidden rounded-xl border border-[#e7e8ec] last:mb-0">
-      <div className="flex items-start gap-2.5 border-b border-[#eef0f3] bg-[#FBFBFC] px-[15px] py-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#EEEDFE] text-[13px]">
-          📁
+    <div className="mt-2 overflow-hidden rounded-[10px] border border-[#e7e8ec]">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 bg-[#FBFBFC] px-3.5 py-2.5 text-left text-[11.5px] text-[#6b6f76]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <span>관련이 약한 자료</span>
+        <span className="ml-auto text-[10.5px] text-[#9aa0a8]">
+          {items.length}건
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-bold leading-snug text-[#1c1d21]">
-            {pack.title}
-          </div>
-          <div className="mt-0.5 text-[11px] leading-relaxed text-[#6b6f76]">
-            {pack.subtitle}
-          </div>
-        </div>
-        {pack.badge ? (
-          <span className="shrink-0 whitespace-nowrap rounded-lg bg-[#f1f2f5] px-[7px] py-0.5 text-[9.5px] text-[#6b6f76]">
-            {pack.badge}
-          </span>
-        ) : null}
-      </div>
-
-      {pack.body ? (
-        <div className="px-[15px] py-3 text-[12.5px] leading-[1.8] text-[#2a2c31]">
-          {pack.body}
+      </button>
+      {open ? (
+        <div className="border-t border-[#eef0f3]">
+          {items.map((item) => {
+            const href = item.notion?.url;
+            const row = (
+              <>
+                <SourceTags item={item} />
+                <span className="min-w-0 flex-1 truncate">{item.title}</span>
+              </>
+            );
+            const className =
+              "flex items-center gap-2 border-b border-[#eef0f3] px-3.5 py-2 text-[11.5px] text-[#6b6f76] last:border-b-0 hover:bg-[#FBFAFF]";
+            if (href) {
+              return (
+                <a
+                  key={item.id}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={className}
+                >
+                  {row}
+                </a>
+              );
+            }
+            return (
+              <div key={item.id} className={className}>
+                {row}
+              </div>
+            );
+          })}
         </div>
       ) : null}
-
-      <div className="border-t border-[#eef0f3] bg-[#FCFCFD]">
-        {pack.notion ? (
-          <LinkRow
-            kind="notion"
-            label={pack.notion.title}
-            href={pack.notion.url}
-          />
-        ) : null}
-        {pack.files.map((f) => (
-          <LinkRow
-            key={f.fullPath}
-            kind="file"
-            label={f.name}
-            path={f.fullPath}
-            onCopy={onCopyToast}
-          />
-        ))}
-        {pack.filesMore > 0 ? (
-          <div className="px-[15px] py-2 text-[11px] text-[#9aa0a8]">
-            외 {pack.filesMore}개
-          </div>
-        ) : null}
-        {pack.folder && folderCopyPath ? (
-          <LinkRow
-            kind="folder"
-            label={folderCopyPath.replace(/\\+$/, "")}
-            path={folderCopyPath}
-            onCopy={onCopyToast}
-          />
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ProjectPackCard({
-  view,
-  mode,
-  onCopyToast
-}: {
-  view: Extract<SourcePackView, { kind: "project" }>;
-  mode: LunaNasDriveMode;
-  onCopyToast?: (message: string) => void;
-}) {
-  const folderCopyPath = view.folder
-    ? formatNasFolderPath(
-        view.folder.drive,
-        view.folder.rawPath,
-        mode,
-        false
-      )
-    : null;
-
-  return (
-    <div className="mb-2.5 overflow-hidden rounded-xl border border-[#e7e8ec] last:mb-0">
-      <div className="flex items-start gap-2.5 border-b border-[#eef0f3] bg-[#FBFBFC] px-[15px] py-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#EEEDFE] text-[13px]">
-          📂
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-bold leading-snug text-[#1c1d21]">
-            {view.title}
-          </div>
-          <div className="mt-0.5 text-[11px] leading-relaxed text-[#6b6f76]">
-            {view.subtitle}
-          </div>
-        </div>
-        {view.badge ? (
-          <span className="shrink-0 whitespace-nowrap rounded-lg bg-[#f1f2f5] px-[7px] py-0.5 text-[9.5px] text-[#6b6f76]">
-            {view.badge}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="border-t border-[#eef0f3] bg-[#FCFCFD]">
-        {view.notion ? (
-          <LinkRow
-            kind="notion"
-            label="프로젝트 페이지 열기"
-            href={view.notion.url}
-          />
-        ) : null}
-        {view.folder && folderCopyPath ? (
-          <LinkRow
-            kind="folder"
-            label={folderCopyPath.replace(/\\+$/, "")}
-            path={folderCopyPath}
-            onCopy={onCopyToast}
-          />
-        ) : null}
-      </div>
-
-      <div className="border-t border-[#eef0f3]">
-        <div className="bg-[#FBFBFC] px-[15px] py-2 text-[10.5px] text-[#9aa0a8]">
-          자료 {view.children.length}건
-        </div>
-        {view.children.map((child, i) => {
-          const st = [
-            child.notion ? "노션" : null,
-            child.files.length > 0 ? "파일" : null
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          const href = child.notion?.url;
-          const rowClass =
-            "flex w-full items-center gap-[9px] border-t border-[#eef0f3] py-2 pl-[26px] pr-[15px] text-left text-[11.5px] hover:bg-[#F7F6FC]";
-          const inner = (
-            <>
-              <span className="w-4 text-[10px] text-[#9aa0a8]">{i + 1}</span>
-              <span className="min-w-0 flex-1 truncate text-[#1c1d21]">
-                {child.title}
-              </span>
-              {st ? (
-                <span className="shrink-0 rounded-[7px] bg-[#f1f2f5] px-1.5 py-px text-[9.5px] text-[#9aa0a8]">
-                  {st}
-                </span>
-              ) : null}
-              <span className="shrink-0 text-[11px] text-[#9aa0a8]">↗</span>
-            </>
-          );
-          if (href) {
-            return (
-              <a
-                key={child.id}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={rowClass}
-              >
-                {inner}
-              </a>
-            );
-          }
-          return (
-            <div key={child.id} className={rowClass}>
-              {inner}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -280,38 +263,51 @@ export function SourcePackList({
   notionSources,
   cards,
   nasDriveMode,
-  onCopyToast
+  onCopyToast,
+  queryHint
 }: {
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   nasDriveMode: LunaNasDriveMode;
   onCopyToast?: (message: string) => void;
+  /** 낮은 점수 안내문에 쓸 핵심어 (선택) */
+  queryHint?: string | null;
 }) {
-  const views = useMemo(
-    () => buildSourcePacks(notionSources, cards),
-    [notionSources, cards]
-  );
-  if (views.length === 0) return null;
+  const tiers = useMemo(() => {
+    const views = buildSourcePacks(notionSources, cards);
+    return tierSourcePacks(views);
+  }, [notionSources, cards]);
+
+  if (
+    !tiers.recommended &&
+    tiers.mid.length === 0 &&
+    tiers.weak.length === 0
+  ) {
+    return null;
+  }
+
+  const hintTerm = (queryHint || "").trim().slice(0, 24);
 
   return (
-    <div className="space-y-0">
-      {views.map((v) =>
-        v.kind === "project" ? (
-          <ProjectPackCard
-            key={v.id}
-            view={v}
-            mode={nasDriveMode}
-            onCopyToast={onCopyToast}
-          />
-        ) : (
-          <ItemPackCard
-            key={v.id}
-            pack={v}
-            mode={nasDriveMode}
-            onCopyToast={onCopyToast}
-          />
-        )
-      )}
+    <div>
+      {tiers.lowConfidence ? (
+        <p className="mb-3 text-[13.5px] leading-[1.85] text-[#2a2c31]">
+          {hintTerm
+            ? `「${hintTerm}」로는 확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요.`
+            : "확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요."}
+        </p>
+      ) : null}
+      {tiers.recommended ? (
+        <RecommendedCard
+          item={tiers.recommended}
+          mode={nasDriveMode}
+          onCopyToast={onCopyToast}
+        />
+      ) : null}
+      {tiers.mid.map((item) => (
+        <MidCard key={item.id} item={item} />
+      ))}
+      <WeakFold items={tiers.weak} />
     </div>
   );
 }

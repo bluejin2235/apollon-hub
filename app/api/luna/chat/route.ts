@@ -29,6 +29,11 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
+  maxNotionSimilarity,
+  PACK_SCORE_RECOMMENDED,
+  takeTopNotionSourcesForLlm
+} from "@/lib/luna/source-pack";
+import {
   getPromptRows,
   LUNA_PROMPT_KEYS,
   LUNA_RUNTIME_PROMPT_KEYS,
@@ -552,8 +557,9 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
+    const forLlm = takeTopNotionSourcesForLlm(opts.notionSources);
     parts.push(
-      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(opts.notionSources)}\n(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다.)`
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`
     );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
@@ -565,7 +571,8 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.cards && opts.cards.length > 0) {
-    const cardBlock = opts.cards
+    const topCards = opts.cards.slice(0, 3);
+    const cardBlock = topCards
       .map((c) =>
         c.url ? `- [${c.type}] ${c.title}: ${c.url}` : `- [${c.type}] ${c.title}: ${c.description}`
       )
@@ -573,7 +580,7 @@ function buildVolatileSystemText(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  const nasResults = opts.nasResults ?? [];
+  const nasResults = (opts.nasResults ?? []).slice(0, 3);
   const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults
@@ -1242,10 +1249,32 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        // ——— 단계 0: 유형 판정 ———
+        // ——— 단계 0: 유형 판정 (+ 임베딩·노션 색인 병렬) ———
         let classification = emptyClassification();
         let classifiedTypeRows: QuestionTypeRow[] = [];
         pushStep("classify", "running", "유형 판정 중");
+
+        const knowledgeEmbPromise = retrieveKnowledgeEmbeddings(
+          admin,
+          searchIntentText
+        );
+        const speculativeNotionPromise = knowledgeEmbPromise.then((emb) =>
+          searchNotionForLuna(
+            admin,
+            searchIntentText.slice(0, 80),
+            searchIntentText,
+            { queryEmbedding: emb.queryEmbedding }
+          )
+        );
+        const speculativeNasPromise = exploreWorkserverFallback(
+          admin,
+          searchIntentText.slice(0, 80),
+          searchIntentText
+        ).catch((err) => {
+          console.error("[luna/search] speculative nas", err);
+          return [] as WorkserverExploreRow[];
+        });
+
         try {
           const classifyRes = await lunaLlmComplete(admin, {
             tier: "C",
@@ -1355,10 +1384,33 @@ export async function POST(request: NextRequest) {
           };
         }
 
-        const knowledgeEmb = await retrieveKnowledgeEmbeddings(
-          admin,
-          searchIntentText
-        );
+        const knowledgeEmb = await knowledgeEmbPromise;
+        let speculativeNotion: NotionSearchOutcome = {
+          status: "skipped",
+          sources: [],
+          queries: [],
+          rounds: 0
+        };
+        let speculativeNas: WorkserverExploreRow[] = [];
+        const willSearch =
+          needsSearch && (notionEnabled || nasEnabled || webEnabled);
+        if (willSearch) {
+          const [notionSpec, nasSpec] = await Promise.all([
+            speculativeNotionPromise,
+            speculativeNasPromise
+          ]);
+          speculativeNotion = notionSpec;
+          speculativeNas = nasSpec;
+          console.log("[luna/search] speculative notion", {
+            status: speculativeNotion.status,
+            count: speculativeNotion.sources.length,
+            maxSim: maxNotionSimilarity(speculativeNotion.sources)
+          });
+          console.log("[luna/search] speculative nas", {
+            count: speculativeNas.length
+          });
+        }
+
         const libraryHits = typesNeedLibrary(classifiedTypeRows)
           ? matchLibraryItems(
               libraryItems,
@@ -1578,40 +1630,50 @@ export async function POST(request: NextRequest) {
 
         // ——— 키워드 추출 (검색 여부와 무관) → 지식·용어 매칭 ———
         let keywords = "";
-        try {
-          const kwRes = await client.messages.create({
-            model: tierB.model_id,
-            max_tokens: 64,
-            system: keywordExtractPrompt,
-            messages: [{ role: "user", content: searchIntentText || "문서" }]
-          });
-          recordPromptUse(usageLog, {
-            key: LUNA_PROMPT_KEYS.keywordExtract,
-            step: "검색어 추출",
-            title: "검색어 추출",
-            row: keywordPick.row
-          });
-          logPromptInject({
-            key: LUNA_PROMPT_KEYS.keywordExtract,
-            step: "검색어 추출",
-            source: keywordPick.source,
-            text: keywordExtractPrompt
-          });
-          pushModelStep(modelSteps, admin, {
-            label: "검색어 추출",
-            model: tierB.model_label,
-            tier: "B",
-            model_id: tierB.model_id,
-            usage: readUsage(kwRes.usage)
-          });
-          const kwText =
-            kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-          keywords =
-            kwText.replace(/^["']|["']$/g, "").trim() ||
-            searchIntentText.slice(0, 80);
-        } catch (err) {
-          console.error("[luna/chat] keyword extract", err);
+        const speculativeMax = maxNotionSimilarity(speculativeNotion.sources);
+        const skipKeywordLlm = speculativeMax >= PACK_SCORE_RECOMMENDED;
+        if (skipKeywordLlm) {
           keywords = searchIntentText.slice(0, 80);
+          pushStep("kw", "done", "검색어 (색인 충분 · 질문 사용)");
+          console.log("[luna/search] skip keyword extract", {
+            speculativeMax
+          });
+        } else {
+          try {
+            const kwRes = await client.messages.create({
+              model: tierB.model_id,
+              max_tokens: 64,
+              system: keywordExtractPrompt,
+              messages: [{ role: "user", content: searchIntentText || "문서" }]
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.keywordExtract,
+              step: "검색어 추출",
+              title: "검색어 추출",
+              row: keywordPick.row
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.keywordExtract,
+              step: "검색어 추출",
+              source: keywordPick.source,
+              text: keywordExtractPrompt
+            });
+            pushModelStep(modelSteps, admin, {
+              label: "검색어 추출",
+              model: tierB.model_label,
+              tier: "B",
+              model_id: tierB.model_id,
+              usage: readUsage(kwRes.usage)
+            });
+            const kwText =
+              kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+            keywords =
+              kwText.replace(/^["']|["']$/g, "").trim() ||
+              searchIntentText.slice(0, 80);
+          } catch (err) {
+            console.error("[luna/chat] keyword extract", err);
+            keywords = searchIntentText.slice(0, 80);
+          }
         }
 
         const injectKeywords = splitKeywordQuery(
@@ -1767,12 +1829,25 @@ export async function POST(request: NextRequest) {
         const workserverExploreSystem = typeFindPrompt;
 
         const skippedNotionOutcome = (): NotionSearchOutcome => ({ status: "skipped", sources: [], queries: [], rounds: 0 });
-        const runConnectorSearch = async (kw: string) => {
+        const runConnectorSearch = async (
+          kw: string,
+          opts?: { reuseSpeculative?: boolean }
+        ) => {
+          const reuseNotion =
+            opts?.reuseSpeculative === true &&
+            notionEnabled &&
+            speculativeNotion.sources.length > 0;
+          const reuseNas =
+            opts?.reuseSpeculative === true &&
+            nasEnabled &&
+            speculativeNas.length > 0;
           const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
             notionEnabled && kw
-              ? searchNotionForLuna(admin, kw, searchIntentText, {
-                  queryEmbedding: knowledgeEmb.queryEmbedding
-                })
+              ? reuseNotion
+                ? Promise.resolve(speculativeNotion)
+                : searchNotionForLuna(admin, kw, searchIntentText, {
+                    queryEmbedding: knowledgeEmb.queryEmbedding
+                  })
               : Promise.resolve(skippedNotionOutcome()),
             webEnabled
               ? (() => {
@@ -1786,6 +1861,10 @@ export async function POST(request: NextRequest) {
               : Promise.resolve([] as LunaCard[]),
             (async () => {
               if (!nasEnabled) return [] as NasDirectoryRow[];
+              if (reuseNas) {
+                pushStep("ws", "done", "Work서버 탐색");
+                return speculativeNas;
+              }
               try {
                 recordPromptUse(usageLog, {
                   key: LUNA_PROMPT_KEYS.find,
@@ -1908,7 +1987,9 @@ export async function POST(request: NextRequest) {
 
           previousKeywords.push(keywords);
           searchRounds = 1;
-          let batch = await runConnectorSearch(keywords);
+          let batch = await runConnectorSearch(keywords, {
+            reuseSpeculative: true
+          });
           notionSources = batch.notionSources;
           notionSearchOutcome = batch.notionOutcome;
           nasResults = batch.nasResults;
@@ -1916,10 +1997,14 @@ export async function POST(request: NextRequest) {
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
-          // 자체 평가 + 재검색
+          // 자체 평가 + 재검색 (최고 유사도 0.7 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
-          for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
+          const firstMaxSim = maxNotionSimilarity(notionSources);
+          if (firstMaxSim >= PACK_SCORE_RECOMMENDED) {
+            pushStep("eval", "done", `색인 충분 (${firstMaxSim.toFixed(2)})`);
+            console.log("[luna/search] skip re-search", { firstMaxSim });
+          } else for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
             if (cards.length === 0) {
@@ -2071,6 +2156,9 @@ export async function POST(request: NextRequest) {
             };
             pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
             pushStep("search", "done", formatSearchDoneLabel(recountCounts));
+            if (maxNotionSimilarity(notionSources) >= PACK_SCORE_RECOMMENDED) {
+              break;
+            }
           }
         }
 

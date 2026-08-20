@@ -14,6 +14,7 @@ import {
 } from "@/lib/luna/engine";
 import { capNotionDisplaySources, formatNotionSourcesForPrompt, type NotionSource } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
@@ -182,10 +183,11 @@ function pushModelStep(
 
 function formatMaterialsList(cards: LunaCard[], notionSources: NotionSource[]): string {
   const lines: string[] = [];
-  if (notionSources.length > 0) {
-    lines.push(formatNotionSourcesForPrompt(notionSources));
+  const topNotion = takeTopNotionSourcesForLlm(notionSources);
+  if (topNotion.length > 0) {
+    lines.push(formatNotionSourcesForPrompt(topNotion));
   }
-  for (const c of cards) {
+  for (const c of cards.slice(0, 3)) {
     if (c.type === "notion") continue;
     lines.push(
       c.url

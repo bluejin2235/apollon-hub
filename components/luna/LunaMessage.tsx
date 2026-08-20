@@ -94,6 +94,7 @@ type LunaMessageProps = {
   privateWikiRefs?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
+  queryHint?: string | null;
   nasDriveMode?: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   attachments?: LunaAttachmentRef[] | null;
@@ -228,13 +229,15 @@ function SourceSections({
   notionSources,
   sourceReasons = null,
   nasDriveMode = "office",
-  onCopyToast
+  onCopyToast,
+  queryHint
 }: {
   cards: LunaCard[];
   notionSources?: NotionSource[] | null;
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode?: LunaNasDriveMode;
   onCopyToast?: (message: string) => void;
+  queryHint?: string | null;
 }) {
   const webYoutube = useMemo(
     () => cards.filter((c) => c.type === "web" || c.type === "youtube"),
@@ -272,6 +275,7 @@ function SourceSections({
             cards={cards}
             nasDriveMode={nasDriveMode}
             onCopyToast={onCopyToast}
+            queryHint={queryHint}
           />
         </section>
       ) : null}
@@ -356,7 +360,8 @@ function InlineThinkingProgress({
   onNasDriveModeChange,
   onCopyToast,
   notionSources,
-  cards
+  cards,
+  queryHint
 }: {
   steps: LunaProgressStep[];
   content: string;
@@ -365,6 +370,7 @@ function InlineThinkingProgress({
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
+  queryHint?: string | null;
 }) {
   const visible = steps.filter((s) => s.status !== "skip");
   const running = visible.find((s) => s.status === "running");
@@ -405,6 +411,7 @@ function InlineThinkingProgress({
             notionSources={notionSources}
             cards={cards}
             source="stream"
+            queryHint={queryHint}
           />
           <span
             className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
@@ -425,11 +432,7 @@ function SourceBadgeRow({
   wikiOpen,
   onToggleWiki,
   notionOpen,
-  onToggleNotion,
-  intentScore,
-  confidenceScore,
-  selfNote,
-  showScores
+  onToggleNotion
 }: {
   cards: LunaCard[];
   notionSources: NotionSource[];
@@ -440,10 +443,6 @@ function SourceBadgeRow({
   onToggleWiki: () => void;
   notionOpen: boolean;
   onToggleNotion: () => void;
-  intentScore?: number | null;
-  confidenceScore?: number | null;
-  selfNote?: string | null;
-  showScores?: boolean;
 }) {
   const counts = countSourceBadges({
     cards,
@@ -464,12 +463,7 @@ function SourceBadgeRow({
     items.push({ label: "내부", n: counts.internal, toggle: "wiki" });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
-  const lowIntent = typeof intentScore === "number" && intentScore < 5;
-  const lowConf = typeof confidenceScore === "number" && confidenceScore < 5;
-  const hasScores =
-    showScores &&
-    (typeof intentScore === "number" || typeof confidenceScore === "number");
-  if (items.length === 0 && !hasScores) return null;
+  if (items.length === 0) return null;
   return (
     <>
       {items.map((it) =>
@@ -478,7 +472,7 @@ function SourceBadgeRow({
             key={it.label}
             type="button"
             onClick={it.toggle === "notion" ? onToggleNotion : onToggleWiki}
-            className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
+            className="rounded-full border border-[#e7e8ec] bg-[#f1f2f5] px-2.5 py-0.5 text-[10.5px] text-[#6b6f76]"
           >
             {it.label} {it.n}건
             {(it.toggle === "wiki" && wikiOpen) ||
@@ -489,39 +483,12 @@ function SourceBadgeRow({
         ) : (
           <span
             key={it.label}
-            className="rounded-[10px] border border-[#e7e8ec] bg-[#f5f6f8] px-2 py-px text-[10.5px] text-[#6b6f76]"
+            className="rounded-full bg-[#f1f2f5] px-2.5 py-0.5 text-[10.5px] text-[#6b6f76]"
           >
             {it.label} {it.n}건
           </span>
         )
       )}
-      {hasScores && typeof intentScore === "number" ? (
-        <span
-          className={`rounded-[10px] border px-2 py-px text-[10.5px] ${
-            lowIntent
-              ? "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
-              : "border-[#e7e8ec] bg-[#f5f6f8] text-[#6b6f76]"
-          }`}
-        >
-          의도 {intentScore}
-        </span>
-      ) : null}
-      {hasScores && typeof confidenceScore === "number" ? (
-        <span
-          className={`rounded-[10px] border px-2 py-px text-[10.5px] ${
-            lowConf
-              ? "border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]"
-              : "border-[#e7e8ec] bg-[#f5f6f8] text-[#6b6f76]"
-          }`}
-        >
-          자신감 {confidenceScore}
-        </span>
-      ) : null}
-      {hasScores && (lowIntent || lowConf) && selfNote ? (
-        <span className="w-full basis-full text-[11px] italic text-[#b45309]">
-          {selfNote}
-        </span>
-      ) : null}
     </>
   );
 }
@@ -613,7 +580,8 @@ function AssistantTextBubble({
   onCopyToast,
   source = "complete",
   notionSources,
-  cards
+  cards,
+  queryHint
 }: {
   content: string;
   nasDriveMode: LunaNasDriveMode;
@@ -622,6 +590,7 @@ function AssistantTextBubble({
   source?: string;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
+  queryHint?: string | null;
 }) {
   return (
     <LunaMarkdown
@@ -633,6 +602,7 @@ function AssistantTextBubble({
       notionSources={notionSources}
       cards={cards}
       source={source}
+      queryHint={queryHint}
     />
   );
 }
@@ -834,11 +804,10 @@ function formatDuration(ms: number): string {
 
 function DetailMetaFooter({
   modelLabel,
-  durationMs,
   detailMeta
 }: {
   modelLabel: string;
-  durationMs: number | null;
+  durationMs?: number | null;
   detailMeta?: LunaDetailMeta | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -856,7 +825,6 @@ function DetailMetaFooter({
     <>
       <div className="mt-0.5 text-[10.5px] text-[#9aa0a8]">
         {modelLabel}
-        {durationMs != null ? ` · ${formatDuration(durationMs)}` : ""}
         {hasDetail ? (
           <>
             {" · "}
@@ -1025,6 +993,11 @@ function UsedPromptsFooter({
   );
 }
 
+function scoreTone(n: number | null | undefined): string {
+  if (typeof n !== "number") return "text-[#6b6f76]";
+  return n < 5 ? "font-bold text-[#B0782B]" : "font-semibold text-[#0F6E56]";
+}
+
 function MessageActionsRow({
   content,
   cards,
@@ -1041,6 +1014,7 @@ function MessageActionsRow({
   onToggleWiki,
   notionOpen,
   onToggleNotion,
+  durationMs,
   intentScore,
   confidenceScore,
   selfNote,
@@ -1061,13 +1035,16 @@ function MessageActionsRow({
   onToggleWiki: () => void;
   notionOpen: boolean;
   onToggleNotion: () => void;
+  durationMs?: number | null;
   intentScore?: number | null;
   confidenceScore?: number | null;
   selfNote?: string | null;
   showScores?: boolean;
 }) {
+  const lowIntent = typeof intentScore === "number" && intentScore < 5;
+  const lowConf = typeof confidenceScore === "number" && confidenceScore < 5;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-[7px]">
+    <div className="mt-3.5 flex flex-wrap items-center gap-[7px]">
       <SourceBadgeRow
         cards={cards}
         notionSources={notionSources}
@@ -1078,56 +1055,82 @@ function MessageActionsRow({
         onToggleWiki={onToggleWiki}
         notionOpen={notionOpen}
         onToggleNotion={onToggleNotion}
-        intentScore={intentScore}
-        confidenceScore={confidenceScore}
-        selfNote={selfNote}
-        showScores={showScores}
       />
-      {content ? (
-        <button
-          type="button"
-          aria-label="복사"
-          onClick={onCopy}
-          className="ml-[3px] text-[#9aa0a8] hover:text-[#6b6f76]"
-        >
-          <Copy className="h-[15px] w-[15px]" strokeWidth={1.75} />
-        </button>
-      ) : null}
-      {canFeedback ? (
-        <>
+      <div className="ml-1 flex items-center gap-[9px] text-[#9aa0a8]">
+        {content ? (
           <button
             type="button"
-            aria-label="좋아요"
-            aria-pressed={feedback === "good"}
-            disabled={busy}
-            onClick={() => onFeedback("good")}
-            className={`text-[15px] leading-none ${
-              feedback === "good" ? "text-[#534AB7]" : "text-[#9aa0a8]"
-            }`}
+            aria-label="복사"
+            onClick={onCopy}
+            className="hover:text-[#6b6f76]"
           >
-            <ThumbsUp
-              className="h-[15px] w-[15px]"
-              strokeWidth={1.75}
-              fill={feedback === "good" ? "currentColor" : "none"}
-            />
+            <Copy className="h-[15px] w-[15px]" strokeWidth={1.75} />
           </button>
-          <button
-            type="button"
-            aria-label="싫어요"
-            aria-pressed={feedback === "bad"}
-            disabled={busy}
-            onClick={() => onFeedback("bad")}
-            className={`text-[15px] leading-none ${
-              feedback === "bad" ? "text-[#534AB7]" : "text-[#9aa0a8]"
-            }`}
-          >
-            <ThumbsDown
-              className="h-[15px] w-[15px]"
-              strokeWidth={1.75}
-              fill={feedback === "bad" ? "currentColor" : "none"}
-            />
-          </button>
-        </>
+        ) : null}
+        {canFeedback ? (
+          <>
+            <button
+              type="button"
+              aria-label="좋아요"
+              aria-pressed={feedback === "good"}
+              disabled={busy}
+              onClick={() => onFeedback("good")}
+              className={
+                feedback === "good" ? "text-[#534AB7]" : "hover:text-[#6b6f76]"
+              }
+            >
+              <ThumbsUp
+                className="h-[15px] w-[15px]"
+                strokeWidth={1.75}
+                fill={feedback === "good" ? "currentColor" : "none"}
+              />
+            </button>
+            <button
+              type="button"
+              aria-label="싫어요"
+              aria-pressed={feedback === "bad"}
+              disabled={busy}
+              onClick={() => onFeedback("bad")}
+              className={
+                feedback === "bad" ? "text-[#534AB7]" : "hover:text-[#6b6f76]"
+              }
+            >
+              <ThumbsDown
+                className="h-[15px] w-[15px]"
+                strokeWidth={1.75}
+                fill={feedback === "bad" ? "currentColor" : "none"}
+              />
+            </button>
+          </>
+        ) : null}
+      </div>
+      <div className="ml-auto flex items-center gap-[11px] text-[10.5px] text-[#9aa0a8]">
+        {durationMs != null ? (
+          <span className="font-semibold text-[#6b6f76]">
+            {formatDuration(durationMs)}
+          </span>
+        ) : null}
+        {showScores && typeof intentScore === "number" ? (
+          <span>
+            의도{" "}
+            <span className={scoreTone(intentScore)}>
+              {intentScore}/10
+            </span>
+          </span>
+        ) : null}
+        {showScores && typeof confidenceScore === "number" ? (
+          <span>
+            자신감{" "}
+            <span className={scoreTone(confidenceScore)}>
+              {confidenceScore}/10
+            </span>
+          </span>
+        ) : null}
+      </div>
+      {showScores && (lowIntent || lowConf) && selfNote ? (
+        <span className="w-full basis-full text-[11px] italic text-[#B0782B]">
+          {selfNote}
+        </span>
       ) : null}
     </div>
   );
@@ -1146,6 +1149,7 @@ export function LunaMessage({
   privateWikiRefs = null,
   cards = null,
   sourceReasons = null,
+  queryHint = null,
   nasDriveMode = "office",
   onNasDriveModeChange,
   attachments = null,
@@ -1463,6 +1467,7 @@ export function LunaMessage({
         onCopyToast={handleCopyToast}
         notionSources={sources}
         cards={cardList}
+        queryHint={queryHint}
       />
     );
   } else if (content) {
@@ -1475,6 +1480,7 @@ export function LunaMessage({
         source={id.startsWith("temp-") ? "complete-stream" : "complete-db"}
         notionSources={sources}
         cards={cardList}
+        queryHint={queryHint}
       />
     );
   } else {
@@ -1513,6 +1519,7 @@ export function LunaMessage({
               onToggleWiki={() => setWikiOpen((open) => !open)}
               notionOpen={notionOpen}
               onToggleNotion={() => setNotionOpen((open) => !open)}
+              durationMs={durationMs}
               intentScore={intentScore}
               confidenceScore={confidenceScore}
               selfNote={selfNote}

@@ -21,6 +21,7 @@ type LunaMarkdownProps = {
   cards?: LunaCard[] | null;
   source?: string;
   highlightTerms?: boolean;
+  queryHint?: string | null;
 };
 
 function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
@@ -48,7 +49,8 @@ export function LunaMarkdown({
   notionSources = null,
   cards = null,
   source = "luna-md",
-  highlightTerms
+  highlightTerms,
+  queryHint = null
 }: LunaMarkdownProps) {
   const allowTerms = highlightTerms ?? source !== "stream";
   const layout = useMemo(
@@ -104,6 +106,7 @@ export function LunaMarkdown({
           cards={cards}
           nasDriveMode={nasDriveMode}
           onCopyToast={onCopyToast}
+          queryHint={queryHint}
         />
       ) : null}
 

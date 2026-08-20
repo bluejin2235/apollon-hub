@@ -11,6 +11,7 @@ import { searchNotionForLuna } from "../lib/luna/notion-index-search";
 import {
   buildSourcePacks,
   countSourcePackMaterials,
+  tierSourcePacks,
   type SourcePackView
 } from "../lib/luna/source-pack";
 import type { LunaCard } from "../lib/luna/tavily";
@@ -113,6 +114,81 @@ async function main() {
   });
 
   console.log("=== Source pack verification ===\n");
+
+  {
+    const high: NotionSource[] = [
+      {
+        id: "a",
+        title: "추천",
+        url: "https://notion.so/a",
+        similarity: 0.86,
+        excerpt: "본문"
+      },
+      {
+        id: "b",
+        title: "중간1",
+        url: "https://notion.so/b",
+        similarity: 0.62
+      },
+      {
+        id: "c",
+        title: "중간2",
+        url: "https://notion.so/c",
+        similarity: 0.55
+      },
+      {
+        id: "d",
+        title: "약함",
+        url: "https://notion.so/d",
+        similarity: 0.41
+      }
+    ];
+    const t = tierSourcePacks(buildSourcePacks(high, []));
+    console.log(
+      `TIER high: rec=${t.recommended?.title ?? "-"} mid=${t.mid.length} weak=${t.weak.length} low=${t.lowConfidence}`
+    );
+    const low = high.map((s, i) => ({ ...s, similarity: 0.3 - i * 0.02 }));
+    const tLow = tierSourcePacks(buildSourcePacks(low, []));
+    console.log(
+      `TIER low: rec=${tLow.recommended ? "YES" : "no"} mid=${tLow.mid.length} weak=${tLow.weak.length} low=${tLow.lowConfidence}`
+    );
+    const nasOnly = tierSourcePacks(
+      buildSourcePacks([], [
+        {
+          type: "nas",
+          title: "수행계획서_v2.pptx",
+          url: null,
+          thumbnail: null,
+          description: "",
+          drive: "T",
+          raw_path: "02 Project\\인스파이어\\수행계획서_v2.pptx",
+          is_file: true
+        }
+      ])
+    );
+    console.log(
+      `TIER nas-only: rec=${nasOnly.recommended?.title ?? "-"} only=${nasOnly.recommended?.onlySide ?? "-"} score=${nasOnly.recommended?.score.toFixed(2) ?? "-"}`
+    );
+    const notionOnly = tierSourcePacks(
+      buildSourcePacks(
+        [
+          {
+            id: "wtcs",
+            title: "WTCS 무역센터",
+            url: "https://notion.so/wtcs",
+            similarity: 0.81,
+            nas_path: null,
+            excerpt: "진행 중"
+          }
+        ],
+        []
+      )
+    );
+    console.log(
+      `TIER notion-only: rec=${notionOnly.recommended?.title ?? "-"} only=${notionOnly.recommended?.onlySide ?? "-"}`
+    );
+    console.log("");
+  }
 
   {
     const t0 = Date.now();
