@@ -233,6 +233,8 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
         hierarchy?: string | null;
         nas_path?: string | null;
         similarity?: number;
+        parent_id?: string | null;
+        path_titles?: unknown;
       } =>
         Boolean(s) &&
         typeof s === "object" &&
@@ -259,7 +261,15 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
       ...(typeof s.section === "string" ? { section: s.section } : {}),
       ...(typeof s.hierarchy === "string" ? { hierarchy: s.hierarchy } : {}),
       ...(typeof s.nas_path === "string" ? { nas_path: s.nas_path } : {}),
-      ...(typeof s.similarity === "number" ? { similarity: s.similarity } : {})
+      ...(typeof s.similarity === "number" ? { similarity: s.similarity } : {}),
+      ...(typeof s.parent_id === "string" ? { parent_id: s.parent_id } : {}),
+      ...(Array.isArray(s.path_titles)
+        ? {
+            path_titles: s.path_titles.filter(
+              (t): t is string => typeof t === "string"
+            )
+          }
+        : {})
     }));
   return sources.length > 0 ? sources : null;
 }

@@ -166,6 +166,8 @@ export type SourceBadgeCounts = {
   nas: number;
   notion: number;
   web: number;
+  /** 노션·Work 묶음 자료 건수 (표시용) */
+  materials: number;
 };
 
 export type UsedPromptRef = {
@@ -257,6 +259,7 @@ export function countSourceBadges(opts: {
   wikiSources?: unknown[] | null;
   privateWikiRefs?: unknown[] | null;
   memoryCount?: number | null;
+  materialsCount?: number | null;
 }): SourceBadgeCounts {
   const cards = opts.cards ?? [];
   let nas = 0;
@@ -278,12 +281,17 @@ export function countSourceBadges(opts: {
     : Array.isArray(opts.wikiSources)
       ? opts.wikiSources.filter((row) => !isPublicWikiSource(row)).length
       : 0;
+  const materials =
+    typeof opts.materialsCount === "number"
+      ? Math.max(0, opts.materialsCount)
+      : 0;
   return {
     memory: Math.max(0, opts.memoryCount ?? 0),
     wiki: wikiFromMeta,
     internal: internalFromMeta,
     nas,
     notion,
-    web
+    web,
+    materials
   };
 }

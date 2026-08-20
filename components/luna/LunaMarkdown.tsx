@@ -3,12 +3,10 @@
 import { useMemo } from "react";
 import { HighlightScope } from "@/components/glossary/HighlightPhrase";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
-import {
-  NasDriveModeToggle,
-  NotionResultCard,
-  WorkserverPathCard
-} from "@/components/luna/WorkserverPathCard";
+import { NasDriveModeToggle } from "@/components/luna/WorkserverPathCard";
+import { SourcePackList } from "@/components/luna/SourcePackCard";
 import { composeLunaResultLayout } from "@/lib/luna/answer-render";
+import { countSourcePackMaterialsFromMeta } from "@/lib/luna/source-pack";
 import type { LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
@@ -66,21 +64,24 @@ export function LunaMarkdown({
   if (!content.trim()) return null;
 
   const { lead, nasGroups, notionItems, body, assume } = layout;
-  const hasNas = nasGroups.length > 0;
-  const hasNotion = notionItems.length > 0;
-  const showDriveToggle = hasNas;
+  const packNotion =
+    (notionSources?.length ?? 0) > 0 ? notionSources : notionItems;
+  const materials = countSourcePackMaterialsFromMeta(packNotion, cards);
+  const hasPacks = materials > 0;
+  const showDriveToggle = hasPacks || nasGroups.length > 0;
 
   const inner = (
     <div
       className={`break-words ${className}`.trim()}
       data-luna-render={source}
       data-luna-paths={nasGroups.length}
+      data-luna-packs={materials}
       data-luna-assume={assume.length}
     >
       {lead || showDriveToggle ? (
         <div
           className={`flex items-start gap-3 ${
-            hasNas || hasNotion || body ? "mb-4" : ""
+            hasPacks || body ? "mb-4" : ""
           }`}
         >
           <div className="min-w-0 flex-1 [&_p]:mb-0">
@@ -97,27 +98,17 @@ export function LunaMarkdown({
         </div>
       ) : null}
 
-      {hasNas ? (
-        <div className="space-y-[18px]">
-          {nasGroups.map((group, groupIndex) => (
-            <WorkserverPathCard
-              key={`${group.drive}-${group.folderRawPath}-${groupIndex}`}
-              group={group}
-              mode={nasDriveMode}
-              onCopyToast={onCopyToast}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {hasNotion ? (
-        <div className={hasNas ? "mt-[18px]" : undefined}>
-          <NotionResultCard sources={notionItems} />
-        </div>
+      {hasPacks ? (
+        <SourcePackList
+          notionSources={packNotion}
+          cards={cards}
+          nasDriveMode={nasDriveMode}
+          onCopyToast={onCopyToast}
+        />
       ) : null}
 
       {body ? (
-        <div className={hasNas || hasNotion ? "mt-[18px]" : undefined}>
+        <div className={hasPacks ? "mt-[18px]" : undefined}>
           <SafeMarkdown content={body} variant="luna" highlightTerms={allowTerms} />
         </div>
       ) : null}

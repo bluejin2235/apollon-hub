@@ -10,12 +10,10 @@ import { Copy, FileText, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } fr
 import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
-import {
-  WorkserverPathCard
-} from "@/components/luna/WorkserverPathCard";
+import { SourcePackList } from "@/components/luna/SourcePackCard";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
-import { groupNasCardsByFolder, type LunaNasDriveMode } from "@/lib/luna/nas-path";
+import { type LunaNasDriveMode } from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { WikiSourceRef } from "@/lib/luna/wiki-match";
 import {
@@ -24,6 +22,7 @@ import {
   type UsedPromptRef,
   type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
+import { countSourcePackMaterialsFromMeta } from "@/lib/luna/source-pack";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
   clipFeedbackNote,
@@ -121,8 +120,6 @@ type LunaMessageProps = {
   selfNote?: string | null;
   showAnswerScores?: boolean;
 };
-
-const CARD_SECTION_ORDER: LunaCard["type"][] = ["notion", "nas", "web", "youtube"];
 
 const CARD_SECTION_META: Record<
   LunaCard["type"],
@@ -228,129 +225,79 @@ function CardRow({ card }: { card: LunaCard }) {
 
 function SourceSections({
   cards,
+  notionSources,
   sourceReasons = null,
   nasDriveMode = "office",
   onCopyToast
 }: {
   cards: LunaCard[];
+  notionSources?: NotionSource[] | null;
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode?: LunaNasDriveMode;
   onCopyToast?: (message: string) => void;
 }) {
-  const groups = useMemo(() => {
-    const map = new Map<LunaCard["type"], LunaCard[]>();
-    for (const card of cards) {
-      const list = map.get(card.type) ?? [];
-      list.push(card);
-      map.set(card.type, list);
-    }
-    return CARD_SECTION_ORDER.map((type) => ({
-      type,
-      items: map.get(type) ?? []
-    })).filter((g) => g.items.length > 0);
-  }, [cards]);
+  const webYoutube = useMemo(
+    () => cards.filter((c) => c.type === "web" || c.type === "youtube"),
+    [cards]
+  );
+  const materials = countSourcePackMaterialsFromMeta(notionSources, cards);
+  const hasPacks = materials > 0;
 
-  if (groups.length === 0) return null;
+  if (!hasPacks && webYoutube.length === 0) return null;
 
   return (
     <div className="mt-3 space-y-4">
-      {groups.map((group) => {
-        const meta = CARD_SECTION_META[group.type];
-        const reasonKey =
-          group.type === "notion" || group.type === "nas" || group.type === "web"
-            ? group.type
-            : null;
-        const reason =
-          reasonKey && sourceReasons
-            ? sourceReasons[reasonKey]?.trim() || ""
-            : "";
-        return (
-          <section key={group.type} className="mb-4 last:mb-0">
-            <div className={`flex items-center gap-2 ${reason ? "" : "mb-1.5"}`}>
-              <span
-                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: meta.color }}
-                aria-hidden
+      {hasPacks ? (
+        <section>
+          <div className="mb-1.5 flex items-center gap-2">
+            <span
+              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: "#534AB7" }}
+              aria-hidden
+            />
+            <span className="text-[13px] font-medium text-slate-800">자료</span>
+            <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
+              {materials}
+            </span>
+          </div>
+          {(sourceReasons?.notion || sourceReasons?.nas) && (
+            <p className="mb-1.5 text-[11px] text-gray-500">
+              {[sourceReasons.notion, sourceReasons.nas]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+          <SourcePackList
+            notionSources={notionSources}
+            cards={cards}
+            nasDriveMode={nasDriveMode}
+            onCopyToast={onCopyToast}
+          />
+        </section>
+      ) : null}
+      {webYoutube.length > 0 ? (
+        <section>
+          <div className="mb-1.5 flex items-center gap-2">
+            <span
+              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: CARD_SECTION_META.web.color }}
+              aria-hidden
+            />
+            <span className="text-[13px] font-medium text-slate-800">웹</span>
+            <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
+              {webYoutube.length}
+            </span>
+          </div>
+          <div className="flex flex-col">
+            {webYoutube.map((card, index) => (
+              <CardRow
+                key={`${card.type}-${card.title}-${card.url ?? index}`}
+                card={card}
               />
-              <span className="text-[13px] font-medium text-slate-800 max-md:text-[14px]">
-                {meta.label}
-              </span>
-              <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
-                {group.items.length}
-              </span>
-            </div>
-            {reason ? (
-              <p
-                className="text-[11px] text-gray-500"
-                style={{ margin: "3px 0 5px" }}
-              >
-                {reason}
-              </p>
-            ) : null}
-            {group.type === "nas" ? (
-              <div className="mt-1 space-y-2">
-                {groupNasCardsByFolder(group.items).map((pathGroup, index) => (
-                  <WorkserverPathCard
-                    key={`${pathGroup.drive}-${pathGroup.folderRawPath}-${index}`}
-                    group={pathGroup}
-                    mode={nasDriveMode}
-                    onCopyToast={onCopyToast}
-                  />
-                ))}
-              </div>
-            ) : group.type === "web" ? (
-              <>
-                <div className="hscroll mt-1 md:hidden">
-                  {group.items.map((card, index) => {
-                    const href = card.url || "#";
-                    const thumb = card.thumbnail || (card.url ? faviconUrl(card.url) : "");
-                    return (
-                      <a
-                        key={`m-web-${card.title}-${card.url ?? index}`}
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex w-[132px] flex-col overflow-hidden rounded-[12px] border border-[#E4E2DA] bg-white"
-                      >
-                        <div className="h-[72px] w-full overflow-hidden bg-slate-100">
-                          {thumb ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={thumb}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : null}
-                        </div>
-                        <p className="line-clamp-2 px-2 py-1.5 text-[11.5px] leading-snug text-slate-800">
-                          {card.title}
-                        </p>
-                      </a>
-                    );
-                  })}
-                </div>
-                <div className="hidden flex-col md:flex">
-                  {group.items.map((card, index) => (
-                    <CardRow
-                      key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
-                      card={card}
-                    />
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col">
-                {group.items.map((card, index) => (
-                  <CardRow
-                    key={`${card.type}-${card.title}-${card.url ?? card.raw_path ?? index}`}
-                    card={card}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -503,20 +450,19 @@ function SourceBadgeRow({
     notionSources,
     wikiSources,
     privateWikiRefs,
-    memoryCount
+    memoryCount,
+    materialsCount: countSourcePackMaterialsFromMeta(notionSources, cards)
   });
   const items: {
     label: string;
     n: number;
     toggle?: "wiki" | "notion";
   }[] = [];
-  if (counts.nas > 0) items.push({ label: "Work서버", n: counts.nas });
+  if (counts.materials > 0) items.push({ label: "자료", n: counts.materials });
   if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki, toggle: "wiki" });
   if (counts.internal > 0)
     items.push({ label: "내부", n: counts.internal, toggle: "wiki" });
   if (counts.memory > 0) items.push({ label: "기억", n: counts.memory });
-  if (counts.notion > 0)
-    items.push({ label: "노션", n: counts.notion, toggle: "notion" });
   if (counts.web > 0) items.push({ label: "웹", n: counts.web });
   const lowIntent = typeof intentScore === "number" && intentScore < 5;
   const lowConf = typeof confidenceScore === "number" && confidenceScore < 5;
@@ -724,6 +670,7 @@ function AnalysisReport({
   content,
   teams,
   cards,
+  notionSources,
   sourceReasons,
   nasDriveMode,
   onNasDriveModeChange,
@@ -733,6 +680,7 @@ function AnalysisReport({
   content: string;
   teams: LunaAnalysisTeam[];
   cards: LunaCard[];
+  notionSources?: NotionSource[] | null;
   sourceReasons?: LunaSourceReasons | null;
   nasDriveMode: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
@@ -864,6 +812,7 @@ function AnalysisReport({
             <div className="mt-2">
               <SourceSections
                 cards={cards}
+                notionSources={notionSources}
                 sourceReasons={sourceReasons}
                 nasDriveMode={nasDriveMode}
                 onCopyToast={onCopyToast}
@@ -1496,6 +1445,7 @@ export function LunaMessage({
         content={content}
         teams={teamList}
         cards={cardList}
+        notionSources={sources}
         sourceReasons={sourceReasons}
         nasDriveMode={nasDriveMode}
         onNasDriveModeChange={onNasDriveModeChange}

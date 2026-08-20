@@ -20,6 +20,9 @@ export type NotionSource = {
   /** Work서버 경로 (luna_notion_pages.nas_path) */
   nas_path?: string | null;
   similarity?: number;
+  /** 프로젝트 묶기용 */
+  parent_id?: string | null;
+  path_titles?: string[];
 };
 
 export type NotionSearchStatus = "ok" | "empty" | "skipped" | "error";
@@ -510,7 +513,9 @@ function toPublicSource(source: NotionSource): NotionSource {
     section: source.section,
     hierarchy: source.hierarchy,
     nas_path: source.nas_path,
-    similarity: source.similarity
+    similarity: source.similarity,
+    parent_id: source.parent_id,
+    path_titles: source.path_titles
   };
 }
 

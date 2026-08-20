@@ -224,7 +224,9 @@ function pageBlocksToSource(
     section: section || null,
     hierarchy,
     nas_path: page.nas_path,
-    similarity
+    similarity,
+    parent_id: page.parent_id,
+    path_titles: asPathTitles(page.path_titles)
   };
 }
 
