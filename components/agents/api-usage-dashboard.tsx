@@ -298,9 +298,10 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                     <YAxis
+                      width={80}
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) =>
-                        typeof v === "number" ? `$${v < 1 ? v.toFixed(2) : v.toFixed(0)}` : String(v)
+                        `₩${Math.round(typeof v === "number" ? v : Number(v)).toLocaleString("ko-KR")}`
                       }
                     />
                     <Tooltip
@@ -312,10 +313,8 @@ export function ApiUsageDashboard({ refreshKey = 0 }: { refreshKey?: number }) {
                             : dataKey === "openai"
                               ? "OpenAI"
                               : String(_name);
-                        return [
-                          formatUsd(typeof value === "number" ? value : Number(value)),
-                          label
-                        ];
+                        const n = typeof value === "number" ? value : Number(value);
+                        return [`₩${Math.round(n).toLocaleString("ko-KR")}`, label];
                       }}
                     />
                     <Legend />
