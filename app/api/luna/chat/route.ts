@@ -1997,7 +1997,7 @@ export async function POST(request: NextRequest) {
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
-          // 자체 평가 + 재검색 (최고 유사도 0.7 이상이면 건너뜀)
+          // 자체 평가 + 재검색 (최고 유사도 0.55 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
           const firstMaxSim = maxNotionSimilarity(notionSources);

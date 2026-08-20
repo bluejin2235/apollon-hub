@@ -121,26 +121,26 @@ async function main() {
         id: "a",
         title: "추천",
         url: "https://notion.so/a",
-        similarity: 0.86,
+        similarity: 0.62,
         excerpt: "본문"
       },
       {
         id: "b",
         title: "중간1",
         url: "https://notion.so/b",
-        similarity: 0.62
+        similarity: 0.48
       },
       {
         id: "c",
         title: "중간2",
         url: "https://notion.so/c",
-        similarity: 0.55
+        similarity: 0.45
       },
       {
         id: "d",
         title: "약함",
         url: "https://notion.so/d",
-        similarity: 0.41
+        similarity: 0.35
       }
     ];
     const t = tierSourcePacks(buildSourcePacks(high, []));

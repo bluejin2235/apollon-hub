@@ -50,9 +50,9 @@ export type SourcePackView =
 const MAX_FILES_SHOWN = 3;
 const PROJECT_MIN_CHILDREN = 3;
 
-/** 표시 계층 임계값 — 바꾸지 말 것 */
-export const PACK_SCORE_RECOMMENDED = 0.7;
-export const PACK_SCORE_MID = 0.5;
+/** 표시 계층 임계값 — 임베딩 실측 분포 기준 (관련 0.5~0.65) */
+export const PACK_SCORE_RECOMMENDED = 0.55;
+export const PACK_SCORE_MID = 0.42;
 /** LLM 프롬프트에 넣는 자료 상한 */
 export const PACK_LLM_TOP_N = 3;
 
@@ -319,7 +319,7 @@ function packFromNotion(
 function packFromNasOnly(
   entry: NasEntry,
   rank: number,
-  /** 노션 히트가 없을 때만 추천(≥0.7) 가능 */
+  /** 노션 히트가 없을 때만 추천(≥PACK_SCORE_RECOMMENDED) 가능 */
   allowRecommend: boolean
 ): SourcePackItem {
   const title = entry.isFile
@@ -533,14 +533,18 @@ export type SourcePackTiers = {
 
 function viewToDisplayItem(view: SourcePackView): SourcePackItem {
   if (view.kind === "item") return view;
-  const hasWork = Boolean(view.folder) || view.children.some(
-    (c) => c.files.length > 0 || c.folder
-  );
-  const onlySide: SourcePackItem["onlySide"] = !view.notion && hasWork
-    ? "nas"
-    : view.notion && !hasWork
-      ? "notion"
-      : null;
+  const hasNotion =
+    Boolean(view.notion) || view.children.some((c) => Boolean(c.notion));
+  const hasWork =
+    Boolean(view.folder) ||
+    view.children.some((c) => c.files.length > 0 || Boolean(c.folder));
+  const onlySide: SourcePackItem["onlySide"] =
+    hasNotion && !hasWork ? "notion" : !hasNotion && hasWork ? "nas" : null;
+  // 프로젝트 카드에도 자식 중 노션 링크 하나 노출
+  const notion =
+    view.notion ??
+    view.children.find((c) => c.notion)?.notion ??
+    null;
   return {
     id: view.id,
     title: view.title,
@@ -548,7 +552,7 @@ function viewToDisplayItem(view: SourcePackView): SourcePackItem {
     badge: view.badge,
     body: null,
     onlySide,
-    notion: view.notion,
+    notion,
     files: [],
     filesMore: 0,
     folder: view.folder,
@@ -559,15 +563,30 @@ function viewToDisplayItem(view: SourcePackView): SourcePackItem {
   };
 }
 
-/** 정확도 순 세 층 — 추천(≥0.7) / 그 다음(0.5~0.7) / 약함(<0.5) */
+/** 정확도 순 세 층 — 추천은 개별 카드(리프) 기준, 프로젝트 묶음은 간략·약함 후보 */
 export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
-  const flat = views
-    .map(viewToDisplayItem)
-    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, "ko"));
-  const maxScore = flat.reduce((m, x) => Math.max(m, x.score), 0);
+  const leaves: SourcePackItem[] = [];
+  const projects: SourcePackItem[] = [];
+  for (const v of views) {
+    if (v.kind === "item") leaves.push(v);
+    else {
+      leaves.push(...v.children);
+      projects.push(viewToDisplayItem(v));
+    }
+  }
+
+  const byScore = (a: SourcePackItem, b: SourcePackItem) =>
+    b.score - a.score || a.title.localeCompare(b.title, "ko");
+  leaves.sort(byScore);
+  projects.sort(byScore);
+
+  const maxScore = [...leaves, ...projects].reduce(
+    (m, x) => Math.max(m, x.score),
+    0
+  );
   const lowConfidence = maxScore < PACK_SCORE_MID;
 
-  if (flat.length === 0) {
+  if (leaves.length === 0 && projects.length === 0) {
     return {
       recommended: null,
       mid: [],
@@ -578,6 +597,7 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
   }
 
   if (lowConfidence) {
+    const flat = [...leaves, ...projects].sort(byScore);
     return {
       recommended: null,
       mid: flat.slice(0, 2),
@@ -588,35 +608,44 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
   }
 
   let recommended: SourcePackItem | null = null;
+  for (const item of leaves) {
+    if (item.score >= PACK_SCORE_RECOMMENDED) {
+      recommended = item;
+      break;
+    }
+  }
+
+  const used = new Set<string>();
+  if (recommended) used.add(recommended.id);
+
   const mid: SourcePackItem[] = [];
   const weak: SourcePackItem[] = [];
-  for (const item of flat) {
+  const rest = [...leaves, ...projects]
+    .filter((item) => !used.has(item.id))
+    .sort(byScore);
+
+  for (const item of rest) {
+    if (used.has(item.id)) continue;
+    // 추천으로 쓴 리프의 부모 프로젝트는 중복 노출하지 않음
     if (
-      !recommended &&
-      item.score >= PACK_SCORE_RECOMMENDED
+      recommended &&
+      item.id.startsWith("project:") &&
+      recommended.parentId &&
+      item.id === `project:${recommended.parentId}`
     ) {
-      recommended = item;
+      used.add(item.id);
       continue;
     }
     if (
       mid.length < 2 &&
-      item.score >= PACK_SCORE_MID &&
-      item.score < PACK_SCORE_RECOMMENDED
+      item.score >= PACK_SCORE_MID
     ) {
       mid.push(item);
-      continue;
-    }
-    if (recommended && item.id === recommended.id) continue;
-    if (mid.some((m) => m.id === item.id)) continue;
-    // 0.7 이상이지만 추천 자리 이미 씀 → mid 후보로 (여유 있으면)
-    if (
-      item.score >= PACK_SCORE_RECOMMENDED &&
-      mid.length < 2
-    ) {
-      mid.push(item);
+      used.add(item.id);
       continue;
     }
     weak.push(item);
+    used.add(item.id);
   }
 
   return { recommended, mid, weak, maxScore, lowConfidence: false };
