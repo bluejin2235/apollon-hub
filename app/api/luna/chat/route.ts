@@ -83,6 +83,13 @@ import {
 import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
 import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
+  CLARIFY_FOLLOWUP_RULE,
+  combineClarifyFollowup,
+  ensureClarifyFollowupTypes,
+  parseClarifyOptions,
+  typesNeedWikiLookup
+} from "@/lib/luna/clarify-followup";
+import {
   applyTypeSearchOverride,
   formatConnectorRoutingSummary,
   hasManualConnectors,
@@ -446,6 +453,7 @@ function buildAnswerSystem(
     notionSearchStatus?: NotionSearchStatus;
     notionSearchRounds?: number;
     webAugmented?: boolean;
+    clarifyFollowup?: boolean;
   },
   useCaching: boolean,
   modelId: string
@@ -465,7 +473,10 @@ function buildAnswerSystem(
   ]
     .filter(Boolean)
     .join("\n\n");
-  const volatile = buildVolatileSystemText(opts);
+  const volatile = buildVolatileSystemText({
+    ...opts,
+    clarifyFollowup: opts.clarifyFollowup
+  });
 
   const payload = buildCachedSystem(
     [
@@ -496,8 +507,13 @@ function buildVolatileSystemText(opts: {
   notionSearchStatus?: NotionSearchStatus;
   notionSearchRounds?: number;
   webAugmented?: boolean;
+  clarifyFollowup?: boolean;
 }): string {
   const parts: string[] = [];
+
+  if (opts.clarifyFollowup) {
+    parts.push(CLARIFY_FOLLOWUP_RULE);
+  }
 
   if (opts.reportContent?.trim()) {
     parts.push(`[이미 정리해둔 자료]\n${opts.reportContent.trim()}`);
@@ -1052,14 +1068,17 @@ export async function POST(request: NextRequest) {
   const clarifyOriginalUser = lastHadClarify
     ? findClarifyOriginalUser(recent)
     : null;
+  const clarifyOptions = lastHadClarify
+    ? parseClarifyOptions(lastAssistant?.metadata)
+    : [];
 
   const userText =
     message || (hasAttachments ? "첨부한 파일을 분석해 주세요." : "");
   const knowledgeDumpRequested = isKnowledgeDumpRequest(userText);
-  const searchIntentText =
-    lastHadClarify && clarifyOriginalUser
-      ? `원래 질문: ${clarifyOriginalUser}\n확인된 조건: ${userText}`
-      : userText;
+  const clarifyFollowupQuery = lastHadClarify
+    ? combineClarifyFollowup(clarifyOriginalUser, userText, clarifyOptions)
+    : null;
+  const searchIntentText = clarifyFollowupQuery || userText;
   const attachmentMeta = attachments.map((a) => ({
     id: a.id,
     file_name: a.file_name,
@@ -1181,7 +1200,7 @@ export async function POST(request: NextRequest) {
             tier: "C",
             feature: "understand",
             system: `${classifyPick.text}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
-            user: userText,
+            user: searchIntentText,
             maxTokens: 256
           });
           recordPromptUse(usageLog, {
@@ -1211,16 +1230,33 @@ export async function POST(request: NextRequest) {
             types: classification.types,
             reason: classification.reason,
             confidence: classification.confidence,
-            switched: classification.switched
+            switched: classification.switched,
+            clarify_followup: Boolean(clarifyFollowupQuery)
           });
         } catch (err) {
           console.error("[luna/chat] classify", err);
           classification = emptyClassification();
         }
+        if (clarifyFollowupQuery) {
+          const forced = ensureClarifyFollowupTypes(
+            classification.types,
+            clarifyOriginalUser
+          );
+          if (forced.switched) {
+            classification = {
+              ...classification,
+              types: forced.types,
+              switched: true,
+              switch_reason:
+                classification.switch_reason ||
+                "되묻기 답을 원래 질문에 이어 다시 검색"
+            };
+          }
+        }
         classifiedTypeRows = classifiedRows(questionTypes, classification.types);
         if (isLowConfidence(classification)) {
           void recordUnclassifiedQuestion(admin, {
-            question: userText,
+            question: searchIntentText,
             classification,
             conversationId
           });
@@ -1244,11 +1280,14 @@ export async function POST(request: NextRequest) {
           nasEnabled = connectorRouting.connectors.nas;
         }
 
-        const knowledgeEmb = await retrieveKnowledgeEmbeddings(admin, userText);
+        const knowledgeEmb = await retrieveKnowledgeEmbeddings(
+          admin,
+          searchIntentText
+        );
         const libraryHits = typesNeedLibrary(classifiedTypeRows)
           ? matchLibraryItems(
               libraryItems,
-              userText,
+              searchIntentText,
               maxSimilarityByLibrary(knowledgeEmb.wiki)
             )
           : [];
@@ -1518,12 +1557,11 @@ export async function POST(request: NextRequest) {
           knowledgeEmb.glossary
         );
         const wikiSources: WikiSourceRef[] =
-          classification.types.includes("know") ||
-          classification.types.includes("find")
+          typesNeedWikiLookup(classification.types) || Boolean(clarifyFollowupQuery)
             ? matchWikiSections(
                 wikiDocs,
                 injectKeywords,
-                userText,
+                searchIntentText,
                 knowledgeEmb.wiki
               )
             : [];
@@ -1550,7 +1588,7 @@ export async function POST(request: NextRequest) {
             typeSlugs: classification.types,
             matchedKnowledge: knowledgeInject.matched.length,
             matchedTerms: matchedTerms.length,
-            question: userText,
+            question: searchIntentText,
             alreadyWeb: webEnabled
           })
         ) {
@@ -1998,10 +2036,10 @@ export async function POST(request: NextRequest) {
               });
             }
           }
-          contentBlocks.push({ type: "text", text: userText });
+          contentBlocks.push({ type: "text", text: searchIntentText });
           historyMessages.push({ role: "user", content: contentBlocks });
         } else {
-          historyMessages.push({ role: "user", content: userText });
+          historyMessages.push({ role: "user", content: searchIntentText });
         }
 
         const typeBlocks: string[] = [];
@@ -2042,7 +2080,8 @@ export async function POST(request: NextRequest) {
             notionSearchAttempted: notionEnabled && anySearch,
             notionSearchStatus: notionSearchOutcome?.status,
             notionSearchRounds: notionSearchOutcome?.rounds ?? 0,
-            webAugmented
+            webAugmented,
+            clarifyFollowup: Boolean(clarifyFollowupQuery)
           },
           tierACfg.use_caching === true,
           tierA.model_id
@@ -2153,7 +2192,8 @@ export async function POST(request: NextRequest) {
           used_prompts: usedPrompts,
           auto_routing: autoRoutingUsed,
           connector_routing: connectorRoutingMeta,
-          classification: classificationPublic(classification, questionTypes)
+          classification: classificationPublic(classification, questionTypes),
+          clarify_followup: Boolean(clarifyFollowupQuery)
         });
 
         let assistantText = "";
@@ -2306,6 +2346,10 @@ export async function POST(request: NextRequest) {
             cache_read_input_tokens: answerUsage.cache_read_input_tokens
           }
         };
+        if (clarifyFollowupQuery) {
+          assistantMeta.clarify_followup = true;
+          assistantMeta.search_intent = searchIntentText;
+        }
         if (
           perspectiveIds.length > 0 ||
           roleIds.length > 0 ||

@@ -28,7 +28,11 @@ const QUESTION_ALIAS_HINTS: Array<{ pattern: RegExp; aliases: string[] }> = [
   { pattern: /왜|이유|목적/, aliases: ["목적", "이유"] },
   { pattern: /근거|출처|기준/, aliases: ["근거", "규칙", "기준"] },
   { pattern: /입력|받으면|받을\s*때/, aliases: ["입력", "입력 처리"] },
-  { pattern: /출력|결과물|산출/, aliases: ["출력", "출력 형식"] }
+  { pattern: /출력|결과물|산출/, aliases: ["출력", "출력 형식"] },
+  {
+    pattern: /공공공간|공개공지|공공\s*프로젝트/,
+    aliases: ["공개공지", "공공공간"]
+  }
 ];
 
 export function splitWikiSourcesByVisibility(sources: WikiSourceRef[]): {
