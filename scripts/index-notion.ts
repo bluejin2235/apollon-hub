@@ -33,7 +33,12 @@ import {
 
 type PageRow = IndexedPage & {
   scan_batch: string;
-  indexed_at: string;
+  indexed_at: string | null;
+};
+
+type ExistingPage = {
+  last_edited_time: string | null;
+  indexed_at: string | null;
 };
 
 type BlockRow = IndexedBlock;
@@ -127,16 +132,16 @@ async function getPreviousPageCount(admin: SupabaseClient): Promise<number> {
   return count ?? 0;
 }
 
-async function loadExistingPageTimes(
+async function loadExistingPages(
   admin: SupabaseClient
-): Promise<Map<string, string | null>> {
-  const map = new Map<string, string | null>();
+): Promise<Map<string, ExistingPage>> {
+  const map = new Map<string, ExistingPage>();
   let from = 0;
   const pageSize = 1000;
   while (true) {
     const { data, error } = await admin
       .from("luna_notion_pages")
-      .select("page_id, last_edited_time")
+      .select("page_id, last_edited_time, indexed_at")
       .order("page_id")
       .range(from, from + pageSize - 1);
     if (error) {
@@ -145,10 +150,11 @@ async function loadExistingPageTimes(
     }
     const rows = data ?? [];
     for (const row of rows) {
-      map.set(
-        row.page_id as string,
-        typeof row.last_edited_time === "string" ? row.last_edited_time : null
-      );
+      map.set(row.page_id as string, {
+        last_edited_time:
+          typeof row.last_edited_time === "string" ? row.last_edited_time : null,
+        indexed_at: typeof row.indexed_at === "string" ? row.indexed_at : null
+      });
     }
     if (rows.length < pageSize) break;
     from += pageSize;
@@ -404,7 +410,7 @@ async function main(): Promise<void> {
   const scanBatch = newScanBatch();
   const client = new NotionIndexClient(notionToken);
   const previousCount = await getPreviousPageCount(admin);
-  const existingTimes = await loadExistingPageTimes(admin);
+  const existingPages = await loadExistingPages(admin);
   const existingBlockCounts = await countByPage(admin, "luna_notion_blocks");
   const existingEmbedCounts = await countByPage(admin, "luna_notion_embeddings");
 
@@ -418,7 +424,7 @@ async function main(): Promise<void> {
   const pages: PageRow[] = pagesRaw.map((page) => ({
     ...pageToIndexed(page, meta),
     scan_batch: scanBatch,
-    indexed_at: new Date().toISOString()
+    indexed_at: null
   }));
 
   const blocksByPage = new Map<string, number>();
@@ -434,10 +440,10 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < pages.length; i += 1) {
     const page = pages[i]!;
-    const prevEdited = existingTimes.get(page.page_id);
+    const prev = existingPages.get(page.page_id);
     const unchanged =
-      existingTimes.has(page.page_id) &&
-      sameEditedTime(prevEdited, page.last_edited_time);
+      Boolean(prev?.indexed_at) &&
+      sameEditedTime(prev?.last_edited_time, page.last_edited_time);
 
     if (unchanged) {
       skippedUnchanged += 1;
@@ -447,6 +453,8 @@ async function main(): Promise<void> {
       runningBlocks += blockN;
       runningEmbeds += embedN;
     } else {
+      await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+
       const rawBlocks = await client.fetchPageBlocks(page.page_id);
       const indexed = blocksToIndexed(page.page_id, rawBlocks);
       if (indexed.length === 0) zeroBlockPages += 1;
@@ -457,7 +465,6 @@ async function main(): Promise<void> {
         page.nas_path = nas;
         nasPathPages += 1;
       }
-      page.indexed_at = new Date().toISOString();
 
       await upsertBatch(admin, "luna_notion_blocks", indexed, "block_id");
       await deleteStaleBlocksForPage(
@@ -472,7 +479,15 @@ async function main(): Promise<void> {
       newEmbedCount += embedded.created;
       embedTokens += embedded.tokens;
 
-      await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+      const doneAt = new Date().toISOString();
+      page.indexed_at = doneAt;
+      const { error: doneErr } = await admin
+        .from("luna_notion_pages")
+        .update({ indexed_at: doneAt, nas_path: page.nas_path })
+        .eq("page_id", page.page_id);
+      if (doneErr) {
+        throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
+      }
 
       blocksByPage.set(page.page_id, indexed.length);
       runningBlocks += indexed.length;
