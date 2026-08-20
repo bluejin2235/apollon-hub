@@ -741,3 +741,69 @@ export async function searchNasLegacy(
   );
   return finalized;
 }
+
+/**
+ * 노션에 기록된 nas_path 로 색인을 직접 조회한다.
+ * 키워드 검색에 안 잡혀도 경로가 있으면 폴더·하위 파일을 붙인다.
+ */
+export async function lookupNasByRecordedPaths(
+  admin: SupabaseClient,
+  recordedPaths: string[]
+): Promise<NasRow[]> {
+  const out: NasRow[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of recordedPaths) {
+    const full = raw.trim().replace(/\//g, "\\");
+    if (!full) continue;
+    const m = full.match(/^([A-Za-z]):\\(.+)$/);
+    const drive = (m?.[1] || "T").toUpperCase();
+    const path = normalizeWsPath(m ? m[2]! : full.replace(/^[A-Za-z]:\\/, ""));
+    if (!path) continue;
+
+    const key = `${drive}:${path}`.toLowerCase();
+    if (seen.has(key)) continue;
+
+    const { data: exact, error: exactErr } = await admin
+      .from("nas_directory")
+      .select(NAS_SELECT)
+      .eq("drive", drive)
+      .eq("path", path)
+      .maybeSingle();
+    if (exactErr) {
+      console.error("[luna/ws] lookupNas exact", exactErr);
+    } else if (exact) {
+      const row = exact as NasRow;
+      const k = `${row.drive}:${row.path}`.toLowerCase();
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(row);
+      }
+    }
+
+    const { data: kids, error: kidsErr } = await admin
+      .from("nas_directory")
+      .select(NAS_SELECT)
+      .eq("drive", drive)
+      .gte("path", `${path}\\`)
+      .lt("path", `${path}\\\uFFFF`)
+      .order("importance", { ascending: false })
+      .limit(8);
+    if (kidsErr) {
+      console.error("[luna/ws] lookupNas kids", kidsErr);
+      continue;
+    }
+    for (const row of (kids ?? []) as NasRow[]) {
+      const k = `${row.drive}:${row.path}`.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(row);
+    }
+  }
+
+  console.log("[luna/ws] lookupNasByRecordedPaths", {
+    paths: recordedPaths.length,
+    hits: out.length
+  });
+  return out;
+}

@@ -44,6 +44,7 @@ export type LunaProgressStep = {
   key: string;
   label: string;
   status: "running" | "done" | "skip";
+  ms?: number;
 };
 
 export type LunaClarifyData = {
@@ -854,6 +855,11 @@ function DetailMetaFooter({
                 .map((s) => (
                   <div key={s.key} className="text-[10.5px] text-[#6b6f76]">
                     {s.label}
+                    {typeof s.ms === "number" ? (
+                      <span className="ml-1.5 font-mono text-[10px] text-[#9aa0a8]">
+                        {s.ms}ms
+                      </span>
+                    ) : null}
                   </div>
                 ))}
             </div>

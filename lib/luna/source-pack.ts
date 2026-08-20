@@ -176,20 +176,42 @@ export function significantTitleOverlap(a: string, b: string): boolean {
   return meaningful.length >= 3;
 }
 
+export function parseTitleDateLabel(title: string): string | null {
+  const t = title.trim();
+  const m8 = t.match(/^(\d{4})(\d{2})(\d{2})(?!\d)/);
+  if (m8) {
+    const y = Number(m8[1]);
+    const m = Number(m8[2]);
+    const d = Number(m8[3]);
+    if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return `${y}.${String(m).padStart(2, "0")}.${String(d).padStart(2, "0")}`;
+    }
+    return null;
+  }
+  const m6 = t.match(/^(\d{2})(\d{2})(\d{2})(?!\d)/);
+  if (m6) {
+    const yy = Number(m6[1]);
+    const m = Number(m6[2]);
+    const d = Number(m6[3]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      const y = 2000 + yy;
+      return `${y}.${String(m).padStart(2, "0")}.${String(d).padStart(2, "0")}`;
+    }
+  }
+  return null;
+}
+
+/** 정렬용 — YYYYMMDD 숫자. 파싱 실패 시 0 */
 export function notionDateKey(title: string): number {
-  const m = title.trim().match(/^(\d{6})/);
-  return m ? Number(m[1]) : 0;
+  const label = parseTitleDateLabel(title);
+  if (!label) return 0;
+  const digits = label.replace(/\./g, "");
+  return Number(digits) || 0;
 }
 
 function formatDateLabel(source: NotionSource): string | null {
-  const key = notionDateKey(source.title);
-  if (key > 0) {
-    const s = String(key).padStart(6, "0");
-    const yy = s.slice(0, 2);
-    const mm = s.slice(2, 4);
-    const dd = s.slice(4, 6);
-    return `20${yy}.${mm}.${dd}`;
-  }
+  const fromTitle = parseTitleDateLabel(source.title);
+  if (fromTitle) return fromTitle;
   if (source.last_edited_time) {
     const d = new Date(source.last_edited_time);
     if (!Number.isNaN(d.getTime())) {
@@ -289,8 +311,11 @@ function packFromNotion(
     matched.find((m) => !m.isFile)?.full ||
     (files[0] ? folderOfFullPath(files[0].fullPath, true) : null);
 
+  const hasNasPath = Boolean(nPath);
+  const unmatched = matched.length === 0 && files.length === 0;
+  // nas_path 자체가 없을 때만 「폴더 없음」. 경로는 있는데 못 묶였으면 경로만 보여 주고 경고 없음.
   const onlySide: SourcePackItem["onlySide"] =
-    matched.length === 0 && files.length === 0 ? "notion" : null;
+    unmatched && !hasNasPath ? "notion" : null;
 
   const date = formatDateLabel(source);
   const crumb = pathBreadcrumb(source.path_titles, source.title);
@@ -307,8 +332,7 @@ function packFromNotion(
     notion: { title: source.title, url: source.url, id: source.id },
     files: shown,
     filesMore: Math.max(0, files.length - shown.length),
-    folder:
-      onlySide === "notion" ? null : folderFull ? toFolder(folderFull) : null,
+    folder: folderFull ? toFolder(folderFull) : null,
     parentId: source.parent_id ?? null,
     pathTitles: source.path_titles ?? [],
     dateKey: notionDateKey(source.title),

@@ -159,9 +159,7 @@ function RecommendedCard({
             <span className="text-[#9aa0a8]">↗</span>
           </a>
         ) : null}
-        {item.onlySide === "notion" ? null : (
-          <WorkLinkRows item={item} mode={mode} onCopyToast={onCopyToast} />
-        )}
+        <WorkLinkRows item={item} mode={mode} onCopyToast={onCopyToast} />
       </div>
     </div>
   );

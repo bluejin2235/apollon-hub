@@ -48,6 +48,7 @@ import {
   findSimilarReport
 } from "@/lib/luna/selfstudy";
 import {
+  lookupNasByRecordedPaths,
   runWorkserverResultPipeline
 } from "@/lib/luna/workserver";
 import {
@@ -148,6 +149,7 @@ import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
+import { hasSpecificNamedEntity } from "@/lib/luna/named-entities";
 import {
   createPromptUsageLog,
   recordPromptUse
@@ -222,7 +224,12 @@ type PromptSkillRow = {
 };
 
 type StepStatus = "running" | "done" | "skip";
-type StepRecord = { key: string; label: string; status: StepStatus };
+type StepRecord = {
+  key: string;
+  label: string;
+  status: StepStatus;
+  ms?: number;
+};
 type ModelStep = {
   label: string;
   model: string;
@@ -1150,12 +1157,29 @@ export async function POST(request: NextRequest) {
       const modelSteps: ModelStep[] = [];
       let searchRounds = 0;
 
+      const stepStartedAt = new Map<string, number>();
       const pushStep = (key: string, status: StepStatus, label: string) => {
+        const now = Date.now();
+        if (status === "running") stepStartedAt.set(key, now);
+        const started = stepStartedAt.get(key);
+        const ms =
+          status === "done" && started != null ? now - started : undefined;
         const idx = steps.findIndex((s) => s.key === key);
-        const rec = { key, status, label };
+        const rec: StepRecord = {
+          key,
+          status,
+          label,
+          ...(typeof ms === "number" ? { ms } : {})
+        };
         if (idx >= 0) steps[idx] = rec;
         else steps.push(rec);
-        emit(controller, encoder, { type: "step", key, status, label });
+        emit(controller, encoder, {
+          type: "step",
+          key,
+          status,
+          label,
+          ...(typeof ms === "number" ? { ms } : {})
+        });
       };
 
       const touchConversation = async () => {
@@ -1420,13 +1444,20 @@ export async function POST(request: NextRequest) {
           : [];
 
         // ——— 단계 1: 되묻기 ———
+        const clearFindIntent =
+          needsSearch &&
+          /찾아|어디|자료|파일|폴더|경로|수행계획|제안서|아이데이션/i.test(
+            userText
+          ) &&
+          hasSpecificNamedEntity(userText);
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
           conversationHadClarify(recent) ||
           hasManualSkills(manualSkillIds) ||
           shouldSkipProjectClarify(userText) ||
-          typesSkipClarify(classifiedTypeRows);
+          typesSkipClarify(classifiedTypeRows) ||
+          clearFindIntent;
 
         if (
           typesNeedLibrary(classifiedTypeRows) &&
@@ -1997,6 +2028,35 @@ export async function POST(request: NextRequest) {
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
+          // 노션 nas_path → 색인 직접 조회 (키워드 검색에 안 잡혀도 묶기)
+          if (nasEnabled && notionSources.length > 0) {
+            const recorded = notionRecordedPaths(notionSources);
+            if (recorded.length > 0) {
+              try {
+                const looked = await lookupNasByRecordedPaths(admin, recorded);
+                if (looked.length > 0) {
+                  nasResults = finalizeNasDirectoryRows([
+                    ...nasResults,
+                    ...looked
+                  ]);
+                  cards = [
+                    ...mergeCards(
+                      cards.filter((c) => c.type !== "nas"),
+                      []
+                    ),
+                    ...nasResults.map(toNasCard)
+                  ];
+                  console.log("[luna/search] nas_path lookup", {
+                    recorded: recorded.length,
+                    hits: looked.length
+                  });
+                }
+              } catch (err) {
+                console.error("[luna/search] nas_path lookup", err);
+              }
+            }
+          }
+
           // 자체 평가 + 재검색 (최고 유사도 0.55 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
@@ -2169,7 +2229,9 @@ export async function POST(request: NextRequest) {
           cards,
           nasResults
         );
-        if (reasonUser) {
+        const skipSourceReasons =
+          maxNotionSimilarity(notionSources) >= PACK_SCORE_RECOMMENDED;
+        if (reasonUser && !skipSourceReasons) {
           try {
             const reasonRes = await client.messages.create({
               model: tierB.model_id,

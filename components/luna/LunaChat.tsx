@@ -313,7 +313,15 @@ export function normalizeProgressSteps(raw: unknown): LunaProgressStep[] | null 
           (s as { status?: unknown }).status === "done" ||
           (s as { status?: unknown }).status === "skip")
     )
-    .map((s) => ({ key: s.key, label: s.label, status: s.status }));
+    .map((s) => {
+      const ms = (s as { ms?: unknown }).ms;
+      return {
+        key: s.key,
+        label: s.label,
+        status: s.status,
+        ...(typeof ms === "number" && Number.isFinite(ms) ? { ms } : {})
+      };
+    });
   return steps.length > 0 ? steps : null;
 }
 
@@ -433,6 +441,7 @@ export function consumeLunaStreamEvents(
         };
       }
     }
+    // 스트리밍 중 step 이벤트에도 ms 유지
     if (parsed.type === "step") {
       const status = parsed.status;
       if (
@@ -440,13 +449,17 @@ export function consumeLunaStreamEvents(
         typeof parsed.label === "string" &&
         (status === "running" || status === "done" || status === "skip")
       ) {
+        const msRaw = parsed.ms;
         return {
           kind: "step",
           buffer: rest,
           step: {
             key: parsed.key,
             label: parsed.label,
-            status
+            status,
+            ...(typeof msRaw === "number" && Number.isFinite(msRaw)
+              ? { ms: Math.round(msRaw) }
+              : {})
           }
         };
       }

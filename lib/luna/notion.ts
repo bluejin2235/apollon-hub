@@ -654,7 +654,7 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
         lines.push(`  날짜: ${s.dates.join(", ")}`);
       }
       if (s.excerpt) {
-        lines.push(`  본문: ${s.excerpt}`);
+        lines.push(`  본문: ${s.excerpt.slice(0, 400)}`);
       }
       return lines.join("\n");
     })
