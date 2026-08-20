@@ -9,6 +9,10 @@
       "schedule": "0 0 * * *"
     },
     {
+      "path": "/api/cron/fx-rates",
+      "schedule": "15 0 * * *"
+    },
+    {
       "path": "/api/cron/license-digest",
       "schedule": "0 0 1,16 * *"
     },
