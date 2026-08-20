@@ -1,3 +1,5 @@
+import { isListingQuestion } from "@/lib/luna/listing-question";
+
 /** 되묻기 직후 턴: 짧은 답을 원래 질문과 합쳐 다시 판정·검색한다. */
 
 export const CLARIFY_FOLLOWUP_RULE = `[되묻기 후 재검색]
@@ -84,11 +86,11 @@ export function ensureClarifyFollowupTypes(
   switched: boolean;
 } {
   const next = types.filter((t) => t !== "smalltalk");
-  let switched = next.length !== types.length;
-  const listing = /어떤게|알려줘|사례|뭐가 있/.test(originalQuestion ?? "");
-  if (listing && !next.includes("know")) {
-    next.push("know");
-    switched = true;
+  const switched = next.length !== types.length;
+  if (isListingQuestion(originalQuestion ?? "")) {
+    const knowOnly = next.filter((t) => t !== "find");
+    if (!knowOnly.includes("know")) knowOnly.unshift("know");
+    return { types: knowOnly, switched: true };
   }
   if (typesNeedWikiLookup(next) || next.includes("make")) {
     return { types: next, switched };

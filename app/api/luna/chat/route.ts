@@ -75,11 +75,18 @@ import {
 } from "@/lib/luna/question-types";
 import {
   formatWikiSectionsBlock,
+  LISTING_WIKI_LIMITS,
   matchWikiSections,
   splitWikiSourcesByVisibility,
   wikiSourceUsedInAnswer,
   type WikiSourceRef
 } from "@/lib/luna/wiki-match";
+import {
+  applyListingTypeOverride,
+  isListingQuestion,
+  shouldSkipFindConnectors,
+  wikiCoversKnowIntent
+} from "@/lib/luna/listing-question";
 import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
 import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
@@ -1253,6 +1260,22 @@ export async function POST(request: NextRequest) {
             };
           }
         }
+        const listingSourceText =
+          clarifyOriginalUser?.trim() || searchIntentText;
+        const listingQuestion = isListingQuestion(listingSourceText);
+        const listingOverride = applyListingTypeOverride(
+          classification.types,
+          listingSourceText
+        );
+        if (listingOverride.switched) {
+          classification = {
+            ...classification,
+            types: listingOverride.types,
+            switched: true,
+            switch_reason:
+              classification.switch_reason || "목록형 질문: 알기 우선"
+          };
+        }
         classifiedTypeRows = classifiedRows(questionTypes, classification.types);
         if (isLowConfidence(classification)) {
           void recordUnclassifiedQuestion(admin, {
@@ -1562,9 +1585,33 @@ export async function POST(request: NextRequest) {
                 wikiDocs,
                 injectKeywords,
                 searchIntentText,
-                knowledgeEmb.wiki
+                knowledgeEmb.wiki,
+                listingQuestion ? LISTING_WIKI_LIMITS : undefined
               )
             : [];
+        if (
+          shouldSkipFindConnectors({
+            types: classification.types,
+            wikiSources,
+            listing: listingQuestion
+          }) &&
+          !hasManualConnectors(manualConnectorFlags)
+        ) {
+          notionEnabled = false;
+          nasEnabled = false;
+          if (!webAugmentEnabled) webEnabled = false;
+          connectorRouting = {
+            connectors: {
+              nas: false,
+              notion: false,
+              web: webEnabled
+            },
+            reason: "wiki_covers_know",
+            reasonLabel: listingQuestion
+              ? "목록형: 위키로 충분"
+              : "알기: 위키로 충분"
+          };
+        }
         const { public: publicWikiSources, private: privateWikiRefs } =
           splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
@@ -1582,7 +1629,10 @@ export async function POST(request: NextRequest) {
           .filter(Boolean);
 
         let webAugmented = false;
+        const listingWikiSufficient =
+          listingQuestion && wikiCoversKnowIntent(wikiSources, true);
         if (
+          !listingWikiSufficient &&
           shouldWebAugmentKnow({
             enabled: webAugmentEnabled,
             typeSlugs: classification.types,

@@ -19,7 +19,8 @@ export type ConnectorRoutingReason =
   | "ambiguous_wide"
   | "type_no_search"
   | "type_needs_search"
-  | "web_augment";
+  | "web_augment"
+  | "wiki_covers_know";
 
 export type ConnectorRoutingResult = {
   connectors: ConnectorFlags;

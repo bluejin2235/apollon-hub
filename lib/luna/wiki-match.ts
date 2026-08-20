@@ -23,6 +23,22 @@ export type WikiSourceRef = {
 export const WIKI_SECTION_MAX = 3;
 export const WIKI_SECTIONS_PER_DOC_MAX = 2;
 export const WIKI_SECTION_BODY_MAX = 1500;
+
+export type WikiPickLimits = {
+  sectionMax: number;
+  sectionsPerDocMax: number;
+};
+
+export const DEFAULT_WIKI_LIMITS: WikiPickLimits = {
+  sectionMax: WIKI_SECTION_MAX,
+  sectionsPerDocMax: WIKI_SECTIONS_PER_DOC_MAX
+};
+
+/** 목록형 질문: 여러 문서가 골고루 들어가도록 문서당 1절·상위 8절 */
+export const LISTING_WIKI_LIMITS: WikiPickLimits = {
+  sectionMax: 8,
+  sectionsPerDocMax: 1
+};
 const QUESTION_ALIAS_HINTS: Array<{ pattern: RegExp; aliases: string[] }> = [
   { pattern: /어떻게|절차|순서|프로세스|과정/, aliases: ["절차"] },
   { pattern: /왜|이유|목적/, aliases: ["목적", "이유"] },
@@ -32,6 +48,10 @@ const QUESTION_ALIAS_HINTS: Array<{ pattern: RegExp; aliases: string[] }> = [
   {
     pattern: /공공공간|공개공지|공공\s*프로젝트/,
     aliases: ["공개공지", "공공공간"]
+  },
+  {
+    pattern: /어떤\s*게\s*있|어떤게\s*있|프로젝트.*(어떤|뭐)|목록|모아\s*줘|전부/,
+    aliases: ["프로젝트", "제안", "공개공지"]
   }
 ];
 
@@ -204,16 +224,73 @@ function toSourceRef(
   };
 }
 
-function pickTopWiki(scored: ScoredWiki[]): WikiSourceRef[] {
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    if (b.title_score !== a.title_score) return b.title_score - a.title_score;
-    if (b.body_score !== a.body_score) return b.body_score - a.body_score;
-    if (b.matched_keywords.length !== a.matched_keywords.length) {
-      return b.matched_keywords.length - a.matched_keywords.length;
+function compareScoredWiki(a: ScoredWiki, b: ScoredWiki): number {
+  if (b.score !== a.score) return b.score - a.score;
+  if (b.title_score !== a.title_score) return b.title_score - a.title_score;
+  if (b.body_score !== a.body_score) return b.body_score - a.body_score;
+  if (b.matched_keywords.length !== a.matched_keywords.length) {
+    return b.matched_keywords.length - a.matched_keywords.length;
+  }
+  return a.title.localeCompare(b.title, "ko");
+}
+
+function stripScoredFields(row: ScoredWiki): WikiSourceRef {
+  const {
+    title_score: _t,
+    body_score: _b,
+    doc_title_score: _d,
+    summary_score: _s,
+    ...pub
+  } = row;
+  void _t;
+  void _b;
+  void _d;
+  void _s;
+  return pub;
+}
+
+/** 목록형: 문서당 최고 절만 남기고, 프로젝트 위키를 우선한다. */
+function applyListingProjectBoost(
+  scored: ScoredWiki[],
+  questionText?: string
+): ScoredWiki[] {
+  const q = questionText?.trim() ?? "";
+  if (!q || !/프로젝트|사례|공공|공개/.test(q)) return scored;
+  return scored.map((row) =>
+    row.category === "projects"
+      ? { ...row, score: row.score + 6 }
+      : row
+  );
+}
+
+function pickTopWikiListing(
+  scored: ScoredWiki[],
+  limits: WikiPickLimits,
+  questionText?: string
+): WikiSourceRef[] {
+  const boosted = applyListingProjectBoost(scored, questionText);
+  const bestByDoc = new Map<string, ScoredWiki>();
+  for (const row of boosted) {
+    const prev = bestByDoc.get(row.slug);
+    if (!prev || compareScoredWiki(row, prev) > 0) {
+      bestByDoc.set(row.slug, row);
     }
-    return a.title.localeCompare(b.title, "ko");
-  });
+  }
+  const sorted = Array.from(bestByDoc.values()).sort(compareScoredWiki);
+  return sorted
+    .slice(0, limits.sectionMax)
+    .map(stripScoredFields);
+}
+
+function pickTopWiki(
+  scored: ScoredWiki[],
+  limits: WikiPickLimits = DEFAULT_WIKI_LIMITS,
+  questionText?: string
+): WikiSourceRef[] {
+  if (limits.sectionMax > DEFAULT_WIKI_LIMITS.sectionMax) {
+    return pickTopWikiListing(scored, limits, questionText);
+  }
+  scored.sort(compareScoredWiki);
   const focused =
     scored.length >= 2 && scored[0] && scored[1] && scored[0].score - scored[1].score >= 3
       ? scored.filter((row) => row.score === scored[0]!.score)
@@ -223,7 +300,7 @@ function pickTopWiki(scored: ScoredWiki[]): WikiSourceRef[] {
   const picked: WikiSourceRef[] = [];
   for (const row of focused) {
     const docCount = perDoc.get(row.slug) ?? 0;
-    if (docCount >= WIKI_SECTIONS_PER_DOC_MAX) continue;
+    if (docCount >= limits.sectionsPerDocMax) continue;
     const {
       title_score: _t,
       body_score: _b,
@@ -237,7 +314,7 @@ function pickTopWiki(scored: ScoredWiki[]): WikiSourceRef[] {
     void _s;
     picked.push(pub);
     perDoc.set(row.slug, docCount + 1);
-    if (picked.length >= WIKI_SECTION_MAX) break;
+    if (picked.length >= limits.sectionMax) break;
   }
   return picked;
 }
@@ -250,7 +327,8 @@ export function matchWikiSections(
   docs: WikiDoc[],
   keywords: string[],
   questionText?: string,
-  embeddingHits?: WikiEmbeddingHit[] | null
+  embeddingHits?: WikiEmbeddingHit[] | null,
+  limits: WikiPickLimits = DEFAULT_WIKI_LIMITS
 ): WikiSourceRef[] {
   const enriched = enrichKeywords(keywords, questionText);
   const weights = keywordWeights(docs, enriched);
@@ -324,7 +402,11 @@ export function matchWikiSections(
     return [];
   }
 
-  return pickTopWiki(Array.from(fused.values()).filter((r) => r.score > 0));
+  return pickTopWiki(
+    Array.from(fused.values()).filter((r) => r.score > 0),
+    limits,
+    questionText
+  );
 }
 
 export function formatWikiSectionsBlock(hits: WikiSourceRef[]): string {
