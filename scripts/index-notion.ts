@@ -3,6 +3,7 @@
  *
  *   npx tsx scripts/index-notion.ts
  *
+ * 페이지 단위로 저장한다. 끊기면 다시 돌리면 이어진다.
  * 전제: luna_notion_* 테이블 + LUNA_OPENAI_API_KEY + NOTION_TOKEN
  */
 import { config } from "dotenv";
@@ -51,6 +52,7 @@ type Stats = {
   embeddings: number;
   skippedShort: number;
   skippedHash: number;
+  skippedUnchanged: number;
   zeroBlockPages: number;
   nasPathPages: number;
   embedTokens: number;
@@ -69,10 +71,6 @@ function log(msg: string): void {
   console.log(msg);
 }
 
-function progress(label: string, current: number, total: number): void {
-  log(`${label} ${current.toLocaleString()} / ${total.toLocaleString()}`);
-}
-
 function createAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key =
@@ -84,6 +82,26 @@ function createAdmin(): SupabaseClient {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
+}
+
+function sameEditedTime(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const ta = new Date(a).getTime();
+  const tb = new Date(b).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
+  return ta === tb;
+}
+
+function logProgress(
+  done: number,
+  total: number,
+  blocks: number,
+  embeddings: number
+): void {
+  log(
+    `${done.toLocaleString()} / ${total.toLocaleString()} 페이지 · 블록 ${blocks.toLocaleString()} · 임베딩 ${embeddings.toLocaleString()}`
+  );
 }
 
 async function upsertBatch(
@@ -109,16 +127,88 @@ async function getPreviousPageCount(admin: SupabaseClient): Promise<number> {
   return count ?? 0;
 }
 
-async function deleteBatch(admin: SupabaseClient, batch: string): Promise<void> {
-  const { data: pages, error: pageErr } = await admin
-    .from("luna_notion_pages")
-    .select("page_id")
-    .eq("scan_batch", batch);
-  if (pageErr) throw pageErr;
-  const pageIds = (pages ?? []).map((p) => p.page_id as string);
-  if (pageIds.length === 0) return;
+async function loadExistingPageTimes(
+  admin: SupabaseClient
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await admin
+      .from("luna_notion_pages")
+      .select("page_id, last_edited_time")
+      .order("page_id")
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (String(error.message).includes("does not exist")) return map;
+      throw error;
+    }
+    const rows = data ?? [];
+    for (const row of rows) {
+      map.set(
+        row.page_id as string,
+        typeof row.last_edited_time === "string" ? row.last_edited_time : null
+      );
+    }
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return map;
+}
 
-  for (const part of chunk(pageIds, NOTION_INDEX_INSERT_BATCH)) {
+async function countByPage(
+  admin: SupabaseClient,
+  table: "luna_notion_blocks" | "luna_notion_embeddings"
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await admin
+      .from(table)
+      .select("page_id")
+      .order("page_id")
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (String(error.message).includes("does not exist")) return map;
+      throw error;
+    }
+    const rows = data ?? [];
+    for (const row of rows) {
+      const id = row.page_id as string;
+      map.set(id, (map.get(id) ?? 0) + 1);
+    }
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return map;
+}
+
+async function deleteOrphanPages(
+  admin: SupabaseClient,
+  livePageIds: Set<string>
+): Promise<void> {
+  const staleIds: string[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await admin
+      .from("luna_notion_pages")
+      .select("page_id")
+      .order("page_id")
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    for (const row of rows) {
+      const id = row.page_id as string;
+      if (!livePageIds.has(id)) staleIds.push(id);
+    }
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  if (staleIds.length === 0) return;
+
+  for (const part of chunk(staleIds, NOTION_INDEX_INSERT_BATCH)) {
     const { data: blocks } = await admin
       .from("luna_notion_blocks")
       .select("block_id")
@@ -130,41 +220,24 @@ async function deleteBatch(admin: SupabaseClient, batch: string): Promise<void> 
       }
       await admin.from("luna_notion_blocks").delete().in("page_id", part);
     }
-  }
-  await admin.from("luna_notion_pages").delete().eq("scan_batch", batch);
-}
-
-async function deleteOtherBatches(
-  admin: SupabaseClient,
-  keepBatch: string
-): Promise<void> {
-  const { data, error } = await admin
-    .from("luna_notion_pages")
-    .select("scan_batch")
-    .neq("scan_batch", keepBatch);
-  if (error) throw error;
-  const batches = [...new Set((data ?? []).map((r) => r.scan_batch as string))];
-  for (const batch of batches) {
-    if (batch) await deleteBatch(admin, batch);
+    await admin.from("luna_notion_pages").delete().in("page_id", part);
   }
 }
 
-async function deleteStaleBlocks(
+async function deleteStaleBlocksForPage(
   admin: SupabaseClient,
-  livePageIds: Set<string>,
+  pageId: string,
   liveBlockIds: Set<string>
 ): Promise<void> {
   const { data, error } = await admin
     .from("luna_notion_blocks")
-    .select("block_id, page_id");
+    .select("block_id")
+    .eq("page_id", pageId);
   if (error) throw error;
-  const stale = (data ?? []).filter((row) => {
-    const blockId = row.block_id as string;
-    const pageId = row.page_id as string;
-    return !liveBlockIds.has(blockId) || !livePageIds.has(pageId);
-  });
-  const staleBlockIds = stale.map((r) => r.block_id as string);
-  for (const part of chunk(staleBlockIds, NOTION_INDEX_INSERT_BATCH)) {
+  const stale = (data ?? [])
+    .map((row) => row.block_id as string)
+    .filter((id) => !liveBlockIds.has(id));
+  for (const part of chunk(stale, NOTION_INDEX_INSERT_BATCH)) {
     if (part.length === 0) continue;
     await admin.from("luna_notion_embeddings").delete().in("block_id", part);
     await admin.from("luna_notion_blocks").delete().in("block_id", part);
@@ -177,6 +250,7 @@ async function loadExistingHashes(
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const part of chunk(blockIds, NOTION_INDEX_INSERT_BATCH)) {
+    if (part.length === 0) continue;
     const { data, error } = await admin
       .from("luna_notion_embeddings")
       .select("block_id, content_hash")
@@ -205,28 +279,78 @@ async function fetchTableSizes(admin: SupabaseClient): Promise<Record<string, st
   return out;
 }
 
+async function embedAndSavePage(
+  admin: SupabaseClient,
+  blocks: BlockRow[]
+): Promise<{ created: number; skippedShort: number; skippedHash: number; tokens: number }> {
+  const embedCandidates = blocks.filter(
+    (b) => b.text.length >= NOTION_INDEX_MIN_EMBED_CHARS
+  );
+  const skippedShort = blocks.length - embedCandidates.length;
+  const existingHashes = await loadExistingHashes(
+    admin,
+    embedCandidates.map((b) => b.block_id)
+  );
+
+  const toEmbed: BlockRow[] = [];
+  let skippedHash = 0;
+  for (const block of embedCandidates) {
+    if (existingHashes.get(block.block_id) === block.content_hash) {
+      skippedHash += 1;
+      continue;
+    }
+    toEmbed.push(block);
+  }
+
+  let created = 0;
+  let tokens = 0;
+  for (const batch of chunk(toEmbed, NOTION_INDEX_EMBED_BATCH)) {
+    const { vectors, tokens: batchTokens } = await createEmbeddingsBatch(
+      batch.map((b) => b.text)
+    );
+    tokens += batchTokens;
+    const now = new Date().toISOString();
+    const rows: EmbedRow[] = [];
+    batch.forEach((block, idx) => {
+      const vector = vectors[idx];
+      if (!vector) return;
+      rows.push({
+        block_id: block.block_id,
+        page_id: block.page_id,
+        content_hash: block.content_hash,
+        embedding: embeddingToSql(vector),
+        updated_at: now
+      });
+    });
+    if (rows.length === 0) continue;
+    const { error } = await admin
+      .from("luna_notion_embeddings")
+      .upsert(rows, { onConflict: "block_id" });
+    if (error) throw new Error(`luna_notion_embeddings upsert: ${error.message}`);
+    created += rows.length;
+  }
+
+  return { created, skippedShort, skippedHash, tokens };
+}
+
 function buildStats(opts: {
   pages: PageRow[];
-  blocks: BlockRow[];
+  blocksByPage: Map<string, number>;
   embedCount: number;
   skippedShort: number;
   skippedHash: number;
+  skippedUnchanged: number;
   zeroBlockPages: number;
   nasPathPages: number;
   embedTokens: number;
   elapsedSec: number;
 }): Stats {
-  const blocksByPage = new Map<string, number>();
-  for (const b of opts.blocks) {
-    blocksByPage.set(b.page_id, (blocksByPage.get(b.page_id) ?? 0) + 1);
-  }
-
   const rootMap = new Map<string, { pages: number; blocks: number }>();
   for (const p of opts.pages) {
     const root = p.root_title ?? "(unknown)";
     const cur = rootMap.get(root) ?? { pages: 0, blocks: 0 };
     cur.pages += 1;
-    cur.blocks += blocksByPage.get(p.page_id) ?? 0;
+    cur.blocks += opts.blocksByPage.get(p.page_id) ?? 0;
     rootMap.set(root, cur);
   }
 
@@ -240,17 +364,21 @@ function buildStats(opts: {
     .map((p) => ({
       title: p.title,
       root_title: p.root_title,
-      blocks: blocksByPage.get(p.page_id) ?? 0
+      blocks: opts.blocksByPage.get(p.page_id) ?? 0
     }))
     .sort((a, b) => b.blocks - a.blocks)
     .slice(0, 20);
 
+  let blockTotal = 0;
+  for (const n of opts.blocksByPage.values()) blockTotal += n;
+
   return {
     pages: opts.pages.length,
-    blocks: opts.blocks.length,
+    blocks: blockTotal,
     embeddings: opts.embedCount,
     skippedShort: opts.skippedShort,
     skippedHash: opts.skippedHash,
+    skippedUnchanged: opts.skippedUnchanged,
     zeroBlockPages: opts.zeroBlockPages,
     nasPathPages: opts.nasPathPages,
     embedTokens: opts.embedTokens,
@@ -274,45 +402,85 @@ async function main(): Promise<void> {
 
   const admin = createAdmin();
   const scanBatch = newScanBatch();
-  const indexedAt = new Date().toISOString();
   const client = new NotionIndexClient(notionToken);
   const previousCount = await getPreviousPageCount(admin);
+  const existingTimes = await loadExistingPageTimes(admin);
+  const existingBlockCounts = await countByPage(admin, "luna_notion_blocks");
+  const existingEmbedCounts = await countByPage(admin, "luna_notion_embeddings");
 
   log(`[index-notion] scan_batch=${scanBatch} previous_pages=${previousCount}`);
 
   const searchResults = await client.searchAll();
   const pagesRaw = collectPagesFromSearch(searchResults);
-  progress("페이지 수집", pagesRaw.length, pagesRaw.length);
+  log(`페이지 수집 ${pagesRaw.length.toLocaleString()} / ${pagesRaw.length.toLocaleString()}`);
 
   const meta = await buildMetaGraph(client, searchResults);
   const pages: PageRow[] = pagesRaw.map((page) => ({
     ...pageToIndexed(page, meta),
     scan_batch: scanBatch,
-    indexed_at: indexedAt
+    indexed_at: new Date().toISOString()
   }));
 
-  const allBlocks: BlockRow[] = [];
+  const blocksByPage = new Map<string, number>();
   let zeroBlockPages = 0;
   let nasPathPages = 0;
+  let skippedShort = 0;
+  let skippedHash = 0;
+  let skippedUnchanged = 0;
+  let newEmbedCount = 0;
+  let embedTokens = 0;
+  let runningBlocks = 0;
+  let runningEmbeds = 0;
 
   for (let i = 0; i < pages.length; i += 1) {
     const page = pages[i]!;
+    const prevEdited = existingTimes.get(page.page_id);
+    const unchanged =
+      existingTimes.has(page.page_id) &&
+      sameEditedTime(prevEdited, page.last_edited_time);
+
+    if (unchanged) {
+      skippedUnchanged += 1;
+      const blockN = existingBlockCounts.get(page.page_id) ?? 0;
+      const embedN = existingEmbedCounts.get(page.page_id) ?? 0;
+      blocksByPage.set(page.page_id, blockN);
+      runningBlocks += blockN;
+      runningEmbeds += embedN;
+    } else {
+      const rawBlocks = await client.fetchPageBlocks(page.page_id);
+      const indexed = blocksToIndexed(page.page_id, rawBlocks);
+      if (indexed.length === 0) zeroBlockPages += 1;
+
+      const bodyText = indexed.map((b) => b.text).join("\n");
+      const nas = firstNasPath([bodyText, page.title]);
+      if (nas) {
+        page.nas_path = nas;
+        nasPathPages += 1;
+      }
+      page.indexed_at = new Date().toISOString();
+
+      await upsertBatch(admin, "luna_notion_blocks", indexed, "block_id");
+      await deleteStaleBlocksForPage(
+        admin,
+        page.page_id,
+        new Set(indexed.map((b) => b.block_id))
+      );
+
+      const embedded = await embedAndSavePage(admin, indexed);
+      skippedShort += embedded.skippedShort;
+      skippedHash += embedded.skippedHash;
+      newEmbedCount += embedded.created;
+      embedTokens += embedded.tokens;
+
+      await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+
+      blocksByPage.set(page.page_id, indexed.length);
+      runningBlocks += indexed.length;
+      runningEmbeds += indexed.length - embedded.skippedShort;
+    }
+
     if ((i + 1) % 25 === 0 || i + 1 === pages.length) {
-      progress("블록 읽기", i + 1, pages.length);
-    }
-    const rawBlocks = await client.fetchPageBlocks(page.page_id);
-    const indexed = blocksToIndexed(page.page_id, rawBlocks);
-    if (indexed.length === 0) zeroBlockPages += 1;
-
-    const bodyText = indexed.map((b) => b.text).join("\n");
-    const nas = firstNasPath([bodyText, page.title]);
-    if (nas) {
-      page.nas_path = nas;
-      nasPathPages += 1;
-    }
-
-    for (const block of indexed) {
-      allBlocks.push(block);
+      logProgress(i + 1, pages.length, runningBlocks, runningEmbeds);
     }
   }
 
@@ -323,84 +491,29 @@ async function main(): Promise<void> {
       : 0;
   const passed = previousCount === 0 || newCount >= minRequired;
   log(
-    `[index-notion] validate (pre-write) previous=${previousCount} new=${newCount} min=${minRequired} passed=${passed}`
-  );
-  if (!passed) {
-    log("[index-notion] FAILED — page count below threshold, nothing written");
-    process.exit(2);
-  }
-
-  log(`[index-notion] upsert pages=${pages.length} blocks=${allBlocks.length}`);
-  await upsertBatch(admin, "luna_notion_pages", pages, "page_id");
-  await upsertBatch(admin, "luna_notion_blocks", allBlocks, "block_id");
-
-  const embedCandidates = allBlocks.filter(
-    (b) => b.text.length >= NOTION_INDEX_MIN_EMBED_CHARS
-  );
-  const skippedShort = allBlocks.length - embedCandidates.length;
-  const existingHashes = await loadExistingHashes(
-    admin,
-    embedCandidates.map((b) => b.block_id)
+    `[index-notion] validate (post-write) previous=${previousCount} new=${newCount} min=${minRequired} passed=${passed}`
   );
 
-  const toEmbed: BlockRow[] = [];
-  let skippedHash = 0;
-  for (const block of embedCandidates) {
-    const prev = existingHashes.get(block.block_id);
-    if (prev === block.content_hash) {
-      skippedHash += 1;
-      continue;
-    }
-    toEmbed.push(block);
+  if (passed) {
+    await deleteOrphanPages(
+      admin,
+      new Set(pages.map((p) => p.page_id))
+    );
+  } else {
+    log("[index-notion] 검증 미달 — 이전 세대 페이지는 지우지 않음");
   }
-
-  let newEmbedCount = 0;
-  let embedTokens = 0;
-  const embedRows: EmbedRow[] = [];
-
-  for (let i = 0; i < toEmbed.length; i += NOTION_INDEX_EMBED_BATCH) {
-    const batch = toEmbed.slice(i, i + NOTION_INDEX_EMBED_BATCH);
-    progress("임베딩", Math.min(i + batch.length, toEmbed.length), toEmbed.length);
-    const { vectors, tokens } = await createEmbeddingsBatch(batch.map((b) => b.text));
-    embedTokens += tokens;
-    const now = new Date().toISOString();
-    batch.forEach((block, idx) => {
-      const vector = vectors[idx];
-      if (!vector) return;
-      embedRows.push({
-        block_id: block.block_id,
-        page_id: block.page_id,
-        content_hash: block.content_hash,
-        embedding: embeddingToSql(vector),
-        updated_at: now
-      });
-    });
-  }
-
-  for (const part of chunk(embedRows, NOTION_INDEX_INSERT_BATCH)) {
-    const { error } = await admin
-      .from("luna_notion_embeddings")
-      .upsert(part, { onConflict: "block_id" });
-    if (error) throw new Error(`luna_notion_embeddings upsert: ${error.message}`);
-    newEmbedCount += part.length;
-  }
-
-  const totalEmbeddings = embedCandidates.length - skippedHash;
-
-  await deleteOtherBatches(admin, scanBatch);
-  await deleteStaleBlocks(
-    admin,
-    new Set(pages.map((p) => p.page_id)),
-    new Set(allBlocks.map((b) => b.block_id))
-  );
 
   const elapsedSec = Math.round((Date.now() - started) / 10) / 100;
+  const embedKept = [...blocksByPage.keys()].reduce((sum, id) => {
+    return sum + (blocksByPage.get(id) ?? 0);
+  }, 0);
   const stats = buildStats({
     pages,
-    blocks: allBlocks,
-    embedCount: totalEmbeddings,
+    blocksByPage,
+    embedCount: embedKept - skippedShort,
     skippedShort,
     skippedHash,
+    skippedUnchanged,
     zeroBlockPages,
     nasPathPages,
     embedTokens,
@@ -415,6 +528,7 @@ async function main(): Promise<void> {
     pages: stats.pages,
     blocks: stats.blocks,
     embeddings: stats.embeddings,
+    skipped_unchanged: stats.skippedUnchanged,
     new_embeddings_this_run: newEmbedCount
   });
   console.log("2. 시간·비용", {
@@ -429,6 +543,7 @@ async function main(): Promise<void> {
   console.log("4. 블록 0개 페이지", stats.zeroBlockPages);
   console.log("5. 15자 미만 스킵", stats.skippedShort);
   console.log("   content_hash 재사용 스킵", stats.skippedHash);
+  console.log("   last_edited 동일 스킵", stats.skippedUnchanged);
   console.log("6. 블록 상위 20");
   for (const row of stats.topPages) {
     console.log(`   ${row.blocks}\t${row.root_title ?? "-"}\t${row.title}`);
