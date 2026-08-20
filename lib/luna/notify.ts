@@ -12,6 +12,7 @@ export const LUNA_LINKS = {
   brainModel: "/settings?tab=luna&luna=brain&sub=model",
   knowledgeConflict: "/settings?tab=luna&luna=knowledge&sub=conflict",
   knowledgeWorkserver: "/settings?tab=luna&luna=knowledge&sub=workserver",
+  knowledgeNotion: "/settings?tab=luna&luna=knowledge&sub=notion",
   failures: "/settings?tab=luna&luna=failures"
 } as const;
 
@@ -22,7 +23,8 @@ export type LunaNotifyEvent =
   | "conflict"
   | "prompt_change"
   | "exam"
-  | "morning";
+  | "morning"
+  | "notion_index";
 
 const DEFAULT_NOTIFY_EVENTS: Record<LunaNotifyEvent, boolean> = {
   consolidation: true,
@@ -31,7 +33,8 @@ const DEFAULT_NOTIFY_EVENTS: Record<LunaNotifyEvent, boolean> = {
   conflict: true,
   prompt_change: true,
   exam: true,
-  morning: true
+  morning: true,
+  notion_index: true
 };
 
 const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
@@ -41,7 +44,8 @@ const EVENT_CATEGORY: Record<LunaNotifyEvent, string> = {
   conflict: "luna_conflict",
   prompt_change: "luna_prompt",
   exam: "luna_exam",
-  morning: "luna_morning"
+  morning: "luna_morning",
+  notion_index: "luna_notion_index"
 };
 
 const EVENT_LINK: Record<LunaNotifyEvent, string> = {
@@ -51,7 +55,8 @@ const EVENT_LINK: Record<LunaNotifyEvent, string> = {
   conflict: LUNA_LINKS.knowledgeConflict,
   prompt_change: LUNA_LINKS.brainUpgrade,
   exam: LUNA_LINKS.brainEval,
-  morning: LUNA_LINKS.dashboard
+  morning: LUNA_LINKS.dashboard,
+  notion_index: LUNA_LINKS.knowledgeNotion
 };
 
 export type LunaNotifyOptions = {

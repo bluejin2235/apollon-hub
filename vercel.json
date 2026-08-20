@@ -63,6 +63,10 @@
     {
       "path": "/api/cron/luna-morning",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/notion-index",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
