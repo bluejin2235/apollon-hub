@@ -16,7 +16,6 @@ import {
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
   CLARIFY_CONCEPT_GUARD,
-  KEYWORD_EXTRACT_FALLBACK,
   TYPE_CLASSIFY_FALLBACK,
   TYPE_FIND_FALLBACK,
   TYPE_KNOW_FALLBACK,
@@ -328,26 +327,6 @@ function buildSystemPrompt(opts: {
   return parts.join("\n\n");
 }
 
-async function extractSearchKeywords(
-  client: Anthropic,
-  userMessage: string,
-  systemPrompt: string
-): Promise<string> {
-  try {
-    const response = await client.messages.create({
-      model: LUNA_MODEL,
-      max_tokens: 64,
-      system: systemPrompt.trim() || KEYWORD_EXTRACT_FALLBACK,
-      messages: [{ role: "user", content: userMessage }]
-    });
-    const text = response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-    return text.replace(/^["']|["']$/g, "").trim() || userMessage.slice(0, 80);
-  } catch (err) {
-    console.error("[luna/run-chat] keyword extract", err);
-    return userMessage.slice(0, 80);
-  }
-}
-
 async function maybeClarify(
   client: Anthropic,
   userText: string,
@@ -442,9 +421,6 @@ export async function runLunaTurn(
   ]
     .filter(Boolean)
     .join("\n\n");
-  const keywordExtractPrompt =
-    loadedPrompts[LUNA_PROMPT_KEYS.keywordExtract]?.trim() ||
-    KEYWORD_EXTRACT_FALLBACK;
   const synthesisOpinion =
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
     SYNTHESIS_OPINION_FALLBACK;
@@ -499,7 +475,8 @@ export async function runLunaTurn(
       hasAttachments: false
     }
   );
-  const notionEnabled = routed.connectors.notion;
+  const _notionEnabled = routed.connectors.notion;
+  void _notionEnabled;
   let webEnabled = routed.connectors.web;
   const nasEnabled = routed.connectors.nas;
 
@@ -561,11 +538,8 @@ export async function runLunaTurn(
     .maybeSingle();
   const webAugmentEnabled = parseWebAugmentEnabled(webAugmentRow?.value);
 
-  const keywords = await extractSearchKeywords(
-    client,
-    userText,
-    keywordExtractPrompt
-  );
+  // 검색·매칭은 질문 원문 고정 (LLM 키워드 추출은 재현성을 해침)
+  const keywords = userText.slice(0, 120);
   const injectKeywords = splitKeywordQuery(keywords, userText, glossaryRows);
   const emb = await retrieveKnowledgeEmbeddings(admin, userText);
   const { depth: questionDepth, limits: llmInject } =

@@ -120,7 +120,9 @@ function RecommendedCard({
         </span>
         <span className="flex-1" />
         <span className="text-[10px] text-[#0F6E56] opacity-70">
-          {(item.displayScore ?? item.score).toFixed(2)}
+          {typeof item.displayScore === "number" && item.displayScore > 0
+            ? item.displayScore.toFixed(2)
+            : "—"}
         </span>
       </div>
       <div className="px-[15px] py-3.5">

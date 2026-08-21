@@ -29,6 +29,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
+  maxNotionMatchStrength,
   maxNotionSimilarity,
   PACK_LLM_TOP_N,
   PACK_SCORE_RECOMMENDED,
@@ -1706,53 +1707,15 @@ export async function POST(request: NextRequest) {
           pushStep("clarify", "done", "의도 확인");
         }
 
-        // ——— 키워드 추출 (검색 여부와 무관) → 지식·용어 매칭 ———
-        let keywords = "";
-        const speculativeMax = maxNotionSimilarity(speculativeNotion.sources);
-        const skipKeywordLlm = speculativeMax >= PACK_SCORE_RECOMMENDED;
-        if (skipKeywordLlm) {
-          keywords = searchIntentText.slice(0, 80);
-          pushStep("kw", "done", "검색어 (색인 충분 · 질문 사용)");
-          console.log("[luna/search] skip keyword extract", {
-            speculativeMax
-          });
-        } else {
-          try {
-            const kwRes = await client.messages.create({
-              model: tierB.model_id,
-              max_tokens: 64,
-              system: keywordExtractPrompt,
-              messages: [{ role: "user", content: searchIntentText || "문서" }]
-            });
-            recordPromptUse(usageLog, {
-              key: LUNA_PROMPT_KEYS.keywordExtract,
-              step: "검색어 추출",
-              title: "검색어 추출",
-              row: keywordPick.row
-            });
-            logPromptInject({
-              key: LUNA_PROMPT_KEYS.keywordExtract,
-              step: "검색어 추출",
-              source: keywordPick.source,
-              text: keywordExtractPrompt
-            });
-            pushModelStep(modelSteps, admin, {
-              label: "검색어 추출",
-              model: tierB.model_label,
-              tier: "B",
-              model_id: tierB.model_id,
-              usage: readUsage(kwRes.usage)
-            });
-            const kwText =
-              kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-            keywords =
-              kwText.replace(/^["']|["']$/g, "").trim() ||
-              searchIntentText.slice(0, 80);
-          } catch (err) {
-            console.error("[luna/chat] keyword extract", err);
-            keywords = searchIntentText.slice(0, 80);
-          }
-        }
+        // ——— 검색어: 질문 원문 고정 (LLM 추출은 재현성을 깨뜨림) ———
+        // 임베딩은 이미 searchIntentText 로 생성. 키워드 매칭도 원문+고유명사.
+        let keywords = searchIntentText.slice(0, 120);
+        pushStep("kw", "done", "검색어 (질문 원문)");
+        console.log("[luna/search] keywords from question", {
+          keywords: keywords.slice(0, 80),
+          speculativeMaxSim: maxNotionSimilarity(speculativeNotion.sources),
+          speculativeMaxMatch: maxNotionMatchStrength(speculativeNotion.sources)
+        });
 
         const injectKeywords = splitKeywordQuery(
           keywords,
@@ -2121,13 +2084,21 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // 자체 평가 + 재검색 (최고 유사도 PACK_SCORE_RECOMMENDED 이상이면 건너뜀)
+          // 자체 평가 + 재검색 (임베딩·하이브리드 합산 중 큰 값이 임계 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
           const firstMaxSim = maxNotionSimilarity(notionSources);
-          if (firstMaxSim >= PACK_SCORE_RECOMMENDED) {
-            pushStep("eval", "done", `색인 충분 (${firstMaxSim.toFixed(2)})`);
-            console.log("[luna/search] skip re-search", { firstMaxSim });
+          const firstMaxMatch = maxNotionMatchStrength(notionSources);
+          if (firstMaxMatch >= PACK_SCORE_RECOMMENDED) {
+            pushStep(
+              "eval",
+              "done",
+              `색인 충분 (sim ${firstMaxSim.toFixed(2)} · match ${firstMaxMatch.toFixed(2)})`
+            );
+            console.log("[luna/search] skip re-search", {
+              firstMaxSim,
+              firstMaxMatch
+            });
           } else for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
@@ -2245,18 +2216,21 @@ export async function POST(request: NextRequest) {
               break;
             }
 
+            // 재검색도 질문 원문을 유지하고, missing 힌트만 뒤에 붙인다 (LLM 단독 치환 금지)
+            const hint = (missing || newKeywords).slice(0, 60);
+            const mergedKw = `${searchIntentText.slice(0, 80)} ${hint}`.trim();
             if (
-              !newKeywords ||
+              !mergedKw ||
               previousKeywords.some(
-                (k) => k.toLowerCase() === newKeywords.toLowerCase()
+                (k) => k.toLowerCase() === mergedKw.toLowerCase()
               )
             ) {
               pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
               break;
             }
 
-            previousKeywords.push(newKeywords);
-            keywords = newKeywords;
+            previousKeywords.push(mergedKw);
+            keywords = mergedKw;
             searchRounds += 1;
             pushStep("search", "running", searchRunningLabel);
             batch = await runConnectorSearch(keywords);
@@ -2280,7 +2254,7 @@ export async function POST(request: NextRequest) {
             };
             pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
             pushStep("search", "done", formatSearchDoneLabel(recountCounts));
-            if (maxNotionSimilarity(notionSources) >= PACK_SCORE_RECOMMENDED) {
+            if (maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED) {
               break;
             }
           }
@@ -2294,7 +2268,7 @@ export async function POST(request: NextRequest) {
           nasResults
         );
         const skipSourceReasons =
-          maxNotionSimilarity(notionSources) >= PACK_SCORE_RECOMMENDED;
+          maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
         if (reasonUser && !skipSourceReasons) {
           try {
             const reasonRes = await client.messages.create({

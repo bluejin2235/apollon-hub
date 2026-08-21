@@ -145,14 +145,20 @@ function expandKeywordVariants(keywords: string[]): string[] {
   return out;
 }
 
+/**
+ * 노션 키워드 토큰.
+ * 질문 원문에서 뽑는다 (LLM 추출어는 무시 — 재현성).
+ * 고유명사·조사 변형은 expand + named entities 로 보강.
+ */
 export function notionSearchKeywords(
-  extracted: string,
+  _extracted: string,
   questionText?: string
 ): string[] {
-  const q = (questionText ?? extracted).trim();
-  const base = splitKeywordQuery(extracted, q, []);
-  const out = expandKeywordVariants(base);
-  const seen = new Set(out.map((k) => compactKeywordText(k)));
+  const q = (questionText ?? _extracted).trim();
+  if (!q) return [];
+  const base = expandKeywordVariants(splitKeywordQuery(q, q, []));
+  const seen = new Set(base.map((k) => compactKeywordText(k)));
+  const out = [...base];
   const push = (raw: string) => {
     const t = raw.trim();
     if (t.length < 2) return;

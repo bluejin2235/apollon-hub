@@ -348,9 +348,10 @@ function packFromNotion(
         : typeof source.similarity === "number"
           ? source.similarity
           : 0,
+    // 화면용 — 임베딩 유사도만 (0~1). fused/keyword 점수는 넣지 않는다.
     displayScore:
-      typeof source.similarity === "number" && source.similarity > 0
-        ? source.similarity
+      typeof source.similarity === "number" && Number.isFinite(source.similarity)
+        ? Math.min(1, Math.max(0, source.similarity))
         : undefined
   };
 }
@@ -389,7 +390,8 @@ function packFromNasOnly(
     parentId: null,
     pathTitles: [],
     dateKey: notionDateKey(title),
-    score
+    score,
+    displayScore: Math.min(1, Math.max(0, score))
   };
 }
 
@@ -598,7 +600,19 @@ function viewToDisplayItem(view: SourcePackView): SourcePackItem {
     parentId: null,
     pathTitles: [],
     dateKey: notionDateKey(view.title),
-    score: view.score
+    score: view.score,
+    displayScore: (() => {
+      let max: number | undefined;
+      for (const c of view.children) {
+        if (typeof c.displayScore === "number") {
+          max =
+            max === undefined
+              ? c.displayScore
+              : Math.max(max, c.displayScore);
+        }
+      }
+      return max;
+    })()
   };
 }
 
@@ -711,6 +725,23 @@ export function maxNotionSimilarity(
   for (const s of sources ?? []) {
     if (typeof s.similarity === "number" && s.similarity > max) {
       max = s.similarity;
+    }
+  }
+  return max;
+}
+
+/** 재검색·키워드 LLM 스킵 판정 — 임베딩 또는 하이브리드 합산(÷10) 중 큰 값 */
+export function maxNotionMatchStrength(
+  sources: NotionSource[] | null | undefined
+): number {
+  let max = 0;
+  for (const s of sources ?? []) {
+    if (typeof s.similarity === "number" && s.similarity > max) {
+      max = s.similarity;
+    }
+    if (typeof s.match_score === "number") {
+      const n = s.match_score / 10;
+      if (n > max) max = n;
     }
   }
   return max;
