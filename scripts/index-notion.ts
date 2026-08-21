@@ -11,7 +11,7 @@ config({ path: ".env.local" });
 config();
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { embeddingToSql } from "@/lib/luna/embedding";
+import { embeddingToSql, contentHash } from "@/lib/luna/embedding";
 import {
   blocksToIndexed,
   buildMetaGraph,
@@ -30,7 +30,11 @@ import {
   NOTION_INDEX_VALIDATE_RATIO,
   pageToIndexed
 } from "@/lib/luna/notion-index";
-import { blocksToChunks, type IndexedChunk } from "@/lib/luna/notion-chunk";
+import {
+  blocksToChunks,
+  formatNotionChunkEmbedText,
+  type IndexedChunk
+} from "@/lib/luna/notion-chunk";
 
 type PageRow = IndexedPage & {
   scan_batch: string;
@@ -311,43 +315,54 @@ async function fetchTableSizes(admin: SupabaseClient): Promise<Record<string, st
 
 async function embedAndSaveChunks(
   admin: SupabaseClient,
-  chunks: IndexedChunk[]
+  chunks: IndexedChunk[],
+  pathTitles: string[]
 ): Promise<{ created: number; skippedShort: number; skippedHash: number; tokens: number }> {
   const embedCandidates = chunks.filter(
     (c) => c.text.replace(/\s+/g, "").length >= NOTION_INDEX_MIN_EMBED_CHARS
   );
   const skippedShort = chunks.length - embedCandidates.length;
+
+  const withEmbed = embedCandidates.map((c) => {
+    const embedText = formatNotionChunkEmbedText(pathTitles, c.text);
+    return {
+      chunk: c,
+      embedText,
+      embedHash: contentHash(embedText)
+    };
+  });
+
   const existingHashes = await loadExistingChunkHashes(
     admin,
-    embedCandidates.map((c) => c.chunk_id)
+    withEmbed.map((x) => x.chunk.chunk_id)
   );
 
-  const toEmbed: IndexedChunk[] = [];
+  const toEmbed: typeof withEmbed = [];
   let skippedHash = 0;
-  for (const c of embedCandidates) {
-    if (existingHashes.get(c.chunk_id) === c.content_hash) {
+  for (const row of withEmbed) {
+    if (existingHashes.get(row.chunk.chunk_id) === row.embedHash) {
       skippedHash += 1;
       continue;
     }
-    toEmbed.push(c);
+    toEmbed.push(row);
   }
 
   let created = 0;
   let tokens = 0;
   for (const batch of chunk(toEmbed, NOTION_INDEX_EMBED_BATCH)) {
     const { vectors, tokens: batchTokens } = await createEmbeddingsBatch(
-      batch.map((c) => c.text)
+      batch.map((b) => b.embedText)
     );
     tokens += batchTokens;
     const now = new Date().toISOString();
     const rows: EmbedRow[] = [];
-    batch.forEach((c, idx) => {
+    batch.forEach((b, idx) => {
       const vector = vectors[idx];
       if (!vector) return;
       rows.push({
-        chunk_id: c.chunk_id,
-        page_id: c.page_id,
-        content_hash: c.content_hash,
+        chunk_id: b.chunk.chunk_id,
+        page_id: b.chunk.page_id,
+        content_hash: b.embedHash,
         embedding: embeddingToSql(vector),
         updated_at: now
       });
@@ -361,6 +376,78 @@ async function embedAndSaveChunks(
   }
 
   return { created, skippedShort, skippedHash, tokens };
+}
+
+async function loadStoredBlocks(
+  admin: SupabaseClient,
+  pageId: string
+): Promise<BlockRow[]> {
+  const out: BlockRow[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await admin
+      .from("luna_notion_blocks")
+      .select("block_id, page_id, block_type, text, position, content_hash")
+      .eq("page_id", pageId)
+      .order("position")
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as BlockRow[];
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
+async function writeChunksAndEmbed(
+  admin: SupabaseClient,
+  page: PageRow,
+  indexed: BlockRow[]
+): Promise<{
+  chunks: number;
+  created: number;
+  skippedShort: number;
+  skippedHash: number;
+  tokens: number;
+}> {
+  const chunks = blocksToChunks(page.page_id, indexed, {
+    pageTitle: page.title
+  });
+  if (chunks.length > 0) {
+    await upsertBatch(
+      admin,
+      "luna_notion_chunks",
+      chunks.map((c) => ({
+        chunk_id: c.chunk_id,
+        page_id: c.page_id,
+        heading: c.heading,
+        text: c.text,
+        block_ids: c.block_ids,
+        position: c.position,
+        content_hash: c.content_hash
+      })),
+      "chunk_id"
+    );
+  }
+  await deleteStaleChunksForPage(
+    admin,
+    page.page_id,
+    new Set(chunks.map((c) => c.chunk_id))
+  );
+  const embedded = await embedAndSaveChunks(
+    admin,
+    chunks,
+    page.path_titles ?? []
+  );
+  return {
+    chunks: chunks.length,
+    created: embedded.created,
+    skippedShort: embedded.skippedShort,
+    skippedHash: embedded.skippedHash,
+    tokens: embedded.tokens
+  };
 }
 
 function buildStats(opts: {
@@ -468,17 +555,30 @@ async function main(): Promise<void> {
   for (let i = 0; i < pages.length; i += 1) {
     const page = pages[i]!;
     const prev = existingPages.get(page.page_id);
-    const unchanged =
+    const metaUnchanged =
       Boolean(prev?.indexed_at) &&
       sameEditedTime(prev?.last_edited_time, page.last_edited_time);
+    const hasChunkEmbeds = (existingEmbedCounts.get(page.page_id) ?? 0) > 0;
 
-    if (unchanged) {
+    if (metaUnchanged && hasChunkEmbeds) {
       skippedUnchanged += 1;
       const blockN = existingBlockCounts.get(page.page_id) ?? 0;
       const embedN = existingEmbedCounts.get(page.page_id) ?? 0;
       blocksByPage.set(page.page_id, blockN);
       runningBlocks += blockN;
       runningEmbeds += embedN;
+    } else if (metaUnchanged && !hasChunkEmbeds) {
+      // 메타는 그대로지만 청크 임베딩이 없음 → 저장된 블록으로 청크만 재생성
+      const indexed = await loadStoredBlocks(admin, page.page_id);
+      if (indexed.length === 0) zeroBlockPages += 1;
+      const written = await writeChunksAndEmbed(admin, page, indexed);
+      skippedShort += written.skippedShort;
+      skippedHash += written.skippedHash;
+      newEmbedCount += written.created;
+      embedTokens += written.tokens;
+      blocksByPage.set(page.page_id, indexed.length);
+      runningBlocks += indexed.length;
+      runningEmbeds += written.chunks;
     } else {
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
 
@@ -500,35 +600,11 @@ async function main(): Promise<void> {
         new Set(indexed.map((b) => b.block_id))
       );
 
-      const chunks = blocksToChunks(page.page_id, indexed, {
-        pageTitle: page.title
-      });
-      await upsertBatch(
-        admin,
-        "luna_notion_chunks",
-        chunks.map((c) => ({
-          chunk_id: c.chunk_id,
-          page_id: c.page_id,
-          heading: c.heading,
-          text: c.text,
-          block_ids: c.block_ids,
-          position: c.position,
-          content_hash: c.content_hash,
-          indexed_at: new Date().toISOString()
-        })),
-        "chunk_id"
-      );
-      await deleteStaleChunksForPage(
-        admin,
-        page.page_id,
-        new Set(chunks.map((c) => c.chunk_id))
-      );
-
-      const embedded = await embedAndSaveChunks(admin, chunks);
-      skippedShort += embedded.skippedShort;
-      skippedHash += embedded.skippedHash;
-      newEmbedCount += embedded.created;
-      embedTokens += embedded.tokens;
+      const written = await writeChunksAndEmbed(admin, page, indexed);
+      skippedShort += written.skippedShort;
+      skippedHash += written.skippedHash;
+      newEmbedCount += written.created;
+      embedTokens += written.tokens;
 
       const doneAt = new Date().toISOString();
       page.indexed_at = doneAt;
@@ -542,7 +618,7 @@ async function main(): Promise<void> {
 
       blocksByPage.set(page.page_id, indexed.length);
       runningBlocks += indexed.length;
-      runningEmbeds += chunks.length;
+      runningEmbeds += written.chunks;
     }
 
     if ((i + 1) % 25 === 0 || i + 1 === pages.length) {

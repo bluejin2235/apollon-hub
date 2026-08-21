@@ -14,8 +14,7 @@ create table if not exists public.luna_notion_chunks (
   text text not null default '',
   block_ids jsonb not null default '[]'::jsonb,
   position integer not null default 0,
-  content_hash text not null,
-  indexed_at timestamptz not null default now()
+  content_hash text not null
 );
 
 create index if not exists luna_notion_chunks_page_id_idx
@@ -55,6 +54,7 @@ RETURNS TABLE(chunk_id text, page_id text, similarity double precision)
 LANGUAGE sql
 STABLE
 SET search_path = public
+SET statement_timeout = '15s'
 AS $$
   SELECT sub.chunk_id, sub.page_id, sub.similarity
   FROM (

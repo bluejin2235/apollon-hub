@@ -596,7 +596,8 @@ async function buildIndexedSources(
 
 /**
  * 색인 우선 노션 검색.
- * - 임베딩 → luna_match_notion_blocks → 본문·계층
+ * - 임베딩 → luna_match_notion_chunks → 청크 본문·계층
+ * - 청크 히트 3건 미만이면 luna_match_notion_blocks 폴백
  * - 페이지 3건 미만이면 실시간 검색 보강
  * - 최근 2시간 수정 페이지만 실시간 본문 재조회
  */
@@ -618,14 +619,20 @@ export async function searchNotionForLuna(
   let selectedHits: NotionBlockMatchHit[] = [];
   let pages: IndexedPageRow[] = [];
   let rpcFailed = false;
+  let usedBlockFallback = false;
 
   if (embedding) {
     const chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
       threshold: NOTION_INDEX_MATCH_THRESHOLD,
       limit: MATCH_OVERFETCH
     });
+
     if (chunkHits && chunkHits.length > 0) {
-      const built = await buildIndexedSourcesFromChunks(admin, chunkHits, queryText);
+      const built = await buildIndexedSourcesFromChunks(
+        admin,
+        chunkHits,
+        queryText
+      );
       indexSources = built.sources;
       selectedHits = built.selectedHits.map((h) => ({
         block_id: h.chunk_id,
@@ -633,18 +640,49 @@ export async function searchNotionForLuna(
         similarity: h.similarity
       }));
       pages = built.pages;
-    } else {
+    } else if (chunkHits === null) {
+      rpcFailed = true;
+    }
+
+    // 청크 히트 3건 미만 → 블록 임베딩 폴백 (당분간 유지)
+    if (!chunkHits || chunkHits.length < LIVE_IF_PAGES_BELOW) {
       const rawHits = await matchNotionBlockEmbeddings(admin, embedding, {
         threshold: NOTION_INDEX_MATCH_THRESHOLD,
         limit: MATCH_OVERFETCH
       });
       if (rawHits === null && chunkHits === null) {
         rpcFailed = true;
-      } else if (rawHits) {
+      } else if (rawHits && rawHits.length > 0) {
+        usedBlockFallback = true;
         const built = await buildIndexedSources(admin, rawHits, queryText);
-        indexSources = built.sources;
-        selectedHits = built.selectedHits;
-        pages = built.pages;
+        const byTitle = new Map(
+          indexSources.map((s) => [
+            s.title.toLowerCase().replace(/\s+/g, " ").trim(),
+            s
+          ])
+        );
+        for (const s of built.sources) {
+          const key = s.title.toLowerCase().replace(/\s+/g, " ").trim();
+          const prev = byTitle.get(key);
+          if (!prev || (s.similarity ?? 0) > (prev.similarity ?? 0)) {
+            byTitle.set(key, s);
+          }
+        }
+        indexSources = capNotionDisplaySources(
+          [...byTitle.values()].sort(
+            (a, b) => (b.similarity ?? 0) - (a.similarity ?? 0)
+          )
+        );
+        selectedHits = [
+          ...selectedHits,
+          ...built.selectedHits.filter(
+            (h) => !selectedHits.some((x) => x.page_id === h.page_id)
+          )
+        ];
+        const pageById = new Map(pages.map((p) => [p.page_id, p]));
+        for (const p of built.pages) {
+          if (!pageById.has(p.page_id)) pages.push(p);
+        }
       }
     }
   }
@@ -710,8 +748,9 @@ export async function searchNotionForLuna(
 
   console.log("[luna/notion-index] search", {
     keywords: keywords.slice(0, 60),
-    blocks: selectedHits.length,
+    chunks: selectedHits.length,
     pages: pageCount,
+    blockFallback: usedBlockFallback,
     similarities: selectedHits.slice(0, 8).map((h) => ({
       page_id: h.page_id.slice(0, 8),
       sim: Number(h.similarity.toFixed(3))

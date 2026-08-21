@@ -131,6 +131,30 @@ export function formatChunkText(heading: string, bodyLines: string[]): string {
   return body;
 }
 
+/**
+ * path_titles 끝에서 최대 2단계 — 임베딩 앞에 붙일 계층 한 줄.
+ * 예: 롯데타워 서울스카이 리뉴얼 › 1st Ideation
+ */
+export function notionHierarchyLine(
+  pathTitles: string[] | null | undefined
+): string {
+  const path = (pathTitles ?? [])
+    .map((t) => normalizeLine(String(t ?? "")))
+    .filter(Boolean);
+  return path.slice(-2).join(" › ");
+}
+
+/** 청크 본문은 그대로 두고, 임베딩 입력에만 계층을 앞에 붙인다. */
+export function formatNotionChunkEmbedText(
+  pathTitles: string[] | null | undefined,
+  chunkText: string
+): string {
+  const hierarchy = notionHierarchyLine(pathTitles);
+  const body = chunkText.replace(/\s+$/g, "").replace(/^\s+/g, "");
+  if (hierarchy && body) return `${hierarchy}\n${body}`;
+  return hierarchy || body;
+}
+
 function makeChunk(
   pageId: string,
   heading: string,

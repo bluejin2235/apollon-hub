@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { embeddingToSql } from "@/lib/luna/embedding";
+import { contentHash, embeddingToSql } from "@/lib/luna/embedding";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 import { lunaNotify } from "@/lib/luna/notify";
 import {
@@ -18,7 +18,11 @@ import {
   type IndexedBlock,
   type IndexedPage
 } from "@/lib/luna/notion-index";
-import { blocksToChunks, type IndexedChunk } from "@/lib/luna/notion-chunk";
+import {
+  blocksToChunks,
+  formatNotionChunkEmbedText,
+  type IndexedChunk
+} from "@/lib/luna/notion-chunk";
 import {
   getNotionIndexExclude,
   pathIsExcluded,
@@ -289,30 +293,43 @@ async function loadExistingChunkHashes(
 async function embedAndSaveChunks(
   admin: SupabaseClient,
   chunks: IndexedChunk[],
-  minChars: number
+  minChars: number,
+  pathTitles: string[]
 ): Promise<{ created: number; skippedShort: number; skippedHash: number }> {
   const embedCandidates = chunks.filter(
     (c) => c.text.replace(/\s+/g, "").length >= minChars
   );
   const skippedShort = chunks.length - embedCandidates.length;
+
+  const withEmbed = embedCandidates.map((c) => {
+    const embedText = formatNotionChunkEmbedText(pathTitles, c.text);
+    return {
+      chunk: c,
+      embedText,
+      embedHash: contentHash(embedText)
+    };
+  });
+
   const existingHashes = await loadExistingChunkHashes(
     admin,
-    embedCandidates.map((c) => c.chunk_id)
+    withEmbed.map((x) => x.chunk.chunk_id)
   );
 
-  const toEmbed: IndexedChunk[] = [];
+  const toEmbed: typeof withEmbed = [];
   let skippedHash = 0;
-  for (const c of embedCandidates) {
-    if (existingHashes.get(c.chunk_id) === c.content_hash) {
+  for (const row of withEmbed) {
+    if (existingHashes.get(row.chunk.chunk_id) === row.embedHash) {
       skippedHash += 1;
       continue;
     }
-    toEmbed.push(c);
+    toEmbed.push(row);
   }
 
   let created = 0;
   for (const batch of chunk(toEmbed, NOTION_INDEX_EMBED_BATCH)) {
-    const { vectors } = await createEmbeddingsBatch(batch.map((c) => c.text));
+    const { vectors } = await createEmbeddingsBatch(
+      batch.map((b) => b.embedText)
+    );
     const now = new Date().toISOString();
     const rows: Array<{
       chunk_id: string;
@@ -321,13 +338,13 @@ async function embedAndSaveChunks(
       embedding: string;
       updated_at: string;
     }> = [];
-    batch.forEach((c, idx) => {
+    batch.forEach((b, idx) => {
       const vector = vectors[idx];
       if (!vector) return;
       rows.push({
-        chunk_id: c.chunk_id,
-        page_id: c.page_id,
-        content_hash: c.content_hash,
+        chunk_id: b.chunk.chunk_id,
+        page_id: b.chunk.page_id,
+        content_hash: b.embedHash,
         embedding: embeddingToSql(vector),
         updated_at: now
       });
@@ -350,7 +367,8 @@ async function savePageChunks(
   pageId: string,
   indexedBlocks: IndexedBlock[],
   minChars: number,
-  pageTitle?: string
+  pageTitle?: string,
+  pathTitles?: string[]
 ): Promise<{ chunks: number; embeddings: number }> {
   const chunks = blocksToChunks(pageId, indexedBlocks, {
     minChars,
@@ -363,8 +381,7 @@ async function savePageChunks(
     text: c.text,
     block_ids: c.block_ids,
     position: c.position,
-    content_hash: c.content_hash,
-    indexed_at: new Date().toISOString()
+    content_hash: c.content_hash
   }));
   if (chunkRows.length > 0) {
     await upsertBatch(
@@ -379,7 +396,12 @@ async function savePageChunks(
     pageId,
     new Set(chunks.map((c) => c.chunk_id))
   );
-  const embedded = await embedAndSaveChunks(admin, chunks, minChars);
+  const embedded = await embedAndSaveChunks(
+    admin,
+    chunks,
+    minChars,
+    pathTitles ?? []
+  );
   return { chunks: chunks.length, embeddings: embedded.created };
 }
 
@@ -800,7 +822,8 @@ export async function runNotionIndexChunk(
         pageId,
         indexed,
         minChars,
-        page.title
+        page.title,
+        page.path_titles
       );
       embeddingsAdded += chunked.embeddings;
       blocks += indexed.length;
