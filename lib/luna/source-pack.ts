@@ -337,7 +337,12 @@ function packFromNotion(
     parentId: source.parent_id ?? null,
     pathTitles: source.path_titles ?? [],
     dateKey: notionDateKey(source.title),
-    score: typeof source.similarity === "number" ? source.similarity : 0
+    score:
+      typeof source.match_score === "number"
+        ? source.match_score / 10
+        : typeof source.similarity === "number"
+          ? source.similarity
+          : 0
   };
 }
 
@@ -676,13 +681,17 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
   return { recommended, mid, weak, maxScore, lowConfidence: false };
 }
 
-/** LLM 프롬프트용 — 유사도 상위 N건만 */
+/** LLM 프롬프트용 — 하이브리드 합산(없으면 유사도) 상위 N건 */
 export function takeTopNotionSourcesForLlm(
   sources: NotionSource[] | null | undefined,
   n = PACK_LLM_TOP_N
 ): NotionSource[] {
   const list = [...(sources ?? [])];
-  list.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+  const rank = (s: NotionSource) =>
+    typeof s.match_score === "number"
+      ? s.match_score
+      : (s.similarity ?? 0) * 10;
+  list.sort((a, b) => rank(b) - rank(a));
   return list.slice(0, n);
 }
 

@@ -20,6 +20,13 @@ export type NotionSource = {
   /** Work서버 경로 (luna_notion_pages.nas_path) */
   nas_path?: string | null;
   similarity?: number;
+  /** 하이브리드: 키워드 점수 */
+  keyword_score?: number;
+  /** 하이브리드: 임베딩 가산점 (sim × weight) */
+  embedding_score?: number;
+  /** 하이브리드 합산 (정렬용) */
+  match_score?: number;
+  match_via?: "keyword" | "embedding" | "both";
   /** 프로젝트 묶기용 */
   parent_id?: string | null;
   path_titles?: string[];
@@ -49,6 +56,8 @@ const MAX_NOTION_QUERIES = 6;
 const PAGE_SIZE = 15;
 const CANDIDATE_LIMIT = 15;
 const DISPLAY_LIMIT = 5;
+/** 색인·하이브리드 검색 결과 — LLM 주입(목록 12 등)보다 여유 있게 */
+export const INDEX_DISPLAY_LIMIT = 24;
 const BODY_BUDGET_MS = 8_000;
 const BODY_PAGE_SIZE = 100;
 const EMPTY_TITLE = "(제목 없음)";
@@ -554,16 +563,27 @@ function preferNotionSource(a: NotionSource, b: NotionSource): NotionSource {
   };
 }
 
-export function capNotionDisplaySources(sources: NotionSource[]): NotionSource[] {
+export function capNotionDisplaySources(
+  sources: NotionSource[],
+  limit = DISPLAY_LIMIT
+): NotionSource[] {
   const byKey = new Map<string, NotionSource>();
   for (const s of sources) {
     const key = notionSourceKey(s);
     const existing = byKey.get(key);
     byKey.set(key, existing ? preferNotionSource(existing, s) : s);
   }
+  const rank = (s: NotionSource) =>
+    typeof s.match_score === "number"
+      ? s.match_score
+      : (s.similarity ?? 0) * 10;
   return [...byKey.values()]
-    .sort((x, y) => (y.paths?.length ?? 0) - (x.paths?.length ?? 0))
-    .slice(0, DISPLAY_LIMIT);
+    .sort((x, y) => {
+      const ds = rank(y) - rank(x);
+      if (Math.abs(ds) > 1e-9) return ds;
+      return (y.paths?.length ?? 0) - (x.paths?.length ?? 0);
+    })
+    .slice(0, limit);
 }
 
 async function searchNotionOnce(
