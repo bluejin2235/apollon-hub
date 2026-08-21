@@ -1,8 +1,11 @@
 import type { WikiSourceRef } from "@/lib/luna/wiki-match";
 
-/** 목록·나열형 질문 — 위키·지식으로 답하고 파일/노션 검색은 건너뛴다. */
+/**
+ * 목록·나열형 질문.
+ * 코드 패턴이 LLM 유형 판정보다 우선한다 (applyListingTypeOverride).
+ */
 export const LISTING_QUESTION_RE =
-  /어떤\s*게\s*있|어떤게\s*있|뭐(?:가|뭐)\s*있|무엇(?:이|이\s*있)|목록|모아\s*줘|전부|몇\s*가지|어떤\s*것(?:들)?|사례(?:가|는)?\s*(?:있|뭐)/;
+  /(?:어떤\s*게|어떤게)\s*있|뭐\s*가?\s*있|무엇이?\s*있|목록|모아\s*줘|전부|몇\s*가지|어떤\s*것들?|사례(?:가|는)?\s*(?:있|뭐)|건\s*(?:들\s*)?(?:중\s*)?(?:뭐|무엇)/;
 
 export function isListingQuestion(text: string): boolean {
   const t = text.replace(/\s+/g, " ").trim();
@@ -10,7 +13,11 @@ export function isListingQuestion(text: string): boolean {
   return LISTING_QUESTION_RE.test(t);
 }
 
-/** 목록형이면 find를 빼고 know를 보장한다. questionText 또는 listing 플래그로 적용. */
+/**
+ * 목록형이면 find를 빼고 know를 보장한다.
+ * listing 인자가 있으면 그대로 쓰고, 없으면 questionText 로 판정한다.
+ * LLM 이 find 를 줘도 코드 패턴이 목록형이면 이쪽이 이긴다.
+ */
 export function applyListingTypeOverride(
   types: string[],
   questionText: string,
@@ -38,7 +45,10 @@ export function wikiCoversKnowIntent(
   return sources.length >= 2;
 }
 
-/** know+find 복합일 때 위키가 충분하면 find 커넥터 검색을 건너뛴다. */
+/**
+ * know+find 복합일 때 위키가 충분하면 find 커넥터(실시간 API·도구 루프)를 건너뛴다.
+ * 노션 색인·nas_directory DB 조회는 여기와 무관하게 항상 돌린다.
+ */
 export function shouldSkipFindConnectors(opts: {
   types: string[];
   wikiSources: WikiSourceRef[];
@@ -54,12 +64,12 @@ export const LISTING_ANSWER_RULE = `[목록형 질문 — 나열 우선]
 - "어떤 게 있지", "목록", "뭐가 있어"처럼 여러 항목을 묻는 질문이다.
 - talk.answer 의 "목록 재나열 금지·의견 우선" 규칙은 이번 턴에 적용하지 않는다. 나열이 먼저다.
 - 첫 문장부터 · 불릿 목록으로 시작한다. "없다", "확정 불가", "해당 사례 없음" 같은 총평·판단을 목록 앞에 두지 않는다.
-- [위키 문서 절]에 주어진 문서를 빠짐없이 훑고, 질문 조건에 해당할 만한 것을 전부 나열한다.
-- 각 항목은 한 줄: · 이름 — 무엇을 했는지 (한 문장). 위키에 한글명·별칭이 있으면 함께 쓴다.
+- [위키 문서 절]·[노션]에 주어진 자료를 빠짐없이 훑고, 질문 조건에 해당할 만한 것을 전부 나열한다.
+- 각 항목은 한 줄: · 이름 — 무엇을 했는지 (한 문장). 한글명·별칭이 있으면 함께 쓴다.
 - 애매하거나 확인이 더 필요한 것도 빼지 말고 나열한 뒤, 목록 아래에 "다만 ~"로 덧붙인다.
 - 판단·분류·걸러내기는 나열이 끝난 뒤에만 한다. 나열보다 판단이 앞서면 안 된다.
 - "확인 불가", "분류하기 어렵다", "조건에 맞을 가능성"만으로 항목을 통째로 생략하지 마라.
-- 주어진 위키 절 중 해당될 만한 것이 하나도 없을 때만 "없다"고 말한다.`;
+- 주어진 자료 중 해당될 만한 것이 하나도 없을 때만 "없다"고 말한다.`;
 
 export function listingAnswerRuleWithWikiCount(docCount: number): string {
   if (docCount <= 0) return LISTING_ANSWER_RULE;

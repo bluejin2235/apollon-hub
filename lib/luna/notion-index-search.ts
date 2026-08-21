@@ -16,7 +16,11 @@ import { matchNamedEntities, NAMED_ENTITY_SEED } from "@/lib/luna/named-entities
 export const NOTION_INDEX_MATCH_THRESHOLD = 0.3;
 export const NOTION_INDEX_TOP_BLOCKS = 12;
 export const NOTION_INDEX_MAX_BLOCKS_PER_PAGE = 3;
+/** 목록형: 여러 프로젝트가 골고루 들어가도록 페이지당 1 · 상위 20 */
+export const NOTION_LISTING_TOP_CHUNKS = 20;
+export const NOTION_LISTING_MAX_PER_PAGE = 1;
 const MATCH_OVERFETCH = 36;
+const LISTING_MATCH_OVERFETCH = 60;
 const LIVE_IF_PAGES_BELOW = 3;
 const RECENT_EDIT_MS = 2 * 60 * 60 * 1000;
 
@@ -347,13 +351,14 @@ function pageChunksToSource(
 async function buildIndexedSourcesFromChunks(
   admin: SupabaseClient,
   hits: NotionChunkMatchHit[],
-  queryText?: string
+  queryText?: string,
+  pickOpts?: { top?: number; perPage?: number }
 ): Promise<{
   sources: NotionSource[];
   pages: IndexedPageRow[];
   selectedHits: NotionChunkMatchHit[];
 }> {
-  const selectedHits = selectNotionChunkHits(hits);
+  const selectedHits = selectNotionChunkHits(hits, pickOpts);
   if (selectedHits.length === 0) {
     return { sources: [], pages: [], selectedHits: [] };
   }
@@ -471,13 +476,14 @@ async function buildIndexedSourcesFromChunks(
 async function buildIndexedSources(
   admin: SupabaseClient,
   hits: NotionBlockMatchHit[],
-  queryText?: string
+  queryText?: string,
+  pickOpts?: { top?: number; perPage?: number }
 ): Promise<{
   sources: NotionSource[];
   pages: IndexedPageRow[];
   selectedHits: NotionBlockMatchHit[];
 }> {
-  const selectedHits = selectNotionBlockHits(hits);
+  const selectedHits = selectNotionBlockHits(hits, pickOpts);
   if (selectedHits.length === 0) {
     return { sources: [], pages: [], selectedHits: [] };
   }
@@ -605,10 +611,22 @@ export async function searchNotionForLuna(
   admin: SupabaseClient,
   keywords: string,
   queryContext?: string,
-  opts?: { queryEmbedding?: number[] | null }
+  opts?: {
+    queryEmbedding?: number[] | null;
+    /** 목록형 등 — 실시간 Notion API 는 끄고 색인만 */
+    skipLive?: boolean;
+    /** 목록형: 상위 20청크 · 페이지당 1 */
+    listing?: boolean;
+  }
 ): Promise<NotionSearchOutcome> {
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
+  const listing = Boolean(opts?.listing);
+  const topN = listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
+  const perPage = listing
+    ? NOTION_LISTING_MAX_PER_PAGE
+    : NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
+  const overfetch = listing ? LISTING_MATCH_OVERFETCH : MATCH_OVERFETCH;
   let embedding = opts?.queryEmbedding ?? null;
   if (!embedding && queryText) {
     // 색인 전용 경로 — 질문 임베딩이 없으면 여유 있게 한 번 생성
@@ -624,14 +642,15 @@ export async function searchNotionForLuna(
   if (embedding) {
     const chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
       threshold: NOTION_INDEX_MATCH_THRESHOLD,
-      limit: MATCH_OVERFETCH
+      limit: overfetch
     });
 
     if (chunkHits && chunkHits.length > 0) {
       const built = await buildIndexedSourcesFromChunks(
         admin,
         chunkHits,
-        queryText
+        queryText,
+        { top: topN, perPage }
       );
       indexSources = built.sources;
       selectedHits = built.selectedHits.map((h) => ({
@@ -648,13 +667,16 @@ export async function searchNotionForLuna(
     if (!chunkHits || chunkHits.length < LIVE_IF_PAGES_BELOW) {
       const rawHits = await matchNotionBlockEmbeddings(admin, embedding, {
         threshold: NOTION_INDEX_MATCH_THRESHOLD,
-        limit: MATCH_OVERFETCH
+        limit: overfetch
       });
       if (rawHits === null && chunkHits === null) {
         rpcFailed = true;
       } else if (rawHits && rawHits.length > 0) {
         usedBlockFallback = true;
-        const built = await buildIndexedSources(admin, rawHits, queryText);
+        const built = await buildIndexedSources(admin, rawHits, queryText, {
+          top: topN,
+          perPage
+        });
         const byTitle = new Map(
           indexSources.map((s) => [
             s.title.toLowerCase().replace(/\s+/g, " ").trim(),
@@ -689,9 +711,10 @@ export async function searchNotionForLuna(
 
   const pageCount = indexSources.length;
   const recentPages = pages.filter((p) => isRecentEdit(p.last_edited_time));
-  // 임베딩 실패·RPC 실패·색인 페이지 3건 미만 → 실시간 보강
+  // 임베딩 실패·RPC 실패·색인 페이지 3건 미만 → 실시간 보강 (skipLive 면 안 함)
   const needSparseLive =
-    !embedding || rpcFailed || pageCount < LIVE_IF_PAGES_BELOW;
+    !opts?.skipLive &&
+    (!embedding || rpcFailed || pageCount < LIVE_IF_PAGES_BELOW);
 
   let liveOutcome: NotionSearchOutcome = {
     status: "skipped",
@@ -702,7 +725,7 @@ export async function searchNotionForLuna(
 
   if (needSparseLive) {
     liveOutcome = await searchNotionPages(keywords, queryContext);
-  } else if (recentPages.length > 0) {
+  } else if (!opts?.skipLive && recentPages.length > 0) {
     const refreshed = await fetchNotionPagesLive(
       recentPages.map((p) => ({
         id: p.page_id,
@@ -750,6 +773,8 @@ export async function searchNotionForLuna(
     keywords: keywords.slice(0, 60),
     chunks: selectedHits.length,
     pages: pageCount,
+    listing,
+    skipLive: Boolean(opts?.skipLive),
     blockFallback: usedBlockFallback,
     similarities: selectedHits.slice(0, 8).map((h) => ({
       page_id: h.page_id.slice(0, 8),

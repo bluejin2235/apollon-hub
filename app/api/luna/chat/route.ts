@@ -1287,7 +1287,11 @@ export async function POST(request: NextRequest) {
             admin,
             searchIntentText.slice(0, 80),
             searchIntentText,
-            { queryEmbedding: emb.queryEmbedding }
+            {
+              queryEmbedding: emb.queryEmbedding,
+              skipLive: listingQuestion,
+              listing: listingQuestion
+            }
           )
         );
         const speculativeNasPromise = exploreWorkserverFallback(
@@ -1398,13 +1402,16 @@ export async function POST(request: NextRequest) {
           nasEnabled = connectorRouting.connectors.nas;
         }
         if (listingQuestion && !hasManualConnectors(manualConnectorFlags)) {
-          notionEnabled = false;
+          // 목록형: 웹·실시간 커넥터만 끈다. 노션 색인·nas_directory 는 DB 조회라 유지.
           webEnabled = false;
-          nasEnabled = false;
           connectorRouting = {
-            connectors: { nas: false, notion: false, web: false },
+            connectors: {
+              nas: nasEnabled,
+              notion: notionEnabled,
+              web: false
+            },
             reason: "wiki_covers_know",
-            reasonLabel: "목록형: 위키·지식으로 답"
+            reasonLabel: "목록형: 색인·위키로 답 (실시간 검색 생략)"
           };
         }
 
@@ -1416,9 +1423,8 @@ export async function POST(request: NextRequest) {
           rounds: 0
         };
         let speculativeNas: WorkserverExploreRow[] = [];
-        const willSearch =
-          needsSearch && (notionEnabled || nasEnabled || webEnabled);
-        if (willSearch) {
+        // 색인(DB)은 needsSearch·목록형과 무관하게 항상 받는다
+        {
           const [notionSpec, nasSpec] = await Promise.all([
             speculativeNotionPromise,
             speculativeNasPromise
@@ -1428,7 +1434,8 @@ export async function POST(request: NextRequest) {
           console.log("[luna/search] speculative notion", {
             status: speculativeNotion.status,
             count: speculativeNotion.sources.length,
-            maxSim: maxNotionSimilarity(speculativeNotion.sources)
+            maxSim: maxNotionSimilarity(speculativeNotion.sources),
+            listing: listingQuestion
           });
           console.log("[luna/search] speculative nas", {
             count: speculativeNas.length
@@ -1743,25 +1750,23 @@ export async function POST(request: NextRequest) {
           }) &&
           !hasManualConnectors(manualConnectorFlags)
         ) {
-          notionEnabled = false;
-          nasEnabled = false;
+          // 실시간 노션 API·Work서버 도구 루프만 스킵. 색인·nas_directory 는 아래 anySearch 에서 유지.
           if (!webAugmentEnabled) webEnabled = false;
           connectorRouting = {
             connectors: {
-              nas: false,
-              notion: false,
+              nas: nasEnabled,
+              notion: notionEnabled,
               web: webEnabled
             },
             reason: "wiki_covers_know",
             reasonLabel: listingQuestion
-              ? "목록형: 위키로 충분"
-              : "알기: 위키로 충분"
+              ? "목록형: 위키로 충분 · 색인은 유지"
+              : "알기: 위키로 충분 · 색인은 유지"
           };
         }
-        // KNOW: 위키를 본 뒤·웹 보강 전에 노션 색인도 본다 (목록형 제외, 색인은 빠름)
+        // KNOW: 위키를 본 뒤·웹 보강 전에 노션 색인도 본다 (색인은 빠름)
         if (
           classification.types.includes("know") &&
-          !listingQuestion &&
           !hasManualConnectors(manualConnectorFlags) &&
           wikiSources.length > 0
         ) {
@@ -1820,29 +1825,30 @@ export async function POST(request: NextRequest) {
           listingQuestion &&
           !hasManualConnectors(manualConnectorFlags)
         ) {
-          notionEnabled = false;
-          nasEnabled = false;
+          // 목록형: 웹만 끈다. 노션 색인·Work서버 DB 조회는 유지.
           webEnabled = false;
           webAugmented = false;
+          notionEnabled = true;
+          nasEnabled = true;
           connectorRouting = {
-            connectors: { nas: false, notion: false, web: false },
+            connectors: { nas: true, notion: true, web: false },
             reason: "wiki_covers_know",
-            reasonLabel: "목록형: 위키·지식으로 답"
+            reasonLabel: "목록형: 색인·위키로 답"
           };
         }
 
         // ——— 단계 2~5: 검색 루프 ———
         const isSearchRequest =
           !hasAttachments &&
-          !listingQuestion &&
           (isSearchRequestMessage(userText) ||
             (Boolean(clarifyRootUser) &&
               isSearchRequestMessage(clarifyRootUser!)));
+        // 노션 색인·nas_directory 는 DB 조회 — 목록형·needsSearch 와 무관하게 돈다
         const anySearch =
-          !listingQuestion &&
-          ((needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
-            (webAugmented && (webEnabled || notionEnabled)) ||
-            (notionEnabled && classification.types.includes("know")));
+          Boolean((keywords || searchIntentText).trim()) ||
+          (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
+          (webAugmented && (webEnabled || notionEnabled)) ||
+          (notionEnabled && classification.types.includes("know"));
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
@@ -1864,21 +1870,31 @@ export async function POST(request: NextRequest) {
           kw: string,
           opts?: { reuseSpeculative?: boolean }
         ) => {
+          // 색인·nas_directory 는 커넥터 플래그와 무관하게 항상 (목록형은 실시간 API만 생략)
+          const runNotionIndex = Boolean(kw || searchIntentText);
+          const skipNotionLive = listingQuestion;
           const reuseNotion =
             opts?.reuseSpeculative === true &&
-            notionEnabled &&
+            runNotionIndex &&
             speculativeNotion.sources.length > 0;
           const reuseNas =
             opts?.reuseSpeculative === true &&
-            nasEnabled &&
             speculativeNas.length > 0;
+          const useNasTools = nasEnabled && !listingQuestion;
           const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
-            notionEnabled && kw
+            runNotionIndex
               ? reuseNotion
                 ? Promise.resolve(speculativeNotion)
-                : searchNotionForLuna(admin, kw, searchIntentText, {
-                    queryEmbedding: knowledgeEmb.queryEmbedding
-                  })
+                : searchNotionForLuna(
+                    admin,
+                    kw || searchIntentText,
+                    searchIntentText,
+                    {
+                      queryEmbedding: knowledgeEmb.queryEmbedding,
+                      skipLive: skipNotionLive,
+                      listing: listingQuestion
+                    }
+                  )
               : Promise.resolve(skippedNotionOutcome()),
             webEnabled
               ? (() => {
@@ -1891,10 +1907,18 @@ export async function POST(request: NextRequest) {
               ? searchYoutube(kw)
               : Promise.resolve([] as LunaCard[]),
             (async () => {
-              if (!nasEnabled) return [] as NasDirectoryRow[];
               if (reuseNas) {
                 pushStep("ws", "done", "Work서버 탐색");
                 return speculativeNas;
+              }
+              if (!useNasTools) {
+                // 목록형·커넥터 오프: nas_directory DB 조회만
+                pushStep("ws", "done", "Work서버 색인");
+                return exploreWorkserverFallback(
+                  admin,
+                  kw || searchIntentText,
+                  searchIntentText
+                );
               }
               try {
                 recordPromptUse(usageLog, {
@@ -1975,14 +1999,10 @@ export async function POST(request: NextRequest) {
         };
 
         if (anySearch) {
-          const searchParts: string[] = [];
-          if (notionEnabled) searchParts.push("노션");
-          if (nasEnabled) searchParts.push("Work서버");
+          const searchParts: string[] = ["노션"];
+          if (nasEnabled || listingQuestion) searchParts.push("Work서버");
           if (webEnabled) searchParts.push("웹");
-          const searchRunningLabel =
-            searchParts.length > 0
-              ? `${searchParts.join(" · ")} 검색 중`
-              : "검색 중";
+          const searchRunningLabel = `${searchParts.join(" · ")} 검색 중`;
 
           pushStep("search", "running", searchRunningLabel);
 
@@ -2004,14 +2024,16 @@ export async function POST(request: NextRequest) {
             web: number;
           }) => {
             const parts = [
-              notionEnabled ? `노션 ${counts.notion}` : null,
-              nasEnabled ? `Work서버 ${counts.nas}` : null,
+              `노션 ${counts.notion}`,
+              nasEnabled || listingQuestion
+                ? `Work서버 ${counts.nas}`
+                : null,
               webEnabled ? `웹 ${counts.web}` : null
             ].filter(Boolean) as string[];
             if (parts.length === 0) return "검색 결과 없음";
             const allZero =
-              (!notionEnabled || counts.notion === 0) &&
-              (!nasEnabled || counts.nas === 0) &&
+              counts.notion === 0 &&
+              (!(nasEnabled || listingQuestion) || counts.nas === 0) &&
               (!webEnabled || counts.web === 0);
             return allZero ? "검색 결과 없음" : parts.join(" · ");
           };
@@ -2029,7 +2051,7 @@ export async function POST(request: NextRequest) {
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
           // 노션 nas_path → 색인 직접 조회 (키워드 검색에 안 잡혀도 묶기)
-          if (nasEnabled && notionSources.length > 0) {
+          if (notionSources.length > 0) {
             const recorded = notionRecordedPaths(notionSources);
             if (recorded.length > 0) {
               try {

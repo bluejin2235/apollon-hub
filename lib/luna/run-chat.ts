@@ -595,9 +595,11 @@ export async function runLunaTurn(
   let youtubeCards: LunaCard[] = [];
   let nasSearchAttempted = false;
 
-  if (notionEnabled && keywords) {
-    const notionOutcome = await searchNotionForLuna(admin, keywords, userText, {
-      queryEmbedding: emb.queryEmbedding
+  if (keywords || userText) {
+    const notionOutcome = await searchNotionForLuna(admin, keywords || userText, userText, {
+      queryEmbedding: emb.queryEmbedding,
+      skipLive: false,
+      listing: false
     });
     notionSources = notionOutcome.sources;
   }
