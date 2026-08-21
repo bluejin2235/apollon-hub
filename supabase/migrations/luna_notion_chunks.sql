@@ -47,7 +47,7 @@ comment on table public.luna_notion_chunk_embeddings is
 
 CREATE OR REPLACE FUNCTION public.luna_match_notion_chunks(
   query_embedding vector(1536),
-  match_threshold double precision DEFAULT 0.35,
+  match_threshold double precision DEFAULT 0.30,
   match_count integer DEFAULT 24
 )
 RETURNS TABLE(chunk_id text, page_id text, similarity double precision)

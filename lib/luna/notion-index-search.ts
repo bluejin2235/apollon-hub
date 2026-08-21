@@ -12,8 +12,8 @@ import {
 } from "@/lib/luna/notion";
 import { matchNamedEntities, NAMED_ENTITY_SEED } from "@/lib/luna/named-entities";
 
-/** 사용자 지정 — 바꾸지 말 것 */
-export const NOTION_INDEX_MATCH_THRESHOLD = 0.35;
+/** 사용자 지정 — 청크 분포에 맞춤 (블록 시절 0.35) */
+export const NOTION_INDEX_MATCH_THRESHOLD = 0.3;
 export const NOTION_INDEX_TOP_BLOCKS = 12;
 export const NOTION_INDEX_MAX_BLOCKS_PER_PAGE = 3;
 const MATCH_OVERFETCH = 36;

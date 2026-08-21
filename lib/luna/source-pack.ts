@@ -50,9 +50,9 @@ export type SourcePackView =
 const MAX_FILES_SHOWN = 3;
 const PROJECT_MIN_CHILDREN = 3;
 
-/** 표시 계층 임계값 — 임베딩 실측 분포 기준 (관련 0.5~0.65) */
-export const PACK_SCORE_RECOMMENDED = 0.55;
-export const PACK_SCORE_MID = 0.42;
+/** 표시 계층 임계값 — 청크 임베딩 실측 분포 기준 (관련 ~0.44–0.54) */
+export const PACK_SCORE_RECOMMENDED = 0.42;
+export const PACK_SCORE_MID = 0.33;
 /** LLM 프롬프트에 넣는 자료 상한 */
 export const PACK_LLM_TOP_N = 3;
 

@@ -2057,7 +2057,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // 자체 평가 + 재검색 (최고 유사도 0.55 이상이면 건너뜀)
+          // 자체 평가 + 재검색 (최고 유사도 PACK_SCORE_RECOMMENDED 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
           const firstMaxSim = maxNotionSimilarity(notionSources);
