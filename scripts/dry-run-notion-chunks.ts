@@ -9,8 +9,9 @@ config();
 
 import { createClient } from "@supabase/supabase-js";
 import {
-  blocksToChunks,
+  buildNotionChunks,
   NOTION_CHUNK_MAX_CHARS,
+  NOTION_CHUNK_MIN_BODY_CHARS,
   NOTION_CHUNK_MIN_CHARS
 } from "@/lib/luna/notion-chunk";
 import { estimateEmbeddingCostUsd } from "@/lib/luna/notion-index";
@@ -30,7 +31,6 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  // 1) 롯데타워 페이지 찾기
   const { data: pages, error: pageErr } = await admin
     .from("luna_notion_pages")
     .select("page_id, title")
@@ -69,41 +69,28 @@ async function main() {
     content_hash: ""
   }));
 
-  const chunks = blocksToChunks(target.page_id, indexed, {
+  const lotte = buildNotionChunks(target.page_id, indexed, {
     minChars: NOTION_CHUNK_MIN_CHARS,
-    maxChars: NOTION_CHUNK_MAX_CHARS
+    maxChars: NOTION_CHUNK_MAX_CHARS,
+    minBodyChars: NOTION_CHUNK_MIN_BODY_CHARS,
+    pageTitle: String(target.title)
   });
 
-  console.log("\n=== 1. 롯데타워 1st Ideation 청크 수 ===");
+  console.log("\n=== 1. 롯데타워 1st Ideation ===");
   console.log(`title: ${target.title}`);
   console.log(`page_id: ${target.page_id}`);
-  console.log(`blocks: ${indexed.length} → chunks: ${chunks.length}`);
-
-  const lucky = chunks.filter((c) => /Lucky Picker/i.test(c.text));
-  console.log(`Lucky Picker 포함 청크: ${lucky.length}`);
-
-  console.log("\n=== 2. 샘플 청크 3개 (전문) ===");
-  const samples = [
-    chunks.find((c) => /Lucky Picker/i.test(c.text)),
-    chunks.find((c) => /120/i.test(c.text) || /120층/i.test(c.heading)),
-    chunks[Math.floor(chunks.length / 2)]
-  ].filter(Boolean);
-  const uniq = [...new Map(samples.map((c) => [c!.chunk_id, c!])).values()].slice(
-    0,
-    3
-  );
-  while (uniq.length < 3 && uniq.length < chunks.length) {
-    const next = chunks.find((c) => !uniq.some((u) => u.chunk_id === c.chunk_id));
-    if (!next) break;
-    uniq.push(next);
-  }
-  uniq.forEach((c, i) => {
-    console.log(`\n--- sample ${i + 1} (pos=${c.position}, chars=${c.text.length}, heading=${JSON.stringify(c.heading)}) ---`);
+  console.log(`blocks: ${indexed.length} → chunks: ${lotte.chunks.length}`);
+  console.log(`skippedThin (이 페이지): ${lotte.skippedThin}`);
+  console.log("\n--- 청크 목록 ---");
+  for (const c of lotte.chunks) {
+    console.log(
+      `[${c.position}] chars=${c.text.length} heading=${JSON.stringify(c.heading)}`
+    );
     console.log(c.text);
-  });
+    console.log("---");
+  }
 
-  // 3–4) 전체 페이지 블록을 스트리밍으로 읽어 청크 추정
-  console.log("\n=== 3. heading 없는 문서 / 4. 전체 예상 ===");
+  console.log("\n=== 전체 스캔 ===");
   const pageTitleById = new Map<string, string>();
   {
     let from = 0;
@@ -148,7 +135,7 @@ async function main() {
     const rows = data ?? [];
     for (const b of rows) {
       const pageId = String(b.page_id);
-      if (!pageTitleById.has(pageId)) continue; // archived 제외
+      if (!pageTitleById.has(pageId)) continue;
       let acc = byPage.get(pageId);
       if (!acc) {
         acc = { rows: [], hasHeading: false };
@@ -174,50 +161,49 @@ async function main() {
     }
   }
 
-  let noHeadingPages = 0;
   let totalChunksEst = 0;
+  let totalSkippedThin = 0;
   let totalChars = 0;
-  const noHeadingExamples: string[] = [];
-  const totalPages = pageTitleById.size;
+  const noHeadingSamples: Array<{
+    title: string;
+    chunks: typeof lotte.chunks;
+  }> = [];
 
   for (const [pageId, acc] of byPage) {
-    if (!acc.hasHeading) {
-      noHeadingPages += 1;
-      if (noHeadingExamples.length < 5) {
-        noHeadingExamples.push(pageTitleById.get(pageId) || "(제목 없음)");
-      }
-    }
-    const pageChunks = blocksToChunks(pageId, acc.rows);
-    totalChunksEst += pageChunks.length;
-    for (const c of pageChunks) totalChars += c.text.length;
-  }
+    const title = pageTitleById.get(pageId) || "";
+    const built = buildNotionChunks(pageId, acc.rows, {
+      pageTitle: title,
+      minBodyChars: NOTION_CHUNK_MIN_BODY_CHARS
+    });
+    totalChunksEst += built.chunks.length;
+    totalSkippedThin += built.skippedThin;
+    for (const c of built.chunks) totalChars += c.text.length;
 
-  // 블록 0개인 페이지도 no-heading으로 셈
-  for (const pageId of pageTitleById.keys()) {
-    if (!byPage.has(pageId)) {
-      noHeadingPages += 1;
-      if (noHeadingExamples.length < 5) {
-        noHeadingExamples.push(pageTitleById.get(pageId) || "(제목 없음)");
-      }
+    if (!acc.hasHeading && built.chunks.length >= 2 && noHeadingSamples.length < 2) {
+      noHeadingSamples.push({ title, chunks: built.chunks });
     }
   }
 
-  const estTokens = Math.ceil(totalChars / 2);
-  const estCost = estimateEmbeddingCostUsd(estTokens);
+  console.log("\n=== 2. heading 없는 문서 샘플 2개 ===");
+  noHeadingSamples.forEach((s, i) => {
+    console.log(`\n#### sample page ${i + 1}: ${s.title} (${s.chunks.length} chunks)`);
+    s.chunks.forEach((c, j) => {
+      console.log(`\n--- chunk ${j} ---`);
+      console.log(c.text);
+    });
+  });
 
-  console.log(`pages scanned: ${totalPages}`);
-  console.log(
-    `no-heading pages: ${noHeadingPages} (${((noHeadingPages / Math.max(1, totalPages)) * 100).toFixed(1)}%)`
-  );
-  console.log(`처리: heading="" 로 본문만 묶어 청크. 15자 미만은 스킵.`);
-  console.log(`examples: ${noHeadingExamples.join(" | ")}`);
+  console.log("\n=== 3. 알맹이 없어 제외된 청크(섹션) 수 ===");
+  console.log(`skippedThin total: ${totalSkippedThin}`);
+
+  console.log("\n=== 4. 최종 예상 청크 수 ===");
   console.log(`estimated chunks: ${totalChunksEst}`);
   console.log(`estimated chars: ${totalChars}`);
+  const estTokens = Math.ceil(totalChars / 2);
   console.log(`estimated tokens (~chars/2): ${estTokens}`);
   console.log(
-    `estimated embed cost (text-embedding-3-small $0.02/1M): $${estCost.toFixed(4)}`
+    `estimated embed cost: $${estimateEmbeddingCostUsd(estTokens).toFixed(4)}`
   );
-  console.log(`(현재 블록 임베딩 ~28,537 대비)`);
 }
 
 main().catch((err) => {

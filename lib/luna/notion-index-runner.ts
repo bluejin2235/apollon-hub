@@ -349,9 +349,13 @@ async function savePageChunks(
   admin: SupabaseClient,
   pageId: string,
   indexedBlocks: IndexedBlock[],
-  minChars: number
+  minChars: number,
+  pageTitle?: string
 ): Promise<{ chunks: number; embeddings: number }> {
-  const chunks = blocksToChunks(pageId, indexedBlocks, { minChars });
+  const chunks = blocksToChunks(pageId, indexedBlocks, {
+    minChars,
+    pageTitle: pageTitle ?? ""
+  });
   const chunkRows = chunks.map((c) => ({
     chunk_id: c.chunk_id,
     page_id: c.page_id,
@@ -791,7 +795,13 @@ export async function runNotionIndexChunk(
         new Set(indexed.map((b) => b.block_id))
       );
 
-      const chunked = await savePageChunks(admin, pageId, indexed, minChars);
+      const chunked = await savePageChunks(
+        admin,
+        pageId,
+        indexed,
+        minChars,
+        page.title
+      );
       embeddingsAdded += chunked.embeddings;
       blocks += indexed.length;
       changedPages += 1;

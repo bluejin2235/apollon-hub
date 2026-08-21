@@ -500,7 +500,9 @@ async function main(): Promise<void> {
         new Set(indexed.map((b) => b.block_id))
       );
 
-      const chunks = blocksToChunks(page.page_id, indexed);
+      const chunks = blocksToChunks(page.page_id, indexed, {
+        pageTitle: page.title
+      });
       await upsertBatch(
         admin,
         "luna_notion_chunks",
