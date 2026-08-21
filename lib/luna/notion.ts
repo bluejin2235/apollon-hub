@@ -548,18 +548,31 @@ export async function fetchNotionPagesLive(
 }
 
 function preferNotionSource(a: NotionSource, b: NotionSource): NotionSource {
+  const rank = (s: NotionSource) =>
+    typeof s.match_score === "number"
+      ? s.match_score
+      : (s.similarity ?? 0) * 10;
   const ap = a.paths?.length ?? 0;
   const bp = b.paths?.length ?? 0;
   let pick = a;
-  if (bp !== ap) pick = bp > ap ? b : a;
+  if (rank(b) !== rank(a)) pick = rank(b) > rank(a) ? b : a;
+  else if (bp !== ap) pick = bp > ap ? b : a;
   else if ((b.excerpt?.length ?? 0) > (a.excerpt?.length ?? 0)) pick = b;
-  else if ((b.similarity ?? 0) > (a.similarity ?? 0)) pick = b;
   return {
     ...pick,
     section: pick.section ?? a.section ?? b.section,
     hierarchy: pick.hierarchy ?? a.hierarchy ?? b.hierarchy,
     nas_path: pick.nas_path ?? a.nas_path ?? b.nas_path,
-    similarity: Math.max(a.similarity ?? 0, b.similarity ?? 0) || pick.similarity
+    similarity:
+      Math.max(a.similarity ?? 0, b.similarity ?? 0) || pick.similarity,
+    keyword_score: Math.max(a.keyword_score ?? 0, b.keyword_score ?? 0) ||
+      pick.keyword_score,
+    embedding_score:
+      Math.max(a.embedding_score ?? 0, b.embedding_score ?? 0) ||
+      pick.embedding_score,
+    match_score:
+      Math.max(a.match_score ?? 0, b.match_score ?? 0) || pick.match_score,
+    match_via: pick.match_via ?? a.match_via ?? b.match_via
   };
 }
 
@@ -655,8 +668,10 @@ export function mergeNotionSearchOutcomes(
 
 export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
   return sources
+    .filter((s) => (s.title ?? "").trim().length > 0)
     .map((s) => {
-      const lines = [`- ${s.title} — ${s.url}`];
+      const title = s.title.trim();
+      const lines = [`- ${title} — ${s.url}`];
       if (s.section) {
         lines.push(`  절: ${s.section}`);
       }

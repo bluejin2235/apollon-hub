@@ -27,8 +27,10 @@ export type SourcePackItem = {
   parentId: string | null;
   pathTitles: string[];
   dateKey: number;
-  /** 노션 유사도 등 — 표시 계층용 */
+  /** 추천·계층 정렬용 (하이브리드 fused/10 또는 임베딩 유사도) */
   score: number;
+  /** 화면 표시용 — 있으면 임베딩 유사도, 없으면 score */
+  displayScore?: number;
 };
 
 export type SourcePackProject = {
@@ -189,11 +191,14 @@ export function parseTitleDateLabel(title: string): string | null {
     }
     return null;
   }
+  // YYMMDD — 업무 문서 관례상 YY 20~30 만 신뢰 (그 외는 표시하지 않음)
+  // 예: 050422 → 애매(2005로 오인) → null / 250422 → 2025.04.22
   const m6 = t.match(/^(\d{2})(\d{2})(\d{2})(?!\d)/);
   if (m6) {
     const yy = Number(m6[1]);
     const m = Number(m6[2]);
     const d = Number(m6[3]);
+    if (yy < 20 || yy > 30) return null;
     if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       const y = 2000 + yy;
       return `${y}.${String(m).padStart(2, "0")}.${String(d).padStart(2, "0")}`;
@@ -342,7 +347,11 @@ function packFromNotion(
         ? source.match_score / 10
         : typeof source.similarity === "number"
           ? source.similarity
-          : 0
+          : 0,
+    displayScore:
+      typeof source.similarity === "number" && source.similarity > 0
+        ? source.similarity
+        : undefined
   };
 }
 

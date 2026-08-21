@@ -420,10 +420,16 @@ export function formatWikiSectionsBlock(hits: WikiSourceRef[]): string {
   return [
     "[위키 문서 절]",
     ...hits.map((hit) => {
+      const title = (hit.title ?? "").trim();
+      const section = (hit.section_title ?? "").trim();
       if (hit.cite_publicly === false) {
-        return `- 내부 기준 · 「${hit.section_title}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 내부 기준을 썼다면 문서명은 밝히지 마라.)`;
+        const sec = section || "관련 절";
+        return `- 내부 기준 · 「${sec}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 내부 기준을 썼다면 문서명은 밝히지 마라.)`;
       }
-      return `- 「${hit.title}」 문서의 「${hit.section_title}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 위키를 썼다면 문서명을 밝혀라.)`;
+      if (!title) {
+        return `- (제목 없는 위키 절)${section ? ` 「${section}」` : ""}\n${hit.excerpt}\n(출처를 쓸 때 빈 「」·**** 를 만들지 마라. 제목이 없으면 출처 줄을 생략한다.)`;
+      }
+      return `- 「${title}」 문서의 「${section || "본문"}」\n${hit.excerpt}\n(조건과 예외를 빼먹지 말고, 위키를 썼다면 문서명을 밝혀라. 제목이 비면 출처를 쓰지 마라.)`;
     })
   ].join("\n\n");
 }

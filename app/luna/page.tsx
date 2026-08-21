@@ -16,7 +16,12 @@ import {
   type LunaAnalysisTeam,
   type LunaChatMessage
 } from "@/components/luna/LunaChat";
-import { normalizeClassification, normalizeUsedPrompts } from "@/lib/luna/chat-response";
+import {
+  normalizeClassification,
+  normalizeUsedPrompts,
+  parseNumberedChoices,
+  scrubLunaAnswerText
+} from "@/lib/luna/chat-response";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
 import { normalizeWikiSources } from "@/lib/luna/wiki-match";
 import type {
@@ -26,7 +31,6 @@ import type {
 } from "@/components/luna/LunaInput";
 import { LunaShell } from "@/components/luna/LunaShell";
 import { LunaSidebar, type LunaConversation } from "@/components/luna/LunaSidebar";
-import { parseNumberedChoices } from "@/lib/luna/chat-response";
 import { clipFeedbackNote, isFeedbackReason } from "@/lib/luna/feedback";
 import { supabase } from "@/lib/supabase/client";
 
@@ -689,7 +693,7 @@ export default function LunaPage() {
                 streamClassification = consumed.classification;
                 metaReceived = true;
                 buffer = consumed.buffer;
-                assistantContent = buffer;
+                assistantContent = scrubLunaAnswerText(buffer);
                 upsertAssistant(assistantContent, {
                   isThinking: true,
                   metadata: { isThinking: true }
@@ -704,11 +708,11 @@ export default function LunaPage() {
             continue;
           }
 
-          assistantContent = buffer;
+          assistantContent = scrubLunaAnswerText(buffer);
           upsertAssistant(assistantContent);
         }
 
-        // meta 이후 step 이벤트는 텍스트로 섞이므로, 스트림 종료 시 answer 완료 반영
+        // meta 이후 step 이벤트는 텍스트로 섞일 수 있어, 스트림 종료 시 answer 완료 반영
         if (assistantVisible && !streamEndedByClarify) {
           const answerIdx = streamSteps.findIndex((s) => s.key === "answer");
           if (answerIdx >= 0 && streamSteps[answerIdx]!.status !== "done") {
@@ -718,7 +722,8 @@ export default function LunaPage() {
               label: "정리 완료"
             };
           }
-          const numbered = parseNumberedChoices(assistantContent);
+          const cleaned = scrubLunaAnswerText(assistantContent);
+          const numbered = parseNumberedChoices(cleaned);
           if (numbered) {
             upsertAssistant(numbered.body, {
               isThinking: false,
@@ -729,7 +734,7 @@ export default function LunaPage() {
               }
             });
           } else {
-            upsertAssistant(assistantContent, {
+            upsertAssistant(cleaned, {
               isThinking: false,
               metadata: undefined
             });

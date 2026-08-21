@@ -244,6 +244,10 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
         hierarchy?: string | null;
         nas_path?: string | null;
         similarity?: number;
+        keyword_score?: number;
+        embedding_score?: number;
+        match_score?: number;
+        match_via?: "keyword" | "embedding" | "both";
         parent_id?: string | null;
         path_titles?: unknown;
       } =>
@@ -273,6 +277,18 @@ export function normalizeNotionSources(raw: unknown): NotionSource[] | null {
       ...(typeof s.hierarchy === "string" ? { hierarchy: s.hierarchy } : {}),
       ...(typeof s.nas_path === "string" ? { nas_path: s.nas_path } : {}),
       ...(typeof s.similarity === "number" ? { similarity: s.similarity } : {}),
+      ...(typeof s.keyword_score === "number"
+        ? { keyword_score: s.keyword_score }
+        : {}),
+      ...(typeof s.embedding_score === "number"
+        ? { embedding_score: s.embedding_score }
+        : {}),
+      ...(typeof s.match_score === "number" ? { match_score: s.match_score } : {}),
+      ...(s.match_via === "keyword" ||
+      s.match_via === "embedding" ||
+      s.match_via === "both"
+        ? { match_via: s.match_via }
+        : {}),
       ...(typeof s.parent_id === "string" ? { parent_id: s.parent_id } : {}),
       ...(Array.isArray(s.path_titles)
         ? {

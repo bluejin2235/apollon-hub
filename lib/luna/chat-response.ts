@@ -12,6 +12,54 @@ export type ParsedNumberedChoices = {
 
 const OTHER_PATTERN = /기타/;
 
+/** meta 이후 섞인 step/meta JSON · 빈 출처 표기 제거 */
+export function scrubLunaAnswerText(text: string): string {
+  let out = text.replace(/\r\n/g, "\n");
+  // 줄 단위 내부 이벤트 JSON
+  out = out
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t.startsWith("{") || !t.endsWith("}")) return true;
+      try {
+        const v = JSON.parse(t) as { type?: unknown };
+        if (
+          v &&
+          typeof v === "object" &&
+          (v.type === "step" ||
+            v.type === "meta" ||
+            v.type === "ids" ||
+            v.type === "clarify" ||
+            v.type === "team")
+        ) {
+          return false;
+        }
+      } catch {
+        /* keep */
+      }
+      return true;
+    })
+    .join("\n");
+
+  // 본문 끝에 붙은 JSON (개행 없이 이어진 경우)
+  out = out.replace(
+    /\s*\{"type":"(?:step|meta|ids|clarify|team)"[^]*\}\s*$/g,
+    ""
+  );
+
+  // 빈 근거·출처
+  out = out.replace(/—\s*근거\s*:\s*(?=\n|$)/g, "");
+  out = out.replace(/-\s*근거\s*:\s*(?=\n|$)/g, "");
+  out = out.replace(/근거\s*:\s*(?=\n|$)/g, "");
+  out = out.replace(/출처\s*:\s*노션\s*「」\s*(?:의\s*「[^」]*」)?/g, "");
+  out = out.replace(/출처\s*:\s*Notion\s*「」/gi, "");
+  out = out.replace(/노션\s*「」\s*의\s*「([^」]*)」/g, "「$1」");
+  out = out.replace(/·\s*\*{2,}\s*—/g, "· (제목 없음) —");
+  out = out.replace(/\*{4,}/g, "");
+
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
  * 응답 끝의 "1. … 2. … N. 기타" 번호 목록을 파싱.
  * 실패 시 null → 원문 그대로 표시.

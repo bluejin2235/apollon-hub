@@ -58,7 +58,7 @@ import {
   type WorkserverExploreRow
 } from "@/lib/luna/workserver-explore";
 import { searchYoutube } from "@/lib/luna/youtube";
-import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import { parseNumberedChoices, scrubLunaAnswerText } from "@/lib/luna/chat-response";
 import { bumpWikiUseCount } from "@/lib/wiki/store";
 import { loadWikiDocs } from "@/lib/wiki/store";
 import {
@@ -1190,7 +1190,14 @@ export async function POST(request: NextRequest) {
       let searchRounds = 0;
 
       const stepStartedAt = new Map<string, number>();
-      const pushStep = (key: string, status: StepStatus, label: string) => {
+      /** meta 이후에는 step JSON 을 본문 스트림에 넣지 않는다 */
+      let streamMetaEmitted = false;
+      const pushStep = (
+        key: string,
+        status: StepStatus,
+        label: string,
+        opts?: { silent?: boolean }
+      ) => {
         const now = Date.now();
         if (status === "running") stepStartedAt.set(key, now);
         const started = stepStartedAt.get(key);
@@ -1205,6 +1212,7 @@ export async function POST(request: NextRequest) {
         };
         if (idx >= 0) steps[idx] = rec;
         else steps.push(rec);
+        if (opts?.silent || streamMetaEmitted) return;
         emit(controller, encoder, {
           type: "step",
           key,
@@ -2567,6 +2575,7 @@ export async function POST(request: NextRequest) {
           classification: classificationPublic(classification, questionTypes),
           clarify_followup: Boolean(clarifyFollowupQuery)
         });
+        streamMetaEmitted = true;
 
         let assistantText = "";
         const maxTokens = hasAttachments ? 8192 : 4096;
@@ -2650,9 +2659,8 @@ export async function POST(request: NextRequest) {
         pushStep("answer", "done", "정리 완료");
 
         const durationMs = Date.now() - startedAt;
-        const safeAssistantText = sanitizeKnowledgeListAnswer(
-          assistantText,
-          learnings
+        const safeAssistantText = scrubLunaAnswerText(
+          sanitizeKnowledgeListAnswer(assistantText, learnings)
         );
         if (safeAssistantText !== assistantText) {
           assistantText = safeAssistantText;
