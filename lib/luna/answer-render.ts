@@ -1,5 +1,9 @@
 import type { LunaCard } from "./tavily";
-import { parseAssumeMarkers, parseNumberedChoices } from "./chat-response";
+import {
+  parseAssumeMarkers,
+  parseNumberedChoices,
+  scrubLunaAnswerText
+} from "./chat-response";
 import {
   findAllWorkserverPathSpans,
   groupNasCardsByFolder,
@@ -10,6 +14,10 @@ import {
   type WorkserverPathGroup
 } from "./nas-path";
 import type { NotionSource } from "./notion";
+import {
+  classifyQuestionDepth,
+  type QuestionDepth
+} from "./question-depth";
 
 export type ParsedLunaAnswer = {
   markdown: string;
@@ -327,19 +335,79 @@ function stripOfficePaths(text: string): string {
   return out;
 }
 
+/** 파일명만 있는 줄이 3줄 이상 연속이면 카드와 중복이므로 제거 */
+export function stripConsecutiveFilenameRuns(
+  text: string,
+  files: Set<string>
+): string {
+  if (files.size === 0) return text;
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const drop = new Set<number>();
+  let runStart = -1;
+  let runLen = 0;
+  const flush = (end: number) => {
+    if (runLen >= 3 && runStart >= 0) {
+      for (let i = runStart; i < end; i++) drop.add(i);
+    }
+    runStart = -1;
+    runLen = 0;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trim()) {
+      flush(i);
+      continue;
+    }
+    if (isFilenameOnlyLine(line, files)) {
+      if (runStart < 0) runStart = i;
+      runLen += 1;
+    } else {
+      flush(i);
+    }
+  }
+  flush(lines.length);
+  if (drop.size === 0) return text;
+  return lines.filter((_, i) => !drop.has(i)).join("\n");
+}
+
+export type StripResultArtifactsOpts = {
+  /** simple 만 문서 제목을 본문에서 지운다. 미지정·listing·synthesis 는 남긴다. */
+  depth?: QuestionDepth | null;
+};
+
+/**
+ * 카드에 이미 보이는 경로·URL·파일명 나열을 본문에서 걷어낸다.
+ * 목록·종합형은 근거로 쓰는 문서 제목을 지우지 않는다 (simple 만 제목 제거).
+ */
 export function stripResultArtifacts(
   markdown: string,
   nasGroups: WorkserverPathGroup[],
-  notionItems: NotionSource[]
+  notionItems: NotionSource[],
+  opts?: StripResultArtifactsOpts
 ): string {
+  const depth = opts?.depth ?? null;
+  const stripDocTitles = depth === "simple";
+
   let text = stripOfficePaths(markdown);
   text = stripNotionLinksFromMarkdown(text);
-  for (const page of notionItems) {
-    if (page.title) {
-      text = text.split(page.title).join("");
+
+  if (stripDocTitles) {
+    for (const page of notionItems) {
+      if (page.title) {
+        // 감싸진 형태를 먼저 지워 **** / 「」 잔여를 막는다
+        text = text.split(`**${page.title}**`).join("");
+        text = text.split(`「${page.title}」`).join("");
+        text = text.split(page.title).join("");
+      }
     }
+    text = text.replace(/「」/g, "");
+    // **제목** → **** 잔여 정리
+    text = scrubLunaAnswerText(text);
   }
+
   const files = collectedFileNames(nasGroups);
+  text = stripConsecutiveFilenameRuns(text, files);
+
   const kept: string[] = [];
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
     const trimmed = line.trim();
@@ -348,7 +416,8 @@ export function stripResultArtifacts(
       continue;
     }
     if (isResultSectionHeading(trimmed)) continue;
-    if (isFilenameOnlyLine(trimmed, files)) continue;
+    // simple: 단독 파일명 줄도 카드 중복으로 제거. listing·synthesis 는 연속 3줄만 위에서 처리.
+    if (stripDocTitles && isFilenameOnlyLine(trimmed, files)) continue;
     if (/^[-*•]\s*$/.test(trimmed)) continue;
     if (/^(?:→|->)\s*$/.test(trimmed)) continue;
     kept.push(line.replace(/^(?:→|->)\s*/, ""));
@@ -373,10 +442,21 @@ export function composeLunaResultLayout(opts: {
   raw: string;
   cards?: LunaCard[] | null;
   notionSources?: NotionSource[] | null;
+  /** 직전 사용자 질문 — 깊이(simple/listing/synthesis) 판정 */
+  questionText?: string | null;
+  depth?: QuestionDepth | null;
 }): LunaResultLayout {
   const numbered = parseNumberedChoices(opts.raw);
   const base = numbered ? numbered.body : opts.raw;
   const { body: withoutAssume, assumptions } = parseAssumeMarkers(base);
+
+  const depth: QuestionDepth | null =
+    opts.depth ??
+    (opts.questionText?.trim()
+      ? classifyQuestionDepth(opts.questionText)
+      : null);
+  // listing·synthesis 는 본문에 문서명을 남긴다. simple 만 카드 중복 제목 제거.
+  const stripDocTitles = depth === "simple";
 
   const allNas = nasCardsFromMeta(opts.cards ?? []);
   const starred = starredNasCards(allNas);
@@ -402,7 +482,9 @@ export function composeLunaResultLayout(opts: {
     )
   );
 
-  const stripped = stripResultArtifacts(withoutAssume, nasGroups, notionItems);
+  const stripped = stripResultArtifacts(withoutAssume, nasGroups, notionItems, {
+    depth
+  });
 
   if (nasGroups.length === 0 && notionItems.length === 0) {
     return {
@@ -419,7 +501,9 @@ export function composeLunaResultLayout(opts: {
     lead,
     nasGroups,
     notionItems,
-    body: stripCardOverlapBody(body, nasGroups, notionItems),
+    body: stripDocTitles
+      ? stripCardOverlapBody(body, nasGroups, notionItems)
+      : body,
     assume: assumptions
   };
 }

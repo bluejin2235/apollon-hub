@@ -1053,6 +1053,11 @@ export function LunaChat({
                     ? hintFromUserQuery(prevUser.content)
                     : null
                 }
+                questionText={
+                  m.role === "assistant" && prevUser?.content
+                    ? prevUser.content
+                    : null
+                }
                 nasDriveMode={nasDriveMode}
                 onNasDriveModeChange={handleNasDriveModeChange}
                 attachments={m.attachments}

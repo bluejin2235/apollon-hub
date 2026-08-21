@@ -96,6 +96,8 @@ type LunaMessageProps = {
   cards?: LunaCard[] | null;
   sourceReasons?: LunaSourceReasons | null;
   queryHint?: string | null;
+  /** 직전 사용자 질문 전문 — 본문 strip 깊이 */
+  questionText?: string | null;
   nasDriveMode?: LunaNasDriveMode;
   onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
   attachments?: LunaAttachmentRef[] | null;
@@ -362,7 +364,8 @@ function InlineThinkingProgress({
   onCopyToast,
   notionSources,
   cards,
-  queryHint
+  queryHint,
+  questionText
 }: {
   steps: LunaProgressStep[];
   content: string;
@@ -372,6 +375,7 @@ function InlineThinkingProgress({
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   queryHint?: string | null;
+  questionText?: string | null;
 }) {
   const visible = steps.filter((s) => s.status !== "skip");
   const running = visible.find((s) => s.status === "running");
@@ -413,6 +417,7 @@ function InlineThinkingProgress({
             cards={cards}
             source="stream"
             queryHint={queryHint}
+            questionText={questionText}
           />
           <span
             className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
@@ -582,7 +587,8 @@ function AssistantTextBubble({
   source = "complete",
   notionSources,
   cards,
-  queryHint
+  queryHint,
+  questionText
 }: {
   content: string;
   nasDriveMode: LunaNasDriveMode;
@@ -592,6 +598,7 @@ function AssistantTextBubble({
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
   queryHint?: string | null;
+  questionText?: string | null;
 }) {
   return (
     <LunaMarkdown
@@ -604,6 +611,7 @@ function AssistantTextBubble({
       cards={cards}
       source={source}
       queryHint={queryHint}
+      questionText={questionText}
     />
   );
 }
@@ -1156,6 +1164,7 @@ export function LunaMessage({
   cards = null,
   sourceReasons = null,
   queryHint = null,
+  questionText = null,
   nasDriveMode = "office",
   onNasDriveModeChange,
   attachments = null,
@@ -1474,6 +1483,7 @@ export function LunaMessage({
         notionSources={sources}
         cards={cardList}
         queryHint={queryHint}
+        questionText={questionText}
       />
     );
   } else if (content) {
@@ -1487,6 +1497,7 @@ export function LunaMessage({
         notionSources={sources}
         cards={cardList}
         queryHint={queryHint}
+        questionText={questionText}
       />
     );
   } else {

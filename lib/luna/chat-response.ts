@@ -12,7 +12,7 @@ export type ParsedNumberedChoices = {
 
 const OTHER_PATTERN = /기타/;
 
-/** meta 이후 섞인 step/meta JSON · 빈 출처 표기 제거 */
+/** meta 이후 섞인 step/meta JSON · 빈 출처·빈 볼드 제거 */
 export function scrubLunaAnswerText(text: string): string {
   let out = text.replace(/\r\n/g, "\n");
   // 줄 단위 내부 이벤트 JSON
@@ -54,8 +54,20 @@ export function scrubLunaAnswerText(text: string): string {
   out = out.replace(/출처\s*:\s*노션\s*「」\s*(?:의\s*「[^」]*」)?/g, "");
   out = out.replace(/출처\s*:\s*Notion\s*「」/gi, "");
   out = out.replace(/노션\s*「」\s*의\s*「([^」]*)」/g, "「$1」");
-  out = out.replace(/·\s*\*{2,}\s*—/g, "· (제목 없음) —");
-  out = out.replace(/\*{4,}/g, "");
+
+  // 빈 볼드(본문 전체): 내용 있는 **굵게** 는 보호하고, 나머지 별표 2~4개 연속 제거
+  // (제목 카드 중복 제거 후 **[진행 중] …** → **** 가 남는 경우 포함)
+  const keptBold: string[] = [];
+  out = out.replace(/\*\*([^*\n]+?)\*\*/g, (_, inner: string) => {
+    if (!inner.trim()) return "";
+    const i = keptBold.length;
+    keptBold.push(`**${inner}**`);
+    return `\u0000B${i}\u0000`;
+  });
+  out = out.replace(/\*\*\s*\*\*/g, "");
+  out = out.replace(/\*{2,4}/g, "");
+  out = out.replace(/＊{2,4}/g, "");
+  out = out.replace(/\u0000B(\d+)\u0000/g, (_, n: string) => keptBold[Number(n)] ?? "");
 
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
