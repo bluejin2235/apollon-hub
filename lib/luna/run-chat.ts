@@ -58,7 +58,13 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
-import { llmInjectLimitsForQuestion, wikiLimitsForDepth } from "@/lib/luna/question-depth";
+import {
+  answerMaxTokensForDepth,
+  llmInjectLimitsForQuestion,
+  SYNTHESIS_ANSWER_RULE,
+  wikiLimitsForDepth,
+  type QuestionDepth
+} from "@/lib/luna/question-depth";
 import {
   formatListingNotionChecklist,
   formatListingWikiChecklist,
@@ -233,6 +239,7 @@ function buildSystemPrompt(opts: {
   nasResults?: NasDirectoryRow[];
   nasSearchAttempted?: boolean;
   webAugmented?: boolean;
+  questionDepth?: QuestionDepth;
   listingQuestion?: boolean;
   listingRule?: string;
   listingChecklist?: string;
@@ -241,6 +248,9 @@ function buildSystemPrompt(opts: {
   llmNasTopN?: number;
 }): string {
   const parts: string[] = [opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT];
+  const depth: QuestionDepth = opts.questionDepth ?? "simple";
+  const listing = depth === "listing" || Boolean(opts.listingQuestion);
+  const synthesis = depth === "synthesis";
   const notionTop = opts.llmNotionTopN ?? 3;
   const cardsTop = opts.llmCardsTopN ?? 3;
   const nasTop = opts.llmNasTopN ?? 3;
@@ -249,10 +259,12 @@ function buildSystemPrompt(opts: {
     if (block.trim()) parts.push(block.trim());
   }
 
-  if (opts.listingQuestion && opts.listingRule?.trim()) {
+  if (listing && opts.listingRule?.trim()) {
     parts.push(opts.listingRule.trim());
+  } else if (synthesis) {
+    parts.push(SYNTHESIS_ANSWER_RULE);
   }
-  if (opts.listingQuestion && opts.listingChecklist?.trim()) {
+  if (listing && opts.listingChecklist?.trim()) {
     parts.push(opts.listingChecklist.trim());
   }
 
@@ -267,9 +279,11 @@ function buildSystemPrompt(opts: {
 
   if (opts.notionSources && opts.notionSources.length > 0) {
     const forLlm = takeTopNotionSourcesForLlm(opts.notionSources, notionTop);
-    const notionHint = opts.listingQuestion
+    const notionHint = listing
       ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라.)`
-      : `(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
+      : synthesis
+        ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라.)`
+        : `(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
       `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
     );
@@ -310,19 +324,28 @@ function buildSystemPrompt(opts: {
     );
   }
 
-  const opinionRule = opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
-
-  parts.push(
-    `${buildLocationAnswerRules({
+  const closing: string[] = [
+    buildLocationAnswerRules({
       hasNotionSources: (opts.notionSources?.length ?? 0) > 0,
       hasNotionPaths: notionPaths.length > 0
-    })}\n` +
-      "- '기능 준비 중', '연동이 안 되어 있다', '검색 실패'처럼 시스템 장애로 단정하지 마세요.\n" +
-      `${opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`}\n` +
-      `${KNOWLEDGE_LIST_HARD_RULE}\n` +
-      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다.\n" +
-      "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
+    }),
+    "- '기능 준비 중', '연동이 안 되어 있다', '검색 실패'처럼 시스템 장애로 단정하지 마세요."
+  ];
+  if (depth === "simple") {
+    const opinionRule =
+      opts.synthesisOpinion?.trim() || SYNTHESIS_OPINION_FALLBACK;
+    closing.push(
+      opinionRule.startsWith("-") ? opinionRule : `- ${opinionRule}`
+    );
+    closing.push(
+      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다."
+    );
+  }
+  closing.push(
+    `${KNOWLEDGE_LIST_HARD_RULE}`,
+    "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
+  parts.push(closing.join("\n"));
 
   return parts.join("\n\n");
 }
@@ -688,6 +711,7 @@ export async function runLunaTurn(
     nasResults,
     nasSearchAttempted,
     webAugmented,
+    questionDepth,
     listingQuestion,
     listingRule,
     listingChecklist,
@@ -698,7 +722,7 @@ export async function runLunaTurn(
 
   const response = await client.messages.create({
     model: LUNA_MODEL,
-    max_tokens: 4096,
+    max_tokens: answerMaxTokensForDepth(questionDepth, false),
     system: systemPrompt,
     messages: [{ role: "user", content: userText }]
   });

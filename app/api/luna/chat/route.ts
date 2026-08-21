@@ -104,9 +104,13 @@ import {
   wikiCoversKnowIntent
 } from "@/lib/luna/listing-question";
 import {
+  answerMaxTokensForDepth,
   llmInjectLimitsForQuestion,
+  shouldOmitTalkAnswer,
+  SYNTHESIS_ANSWER_RULE,
   wikiLimitsForDepth,
-  type LlmInjectLimits
+  type LlmInjectLimits,
+  type QuestionDepth
 } from "@/lib/luna/question-depth";
 import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
 import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
@@ -448,15 +452,15 @@ function buildL3PromptBlock(opts: {
   assume?: string;
   typeBlocks?: string[];
   answer?: string;
-  /** talk.answer 뒤 — 목록형일 때 나열 규칙이 답변 원칙을 덮어쓴다 */
-  listingRule?: string;
+  /** talk.answer 를 덮는 깊이 규칙 (listing / synthesis) */
+  depthRule?: string;
 }): string {
   return [
     opts.understand,
     opts.assume,
     ...(opts.typeBlocks ?? []),
     opts.answer,
-    opts.listingRule
+    opts.depthRule
   ]
     .map((s) => s?.trim() ?? "")
     .filter(Boolean)
@@ -483,6 +487,7 @@ function buildAnswerSystem(
     notionSearchRounds?: number;
     webAugmented?: boolean;
     clarifyFollowup?: boolean;
+    questionDepth?: QuestionDepth;
     listingQuestion?: boolean;
     listingRule?: string;
     listingChecklist?: string;
@@ -509,6 +514,7 @@ function buildAnswerSystem(
   const volatile = buildVolatileSystemText({
     ...opts,
     clarifyFollowup: opts.clarifyFollowup,
+    questionDepth: opts.questionDepth,
     listingQuestion: opts.listingQuestion,
     listingRule: opts.listingRule,
     listingChecklist: opts.listingChecklist,
@@ -545,12 +551,16 @@ function buildVolatileSystemText(opts: {
   notionSearchRounds?: number;
   webAugmented?: boolean;
   clarifyFollowup?: boolean;
+  questionDepth?: QuestionDepth;
   listingQuestion?: boolean;
   listingRule?: string;
   listingChecklist?: string;
   llmInject?: LlmInjectLimits;
 }): string {
   const parts: string[] = [];
+  const depth: QuestionDepth = opts.questionDepth ?? "simple";
+  const listing = depth === "listing" || Boolean(opts.listingQuestion);
+  const synthesis = depth === "synthesis";
   const inject = opts.llmInject ?? {
     notion: PACK_LLM_TOP_N,
     wikiSections: 3,
@@ -564,10 +574,12 @@ function buildVolatileSystemText(opts: {
     parts.push(CLARIFY_FOLLOWUP_RULE);
   }
 
-  if (opts.listingQuestion && opts.listingRule?.trim()) {
+  if (listing && opts.listingRule?.trim()) {
     parts.push(opts.listingRule.trim());
+  } else if (synthesis) {
+    parts.push(SYNTHESIS_ANSWER_RULE);
   }
-  if (opts.listingQuestion && opts.listingChecklist?.trim()) {
+  if (listing && opts.listingChecklist?.trim()) {
     parts.push(opts.listingChecklist.trim());
   }
 
@@ -586,9 +598,11 @@ function buildVolatileSystemText(opts: {
       opts.notionSources,
       inject.notion
     );
-    const notionHint = opts.listingQuestion
+    const notionHint = listing
       ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라. 기록된 경로·제목·URL을 근거로 쓴다.)`
-      : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
+      : synthesis
+        ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라. 각 항목에 페이지 제목을 근거로 단다.)`
+        : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
       `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
     );
@@ -636,15 +650,23 @@ function buildVolatileSystemText(opts: {
     );
   }
 
-  parts.push(
-    `${buildLocationAnswerRules({
+  const closing: string[] = [
+    buildLocationAnswerRules({
       hasNotionSources: (opts.notionSources?.length ?? 0) > 0,
       hasNotionPaths: notionPaths.length > 0
-    })}\n` +
-      `${SYNTHESIS_OPINION_FALLBACK}\n` +
-      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다.\n" +
-      "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
+    })
+  ];
+  // simple 만 "카드 재나열 금지·의견만" — listing·synthesis 는 사례 나열이 답이다
+  if (depth === "simple") {
+    closing.push(SYNTHESIS_OPINION_FALLBACK);
+    closing.push(
+      "- 위치 답변은 카드 목록을 다시 나열하는 것이 아니다. 핵심 경로와 근거 노션 링크를 문장으로 말한다."
+    );
+  }
+  closing.push(
+    "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
+  parts.push(closing.join("\n"));
 
   return parts.join("\n\n");
 }
@@ -2405,12 +2427,19 @@ export async function POST(request: NextRequest) {
               .join("\n\n")
           : undefined;
 
+        const depthRule =
+          listingQuestion
+            ? listingRule
+            : questionDepth === "synthesis"
+              ? SYNTHESIS_ANSWER_RULE
+              : undefined;
+
         const l3Prompt = buildL3PromptBlock({
           understand: understandPick.text,
           assume: talkAssume,
           typeBlocks,
-          answer: listingQuestion ? undefined : talkAnswer,
-          listingRule
+          answer: shouldOmitTalkAnswer(questionDepth) ? undefined : talkAnswer,
+          depthRule
         });
 
         const systemPrompt = buildAnswerSystem(
@@ -2432,6 +2461,7 @@ export async function POST(request: NextRequest) {
             notionSearchRounds: notionSearchOutcome?.rounds ?? 0,
             webAugmented,
             clarifyFollowup: Boolean(clarifyFollowupQuery),
+            questionDepth,
             listingQuestion,
             listingRule,
             listingChecklist,
@@ -2503,7 +2533,7 @@ export async function POST(request: NextRequest) {
             text: pick.text
           });
         }
-        if (talkAnswer) {
+        if (talkAnswer && !shouldOmitTalkAnswer(questionDepth)) {
           recordPromptUse(usageLog, {
             key: LUNA_PROMPT_KEYS.answer,
             step: "답변 생성",
@@ -2552,8 +2582,16 @@ export async function POST(request: NextRequest) {
         streamMetaEmitted = true;
 
         let assistantText = "";
-        const maxTokens = hasAttachments ? 8192 : 4096;
+        const maxTokens = answerMaxTokensForDepth(
+          questionDepth,
+          hasAttachments
+        );
         let answerUsage = emptyUsage();
+        console.log("[luna/answer]", {
+          depth: questionDepth,
+          maxTokens,
+          omitTalkAnswer: shouldOmitTalkAnswer(questionDepth)
+        });
 
         if (tierAResolved.provider === "anthropic") {
           const anthropicStream = client.messages.stream({
