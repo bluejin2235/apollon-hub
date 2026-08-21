@@ -30,6 +30,7 @@ import {
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
   maxNotionSimilarity,
+  PACK_LLM_TOP_N,
   PACK_SCORE_RECOMMENDED,
   takeTopNotionSourcesForLlm
 } from "@/lib/luna/source-pack";
@@ -88,7 +89,6 @@ import {
 import { CORRECTION_RE } from "@/lib/luna/selfstudy";
 import {
   formatWikiSectionsBlock,
-  LISTING_WIKI_LIMITS,
   matchWikiSections,
   splitWikiSourcesByVisibility,
   wikiSourceUsedInAnswer,
@@ -96,11 +96,17 @@ import {
 } from "@/lib/luna/wiki-match";
 import {
   applyListingTypeOverride,
+  formatListingNotionChecklist,
   formatListingWikiChecklist,
   listingAnswerRuleWithWikiCount,
   shouldSkipFindConnectors,
   wikiCoversKnowIntent
 } from "@/lib/luna/listing-question";
+import {
+  llmInjectLimitsForQuestion,
+  wikiLimitsForDepth,
+  type LlmInjectLimits
+} from "@/lib/luna/question-depth";
 import { checkAndNotifyPrivateWikiOveruse } from "@/lib/luna/wiki-private-alert";
 import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
@@ -479,6 +485,7 @@ function buildAnswerSystem(
     listingQuestion?: boolean;
     listingRule?: string;
     listingChecklist?: string;
+    llmInject?: LlmInjectLimits;
   },
   useCaching: boolean,
   modelId: string
@@ -503,7 +510,8 @@ function buildAnswerSystem(
     clarifyFollowup: opts.clarifyFollowup,
     listingQuestion: opts.listingQuestion,
     listingRule: opts.listingRule,
-    listingChecklist: opts.listingChecklist
+    listingChecklist: opts.listingChecklist,
+    llmInject: opts.llmInject
   });
 
   const payload = buildCachedSystem(
@@ -539,8 +547,17 @@ function buildVolatileSystemText(opts: {
   listingQuestion?: boolean;
   listingRule?: string;
   listingChecklist?: string;
+  llmInject?: LlmInjectLimits;
 }): string {
   const parts: string[] = [];
+  const inject = opts.llmInject ?? {
+    notion: PACK_LLM_TOP_N,
+    wikiSections: 3,
+    wikiPerDoc: 2,
+    learnings: 3,
+    cards: 3,
+    nas: 3
+  };
 
   if (opts.clarifyFollowup) {
     parts.push(CLARIFY_FOLLOWUP_RULE);
@@ -564,9 +581,15 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    const forLlm = takeTopNotionSourcesForLlm(opts.notionSources);
+    const forLlm = takeTopNotionSourcesForLlm(
+      opts.notionSources,
+      inject.notion
+    );
+    const notionHint = opts.listingQuestion
+      ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라. 기록된 경로·제목·URL을 근거로 쓴다.)`
+      : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
-      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
@@ -578,7 +601,7 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.cards && opts.cards.length > 0) {
-    const topCards = opts.cards.slice(0, 3);
+    const topCards = opts.cards.slice(0, inject.cards);
     const cardBlock = topCards
       .map((c) =>
         c.url ? `- [${c.type}] ${c.title}: ${c.url}` : `- [${c.type}] ${c.title}: ${c.description}`
@@ -587,7 +610,7 @@ function buildVolatileSystemText(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  const nasResults = (opts.nasResults ?? []).slice(0, 3);
+  const nasResults = (opts.nasResults ?? []).slice(0, inject.nas);
   const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults
@@ -1123,6 +1146,15 @@ export async function POST(request: NextRequest) {
   const listingCtx = resolveListingQuestion(recent, searchIntentText);
   const listingQuestion = listingCtx.listing;
   const listingSourceText = listingCtx.rootText;
+  const depthText = listingSourceText || searchIntentText;
+  const { depth: questionDepth, limits: llmInject } =
+    llmInjectLimitsForQuestion(depthText);
+  console.log("[luna/inject]", {
+    depth: questionDepth,
+    notion: llmInject.notion,
+    wiki: llmInject.wikiSections,
+    learnings: llmInject.learnings
+  });
   const attachmentMeta = attachments.map((a) => ({
     id: a.id,
     file_name: a.file_name,
@@ -1724,7 +1756,9 @@ export async function POST(request: NextRequest) {
           injectKeywords,
           {
             dump: knowledgeDumpRequested,
-            embeddingHits: knowledgeEmb.learning
+            embeddingHits: knowledgeEmb.learning,
+            max: llmInject.learnings,
+            matchedMax: llmInject.learnings
           }
         );
         const matchedTerms = pickGlossaryForQuestion(
@@ -1739,7 +1773,7 @@ export async function POST(request: NextRequest) {
                 injectKeywords,
                 listingQuestion ? listingSourceText : searchIntentText,
                 knowledgeEmb.wiki,
-                listingQuestion ? LISTING_WIKI_LIMITS : undefined
+                wikiLimitsForDepth(questionDepth)
               )
             : [];
         if (
@@ -2370,13 +2404,23 @@ export async function POST(request: NextRequest) {
           typeBlocks.push(formatLibraryBlock(libraryHits));
         }
 
+        const notionForLlm = takeTopNotionSourcesForLlm(
+          notionSources,
+          llmInject.notion
+        );
         const listingRule = listingQuestion
           ? listingAnswerRuleWithWikiCount(
-              new Set(wikiSources.map((s) => s.slug)).size
+              new Set(wikiSources.map((s) => s.slug)).size,
+              notionForLlm.length
             )
           : undefined;
         const listingChecklist = listingQuestion
-          ? formatListingWikiChecklist(wikiSources)
+          ? [
+              formatListingWikiChecklist(wikiSources),
+              formatListingNotionChecklist(notionForLlm)
+            ]
+              .filter(Boolean)
+              .join("\n\n")
           : undefined;
 
         const l3Prompt = buildL3PromptBlock({
@@ -2408,7 +2452,8 @@ export async function POST(request: NextRequest) {
             clarifyFollowup: Boolean(clarifyFollowupQuery),
             listingQuestion,
             listingRule,
-            listingChecklist
+            listingChecklist,
+            llmInject
           },
           tierACfg.use_caching === true,
           tierA.model_id

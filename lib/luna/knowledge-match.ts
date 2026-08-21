@@ -215,11 +215,23 @@ function scoreAgainstKeywords(text: string, keywords: string[]): number {
 export function pickLearningsForQuestion(
   rows: LearningMatchRow[],
   keywords: string[],
-  opts?: { dump?: boolean; embeddingHits?: IdEmbeddingHit[] | null }
+  opts?: {
+    dump?: boolean;
+    embeddingHits?: IdEmbeddingHit[] | null;
+    /** 전체 주입 상한 (기본 INJECT_LEARNING_MAX) */
+    max?: number;
+    /** 키워드·임베딩 매칭 상한 (기본 MATCHED_LEARNING_MAX) */
+    matchedMax?: number;
+  }
 ): KnowledgeInjectResult {
   if (opts?.dump) {
     return { matched: [], other: [], all: [], ids: [] };
   }
+  const injectMax = opts?.max ?? INJECT_LEARNING_MAX;
+  const matchedMax = Math.min(
+    opts?.matchedMax ?? MATCHED_LEARNING_MAX,
+    injectMax
+  );
   const simById = new Map<string, number>();
   for (const hit of opts?.embeddingHits ?? []) {
     simById.set(hit.id, hit.similarity);
@@ -243,7 +255,7 @@ export function pickLearningsForQuestion(
     })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || (b.row.importance ?? 0) - (a.row.importance ?? 0));
-  const matched = scored.slice(0, MATCHED_LEARNING_MAX).map((x) => x.row);
+  const matched = scored.slice(0, matchedMax).map((x) => x.row);
   const matchedIds = new Set(matched.map((r) => r.id));
   const popular = [...rows]
     .filter((r) => !matchedIds.has(r.id))
@@ -255,7 +267,7 @@ export function pickLearningsForQuestion(
       const tb = b.created_at ?? "";
       return ta < tb ? 1 : ta > tb ? -1 : 0;
     });
-  const otherCap = Math.max(0, INJECT_LEARNING_MAX - matched.length);
+  const otherCap = Math.max(0, injectMax - matched.length);
   const other = matched.length > 0 ? popular.slice(0, otherCap) : [];
   const all = [...matched, ...other];
   return {

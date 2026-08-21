@@ -53,7 +53,8 @@ const PROJECT_MIN_CHILDREN = 3;
 /** 표시 계층 임계값 — 청크 임베딩 실측 분포 기준 (관련 ~0.44–0.54) */
 export const PACK_SCORE_RECOMMENDED = 0.42;
 export const PACK_SCORE_MID = 0.33;
-/** LLM 프롬프트에 넣는 자료 상한 */
+/** LLM 프롬프트용 기본 상한(단순 조회). 종합·목록은 question-depth 한도를 넘긴다. */
+/** LLM 프롬프트용 기본 상한(단순 조회). 종합·목록은 question-depth 한도를 넘긴다. */
 export const PACK_LLM_TOP_N = 3;
 
 export function normalizeWorkPath(path: string): string {

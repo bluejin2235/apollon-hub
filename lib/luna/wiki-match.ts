@@ -34,8 +34,14 @@ export const DEFAULT_WIKI_LIMITS: WikiPickLimits = {
   sectionsPerDocMax: WIKI_SECTIONS_PER_DOC_MAX
 };
 
-/** 목록형 질문: 여러 문서가 골고루 들어가도록 문서당 1절·상위 8절 */
+/** 목록형 질문: 여러 문서가 골고루 — 문서당 1절·상위 12절 (LLM 주입과 맞춤) */
 export const LISTING_WIKI_LIMITS: WikiPickLimits = {
+  sectionMax: 12,
+  sectionsPerDocMax: 1
+};
+
+/** 종합형: 상위 8절 · 문서당 1 */
+export const SYNTHESIS_WIKI_LIMITS: WikiPickLimits = {
   sectionMax: 8,
   sectionsPerDocMax: 1
 };

@@ -59,6 +59,13 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
+import { llmInjectLimitsForQuestion, wikiLimitsForDepth } from "@/lib/luna/question-depth";
+import {
+  formatListingNotionChecklist,
+  formatListingWikiChecklist,
+  isListingQuestion,
+  listingAnswerRuleWithWikiCount
+} from "@/lib/luna/listing-question";
 import {
   getPrompts,
   LUNA_PROMPT_KEYS,
@@ -227,11 +234,27 @@ function buildSystemPrompt(opts: {
   nasResults?: NasDirectoryRow[];
   nasSearchAttempted?: boolean;
   webAugmented?: boolean;
+  listingQuestion?: boolean;
+  listingRule?: string;
+  listingChecklist?: string;
+  llmNotionTopN?: number;
+  llmCardsTopN?: number;
+  llmNasTopN?: number;
 }): string {
   const parts: string[] = [opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT];
+  const notionTop = opts.llmNotionTopN ?? 3;
+  const cardsTop = opts.llmCardsTopN ?? 3;
+  const nasTop = opts.llmNasTopN ?? 3;
 
   for (const block of opts.connectorPrompts ?? []) {
     if (block.trim()) parts.push(block.trim());
+  }
+
+  if (opts.listingQuestion && opts.listingRule?.trim()) {
+    parts.push(opts.listingRule.trim());
+  }
+  if (opts.listingQuestion && opts.listingChecklist?.trim()) {
+    parts.push(opts.listingChecklist.trim());
   }
 
   if (opts.glossaryBlock?.trim()) parts.push(opts.glossaryBlock.trim());
@@ -244,14 +267,17 @@ function buildSystemPrompt(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    const forLlm = takeTopNotionSourcesForLlm(opts.notionSources);
+    const forLlm = takeTopNotionSourcesForLlm(opts.notionSources, notionTop);
+    const notionHint = opts.listingQuestion
+      ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라.)`
+      : `(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
-      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
     );
   }
 
   if (opts.cards && opts.cards.length > 0) {
-    const topCards = opts.cards.slice(0, 3);
+    const topCards = opts.cards.slice(0, cardsTop);
     const cardBlock = topCards
       .map((c) =>
         c.url ? `- [${c.type}] ${c.title}: ${c.url}` : `- [${c.type}] ${c.title}: ${c.description}`
@@ -260,7 +286,7 @@ function buildSystemPrompt(opts: {
     parts.push(`[검색 레퍼런스]\n${cardBlock}`);
   }
 
-  const nasResults = (opts.nasResults ?? []).slice(0, 3);
+  const nasResults = (opts.nasResults ?? []).slice(0, nasTop);
   const notionPaths = notionRecordedPaths(opts.notionSources ?? []);
   if (nasResults.length > 0) {
     const nasBlock = nasResults
@@ -542,10 +568,17 @@ export async function runLunaTurn(
   );
   const injectKeywords = splitKeywordQuery(keywords, userText, glossaryRows);
   const emb = await retrieveKnowledgeEmbeddings(admin, userText);
+  const { depth: questionDepth, limits: llmInject } =
+    llmInjectLimitsForQuestion(userText);
+  const listingQuestion = isListingQuestion(userText);
   const knowledgeInject = pickLearningsForQuestion(
     (learningsData ?? []) as LearningMatchRow[],
     injectKeywords,
-    { embeddingHits: emb.learning }
+    {
+      embeddingHits: emb.learning,
+      max: llmInject.learnings,
+      matchedMax: llmInject.learnings
+    }
   );
   const matchedTerms = pickGlossaryForQuestion(
     glossaryRows,
@@ -554,7 +587,13 @@ export async function runLunaTurn(
   );
   const wikiSources =
     classifiedSlugs.includes("know") || classifiedSlugs.includes("find")
-      ? matchWikiSections(wikiDocs, injectKeywords, userText, emb.wiki)
+      ? matchWikiSections(
+          wikiDocs,
+          injectKeywords,
+          userText,
+          emb.wiki,
+          wikiLimitsForDepth(questionDepth)
+        )
       : [];
   const { public: publicWikiSources, private: privateWikiRefs } =
     splitWikiSourcesByVisibility(wikiSources);
@@ -644,6 +683,24 @@ export async function runLunaTurn(
     description: ""
   }));
   const cards = [...notionCards, ...nasResults.map(toNasCard), ...webCards, ...youtubeCards];
+  const notionForLlm = takeTopNotionSourcesForLlm(
+    notionSources,
+    llmInject.notion
+  );
+  const listingRule = listingQuestion
+    ? listingAnswerRuleWithWikiCount(
+        new Set(wikiSources.map((s) => s.slug)).size,
+        notionForLlm.length
+      )
+    : undefined;
+  const listingChecklist = listingQuestion
+    ? [
+        formatListingWikiChecklist(wikiSources),
+        formatListingNotionChecklist(notionForLlm)
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+    : undefined;
 
   const systemPrompt = buildSystemPrompt({
     identity,
@@ -656,7 +713,13 @@ export async function runLunaTurn(
     cards,
     nasResults,
     nasSearchAttempted,
-    webAugmented
+    webAugmented,
+    listingQuestion,
+    listingRule,
+    listingChecklist,
+    llmNotionTopN: llmInject.notion,
+    llmCardsTopN: llmInject.cards,
+    llmNasTopN: llmInject.nas
   });
 
   const response = await client.messages.create({
