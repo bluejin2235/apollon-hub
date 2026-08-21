@@ -26,6 +26,12 @@ export type NotionBlockMatchHit = {
   similarity: number;
 };
 
+export type NotionChunkMatchHit = {
+  chunk_id: string;
+  page_id: string;
+  similarity: number;
+};
+
 type IndexedPageRow = {
   page_id: string;
   title: string;
@@ -40,6 +46,14 @@ type IndexedBlockRow = {
   block_id: string;
   page_id: string;
   block_type: string;
+  text: string;
+  position: number;
+};
+
+type IndexedChunkRow = {
+  chunk_id: string;
+  page_id: string;
+  heading: string;
   text: string;
   position: number;
 };
@@ -115,6 +129,54 @@ export async function matchNotionBlockEmbeddings(
       (r: NotionBlockMatchHit) =>
         r.block_id && r.page_id && r.similarity >= NOTION_INDEX_MATCH_THRESHOLD
     );
+}
+
+export async function matchNotionChunkEmbeddings(
+  admin: SupabaseClient,
+  queryEmbedding: number[],
+  opts?: { threshold?: number; limit?: number }
+): Promise<NotionChunkMatchHit[] | null> {
+  const { data, error } = await admin.rpc("luna_match_notion_chunks", {
+    query_embedding: embeddingToSql(queryEmbedding),
+    match_threshold: opts?.threshold ?? NOTION_INDEX_MATCH_THRESHOLD,
+    match_count: opts?.limit ?? MATCH_OVERFETCH
+  });
+  if (error) {
+    if (!isMissingRpc(error)) {
+      console.error("[luna/notion-index] chunk match rpc", error);
+    }
+    return null;
+  }
+  return (data ?? [])
+    .map((row: Record<string, unknown>) => ({
+      chunk_id: String(row.chunk_id ?? ""),
+      page_id: String(row.page_id ?? ""),
+      similarity: Number(row.similarity) || 0
+    }))
+    .filter(
+      (r: NotionChunkMatchHit) =>
+        r.chunk_id && r.page_id && r.similarity >= NOTION_INDEX_MATCH_THRESHOLD
+    );
+}
+
+/** 유사도 순 유지, 페이지당 최대 3청크, 상위 12 */
+export function selectNotionChunkHits(
+  hits: NotionChunkMatchHit[],
+  opts?: { top?: number; perPage?: number }
+): NotionChunkMatchHit[] {
+  const top = opts?.top ?? NOTION_INDEX_TOP_BLOCKS;
+  const perPage = opts?.perPage ?? NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
+  const sorted = [...hits].sort((a, b) => b.similarity - a.similarity);
+  const perPageCount = new Map<string, number>();
+  const out: NotionChunkMatchHit[] = [];
+  for (const hit of sorted) {
+    const n = perPageCount.get(hit.page_id) ?? 0;
+    if (n >= perPage) continue;
+    perPageCount.set(hit.page_id, n + 1);
+    out.push(hit);
+    if (out.length >= top) break;
+  }
+  return out;
 }
 
 function formatHierarchy(opts: {
@@ -227,6 +289,182 @@ function pageBlocksToSource(
     similarity,
     parent_id: page.parent_id,
     path_titles: asPathTitles(page.path_titles)
+  };
+}
+
+function pageChunksToSource(
+  page: IndexedPageRow,
+  chunks: IndexedChunkRow[],
+  siblings: IndexedPageRow[],
+  similarity: number,
+  queryText?: string
+): NotionSource {
+  const sorted = chunks.slice().sort((a, b) => a.position - b.position);
+  const body = sorted
+    .map((c) => c.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  const hierarchy = formatHierarchy({ page, siblings, queryText });
+  const section =
+    sorted.find((c) => c.heading.trim())?.heading.trim().slice(0, 80) ??
+    sorted[0]?.text.replace(/\s+/g, " ").trim().slice(0, 80) ??
+    "";
+  const hay = `${page.title}\n${body}\n${hierarchy}`;
+  const paths = [
+    ...(page.nas_path ? [page.nas_path] : []),
+    ...extractWorkserverPathsFromText(hay)
+  ];
+  const pathSeen = new Set<string>();
+  const uniquePaths = paths.filter((p) => {
+    const key = p.replace(/\s+/g, " ").trim().toLowerCase();
+    if (!key || pathSeen.has(key)) return false;
+    pathSeen.add(key);
+    return true;
+  });
+  const dates = extractDatesFromText(hay);
+  const entities = matchNamedEntities(hay, NAMED_ENTITY_SEED)
+    .filter((e) => e.kind !== "brand_group")
+    .map((e) => e.canonical);
+
+  return {
+    title: page.title || "(제목 없음)",
+    url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
+    id: page.page_id,
+    last_edited_time: page.last_edited_time,
+    excerpt: body.replace(/\s+/g, " ").trim().slice(0, 280) || null,
+    paths: uniquePaths,
+    dates,
+    entities,
+    section: section || null,
+    hierarchy,
+    nas_path: page.nas_path,
+    similarity,
+    parent_id: page.parent_id,
+    path_titles: asPathTitles(page.path_titles)
+  };
+}
+
+async function buildIndexedSourcesFromChunks(
+  admin: SupabaseClient,
+  hits: NotionChunkMatchHit[],
+  queryText?: string
+): Promise<{
+  sources: NotionSource[];
+  pages: IndexedPageRow[];
+  selectedHits: NotionChunkMatchHit[];
+}> {
+  const selectedHits = selectNotionChunkHits(hits);
+  if (selectedHits.length === 0) {
+    return { sources: [], pages: [], selectedHits: [] };
+  }
+
+  const chunkIds = selectedHits.map((h) => h.chunk_id);
+  const pageIds = [...new Set(selectedHits.map((h) => h.page_id))];
+
+  const [{ data: chunkRows, error: chunkErr }, { data: pageRows, error: pageErr }] =
+    await Promise.all([
+      admin
+        .from("luna_notion_chunks")
+        .select("chunk_id, page_id, heading, text, position")
+        .in("chunk_id", chunkIds),
+      admin
+        .from("luna_notion_pages")
+        .select(
+          "page_id, title, parent_id, path_titles, nas_path, url, last_edited_time"
+        )
+        .in("page_id", pageIds)
+    ]);
+
+  if (chunkErr) console.error("[luna/notion-index] chunks", chunkErr);
+  if (pageErr) console.error("[luna/notion-index] pages", pageErr);
+
+  const chunks = (chunkRows ?? []) as IndexedChunkRow[];
+  const pages = (pageRows ?? []).map((p) => ({
+    ...(p as IndexedPageRow),
+    path_titles: asPathTitles((p as IndexedPageRow).path_titles)
+  }));
+
+  const parentIds = [
+    ...new Set(pages.map((p) => p.parent_id).filter((id): id is string => Boolean(id)))
+  ];
+  let siblings: IndexedPageRow[] = [];
+  if (parentIds.length > 0) {
+    const { data: sibRows, error: sibErr } = await admin
+      .from("luna_notion_pages")
+      .select(
+        "page_id, title, parent_id, path_titles, nas_path, url, last_edited_time"
+      )
+      .in("parent_id", parentIds)
+      .eq("archived", false)
+      .limit(120);
+    if (sibErr) console.error("[luna/notion-index] siblings", sibErr);
+    siblings = ((sibRows ?? []) as IndexedPageRow[]).map((p) => ({
+      ...p,
+      path_titles: asPathTitles(p.path_titles)
+    }));
+  }
+
+  const pageById = new Map(pages.map((p) => [p.page_id, p]));
+  const chunksByPage = new Map<string, IndexedChunkRow[]>();
+  const simByPage = new Map<string, number>();
+  const hitOrder = new Map(selectedHits.map((h, i) => [h.chunk_id, i]));
+
+  for (const c of chunks) {
+    const list = chunksByPage.get(c.page_id) ?? [];
+    list.push(c);
+    chunksByPage.set(c.page_id, list);
+  }
+  for (const h of selectedHits) {
+    const prev = simByPage.get(h.page_id) ?? 0;
+    if (h.similarity > prev) simByPage.set(h.page_id, h.similarity);
+  }
+
+  for (const [, list] of chunksByPage) {
+    list.sort(
+      (a, b) => (hitOrder.get(a.chunk_id) ?? 999) - (hitOrder.get(b.chunk_id) ?? 999)
+    );
+  }
+
+  const sources: NotionSource[] = [];
+  for (const pageId of pageIds) {
+    const page = pageById.get(pageId);
+    const pageChunks = chunksByPage.get(pageId) ?? [];
+    if (!page || pageChunks.length === 0) continue;
+    const sibs = siblings.filter(
+      (s) => s.parent_id && s.parent_id === page.parent_id
+    );
+    sources.push(
+      pageChunksToSource(
+        page,
+        pageChunks,
+        sibs.length > 0 ? sibs : [page],
+        simByPage.get(pageId) ?? 0,
+        queryText
+      )
+    );
+  }
+
+  sources.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+  const byTitle = new Map<string, NotionSource>();
+  for (const s of sources) {
+    const key = s.title.toLowerCase().replace(/\s+/g, " ").trim();
+    const prev = byTitle.get(key);
+    if (!prev) {
+      byTitle.set(key, s);
+      continue;
+    }
+    const prevScore =
+      (prev.similarity ?? 0) * 10 +
+      (prev.nas_path || (prev.paths?.length ?? 0) > 0 ? 1 : 0);
+    const nextScore =
+      (s.similarity ?? 0) * 10 +
+      (s.nas_path || (s.paths?.length ?? 0) > 0 ? 1 : 0);
+    if (nextScore > prevScore) byTitle.set(key, s);
+  }
+  return {
+    sources: capNotionDisplaySources([...byTitle.values()]),
+    pages,
+    selectedHits
   };
 }
 
@@ -382,17 +620,32 @@ export async function searchNotionForLuna(
   let rpcFailed = false;
 
   if (embedding) {
-    const rawHits = await matchNotionBlockEmbeddings(admin, embedding, {
+    const chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
       threshold: NOTION_INDEX_MATCH_THRESHOLD,
       limit: MATCH_OVERFETCH
     });
-    if (rawHits === null) {
-      rpcFailed = true;
-    } else {
-      const built = await buildIndexedSources(admin, rawHits, queryText);
+    if (chunkHits && chunkHits.length > 0) {
+      const built = await buildIndexedSourcesFromChunks(admin, chunkHits, queryText);
       indexSources = built.sources;
-      selectedHits = built.selectedHits;
+      selectedHits = built.selectedHits.map((h) => ({
+        block_id: h.chunk_id,
+        page_id: h.page_id,
+        similarity: h.similarity
+      }));
       pages = built.pages;
+    } else {
+      const rawHits = await matchNotionBlockEmbeddings(admin, embedding, {
+        threshold: NOTION_INDEX_MATCH_THRESHOLD,
+        limit: MATCH_OVERFETCH
+      });
+      if (rawHits === null && chunkHits === null) {
+        rpcFailed = true;
+      } else if (rawHits) {
+        const built = await buildIndexedSources(admin, rawHits, queryText);
+        indexSources = built.sources;
+        selectedHits = built.selectedHits;
+        pages = built.pages;
+      }
     }
   }
 
