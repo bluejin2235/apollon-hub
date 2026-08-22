@@ -9,7 +9,8 @@ import { extractWorkserverPathsFromText } from "@/lib/luna/notion";
 export const NOTION_INDEX_RATE_MS = 350;
 export const NOTION_INDEX_MIN_EMBED_CHARS = 15;
 export const NOTION_INDEX_INSERT_BATCH = 500;
-export const NOTION_INDEX_EMBED_BATCH = 100;
+/** HNSW 갱신 부담 — 청크 임베딩 upsert 는 25 이하 */
+export const NOTION_INDEX_EMBED_BATCH = 25;
 export const NOTION_INDEX_VALIDATE_RATIO = 0.7;
 
 export const NOTION_VERSION = "2022-06-28";

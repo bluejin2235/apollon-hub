@@ -220,17 +220,7 @@ async function deleteOrphanPages(
   if (staleIds.length === 0) return;
 
   for (const part of chunk(staleIds, NOTION_INDEX_INSERT_BATCH)) {
-    const { data: blocks } = await admin
-      .from("luna_notion_blocks")
-      .select("block_id")
-      .in("page_id", part);
-    const blockIds = (blocks ?? []).map((b) => b.block_id as string);
-    if (blockIds.length > 0) {
-      for (const bPart of chunk(blockIds, NOTION_INDEX_INSERT_BATCH)) {
-        await admin.from("luna_notion_embeddings").delete().in("block_id", bPart);
-      }
-      await admin.from("luna_notion_blocks").delete().in("page_id", part);
-    }
+    await admin.from("luna_notion_blocks").delete().in("page_id", part);
     await admin.from("luna_notion_chunks").delete().in("page_id", part);
     await admin.from("luna_notion_pages").delete().in("page_id", part);
   }
@@ -251,7 +241,6 @@ async function deleteStaleBlocksForPage(
     .filter((id) => !liveBlockIds.has(id));
   for (const part of chunk(stale, NOTION_INDEX_INSERT_BATCH)) {
     if (part.length === 0) continue;
-    await admin.from("luna_notion_embeddings").delete().in("block_id", part);
     await admin.from("luna_notion_blocks").delete().in("block_id", part);
   }
 }
@@ -368,10 +357,20 @@ async function embedAndSaveChunks(
       });
     });
     if (rows.length === 0) continue;
-    const { error } = await admin
-      .from("luna_notion_chunk_embeddings")
-      .upsert(rows, { onConflict: "chunk_id" });
-    if (error) throw new Error(`luna_notion_chunk_embeddings upsert: ${error.message}`);
+    let lastErr: Error | null = null;
+    for (const wait of [0, 2000, 6000, 18000]) {
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      const { error } = await admin
+        .from("luna_notion_chunk_embeddings")
+        .upsert(rows, { onConflict: "chunk_id" });
+      if (!error) {
+        lastErr = null;
+        break;
+      }
+      lastErr = new Error(`luna_notion_chunk_embeddings upsert: ${error.message}`);
+      if (!/timeout|canceling statement|57014/i.test(error.message)) break;
+    }
+    if (lastErr) throw lastErr;
     created += rows.length;
   }
 

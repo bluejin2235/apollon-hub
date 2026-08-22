@@ -46,6 +46,35 @@ function isMissingTableError(err: unknown): boolean {
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** statement timeout 등 — 2s → 6s → 18s 후 재시도 */
+async function withTimeoutRetries<T>(
+  label: string,
+  fn: () => Promise<T>,
+  delaysMs: number[] = [2000, 6000, 18000]
+): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i <= delaysMs.length; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const retryable = /timeout|canceling statement|57014|deadlock/i.test(msg);
+      if (!retryable || i >= delaysMs.length) break;
+      const wait = delaysMs[i]!;
+      console.warn(
+        `[notion-index] retry ${i + 1}/${delaysMs.length} ${label} after ${wait}ms: ${msg.slice(0, 160)}`
+      );
+      await sleep(wait);
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
 /** 한 청크에서 쓰는 시간(ms). maxDuration 300s 기준 여유. */
 export const NOTION_INDEX_CHUNK_BUDGET_MS = 240_000;
 
@@ -158,7 +187,7 @@ async function loadExistingPages(
 
 async function countByPage(
   admin: SupabaseClient,
-  table: "luna_notion_blocks" | "luna_notion_embeddings"
+  table: "luna_notion_blocks"
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   let from = 0;
@@ -209,17 +238,7 @@ async function deleteOrphanPages(
   if (staleIds.length === 0) return;
 
   for (const part of chunk(staleIds, NOTION_INDEX_INSERT_BATCH)) {
-    const { data: blocks } = await admin
-      .from("luna_notion_blocks")
-      .select("block_id")
-      .in("page_id", part);
-    const blockIds = (blocks ?? []).map((b) => b.block_id as string);
-    if (blockIds.length > 0) {
-      for (const bPart of chunk(blockIds, NOTION_INDEX_INSERT_BATCH)) {
-        await admin.from("luna_notion_embeddings").delete().in("block_id", bPart);
-      }
-      await admin.from("luna_notion_blocks").delete().in("page_id", part);
-    }
+    await admin.from("luna_notion_blocks").delete().in("page_id", part);
     await admin.from("luna_notion_chunks").delete().in("page_id", part);
     await admin.from("luna_notion_pages").delete().in("page_id", part);
   }
@@ -240,7 +259,6 @@ async function deleteStaleBlocksForPage(
     .filter((id) => !liveBlockIds.has(id));
   for (const part of chunk(stale, NOTION_INDEX_INSERT_BATCH)) {
     if (part.length === 0) continue;
-    await admin.from("luna_notion_embeddings").delete().in("block_id", part);
     await admin.from("luna_notion_blocks").delete().in("block_id", part);
   }
 }
@@ -350,12 +368,19 @@ async function embedAndSaveChunks(
       });
     });
     if (rows.length === 0) continue;
-    const { error } = await admin
-      .from("luna_notion_chunk_embeddings")
-      .upsert(rows, { onConflict: "chunk_id" });
-    if (error) {
-      throw new Error(`luna_notion_chunk_embeddings upsert: ${error.message}`);
-    }
+    await withTimeoutRetries(
+      `chunk_embeddings upsert n=${rows.length}`,
+      async () => {
+        const { error } = await admin
+          .from("luna_notion_chunk_embeddings")
+          .upsert(rows, { onConflict: "chunk_id" });
+        if (error) {
+          throw new Error(
+            `luna_notion_chunk_embeddings upsert: ${error.message}`
+          );
+        }
+      }
+    );
     created += rows.length;
   }
 
@@ -804,37 +829,48 @@ export async function runNotionIndexChunk(
       }
 
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
-      const rawBlocks = await client.fetchPageBlocks(pageId);
-      const indexed = blocksToIndexed(pageId, rawBlocks);
-      const bodyText = indexed.map((b) => b.text).join("\n");
-      const nas = firstNasPath([bodyText, page.title]);
-      if (nas) page.nas_path = nas;
+      try {
+        const rawBlocks = await client.fetchPageBlocks(pageId);
+        const indexed = blocksToIndexed(pageId, rawBlocks);
+        const bodyText = indexed.map((b) => b.text).join("\n");
+        const nas = firstNasPath([bodyText, page.title]);
+        if (nas) page.nas_path = nas;
 
-      await upsertBatch(admin, "luna_notion_blocks", indexed, "block_id");
-      await deleteStaleBlocksForPage(
-        admin,
-        pageId,
-        new Set(indexed.map((b) => b.block_id))
-      );
+        await upsertBatch(admin, "luna_notion_blocks", indexed, "block_id");
+        await deleteStaleBlocksForPage(
+          admin,
+          pageId,
+          new Set(indexed.map((b) => b.block_id))
+        );
 
-      const chunked = await savePageChunks(
-        admin,
-        pageId,
-        indexed,
-        minChars,
-        page.title,
-        page.path_titles
-      );
-      embeddingsAdded += chunked.embeddings;
-      blocks += indexed.length;
-      changedPages += 1;
+        const chunked = await savePageChunks(
+          admin,
+          pageId,
+          indexed,
+          minChars,
+          page.title,
+          page.path_titles
+        );
+        embeddingsAdded += chunked.embeddings;
+        blocks += indexed.length;
+        changedPages += 1;
 
-      const doneAt = new Date().toISOString();
-      const { error: doneErr } = await admin
-        .from("luna_notion_pages")
-        .update({ indexed_at: doneAt, nas_path: page.nas_path })
-        .eq("page_id", pageId);
-      if (doneErr) throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
+        const doneAt = new Date().toISOString();
+        const { error: doneErr } = await admin
+          .from("luna_notion_pages")
+          .update({ indexed_at: doneAt, nas_path: page.nas_path })
+          .eq("page_id", pageId);
+        if (doneErr) {
+          throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
+        }
+      } catch (pageErr) {
+        const msg =
+          pageErr instanceof Error ? pageErr.message : String(pageErr);
+        console.error(
+          `[notion-index] skip page ${pageId.slice(0, 8)}: ${msg.slice(0, 200)}`
+        );
+        // 페이지 단위 실패는 전체를 멈추지 않음 — 다음 페이지로
+      }
 
       pagesProcessed += 1;
       cursor += 1;
@@ -922,13 +958,12 @@ export async function getNotionIndexStats(admin: SupabaseClient): Promise<{
     return count ?? 0;
   };
 
-  const [pages, blocks, blockEmbeddings, chunkEmbeddings] = await Promise.all([
+  const [pages, blocks, chunkEmbeddings] = await Promise.all([
     countExact("luna_notion_pages"),
     countExact("luna_notion_blocks"),
-    countExact("luna_notion_embeddings"),
     countExact("luna_notion_chunk_embeddings")
   ]);
-  const embeddings = chunkEmbeddings > 0 ? chunkEmbeddings : blockEmbeddings;
+  const embeddings = chunkEmbeddings;
 
   let teamspaces = 0;
   {
