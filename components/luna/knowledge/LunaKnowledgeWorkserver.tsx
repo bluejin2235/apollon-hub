@@ -22,6 +22,7 @@ import {
   formatScanTime,
   K
 } from "@/lib/luna/knowledge-format";
+import { LunaNasPathSettingsPanel } from "@/components/luna/knowledge/LunaNasPathSettingsPanel";
 import { supabase } from "@/lib/supabase/client";
 
 type PathRow = {
@@ -204,6 +205,8 @@ export function LunaKnowledgeWorkserver() {
 
   return (
     <KnowledgeShell>
+      <LunaNasPathSettingsPanel />
+
       <StatGrid>
         <StatCard
           label="인덱싱 파일"

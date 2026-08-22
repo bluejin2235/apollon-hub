@@ -8,7 +8,7 @@ import {
 } from "@/lib/luna/source-pack";
 import {
   formatNasFolderPath,
-  type LunaNasDriveMode
+  type NasPathSettings
 } from "@/lib/luna/nas-path";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
@@ -48,18 +48,18 @@ function SourceTags({ item }: { item: SourcePackItem }) {
 
 function WorkLinkRows({
   item,
-  mode,
+  nasPathSettings,
   onCopyToast
 }: {
   item: SourcePackItem;
-  mode: LunaNasDriveMode;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
 }) {
   const folderPath = item.folder
     ? formatNasFolderPath(
         item.folder.drive,
         item.folder.rawPath,
-        mode,
+        nasPathSettings,
         false
       ).replace(/\\+$/, "")
     : null;
@@ -121,11 +121,11 @@ function WorkLinkRows({
 
 function RecommendedCard({
   item,
-  mode,
+  nasPathSettings,
   onCopyToast
 }: {
   item: SourcePackItem;
-  mode: LunaNasDriveMode;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
 }) {
   return (
@@ -193,7 +193,7 @@ function RecommendedCard({
             <span className="text-[#9aa0a8]">↗</span>
           </a>
         ) : null}
-        <WorkLinkRows item={item} mode={mode} onCopyToast={onCopyToast} />
+        <WorkLinkRows item={item} nasPathSettings={nasPathSettings} onCopyToast={onCopyToast} />
       </div>
     </div>
   );
@@ -294,14 +294,14 @@ function WeakFold({ items }: { items: SourcePackItem[] }) {
 export function SourcePackList({
   notionSources,
   cards,
-  nasDriveMode,
+  nasPathSettings,
   onCopyToast,
   queryHint,
   stageQuestion
 }: {
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
-  nasDriveMode: LunaNasDriveMode;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   /** 낮은 점수 안내문에 쓸 핵심어 (선택) */
   queryHint?: string | null;
@@ -339,7 +339,7 @@ export function SourcePackList({
       {tiers.recommended ? (
         <RecommendedCard
           item={tiers.recommended}
-          mode={nasDriveMode}
+          nasPathSettings={nasPathSettings}
           onCopyToast={onCopyToast}
         />
       ) : null}

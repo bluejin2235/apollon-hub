@@ -14,12 +14,11 @@ import {
   type LunaAnalysisTeam,
   type LunaClarifyData,
   type LunaModelStep,
-  type LunaNasDriveMode,
   type LunaProgressStep,
   type LunaSourceReasons,
   type LunaDetailMeta
 } from "@/components/luna/LunaMessage";
-import { loadNasDriveMode, saveNasDriveMode } from "@/lib/luna/nas-path";
+import { useNasPathSettings } from "@/lib/luna/use-nas-path-settings";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -614,13 +613,7 @@ export function LunaChat({
   const skipTitleCommitRef = useRef(false);
   const stickToBottomRef = useRef(true);
   useMeasureBottomUi(bottomUiRef, true);
-  const [nasDriveMode, setNasDriveMode] =
-    useState<LunaNasDriveMode>(() => loadNasDriveMode());
-
-  function handleNasDriveModeChange(mode: LunaNasDriveMode) {
-    setNasDriveMode(mode);
-    saveNasDriveMode(mode);
-  }
+  const { settings: nasPathSettings } = useNasPathSettings();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [showQuestionCard, setShowQuestionCard] = useState(false);
@@ -1058,8 +1051,7 @@ export function LunaChat({
                     ? prevUser.content
                     : null
                 }
-                nasDriveMode={nasDriveMode}
-                onNasDriveModeChange={handleNasDriveModeChange}
+                nasPathSettings={nasPathSettings}
                 attachments={m.attachments}
                 isThinking={isThinking}
                 modelLabel={m.modelLabel}

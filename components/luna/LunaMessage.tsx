@@ -13,7 +13,10 @@ import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
 import { SourcePackList } from "@/components/luna/SourcePackCard";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
-import { type LunaNasDriveMode } from "@/lib/luna/nas-path";
+import {
+  DEFAULT_NAS_PATH_SETTINGS,
+  type NasPathSettings
+} from "@/lib/luna/nas-path";
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { WikiSourceRef } from "@/lib/luna/wiki-match";
 import {
@@ -65,7 +68,7 @@ export type LunaSourceReasons = {
   web?: string;
 };
 
-export type { LunaNasDriveMode } from "@/lib/luna/nas-path";
+export type { NasPathSettings } from "@/lib/luna/nas-path";
 
 export type LunaConnectorRoutingMeta = {
   summary: string;
@@ -98,8 +101,7 @@ type LunaMessageProps = {
   queryHint?: string | null;
   /** 직전 사용자 질문 전문 — 본문 strip 깊이 */
   questionText?: string | null;
-  nasDriveMode?: LunaNasDriveMode;
-  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  nasPathSettings?: NasPathSettings;
   attachments?: LunaAttachmentRef[] | null;
   isThinking?: boolean;
   modelLabel?: string | null;
@@ -231,7 +233,7 @@ function SourceSections({
   cards,
   notionSources,
   sourceReasons = null,
-  nasDriveMode = "office",
+  nasPathSettings = DEFAULT_NAS_PATH_SETTINGS,
   onCopyToast,
   queryHint,
   questionText
@@ -239,7 +241,7 @@ function SourceSections({
   cards: LunaCard[];
   notionSources?: NotionSource[] | null;
   sourceReasons?: LunaSourceReasons | null;
-  nasDriveMode?: LunaNasDriveMode;
+  nasPathSettings?: NasPathSettings;
   onCopyToast?: (message: string) => void;
   queryHint?: string | null;
   questionText?: string | null;
@@ -278,7 +280,7 @@ function SourceSections({
           <SourcePackList
             notionSources={notionSources}
             cards={cards}
-            nasDriveMode={nasDriveMode}
+            nasPathSettings={nasPathSettings}
             onCopyToast={onCopyToast}
             queryHint={queryHint}
             stageQuestion={questionText}
@@ -362,8 +364,7 @@ function LunaAvatar() {
 function InlineThinkingProgress({
   steps,
   content,
-  nasDriveMode,
-  onNasDriveModeChange,
+  nasPathSettings,
   onCopyToast,
   notionSources,
   cards,
@@ -372,8 +373,7 @@ function InlineThinkingProgress({
 }: {
   steps: LunaProgressStep[];
   content: string;
-  nasDriveMode: LunaNasDriveMode;
-  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -413,8 +413,7 @@ function InlineThinkingProgress({
           <LunaMarkdown
             content={content}
             className="text-[14.5px] max-md:text-[13.5px]"
-            nasDriveMode={nasDriveMode}
-            onNasDriveModeChange={onNasDriveModeChange}
+            nasPathSettings={nasPathSettings}
             onCopyToast={onCopyToast}
             notionSources={notionSources}
             cards={cards}
@@ -584,8 +583,7 @@ function WikiSourcesPanel({
 
 function AssistantTextBubble({
   content,
-  nasDriveMode,
-  onNasDriveModeChange,
+  nasPathSettings,
   onCopyToast,
   source = "complete",
   notionSources,
@@ -594,8 +592,7 @@ function AssistantTextBubble({
   questionText
 }: {
   content: string;
-  nasDriveMode: LunaNasDriveMode;
-  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   source?: string;
   notionSources?: NotionSource[] | null;
@@ -607,8 +604,7 @@ function AssistantTextBubble({
     <LunaMarkdown
       content={content}
       className="text-[14.5px] max-md:text-[13.5px]"
-      nasDriveMode={nasDriveMode}
-      onNasDriveModeChange={onNasDriveModeChange}
+      nasPathSettings={nasPathSettings}
       onCopyToast={onCopyToast}
       notionSources={notionSources}
       cards={cards}
@@ -621,15 +617,13 @@ function AssistantTextBubble({
 
 function MarkdownText({
   content,
-  nasDriveMode,
-  onNasDriveModeChange,
+  nasPathSettings,
   onCopyToast,
   notionSources,
   cards
 }: {
   content: string;
-  nasDriveMode: LunaNasDriveMode;
-  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -638,8 +632,7 @@ function MarkdownText({
     <LunaMarkdown
       content={content}
       className="text-sm leading-relaxed text-slate-900"
-      nasDriveMode={nasDriveMode}
-      onNasDriveModeChange={onNasDriveModeChange}
+      nasPathSettings={nasPathSettings}
       onCopyToast={onCopyToast}
       notionSources={notionSources}
       cards={cards}
@@ -654,8 +647,7 @@ function AnalysisReport({
   cards,
   notionSources,
   sourceReasons,
-  nasDriveMode,
-  onNasDriveModeChange,
+  nasPathSettings,
   onCopyToast,
   isThinking
 }: {
@@ -664,8 +656,7 @@ function AnalysisReport({
   cards: LunaCard[];
   notionSources?: NotionSource[] | null;
   sourceReasons?: LunaSourceReasons | null;
-  nasDriveMode: LunaNasDriveMode;
-  onNasDriveModeChange?: (mode: LunaNasDriveMode) => void;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   isThinking: boolean;
 }) {
@@ -739,8 +730,7 @@ function AnalysisReport({
           content ? (
             <MarkdownText
               content={content}
-              nasDriveMode={nasDriveMode}
-              onNasDriveModeChange={onNasDriveModeChange}
+              nasPathSettings={nasPathSettings}
               onCopyToast={onCopyToast}
               cards={cards}
             />
@@ -752,8 +742,7 @@ function AnalysisReport({
         ) : activeTeam?.content ? (
           <MarkdownText
             content={activeTeam.content}
-            nasDriveMode={nasDriveMode}
-            onNasDriveModeChange={onNasDriveModeChange}
+            nasPathSettings={nasPathSettings}
             onCopyToast={onCopyToast}
             cards={cards}
           />
@@ -796,7 +785,7 @@ function AnalysisReport({
                 cards={cards}
                 notionSources={notionSources}
                 sourceReasons={sourceReasons}
-                nasDriveMode={nasDriveMode}
+                nasPathSettings={nasPathSettings}
                 onCopyToast={onCopyToast}
               />
             </div>
@@ -1168,8 +1157,7 @@ export function LunaMessage({
   sourceReasons = null,
   queryHint = null,
   questionText = null,
-  nasDriveMode = "office",
-  onNasDriveModeChange,
+  nasPathSettings = DEFAULT_NAS_PATH_SETTINGS,
   attachments = null,
   isThinking = false,
   modelLabel = null,
@@ -1433,8 +1421,7 @@ export function LunaMessage({
         {q ? (
           <LunaMarkdown
             content={q}
-            nasDriveMode={nasDriveMode}
-            onNasDriveModeChange={onNasDriveModeChange}
+            nasPathSettings={nasPathSettings}
             onCopyToast={handleCopyToast}
             notionSources={sources}
             cards={cardList}
@@ -1469,8 +1456,7 @@ export function LunaMessage({
         cards={cardList}
         notionSources={sources}
         sourceReasons={sourceReasons}
-        nasDriveMode={nasDriveMode}
-        onNasDriveModeChange={onNasDriveModeChange}
+        nasPathSettings={nasPathSettings}
         onCopyToast={handleCopyToast}
         isThinking={isThinking}
       />
@@ -1480,8 +1466,7 @@ export function LunaMessage({
       <InlineThinkingProgress
         steps={stepList}
         content={content}
-        nasDriveMode={nasDriveMode}
-        onNasDriveModeChange={onNasDriveModeChange}
+        nasPathSettings={nasPathSettings}
         onCopyToast={handleCopyToast}
         notionSources={sources}
         cards={cardList}
@@ -1493,8 +1478,7 @@ export function LunaMessage({
     bubbleInner = (
       <AssistantTextBubble
         content={content}
-        nasDriveMode={nasDriveMode}
-        onNasDriveModeChange={onNasDriveModeChange}
+        nasPathSettings={nasPathSettings}
         onCopyToast={handleCopyToast}
         source={id.startsWith("temp-") ? "complete-stream" : "complete-db"}
         notionSources={sources}

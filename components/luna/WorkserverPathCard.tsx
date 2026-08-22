@@ -5,7 +5,7 @@ import { ArrowUpRight, Check, Copy, Folder } from "lucide-react";
 import type { NotionSource } from "@/lib/luna/notion";
 import type {
   FileExtBadgeKind,
-  LunaNasDriveMode,
+  NasPathSettings,
   WorkserverPathGroup
 } from "@/lib/luna/nas-path";
 import {
@@ -37,44 +37,6 @@ function FileExtBadge({ fileName }: { fileName: string }) {
     >
       {kind}
     </span>
-  );
-}
-
-export function NasDriveModeToggle({
-  mode,
-  onChange
-}: {
-  mode: LunaNasDriveMode;
-  onChange?: (mode: LunaNasDriveMode) => void;
-}) {
-  const item = (value: LunaNasDriveMode, label: string) => {
-    const selected = mode === value;
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onChange?.(value);
-        }}
-        className="text-[11px]"
-        style={{
-          color: selected ? "#1c1d21" : "#9aa0a8",
-          borderBottom: selected ? "1px solid #9aa0a8" : "1px solid transparent",
-          paddingBottom: 1,
-          fontWeight: selected ? 600 : 400
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-
-  return (
-    <div className="flex shrink-0 items-center gap-2.5 pt-0.5">
-      {item("office", "사무실")}
-      {item("raidrive", "RaiDrive")}
-    </div>
   );
 }
 
@@ -130,25 +92,25 @@ function CopyButton({
 
 type WorkserverPathCardProps = {
   group: WorkserverPathGroup;
-  mode: LunaNasDriveMode;
+  nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
 };
 
 export function WorkserverPathCard({
   group,
-  mode,
+  nasPathSettings,
   onCopyToast
 }: WorkserverPathCardProps) {
   const folderPath = formatNasFolderPath(
     group.drive,
     group.folderRawPath,
-    mode,
+    nasPathSettings,
     false
   );
   const crumb = formatNasFolderBreadcrumb(
     group.drive,
     group.folderRawPath,
-    mode
+    nasPathSettings
   );
 
   return (

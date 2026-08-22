@@ -12,6 +12,7 @@ import { formatKoreanDay, K } from "@/lib/luna/knowledge-format";
 import { supabase } from "@/lib/supabase/client";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
+import { DEFAULT_NAS_PATH_SETTINGS } from "@/lib/luna/nas-path";
 
 type FailureDbFix = {
   id: string;
@@ -476,7 +477,7 @@ function TurnView({
             <LunaMarkdown
               content={turn.assistant.content}
               className="text-[12.5px] leading-[1.8] text-[#1c1d21]"
-              nasDriveMode="office"
+              nasPathSettings={DEFAULT_NAS_PATH_SETTINGS}
               source="failures-thread"
               questionText={turn.user?.content ?? null}
               highlightTerms

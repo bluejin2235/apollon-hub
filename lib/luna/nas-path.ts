@@ -1,8 +1,21 @@
 import type { LunaCard } from "@/lib/luna/tavily";
+import {
+  DEFAULT_NAS_PATH_SETTINGS,
+  joinNasPrefix,
+  OFFICE_PREFIX_P,
+  OFFICE_PREFIX_T,
+  type NasPathSettings,
+  UNC_PREFIX_P,
+  UNC_PREFIX_T
+} from "@/lib/luna/nas-path-settings";
 
-export type LunaNasDriveMode = "office" | "raidrive";
-
-export const NAS_DRIVE_MODE_STORAGE_KEY = "luna:nas-drive-mode";
+export type { NasPathDisplayMode, NasPathSettings } from "@/lib/luna/nas-path-settings";
+export {
+  DEFAULT_NAS_PATH_SETTINGS,
+  loadCachedNasPathSettings,
+  cacheNasPathSettings,
+  nasPathSettingsLabel
+} from "@/lib/luna/nas-path-settings";
 
 export type WorkserverPathGroup = {
   drive: string;
@@ -15,76 +28,64 @@ export const WORKSERVER_OFFICE_PATH_RE = /(?:T|P):\\[^\r\n`[\]()（）]+/gi;
 
 const FILE_EXT_RE = /\.[a-z0-9]{1,8}$/i;
 
-export function loadNasDriveMode(): LunaNasDriveMode {
-  if (typeof window === "undefined") return "office";
-  try {
-    const v = localStorage.getItem(NAS_DRIVE_MODE_STORAGE_KEY);
-    if (v === "raidrive" || v === "office") return v;
-  } catch {
-    /* ignore */
-  }
-  return "office";
-}
-
-export function saveNasDriveMode(mode: LunaNasDriveMode): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(NAS_DRIVE_MODE_STORAGE_KEY, mode);
-  } catch {
-    /* ignore */
-  }
-}
-
 export function normalizeNasDriveLetter(drive?: string): string {
   return (drive ?? "").trim().replace(/:$/, "").toUpperCase();
 }
 
+/**
+ * nas_directory.drive 에 대응하는 접두사만 반환한다.
+ * path 본문(nas_directory.path)은 여기서 건드리지 않는다 — 붙일 접두사만 고른다.
+ */
 export function nasDrivePrefix(
   drive: string | undefined,
-  mode: LunaNasDriveMode
+  settings: NasPathSettings = DEFAULT_NAS_PATH_SETTINGS
 ): string {
   const letter = normalizeNasDriveLetter(drive);
-  if (mode === "raidrive") {
-    if (letter === "P") return "Z:\\Partners\\";
-    return "Z:\\Work\\";
+  if (settings.mode === "office") {
+    if (letter === "P") return OFFICE_PREFIX_P;
+    if (letter === "T") return OFFICE_PREFIX_T;
+    return letter ? `${letter}:\\` : "";
   }
-  if (letter === "P") return "P:\\";
-  if (letter === "T") return "T:\\";
-  return letter ? `${letter}:\\` : "";
+  if (settings.mode === "unc") {
+    if (letter === "P") return UNC_PREFIX_P;
+    return UNC_PREFIX_T;
+  }
+  return letter === "P" ? settings.prefixP : settings.prefixT;
 }
 
 export function normalizeRawNasPath(rawPath: string): string {
   return rawPath.replace(/\//g, "\\").replace(/^\\+/, "").replace(/\\+$/, "");
 }
 
-/** 표시·복사 공통: 접두사 + 폴더 경로 + 끝 백슬래시 (파일명이면 제거) */
+/**
+ * 표시·복사 공통: 접두사 + nas_directory.path (+ 폴더면 끝 백슬래시).
+ * rawPath 는 DB nas_directory.path 그대로 — 폴더명·연도·번호를 추론·재구성하지 않는다.
+ */
 export function formatNasFolderPath(
   drive: string | undefined,
   rawPath: string,
-  mode: LunaNasDriveMode,
+  settings: NasPathSettings,
   isFile: boolean
 ): string {
   let path = normalizeRawNasPath(rawPath);
-  if (!path) {
-    const prefix = nasDrivePrefix(drive, mode);
-    return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
-  }
   if (isFile) {
     const idx = path.lastIndexOf("\\");
     path = idx >= 0 ? path.slice(0, idx) : "";
   }
-  const prefix = nasDrivePrefix(drive, mode);
-  if (!path) return prefix.endsWith("\\") ? prefix : prefix ? `${prefix}\\` : "";
-  return `${prefix}${path}\\`;
+  const prefix = nasDrivePrefix(drive, settings);
+  const joined = joinNasPrefix(prefix, path);
+  if (!joined) return "";
+  if (isFile || !path) return joined.replace(/\\+$/, "") || joined;
+  return joined.endsWith("\\") ? joined : `${joined}\\`;
 }
 
 /** 화면용: 드라이브부터 전체를 › 로 구분 (복사 경로는 formatNasFolderPath) */
 export function formatNasFolderBreadcrumb(
   drive: string | undefined,
   rawPath: string,
-  mode: LunaNasDriveMode
+  settings: NasPathSettings
 ): string {
-  const full = formatNasFolderPath(drive, rawPath, mode, false).replace(/\\+$/, "");
+  const full = formatNasFolderPath(drive, rawPath, settings, false).replace(/\\+$/, "");
   if (!full) return "";
   return full.replace(/\\/g, " › ");
 }
@@ -141,11 +142,12 @@ export function inferFileTag(
 export function formatNasFilePath(
   drive: string | undefined,
   rawPath: string,
-  mode: LunaNasDriveMode,
+  settings: NasPathSettings,
   fileName: string
 ): string {
-  const folder = formatNasFolderPath(drive, rawPath, mode, false);
-  return `${folder}${fileName}`;
+  const folder = formatNasFolderPath(drive, rawPath, settings, false);
+  const base = folder.endsWith("\\") ? folder : folder ? `${folder}\\` : "";
+  return `${base}${fileName}`;
 }
 
 export type ParsedOfficePath = {
