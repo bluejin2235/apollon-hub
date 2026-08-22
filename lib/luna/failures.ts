@@ -14,8 +14,14 @@ import {
   type FailureKindFilter,
   type FailureSignal
 } from "@/lib/luna/failures-shared";
+import {
+  classifyFailureCause,
+  failureCauseMeta,
+  type FailureCauseType
+} from "@/lib/luna/failure-cause";
 
 export type { FailureKind, FailureKindFilter, FailureSignal };
+export type { FailureCauseType } from "@/lib/luna/failure-cause";
 export {
   FAILURE_SIGNAL_PRIORITY,
   isInspectFailure,
@@ -27,6 +33,12 @@ export {
   shouldSkipFailureForClarifyPick,
   summarizeFailureKinds
 } from "@/lib/luna/failures-shared";
+export {
+  classifyFailureCause,
+  failureCauseMeta,
+  FAILURE_CAUSE_META,
+  FAILURE_CAUSE_ORDER
+} from "@/lib/luna/failure-cause";
 
 export type FailureVerdict = "improve" | "skip" | null;
 
@@ -90,6 +102,8 @@ export type FailureRow = {
   created_at: string;
   asked_by_name?: string | null;
   human_note?: string | null;
+  /** 조회 시 규칙으로 계산 (DB 컬럼 선택) */
+  cause_type?: FailureCauseType;
 };
 
 export type FailurePromptGroup = {
@@ -401,6 +415,7 @@ export async function recordAutoFailuresFromAnswer(
     classifyConfidence?: number | null;
     searchAttempted?: boolean;
     searchResultCount?: number;
+    sourceRef?: Record<string, unknown>;
   }
 ): Promise<void> {
   const signals: FailureSignal[] = [];
@@ -425,6 +440,13 @@ export async function recordAutoFailuresFromAnswer(
   if (signals.length === 0) return;
 
   const primary = pickPrimarySignal(signals);
+  const sourceRef: Record<string, unknown> = { ...(opts.sourceRef ?? {}) };
+  if (
+    signals.includes("unclassified") &&
+    typeof opts.classifyConfidence === "number"
+  ) {
+    sourceRef.confidence = opts.classifyConfidence;
+  }
   await recordLunaFailure(admin, {
     messageId: opts.messageId,
     conversationId: opts.conversationId,
@@ -440,11 +462,7 @@ export async function recordAutoFailuresFromAnswer(
     kind: kindForSignals(signals),
     signal: primary,
     signals,
-    sourceRef:
-      signals.includes("unclassified") &&
-      typeof opts.classifyConfidence === "number"
-        ? { confidence: opts.classifyConfidence }
-        : {}
+    sourceRef
   });
 }
 
@@ -501,26 +519,47 @@ export async function listLunaFailures(
       self_note: selfNote,
       db_fixes: normalizeFailureDbFixes((r as { db_fixes?: unknown }).db_fixes),
       asked_by_name: r.asked_by ? names.get(r.asked_by) ?? null : null,
-      human_note: humanNote || null
+      human_note: humanNote || null,
+      cause_type: classifyFailureCause({
+        question: r.question,
+        answer_excerpt: r.answer_excerpt,
+        signal: r.signal,
+        signals,
+        intent_score: r.intent_score,
+        confidence_score: r.confidence_score,
+        sources_used: r.sources_used,
+        duration_ms: r.duration_ms,
+        types: r.types,
+        source_ref: ref
+      })
     };
   });
 
   const merged = mergeFailureRowsByMessage(enriched).filter(
     (r) => isInspectFailure(r) || !isLikelyClarifyPickQuestion(r.question)
   );
-  if (!opts?.kind) return merged;
-  return merged.filter((r) => matchesKindFilter(r, opts.kind!));
+  // merge 후 원인 재계산 (signals 합쳐짐)
+  const withCause = merged.map((r) => ({
+    ...r,
+    cause_type: classifyFailureCause(r)
+  }));
+  if (!opts?.kind) return withCause;
+  return withCause.filter((r) => matchesKindFilter(r, opts.kind!));
 }
 
 export type FailureCluster = {
   key: string;
   label: string;
+  emoji: string;
+  blurb: string;
   count: number;
   asker_count: number;
+  previews: string[];
   items: FailureRow[];
 };
 
-export function clusterFailures(rows: FailureRow[]): FailureCluster[] {
+/** @deprecated 질문 유사 묶음 — 원인 묶음으로 대체 */
+export function clusterFailuresByQuestion(rows: FailureRow[]): FailureCluster[] {
   const map = new Map<string, FailureRow[]>();
   for (const row of rows) {
     if (row.verdict) continue;
@@ -537,13 +576,61 @@ export function clusterFailures(rows: FailureRow[]): FailureCluster[] {
       return {
         key,
         label,
+        emoji: "💬",
+        blurb: "비슷한 질문",
         count: items.length,
         asker_count: askers.size,
+        previews: items
+          .slice(0, 3)
+          .map((i) => i.question.replace(/\s+/g, " ").trim().slice(0, 48)),
         items
       };
     })
     .filter((c) => c.count >= 2)
     .sort((a, b) => b.count - a.count);
+}
+
+/** 원인 유형으로 묶기 (건수·인원 많은 순) */
+export function clusterFailures(rows: FailureRow[]): FailureCluster[] {
+  const map = new Map<string, FailureRow[]>();
+  for (const row of rows) {
+    if (row.verdict) continue;
+    if (isInspectFailure(row)) continue;
+    const cause = classifyFailureCause(row);
+    const list = map.get(cause) ?? [];
+    list.push(row);
+    map.set(cause, list);
+  }
+  return [...map.entries()]
+    .map(([key, items]) => {
+      const meta = failureCauseMeta(key as FailureCauseType);
+      const askers = new Set(items.map((i) => i.asked_by).filter(Boolean));
+      const previews: string[] = [];
+      const seen = new Set<string>();
+      for (const i of items) {
+        const q = i.question.replace(/\s+/g, " ").trim();
+        if (!q || seen.has(q)) continue;
+        seen.add(q);
+        previews.push(q.slice(0, 52));
+        if (previews.length >= 3) break;
+      }
+      return {
+        key: meta.type,
+        label: meta.title,
+        emoji: meta.emoji,
+        blurb: meta.blurb,
+        count: items.length,
+        asker_count: askers.size,
+        previews,
+        items
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        b.asker_count - a.asker_count ||
+        a.label.localeCompare(b.label, "ko")
+    );
 }
 
 export async function setFailureVerdict(

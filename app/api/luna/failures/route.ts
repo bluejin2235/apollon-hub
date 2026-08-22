@@ -51,7 +51,9 @@ export async function GET(request: NextRequest) {
   const open = rows.filter((r) => !r.verdict);
   const improved = rows.filter((r) => r.verdict === "improve");
   const skipped = rows.filter((r) => r.verdict === "skip");
-  const clusters = clusterFailures(open);
+  const clusters = clusterFailures(open).map(
+    ({ items: _items, ...rest }) => rest
+  );
 
   return NextResponse.json({
     summary: {

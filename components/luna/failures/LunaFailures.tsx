@@ -44,6 +44,7 @@ type FailureRow = {
   dev_fixed_at?: string | null;
   verdict?: "improve" | "skip" | null;
   duration_ms?: number | null;
+  cause_type?: string | null;
 };
 
 type ThreadBubble = {
@@ -74,8 +75,11 @@ type ThreadPayload = {
 type Cluster = {
   key: string;
   label: string;
+  emoji: string;
+  blurb: string;
   count: number;
   asker_count: number;
+  previews: string[];
 };
 
 type PromptGroup = {
@@ -853,6 +857,7 @@ export function LunaFailures() {
   );
   const [status, setStatus] = useState<"open" | "improve" | "skip">("open");
   const [openItem, setOpenItem] = useState<FailureRow | null>(null);
+  const [causeFilter, setCauseFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = await getAccessToken();
@@ -863,6 +868,7 @@ export function LunaFailures() {
     }
     setLoading(true);
     setError("");
+    setCauseFilter(null);
     const res = await fetch(`/api/luna/failures?kind=${kind}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -885,9 +891,15 @@ export function LunaFailures() {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    if (status === "open") return data.items.filter((r) => !r.verdict);
-    return data.items.filter((r) => r.verdict === status);
-  }, [data, status]);
+    let rows =
+      status === "open"
+        ? data.items.filter((r) => !r.verdict)
+        : data.items.filter((r) => r.verdict === status);
+    if (status === "open" && causeFilter) {
+      rows = rows.filter((r) => r.cause_type === causeFilter);
+    }
+    return rows;
+  }, [data, status, causeFilter]);
 
   return (
     <KnowledgeShell>
@@ -929,13 +941,13 @@ export function LunaFailures() {
             className="mb-3.5 flex flex-wrap gap-3.5 border-b pb-2.5 text-[11.5px]"
             style={{ borderColor: K.line2, color: K.sub }}
           >
-            <button type="button" onClick={() => setStatus("open")} className={status === "open" ? "font-bold text-[#3C3489]" : ""}>
+            <button type="button" onClick={() => { setStatus("open"); setCauseFilter(null); }} className={status === "open" ? "font-bold text-[#3C3489]" : ""}>
               확인할 것 <b style={{ color: K.ink }}>{data.summary.open}</b>
             </button>
-            <button type="button" onClick={() => setStatus("improve")} className={status === "improve" ? "font-bold text-[#3C3489]" : ""}>
+            <button type="button" onClick={() => { setStatus("improve"); setCauseFilter(null); }} className={status === "improve" ? "font-bold text-[#3C3489]" : ""}>
               개선한 것 <b style={{ color: K.ink }}>{data.summary.improve}</b>
             </button>
-            <button type="button" onClick={() => setStatus("skip")} className={status === "skip" ? "font-bold text-[#3C3489]" : ""}>
+            <button type="button" onClick={() => { setStatus("skip"); setCauseFilter(null); }} className={status === "skip" ? "font-bold text-[#3C3489]" : ""}>
               스킵한 것 <b style={{ color: K.ink }}>{data.summary.skip}</b>
             </button>
           </div>
@@ -949,18 +961,66 @@ export function LunaFailures() {
         <>
           {status === "open" && data.clusters.length > 0 ? (
             <div className="mb-4 space-y-2">
-              <p className="text-[12px] font-semibold" style={{ color: K.sub }}>
-                묶어 보기
-              </p>
-              {data.clusters.slice(0, 8).map((c) => (
-                <div
-                  key={c.key}
-                  className="rounded-lg border border-[#e7e8ec] bg-[#fafbfc] px-3 py-2 text-[13px]"
-                  style={{ color: K.ink }}
-                >
-                  「{c.label}…」 관련 {c.count}번 · {c.asker_count}명
-                </div>
-              ))}
+              <div className="flex items-center gap-2">
+                <p className="text-[12px] font-semibold" style={{ color: K.sub }}>
+                  원인으로 묶기
+                </p>
+                {causeFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => setCauseFilter(null)}
+                    className="text-[11px] font-medium text-[#534AB7]"
+                  >
+                    전체 보기
+                  </button>
+                ) : null}
+              </div>
+              {data.clusters.map((c) => {
+                const active = causeFilter === c.key;
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() =>
+                      setCauseFilter((prev) => (prev === c.key ? null : c.key))
+                    }
+                    className={`w-full rounded-lg border px-3 py-2.5 text-left transition ${
+                      active
+                        ? "border-[#534AB7] bg-[#F5F3FF]"
+                        : "border-[#e7e8ec] bg-[#fafbfc] hover:border-[#D9D4EE]"
+                    }`}
+                    style={{ color: K.ink }}
+                  >
+                    <div className="flex items-center gap-2 text-[13px]">
+                      <span className="shrink-0">{c.emoji || "▫️"}</span>
+                      <span className="min-w-0 flex-1 font-semibold">
+                        {c.label}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-[#6b6f76]">
+                        {c.count}건 · {c.asker_count}명
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                          active
+                            ? "bg-[#534AB7] text-white"
+                            : "bg-white text-[#534AB7] border border-[#D9D4EE]"
+                        }`}
+                      >
+                        {active ? "선택됨" : "보기"}
+                      </span>
+                    </div>
+                    {c.previews && c.previews.length > 0 ? (
+                      <ul className="mt-1.5 space-y-0.5 pl-6 text-[11.5px] text-[#6b6f76]">
+                        {c.previews.map((p) => (
+                          <li key={p} className="truncate">
+                            · {p}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
 

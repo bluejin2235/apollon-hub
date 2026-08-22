@@ -2915,7 +2915,11 @@ export async function POST(request: NextRequest) {
             classifyConfidence: classification.confidence,
             searchAttempted: searchRounds > 0,
             searchResultCount:
-              cards.length + notionSources.length + publicWikiSources.length
+              cards.length + notionSources.length + publicWikiSources.length,
+            sourceRef: {
+              last_had_clarify: lastHadClarify,
+              clarify_followup: Boolean(clarifyFollowupQuery)
+            }
           }).catch((err) =>
             console.error("[luna/chat] auto failures", err)
           );
