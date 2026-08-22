@@ -48,8 +48,13 @@ import {
 import {
   analyzeMediaImageVision,
   buildMediaIndexVisionPrompt,
-  mediaVisionModel
+  mediaVisionModel,
+  resolveMediaVisionProvider
 } from "@/lib/luna/media-vision";
+import {
+  lunaAnthropicApiKey,
+  lunaOpenAiApiKey
+} from "@/lib/luna/media-vision-api";
 import {
   compareHtmlPath,
   compareJsonPath,
@@ -268,6 +273,17 @@ async function runCompare(opts: CliOpts): Promise<void> {
   const admin = createAdmin();
   const glossary = await loadVisualGlossary(admin);
   console.log(`compare model: ${model} · files: ${limit}`);
+  if (resolveMediaVisionProvider(model) === "anthropic") {
+    const ak = lunaAnthropicApiKey();
+    console.log(
+      `anthropic key: ${ak ? "ok (hubtrendchat_claude / ANTHROPIC_API_KEY)" : "MISSING"}`
+    );
+    if (!ak) process.exit(1);
+  } else {
+    const ok = lunaOpenAiApiKey();
+    console.log(`openai key: ${ok ? "ok" : "MISSING"}`);
+    if (!ok) process.exit(1);
+  }
 
   let doc = loadCompareDoc();
   if (!doc || doc.files.length === 0) {
@@ -312,7 +328,8 @@ async function runCompare(opts: CliOpts): Promise<void> {
 
     const fullPath = resolveMediaFilePath(drive, row.path);
     if (!existsSync(fullPath)) {
-      console.error(`  [missing] ${row.path}`);
+      const errMsg = `file_not_found: ${fullPath}`;
+      console.error(`  [${i + 1}/${doc.files.length}] ${errMsg}`);
       row.models[model] = {
         description: "",
         category: "unknown",
@@ -323,7 +340,7 @@ async function runCompare(opts: CliOpts): Promise<void> {
         output_tokens: 0,
         elapsed_ms: 0,
         cost_usd: null,
-        error: "file_not_found"
+        error: errMsg
       };
       failed++;
       continue;
@@ -349,6 +366,8 @@ async function runCompare(opts: CliOpts): Promise<void> {
 
     const jpegB64 = await resizeForVision(fullPath);
     if (!jpegB64) {
+      const errMsg = `image_unreadable: ${fullPath}`;
+      console.error(`  [${i + 1}/${doc.files.length}] ${errMsg}`);
       row.models[model] = {
         description: "",
         category: "unknown",
@@ -359,7 +378,7 @@ async function runCompare(opts: CliOpts): Promise<void> {
         output_tokens: 0,
         elapsed_ms: 0,
         cost_usd: null,
-        error: "image_unreadable"
+        error: errMsg
       };
       failed++;
       continue;
@@ -397,6 +416,8 @@ async function runCompare(opts: CliOpts): Promise<void> {
     } catch (e) {
       const ms = Date.now() - t0;
       elapsedMs += ms;
+      const errMsg =
+        e instanceof Error ? e.message : `vision_error: ${String(e)}`;
       row.models[model] = {
         description: "",
         category: "unknown",
@@ -407,10 +428,10 @@ async function runCompare(opts: CliOpts): Promise<void> {
         output_tokens: 0,
         elapsed_ms: ms,
         cost_usd: null,
-        error: e instanceof Error ? e.message.slice(0, 200) : "vision_error"
+        error: errMsg.slice(0, 500)
       };
       failed++;
-      console.log("fail");
+      console.error(`fail — ${errMsg.slice(0, 400)}`);
     }
   }
 

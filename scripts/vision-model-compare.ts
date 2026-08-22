@@ -18,7 +18,12 @@ config({ path: resolve(process.cwd(), ".env.local") });
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import Anthropic from "@anthropic-ai/sdk";
+import {
+  callAnthropicVision,
+  callOpenAiVision,
+  lunaAnthropicApiKey,
+  lunaOpenAiApiKey
+} from "../lib/luna/media-vision-api";
 import {
   classifyFolderCategory,
   parseMediaPath
@@ -110,18 +115,10 @@ type CompareRow = {
 };
 
 function openaiKey(): string | null {
-  return (
-    process.env.LUNA_OPENAI_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim() ||
-    null
-  );
+  return lunaOpenAiApiKey();
 }
 function anthropicKey(): string | null {
-  return (
-    process.env.hubtrendchat_claude?.trim() ||
-    process.env.ANTHROPIC_API_KEY?.trim() ||
-    null
-  );
+  return lunaAnthropicApiKey();
 }
 function googleKey(): string | null {
   return (
@@ -180,50 +177,11 @@ async function visionOpenAI(
   input_tokens: number;
   output_tokens: number;
 }> {
-  const key = openaiKey();
-  if (!key) throw new Error("키 없음");
-  const body: Record<string, unknown> = {
-    model,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: prompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${jpegBase64}`,
-              detail: "low"
-            }
-          }
-        ]
-      }
-    ]
-  };
-  if (/^gpt-5|^o[1-4]|codex/i.test(model)) {
-    body.max_completion_tokens = 700;
-  } else {
-    body.max_tokens = 700;
-  }
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 280)}`);
-  }
-  const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
+  const r = await callOpenAiVision({ model, prompt, jpegBase64, maxTokens: 700 });
   return {
-    text: json.choices?.[0]?.message?.content ?? "",
-    input_tokens: json.usage?.prompt_tokens ?? 0,
-    output_tokens: json.usage?.completion_tokens ?? 0
+    text: r.text,
+    input_tokens: r.input_tokens,
+    output_tokens: r.output_tokens
   };
 }
 
@@ -236,35 +194,11 @@ async function visionAnthropic(
   input_tokens: number;
   output_tokens: number;
 }> {
-  const key = anthropicKey();
-  if (!key) throw new Error("키 없음");
-  const client = new Anthropic({ apiKey: key });
-  const res = await client.messages.create({
-    model,
-    max_tokens: 700,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: "image/jpeg",
-              data: jpegBase64
-            }
-          },
-          { type: "text", text: prompt }
-        ]
-      }
-    ]
-  });
-  const text =
-    res.content.find((b) => b.type === "text")?.text?.trim() ?? "";
+  const r = await callAnthropicVision({ model, prompt, jpegBase64, maxTokens: 700 });
   return {
-    text,
-    input_tokens: res.usage?.input_tokens ?? 0,
-    output_tokens: res.usage?.output_tokens ?? 0
+    text: r.text,
+    input_tokens: r.input_tokens,
+    output_tokens: r.output_tokens
   };
 }
 
