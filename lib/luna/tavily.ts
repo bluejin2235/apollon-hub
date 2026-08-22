@@ -1,15 +1,19 @@
 export type LunaCard = {
-  type: "web" | "youtube" | "notion" | "nas";
+  type: "web" | "youtube" | "notion" | "nas" | "image";
   title: string;
   url: string | null;
   thumbnail: string | null;
   description: string;
-  /** Work서버 카드 전용: 드라이브 문자 (예: "T") */
+  /** Work서버·이미지 카드: 드라이브 문자 (예: "T") */
   drive?: string;
-  /** Work서버 카드 전용: DB 원본 경로 (드라이브 접두사 없음) */
+  /** Work서버·이미지 카드: DB 원본 경로 (드라이브 접두사 없음) */
   raw_path?: string;
-  /** Work서버 카드 전용: 파일이면 true, 폴더면 false */
+  /** Work서버·이미지 카드: 파일이면 true, 폴더면 false */
   is_file?: boolean;
+  /** 이미지 색인 카드 */
+  project?: string;
+  ai_category?: string;
+  similarity?: number;
 };
 
 type TavilyResult = {

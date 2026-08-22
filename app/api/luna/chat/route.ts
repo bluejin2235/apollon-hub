@@ -29,6 +29,10 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import {
+  orderCardsWithImagePriority,
+  searchMediaForLuna
+} from "@/lib/luna/media-index-search";
 import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
 import {
   maxNotionMatchStrength,
@@ -340,11 +344,11 @@ function finalizeNasDirectoryRows(rows: NasDirectoryRow[]): NasDirectoryRow[] {
 
 function cardDedupeKey(card: LunaCard): string {
   if (card.url) return `url:${card.url}`;
-  if (card.type === "nas") {
-    if (card.raw_path) return `nas:${card.raw_path}`;
+  if (card.type === "nas" || card.type === "image") {
+    if (card.raw_path) return `${card.type}:${card.raw_path}`;
     let pathPart = card.description?.split(" · ")[0] || card.title;
     if (pathPart.startsWith("★ ")) pathPart = pathPart.slice(2);
-    return `nas:${pathPart}`;
+    return `${card.type}:${pathPart}`;
   }
   return `${card.type}:${card.title}`;
 }
@@ -1913,7 +1917,8 @@ export async function POST(request: NextRequest) {
             opts?.reuseSpeculative === true &&
             speculativeNas.length > 0;
           const useNasTools = nasEnabled && !listingQuestion;
-          const [notionOutcome, webRes, youtubeRes, nasRes] = await Promise.all([
+          const [notionOutcome, webRes, youtubeRes, nasRes, mediaRes] =
+            await Promise.all([
             runNotionIndex
               ? reuseNotion
                 ? Promise.resolve(speculativeNotion)
@@ -2005,7 +2010,12 @@ export async function POST(request: NextRequest) {
                   searchIntentText
                 );
               }
-            })()
+            })(),
+            searchMediaForLuna(
+              admin,
+              knowledgeEmb.queryEmbedding,
+              searchIntentText
+            ).then((r) => r.cards)
           ]);
 
           const notionRes = notionOutcome.sources;
@@ -2017,15 +2027,23 @@ export async function POST(request: NextRequest) {
             description: ""
           }));
           const nasCards = nasRes.map(toNasCard);
+          const merged = [
+            ...notionCards,
+            ...nasCards,
+            ...mediaRes,
+            ...webRes,
+            ...youtubeRes
+          ];
           return {
             notionSources: notionRes,
             notionOutcome,
             nasResults: nasRes,
-            cards: [...notionCards, ...nasCards, ...webRes, ...youtubeRes],
+            cards: orderCardsWithImagePriority(merged, searchIntentText),
             counts: {
               notion: notionRes.length,
               nas: nasRes.length,
-              web: webRes.length
+              web: webRes.length,
+              image: mediaRes.length
             }
           };
         };

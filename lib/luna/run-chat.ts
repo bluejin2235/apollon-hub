@@ -41,6 +41,10 @@ import {
   type LearningMatchRow
 } from "@/lib/luna/knowledge-match";
 import { retrieveKnowledgeEmbeddings } from "@/lib/luna/embedding-retrieve";
+import {
+  orderCardsWithImagePriority,
+  searchMediaForLuna
+} from "@/lib/luna/media-index-search";
 import { formatGlossaryBlock } from "@/lib/luna/prompt-cache";
 import { loadWikiDocs, bumpWikiUseCount } from "@/lib/wiki/store";
 import {
@@ -633,13 +637,18 @@ export async function runLunaTurn(
   let youtubeCards: LunaCard[] = [];
   let nasSearchAttempted = false;
 
+  let mediaCards: LunaCard[] = [];
   if (keywords || userText) {
-    const notionOutcome = await searchNotionForLuna(admin, keywords || userText, userText, {
-      queryEmbedding: emb.queryEmbedding,
-      skipLive: false,
-      listing: false
-    });
+    const [notionOutcome, mediaRes] = await Promise.all([
+      searchNotionForLuna(admin, keywords || userText, userText, {
+        queryEmbedding: emb.queryEmbedding,
+        skipLive: false,
+        listing: false
+      }),
+      searchMediaForLuna(admin, emb.queryEmbedding, userText)
+    ]);
     notionSources = notionOutcome.sources;
+    mediaCards = mediaRes.cards;
   }
   if (webEnabled) {
     webCards = await searchTavily(keywords || userText);
@@ -681,7 +690,10 @@ export async function runLunaTurn(
     thumbnail: null,
     description: ""
   }));
-  const cards = [...notionCards, ...nasResults.map(toNasCard), ...webCards, ...youtubeCards];
+  const cards = orderCardsWithImagePriority(
+    [...notionCards, ...nasResults.map(toNasCard), ...mediaCards, ...webCards, ...youtubeCards],
+    userText
+  );
   const notionForLlm = takeTopNotionSourcesForLlm(
     notionSources,
     llmInject.notion

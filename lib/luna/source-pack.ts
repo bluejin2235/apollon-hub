@@ -1,8 +1,14 @@
 import type { NotionSource } from "@/lib/luna/notion";
 import {
+  formatNasFolderPath,
   normalizeNasDriveLetter,
   normalizeRawNasPath
 } from "@/lib/luna/nas-path";
+import { DEFAULT_NAS_PATH_SETTINGS } from "@/lib/luna/nas-path-settings";
+import {
+  MEDIA_PACK_MID,
+  MEDIA_PACK_RECOMMENDED
+} from "@/lib/luna/media-index-search";
 import {
   detectStageQueryBias,
   detectWorkStage,
@@ -313,6 +319,58 @@ function buildNasEntries(cards: LunaCard[]): NasEntry[] {
   return out;
 }
 
+function packFromImage(card: LunaCard): SourcePackItem {
+  const rawPath = card.raw_path ?? "";
+  const drive = normalizeNasDriveLetter(card.drive);
+  const fullPath = formatNasFolderPath(
+    drive,
+    rawPath,
+    DEFAULT_NAS_PATH_SETTINGS,
+    true
+  );
+  const score =
+    typeof card.similarity === "number" && Number.isFinite(card.similarity)
+      ? card.similarity
+      : 0;
+  const categoryLabel =
+    card.ai_category === "ours"
+      ? "시안"
+      : card.ai_category === "reference"
+        ? "레퍼런스"
+        : card.ai_category === "document"
+          ? "문서"
+          : card.ai_category ?? null;
+  const subtitleParts = [card.project?.trim(), categoryLabel].filter(Boolean);
+  return {
+    id: `image:${normalizeWorkPath(rawPath)}`,
+    title: card.title,
+    subtitle: subtitleParts.join(" · ") || "이미지",
+    badge: categoryLabel,
+    body: card.description?.trim() || null,
+    onlySide: null,
+    notion: null,
+    files: fullPath
+      ? [
+          {
+            name: card.title,
+            fullPath,
+            drive,
+            rawPath: normalizeRawNasPath(rawPath)
+          }
+        ]
+      : [],
+    filesMore: 0,
+    folder: fullPath
+      ? toFolder(formatNasFolderPath(drive, rawPath, DEFAULT_NAS_PATH_SETTINGS, false))
+      : null,
+    parentId: null,
+    pathTitles: [],
+    dateKey: notionDateKey(card.title),
+    score,
+    displayScore: Math.min(1, Math.max(0, score))
+  };
+}
+
 function packFromNotion(
   source: NotionSource,
   matched: NasEntry[]
@@ -434,6 +492,7 @@ export function buildSourcePacks(
 ): SourcePackView[] {
   const notions = (notionSources ?? []).filter((s) => s.title && s.url);
   const nasEntries = buildNasEntries(cards ?? []);
+  const imageCards = (cards ?? []).filter((c) => c.type === "image");
   const notionNormPaths = notions
     .map((s) => notionPath(s))
     .filter((p): p is string => Boolean(p))
@@ -495,6 +554,10 @@ export function buildSourcePacks(
       )
     );
     nasOnlyRank += 1;
+  }
+
+  for (const card of imageCards) {
+    items.push(packFromImage(card));
   }
 
   return groupPacksIntoProjects(items, notions);
@@ -605,7 +668,8 @@ export function countSourcePackMaterialsFromMeta(
 ): number {
   const hasNotion = (notionSources?.length ?? 0) > 0;
   const hasNas = (cards ?? []).some((c) => c.type === "nas");
-  if (!hasNotion && !hasNas) return 0;
+  const hasImage = (cards ?? []).some((c) => c.type === "image");
+  if (!hasNotion && !hasNas && !hasImage) return 0;
   return countSourcePackMaterials(buildSourcePacks(notionSources, cards));
 }
 
@@ -708,7 +772,10 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
 
   let recommended: SourcePackItem | null = null;
   for (const item of leaves) {
-    if (item.score >= PACK_SCORE_RECOMMENDED) {
+    const recThreshold = item.id.startsWith("image:")
+      ? MEDIA_PACK_RECOMMENDED
+      : PACK_SCORE_RECOMMENDED;
+    if (item.score >= recThreshold) {
       recommended = item;
       break;
     }
@@ -737,7 +804,8 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
     }
     if (
       mid.length < 2 &&
-      item.score >= PACK_SCORE_MID
+      item.score >=
+        (item.id.startsWith("image:") ? MEDIA_PACK_MID : PACK_SCORE_MID)
     ) {
       mid.push(item);
       used.add(item.id);

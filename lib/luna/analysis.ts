@@ -14,6 +14,11 @@ import {
 } from "@/lib/luna/engine";
 import { capNotionDisplaySources, formatNotionSourcesForPrompt, type NotionSource } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { createQueryEmbedding } from "@/lib/luna/embedding";
+import {
+  orderCardsWithImagePriority,
+  searchMediaForLuna
+} from "@/lib/luna/media-index-search";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import { getPrompts } from "@/lib/luna/prompts";
@@ -106,10 +111,10 @@ function toNasCard(row: NasDirectoryRow): LunaCard {
 
 function cardDedupeKey(card: LunaCard): string {
   if (card.url) return `url:${card.url}`;
-  if (card.type === "nas") {
-    if (card.raw_path) return `nas:${card.raw_path}`;
+  if (card.type === "nas" || card.type === "image") {
+    if (card.raw_path) return `${card.type}:${card.raw_path}`;
     const pathPart = card.description?.split(" · ")[0] || card.title;
-    return `nas:${pathPart}`;
+    return `${card.type}:${pathPart}`;
   }
   return `${card.type}:${card.title}`;
 }
@@ -364,7 +369,8 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       notionEnabled || webEnabled || nasEnabled || isSearchRequest;
 
     const runConnectorSearch = async (kw: string) => {
-      const [notionRes, webRes, youtubeRes, nasRes] = await Promise.all([
+      const [notionRes, webRes, youtubeRes, nasRes, mediaRes] =
+        await Promise.all([
         notionEnabled && kw
           ? searchNotionForLuna(admin, kw, userText).then((o) => o.sources)
           : Promise.resolve([] as NotionSource[]),
@@ -392,6 +398,10 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
             return [];
           }
           return (nasData ?? []) as NasDirectoryRow[];
+        })(),
+        (async () => {
+          const emb = await createQueryEmbedding(kw || userText);
+          return searchMediaForLuna(admin, emb, userText).then((r) => r.cards);
         })()
       ]);
 
@@ -406,11 +416,15 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       return {
         notionSources: notionRes,
         nasResults: nasRes,
-        cards: [...notionCards, ...nasCards, ...webRes, ...youtubeRes],
+        cards: orderCardsWithImagePriority(
+          [...notionCards, ...nasCards, ...mediaRes, ...webRes, ...youtubeRes],
+          userText
+        ),
         counts: {
           notion: notionRes.length,
           nas: nasRes.length,
-          web: webRes.length
+          web: webRes.length,
+          image: mediaRes.length
         }
       };
     };

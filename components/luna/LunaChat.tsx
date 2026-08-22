@@ -206,7 +206,8 @@ export function normalizeLunaCards(raw: unknown): LunaCard[] | null {
         row.type === "web" ||
         row.type === "youtube" ||
         row.type === "notion" ||
-        row.type === "nas";
+        row.type === "nas" ||
+        row.type === "image";
       const validUrl = typeof row.url === "string" || row.url === null;
       return validType && typeof row.title === "string" && validUrl;
     })
@@ -220,7 +221,12 @@ export function normalizeLunaCards(raw: unknown): LunaCard[] | null {
         description: typeof row.description === "string" ? row.description : "",
         drive: typeof row.drive === "string" ? row.drive : undefined,
         raw_path: typeof row.raw_path === "string" ? row.raw_path : undefined,
-        is_file: typeof row.is_file === "boolean" ? row.is_file : undefined
+        is_file: typeof row.is_file === "boolean" ? row.is_file : undefined,
+        project: typeof row.project === "string" ? row.project : undefined,
+        ai_category:
+          typeof row.ai_category === "string" ? row.ai_category : undefined,
+        similarity:
+          typeof row.similarity === "number" ? row.similarity : undefined
       };
     });
   return cards.length > 0 ? cards : null;

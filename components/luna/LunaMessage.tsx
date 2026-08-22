@@ -133,6 +133,7 @@ const CARD_SECTION_META: Record<
 > = {
   notion: { label: "노션", color: "#534AB7" },
   nas: { label: "Work서버", color: "#1D9E75" },
+  image: { label: "이미지", color: "#7C5CFC" },
   web: { label: "웹", color: "#378ADD" },
   youtube: { label: "YouTube", color: "#E24B4A" }
 };
