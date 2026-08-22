@@ -24,6 +24,13 @@ export function mediaVisionModel(): string {
   return process.env.MEDIA_VISION_MODEL?.trim() || "gpt-5.6-luna";
 }
 
+/** gpt-5 / o-series 는 max_completion_tokens (lib/luna/llm/client.ts 와 동일) */
+function openAiMaxTokensField(model: string): "max_completion_tokens" | "max_tokens" {
+  return /^gpt-5|^o[1-4]|codex/i.test(model)
+    ? "max_completion_tokens"
+    : "max_tokens";
+}
+
 export function buildMediaIndexVisionPrompt(opts: {
   fullPath: string;
   parts: MediaPathParts;
@@ -103,31 +110,34 @@ export async function analyzeMediaImageVision(
   if (!key) throw new Error("LUNA_OPENAI_API_KEY missing");
 
   const model = mediaVisionModel();
+  const maxTokens = 600;
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${jpegBase64}`,
+              detail: "low"
+            }
+          }
+        ]
+      }
+    ]
+  };
+  body[openAiMaxTokensField(model)] = maxTokens;
+
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 600,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${jpegBase64}`,
-                detail: "low"
-              }
-            }
-          ]
-        }
-      ]
-    })
+    body: JSON.stringify(body)
   });
 
   if (!res.ok) {

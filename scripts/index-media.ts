@@ -34,10 +34,12 @@ import {
   DEFAULT_PILOT_ROOT,
   mediaFileTypeFromExt,
   printMediaDryRunReport,
+  sampleCandidatesByIncludeRule,
   writeMediaDryRunJson,
   type ScanCandidate
 } from "@/lib/luna/media-scan";
 import { parseMediaPath } from "@/lib/luna/media-path-parse";
+import { resolveOfficialPrice } from "@/lib/luna/model-pricing";
 import {
   storageKeyFromPath,
   uploadMediaThumbnail
@@ -125,10 +127,20 @@ async function indexOne(
   item: ScanCandidate,
   glossary: Awaited<ReturnType<typeof loadVisualGlossary>>,
   notionCache: Map<string, string | null>
-): Promise<"indexed" | "skipped" | "failed"> {
+): Promise<
+  | {
+      status: "indexed";
+      description: string;
+      category: string;
+      visionIn: number;
+      visionOut: number;
+    }
+  | { status: "skipped" }
+  | { status: "failed" }
+> {
   const existing = await fetchIndexedMtime(admin, item.path);
   if (isSameMtime(existing.mtime, item.mtimeMs)) {
-    return "skipped";
+    return { status: "skipped" };
   }
 
   const parts = parseMediaPath(item.fullPath);
@@ -158,7 +170,7 @@ async function indexOne(
   const jpegB64 = await resizeForVision(item.fullPath);
   if (!jpegB64) {
     console.error(`  [skip] image unreadable: ${item.path}`);
-    return "failed";
+    return { status: "failed" };
   }
 
   let vision;
@@ -166,7 +178,7 @@ async function indexOne(
     vision = await analyzeMediaImageVision(jpegB64, prompt);
   } catch (e) {
     console.error(`  [vision] ${item.path}:`, e instanceof Error ? e.message : e);
-    return "failed";
+    return { status: "failed" };
   }
 
   const thumbBuf = await makeThumbnail(item.fullPath);
@@ -210,7 +222,13 @@ async function indexOne(
   };
 
   await upsertMediaIndex(admin, row);
-  return "indexed";
+  return {
+    status: "indexed",
+    description: vision.result.description,
+    category: vision.result.category,
+    visionIn: vision.usage.inputTokens,
+    visionOut: vision.usage.outputTokens
+  };
 }
 
 async function runIndex(opts: CliOpts): Promise<void> {
@@ -238,7 +256,18 @@ async function runIndex(opts: CliOpts): Promise<void> {
   console.log(`glossary: ${glossary.length} terms · model: ${mediaVisionModel()}`);
 
   let work = stats.candidates;
-  if (opts.limit != null) work = work.slice(0, opts.limit);
+  if (opts.limit != null) {
+    work = sampleCandidatesByIncludeRule(stats.candidates, opts.limit);
+    const byRule: Record<string, number> = {};
+    for (const c of work) {
+      byRule[c.includeRule] = (byRule[c.includeRule] ?? 0) + 1;
+    }
+    console.log(
+      `limit sample (${work.length}): ${Object.entries(byRule)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")}`
+    );
+  }
 
   console.log(`indexing ${work.length} / ${stats.candidates.length} candidates`);
 
@@ -246,16 +275,29 @@ async function runIndex(opts: CliOpts): Promise<void> {
   let indexed = 0;
   let skipped = 0;
   let failed = 0;
+  let visionIn = 0;
+  let visionOut = 0;
+  const samples: Array<{ file: string; category: string; description: string }> =
+    [];
 
   for (let i = 0; i < work.length; i++) {
     const item = work[i]!;
     process.stdout.write(`[${i + 1}/${work.length}] ${item.fileName} … `);
     try {
       const r = await indexOne(admin, item, glossary, notionCache);
-      if (r === "indexed") {
+      if (r.status === "indexed") {
         indexed++;
+        visionIn += r.visionIn;
+        visionOut += r.visionOut;
+        if (samples.length < 5 && r.description.trim()) {
+          samples.push({
+            file: item.fileName,
+            category: r.category,
+            description: r.description
+          });
+        }
         console.log("ok");
-      } else if (r === "skipped") {
+      } else if (r.status === "skipped") {
         skipped++;
         console.log("skip (mtime)");
       } else {
@@ -268,7 +310,31 @@ async function runIndex(opts: CliOpts): Promise<void> {
     }
   }
 
+  const model = mediaVisionModel();
+  const price = resolveOfficialPrice(model);
+  let estUsd: number | null = null;
+  if (price) {
+    estUsd =
+      (visionIn / 1_000_000) * price.input +
+      (visionOut / 1_000_000) * price.output;
+  }
+
   console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
+  if (indexed > 0) {
+    console.log(
+      `vision tokens: in=${visionIn.toLocaleString("ko-KR")} out=${visionOut.toLocaleString("ko-KR")}`
+    );
+    if (estUsd != null) {
+      console.log(`vision cost (est.): $${estUsd.toFixed(4)} (${model})`);
+    }
+    if (samples.length > 0) {
+      console.log("\n--- description samples ---");
+      for (const s of samples) {
+        console.log(`[${s.category}] ${s.file}`);
+        console.log(`  ${s.description}\n`);
+      }
+    }
+  }
 }
 
 const opts = parseArgs(process.argv.slice(2));

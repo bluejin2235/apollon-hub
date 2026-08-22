@@ -52,7 +52,11 @@ export const EXCLUDE_FOLDER_PATTERNS: Array<{ id: string; re: RegExp }> = [
   { id: "provided_88", re: /88\s*제공\s*받은\s*자료/i },
   { id: "recycle_d5", re: /#recycle|_d5c/i },
   { id: "3d_misc", re: /\bSKP\b|\benskape\b|\btexture\b|재질/i },
-  { id: "temp", re: /\\temp\\|\\tmp\\|\btemp\b|\btmp\b/i }
+  { id: "temp", re: /\\temp\\|\\tmp\\|\btemp\b|\btmp\b/i },
+  {
+    id: "portrait",
+    re: /증명\s*사진|얼굴|인물\s*사진|프로필/i
+  }
 ];
 
 /** 시범 — T:\\02 Project\\2026 아래 3개 프로젝트 */

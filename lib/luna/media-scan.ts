@@ -258,4 +258,37 @@ export function writeMediaDryRunJson(
   return file;
 }
 
+/** --limit 시 포함 규칙별로 라운드로빈 샘플 */
+export function sampleCandidatesByIncludeRule(
+  candidates: ScanCandidate[],
+  limit: number
+): ScanCandidate[] {
+  if (limit >= candidates.length) return candidates;
+
+  const buckets = new Map<string, ScanCandidate[]>();
+  for (const c of candidates) {
+    const list = buckets.get(c.includeRule) ?? [];
+    list.push(c);
+    buckets.set(c.includeRule, list);
+  }
+
+  const rules = [...buckets.keys()].sort();
+  const out: ScanCandidate[] = [];
+  let round = 0;
+  while (out.length < limit) {
+    let added = false;
+    for (const rule of rules) {
+      const bucket = buckets.get(rule)!;
+      if (round < bucket.length) {
+        out.push(bucket[round]!);
+        if (out.length >= limit) break;
+        added = true;
+      }
+    }
+    if (!added) break;
+    round++;
+  }
+  return out;
+}
+
 export { DEFAULT_PILOT_ROOT };
