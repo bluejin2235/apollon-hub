@@ -2,25 +2,35 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractKeyNouns } from "@/lib/luna/reflect-guard";
 import { createCandidate } from "@/lib/luna/candidates";
+import {
+  isInspectFailure,
+  isLikelyClarifyPickQuestion,
+  kindForSignals,
+  matchesKindFilter,
+  mergeFailureRowsByMessage,
+  pickPrimarySignal,
+  uniqueFailureSignals,
+  type FailureKind,
+  type FailureKindFilter,
+  type FailureSignal
+} from "@/lib/luna/failures-shared";
 
-export type FailureKind = "human" | "self" | "auto";
-
-export type FailureSignal =
-  | "thumbs_down"
-  | "correction"
-  | "candidate_deleted"
-  | "low_intent"
-  | "low_confidence"
-  | "not_found"
-  | "unclassified"
-  | "zero_search"
-  | "eval_fail";
+export type { FailureKind, FailureKindFilter, FailureSignal };
+export {
+  FAILURE_SIGNAL_PRIORITY,
+  isInspectFailure,
+  isLikelyClarifyPickQuestion,
+  kindForSignals,
+  matchesKindFilter,
+  mergeFailureRowsByMessage,
+  pickPrimarySignal,
+  shouldSkipFailureForClarifyPick,
+  summarizeFailureKinds
+} from "@/lib/luna/failures-shared";
 
 export type FailureVerdict = "improve" | "skip" | null;
 
 export type ImproveTarget = "knowledge" | "dev_wiki" | "prompt";
-
-export type FailureKindFilter = "all" | "human" | "self" | "auto";
 
 export type FailureDbFixKind = "wiki" | "term" | "knowledge";
 
@@ -58,6 +68,8 @@ export type FailureRow = {
   answer_excerpt: string;
   kind: FailureKind;
   signal: FailureSignal;
+  /** message 당 감지된 신호 전체. 없으면 [signal] */
+  signals?: FailureSignal[];
   intent_score: number | null;
   confidence_score: number | null;
   self_note: string | null;
@@ -226,18 +238,25 @@ function isMissingTable(error: unknown): boolean {
 
 export async function recordLunaFailure(
   admin: SupabaseClient,
-  input: RecordFailureInput
+  input: RecordFailureInput & { signals?: FailureSignal[] }
 ): Promise<string | null> {
   const question = (input.question ?? "").trim();
   const answerExcerpt = excerpt(input.answerExcerpt ?? "");
-  const row = {
-    message_id: input.messageId ?? null,
+  const incomingSignals = uniqueFailureSignals([
+    ...(input.signals ?? []),
+    input.signal
+  ]);
+  const primary = pickPrimarySignal(incomingSignals);
+  const kind = kindForSignals(incomingSignals, input.kind);
+
+  const baseFields = {
     conversation_id: input.conversationId ?? null,
     asked_by: input.askedBy ?? null,
     question,
     answer_excerpt: answerExcerpt,
-    kind: input.kind,
-    signal: input.signal,
+    kind,
+    signal: primary,
+    signals: incomingSignals,
     intent_score: clipScore(input.intentScore ?? null),
     confidence_score: clipScore(input.confidenceScore ?? null),
     self_note: input.selfNote?.trim() || null,
@@ -249,29 +268,115 @@ export async function recordLunaFailure(
   };
 
   if (input.messageId) {
-    const { data: existing } = await admin
+    const { data: existingRows, error: findErr } = await admin
       .from("luna_failures")
-      .select("id")
-      .eq("message_id", input.messageId)
-      .eq("signal", input.signal)
-      .maybeSingle();
-    if (existing?.id) {
-      const { error } = await admin
+      .select(
+        "id, signal, signals, self_note, kind, source_ref, intent_score, confidence_score"
+      )
+      .eq("message_id", input.messageId);
+    if (findErr && !isMissingTable(findErr)) {
+      console.error("[luna/failures] find by message", findErr);
+    }
+    const existing = (existingRows ?? []) as Array<{
+      id: string;
+      signal: FailureSignal;
+      signals?: FailureSignal[] | null;
+      self_note: string | null;
+      kind: FailureKind;
+      source_ref: Record<string, unknown> | null;
+      intent_score: number | null;
+      confidence_score: number | null;
+    }>;
+
+    if (existing.length > 0) {
+      const mergedSignals = uniqueFailureSignals([
+        ...existing.flatMap((r) =>
+          Array.isArray(r.signals) && r.signals.length > 0
+            ? r.signals
+            : [r.signal]
+        ),
+        ...incomingSignals
+      ]);
+      const mergedPrimary = pickPrimarySignal(mergedSignals);
+      const mergedKind = kindForSignals(mergedSignals, kind);
+      const keeper = existing[0]!;
+      const selfNote =
+        baseFields.self_note ||
+        existing.map((r) => r.self_note?.trim()).find(Boolean) ||
+        null;
+      const intent =
+        baseFields.intent_score ??
+        existing.map((r) => r.intent_score).find((n) => n != null) ??
+        null;
+      const confidence =
+        baseFields.confidence_score ??
+        existing.map((r) => r.confidence_score).find((n) => n != null) ??
+        null;
+      const mergedRef = {
+        ...(typeof keeper.source_ref === "object" && keeper.source_ref
+          ? keeper.source_ref
+          : {}),
+        ...(input.sourceRef ?? {})
+      };
+
+      const patch: Record<string, unknown> = {
+        ...baseFields,
+        signal: mergedPrimary,
+        kind: mergedKind,
+        self_note: selfNote,
+        intent_score: intent,
+        confidence_score: confidence,
+        source_ref: mergedRef,
+        verdict: null,
+        resolved_at: null
+      };
+      // signals 컬럼이 아직 없으면 한 번 재시도
+      let { error } = await admin
         .from("luna_failures")
-        .update({ ...row, verdict: null, resolved_at: null })
-        .eq("id", existing.id);
-      if (error && !isMissingTable(error)) {
-        console.error("[luna/failures] update", error);
+        .update(patch)
+        .eq("id", keeper.id);
+      if (error && String(error.message || "").includes("signals")) {
+        delete patch.signals;
+        ({ error } = await admin
+          .from("luna_failures")
+          .update(patch)
+          .eq("id", keeper.id));
       }
-      return existing.id as string;
+      if (error && !isMissingTable(error)) {
+        console.error("[luna/failures] merge update", error);
+      }
+
+      const dropIds = existing.slice(1).map((r) => r.id);
+      if (dropIds.length > 0) {
+        const { error: delErr } = await admin
+          .from("luna_failures")
+          .delete()
+          .in("id", dropIds);
+        if (delErr && !isMissingTable(delErr)) {
+          console.error("[luna/failures] merge delete dupes", delErr);
+        }
+      }
+      return keeper.id;
     }
   }
 
-  const { data, error } = await admin
+  const insertRow: Record<string, unknown> = {
+    message_id: input.messageId ?? null,
+    ...baseFields
+  };
+  let { data, error } = await admin
     .from("luna_failures")
-    .insert(row)
+    .insert(insertRow)
     .select("id")
     .maybeSingle();
+  if (error && String(error.message || "").includes("signals")) {
+    delete insertRow.signals;
+    ({ data, error } = await admin
+      .from("luna_failures")
+      .insert(insertRow)
+      .select("id")
+      .maybeSingle());
+  }
   if (error) {
     if (!isMissingTable(error)) console.error("[luna/failures] insert", error);
     return null;
@@ -298,7 +403,29 @@ export async function recordAutoFailuresFromAnswer(
     searchResultCount?: number;
   }
 ): Promise<void> {
-  const base = {
+  const signals: FailureSignal[] = [];
+  if (typeof opts.intentScore === "number" && opts.intentScore < 5) {
+    signals.push("low_intent");
+  }
+  if (typeof opts.confidenceScore === "number" && opts.confidenceScore < 5) {
+    signals.push("low_confidence");
+  }
+  if (isNotFoundAnswer(opts.answer)) {
+    signals.push("not_found");
+  }
+  if (
+    typeof opts.classifyConfidence === "number" &&
+    opts.classifyConfidence < 0.5
+  ) {
+    signals.push("unclassified");
+  }
+  if (opts.searchAttempted && (opts.searchResultCount ?? 0) === 0) {
+    signals.push("zero_search");
+  }
+  if (signals.length === 0) return;
+
+  const primary = pickPrimarySignal(signals);
+  await recordLunaFailure(admin, {
     messageId: opts.messageId,
     conversationId: opts.conversationId,
     askedBy: opts.askedBy,
@@ -309,57 +436,16 @@ export async function recordAutoFailuresFromAnswer(
     durationMs: opts.durationMs ?? null,
     intentScore: opts.intentScore,
     confidenceScore: opts.confidenceScore,
-    selfNote: opts.selfNote
-  };
-
-  if (
-    typeof opts.intentScore === "number" &&
-    opts.intentScore < 5
-  ) {
-    await recordLunaFailure(admin, {
-      ...base,
-      kind: "self",
-      signal: "low_intent"
-    });
-  }
-  if (
-    typeof opts.confidenceScore === "number" &&
-    opts.confidenceScore < 5
-  ) {
-    await recordLunaFailure(admin, {
-      ...base,
-      kind: "self",
-      signal: "low_confidence"
-    });
-  }
-  if (isNotFoundAnswer(opts.answer)) {
-    await recordLunaFailure(admin, {
-      ...base,
-      kind: "auto",
-      signal: "not_found"
-    });
-  }
-  if (
-    typeof opts.classifyConfidence === "number" &&
-    opts.classifyConfidence < 0.5
-  ) {
-    await recordLunaFailure(admin, {
-      ...base,
-      kind: "auto",
-      signal: "unclassified",
-      sourceRef: { confidence: opts.classifyConfidence }
-    });
-  }
-  if (
-    opts.searchAttempted &&
-    (opts.searchResultCount ?? 0) === 0
-  ) {
-    await recordLunaFailure(admin, {
-      ...base,
-      kind: "auto",
-      signal: "zero_search"
-    });
-  }
+    selfNote: opts.selfNote,
+    kind: kindForSignals(signals),
+    signal: primary,
+    signals,
+    sourceRef:
+      signals.includes("unclassified") &&
+      typeof opts.classifyConfidence === "number"
+        ? { confidence: opts.classifyConfidence }
+        : {}
+  });
 }
 
 export async function listLunaFailures(
@@ -376,16 +462,13 @@ export async function listLunaFailures(
   } else if (opts?.verdict) {
     q = q.eq("verdict", opts.verdict);
   }
-  if (opts?.kind && opts.kind !== "all") {
-    q = q.eq("kind", opts.kind);
-  }
   const { data, error } = await q;
   if (error) {
     if (isMissingTable(error)) return [];
     throw error;
   }
-  const rows = (data ?? []) as FailureRow[];
-  const userIds = [...new Set(rows.map((r) => r.asked_by).filter(Boolean))] as string[];
+  const raw = (data ?? []) as FailureRow[];
+  const userIds = [...new Set(raw.map((r) => r.asked_by).filter(Boolean))] as string[];
   const names = new Map<string, string>();
   if (userIds.length > 0) {
     const { data: profiles } = await admin
@@ -396,20 +479,37 @@ export async function listLunaFailures(
       if (p.id && p.name) names.set(p.id as string, p.name as string);
     }
   }
-  return rows.map((r) => {
+  const enriched = raw.map((r) => {
     const ref =
       r.source_ref && typeof r.source_ref === "object" && !Array.isArray(r.source_ref)
         ? r.source_ref
         : {};
     const humanNote =
       typeof ref.feedback_note === "string" ? ref.feedback_note.trim() : "";
+    const signals =
+      Array.isArray(r.signals) && r.signals.length > 0
+        ? (r.signals as FailureSignal[])
+        : ([r.signal] as FailureSignal[]);
+    // eval 사유가 self_note 비어 있으면 source_ref.reason 사용
+    let selfNote = r.self_note;
+    if (!selfNote?.trim() && typeof ref.reason === "string") {
+      selfNote = ref.reason.trim();
+    }
     return {
       ...r,
+      signals,
+      self_note: selfNote,
       db_fixes: normalizeFailureDbFixes((r as { db_fixes?: unknown }).db_fixes),
       asked_by_name: r.asked_by ? names.get(r.asked_by) ?? null : null,
       human_note: humanNote || null
     };
   });
+
+  const merged = mergeFailureRowsByMessage(enriched).filter(
+    (r) => isInspectFailure(r) || !isLikelyClarifyPickQuestion(r.question)
+  );
+  if (!opts?.kind) return merged;
+  return merged.filter((r) => matchesKindFilter(r, opts.kind!));
 }
 
 export type FailureCluster = {

@@ -27,6 +27,7 @@ type FailureRow = {
   question: string;
   answer_excerpt: string;
   signal: string;
+  signals?: string[];
   kind: "human" | "self" | "auto";
   intent_score: number | null;
   confidence_score: number | null;
@@ -85,7 +86,13 @@ type PromptGroup = {
 
 type Payload = {
   summary: { open: number; improve: number; skip: number };
-  kind_summary: { all: number; human: number; self: number; auto: number };
+  kind_summary: {
+    all: number;
+    human: number;
+    self: number;
+    auto: number;
+    inspect: number;
+  };
   clusters: Cluster[];
   dev_groups: PromptGroup[];
   items: FailureRow[];
@@ -107,7 +114,8 @@ const KIND_TAB = [
   { key: "all", label: "전체" },
   { key: "human", label: "👎 사람이 표시" },
   { key: "self", label: "🌙 루나가 낮게 평가" },
-  { key: "auto", label: "⚙ 자동 감지" }
+  { key: "auto", label: "⚙ 자동 감지" },
+  { key: "inspect", label: "📋 정기 점검" }
 ] as const;
 
 const HOT = "#C0392B";
@@ -146,14 +154,26 @@ function formatDurationMs(ms: number | null | undefined): string {
 }
 
 function kindTag(item: FailureRow): { label: string; className: string } {
+  const signals =
+    Array.isArray(item.signals) && item.signals.length > 0
+      ? item.signals
+      : [item.signal];
+  if (item.signal === "eval_fail" || signals.includes("eval_fail")) {
+    return {
+      label: "📋 정기 점검",
+      className: "bg-[#EEF2F7] text-[#4A5568]"
+    };
+  }
   if (item.kind === "human") {
     return { label: "👎 사람이 표시", className: "bg-[#FDECEA] text-[#C0392B]" };
   }
   if (item.kind === "self") {
     return { label: "🌙 루나가 낮게 평가", className: "bg-[#FBF3E4] text-[#B0782B]" };
   }
-  const sig = SIGNAL_LABEL[item.signal];
-  const extra = sig && sig !== "👎" ? ` · ${sig}` : "";
+  const extras = signals
+    .map((s) => SIGNAL_LABEL[s])
+    .filter((v) => v && v !== "👎");
+  const extra = extras.length ? ` · ${extras.join(" · ")}` : "";
   return { label: `⚙ 자동 감지${extra}`, className: "bg-[#f1f2f5] text-[#6b6f76]" };
 }
 
@@ -188,35 +208,40 @@ function statusText(item: FailureRow): { db: string; dev: string } {
 function WhyBox({ item }: { item: FailureRow }) {
   const human = humanReason(item);
   const self = selfReason(item);
-  if (human) {
+  if (!human && !self) {
     return (
       <div
-        className="mb-2 rounded-lg px-3 py-2 text-[12.5px] leading-relaxed"
-        style={{ background: HOT_BG, color: "#2a2c31" }}
+        className="mb-2 rounded-lg px-3 py-2 text-[12.5px]"
+        style={{ background: "#FBFBFC", color: K.faint }}
       >
-        <span className="mr-1 text-[10px] font-bold" style={{ color: HOT }}>
-          왜 아쉬웠나
-        </span>
-        {human}
-      </div>
-    );
-  }
-  if (self) {
-    return (
-      <div
-        className="mb-2 rounded-lg px-3 py-2 text-[12.5px] leading-relaxed"
-        style={{ background: "#FBFBFC", color: "#2a2c31" }}
-      >
-        <span className="mr-1 text-[10px]" style={{ color: K.sub }}>
-          🌙
-        </span>
-        {self}
+        사유 없음
       </div>
     );
   }
   return (
-    <div className="mb-2 rounded-lg px-3 py-2 text-[12.5px]" style={{ background: "#FBFBFC", color: K.faint }}>
-      사유 없음
+    <div className="mb-2 space-y-1.5">
+      {human ? (
+        <div
+          className="rounded-lg px-3 py-2 text-[12.5px] leading-relaxed"
+          style={{ background: HOT_BG, color: "#2a2c31" }}
+        >
+          <span className="mr-1 text-[10px] font-bold" style={{ color: HOT }}>
+            왜 아쉬웠나
+          </span>
+          {human}
+        </div>
+      ) : null}
+      {self ? (
+        <div
+          className="rounded-lg px-3 py-2 text-[12.5px] leading-relaxed"
+          style={{ background: "#FBFBFC", color: "#2a2c31" }}
+        >
+          <span className="mr-1 text-[10px]" style={{ color: K.sub }}>
+            🌙
+          </span>
+          {self}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -815,7 +840,9 @@ export function LunaFailures() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState<Payload | null>(null);
-  const [kind, setKind] = useState<"all" | "human" | "self" | "auto">("all");
+  const [kind, setKind] = useState<"all" | "human" | "self" | "auto" | "inspect">(
+    "all"
+  );
   const [status, setStatus] = useState<"open" | "improve" | "skip">("open");
   const [openItem, setOpenItem] = useState<FailureRow | null>(null);
 
@@ -882,7 +909,9 @@ export function LunaFailures() {
                       ? data.kind_summary.human
                       : k.key === "self"
                         ? data.kind_summary.self
-                        : data.kind_summary.auto}
+                        : k.key === "inspect"
+                          ? data.kind_summary.inspect
+                          : data.kind_summary.auto}
                 </span>
               </button>
             ))}
@@ -975,7 +1004,8 @@ export function LunaFailures() {
           )}
           <Hint>최근 {filtered.length}건 · 카드를 누르면 그때 대화가 열립니다</Hint>
           <p className="mt-2 text-[11px]" style={{ color: K.faint }}>
-            사유가 없는 것은 「사유 없음」으로 보이고, 대화를 열어 확인할 수 있습니다.
+            「전체」에는 정기 점검을 넣지 않습니다. 점검 결과는 📋 탭에서 보세요.
+            사람 메모와 루나 자기평가는 카드에 구분해 표시합니다.
           </p>
         </>
       ) : null}

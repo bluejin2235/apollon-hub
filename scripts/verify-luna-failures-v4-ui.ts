@@ -113,8 +113,14 @@ async function main() {
   const bodyText = await page.locator("body").innerText();
   const checks: Array<[string, boolean]> = [
     ["질문+사유 카피", bodyText.includes("카드를 누르면 그때 대화를 볼 수 있어요")],
-    ["종류 탭", bodyText.includes("사람이 표시") && bodyText.includes("자동 감지")],
+    [
+      "종류 탭(+정기 점검)",
+      bodyText.includes("사람이 표시") &&
+        bodyText.includes("자동 감지") &&
+        bodyText.includes("정기 점검")
+    ],
     ["개선하기 버튼", bodyText.includes("개선하기")],
+    ["전체에서 점검 제외 안내", bodyText.includes("정기 점검을 넣지 않습니다")],
     ["답변 excerpt 힌트 없음", !bodyText.includes("행을 누르면 그 대화로 갑니다")]
   ];
   for (const [name, ok] of checks) {
@@ -122,10 +128,42 @@ async function main() {
   }
 
   await page.screenshot({
-    path: join(OUT, "luna-failures-v4-list.png"),
+    path: join(OUT, "luna-failures-dedupe-list.png"),
     fullPage: true
   });
-  console.log("✓ luna-failures-v4-list.png");
+  console.log("✓ luna-failures-dedupe-list.png");
+
+  // 정기 점검 탭
+  const inspectTab = page.getByRole("button", { name: /정기 점검/ });
+  if ((await inspectTab.count()) > 0) {
+    await inspectTab.first().click();
+    await page.waitForTimeout(800);
+    await page.screenshot({
+      path: join(OUT, "luna-failures-inspect-tab.png"),
+      fullPage: true
+    });
+    console.log("✓ luna-failures-inspect-tab.png");
+    await page.getByRole("button", { name: /^전체/ }).first().click();
+    await page.waitForTimeout(500);
+  }
+
+  // 자동 감지 탭에서 🌙 사유
+  const autoTab = page.getByRole("button", { name: /자동 감지/ });
+  if ((await autoTab.count()) > 0) {
+    await autoTab.first().click();
+    await page.waitForTimeout(800);
+    const autoText = await page.locator("body").innerText();
+    console.log(
+      autoText.includes("🌙") || autoText.includes("왜 아쉬웠나") || !autoText.includes("사유 없음")
+        ? "✓ 자동감지 사유 표시(또는 사유없음 감소)"
+        : "! 자동감지 사유 확인 필요"
+    );
+    await page.screenshot({
+      path: join(OUT, "luna-failures-auto-note.png"),
+      fullPage: true
+    });
+    console.log("✓ luna-failures-auto-note.png");
+  }
 
   const card = page.locator("text=눌러서 대화 보기").first();
   if ((await card.count()) > 0) {

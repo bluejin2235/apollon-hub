@@ -8,8 +8,11 @@ import {
   groupDevPrompts,
   listLunaFailures,
   markFailureImprovedIfDone,
+  matchesKindFilter,
   saveFailureImprovementDraft,
-  setFailureVerdict
+  setFailureVerdict,
+  summarizeFailureKinds,
+  type FailureKindFilter
 } from "@/lib/luna/failures";
 
 export const runtime = "nodejs";
@@ -28,14 +31,23 @@ export async function GET(request: NextRequest) {
   }
 
   const verdict = request.nextUrl.searchParams.get("verdict");
-  const kind = request.nextUrl.searchParams.get("kind");
-  const rows = await listLunaFailures(admin, {
+  const kindParam = request.nextUrl.searchParams.get("kind");
+  const kind: FailureKindFilter =
+    kindParam === "human" ||
+    kindParam === "self" ||
+    kindParam === "auto" ||
+    kindParam === "inspect"
+      ? kindParam
+      : "all";
+
+  const allRows = await listLunaFailures(admin, {
     verdict:
       verdict === "open" || verdict === "improve" || verdict === "skip"
         ? verdict
-        : undefined,
-    kind: kind === "human" || kind === "self" || kind === "auto" ? kind : "all"
+        : undefined
   });
+  const kind_summary = summarizeFailureKinds(allRows);
+  const rows = allRows.filter((r) => matchesKindFilter(r, kind));
   const open = rows.filter((r) => !r.verdict);
   const improved = rows.filter((r) => r.verdict === "improve");
   const skipped = rows.filter((r) => r.verdict === "skip");
@@ -47,12 +59,7 @@ export async function GET(request: NextRequest) {
       improve: improved.length,
       skip: skipped.length
     },
-    kind_summary: {
-      all: rows.length,
-      human: rows.filter((r) => r.kind === "human").length,
-      self: rows.filter((r) => r.kind === "self").length,
-      auto: rows.filter((r) => r.kind === "auto").length
-    },
+    kind_summary,
     clusters,
     dev_groups: groupDevPrompts(improved),
     items: rows

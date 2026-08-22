@@ -720,6 +720,8 @@ export async function executeEvalCase(
       answerExcerpt: result.answer,
       kind: "auto",
       signal: "eval_fail",
+      signals: ["eval_fail"],
+      selfNote: grade.reason || null,
       durationMs: result.durationMs,
       sourceRef: {
         run_id: runId,
