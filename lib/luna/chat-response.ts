@@ -43,7 +43,7 @@ export function scrubLunaAnswerText(text: string): string {
 
   // 본문 끝에 붙은 JSON (개행 없이 이어진 경우)
   out = out.replace(
-    /\s*\{"type":"(?:step|meta|ids|clarify|team)"[^]*\}\s*$/g,
+    /\s*\{"type":"(?:step|meta|ids|clarify|team|search_snapshot)"[^]*\}\s*$/g,
     ""
   );
 
@@ -226,6 +226,7 @@ export type SourceBadgeCounts = {
   nas: number;
   notion: number;
   web: number;
+  image: number;
   /** 노션·Work 묶음 자료 건수 (표시용) */
   materials: number;
 };
@@ -325,10 +326,12 @@ export function countSourceBadges(opts: {
   let nas = 0;
   let notion = 0;
   let web = 0;
+  let image = 0;
   for (const c of cards) {
     if (c.type === "nas") nas += 1;
     else if (c.type === "notion") notion += 1;
     else if (c.type === "web" || c.type === "youtube") web += 1;
+    else if (c.type === "image") image += 1;
   }
   if (notion === 0 && Array.isArray(opts.notionSources)) {
     notion = opts.notionSources.length;
@@ -352,6 +355,7 @@ export function countSourceBadges(opts: {
     nas,
     notion,
     web,
+    image,
     materials
   };
 }

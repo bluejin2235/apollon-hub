@@ -23,6 +23,7 @@ import type { LunaConversation } from "@/components/luna/LunaSidebar";
 import { useLunaPendingQuestion } from "@/components/luna/use-luna-pending-question";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
+import type { LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
 import { normalizeWikiSources, type WikiSourceRef } from "@/lib/luna/wiki-match";
 import {
   parseNumberedChoices,
@@ -108,6 +109,7 @@ export type LunaChatMessage = {
   wikiSources?: WikiSourceRef[] | null;
   privateWikiRefs?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
+  searchCounts?: LunaSearchCounts | null;
   sourceReasons?: LunaSourceReasons | null;
   attachments?: LunaAttachmentRef[] | null;
   isThinking?: boolean;
@@ -400,6 +402,15 @@ export type LunaStreamEventResult =
       teamKind?: "perspective" | "role";
     }
   | {
+      kind: "search_snapshot";
+      buffer: string;
+      cards: LunaCard[] | null;
+      notionSources: NotionSource[] | null;
+      wikiSources: WikiSourceRef[] | null;
+      searchCounts: LunaSearchCounts;
+      classification: LunaClassificationMeta | null;
+    }
+  | {
       kind: "meta";
       buffer: string;
       cards: LunaCard[] | null;
@@ -422,6 +433,19 @@ export type LunaStreamEventResult =
       assistantMessageId: string;
     }
   | { kind: "text"; buffer: string };
+
+export function normalizeSearchCounts(raw: unknown): LunaSearchCounts | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  return {
+    wiki: num(row.wiki),
+    notion: num(row.notion),
+    work: num(row.work),
+    image: num(row.image)
+  };
+}
 
 /** meta 이전: 줄 단위 JSON 이벤트 소비. meta 이후: 전체를 텍스트로. */
 export function consumeLunaStreamEvents(
@@ -514,6 +538,28 @@ export function consumeLunaStreamEvents(
           content:
             typeof parsed.content === "string" ? parsed.content : undefined,
           teamKind
+        };
+      }
+    }
+    if (parsed.type === "search_snapshot") {
+      const countsRaw = parsed.counts;
+      const counts =
+        countsRaw && typeof countsRaw === "object"
+          ? normalizeSearchCounts(countsRaw)
+          : null;
+      if (counts) {
+        const wikiRaw = parsed.wiki_count;
+        if (typeof wikiRaw === "number" && Number.isFinite(wikiRaw)) {
+          counts.wiki = wikiRaw;
+        }
+        return {
+          kind: "search_snapshot",
+          buffer: rest,
+          cards: normalizeLunaCards(parsed.cards),
+          notionSources: normalizeNotionSources(parsed.notion_sources),
+          wikiSources: normalizeWikiSources(parsed.wiki_sources),
+          searchCounts: counts,
+          classification: normalizeClassification(parsed.classification)
         };
       }
     }
@@ -1046,6 +1092,7 @@ export function LunaChat({
                 wikiSources={m.wikiSources}
                 privateWikiRefs={m.privateWikiRefs}
                 cards={m.cards}
+                searchCounts={m.searchCounts}
                 sourceReasons={m.sourceReasons}
                 queryHint={
                   m.role === "assistant" && prevUser?.content

@@ -22,6 +22,8 @@ type LunaMarkdownProps = {
   queryHint?: string | null;
   /** 직전 사용자 질문 전문 — 답변 본문 strip 깊이 판정 */
   questionText?: string | null;
+  /** true면 자료 카드는 LunaAnswerLayout 에서만 렌더 */
+  hideSourcePacks?: boolean;
 };
 
 function AssumeBlocks({ assumptions }: { assumptions: string[] }) {
@@ -50,7 +52,8 @@ export function LunaMarkdown({
   source = "luna-md",
   highlightTerms,
   queryHint = null,
-  questionText = null
+  questionText = null,
+  hideSourcePacks = false
 }: LunaMarkdownProps) {
   const allowTerms = highlightTerms ?? source !== "stream";
   const layout = useMemo(
@@ -86,7 +89,7 @@ export function LunaMarkdown({
         </div>
       ) : null}
 
-      {hasPacks ? (
+      {hasPacks && !hideSourcePacks ? (
         <SourcePackList
           notionSources={packNotion}
           cards={cards}

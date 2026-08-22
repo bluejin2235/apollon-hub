@@ -2129,6 +2129,25 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          const emitSearchSnapshot = () => {
+            if (streamMetaEmitted) return;
+            const imageN = cards.filter((c) => c.type === "image").length;
+            emit(controller, encoder, {
+              type: "search_snapshot",
+              cards,
+              notion_sources: notionSources,
+              wiki_count: publicWikiSources.length,
+              classification: classificationPublic(classification, questionTypes),
+              counts: {
+                wiki: publicWikiSources.length,
+                notion: notionSources.length,
+                work: nasResults.length,
+                image: imageN
+              }
+            });
+          };
+          emitSearchSnapshot();
+
           // 자체 평가 + 재검색 (임베딩·하이브리드 합산 중 큰 값이 임계 이상이면 건너뜀)
           let sufficient = true;
           let missing = "";
@@ -2299,6 +2318,7 @@ export async function POST(request: NextRequest) {
               ),
               ...nasResults.map(toNasCard)
             ];
+            emitSearchSnapshot();
             const recountCounts = {
               notion: cards.filter((c) => c.type === "notion").length,
               nas: cards.filter((c) => c.type === "nas").length,

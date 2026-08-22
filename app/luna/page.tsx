@@ -538,6 +538,7 @@ export default function LunaPage() {
         let streamUsedPrompts: LunaChatMessage["usedPrompts"] = null;
         let streamConnectorRouting: LunaChatMessage["connectorRouting"] = null;
         let streamClassification: LunaChatMessage["classification"] = null;
+        let streamSearchCounts: LunaChatMessage["searchCounts"] = null;
         let assistantContent = "";
         let assistantVisible = false;
 
@@ -549,6 +550,11 @@ export default function LunaPage() {
                     ...m,
                     isThinking: true,
                     metadata: { isThinking: true },
+                    cards: streamCards ?? m.cards,
+                    notionSources: streamNotionSources ?? m.notionSources,
+                    wikiSources: streamWikiSources ?? m.wikiSources,
+                    searchCounts: streamSearchCounts ?? m.searchCounts,
+                    classification: streamClassification ?? m.classification,
                     steps: streamSteps.length > 0 ? [...streamSteps] : m.steps,
                     searchRounds: streamSearchRounds ?? m.searchRounds,
                     mode: streamMode ?? m.mode,
@@ -570,6 +576,8 @@ export default function LunaPage() {
                     cards: streamCards ?? m.cards,
                     notionSources: streamNotionSources ?? m.notionSources,
                     wikiSources: streamWikiSources ?? m.wikiSources,
+                    searchCounts: streamSearchCounts ?? m.searchCounts,
+                    classification: streamClassification ?? m.classification,
                     sourceReasons: streamSourceReasons ?? m.sourceReasons,
                     steps: streamSteps.length > 0 ? streamSteps : m.steps,
                     searchRounds: streamSearchRounds ?? m.searchRounds,
@@ -578,7 +586,6 @@ export default function LunaPage() {
                     memoryCount: streamMemoryCount ?? m.memoryCount,
                     usedPrompts: streamUsedPrompts ?? m.usedPrompts,
                     connectorRouting: streamConnectorRouting ?? m.connectorRouting,
-                    classification: streamClassification ?? m.classification,
                     ...extra
                   }
                 : m
@@ -653,6 +660,22 @@ export default function LunaPage() {
                 updateThinking();
                 continue;
               }
+              if (consumed.kind === "search_snapshot") {
+                buffer = consumed.buffer;
+                if (consumed.cards) streamCards = consumed.cards;
+                if (consumed.notionSources) {
+                  streamNotionSources = consumed.notionSources;
+                }
+                if (consumed.wikiSources) {
+                  streamWikiSources = consumed.wikiSources;
+                }
+                streamSearchCounts = consumed.searchCounts;
+                if (consumed.classification) {
+                  streamClassification = consumed.classification;
+                }
+                updateThinking();
+                continue;
+              }
               if (consumed.kind === "team") {
                 buffer = consumed.buffer;
                 applyTeamEvent(consumed);
@@ -691,6 +714,21 @@ export default function LunaPage() {
                 streamUsedPrompts = consumed.usedPrompts;
                 streamConnectorRouting = consumed.connectorRouting;
                 streamClassification = consumed.classification;
+                if (consumed.wikiSources) {
+                  streamWikiSources = consumed.wikiSources;
+                }
+                if (streamSearchCounts == null && consumed.wikiSources) {
+                  streamSearchCounts = {
+                    wiki: consumed.wikiSources.length,
+                    notion: consumed.notionSources?.length ?? null,
+                    work:
+                      consumed.cards?.filter((c) => c.type === "nas").length ??
+                      null,
+                    image:
+                      consumed.cards?.filter((c) => c.type === "image")
+                        .length ?? null
+                  };
+                }
                 metaReceived = true;
                 buffer = consumed.buffer;
                 assistantContent = scrubLunaAnswerText(buffer);

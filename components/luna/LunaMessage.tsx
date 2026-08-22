@@ -10,7 +10,9 @@ import { Copy, FileText, Image as ImageIcon, Sparkles, ThumbsDown, ThumbsUp } fr
 import type { LunaAttachmentRef } from "@/components/luna/LunaInput";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
+import { LunaAnswerLayout } from "@/components/luna/LunaAnswerLayout";
 import { SourcePackList } from "@/components/luna/SourcePackCard";
+import type { LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
 import { SupplyToast } from "@/components/supplies/toast";
 import type { NotionSource } from "@/lib/luna/notion";
 import {
@@ -25,6 +27,7 @@ import {
   type UsedPromptRef,
   type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
+import { countDocMaterials } from "@/lib/luna/luna-answer-ui";
 import { countSourcePackMaterialsFromMeta } from "@/lib/luna/source-pack";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
@@ -97,6 +100,7 @@ type LunaMessageProps = {
   wikiSources?: WikiSourceRef[] | null;
   privateWikiRefs?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
+  searchCounts?: LunaSearchCounts | null;
   sourceReasons?: LunaSourceReasons | null;
   queryHint?: string | null;
   /** 직전 사용자 질문 전문 — 본문 strip 깊이 */
@@ -368,7 +372,10 @@ function InlineThinkingProgress({
   nasPathSettings,
   onCopyToast,
   notionSources,
+  wikiSources,
   cards,
+  searchCounts,
+  classification,
   queryHint,
   questionText
 }: {
@@ -377,15 +384,18 @@ function InlineThinkingProgress({
   nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
   notionSources?: NotionSource[] | null;
+  wikiSources?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
+  searchCounts?: LunaSearchCounts | null;
+  classification?: LunaClassificationMeta | null;
   queryHint?: string | null;
   questionText?: string | null;
 }) {
-  const visible = steps.filter((s) => s.status !== "skip");
-  const running = visible.find((s) => s.status === "running");
-  const done = visible.filter((s) => s.status === "done");
-
-  if (!running && done.length === 0 && !content.trim()) {
+  if (
+    steps.filter((s) => s.status !== "skip").length === 0 &&
+    !content.trim() &&
+    !cards?.length
+  ) {
     return (
       <div className="flex items-center gap-2">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
@@ -395,40 +405,20 @@ function InlineThinkingProgress({
   }
 
   return (
-    <>
-      {running ? (
-        <div className="mb-2 flex items-center gap-2">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
-          <span className="text-[13px] text-[#6b6f76]">{running.label}</span>
-        </div>
-      ) : null}
-      {done.length > 0 ? (
-        <div className="mb-2 pl-3.5 text-[12.5px] leading-[1.9] text-[#9aa0a8]">
-          {done.map((s) => (
-            <div key={s.key}>{s.label} — 완료</div>
-          ))}
-        </div>
-      ) : null}
-      {content.trim() ? (
-        <div className="text-[14.5px] leading-[1.75] max-md:text-[13.5px] max-md:leading-[1.7]">
-          <LunaMarkdown
-            content={content}
-            className="text-[14.5px] max-md:text-[13.5px]"
-            nasPathSettings={nasPathSettings}
-            onCopyToast={onCopyToast}
-            notionSources={notionSources}
-            cards={cards}
-            source="stream"
-            queryHint={queryHint}
-            questionText={questionText}
-          />
-          <span
-            className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#1c1d21] align-text-bottom"
-            aria-hidden
-          />
-        </div>
-      ) : null}
-    </>
+    <LunaAnswerLayout
+      isStreaming
+      content={content}
+      steps={steps}
+      classification={classification}
+      notionSources={notionSources}
+      wikiSources={wikiSources}
+      cards={cards}
+      searchCounts={searchCounts}
+      nasPathSettings={nasPathSettings}
+      onCopyToast={onCopyToast}
+      queryHint={queryHint}
+      questionText={questionText}
+    />
   );
 }
 
@@ -459,13 +449,14 @@ function SourceBadgeRow({
     wikiSources,
     privateWikiRefs,
     memoryCount,
-    materialsCount: countSourcePackMaterialsFromMeta(notionSources, cards)
+    materialsCount: countDocMaterials(notionSources, cards)
   });
   const items: {
     label: string;
     n: number;
     toggle?: "wiki" | "notion";
   }[] = [];
+  if (counts.image > 0) items.push({ label: "이미지", n: counts.image });
   if (counts.materials > 0) items.push({ label: "자료", n: counts.materials });
   if (counts.wiki > 0) items.push({ label: "위키", n: counts.wiki, toggle: "wiki" });
   if (counts.internal > 0)
@@ -586,30 +577,39 @@ function AssistantTextBubble({
   content,
   nasPathSettings,
   onCopyToast,
-  source = "complete",
   notionSources,
+  wikiSources,
   cards,
+  searchCounts,
+  steps,
+  classification,
   queryHint,
   questionText
 }: {
   content: string;
   nasPathSettings: NasPathSettings;
   onCopyToast?: (message: string) => void;
-  source?: string;
   notionSources?: NotionSource[] | null;
+  wikiSources?: WikiSourceRef[] | null;
   cards?: LunaCard[] | null;
+  searchCounts?: LunaSearchCounts | null;
+  steps?: LunaProgressStep[] | null;
+  classification?: LunaClassificationMeta | null;
   queryHint?: string | null;
   questionText?: string | null;
 }) {
   return (
-    <LunaMarkdown
+    <LunaAnswerLayout
+      isStreaming={false}
       content={content}
-      className="text-[14.5px] max-md:text-[13.5px]"
+      steps={steps ?? []}
+      classification={classification}
+      notionSources={notionSources}
+      wikiSources={wikiSources}
+      cards={cards}
+      searchCounts={searchCounts}
       nasPathSettings={nasPathSettings}
       onCopyToast={onCopyToast}
-      notionSources={notionSources}
-      cards={cards}
-      source={source}
       queryHint={queryHint}
       questionText={questionText}
     />
@@ -1155,6 +1155,7 @@ export function LunaMessage({
   wikiSources = null,
   privateWikiRefs = null,
   cards = null,
+  searchCounts = null,
   sourceReasons = null,
   queryHint = null,
   questionText = null,
@@ -1470,7 +1471,10 @@ export function LunaMessage({
         nasPathSettings={nasPathSettings}
         onCopyToast={handleCopyToast}
         notionSources={sources}
+        wikiSources={wikiRefs}
         cards={cardList}
+        searchCounts={searchCounts}
+        classification={classification}
         queryHint={queryHint}
         questionText={questionText}
       />
@@ -1481,9 +1485,12 @@ export function LunaMessage({
         content={content}
         nasPathSettings={nasPathSettings}
         onCopyToast={handleCopyToast}
-        source={id.startsWith("temp-") ? "complete-stream" : "complete-db"}
         notionSources={sources}
+        wikiSources={wikiRefs}
         cards={cardList}
+        searchCounts={searchCounts}
+        steps={stepList}
+        classification={classification}
         queryHint={queryHint}
         questionText={questionText}
       />
