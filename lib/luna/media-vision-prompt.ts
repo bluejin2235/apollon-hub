@@ -3,6 +3,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  extractInlineSynonyms,
+  normalizeSynonyms
+} from "@/lib/glossary/synonyms";
+import {
   GLOSSARY_VISUAL_NEEDLES,
   type FolderCategory,
   type MediaPathParts
@@ -12,6 +16,12 @@ export type MediaGlossaryTerm = {
   term_ko: string;
   term_en: string | null;
   definition: string;
+  synonyms: string[];
+};
+
+/** DB synonyms 미등록이지만 본문·검색에서 쓰는 표현 → term_ko */
+const GLOSSARY_EXTRA_SYNONYMS: Record<string, string[]> = {
+  "미디어 스컬프처": ["미디어 조형물"]
 };
 
 export type MediaVisionParsed = {
@@ -38,7 +48,7 @@ export async function loadVisualGlossary(
   const needles = [...GLOSSARY_VISUAL_NEEDLES];
   const { data, error } = await admin
     .from("glossary_terms")
-    .select("term_ko, term_en, definition, deleted_at")
+    .select("term_ko, term_en, definition, synonyms, deleted_at")
     .not("definition", "is", null)
     .limit(2000);
   if (error) {
@@ -52,10 +62,18 @@ export async function loadVisualGlossary(
   for (const r of rows) {
     const hay = `${r.term_ko ?? ""} ${r.term_en ?? ""}`;
     if (needles.some((n) => hay.includes(n))) {
+      const extracted = extractInlineSynonyms(
+        String(r.definition),
+        normalizeSynonyms(r.synonyms)
+      );
       hit.push({
         term_ko: r.term_ko,
         term_en: r.term_en,
-        definition: String(r.definition).slice(0, 120)
+        definition: extracted.definition.slice(0, 120),
+        synonyms: normalizeSynonyms([
+          ...extracted.synonyms,
+          ...(GLOSSARY_EXTRA_SYNONYMS[r.term_ko] ?? [])
+        ])
       });
     }
   }

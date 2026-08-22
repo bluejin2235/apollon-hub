@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.luna_media_index (
   stage text,
   author text,
   folder_category text,
-  ai_category text CHECK (ai_category IN ('ours', 'reference', 'unknown')),
+  ai_category text CHECK (ai_category IN ('ours', 'reference', 'document', 'unknown')),
   purpose text,
 
   description text,

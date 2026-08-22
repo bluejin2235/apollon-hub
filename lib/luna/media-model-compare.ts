@@ -103,17 +103,29 @@ export async function fetchIndexedCompareRows(
   return (data ?? []) as IndexedCompareRow[];
 }
 
+function normalizeTermHaystack(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 export function countGlossaryTermsInText(
   text: string,
   glossary: MediaGlossaryTerm[]
 ): string[] {
-  const hay = text.toLowerCase();
+  const hay = normalizeTermHaystack(text);
   const used: string[] = [];
   for (const t of glossary) {
-    const ko = (t.term_ko ?? "").trim();
-    const en = (t.term_en ?? "").trim();
-    if (ko && hay.includes(ko.toLowerCase())) used.push(ko);
-    else if (en && hay.includes(en.toLowerCase())) used.push(ko || en);
+    const canonical = (t.term_ko ?? "").trim();
+    if (!canonical) continue;
+    const needles = [
+      canonical,
+      ...(t.term_en ?? "").trim() ? [(t.term_en ?? "").trim()] : [],
+      ...(t.synonyms ?? [])
+    ];
+    const matched = needles.some((raw) => {
+      const needle = normalizeTermHaystack(raw);
+      return needle.length > 0 && hay.includes(needle);
+    });
+    if (matched) used.push(canonical);
   }
   return [...new Set(used)];
 }

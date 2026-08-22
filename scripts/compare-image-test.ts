@@ -6,7 +6,8 @@
  *
  * DB·Storage 미사용.
  *   compare.json · compare.html — 3모델 전체
- *   compare-haiku-v2.json · compare-haiku-v2.html — haiku before/after (단일 모드)
+ *   compare-haiku-v2.json · compare-haiku-v2.html — haiku v1 vs v2
+ *   compare-haiku-v3.json · compare-haiku-v3.html — haiku v2 vs v3
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -54,7 +55,9 @@ const SKIP_NAMES = new Set([
   "compare.json",
   "compare.html",
   "compare-haiku-v2.json",
-  "compare-haiku-v2.html"
+  "compare-haiku-v2.html",
+  "compare-haiku-v3.json",
+  "compare-haiku-v3.html"
 ]);
 
 type ModelResult = {
@@ -103,7 +106,57 @@ type ValidationStats = {
   terms_over_2: number;
   guess_phrases: number;
   unknown_category: number;
+  document_category: number;
+  category_counts: Record<string, number>;
 };
+
+/** 추측형 표현 — "눈에 보인다/보이는"은 제외 */
+const SPECULATIVE_RE =
+  /(?:으로|로)\s*추정|것으로\s*보(?:인다|이며|임)|(?:으로|로)\s*보이며/;
+
+function categoryCounts(files: FileRow[], model: string): Record<string, number> {
+  const counts: Record<string, number> = {
+    ours: 0,
+    reference: 0,
+    document: 0,
+    unknown: 0
+  };
+  for (const f of files) {
+    const r = f.models[model];
+    if (!r?.description || r.error) continue;
+    const cat = r.category in counts ? r.category : "unknown";
+    counts[cat] += 1;
+  }
+  return counts;
+}
+
+function findTermsMismatch(
+  files: FileRow[],
+  model: string,
+  glossary: Awaited<ReturnType<typeof loadVisualGlossary>>
+): Array<{ file_name: string; expected: string[]; actual: string[] }> {
+  const mismatches: Array<{
+    file_name: string;
+    expected: string[];
+    actual: string[];
+  }> = [];
+  for (const f of files) {
+    const r = f.models[model];
+    if (!r?.description || r.error) continue;
+    const text = [r.description, r.purpose].filter(Boolean).join("\n");
+    const expected = countGlossaryTermsInText(text, glossary);
+    if (expected.length === 0) continue;
+    const missing = expected.filter((t) => !r.terms_used.includes(t));
+    if (missing.length > 0) {
+      mismatches.push({
+        file_name: f.file_name,
+        expected,
+        actual: r.terms_used
+      });
+    }
+  }
+  return mismatches;
+}
 
 function parseArgs(argv: string[]): { model: string | null } {
   let model: string | null = null;
@@ -163,17 +216,19 @@ function validateHaiku(files: FileRow[], model: string): ValidationStats {
     gonggaegongji: 0,
     terms_over_2: 0,
     guess_phrases: 0,
-    unknown_category: 0
+    unknown_category: 0,
+    document_category: 0,
+    category_counts: categoryCounts(files, model)
   };
-  const guessRe = /추정|보인다|보임|것으로 보|으로 보|추측/;
   for (const f of files) {
     const r = f.models[model];
     if (!r?.description || r.error) continue;
     const d = `${r.description} ${r.purpose}`;
     if (d.includes("공개공지")) stats.gonggaegongji += 1;
     if (r.terms_used.length > 2) stats.terms_over_2 += 1;
-    if (guessRe.test(d)) stats.guess_phrases += 1;
+    if (SPECULATIVE_RE.test(d)) stats.guess_phrases += 1;
     if (r.category === "unknown") stats.unknown_category += 1;
+    if (r.category === "document") stats.document_category += 1;
   }
   return stats;
 }
@@ -182,8 +237,10 @@ function printValidation(label: string, stats: ValidationStats): void {
   console.log(`  [${label}]`);
   console.log(`    공개공지 사용: ${stats.gonggaegongji}건`);
   console.log(`    용어 3개 이상: ${stats.terms_over_2}건`);
-  console.log(`    추정/보인다 표현: ${stats.guess_phrases}건`);
-  console.log(`    unknown 분류: ${stats.unknown_category}건`);
+  console.log(`    추측 표현: ${stats.guess_phrases}건`);
+  console.log(
+    `    분류: ours=${stats.category_counts.ours} reference=${stats.category_counts.reference} document=${stats.category_counts.document} unknown=${stats.category_counts.unknown}`
+  );
 }
 
 function renderModelBlock(
@@ -216,11 +273,12 @@ function renderModelBlock(
 </div>`;
 }
 
-function writeHaikuV2Html(
+function writeHaikuCompareHtml(
   before: CompareDoc,
   after: CompareDoc,
   beforeStats: ValidationStats,
-  afterStats: ValidationStats
+  afterStats: ValidationStats,
+  opts: { title: string; beforeLabel: string; afterLabel: string; outFile: string }
 ): void {
   const cards = after.files
     .map((f) => {
@@ -234,8 +292,8 @@ function writeHaikuV2Html(
     <div class="fname">${esc(f.file_name)}</div>
   </div>
   <div class="cols">
-    ${renderModelBlock("before (v1 프롬프트)", beforeR, "before")}
-    ${renderModelBlock("after (v2 용어·서술 규칙)", afterR, "after")}
+    ${renderModelBlock(opts.beforeLabel, beforeR, "before")}
+    ${renderModelBlock(opts.afterLabel, afterR, "after")}
   </div>
 </article>`;
     })
@@ -246,7 +304,7 @@ function writeHaikuV2Html(
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Haiku v1 vs v2 — ${after.file_count}장</title>
+<title>${esc(opts.title)} — ${after.file_count}장</title>
 <style>
 :root{color-scheme:light dark}
 body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#f0ede6;color:#1a1b1f;line-height:1.5}
@@ -277,22 +335,22 @@ th{background:#f7f5f0}
 </head>
 <body>
 <header>
-  <h1>claude-haiku-4-5 — 프롬프트 v1 vs v2</h1>
-  <p>docs/image_test ${after.file_count}장 · 용어 조건·2개 상한·추측 금지</p>
+  <h1>${esc(opts.title)} — ${after.file_count}장</h1>
+  <p>docs/image_test · ${esc(after.prompt_version ?? "v3")} · max_tokens=${after.vision_max_tokens}</p>
 </header>
 <div class="wrap">
   <h2 style="font-size:15px">검증 지표</h2>
   <table>
-    <thead><tr><th></th><th>공개공지</th><th>용어 3+</th><th>추정 표현</th><th>unknown</th></tr></thead>
+    <thead><tr><th></th><th>공개공지</th><th>용어 3+</th><th>추측 표현</th><th>document</th></tr></thead>
     <tbody>
-      <tr><td><strong>before v1</strong></td><td>${beforeStats.gonggaegongji}</td><td>${beforeStats.terms_over_2}</td><td>${beforeStats.guess_phrases}</td><td>${beforeStats.unknown_category}</td></tr>
-      <tr><td><strong>after v2</strong></td><td>${afterStats.gonggaegongji}</td><td>${afterStats.terms_over_2}</td><td>${afterStats.guess_phrases}</td><td>${afterStats.unknown_category}</td></tr>
+      <tr><td><strong>before</strong></td><td>${beforeStats.gonggaegongji}</td><td>${beforeStats.terms_over_2}</td><td>${beforeStats.guess_phrases}</td><td>${beforeStats.document_category}</td></tr>
+      <tr><td><strong>after</strong></td><td>${afterStats.gonggaegongji}</td><td>${afterStats.terms_over_2}</td><td>${afterStats.guess_phrases}</td><td>${afterStats.document_category}</td></tr>
     </tbody>
   </table>
   ${cards}
 </div>
 </body></html>`;
-  writeFileSync(join(IMAGE_DIR, "compare-haiku-v2.html"), html, "utf8");
+  writeFileSync(join(IMAGE_DIR, opts.outFile), html, "utf8");
 }
 
 function writeHtml(doc: CompareDoc): void {
@@ -429,7 +487,7 @@ async function runSingleModel(
     file_count: images.length,
     scale_total: SCALE_TOTAL,
     vision_max_tokens: VISION_MAX_TOKENS,
-    prompt_version: "v2",
+    prompt_version: "v3",
     model_runs: [],
     files: []
   };
@@ -580,28 +638,48 @@ async function main(): Promise<void> {
   console.log(`glossary: ${glossary.length} terms · max_tokens=${VISION_MAX_TOKENS}`);
 
   if (singleModel === HAIKU_MODEL) {
-    const before = loadCompareDoc("compare.json");
+    const before =
+      loadCompareDoc("compare-haiku-v2.json") ?? loadCompareDoc("compare.json");
     if (!before) {
-      console.error("compare.json 없음 — 먼저 3모델 compare를 실행하세요");
+      console.error("compare-haiku-v2.json 또는 compare.json 없음");
       process.exit(1);
     }
 
     const after = await runSingleModel(singleModel, images, glossary);
     writeFileSync(
-      join(IMAGE_DIR, "compare-haiku-v2.json"),
+      join(IMAGE_DIR, "compare-haiku-v3.json"),
       JSON.stringify(after, null, 2),
       "utf8"
     );
 
     const beforeStats = validateHaiku(before.files, HAIKU_MODEL);
     const afterStats = validateHaiku(after.files, HAIKU_MODEL);
-    writeHaikuV2Html(before, after, beforeStats, afterStats);
+    writeHaikuCompareHtml(before, after, beforeStats, afterStats, {
+      title: "Haiku v2 vs v3",
+      beforeLabel: "before (v2)",
+      afterLabel: "after (v3 용어·문서 분류)",
+      outFile: "compare-haiku-v3.html"
+    });
 
-    console.log("\n=== haiku v1 vs v2 검증 ===");
-    printValidation("before v1", beforeStats);
-    printValidation("after v2", afterStats);
+    const termMismatch = findTermsMismatch(after.files, HAIKU_MODEL, glossary);
+    const run = after.model_runs[0];
+
+    console.log("\n=== haiku v3 검증 ===");
+    printValidation("before", beforeStats);
+    printValidation("after v3", afterStats);
+    console.log(`\n  용어 평균: ${run?.terms_avg.toFixed(2) ?? "—"}/장 (합 ${run?.terms_total ?? 0})`);
+    if (termMismatch.length === 0) {
+      console.log("  terms_used 누락: 0건");
+    } else {
+      console.log(`  terms_used 누락: ${termMismatch.length}건`);
+      for (const m of termMismatch) {
+        console.log(
+          `    - ${m.file_name}: expected [${m.expected.join(", ")}] actual [${m.actual.join(", ")}]`
+        );
+      }
+    }
     printReport(after);
-    console.log(`HTML: docs/image_test/compare-haiku-v2.html`);
+    console.log(`HTML: docs/image_test/compare-haiku-v3.html`);
     return;
   }
 

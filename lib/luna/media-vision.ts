@@ -8,9 +8,15 @@ import {
   type MediaGlossaryTerm
 } from "@/lib/luna/media-vision-prompt";
 
+export type MediaIndexCategory =
+  | "ours"
+  | "reference"
+  | "document"
+  | "unknown";
+
 export type MediaIndexVisionOutput = {
   description: string;
-  category: "ours" | "reference" | "unknown";
+  category: MediaIndexCategory;
   purpose: string;
   author: string;
 };
@@ -34,10 +40,11 @@ export function resolveMediaVisionProvider(model: string): MediaVisionProvider {
 /** glossary + 서술 규칙 — index·로컬 테스트 공통 */
 function mediaVisionRulesBlock(glossary: MediaGlossaryTerm[]): string {
   return `[서술 규칙]
-- 확실하지 않으면 "~로 추정", "~로 보인다", "~것으로 보임" 등 추측 표현을 쓰지 마라. 눈에 보이는 것만 서술하라.
-- 브랜드·상호·장소명을 모르면 언급하지 마라.
+- 확실하지 않으면 "~로 추정", "~것으로 보인다", "~으로 보이며" 등 추측 표현을 쓰지 마라. "~로 구성돼 있다"처럼 단정하거나, 확실하지 않으면 빼라.
+- "눈에 보인다"는 사실 서술(예: "텍스트가 보인다", "조명 설계가 보인다")은 허용. "프로젝션 스크린으로 보이며"처럼 유형·장소를 추측하는 "~으로 보이며"는 금지.
+- 산·건물·브랜드·상호 등 고유명사는 이미지·경로에서 확실할 때만. 지명·산 이름을 추측하지 마라.
 - 한 description 에 아폴론 용어는 최대 2개. 확실하지 않으면 쓰지 말고 일반 한국어로 써라.
-- category: 타사 사례·레퍼런스·인스피레이션·현장 사진이면 reference, 우리 시안·렌더·제작물이면 ours. 분명하면 unknown 을 쓰지 마라.
+- category: 타사 사례·레퍼런스·인스피레이션·현장 사진이면 reference, 우리 시안·렌더·제작물이면 ours, 사업자등록증·계약서·인허가·증빙 행정 문서이면 document. 분명하면 unknown 을 쓰지 마라.
 
 [용어 사용 조건 — 아래에 해당할 때만 glossary 용어를 쓴다]
 - 공개공지: 건물 밖 야외 공간일 때만. 실내 로비·아트리움·쇼핑몰 실내에는 쓰지 마라
@@ -82,12 +89,12 @@ ${opts.notionContext ?? "(없음)"}
 
 ${mediaVisionRulesBlock(opts.glossary)}
 
-category 후보: ours(우리 시안·제작) | reference(레퍼런스·사례) | unknown
+category 후보: ours(우리 시안·제작) | reference(레퍼런스·사례) | document(증빙·행정 문서) | unknown
 
 JSON:
 {
   "description": "한국어 100~200자. 무엇이 보이나·공간·색·형태·재질",
-  "category": "ours|reference|unknown",
+  "category": "ours|reference|document|unknown",
   "purpose": "용도 한 줄 (경로 해석 + 이미지)",
   "author": "주체 (아폴론/협력사명/이니셜/한글 이름)"
 }`;
@@ -105,12 +112,12 @@ ${fileName ?? "로컬 테스트 이미지"} (프로젝트·경로·노션 맥락
 
 ${mediaVisionRulesBlock(glossary)}
 
-category 후보: ours(우리 시안·제작) | reference(레퍼런스·사례) | unknown
+category 후보: ours(우리 시안·제작) | reference(레퍼런스·사례) | document(증빙·행정 문서) | unknown
 
 JSON:
 {
   "description": "한국어 100~200자. 무엇이 보이나·공간·색·형태·재질",
-  "category": "ours|reference|unknown",
+  "category": "ours|reference|document|unknown",
   "purpose": "용도 한 줄",
   "author": "주체 (알 수 없으면 빈 문자열)"
 }`;
@@ -131,8 +138,12 @@ export function parseMediaIndexVisionJson(text: string): MediaIndexVisionOutput 
   try {
     const v = JSON.parse(t.slice(start, end + 1)) as Record<string, unknown>;
     const rawCat = String(v.category ?? "unknown").toLowerCase();
-    const category =
-      rawCat === "ours" || rawCat === "reference" ? rawCat : "unknown";
+    const category: MediaIndexCategory =
+      rawCat === "ours" ||
+      rawCat === "reference" ||
+      rawCat === "document"
+        ? rawCat
+        : "unknown";
     return {
       description: String(v.description ?? "").slice(0, 400),
       category,
