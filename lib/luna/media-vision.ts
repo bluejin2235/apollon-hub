@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import type { MediaPathParts } from "@/lib/luna/media-path-parse";
 import {
   formatGlossaryBlock,
@@ -16,16 +17,32 @@ export type MediaVisionUsage = {
   outputTokens: number;
 };
 
+export type MediaVisionProvider = "openai" | "anthropic";
+
 function openaiKey(): string | null {
   return process.env.LUNA_OPENAI_API_KEY?.trim() || null;
+}
+
+function anthropicKey(): string | null {
+  return (
+    process.env.LUNA_ANTHROPIC_API_KEY?.trim() ||
+    process.env.ANTHROPIC_API_KEY?.trim() ||
+    null
+  );
 }
 
 export function mediaVisionModel(): string {
   return process.env.MEDIA_VISION_MODEL?.trim() || "gpt-5.6-luna";
 }
 
+export function resolveMediaVisionProvider(model: string): MediaVisionProvider {
+  return /claude/i.test(model) ? "anthropic" : "openai";
+}
+
 /** gpt-5 / o-series 는 max_completion_tokens (lib/luna/llm/client.ts 와 동일) */
-function openAiMaxTokensField(model: string): "max_completion_tokens" | "max_tokens" {
+function openAiMaxTokensField(
+  model: string
+): "max_completion_tokens" | "max_tokens" {
   return /^gpt-5|^o[1-4]|codex/i.test(model)
     ? "max_completion_tokens"
     : "max_tokens";
@@ -102,14 +119,14 @@ export function parseMediaIndexVisionJson(text: string): MediaIndexVisionOutput 
   }
 }
 
-export async function analyzeMediaImageVision(
+async function analyzeOpenAiVision(
   jpegBase64: string,
-  prompt: string
+  prompt: string,
+  model: string
 ): Promise<{ result: MediaIndexVisionOutput; usage: MediaVisionUsage }> {
   const key = openaiKey();
   if (!key) throw new Error("LUNA_OPENAI_API_KEY missing");
 
-  const model = mediaVisionModel();
   const maxTokens = 600;
   const body: Record<string, unknown> = {
     model,
@@ -141,8 +158,8 @@ export async function analyzeMediaImageVision(
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`vision ${res.status}: ${body.slice(0, 300)}`);
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`vision ${res.status}: ${errBody.slice(0, 300)}`);
   }
 
   const json = (await res.json()) as {
@@ -157,4 +174,56 @@ export async function analyzeMediaImageVision(
       outputTokens: json.usage?.completion_tokens ?? 0
     }
   };
+}
+
+async function analyzeAnthropicVision(
+  jpegBase64: string,
+  prompt: string,
+  model: string
+): Promise<{ result: MediaIndexVisionOutput; usage: MediaVisionUsage }> {
+  const key = anthropicKey();
+  if (!key) throw new Error("LUNA_ANTHROPIC_API_KEY missing");
+
+  const client = new Anthropic({ apiKey: key });
+  const res = await client.messages.create({
+    model,
+    max_tokens: 700,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/jpeg",
+              data: jpegBase64
+            }
+          },
+          { type: "text", text: prompt }
+        ]
+      }
+    ]
+  });
+  const text =
+    res.content.find((b) => b.type === "text")?.text?.trim() ?? "";
+  return {
+    result: parseMediaIndexVisionJson(text),
+    usage: {
+      inputTokens: res.usage?.input_tokens ?? 0,
+      outputTokens: res.usage?.output_tokens ?? 0
+    }
+  };
+}
+
+export async function analyzeMediaImageVision(
+  jpegBase64: string,
+  prompt: string,
+  opts?: { model?: string }
+): Promise<{ result: MediaIndexVisionOutput; usage: MediaVisionUsage }> {
+  const model = opts?.model ?? mediaVisionModel();
+  if (resolveMediaVisionProvider(model) === "anthropic") {
+    return analyzeAnthropicVision(jpegBase64, prompt, model);
+  }
+  return analyzeOpenAiVision(jpegBase64, prompt, model);
 }
