@@ -1,0 +1,344 @@
+{
+  "generated_at": "2026-08-22T12:45:41.115Z",
+  "image_dir": "docs/image_test",
+  "file_count": 19,
+  "scale_total": 2230,
+  "vision_max_tokens": 1024,
+  "prompt_version": "v2",
+  "model_runs": [
+    {
+      "model_id": "claude-haiku-4-5",
+      "file_count": 19,
+      "total_input_tokens": 67492,
+      "total_output_tokens": 4015,
+      "total_elapsed_ms": 66124,
+      "total_cost_usd": 0.08756699999999999,
+      "per_image_cost_usd": 0.00460878947368421,
+      "terms_total": 9,
+      "terms_avg": 0.47368421052631576
+    }
+  ],
+  "files": [
+    {
+      "file_name": "0b09a831762939_566289695daae.jpg",
+      "relative_path": "0b09a831762939_566289695daae.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "대형 실내 로비 공간에 설치된 산(마터호른으로 추정)의 흑백 사진을 담은 대형 벽면 디스플레이. 프로젝션 스크린으로 보이며, 목재·석재 마감의 현대식 로비 건축과 조화를 이룬다. 양측 계단과 격자 창문으로 둘러싸인 수직 공간에서 산 이미지가 건축적 포인트로 작용한다.",
+          "category": "reference",
+          "purpose": "건축 로비 공간의 시각적 랜드마크 연출",
+          "terms_used": [
+            "프로젝션 스크린"
+          ],
+          "input_tokens": 3458,
+          "output_tokens": 215,
+          "elapsed_ms": 2780,
+          "cost_usd": 0.004533000000000001
+        }
+      }
+    },
+    {
+      "file_name": "132043593_452227905770283_3271989991474656928_n.jpg",
+      "relative_path": "132043593_452227905770283_3271989991474656928_n.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "실내 아트리움 공간에서 보라색 네온 LED 바가 양쪽 벽면에 수직으로 설치되어 있고, 중앙의 대형 디스플레이 스크린에는 심해 생물들이 어두운 파란색 톤으로 표현되어 있다. 바닥은 거울처럼 반사되는 검은색 표면이며, 중앙에 관람객이 서 있다. 선형 LED와 영상 디스플레이가 결합된 이머시브한 공간 구성이다.",
+          "category": "reference",
+          "purpose": "호텔·문화시설 등 실내 공간의 미디어 연출 사례",
+          "terms_used": [
+            "LED 바"
+          ],
+          "input_tokens": 3602,
+          "output_tokens": 240,
+          "elapsed_ms": 7149,
+          "cost_usd": 0.004802000000000001
+        }
+      }
+    },
+    {
+      "file_name": "1623701019456.jfif",
+      "relative_path": "1623701019456.jfif",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "현대식 아트리움 공간에서 3층 규모의 곡선형 발코니가 나선형으로 연결되어 있다. 상단 벽면에는 숲과 물의 이미지가 담긴 대형 멀티채널 디스플레이가 설치되어 있으며, 목재와 유리 난간이 현대적 인테리어를 완성한다. 따뜻한 조명이 층별로 비추고 있다.",
+          "category": "reference",
+          "purpose": "건축 공간의 미디어 통합 활용 사례",
+          "terms_used": [],
+          "input_tokens": 3590,
+          "output_tokens": 202,
+          "elapsed_ms": 2476,
+          "cost_usd": 0.0046
+        }
+      }
+    },
+    {
+      "file_name": "1635886567252.jfif",
+      "relative_path": "1635886567252.jfif",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "공개공지에 설치된 독립 미디어 조형물. 크림색 향수병 형태의 입체 조형물이 검은색 원형 프레임으로 둘러싸여 있다. 프레임에는 분홍색과 흰색 장식이 있으며, 주변에 분홍색 꽃이 배치되어 있다. 건물 외벽 앞 보행로에 위치한다.",
+          "category": "reference",
+          "purpose": "향수 브랜드 프로모션을 위한 미디어 스컬프처 설치",
+          "terms_used": [
+            "미디어 스컬프처",
+            "공개공지"
+          ],
+          "input_tokens": 3567,
+          "output_tokens": 201,
+          "elapsed_ms": 2621,
+          "cost_usd": 0.004572
+        }
+      }
+    },
+    {
+      "file_name": "214049778_4078730055579838_4601379737613056067_n.jpg",
+      "relative_path": "214049778_4078730055579838_4601379737613056067_n.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "흰색 원형 프레임 내부에 하늘을 배경으로 나뭇가지가 뻗어 있는 자작나무를 아래에서 올려다본 구성. 옅은 갈색 줄기에서 가지가 방사형으로 뻗어 있고, 끝부분에 갈색 열매나 꽃 같은 작은 입자들이 밀집되어 있다. 맑은 파란 하늘과 나무의 유기적 구조가 기하학적 원형 프레임과 대비된다.",
+          "category": "reference",
+          "purpose": "자연의 기하학적 구조와 공간 미디어 조형물 설계 참고",
+          "terms_used": [],
+          "input_tokens": 3603,
+          "output_tokens": 242,
+          "elapsed_ms": 3571,
+          "cost_usd": 0.004813
+        }
+      }
+    },
+    {
+      "file_name": "325442972_503428421691342_4060236778217379810_n.jpg",
+      "relative_path": "325442972_503428421691342_4060236778217379810_n.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "안개 속에서 돛을 펼친 범선이 물 위에 떠 있다. 밝은 황금색 조명이 돛과 돛대의 격자 구조를 밝혀내고 있으며, 회색빛의 하늘과 바다 위에 신비로운 분위기를 연출한다. 역광으로 인해 돛의 질감과 선박의 입체감이 강조된다.",
+          "category": "reference",
+          "purpose": "해양 문화·역사적 상징을 미디어 조형으로 표현한 야외 설치 미술",
+          "terms_used": [],
+          "input_tokens": 3625,
+          "output_tokens": 207,
+          "elapsed_ms": 6582,
+          "cost_usd": 0.00466
+        }
+      }
+    },
+    {
+      "file_name": "3a31ad69b00f6776713524d70ecc4ae8.jpg",
+      "relative_path": "3a31ad69b00f6776713524d70ecc4ae8.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "숲으로 둘러싸인 강변에 원통형 대형 서재 구조물이 설치되어 있다. 내부 벽면 전체가 책으로 채워져 있으며, 바닥에는 초록색 의자와 작은 테이블이 배치되어 있다. 강 위의 수면이 하늘빛으로 반사되고, 따뜻한 톤의 자연광이 전체 장면을 감싼다.",
+          "category": "reference",
+          "purpose": "자연 속 독서 공간을 주제로 한 개념 미디어 아트 설치 사례",
+          "terms_used": [
+            "미디어 아트"
+          ],
+          "input_tokens": 3561,
+          "output_tokens": 216,
+          "elapsed_ms": 2716,
+          "cost_usd": 0.004641
+        }
+      }
+    },
+    {
+      "file_name": "469480503_895210246068365_2728616747831741624_n.jpg",
+      "relative_path": "469480503_895210246068365_2728616747831741624_n.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "고딕 양식의 대성당 외벽을 파란색과 금색 조명으로 밝힌 야간 연출. 건물 위쪽에서 하늘을 향해 뻗어나가는 다수의 수직 광선이 극적인 스케일감을 연출하며, 세로로 긴 창문과 장식적 아치 등 건축 세부를 강조하는 조명 설계가 보인다.",
+          "category": "reference",
+          "purpose": "역사적 건축물의 야간 조명 및 미디어파사드 사례",
+          "terms_used": [
+            "미디어파사드"
+          ],
+          "input_tokens": 3602,
+          "output_tokens": 202,
+          "elapsed_ms": 3026,
+          "cost_usd": 0.004612
+        }
+      }
+    },
+    {
+      "file_name": "61025629-las-vegas-april-13-the-cosmopolitan-hotel-lobby-in-las-vegas-on-april-13-2016-the-cosmopoli.jpg",
+      "relative_path": "61025629-las-vegas-april-13-the-cosmopolitan-hotel-lobby-in-las-vegas-on-april-13-2016-the-cosmopoli.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "호텔 로비 내부의 높은 천장에서 바닥까지 연장된 대형 LED 벽면 디스플레이. 파란색·노란색·초록색·빨간색 등 다채로운 색상의 사각형 패턴이 기하학적으로 배열되어 있다. 멀티채널 영상 구성으로 공간 전체를 감싸며, 반사되는 바닥이 몰입감을 강화한다.",
+          "category": "reference",
+          "purpose": "호텔 로비의 상징적 미디어 환경 조성 및 공간 브랜딩",
+          "terms_used": [
+            "멀티채널 영상"
+          ],
+          "input_tokens": 3556,
+          "output_tokens": 216,
+          "elapsed_ms": 3125,
+          "cost_usd": 0.004636
+        }
+      }
+    },
+    {
+      "file_name": "69ad5c22ffe6bf23a1cfca0211338069.jpg",
+      "relative_path": "69ad5c22ffe6bf23a1cfca0211338069.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "쇼핑몰 중앙 아트리움에 설치된 대형 수직 디스플레이 벽면. 흰색 바탕에 다양한 사진·이미지를 격자로 배열한 구성. 상단에 타이틀 텍스트, 중앙 로비 바닥에는 줄무늬 패턴과 함께 사진 포스터들이 배치되어 있으며, 방문객들이 전시 공간을 관람하고 있다.",
+          "category": "reference",
+          "purpose": "쇼핑몰 내 기획전시 또는 캠페인 디스플레이",
+          "terms_used": [],
+          "input_tokens": 3532,
+          "output_tokens": 220,
+          "elapsed_ms": 2827,
+          "cost_usd": 0.004632
+        }
+      }
+    },
+    {
+      "file_name": "8bf036aa2589b8254e377faa8071c535.jpg",
+      "relative_path": "8bf036aa2589b8254e377faa8071c535.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "야외 광장의 중앙에 설치된 육각형 입체 미디어 조형물. 6개 면이 모두 LED 스크린으로 구성되어 있으며, 분홍색과 파란색 그래디언트 영상이 출력되고 있다. 검은색 철골 프레임 구조로 지탱되며, 주변 건물의 광고 스크린과 야간 조명이 함께 어우러진 도시 야경을 형성한다.",
+          "category": "reference",
+          "purpose": "야외 공공 공간의 미디어 랜드마크 및 문화 콘텐츠 발표 플랫폼",
+          "terms_used": [],
+          "input_tokens": 3577,
+          "output_tokens": 230,
+          "elapsed_ms": 5664,
+          "cost_usd": 0.004727
+        }
+      }
+    },
+    {
+      "file_name": "사진. 이청 삼성디스플레이 대표이사 사장.jpg",
+      "relative_path": "사진. 이청 삼성디스플레이 대표이사 사장.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "검은색 터틀넥 상의를 입은 남성의 정면 초상 사진. 안경을 착용하고 있으며, 양손을 모아 가슴 앞에 위치시킨 포즈. 검은 배경 스튜디오 촬영으로 피사체를 부각시킨 프로페셔널 초상화.",
+          "category": "reference",
+          "purpose": "인물 프로필 사진",
+          "terms_used": [],
+          "input_tokens": 3537,
+          "output_tokens": 158,
+          "elapsed_ms": 2397,
+          "cost_usd": 0.004327
+        }
+      }
+    },
+    {
+      "file_name": "삼성전자판매 사업자등록증.jpg",
+      "relative_path": "삼성전자판매 사업자등록증.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "삼성전자판매의 사업자등록증. 녹색 바탕에 흰색 텍스트로 등록번호, 대표자명, 사업장 주소 등이 기재되어 있다. 우측 상단에 녹색 등록 스탬프, 하단에 분당세무서장 인장이 찍혀 있다.",
+          "category": "unknown",
+          "purpose": "법인 등록 및 사업 증빙 서류",
+          "terms_used": [],
+          "input_tokens": 3551,
+          "output_tokens": 165,
+          "elapsed_ms": 2727,
+          "cost_usd": 0.004376
+        }
+      }
+    },
+    {
+      "file_name": "Enscape_2021-02-26-13-42-28.jpg",
+      "relative_path": "Enscape_2021-02-26-13-42-28.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "실내 공간의 중앙에 설치된 육면체 미디어 조형물. 상단부 4면에 원형 시계 디스플레이가 부착되어 있으며, 밝은 조명으로 역광 처리되어 있다. 조형물 하단부는 짙은 파란색 패널로 마감되었고, 목재 바닥과 대비를 이룬다. 천장의 간접 조명과 측면 창으로부터의 자연광이 공간을 밝힌다.",
+          "category": "ours",
+          "purpose": "실내 로비·아트리움의 시간 정보 제공 및 랜드마크 역할을 하는 미디어 조형물",
+          "terms_used": [],
+          "input_tokens": 3461,
+          "output_tokens": 245,
+          "elapsed_ms": 3628,
+          "cost_usd": 0.004686
+        }
+      }
+    },
+    {
+      "file_name": "F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260126_181852.782.jpg",
+      "relative_path": "F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260126_181852.782.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "자동차 섀시의 에어로다이나믹 분석 다이어그램. 상단부 조감도에서 메인플레인, 플랩, 엔드플레이트의 다운포스 수치와 각 부위의 상태를 초록색 'OK' 표시로 표기하고 있다. 좌우 측면에는 프론트윙과 리어윙의 다운포스 데이터가 검은색 배경에 밝은 녹색 텍스트로 표시되어 있다.",
+          "category": "reference",
+          "purpose": "경주용 자동차의 공기역학 성능 모니터링 및 기술 데이터 시각화",
+          "terms_used": [],
+          "input_tokens": 3495,
+          "output_tokens": 233,
+          "elapsed_ms": 3257,
+          "cost_usd": 0.00466
+        }
+      }
+    },
+    {
+      "file_name": "F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260127_172611.964.jpg",
+      "relative_path": "F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260127_172611.964.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "실내 이벤트 공간에서 세 명이 금색 트로피를 들고 있다. 왼쪽과 중앙의 두 남성은 흰색 전통 복장을 입고 있고, 오른쪽의 여성은 검은색 정장을 착용했다. 배경에는 어두운 톤의 벽면에 발광 텍스트가 보인다.",
+          "category": "reference",
+          "purpose": "스포츠 이벤트 시상식 장면",
+          "terms_used": [],
+          "input_tokens": 3495,
+          "output_tokens": 179,
+          "elapsed_ms": 2254,
+          "cost_usd": 0.00439
+        }
+      }
+    },
+    {
+      "file_name": "f121ad82611fb5e53bbd64711f243622.jpg",
+      "relative_path": "f121ad82611fb5e53bbd64711f243622.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "야외 공간에 설치된 다수의 수직 원뿔 형태 미디어 조형물. 파란색 빛을 내보내는 독립적 기둥들이 무대처럼 조성된 공간을 둘러싸고 있으며, 흰색 바닥 위에 관람객들이 앉아 있다. LED 바 형태의 선형 발광 요소로 구성된 것으로 보인다.",
+          "category": "reference",
+          "purpose": "몰입형 미디어 설치 공간의 사례",
+          "terms_used": [
+            "LED 바"
+          ],
+          "input_tokens": 3530,
+          "output_tokens": 194,
+          "elapsed_ms": 2650,
+          "cost_usd": 0.0045000000000000005
+        }
+      }
+    },
+    {
+      "file_name": "KakaoTalk_20260331_192940007_29.jpg",
+      "relative_path": "KakaoTalk_20260331_192940007_29.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "실내 대형 벽면 디스플레이에서 흰색 방호복을 입은 인물과 주황색 폭발 효과가 표현된 영상이 재생 중이다. 하단에 '항상 함께 미래를 위해'라는 텍스트가 삽입되어 있으며, 관객 두 명이 갈색 소파에 앉아 시청하고 있다. 천장에서 내려온 수직 선형 LED 바가 공간을 분할한다.",
+          "category": "reference",
+          "purpose": "기업 홍보 영상 시연 및 미디어 스페이스 사례 검토",
+          "terms_used": [
+            "LED 바"
+          ],
+          "input_tokens": 3575,
+          "output_tokens": 225,
+          "elapsed_ms": 3240,
+          "cost_usd": 0.0047
+        }
+      }
+    },
+    {
+      "file_name": "KakaoTalk_20260401_110752075_13.jpg",
+      "relative_path": "KakaoTalk_20260401_110752075_13.jpg",
+      "models": {
+        "claude-haiku-4-5": {
+          "description": "현대적 인테리어의 대기실 공간. 주황색 가죽 소파가 중앙과 좌우에 배치되어 있고, 중앙에 회색 러그가 깔려있다. 상단 벽면에는 수평선 형태의 밝은 조명이 설치되어 있으며, 후면 벽에는 밝은 회색 패널이 수직으로 배열되어 있다. 천장에는 매입형 LED 조명이 규칙적으로 배치되어 있다.",
+          "category": "reference",
+          "purpose": "현대식 공간 디자인 및 조명 계획 사례",
+          "terms_used": [],
+          "input_tokens": 3575,
+          "output_tokens": 225,
+          "elapsed_ms": 3434,
+          "cost_usd": 0.0047
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Haiku v1 vs v2 — 19장</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#f0ede6;color:#1a1b1f;line-height:1.5}
+header{padding:20px 24px;background:#1a1b1f;color:#fff}
+header h1{margin:0 0 6px;font-size:20px}
+header p{margin:0;opacity:.8;font-size:13px}
+.wrap{max-width:1200px;margin:0 auto;padding:20px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;margin-bottom:24px;font-size:13px}
+th,td{padding:10px 12px;border:1px solid #eceae4;text-align:center}
+th{background:#f7f5f0}
+.card{background:#fff;border-radius:14px;margin-bottom:28px;overflow:hidden;box-shadow:0 2px 8px #0002}
+.hero{padding:16px;text-align:center;background:#111}
+.hero img{max-width:100%;min-width:400px;min-height:280px;max-height:560px;object-fit:contain;display:block;margin:0 auto}
+.fname{margin-top:12px;font-size:12px;color:#ccc;word-break:break-all}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.block{padding:16px 18px;border-top:1px solid #eceae4}
+.block.before{background:#fafafa;border-right:1px solid #eceae4}
+.block.after{background:#f8fbff}
+.block h4{margin:0 0 10px;font-size:13px;color:#444}
+.cat{display:inline-block;background:#eef6ff;padding:2px 8px;border-radius:4px;font-size:11px;margin-bottom:8px}
+.desc{margin:0 0 6px;font-size:14px}
+.purpose{margin:0 0 6px;font-size:12px;color:#666}
+.terms{margin:0;font-size:11px;color:#888}
+.warn{color:#c2410c;font-size:11px}
+.err{color:#9b1c1c}
+@media(max-width:800px){.cols{grid-template-columns:1fr}.block.before{border-right:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>claude-haiku-4-5 — 프롬프트 v1 vs v2</h1>
+  <p>docs/image_test 19장 · 용어 조건·2개 상한·추측 금지</p>
+</header>
+<div class="wrap">
+  <h2 style="font-size:15px">검증 지표</h2>
+  <table>
+    <thead><tr><th></th><th>공개공지</th><th>용어 3+</th><th>추정 표현</th><th>unknown</th></tr></thead>
+    <tbody>
+      <tr><td><strong>before v1</strong></td><td>4</td><td>6</td><td>4</td><td>2</td></tr>
+      <tr><td><strong>after v2</strong></td><td>1</td><td>0</td><td>4</td><td>1</td></tr>
+    </tbody>
+  </table>
+  <article class="card">
+  <div class="hero">
+    <img src="0b09a831762939_566289695daae.jpg" alt="0b09a831762939_566289695daae.jpg" loading="lazy"/>
+    <div class="fname">0b09a831762939_566289695daae.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">대형 실내 로비 공간에 설치된 산봉우리 흑백 사진을 담은 거대한 매달린 디스플레이. 목재와 강철 구조로 된 기하학적 틀 속에 눈 덮인 산맥의 웅장한 이미지가 투사되어 있다. 차갑고 미니멀한 톤의 실내와 대비되는 자연의 숭고함을 표현하며, 계단과 방문객을 압도하는 스케일의 미디어 조형물이다.</p>
+  <p class="purpose">상업 공간의 랜드마크 조성과 방문객 유도를 위한 대규모 이머시브 미디어 앵커테넌트</p>
+  <p class="terms">용어 1: 이머시브 미디어</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">대형 실내 로비 공간에 설치된 산(마터호른으로 추정)의 흑백 사진을 담은 대형 벽면 디스플레이. 프로젝션 스크린으로 보이며, 목재·석재 마감의 현대식 로비 건축과 조화를 이룬다. 양측 계단과 격자 창문으로 둘러싸인 수직 공간에서 산 이미지가 건축적 포인트로 작용한다.</p>
+  <p class="purpose">건축 로비 공간의 시각적 랜드마크 연출</p>
+  <p class="terms">용어 1: 프로젝션 스크린</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="132043593_452227905770283_3271989991474656928_n.jpg" alt="132043593_452227905770283_3271989991474656928_n.jpg" loading="lazy"/>
+    <div class="fname">132043593_452227905770283_3271989991474656928_n.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">깊은 남색 수족관을 배경으로 양쪽에 보라색 네온 LED 바가 수직으로 설치되어 있다. 중앙의 투명한 통로를 통해 관람자가 물 환경을 감싸는 몰입형 공간을 경험하게 된다. 바닥은 반사 표면으로 마감되어 영상 깊이감을 극대화한다.</p>
+  <p class="purpose">이머시브 미디어 공간 설계 - 투명 LED와 수족관 영상을 결합한 몰입형 갤러리 또는 상업 시설 진입 공간 연출</p>
+  <p class="terms">용어 3: LED 바, 이머시브 미디어, 투명 LED</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">실내 아트리움 공간에서 보라색 네온 LED 바가 양쪽 벽면에 수직으로 설치되어 있고, 중앙의 대형 디스플레이 스크린에는 심해 생물들이 어두운 파란색 톤으로 표현되어 있다. 바닥은 거울처럼 반사되는 검은색 표면이며, 중앙에 관람객이 서 있다. 선형 LED와 영상 디스플레이가 결합된 이머시브한 공간 구성이다.</p>
+  <p class="purpose">호텔·문화시설 등 실내 공간의 미디어 연출 사례</p>
+  <p class="terms">용어 1: LED 바</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="1623701019456.jfif" alt="1623701019456.jfif" loading="lazy"/>
+    <div class="fname">1623701019456.jfif</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">현대적인 건축물의 내부 계단 공간. 3층 규모의 곡선형 구조로 설계되었으며, 우측 벽면에 숲과 나무를 주제로 한 대형 멀티채널 영상이 설치되어 있다. 녹색과 갈색, 파란색이 조화로운 자연 이미지가 LED 디스플레이에 출력되고 있으며, 개인이 계단을 이용하는 모습이 보인다.</p>
+  <p class="purpose">건축 공간의 수직 이동 동선에서 멀티채널 LED를 활용한 이머시브 미디어 환경 구현 사례</p>
+  <p class="terms">용어 2: 멀티채널 영상, 이머시브 미디어</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">현대식 아트리움 공간에서 3층 규모의 곡선형 발코니가 나선형으로 연결되어 있다. 상단 벽면에는 숲과 물의 이미지가 담긴 대형 멀티채널 디스플레이가 설치되어 있으며, 목재와 유리 난간이 현대적 인테리어를 완성한다. 따뜻한 조명이 층별로 비추고 있다.</p>
+  <p class="purpose">건축 공간의 미디어 통합 활용 사례</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="1635886567252.jfif" alt="1635886567252.jfif" loading="lazy"/>
+    <div class="fname">1635886567252.jfif</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">공개공지에 설치된 대형 미디어 스컬프처. 검은색과 흰색의 대비되는 곡면 형태로 향수적 향수병 모양을 연출. 원형 LED 디스플레이가 장식적 프레임을 이루고 있으며, 분홍색 꽃과 함께 도시 공간의 랜드마크로 기능.</p>
+  <p class="purpose">야외 공개공지를 미디어 갤러리로 전환하는 이머시브 앵커테넌트 사례</p>
+  <p class="terms">용어 3: 미디어 스컬프처, 이머시브 앵커테넌트, 공개공지</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙) <span class="warn">⚠ 공개공지</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">공개공지에 설치된 독립 미디어 조형물. 크림색 향수병 형태의 입체 조형물이 검은색 원형 프레임으로 둘러싸여 있다. 프레임에는 분홍색과 흰색 장식이 있으며, 주변에 분홍색 꽃이 배치되어 있다. 건물 외벽 앞 보행로에 위치한다.</p>
+  <p class="purpose">향수 브랜드 프로모션을 위한 미디어 스컬프처 설치</p>
+  <p class="terms">용어 2: 미디어 스컬프처, 공개공지</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="214049778_4078730055579838_4601379737613056067_n.jpg" alt="214049778_4078730055579838_4601379737613056067_n.jpg" loading="lazy"/>
+    <div class="fname">214049778_4078730055579838_4601379737613056067_n.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">하늘을 향해 촬영한 나목의 앙각 이미지. 흰색 원형 프레임이 상단을 둘러싸고 있으며, 나뭇가지와 갈색 수피가 중앙을 향해 수렴한다. 맑은 청색 하늘을 배경으로 가지의 미세한 움직임과 자연의 기하학적 구조가 돋보인다.</p>
+  <p class="purpose">자연의 방사형 구조와 수직 시점 연출의 영감 수집</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">흰색 원형 프레임 내부에 하늘을 배경으로 나뭇가지가 뻗어 있는 자작나무를 아래에서 올려다본 구성. 옅은 갈색 줄기에서 가지가 방사형으로 뻗어 있고, 끝부분에 갈색 열매나 꽃 같은 작은 입자들이 밀집되어 있다. 맑은 파란 하늘과 나무의 유기적 구조가 기하학적 원형 프레임과 대비된다.</p>
+  <p class="purpose">자연의 기하학적 구조와 공간 미디어 조형물 설계 참고</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="325442972_503428421691342_4060236778217379810_n.jpg" alt="325442972_503428421691342_4060236778217379810_n.jpg" loading="lazy"/>
+    <div class="fname">325442972_503428421691342_4060236778217379810_n.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">안개 속에서 돛을 펼친 범선이 신비롭게 부유하는 모습. 크림색과 황금색으로 물든 돛이 격자 무늬로 빛나며, 수평선 위 고스트 같은 선체와 함께 초현실적 해상 풍경을 연출한다.</p>
+  <p class="purpose">몰입형 미디어 아트의 신비로운 빛·공간감·초현실성 표현 레퍼런스</p>
+  <p class="terms">용어 1: 미디어 아트</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">안개 속에서 돛을 펼친 범선이 물 위에 떠 있다. 밝은 황금색 조명이 돛과 돛대의 격자 구조를 밝혀내고 있으며, 회색빛의 하늘과 바다 위에 신비로운 분위기를 연출한다. 역광으로 인해 돛의 질감과 선박의 입체감이 강조된다.</p>
+  <p class="purpose">해양 문화·역사적 상징을 미디어 조형으로 표현한 야외 설치 미술</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="3a31ad69b00f6776713524d70ecc4ae8.jpg" alt="3a31ad69b00f6776713524d70ecc4ae8.jpg" loading="lazy"/>
+    <div class="fname">3a31ad69b00f6776713524d70ecc4ae8.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">강렬한 황금빛 해질녘 풍경 속에 우뚝 솟은 원통형 책장 구조물. 책들로 빼곡하게 채워진 벽면이 적갈색과 베이지톤으로 표현되며, 내부 바닥에는 녹색 의자와 붉은 색의 소품이 배치되어 있다. 구조물 주변은 울창한 숲과 황금색으로 반사되는 강의 자연 경관이 펼쳐진다.</p>
+  <p class="purpose">자연경관과 건축·미디어 조형물의 통합 공간 연출 사례</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">숲으로 둘러싸인 강변에 원통형 대형 서재 구조물이 설치되어 있다. 내부 벽면 전체가 책으로 채워져 있으며, 바닥에는 초록색 의자와 작은 테이블이 배치되어 있다. 강 위의 수면이 하늘빛으로 반사되고, 따뜻한 톤의 자연광이 전체 장면을 감싼다.</p>
+  <p class="purpose">자연 속 독서 공간을 주제로 한 개념 미디어 아트 설치 사례</p>
+  <p class="terms">용어 1: 미디어 아트</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="469480503_895210246068365_2728616747831741624_n.jpg" alt="469480503_895210246068365_2728616747831741624_n.jpg" loading="lazy"/>
+    <div class="fname">469480503_895210246068365_2728616747831741624_n.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">야간에 조명된 노트르담 대성당의 정면. 두 개의 높은 탑과 장미창이 황금색으로 밝혀져 있으며, 상공에서 교차하는 청색 라이트빔이 극적인 연출을 더한다. 앞의 센 강변 석조 제방은 따뜻한 조명으로 대비를 이룬다.</p>
+  <p class="purpose">건축물 야간 미디어 조명 연출 사례 참고</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">고딕 양식의 대성당 외벽을 파란색과 금색 조명으로 밝힌 야간 연출. 건물 위쪽에서 하늘을 향해 뻗어나가는 다수의 수직 광선이 극적인 스케일감을 연출하며, 세로로 긴 창문과 장식적 아치 등 건축 세부를 강조하는 조명 설계가 보인다.</p>
+  <p class="purpose">역사적 건축물의 야간 조명 및 미디어파사드 사례</p>
+  <p class="terms">용어 1: 미디어파사드</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="61025629-las-vegas-april-13-the-cosmopolitan-hotel-lobby-in-las-vegas-on-april-13-2016-the-cosmopoli.jpg" alt="61025629-las-vegas-april-13-the-cosmopolitan-hotel-lobby-in-las-vegas-on-april-13-2016-the-cosmopoli.jpg" loading="lazy"/>
+    <div class="fname">61025629-las-vegas-april-13-the-cosmopolitan-hotel-lobby-in-las-vegas-on-april-13-2016-the-cosmopoli.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">The Cosmopolitan 호텔 로비의 거대한 미디어 스컬프처. 파란색·노랑·초록 계열의 수백 개 LED 캐비닛이 격자 구조로 수직 설치되어 있으며, 다양한 색상의 픽셀이 동시에 표현된다. 반사되는 바닥과 함께 공간 전체를 감싸는 몰입형 환경을 조성한다.</p>
+  <p class="purpose">호텔 로비의 상징적 이머시브 앵커테넌트로서 방문객의 재방문을 유도하는 미디어 조형물</p>
+  <p class="terms">용어 3: 미디어 스컬프처, 이머시브 앵커테넌트, LED 캐비닛</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">호텔 로비 내부의 높은 천장에서 바닥까지 연장된 대형 LED 벽면 디스플레이. 파란색·노란색·초록색·빨간색 등 다채로운 색상의 사각형 패턴이 기하학적으로 배열되어 있다. 멀티채널 영상 구성으로 공간 전체를 감싸며, 반사되는 바닥이 몰입감을 강화한다.</p>
+  <p class="purpose">호텔 로비의 상징적 미디어 환경 조성 및 공간 브랜딩</p>
+  <p class="terms">용어 1: 멀티채널 영상</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="69ad5c22ffe6bf23a1cfca0211338069.jpg" alt="69ad5c22ffe6bf23a1cfca0211338069.jpg" loading="lazy"/>
+    <div class="fname">69ad5c22ffe6bf23a1cfca0211338069.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">대형 쇼핑몰의 중앙 홀에 설치된 수직형 미디어 조형물. 흰색 패널에 다양한 사진과 이미지를 격자 형태로 배치한 구조로, 커피 테마의 라이프스타일 콘텐츠를 전시하고 있다. 바닥에는 LED 바닥 디스플레이로 추정되는 조명 요소가 배치되어 공간 전체를 미디어화했다.</p>
+  <p class="purpose">공개공지의 미디어 갤러리 활용으로 상업 공간의 시각적 랜드마크 창출</p>
+  <p class="terms">용어 3: LED 바, 공개공지, LED 바닥 디스플레이</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">쇼핑몰 중앙 아트리움에 설치된 대형 수직 디스플레이 벽면. 흰색 바탕에 다양한 사진·이미지를 격자로 배열한 구성. 상단에 타이틀 텍스트, 중앙 로비 바닥에는 줄무늬 패턴과 함께 사진 포스터들이 배치되어 있으며, 방문객들이 전시 공간을 관람하고 있다.</p>
+  <p class="purpose">쇼핑몰 내 기획전시 또는 캠페인 디스플레이</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="8bf036aa2589b8254e377faa8071c535.jpg" alt="8bf036aa2589b8254e377faa8071c535.jpg" loading="lazy"/>
+    <div class="fname">8bf036aa2589b8254e377faa8071c535.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 공개공지</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">야외 공개공지에 설치된 육면체 형태의 대형 미디어 조형물. 검은색 강철 골조에 다중 곡면 LED 스크린으로 구성되어 있으며, 핑크·파랑·청록색의 역동적인 그래픽과 한글 텍스트를 표시 중. 야간에 강렬한 빛을 방출하여 도시 광장의 시각적 랜드마크 역할.</p>
+  <p class="purpose">공개공지의 이머시브 앵커테넌트로 기능하는 미디어 조형물 설치 사례</p>
+  <p class="terms">용어 2: 이머시브 앵커테넌트, 공개공지</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">야외 광장의 중앙에 설치된 육각형 입체 미디어 조형물. 6개 면이 모두 LED 스크린으로 구성되어 있으며, 분홍색과 파란색 그래디언트 영상이 출력되고 있다. 검은색 철골 프레임 구조로 지탱되며, 주변 건물의 광고 스크린과 야간 조명이 함께 어우러진 도시 야경을 형성한다.</p>
+  <p class="purpose">야외 공공 공간의 미디어 랜드마크 및 문화 콘텐츠 발표 플랫폼</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="%EC%82%AC%EC%A7%84.%20%EC%9D%B4%EC%B2%AD%20%EC%82%BC%EC%84%B1%EB%94%94%EC%8A%A4%ED%94%8C%EB%A0%88%EC%9D%B4%20%EB%8C%80%ED%91%9C%EC%9D%B4%EC%82%AC%20%EC%82%AC%EC%9E%A5.jpg" alt="사진. 이청 삼성디스플레이 대표이사 사장.jpg" loading="lazy"/>
+    <div class="fname">사진. 이청 삼성디스플레이 대표이사 사장.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">unknown</span>
+  <p class="desc">검은색 터틀넥을 입은 남성의 정면 초상 사진. 안경을 착용하고 있으며 검은 배경 앞에서 손을 모아 포즈를 취하고 있다. 전문적이고 공식적인 분위기의 스튜디오 촬영.</p>
+  <p class="purpose">기업 임원 프로필 사진</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">검은색 터틀넥 상의를 입은 남성의 정면 초상 사진. 안경을 착용하고 있으며, 양손을 모아 가슴 앞에 위치시킨 포즈. 검은 배경 스튜디오 촬영으로 피사체를 부각시킨 프로페셔널 초상화.</p>
+  <p class="purpose">인물 프로필 사진</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90%ED%8C%90%EB%A7%A4%20%EC%82%AC%EC%97%85%EC%9E%90%EB%93%B1%EB%A1%9D%EC%A6%9D.jpg" alt="삼성전자판매 사업자등록증.jpg" loading="lazy"/>
+    <div class="fname">삼성전자판매 사업자등록증.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">한국의 사업자등록증. 녹색 바탕에 한글 텍스트와 공식 인장이 인쇄된 문서. 삼성전자판매의 등록 정보와 사업 내용, 발급 기관 정보가 표기되어 있으며, 우측 상단에 태극 로고와 하단에 분당세무서장 인장이 위치한 공식 서류.</p>
+  <p class="purpose">기업 신원 확인 및 사업 등록 기록</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">unknown</span>
+  <p class="desc">삼성전자판매의 사업자등록증. 녹색 바탕에 흰색 텍스트로 등록번호, 대표자명, 사업장 주소 등이 기재되어 있다. 우측 상단에 녹색 등록 스탬프, 하단에 분당세무서장 인장이 찍혀 있다.</p>
+  <p class="purpose">법인 등록 및 사업 증빙 서류</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="Enscape_2021-02-26-13-42-28.jpg" alt="Enscape_2021-02-26-13-42-28.jpg" loading="lazy"/>
+    <div class="fname">Enscape_2021-02-26-13-42-28.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">ours</span>
+  <p class="desc">어두운 갈색 톤의 현대적 실내공간에 네 면이 노출된 거대한 육면체 구조물이 설치되어 있다. 구조물의 상단부와 측면에는 클래식한 원형 시계 페이스가 4개 삽입되어 있으며, 따뜻한 조명으로 역광 처리되어 있다. 하단부는 진한 남색 패널로 마감되었고, 목재 바닥과 대비를 이루고 있다. 전체적으로 시간 개념을 상징하는 미디어 조형물로 보인다.</p>
+  <p class="purpose">공간 대표성을 갖춘 이머시브 앵커테넌트 또는 미디어 조형물 설치 시안</p>
+  <p class="terms">용어 1: 이머시브 앵커테넌트</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">ours</span>
+  <p class="desc">실내 공간의 중앙에 설치된 육면체 미디어 조형물. 상단부 4면에 원형 시계 디스플레이가 부착되어 있으며, 밝은 조명으로 역광 처리되어 있다. 조형물 하단부는 짙은 파란색 패널로 마감되었고, 목재 바닥과 대비를 이룬다. 천장의 간접 조명과 측면 창으로부터의 자연광이 공간을 밝힌다.</p>
+  <p class="purpose">실내 로비·아트리움의 시간 정보 제공 및 랜드마크 역할을 하는 미디어 조형물</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="F1%20%EB%8D%94%20%EB%AC%B4%EB%B9%84%20F1%20The%20Movie%2C%202025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260126_181852.782.jpg" alt="F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260126_181852.782.jpg" loading="lazy"/>
+    <div class="fname">F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260126_181852.782.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">F1 경주차의 공기역학 시스템을 상세히 표현한 기술 다이어그램. 검은색 배경에 흰색 선으로 차체 윤곽을 그리고, 초록색 텍스트로 메인플레인·플랩·엔드플레이트 등 각 부품의 수치 데이터를 표기. 전면·측면·후면 뷰에서 다운포스 생성 구조를 입체적으로 시각화.</p>
+  <p class="purpose">F1 영화의 기술 설명 및 자동차 공학 콘텐츠 시각화</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">자동차 섀시의 에어로다이나믹 분석 다이어그램. 상단부 조감도에서 메인플레인, 플랩, 엔드플레이트의 다운포스 수치와 각 부위의 상태를 초록색 'OK' 표시로 표기하고 있다. 좌우 측면에는 프론트윙과 리어윙의 다운포스 데이터가 검은색 배경에 밝은 녹색 텍스트로 표시되어 있다.</p>
+  <p class="purpose">경주용 자동차의 공기역학 성능 모니터링 및 기술 데이터 시각화</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="F1%20%EB%8D%94%20%EB%AC%B4%EB%B9%84%20F1%20The%20Movie%2C%202025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260127_172611.964.jpg" alt="F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260127_172611.964.jpg" loading="lazy"/>
+    <div class="fname">F1 더 무비 F1 The Movie, 2025.1080p.KORSUB.WEBRip.H264.AAC.mp4_20260127_172611.964.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">흰색 전통 복장을 입은 두 남성과 검은색 정장의 여성이 금색으로 장식된 트로피를 들고 있는 실내 수상식 장면. 배경에 'ETIHAD' 브랜딩이 보이며, LED 조명이 설치된 현대적 공간에서 진행되는 공식 행사의 모습이다.</p>
+  <p class="purpose">F1 motorsport 이벤트 공식 행사 촬영</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">실내 이벤트 공간에서 세 명이 금색 트로피를 들고 있다. 왼쪽과 중앙의 두 남성은 흰색 전통 복장을 입고 있고, 오른쪽의 여성은 검은색 정장을 착용했다. 배경에는 어두운 톤의 벽면에 발광 텍스트가 보인다.</p>
+  <p class="purpose">스포츠 이벤트 시상식 장면</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="f121ad82611fb5e53bbd64711f243622.jpg" alt="f121ad82611fb5e53bbd64711f243622.jpg" loading="lazy"/>
+    <div class="fname">f121ad82611fb5e53bbd64711f243622.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">reference</span>
+  <p class="desc">야간 공개공지에 설치된 수십 개의 원뿔형 LED 조형물이 하늘을 향해 솟아있다. 밝은 청백색 빛이 원뿔 표면을 따라 흘러내리며 극적인 수직 연출을 만든다. 바닥은 LED 바닥 디스플레이로 구성되어 관람자들이 설치 위에서 직접 경험하는 몰입형 공간을 형성한다.</p>
+  <p class="purpose">야외 공공공간의 미디어 조형물을 통한 이머시브 환경 구현 사례</p>
+  <p class="terms">용어 3: LED 바, 공개공지, LED 바닥 디스플레이</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">야외 공간에 설치된 다수의 수직 원뿔 형태 미디어 조형물. 파란색 빛을 내보내는 독립적 기둥들이 무대처럼 조성된 공간을 둘러싸고 있으며, 흰색 바닥 위에 관람객들이 앉아 있다. LED 바 형태의 선형 발광 요소로 구성된 것으로 보인다.</p>
+  <p class="purpose">몰입형 미디어 설치 공간의 사례</p>
+  <p class="terms">용어 1: LED 바</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="KakaoTalk_20260331_192940007_29.jpg" alt="KakaoTalk_20260331_192940007_29.jpg" loading="lazy"/>
+    <div class="fname">KakaoTalk_20260331_192940007_29.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트) <span class="warn">⚠ 3개+</span></h4>
+  <span class="cat">unknown</span>
+  <p class="desc">갈색 소파에 앉은 두 명의 관람자가 대형 LED 스크린을 바라보고 있다. 스크린에는 흰색 우주복을 입은 인물과 주황색 폭발 이미지, '항상 함께, 미래를 위해(Always Together For the Future)'라는 텍스트가 표시되어 있다. 따뜻한 갈색 톤의 실내 공간에서 미디어 콘텐츠를 감상하는 몰입형 환경이다.</p>
+  <p class="purpose">브랜드 메시지 전달을 위한 이머시브 앵커테넌트 또는 미디어 쇼 상영</p>
+  <p class="terms">용어 3: 이머시브 앵커테넌트, 미디어 콘텐츠, 미디어 쇼</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">실내 대형 벽면 디스플레이에서 흰색 방호복을 입은 인물과 주황색 폭발 효과가 표현된 영상이 재생 중이다. 하단에 '항상 함께 미래를 위해'라는 텍스트가 삽입되어 있으며, 관객 두 명이 갈색 소파에 앉아 시청하고 있다. 천장에서 내려온 수직 선형 LED 바가 공간을 분할한다.</p>
+  <p class="purpose">기업 홍보 영상 시연 및 미디어 스페이스 사례 검토</p>
+  <p class="terms">용어 1: LED 바</p>
+</div>
+  </div>
+</article>
+<article class="card">
+  <div class="hero">
+    <img src="KakaoTalk_20260401_110752075_13.jpg" alt="KakaoTalk_20260401_110752075_13.jpg" loading="lazy"/>
+    <div class="fname">KakaoTalk_20260401_110752075_13.jpg</div>
+  </div>
+  <div class="cols">
+    <div class="block before">
+  <h4>before (v1 프롬프트)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">현대적 라운지 공간에서 갈색 가죽 소파들이 중앙 회색 카펫 위에 배치되어 있다. 뒤편 밝은 벽면에는 LED 조명이 선형으로 설치되어 있으며, 상단 천장에도 다수의 매립형 조명이 배치되어 있다. 전체적으로 따뜻하고 세련된 분위기의 대기 공간이다.</p>
+  <p class="purpose">공항·호텔·엔터테인먼트 시설 등 프리미엄 라운지 공간의 조명·가구 배치 레퍼런스</p>
+  <p class="terms">용어 0</p>
+</div>
+    <div class="block after">
+  <h4>after (v2 용어·서술 규칙)</h4>
+  <span class="cat">reference</span>
+  <p class="desc">현대적 인테리어의 대기실 공간. 주황색 가죽 소파가 중앙과 좌우에 배치되어 있고, 중앙에 회색 러그가 깔려있다. 상단 벽면에는 수평선 형태의 밝은 조명이 설치되어 있으며, 후면 벽에는 밝은 회색 패널이 수직으로 배열되어 있다. 천장에는 매입형 LED 조명이 규칙적으로 배치되어 있다.</p>
+  <p class="purpose">현대식 공간 디자인 및 조명 계획 사례</p>
+  <p class="terms">용어 0</p>
+</div>
+  </div>
+</article>
+</div>
+</body></html>
