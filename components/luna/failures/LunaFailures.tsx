@@ -11,6 +11,7 @@ import {
 import { formatKoreanDay, K } from "@/lib/luna/knowledge-format";
 import { supabase } from "@/lib/supabase/client";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
+import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 
 type FailureDbFix = {
   id: string;
@@ -461,14 +462,21 @@ function TurnView({
             </div>
           ) : null}
           <div
-            className="max-w-[82%] rounded-[14px] rounded-tl px-3.5 py-2.5 text-[12.5px] leading-[1.8]"
+            className="max-w-[92%] rounded-[14px] rounded-tl px-3.5 py-2.5"
             style={{
               background: "#F7F6FC",
               border: focus ? `2px solid ${HOT}` : "1px solid #E8E5F4",
               color: K.ink
             }}
           >
-            {turn.assistant.content}
+            <LunaMarkdown
+              content={turn.assistant.content}
+              className="text-[12.5px] leading-[1.8] text-[#1c1d21]"
+              nasDriveMode="office"
+              source="failures-thread"
+              questionText={turn.user?.content ?? null}
+              highlightTerms
+            />
           </div>
           {focus ? (
             <div className="mt-1.5 flex flex-wrap gap-1">
