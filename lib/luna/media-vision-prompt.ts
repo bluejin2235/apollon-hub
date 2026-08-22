@@ -19,11 +19,6 @@ export type MediaGlossaryTerm = {
   synonyms: string[];
 };
 
-/** DB synonyms 미등록이지만 본문·검색에서 쓰는 표현 → term_ko */
-const GLOSSARY_EXTRA_SYNONYMS: Record<string, string[]> = {
-  "미디어 스컬프처": ["미디어 조형물"]
-};
-
 export type MediaVisionParsed = {
   description: string;
   purpose: string;
@@ -70,10 +65,7 @@ export async function loadVisualGlossary(
         term_ko: r.term_ko,
         term_en: r.term_en,
         definition: extracted.definition.slice(0, 120),
-        synonyms: normalizeSynonyms([
-          ...extracted.synonyms,
-          ...(GLOSSARY_EXTRA_SYNONYMS[r.term_ko] ?? [])
-        ])
+        synonyms: extracted.synonyms
       });
     }
   }

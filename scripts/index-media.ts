@@ -159,17 +159,25 @@ async function indexOne(
 ): Promise<
   | {
       status: "indexed";
+      path: string;
+      drive: string;
+      project: string | null;
+      folderCategory: string;
       description: string;
+      purpose: string;
       category: string;
+      termsUsed: string[];
+      thumbnailUrl: string | null;
+      notionMatched: boolean;
       visionIn: number;
       visionOut: number;
     }
-  | { status: "skipped" }
-  | { status: "failed" }
+  | { status: "skipped"; reason: "mtime" }
+  | { status: "failed"; reason: string }
 > {
   const existing = await fetchIndexedMtime(admin, item.path);
   if (isSameMtime(existing.mtime, item.mtimeMs)) {
-    return { status: "skipped" };
+    return { status: "skipped", reason: "mtime" };
   }
 
   const parts = parseMediaPath(item.fullPath);
@@ -186,6 +194,7 @@ async function indexOne(
       : null;
     notionCache.set(cacheKey, notionContext);
   }
+  const notionMatched = Boolean(notionContext?.trim());
 
   const prompt = buildMediaIndexVisionPrompt({
     fullPath: item.fullPath,
@@ -198,8 +207,7 @@ async function indexOne(
   const dims = await loadImageMeta(item.fullPath);
   const jpegB64 = await resizeForVision(item.fullPath);
   if (!jpegB64) {
-    console.error(`  [skip] image unreadable: ${item.path}`);
-    return { status: "failed" };
+    return { status: "failed", reason: "image_unreadable" };
   }
 
   let vision;
@@ -208,8 +216,8 @@ async function indexOne(
       model: mediaVisionModel()
     });
   } catch (e) {
-    console.error(`  [vision] ${item.path}:`, e instanceof Error ? e.message : e);
-    return { status: "failed" };
+    const msg = e instanceof Error ? e.message : String(e);
+    return { status: "failed", reason: `vision_error: ${msg.slice(0, 200)}` };
   }
 
   const thumbBuf = await makeThumbnail(item.fullPath);
@@ -228,6 +236,7 @@ async function indexOne(
     .join("\n");
   const vector = await createEmbedding(embedText);
   const hash = contentHash(embedText);
+  const termsUsed = countGlossaryTermsInText(embedText, glossary);
 
   const row: MediaIndexRow = {
     path: item.path,
@@ -255,11 +264,120 @@ async function indexOne(
   await upsertMediaIndex(admin, row);
   return {
     status: "indexed",
+    path: item.path,
+    drive: item.drive,
+    project: parts.project,
+    folderCategory: item.includeRule,
     description: vision.result.description,
+    purpose: vision.result.purpose,
     category: vision.result.category,
+    termsUsed,
+    thumbnailUrl,
+    notionMatched,
     visionIn: vision.usage.inputTokens,
     visionOut: vision.usage.outputTokens
   };
+}
+
+const SCALE_TOTAL = 2230;
+
+function parentFolder(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/[^/]+$/, "");
+}
+
+function printBatchReport(opts: {
+  indexed: number;
+  skipped: number;
+  failed: number;
+  failReasons: Record<string, number>;
+  visionIn: number;
+  visionOut: number;
+  elapsedMs: number;
+  model: string;
+  estUsd: number | null;
+  rows: Array<{
+    path: string;
+    drive: string;
+    project: string | null;
+    folderCategory: string;
+    category: string;
+    description: string;
+    purpose: string;
+    termsUsed: string[];
+    thumbnailUrl: string | null;
+    notionMatched: boolean;
+  }>;
+}): void {
+  const byCat: Record<string, number> = {
+    ours: 0,
+    reference: 0,
+    document: 0,
+    unknown: 0
+  };
+  const byProject: Record<string, number> = {};
+  const byFolder: Record<string, number> = {};
+  let notionHits = 0;
+
+  for (const r of opts.rows) {
+    const cat = r.category in byCat ? r.category : "unknown";
+    byCat[cat] += 1;
+    const proj = r.project ?? "(none)";
+    byProject[proj] = (byProject[proj] ?? 0) + 1;
+    const folder = parentFolder(r.path);
+    byFolder[folder] = (byFolder[folder] ?? 0) + 1;
+    if (r.notionMatched) notionHits += 1;
+  }
+
+  const thumbSamples = opts.rows
+    .filter((r) => r.thumbnailUrl)
+    .slice(0, 3)
+    .map((r) => r.thumbnailUrl!);
+  const pathSamples = opts.rows.slice(0, 3).map((r) => r.path);
+  const descSamples = opts.rows.slice(0, 5);
+
+  console.log("\n=== batch report ===");
+  console.log(`1. 성공 ${opts.indexed} · skip ${opts.skipped} · 실패 ${opts.failed}`);
+  if (Object.keys(opts.failReasons).length > 0) {
+    for (const [k, v] of Object.entries(opts.failReasons).sort((a, b) => b[1] - a[1])) {
+      console.log(`   - ${k}: ${v}`);
+    }
+  }
+  console.log(
+    `2. 비용: in=${opts.visionIn.toLocaleString("ko-KR")} out=${opts.visionOut.toLocaleString("ko-KR")}` +
+      (opts.estUsd != null ? ` · $${opts.estUsd.toFixed(4)} (${opts.model})` : "")
+  );
+  console.log(`3. 소요: ${(opts.elapsedMs / 1000).toFixed(1)}s`);
+  console.log(
+    `4. 분류: ours=${byCat.ours} reference=${byCat.reference} document=${byCat.document} unknown=${byCat.unknown}`
+  );
+  console.log("5. 프로젝트별:");
+  for (const [k, v] of Object.entries(byProject).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+    console.log(`   ${k}: ${v}`);
+  }
+  console.log("   폴더별 (상위 8):");
+  for (const [k, v] of Object.entries(byFolder).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+    console.log(`   ${k}: ${v}`);
+  }
+  console.log(`6. 썸네일 Storage: ${thumbSamples.length}/${opts.indexed} 샘플`);
+  for (const u of thumbSamples) console.log(`   ${u}`);
+  console.log("7. path (드라이브 없음) 샘플:");
+  for (const p of pathSamples) console.log(`   ${p}`);
+  console.log(
+    `8. 노션 맥락: ${notionHits}/${opts.indexed} (${opts.indexed > 0 ? ((100 * notionHits) / opts.indexed).toFixed(1) : 0}%)`
+  );
+  console.log("9. 설명 샘플:");
+  for (const s of descSamples) {
+    console.log(`   [${s.category}] ${s.path}`);
+    console.log(`   용어: ${s.termsUsed.length > 0 ? s.termsUsed.join(", ") : "(없음)"}`);
+    console.log(`   ${s.description.slice(0, 160)}…`);
+  }
+  if (opts.indexed > 0 && opts.estUsd != null) {
+    const perImg = opts.estUsd / opts.indexed;
+    const perSec = opts.elapsedMs / opts.indexed / 1000;
+    console.log(
+      `10. ${SCALE_TOTAL.toLocaleString("ko-KR")}장 예상: $${(perImg * SCALE_TOTAL).toFixed(2)} · ${((perSec * SCALE_TOTAL) / 3600).toFixed(1)}h`
+    );
+  }
 }
 
 async function runCompare(opts: CliOpts): Promise<void> {
@@ -487,7 +605,9 @@ async function runIndex(opts: CliOpts): Promise<void> {
 
   let work = stats.candidates;
   if (opts.limit != null) {
-    work = sampleCandidatesByIncludeRule(stats.candidates, opts.limit);
+    work = sampleCandidatesByIncludeRule(stats.candidates, opts.limit, {
+      maxPerFolder: 10
+    });
     const byRule: Record<string, number> = {};
     for (const c of work) {
       byRule[c.includeRule] = (byRule[c.includeRule] ?? 0) + 1;
@@ -507,8 +627,20 @@ async function runIndex(opts: CliOpts): Promise<void> {
   let failed = 0;
   let visionIn = 0;
   let visionOut = 0;
-  const samples: Array<{ file: string; category: string; description: string }> =
-    [];
+  const failReasons: Record<string, number> = {};
+  const indexedRows: Array<{
+    path: string;
+    drive: string;
+    project: string | null;
+    folderCategory: string;
+    category: string;
+    description: string;
+    purpose: string;
+    termsUsed: string[];
+    thumbnailUrl: string | null;
+    notionMatched: boolean;
+  }> = [];
+  const tBatch = Date.now();
 
   for (let i = 0; i < work.length; i++) {
     const item = work[i]!;
@@ -519,27 +651,36 @@ async function runIndex(opts: CliOpts): Promise<void> {
         indexed++;
         visionIn += r.visionIn;
         visionOut += r.visionOut;
-        if (samples.length < 5 && r.description.trim()) {
-          samples.push({
-            file: item.fileName,
-            category: r.category,
-            description: r.description
-          });
-        }
+        indexedRows.push({
+          path: r.path,
+          drive: r.drive,
+          project: r.project,
+          folderCategory: r.folderCategory,
+          category: r.category,
+          description: r.description,
+          purpose: r.purpose,
+          termsUsed: r.termsUsed,
+          thumbnailUrl: r.thumbnailUrl,
+          notionMatched: r.notionMatched
+        });
         console.log("ok");
       } else if (r.status === "skipped") {
         skipped++;
         console.log("skip (mtime)");
       } else {
         failed++;
-        console.log("fail");
+        failReasons[r.reason] = (failReasons[r.reason] ?? 0) + 1;
+        console.log(`fail (${r.reason})`);
       }
     } catch (e) {
       failed++;
-      console.log("error:", e instanceof Error ? e.message : e);
+      const reason = e instanceof Error ? e.message : String(e);
+      failReasons[reason.slice(0, 120)] = (failReasons[reason.slice(0, 120)] ?? 0) + 1;
+      console.log("error:", reason);
     }
   }
 
+  const elapsedMs = Date.now() - tBatch;
   const model = mediaVisionModel();
   const price = resolveOfficialPrice(model);
   let estUsd: number | null = null;
@@ -551,19 +692,18 @@ async function runIndex(opts: CliOpts): Promise<void> {
 
   console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
   if (indexed > 0) {
-    console.log(
-      `vision tokens: in=${visionIn.toLocaleString("ko-KR")} out=${visionOut.toLocaleString("ko-KR")}`
-    );
-    if (estUsd != null) {
-      console.log(`vision cost (est.): $${estUsd.toFixed(4)} (${model})`);
-    }
-    if (samples.length > 0) {
-      console.log("\n--- description samples ---");
-      for (const s of samples) {
-        console.log(`[${s.category}] ${s.file}`);
-        console.log(`  ${s.description}\n`);
-      }
-    }
+    printBatchReport({
+      indexed,
+      skipped,
+      failed,
+      failReasons,
+      visionIn,
+      visionOut,
+      elapsedMs,
+      model,
+      estUsd,
+      rows: indexedRows
+    });
   }
 }
 

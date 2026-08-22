@@ -258,12 +258,17 @@ export function writeMediaDryRunJson(
   return file;
 }
 
-/** --limit 시 포함 규칙별로 라운드로빈 샘플 */
+/** --limit 시 포함 규칙별로 라운드로빈 샘플. maxPerFolder 로 한 폴더 상한. */
 export function sampleCandidatesByIncludeRule(
   candidates: ScanCandidate[],
-  limit: number
+  limit: number,
+  opts?: { maxPerFolder?: number }
 ): ScanCandidate[] {
   if (limit >= candidates.length) return candidates;
+
+  const maxPerFolder = opts?.maxPerFolder ?? Number.POSITIVE_INFINITY;
+  const folderOf = (c: ScanCandidate) =>
+    c.path.replace(/\\/g, "/").replace(/\/[^/]+$/, "");
 
   const buckets = new Map<string, ScanCandidate[]>();
   for (const c of candidates) {
@@ -274,14 +279,21 @@ export function sampleCandidatesByIncludeRule(
 
   const rules = [...buckets.keys()].sort();
   const out: ScanCandidate[] = [];
+  const folderCounts = new Map<string, number>();
   let round = 0;
   while (out.length < limit) {
     let added = false;
     for (const rule of rules) {
       const bucket = buckets.get(rule)!;
       if (round < bucket.length) {
-        out.push(bucket[round]!);
-        if (out.length >= limit) break;
+        const cand = bucket[round]!;
+        const folder = folderOf(cand);
+        const n = folderCounts.get(folder) ?? 0;
+        if (n < maxPerFolder) {
+          out.push(cand);
+          folderCounts.set(folder, n + 1);
+          if (out.length >= limit) break;
+        }
         added = true;
       }
     }
