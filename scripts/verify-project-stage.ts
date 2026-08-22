@@ -44,9 +44,9 @@ assert(
 );
 assert(
   detectWorkStage({
-    pathTitles: ["[진행 중] 사업개발", "롯데월드타워"]
+    pathTitles: ["영업 및 사업개발", "아이데이션 DB"]
   }) === "proposal",
-  "notion bizdev path"
+  "sales bizdev path"
 );
 assert(
   detectWorkStage({ nasPath: "T:\\02 Project\\Inspire" }) === "executed",

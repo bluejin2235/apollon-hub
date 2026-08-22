@@ -12,7 +12,7 @@ export type StageQueryBias = "prefer_executed" | "prefer_proposal" | "neutral";
 const EXECUTED_PATH_RE =
   /02\s*Project|\[(?:진행\s*중|완료)\]\s*프로젝트/i;
 const PROPOSAL_PATH_RE =
-  /01\s*사업개발|\[(?:진행\s*중|완료)\]\s*사업개발/i;
+  /01\s*사업개발|\[(?:진행\s*중|완료)\]\s*사업개발|영업\s*및\s*사업개발|아이데이션\s*DB/i;
 
 /** 질문에 「수행」을 가리키는 말 */
 const QUERY_EXECUTED_RE =
@@ -52,6 +52,8 @@ export function detectWorkStage(opts: {
   // 노션 계층·경로에 명시된 구분 우선
   if (EXECUTED_PATH_RE.test(hay)) return "executed";
   if (PROPOSAL_PATH_RE.test(hay)) return "proposal";
+  // BD(사업개발) 공간
+  if (/BD\s*전용|[/\\]BD\b/i.test(hay)) return "proposal";
 
   const drive =
     (opts.drive ?? "").toUpperCase() ||
@@ -69,6 +71,12 @@ export function detectWorkStage(opts: {
 
   if (/T:\\?\s*02\s*Project|[/\\]02\s*Project/i.test(hay)) return "executed";
   if (/T:\\?\s*01\s*사업개발|[/\\]01\s*사업개발/i.test(hay)) return "proposal";
+
+  // 경로 불명일 때 제목 힌트 (제안서·아이데이션 등)
+  const title = opts.title ?? "";
+  if (/제안|아이데이션|ideation|컨셉\s*디자인|RFP|입찰/i.test(title)) {
+    return "proposal";
+  }
 
   return "unknown";
 }
@@ -94,13 +102,14 @@ export function stageScoreMultiplier(
 ): number {
   if (bias === "neutral") return 1;
   if (bias === "prefer_executed") {
-    if (stage === "executed") return 1.4;
-    if (stage === "proposal") return 0.45;
-    return 0.85;
+    if (stage === "executed") return 1.45;
+    if (stage === "proposal") return 0.35;
+    return 0.75;
   }
-  if (stage === "proposal") return 1.4;
-  if (stage === "executed") return 0.7;
-  return 0.85;
+  // prefer_proposal — 수행(02 Project)을 강하게 밀어 사업개발이 위로 오게
+  if (stage === "proposal") return 1.55;
+  if (stage === "executed") return 0.28;
+  return 0.8;
 }
 
 /** match_score(하이브리드) 또는 similarity×10 에 단계 가중 적용 */

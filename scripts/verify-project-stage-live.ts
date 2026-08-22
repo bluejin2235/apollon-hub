@@ -1,9 +1,10 @@
 /**
  * 실검색 4문장 — 단계 뱃지·정렬 확인
- * npx tsx scripts/verify-project-stage-live.ts
+ * npx tsx --require ./scripts/stub-server-only.cjs scripts/verify-project-stage-live.ts
  */
 import { config } from "dotenv";
-config({ path: ".env.local" });
+import { resolve } from "path";
+config({ path: resolve(process.cwd(), ".env.local") });
 
 import { createClient } from "@supabase/supabase-js";
 import { searchNotionForLuna } from "../lib/luna/notion-index-search";
@@ -15,7 +16,8 @@ import {
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     console.error("missing supabase env");
     process.exit(1);
