@@ -68,6 +68,30 @@ JSON:
 }`;
 }
 
+/** 로컬 테스트 — 경로·노션 맥락 없이 이미지만 */
+export function buildLocalImageTestVisionPrompt(
+  glossary: MediaGlossaryTerm[],
+  fileName?: string
+): string {
+  return `당신은 아폴론(미디어·공간 디자인) 아카이브 사서다. 이미지를 보고 JSON만 답한다.
+
+[파일]
+${fileName ?? "로컬 테스트 이미지"} (프로젝트·경로·노션 맥락 없음)
+
+[아폴론 용어 — 해당하는 용어가 있으면 쓰되 억지로 끼워넣지 마라]
+${formatGlossaryBlock(glossary)}
+
+category 후보: ours(우리 시안·제작) | reference(레퍼런스·사례) | unknown
+
+JSON:
+{
+  "description": "한국어 100~200자. 무엇이 보이나·공간·색·형태·재질",
+  "category": "ours|reference|unknown",
+  "purpose": "용도 한 줄",
+  "author": "주체 (알 수 없으면 빈 문자열)"
+}`;
+}
+
 export function parseMediaIndexVisionJson(text: string): MediaIndexVisionOutput {
   const t = text.trim();
   const start = t.indexOf("{");
@@ -104,22 +128,23 @@ export function parseMediaIndexVisionJson(text: string): MediaIndexVisionOutput 
 export async function analyzeMediaImageVision(
   jpegBase64: string,
   prompt: string,
-  opts?: { model?: string }
+  opts?: { model?: string; maxTokens?: number }
 ): Promise<{ result: MediaIndexVisionOutput; usage: MediaVisionUsage }> {
   const model = opts?.model ?? mediaVisionModel();
+  const maxTokens = opts?.maxTokens ?? 1024;
   const api =
     resolveMediaVisionProvider(model) === "anthropic"
       ? await callAnthropicVision({
           model,
           prompt,
           jpegBase64,
-          maxTokens: 600
+          maxTokens
         })
       : await callOpenAiVision({
           model,
           prompt,
           jpegBase64,
-          maxTokens: 600
+          maxTokens
         });
 
   return {
