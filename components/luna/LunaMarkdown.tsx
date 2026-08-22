@@ -111,6 +111,7 @@ export function LunaMarkdown({
           nasDriveMode={nasDriveMode}
           onCopyToast={onCopyToast}
           queryHint={queryHint}
+          stageQuestion={questionText}
         />
       ) : null}
 

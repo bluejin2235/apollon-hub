@@ -57,6 +57,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import {
   answerMaxTokensForDepth,
@@ -271,6 +272,7 @@ function buildSystemPrompt(opts: {
   if (opts.glossaryBlock?.trim()) parts.push(opts.glossaryBlock.trim());
   if (opts.wikiSectionsBlock?.trim()) parts.push(opts.wikiSectionsBlock.trim());
   if (opts.learningsBlock?.trim()) parts.push(opts.learningsBlock.trim());
+  parts.push(WORK_STAGE_ANSWER_RULE);
   if (opts.webAugmented) {
     parts.push(
       "[웹 검색 보강]\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."

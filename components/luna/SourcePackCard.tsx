@@ -16,6 +16,22 @@ import type { LunaCard } from "@/lib/luna/tavily";
 function SourceTags({ item }: { item: SourcePackItem }) {
   return (
     <div className="flex shrink-0 gap-1">
+      {item.workStage === "executed" ? (
+        <span
+          className="rounded-md bg-[#E6F5EF] px-[7px] py-0.5 text-[9px] font-bold text-[#0F6E56]"
+          title="실제 구축한 프로젝트"
+        >
+          수행
+        </span>
+      ) : null}
+      {item.workStage === "proposal" ? (
+        <span
+          className="rounded-md bg-[#FBF3E6] px-[7px] py-0.5 text-[9px] font-bold text-[#9A6700]"
+          title="제안 단계 문서"
+        >
+          제안
+        </span>
+      ) : null}
       {item.notion ? (
         <span className="rounded-md bg-[#EFEFED] px-[7px] py-0.5 text-[9px] font-bold text-[#37352F]">
           노션
@@ -118,6 +134,22 @@ function RecommendedCard({
         <span className="text-[10px] font-extrabold tracking-wide text-[#0F6E56]">
           추천 자료
         </span>
+        {item.workStage === "executed" ? (
+          <span
+            className="rounded-md bg-white/70 px-[7px] py-0.5 text-[9px] font-bold text-[#0F6E56]"
+            title="실제 구축한 프로젝트"
+          >
+            수행
+          </span>
+        ) : null}
+        {item.workStage === "proposal" ? (
+          <span
+            className="rounded-md bg-[#FBF3E6] px-[7px] py-0.5 text-[9px] font-bold text-[#9A6700]"
+            title="제안 단계 문서"
+          >
+            제안
+          </span>
+        ) : null}
         <span className="flex-1" />
         <span className="text-[10px] text-[#0F6E56] opacity-70">
           {typeof item.displayScore === "number" && item.displayScore > 0
@@ -264,7 +296,8 @@ export function SourcePackList({
   cards,
   nasDriveMode,
   onCopyToast,
-  queryHint
+  queryHint,
+  stageQuestion
 }: {
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -272,11 +305,17 @@ export function SourcePackList({
   onCopyToast?: (message: string) => void;
   /** 낮은 점수 안내문에 쓸 핵심어 (선택) */
   queryHint?: string | null;
+  /** 제안/수행 가중치용 원문 질문 (없으면 queryHint) */
+  stageQuestion?: string | null;
 }) {
   const tiers = useMemo(() => {
-    const views = buildSourcePacks(notionSources, cards);
+    const views = buildSourcePacks(
+      notionSources,
+      cards,
+      stageQuestion || queryHint
+    );
     return tierSourcePacks(views);
-  }, [notionSources, cards]);
+  }, [notionSources, cards, queryHint, stageQuestion]);
 
   if (
     !tiers.recommended &&

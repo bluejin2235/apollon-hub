@@ -2,6 +2,12 @@ import {
   matchNamedEntities,
   NAMED_ENTITY_SEED
 } from "@/lib/luna/named-entities";
+import {
+  boostMatchScoreForStage,
+  detectStageQueryBias,
+  detectWorkStage,
+  type WorkStage
+} from "@/lib/luna/project-stage";
 import { prepareSearchTerms } from "@/lib/luna/workserver";
 
 export type NotionSource = {
@@ -30,6 +36,8 @@ export type NotionSource = {
   /** 프로젝트 묶기용 */
   parent_id?: string | null;
   path_titles?: string[];
+  /** 제안 단계 vs 수행 프로젝트 (조회 시 경로로 판정) */
+  work_stage?: "executed" | "proposal" | "unknown";
 };
 
 export type NotionSearchStatus = "ok" | "empty" | "skipped" | "error";
@@ -671,7 +679,13 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
     .filter((s) => (s.title ?? "").trim().length > 0)
     .map((s) => {
       const title = s.title.trim();
-      const lines = [`- ${title} — ${s.url}`];
+      const stage =
+        s.work_stage === "executed"
+          ? "[수행]"
+          : s.work_stage === "proposal"
+            ? "[제안]"
+            : "";
+      const lines = [`- ${stage ? `${stage} ` : ""}${title} — ${s.url}`];
       if (s.section) {
         lines.push(`  절: ${s.section}`);
       }
@@ -694,6 +708,35 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
       return lines.join("\n");
     })
     .join("\n");
+}
+
+/** 검색 결과에 단계 표시·질문 가중치 반영 후 재정렬 */
+export function annotateNotionSourcesWithWorkStage(
+  sources: NotionSource[],
+  question: string
+): NotionSource[] {
+  const bias = detectStageQueryBias(question);
+  const next = sources.map((s) => {
+    const stage = detectWorkStage({
+      nasPath: s.nas_path,
+      paths: s.paths,
+      pathTitles: s.path_titles,
+      title: s.title
+    });
+    const match_score = boostMatchScoreForStage(
+      s.match_score,
+      s.similarity,
+      stage,
+      bias
+    );
+    return { ...s, work_stage: stage as WorkStage, match_score };
+  });
+  next.sort(
+    (a, b) =>
+      (b.match_score ?? (b.similarity ?? 0) * 10) -
+      (a.match_score ?? (a.similarity ?? 0) * 10)
+  );
+  return next;
 }
 
 export function notionRecordedPaths(sources: NotionSource[]): string[] {

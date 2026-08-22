@@ -233,7 +233,8 @@ function SourceSections({
   sourceReasons = null,
   nasDriveMode = "office",
   onCopyToast,
-  queryHint
+  queryHint,
+  questionText
 }: {
   cards: LunaCard[];
   notionSources?: NotionSource[] | null;
@@ -241,6 +242,7 @@ function SourceSections({
   nasDriveMode?: LunaNasDriveMode;
   onCopyToast?: (message: string) => void;
   queryHint?: string | null;
+  questionText?: string | null;
 }) {
   const webYoutube = useMemo(
     () => cards.filter((c) => c.type === "web" || c.type === "youtube"),
@@ -279,6 +281,7 @@ function SourceSections({
             nasDriveMode={nasDriveMode}
             onCopyToast={onCopyToast}
             queryHint={queryHint}
+            stageQuestion={questionText}
           />
         </section>
       ) : null}

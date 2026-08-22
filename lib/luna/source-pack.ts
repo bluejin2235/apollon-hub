@@ -3,6 +3,13 @@ import {
   normalizeNasDriveLetter,
   normalizeRawNasPath
 } from "@/lib/luna/nas-path";
+import {
+  detectStageQueryBias,
+  detectWorkStage,
+  stageScoreMultiplier,
+  workStageBadgeText,
+  type WorkStage
+} from "@/lib/luna/project-stage";
 import type { LunaCard } from "@/lib/luna/tavily";
 
 /** 표시용 — 원본 테이블은 건드리지 않는다 */
@@ -31,6 +38,8 @@ export type SourcePackItem = {
   score: number;
   /** 화면 표시용 — 있으면 임베딩 유사도, 없으면 score */
   displayScore?: number;
+  /** 제안 단계 vs 수행 프로젝트 */
+  workStage?: WorkStage;
 };
 
 export type SourcePackProject = {
@@ -43,6 +52,7 @@ export type SourcePackProject = {
   folder: SourcePackItem["folder"];
   children: SourcePackItem[];
   score: number;
+  workStage?: WorkStage;
 };
 
 export type SourcePackView =
@@ -327,6 +337,14 @@ function packFromNotion(
   const crumb = pathBreadcrumb(source.path_titles, source.title);
   const sideLabel = onlySide === "notion" ? "노션에만 있음" : crumb;
   const subtitleParts = [date, sideLabel].filter(Boolean);
+  const workStage =
+    source.work_stage ??
+    detectWorkStage({
+      nasPath: source.nas_path,
+      paths: source.paths,
+      pathTitles: source.path_titles,
+      title: source.title
+    });
 
   return {
     id: source.id || source.url,
@@ -352,7 +370,8 @@ function packFromNotion(
     displayScore:
       typeof source.similarity === "number" && Number.isFinite(source.similarity)
         ? Math.min(1, Math.max(0, source.similarity))
-        : undefined
+        : undefined,
+    workStage
   };
 }
 
@@ -360,16 +379,25 @@ function packFromNasOnly(
   entry: NasEntry,
   rank: number,
   /** 노션 히트가 없을 때만 추천(≥PACK_SCORE_RECOMMENDED) 가능 */
-  allowRecommend: boolean
+  allowRecommend: boolean,
+  question?: string
 ): SourcePackItem {
   const title = entry.isFile
     ? entry.card.title || fileNameOf(entry.full)
     : entry.card.title || fileNameOf(entry.full);
   const folderFull = folderOfFullPath(entry.full, entry.isFile);
   const important = entry.card.description?.startsWith("★ ") === true;
-  const score = allowRecommend
+  let score = allowRecommend
     ? Math.max(0.35, (important ? 0.82 : 0.78) - rank * 0.1)
     : Math.max(0.35, 0.48 - rank * 0.03);
+  const workStage = detectWorkStage({
+    nasPath: entry.full,
+    drive: entry.card.drive,
+    title
+  });
+  if (question) {
+    score *= stageScoreMultiplier(workStage, detectStageQueryBias(question));
+  }
   const crumb = folderFull
     .replace(/^[A-Za-z]:\\/, "")
     .split("\\")
@@ -380,7 +408,7 @@ function packFromNasOnly(
     id: `nas:${entry.norm}`,
     title,
     subtitle: crumb || "Work서버",
-    badge: null,
+    badge: workStageBadgeText(workStage),
     body: null,
     onlySide: "nas",
     notion: null,
@@ -391,7 +419,8 @@ function packFromNasOnly(
     pathTitles: [],
     dateKey: notionDateKey(title),
     score,
-    displayScore: Math.min(1, Math.max(0, score))
+    displayScore: Math.min(1, Math.max(0, score)),
+    workStage
   };
 }
 
@@ -400,7 +429,8 @@ function packFromNasOnly(
  */
 export function buildSourcePacks(
   notionSources: NotionSource[] | null | undefined,
-  cards: LunaCard[] | null | undefined
+  cards: LunaCard[] | null | undefined,
+  question?: string | null
 ): SourcePackView[] {
   const notions = (notionSources ?? []).filter((s) => s.title && s.url);
   const nasEntries = buildNasEntries(cards ?? []);
@@ -456,7 +486,14 @@ export function buildSourcePacks(
       entry.used = true;
       continue;
     }
-    items.push(packFromNasOnly(entry, nasOnlyRank, allowNasRecommend));
+    items.push(
+      packFromNasOnly(
+        entry,
+        nasOnlyRank,
+        allowNasRecommend,
+        question?.trim() || undefined
+      )
+    );
     nasOnlyRank += 1;
   }
 
@@ -507,6 +544,13 @@ function groupPacksIntoProjects(
       for (const m of children) consumed.add(m.id);
       if (parentSelf) consumed.add(parentSelf.id);
 
+      const projectStage =
+        parentNotion?.work_stage ??
+        parentSelf?.workStage ??
+        children.find((c) => c.workStage && c.workStage !== "unknown")
+          ?.workStage ??
+        sample.workStage;
+
       views.push({
         kind: "project",
         id: `project:${parentId}`,
@@ -526,7 +570,8 @@ function groupPacksIntoProjects(
             children.find((m) => m.folder)?.folder ??
             null,
         children,
-        score: Math.max(...children.map((c) => c.score), parentSelf?.score ?? 0)
+        score: Math.max(...children.map((c) => c.score), parentSelf?.score ?? 0),
+        workStage: projectStage
       });
       continue;
     }
@@ -612,7 +657,8 @@ function viewToDisplayItem(view: SourcePackView): SourcePackItem {
         }
       }
       return max;
-    })()
+    })(),
+    workStage: view.workStage
   };
 }
 

@@ -23,11 +23,13 @@ import {
   formatNotionSourcesForPrompt,
   mergeNotionSearchOutcomes,
   notionRecordedPaths,
+  annotateNotionSourcesWithWorkStage,
   type NotionSearchOutcome,
   type NotionSearchStatus,
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
 import {
   maxNotionMatchStrength,
   maxNotionSimilarity,
@@ -587,6 +589,8 @@ function buildVolatileSystemText(opts: {
   if (opts.reportContent?.trim()) {
     parts.push(`[이미 정리해둔 자료]\n${opts.reportContent.trim()}`);
   }
+
+  parts.push(WORK_STAGE_ANSWER_RULE);
 
   if (opts.webAugmented) {
     parts.push(
@@ -2258,7 +2262,14 @@ export async function POST(request: NextRequest) {
             pushStep("search", "running", searchRunningLabel);
             batch = await runConnectorSearch(keywords);
             notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome) : batch.notionOutcome;
-            notionSources = notionSearchOutcome.sources;
+            notionSources = annotateNotionSourcesWithWorkStage(
+              notionSearchOutcome.sources,
+              searchIntentText
+            );
+            notionSearchOutcome = {
+              ...notionSearchOutcome,
+              sources: notionSources
+            };
             nasResults = finalizeNasDirectoryRows([
               ...nasResults,
               ...batch.nasResults

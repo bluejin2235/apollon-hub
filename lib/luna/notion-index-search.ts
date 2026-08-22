@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
 import {
+  annotateNotionSourcesWithWorkStage,
   capNotionDisplaySources,
   extractDatesFromText,
   extractWorkserverPathsFromText,
@@ -880,8 +881,13 @@ export async function searchNotionForLuna(
     ms: Date.now() - started
   });
 
+  const stagedSources = queryText
+    ? annotateNotionSourcesWithWorkStage(merged.sources, queryText)
+    : merged.sources;
+
   return {
     ...merged,
+    sources: stagedSources,
     queries: [...new Set([...merged.queries, "index"])]
   };
 }
