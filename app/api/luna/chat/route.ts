@@ -30,6 +30,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import {
+  hasImageSearchIntent,
   orderCardsWithImagePriority,
   searchMediaForLuna
 } from "@/lib/luna/media-index-search";
@@ -1522,6 +1523,21 @@ export async function POST(request: NextRequest) {
             )
           : [];
 
+        const imageIntent = hasImageSearchIntent(searchIntentText);
+        let preMediaProbe = { hits: [] as Awaited<ReturnType<typeof searchMediaForLuna>>["hits"], cards: [] as LunaCard[] };
+        if (imageIntent && knowledgeEmb.queryEmbedding?.length) {
+          preMediaProbe = await searchMediaForLuna(
+            admin,
+            knowledgeEmb.queryEmbedding,
+            searchIntentText
+          );
+          console.log("[luna/media-index] pre-clarify", {
+            query: searchIntentText.slice(0, 80),
+            hits: preMediaProbe.hits.length,
+            topSim: preMediaProbe.hits[0]?.similarity ?? null
+          });
+        }
+
         // ——— 단계 1: 되묻기 ———
         const clearFindIntent =
           needsSearch &&
@@ -1529,6 +1545,10 @@ export async function POST(request: NextRequest) {
             userText
           ) &&
           hasSpecificNamedEntity(userText);
+        const clearImageFindIntent =
+          imageIntent &&
+          hasSpecificNamedEntity(userText) &&
+          /보여|찾|어디|자료|파일|KV/i.test(userText);
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
@@ -1536,7 +1556,9 @@ export async function POST(request: NextRequest) {
           hasManualSkills(manualSkillIds) ||
           shouldSkipProjectClarify(userText) ||
           typesSkipClarify(classifiedTypeRows) ||
-          clearFindIntent;
+          clearFindIntent ||
+          clearImageFindIntent ||
+          (imageIntent && preMediaProbe.hits.length > 0);
 
         if (
           typesNeedLibrary(classifiedTypeRows) &&
@@ -2011,11 +2033,13 @@ export async function POST(request: NextRequest) {
                 );
               }
             })(),
-            searchMediaForLuna(
-              admin,
-              knowledgeEmb.queryEmbedding,
-              searchIntentText
-            ).then((r) => r.cards)
+            imageIntent && knowledgeEmb.queryEmbedding?.length
+              ? Promise.resolve(preMediaProbe.cards)
+              : searchMediaForLuna(
+                  admin,
+                  knowledgeEmb.queryEmbedding,
+                  searchIntentText
+                ).then((r) => r.cards)
           ]);
 
           const notionRes = notionOutcome.sources;
@@ -2132,6 +2156,12 @@ export async function POST(request: NextRequest) {
           const emitSearchSnapshot = () => {
             if (streamMetaEmitted) return;
             const imageN = cards.filter((c) => c.type === "image").length;
+            console.log("[luna/media-index] snapshot", {
+              query: searchIntentText.slice(0, 80),
+              imageCards: imageN,
+              topSim:
+                cards.find((c) => c.type === "image")?.similarity ?? null
+            });
             emit(controller, encoder, {
               type: "search_snapshot",
               cards,

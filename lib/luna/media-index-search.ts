@@ -99,7 +99,14 @@ async function matchMediaEmbeddingsFallback(
     });
   }
   scored.sort((a, b) => b.similarity - a.similarity);
-  return scored.slice(0, limit);
+  const out = scored.slice(0, limit);
+  console.log("[luna/media-index] fallback", {
+    threshold,
+    scanned: data?.length ?? 0,
+    hits: out.length,
+    topSim: out[0]?.similarity ?? null
+  });
+  return out;
 }
 
 export async function matchMediaEmbeddings(
@@ -116,12 +123,24 @@ export async function matchMediaEmbeddings(
   });
   if (error) {
     if (isMissingRpc(error)) {
+      console.log("[luna/media-index] rpc missing, fallback scan", {
+        threshold,
+        limit
+      });
       return matchMediaEmbeddingsFallback(admin, queryEmbedding, opts);
     }
     console.error("[luna/media-index] rpc", error);
     return [];
   }
-  if (!data?.length) return [];
+  if (!data?.length) {
+    console.log("[luna/media-index] rpc", { threshold, hits: 0, topSim: null });
+    return [];
+  }
+  console.log("[luna/media-index] rpc", {
+    threshold,
+    hits: data.length,
+    topSim: Number((data[0] as Record<string, unknown>)?.similarity) || null
+  });
 
   const paths = data.map((row: Record<string, unknown>) => String(row.path ?? ""));
   const { data: metaRows, error: metaErr } = await admin
@@ -188,9 +207,23 @@ export async function searchMediaForLuna(
   question: string,
   opts?: { threshold?: number; limit?: number }
 ): Promise<{ hits: MediaIndexHit[]; cards: LunaCard[] }> {
-  if (!queryEmbedding?.length) return { hits: [], cards: [] };
+  if (!queryEmbedding?.length) {
+    console.log("[luna/media-index] search skipped (no embedding)", {
+      q: question.slice(0, 80)
+    });
+    return { hits: [], cards: [] };
+  }
   const hits = await matchMediaEmbeddings(admin, queryEmbedding, opts);
   let cards = mediaHitsToCards(hits);
+  if (hasImageSearchIntent(question) || hits.length > 0) {
+    console.log("[luna/media-index] search", {
+      q: question.slice(0, 80),
+      hits: hits.length,
+      cards: cards.length,
+      topSim: hits[0]?.similarity ?? null,
+      topProject: hits[0]?.project ?? null
+    });
+  }
   if (hasImageSearchIntent(question)) {
     cards = [...cards].sort(
       (a, b) => (b.similarity ?? 0) - (a.similarity ?? 0)

@@ -1418,9 +1418,31 @@ export function LunaMessage({
   let bubbleInner: ReactNode;
   if (clarify) {
     const q = clarify.question || content;
+    const hasAnswerUi =
+      cardList.length > 0 ||
+      (searchCounts != null &&
+        ((searchCounts.image ?? 0) > 0 ||
+          (searchCounts.notion ?? 0) > 0 ||
+          (searchCounts.work ?? 0) > 0)) ||
+      stepList.length > 0;
     bubbleInner = (
       <>
-        {q ? (
+        {hasAnswerUi ? (
+          <LunaAnswerLayout
+            isStreaming={false}
+            content={q}
+            steps={stepList}
+            classification={classification}
+            notionSources={sources}
+            wikiSources={wikiRefs}
+            cards={cardList}
+            searchCounts={searchCounts}
+            nasPathSettings={nasPathSettings}
+            onCopyToast={handleCopyToast}
+            queryHint={queryHint}
+            questionText={questionText}
+          />
+        ) : q ? (
           <LunaMarkdown
             content={q}
             nasPathSettings={nasPathSettings}

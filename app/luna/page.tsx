@@ -23,6 +23,8 @@ import {
   scrubLunaAnswerText
 } from "@/lib/luna/chat-response";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
+import type { LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
+import type { LunaCard } from "@/lib/luna/tavily";
 import { normalizeWikiSources } from "@/lib/luna/wiki-match";
 import type {
   LunaAttachmentRef,
@@ -39,6 +41,16 @@ async function getAccessToken(): Promise<string | null> {
     data: { session }
   } = await supabase.auth.getSession();
   return session?.access_token ?? null;
+}
+
+function hasImageAnswerUi(
+  cards: LunaCard[] | null | undefined,
+  searchCounts?: LunaSearchCounts | null
+): boolean {
+  return (
+    (cards?.some((c) => c.type === "image") ?? false) ||
+    (searchCounts?.image ?? 0) > 0
+  );
 }
 
 const EMPTY_SKILLS: LunaSkillsSelection = {
@@ -203,12 +215,14 @@ export default function LunaPage() {
           if (Number.isFinite(n)) memoryCount = n;
         }
 
+        const cards = normalizeLunaCards(meta?.cards);
+
         // 본문에 번호 선택지가 남아 있으면 clarify 로 승격 (패널용)
         let content = row.content as string;
         let clarifyResolved = clarify;
         if (!clarifyResolved && row.role === "assistant") {
           const numbered = parseNumberedChoices(content);
-          if (numbered) {
+          if (numbered && !hasImageAnswerUi(cards)) {
             content = numbered.body;
             clarifyResolved = {
               question: numbered.body,
@@ -248,7 +262,7 @@ export default function LunaPage() {
           notionSources,
           wikiSources,
           privateWikiRefs,
-          cards: normalizeLunaCards(meta?.cards),
+          cards: cards,
           sourceReasons: normalizeSourceReasons(meta?.source_reasons),
           attachments,
           modelLabel,
@@ -762,7 +776,8 @@ export default function LunaPage() {
           }
           const cleaned = scrubLunaAnswerText(assistantContent);
           const numbered = parseNumberedChoices(cleaned);
-          if (numbered) {
+          const imageUi = hasImageAnswerUi(streamCards, streamSearchCounts);
+          if (numbered && !imageUi) {
             upsertAssistant(numbered.body, {
               isThinking: false,
               metadata: undefined,
