@@ -66,6 +66,17 @@ export function normalizeWorkPath(p: string): string {
   return p.replace(/\//g, "\\").replace(/\\+/g, "\\").trim();
 }
 
+/** T:\\foo\\bar → { drive, relativePath } — nas_directory.path 형식 */
+export function splitDrivePath(fullPath: string): {
+  drive: string;
+  relativePath: string;
+} {
+  const n = normalizeWorkPath(fullPath);
+  const m = n.match(/^([A-Za-z]):\\(.*)$/);
+  if (!m) return { drive: "T", relativePath: n.replace(/^\\+/, "") };
+  return { drive: m[1]!.toUpperCase(), relativePath: m[2]! };
+}
+
 export function splitPathSegments(fullPath: string): string[] {
   const n = normalizeWorkPath(fullPath);
   const withoutDrive = n.replace(/^[A-Za-z]:\\/, "");
