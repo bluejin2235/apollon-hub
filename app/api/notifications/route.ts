@@ -3,9 +3,11 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import {
   countUnreadNotifications,
   decodeNotificationCursor,
-  encodeNotificationCursor,
-  resolveNotificationViewer,
-  type HubNotificationItem
+  listHubNotifications,
+  loadMutedCategories,
+  notificationFilterCounts,
+  parseNotificationFilter,
+  resolveNotificationViewer
 } from "@/lib/portal/hub-notifications";
 
 export const runtime = "nodejs";
@@ -25,86 +27,78 @@ export async function GET(request: NextRequest) {
     ? Math.min(50, Math.max(1, Math.round(limitRaw)))
     : 20;
   const cursorParam = request.nextUrl.searchParams.get("cursor")?.trim() || "";
+  const filter = parseNotificationFilter(
+    request.nextUrl.searchParams.get("filter")
+  );
+  const includeMuted =
+    request.nextUrl.searchParams.get("include_muted") === "1" ||
+    request.nextUrl.searchParams.get("include_muted") === "true";
+  const withCounts =
+    request.nextUrl.searchParams.get("with_counts") === "1" ||
+    request.nextUrl.searchParams.get("with_counts") === "true";
 
   try {
     const viewer = await resolveNotificationViewer(admin, user);
+    const { muted } = await loadMutedCategories(admin, viewer.userId);
 
-    let query = admin
-      .from("hub_notifications")
-      .select(
-        "id, category, title, body, link, level, scope, created_at"
-      )
-      .or(viewer.orFilter)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(limit + 1);
-
+    let cursor: { createdAt: string; id: string } | null = null;
     if (cursorParam) {
-      const cursor = decodeNotificationCursor(cursorParam);
+      cursor = decodeNotificationCursor(cursorParam);
       if (!cursor) {
         return NextResponse.json({ error: "Invalid cursor" }, { status: 400 });
       }
-      query = query.or(
-        `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+    }
+
+    const { items, nextCursor } = await listHubNotifications(
+      admin,
+      viewer.userId,
+      viewer.orFilter,
+      {
+        filter,
+        includeMuted,
+        mutedCategories: muted,
+        limit,
+        cursor
+      }
+    );
+
+    let unread_count: number;
+    let counts = null;
+    if (withCounts) {
+      counts = await notificationFilterCounts(
+        admin,
+        viewer.userId,
+        viewer.orFilter
+      );
+      unread_count = includeMuted
+        ? counts.unread
+        : await countUnreadNotifications(
+            admin,
+            viewer.userId,
+            viewer.orFilter,
+            muted
+          );
+    } else {
+      unread_count = await countUnreadNotifications(
+        admin,
+        viewer.userId,
+        viewer.orFilter,
+        includeMuted ? [] : muted
       );
     }
 
-    const { data, error } = await query;
-    if (error) {
-      console.error("[notifications] GET", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    const rows = data ?? [];
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const ids = page.map((r) => r.id as string);
-
-    const readSet = new Set<string>();
-    if (ids.length > 0) {
-      const { data: reads, error: readError } = await admin
-        .from("hub_notification_reads")
-        .select("notification_id")
-        .eq("user_id", viewer.userId)
-        .in("notification_id", ids);
-      if (readError) {
-        console.error("[notifications] GET reads", readError);
-        return NextResponse.json({ error: readError.message }, { status: 500 });
-      }
-      for (const r of reads ?? []) {
-        readSet.add(r.notification_id as string);
-      }
-    }
-
-    const items: HubNotificationItem[] = page.map((r) => ({
-      id: r.id as string,
-      category: r.category as string,
-      title: r.title as string,
-      body: (r.body as string | null) ?? null,
-      link: (r.link as string | null) ?? null,
-      level: r.level as string,
-      scope: r.scope as string,
-      created_at: (r.created_at as string) ?? new Date(0).toISOString(),
-      read: readSet.has(r.id as string)
-    }));
-
-    const last = items[items.length - 1];
-    const nextCursor =
-      hasMore && last
-        ? encodeNotificationCursor(last.created_at, last.id)
-        : null;
-
-    const unread_count = await countUnreadNotifications(
-      admin,
-      viewer.userId,
-      viewer.orFilter
-    );
-
-    return NextResponse.json({
+    const payload: Record<string, unknown> = {
       items,
       unread_count,
       next_cursor: nextCursor
-    });
+    };
+
+    if (counts) {
+      payload.counts = counts;
+      payload.total_count = counts.all;
+    }
+
+    return NextResponse.json(payload);
   } catch (err) {
     console.error("[notifications] GET", err);
     return NextResponse.json(

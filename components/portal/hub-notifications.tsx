@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import {
+  HUB_NOTIFICATIONS_CHANGED,
+  NOTIFICATIONS_SETTINGS_URL
+} from "@/lib/portal/notification-display";
 
 type HubNotificationItem = {
   id: string;
@@ -47,9 +51,7 @@ export function HubNotifications() {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<HubNotificationItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -93,7 +95,6 @@ export function HubNotifications() {
     try {
       const json = await fetchPage();
       setItems(json.items);
-      setNextCursor(json.next_cursor);
       setUnreadCount(json.unread_count);
     } finally {
       setLoading(false);
@@ -105,7 +106,14 @@ export function HubNotifications() {
     const timer = window.setInterval(() => {
       void refreshUnread();
     }, 60_000);
-    return () => window.clearInterval(timer);
+    const onChanged = () => {
+      void refreshUnread();
+    };
+    window.addEventListener(HUB_NOTIFICATIONS_CHANGED, onChanged);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(HUB_NOTIFICATIONS_CHANGED, onChanged);
+    };
   }, [refreshUnread]);
 
   useEffect(() => {
@@ -163,20 +171,9 @@ export function HubNotifications() {
     }
   }
 
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const json = await fetchPage(nextCursor);
-      setItems((prev) => {
-        const seen = new Set(prev.map((p) => p.id));
-        return [...prev, ...json.items.filter((n) => !seen.has(n.id))];
-      });
-      setNextCursor(json.next_cursor);
-      setUnreadCount(json.unread_count);
-    } finally {
-      setLoadingMore(false);
-    }
+  function openFullPage() {
+    setOpen(false);
+    router.push(NOTIFICATIONS_SETTINGS_URL);
   }
 
   async function onRowClick(item: HubNotificationItem) {
@@ -273,18 +270,15 @@ export function HubNotifications() {
             )}
           </ul>
 
-          {nextCursor ? (
-            <div className="border-t border-slate-100 px-4 py-2.5">
-              <button
-                type="button"
-                disabled={loadingMore}
-                onClick={() => void loadMore()}
-                className="w-full rounded-lg py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-              >
-                {loadingMore ? "불러오는 중…" : "더 보기"}
-              </button>
-            </div>
-          ) : null}
+          <div className="border-t border-slate-100 bg-[#FBFAFF] px-4 py-2.5">
+            <button
+              type="button"
+              onClick={openFullPage}
+              className="w-full rounded-lg py-1.5 text-xs font-semibold text-[#534AB7] hover:bg-white"
+            >
+              더 보기
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

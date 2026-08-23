@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { resolveNotificationViewer } from "@/lib/portal/hub-notifications";
+import {
+  listMatchingNotificationIds,
+  loadMutedCategories,
+  markNotificationsRead,
+  parseNotificationFilter,
+  resolveNotificationViewer
+} from "@/lib/portal/hub-notifications";
 
 export const runtime = "nodejs";
 
@@ -14,60 +20,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
+  let body: { filter?: unknown; include_muted?: unknown } = {};
+  try {
+    const text = await request.text();
+    if (text.trim()) {
+      body = JSON.parse(text) as { filter?: unknown; include_muted?: unknown };
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const filter = parseNotificationFilter(
+    typeof body.filter === "string" ? body.filter : "all"
+  );
+  const includeMuted = body.include_muted === true || body.include_muted === "1";
+
   try {
     const viewer = await resolveNotificationViewer(admin, user);
+    const { muted } = await loadMutedCategories(admin, viewer.userId);
 
-    const { data: rows, error: fetchError } = await admin
-      .from("hub_notifications")
-      .select("id")
-      .or(viewer.orFilter);
-
-    if (fetchError) {
-      console.error("[notifications/read-all] fetch", fetchError);
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
-    }
-
-    const ids = (rows ?? []).map((r) => r.id as string);
-    if (ids.length === 0) {
-      return NextResponse.json({ ok: true, marked: 0 });
-    }
-
-    const { data: reads, error: readError } = await admin
-      .from("hub_notification_reads")
-      .select("notification_id")
-      .eq("user_id", viewer.userId)
-      .in("notification_id", ids);
-
-    if (readError) {
-      console.error("[notifications/read-all] reads", readError);
-      return NextResponse.json({ error: readError.message }, { status: 500 });
-    }
-
-    const readSet = new Set(
-      (reads ?? []).map((r) => r.notification_id as string)
+    const unreadIds = await listMatchingNotificationIds(
+      admin,
+      viewer.userId,
+      viewer.orFilter,
+      {
+        filter,
+        includeMuted,
+        mutedCategories: muted,
+        unreadOnly: true
+      }
     );
-    const unreadIds = ids.filter((id) => !readSet.has(id));
+
     if (unreadIds.length === 0) {
-      return NextResponse.json({ ok: true, marked: 0 });
+      return NextResponse.json({ ok: true, marked: 0, ids: [] });
     }
 
-    const now = new Date().toISOString();
-    const payload = unreadIds.map((notification_id) => ({
-      notification_id,
-      user_id: viewer.userId,
-      read_at: now
-    }));
+    await markNotificationsRead(admin, viewer.userId, unreadIds);
 
-    const { error } = await admin
-      .from("hub_notification_reads")
-      .upsert(payload, { onConflict: "notification_id,user_id" });
-
-    if (error) {
-      console.error("[notifications/read-all] upsert", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true, marked: unreadIds.length });
+    return NextResponse.json({
+      ok: true,
+      marked: unreadIds.length,
+      ids: unreadIds
+    });
   } catch (err) {
     console.error("[notifications/read-all]", err);
     return NextResponse.json(

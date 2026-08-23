@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { LunaSettingsTab } from "@/components/settings/luna-settings-tab";
 import { MyLoansTab } from "@/components/settings/my-loans-tab";
+import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
 import { ServicePermissionsTab } from "@/components/settings/service-permissions-tab";
 import { StatisticsTab } from "@/components/settings/statistics-tab";
@@ -20,6 +21,7 @@ import { supabase } from "@/lib/supabase/client";
 type TabKey =
   | "profile"
   | "password"
+  | "notifications"
   | "team"
   | "loans"
   | "services"
@@ -34,6 +36,7 @@ function isSettingsTabKey(value: string): value is TabKey {
   return (
     value === "profile" ||
     value === "password" ||
+    value === "notifications" ||
     value === "team" ||
     value === "loans" ||
     value === "services" ||
@@ -42,8 +45,18 @@ function isSettingsTabKey(value: string): value is TabKey {
     value === "luna"
   );
 }
+
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<PortalAuthChecking />}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status, profile: sessionProfile } = useRequirePortalSession({
     profileSelect: "id, email, name, department, role"
   });
@@ -78,22 +91,31 @@ export default function SettingsPage() {
   const canManageServices = profileRole === "슈퍼관리자";
 
   useEffect(() => {
-    if (!canManageServices) return;
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get("tab");
-    const luna = params.get("luna");
+    const tab = searchParams.get("tab");
+    const luna = searchParams.get("luna");
     if (tab === "luna" || luna) {
-      setActiveTab("luna");
-      setMobileShowingContent(true);
+      if (canManageServices) {
+        setActiveTab("luna");
+        setMobileShowingContent(true);
+      }
       return;
     }
     if (tab && isSettingsTabKey(tab)) {
+      if (
+        (tab === "luna" ||
+          tab === "services" ||
+          tab === "permissions" ||
+          tab === "stats") &&
+        !canManageServices
+      ) {
+        return;
+      }
       setActiveTab(tab);
       if (tab !== "profile") {
         setMobileShowingContent(true);
       }
     }
-  }, [canManageServices]);
+  }, [canManageServices, searchParams]);
 
   const selectTab = (key: TabKey) => {
     setActiveTab(key);
@@ -112,6 +134,7 @@ export default function SettingsPage() {
     const base: Array<{ key: TabKey; label: string }> = [
       { key: "profile", label: "프로필" },
       { key: "password", label: "비밀번호" },
+      { key: "notifications", label: "알림" },
       { key: "loans", label: "내 대출 현황" },
       { key: "team", label: "팀원 관리" }
     ];
@@ -350,7 +373,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="mb-7 hidden items-center justify-between md:flex">
-          <nav className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+          <nav className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-100 p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -607,6 +630,8 @@ export default function SettingsPage() {
             ))}
           </section>
         ) : null}
+
+        {activeTab === "notifications" ? <NotificationsTab /> : null}
 
         {activeTab === "loans" ? <MyLoansTab userId={sessionProfile.id} /> : null}
 
