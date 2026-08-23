@@ -25,3 +25,18 @@ export async function uploadMediaThumbnail(
   const { data: pub } = supabase.storage.from(THUMB_BUCKET).getPublicUrl(path);
   return pub.publicUrl;
 }
+
+export async function uploadMediaLarge(
+  supabase: SupabaseClient,
+  key: string,
+  data: Buffer
+): Promise<string> {
+  const path = `${key}.large.webp`;
+  const { error } = await supabase.storage.from(THUMB_BUCKET).upload(path, data, {
+    contentType: "image/webp",
+    upsert: true
+  });
+  if (error) throw error;
+  const { data: pub } = supabase.storage.from(THUMB_BUCKET).getPublicUrl(path);
+  return pub.publicUrl;
+}

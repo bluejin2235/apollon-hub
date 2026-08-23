@@ -22,6 +22,7 @@ export type MediaIndexHit = {
   ai_category: string | null;
   description: string | null;
   thumbnail_url: string | null;
+  large_url: string | null;
 };
 
 function isMissingRpc(error: unknown): boolean {
@@ -74,7 +75,7 @@ async function matchMediaEmbeddingsFallback(
   const { data, error } = await admin
     .from("luna_media_index")
     .select(
-      "path, drive, file_name, project, ai_category, description, thumbnail_url, embedding"
+      "path, drive, file_name, project, ai_category, description, thumbnail_url, large_url, embedding"
     )
     .not("embedding", "is", null);
   if (error) {
@@ -95,7 +96,8 @@ async function matchMediaEmbeddingsFallback(
       project: (row.project as string | null) ?? null,
       ai_category: (row.ai_category as string | null) ?? null,
       description: (row.description as string | null) ?? null,
-      thumbnail_url: (row.thumbnail_url as string | null) ?? null
+      thumbnail_url: (row.thumbnail_url as string | null) ?? null,
+      large_url: (row.large_url as string | null) ?? null
     });
   }
   scored.sort((a, b) => b.similarity - a.similarity);
@@ -146,7 +148,7 @@ export async function matchMediaEmbeddings(
   const { data: metaRows, error: metaErr } = await admin
     .from("luna_media_index")
     .select(
-      "path, project, ai_category, description, thumbnail_url, drive, file_name"
+      "path, project, ai_category, description, thumbnail_url, large_url, drive, file_name"
     )
     .in("path", paths);
   if (metaErr) console.error("[luna/media-index] meta", metaErr);
@@ -166,7 +168,8 @@ export async function matchMediaEmbeddings(
         project: (meta?.project as string | null) ?? null,
         ai_category: (meta?.ai_category as string | null) ?? null,
         description: (meta?.description as string | null) ?? null,
-        thumbnail_url: (meta?.thumbnail_url as string | null) ?? null
+        thumbnail_url: (meta?.thumbnail_url as string | null) ?? null,
+        large_url: (meta?.large_url as string | null) ?? null
       };
     })
     .filter((h: MediaIndexHit) => h.path && h.similarity >= threshold);
@@ -184,7 +187,7 @@ export function mediaHitToCard(hit: MediaIndexHit): LunaCard {
   return {
     type: "image",
     title,
-    url: null,
+    url: hit.large_url?.trim() || null,
     thumbnail: hit.thumbnail_url?.trim() || null,
     description: descParts.join(" · ") || hit.path,
     drive: hit.drive?.trim() || undefined,

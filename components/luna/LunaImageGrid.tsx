@@ -56,9 +56,9 @@ function ImageCell({
           </span>
         ) : null}
         <div className="absolute inset-0 flex items-end gap-1 bg-[rgba(20,20,28,.7)] p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-          {card.thumbnail ? (
+          {card.thumbnail || card.url ? (
             <a
-              href={card.thumbnail}
+              href={card.url || card.thumbnail!}
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 rounded-[5px] bg-white/90 py-1 text-center text-[9.5px] font-semibold text-[#1c1d21]"

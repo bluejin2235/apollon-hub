@@ -6,14 +6,17 @@
  *   npx tsx scripts/index-media.ts --limit=20 --model=claude-haiku-4-5 --compare
  *   npx tsx scripts/index-media.ts --root="T:\\02 Project\\2026"
  *
+ *   npx tsx scripts/index-media.ts --rebuild-large
+ *
  * 또는 run-media-index.bat (작업 스케줄러용)
+ *   scripts/register-rebuild-large-task.ps1 — 142장 large_url 일회성 (/IT)
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
 config();
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   contentHash,
@@ -22,14 +25,18 @@ import {
 } from "@/lib/luna/embedding";
 import {
   loadImageMeta,
-  makeThumbnail,
+  makeLargeWebp,
+  renderMediaVariants,
   resizeForVision
 } from "@/lib/luna/media-image";
 import {
   fetchIndexedMtime,
+  fetchMediaIndexForLargeRebuild,
+  updateMediaLargeUrl,
   upsertMediaIndex,
   type MediaIndexRow
 } from "@/lib/luna/media-index-store";
+import { THUMB_BUCKET } from "@/lib/luna/media-index-rules";
 import {
   collectMediaCandidates,
   DEFAULT_PILOT_ROOT,
@@ -43,6 +50,7 @@ import { parseMediaPath } from "@/lib/luna/media-path-parse";
 import { resolveOfficialPrice } from "@/lib/luna/model-pricing";
 import {
   storageKeyFromPath,
+  uploadMediaLarge,
   uploadMediaThumbnail
 } from "@/lib/luna/media-thumbnails";
 import {
@@ -82,6 +90,7 @@ type CliOpts = {
   root: string;
   model: string | null;
   compare: boolean;
+  rebuildLarge: boolean;
 };
 
 function parseArgs(argv: string[]): CliOpts {
@@ -90,11 +99,13 @@ function parseArgs(argv: string[]): CliOpts {
     limit: null,
     root: DEFAULT_PILOT_ROOT,
     model: null,
-    compare: false
+    compare: false,
+    rebuildLarge: false
   };
   for (const a of argv) {
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--compare") opts.compare = true;
+    else if (a === "--rebuild-large") opts.rebuildLarge = true;
     else if (a.startsWith("--limit=")) {
       const n = parseInt(a.slice("--limit=".length), 10);
       if (Number.isFinite(n) && n > 0) opts.limit = n;
@@ -205,7 +216,8 @@ async function indexOne(
   });
 
   const dims = await loadImageMeta(item.fullPath);
-  const jpegB64 = await resizeForVision(item.fullPath);
+  const variants = await renderMediaVariants(item.fullPath);
+  const jpegB64 = variants.visionJpegBase64;
   if (!jpegB64) {
     return { status: "failed", reason: "image_unreadable" };
   }
@@ -220,16 +232,30 @@ async function indexOne(
     return { status: "failed", reason: `vision_error: ${msg.slice(0, 200)}` };
   }
 
-  const thumbBuf = await makeThumbnail(item.fullPath);
+  const storageKey = storageKeyFromPath(item.drive, item.path);
   let thumbnailUrl: string | null = null;
-  if (thumbBuf) {
+  if (variants.thumbWebp) {
     try {
-      const key = storageKeyFromPath(item.drive, item.path);
-      thumbnailUrl = await uploadMediaThumbnail(admin, key, thumbBuf);
+      thumbnailUrl = await uploadMediaThumbnail(
+        admin,
+        storageKey,
+        variants.thumbWebp
+      );
     } catch (e) {
       console.warn(`  [thumb] ${item.path}:`, e instanceof Error ? e.message : e);
     }
   }
+
+  let largeUrl: string | null = null;
+  if (variants.largeWebp) {
+    try {
+      largeUrl = await uploadMediaLarge(admin, storageKey, variants.largeWebp);
+    } catch (e) {
+      console.warn(`  [large] ${item.path}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  const resolvedDims = variants.dims ?? dims;
 
   const embedText = [vision.result.description, vision.result.purpose]
     .filter(Boolean)
@@ -244,8 +270,8 @@ async function indexOne(
     file_name: item.fileName,
     file_type: mediaFileTypeFromExt(item.fullPath),
     file_size: item.sizeBytes,
-    width: dims?.width ?? null,
-    height: dims?.height ?? null,
+    width: resolvedDims?.width ?? null,
+    height: resolvedDims?.height ?? null,
     file_mtime: mtimeIso(item.mtimeMs),
     project: parts.project,
     stage,
@@ -256,6 +282,7 @@ async function indexOne(
     description: vision.result.description || null,
     description_model: mediaVisionModel(),
     thumbnail_url: thumbnailUrl,
+    large_url: largeUrl,
     embedding: vector ? embeddingToSql(vector) : null,
     content_hash: hash,
     indexed_at: new Date().toISOString()
@@ -378,6 +405,214 @@ function printBatchReport(opts: {
       `10. ${SCALE_TOTAL.toLocaleString("ko-KR")}장 예상: $${(perImg * SCALE_TOTAL).toFixed(2)} · ${((perSec * SCALE_TOTAL) / 3600).toFixed(1)}h`
     );
   }
+}
+
+const SCALE_LARGE_CORPUS = 77065;
+
+async function walkStorageFiles(
+  admin: SupabaseClient,
+  prefix = ""
+): Promise<Array<{ path: string; size: number }>> {
+  const out: Array<{ path: string; size: number }> = [];
+  let offset = 0;
+  const page = 200;
+  while (true) {
+    const { data, error } = await admin.storage.from(THUMB_BUCKET).list(prefix, {
+      limit: page,
+      offset,
+      sortBy: { column: "name", order: "asc" }
+    });
+    if (error) throw error;
+    const rows = data ?? [];
+    if (rows.length === 0) break;
+    for (const row of rows) {
+      const name = row.name ?? "";
+      const childPrefix = prefix ? `${prefix}/${name}` : name;
+      if (row.id == null) {
+        out.push(...(await walkStorageFiles(admin, childPrefix)));
+      } else {
+        const meta = row.metadata as { size?: number } | undefined;
+        out.push({
+          path: childPrefix,
+          size: typeof meta?.size === "number" ? meta.size : 0
+        });
+      }
+    }
+    if (rows.length < page) break;
+    offset += page;
+  }
+  return out;
+}
+
+async function summarizeStorage(admin: SupabaseClient): Promise<{
+  thumbCount: number;
+  thumbBytes: number;
+  largeCount: number;
+  largeBytes: number;
+}> {
+  const files = await walkStorageFiles(admin);
+  let thumbCount = 0;
+  let thumbBytes = 0;
+  let largeCount = 0;
+  let largeBytes = 0;
+  for (const f of files) {
+    if (f.path.endsWith(".large.webp")) {
+      largeCount += 1;
+      largeBytes += f.size;
+    } else if (f.path.endsWith(".webp")) {
+      thumbCount += 1;
+      thumbBytes += f.size;
+    }
+  }
+  return { thumbCount, thumbBytes, largeCount, largeBytes };
+}
+
+function printRebuildLargeReport(opts: {
+  elapsedMs: number;
+  ok: number;
+  skipped: number;
+  failed: number;
+  failReasons: Record<string, number>;
+  thumbBytes: number;
+  thumbCount: number;
+  largeBytes: number;
+  largeCount: number;
+  filledLargeUrl: number;
+  under1200: number;
+  totalRows: number;
+}): void {
+  const thumbMb = opts.thumbBytes / (1024 * 1024);
+  const largeMb = opts.largeBytes / (1024 * 1024);
+  const avgThumb = opts.thumbCount > 0 ? opts.thumbBytes / opts.thumbCount : 0;
+  const avgLarge = opts.largeCount > 0 ? opts.largeBytes / opts.largeCount : 0;
+  const estThumbGb = (avgThumb * SCALE_LARGE_CORPUS) / (1024 ** 3);
+  const estLargeGb = (avgLarge * SCALE_LARGE_CORPUS) / (1024 ** 3);
+
+  console.log("\n=== rebuild-large report ===");
+  console.log(
+    `1. 소요: ${(opts.elapsedMs / 1000).toFixed(1)}s · ok=${opts.ok} skip=${opts.skipped} fail=${opts.failed}`
+  );
+  if (Object.keys(opts.failReasons).length > 0) {
+    for (const [k, v] of Object.entries(opts.failReasons).sort(
+      (a, b) => b[1] - a[1]
+    )) {
+      console.log(`   fail ${k}: ${v}`);
+    }
+  }
+  console.log(
+    `2. large_url 채움: ${opts.filledLargeUrl}/${opts.totalRows} (이번 실행 ok=${opts.ok})`
+  );
+  console.log(
+    `3. Storage 썸네일(.webp): ${opts.thumbCount} files · ${thumbMb.toFixed(2)} MB`
+  );
+  console.log(
+    `4. Storage 확대본(.large.webp): ${opts.largeCount} files · ${largeMb.toFixed(2)} MB`
+  );
+  console.log(
+    `5. 원본 긴 변 < 1200px: ${opts.under1200}/${opts.totalRows}`
+  );
+  console.log(
+    `6. ${SCALE_LARGE_CORPUS.toLocaleString("ko-KR")}장 예상 Storage: 썸네일 ${estThumbGb.toFixed(2)} GB + 확대본 ${estLargeGb.toFixed(2)} GB = ${(estThumbGb + estLargeGb).toFixed(2)} GB`
+  );
+}
+
+async function runRebuildLarge(admin: SupabaseClient): Promise<void> {
+  const rows = await fetchMediaIndexForLargeRebuild(admin);
+  if (rows.length === 0) {
+    console.log("luna_media_index: no rows");
+    return;
+  }
+
+  const need = rows.filter((r) => !r.large_url?.trim());
+  console.log(
+    `rebuild-large: ${need.length} to process (${rows.length} total, ${rows.length - need.length} already have large_url)`
+  );
+
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  const failReasons: Record<string, number> = {};
+  let largeBytesUploaded = 0;
+  const t0 = Date.now();
+
+  for (let i = 0; i < need.length; i++) {
+    const row = need[i]!;
+    const fullPath = resolveMediaFilePath(row.drive, row.path);
+    if (!existsSync(fullPath)) {
+      failed++;
+      failReasons.file_not_found = (failReasons.file_not_found ?? 0) + 1;
+      console.log(`[${i + 1}/${need.length}] skip missing ${row.path}`);
+      continue;
+    }
+
+    process.stdout.write(
+      `[${i + 1}/${need.length}] ${basename(row.path)} … `
+    );
+    try {
+      const buf = await makeLargeWebp(fullPath);
+      if (!buf) {
+        failed++;
+        failReasons.image_unreadable = (failReasons.image_unreadable ?? 0) + 1;
+        console.log("fail (unreadable)");
+        continue;
+      }
+      const key = storageKeyFromPath(row.drive, row.path);
+      const largeUrl = await uploadMediaLarge(admin, key, buf);
+      await updateMediaLargeUrl(admin, row.path, largeUrl);
+      largeBytesUploaded += buf.length;
+      ok++;
+      console.log(`ok ${buf.length}B`);
+    } catch (e) {
+      failed++;
+      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 120);
+      failReasons[msg] = (failReasons[msg] ?? 0) + 1;
+      console.log(`error: ${msg}`);
+    }
+  }
+
+  skipped = rows.length - need.length;
+  const elapsedMs = Date.now() - t0;
+
+  const { data: filledRows, error: filledErr } = await admin
+    .from("luna_media_index")
+    .select("large_url, width, height")
+    .not("large_url", "is", null);
+  if (filledErr) throw filledErr;
+
+  const filledLargeUrl = (filledRows ?? []).length;
+  let under1200 = 0;
+  for (const r of rows) {
+    const w = typeof r.width === "number" ? r.width : 0;
+    const h = typeof r.height === "number" ? r.height : 0;
+    const maxSide = Math.max(w, h);
+    if (maxSide > 0 && maxSide < 1200) under1200 += 1;
+  }
+
+  let thumbStats = { count: 0, bytes: 0 };
+  let largeStats = { count: 0, bytes: 0 };
+  try {
+    const storage = await summarizeStorage(admin);
+    thumbStats = { count: storage.thumbCount, bytes: storage.thumbBytes };
+    largeStats = { count: storage.largeCount, bytes: storage.largeBytes };
+  } catch (e) {
+    console.warn("[storage list]", e instanceof Error ? e.message : e);
+    largeStats = { count: ok, bytes: largeBytesUploaded };
+  }
+
+  printRebuildLargeReport({
+    elapsedMs,
+    ok,
+    skipped,
+    failed,
+    failReasons,
+    thumbBytes: thumbStats.bytes,
+    thumbCount: thumbStats.count,
+    largeBytes: largeStats.bytes,
+    largeCount: largeStats.count,
+    filledLargeUrl,
+    under1200,
+    totalRows: rows.length
+  });
 }
 
 async function runCompare(opts: CliOpts): Promise<void> {
@@ -578,6 +813,11 @@ async function runCompare(opts: CliOpts): Promise<void> {
 async function runIndex(opts: CliOpts): Promise<void> {
   if (opts.compare) {
     await runCompare(opts);
+    return;
+  }
+  if (opts.rebuildLarge) {
+    const admin = createAdmin();
+    await runRebuildLarge(admin);
     return;
   }
   const root = resolveScanRoot(opts.root);

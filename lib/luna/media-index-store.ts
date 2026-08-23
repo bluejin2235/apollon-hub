@@ -18,6 +18,7 @@ export type MediaIndexRow = {
   description: string | null;
   description_model: string | null;
   thumbnail_url: string | null;
+  large_url: string | null;
   embedding?: string | null;
   content_hash: string | null;
   indexed_at: string;
@@ -47,4 +48,35 @@ export async function upsertMediaIndex(
     onConflict: "path"
   });
   if (error) throw error;
+}
+
+export async function updateMediaLargeUrl(
+  admin: SupabaseClient,
+  path: string,
+  largeUrl: string
+): Promise<void> {
+  const { error } = await admin
+    .from("luna_media_index")
+    .update({ large_url: largeUrl })
+    .eq("path", path);
+  if (error) throw error;
+}
+
+export type MediaIndexLargeRebuildRow = {
+  path: string;
+  drive: string;
+  width: number | null;
+  height: number | null;
+  large_url: string | null;
+};
+
+export async function fetchMediaIndexForLargeRebuild(
+  admin: SupabaseClient
+): Promise<MediaIndexLargeRebuildRow[]> {
+  const { data, error } = await admin
+    .from("luna_media_index")
+    .select("path, drive, width, height, large_url")
+    .order("indexed_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as MediaIndexLargeRebuildRow[];
 }

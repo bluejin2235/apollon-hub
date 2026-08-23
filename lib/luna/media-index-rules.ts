@@ -59,6 +59,14 @@ export const EXCLUDE_FOLDER_PATTERNS: Array<{ id: string; re: RegExp }> = [
   }
 ];
 
+/** 영상 재생 캡처 — 원본 영상 확장자 뒤 타임스탬프 (예: movie.mp4_20260126_172317.jpg) */
+export const VIDEO_CAPTURE_FILENAME_RE =
+  /\.(mp4|mov|mkv|avi|wmv|m4v|ts)_\d/i;
+
+/** 같은 폴더·파일명 앞 N자가 M장 이상이면 캡처 시퀀스로 전부 제외 */
+export const VIDEO_CAPTURE_PREFIX_LEN = 30;
+export const VIDEO_CAPTURE_PREFIX_MIN_COUNT = 20;
+
 /** 시범 — T:\\02 Project\\2026 아래 3개 프로젝트 */
 export const PILOT_PROJECT_FOLDERS = [
   "260129 삼성디스플레이 시어터룸",
@@ -69,5 +77,9 @@ export const PILOT_PROJECT_FOLDERS = [
 export const DEFAULT_PILOT_ROOT = "T:\\02 Project\\2026";
 
 export const THUMB_BUCKET = "luna-media-thumbs";
-export const VISION_MAX_PX = 640;
+/** AI 비전 입력 — Storage 저장 안 함 */
+export const VISION_MAX_PX = 800;
+/** 그리드 썸네일 Storage */
 export const THUMB_MAX_PX = 400;
+/** 확대 보기 Storage */
+export const LARGE_MAX_PX = 1200;
