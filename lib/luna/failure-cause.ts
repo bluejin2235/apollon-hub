@@ -1,5 +1,8 @@
 /**
  * 실패 원인 유형 — 규칙 기반 (LLM 없음). 조회 시 계산.
+ *
+ * 우선순위는 「무엇을 고치면 몇 건이 풀리나」다.
+ * thumbs_down 은 알게 된 경로일 뿐, 원인을 가리지 않는다.
  */
 import {
   isLikelyClarifyPickQuestion,
@@ -87,7 +90,10 @@ export const FAILURE_CAUSE_ORDER: FailureCauseType[] = [
 ];
 
 const WIKI_TOPIC_RE =
-  /규정|기준|절차|규칙|정책|양식|가이드|매뉴얼|지침|프로세스|어떻게\s*해|해야\s*하|제출|결재|승인/;
+  /규정|기준|절차|규칙|정책|양식|가이드|매뉴얼|지침|프로세스|어떻게\s*해|해야\s*하|제출|결재|승인|복지|야근|휴가|병가|인허가|뭐야|뭐고|무슨\s*뜻/;
+
+const FIND_RE =
+  /찾아줘|찾아\s*줘|어디\s*있|위치|보여줘|모아줘|파일\s*최종|견적서/;
 
 const SLOW_MS = 25_000;
 const SHALLOW_SOURCE_MIN = 3;
@@ -156,41 +162,57 @@ function isClarifyFollowup(row: CauseClassifyInput): boolean {
       return true;
     }
   }
-  return isLikelyClarifyPickQuestion(row.question || "");
+  return false;
+}
+
+function isFindQuestion(q: string): boolean {
+  return FIND_RE.test(q);
+}
+
+function isWikiTopic(q: string): boolean {
+  return WIKI_TOPIC_RE.test(q);
 }
 
 /**
- * 우선순위: 사람 정정 → 되묻기 → 위키 공백 → 검색 실패 → 얕은 답 → 느림 → 의도 → 미분류
+ * 우선순위: 되묻기 → 위키 공백 → 검색 실패 → 얕은 답 → 의도 → 사람 정정(잔여) → 느림 → 미분류
+ * thumbs_down 은 원인보다 나중에. 검색·위키 원인을 가리지 않기 위함.
  */
 export function classifyFailureCause(
   row: CauseClassifyInput
 ): FailureCauseType {
-  if (hasSignal(row, "thumbs_down") || hasSignal(row, "correction")) {
-    return "human_correction";
-  }
-
+  const q = row.question || "";
   const answer = (row.answer_excerpt || "").replace(/\s+/g, " ").trim();
+  const src = failureSourceTotals(row.sources_used);
+
+  if (isLikelyClarifyPickQuestion(q)) {
+    return "clarify_mishandle";
+  }
   if (
     isClarifyFollowup(row) &&
-    (answer.length > 0 && answer.length <= SHORT_ANSWER_CHARS ||
-      hasSignal(row, "not_found") ||
-      hasSignal(row, "low_confidence"))
+    answer.length > 0 &&
+    answer.length <= SHORT_ANSWER_CHARS
   ) {
     return "clarify_mishandle";
   }
 
-  const src = failureSourceTotals(row.sources_used);
-  const q = row.question || "";
-
-  if (src.wiki === 0 && WIKI_TOPIC_RE.test(q)) {
+  if (isWikiTopic(q) && src.wiki === 0) {
     return "wiki_gap";
   }
 
+  if (hasSignal(row, "zero_search") || hasSignal(row, "not_found")) {
+    return "search_miss";
+  }
   if (
-    hasSignal(row, "zero_search") ||
-    hasSignal(row, "not_found") ||
-    src.materials === 0 ||
+    isFindQuestion(q) &&
+    !isWikiTopic(q) &&
     (src.notion === 0 && src.cards === 0 && src.wiki === 0)
+  ) {
+    return "search_miss";
+  }
+  if (
+    isFindQuestion(q) &&
+    !isWikiTopic(q) &&
+    (hasSignal(row, "thumbs_down") || hasSignal(row, "correction"))
   ) {
     return "search_miss";
   }
@@ -202,9 +224,8 @@ export function classifyFailureCause(
   ) {
     return "shallow_answer";
   }
-
-  if (typeof row.duration_ms === "number" && row.duration_ms >= SLOW_MS) {
-    return "slow_response";
+  if (hasSignal(row, "low_confidence") && src.materials >= SHALLOW_SOURCE_MIN) {
+    return "shallow_answer";
   }
 
   if (
@@ -215,10 +236,12 @@ export function classifyFailureCause(
     return "low_understanding";
   }
 
-  if (hasSignal(row, "low_confidence")) {
-    return src.materials >= SHALLOW_SOURCE_MIN
-      ? "shallow_answer"
-      : "search_miss";
+  if (hasSignal(row, "thumbs_down") || hasSignal(row, "correction")) {
+    return "human_correction";
+  }
+
+  if (typeof row.duration_ms === "number" && row.duration_ms >= SLOW_MS) {
+    return "slow_response";
   }
 
   return "unclassified";

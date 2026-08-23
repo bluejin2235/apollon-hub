@@ -95,9 +95,7 @@ async function main() {
     };
   });
 
-  const merged = mergeFailureRowsByMessage(enriched).filter(
-    (r) => isInspectFailure(r) || !isLikelyClarifyPickQuestion(r.question)
-  );
+  const merged = mergeFailureRowsByMessage(enriched);
   const summary = summarizeFailureKinds(merged);
   const allView = merged.filter((r) => matchesKindFilter(r, "all"));
   const inspectView = merged.filter((r) => matchesKindFilter(r, "inspect"));

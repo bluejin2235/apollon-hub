@@ -92,8 +92,7 @@ import { scoreAnswerSelf } from "@/lib/luna/answer-self-score";
 import {
   isAnswerScoresVisible,
   recordAutoFailuresFromAnswer,
-  recordLunaFailure,
-  shouldSkipFailureForClarifyPick
+  recordLunaFailure
 } from "@/lib/luna/failures";
 import { CORRECTION_RE } from "@/lib/luna/selfstudy";
 import {
@@ -2957,12 +2956,7 @@ export async function POST(request: NextRequest) {
 
         if (insertError) {
           console.error("[luna/chat] insert messages", insertError);
-        } else if (
-          !shouldSkipFailureForClarifyPick({
-            lastHadClarify,
-            userText
-          })
-        ) {
+        } else {
           void recordAutoFailuresFromAnswer(admin, {
             messageId: assistantMessageId,
             conversationId,

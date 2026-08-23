@@ -15,7 +15,6 @@ import {
 } from "../lib/luna/failure-cause";
 import {
   isInspectFailure,
-  isLikelyClarifyPickQuestion,
   mergeFailureRowsByMessage,
   type FailureKind,
   type FailureSignal
@@ -68,18 +67,20 @@ async function main() {
         : [r.signal]
   }));
 
-  const merged = mergeFailureRowsByMessage(enriched).filter(
-    (r) => isInspectFailure(r) || !isLikelyClarifyPickQuestion(r.question)
-  );
+  const merged = mergeFailureRowsByMessage(enriched);
   const open = merged.filter((r) => !r.verdict && !isInspectFailure(r));
 
   const counts = new Map<FailureCauseType, number>();
+  const people = new Map<FailureCauseType, Set<string>>();
   const samples = new Map<FailureCauseType, string[]>();
   for (const row of open) {
     const cause = classifyFailureCause(row);
     counts.set(cause, (counts.get(cause) ?? 0) + 1);
+    const who = people.get(cause) ?? new Set<string>();
+    if (row.asked_by) who.add(row.asked_by);
+    people.set(cause, who);
     const list = samples.get(cause) ?? [];
-    if (list.length < 4) {
+    if (list.length < 6) {
       list.push(row.question.replace(/\s+/g, " ").trim().slice(0, 48));
       samples.set(cause, list);
     }
@@ -93,14 +94,19 @@ async function main() {
     if (n === 0) continue;
     const meta = failureCauseMeta(t);
     const pct = total ? ((n / total) * 100).toFixed(1) : "0";
+    const askers = people.get(t)?.size ?? 0;
     console.log(
-      `${meta.emoji} ${meta.title}\t${n}건 (${pct}%)\t예: ${(samples.get(t) ?? []).join(" / ")}`
+      `${meta.emoji} ${meta.title}\t${n}건 · ${askers}명 (${pct}%)\t예: ${(samples.get(t) ?? []).join(" / ")}`
     );
   }
   const unk = counts.get("unclassified") ?? 0;
   console.log(
     `unclassified_ratio=${total ? ((unk / total) * 100).toFixed(1) : 0}%`
   );
+  console.log("--- unclassified samples ---");
+  for (const q of samples.get("unclassified") ?? []) {
+    console.log(`  · ${q}`);
+  }
 }
 
 main().catch((e) => {

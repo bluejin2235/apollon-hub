@@ -68,6 +68,47 @@ const b: Row = {
 const merged = mergeFailureRowsByMessage([a, b]);
 assert(merged.length === 1, "merge to 1");
 assert(merged[0]!.signal === "not_found", "primary not_found over low_confidence");
+
+const mid2 = "22222222-2222-2222-2222-222222222222";
+const humanEmpty: Row & {
+  sources_used?: Record<string, unknown>;
+  duration_ms?: number | null;
+} = {
+  ...base,
+  id: "h",
+  message_id: mid2,
+  question: "lucky 프로그램이 뭐였지",
+  kind: "human",
+  signal: "thumbs_down",
+  sources_used: {},
+  duration_ms: null,
+  created_at: "2026-08-22T02:00:00.000Z"
+};
+const autoRich: Row & {
+  sources_used?: Record<string, unknown>;
+  duration_ms?: number | null;
+} = {
+  ...base,
+  id: "r",
+  message_id: mid2,
+  question: "lucky 프로그램이 뭐였지",
+  kind: "auto",
+  signal: "not_found",
+  sources_used: { wiki: 3, notion: 5, cards: 5, memory: 10 },
+  duration_ms: 24135,
+  created_at: "2026-08-22T01:59:00.000Z"
+};
+const mergedSrc = mergeFailureRowsByMessage([humanEmpty, autoRich]);
+assert(mergedSrc.length === 1, "merge sources pair");
+assert(
+  (mergedSrc[0] as { sources_used?: { notion?: number } }).sources_used
+    ?.notion === 5,
+  "keep richest sources_used"
+);
+assert(
+  (mergedSrc[0] as { duration_ms?: number | null }).duration_ms === 24135,
+  "keep duration"
+);
 assert(
   (merged[0]!.signals ?? []).includes("not_found") &&
     (merged[0]!.signals ?? []).includes("low_confidence"),
@@ -85,15 +126,17 @@ assert(kindForSignals(["thumbs_down", "not_found"]) === "human", "kind human");
 
 assert(isLikelyClarifyPickQuestion("1"), "1");
 assert(isLikelyClarifyPickQuestion("1번"), "1번");
+assert(isLikelyClarifyPickQuestion("1·2 모두"), "1·2 모두");
 assert(!isLikelyClarifyPickQuestion("작년 미디어파사드 자료 모아줘"), "real q");
 assert(
   shouldSkipFailureForClarifyPick({ lastHadClarify: true, userText: "1번" }),
-  "skip clarify"
+  "helper still detects pick"
 );
 assert(
   !shouldSkipFailureForClarifyPick({ lastHadClarify: false, userText: "1번" }),
   "no skip without clarify"
 );
+// 기록은 건너뛰지 않는다. 되묻기 실패는 원인 묶음으로 모은다.
 
 const inspect: Row = {
   ...base,

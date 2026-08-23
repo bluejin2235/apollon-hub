@@ -72,10 +72,12 @@ export function shouldSkipFailureForClarifyPick(opts: {
 
 export function isLikelyClarifyPickQuestion(question: string): boolean {
   const t = question.replace(/\s+/g, "").trim();
-  if (!t || t.length > 10) return false;
+  if (!t || t.length > 12) return false;
   if (/^\d{1,2}번?$/.test(t)) return true;
   if (/^(예|아니요|아니|응|네|ㅇㅇ|ㄴㄴ|ok|yes|no)$/i.test(t)) return true;
   if (/^[1-9]$/.test(t)) return true;
+  if (/모두|둘다|전부/.test(t)) return true;
+  if (/^[1-9](·|,|\/)[1-9]/.test(t)) return true;
   return false;
 }
 
@@ -104,7 +106,51 @@ export type FailureMergeRow = {
   human_note?: string | null;
   source_ref: Record<string, unknown>;
   created_at: string;
+  sources_used?: Record<string, unknown> | null;
+  duration_ms?: number | null;
+  types?: string[] | null;
 };
+
+function sourceMaterialScore(
+  sources: Record<string, unknown> | null | undefined
+): number {
+  if (!sources || typeof sources !== "object") return -1;
+  const n = (k: string) => {
+    const v = sources[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  return n("wiki") + n("notion") + n("cards") + n("memory");
+}
+
+function pickRichestSources(
+  rows: Array<{ sources_used?: Record<string, unknown> | null }>
+): Record<string, unknown> | null | undefined {
+  let best: Record<string, unknown> | null | undefined;
+  let bestScore = -1;
+  for (const r of rows) {
+    const score = sourceMaterialScore(r.sources_used);
+    if (score > bestScore) {
+      bestScore = score;
+      best = r.sources_used;
+    }
+  }
+  return best;
+}
+
+function unionTypes(
+  rows: Array<{ types?: string[] | null }>
+): string[] | null | undefined {
+  const out: string[] = [];
+  let seen = false;
+  for (const r of rows) {
+    if (!Array.isArray(r.types)) continue;
+    seen = true;
+    for (const t of r.types) {
+      if (t && !out.includes(t)) out.push(t);
+    }
+  }
+  return seen ? out : undefined;
+}
 
 export function mergeFailureRowsByMessage<T extends FailureMergeRow>(
   rows: T[]
@@ -157,6 +203,8 @@ export function mergeFailureRowsByMessage<T extends FailureMergeRow>(
       }
       return acc;
     }, {});
+    const duration =
+      group.map((r) => r.duration_ms).find((n) => n != null) ?? null;
     merged.push({
       ...keeper,
       signal: primary,
@@ -167,11 +215,16 @@ export function mergeFailureRowsByMessage<T extends FailureMergeRow>(
       intent_score: intent,
       confidence_score: confidence,
       source_ref: refs,
+      sources_used: pickRichestSources(group) ?? keeper.sources_used,
+      duration_ms: duration,
+      types: unionTypes(group) ?? keeper.types,
       question:
         group.map((r) => r.question).find((q) => q.trim()) || keeper.question,
       answer_excerpt:
-        group.map((r) => r.answer_excerpt).find((a) => a.trim()) ||
-        keeper.answer_excerpt
+        group
+          .map((r) => r.answer_excerpt)
+          .sort((a, b) => (b?.length ?? 0) - (a?.length ?? 0))
+          .find((a) => a.trim()) || keeper.answer_excerpt
     });
   }
 

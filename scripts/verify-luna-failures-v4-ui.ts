@@ -120,6 +120,11 @@ async function main() {
         bodyText.includes("정기 점검")
     ],
     ["개선하기 버튼", bodyText.includes("개선하기")],
+    ["원인으로 묶기", bodyText.includes("원인으로 묶기")],
+    [
+      "질문 묶어보기 없음",
+      !bodyText.includes("묶어 보기") && !bodyText.includes("비슷한 질문")
+    ],
     ["전체에서 점검 제외 안내", bodyText.includes("정기 점검을 넣지 않습니다")],
     ["답변 excerpt 힌트 없음", !bodyText.includes("행을 누르면 그 대화로 갑니다")]
   ];
@@ -132,6 +137,33 @@ async function main() {
     fullPage: true
   });
   console.log("✓ luna-failures-dedupe-list.png");
+
+  const causeBtn = page.getByRole("button", { name: /보기|선택됨/ }).first();
+  if ((await causeBtn.count()) > 0) {
+    const beforeCards = (await page.locator("text=눌러서 대화 보기").count());
+    await causeBtn.click();
+    await page.waitForTimeout(400);
+    const filteredText = await page.locator("body").innerText();
+    const afterCards = await page.locator("text=눌러서 대화 보기").count();
+    console.log(
+      filteredText.includes("선택됨") && filteredText.includes("전체 보기")
+        ? "✓ 묶음 클릭 → 선택됨·전체 보기"
+        : "✗ 묶음 클릭 필터 표시 없음"
+    );
+    console.log(
+      afterCards <= beforeCards
+        ? `✓ 필터 후 카드 ${afterCards}건 (이전 ${beforeCards})`
+        : `✗ 필터 후 카드가 줄지 않음 ${afterCards} vs ${beforeCards}`
+    );
+    await page.screenshot({
+      path: join(OUT, "luna-failures-cause-filter.png"),
+      fullPage: true
+    });
+    console.log("✓ luna-failures-cause-filter.png");
+    const clear = page.getByRole("button", { name: "전체 보기" });
+    if ((await clear.count()) > 0) await clear.click();
+    await page.waitForTimeout(300);
+  }
 
   // 정기 점검 탭
   const inspectTab = page.getByRole("button", { name: /정기 점검/ });

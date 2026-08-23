@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase/client";
 import { buildLunaSettingsUrl } from "@/lib/luna/settings-nav";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { DEFAULT_NAS_PATH_SETTINGS } from "@/lib/luna/nas-path";
+import { failureCauseMeta, type FailureCauseType } from "@/lib/luna/failure-cause";
 
 type FailureDbFix = {
   id: string;
@@ -595,6 +596,11 @@ function FailureCard({
         <span className={`rounded-full px-2 py-0.5 text-[9.5px] font-bold ${tag.className}`}>
           {tag.label}
         </span>
+        {item.cause_type ? (
+          <span className="rounded-full bg-[#EEEDFE] px-2 py-0.5 text-[9.5px] font-bold text-[#3C3489]">
+            {failureCauseMeta(item.cause_type as FailureCauseType).emoji}
+          </span>
+        ) : null}
         <span className="text-[10.5px]" style={{ color: K.faint }}>
           {item.asked_by_name ?? "—"}
         </span>

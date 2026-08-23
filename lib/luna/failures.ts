@@ -4,7 +4,6 @@ import { extractKeyNouns } from "@/lib/luna/reflect-guard";
 import { createCandidate } from "@/lib/luna/candidates";
 import {
   isInspectFailure,
-  isLikelyClarifyPickQuestion,
   kindForSignals,
   matchesKindFilter,
   mergeFailureRowsByMessage,
@@ -535,9 +534,7 @@ export async function listLunaFailures(
     };
   });
 
-  const merged = mergeFailureRowsByMessage(enriched).filter(
-    (r) => isInspectFailure(r) || !isLikelyClarifyPickQuestion(r.question)
-  );
+  const merged = mergeFailureRowsByMessage(enriched);
   // merge 후 원인 재계산 (signals 합쳐짐)
   const withCause = merged.map((r) => ({
     ...r,
@@ -557,38 +554,6 @@ export type FailureCluster = {
   previews: string[];
   items: FailureRow[];
 };
-
-/** @deprecated 질문 유사 묶음 — 원인 묶음으로 대체 */
-export function clusterFailuresByQuestion(rows: FailureRow[]): FailureCluster[] {
-  const map = new Map<string, FailureRow[]>();
-  for (const row of rows) {
-    if (row.verdict) continue;
-    const key = row.cluster_key || failureClusterKey(row.question);
-    const list = map.get(key) ?? [];
-    list.push(row);
-    map.set(key, list);
-  }
-  return [...map.entries()]
-    .map(([key, items]) => {
-      const askers = new Set(items.map((i) => i.asked_by).filter(Boolean));
-      const label =
-        items[0]?.question.replace(/\s+/g, " ").trim().slice(0, 42) || key;
-      return {
-        key,
-        label,
-        emoji: "💬",
-        blurb: "비슷한 질문",
-        count: items.length,
-        asker_count: askers.size,
-        previews: items
-          .slice(0, 3)
-          .map((i) => i.question.replace(/\s+/g, " ").trim().slice(0, 48)),
-        items
-      };
-    })
-    .filter((c) => c.count >= 2)
-    .sort((a, b) => b.count - a.count);
-}
 
 /** 원인 유형으로 묶기 (건수·인원 많은 순) */
 export function clusterFailures(rows: FailureRow[]): FailureCluster[] {

@@ -52,7 +52,15 @@ export async function GET(request: NextRequest) {
   const improved = rows.filter((r) => r.verdict === "improve");
   const skipped = rows.filter((r) => r.verdict === "skip");
   const clusters = clusterFailures(open).map(
-    ({ items: _items, ...rest }) => rest
+    ({ key, label, emoji, blurb, count, asker_count, previews }) => ({
+      key,
+      label,
+      emoji,
+      blurb,
+      count,
+      asker_count,
+      previews
+    })
   );
 
   return NextResponse.json({
