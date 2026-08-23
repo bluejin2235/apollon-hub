@@ -14,6 +14,8 @@ export type LunaCard = {
   project?: string;
   ai_category?: string;
   similarity?: number;
+  /** 이미지 모달 — AI description 원문 (project 접미 제외) */
+  image_description?: string;
 };
 
 type TavilyResult = {

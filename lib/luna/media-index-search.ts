@@ -195,7 +195,8 @@ export function mediaHitToCard(hit: MediaIndexHit): LunaCard {
     is_file: true,
     project: hit.project ?? undefined,
     ai_category: hit.ai_category ?? undefined,
-    similarity: hit.similarity
+    similarity: hit.similarity,
+    image_description: hit.description?.trim() || undefined
   };
 }
 

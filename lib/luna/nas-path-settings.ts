@@ -2,12 +2,17 @@
 
 export type NasPathDisplayMode = "office" | "custom" | "unc";
 
+/** 이미지 모달 경로 탭 — 사무실 / RaiDrive / UNC */
+export type ModalPathTab = NasPathDisplayMode;
+
 export type NasPathSettings = {
   mode: NasPathDisplayMode;
   /** custom 모드: T 드라이브 접두사 (예 Z:\Work\) */
   prefixT: string;
   /** custom 모드: P 드라이브 접두사 (예 Z:\Partners\) */
   prefixP: string;
+  /** 이미지 모달 마지막 경로 탭 (DB only) */
+  modalPathTab?: ModalPathTab | null;
 };
 
 export const NAS_PATH_SETTINGS_STORAGE_KEY = "luna:nas-path-settings";
@@ -19,6 +24,9 @@ export const OFFICE_PREFIX_T = "T:\\";
 export const OFFICE_PREFIX_P = "P:\\";
 export const UNC_PREFIX_T = "\\\\aiw\\work\\";
 export const UNC_PREFIX_P = "\\\\aiw\\partners\\";
+
+export const DEFAULT_RAIDRIVE_PREFIX_T = "Z:\\Work\\";
+export const DEFAULT_RAIDRIVE_PREFIX_P = "Z:\\Partners\\";
 
 export const DEFAULT_NAS_PATH_SETTINGS: NasPathSettings = {
   mode: "office",
@@ -64,19 +72,27 @@ export function parseNasPathSettingsRow(row: unknown): NasPathSettings {
         ? r.prefix_p
         : typeof r.prefixP === "string"
           ? r.prefixP
-          : ""
+          : "",
+    modalPathTab: parseModalPathTab(r.modal_path_tab ?? r.modalPathTab)
   };
+}
+
+function parseModalPathTab(value: unknown): ModalPathTab | null {
+  if (value === "office" || value === "custom" || value === "unc") return value;
+  return null;
 }
 
 export function serializeNasPathSettings(settings: NasPathSettings): {
   display_mode: NasPathDisplayMode;
   prefix_t: string;
   prefix_p: string;
+  modal_path_tab: ModalPathTab | null;
 } {
   return {
     display_mode: settings.mode,
     prefix_t: normalizePrefixInput(settings.prefixT),
-    prefix_p: normalizePrefixInput(settings.prefixP)
+    prefix_p: normalizePrefixInput(settings.prefixP),
+    modal_path_tab: settings.modalPathTab ?? null
   };
 }
 
@@ -102,7 +118,11 @@ export function cacheNasPathSettings(settings: NasPathSettings): void {
   try {
     localStorage.setItem(
       NAS_PATH_SETTINGS_STORAGE_KEY,
-      JSON.stringify(serializeNasPathSettings(settings))
+      JSON.stringify({
+        display_mode: settings.mode,
+        prefix_t: normalizePrefixInput(settings.prefixT),
+        prefix_p: normalizePrefixInput(settings.prefixP)
+      })
     );
   } catch {
     /* ignore */

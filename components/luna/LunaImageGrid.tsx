@@ -15,11 +15,15 @@ import type { LunaCard } from "@/lib/luna/tavily";
 function ImageCell({
   card,
   nasPathSettings,
-  onCopyToast
+  onCopyToast,
+  onOpen,
+  isFavorite
 }: {
   card: LunaCard;
   nasPathSettings: NasPathSettings;
   onCopyToast?: (msg: string) => void;
+  onOpen: () => void;
+  isFavorite?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const badge = imageCategoryBadge(card.ai_category);
@@ -33,7 +37,11 @@ function ImageCell({
     : "";
 
   return (
-    <div className="group relative bg-white">
+    <button
+      type="button"
+      className="group relative w-full bg-white text-left"
+      onClick={onOpen}
+    >
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-[#eceef1]">
         {card.thumbnail && !failed ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -55,31 +63,30 @@ function ImageCell({
             {badge.label}
           </span>
         ) : null}
-        <div className="absolute inset-0 flex items-end gap-1 bg-[rgba(20,20,28,.7)] p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-          {card.thumbnail || card.url ? (
-            <a
-              href={card.url || card.thumbnail!}
-              target="_blank"
-              rel="noopener noreferrer"
+        {isFavorite ? (
+          <span
+            className="absolute right-1.5 top-1.5 text-[11px] leading-none text-[#e05252]"
+            aria-label="즐겨찾기"
+          >
+            ♥
+          </span>
+        ) : null}
+        {folderPath ? (
+          <div className="absolute inset-0 flex items-end gap-1 bg-[rgba(20,20,28,.7)] p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <span
+              role="presentation"
               className="flex-1 rounded-[5px] bg-white/90 py-1 text-center text-[9.5px] font-semibold text-[#1c1d21]"
-            >
-              크게
-            </a>
-          ) : null}
-          {folderPath ? (
-            <button
-              type="button"
-              className="flex-1 rounded-[5px] bg-white/90 py-1 text-center text-[9.5px] font-semibold text-[#1c1d21]"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 void navigator.clipboard.writeText(folderPath).then(() => {
                   onCopyToast?.("폴더 경로 복사됨");
                 });
               }}
             >
               폴더
-            </button>
-          ) : null}
-        </div>
+            </span>
+          </div>
+        ) : null}
       </div>
       <div className="px-2 py-1.5">
         <div
@@ -95,7 +102,7 @@ function ImageCell({
           {imagePathCaption(card.raw_path)}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -104,13 +111,17 @@ export function LunaImageGrid({
   nasPathSettings,
   onCopyToast,
   limit,
-  onMoreClick
+  onMoreClick,
+  favoritePaths,
+  onCellClick
 }: {
   cards: LunaCard[];
   nasPathSettings: NasPathSettings;
   onCopyToast?: (msg: string) => void;
   limit?: number;
   onMoreClick?: () => void;
+  favoritePaths?: Set<string>;
+  onCellClick?: (index: number) => void;
 }) {
   const max = limit ?? cards.length;
   const shown = cards.slice(0, max);
@@ -125,12 +136,16 @@ export function LunaImageGrid({
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e7e8ec] bg-[#eef0f3]">
       <div className="grid grid-cols-2 gap-px sm:grid-cols-4 lg:grid-cols-5">
-        {shown.map((card) => (
+        {shown.map((card, i) => (
           <ImageCell
             key={`${card.raw_path ?? card.title}`}
             card={card}
             nasPathSettings={nasPathSettings}
             onCopyToast={onCopyToast}
+            onOpen={() => onCellClick?.(i)}
+            isFavorite={
+              card.raw_path ? favoritePaths?.has(card.raw_path) : false
+            }
           />
         ))}
         {more > 0 && onMoreClick ? (

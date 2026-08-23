@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LunaMarkdown } from "@/components/luna/LunaMarkdown";
 import { SourcePackList } from "@/components/luna/SourcePackCard";
 import { LunaAnswerTabs } from "@/components/luna/LunaAnswerTabs";
@@ -10,6 +10,7 @@ import {
   LunaSectionHeader
 } from "@/components/luna/LunaDocumentList";
 import { LunaImageGrid } from "@/components/luna/LunaImageGrid";
+import { LunaImageModal } from "@/components/luna/LunaImageModal";
 import {
   LunaImageIndexWarning,
   LunaImageScopeNotice
@@ -27,9 +28,19 @@ import {
   type LunaSearchCounts
 } from "@/lib/luna/luna-answer-ui";
 import type { NasPathSettings } from "@/lib/luna/nas-path";
+import type { ModalPathTab } from "@/lib/luna/nas-path-settings";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { WikiSourceRef } from "@/lib/luna/wiki-match";
+import { supabase } from "@/lib/supabase/client";
+
+type NasPathSettingsWithModal = NasPathSettings & {
+  modalPathTab?: ModalPathTab | null;
+};
+
+function modalPathTabFromSettings(settings: NasPathSettings): ModalPathTab {
+  return (settings as NasPathSettingsWithModal).modalPathTab ?? "office";
+}
 
 export function LunaAnswerLayout({
   isStreaming,
@@ -59,6 +70,90 @@ export function LunaAnswerLayout({
   questionText?: string | null;
 }) {
   const [tab, setTab] = useState<LunaAnswerTab>("all");
+  const [modalIndex, setModalIndex] = useState<number | null>(null);
+  const [favoritePaths, setFavoritePaths] = useState<Set<string>>(new Set());
+  const [pathTab, setPathTab] = useState<ModalPathTab>(() =>
+    modalPathTabFromSettings(nasPathSettings)
+  );
+
+  useEffect(() => {
+    setPathTab(modalPathTabFromSettings(nasPathSettings));
+  }, [nasPathSettings]);
+
+  useEffect(() => {
+    async function loadFavorites() {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+      try {
+        const res = await fetch("/api/luna/media/favorites", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { paths?: string[] };
+        if (Array.isArray(json.paths)) {
+          setFavoritePaths(new Set(json.paths));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    void loadFavorites();
+  }, []);
+
+  const toggleFavorite = useCallback(async (path: string, favorited: boolean) => {
+    setFavoritePaths((prev) => {
+      const next = new Set(prev);
+      if (favorited) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return;
+
+    try {
+      await fetch("/api/luna/media/favorites", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ path, favorited })
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handlePathTabChange = useCallback(async (tab: ModalPathTab) => {
+    setPathTab(tab);
+
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return;
+
+    try {
+      await fetch("/api/luna/nas/path-settings", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ modal_path_tab: tab })
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const searchDone = steps.some(
     (s) => s.key === "search" && s.status === "done"
   );
@@ -169,6 +264,8 @@ export function LunaAnswerLayout({
             onCopyToast={onCopyToast}
             limit={limit}
             onMoreClick={limit ? () => setTab("images") : undefined}
+            favoritePaths={favoritePaths}
+            onCellClick={setModalIndex}
           />
         ) : null}
       </section>
@@ -193,7 +290,15 @@ export function LunaAnswerLayout({
       </>
     );
   } else if (tab === "images") {
-    body = <LunaImageGrid cards={imgs} nasPathSettings={nasPathSettings} onCopyToast={onCopyToast} />;
+    body = (
+      <LunaImageGrid
+        cards={imgs}
+        nasPathSettings={nasPathSettings}
+        onCopyToast={onCopyToast}
+        favoritePaths={favoritePaths}
+        onCellClick={setModalIndex}
+      />
+    );
   } else if (tab === "video") {
     body = (
       <p className="text-[12px] text-[#9aa0a8]">
@@ -236,6 +341,20 @@ export function LunaAnswerLayout({
         isComplete={!isStreaming}
       />
       {tab === "all" ? body : <div className="mt-1">{body}</div>}
+      {modalIndex != null ? (
+        <LunaImageModal
+          cards={imgs}
+          index={modalIndex}
+          onClose={() => setModalIndex(null)}
+          onIndexChange={setModalIndex}
+          nasPathSettings={nasPathSettings}
+          onCopyToast={onCopyToast}
+          favoritePaths={favoritePaths}
+          onFavoriteToggle={toggleFavorite}
+          pathTab={pathTab}
+          onPathTabChange={handlePathTabChange}
+        />
+      ) : null}
     </>
   );
 }
