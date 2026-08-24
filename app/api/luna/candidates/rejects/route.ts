@@ -56,9 +56,10 @@ export async function GET(request: NextRequest) {
 
   const { data: rows, error } = await admin
     .from("luna_learnings")
-    .select("id, content, meta, resolved_at, updated_at, created_at")
+    .select("id, content, meta, resolved_at, created_at")
     .or("meta->>reject_note.not.is.null,meta->>reject_action.not.is.null")
     .order("resolved_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
     .limit(200);
 
   if (error) {
@@ -73,11 +74,9 @@ export async function GET(request: NextRequest) {
       const at =
         typeof row.resolved_at === "string" && row.resolved_at
           ? row.resolved_at
-          : typeof row.updated_at === "string"
-            ? row.updated_at
-            : typeof row.created_at === "string"
-              ? row.created_at
-              : "";
+          : typeof row.created_at === "string"
+            ? row.created_at
+            : "";
       const content =
         typeof row.content === "string" ? row.content.trim() : "";
       return {

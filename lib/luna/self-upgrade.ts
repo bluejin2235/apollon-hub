@@ -243,10 +243,12 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
   const { data: rows, error } = await admin
     .from("luna_learnings")
     .select(
-      "id, content, category, status, thread, meta, resolved_at, updated_at, created_at"
+      "id, content, category, status, thread, meta, resolved_at, created_at"
     )
-    .gte("updated_at", since)
+    .or(`resolved_at.gte."${since}",created_at.gte."${since}"`)
     .neq("category", "identity")
+    .order("resolved_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
     .limit(500);
 
   if (error) {
@@ -277,8 +279,8 @@ async function collectTriggers(admin: SupabaseClient): Promise<{
       const resolvedAt =
         typeof row.resolved_at === "string"
           ? row.resolved_at
-          : typeof row.updated_at === "string"
-            ? row.updated_at
+          : typeof row.created_at === "string"
+            ? row.created_at
             : null;
       if (resolvedAt && resolvedAt >= since && content) {
         confirmed.push({ content, category });
