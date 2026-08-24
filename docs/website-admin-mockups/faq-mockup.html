@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>FAQ 배치 목업 — 워크·인사이트 상세</title>
+<style>
+:root{
+  --bg:#fff; --ink:#16181d; --dim:#6b7280; --line:#e5e7eb;
+  --soft:#f7f8fa; --accent:#1f4fd8; --note:#b4520a; --notebg:#fdf6ef;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+  font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  font-size:16px;line-height:1.7;-webkit-text-size-adjust:100%}
+.page{max-width:960px;margin:0 auto;padding:40px 20px 100px}
+h1.doc{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+p.docsub{color:var(--dim);font-size:14px;margin:0 0 36px}
+
+.sect{font-size:13px;font-weight:700;letter-spacing:.1em;color:var(--dim);
+  margin:44px 0 12px;text-transform:uppercase}
+
+/* 브라우저 프레임 */
+.frame{background:var(--bg);border:1px solid #d6dae0;border-radius:10px;
+  overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.07)}
+.bar{background:#f1f3f5;border-bottom:1px solid #dfe3e8;padding:9px 14px;
+  display:flex;align-items:center;gap:8px}
+.dots{display:flex;gap:5px}
+.dots i{width:9px;height:9px;border-radius:50%;background:#cdd2d8;display:block}
+.url{flex:1;background:#fff;border:1px solid #e0e4e9;border-radius:5px;
+  padding:3px 10px;font-size:12px;color:#7a828c;
+  font-family:ui-monospace,Menlo,monospace}
+
+.inner{padding:0 40px 40px}
+
+/* GNB */
+.gnb{display:flex;align-items:center;gap:22px;padding:16px 0;
+  border-bottom:1px solid var(--line);font-size:13px;color:var(--dim)}
+.gnb .logo{font-weight:800;letter-spacing:.06em;color:var(--ink);font-size:13px}
+.gnb .sp{flex:1}
+
+/* 본문 */
+.wtitle{font-size:30px;margin:34px 0 4px;letter-spacing:-.02em}
+.wmeta{color:var(--dim);font-size:13.5px;margin:0 0 30px}
+
+.s{margin:0 0 30px}
+.s h2{font-size:19px;margin:0 0 10px;letter-spacing:-.01em}
+.s p{margin:0 0 14px;color:#3a4049;font-size:14.5px}
+.ph{background:#e9ecf0;border-radius:6px;height:120px;display:flex;
+  align-items:center;justify-content:center;color:#a3aab4;font-size:12px;
+  margin-bottom:8px}
+.ph.tall{height:170px}
+.cap{font-size:12.5px;color:var(--dim);margin:0 0 20px;line-height:1.55}
+.cap b{color:var(--note);font-weight:700}
+
+.collapsed{border:1px dashed #d3d8de;border-radius:6px;padding:12px 16px;
+  color:#9aa1ab;font-size:13px;text-align:center;margin-bottom:26px}
+
+/* FAQ 블록 */
+.faq{border-top:2px solid var(--ink);padding-top:26px;margin:40px 0 34px}
+.faq h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
+.faq .lead{color:var(--dim);font-size:13px;margin:0 0 18px}
+.qa{border-bottom:1px solid var(--line)}
+.qa .q{display:flex;align-items:flex-start;gap:12px;padding:15px 0;
+  font-size:15.5px;font-weight:600;cursor:pointer}
+.qa .q .mark{color:var(--dim);font-weight:400;flex-shrink:0;font-size:14px;
+  line-height:1.55;width:14px}
+.qa .q .sp{flex:1}
+.qa .q .ic{color:#aeb5be;font-size:15px;flex-shrink:0}
+.qa .a{padding:0 0 18px 26px;color:#3a4049;font-size:14.5px}
+.qa.open .a{display:block}
+.qa .a{display:none}
+.qa.open .a{display:block}
+
+/* 인터뷰/관련 */
+.iv{background:var(--soft);border-radius:8px;padding:20px 22px;margin-bottom:28px;
+  display:flex;gap:18px;align-items:center}
+.iv .av{width:56px;height:56px;border-radius:50%;background:#dde1e6;flex-shrink:0}
+.iv .q{font-size:14.5px;margin:0 0 6px}
+.iv .n{font-size:12.5px;color:var(--dim)}
+
+.rel{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:10px}
+.rel .c{background:#e9ecf0;border-radius:6px;height:82px}
+
+/* 주석 */
+.note{background:var(--notebg);border:1px solid #eccfae;border-left:3px solid var(--note);
+  border-radius:0 6px 6px 0;padding:14px 18px;margin:14px 0 0;font-size:13.5px}
+.note b{color:var(--note)}
+.note p{margin:0 0 8px}
+.note p:last-child{margin:0}
+.tagline{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+  color:var(--note);border:1px solid var(--note);border-radius:20px;
+  padding:1px 9px;margin-bottom:8px}
+
+/* 어드민 */
+.adm{background:#fff;border:1px solid #d6dae0;border-radius:10px;padding:26px 30px}
+.adm h3{font-size:17px;margin:0 0 4px}
+.adm .sub{color:var(--dim);font-size:13px;margin:0 0 20px}
+.row{border:1px solid var(--line);border-radius:7px;padding:14px 16px;margin-bottom:10px}
+.row .rh{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.row .num{font-size:11.5px;font-weight:700;color:#fff;background:#8b93a0;
+  border-radius:4px;padding:1px 7px}
+.row .sp{flex:1}
+.row .del{font-size:12px;color:#9aa1ab}
+.fld{margin-bottom:9px}
+.fld label{display:block;font-size:11.5px;font-weight:700;color:var(--dim);
+  letter-spacing:.03em;margin-bottom:4px}
+.inp{border:1px solid #dde1e6;border-radius:5px;padding:8px 11px;font-size:13.5px;
+  background:#fcfcfd;color:#3a4049}
+.inp.gen{background:#f4f6ff;border-color:#c8d3f5;color:#3a4049}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btn{border:1px solid #d3d8de;border-radius:6px;padding:8px 14px;font-size:13px;
+  background:#fff;color:#3a4049}
+.btn.p{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn.ai{background:#eef2ff;border-color:#c8d3f5;color:#2f45a8}
+.hint{font-size:12px;color:var(--dim);margin-top:10px}
+.enbadge{font-size:11px;color:#2f45a8;background:#eef2ff;border:1px solid #c8d3f5;
+  border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700}
+
+@media (max-width:700px){
+  .inner{padding:0 20px 30px}
+  .rel{grid-template-columns:repeat(2,1fr)}
+  .two{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1 class="doc">FAQ 배치 목업</h1>
+<p class="docsub">2026.08.24 · 워크 상세 / 인사이트 상세 / 어드민 입력 · 배치 확인용</p>
+
+<!-- ══════ 워크 상세 ══════ -->
+<div class="sect">① 워크 상세 — Credit 다음, Interview 앞</div>
+
+<div class="frame">
+  <div class="bar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url">apollonworks.com/works/lotte-duty-free-star-avenue</div>
+  </div>
+  <div class="inner">
+    <div class="gnb">
+      <span class="logo">APOLLON</span>
+      <span>About</span><span>Expertise</span><span>Works</span><span>Insight</span>
+      <span class="sp"></span><span>KR&nbsp;·&nbsp;EN</span>
+    </div>
+
+    <h1 class="wtitle">롯데면세점 스타애비뉴 리뉴얼</h1>
+    <p class="wmeta">2024 · Media architecture</p>
+
+    <div class="collapsed">Overview · Creative · Space · Pre-Production · Production · On-site Test — 생략</div>
+
+    <div class="s">
+      <h2>Achievement</h2>
+      <div class="ph tall">이미지</div>
+      <p class="cap"><b>캡션</b> — 리뉴얼 후 스타애비뉴 중앙 통로. 일평균 방문객이 1만 6천 명으로 두 배 늘었고, 두 달간 누적 112만 명이 방문했습니다.</p>
+      <div class="ph">이미지</div>
+      <p class="cap" style="color:#aeb5be">캡션 없음 — 이 이미지는 캡션을 끄고 등록한 경우</p>
+    </div>
+
+    <div class="s">
+      <h2>Credit</h2>
+      <p>기획·설계·콘텐츠 제작 — 아폴론이머시브웍스 / 클라이언트 — 롯데면세점</p>
+    </div>
+
+    <!-- FAQ -->
+    <div class="faq">
+      <h2>자주 묻는 질문</h2>
+      <p class="lead">Frequently Asked Questions</p>
+
+      <div class="qa open">
+        <div class="q"><span class="mark">Q</span><span class="sp">스타애비뉴 리뉴얼은 어떤 프로젝트인가요?</span><span class="ic">−</span></div>
+        <div class="a">롯데면세점 명동 본점의 K-POP 체험 공간 스타애비뉴를 몰입형 미디어 공간으로 재구성한 프로젝트입니다. 아폴론이머시브웍스가 공간 기획부터 하드웨어 설계, 콘텐츠 제작까지 전 과정을 담당했습니다.</div>
+      </div>
+
+      <div class="qa">
+        <div class="q"><span class="mark">Q</span><span class="sp">어떤 기술이 적용되었나요?</span><span class="ic">＋</span></div>
+        <div class="a">…</div>
+      </div>
+
+      <div class="qa">
+        <div class="q"><span class="mark">Q</span><span class="sp">리뉴얼 이후 방문객 수는 어떻게 달라졌나요?</span><span class="ic">＋</span></div>
+        <div class="a">…</div>
+      </div>
+
+      <div class="qa">
+        <div class="q"><span class="mark">Q</span><span class="sp">콘텐츠는 교체할 수 있나요?</span><span class="ic">＋</span></div>
+        <div class="a">…</div>
+      </div>
+
+      <div class="note">
+        <span class="tagline">설계 메모</span>
+        <p><b>3~5문항.</b> 국·영문 각각. 등록된 문항이 없으면 이 섹션 자체가 화면에 나타나지 않습니다.</p>
+        <p><b>첫 문항만 펼침, 나머지는 접힘.</b> 접힌 답변도 HTML에는 들어 있어야 합니다. 검색봇과 AI는 접힘 여부를 보지 않고 HTML을 읽습니다. JS로 나중에 불러오는 방식이면 안 됩니다.</p>
+        <p><b>같은 내용이 FAQPage 구조화 데이터로 자동 생성됩니다.</b> 화면에 없는 FAQ를 구조화 데이터에만 넣으면 구글이 무시합니다.</p>
+      </div>
+    </div>
+
+    <div class="s">
+      <h2>Interview</h2>
+      <div class="iv">
+        <div class="av"></div>
+        <div>
+          <p class="q">“광고는 제품이 아닌 이야기를 팝니다.”</p>
+          <p class="n">김지현 — 크리에이티브 디렉터</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="s">
+      <h2>Related Article</h2>
+      <div class="rel"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+    </div>
+
+    <div class="collapsed">Let's Talk · Company Profile — 기존 고정 영역</div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:16px">
+  <span class="tagline">왜 Credit 다음인가</span>
+  <p>Interview·Related Article·Let's Talk는 <b>다른 곳으로 보내는 영역</b>입니다. 그 뒤에 FAQ를 두면 이미 떠난 뒤라 아무도 안 읽습니다.</p>
+  <p>Credit은 프로젝트 설명의 마지막입니다. <b>본문을 다 읽고 “그래서 이건 뭐였지”가 남는 지점</b>이 FAQ 자리입니다. 왼쪽 앵커 메뉴에도 마지막 항목으로 자동으로 붙습니다. (8/23 회의 결정 — 앵커 최대 8개. Contents 유형은 7개라 FAQ를 넣으면 8개, 한계선입니다.)</p>
+</div>
+
+<!-- ══════ 인사이트 상세 ══════ -->
+<div class="sect">② 인사이트 상세 — 본문 다음, Related Article 앞</div>
+
+<div class="frame">
+  <div class="bar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url">apollonworks.com/insight/inspire-pink-whale-show</div>
+  </div>
+  <div class="inner">
+    <div class="gnb">
+      <span class="logo">APOLLON</span>
+      <span>About</span><span>Expertise</span><span>Works</span><span>Insight</span>
+      <span class="sp"></span><span>KR&nbsp;·&nbsp;EN</span>
+    </div>
+
+    <h1 class="wtitle">인스파이어 핑크 고래 쇼</h1>
+    <p class="wmeta">2024.06.12 · behind the work</p>
+
+    <div class="collapsed">본문 (위지윅 HTML) — 생략</div>
+
+    <div class="collapsed" style="border-style:solid;background:var(--soft);color:#6b7280">
+      Executive Commentary · [원문보기]
+    </div>
+
+    <div class="faq" style="margin-top:34px">
+      <h2>자주 묻는 질문</h2>
+      <p class="lead">Frequently Asked Questions</p>
+      <div class="qa open">
+        <div class="q"><span class="mark">Q</span><span class="sp">핑크 고래 쇼는 어디서 볼 수 있나요?</span><span class="ic">−</span></div>
+        <div class="a">인천 인스파이어 엔터테인먼트 리조트의 오로라(AURORA) 구간에서 상영됩니다.</div>
+      </div>
+      <div class="qa">
+        <div class="q"><span class="mark">Q</span><span class="sp">Under the Blueland는 어떤 콘텐츠인가요?</span><span class="ic">＋</span></div>
+        <div class="a">…</div>
+      </div>
+      <div class="qa">
+        <div class="q"><span class="mark">Q</span><span class="sp">누가 제작했나요?</span><span class="ic">＋</span></div>
+        <div class="a">…</div>
+      </div>
+
+      <div class="note">
+        <span class="tagline">설계 메모</span>
+        <p>인사이트는 워크와 달리 <b>선택 사항</b>입니다. news·culture 글에는 대부분 필요 없고, behind the work·lab 글에만 붙입니다.</p>
+        <p>인사이트 하단에는 Let's Talk·Company Profile 고정 영역이 <b>들어가지 않습니다.</b> (화면설계 명시) 그래서 FAQ는 Related Article 앞이 마지막 위치입니다.</p>
+      </div>
+    </div>
+
+    <div class="s">
+      <h2>Related Article</h2>
+      <div class="rel"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 어드민 ══════ -->
+<div class="sect">③ 어드민 입력 — Hub &gt; 홈페이지 &gt; 워크 편집</div>
+
+<div class="adm">
+  <h3>FAQ</h3>
+  <p class="sub">3~5문항 권장. 비워두면 화면에 표시되지 않습니다.</p>
+
+  <div class="row">
+    <div class="rh">
+      <span class="num">1</span>
+      <span class="sp"></span>
+      <span class="del">↑ ↓ &nbsp; 삭제</span>
+    </div>
+    <div class="fld">
+      <label>질문 (국문)</label>
+      <div class="inp">스타애비뉴 리뉴얼은 어떤 프로젝트인가요?</div>
+    </div>
+    <div class="fld">
+      <label>질문 (영문) <span class="enbadge">AI 생성</span></label>
+      <div class="inp gen">What is the Star Avenue Renewal project?</div>
+    </div>
+    <div class="fld">
+      <label>답변 (국문)</label>
+      <div class="inp" style="min-height:60px">롯데면세점 명동 본점의 K-POP 체험 공간 스타애비뉴를 몰입형 미디어 공간으로 재구성한 프로젝트입니다…</div>
+    </div>
+    <div class="fld">
+      <label>답변 (영문) <span class="enbadge">AI 생성</span></label>
+      <div class="inp gen" style="min-height:60px">A project that reimagined Lotte Duty Free Myeongdong's K-POP experience zone…</div>
+    </div>
+  </div>
+
+  <div class="row" style="opacity:.5">
+    <div class="rh"><span class="num">2</span><span class="sp"></span><span class="del">↑ ↓ &nbsp; 삭제</span></div>
+    <div class="fld"><label>질문 (국문)</label><div class="inp">어떤 기술이 적용되었나요?</div></div>
+  </div>
+
+  <div class="btns">
+    <span class="btn">＋ 문항 추가</span>
+    <span class="btn ai">✦ AI로 초안 만들기</span>
+    <span class="btn ai">✦ 영문 생성</span>
+    <span class="btn p">저장</span>
+  </div>
+
+  <p class="hint">
+    <b>AI로 초안 만들기</b> — 등록된 본문·기술사양·성과수치를 읽고 질문 4개와 답변 초안을 국문으로 만듭니다. 사람이 확인·수정한 뒤 영문을 생성합니다.
+  </p>
+</div>
+
+<div class="note" style="margin-top:16px">
+  <span class="tagline">지영 부장님 구현 범위</span>
+  <p>① 워크 상세 — Credit 다음 FAQ 아코디언 (첫 항목 펼침, 값 없으면 섹션 미출력)</p>
+  <p>② 인사이트 상세 — Related Article 앞 FAQ 아코디언 (선택)</p>
+  <p>③ 갤러리 이미지 캡션 표시 (값 없으면 미출력)</p>
+  <p>④ 접힌 답변도 HTML에 포함 — JS 지연 로딩 금지</p>
+  <p>⑤ 왼쪽 앵커 메뉴에 FAQ 항목 자동 추가</p>
+</div>
+
+</div>
+</body>
+</html>

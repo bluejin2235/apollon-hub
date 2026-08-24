@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>홈페이지 어드민 — 워크 전체 화면</title>
+<style>
+:root{
+  --bg:#fff; --ink:#16181d; --dim:#6b7280; --faint:#9ca3af;
+  --line:#e5e7eb; --soft:#f8f9fb; --chip:#eef0f3;
+  --luna:#534AB7; --lunabg:#f2f0fc; --lunaline:#d5cff2;
+  --ok:#0f7a45; --okbg:#f0f9f4;
+  --warn:#a35a08; --warnbg:#fdf7f0; --warnline:#eddcc4;
+  --err:#b0231e; --errbg:#fdf2f1; --errline:#f0cecb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+  font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%}
+.page{max-width:1200px;margin:0 auto;padding:32px 18px 90px}
+h1.doc{font-size:24px;margin:0 0 5px;letter-spacing:-.02em}
+p.docsub{color:var(--dim);font-size:13.5px;margin:0 0 8px}
+.sect{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--dim);
+  margin:46px 0 11px;text-transform:uppercase}
+
+.frame{background:var(--bg);border:1px solid #d6dae0;border-radius:10px;
+  overflow:hidden;box-shadow:0 6px 22px rgba(0,0,0,.07)}
+.hubhead{display:flex;align-items:center;gap:11px;padding:11px 18px;
+  border-bottom:1px solid var(--line);background:#fff}
+.hubhead .logo{width:24px;height:24px;border-radius:6px;background:var(--ink);
+  color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.hubhead .nm{font-size:13px;font-weight:800;letter-spacing:.08em}
+.hubhead .sp{flex:1}
+.hubhead .r{font-size:12.5px;color:var(--dim)}
+
+.body{display:grid;grid-template-columns:186px 1fr}
+.side{border-right:1px solid var(--line);background:#fcfcfd;padding:16px 0}
+.side .ttl{font-size:11.5px;font-weight:800;letter-spacing:.09em;color:var(--faint);
+  padding:0 18px;margin-bottom:11px}
+.side a{display:block;padding:6.5px 18px;font-size:13.5px;color:#3a4049;text-decoration:none}
+.side a.g{font-weight:700;color:var(--ink);margin-top:12px}
+.side a.sub{padding-left:30px;font-size:13px;color:var(--dim)}
+.side a.on{background:#efedfa;color:var(--luna);font-weight:700;box-shadow:inset 3px 0 0 var(--luna)}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{padding:18px 24px 0}
+.bcr{font-size:12px;color:var(--faint);margin-bottom:5px}
+.th{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.th h2{font-size:20px;margin:0;letter-spacing:-.02em}
+.th .sp{flex:1}
+.tsub{font-size:12px;color:var(--faint);margin:3px 0 0}
+.badge{font-size:11px;font-weight:700;border-radius:4px;padding:2px 8px}
+.badge.draft{background:var(--warnbg);color:var(--warn)}
+.badge.pub{background:var(--okbg);color:var(--ok)}
+
+.tabs{display:flex;gap:2px;padding:14px 24px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{display:flex;align-items:center;gap:6px;padding:9px 14px;font-size:13.5px;color:var(--dim);
+  border:1px solid transparent;border-bottom:none;border-radius:7px 7px 0 0;white-space:nowrap;margin-bottom:-1px}
+.tab.on{background:#fff;border-color:var(--line);color:var(--ink);font-weight:700}
+.pip{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.pip.full{background:var(--ok)} .pip.empty{background:#d6dae0} .pip.warn{background:var(--warn)}
+
+.cont{padding:20px 24px 26px;flex:1}
+.grp{margin-bottom:24px}
+.gt{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--dim);
+  padding-bottom:7px;border-bottom:1px solid var(--line);margin-bottom:13px}
+.gt em{font-style:normal;font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)}
+.fld{margin-bottom:12px}
+.fld > label{display:block;font-size:12px;font-weight:700;color:#4a515b;margin-bottom:4px}
+.req{color:var(--err);font-size:11px;margin-left:3px}
+.hint{font-size:11.5px;color:var(--faint);margin-top:3px}
+.gd{font-size:11.5px;color:#7b828c;margin-top:5px;padding:6px 9px;background:var(--soft);
+  border-left:2px solid #d6dae0;border-radius:0 4px 4px 0;line-height:1.55}
+.gd b{color:#4a515b;font-weight:700}
+.gd .sepd{color:#c3c9d0;margin:0 5px}
+.cnt{float:right;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.cnt.ov{color:var(--err);font-weight:700}
+.cnt.near{color:var(--warn)}
+.inp{border:1px solid #dde1e6;border-radius:6px;padding:8px 11px;font-size:13.5px;
+  background:#fff;color:#3a4049;min-height:36px}
+.inp.ta{min-height:62px}
+.inp.ai{background:#f7f5fd;border-color:var(--lunaline)}
+.inp.err{background:var(--errbg);border-color:var(--errline);color:var(--err)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.lang{font-size:10px;font-weight:800;border-radius:3px;padding:1px 5px;background:var(--chip);color:var(--dim);margin-right:5px}
+.lang.en{background:var(--lunabg);color:var(--luna)}
+.aib{font-size:10px;font-weight:700;color:var(--luna);background:var(--lunabg);
+  border:1px solid var(--lunaline);border-radius:3px;padding:1px 5px;margin-left:5px}
+
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12.5px;border:1px solid #dde1e6;border-radius:14px;padding:3px 11px;background:#fff;color:#3a4049}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip.add{border-style:dashed;color:var(--faint)}
+
+.btn{border:1px solid #dde1e6;border-radius:6px;padding:7px 13px;font-size:12.5px;
+  background:#fff;color:#3a4049;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn.p{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn.ai{background:var(--lunabg);border-color:var(--lunaline);color:var(--luna);font-weight:600}
+.btn.sm{padding:4px 10px;font-size:11.5px}
+.btn.dis{opacity:.4}
+
+.bar{border-top:1px solid var(--line);background:#fcfcfd;padding:11px 24px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.bar .chk{flex:1;font-size:12.5px;display:flex;align-items:center;gap:8px;min-width:180px}
+.bar .chk .ic{color:var(--warn)} .bar .chk .tx{color:var(--warn)}
+.bar .chk.ok .ic,.bar .chk.ok .tx{color:var(--ok)}
+
+/* 목록 */
+.lbar{display:flex;align-items:center;gap:8px;padding:0 24px 14px;flex-wrap:wrap}
+.srch{flex:1;min-width:150px;border:1px solid #dde1e6;border-radius:6px;padding:7px 11px;
+  font-size:13px;color:var(--faint);background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{background:var(--soft);font-size:11.5px;font-weight:700;color:var(--dim);white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.tw{width:66px;height:37px;border-radius:4px;background:#e9ecf0;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;color:#aeb5be;font-size:9px}
+.row2{display:flex;align-items:center;gap:11px}
+.nm2{font-weight:600}
+.purl{font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,monospace}
+.dots{color:var(--faint)}
+.stt{font-size:10.5px;font-weight:700;border-radius:3px;padding:1px 7px;white-space:nowrap}
+.stt.pub{background:var(--okbg);color:var(--ok)}
+.stt.draft{background:var(--warnbg);color:var(--warn)}
+.mini{display:inline-flex;gap:4px}
+.mp{width:7px;height:7px;border-radius:50%;background:#d6dae0;display:block}
+.mp.f{background:var(--ok)} .mp.w{background:var(--warn)}
+
+/* 블록 */
+.blk{border:1px solid var(--line);border-radius:9px;margin-bottom:11px;background:#fff}
+.bkh{display:flex;align-items:center;gap:9px;padding:9px 13px;background:var(--soft);
+  border-bottom:1px solid var(--line);border-radius:8px 8px 0 0}
+.bkh .hd{color:var(--faint);cursor:grab;font-size:12px}
+.bkh .idx{font-size:10.5px;font-weight:700;color:#fff;background:#8b93a0;border-radius:4px;padding:1px 7px}
+.bkh .bt{font-size:13.5px;font-weight:700;flex:1;min-width:0}
+.bkh .kind{font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;background:var(--chip);color:var(--dim)}
+.bkh .kind.iv{background:var(--lunabg);color:var(--luna)}
+.bkh .ctl{font-size:11.5px;color:var(--faint)}
+.bkb{padding:13px}
+.blk.fold .bkb{display:none}
+
+/* 에디터 */
+.ed{border:1px solid #dde1e6;border-radius:8px;overflow:hidden}
+.edtb{display:flex;align-items:center;gap:3px;padding:6px 8px;background:var(--soft);
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tb{font-size:12px;color:#3a4049;padding:3px 8px;border-radius:5px;background:#fff;
+  border:1px solid #e3e7ec;white-space:nowrap}
+.tb.b{font-weight:800} .tb.i{font-style:italic}
+.tb.hi{background:var(--lunabg);border-color:var(--lunaline);color:var(--luna);font-weight:600}
+.sep{width:1px;height:17px;background:#dde1e6;margin:0 3px}
+.edbd{padding:13px;min-height:80px;font-size:13.5px;color:#3a4049}
+.edbd p{margin:0 0 10px}
+.edbd h4{font-size:15px;margin:14px 0 7px}
+.langtab{display:flex;gap:3px;padding:6px 8px 0;background:var(--soft)}
+.lt{font-size:11.5px;padding:3px 12px;border-radius:6px 6px 0 0;color:var(--dim);background:#eceff3}
+.lt.on{background:#fff;color:var(--ink);font-weight:700;border:1px solid var(--line);border-bottom:none}
+
+/* 이미지 행 */
+.irow{border:1px dashed #d3d8de;border-radius:7px;padding:10px;margin:10px 0;background:#fcfcfd}
+.irh{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
+.irh .lbl{font-size:11px;font-weight:700;color:var(--dim)}
+.lay{display:flex;gap:5px;flex-wrap:wrap}
+.ly{border:1px solid #dde1e6;border-radius:5px;padding:3px 8px;font-size:11px;color:var(--dim);
+  display:flex;align-items:center;gap:5px;background:#fff}
+.ly.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.ly .g{display:flex;gap:2px}
+.ly .g i{display:block;height:11px;background:currentColor;opacity:.55;border-radius:1px}
+.imgs{display:grid;gap:9px}
+.imgs.f{grid-template-columns:1fr}
+.imgs.s{grid-template-columns:1fr 1fr}
+.imgs.o{grid-template-columns:2fr 1fr}
+.ic2{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#fff}
+.thumb{background:#e9ecf0;height:78px;display:flex;align-items:center;justify-content:center;
+  color:#a9b0ba;font-size:10.5px;text-align:center;padding:4px}
+.ib{padding:8px 10px}
+.ir2{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.ir2 .lb{font-size:10px;font-weight:700;color:var(--dim);width:30px;flex-shrink:0}
+.imin{flex:1;border:1px solid #dde1e6;border-radius:4px;padding:4px 7px;font-size:11.5px;
+  background:#fff;color:#3a4049;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imin.ai{background:#f7f5fd;border-color:var(--lunaline)}
+.imin.off{background:var(--soft);color:var(--faint)}
+.capsw{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);
+  padding-top:6px;margin-top:1px;border-top:1px solid var(--line)}
+.sw{width:30px;height:17px;border-radius:9px;background:#d6dae0;flex-shrink:0;position:relative}
+.sw.on{background:var(--ok)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.sw.on::after{left:15px}
+.sw.big{width:36px;height:20px} .sw.big::after{width:16px;height:16px} .sw.big.on::after{left:18px}
+
+/* 영상 */
+.vrow{border:1px dashed #d3d8de;border-radius:7px;padding:10px;margin:10px 0;background:#fcfcfd}
+.vtypes{display:flex;gap:6px;margin-bottom:9px;flex-wrap:wrap}
+.vt{border:1px solid #dde1e6;border-radius:6px;padding:5px 10px;font-size:11.5px;color:var(--dim);background:#fff}
+.vt.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.vt.soon{opacity:.5}
+.vprev{background:#1c1f24;border-radius:6px;height:96px;display:flex;align-items:center;
+  justify-content:center;color:#7d848e;font-size:11.5px;margin-bottom:8px}
+
+.tog{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);
+  border-radius:8px;background:var(--soft);margin-bottom:13px}
+.tog .c{flex:1}
+.tog .t{font-size:13.5px;font-weight:600}
+.tog .s{font-size:11.5px;color:var(--dim)}
+
+.luna{border:1px solid var(--lunaline);background:var(--lunabg);border-radius:9px;
+  padding:12px 15px;margin-bottom:13px;display:flex;gap:11px;align-items:flex-start}
+.luna .av{width:25px;height:25px;border-radius:7px;background:var(--luna);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;flex-shrink:0}
+.luna .c{flex:1;font-size:12.5px;color:#3a3550}
+.luna .c b{color:var(--luna)}
+
+/* 연결 카드 */
+.rels{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.rc{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fff}
+.rc.sug{border-color:var(--lunaline);background:#fbfaff}
+.rc .th2{background:#e9ecf0;height:66px;display:flex;align-items:center;justify-content:center;
+  color:#a9b0ba;font-size:10px}
+.rc .rb{padding:8px 9px}
+.rc .kd{font-size:9.5px;font-weight:700;border-radius:3px;padding:1px 5px;background:var(--chip);color:var(--dim)}
+.rc .kd.i{background:#eaf3ff;color:#1f6fd8}
+.rc .kd.p{background:#f0f9f4;color:var(--ok)}
+.rc .tt{font-size:12px;font-weight:600;margin-top:5px;line-height:1.35}
+.rc .ac{display:flex;gap:5px;margin-top:7px}
+.rc .x{font-size:10.5px;color:var(--faint);border:1px solid #dde1e6;border-radius:4px;padding:2px 7px}
+.rc .x.add{color:var(--luna);border-color:var(--lunaline);background:var(--lunabg)}
+.rc.empty{border-style:dashed;display:flex;align-items:center;justify-content:center;
+  min-height:132px;color:var(--faint);font-size:12px}
+
+/* 점검 패널 */
+.panel{border:1px solid var(--warnline);border-radius:10px;overflow:hidden;background:#fff;margin-top:0}
+.ph2{display:flex;align-items:center;gap:11px;padding:14px 18px;background:var(--warnbg);
+  border-bottom:1px solid var(--warnline)}
+.ph2 .t{font-size:15px;font-weight:700;color:var(--warn)}
+.ph2 .sp{flex:1}
+.ph2 .x{color:var(--faint);font-size:15px}
+.crow{display:flex;align-items:flex-start;gap:11px;padding:11px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+.crow:last-child{border-bottom:none}
+.cd{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.cd.e{background:var(--err)} .cd.w{background:var(--warn)} .cd.o{background:var(--ok)}
+.crow .c{flex:1;min-width:0}
+.crow .t{font-weight:600}
+.crow .s{font-size:11.5px;color:var(--dim);margin-top:1px}
+.crow .go{font-size:11.5px;color:var(--dim);border:1px solid #dde1e6;border-radius:5px;
+  padding:3px 10px;background:#fff;white-space:nowrap}
+
+.note{background:var(--warnbg);border:1px solid var(--warnline);border-left:3px solid var(--warn);
+  border-radius:0 7px 7px 0;padding:13px 17px;margin:14px 0 0;font-size:13px}
+.note b{color:var(--warn)}
+.note p{margin:0 0 7px} .note p:last-child{margin:0}
+.tg{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--warn);
+  border:1px solid var(--warn);border-radius:20px;padding:1px 9px;margin-bottom:7px}
+
+@media (max-width:900px){
+  .body{grid-template-columns:1fr}
+  .side{display:none}
+  .two,.three{grid-template-columns:1fr}
+  .rels{grid-template-columns:repeat(2,1fr)}
+  .imgs.s,.imgs.o{grid-template-columns:1fr}
+  .cont,.top,.tabs,.bar,.lbar{padding-left:15px;padding-right:15px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1 class="doc">홈페이지 어드민 — 워크 전체 화면</h1>
+<p class="docsub">2026.08.24 · 목록 / 기본정보 / 본문 블록 / FAQ / 검색 정보 / 연결 / 공개 전 점검</p>
+
+<!-- ════════ ① 목록 ════════ -->
+<div class="sect">① 프로젝트 목록</div>
+
+<div class="frame">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="nm">APOLLON HUB</div>
+    <div class="sp"></div><span class="r">이택진 / 슈퍼관리자</span>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="ttl">홈페이지</div>
+      <a href="#">대시보드</a>
+      <a href="#" class="g">루나</a><a href="#" class="sub">홈페이지 도우미</a>
+      <a href="#" class="g">워크</a>
+      <a href="#" class="sub on">프로젝트 목록</a>
+      <a href="#" class="sub">카테고리 · 태그</a>
+      <a href="#" class="g">인사이트</a><a href="#" class="sub">글 목록</a>
+      <a href="#" class="g">메인 화면</a>
+      <a href="#" class="g">페이지</a>
+      <a href="#" class="g">이미지</a>
+      <a href="#" class="g">받은 내용</a>
+      <a href="#" class="g">검색 노출</a>
+      <a href="#" class="g">방문 통계</a>
+      <a href="#" class="g">설정</a>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="bcr">워크</div>
+        <div class="th">
+          <h2>프로젝트 목록</h2>
+          <span class="sp"></span>
+          <span class="btn">순서 바꾸기</span>
+          <span class="btn p">＋ 새 프로젝트</span>
+        </div>
+        <p class="tsub">전체 11 · 공개 9 · 초안 2</p>
+      </div>
+
+      <div style="height:16px"></div>
+      <div class="lbar">
+        <span class="srch">제목 · 클라이언트 검색</span>
+        <span class="btn">전체 카테고리 ▾</span>
+        <span class="btn">상태 ▾</span>
+        <span class="btn">최신순 ▾</span>
+      </div>
+
+      <table>
+        <tr>
+          <th style="width:44%">프로젝트</th>
+          <th>카테고리</th><th>연도</th><th>상태</th>
+          <th>채움</th><th class="n">방문</th><th></th>
+        </tr>
+        <tr>
+          <td><div class="row2"><span class="tw">16:9</span>
+            <span><span class="nm2">롯데면세점 스타애비뉴 리뉴얼</span>
+            <div class="purl">/works/lotte-duty-free-star-avenue</div></span></div></td>
+          <td>media space</td><td>2024</td>
+          <td><span class="stt draft">초안</span></td>
+          <td><span class="mini"><i class="mp w"></i><i class="mp f"></i><i class="mp"></i><i class="mp f"></i></span></td>
+          <td class="n">—</td><td class="dots">⋯</td>
+        </tr>
+        <tr>
+          <td><div class="row2"><span class="tw">16:9</span>
+            <span><span class="nm2">인스파이어 리조트 오로라</span>
+            <div class="purl">/works/inspire-resort-aurora</div></span></div></td>
+          <td>media contents</td><td>2024</td>
+          <td><span class="stt pub">공개</span></td>
+          <td><span class="mini"><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i></span></td>
+          <td class="n">377</td><td class="dots">⋯</td>
+        </tr>
+        <tr>
+          <td><div class="row2"><span class="tw">16:9</span>
+            <span><span class="nm2">역삼 아시아미디어타워</span>
+            <div class="purl">/works/yeoksam-asia-media-tower</div></span></div></td>
+          <td>media architecture</td><td>2022</td>
+          <td><span class="stt pub">공개</span></td>
+          <td><span class="mini"><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i></span></td>
+          <td class="n">156</td><td class="dots">⋯</td>
+        </tr>
+        <tr>
+          <td><div class="row2"><span class="tw">16:9</span>
+            <span><span class="nm2">트렌디·유스타운 컨셉 디자인</span>
+            <div class="purl">/works/trendy-youth-town</div></span></div></td>
+          <td>media architecture</td><td>2022</td>
+          <td><span class="stt draft">초안</span></td>
+          <td><span class="mini"><i class="mp f"></i><i class="mp"></i><i class="mp"></i><i class="mp"></i></span></td>
+          <td class="n">—</td><td class="dots">⋯</td>
+        </tr>
+        <tr>
+          <td><div class="row2"><span class="tw">16:9</span>
+            <span><span class="nm2">루나 크레센도</span>
+            <div class="purl">/works/lunar-crescendo</div></span></div></td>
+          <td>media sculpture</td><td>2023</td>
+          <td><span class="stt pub">공개</span></td>
+          <td><span class="mini"><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i><i class="mp f"></i></span></td>
+          <td class="n">92</td><td class="dots">⋯</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <span class="tg">「채움」 열</span>
+  <p>점 네 개가 탭 네 개입니다 — 기본정보 · 본문 · FAQ · 연결.
+  ● 초록 채워짐 / ● 주황 공개를 막는 누락 / ○ 회색 비어 있음.
+  목록에서 어느 프로젝트가 덜 됐는지 바로 보입니다.</p>
+</div>
+
+<!-- ════════ ② 기본정보 ════════ -->
+<div class="sect">② 기본정보 — 검색 노출 포함</div>
+
+<div class="frame">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="nm">APOLLON HUB</div>
+    <div class="sp"></div><span class="r">이택진 / 슈퍼관리자</span>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="ttl">홈페이지</div>
+      <a href="#">대시보드</a>
+      <a href="#" class="g">루나</a>
+      <a href="#" class="g">워크</a><a href="#" class="sub on">프로젝트 목록</a><a href="#" class="sub">카테고리 · 태그</a>
+      <a href="#" class="g">인사이트</a>
+      <a href="#" class="g">메인 화면</a>
+      <a href="#" class="g">페이지</a>
+      <a href="#" class="g">이미지</a>
+      <a href="#" class="g">받은 내용</a>
+      <a href="#" class="g">검색 노출</a>
+      <a href="#" class="g">방문 통계</a>
+      <a href="#" class="g">설정</a>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="bcr">워크 &nbsp;›&nbsp; 프로젝트 목록 &nbsp;›&nbsp; 편집</div>
+        <div class="th">
+          <h2>롯데면세점 스타애비뉴 리뉴얼</h2>
+          <span class="badge draft">초안</span>
+          <span class="sp"></span>
+          <span class="btn">미리보기 ↗</span>
+        </div>
+        <p class="tsub">14분 전 저장 · 이택진</p>
+      </div>
+
+      <div class="tabs">
+        <span class="tab on"><i class="pip warn"></i>기본정보</span>
+        <span class="tab"><i class="pip full"></i>본문</span>
+        <span class="tab"><i class="pip empty"></i>FAQ</span>
+        <span class="tab"><i class="pip full"></i>연결</span>
+      </div>
+
+      <div class="cont">
+        <div class="grp">
+          <div class="gt">제목 · 주소</div>
+          <div class="fld">
+            <label>제목<span class="req">*</span><span class="cnt">국문 14 / 22 · 영문 35 / 46</span></label>
+            <div class="two">
+              <div class="inp"><span class="lang">국문</span>롯데면세점 스타애비뉴 리뉴얼</div>
+              <div class="inp ai"><span class="lang en">영문</span>Lotte Duty Free Star Avenue Renewal<span class="aib">AI</span></div>
+            </div>
+            <div class="gd">
+              <b>국문 8~22자</b> · 영문 15~46자<span class="sepd">|</span>
+              쓰이는 곳 — <b>상세 제목 · 목록 카드 · 구글 검색 제목 · 링크 공유 제목 · 관련 콘텐츠 카드 · 구조화 데이터</b><br>
+              검색 제목에는 「 | 아폴론이머시브웍스」가 자동으로 붙습니다.
+              목록 작은 카드에서 <b>국문 11자 · 영문 23자</b>가 한 줄입니다. 그보다 길면 두 줄이 되고,
+              22자(영문 46자)를 넘으면 세 줄이 되어 카드가 흐트러집니다.
+            </div>
+          </div>
+          <div class="fld">
+            <label>부제<span class="cnt">국문 16 / 30 · 영문 38 / 60</span></label>
+            <div class="two">
+              <div class="inp"><span class="lang">국문</span>스타애비뉴, 롯데면세점 명동본점</div>
+              <div class="inp ai"><span class="lang en">영문</span>Star Avenue, Lotte Duty Free Myeongdong<span class="aib">AI</span></div>
+            </div>
+            <div class="gd">
+              <b>국문 30자 이내</b> · 영문 60자 이내<span class="sepd">|</span>
+              상세 페이지 제목 아래 한 줄로 들어갑니다. 장소나 클라이언트를 적습니다.
+              예) 스타애비뉴, 롯데면세점 명동본점
+            </div>
+          </div>
+          <div class="fld">
+            <label>주소 (slug)<span class="req">*</span></label>
+            <div class="inp">lotte-duty-free-star-avenue</div>
+            <div class="gd">
+              apollonworks.com/works/<b>lotte-duty-free-star-avenue</b><span class="sepd">|</span>
+              <b>영문 소문자와 하이픈(-)만</b>. 한글·공백·특수문자는 쓰지 않습니다.
+              공개 후에 바꾸면 기존 검색 순위와 외부 링크가 끊깁니다.
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gt">분류</div>
+          <div class="fld">
+            <label>카테고리<span class="req">*</span></label>
+            <div class="chips">
+              <span class="chip">media architecture</span><span class="chip on">media space</span>
+              <span class="chip">media contents</span><span class="chip">media sculpture</span>
+            </div>
+          </div>
+          <div class="fld">
+            <label>태그</label>
+            <div class="chips">
+              <span class="chip on">면세점</span><span class="chip on">K-POP</span>
+              <span class="chip on">이머시브 리테일</span><span class="chip on">디지털 키테넌트</span>
+              <span class="chip add">＋ 추가</span>
+            </div>
+            <div class="gd">
+              <b>3~6개</b> · 태그당 2~10자<span class="sepd">|</span>
+              쓰이는 곳 — <b>사이트 안 분류(태그를 누르면 같은 태그의 워크가 모임) · 검색 노출 키워드 · 관련 콘텐츠 자동 추천</b><br>
+              사람이 검색창에 칠 법한 말로 답니다. 여러 프로젝트가 같은 태그를 공유해야 의미가 있습니다.<br>
+              좋은 예) 면세점 · K-POP · 이머시브 리테일 &nbsp; 나쁜 예) 2024년1월착수 · 김대리담당
+            </div>
+          </div>
+          <div class="two">
+            <div class="fld"><label>표기 연도<span class="req">*</span></label><div class="inp">2024</div>
+              <div class="hint">화면에 보이는 연도</div></div>
+            <div class="fld"><label>공개일<span class="req">*</span></label><div class="inp">2026-08-28</div>
+              <div class="hint">검색엔진 정렬 기준</div></div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gt">대표 이미지 · 배경 영상</div>
+
+          <div class="fld">
+            <label>대표 이미지<span class="req">*</span></label>
+            <div class="thumb" style="height:88px;border-radius:7px;max-width:360px">star-avenue-key.jpg · 2560×1440 · 1.4MB</div>
+            <div class="gd">
+              <b>JPG</b> · <b>2560 × 1440</b> (16:9 고정) · <b>2MB 이하</b><span class="sepd">|</span>
+              쓰이는 곳 — <b>목록 카드 · 상세 첫 화면 · 관련 콘텐츠 썸네일 · 링크 공유 이미지(카톡·슬랙·링크드인) · 구조화 데이터</b><br>
+              화면 크기에 맞는 작은 판도, 공유용 1200×630도 <b>이 한 장에서 자동으로 만듭니다.</b>
+              따로 올릴 것이 없습니다.<br>
+              사람 얼굴이나 로고는 <b>가운데</b>에 두세요. 작은 카드에서 가장자리가 잘릴 수 있습니다.
+            </div>
+          </div>
+
+          <div class="two">
+            <div class="fld">
+              <label>배경 영상 — 큰 화면용</label>
+              <div class="thumb" style="height:80px;border-radius:7px">loop-lg.mp4 · 1280×720 · 5초 · 1.3MB</div>
+              <div class="gd">
+                <b>MP4 (H.264)</b> · <b>1280 × 720</b> · <b>1.5MB 이하</b><br>
+                4~6초 · <b>24fps</b> · 소리 없음 · 비트레이트 2Mbps<span class="sepd">|</span>
+                목록 맨 위 큰 카드, 메인 히어로에 쓰입니다.
+              </div>
+            </div>
+            <div class="fld">
+              <label>배경 영상 — 작은 화면용</label>
+              <div class="thumb" style="height:80px;border-radius:7px">loop-sm.mp4 · 640×360 · 5초 · 0.4MB</div>
+              <div class="gd">
+                <b>MP4 (H.264)</b> · <b>640 × 360</b> · <b>0.5MB 이하</b><br>
+                4~6초 · <b>24fps</b> · 소리 없음 · 비트레이트 0.7Mbps<span class="sepd">|</span>
+                목록 작은 카드, 메인 작은 칸에 쓰입니다.
+              </div>
+            </div>
+          </div>
+          <div class="gd" style="border-left-color:var(--warn);background:var(--warnbg);margin-bottom:12px">
+            <b>왜 두 벌인가</b> — 목록 한 화면에 큰 것 1개와 작은 것 8개가 함께 깔립니다.
+            큰 파일 하나로 돌려쓰면 13MB가 나가지만, 나눠 쓰면 5MB로 줄어듭니다.
+            <b>작은 화면용을 올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다.</b><br>
+            프리미어에서 같은 시퀀스를 해상도만 바꿔 두 번 내보내면 됩니다. 내보내기 설정 두 벌을 팀에 공유해 두세요.
+          </div>
+          <div class="fld" style="margin-bottom:0">
+            <label>목록에서 크게 보이기</label>
+            <div class="tog" style="margin-bottom:0">
+              <span class="sw big"></span>
+              <span class="c"><span class="t">이 프로젝트를 목록 맨 위에 크게 배치</span>
+              <span class="s">한 번에 한 개만 지정할 수 있습니다</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gt">프로젝트 정보 <em>— 구조화 데이터로 자동 변환됩니다</em></div>
+          <div class="fld">
+            <label>클라이언트</label>
+            <div class="two">
+              <div class="inp"><span class="lang">국문</span>롯데면세점</div>
+              <div class="inp ai"><span class="lang en">영문</span>Lotte Duty Free<span class="aib">AI</span></div>
+            </div>
+          </div>
+          <div class="two">
+            <div class="fld"><label>프로젝트 유형</label><div class="inp">공간 리뉴얼 · 미디어 스페이스 디자인</div></div>
+            <div class="fld"><label>완공 연도</label><div class="inp">2024</div></div>
+          </div>
+          <div class="fld">
+            <label>위치</label>
+            <div class="three"><div class="inp">대한민국</div><div class="inp">서울</div><div class="inp">중구 남대문로 81</div></div>
+            <div class="gd">
+              국가 · 도시 · 주소 순서<span class="sepd">|</span>
+              구조화 데이터로 나가므로 <b>실제 행정 주소</b>를 씁니다. 건물 이름만 쓰지 마세요.
+              해외 프로젝트는 영문으로.
+            </div>
+          </div>
+          <div class="two">
+            <div class="fld"><label>규모 · 면적</label><div class="inp">연면적 1,240㎡ · 미디어월 23.5 × 4.25m</div>
+              <div class="gd"><b>60자 이내</b><span class="sepd">|</span>
+              면적은 ㎡, 길이는 m. 숫자에 <b>쉼표</b>를 넣습니다.
+              예) 대지면적 129,836㎡ · 연면적 525,289㎡</div></div>
+            <div class="fld"><label>수상 내역</label><div class="inp">—</div></div>
+          </div>
+          <div class="fld" style="margin-bottom:0">
+            <label>참여 크레딧</label>
+            <div class="two" style="margin-bottom:7px">
+              <div class="inp"><span class="lang">역할</span>Media Space Design</div>
+              <div class="inp">아폴론이머시브웍스</div>
+            </div>
+            <div class="two" style="margin-bottom:7px">
+              <div class="inp"><span class="lang">역할</span>Client</div>
+              <div class="inp">롯데면세점</div>
+            </div>
+            <span class="btn sm">＋ 크레딧 추가</span>
+            <div class="gd">
+              역할은 <b>영문 표기</b>, 회사·사람 이름은 있는 그대로<span class="sepd">|</span>
+              Developer · Project Management · Architect · Construction Management ·
+              Media Architecture Design · Client · 협업 작가 등 <b>역할별로 한 줄씩</b> 추가합니다.<br>
+              한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gt">요약 · 성과</div>
+          <div class="fld">
+            <label>한 줄 요약<span class="req">*</span></label>
+            <div class="two">
+              <div class="inp ta"><span class="lang">국문</span>지나가는 통로였던 면세점 K-POP 존을 머무는 몰입형 미디어 공간으로 재구성했습니다.</div>
+              <div class="inp ta ai"><span class="lang en">영문</span>Transformed a duty-free K-POP passage into an immersive media destination.<span class="aib">AI</span></div>
+            </div>
+            <div class="gd">
+              <b>국문 60~80자</b> · 영문 120~155자 · <b>1~2문장</b><span class="sepd">|</span>
+              쓰이는 곳 — <b>목록 카드 · 상세 페이지 · 구글 검색 결과 설명 · 링크 공유 미리보기 · AI 인용</b><br>
+              「무엇을 어떻게 바꿨는가」를 한 문장으로. 형용사보다 <b>동사와 숫자</b>가 인용됩니다.
+              사람이 검색할 말(면세점 · 미디어아트 같은)이 자연스럽게 들어가면 좋습니다.<br>
+              좋은 예) 지나가는 통로였던 면세점 K-POP 존을 머무는 몰입형 미디어 공간으로 재구성했습니다.
+            </div>
+            <div class="gd" style="border-left-color:var(--warn);background:var(--warnbg);margin-top:6px;display:none">
+              ⚠ <b>92자입니다.</b> 구글 검색 결과에서 뒤가 잘립니다.
+              <span class="btn ai sm" style="margin-left:6px">✦ 검색용으로 줄이기</span><br>
+              <span style="color:var(--faint)">— 80자를 넘거나 검색어가 하나도 없을 때만 이 줄이 나타납니다.
+              누르면 80자 이내 문장을 따로 만들어 검색 결과에만 씁니다. 화면에는 원래 문장이 그대로 나옵니다.</span>
+            </div>
+          </div>
+          <div class="fld" style="margin-bottom:0">
+            <label>성과 수치</label>
+            <div class="three">
+              <div class="inp">일평균 방문객 16,000명</div>
+              <div class="inp">누적 112만 명 (2개월)</div>
+              <div class="inp" style="color:var(--faint)">＋ 항목 추가</div>
+            </div>
+            <div class="gd">
+              <b>항목당 30자 이내</b> · 3~5개 권장<span class="sepd">|</span>
+              AI가 가장 많이 인용하는 부분입니다. <b>반드시 숫자를 넣으세요.</b><br>
+              좋은 예) 일평균 방문객 16,000명 <span class="sepd">·</span> 누적 112만 명(2개월) <span class="sepd">·</span> 언론 보도 24건<br>
+              나쁜 예) 방문객이 크게 늘었습니다 — 숫자가 없으면 인용되지 않습니다
+            </div>
+          </div>
+        </div>
+
+        <div class="grp" style="margin-bottom:0">
+          <div class="gt">내부 연결 <em>— 외부에 노출되지 않습니다</em></div>
+          <div class="fld" style="margin-bottom:0">
+            <div class="ir2" style="margin-bottom:6px">
+              <span class="lb" style="width:60px">국문 폴더<span class="req">*</span></span>
+              <span class="imin"><span style="color:var(--faint)">T:\02 Project\2024\</span>240115 롯데면세점 스타애비뉴 리뉴얼</span>
+              <span class="btn sm">찾기</span>
+            </div>
+            <div class="ir2" style="margin-bottom:6px">
+              <span class="lb" style="width:60px">영문 폴더</span>
+              <span class="imin"><span style="color:var(--faint)">T:\02 Project\2024\</span>240115 Lotte Duty Free Star Avenue</span>
+              <span class="btn sm">찾기</span>
+            </div>
+            <div class="ir2" style="margin-bottom:6px">
+              <span class="lb" style="width:60px">추가</span>
+              <span class="imin"><span style="color:var(--faint)">P:\2024\</span>240115 스타애비뉴 촬영원본</span>
+              <span class="btn sm">삭제</span>
+            </div>
+            <span class="btn sm">＋ 폴더 추가</span>
+            <div class="hint">나중에 루나가 이 워크와 내부 자료를 같은 프로젝트로 인식합니다</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bar">
+        <span class="chk"><span class="ic">▲</span><span class="tx">공개하려면 3가지가 더 필요합니다</span></span>
+        <span class="btn">미리보기 ↗</span>
+        <span class="btn">임시 저장</span>
+        <span class="btn">공개 전 점검</span>
+        <span class="btn p dis">등록하기</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ ③ 본문 ════════ -->
+<div class="sect">③ 본문 — 블록</div>
+
+<div class="frame">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="nm">APOLLON HUB</div>
+    <div class="sp"></div><span class="r">이택진 / 슈퍼관리자</span>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="ttl">홈페이지</div>
+      <a href="#">대시보드</a><a href="#" class="g">루나</a>
+      <a href="#" class="g">워크</a><a href="#" class="sub on">프로젝트 목록</a>
+      <a href="#" class="g">인사이트</a><a href="#" class="g">메인 화면</a>
+      <a href="#" class="g">페이지</a><a href="#" class="g">이미지</a>
+      <a href="#" class="g">받은 내용</a><a href="#" class="g">검색 노출</a>
+      <a href="#" class="g">방문 통계</a><a href="#" class="g">설정</a>
+    </nav>
+
+    <div class="main">
+      <div class="top">
+        <div class="bcr">워크 &nbsp;›&nbsp; 프로젝트 목록 &nbsp;›&nbsp; 편집</div>
+        <div class="th">
+          <h2>롯데면세점 스타애비뉴 리뉴얼</h2>
+          <span class="badge draft">초안</span>
+          <span class="sp"></span><span class="btn">미리보기 ↗</span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <span class="tab"><i class="pip warn"></i>기본정보</span>
+        <span class="tab on"><i class="pip full"></i>본문</span>
+        <span class="tab"><i class="pip empty"></i>FAQ</span>
+        <span class="tab"><i class="pip full"></i>연결</span>
+      </div>
+
+      <div class="cont">
+        <div class="luna">
+          <div class="av">L</div>
+          <div class="c">
+            블록을 위에서부터 쌓는 순서가 <b>페이지 왼쪽 앵커 메뉴 순서</b>가 됩니다.
+            블록 제목이 곧 메뉴 이름입니다. 이미지를 다 넣으신 뒤 <b>[AI로 채우기]</b>를 누르면
+            글 맥락과 이미지를 함께 읽고 대체 텍스트·캡션 초안을 만듭니다.
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              <span class="btn ai sm">✦ AI로 채우기</span>
+              <span class="btn ai sm">✦ 영문 생성</span>
+              <span class="btn sm">전체 접기</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 블록 1 : 펼침 -->
+        <div class="blk">
+          <div class="bkh">
+            <span class="hd">⠿</span><span class="idx">1</span>
+            <span class="bt">Overview</span>
+            <span class="kind">기본</span>
+            <span class="btn sm" style="background:var(--lunabg);border-color:var(--lunaline);color:var(--luna);font-weight:600">◱ 미리보기</span>
+            <span class="ctl">↑ ↓ &nbsp; 복제 &nbsp; 삭제 &nbsp; ▲</span>
+          </div>
+          <div class="bkb">
+            <div class="fld">
+              <label>블록 제목<span class="req">*</span> <span style="font-weight:400;color:var(--faint)">— 왼쪽 앵커 메뉴에 표시됩니다</span><span class="cnt">8 / 16</span></label>
+              <div class="two">
+                <div class="inp"><span class="lang">국문</span>Overview</div>
+                <div class="inp"><span class="lang en">영문</span>Overview</div>
+              </div>
+              <div class="gd">
+                <b>16자 이내</b> · 짧을수록 좋습니다<span class="sepd">|</span>
+                왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다.<br>
+                자주 쓰는 이름 — Overview · Creative · Space · Synopsis · Pre-Production ·
+                Production · On-site Test · Achievement · Credit<br>
+                <b>블록은 8개까지</b>. 9개째부터는 앵커 메뉴가 화면에서 넘칩니다.
+              </div>
+            </div>
+            <div class="fld">
+              <label>기본 설명 <span style="font-weight:400;color:var(--faint)">— 제목 옆 고정 위치. 모든 블록 공통</span><span class="cnt">국문 48 / 120</span></label>
+              <div class="two">
+                <div class="inp ta"><span class="lang">국문</span>스타애비뉴는 2009년 롯데면세점이 한류 붐과 함께 공간 마케팅의 거점으로 구축한 공간입니다.</div>
+                <div class="inp ta ai"><span class="lang en">영문</span>Star Avenue was established in 2009 as a flagship space marketing destination.<span class="aib">AI</span></div>
+              </div>
+              <div class="gd">
+                <b>국문 60~120자</b> · 영문 120~240자 · <b>2~3문장</b><span class="sepd">|</span>
+                제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다.<br>
+                이 블록이 <b>무엇에 대한 것인지</b>를 먼저 쓰세요. 본문은 아래 자유 영역에서 이어 씁니다.
+              </div>
+            </div>
+
+            <div class="fld" style="margin-bottom:0">
+              <label>본문 <span style="font-weight:400;color:var(--faint)">— 자유 편집</span></label>
+              <div class="ed">
+                <div class="langtab"><span class="lt on">국문</span><span class="lt">영문 ✦</span></div>
+                <div class="edtb">
+                  <span class="tb">↶</span><span class="tb">↷</span>
+                  <span class="sep"></span>
+                  <span class="tb">문단</span><span class="tb">소제목</span>
+                  <span class="sep"></span>
+                  <span class="tb b">B</span><span class="tb i">I</span><span class="tb">🔗</span>
+                  <span class="sep"></span>
+                  <span class="tb">목록</span><span class="tb">인용</span><span class="tb">구분선</span>
+                  <span class="sep"></span>
+                  <span class="tb hi">🖼 이미지</span><span class="tb hi">▶ 영상</span>
+                  <span class="sep"></span>
+                  <span class="tb">&lt;/&gt;</span>
+                </div>
+                <div class="edbd">
+                  <p>이후 약 17년간 관광 트렌드와 방문객의 소비 방식은 크게 변화했고, 스타애비뉴 역시 롯데면세점과 명동을 대표하는 랜드마크로서의 새로운 역할이 요구되었습니다.</p>
+
+                  <div class="irow">
+                    <div class="irh">
+                      <span class="lbl">이미지 · 2장</span>
+                      <span class="lay">
+                        <span class="ly"><span class="g"><i style="width:24px"></i></span>1단</span>
+                        <span class="ly on"><span class="g"><i style="width:11px"></i><i style="width:11px"></i></span>2단 1:1</span>
+                        <span class="ly"><span class="g"><i style="width:16px"></i><i style="width:7px"></i></span>2단 2:1</span>
+                        <span class="ly"><span class="g"><i style="width:7px"></i><i style="width:16px"></i></span>2단 1:2</span>
+                      </span>
+                      <span style="flex:1"></span>
+                      <span class="btn sm">삭제</span>
+                    </div>
+                    <div class="gd" style="margin:0 0 9px">
+                      <b>JPG</b> · 긴 변 <b>2560px</b> · <b>2MB 이하</b> · <b>비율 자유</b><span class="sepd">|</span>
+                      본문 이미지는 가로·세로·정사각형 아무거나 됩니다. 올린 비율 그대로 들어갑니다.<br>
+                      <b>2단 2:1 · 1:2 배치의 작은 쪽은 세로형(3:4)</b>이 어울립니다. 가로 사진을 넣으면 좌우가 잘립니다.
+                    </div>
+                    <div class="imgs s">
+                      <div class="ic2">
+                        <div class="thumb">overview-01.jpg<br>2560×1440</div>
+                        <div class="ib">
+                          <div class="ir2"><span class="lb">대체</span><span class="imin ai">리뉴얼 전 스타애비뉴 통로</span></div>
+                          <div class="ir2"><span class="lb">캡션</span><span class="imin off">캡션 없음</span></div>
+                          <div class="capsw"><span class="sw"></span>화면에 캡션 표시</div>
+                        </div>
+                      </div>
+                      <div class="ic2">
+                        <div class="thumb">overview-02.jpg<br>1440×1620 (세로)</div>
+                        <div class="ib">
+                          <div class="ir2"><span class="lb">대체</span><span class="imin ai">아치 형태가 반복되는 진입부</span></div>
+                          <div class="ir2"><span class="lb">캡션</span><span class="imin ai">공간 전반에 일관되게 적용된 아치 형태. 인테리어와 미디어를 하나의 디자인 언어로 묶었습니다.</span></div>
+                          <div class="capsw"><span class="sw on"></span>화면에 캡션 표시
+                            <span style="flex:1"></span><span style="color:var(--luna)">✦ 확인 전</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="gd" style="margin:9px 0 0">
+                      <b>대체 텍스트</b> — 국문 40자 이내. 화면에 안 보입니다. 무엇이 찍혔는지 사실만.
+                      모든 이미지에 필수입니다.<br>
+                      <b>캡션</b> — 국문 40~90자, 1~2문장. <b>화면에 보입니다.</b> AI가 인용하는 것도 이쪽입니다.
+                      말할 것이 있는 이미지에만 켜세요. 워크 하나에 <b>5~8장</b>이 적당합니다.<br>
+                      캡션에는 <b>프로젝트 이름·기술·숫자</b>를 넣으세요.
+                      좋은 예) 폭 23.5m 미디어월. 15분마다 웰컴쇼가 재생됩니다.
+                      나쁜 예) 아름다운 공간의 모습
+                    </div>
+                  </div>
+
+                  <p>이번 프로젝트는 오늘날의 FIT·MZ 방문객이 자연스럽게 반응하고 상호작용할 수 있는 K-POP 기반 몰입형 미디어 체험 공간으로 재구성하는 것을 목표로 했습니다.</p>
+
+                  <div class="vrow">
+                    <div class="irh">
+                      <span class="lbl">영상</span>
+                      <span class="vtypes">
+                        <span class="vt on">유튜브 · Behance 임베드</span>
+                        <span class="vt">배경 루프 업로드</span>
+                        <span class="vt soon">본편 영상 (9월 예정)</span>
+                      </span>
+                      <span style="flex:1"></span><span class="btn sm">삭제</span>
+                    </div>
+                    <div class="vprev">▶ &nbsp; youtube.com/watch?v=b4cyArIaxfM</div>
+                    <div class="ir2"><span class="lb" style="width:34px">대체</span>
+                      <span class="imin">스타애비뉴 리뉴얼 소개 영상</span></div>
+                    <div class="gd" style="margin:9px 0 0">
+                      <b>임베드</b> — 유튜브·Behance 주소를 그대로 붙여넣으세요.
+                      재생 버튼을 누르기 전까지는 이미지 한 장만 보이므로 페이지가 무거워지지 않습니다.<br>
+                      <b>배경 루프</b> — MP4(H.264) · 1280×720 · 4~6초 · 24fps · 소리 없음 · <b>1.5MB 이하</b>.
+                      마우스를 올리면 재생되고, 모바일에서는 정지 이미지로 대체됩니다.<br>
+                      <b>본편 영상</b> — 9월 예정. 유튜브에 올리지 않을 고화질 영상을 우리 서버에서 재생합니다.
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="gd">
+                <b>글꼴 · 자간 · 글자색은 없습니다.</b> 화면 스타일은 사이트가 정합니다<span class="sepd">|</span>
+                한 문단은 <b>국문 150자 이내</b>가 읽기 좋습니다. 그보다 길면 문단을 나누세요.<br>
+                소제목은 <b>국문 20자 이내</b>. 소제목 아래 첫 문장에 결론을 쓰면 AI가 그 덩어리를 인용합니다.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 접힌 블록들 -->
+        <div class="blk fold">
+          <div class="bkh"><span class="hd">⠿</span><span class="idx">2</span>
+            <span class="bt">Creative — “Borderless Avenue”</span>
+            <span class="kind">기본</span>
+            <span class="btn sm">◱ 미리보기</span><span class="ctl">이미지 5 · 영상 1 &nbsp;&nbsp; ▼</span></div>
+        </div>
+        <div class="blk fold">
+          <div class="bkh"><span class="hd">⠿</span><span class="idx">3</span>
+            <span class="bt">Space</span><span class="kind">기본</span>
+            <span class="btn sm">◱ 미리보기</span><span class="ctl">이미지 8 &nbsp;&nbsp; ▼</span></div>
+        </div>
+        <div class="blk fold">
+          <div class="bkh"><span class="hd">⠿</span><span class="idx">4</span>
+            <span class="bt">On-site Test</span><span class="kind">기본</span>
+            <span class="btn sm">◱ 미리보기</span><span class="ctl">이미지 4 &nbsp;&nbsp; ▼</span></div>
+        </div>
+        <div class="blk fold">
+          <div class="bkh"><span class="hd">⠿</span><span class="idx">5</span>
+            <span class="bt">Achievement</span><span class="kind">기본</span>
+            <span class="btn sm">◱ 미리보기</span><span class="ctl">이미지 3 &nbsp;&nbsp; ▼</span></div>
+        </div>
+
+        <!-- 인터뷰 블록 -->
+        <div class="blk">
+          <div class="bkh"><span class="hd">⠿</span><span class="idx">6</span>
+            <span class="bt">Interview</span><span class="kind iv">인터뷰</span>
+            <span class="btn sm">◱ 미리보기</span><span class="ctl">↑ ↓ &nbsp; 삭제 &nbsp; ▲</span></div>
+          <div class="bkb">
+            <div class="fld">
+              <label>연결할 인사이트<span class="req">*</span></label>
+              <div class="rels" style="grid-template-columns:repeat(3,1fr)">
+                <div class="rc">
+                  <div class="th2">16:9</div>
+                  <div class="rb"><span class="kd i">인사이트</span>
+                    <div class="tt">“광고는 제품이 아닌 이야기를 팝니다” — 김지현 CD</div>
+                    <div class="ac"><span class="x">바꾸기</span><span class="x">해제</span></div></div>
+                </div>
+                <div class="rc empty">＋ 인사이트에서 고르기</div>
+              </div>
+              <div class="gd">
+                인터뷰는 별도 데이터가 아니라 <b>인사이트에 등록된 글 하나</b>를 연결하는 블록입니다.
+                화면에서 [Learn more]를 누르면 <b>팝업</b>으로 열리고, 팝업 안 「원문보기」로 인사이트 페이지로 이동합니다.
+              </div>
+            </div>
+            <div class="fld">
+              <label>화면에 보일 인용문<span class="req">*</span><span class="cnt">국문 58 / 70</span></label>
+              <div class="two">
+                <div class="inp ta"><span class="lang">국문</span>광고는 제품이 아닌 이야기를 팝니다. 그 이야기 하나가 사람을 움직이고, 브랜드의 내일을 만들어 갑니다.</div>
+                <div class="inp ta ai"><span class="lang en">영문</span>Advertising sells stories, not products.<span class="aib">AI</span></div>
+              </div>
+              <div class="gd">
+                <b>국문 40~70자</b> · <b>세 줄까지</b><span class="sepd">|</span>
+                팝업을 열기 전 카드에 크게 보이는 문장입니다. 70자를 넘으면 네 줄이 되어 카드가 흐트러집니다.<br>
+                인사이트 본문에서 <b>가장 강한 한 문장</b>을 골라 넣으세요.
+              </div>
+            </div>
+            <div class="fld" style="margin-bottom:0">
+              <label>이름 · 직함<span class="req">*</span><span class="cnt">국문 16 / 24</span></label>
+              <div class="two">
+                <div class="inp"><span class="lang">국문</span>김지현 - 크리에이티브 디렉터</div>
+                <div class="inp ai"><span class="lang en">영문</span>Jihyun Kim - Creative Director<span class="aib">AI</span></div>
+              </div>
+              <div class="gd"><b>국문 24자 이내</b> · 형식은 <b>이름 - 직함</b><span class="sepd">|</span>
+              프로필 이미지는 정사각형 <b>600 × 600</b> · JPG · 300KB 이하</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:7px;margin-top:4px;flex-wrap:wrap">
+          <span class="btn">＋ 기본 블록</span>
+          <span class="btn">＋ 인터뷰 블록</span>
+          <span class="btn">이미지 라이브러리에서 가져오기</span>
+        </div>
+        <div class="hint" style="margin-top:9px">
+          Let's Talk · Company Profile 은 모든 워크에 자동으로 붙는 고정 영역입니다. 여기서 관리하지 않습니다
+        </div>
+      </div>
+
+      <div class="bar">
+        <span class="chk"><span class="ic">▲</span><span class="tx">AI가 만든 캡션 4개가 확인 전입니다</span></span>
+        <span class="btn">미리보기 ↗</span><span class="btn">임시 저장</span>
+        <span class="btn">공개 전 점검</span><span class="btn p dis">등록하기</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <span class="tg">블록 = 앵커 메뉴</span>
+  <p>블록 순서가 그대로 페이지 왼쪽 메뉴 순서가 됩니다. 블록을 끌어 옮기면 메뉴도 같이 바뀝니다.</p>
+  <p><b>블록 구성은 프로젝트마다 다릅니다.</b> 실제 사례를 보면 공간 프로젝트는 Overview·Creative·Space, 콘텐츠 쇼는 Synopsis·Pre-Production·Production, 작품은 서술 몇 개가 전부입니다. 그래서 고정 목록이 아니라 자유롭게 만들고 이름 붙이는 방식입니다.</p>
+  <p><b>앵커는 8개가 한계입니다.</b> 9개째부터는 화면에서 잘리므로 등록 시 경고를 띄웁니다.</p>
+</div>
+
+<!-- ════════ ④ FAQ · 검색 정보 ════════ -->
+<div class="sect">④ FAQ</div>
+
+<div class="frame">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="nm">APOLLON HUB</div>
+    <div class="sp"></div><span class="r">이택진 / 슈퍼관리자</span>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="ttl">홈페이지</div>
+      <a href="#">대시보드</a><a href="#" class="g">루나</a>
+      <a href="#" class="g">워크</a><a href="#" class="sub on">프로젝트 목록</a>
+      <a href="#" class="g">인사이트</a><a href="#" class="g">메인 화면</a>
+      <a href="#" class="g">페이지</a><a href="#" class="g">이미지</a>
+      <a href="#" class="g">받은 내용</a><a href="#" class="g">검색 노출</a>
+      <a href="#" class="g">방문 통계</a><a href="#" class="g">설정</a>
+    </nav>
+    <div class="main">
+      <div class="top">
+        <div class="bcr">워크 &nbsp;›&nbsp; 프로젝트 목록 &nbsp;›&nbsp; 편집</div>
+        <div class="th"><h2>롯데면세점 스타애비뉴 리뉴얼</h2>
+          <span class="badge draft">초안</span><span class="sp"></span>
+          <span class="btn">미리보기 ↗</span></div>
+      </div>
+      <div class="tabs">
+        <span class="tab"><i class="pip warn"></i>기본정보</span>
+        <span class="tab"><i class="pip full"></i>본문</span>
+        <span class="tab on"><i class="pip empty"></i>FAQ</span>
+        <span class="tab"><i class="pip full"></i>연결</span>
+      </div>
+      <div class="cont">
+        <div class="tog">
+          <span class="sw big on"></span>
+          <span class="c"><span class="t">이 워크에 FAQ 표시</span>
+          <span class="s">ChatGPT · Perplexity 같은 AI가 인용할 가능성이 높아집니다. 3~5문항 권장</span></span>
+        </div>
+
+        <div class="luna">
+          <div class="av">L</div>
+          <div class="c">본문 · 규모 · 성과수치를 읽고 질문과 답변 초안을 만들어 드립니다.
+            답변은 <b>2~3문장</b>이 AI 인용에 가장 좋습니다.
+            <div style="margin-top:8px"><span class="btn ai sm">✦ AI로 초안 만들기</span></div></div>
+        </div>
+
+        <div class="blk">
+          <div class="bkh"><span class="idx">1</span><span class="bt" style="font-weight:400">스타애비뉴 리뉴얼은 어떤 프로젝트인가요?</span>
+            <span class="ctl">↑ ↓ &nbsp; 삭제 &nbsp; ▲</span></div>
+          <div class="bkb">
+            <div class="fld"><label>질문<span class="cnt">국문 22 / 45</span></label>
+              <div class="two">
+                <div class="inp"><span class="lang">국문</span>스타애비뉴 리뉴얼은 어떤 프로젝트인가요?</div>
+                <div class="inp ai"><span class="lang en">영문</span>What is the Star Avenue Renewal project?<span class="aib">AI</span></div>
+              </div>
+              <div class="gd">
+                <b>국문 15~45자</b> · 반드시 <b>물음표로 끝나는 완전한 문장</b><span class="sepd">|</span>
+                사람이 검색창이나 AI에 실제로 칠 법한 말로 씁니다.<br>
+                좋은 예) 리뉴얼 이후 방문객 수는 어떻게 달라졌나요?<br>
+                나쁜 예) 방문객 <span class="sepd">·</span> 성과 — 단어만 쓰면 AI가 질문으로 인식하지 못합니다
+              </div></div>
+            <div class="fld" style="margin-bottom:0"><label>답변<span class="cnt">국문 86 / 200</span></label>
+              <div class="two">
+                <div class="inp ta"><span class="lang">국문</span>롯데면세점 명동 본점의 K-POP 체험 공간을 몰입형 미디어 공간으로 재구성한 프로젝트입니다…</div>
+                <div class="inp ta ai"><span class="lang en">영문</span>A project that reimagined Lotte Duty Free Myeongdong's K-POP zone…<span class="aib">AI</span></div>
+              </div>
+              <div class="gd">
+                <b>국문 70~200자</b> · <b>2~3문장</b><span class="sepd">|</span>
+                이 길이가 AI 인용에 가장 좋습니다. 너무 짧으면 인용할 내용이 없고,
+                너무 길면 통째로 인용되지 않습니다.<br>
+                <b>첫 문장에 답을 먼저</b> 쓰고 그다음에 설명합니다.
+                프로젝트 이름·숫자·기술 용어를 넣으세요.
+              </div></div>
+          </div>
+        </div>
+        <div class="blk fold">
+          <div class="bkh"><span class="idx">2</span>
+            <span class="bt" style="font-weight:400">리뉴얼 이후 방문객 수는 어떻게 달라졌나요?</span>
+            <span class="ctl">▼</span></div>
+        </div>
+        <div class="blk fold">
+          <div class="bkh"><span class="idx">3</span>
+            <span class="bt" style="font-weight:400">콘텐츠는 나중에 교체할 수 있나요?</span>
+            <span class="ctl">▼</span></div>
+        </div>
+
+        <div><span class="btn">＋ 문항 추가</span></div>
+
+        <div class="gd" style="margin-top:16px">
+          <b>FAQ는 워크 상세 맨 아래</b>, Credit 다음 · Interview 앞에 아코디언으로 들어갑니다.
+          첫 문항만 펼쳐지고 나머지는 접혀 있지만, 접힌 답변도 검색봇과 AI가 읽습니다.<br>
+          같은 내용이 <b>FAQPage 구조화 데이터</b>로 자동 생성됩니다.
+        </div>
+      </div>
+      <div class="bar">
+        <span class="chk"><span class="ic">▲</span><span class="tx">FAQ 3문항 입력됨 · 기본정보의 검색 설명(영문)이 비어 있습니다</span></span>
+        <span class="btn">미리보기 ↗</span><span class="btn">임시 저장</span>
+        <span class="btn">공개 전 점검</span><span class="btn p dis">등록하기</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ ⑤ 연결 ════════ -->
+<div class="sect">⑤ 연결 — 관련 콘텐츠</div>
+
+<div class="frame">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="nm">APOLLON HUB</div>
+    <div class="sp"></div><span class="r">이택진 / 슈퍼관리자</span>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="ttl">홈페이지</div>
+      <a href="#">대시보드</a><a href="#" class="g">루나</a>
+      <a href="#" class="g">워크</a><a href="#" class="sub on">프로젝트 목록</a>
+      <a href="#" class="g">인사이트</a><a href="#" class="g">메인 화면</a>
+      <a href="#" class="g">페이지</a><a href="#" class="g">이미지</a>
+      <a href="#" class="g">받은 내용</a><a href="#" class="g">검색 노출</a>
+      <a href="#" class="g">방문 통계</a><a href="#" class="g">설정</a>
+    </nav>
+    <div class="main">
+      <div class="top">
+        <div class="bcr">워크 &nbsp;›&nbsp; 프로젝트 목록 &nbsp;›&nbsp; 편집</div>
+        <div class="th"><h2>롯데면세점 스타애비뉴 리뉴얼</h2>
+          <span class="badge draft">초안</span><span class="sp"></span>
+          <span class="btn">미리보기 ↗</span></div>
+      </div>
+      <div class="tabs">
+        <span class="tab"><i class="pip warn"></i>기본정보</span>
+        <span class="tab"><i class="pip full"></i>본문</span>
+        <span class="tab"><i class="pip empty"></i>FAQ</span>
+        <span class="tab on"><i class="pip full"></i>연결</span>
+      </div>
+      <div class="cont">
+        <div class="luna">
+          <div class="av">L</div>
+          <div class="c">
+            본문 · 태그 · 카테고리를 읽고 <b>어울리는 4개를 골라 넣어 뒀습니다.</b>
+            그대로 두셔도 되고, 마음에 안 드는 것은 빼고 직접 넣으셔도 됩니다.
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              <span class="btn ai sm">✦ 다시 골라줘</span>
+              <span class="btn sm">＋ 직접 고르기</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp" style="margin-bottom:0">
+          <div class="gt">관련 콘텐츠 <em>— 화면에 이 순서대로 4개가 나옵니다</em></div>
+          <div class="rels">
+            <div class="rc">
+              <div class="th2">16:9</div>
+              <div class="rb"><span class="kd">워크</span>
+                <div class="tt">인스파이어 리조트 오로라</div>
+                <div class="ac"><span class="x">↑</span><span class="x">↓</span><span class="x">빼기</span></div></div>
+            </div>
+            <div class="rc">
+              <div class="th2">16:9</div>
+              <div class="rb"><span class="kd i">인사이트</span>
+                <div class="tt">인스파이어 핑크 고래 쇼</div>
+                <div class="ac"><span class="x">↑</span><span class="x">↓</span><span class="x">빼기</span></div></div>
+            </div>
+            <div class="rc">
+              <div class="th2">16:9</div>
+              <div class="rb"><span class="kd p">페이지</span>
+                <div class="tt">Expertise — Media Space Design</div>
+                <div class="ac"><span class="x">↑</span><span class="x">↓</span><span class="x">빼기</span></div></div>
+            </div>
+            <div class="rc">
+              <div class="th2">16:9</div>
+              <div class="rb"><span class="kd">워크</span>
+                <div class="tt">역삼 아시아미디어타워</div>
+                <div class="ac"><span class="x">↑</span><span class="x">↓</span><span class="x">빼기</span></div></div>
+            </div>
+          </div>
+          <div class="gd">
+            워크 · 인사이트 · 정적 페이지 모두 연결할 수 있습니다. <b>화면에는 4개가 나옵니다</b><span class="sepd">|</span>
+            카드 제목은 연결된 콘텐츠의 제목을 그대로 가져옵니다.
+            <b>국문 12자 · 영문 14자</b>가 한 줄이고 두 줄까지 보입니다. 그보다 길면 잘립니다.<br>
+            같은 카테고리만 넣지 말고 <b>인사이트를 한 개 이상</b> 섞으세요. 읽을거리가 있어야 체류시간이 늘어납니다.<br>
+            하나를 빼면 그 자리에 <b>루나가 다음 후보를 자동으로 채워 넣습니다.</b> 빈칸으로 두려면 「빈칸 유지」를 누르세요.
+          </div>
+        </div>
+      </div>
+      <div class="bar">
+        <span class="chk ok"><span class="ic">●</span><span class="tx">관련 콘텐츠 4개 지정됨</span></span>
+        <span class="btn">미리보기 ↗</span><span class="btn">임시 저장</span>
+        <span class="btn">공개 전 점검</span><span class="btn p dis">등록하기</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ ⑥ 블록 미리보기 팝업 ════════ -->
+<div class="sect">⑥ 블록 미리보기 — 팝업</div>
+
+<div style="background:rgba(22,24,29,.55);border-radius:12px;padding:26px 20px">
+  <div class="frame" style="max-width:900px;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <span style="font-size:14px;font-weight:700">미리보기 — Overview</span>
+      <span style="font-size:11.5px;color:var(--faint)">저장하지 않은 내용까지 그대로 보입니다</span>
+      <span style="flex:1"></span>
+      <span class="seg" style="display:inline-flex;border:1px solid #dde1e6;border-radius:7px;overflow:hidden">
+        <span style="font-size:12px;padding:4px 11px;background:var(--ink);color:#fff;font-weight:700">국문</span>
+        <span style="font-size:12px;padding:4px 11px;color:var(--dim);border-left:1px solid #dde1e6">영문</span>
+      </span>
+      <span class="seg" style="display:inline-flex;border:1px solid #dde1e6;border-radius:7px;overflow:hidden">
+        <span style="font-size:12px;padding:4px 11px;background:var(--ink);color:#fff;font-weight:700">PC</span>
+        <span style="font-size:12px;padding:4px 11px;color:var(--dim);border-left:1px solid #dde1e6">모바일</span>
+      </span>
+      <span style="color:var(--faint);font-size:16px">✕</span>
+    </div>
+
+    <div style="background:#fff;padding:0">
+      <div style="padding:34px 40px 40px">
+        <div style="font-size:11px;color:var(--faint);letter-spacing:.1em;margin-bottom:22px;
+          padding-bottom:9px;border-bottom:1px solid var(--line)">
+          ↓ 아래는 홈페이지 화면을 그대로 불러온 것입니다 (어드민이 그린 것이 아닙니다)
+        </div>
+
+        <h2 style="font-size:36px;margin:0 0 14px;letter-spacing:-.02em;font-weight:700">Overview</h2>
+        <p style="font-size:16px;color:#3a4049;max-width:660px;margin:0 0 30px;line-height:1.75">
+          스타애비뉴는 2009년 롯데면세점이 한류 붐과 함께 공간 마케팅의 거점으로 구축한 공간입니다.
+        </p>
+        <p style="font-size:15px;color:#4a515b;max-width:660px;margin:0 0 26px;line-height:1.8">
+          이후 약 17년간 관광 트렌드와 방문객의 소비 방식은 크게 변화했고, 스타애비뉴 역시 롯데면세점과
+          명동을 대표하는 랜드마크로서의 새로운 역할이 요구되었습니다.
+        </p>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:10px">
+          <div>
+            <div style="background:#e9ecf0;height:150px;border-radius:2px;display:flex;
+              align-items:center;justify-content:center;color:#a9b0ba;font-size:11px">overview-01.jpg</div>
+          </div>
+          <div>
+            <div style="background:#e9ecf0;height:150px;border-radius:2px;display:flex;
+              align-items:center;justify-content:center;color:#a9b0ba;font-size:11px">overview-02.jpg</div>
+            <p style="font-size:12.5px;color:#6b7280;margin:9px 0 0;line-height:1.6">
+              공간 전반에 일관되게 적용된 아치 형태. 인테리어와 미디어를 하나의 디자인 언어로 묶었습니다.
+            </p>
+          </div>
+        </div>
+
+        <p style="font-size:15px;color:#4a515b;max-width:660px;margin:26px 0 22px;line-height:1.8">
+          이번 프로젝트는 오늘날의 FIT·MZ 방문객이 자연스럽게 반응하고 상호작용할 수 있는
+          K-POP 기반 몰입형 미디어 체험 공간으로 재구성하는 것을 목표로 했습니다.
+        </p>
+
+        <div style="background:#1c1f24;border-radius:2px;height:230px;display:flex;
+          align-items:center;justify-content:center;color:#7d848e;font-size:13px">▶</div>
+      </div>
+    </div>
+
+    <div style="padding:11px 16px;background:var(--soft);border-top:1px solid var(--line);
+      display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+      <span style="flex:1;font-size:12px;color:var(--dim)">ESC 로도 닫힙니다</span>
+      <span class="btn sm">전체 페이지로 보기 ↗</span>
+      <span class="btn sm p">닫기</span>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <span class="tg">미리보기가 실제와 같아야 하는 이유</span>
+  <p><b>어드민은 화면을 흉내내지 않습니다. 실제 홈페이지 화면을 불러옵니다.</b></p>
+  <p>홈페이지 쪽에 미리보기 전용 주소를 하나 만들고, 어드민 팝업이 그 화면을 그대로 띄웁니다.
+  <span class="purl" style="font-size:12px">apollonworks.com/preview/works/[id]?block=3&amp;locale=ko</span></p>
+  <p><b>블록 미리보기와 전체 미리보기가 같은 주소를 씁니다.</b> <code>block=3</code>이 있으면 그 블록만, 없으면 전체. 코드가 하나라 둘이 어긋날 수 없습니다.</p>
+  <p><b>지영 부장님이 CSS를 고치면 미리보기도 그 순간부터 같이 바뀝니다.</b> 어드민이 따로 스타일을 들고 있지 않기 때문입니다.</p>
+  <p><b>저장하지 않은 내용도 보입니다.</b> 편집 중인 내용을 미리보기 주소로 함께 넘깁니다.</p>
+  <p><b>초안 보호</b> — 미리보기 주소는 토큰이 있어야 열립니다. 주소를 알아도 외부인은 못 보고, 검색엔진도 막습니다.</p>
+</div>
+
+<!-- ════════ ⑥ 점검 패널 ════════ -->
+<div class="sect">⑦ 공개 전 점검 — 하단에서 올라오는 패널</div>
+
+<div class="panel">
+  <div class="ph2">
+    <span class="t">공개 전 점검</span>
+    <span style="font-size:12.5px;color:var(--dim)">문제 1 · 확인 필요 3 · 통과 8</span>
+    <span class="sp"></span><span class="x">✕</span>
+  </div>
+  <div class="crow">
+    <span class="cd e"></span>
+    <span class="c"><span class="t">검색 설명(영문)이 비어 있습니다</span>
+      <div class="s">영어권 검색과 AI에 이 프로젝트가 노출되지 않습니다</div></span>
+    <span class="go">기본정보 →</span>
+  </div>
+  <div class="crow">
+    <span class="cd w"></span>
+    <span class="c"><span class="t">AI가 만든 캡션 4개가 확인 전입니다</span>
+      <div class="s">Overview 2 · Creative 1 · Achievement 1</div></span>
+    <span class="go">본문 →</span>
+  </div>
+  <div class="crow">
+    <span class="cd w"></span>
+    <span class="c"><span class="t">FAQ가 비어 있습니다</span>
+      <div class="s">필수는 아니지만 AI 인용 가능성이 크게 떨어집니다</div></span>
+    <span class="go">FAQ →</span>
+  </div>
+  <div class="crow">
+    <span class="cd w"></span>
+    <span class="c"><span class="t">배경 루프 영상이 3.4MB 입니다</span>
+      <div class="s">권장 3MB 이하 · 모바일에서 끊길 수 있습니다</div></span>
+    <span class="go">기본정보 →</span>
+  </div>
+  <div class="crow">
+    <span class="cd o"></span>
+    <span class="c"><span class="t">통과한 검사 8개</span>
+      <div class="s">제목 국·영문 · 대표 이미지 규격 · 요약 · 카테고리 · 태그 · 대체 텍스트 · 연결 · 내부 폴더</div></span>
+    <span class="go">펼치기</span>
+  </div>
+  <div style="padding:12px 18px;background:var(--soft);border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+    <span style="flex:1;font-size:12.5px;color:var(--err)">
+      ● 문제 1건을 해결해야 등록할 수 있습니다</span>
+    <span class="btn">닫기</span>
+    <span class="btn p dis">등록하기</span>
+  </div>
+</div>
+
+<div class="note" style="background:#f0f9f4;border-color:#bfe3ce;border-left-color:#0f7a45">
+  <span class="tg" style="color:#0f7a45;border-color:#0f7a45">두 가지 원칙</span>
+  <p><b>1. 같은 내용을 두 번 치게 하지 않는다.</b><br>
+  한 번 넣은 정보가 여러 곳에 쓰이면 칸을 늘리지 말고, 그 칸 아래에 <b>「쓰이는 곳」</b>을 적습니다.
+  예외가 필요할 때만(검색 설명이 80자를 넘는 등) 그 자리에 조용히 안내가 뜨고, 누르면 그때 별도 값이 생깁니다.</p>
+  <p><b>2. 어드민은 화면을 흉내내지 않는다.</b><br>
+  미리보기는 실제 홈페이지 화면을 불러옵니다. 어드민이 따로 스타일을 들고 있으면 시간이 지나면서 반드시 어긋납니다.</p>
+</div>
+
+<div class="note">
+  <span class="tg">전체 설계 요약</span>
+  <p><b>탭 4개.</b> 기본정보 · 본문 · FAQ · 연결. 탭 옆 점으로 진행 상황을 보여주고, 목록 화면에도 같은 점이 나옵니다.</p>
+  <p><b>검색 정보 탭을 통째로 없앴습니다.</b> 같은 내용을 두 번 치게 하는 칸이었습니다.
+  검색 제목은 <b>제목</b>을, 검색 설명은 <b>한 줄 요약</b>을, 공유 이미지는 <b>대표 이미지</b>를, 검색 키워드는 <b>태그</b>를 그대로 씁니다.
+  <b>검색 때문에 새로 칠 것은 하나도 없습니다.</b></p>
+  <p><b>블록은 자유롭게 쌓습니다.</b> 제목 + 기본 설명(고정 위치)까지는 모든 블록이 같고, 그 아래는 자유 편집입니다. 순서가 앵커 메뉴 순서입니다.</p>
+  <p><b>에디터는 구조만 다룹니다.</b> 문단 · 소제목 · 굵게 · 링크 · 목록 · 인용 · 구분선 · 이미지 · 영상. 글꼴 · 자간 · 글자색은 넣지 않았습니다. 등록자마다 다르게 꾸미면 사이트 디자인이 무너집니다.</p>
+  <p><b>이미지는 두 종류.</b> 대표 이미지는 16:9 고정(목록 카드 · 썸네일 · 공유용), 본문 이미지는 비율 자유입니다.</p>
+  <p><b>영상은 세 가지.</b> 임베드 · 배경 루프 · 본편(9월 예정). 배경 루프는 <b>큰 화면용 1280×720 · 작은 화면용 640×360 두 벌</b>을 올립니다. 목록 한 화면에 큰 것 1개와 작은 것 8개가 함께 깔려서, 한 벌로 돌려쓰면 13MB가 나갑니다.</p>
+  <p><b>인터뷰는 인사이트 연결.</b> 별도 데이터가 아니라 등록된 인사이트 하나를 붙이는 블록입니다.</p>
+  <p><b>블록마다 미리보기 버튼.</b> 그 블록만 실제 화면 모양으로 팝업에 뜹니다. 국·영문과 PC·모바일을 전환할 수 있습니다.</p>
+  <p><b>연결은 루나가 미리 4개를 채워 둡니다.</b> 사람은 빼거나 바꾸기만 하면 됩니다. 빈 상태에서 고르게 하면 아무도 안 채웁니다. 하나를 빼면 다음 후보가 자동으로 들어옵니다.</p>
+</div>
+
+<div class="note" style="background:#f4f6fb;border-color:#ccd6ea;border-left-color:#1f4fd8">
+  <span class="tg" style="color:#1f4fd8;border-color:#1f4fd8">입력 가이드 — 글자 수는 실측값입니다</span>
+  <p>목업 사이트에서 각 요소의 실제 폭과 글자 크기를 재서 뽑았습니다. 국문은 한 글자가 글자 크기만큼,
+  영문은 절반 정도를 차지하므로 두 언어의 허용 글자 수가 두 배 차이 납니다.</p>
+  <p><b>주요 실측</b> — 목록 작은 카드 제목 428px / 36px → 국문 11자가 한 줄 ·
+  인터뷰 인용문 412px / 28px → 국문 19자가 한 줄, 58자가 세 줄 ·
+  관련 콘텐츠 제목 220px / 18px → 국문 12자가 한 줄, 두 줄까지 표시.</p>
+  <p><b>글자 수 표시가 입력칸 오른쪽 위에 항상 뜹니다.</b> 권장을 넘으면 주황, 한계를 넘으면 빨강으로 바뀝니다.
+  넘어도 저장은 되지만 「공개 전 점검」에 걸립니다.</p>
+  <p><b>가이드가 필요 없는 칸에는 넣지 않았습니다.</b> 연도·카테고리·공개일처럼 고를 것이 정해진 칸은 설명이 오히려 방해가 됩니다.</p>
+  <p>인사이트 · 메인 화면 · 정적 페이지 등록 화면에도 같은 방식으로 가이드를 답니다.</p>
+  <p><b>칸마다 「쓰이는 곳」을 적었습니다.</b> 한 번 넣은 정보가 어디까지 쓰이는지 보이면, 왜 신경 써서 써야 하는지 알게 됩니다.</p>
+</div>
+
+<div class="note">
+  <span class="tg">아직 안 정한 것</span>
+  <p><b>이미지 전체화면 뷰어</b> — 화면 디자인이 없습니다. 훈희 이사님 작업이 필요합니다. 좌우 화살표 · 키보드 이동 · 워크 전체 이미지 순환.</p>
+  <p><b>2단 2:1 배치의 작은 쪽</b>이 세로형(0.89)으로 잡혀 있습니다. 의도인지 확인이 필요합니다.</p>
+  <p><b>본편 영상 호스팅</b> — 어느 서비스를 쓸지, 비용이 얼마인지 조사가 필요합니다.</p>
+  <p><b>블록 제목의 앵커 메뉴 폭</b>은 아직 재지 못했습니다. 16자는 추정이므로 실제 메뉴가 붙은 뒤 확인이 필요합니다.</p>
+  <p><b>모바일 글자 수</b>는 따로 재야 합니다. 위 숫자는 전부 데스크탑 기준입니다.</p>
+</div>
+
+</div>
+</body>
+</html>
