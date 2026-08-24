@@ -191,6 +191,7 @@ function todayLabel() {
 
 const SERVICES = [
   { label: "라이선스", sub: "Manager", icon: "ti-key", color: "#EF9F27", href: "/licenses" },
+  { label: "홈페이지", sub: "Website", icon: "ti-world", color: "#2D6BE4", href: "/website" },
   { label: "트렌드 레이더", sub: "Radar", icon: "ti-radar", color: "#EF9F27", href: "/research" },
   { label: "AI비용관리", sub: "Arte", icon: "ti-chart-bar", color: "#EF9F27", href: "/agents" },
   { label: "물품창고", sub: "Supplies", icon: "ti-package", color: "#1D9E75", href: "/supplies" },
