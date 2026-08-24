@@ -219,6 +219,11 @@ async function indexOne(
   const variants = await renderMediaVariants(item.fullPath);
   const jpegB64 = variants.visionJpegBase64;
   if (!jpegB64) {
+    const ext = item.fileName.split(".").pop()?.toLowerCase() ?? "";
+    // sharp/libvips 가 psd·ai 를 못 읽는 경우가 많음 — 전체 색인 지연 없이 건너뜀
+    if (ext === "psd" || ext === "ai") {
+      return { status: "failed", reason: `${ext}_unreadable` };
+    }
     return { status: "failed", reason: "image_unreadable" };
   }
 
@@ -881,6 +886,16 @@ async function runIndex(opts: CliOpts): Promise<void> {
     notionMatched: boolean;
   }> = [];
   const tBatch = Date.now();
+  const model = mediaVisionModel();
+  const price = resolveOfficialPrice(model);
+
+  function runningCostUsd(): number | null {
+    if (!price) return null;
+    return (
+      (visionIn / 1_000_000) * price.input +
+      (visionOut / 1_000_000) * price.output
+    );
+  }
 
   for (let i = 0; i < work.length; i++) {
     const item = work[i]!;
@@ -918,20 +933,29 @@ async function runIndex(opts: CliOpts): Promise<void> {
       failReasons[reason.slice(0, 120)] = (failReasons[reason.slice(0, 120)] ?? 0) + 1;
       console.log("error:", reason);
     }
+
+    const done = i + 1;
+    if (done % 100 === 0 || done === work.length) {
+      const elapsed = Date.now() - tBatch;
+      const remaining = work.length - done;
+      const etaMs = done > 0 ? (elapsed / done) * remaining : 0;
+      const cost = runningCostUsd();
+      const pct = ((100 * done) / work.length).toFixed(1);
+      console.log(
+        `[progress] ${done}/${work.length} (${pct}%) · ok=${indexed} skip=${skipped} fail=${failed}` +
+          ` · cost=$${cost != null ? cost.toFixed(4) : "?"}` +
+          ` · in=${visionIn.toLocaleString("ko-KR")} out=${visionOut.toLocaleString("ko-KR")}` +
+          ` · elapsed=${(elapsed / 1000 / 60).toFixed(1)}m` +
+          ` · eta≈${(etaMs / 1000 / 60).toFixed(1)}m`
+      );
+    }
   }
 
   const elapsedMs = Date.now() - tBatch;
-  const model = mediaVisionModel();
-  const price = resolveOfficialPrice(model);
-  let estUsd: number | null = null;
-  if (price) {
-    estUsd =
-      (visionIn / 1_000_000) * price.input +
-      (visionOut / 1_000_000) * price.output;
-  }
+  let estUsd: number | null = runningCostUsd();
 
   console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
-  if (indexed > 0) {
+  if (indexed > 0 || failed > 0 || skipped > 0) {
     printBatchReport({
       indexed,
       skipped,
@@ -944,6 +968,27 @@ async function runIndex(opts: CliOpts): Promise<void> {
       estUsd,
       rows: indexedRows
     });
+  }
+
+  try {
+    const storage = await summarizeStorage(admin);
+    const thumbMb = storage.thumbBytes / (1024 * 1024);
+    const largeMb = storage.largeBytes / (1024 * 1024);
+    console.log(
+      `Storage: thumb ${storage.thumbCount} · ${thumbMb.toFixed(2)} MB · large ${storage.largeCount} · ${largeMb.toFixed(2)} MB`
+    );
+    if (indexed > 0 && estUsd != null && elapsedMs > 0) {
+      const perImgUsd = estUsd / indexed;
+      const perImgSec = elapsedMs / indexed / 1000;
+      console.log(
+        `${SCALE_LARGE_CORPUS.toLocaleString("ko-KR")}장 전체 색인 예상: $${(perImgUsd * SCALE_LARGE_CORPUS).toFixed(2)} · ${((perImgSec * SCALE_LARGE_CORPUS) / 3600).toFixed(1)}h`
+      );
+    }
+  } catch (e) {
+    console.warn(
+      "Storage summary failed:",
+      e instanceof Error ? e.message : e
+    );
   }
 }
 

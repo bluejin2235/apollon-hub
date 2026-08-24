@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import {
   DEFAULT_PILOT_ROOT,
   EXCLUDE_FOLDER_PATTERNS,
@@ -7,7 +7,10 @@ import {
   IMAGE_EXTENSIONS,
   INCLUDE_FOLDER_PATTERNS,
   MIN_FILE_BYTES,
-  PILOT_PROJECT_FOLDERS
+  PILOT_PROJECT_FOLDERS,
+  VIDEO_CAPTURE_FILENAME_RE,
+  VIDEO_CAPTURE_PREFIX_LEN,
+  VIDEO_CAPTURE_PREFIX_MIN_COUNT
 } from "@/lib/luna/media-index-rules";
 import {
   normalizeWorkPath,
@@ -64,7 +67,42 @@ function matchesInclude(relPath: string): string | null {
   return null;
 }
 
-export function classifyMediaFile(
+/** ① 영상 확장자+타임스탬프 파일명 */
+export function isVideoCaptureFilename(fileName: string): boolean {
+  return VIDEO_CAPTURE_FILENAME_RE.test(fileName);
+}
+
+function folderKeyFromRelativePath(relativePath: string): string {
+  return dirname(relativePath).replace(/\\/g, "/");
+}
+
+/** ② 같은 폴더·파일명 앞 30자가 20장 이상 + 영상캡처성 접두사일 때만 제외
+ *  (일반 레퍼런스 배치를 통째로 지우지 않도록 영상 확장자·타임스탬프 접두사만) */
+export function videoCaptureSequencePaths(
+  rows: Array<{ fullPath: string; path: string; fileName: string }>
+): Set<string> {
+  const groups = new Map<string, string[]>();
+  for (const row of rows) {
+    const prefix = row.fileName.slice(0, VIDEO_CAPTURE_PREFIX_LEN);
+    // 영상 프레임 덤프성 접두사만 (예: movie.mp4_20260126…)
+    if (!/\.(mp4|mov|mkv|avi|wmv|m4v|ts)_/i.test(prefix) && !/\.(mp4|mov|mkv|avi|wmv|m4v|ts)/i.test(prefix)) {
+      continue;
+    }
+    const key = `${folderKeyFromRelativePath(row.path)}\0${prefix}`;
+    const list = groups.get(key) ?? [];
+    list.push(row.fullPath);
+    groups.set(key, list);
+  }
+  const excluded = new Set<string>();
+  for (const paths of groups.values()) {
+    if (paths.length >= VIDEO_CAPTURE_PREFIX_MIN_COUNT) {
+      for (const p of paths) excluded.add(p);
+    }
+  }
+  return excluded;
+}
+
+function classifyMediaFileBase(
   fullPath: string,
   sizeBytes: number
 ): ClassifyResult {
@@ -84,6 +122,18 @@ export function classifyMediaFile(
   if (!inc) return { ok: false, reason: "no_include" };
 
   return { ok: true, includeRule: inc };
+}
+
+export function classifyMediaFile(
+  fullPath: string,
+  sizeBytes: number
+): ClassifyResult {
+  const base = classifyMediaFileBase(fullPath, sizeBytes);
+  if (!base.ok) return base;
+  if (isVideoCaptureFilename(basename(fullPath))) {
+    return { ok: false, reason: "exclude:video_capture_name" };
+  }
+  return base;
 }
 
 export function mediaFileTypeFromExt(fullPath: string): "image" | "design" {
@@ -141,6 +191,8 @@ export function collectMediaCandidates(root: string): ScanStats {
     totalFilesSeen: allFiles.length
   };
 
+  const preCandidates: ScanCandidate[] = [];
+
   for (const fullPath of allFiles) {
     let sizeBytes = 0;
     let mtimeMs = 0;
@@ -153,15 +205,14 @@ export function collectMediaCandidates(root: string): ScanStats {
       continue;
     }
 
-    const verdict = classifyMediaFile(fullPath, sizeBytes);
+    const verdict = classifyMediaFileBase(fullPath, sizeBytes);
     if (!verdict.ok) {
       stats.excluded[verdict.reason] = (stats.excluded[verdict.reason] ?? 0) + 1;
       continue;
     }
 
     const { drive, relativePath } = splitDrivePath(fullPath);
-    const projectFolder = projectFromPath(relativePath);
-    const row: ScanCandidate = {
+    preCandidates.push({
       fullPath,
       drive,
       path: relativePath,
@@ -169,14 +220,29 @@ export function collectMediaCandidates(root: string): ScanStats {
       sizeBytes,
       mtimeMs,
       includeRule: verdict.includeRule,
-      projectFolder
-    };
-    stats.candidates.push(row);
+      projectFolder: projectFromPath(relativePath)
+    });
+  }
 
-    const pk = projectFolder ?? "(unknown)";
+  const sequencePaths = videoCaptureSequencePaths(preCandidates);
+
+  for (const row of preCandidates) {
+    if (isVideoCaptureFilename(row.fileName)) {
+      stats.excluded["exclude:video_capture_name"] =
+        (stats.excluded["exclude:video_capture_name"] ?? 0) + 1;
+      continue;
+    }
+    if (sequencePaths.has(row.fullPath)) {
+      stats.excluded["exclude:video_capture_seq"] =
+        (stats.excluded["exclude:video_capture_seq"] ?? 0) + 1;
+      continue;
+    }
+
+    stats.candidates.push(row);
+    const pk = row.projectFolder ?? "(unknown)";
     stats.byProject[pk] = (stats.byProject[pk] ?? 0) + 1;
-    stats.byIncludeRule[verdict.includeRule] =
-      (stats.byIncludeRule[verdict.includeRule] ?? 0) + 1;
+    stats.byIncludeRule[row.includeRule] =
+      (stats.byIncludeRule[row.includeRule] ?? 0) + 1;
   }
 
   return stats;

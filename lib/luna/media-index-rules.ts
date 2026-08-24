@@ -59,9 +59,9 @@ export const EXCLUDE_FOLDER_PATTERNS: Array<{ id: string; re: RegExp }> = [
   }
 ];
 
-/** 영상 재생 캡처 — 원본 영상 확장자 뒤 타임스탬프 (예: movie.mp4_20260126_172317.jpg) */
+/** 영상 재생 캡처 — 원본 영상확장자_YYYYMMDD_HHMMSS (예: movie.mp4_20260126_172317.jpg) */
 export const VIDEO_CAPTURE_FILENAME_RE =
-  /\.(mp4|mov|mkv|avi|wmv|m4v|ts)_\d/i;
+  /\.(mp4|mov|mkv|avi|wmv|m4v|ts)_\d{8}_\d{6}/i;
 
 /** 같은 폴더·파일명 앞 N자가 M장 이상이면 캡처 시퀀스로 전부 제외 */
 export const VIDEO_CAPTURE_PREFIX_LEN = 30;
