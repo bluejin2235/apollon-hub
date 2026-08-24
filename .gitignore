@@ -35,3 +35,10 @@ media-index.log
 
 *.xlsx
 *.pdf
+
+# 로컬 검증 · 임시 산출물
+tmp/
+*.log
+run-media-dryrun.bat
+docs/image_test/
+docs/audit/highlight-screens/
