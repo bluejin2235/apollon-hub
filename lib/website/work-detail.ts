@@ -1,0 +1,531 @@
+export type Loc = { ko: string; en: string };
+
+export type WorkCredit = {
+  id: string;
+  work_id: string;
+  sort: number;
+  role: string;
+  name: Loc | null;
+};
+
+export type WorkMetric = {
+  id: string;
+  work_id: string;
+  sort: number;
+  value: Loc | null;
+};
+
+export type WorkFolder = {
+  id: string;
+  work_id: string;
+  kind: "ko" | "en" | "extra";
+  path: string;
+};
+
+export type WorkTagEmbed = {
+  sort: number;
+  tag_id: string;
+  tags: { id: string; label: Loc } | null;
+};
+
+export type BlockImage = {
+  id: string;
+  block_id: string;
+  sort: number;
+  src: string;
+  width: number | null;
+  height: number | null;
+  alt: Loc | null;
+  caption: Loc | null;
+  caption_visible: boolean;
+  ai_generated: boolean;
+  ai_confirmed: boolean;
+};
+
+export type ContentBlock = {
+  id: string;
+  section_id: string;
+  sort: number;
+  type: "paragraph" | "images" | "video";
+  body: Loc | null;
+  layout: "full" | "split" | "offset" | "offset-reverse" | null;
+  video_kind: string | null;
+  video_url: string | null;
+  video_poster: string | null;
+  video_alt: Loc | null;
+  block_images?: BlockImage[] | null;
+};
+
+export type WorkSection = {
+  id: string;
+  work_id: string;
+  sort: number;
+  kind: "basic" | "interview";
+  headline: Loc | null;
+  lead: Loc | null;
+  content_blocks?: ContentBlock[] | null;
+};
+
+export type WorkFaq = {
+  id: string;
+  work_id: string | null;
+  question: Loc | null;
+  answer: Loc | null;
+  sort: number;
+};
+
+export type WorkRelated = {
+  id: string;
+  sort: number;
+  target_type: string;
+  target_work_id: string | null;
+  target_insight_id: string | null;
+  target_page_key: string | null;
+};
+
+export type WorkInterview = {
+  section_id: string;
+  work_id: string;
+  insight_id: string;
+  quote_override: Loc | null;
+  attribution_override: Loc | null;
+};
+
+export type WorkDetail = {
+  id: string;
+  slug: string;
+  category_id: string;
+  title: Loc | null;
+  subtitle: Loc | null;
+  summary: Loc | null;
+  search_description: Loc | null;
+  key_image: string | null;
+  key_image_alt: Loc | null;
+  loop_video_lg: string | null;
+  loop_video_sm: string | null;
+  client: Loc | null;
+  project_type: Loc | null;
+  completed_year: string | null;
+  location_country: Loc | null;
+  location_city: Loc | null;
+  location_address: Loc | null;
+  scale: Loc | null;
+  awards: Loc | null;
+  year: string | null;
+  published_at: string | null;
+  status: "draft" | "published";
+  sort: number;
+  is_featured: boolean;
+  show_faq: boolean;
+  created_at: string;
+  updated_at: string;
+  work_sections?: WorkSection[] | null;
+  work_credits?: WorkCredit[] | null;
+  work_metrics?: WorkMetric[] | null;
+  work_folders?: WorkFolder[] | null;
+  work_tags?: WorkTagEmbed[] | null;
+  faqs?: WorkFaq[] | null;
+  content_related?: WorkRelated[] | null;
+  work_interview?: WorkInterview[] | null;
+  check?: import("@/lib/website/types").CheckWorks | null;
+};
+
+export type WorkBasicDraft = {
+  slug: string;
+  category_id: string;
+  title: Loc;
+  subtitle: Loc;
+  summary: Loc;
+  search_description: Loc;
+  key_image: string;
+  key_image_alt: Loc;
+  loop_video_lg: string;
+  loop_video_sm: string;
+  client: Loc;
+  project_type: Loc;
+  completed_year: string;
+  location_country: Loc;
+  location_city: Loc;
+  location_address: Loc;
+  scale: Loc;
+  awards: Loc;
+  year: string;
+  published_at: string;
+  is_featured: boolean;
+  show_faq: boolean;
+};
+
+export function emptyLoc(): Loc {
+  return { ko: "", en: "" };
+}
+
+export function asLoc(value: unknown): Loc {
+  if (!value || typeof value !== "object") return emptyLoc();
+  const row = value as Record<string, unknown>;
+  return {
+    ko: typeof row.ko === "string" ? row.ko : "",
+    en: typeof row.en === "string" ? row.en : ""
+  };
+}
+
+export type EditorTab = "basic" | "content" | "faq" | "related";
+
+export function parseEditorTab(value: string | null): EditorTab {
+  if (value === "content" || value === "faq" || value === "related") return value;
+  return "basic";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asBool(value: unknown): boolean {
+  return value === true;
+}
+
+function asNum(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function asArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  return [];
+}
+
+function unwrapTag(value: unknown): { id: string; label: Loc } | null {
+  const row = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
+  if (!row || typeof row.id !== "string") return null;
+  return { id: row.id, label: asLoc(row.label) };
+}
+
+function parseImage(value: unknown): BlockImage | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== "string") return null;
+  return {
+    id: row.id,
+    block_id: asString(row.block_id),
+    sort: asNum(row.sort),
+    src: asString(row.src),
+    width: typeof row.width === "number" ? row.width : null,
+    height: typeof row.height === "number" ? row.height : null,
+    alt: row.alt ? asLoc(row.alt) : null,
+    caption: row.caption ? asLoc(row.caption) : null,
+    caption_visible: asBool(row.caption_visible),
+    ai_generated: asBool(row.ai_generated),
+    ai_confirmed: asBool(row.ai_confirmed)
+  };
+}
+
+function parseBlock(value: unknown): ContentBlock | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== "string") return null;
+  const type = row.type === "images" || row.type === "video" ? row.type : "paragraph";
+  const layout =
+    row.layout === "full" ||
+    row.layout === "split" ||
+    row.layout === "offset" ||
+    row.layout === "offset-reverse"
+      ? row.layout
+      : null;
+  return {
+    id: row.id,
+    section_id: asString(row.section_id),
+    sort: asNum(row.sort),
+    type,
+    body: row.body ? asLoc(row.body) : null,
+    layout,
+    video_kind: typeof row.video_kind === "string" ? row.video_kind : null,
+    video_url: typeof row.video_url === "string" ? row.video_url : null,
+    video_poster: typeof row.video_poster === "string" ? row.video_poster : null,
+    video_alt: row.video_alt ? asLoc(row.video_alt) : null,
+    block_images: asArray(row.block_images).map(parseImage).filter((v): v is BlockImage => v !== null)
+  };
+}
+
+function parseSection(value: unknown): WorkSection | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== "string") return null;
+  return {
+    id: row.id,
+    work_id: asString(row.work_id),
+    sort: asNum(row.sort),
+    kind: row.kind === "interview" ? "interview" : "basic",
+    headline: row.headline ? asLoc(row.headline) : null,
+    lead: row.lead ? asLoc(row.lead) : null,
+    content_blocks: asArray(row.content_blocks)
+      .map(parseBlock)
+      .filter((v): v is ContentBlock => v !== null)
+  };
+}
+
+export function parseWorkDetail(value: unknown): WorkDetail | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== "string") return null;
+
+  const status = row.status === "published" ? "published" : "draft";
+  const check = asRecord(row.check);
+
+  return {
+    id: row.id,
+    slug: asString(row.slug),
+    category_id: asString(row.category_id),
+    title: row.title ? asLoc(row.title) : null,
+    subtitle: row.subtitle ? asLoc(row.subtitle) : null,
+    summary: row.summary ? asLoc(row.summary) : null,
+    search_description: row.search_description ? asLoc(row.search_description) : null,
+    key_image: typeof row.key_image === "string" ? row.key_image : null,
+    key_image_alt: row.key_image_alt ? asLoc(row.key_image_alt) : null,
+    loop_video_lg: typeof row.loop_video_lg === "string" ? row.loop_video_lg : null,
+    loop_video_sm: typeof row.loop_video_sm === "string" ? row.loop_video_sm : null,
+    client: row.client ? asLoc(row.client) : null,
+    project_type: row.project_type ? asLoc(row.project_type) : null,
+    completed_year: typeof row.completed_year === "string" ? row.completed_year : null,
+    location_country: row.location_country ? asLoc(row.location_country) : null,
+    location_city: row.location_city ? asLoc(row.location_city) : null,
+    location_address: row.location_address ? asLoc(row.location_address) : null,
+    scale: row.scale ? asLoc(row.scale) : null,
+    awards: row.awards ? asLoc(row.awards) : null,
+    year: typeof row.year === "string" ? row.year : null,
+    published_at: typeof row.published_at === "string" ? row.published_at : null,
+    status,
+    sort: asNum(row.sort),
+    is_featured: asBool(row.is_featured),
+    show_faq: asBool(row.show_faq),
+    created_at: asString(row.created_at),
+    updated_at: asString(row.updated_at),
+    work_sections: asArray(row.work_sections)
+      .map(parseSection)
+      .filter((v): v is WorkSection => v !== null),
+    work_credits: asArray(row.work_credits)
+      .map((item) => {
+        const c = asRecord(item);
+        if (!c || typeof c.id !== "string") return null;
+        return {
+          id: c.id,
+          work_id: asString(c.work_id),
+          sort: asNum(c.sort),
+          role: asString(c.role),
+          name: c.name ? asLoc(c.name) : null
+        };
+      })
+      .filter((v): v is WorkCredit => v !== null),
+    work_metrics: asArray(row.work_metrics)
+      .map((item) => {
+        const m = asRecord(item);
+        if (!m || typeof m.id !== "string") return null;
+        return {
+          id: m.id,
+          work_id: asString(m.work_id),
+          sort: asNum(m.sort),
+          value: m.value ? asLoc(m.value) : null
+        };
+      })
+      .filter((v): v is WorkMetric => v !== null),
+    work_folders: asArray(row.work_folders)
+      .map((item) => {
+        const f = asRecord(item);
+        if (!f || typeof f.id !== "string") return null;
+        const kind = f.kind === "en" || f.kind === "extra" ? f.kind : "ko";
+        return { id: f.id, work_id: asString(f.work_id), kind, path: asString(f.path) };
+      })
+      .filter((v): v is WorkFolder => v !== null),
+    work_tags: asArray(row.work_tags)
+      .map((item) => {
+        const t = asRecord(item);
+        if (!t || typeof t.tag_id !== "string") return null;
+        return { sort: asNum(t.sort), tag_id: t.tag_id, tags: unwrapTag(t.tags) } satisfies WorkTagEmbed;
+      })
+      .filter((v): v is WorkTagEmbed => v !== null),
+    faqs: asArray(row.faqs)
+      .map((item) => {
+        const f = asRecord(item);
+        if (!f || typeof f.id !== "string") return null;
+        return {
+          id: f.id,
+          work_id: typeof f.work_id === "string" ? f.work_id : null,
+          question: f.question ? asLoc(f.question) : null,
+          answer: f.answer ? asLoc(f.answer) : null,
+          sort: asNum(f.sort)
+        };
+      })
+      .filter((v): v is WorkFaq => v !== null),
+    content_related: asArray(row.content_related)
+      .map((item) => {
+        const r = asRecord(item);
+        if (!r || typeof r.id !== "string") return null;
+        return {
+          id: r.id,
+          sort: asNum(r.sort),
+          target_type: asString(r.target_type),
+          target_work_id: typeof r.target_work_id === "string" ? r.target_work_id : null,
+          target_insight_id: typeof r.target_insight_id === "string" ? r.target_insight_id : null,
+          target_page_key: typeof r.target_page_key === "string" ? r.target_page_key : null
+        };
+      })
+      .filter((v): v is WorkRelated => v !== null),
+    work_interview: asArray(row.work_interview)
+      .map((item) => {
+        const i = asRecord(item);
+        if (!i || typeof i.section_id !== "string") return null;
+        return {
+          section_id: i.section_id,
+          work_id: asString(i.work_id),
+          insight_id: asString(i.insight_id),
+          quote_override: i.quote_override ? asLoc(i.quote_override) : null,
+          attribution_override: i.attribution_override ? asLoc(i.attribution_override) : null
+        };
+      })
+      .filter((v): v is WorkInterview => v !== null),
+    check: check
+      ? ({
+          id: asString(check.id) || row.id,
+          slug: asString(check.slug) || asString(row.slug),
+          title_ko: typeof check.title_ko === "string" ? check.title_ko : null,
+          status,
+          missing_summary_en: asBool(check.missing_summary_en),
+          missing_key_alt: asBool(check.missing_key_alt),
+          no_sections: asBool(check.no_sections),
+          missing_image_alt: asBool(check.missing_image_alt),
+          ai_unconfirmed: asBool(check.ai_unconfirmed),
+          no_small_loop: asBool(check.no_small_loop),
+          faq_on_but_empty: asBool(check.faq_on_but_empty),
+          too_many_anchors: asBool(check.too_many_anchors),
+          no_tags: asBool(check.no_tags),
+          no_related: asBool(check.no_related),
+          no_internal_folder: asBool(check.no_internal_folder),
+          summary_too_long: asBool(check.summary_too_long),
+          image_count: asNum(check.image_count),
+          caption_count: asNum(check.caption_count)
+        } satisfies import("@/lib/website/types").CheckWorks)
+      : null
+  };
+}
+
+export function draftFromWork(work: WorkDetail): WorkBasicDraft {
+  return {
+    slug: work.slug ?? "",
+    category_id: work.category_id ?? "",
+    title: asLoc(work.title),
+    subtitle: asLoc(work.subtitle),
+    summary: asLoc(work.summary),
+    search_description: asLoc(work.search_description),
+    key_image: work.key_image ?? "",
+    key_image_alt: asLoc(work.key_image_alt),
+    loop_video_lg: work.loop_video_lg ?? "",
+    loop_video_sm: work.loop_video_sm ?? "",
+    client: asLoc(work.client),
+    project_type: asLoc(work.project_type),
+    completed_year: work.completed_year ?? "",
+    location_country: asLoc(work.location_country),
+    location_city: asLoc(work.location_city),
+    location_address: asLoc(work.location_address),
+    scale: asLoc(work.scale),
+    awards: asLoc(work.awards),
+    year: work.year ?? "",
+    published_at: (work.published_at ?? "").slice(0, 10),
+    is_featured: work.is_featured,
+    show_faq: work.show_faq
+  };
+}
+
+export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unknown> {
+  return {
+    slug: draft.slug,
+    category_id: draft.category_id,
+    title: draft.title,
+    subtitle: draft.subtitle,
+    summary: draft.summary,
+    search_description: draft.search_description,
+    key_image: draft.key_image || null,
+    key_image_alt: draft.key_image_alt,
+    loop_video_lg: draft.loop_video_lg || null,
+    loop_video_sm: draft.loop_video_sm || null,
+    client: draft.client,
+    project_type: draft.project_type,
+    completed_year: draft.completed_year || null,
+    location_country: draft.location_country,
+    location_city: draft.location_city,
+    location_address: draft.location_address,
+    scale: draft.scale,
+    awards: draft.awards,
+    year: draft.year || null,
+    published_at: draft.published_at || null,
+    is_featured: draft.is_featured,
+    show_faq: draft.show_faq
+  };
+}
+
+export function fileName(src: string | null | undefined): string {
+  if (!src) return "";
+  const clean = src.split("?")[0] ?? src;
+  const parts = clean.split("/");
+  return parts[parts.length - 1] || clean;
+}
+
+export function mediaUrl(siteUrl: string, src: string | null | undefined): string | null {
+  if (!src) return null;
+  if (/^https?:\/\//i.test(src)) return src;
+  const base = siteUrl.replace(/\/$/, "");
+  return `${base}${src.startsWith("/") ? src : `/${src}`}`;
+}
+
+export function todayYmd(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function formatSavedAt(iso: string | null | undefined): string {
+  if (!iso) return "저장된 적 없음";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+export function tagLabel(embed: WorkTagEmbed): string {
+  return embed.tags?.label.ko || embed.tags?.label.en || embed.tag_id;
+}
+
+export function countAiUnconfirmed(work: WorkDetail): number {
+  let n = 0;
+  for (const section of work.work_sections ?? []) {
+    for (const block of section.content_blocks ?? []) {
+      for (const image of block.block_images ?? []) {
+        if (image.ai_generated && !image.ai_confirmed) n += 1;
+      }
+    }
+  }
+  return n;
+}
+
+export function aiUnconfirmedBySection(work: WorkDetail): string {
+  const parts: string[] = [];
+  for (const section of work.work_sections ?? []) {
+    let n = 0;
+    for (const block of section.content_blocks ?? []) {
+      for (const image of block.block_images ?? []) {
+        if (image.ai_generated && !image.ai_confirmed) n += 1;
+      }
+    }
+    if (n > 0) {
+      const name = section.headline?.ko?.trim() || "블록";
+      parts.push(`${name} ${n}`);
+    }
+  }
+  return parts.join(" · ");
+}
