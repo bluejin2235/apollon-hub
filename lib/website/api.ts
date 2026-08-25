@@ -97,3 +97,119 @@ export function deleteWork(id: string): Promise<ApiResult<{ id: string }>> {
 export function getMeta(): Promise<ApiResult<WebsiteMeta>> {
   return websiteFetch<WebsiteMeta>("meta");
 }
+
+export type BlockLibraryItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  preset: string;
+  config: Record<string, unknown>;
+  is_default: boolean;
+  sort: number;
+  created_by: string | null;
+};
+
+export type UploadResult = {
+  path: string;
+  publicUrl: string;
+  width: number | null;
+  height: number | null;
+  size: number;
+  mime: string;
+};
+
+export type OrderItem = { id: string; sort: number };
+
+export function getLibrary(): Promise<ApiResult<{ items: BlockLibraryItem[] }>> {
+  return websiteFetch<{ items: BlockLibraryItem[] }>("library");
+}
+
+export function createLibrary(body: unknown): Promise<ApiResult<BlockLibraryItem>> {
+  return websiteFetch<BlockLibraryItem>("library", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function createBlock(sectionId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`sections/${sectionId}/blocks`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateBlock(
+  sectionId: string,
+  blockId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`sections/${sectionId}/blocks/${blockId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteBlock(sectionId: string, blockId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`sections/${sectionId}/blocks/${blockId}`, { method: "DELETE" });
+}
+
+export function reorderBlocks(sectionId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`sections/${sectionId}/blocks`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function addImages(blockId: string, images: unknown[]): Promise<ApiResult<unknown>> {
+  return websiteFetch(`blocks/${blockId}/images`, { method: "POST", body: JSON.stringify(images) });
+}
+
+export function updateImage(
+  blockId: string,
+  imageId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`blocks/${blockId}/images/${imageId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteImage(blockId: string, imageId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`blocks/${blockId}/images/${imageId}`, { method: "DELETE" });
+}
+
+export function reorderImages(blockId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`blocks/${blockId}/images`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function createSection(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/sections`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateSection(
+  workId: string,
+  sectionId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/sections/${sectionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteSection(workId: string, sectionId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/sections/${sectionId}`, { method: "DELETE" });
+}
+
+export function reorderSections(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`works/${workId}/sections`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function uploadFile(file: File, bucket: string, path: string): Promise<ApiResult<UploadResult>> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("bucket", bucket);
+  form.append("path", path);
+  return websiteFetch<UploadResult>("upload", { method: "POST", body: form });
+}

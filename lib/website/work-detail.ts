@@ -46,13 +46,19 @@ export type ContentBlock = {
   id: string;
   section_id: string;
   sort: number;
-  type: "paragraph" | "images" | "video";
+  preset: string;
   body: Loc | null;
-  layout: "full" | "split" | "offset" | "offset-reverse" | null;
   video_kind: string | null;
   video_url: string | null;
   video_poster: string | null;
   video_alt: Loc | null;
+  embed_provider: string | null;
+  embed_url: string | null;
+  embed_title: Loc | null;
+  embed_poster: string | null;
+  gallery_row_height: number | null;
+  text_side: "left" | "right" | null;
+  from_library_id: string | null;
   block_images?: BlockImage[] | null;
 };
 
@@ -223,28 +229,42 @@ function parseImage(value: unknown): BlockImage | null {
   };
 }
 
+function fallbackPreset(row: Record<string, unknown>): string {
+  if (typeof row.preset === "string" && row.preset) return row.preset;
+  if (row.type === "paragraph") return "text-only";
+  if (row.type === "video") return "video-full";
+  if (
+    row.layout === "split" ||
+    row.layout === "offset" ||
+    row.layout === "offset-reverse" ||
+    row.layout === "full"
+  ) {
+    return row.layout;
+  }
+  return "full";
+}
+
 function parseBlock(value: unknown): ContentBlock | null {
   const row = asRecord(value);
   if (!row || typeof row.id !== "string") return null;
-  const type = row.type === "images" || row.type === "video" ? row.type : "paragraph";
-  const layout =
-    row.layout === "full" ||
-    row.layout === "split" ||
-    row.layout === "offset" ||
-    row.layout === "offset-reverse"
-      ? row.layout
-      : null;
+  const textSide = row.text_side === "left" || row.text_side === "right" ? row.text_side : null;
   return {
     id: row.id,
     section_id: asString(row.section_id),
     sort: asNum(row.sort),
-    type,
+    preset: fallbackPreset(row),
     body: row.body ? asLoc(row.body) : null,
-    layout,
     video_kind: typeof row.video_kind === "string" ? row.video_kind : null,
     video_url: typeof row.video_url === "string" ? row.video_url : null,
     video_poster: typeof row.video_poster === "string" ? row.video_poster : null,
     video_alt: row.video_alt ? asLoc(row.video_alt) : null,
+    embed_provider: typeof row.embed_provider === "string" ? row.embed_provider : null,
+    embed_url: typeof row.embed_url === "string" ? row.embed_url : null,
+    embed_title: row.embed_title ? asLoc(row.embed_title) : null,
+    embed_poster: typeof row.embed_poster === "string" ? row.embed_poster : null,
+    gallery_row_height: typeof row.gallery_row_height === "number" ? row.gallery_row_height : null,
+    text_side: textSide,
+    from_library_id: typeof row.from_library_id === "string" ? row.from_library_id : null,
     block_images: asArray(row.block_images).map(parseImage).filter((v): v is BlockImage => v !== null)
   };
 }
