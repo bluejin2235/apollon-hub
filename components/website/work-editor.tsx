@@ -275,7 +275,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
             siteUrl={siteUrl}
           />
         ) : null}
-        {tab === "content" ? <WorkContentTab work={work} siteUrl={siteUrl} /> : null}
+        {tab === "content" ? (
+          <WorkContentTab work={work} siteUrl={siteUrl} onReload={load} />
+        ) : null}
         {tab === "faq" ? (
           <WorkFaqTab work={work} saving={saving} onToggleShowFaq={(next) => void toggleFaq(next)} />
         ) : null}

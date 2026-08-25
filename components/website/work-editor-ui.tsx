@@ -119,12 +119,14 @@ const inputBase =
 export function TextInput({
   value,
   onChange,
+  onBlur,
   placeholder,
   readOnly,
   ai
 }: {
   value: string;
   onChange?: (value: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   readOnly?: boolean;
   ai?: boolean;
@@ -135,6 +137,7 @@ export function TextInput({
       readOnly={readOnly}
       placeholder={placeholder}
       onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      onBlur={onBlur}
       className={`${inputBase} ${ai ? "border-apollon-200 bg-apollon-50" : "bg-white"} ${
         readOnly ? "text-slate-600" : ""
       }`}
@@ -145,6 +148,7 @@ export function TextInput({
 export function TextArea({
   value,
   onChange,
+  onBlur,
   placeholder,
   readOnly,
   ai,
@@ -152,6 +156,7 @@ export function TextArea({
 }: {
   value: string;
   onChange?: (value: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   readOnly?: boolean;
   ai?: boolean;
@@ -164,6 +169,7 @@ export function TextArea({
       placeholder={placeholder}
       rows={rows}
       onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      onBlur={onBlur}
       className={`${inputBase} min-h-[62px] resize-y ${ai ? "border-apollon-200 bg-apollon-50" : "bg-white"} ${
         readOnly ? "text-slate-600" : ""
       }`}
@@ -176,6 +182,7 @@ export function BilingualField({
   en,
   onKo,
   onEn,
+  onBlur,
   multiline,
   readOnly
 }: {
@@ -183,6 +190,7 @@ export function BilingualField({
   en: string;
   onKo?: (value: string) => void;
   onEn?: (value: string) => void;
+  onBlur?: () => void;
   multiline?: boolean;
   readOnly?: boolean;
 }) {
@@ -193,14 +201,14 @@ export function BilingualField({
         <div className="mb-1">
           <LangKo />
         </div>
-        <Field value={ko} onChange={onKo} readOnly={readOnly} />
+        <Field value={ko} onChange={onKo} onBlur={onBlur} readOnly={readOnly} />
       </div>
       <div className="relative">
         <div className="mb-1 flex items-center gap-1">
           <LangEn />
           <AiBadge />
         </div>
-        <Field value={en} onChange={onEn} readOnly={readOnly} ai />
+        <Field value={en} onChange={onEn} onBlur={onBlur} readOnly={readOnly} ai />
       </div>
     </div>
   );

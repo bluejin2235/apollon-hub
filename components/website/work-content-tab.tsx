@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, GripVertical } from "lucide-react";
-import type { ContentBlock, WorkDetail, WorkInterview, WorkSection } from "@/lib/website/work-detail";
-import { fileName, mediaUrl } from "@/lib/website/work-detail";
+import {
+  createSection,
+  deleteSection,
+  reorderBlocks,
+  reorderSections,
+  updateSection
+} from "@/lib/website/api";
+import type { ContentBlock, Loc, WorkDetail, WorkInterview, WorkSection } from "@/lib/website/work-detail";
+import { asLoc } from "@/lib/website/work-detail";
+import { BlockCard } from "@/components/website/block-card";
+import { BlockPicker } from "@/components/website/block-picker";
 import {
   AiBtn,
   BilingualField,
@@ -13,27 +22,69 @@ import {
   GhostBtn,
   Guide,
   Hint,
+  locField,
   LunaCallout,
   Req,
   Sep,
   SmallBtn
 } from "@/components/website/work-editor-ui";
 
-const LAYOUT_LABEL: Record<string, string> = {
-  full: "1단",
-  split: "2단 1:1",
-  offset: "2단 2:1",
-  "offset-reverse": "2단 1:2"
-};
-
 type Props = {
   work: WorkDetail;
   siteUrl: string;
+  onReload: () => Promise<void>;
 };
 
-export function WorkContentTab({ work, siteUrl }: Props) {
-  const sections = work.work_sections ?? [];
+export function WorkContentTab({ work, siteUrl, onReload }: Props) {
+  const sections = [...(work.work_sections ?? [])].sort((a, b) => a.sort - b.sort);
   const interviews = work.work_interview ?? [];
+  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(sections[0] ? [sections[0].id] : []));
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(id: string) {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function addSection() {
+    const res = await createSection(work.id, {
+      headline: { ko: "새 섹션", en: "New section" },
+      kind: "basic",
+      sort: (sections[sections.length - 1]?.sort ?? 0) + 1
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await onReload();
+  }
+
+  async function moveSection(index: number, dir: -1 | 1) {
+    const next = index + dir;
+    if (next < 0 || next >= sections.length) return;
+    const order = sections.map((section, i) => ({
+      id: section.id,
+      sort: i === index ? next : i === next ? index : i
+    }));
+    const res = await reorderSections(work.id, order);
+    if (!res.ok) setError(res.error);
+    else await onReload();
+  }
+
+  async function removeSection(id: string) {
+    if (!confirm("이 섹션과 안의 블록을 삭제할까요?")) return;
+    const res = await deleteSection(work.id, id);
+    if (!res.ok) setError(res.error);
+    else await onReload();
+  }
+
+  const pickerSection = sections.find((s) => s.id === pickerFor);
+  const pickerSort = Math.max(0, ...(pickerSection?.content_blocks ?? []).map((b) => b.sort)) + 1;
 
   return (
     <div>
@@ -44,9 +95,17 @@ export function WorkContentTab({ work, siteUrl }: Props) {
         <div className="mt-2 flex flex-wrap gap-1.5">
           <AiBtn disabled>✦ AI로 채우기</AiBtn>
           <AiBtn disabled>✦ 영문 생성</AiBtn>
-          <SmallBtn disabled>전체 접기</SmallBtn>
+          <SmallBtn onClick={() => setOpenIds(new Set())}>전체 접기</SmallBtn>
         </div>
       </LunaCallout>
+
+      {sections.length > 8 ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          앵커 메뉴는 8개까지 표시됩니다. 9개째부터 화면에서 넘칩니다.
+        </div>
+      ) : null}
+
+      {error ? <p className="mb-3 text-sm text-rose-600">{error}</p> : null}
 
       <div className="space-y-2.5">
         {sections.map((section, index) => (
@@ -54,20 +113,36 @@ export function WorkContentTab({ work, siteUrl }: Props) {
             key={section.id}
             section={section}
             index={index + 1}
+            total={sections.length}
+            workId={work.id}
             siteUrl={siteUrl}
             interview={interviews.find((i) => i.section_id === section.id) ?? null}
+            open={openIds.has(section.id)}
+            onToggle={() => toggle(section.id)}
+            onMove={(dir) => void moveSection(index, dir)}
+            onDelete={() => void removeSection(section.id)}
+            onAddBlock={() => setPickerFor(section.id)}
+            onReload={onReload}
           />
         ))}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <GhostBtn disabled>＋ 기본 블록</GhostBtn>
-        <GhostBtn disabled>＋ 인터뷰 블록</GhostBtn>
-        <GhostBtn disabled>이미지 라이브러리에서 가져오기</GhostBtn>
+        <GhostBtn onClick={() => void addSection()}>＋ 섹션 추가</GhostBtn>
       </div>
       <Hint>
         Let&apos;s Talk · Company Profile 은 모든 워크에 자동으로 붙는 고정 영역입니다. 여기서 관리하지 않습니다
       </Hint>
+
+      {pickerFor ? (
+        <BlockPicker
+          open
+          sectionId={pickerFor}
+          nextSort={pickerSort}
+          onClose={() => setPickerFor(null)}
+          onPicked={() => void onReload()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -75,18 +150,33 @@ export function WorkContentTab({ work, siteUrl }: Props) {
 function SectionCard({
   section,
   index,
+  total,
+  workId,
   siteUrl,
-  interview
+  interview,
+  open,
+  onToggle,
+  onMove,
+  onDelete,
+  onAddBlock,
+  onReload
 }: {
   section: WorkSection;
   index: number;
+  total: number;
+  workId: string;
   siteUrl: string;
   interview: WorkInterview | null;
+  open: boolean;
+  onToggle: () => void;
+  onMove: (dir: -1 | 1) => void;
+  onDelete: () => void;
+  onAddBlock: () => void;
+  onReload: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const blocks = section.content_blocks ?? [];
+  const blocks = [...(section.content_blocks ?? [])].sort((a, b) => a.sort - b.sort);
   const imageCount = blocks.reduce((n, b) => n + (b.block_images?.length ?? 0), 0);
-  const videoCount = blocks.filter((b) => b.type === "video").length;
+  const videoCount = blocks.filter((b) => b.preset.startsWith("video") || b.preset === "embed").length;
   const isInterview = section.kind === "interview";
   const title = section.headline?.ko?.trim() || section.headline?.en?.trim() || "제목 없음";
   const mediaLabel = [
@@ -98,14 +188,12 @@ function SectionCard({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2.5 text-left"
-      >
+      <div className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2.5">
         <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-        <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
-        <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{title}</span>
+        <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{title}</span>
+        </button>
         <span
           className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
             isInterview ? "bg-apollon-50 text-apollon-700" : "bg-slate-100 text-slate-500"
@@ -114,79 +202,211 @@ function SectionCard({
           {isInterview ? "인터뷰" : "기본"}
         </span>
         {mediaLabel ? <span className="hidden text-xs text-slate-400 sm:inline">{mediaLabel}</span> : null}
-        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
-      </button>
+        <button
+          type="button"
+          disabled={index <= 1}
+          onClick={() => onMove(-1)}
+          className="text-xs text-slate-400 disabled:opacity-30"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          disabled={index >= total}
+          onClick={() => onMove(1)}
+          className="text-xs text-slate-400 disabled:opacity-30"
+        >
+          ↓
+        </button>
+        <button type="button" onClick={onDelete} className="text-xs text-rose-600">
+          삭제
+        </button>
+        <button type="button" onClick={onToggle} className="text-slate-400">
+          <ChevronDown className={`h-4 w-4 shrink-0 transition ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
 
       {open ? (
-        <div className="space-y-4 p-3.5">
-          <div>
-            <FieldLabel
-              extra={
-                <CharKo n={(section.headline?.ko ?? "").length} warn={16} limit={16} />
-              }
-            >
-              블록 제목
-              <Req />
-              <span className="font-normal text-slate-400">— 왼쪽 앵커 메뉴에 표시됩니다</span>
-            </FieldLabel>
-            <BilingualField
-              ko={section.headline?.ko ?? ""}
-              en={section.headline?.en ?? ""}
-              readOnly
-            />
-            <Guide>
-              <b className="font-semibold text-slate-600">16자 이내</b> · 짧을수록 좋습니다
-              <Sep />
-              왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다.
-              <br />
-              자주 쓰는 이름 — Overview · Creative · Space · Synopsis · Pre-Production · Production · On-site Test
-              · Achievement · Credit
-              <br />
-              <b className="font-semibold text-slate-600">블록은 8개까지</b>. 9개째부터는 앵커 메뉴가 화면에서
-              넘칩니다.
-            </Guide>
-          </div>
+        <SectionBody
+          section={section}
+          workId={workId}
+          siteUrl={siteUrl}
+          interview={interview}
+          isInterview={isInterview}
+          blocks={blocks}
+          onAddBlock={onAddBlock}
+          onReload={onReload}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-          <div>
-            <FieldLabel
-              extra={
-                <CharPair
-                  ko={(section.lead?.ko ?? "").length}
-                  en={(section.lead?.en ?? "").length}
-                  koWarn={120}
-                  enWarn={240}
-                  koLimit={120}
-                  enLimit={240}
-                />
-              }
-            >
-              기본 설명
-              <span className="font-normal text-slate-400">— 제목 옆 고정 위치. 모든 블록 공통</span>
-            </FieldLabel>
-            <BilingualField
-              ko={section.lead?.ko ?? ""}
-              en={section.lead?.en ?? ""}
-              readOnly
-              multiline
-            />
-            <Guide>
-              <b className="font-semibold text-slate-600">국문 60~120자</b> · 영문 120~240자 ·{" "}
-              <b className="font-semibold text-slate-600">2~3문장</b>
-              <Sep />
-              제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다.
-              <br />이 블록이 <b className="font-semibold text-slate-600">무엇에 대한 것인지</b>를 먼저 쓰세요. 본문은
-              아래 자유 영역에서 이어 씁니다.
-            </Guide>
-          </div>
+function SectionBody({
+  section,
+  workId,
+  siteUrl,
+  interview,
+  isInterview,
+  blocks,
+  onAddBlock,
+  onReload
+}: {
+  section: WorkSection;
+  workId: string;
+  siteUrl: string;
+  interview: WorkInterview | null;
+  isInterview: boolean;
+  blocks: ContentBlock[];
+  onAddBlock: () => void;
+  onReload: () => Promise<void>;
+}) {
+  const [headline, setHeadline] = useState<Loc>(asLoc(section.headline));
+  const [lead, setLead] = useState<Loc>(asLoc(section.lead));
+  const [openBlocks, setOpenBlocks] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-          {isInterview ? (
-            <InterviewRead interview={interview} />
-          ) : (
-            blocks.map((block) => (
-              <BlockRead key={block.id} block={block} siteUrl={siteUrl} />
-            ))
-          )}
-        </div>
+  useEffect(() => {
+    setHeadline(asLoc(section.headline));
+    setLead(asLoc(section.lead));
+  }, [section]);
+
+  function schedule(patch: Record<string, unknown>) {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void persist(patch), 1500);
+  }
+
+  async function persist(patch: Record<string, unknown>) {
+    const res = await updateSection(workId, section.id, patch);
+    if (!res.ok) setError(res.error);
+  }
+
+  async function moveBlock(index: number, dir: -1 | 1) {
+    const next = index + dir;
+    if (next < 0 || next >= blocks.length) return;
+    const order = blocks.map((block, i) => ({
+      id: block.id,
+      sort: i === index ? next : i === next ? index : i
+    }));
+    const res = await reorderBlocks(section.id, order);
+    if (!res.ok) setError(res.error);
+    else await onReload();
+  }
+
+  function toggleBlock(id: string) {
+    setOpenBlocks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-4 p-3.5">
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+      <div>
+        <FieldLabel extra={<CharKo n={headline.ko.length} warn={16} limit={16} />}>
+          블록 제목
+          <Req />
+          <span className="font-normal text-slate-400">— 왼쪽 앵커 메뉴에 표시됩니다</span>
+        </FieldLabel>
+        <BilingualField
+          ko={headline.ko}
+          en={headline.en}
+          onKo={(v) => {
+            const next = locField(headline, "ko", v);
+            setHeadline(next);
+            schedule({ headline: next });
+          }}
+          onEn={(v) => {
+            const next = locField(headline, "en", v);
+            setHeadline(next);
+            schedule({ headline: next });
+          }}
+          onBlur={() => {
+            if (timer.current) clearTimeout(timer.current);
+            void persist({ headline });
+          }}
+        />
+        <Guide>
+          <b className="font-semibold text-slate-600">16자 이내</b> · 짧을수록 좋습니다
+          <Sep />
+          왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다.
+          <br />
+          자주 쓰는 이름 — Overview · Creative · Space · Synopsis · Pre-Production · Production · On-site Test ·
+          Achievement · Credit
+          <br />
+          <b className="font-semibold text-slate-600">블록은 8개까지</b>. 9개째부터는 앵커 메뉴가 화면에서 넘칩니다.
+        </Guide>
+      </div>
+
+      <div>
+        <FieldLabel
+          extra={
+            <CharPair
+              ko={lead.ko.length}
+              en={lead.en.length}
+              koWarn={120}
+              enWarn={240}
+              koLimit={120}
+              enLimit={240}
+            />
+          }
+        >
+          기본 설명
+          <span className="font-normal text-slate-400">— 제목 옆 고정 위치. 모든 블록 공통</span>
+        </FieldLabel>
+        <BilingualField
+          ko={lead.ko}
+          en={lead.en}
+          multiline
+          onKo={(v) => {
+            const next = locField(lead, "ko", v);
+            setLead(next);
+            schedule({ lead: next });
+          }}
+          onEn={(v) => {
+            const next = locField(lead, "en", v);
+            setLead(next);
+            schedule({ lead: next });
+          }}
+          onBlur={() => {
+            if (timer.current) clearTimeout(timer.current);
+            void persist({ lead });
+          }}
+        />
+        <Guide>
+          <b className="font-semibold text-slate-600">국문 60~120자</b> · 영문 120~240자 ·{" "}
+          <b className="font-semibold text-slate-600">2~3문장</b>
+          <Sep />
+          제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다.
+          <br />이 블록이 <b className="font-semibold text-slate-600">무엇에 대한 것인지</b>를 먼저 쓰세요. 본문은 아래
+          자유 영역에서 이어 씁니다.
+        </Guide>
+      </div>
+
+      {isInterview ? <InterviewRead interview={interview} /> : null}
+
+      {blocks.map((block, i) => (
+        <BlockCard
+          key={block.id}
+          block={block}
+          index={i + 1}
+          total={blocks.length}
+          sectionId={section.id}
+          workId={workId}
+          siteUrl={siteUrl}
+          collapsed={!openBlocks.has(block.id)}
+          onToggle={() => toggleBlock(block.id)}
+          onMove={(dir) => void moveBlock(i, dir)}
+          onReload={onReload}
+        />
+      ))}
+
+      {!isInterview ? (
+        <GhostBtn onClick={onAddBlock}>＋ 블록 추가</GhostBtn>
       ) : null}
     </div>
   );
@@ -210,11 +430,7 @@ function InterviewRead({ interview }: { interview: WorkInterview | null }) {
         </Guide>
       </div>
       <div>
-        <FieldLabel
-          extra={
-            <CharKo n={(interview?.quote_override?.ko ?? "").length} warn={70} limit={70} />
-          }
-        >
+        <FieldLabel extra={<CharKo n={(interview?.quote_override?.ko ?? "").length} warn={70} limit={70} />}>
           화면에 보일 인용문
           <Req />
         </FieldLabel>
@@ -234,11 +450,7 @@ function InterviewRead({ interview }: { interview: WorkInterview | null }) {
         </Guide>
       </div>
       <div>
-        <FieldLabel
-          extra={
-            <CharKo n={(interview?.attribution_override?.ko ?? "").length} warn={24} limit={24} />
-          }
-        >
+        <FieldLabel extra={<CharKo n={(interview?.attribution_override?.ko ?? "").length} warn={24} limit={24} />}>
           이름 · 직함
           <Req />
         </FieldLabel>
@@ -255,110 +467,5 @@ function InterviewRead({ interview }: { interview: WorkInterview | null }) {
         </Guide>
       </div>
     </div>
-  );
-}
-
-function BlockRead({ block, siteUrl }: { block: ContentBlock; siteUrl: string }) {
-  if (block.type === "images") {
-    const images = block.block_images ?? [];
-    const layout = block.layout ?? "full";
-    return (
-      <div className="rounded-lg border border-slate-200 p-3">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-slate-500">이미지 · {images.length}장</span>
-          <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-            {LAYOUT_LABEL[layout] ?? layout}
-          </span>
-        </div>
-        <Guide>
-          <b className="font-semibold text-slate-600">JPG</b> · 긴 변{" "}
-          <b className="font-semibold text-slate-600">2560px</b> ·{" "}
-          <b className="font-semibold text-slate-600">2MB 이하</b> ·{" "}
-          <b className="font-semibold text-slate-600">비율 자유</b>
-          <Sep />
-          본문 이미지는 가로·세로·정사각형 아무거나 됩니다. 올린 비율 그대로 들어갑니다.
-          <br />
-          <b className="font-semibold text-slate-600">2단 2:1 · 1:2 배치의 작은 쪽은 세로형(3:4)</b>이 어울립니다. 가로
-          사진을 넣으면 좌우가 잘립니다.
-        </Guide>
-        <div className="mt-3 space-y-3">
-          {images.map((img) => (
-            <div key={img.id} className="grid grid-cols-1 gap-3 md:grid-cols-[160px_1fr]">
-              <div className="flex h-24 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-[10px] text-slate-400">
-                {mediaUrl(siteUrl, img.src) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={mediaUrl(siteUrl, img.src) ?? ""} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  fileName(img.src)
-                )}
-              </div>
-              <div className="space-y-1.5 text-xs text-slate-600">
-                <p>
-                  <span className="inline-block w-12 font-semibold text-slate-500">대체</span>
-                  {img.alt?.ko || img.alt?.en || "—"}
-                </p>
-                <p>
-                  <span className="inline-block w-12 font-semibold text-slate-500">캡션</span>
-                  {img.caption?.ko || img.caption?.en || "캡션 없음"}
-                </p>
-                <p className="flex flex-wrap items-center gap-2">
-                  <span className="text-slate-500">화면에 캡션 표시</span>
-                  <span className={img.caption_visible ? "text-emerald-600" : "text-slate-400"}>
-                    {img.caption_visible ? "켜짐" : "꺼짐"}
-                  </span>
-                  {img.ai_generated ? (
-                    <span className="text-apollon-700">
-                      ✦ {img.ai_confirmed ? "AI 확인됨" : "확인 전"}
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-        <Guide>
-          <b className="font-semibold text-slate-600">대체 텍스트</b> — 국문 40자 이내. 화면에 안 보입니다. 무엇이
-          찍혔는지 사실만. 모든 이미지에 필수입니다.
-          <br />
-          <b className="font-semibold text-slate-600">캡션</b> — 국문 40~90자, 1~2문장.{" "}
-          <b className="font-semibold text-slate-600">화면에 보입니다.</b> AI가 인용하는 것도 이쪽입니다. 말할 것이
-          있는 이미지에만 켜세요. 워크 하나에 <b className="font-semibold text-slate-600">5~8장</b>이 적당합니다.
-          <br />
-          캡션에는 <b className="font-semibold text-slate-600">프로젝트 이름·기술·숫자</b>를 넣으세요. 좋은 예) 폭
-          23.5m 미디어월. 15분마다 웰컴쇼가 재생됩니다. 나쁜 예) 아름다운 공간의 모습
-        </Guide>
-      </div>
-    );
-  }
-
-  if (block.type === "video") {
-    return (
-      <div className="rounded-lg border border-slate-200 p-3">
-        <div className="mb-2 text-xs font-bold text-slate-500">영상</div>
-        <p className="rounded-md bg-slate-100 px-3 py-6 text-center text-sm text-slate-500">
-          ▶ {block.video_url || "영상 없음"}
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          대체 {block.video_alt?.ko || block.video_alt?.en || "—"}
-        </p>
-        <Guide>
-          <b className="font-semibold text-slate-600">임베드</b> — 유튜브·Behance 주소를 그대로 붙여넣으세요. 재생
-          버튼을 누르기 전까지는 이미지 한 장만 보이므로 페이지가 무거워지지 않습니다.
-          <br />
-          <b className="font-semibold text-slate-600">배경 루프</b> — MP4(H.264) · 1280×720 · 4~6초 · 24fps · 소리
-          없음 · <b className="font-semibold text-slate-600">1.5MB 이하</b>. 마우스를 올리면 재생되고, 모바일에서는
-          정지 이미지로 대체됩니다.
-          <br />
-          <b className="font-semibold text-slate-600">본편 영상</b> — 9월 예정. 유튜브에 올리지 않을 고화질 영상을 우리
-          서버에서 재생합니다.
-        </Guide>
-      </div>
-    );
-  }
-
-  const body = block.body?.ko || block.body?.en;
-  if (!body) return null;
-  return (
-    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{body}</p>
   );
 }
