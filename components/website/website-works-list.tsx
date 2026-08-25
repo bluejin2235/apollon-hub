@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { getMeta, listWorks } from "@/lib/website/api";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { MoreHorizontal } from "lucide-react";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { NewWorkModal } from "@/components/website/new-work-modal";
+import { PreviewModal } from "@/components/website/preview-modal";
+import { deleteWork, getMeta, listWorks, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
 import type { WebsiteCategory, WorkListItem } from "@/lib/website/types";
 
@@ -13,6 +18,18 @@ function mediaUrl(siteUrl: string, src: string | null): string | null {
   if (/^https?:\/\//i.test(src)) return src;
   const base = siteUrl.replace(/\/$/, "");
   return `${base}${src.startsWith("/") ? src : `/${src}`}`;
+}
+
+function publicWorkUrl(siteUrl: string, slug: string) {
+  return `${siteUrl.replace(/\/$/, "")}/works/${slug}`;
+}
+
+function editHref(id: string) {
+  return `/website/works/${id}?tab=basic`;
+}
+
+function formatError(error: string, details?: unknown) {
+  return error + (details ? ` · ${JSON.stringify(details)}` : "");
 }
 
 function dotClass(state: "ok" | "warn" | "empty") {
@@ -50,7 +67,171 @@ function StatusBadge({ status }: { status: WorkListItem["status"] }) {
   );
 }
 
+const menuItemClass =
+  "block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50";
+
+function WorkOverflowMenu({
+  item,
+  siteUrl,
+  open,
+  onOpenChange,
+  onPreview,
+  onUnpublish,
+  onDelete
+}: {
+  item: WorkListItem;
+  siteUrl: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPreview: () => void;
+  onUnpublish: () => void;
+  onDelete: () => void;
+}) {
+  const published = item.status === "published";
+  const url = publicWorkUrl(siteUrl, item.slug);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setCopied(false);
+      setPos(null);
+      return;
+    }
+    function place() {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    place();
+    function onDoc(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) onOpenChangeRef.current(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onOpenChangeRef.current(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  async function copyUrl() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div ref={rootRef} className="relative" data-stop-row>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="더 보기"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenChange(!open);
+        }}
+        className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && pos ? (
+        <div
+          role="menu"
+          className="fixed z-30 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+          style={{ top: pos.top, right: pos.right }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Link href={editHref(item.id)} role="menuitem" className={menuItemClass}>
+            편집
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItemClass}
+            onClick={() => {
+              onOpenChange(false);
+              onPreview();
+            }}
+          >
+            미리보기 ↗
+          </button>
+          {published ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              role="menuitem"
+              className={menuItemClass}
+            >
+              홈페이지에서 보기 ↗
+            </a>
+          ) : (
+            <span className="group relative block" title="공개 후에 볼 수 있습니다">
+              <span
+                role="menuitem"
+                aria-disabled="true"
+                className="block w-full cursor-not-allowed px-3 py-1.5 text-left text-sm text-slate-400"
+              >
+                홈페이지에서 보기 ↗
+              </span>
+              <span className="pointer-events-none absolute right-full top-1/2 z-30 mr-2 hidden w-max -translate-y-1/2 rounded bg-slate-800 px-2 py-1 text-[11px] text-white group-hover:block">
+                공개 후에 볼 수 있습니다
+              </span>
+            </span>
+          )}
+          <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyUrl()}>
+            {copied ? "복사됨" : "주소 복사"}
+          </button>
+          <div className="my-1 border-t border-slate-200" />
+          {published ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onUnpublish();
+              }}
+            >
+              비공개로 되돌리기
+            </button>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="block w-full px-3 py-1.5 text-left text-sm text-rose-600 hover:bg-rose-50"
+            onClick={() => {
+              onOpenChange(false);
+              onDelete();
+            }}
+          >
+            삭제
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
+  const router = useRouter();
   const [items, setItems] = useState<WorkListItem[]>([]);
   const [categories, setCategories] = useState<WebsiteCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -59,28 +240,52 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState<"all" | "draft" | "published">("all");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
+  const [newOpen, setNewOpen] = useState(false);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<WorkListItem | null>(null);
+  const [unpublishItem, setUnpublishItem] = useState<WorkListItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<WorkListItem | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  async function reloadItems() {
+    const works = await listWorks({ status: "all", limit: 100 });
+    if (!works.ok) {
+      setError(formatError(works.error, works.details));
+      return;
+    }
+    setItems(works.data.items ?? []);
+    setError(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [works, meta] = await Promise.all([
-        listWorks({ status: "all", limit: 100 }),
-        getMeta()
-      ]);
-      if (cancelled) return;
-      if (!works.ok) {
-        setError(works.error + (works.details ? ` · ${JSON.stringify(works.details)}` : ""));
-        setLoading(false);
-        return;
+      try {
+        const [works, meta] = await Promise.all([
+          listWorks({ status: "all", limit: 100 }),
+          getMeta()
+        ]);
+        if (cancelled) return;
+        if (!works.ok) {
+          setError(formatError(works.error, works.details));
+          return;
+        }
+        setItems(works.data.items ?? []);
+        if (meta.ok) setCategories(meta.data.workCategories ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setItems(works.data.items ?? []);
-      if (meta.ok) setCategories(meta.data.workCategories ?? []);
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const labelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -113,6 +318,55 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const published = items.filter((row) => row.status === "published").length;
   const draft = items.length - published;
 
+  function goEdit(item: WorkListItem) {
+    router.push(editHref(item.id));
+  }
+
+  function onRowClick(event: ReactMouseEvent, item: WorkListItem) {
+    if ((event.target as HTMLElement).closest("[data-stop-row]")) return;
+    goEdit(item);
+  }
+
+  function menuFor(item: WorkListItem, where: "d" | "m") {
+    const id = `${where}-${item.id}`;
+    return (
+      <WorkOverflowMenu
+        item={item}
+        siteUrl={siteUrl}
+        open={menuId === id}
+        onOpenChange={(next) => setMenuId(next ? id : null)}
+        onPreview={() => setPreviewItem(item)}
+        onUnpublish={() => setUnpublishItem(item)}
+        onDelete={() => setDeleteItem(item)}
+      />
+    );
+  }
+
+  async function confirmUnpublish() {
+    if (!unpublishItem) return;
+    const res = await updateWork(unpublishItem.id, { status: "draft" });
+    setUnpublishItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+  }
+
+  async function confirmDelete() {
+    if (!deleteItem) return;
+    const res = await deleteWork(deleteItem.id);
+    setDeleteItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    setToast("삭제되었습니다");
+  }
+
+  const deleteTitleKo = deleteItem?.title?.ko?.trim() || (deleteItem ? workTitle(deleteItem) : "");
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -126,11 +380,18 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
         </div>
         <button
           type="button"
+          onClick={() => setNewOpen(true)}
           className="rounded-lg bg-apollon-500 px-4 py-2 text-sm font-semibold text-white"
         >
           ＋ 새 프로젝트
         </button>
       </div>
+
+      {toast ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+          {toast}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <input
@@ -177,7 +438,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
       {loading ? <p className="text-sm text-slate-500">불러오는 중...</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-      {!loading && !error ? (
+      {!loading && (!error || items.length > 0) ? (
         <>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
@@ -195,9 +456,13 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                 {filtered.map((item) => {
                   const thumb = mediaUrl(siteUrl, item.key_image);
                   return (
-                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <tr
+                      key={item.id}
+                      className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                      onClick={(event) => onRowClick(event, item)}
+                    >
                       <td className="py-3 pr-3">
-                        <Link href={`/website/works/${item.id}`} className="flex items-center gap-3">
+                        <Link href={editHref(item.id)} className="flex items-center gap-3">
                           {thumb ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -228,7 +493,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                       <td className="py-3 pr-3">
                         <FillDots item={item} />
                       </td>
-                      <td className="py-3 text-slate-400">⋯</td>
+                      <td className="py-3 text-right" data-stop-row onClick={(event) => event.stopPropagation()}>
+                        {menuFor(item, "d")}
+                      </td>
                     </tr>
                   );
                 })}
@@ -241,9 +508,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
               const thumb = mediaUrl(siteUrl, item.key_image);
               return (
                 <li key={item.id}>
-                  <Link
-                    href={`/website/works/${item.id}`}
-                    className="apollon-card flex gap-3 p-3"
+                  <div
+                    className="apollon-card flex cursor-pointer gap-3 p-3"
+                    onClick={(event) => onRowClick(event, item)}
                   >
                     {thumb ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -263,7 +530,10 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                         <FillDots item={item} />
                       </span>
                     </span>
-                  </Link>
+                    <span className="shrink-0 self-start" data-stop-row onClick={(event) => event.stopPropagation()}>
+                      {menuFor(item, "m")}
+                    </span>
+                  </div>
                 </li>
               );
             })}
@@ -274,6 +544,53 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
           ) : null}
         </>
       ) : null}
+
+      <NewWorkModal open={newOpen} onClose={() => setNewOpen(false)} />
+
+      {previewItem ? (
+        <PreviewModal
+          workId={previewItem.id}
+          title={workTitle(previewItem)}
+          onClose={() => setPreviewItem(null)}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        key={unpublishItem ? `unpub-${unpublishItem.id}` : "unpub"}
+        open={Boolean(unpublishItem)}
+        title="홈페이지에서 내려갑니다. 계속할까요?"
+        confirmText="계속"
+        onConfirm={() => confirmUnpublish()}
+        onCancel={() => setUnpublishItem(null)}
+      />
+
+      <ConfirmDialog
+        key={deleteItem ? `del-${deleteItem.id}` : "del"}
+        open={Boolean(deleteItem)}
+        title="이 프로젝트를 삭제할까요?"
+        confirmText="삭제"
+        confirmWord={deleteItem?.slug}
+        danger
+        onConfirm={() => confirmDelete()}
+        onCancel={() => setDeleteItem(null)}
+        description={
+          deleteItem ? (
+            <>
+              {deleteItem.status === "published" ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  지금 홈페이지에 공개되어 있습니다. 삭제하면 페이지가 사라집니다.
+                </p>
+              ) : null}
+              <p className="font-bold text-slate-900">{deleteTitleKo}</p>
+              <p>
+                블록 {deleteItem.counts.sections}개 · 이미지 {deleteItem.counts.images}장 · FAQ{" "}
+                {deleteItem.counts.faqs}문항이 함께 지워집니다.
+              </p>
+              <p>되돌릴 수 없습니다.</p>
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }

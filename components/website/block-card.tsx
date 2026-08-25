@@ -30,7 +30,9 @@ import {
   imageLimitForPreset,
   PRESET_LABEL
 } from "@/components/website/block-presets";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
+import { PreviewMiniBtn, PreviewModal } from "@/components/website/preview-modal";
 import {
   BilingualField,
   CharKo,
@@ -92,6 +94,8 @@ export function BlockCard({
   const [menu, setMenu] = useState(false);
   const [changePreset, setChangePreset] = useState(false);
   const [saveLib, setSaveLib] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [body, setBody] = useState<Loc>(asLoc(block.body));
   const [videoKind, setVideoKind] = useState(block.video_kind ?? "embed");
   const [videoUrl, setVideoUrl] = useState(block.video_url ?? "");
@@ -139,13 +143,17 @@ export function BlockCard({
   async function persist(patch: Record<string, unknown>) {
     setSave("saving");
     setError(null);
-    const res = await updateBlock(sectionId, block.id, patch);
-    if (!res.ok) {
-      setSave("error");
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
-      return;
+    try {
+      const res = await updateBlock(sectionId, block.id, patch);
+      if (!res.ok) {
+        setSave("error");
+        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        return;
+      }
+      setSave("saved");
+    } finally {
+      setSave((cur) => (cur === "saving" ? "idle" : cur));
     }
-    setSave("saved");
   }
 
   async function flush(patch: Record<string, unknown>) {
@@ -154,8 +162,8 @@ export function BlockCard({
   }
 
   async function onDelete() {
-    if (!confirm("이 블록을 삭제할까요?")) return;
     const res = await deleteBlock(sectionId, block.id);
+    setDeleteOpen(false);
     if (!res.ok) {
       setError(res.error);
       return;
@@ -240,6 +248,7 @@ export function BlockCard({
           {presetName}
         </button>
         {mediaLabel ? <span className="hidden text-xs text-slate-400 sm:inline">{mediaLabel}</span> : null}
+        <PreviewMiniBtn onClick={() => setPreviewOpen(true)} />
         {save === "saving" ? <span className="text-[11px] text-slate-400">저장 중</span> : null}
         {save === "saved" ? <span className="text-[11px] text-emerald-600">저장됨</span> : null}
         <button type="button" disabled={index <= 1} onClick={() => onMove(-1)} className="text-xs text-slate-400 disabled:opacity-30">
@@ -257,7 +266,7 @@ export function BlockCard({
               <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50" onClick={() => { setMenu(false); void onClone(); }}>
                 <Copy className="h-3 w-3" /> 복제
               </button>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50" onClick={() => { setMenu(false); void onDelete(); }}>
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50" onClick={() => { setMenu(false); setDeleteOpen(true); }}>
                 <Trash2 className="h-3 w-3" /> 삭제
               </button>
             </div>
@@ -277,7 +286,7 @@ export function BlockCard({
             <SmallBtn onClick={() => setChangePreset((v) => !v)}>배치 바꾸기</SmallBtn>
             <SmallBtn onClick={() => setSaveLib(true)}>라이브러리에 저장</SmallBtn>
             <SmallBtn onClick={() => void onClone()}>복제</SmallBtn>
-            <SmallBtn onClick={() => void onDelete()}>삭제</SmallBtn>
+            <SmallBtn onClick={() => setDeleteOpen(true)}>삭제</SmallBtn>
           </div>
 
           {changePreset ? (
@@ -450,6 +459,24 @@ export function BlockCard({
           ) : null}
         </div>
       )}
+
+      {previewOpen ? (
+        <PreviewModal
+          workId={workId}
+          blockId={block.id}
+          title={presetName}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="이 블록을 삭제할까요?"
+        confirmText="삭제"
+        danger
+        onConfirm={() => onDelete()}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </div>
   );
 }
@@ -909,25 +936,28 @@ function SaveLibraryModal({
   async function submit() {
     setBusy(true);
     setError(null);
-    const createdBy = await currentUserName();
-    const config: Record<string, unknown> = {
-      caption_visible: images.some((img) => img.caption_visible)
-    };
-    if (block.gallery_row_height != null) config.gallery_row_height = block.gallery_row_height;
-    if (block.text_side) config.text_side = block.text_side;
-    const res = await createLibrary({
-      name,
-      description: description.trim() || null,
-      preset: block.preset,
-      config,
-      created_by: createdBy
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
+    try {
+      const createdBy = await currentUserName();
+      const config: Record<string, unknown> = {
+        caption_visible: images.some((img) => img.caption_visible)
+      };
+      if (block.gallery_row_height != null) config.gallery_row_height = block.gallery_row_height;
+      if (block.text_side) config.text_side = block.text_side;
+      const res = await createLibrary({
+        name,
+        description: description.trim() || null,
+        preset: block.preset,
+        config,
+        created_by: createdBy
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onClose();
+    } finally {
+      setBusy(false);
     }
-    onClose();
   }
 
   return (

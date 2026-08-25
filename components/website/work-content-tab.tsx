@@ -11,8 +11,11 @@ import {
 } from "@/lib/website/api";
 import type { ContentBlock, Loc, WorkDetail, WorkInterview, WorkSection } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
+import { InterviewEditor } from "@/components/website/interview-editor";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { PreviewMiniBtn, PreviewModal } from "@/components/website/preview-modal";
 import {
   AiBtn,
   BilingualField,
@@ -41,6 +44,8 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set(sections[0] ? [sections[0].id] : []));
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ sectionId: string; title: string } | null>(null);
+  const [deleteSectionId, setDeleteSectionId] = useState<string | null>(null);
 
   function toggle(id: string) {
     setOpenIds((prev) => {
@@ -76,9 +81,10 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
     else await onReload();
   }
 
-  async function removeSection(id: string) {
-    if (!confirm("이 섹션과 안의 블록을 삭제할까요?")) return;
-    const res = await deleteSection(work.id, id);
+  async function removeSection() {
+    if (!deleteSectionId) return;
+    const res = await deleteSection(work.id, deleteSectionId);
+    setDeleteSectionId(null);
     if (!res.ok) setError(res.error);
     else await onReload();
   }
@@ -120,9 +126,15 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
             open={openIds.has(section.id)}
             onToggle={() => toggle(section.id)}
             onMove={(dir) => void moveSection(index, dir)}
-            onDelete={() => void removeSection(section.id)}
+            onDelete={() => setDeleteSectionId(section.id)}
             onAddBlock={() => setPickerFor(section.id)}
             onReload={onReload}
+            onPreview={() =>
+              setPreview({
+                sectionId: section.id,
+                title: section.headline?.ko?.trim() || section.headline?.en?.trim() || "제목 없음"
+              })
+            }
           />
         ))}
       </div>
@@ -143,6 +155,24 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
           onPicked={() => void onReload()}
         />
       ) : null}
+
+      {preview ? (
+        <PreviewModal
+          workId={work.id}
+          sectionId={preview.sectionId}
+          title={preview.title}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(deleteSectionId)}
+        title="이 섹션과 안의 블록을 삭제할까요?"
+        confirmText="삭제"
+        danger
+        onConfirm={() => removeSection()}
+        onCancel={() => setDeleteSectionId(null)}
+      />
     </div>
   );
 }
@@ -159,7 +189,8 @@ function SectionCard({
   onMove,
   onDelete,
   onAddBlock,
-  onReload
+  onReload,
+  onPreview
 }: {
   section: WorkSection;
   index: number;
@@ -173,6 +204,7 @@ function SectionCard({
   onDelete: () => void;
   onAddBlock: () => void;
   onReload: () => Promise<void>;
+  onPreview: () => void;
 }) {
   const blocks = [...(section.content_blocks ?? [])].sort((a, b) => a.sort - b.sort);
   const imageCount = blocks.reduce((n, b) => n + (b.block_images?.length ?? 0), 0);
@@ -201,6 +233,7 @@ function SectionCard({
         >
           {isInterview ? "인터뷰" : "기본"}
         </span>
+        <PreviewMiniBtn onClick={onPreview} />
         {mediaLabel ? <span className="hidden text-xs text-slate-400 sm:inline">{mediaLabel}</span> : null}
         <button
           type="button"
@@ -387,7 +420,15 @@ function SectionBody({
         </Guide>
       </div>
 
-      {isInterview ? <InterviewRead interview={interview} /> : null}
+      {isInterview ? (
+        <InterviewEditor
+          workId={workId}
+          sectionId={section.id}
+          interview={interview}
+          siteUrl={siteUrl}
+          onReload={onReload}
+        />
+      ) : null}
 
       {blocks.map((block, i) => (
         <BlockCard
@@ -408,64 +449,6 @@ function SectionBody({
       {!isInterview ? (
         <GhostBtn onClick={onAddBlock}>＋ 블록 추가</GhostBtn>
       ) : null}
-    </div>
-  );
-}
-
-function InterviewRead({ interview }: { interview: WorkInterview | null }) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel>
-          연결할 인사이트
-          <Req />
-        </FieldLabel>
-        <div className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-400">
-          {interview?.insight_id ? `인사이트 ${interview.insight_id}` : "＋ 인사이트에서 고르기"}
-        </div>
-        <Guide>
-          인터뷰는 별도 데이터가 아니라 <b className="font-semibold text-slate-600">인사이트에 등록된 글 하나</b>를
-          연결하는 블록입니다. 화면에서 [Learn more]를 누르면 <b className="font-semibold text-slate-600">팝업</b>으로
-          열리고, 팝업 안 「원문보기」로 인사이트 페이지로 이동합니다.
-        </Guide>
-      </div>
-      <div>
-        <FieldLabel extra={<CharKo n={(interview?.quote_override?.ko ?? "").length} warn={70} limit={70} />}>
-          화면에 보일 인용문
-          <Req />
-        </FieldLabel>
-        <BilingualField
-          ko={interview?.quote_override?.ko ?? ""}
-          en={interview?.quote_override?.en ?? ""}
-          readOnly
-          multiline
-        />
-        <Guide>
-          <b className="font-semibold text-slate-600">국문 40~70자</b> ·{" "}
-          <b className="font-semibold text-slate-600">세 줄까지</b>
-          <Sep />
-          팝업을 열기 전 카드에 크게 보이는 문장입니다. 70자를 넘으면 네 줄이 되어 카드가 흐트러집니다.
-          <br />
-          인사이트 본문에서 <b className="font-semibold text-slate-600">가장 강한 한 문장</b>을 골라 넣으세요.
-        </Guide>
-      </div>
-      <div>
-        <FieldLabel extra={<CharKo n={(interview?.attribution_override?.ko ?? "").length} warn={24} limit={24} />}>
-          이름 · 직함
-          <Req />
-        </FieldLabel>
-        <BilingualField
-          ko={interview?.attribution_override?.ko ?? ""}
-          en={interview?.attribution_override?.en ?? ""}
-          readOnly
-        />
-        <Guide>
-          <b className="font-semibold text-slate-600">국문 24자 이내</b> · 형식은{" "}
-          <b className="font-semibold text-slate-600">이름 - 직함</b>
-          <Sep />
-          프로필 이미지는 정사각형 <b className="font-semibold text-slate-600">600 × 600</b> · JPG · 300KB 이하
-        </Guide>
-      </div>
     </div>
   );
 }
