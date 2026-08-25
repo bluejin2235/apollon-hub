@@ -8,10 +8,10 @@ export async function websiteAdminFetch(
   const secret = process.env.WEBSITE_ADMIN_SECRET?.trim();
 
   if (!base) {
-    throw new Error("WEBSITE_API_URL 이 설정되지 않았습니다.");
+    return { status: 500, body: { error: "WEBSITE_API_URL 이 설정되지 않았습니다." } };
   }
   if (!secret) {
-    throw new Error("WEBSITE_ADMIN_SECRET 이 설정되지 않았습니다.");
+    return { status: 500, body: { error: "WEBSITE_ADMIN_SECRET 이 설정되지 않았습니다." } };
   }
 
   const url = `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
@@ -26,16 +26,49 @@ export async function websiteAdminFetch(
     headers.delete("Content-Type");
   }
 
-  const res = await fetch(url, { ...init, headers });
-  const text = await res.text();
-  let body: unknown = null;
-  if (text) {
-    try {
-      body = JSON.parse(text) as unknown;
-    } catch {
-      body = text;
-    }
+  const controller = new AbortController();
+  const timeoutMs = isFormData ? 120_000 : 20_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const incoming = init?.signal;
+  const onIncomingAbort = () => controller.abort();
+  if (incoming) {
+    if (incoming.aborted) controller.abort();
+    else incoming.addEventListener("abort", onIncomingAbort, { once: true });
   }
 
-  return { status: res.status, body };
+  try {
+    const res = await fetch(url, { ...init, headers, signal: controller.signal });
+    const text = await res.text();
+    let body: unknown = null;
+    if (text) {
+      try {
+        body = JSON.parse(text) as unknown;
+      } catch {
+        body = text;
+      }
+    }
+    return { status: res.status, body };
+  } catch (err) {
+    if (controller.signal.aborted && !incoming?.aborted) {
+      return {
+        status: 504,
+        body: {
+          error: "website_timeout",
+          details: {
+            message: "홈페이지 서버가 응답하지 않습니다. 개발 서버가 떠 있는지 확인하세요."
+          }
+        }
+      };
+    }
+    return {
+      status: 502,
+      body: {
+        error: "website_unreachable",
+        details: { message: err instanceof Error ? err.message : String(err) }
+      }
+    };
+  } finally {
+    clearTimeout(timer);
+    incoming?.removeEventListener("abort", onIncomingAbort);
+  }
 }

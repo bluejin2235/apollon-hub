@@ -24,6 +24,7 @@ import { WorkContentTab } from "@/components/website/work-content-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
 import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
+import { PreviewBarBtn, PreviewModal } from "@/components/website/preview-modal";
 
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
@@ -100,27 +101,29 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
 
   const load = useCallback(async () => {
-    const [workRes, metaRes] = await Promise.all([getWork(workId), getMeta()]);
-    if (!workRes.ok) {
-      setError(workRes.error + (workRes.details ? ` · ${JSON.stringify(workRes.details)}` : ""));
+    try {
+      const [workRes, metaRes] = await Promise.all([getWork(workId), getMeta()]);
+      if (!workRes.ok) {
+        setError(workRes.error + (workRes.details ? ` · ${JSON.stringify(workRes.details)}` : ""));
+        return;
+      }
+      const parsed = parseWorkDetail(workRes.data);
+      if (!parsed) {
+        setError("work_not_found");
+        return;
+      }
+      setWork(parsed);
+      setDraft(draftFromWork(parsed));
+      setCheckOverride(null);
+      if (metaRes.ok) setCategories(metaRes.data.workCategories ?? []);
+      setError(null);
+    } finally {
       setLoading(false);
-      return;
     }
-    const parsed = parseWorkDetail(workRes.data);
-    if (!parsed) {
-      setError("work_not_found");
-      setLoading(false);
-      return;
-    }
-    setWork(parsed);
-    setDraft(draftFromWork(parsed));
-    setCheckOverride(null);
-    if (metaRes.ok) setCategories(metaRes.data.workCategories ?? []);
-    setError(null);
-    setLoading(false);
   }, [workId]);
 
   useEffect(() => {
@@ -138,7 +141,6 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
 
   const check = checkOverride ?? work?.check ?? null;
   const canPublish = problemCount(check) === 0;
-  const previewHref = siteUrl ? `${siteUrl.replace(/\/$/, "")}/preview/works/${workId}` : "";
   const shortage = work ? shortageLine(work, check) : null;
 
   const onChangeDraft = useCallback((patch: Partial<WorkBasicDraft>) => {
@@ -149,47 +151,56 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     if (!draft) return;
     setSaving(true);
     setError(null);
-    const result = await updateWork(workId, worksPatchFromDraft(draft));
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-      return;
+    try {
+      const result = await updateWork(workId, worksPatchFromDraft(draft));
+      if (!result.ok) {
+        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        return;
+      }
+      await load();
+    } finally {
+      setSaving(false);
     }
-    await load();
   }
 
   async function publish() {
     if (!draft) return;
     setSaving(true);
     setError(null);
-    const result = await updateWork(workId, {
-      ...worksPatchFromDraft(draft),
-      status: "published",
-      published_at: todayYmd()
-    });
-    setSaving(false);
-    if (!result.ok) {
-      if (result.status === 409 && result.error === "publish_blocked") {
-        setCheckOverride(mergeCheck(work?.check ?? null, result.details));
-        setPanelOpen(true);
+    try {
+      const result = await updateWork(workId, {
+        ...worksPatchFromDraft(draft),
+        status: "published",
+        published_at: todayYmd()
+      });
+      if (!result.ok) {
+        if (result.status === 409 && result.error === "publish_blocked") {
+          setCheckOverride(mergeCheck(work?.check ?? null, result.details));
+          setPanelOpen(true);
+          return;
+        }
+        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
         return;
       }
-      setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-      return;
+      setPanelOpen(false);
+      await load();
+    } finally {
+      setSaving(false);
     }
-    setPanelOpen(false);
-    await load();
   }
 
   async function toggleFaq(next: boolean) {
     setSaving(true);
-    const result = await updateWork(workId, { show_faq: next });
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-      return;
+    try {
+      const result = await updateWork(workId, { show_faq: next });
+      if (!result.ok) {
+        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        return;
+      }
+      await load();
+    } finally {
+      setSaving(false);
     }
-    await load();
   }
 
   if (loading) {
@@ -225,18 +236,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           {work.status === "published" ? "공개" : "초안"}
         </span>
         <span className="flex-1" />
-        {previewHref ? (
-          <a
-            href={previewHref}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            미리보기 ↗
-          </a>
-        ) : (
-          <GhostBtn disabled>미리보기 ↗</GhostBtn>
-        )}
+        <PreviewBarBtn onClick={() => setPreviewOpen(true)} />
       </div>
       <p className="mt-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
         마지막 저장 {formatSavedAt(work.updated_at)}
@@ -273,15 +273,23 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
             work={work}
             categories={categories}
             siteUrl={siteUrl}
+            onReload={load}
           />
         ) : null}
         {tab === "content" ? (
           <WorkContentTab work={work} siteUrl={siteUrl} onReload={load} />
         ) : null}
         {tab === "faq" ? (
-          <WorkFaqTab work={work} saving={saving} onToggleShowFaq={(next) => void toggleFaq(next)} />
+          <WorkFaqTab
+            work={work}
+            saving={saving}
+            onToggleShowFaq={(next) => void toggleFaq(next)}
+            onReload={load}
+          />
         ) : null}
-        {tab === "related" ? <WorkRelatedTab work={work} /> : null}
+        {tab === "related" ? (
+          <WorkRelatedTab work={work} siteUrl={siteUrl} onReload={load} />
+        ) : null}
       </div>
 
       <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -291,18 +299,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           >
             {shortage?.text}
           </p>
-          {previewHref ? (
-            <a
-              href={previewHref}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              미리보기 ↗
-            </a>
-          ) : (
-            <GhostBtn disabled>미리보기 ↗</GhostBtn>
-          )}
+          <PreviewBarBtn onClick={() => setPreviewOpen(true)} />
           <GhostBtn disabled={saving} onClick={() => void saveTemp()}>
             임시 저장
           </GhostBtn>
@@ -347,6 +344,10 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           }}
           onPublish={() => void publish()}
         />
+      ) : null}
+
+      {previewOpen ? (
+        <PreviewModal workId={workId} title={titleKo} onClose={() => setPreviewOpen(false)} />
       ) : null}
     </div>
   );

@@ -127,26 +127,29 @@ export function ImageUploader({
     if (ok.length === 0) return;
 
     const uploaded: UploadedMedia[] = [];
-    for (let i = 0; i < ok.length; i++) {
-      const file = ok[i]!;
-      setProgress(`${i + 1} / ${ok.length} 올리는 중… ${file.name}`);
-      const dims = await readSize(file);
-      const path = `works/${workId}/${Date.now()}-${i}-${safeName(file.name)}`;
-      const res = await uploadFile(file, "works", path);
-      if (!res.ok) {
-        setError(`${file.name}: ${res.error}`);
-        continue;
+    try {
+      for (let i = 0; i < ok.length; i++) {
+        const file = ok[i]!;
+        setProgress(`${i + 1} / ${ok.length} 올리는 중… ${file.name}`);
+        const dims = await readSize(file);
+        const path = `works/${workId}/${Date.now()}-${i}-${safeName(file.name)}`;
+        const res = await uploadFile(file, "works", path);
+        if (!res.ok) {
+          setError(`${file.name}: ${res.error}`);
+          continue;
+        }
+        uploaded.push({
+          src: res.data.publicUrl || `/${res.data.path}`,
+          width: res.data.width ?? dims?.width ?? null,
+          height: res.data.height ?? dims?.height ?? null,
+          size: res.data.size,
+          mime: res.data.mime,
+          name: file.name
+        });
       }
-      uploaded.push({
-        src: res.data.publicUrl || `/${res.data.path}`,
-        width: res.data.width ?? dims?.width ?? null,
-        height: res.data.height ?? dims?.height ?? null,
-        size: res.data.size,
-        mime: res.data.mime,
-        name: file.name
-      });
+    } finally {
+      setProgress(null);
     }
-    setProgress(null);
     if (uploaded.length > 0) onUploaded(uploaded);
   }
 

@@ -14,15 +14,17 @@ export function WebsiteDashboard({ siteUrl }: { siteUrl: string }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await listWorks({ status: "all", limit: 100 });
-      if (cancelled) return;
-      if (!result.ok) {
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-        setLoading(false);
-        return;
+      try {
+        const result = await listWorks({ status: "all", limit: 100 });
+        if (cancelled) return;
+        if (!result.ok) {
+          setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+          return;
+        }
+        setItems(result.data.items ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setItems(result.data.items ?? []);
-      setLoading(false);
     })();
     return () => {
       cancelled = true;

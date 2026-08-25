@@ -65,14 +65,17 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
       body.embed_provider = "youtube";
       body.embed_url = "https://www.youtube.com/watch?v=";
     }
-    const res = await createBlock(sectionId, body);
-    setBusyId(null);
-    if (!res.ok) {
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
-      return;
+    try {
+      const res = await createBlock(sectionId, body);
+      if (!res.ok) {
+        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        return;
+      }
+      onPicked();
+      onClose();
+    } finally {
+      setBusyId(null);
     }
-    onPicked();
-    onClose();
   }
 
   if (!open) return null;

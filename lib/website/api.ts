@@ -25,47 +25,70 @@ function queryString(params?: Record<string, string | number | undefined | null>
 }
 
 async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
-  const token = await accessToken();
-  if (!token) {
-    return { ok: false, error: "unauthorized", status: 401 };
-  }
+  const controller = new AbortController();
+  const incoming = init?.signal;
+  const onIncomingAbort = () => controller.abort();
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const headers = new Headers(init?.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
-  if (!isFormData && init?.body != null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const res = await fetch(`/api/website/${path.replace(/^\//, "")}`, { ...init, headers });
-  let body: unknown = null;
   try {
-    body = await res.json();
+    const token = await accessToken();
+    if (!token) {
+      return { ok: false, error: "unauthorized", status: 401 };
+    }
+
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+    if (!isFormData && init?.body != null && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const timeoutMs = isFormData ? 180_000 : 30_000;
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (incoming) {
+      if (incoming.aborted) controller.abort();
+      else incoming.addEventListener("abort", onIncomingAbort, { once: true });
+    }
+
+    const res = await fetch(`/api/website/${path.replace(/^\//, "")}`, {
+      ...init,
+      headers,
+      signal: controller.signal
+    });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: typeof record?.error === "string" ? record.error : "request_failed",
+        details: record?.details,
+        status: res.status
+      };
+    }
+
+    if (record && "error" in record && record.error && !("data" in record)) {
+      return {
+        ok: false,
+        error: String(record.error),
+        details: record.details,
+        status: res.status
+      };
+    }
+
+    const data = record && "data" in record ? (record.data as T) : (body as T);
+    return { ok: true, data, status: res.status };
   } catch {
-    body = null;
+    return { ok: false, error: "network_error", status: 0 };
+  } finally {
+    if (timer) clearTimeout(timer);
+    incoming?.removeEventListener("abort", onIncomingAbort);
   }
-
-  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
-  if (!res.ok) {
-    return {
-      ok: false,
-      error: typeof record?.error === "string" ? record.error : "request_failed",
-      details: record?.details,
-      status: res.status
-    };
-  }
-
-  if (record && "error" in record && record.error && !("data" in record)) {
-    return {
-      ok: false,
-      error: String(record.error),
-      details: record.details,
-      status: res.status
-    };
-  }
-
-  const data = record && "data" in record ? (record.data as T) : (body as T);
-  return { ok: true, data, status: res.status };
 }
 
 export function listWorks(params?: {
@@ -96,6 +119,18 @@ export function deleteWork(id: string): Promise<ApiResult<{ id: string }>> {
 
 export function getMeta(): Promise<ApiResult<WebsiteMeta>> {
   return websiteFetch<WebsiteMeta>("meta");
+}
+
+export function getPreviewUrl(opts: {
+  workId: string;
+  sectionId?: string;
+  blockId?: string;
+  locale?: string;
+}): Promise<ApiResult<{ url: string }>> {
+  return websiteFetch<{ url: string }>("preview-url", {
+    method: "POST",
+    body: JSON.stringify(opts)
+  });
 }
 
 export type BlockLibraryItem = {
@@ -212,4 +247,164 @@ export function uploadFile(file: File, bucket: string, path: string): Promise<Ap
   form.append("bucket", bucket);
   form.append("path", path);
   return websiteFetch<UploadResult>("upload", { method: "POST", body: form });
+}
+
+export type WebsiteTagItem = {
+  id: string;
+  label: { ko?: string; en?: string };
+};
+
+export type SearchHit = {
+  type: "work" | "insight" | "page";
+  id: string;
+  title: { ko?: string; en?: string } | string | null;
+  slug: string;
+  key_image: string | null;
+  category: string | null;
+  status: string;
+};
+
+export function getTags(): Promise<ApiResult<{ items: WebsiteTagItem[] }>> {
+  return websiteFetch<{ items: WebsiteTagItem[] }>("tags");
+}
+
+export function createTag(
+  id: string,
+  label: { ko: string; en: string }
+): Promise<ApiResult<WebsiteTagItem>> {
+  return websiteFetch<WebsiteTagItem>("tags", {
+    method: "POST",
+    body: JSON.stringify({ id, label })
+  });
+}
+
+export function setWorkTags(
+  workId: string,
+  tagIds: string[]
+): Promise<ApiResult<{ items: unknown[] }>> {
+  return websiteFetch(`works/${workId}/tags`, {
+    method: "PUT",
+    body: JSON.stringify({ tagIds })
+  });
+}
+
+export function addCredit(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/credits`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateCredit(
+  workId: string,
+  creditId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/credits/${creditId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteCredit(workId: string, creditId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/credits/${creditId}`, { method: "DELETE" });
+}
+
+export function reorderCredits(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`works/${workId}/credits`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function addMetric(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/metrics`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateMetric(
+  workId: string,
+  metricId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/metrics/${metricId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteMetric(workId: string, metricId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/metrics/${metricId}`, { method: "DELETE" });
+}
+
+export function reorderMetrics(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`works/${workId}/metrics`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function addFolder(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/folders`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateFolder(
+  workId: string,
+  folderId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/folders/${folderId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteFolder(workId: string, folderId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/folders/${folderId}`, { method: "DELETE" });
+}
+
+export function addFaq(body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch("faqs", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateFaq(faqId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`faqs/${faqId}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function deleteFaq(faqId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`faqs/${faqId}`, { method: "DELETE" });
+}
+
+export function reorderFaqs(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`faqs${queryString({ work_id: workId })}`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function addRelated(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/related`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function deleteRelated(workId: string, relatedId: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/related/${relatedId}`, { method: "DELETE" });
+}
+
+export function reorderRelated(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`works/${workId}/related`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function searchContent(
+  q: string,
+  type: "work" | "insight" | "page",
+  limit = 20
+): Promise<ApiResult<SearchHit[]>> {
+  return websiteFetch<SearchHit[]>(`search${queryString({ q: q || undefined, type, limit })}`);
+}
+
+export function setInterview(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`works/${workId}/interview`, { method: "PUT", body: JSON.stringify(body) });
+}
+
+export function clearInterview(workId: string): Promise<ApiResult<{ work_id: string }>> {
+  return websiteFetch(`works/${workId}/interview`, { method: "DELETE" });
 }
