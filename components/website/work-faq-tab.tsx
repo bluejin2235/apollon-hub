@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import type { WorkDetail, WorkFaq } from "@/lib/website/work-detail";
+import { addFaq, deleteFaq, reorderFaqs, updateFaq } from "@/lib/website/api";
+import type { Loc, WorkDetail, WorkFaq } from "@/lib/website/work-detail";
+import { asLoc } from "@/lib/website/work-detail";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import {
   AiBtn,
   BilingualField,
@@ -10,6 +13,7 @@ import {
   FieldLabel,
   GhostBtn,
   Guide,
+  locField,
   LunaCallout,
   Sep,
   ToggleRow
@@ -19,10 +23,61 @@ type Props = {
   work: WorkDetail;
   saving?: boolean;
   onToggleShowFaq: (next: boolean) => void;
+  onReload: () => Promise<void>;
 };
 
-export function WorkFaqTab({ work, saving, onToggleShowFaq }: Props) {
-  const faqs = work.faqs ?? [];
+function toOrder(items: WorkFaq[], from: number, to: number) {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next.map((item, i) => ({ id: item.id, sort: i }));
+}
+
+export function WorkFaqTab({ work, saving, onToggleShowFaq, onReload }: Props) {
+  const faqs = [...(work.faqs ?? [])].sort((a, b) => a.sort - b.sort);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteFaqItem, setDeleteFaqItem] = useState<WorkFaq | null>(null);
+
+  async function add() {
+    setError(null);
+    const res = await addFaq({
+      scope: "work",
+      work_id: work.id,
+      question: { ko: "새 질문?", en: "" },
+      answer: { ko: "답변을 입력하세요.", en: "" },
+      sort: faqs.length,
+      in_schema: true
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await onReload();
+  }
+
+  async function move(from: number, dir: -1 | 1) {
+    const to = from + dir;
+    if (to < 0 || to >= faqs.length) return;
+    setError(null);
+    const res = await reorderFaqs(work.id, toOrder(faqs, from, to));
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await onReload();
+  }
+
+  async function remove() {
+    if (!deleteFaqItem) return;
+    setError(null);
+    const res = await deleteFaq(deleteFaqItem.id);
+    setDeleteFaqItem(null);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await onReload();
+  }
 
   return (
     <div>
@@ -44,14 +99,27 @@ export function WorkFaqTab({ work, saving, onToggleShowFaq }: Props) {
         </div>
       </LunaCallout>
 
+      {error ? <p className="mb-3 text-xs text-rose-600">{error}</p> : null}
+
       <div className="space-y-2.5">
         {faqs.map((faq, i) => (
-          <FaqCard key={faq.id} faq={faq} index={i + 1} />
+          <FaqCard
+            key={faq.id}
+            faq={faq}
+            index={i + 1}
+            total={faqs.length}
+            onMove={(dir) => void move(i, dir)}
+            onDelete={() => setDeleteFaqItem(faq)}
+            onSave={async (question, answer) => {
+              const res = await updateFaq(faq.id, { question, answer });
+              if (!res.ok) setError(res.error);
+            }}
+          />
         ))}
       </div>
 
       <div className="mt-3">
-        <GhostBtn disabled>＋ 문항 추가</GhostBtn>
+        <GhostBtn onClick={() => void add()}>＋ 문항 추가</GhostBtn>
       </div>
 
       <Guide>
@@ -60,35 +128,103 @@ export function WorkFaqTab({ work, saving, onToggleShowFaq }: Props) {
         <br />
         같은 내용이 <b className="font-semibold text-slate-600">FAQPage 구조화 데이터</b>로 자동 생성됩니다.
       </Guide>
+
+      <ConfirmDialog
+        open={Boolean(deleteFaqItem)}
+        title="이 문항을 삭제할까요?"
+        confirmText="삭제"
+        danger
+        onConfirm={() => remove()}
+        onCancel={() => setDeleteFaqItem(null)}
+      />
     </div>
   );
 }
 
-function FaqCard({ faq, index }: { faq: WorkFaq; index: number }) {
+function FaqCard({
+  faq,
+  index,
+  total,
+  onMove,
+  onDelete,
+  onSave
+}: {
+  faq: WorkFaq;
+  index: number;
+  total: number;
+  onMove: (dir: -1 | 1) => void;
+  onDelete: () => void;
+  onSave: (question: Loc, answer: Loc) => Promise<void>;
+}) {
   const [open, setOpen] = useState(index === 1);
-  const q = faq.question?.ko?.trim() || faq.question?.en?.trim() || "질문 없음";
+  const [question, setQuestion] = useState<Loc>(asLoc(faq.question));
+  const [answer, setAnswer] = useState<Loc>(asLoc(faq.answer));
+  const [save, setSave] = useState<"idle" | "saving" | "saved">("idle");
+  const questionRef = useRef(question);
+  const answerRef = useRef(answer);
+  questionRef.current = question;
+  answerRef.current = answer;
+
+  useEffect(() => {
+    setQuestion(asLoc(faq.question));
+    setAnswer(asLoc(faq.answer));
+  }, [faq]);
+
+  async function persist() {
+    setSave("saving");
+    try {
+      await onSave(questionRef.current, answerRef.current);
+      setSave("saved");
+      window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 1200);
+    } finally {
+      setSave((cur) => (cur === "saving" ? "idle" : cur));
+    }
+  }
+
+  const q = question.ko.trim() || question.en.trim() || "질문 없음";
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2.5 text-left"
-      >
-        <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
-        <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{q}</span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
-      </button>
+      <div className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2.5">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{q}</span>
+        </button>
+        {save === "saving" ? <span className="text-[11px] text-slate-400">저장 중</span> : null}
+        {save === "saved" ? <span className="text-[11px] text-emerald-600">저장됨</span> : null}
+        <button
+          type="button"
+          disabled={index <= 1}
+          onClick={() => onMove(-1)}
+          className="text-xs text-slate-400 disabled:opacity-30"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          disabled={index >= total}
+          onClick={() => onMove(1)}
+          className="text-xs text-slate-400 disabled:opacity-30"
+        >
+          ↓
+        </button>
+        <button type="button" onClick={onDelete} className="text-xs text-rose-600">
+          삭제
+        </button>
+        <button type="button" onClick={() => setOpen((v) => !v)} className="text-slate-400">
+          <ChevronDown className={`h-4 w-4 shrink-0 transition ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
       {open ? (
         <div className="space-y-3 p-3.5">
           <div>
-            <FieldLabel extra={<CharKo n={(faq.question?.ko ?? "").length} warn={45} limit={45} />}>
-              질문
-            </FieldLabel>
+            <FieldLabel extra={<CharKo n={question.ko.length} warn={45} limit={45} />}>질문</FieldLabel>
             <BilingualField
-              ko={faq.question?.ko ?? ""}
-              en={faq.question?.en ?? ""}
-              readOnly
+              ko={question.ko}
+              en={question.en}
+              onKo={(v) => setQuestion(locField(question, "ko", v))}
+              onEn={(v) => setQuestion(locField(question, "en", v))}
+              onBlur={() => void persist()}
             />
             <Guide>
               <b className="font-semibold text-slate-600">국문 15~45자</b> · 반드시{" "}
@@ -103,14 +239,14 @@ function FaqCard({ faq, index }: { faq: WorkFaq; index: number }) {
             </Guide>
           </div>
           <div>
-            <FieldLabel extra={<CharKo n={(faq.answer?.ko ?? "").length} warn={200} limit={200} />}>
-              답변
-            </FieldLabel>
+            <FieldLabel extra={<CharKo n={answer.ko.length} warn={200} limit={200} />}>답변</FieldLabel>
             <BilingualField
-              ko={faq.answer?.ko ?? ""}
-              en={faq.answer?.en ?? ""}
-              readOnly
+              ko={answer.ko}
+              en={answer.en}
               multiline
+              onKo={(v) => setAnswer(locField(answer, "ko", v))}
+              onEn={(v) => setAnswer(locField(answer, "en", v))}
+              onBlur={() => void persist()}
             />
             <Guide>
               <b className="font-semibold text-slate-600">국문 70~200자</b> ·{" "}

@@ -1,21 +1,40 @@
 "use client";
 
+import {
+  addCredit,
+  addFolder,
+  addMetric,
+  deleteCredit,
+  deleteFolder,
+  deleteMetric,
+  reorderCredits,
+  reorderMetrics,
+  updateCredit,
+  updateFolder,
+  updateMetric
+} from "@/lib/website/api";
 import type { WebsiteCategory } from "@/lib/website/types";
-import type { WorkBasicDraft, WorkDetail } from "@/lib/website/work-detail";
-import { fileName, mediaUrl, tagLabel } from "@/lib/website/work-detail";
+import type {
+  WorkBasicDraft,
+  WorkCredit,
+  WorkDetail,
+  WorkFolder,
+  WorkMetric
+} from "@/lib/website/work-detail";
+import { asLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
+import { RepeatList, type SaveResult } from "@/components/website/repeat-list";
+import { TagPicker } from "@/components/website/tag-picker";
 import {
   AiBadge,
   BilingualField,
   CharPair,
   FieldLabel,
-  GhostBtn,
   GroupTitle,
   Guide,
   Hint,
   locField,
   Req,
   Sep,
-  SmallBtn,
   TextInput,
   ThumbBox,
   ToggleRow
@@ -27,16 +46,25 @@ type Props = {
   work: WorkDetail;
   categories: WebsiteCategory[];
   siteUrl: string;
+  onReload: () => Promise<void>;
 };
 
-export function WorkBasicTab({ draft, onChange, work, categories, siteUrl }: Props) {
-  const credits = work.work_credits ?? [];
-  const metrics = work.work_metrics ?? [];
+function toOrder<T extends { id: string }>(items: T[], from: number, to: number) {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next.map((item, i) => ({ id: item.id, sort: i }));
+}
+
+function failOf(error: string): SaveResult {
+  return { ok: false, error };
+}
+
+export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onReload }: Props) {
+  const credits = [...(work.work_credits ?? [])].sort((a, b) => a.sort - b.sort);
+  const metrics = [...(work.work_metrics ?? [])].sort((a, b) => a.sort - b.sort);
   const folders = work.work_folders ?? [];
-  const tags = work.work_tags ?? [];
-  const folderKo = folders.find((f) => f.kind === "ko");
-  const folderEn = folders.find((f) => f.kind === "en");
-  const folderExtra = folders.filter((f) => f.kind === "extra");
+  const tags = [...(work.work_tags ?? [])].sort((a, b) => a.sort - b.sort);
   const summaryLong = draft.summary.ko.length > 80;
 
   return (
@@ -154,35 +182,11 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl }: Pro
 
         <div className="mb-3">
           <FieldLabel>태그</FieldLabel>
-          <div className="flex flex-wrap gap-1.5">
-            {tags.map((t) => (
-              <span
-                key={t.tag_id}
-                className="rounded-full border border-slate-900 bg-slate-900 px-3 py-1 text-xs text-white"
-              >
-                {tagLabel(t)}
-              </span>
-            ))}
-            <button
-              type="button"
-              disabled
-              className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              ＋ 추가
-            </button>
-          </div>
-          <Guide>
-            <b className="font-semibold text-slate-600">3~6개</b> · 태그당 2~10자
-            <Sep />
-            쓰이는 곳 —{" "}
-            <b className="font-semibold text-slate-600">
-              사이트 안 분류(태그를 누르면 같은 태그의 워크가 모임) · 검색 노출 키워드 · 관련 콘텐츠 자동 추천
-            </b>
-            <br />
-            사람이 검색창에 칠 법한 말로 답니다. 여러 프로젝트가 같은 태그를 공유해야 의미가 있습니다.
-            <br />
-            좋은 예) 면세점 · K-POP · 이머시브 리테일 &nbsp; 나쁜 예) 2024년1월착수 · 김대리담당
-          </Guide>
+          <TagPicker
+            workId={work.id}
+            selectedIds={tags.map((t) => t.tag_id)}
+            onReload={onReload}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
@@ -447,30 +451,65 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl }: Pro
         </div>
         <div>
           <FieldLabel>참여 크레딧</FieldLabel>
-          <div className="space-y-2">
-            {credits.map((c) => (
-              <div key={c.id} className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <TextInput value={c.role} readOnly />
-                <TextInput value={c.name?.ko ?? ""} readOnly />
-              </div>
-            ))}
-            {credits.length === 0 ? (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <TextInput value="" placeholder="역할" readOnly />
-                <TextInput value="" placeholder="이름" readOnly />
-              </div>
-            ) : null}
-          </div>
-          <div className="mt-2">
-            <SmallBtn disabled>＋ 크레딧 추가</SmallBtn>
-          </div>
-          <Guide>
-            역할은 <b className="font-semibold text-slate-600">영문 표기</b>, 회사·사람 이름은 있는 그대로
-            <Sep />
-            Developer · Project Management · Architect · Construction Management · Media Architecture Design ·
-            Client · 협업 작가 등 <b className="font-semibold text-slate-600">역할별로 한 줄씩</b> 추가합니다.
-            <br />한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.
-          </Guide>
+          <RepeatList
+            items={credits}
+            addLabel="＋ 크레딧 추가"
+            onAdd={async () => {
+              const res = await addCredit(work.id, {
+                role: "Role",
+                name: { ko: "이름", en: "" },
+                sort: credits.length
+              });
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            onUpdate={async (item: WorkCredit) => {
+              const name = asLoc(item.name);
+              const res = await updateCredit(work.id, item.id, { role: item.role, name });
+              return res.ok ? { ok: true } : failOf(res.error);
+            }}
+            onDelete={async (item: WorkCredit) => {
+              const res = await deleteCredit(work.id, item.id);
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            onReorder={async (from, to) => {
+              const res = await reorderCredits(work.id, toOrder(credits, from, to));
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            renderFields={(item, onChange) => {
+              const name = asLoc(item.name);
+              return (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <TextInput
+                    value={item.role}
+                    placeholder="역할 (영문)"
+                    onChange={(v) => onChange({ role: v })}
+                  />
+                  <TextInput
+                    value={name.ko}
+                    placeholder="이름 국문"
+                    onChange={(v) => onChange({ name: locField(name, "ko", v) })}
+                  />
+                  <TextInput
+                    value={name.en}
+                    placeholder="이름 영문"
+                    onChange={(v) => onChange({ name: locField(name, "en", v) })}
+                  />
+                </div>
+              );
+            }}
+            guide={
+              <Guide>
+                역할은 <b className="font-semibold text-slate-600">영문 표기</b>, 회사·사람 이름은 있는 그대로
+                <Sep />
+                Developer · Project Management · Architect · Construction Management · Media Architecture Design ·
+                Client · 협업 작가 등 <b className="font-semibold text-slate-600">역할별로 한 줄씩</b> 추가합니다.
+                <br />한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.
+              </Guide>
+            }
+          />
         </div>
       </section>
 
@@ -551,66 +590,110 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl }: Pro
         </div>
         <div>
           <FieldLabel>성과 수치</FieldLabel>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-            {metrics.map((m) => (
-              <TextInput key={m.id} value={m.value?.ko ?? ""} readOnly />
-            ))}
-            <GhostBtn disabled>＋ 항목 추가</GhostBtn>
-          </div>
-          <Guide>
-            <b className="font-semibold text-slate-600">항목당 30자 이내</b> · 3~5개 권장
-            <Sep />
-            AI가 가장 많이 인용하는 부분입니다. <b className="font-semibold text-slate-600">반드시 숫자를 넣으세요.</b>
-            <br />
-            좋은 예) 일평균 방문객 16,000명 <span className="mx-1.5 text-slate-300">·</span> 누적 112만 명(2개월){" "}
-            <span className="mx-1.5 text-slate-300">·</span> 언론 보도 24건
-            <br />
-            나쁜 예) 방문객이 크게 늘었습니다 — 숫자가 없으면 인용되지 않습니다
-          </Guide>
+          <RepeatList
+            items={metrics}
+            addLabel="＋ 항목 추가"
+            onAdd={async () => {
+              const res = await addMetric(work.id, {
+                value: { ko: "수치", en: "" },
+                sort: metrics.length
+              });
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            onUpdate={async (item: WorkMetric) => {
+              const res = await updateMetric(work.id, item.id, { value: asLoc(item.value) });
+              return res.ok ? { ok: true } : failOf(res.error);
+            }}
+            onDelete={async (item: WorkMetric) => {
+              const res = await deleteMetric(work.id, item.id);
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            onReorder={async (from, to) => {
+              const res = await reorderMetrics(work.id, toOrder(metrics, from, to));
+              if (!res.ok) return failOf(res.error);
+              await onReload();
+            }}
+            renderFields={(item, onChange) => {
+              const value = asLoc(item.value);
+              return (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <TextInput
+                    value={value.ko}
+                    placeholder="값 국문"
+                    onChange={(v) => onChange({ value: locField(value, "ko", v) })}
+                  />
+                  <TextInput
+                    value={value.en}
+                    placeholder="값 영문"
+                    onChange={(v) => onChange({ value: locField(value, "en", v) })}
+                  />
+                </div>
+              );
+            }}
+            guide={
+              <Guide>
+                <b className="font-semibold text-slate-600">항목당 30자 이내</b> · 3~5개 권장
+                <Sep />
+                AI가 가장 많이 인용하는 부분입니다.{" "}
+                <b className="font-semibold text-slate-600">반드시 숫자를 넣으세요.</b>
+                <br />
+                좋은 예) 일평균 방문객 16,000명 <span className="mx-1.5 text-slate-300">·</span> 누적 112만 명(2개월){" "}
+                <span className="mx-1.5 text-slate-300">·</span> 언론 보도 24건
+                <br />
+                나쁜 예) 방문객이 크게 늘었습니다 — 숫자가 없으면 인용되지 않습니다
+              </Guide>
+            }
+          />
         </div>
       </section>
 
       <section>
         <GroupTitle note="외부에 노출되지 않습니다">내부 연결</GroupTitle>
-        <FolderRow label="국문 폴더" required path={folderKo?.path ?? ""} find />
-        <FolderRow label="영문 폴더" path={folderEn?.path ?? ""} find />
-        {folderExtra.map((f) => (
-          <FolderRow key={f.id} label="추가" path={f.path} remove />
-        ))}
-        {folderExtra.length === 0 ? <FolderRow label="추가" path="" remove /> : null}
-        <div className="mt-2">
-          <SmallBtn disabled>＋ 폴더 추가</SmallBtn>
-        </div>
-        <Hint>나중에 루나가 이 워크와 내부 자료를 같은 프로젝트로 인식합니다</Hint>
+        <RepeatList
+          items={folders}
+          addLabel="＋ 폴더 추가"
+          onAdd={async () => {
+            const res = await addFolder(work.id, { kind: "extra", path: "T:\\" });
+            if (!res.ok) return failOf(res.error);
+            await onReload();
+          }}
+          onUpdate={async (item: WorkFolder) => {
+            const res = await updateFolder(work.id, item.id, { kind: item.kind, path: item.path });
+            return res.ok ? { ok: true } : failOf(res.error);
+          }}
+          onDelete={async (item: WorkFolder) => {
+            const res = await deleteFolder(work.id, item.id);
+            if (!res.ok) return failOf(res.error);
+            await onReload();
+          }}
+          onReorder={async () => ({ ok: true })}
+          renderFields={(item, onChange) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={item.kind}
+                onChange={(e) =>
+                  onChange({ kind: e.target.value as WorkFolder["kind"] }, { save: true })
+                }
+                className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="ko">국문</option>
+                <option value="en">영문</option>
+                <option value="extra">추가</option>
+              </select>
+              <div className="min-w-0 flex-1">
+                <TextInput
+                  value={item.path}
+                  placeholder="경로"
+                  onChange={(v) => onChange({ path: v })}
+                />
+              </div>
+            </div>
+          )}
+          guide={<Hint>나중에 루나가 이 워크와 내부 자료를 같은 프로젝트로 인식합니다</Hint>}
+        />
       </section>
-    </div>
-  );
-}
-
-function FolderRow({
-  label,
-  path,
-  required,
-  find,
-  remove
-}: {
-  label: string;
-  path: string;
-  required?: boolean;
-  find?: boolean;
-  remove?: boolean;
-}) {
-  return (
-    <div className="mb-1.5 flex flex-wrap items-center gap-2">
-      <span className="w-16 shrink-0 text-xs font-semibold text-slate-600">
-        {label}
-        {required ? <Req /> : null}
-      </span>
-      <div className="min-w-0 flex-1">
-        <TextInput value={path} readOnly />
-      </div>
-      {find ? <SmallBtn disabled>찾기</SmallBtn> : null}
-      {remove ? <SmallBtn disabled>삭제</SmallBtn> : null}
     </div>
   );
 }
