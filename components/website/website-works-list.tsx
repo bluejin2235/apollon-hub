@@ -6,10 +6,13 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { MoreHorizontal } from "lucide-react";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { NewWorkModal } from "@/components/website/new-work-modal";
-import { PreviewModal } from "@/components/website/preview-modal";
+import { showToast } from "@/components/website/toast";
 import { deleteWork, getMeta, listWorks, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
 import type { WebsiteCategory, WorkListItem } from "@/lib/website/types";
+import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window";
+
+const PUBLISH_REDIRECT_KEY = "website-publish-toast";
 
 type SortKey = "recent" | "title" | "year";
 
@@ -242,10 +245,8 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [newOpen, setNewOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [previewItem, setPreviewItem] = useState<WorkListItem | null>(null);
   const [unpublishItem, setUnpublishItem] = useState<WorkListItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<WorkListItem | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   async function reloadItems() {
     const works = await listWorks({ status: "all", limit: 100 });
@@ -282,10 +283,19 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   }, []);
 
   useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+    try {
+      const raw = sessionStorage.getItem(PUBLISH_REDIRECT_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PUBLISH_REDIRECT_KEY);
+      const parsed = JSON.parse(raw) as { title?: string };
+      const title = parsed.title?.trim();
+      if (title) {
+        showToast({ message: `'${title}' 이 공개되었습니다`, tone: "ok" });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const labelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -335,7 +345,17 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
         siteUrl={siteUrl}
         open={menuId === id}
         onOpenChange={(next) => setMenuId(next ? id : null)}
-        onPreview={() => setPreviewItem(item)}
+        onPreview={() => {
+          setMenuId(null);
+          void (async () => {
+            try {
+              const ok = await openPreview({ workId: item.id });
+              if (!ok) setError(PREVIEW_POPUP_BLOCKED);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "preview_failed");
+            }
+          })();
+        }}
         onUnpublish={() => setUnpublishItem(item)}
         onDelete={() => setDeleteItem(item)}
       />
@@ -351,6 +371,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
       return;
     }
     await reloadItems();
+    showToast({ message: "비공개로 바뀌었습니다", tone: "ok" });
   }
 
   async function confirmDelete() {
@@ -362,7 +383,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
       return;
     }
     await reloadItems();
-    setToast("삭제되었습니다");
+    showToast({ message: "삭제되었습니다", tone: "ok" });
   }
 
   const deleteTitleKo = deleteItem?.title?.ko?.trim() || (deleteItem ? workTitle(deleteItem) : "");
@@ -386,12 +407,6 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
           ＋ 새 프로젝트
         </button>
       </div>
-
-      {toast ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
-          {toast}
-        </div>
-      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <input
@@ -472,7 +487,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                             />
                           ) : (
                             <span className="grid h-10 w-[71px] shrink-0 place-items-center rounded bg-slate-100 text-[10px] text-slate-400">
-                              16:9
+                              —
                             </span>
                           )}
                           <span className="min-w-0">
@@ -517,7 +532,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                       <img src={thumb} alt="" className="h-16 w-[114px] shrink-0 rounded object-cover" />
                     ) : (
                       <span className="grid h-16 w-[114px] shrink-0 place-items-center rounded bg-slate-100 text-xs text-slate-400">
-                        16:9
+                        —
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
@@ -546,14 +561,6 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
       ) : null}
 
       <NewWorkModal open={newOpen} onClose={() => setNewOpen(false)} />
-
-      {previewItem ? (
-        <PreviewModal
-          workId={previewItem.id}
-          title={workTitle(previewItem)}
-          onClose={() => setPreviewItem(null)}
-        />
-      ) : null}
 
       <ConfirmDialog
         key={unpublishItem ? `unpub-${unpublishItem.id}` : "unpub"}

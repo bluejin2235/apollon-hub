@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getMeta, getWork, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
@@ -12,7 +12,6 @@ import {
   formatSavedAt,
   parseEditorTab,
   parseWorkDetail,
-  todayYmd,
   worksPatchFromDraft,
   type EditorTab,
   type WorkBasicDraft,
@@ -23,8 +22,16 @@ import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
-import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
-import { PreviewBarBtn, PreviewModal } from "@/components/website/preview-modal";
+import { GhostBtn, PreviewBarBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
+import { showToast } from "@/components/website/toast";
+import { isPreviewOpen, openPreview, PREVIEW_POPUP_BLOCKED, refreshPreview } from "@/lib/website/preview-window";
+
+const PUBLISH_REDIRECT_KEY = "website-publish-toast";
+
+function websiteOrigin() {
+  const raw = process.env.NEXT_PUBLIC_WEBSITE_ORIGIN?.trim() || "http://localhost:3100";
+  return raw.replace(/\/$/, "");
+}
 
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
@@ -51,6 +58,23 @@ function problemCount(check: CheckWorks | null): number {
   return PROBLEM_FLAGS.filter((flag) => check[flag]).length;
 }
 
+function draftLimitProblems(draft: WorkBasicDraft): string[] {
+  const issues: string[] = [];
+  if (draft.title.ko.trim() && draft.title.ko.length > 22) {
+    issues.push("제목이 22자를 넘습니다");
+  }
+  if (draft.title.en.length > 46) {
+    issues.push("영문 제목이 46자를 넘습니다");
+  }
+  if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
+    issues.push("한 줄 요약이 80자를 넘습니다");
+  }
+  if (draft.summary.en.length > 155) {
+    issues.push("영문 요약이 155자를 넘습니다");
+  }
+  return issues;
+}
+
 function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | null {
   if (!check || !details || typeof details !== "object") return check;
   const next = { ...check };
@@ -62,10 +86,16 @@ function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | nu
   return next;
 }
 
-function shortageLine(work: WorkDetail, check: CheckWorks | null): { text: string; ok: boolean } {
-  const problems = problemCount(check);
+function shortageLine(
+  work: WorkDetail,
+  check: CheckWorks | null,
+  draft: WorkBasicDraft | null
+): { text: string; ok: boolean } {
+  const limits = draft ? draftLimitProblems(draft) : [];
+  const problems = problemCount(check) + limits.length;
   if (problems > 0) {
-    return { text: `공개하려면 ${problems}가지가 더 필요합니다`, ok: false };
+    const extra = limits[0] ? ` — ${limits[0]}` : "";
+    return { text: `공개하려면 ${problems}가지가 더 필요합니다${extra}`, ok: false };
   }
   if (check?.ai_unconfirmed) {
     const n = countAiUnconfirmed(work);
@@ -101,8 +131,10 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLive, setPreviewLive] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
+  const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -130,6 +162,24 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setPreviewLive(isPreviewOpen());
+    const timer = window.setInterval(() => {
+      setPreviewLive(isPreviewOpen());
+    }, 2000);
+    return () => {
+      window.clearInterval(timer);
+      if (publishNavTimer.current) window.clearTimeout(publishNavTimer.current);
+    };
+  }, []);
+
+  const cancelPublishNav = useCallback(() => {
+    if (publishNavTimer.current) {
+      window.clearTimeout(publishNavTimer.current);
+      publishNavTimer.current = null;
+    }
+  }, []);
+
   const setTab = useCallback(
     (next: EditorTab) => {
       const sp = new URLSearchParams(searchParams.toString());
@@ -140,8 +190,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   );
 
   const check = checkOverride ?? work?.check ?? null;
-  const canPublish = problemCount(check) === 0;
-  const shortage = work ? shortageLine(work, check) : null;
+  const limitIssues = draft ? draftLimitProblems(draft) : [];
+  const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
+  const shortage = work ? shortageLine(work, check, draft) : null;
 
   const onChangeDraft = useCallback((patch: Partial<WorkBasicDraft>) => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -157,7 +208,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
         return;
       }
+      refreshPreview();
       await load();
+      showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
     } finally {
       setSaving(false);
     }
@@ -167,11 +220,11 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     if (!draft) return;
     setSaving(true);
     setError(null);
+    cancelPublishNav();
     try {
       const result = await updateWork(workId, {
         ...worksPatchFromDraft(draft),
-        status: "published",
-        published_at: todayYmd()
+        status: "published"
       });
       if (!result.ok) {
         if (result.status === 409 && result.error === "publish_blocked") {
@@ -184,6 +237,44 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       }
       setPanelOpen(false);
       await load();
+      if (isPreviewOpen()) refreshPreview();
+
+      const title = draft.title.ko.trim() || work?.slug || "프로젝트";
+      const slug = draft.slug || work?.slug || "";
+      const publicHref = `${websiteOrigin()}/works/${slug}`;
+      try {
+        sessionStorage.setItem(
+          PUBLISH_REDIRECT_KEY,
+          JSON.stringify({ title, at: Date.now() })
+        );
+      } catch {
+        // ignore
+      }
+
+      showToast({
+        message: "공개되었습니다",
+        tone: "ok",
+        durationMs: 4000,
+        actions: [
+          { label: "홈페이지에서 보기 ↗", href: publicHref },
+          {
+            label: "계속 편집",
+            onClick: () => {
+              cancelPublishNav();
+              try {
+                sessionStorage.removeItem(PUBLISH_REDIRECT_KEY);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        ]
+      });
+
+      publishNavTimer.current = window.setTimeout(() => {
+        publishNavTimer.current = null;
+        router.push("/website/works");
+      }, 1500);
     } finally {
       setSaving(false);
     }
@@ -208,6 +299,20 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   }
   if (!work || !draft) {
     return <p className="text-sm text-rose-600">{error ?? "work_not_found"}</p>;
+  }
+
+  async function handlePreview() {
+    setPreviewBlocked(false);
+    try {
+      const ok = await openPreview({ workId });
+      if (!ok) {
+        setPreviewBlocked(true);
+        return;
+      }
+      setPreviewLive(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "preview_failed");
+    }
   }
 
   const titleKo = draft.title.ko.trim() || work.slug;
@@ -236,8 +341,17 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           {work.status === "published" ? "공개" : "초안"}
         </span>
         <span className="flex-1" />
-        <PreviewBarBtn onClick={() => setPreviewOpen(true)} />
+        <PreviewBarBtn onClick={() => void handlePreview()} />
+        {previewLive ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+            <i className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            연결됨
+          </span>
+        ) : null}
       </div>
+      {previewBlocked ? (
+        <p className="mt-1 text-xs text-rose-600">{PREVIEW_POPUP_BLOCKED}</p>
+      ) : null}
       <p className="mt-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
         마지막 저장 {formatSavedAt(work.updated_at)}
       </p>
@@ -299,7 +413,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           >
             {shortage?.text}
           </p>
-          <PreviewBarBtn onClick={() => setPreviewOpen(true)} />
+          <PreviewBarBtn onClick={() => void handlePreview()} />
           <GhostBtn disabled={saving} onClick={() => void saveTemp()}>
             임시 저장
           </GhostBtn>
@@ -344,10 +458,6 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           }}
           onPublish={() => void publish()}
         />
-      ) : null}
-
-      {previewOpen ? (
-        <PreviewModal workId={workId} title={titleKo} onClose={() => setPreviewOpen(false)} />
       ) : null}
     </div>
   );

@@ -143,7 +143,7 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={src} alt="" className="h-full w-full object-cover" />
               ) : (
-                "16:9"
+                "—"
               )}
             </div>
             <div className="p-2.5">
