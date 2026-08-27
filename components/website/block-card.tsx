@@ -2,13 +2,6 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  ChevronDown,
-  Copy,
-  GripVertical,
-  MoreHorizontal,
-  Trash2
-} from "lucide-react";
-import {
   addImages,
   createBlock,
   createLibrary,
@@ -32,7 +25,19 @@ import {
 } from "@/components/website/block-presets";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
-import { PreviewMiniBtn, PreviewModal } from "@/components/website/preview-modal";
+import { PosterPicker } from "@/components/website/poster-picker";
+import { uploadFile } from "@/lib/website/api";
+import {
+  sanitizeUploadFilename,
+  uploadObjectPath
+} from "@/lib/website/upload-path";
+import {
+  extractFrames,
+  extractFramesAlt,
+  revokeFrameUrls,
+  type ExtractedFrame,
+  type VideoFrameMeta
+} from "@/lib/website/video-thumbs";
 import {
   BilingualField,
   CharKo,
@@ -54,9 +59,12 @@ type Props = {
   total: number;
   sectionId: string;
   workId: string;
+  uploadRoot: string;
   siteUrl: string;
   onReload: () => Promise<void>;
   onMove: (dir: -1 | 1) => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   collapsed: boolean;
   onToggle: () => void;
 };
@@ -83,21 +91,24 @@ export function BlockCard({
   total,
   sectionId,
   workId,
+  uploadRoot,
   siteUrl,
   onReload,
   onMove,
+  canMoveUp = index > 1,
+  canMoveDown = index < total,
   collapsed,
   onToggle
 }: Props) {
   const [save, setSave] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [menu, setMenu] = useState(false);
   const [changePreset, setChangePreset] = useState(false);
   const [saveLib, setSaveLib] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [body, setBody] = useState<Loc>(asLoc(block.body));
-  const [videoKind, setVideoKind] = useState(block.video_kind ?? "embed");
+  const [videoKind, setVideoKind] = useState(
+    block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed")
+  );
   const [videoUrl, setVideoUrl] = useState(block.video_url ?? "");
   const [videoPoster, setVideoPoster] = useState(block.video_poster ?? "");
   const [videoAlt, setVideoAlt] = useState<Loc>(asLoc(block.video_alt));
@@ -111,7 +122,7 @@ export function BlockCard({
 
   useEffect(() => {
     setBody(asLoc(block.body));
-    setVideoKind(block.video_kind ?? "embed");
+    setVideoKind(block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed"));
     setVideoUrl(block.video_url ?? "");
     setVideoPoster(block.video_poster ?? "");
     setVideoAlt(asLoc(block.video_alt));
@@ -127,20 +138,25 @@ export function BlockCard({
   const limit = imageLimitForPreset(block.preset);
   const atLimit = limit !== null && images.length >= limit;
   const presetName = PRESET_LABEL[block.preset] ?? block.preset;
-  const mediaLabel = [
-    images.length ? `이미지 ${images.length}` : "",
-    block.preset.startsWith("video") ? "영상" : "",
-    block.preset === "embed" ? "임베드" : ""
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const chip =
+    block.preset.startsWith("video")
+      ? block.video_kind === "file" || (!block.video_url && Boolean(block.video_poster))
+        ? "업로드"
+        : block.video_url?.includes("vimeo")
+          ? "Vimeo"
+          : block.video_url
+            ? "유튜브"
+            : "영상"
+      : block.preset === "embed"
+        ? (EMBED_PROVIDERS.find((item) => item.id === block.embed_provider)?.label ?? "임베드")
+        : null;
 
   function schedule(patch: Record<string, unknown>) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void persist(patch), 1500);
   }
 
-  async function persist(patch: Record<string, unknown>) {
+  async function persist(patch: Record<string, unknown>): Promise<boolean> {
     setSave("saving");
     setError(null);
     try {
@@ -148,17 +164,22 @@ export function BlockCard({
       if (!res.ok) {
         setSave("error");
         setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
-        return;
+        return false;
       }
       setSave("saved");
+      return true;
+    } catch (err) {
+      setSave("error");
+      setError(err instanceof Error ? err.message : "저장하지 못했습니다");
+      return false;
     } finally {
       setSave((cur) => (cur === "saving" ? "idle" : cur));
     }
   }
 
-  async function flush(patch: Record<string, unknown>) {
+  async function flush(patch: Record<string, unknown>): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
-    await persist(patch);
+    return persist(patch);
   }
 
   async function onDelete() {
@@ -240,45 +261,35 @@ export function BlockCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 bg-slate-50 px-3 py-2">
-        <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-        <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
-        <button type="button" onClick={onToggle} className="min-w-0 flex-1 truncate text-left text-sm font-bold text-slate-800">
-          {presetName}
-        </button>
-        {mediaLabel ? <span className="hidden text-xs text-slate-400 sm:inline">{mediaLabel}</span> : null}
-        <PreviewMiniBtn onClick={() => setPreviewOpen(true)} />
-        {save === "saving" ? <span className="text-[11px] text-slate-400">저장 중</span> : null}
-        {save === "saved" ? <span className="text-[11px] text-emerald-600">저장됨</span> : null}
-        <button type="button" disabled={index <= 1} onClick={() => onMove(-1)} className="text-xs text-slate-400 disabled:opacity-30">
-          ↑
-        </button>
-        <button type="button" disabled={index >= total} onClick={() => onMove(1)} className="text-xs text-slate-400 disabled:opacity-30">
-          ↓
-        </button>
-        <div className="relative">
-          <button type="button" onClick={() => setMenu((v) => !v)} className="text-slate-400">
-            <MoreHorizontal className="h-4 w-4" />
+    <div id={`content-block-${block.id}`} className={collapsed ? "blk" : "blk on"}>
+      <div className="bh" onClick={onToggle}>
+        <span className="gr">⠿</span>
+        <span className="kd">{presetName}</span>
+        {chip ? <span className="c2">{chip}</span> : null}
+        {save === "saving" ? <span className="c2">저장 중</span> : null}
+        {save === "saved" ? <span className="c2">저장됨</span> : null}
+        <div
+          className="ct"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" className="ico" disabled={!canMoveUp} onClick={() => onMove(-1)}>
+            ↑
           </button>
-          {menu ? (
-            <div className="absolute right-0 z-10 mt-1 w-36 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50" onClick={() => { setMenu(false); void onClone(); }}>
-                <Copy className="h-3 w-3" /> 복제
-              </button>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50" onClick={() => { setMenu(false); setDeleteOpen(true); }}>
-                <Trash2 className="h-3 w-3" /> 삭제
-              </button>
-            </div>
-          ) : null}
+          <button type="button" className="ico" disabled={!canMoveDown} onClick={() => onMove(1)}>
+            ↓
+          </button>
+          <button type="button" className="ico" onClick={() => void onClone()}>
+            ⧉
+          </button>
+          <button type="button" className="ico" onClick={() => setDeleteOpen(true)}>
+            ✕
+          </button>
         </div>
-        <button type="button" onClick={onToggle} className="text-slate-400">
-          <ChevronDown className={`h-4 w-4 transition ${collapsed ? "" : "rotate-180"}`} />
-        </button>
       </div>
 
       {collapsed ? null : (
-        <div className="space-y-4 p-3.5">
+        <div className="bb">
+        <div className="space-y-4">
           {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -357,9 +368,8 @@ export function BlockCard({
             <ImagesEditor
               images={images}
               blockId={block.id}
-              preset={block.preset}
               siteUrl={siteUrl}
-              workId={workId}
+              uploadRoot={uploadRoot}
               atLimit={atLimit}
               limit={limit}
               onReload={onReload}
@@ -406,19 +416,27 @@ export function BlockCard({
               url={videoUrl}
               poster={videoPoster}
               alt={videoAlt}
-              workId={workId}
+              uploadRoot={uploadRoot}
+              blockId={block.id}
+              siteUrl={siteUrl}
               onKind={(v) => {
                 setVideoKind(v);
-                void flush({ video_kind: v });
+                setVideoUrl("");
+                void flush({ video_kind: v, video_url: null });
               }}
               onUrl={(v) => {
                 setVideoUrl(v);
                 schedule({ video_url: v, video_kind: videoKind });
               }}
               onUrlBlur={() => void flush({ video_url: videoUrl, video_kind: videoKind })}
-              onPoster={(src) => {
-                setVideoPoster(src);
-                void flush({ video_poster: src });
+              onUrlCommit={(v) => {
+                setVideoUrl(v);
+                void flush({ video_url: v || null, video_kind: "hosted" });
+              }}
+              onPoster={async (src) => {
+                const ok = await flush({ video_poster: src || null });
+                if (ok) setVideoPoster(src);
+                return ok;
               }}
               onAlt={(next) => {
                 setVideoAlt(next);
@@ -434,7 +452,8 @@ export function BlockCard({
               url={embedUrl}
               title={embedTitle}
               poster={embedPoster}
-              workId={workId}
+              uploadRoot={uploadRoot}
+              siteUrl={siteUrl}
               onProvider={setEmbedProvider}
               onUrl={setEmbedUrl}
               onConfirm={() => void flush({ embed_provider: embedProvider, embed_url: embedUrl })}
@@ -458,16 +477,8 @@ export function BlockCard({
             />
           ) : null}
         </div>
+        </div>
       )}
-
-      {previewOpen ? (
-        <PreviewModal
-          workId={workId}
-          blockId={block.id}
-          title={presetName}
-          onClose={() => setPreviewOpen(false)}
-        />
-      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}
@@ -486,9 +497,8 @@ const IMAGE_TEXT_LIKE = new Set(["image-text", "text-image", "portrait-text"]);
 function ImagesEditor({
   images,
   blockId,
-  preset,
   siteUrl,
-  workId,
+  uploadRoot,
   atLimit,
   limit,
   onReload,
@@ -497,16 +507,14 @@ function ImagesEditor({
 }: {
   images: BlockImage[];
   blockId: string;
-  preset: string;
   siteUrl: string;
-  workId: string;
+  uploadRoot: string;
   atLimit: boolean;
   limit: number | null;
   onReload: () => Promise<void>;
   onAdd: (files: UploadedMedia[]) => void;
   onError: (msg: string | null) => void;
 }) {
-  const multi = preset === "gallery-auto" || preset === "carousel";
 
   async function move(index: number, dir: -1 | 1) {
     const next = index + dir;
@@ -532,8 +540,8 @@ function ImagesEditor({
         <Sep />
         본문 이미지는 가로·세로·정사각형 아무거나 됩니다. 올린 비율 그대로 들어갑니다.
         <br />
-        <b className="font-semibold text-slate-600">2단 2:1 · 1:2 배치의 작은 쪽은 세로형(3:4)</b>이 어울립니다. 가로
-        사진을 넣으면 좌우가 잘립니다.
+        <b className="font-semibold text-slate-600">「가로 + 세로」「세로 + 가로」의 큰 쪽은 가로 사진</b>이어야
+        합니다. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
       </Guide>
       <div className="mt-3 space-y-3">
         {images.map((img, i) => (
@@ -553,12 +561,14 @@ function ImagesEditor({
       </div>
       <div className="mt-3">
         <ImageUploader
-          workId={workId}
+          bucket="works"
+          folder={`${uploadRoot}/blocks/${blockId}`}
           accept="image"
-          multiple={multi}
+          multiple
           disabled={atLimit}
           maxFiles={limit === null ? undefined : Math.max(0, limit - images.length)}
-          label={atLimit ? `이 배치는 ${limit}장까지` : "＋ 이미지 추가"}
+          existingNames={images.map((img) => fileName(img.src))}
+          guide={atLimit ? `이 배치는 ${limit}장까지` : "JPG · 긴 변 2560px · 2MB 이하 · 비율 자유"}
           onUploaded={onAdd}
         />
       </div>
@@ -728,10 +738,13 @@ function VideoFields({
   url,
   poster,
   alt,
-  workId,
+  uploadRoot,
+  blockId,
+  siteUrl,
   onKind,
   onUrl,
   onUrlBlur,
+  onUrlCommit,
   onPoster,
   onAlt,
   onAltBlur
@@ -740,53 +753,280 @@ function VideoFields({
   url: string;
   poster: string;
   alt: Loc;
-  workId: string;
+  uploadRoot: string;
+  blockId: string;
+  siteUrl: string;
   onKind: (v: string) => void;
   onUrl: (v: string) => void;
   onUrlBlur: () => void;
-  onPoster: (src: string) => void;
+  onUrlCommit: (v: string) => void;
+  onPoster: (src: string) => void | Promise<boolean | void>;
   onAlt: (v: Loc) => void;
   onAltBlur: () => void;
 }) {
+  const isHosted = kind === "hosted" || kind === "loop";
+  const previewSrc = url ? mediaUrl(siteUrl, url) : null;
+
+  const [frames, setFrames] = useState<ExtractedFrame[]>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [extractFailed, setExtractFailed] = useState(false);
+  const [extractProgress, setExtractProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
+  const [showPicker, setShowPicker] = useState(false);
+  const [manualPoster, setManualPoster] = useState(false);
+  const [posterBusy, setPosterBusy] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [sourceStem, setSourceStem] = useState("video");
+  const [pendingPickAfterUpload, setPendingPickAfterUpload] = useState(false);
+  /** DB video_width / video_height 추가 후 PATCH에 실을 값 */
+  const [, setVideoMeta] = useState<VideoFrameMeta | null>(null);
+  const extractGen = useRef(0);
+  const usedAlt = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      revokeFrameUrls(frames);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
+  }, []);
+
+  function clearFrames() {
+    setFrames((prev) => {
+      revokeFrameUrls(prev);
+      return [];
+    });
+  }
+
+  async function runExtract(file: File, alt: boolean) {
+    const gen = ++extractGen.current;
+    setExtracting(true);
+    setExtractFailed(false);
+    setPickError(null);
+    setExtractProgress({ done: 0, total: 1 });
+    clearFrames();
+    const fn = alt ? extractFramesAlt : extractFrames;
+    const next = await fn(file, 5, (meta) => {
+      if (gen === extractGen.current) setVideoMeta(meta);
+    }, (done, total) => {
+      if (gen === extractGen.current) setExtractProgress({ done, total });
+    });
+    if (gen !== extractGen.current) {
+      revokeFrameUrls(next);
+      return;
+    }
+    setFrames(next);
+    setExtracting(false);
+    setExtractProgress(null);
+    if (next.length === 0) {
+      setExtractFailed(true);
+      setShowPicker(false);
+      setManualPoster(true);
+    } else {
+      setExtractFailed(false);
+      setShowPicker(true);
+    }
+  }
+
+  function onVideoUploaded(files: UploadedMedia[]) {
+    const first = files[0];
+    if (!first) return;
+    onUrlCommit(first.src);
+    if (!poster && pendingPickAfterUpload) {
+      setShowPicker(true);
+    }
+    setPendingPickAfterUpload(false);
+  }
+
+  async function uploadPosterBlob(blob: Blob, at: number) {
+    setPosterBusy(true);
+    setPickError(null);
+    try {
+      const sec = Math.floor(at);
+      const filename = sanitizeUploadFilename(`${sourceStem}-poster-${sec}.jpg`);
+      const path = uploadObjectPath(`${uploadRoot}/poster`, filename);
+      const file = new File([blob], filename, { type: "image/jpeg" });
+      const res = await uploadFile(file, "works", path);
+      if (!res.ok) {
+        setPickError(res.error || "올리지 못했습니다");
+        return;
+      }
+      const src = res.data.publicUrl || `/${res.data.path}`;
+      const saved = await onPoster(src);
+      if (saved === false) {
+        setPickError("저장하지 못했습니다");
+        return;
+      }
+      setShowPicker(false);
+    } catch (err) {
+      setPickError(err instanceof Error ? err.message : "저장하지 못했습니다");
+    } finally {
+      setPosterBusy(false);
+    }
+  }
+
+  const [localFile, setLocalFile] = useState<File | null>(null);
+
+  async function runExtractKeepFile(file: File, alt: boolean) {
+    setLocalFile(file);
+    usedAlt.current = alt;
+    await runExtract(file, alt);
+  }
+
+  function onLocalVideoKeep(files: File[]) {
+    const file = files[0];
+    if (!file) return;
+    const stem = file.name.replace(/\.[^.]+$/, "") || "video";
+    setSourceStem(stem);
+    setManualPoster(false);
+    setExtractFailed(false);
+    setPickError(null);
+    setPendingPickAfterUpload(!poster);
+    setShowPicker(true);
+    usedAlt.current = false;
+    void runExtractKeepFile(file, false);
+  }
+
+  function handleRedraw() {
+    if (!localFile) return;
+    const nextAlt = !usedAlt.current;
+    setShowPicker(true);
+    void runExtractKeepFile(localFile, nextAlt);
+  }
+
+  function reopenPicker() {
+    setManualPoster(false);
+    setPickError(null);
+    if (frames.length > 0) {
+      setShowPicker(true);
+      return;
+    }
+    if (localFile) {
+      setShowPicker(true);
+      void runExtractKeepFile(localFile, usedAlt.current);
+      return;
+    }
+    setManualPoster(true);
+  }
+
   return (
     <div className="rounded-lg border border-dashed border-slate-300 p-3">
       <div className="mb-2 flex flex-wrap gap-1.5">
         <KindChip on={kind === "embed"} onClick={() => onKind("embed")}>
-          유튜브·Behance 임베드
+          임베드
         </KindChip>
-        <KindChip on={kind === "loop"} onClick={() => onKind("loop")}>
-          배경 루프 업로드
-        </KindChip>
-        <KindChip on={false} disabled>
-          본편 영상 (9월 예정)
+        <KindChip on={isHosted} onClick={() => onKind("hosted")}>
+          영상 업로드
         </KindChip>
       </div>
-      {kind === "loop" ? (
-        <ImageUploader
-          workId={workId}
-          accept="video"
-          kind="loop-lg"
-          label="＋ 루프 영상 업로드"
-          onUploaded={(files) => {
-            const first = files[0];
-            if (first) onUrl(first.src);
-          }}
-        />
+
+      {isHosted ? (
+        <div>
+          <FieldLabel>영상 파일</FieldLabel>
+          <ImageUploader
+            bucket="works"
+            folder={`${uploadRoot}/blocks/${blockId}`}
+            accept="video"
+            multiple={false}
+            siteUrl={siteUrl}
+            value={url || null}
+            guide={
+              <>
+                MP4 (H.264) · 200MB 이하 · 클릭하면 재생됩니다.
+                <br />
+                더 큰 영상은 유튜브에 올리고 주소를 붙여넣는 편이 낫습니다.
+              </>
+            }
+            onLocalFiles={onLocalVideoKeep}
+            onUploaded={onVideoUploaded}
+            onClear={() => {
+              onUrlCommit("");
+              clearFrames();
+              setLocalFile(null);
+              setShowPicker(false);
+              setExtractFailed(false);
+              setManualPoster(false);
+              setPickError(null);
+              setVideoMeta(null);
+            }}
+          />
+          {previewSrc ? (
+            <video
+              src={previewSrc}
+              muted
+              controls
+              playsInline
+              className="mt-2 max-h-48 w-full rounded-md bg-black object-contain"
+            />
+          ) : null}
+
+          {extracting || showPicker || extractFailed ? (
+            <PosterPicker
+              frames={frames}
+              extracting={extracting}
+              failed={extractFailed}
+              busy={posterBusy}
+              progress={extractProgress}
+              error={pickError}
+              onPick={(blob, at) => void uploadPosterBlob(blob, at)}
+              onUpload={() => {
+                setManualPoster(true);
+                setShowPicker(false);
+                setExtractFailed(false);
+                setPickError(null);
+              }}
+              onRedraw={localFile ? handleRedraw : undefined}
+            />
+          ) : null}
+
+          {url && !showPicker && !extracting && !extractFailed ? (
+            <button
+              type="button"
+              className="mt-2 text-xs font-medium text-apollon-700 underline"
+              onClick={reopenPicker}
+            >
+              재생 전 이미지 다시 고르기
+            </button>
+          ) : null}
+        </div>
       ) : (
-        <TextInput value={url} onChange={onUrl} onBlur={onUrlBlur} placeholder="영상 주소" />
+        <TextInput
+          value={url}
+          onChange={onUrl}
+          onBlur={onUrlBlur}
+          placeholder="유튜브 · Vimeo · Behance 주소"
+        />
       )}
+
       <div className="mt-2">
         <FieldLabel>재생 전 이미지</FieldLabel>
-        <ImageUploader
-          workId={workId}
-          accept="image"
-          kind="poster"
-          label={poster ? "재생 전 이미지 바꾸기" : "＋ 재생 전 이미지"}
-          onUploaded={(files) => {
-            const first = files[0];
-            if (first) onPoster(first.src);
-          }}
-        />
+        {isHosted && !manualPoster && !poster && !extractFailed && (extracting || showPicker) ? (
+          <p className="text-xs text-slate-500">위에서 장면을 고르거나 직접 올리기를 선택하세요.</p>
+        ) : (
+          <ImageUploader
+            bucket="works"
+            folder={`${uploadRoot}/poster`}
+            accept="image"
+            multiple={false}
+            kind="poster"
+            siteUrl={siteUrl}
+            value={poster || null}
+            guide={
+              isHosted
+                ? "필수. 없으면 재생 전에 검은 화면이 보입니다"
+                : "비워두면 유튜브 썸네일을 자동으로 가져옵니다"
+            }
+            onUploaded={async (files) => {
+              const first = files[0];
+              if (!first) return;
+              const ok = await onPoster(first.src);
+              if (ok === false) return;
+              setShowPicker(false);
+              setManualPoster(false);
+            }}
+            onClear={() => void onPoster("")}
+          />
+        )}
       </div>
       <div className="mt-2">
         <FieldLabel>대체 텍스트</FieldLabel>
@@ -799,15 +1039,19 @@ function VideoFields({
         />
       </div>
       <Guide>
-        <b className="font-semibold text-slate-600">임베드</b> — 유튜브·Behance 주소를 그대로 붙여넣으세요. 재생 버튼을
-        누르기 전까지는 이미지 한 장만 보이므로 페이지가 무거워지지 않습니다.
-        <br />
-        <b className="font-semibold text-slate-600">배경 루프</b> — MP4(H.264) · 1280×720 · 4~6초 · 24fps · 소리 없음 ·{" "}
-        <b className="font-semibold text-slate-600">1.5MB 이하</b>. 마우스를 올리면 재생되고, 모바일에서는 정지 이미지로
-        대체됩니다.
-        <br />
-        <b className="font-semibold text-slate-600">본편 영상</b> — 9월 예정. 유튜브에 올리지 않을 고화질 영상을 우리
-        서버에서 재생합니다.
+        {isHosted ? (
+          <>
+            <b className="font-semibold text-slate-600">MP4 · 200MB 이하.</b> 클릭하면 재생됩니다.
+            <br />
+            목록 카드에서 마우스를 올리면 도는 배경 영상은 기본정보 탭에서 따로 올립니다.
+          </>
+        ) : (
+          <>
+            유튜브 · Vimeo · Behance 주소를 그대로 붙여넣으세요.
+            <br />
+            재생 버튼을 누르기 전까지는 이미지 한 장만 보이므로 페이지가 가볍습니다.
+          </>
+        )}
       </Guide>
     </div>
   );
@@ -818,7 +1062,8 @@ function EmbedFields({
   url,
   title,
   poster,
-  workId,
+  uploadRoot,
+  siteUrl,
   onProvider,
   onUrl,
   onConfirm,
@@ -830,7 +1075,8 @@ function EmbedFields({
   url: string;
   title: Loc;
   poster: string;
-  workId: string;
+  uploadRoot: string;
+  siteUrl: string;
   onProvider: (v: string) => void;
   onUrl: (v: string) => void;
   onConfirm: () => void;
@@ -881,14 +1127,19 @@ function EmbedFields({
       />
       <FieldLabel>재생 전 이미지</FieldLabel>
       <ImageUploader
-        workId={workId}
+        bucket="works"
+        folder={`${uploadRoot}/poster`}
         accept="image"
+        multiple={false}
         kind="poster"
-        label={poster ? "재생 전 이미지 바꾸기" : "＋ 재생 전 이미지"}
+        siteUrl={siteUrl}
+        value={poster || null}
+        guide="재생 전에 보이는 이미지"
         onUploaded={(files) => {
           const first = files[0];
           if (first) onPoster(first.src);
         }}
+        onClear={() => onPoster("")}
       />
     </div>
   );
