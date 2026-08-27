@@ -16,6 +16,7 @@ type RepeatListProps<T extends ItemBase> = {
   renderFields: (item: T, onChange: (patch: Partial<T>, opts?: { save?: boolean }) => void) => ReactNode;
   addLabel: string;
   guide?: ReactNode;
+  variant?: "default" | "boxed";
 };
 
 type RepeatRowProps<T extends ItemBase> = {
@@ -26,6 +27,7 @@ type RepeatRowProps<T extends ItemBase> = {
   onUpdate: (item: T) => Promise<SaveResult>;
   onDelete: (item: T) => Promise<SaveResult | void>;
   onMove: (dir: -1 | 1) => void;
+  variant: "default" | "boxed";
 };
 
 function RepeatRow<T extends ItemBase>({
@@ -35,7 +37,8 @@ function RepeatRow<T extends ItemBase>({
   renderFields,
   onUpdate,
   onDelete,
-  onMove
+  onMove,
+  variant
 }: RepeatRowProps<T>) {
   const [local, setLocal] = useState(item);
   const [save, setSave] = useState<"idle" | "saving" | "saved">("idle");
@@ -86,6 +89,49 @@ function RepeatRow<T extends ItemBase>({
     if (!window.confirm("삭제할까요?")) return;
     const res = await onDelete(item);
     if (res && !res.ok) setError(res.error);
+  }
+
+  if (variant === "boxed") {
+    return (
+      <div className="repeat-row" onBlur={onRowBlur}>
+        <div className="repeat-fields">{renderFields(local, onChange)}</div>
+        <div className="repeat-acts">
+          {save === "saving" ? <span className="repeat-save">저장 중</span> : null}
+          {save === "saved" ? <span className="repeat-save">저장됨</span> : null}
+          <button
+            type="button"
+            className="ico"
+            disabled={index <= 0}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              void persist(localRef.current).then(() => onMove(-1));
+            }}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="ico"
+            disabled={index >= total - 1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              void persist(localRef.current).then(() => onMove(1));
+            }}
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            className="ico"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void remove()}
+          >
+            ✕
+          </button>
+        </div>
+        {error ? <p className="repeat-error">{error}</p> : null}
+      </div>
+    );
   }
 
   return (
@@ -140,7 +186,8 @@ export function RepeatList<T extends ItemBase>({
   onReorder,
   renderFields,
   addLabel,
-  guide
+  guide,
+  variant = "default"
 }: RepeatListProps<T>) {
   const [listError, setListError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,26 +211,37 @@ export function RepeatList<T extends ItemBase>({
     if (res && !res.ok) setListError(res.error);
   }
 
+  const rows = items.map((item, index) => (
+    <RepeatRow
+      key={item.id}
+      item={item}
+      index={index}
+      total={items.length}
+      renderFields={renderFields}
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onMove={(dir) => void move(index, dir)}
+      variant={variant}
+    />
+  ));
+
   return (
     <div>
-      <div className="space-y-2">
-        {items.map((item, index) => (
-          <RepeatRow
-            key={item.id}
-            item={item}
-            index={index}
-            total={items.length}
-            renderFields={renderFields}
-            onUpdate={onUpdate}
-            onDelete={onDelete}
-            onMove={(dir) => void move(index, dir)}
-          />
-        ))}
-      </div>
-      <div className="mt-2">
-        <SmallBtn disabled={busy} onClick={() => void add()}>
-          {addLabel}
-        </SmallBtn>
+      {variant === "boxed" ? (
+        items.length > 0 ? <div className="repeat-box">{rows}</div> : null
+      ) : (
+        <div className="space-y-2">{rows}</div>
+      )}
+      <div className={variant === "boxed" ? undefined : "mt-2"} style={variant === "boxed" ? { marginTop: 7 } : undefined}>
+        {variant === "boxed" ? (
+          <button type="button" className="btn sm" disabled={busy} onClick={() => void add()}>
+            {addLabel}
+          </button>
+        ) : (
+          <SmallBtn disabled={busy} onClick={() => void add()}>
+            {addLabel}
+          </SmallBtn>
+        )}
       </div>
       {listError ? <p className="mt-1 text-xs text-rose-600">{listError}</p> : null}
       {guide}

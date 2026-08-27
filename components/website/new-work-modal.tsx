@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createWork, getMeta } from "@/lib/website/api";
 import type { ApiErr, WebsiteCategory } from "@/lib/website/types";
+import { todayYmd } from "@/lib/website/work-detail";
 import { CharKo, FieldLabel, GhostBtn, PrimaryBtn, Req, TextInput } from "@/components/website/work-editor-ui";
 
 type Props = {
@@ -118,7 +119,8 @@ export function NewWorkModal({ open, onClose }: Props) {
         year: year.trim(),
         title: { ko, en: ko },
         summary: { ko: "작성 중입니다.", en: "" },
-        key_image: "/works/placeholder-wide.svg"
+        key_image: "/works/placeholder-wide.svg",
+        published_at: todayYmd()
       });
       if (!res.ok) {
         if (isWebsiteDown(res)) {

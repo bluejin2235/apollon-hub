@@ -1,44 +1,31 @@
 "use client";
 
+import { useEffect, useId, useState } from "react";
 import {
   addCredit,
   addFolder,
-  addMetric,
   deleteCredit,
   deleteFolder,
-  deleteMetric,
   reorderCredits,
-  reorderMetrics,
+  reorderFolders,
   updateCredit,
-  updateFolder,
-  updateMetric
+  updateFolder
 } from "@/lib/website/api";
 import type { WebsiteCategory } from "@/lib/website/types";
 import type {
   WorkBasicDraft,
   WorkCredit,
   WorkDetail,
-  WorkFolder,
-  WorkMetric
+  WorkFolder
 } from "@/lib/website/work-detail";
-import { asLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
+import { asLoc } from "@/lib/website/work-detail";
+import { workFolderPrefix } from "@/lib/website/upload-path";
+import { ImageUploader } from "@/components/website/image-uploader";
 import { RepeatList, type SaveResult } from "@/components/website/repeat-list";
 import { TagPicker } from "@/components/website/tag-picker";
-import {
-  AiBadge,
-  BilingualField,
-  CharPair,
-  FieldLabel,
-  GroupTitle,
-  Guide,
-  Hint,
-  locField,
-  Req,
-  Sep,
-  TextInput,
-  ThumbBox,
-  ToggleRow
-} from "@/components/website/work-editor-ui";
+import { locField } from "@/components/website/work-editor-ui";
+import { Alert, Field, FoldGroup } from "@/components/website/ui";
+import "./ui/work-admin.css";
 
 type Props = {
   draft: WorkBasicDraft;
@@ -48,6 +35,8 @@ type Props = {
   siteUrl: string;
   onReload: () => Promise<void>;
 };
+
+type PendingExtra = { key: string; name: string; path: string };
 
 function toOrder<T extends { id: string }>(items: T[], from: number, to: number) {
   const next = [...items];
@@ -60,398 +49,698 @@ function failOf(error: string): SaveResult {
   return { ok: false, error };
 }
 
-export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onReload }: Props) {
-  const credits = [...(work.work_credits ?? [])].sort((a, b) => a.sort - b.sort);
-  const metrics = [...(work.work_metrics ?? [])].sort((a, b) => a.sort - b.sort);
-  const folders = work.work_folders ?? [];
-  const tags = [...(work.work_tags ?? [])].sort((a, b) => a.sort - b.sort);
-  const summaryLong = draft.summary.ko.length > 80;
+function filled(value: string | null | undefined) {
+  return Boolean(value?.trim());
+}
+
+function withinLimit(value: string, limit: number) {
+  const text = value.trim();
+  return text.length > 0 && text.length <= limit;
+}
+
+function isPlaceholderKey(src: string) {
+  return !src.trim() || /placeholder-wide/i.test(src);
+}
+
+function toneOf(done: number, total: number): "ok" | "warn" | "faint" {
+  if (done <= 0) return "faint";
+  if (done >= total) return "ok";
+  return "warn";
+}
+
+function splitFolders(folders: WorkFolder[]) {
+  const sorted = [...folders].sort((a, b) => a.sort - b.sort);
+  const isProject = (item: WorkFolder) =>
+    item.kind === "ko" || item.name.trim() === "프로젝트 폴더";
+  const isVideo = (item: WorkFolder) =>
+    item.kind === "en" || item.name.trim() === "영상 폴더";
+  const project =
+    sorted.find(isProject) ??
+    sorted.find((item) => filled(item.path) && !isVideo(item)) ??
+    null;
+  const video = sorted.find((item) => isVideo(item) && item.id !== project?.id) ?? null;
+  const extras = sorted.filter((item) => item.id !== project?.id && item.id !== video?.id);
+  return { project, video, extras };
+}
+
+function AiBadge() {
+  return (
+    <button type="button" className="aib" disabled title="국문으로 영문 생성">
+      AI
+    </button>
+  );
+}
+
+function Bi({
+  ko,
+  en,
+  onKo,
+  onEn,
+  multiline,
+  koPlaceholder,
+  enPlaceholder
+}: {
+  ko: string;
+  en: string;
+  onKo: (v: string) => void;
+  onEn: (v: string) => void;
+  multiline?: boolean;
+  koPlaceholder?: string;
+  enPlaceholder?: string;
+}) {
+  return (
+    <div className="two">
+      {multiline ? (
+        <textarea
+          className="i"
+          value={ko}
+          placeholder={koPlaceholder}
+          onChange={(e) => onKo(e.target.value)}
+        />
+      ) : (
+        <input
+          className="i"
+          value={ko}
+          placeholder={koPlaceholder}
+          onChange={(e) => onKo(e.target.value)}
+        />
+      )}
+      <div className="enw">
+        {multiline ? (
+          <textarea
+            className="i"
+            value={en}
+            placeholder={enPlaceholder}
+            onChange={(e) => onEn(e.target.value)}
+          />
+        ) : (
+          <input
+            className="i"
+            value={en}
+            placeholder={enPlaceholder}
+            onChange={(e) => onEn(e.target.value)}
+          />
+        )}
+        <AiBadge />
+      </div>
+    </div>
+  );
+}
+
+function FolderKindRow({
+  label,
+  required,
+  placeholder,
+  folder,
+  kind,
+  sort,
+  workId,
+  onReload
+}: {
+  label: string;
+  required?: boolean;
+  placeholder: string;
+  folder: WorkFolder | null;
+  kind: "ko" | "en";
+  sort: number;
+  workId: string;
+  onReload: () => Promise<void>;
+}) {
+  const [local, setLocal] = useState(folder?.path ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const shown = folder?.name?.trim() || label;
+
+  useEffect(() => {
+    setLocal(folder?.path ?? "");
+  }, [folder?.id, folder?.path]);
+
+  async function commit() {
+    const trimmed = local.trim();
+    setError(null);
+    if (folder) {
+      if (trimmed === folder.path || !trimmed) return;
+      const res = await updateFolder(workId, folder.id, { path: trimmed });
+      if (!res.ok) {
+        setError(res.error);
+        setLocal(folder.path);
+        return;
+      }
+      await onReload();
+      return;
+    }
+    if (!trimmed) return;
+    const res = await addFolder(workId, { kind, path: trimmed, name: label, sort });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await onReload();
+  }
+
+  async function remove() {
+    setError(null);
+    if (!folder) {
+      setLocal("");
+      return;
+    }
+    const res = await deleteFolder(workId, folder.id);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setLocal("");
+    await onReload();
+  }
 
   return (
-    <div className="space-y-8">
-      <section>
-        <GroupTitle>제목 · 주소</GroupTitle>
-        <div className="mb-3">
-          <FieldLabel
-            extra={
-              <CharPair
-                ko={draft.title.ko.length}
-                en={draft.title.en.length}
-                koWarn={11}
-                enWarn={23}
-                koLimit={22}
-                enLimit={46}
-              />
-            }
-          >
-            제목
-            <Req />
-          </FieldLabel>
-          <BilingualField
+    <>
+      <div className="frow">
+        <div>
+          <b style={{ fontSize: 12 }}>{shown}</b>
+          {required ? <span className="rq2"> *</span> : null}
+        </div>
+        <input
+          className="i"
+          value={local}
+          placeholder={placeholder}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={() => void commit()}
+        />
+        <button type="button" className="ico" onClick={() => void remove()}>
+          ✕
+        </button>
+      </div>
+      {error ? (
+        <p style={{ margin: "-2px 0 8px", fontSize: 11, color: "var(--err)" }}>{error}</p>
+      ) : null}
+    </>
+  );
+}
+
+function ExtraFolderRow({
+  name,
+  path,
+  onNameBlur,
+  onPathBlur,
+  onDelete,
+  onMove,
+  canMoveUp,
+  canMoveDown,
+  error
+}: {
+  name: string;
+  path: string;
+  onNameBlur: (name: string) => void;
+  onPathBlur: (path: string) => void;
+  onDelete: () => void;
+  onMove?: (dir: -1 | 1) => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  error?: string | null;
+}) {
+  const [localName, setLocalName] = useState(name);
+  const [localPath, setLocalPath] = useState(path);
+
+  useEffect(() => {
+    setLocalName(name);
+  }, [name]);
+
+  useEffect(() => {
+    setLocalPath(path);
+  }, [path]);
+
+  return (
+    <>
+      <div className="frow">
+        <input
+          className="i"
+          value={localName}
+          placeholder="폴더 이름 (예: 도면 폴더)"
+          onChange={(e) => setLocalName(e.target.value)}
+          onBlur={() => onNameBlur(localName)}
+        />
+        <input
+          className="i"
+          value={localPath}
+          placeholder="경로"
+          onChange={(e) => setLocalPath(e.target.value)}
+          onBlur={() => onPathBlur(localPath)}
+        />
+        <div className="frow-acts">
+          {onMove ? (
+            <>
+              <button
+                type="button"
+                className="ico"
+                disabled={!canMoveUp}
+                onClick={() => onMove(-1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="ico"
+                disabled={!canMoveDown}
+                onClick={() => onMove(1)}
+              >
+                ↓
+              </button>
+            </>
+          ) : null}
+          <button type="button" className="ico" onClick={onDelete}>
+            ✕
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <p style={{ margin: "-2px 0 8px", fontSize: 11, color: "var(--err)" }}>{error}</p>
+      ) : null}
+    </>
+  );
+}
+
+export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onReload }: Props) {
+  const credits = [...(work.work_credits ?? [])].sort((a, b) => a.sort - b.sort);
+  const folders = [...(work.work_folders ?? [])].sort((a, b) => a.sort - b.sort);
+  const tags = [...(work.work_tags ?? [])].sort((a, b) => a.sort - b.sort);
+  const uploadRoot = workFolderPrefix(draft.slug || work.slug, work.id);
+  const { project, video, extras } = splitFolders(folders);
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [pendingExtras, setPendingExtras] = useState<PendingExtra[]>([]);
+  const [extraErrors, setExtraErrors] = useState<Record<string, string>>({});
+  const pendingKey = useId();
+
+  const categoryLabel =
+    categories.find((item) => item.id === draft.category_id)?.label?.ko || draft.category_id || "—";
+  const keyFilled = !isPlaceholderKey(draft.key_image);
+  const titleDone =
+    withinLimit(draft.title.ko, 22) && draft.title.en.length <= 46;
+  const summaryDone =
+    withinLimit(draft.summary.ko, 80) && draft.summary.en.length <= 155;
+  const requiredDone = [
+    titleDone,
+    filled(draft.slug),
+    filled(draft.category_id),
+    filled(draft.year),
+    keyFilled,
+    summaryDone
+  ].filter(Boolean).length;
+
+  const locationFilled =
+    filled(draft.location_country.ko) &&
+    filled(draft.location_city.ko) &&
+    filled(draft.location_address.ko);
+  const subtitleDone =
+    !filled(draft.subtitle.ko) ||
+    (draft.subtitle.ko.length <= 30 && draft.subtitle.en.length <= 60);
+  const infoDone = [
+    filled(draft.subtitle.ko) && subtitleDone,
+    filled(draft.client.ko),
+    filled(draft.completed_year),
+    filled(draft.project_type.ko),
+    locationFilled,
+    credits.length > 0
+  ].filter(Boolean).length;
+
+  const videoDone = [filled(draft.loop_video_lg), filled(draft.loop_video_sm)].filter(Boolean).length;
+  const folderDone = [Boolean(project?.path.trim()), Boolean(video?.path.trim())].filter(Boolean).length;
+  const tagTone: "ok" | "warn" | "faint" =
+    tags.length >= 3 ? "ok" : tags.length > 0 ? "warn" : "faint";
+
+  async function commitExtraName(id: string, nextName: string) {
+    const trimmed = nextName.trim();
+    const row = extras.find((item) => item.id === id);
+    if (!row || trimmed === row.name) return;
+    setExtraErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    const res = await updateFolder(work.id, id, { name: trimmed });
+    if (!res.ok) {
+      setExtraErrors((prev) => ({ ...prev, [id]: res.error }));
+      return;
+    }
+    await onReload();
+  }
+
+  async function commitExtraPath(id: string, nextPath: string) {
+    const trimmed = nextPath.trim();
+    const row = extras.find((item) => item.id === id);
+    if (!row) return;
+    setExtraErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!trimmed || trimmed === row.path) return;
+    const res = await updateFolder(work.id, id, { path: trimmed });
+    if (!res.ok) {
+      setExtraErrors((prev) => ({ ...prev, [id]: res.error }));
+      return;
+    }
+    await onReload();
+  }
+
+  async function commitPending(item: PendingExtra, nextPath: string, nextName: string) {
+    const trimmed = nextPath.trim();
+    setExtraErrors((prev) => {
+      const next = { ...prev };
+      delete next[item.key];
+      return next;
+    });
+    if (!trimmed) return;
+    const extrasStart = (project ? 1 : 0) + (video ? 1 : 0);
+    const res = await addFolder(work.id, {
+      kind: "extra",
+      path: trimmed,
+      name: nextName.trim(),
+      sort: extrasStart + extras.length
+    });
+    if (!res.ok) {
+      setExtraErrors((prev) => ({ ...prev, [item.key]: res.error }));
+      return;
+    }
+    setPendingExtras((prev) => prev.filter((row) => row.key !== item.key));
+    await onReload();
+  }
+
+  async function deleteExtra(id: string) {
+    const res = await deleteFolder(work.id, id);
+    if (!res.ok) {
+      setExtraErrors((prev) => ({ ...prev, [id]: res.error }));
+      return;
+    }
+    await onReload();
+  }
+
+  async function moveExtra(from: number, dir: -1 | 1) {
+    const to = from + dir;
+    if (to < 0 || to >= extras.length) return;
+    const next = [...extras];
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    next.splice(to, 0, moved);
+    const extrasStart = (project ? 1 : 0) + (video ? 1 : 0);
+    const order = [
+      ...(project ? [{ id: project.id, sort: 0 }] : []),
+      ...(video ? [{ id: video.id, sort: project ? 1 : 0 }] : []),
+      ...next.map((item, i) => ({ id: item.id, sort: extrasStart + i }))
+    ];
+    const res = await reorderFolders(work.id, order);
+    if (!res.ok) {
+      setExtraErrors((prev) => ({ ...prev, [moved.id]: res.error }));
+      return;
+    }
+    await onReload();
+  }
+
+  return (
+    <div className="wa">
+      <div className="grp">
+        <div className="gt">
+          꼭 채워야 하는 것 <span className="c">{requiredDone} / 6 완료</span>
+        </div>
+
+        <Field
+          label="제목"
+          required
+          counts={[
+            { label: "국문", value: draft.title.ko.length, recommend: 11, limit: 22 },
+            { label: "영문", value: draft.title.en.length, recommend: 23, limit: 46 }
+          ]}
+          tip={
+            <>
+              <b>국문 8~22자 · 영문 15~46자</b>
+              <br />
+              상세 제목 · 목록 카드 · 구글 검색 제목 · 링크 공유 · 관련 콘텐츠 카드에 모두 쓰입니다.
+              검색 제목에는 「 | 아폴론이머시브웍스」가 자동으로 붙습니다.
+              <br />
+              <span className="ex">목록 작은 카드에서 국문 11자가 한 줄입니다.</span>
+            </>
+          }
+        >
+          <Bi
             ko={draft.title.ko}
             en={draft.title.en}
+            koPlaceholder="국문 제목"
+            enPlaceholder="영문 제목"
             onKo={(v) => onChange({ title: locField(draft.title, "ko", v) })}
             onEn={(v) => onChange({ title: locField(draft.title, "en", v) })}
           />
-          <Guide>
-            <b className="font-semibold text-slate-600">국문 8~22자</b> · 영문 15~46자
-            <Sep />
-            쓰이는 곳 —{" "}
-            <b className="font-semibold text-slate-600">
-              상세 제목 · 목록 카드 · 구글 검색 제목 · 링크 공유 제목 · 관련 콘텐츠 카드 · 구조화 데이터
-            </b>
-            <br />
-            검색 제목에는 「 | 아폴론이머시브웍스」가 자동으로 붙습니다. 목록 작은 카드에서{" "}
-            <b className="font-semibold text-slate-600">국문 11자 · 영문 23자</b>가 한 줄입니다. 그보다 길면 두 줄이 되고,
-            22자(영문 46자)를 넘으면 세 줄이 되어 카드가 흐트러집니다.
-          </Guide>
+          {draft.title.ko.length > 22 ? (
+            <Alert tone="e">국문이 22자를 넘습니다. 목록 카드에서 세 줄이 되어 흐트러집니다.</Alert>
+          ) : null}
+        </Field>
+
+        <Field
+          label="주소"
+          required
+          tip={
+            <>
+              <b>영문 소문자와 하이픈만</b>
+              <br />
+              공개 후에 바꾸면 기존 검색 순위와 외부 링크가 끊깁니다.
+            </>
+          }
+        >
+          <div className="slugrow">
+            <span className="pre">apollonworks.com/works/</span>
+            <input
+              className="i"
+              value={draft.slug}
+              onChange={(e) => onChange({ slug: e.target.value })}
+            />
+          </div>
+        </Field>
+
+        <div className="two">
+          <Field label="카테고리" required>
+            {editingCategory ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select
+                  className="i"
+                  value={draft.category_id}
+                  onChange={(e) => {
+                    onChange({ category_id: e.target.value });
+                    setEditingCategory(false);
+                  }}
+                >
+                  {categories.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label?.ko || item.id}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn xs"
+                  onClick={() => setEditingCategory(false)}
+                >
+                  완료
+                </button>
+              </div>
+            ) : (
+              <div className="ro">
+                <span className="v">{categoryLabel}</span>
+                <button
+                  type="button"
+                  className="btn xs"
+                  onClick={() => setEditingCategory(true)}
+                >
+                  바꾸기
+                </button>
+              </div>
+            )}
+          </Field>
+          <Field
+            label="표기 연도"
+            required
+            tip="화면에 보이는 연도이자 목록 정렬 기준입니다."
+          >
+            <input
+              className="i"
+              value={draft.year}
+              onChange={(e) => onChange({ year: e.target.value })}
+              style={{ maxWidth: 140 }}
+            />
+          </Field>
         </div>
 
-        <div className="mb-3">
-          <FieldLabel
-            extra={
-              <CharPair
-                ko={draft.subtitle.ko.length}
-                en={draft.subtitle.en.length}
-                koWarn={30}
-                enWarn={60}
-                koLimit={30}
-                enLimit={60}
-              />
-            }
-          >
-            부제
-          </FieldLabel>
-          <BilingualField
+        <Field
+          label="대표 이미지"
+          required
+          tip={
+            <>
+              <b>긴 변 2560px 권장 · 15MB 이하 · 비율 자유</b>
+              <br />
+              목록 카드 · 상세 첫 화면 · 관련 콘텐츠 썸네일 · 링크 공유 이미지에 모두 쓰입니다.
+              축소본과 공유용 1200×630 은 이 한 장에서 자동으로 만듭니다.
+              <br />
+              <span className="ex">
+                사람 얼굴이나 로고는 가운데에 두세요. 작은 카드에서는 가장자리가 잘릴 수 있습니다.
+              </span>
+            </>
+          }
+        >
+          <ImageUploader
+            bucket="works"
+            folder={`${uploadRoot}/key`}
+            accept="image"
+            multiple={false}
+            kind="key"
+            appearance="filecard"
+            siteUrl={siteUrl}
+            value={keyFilled ? draft.key_image : null}
+            emptyHint="JPG · 긴 변 2560px · 15MB 이하"
+            onUploaded={(files) => {
+              const first = files[0];
+              if (first) onChange({ key_image: first.src });
+            }}
+            onClear={() => onChange({ key_image: "" })}
+          />
+        </Field>
+
+        <Field
+          label="한 줄 요약"
+          required
+          counts={[
+            { label: "국문", value: draft.summary.ko.length, recommend: 60, limit: 80 },
+            { label: "영문", value: draft.summary.en.length, recommend: 120, limit: 155 }
+          ]}
+          tip={
+            <>
+              <b>국문 60~80자 · 1~2문장</b>
+              <br />
+              목록 카드 · 상세 · 구글 검색 결과 설명 · 링크 공유 · AI 인용에 모두 쓰입니다.
+              형용사보다 <b>동사와 숫자</b>가 인용됩니다.
+            </>
+          }
+        >
+          <Bi
+            ko={draft.summary.ko}
+            en={draft.summary.en}
+            multiline
+            onKo={(v) => onChange({ summary: locField(draft.summary, "ko", v) })}
+            onEn={(v) => onChange({ summary: locField(draft.summary, "en", v) })}
+          />
+        </Field>
+      </div>
+
+      <FoldGroup
+        title="프로젝트 정보"
+        summary="부제 · 클라이언트 · 유형 · 완공 연도 · 위치 · 크레딧"
+        filled={infoDone}
+        total={6}
+        countTone={toneOf(infoDone, 6)}
+      >
+        <Field
+          label="부제"
+          counts={[
+            { label: "국문", value: draft.subtitle.ko.length, limit: 30 },
+            { label: "영문", value: draft.subtitle.en.length, limit: 60 }
+          ]}
+          tip={
+            <>
+              상세 페이지 제목 아래 한 줄. 장소나 클라이언트를 적습니다.
+              <br />
+              <span className="ex">화면 자리는 훈희 이사 디자인 확정 대기 중입니다.</span>
+            </>
+          }
+        >
+          <Bi
             ko={draft.subtitle.ko}
             en={draft.subtitle.en}
             onKo={(v) => onChange({ subtitle: locField(draft.subtitle, "ko", v) })}
             onEn={(v) => onChange({ subtitle: locField(draft.subtitle, "en", v) })}
           />
-          <Guide>
-            <b className="font-semibold text-slate-600">국문 30자 이내</b> · 영문 60자 이내
-            <Sep />
-            상세 페이지 제목 아래 한 줄로 들어갑니다. 장소나 클라이언트를 적습니다. 예) 스타애비뉴, 롯데면세점
-            명동본점
-          </Guide>
-        </div>
+        </Field>
 
-        <div>
-          <FieldLabel>
-            주소 (slug)
-            <Req />
-          </FieldLabel>
-          <TextInput value={draft.slug} onChange={(v) => onChange({ slug: v })} />
-          <Guide>
-            apollonworks.com/works/
-            <b className="font-semibold text-slate-600">{draft.slug || "…"}</b>
-            <Sep />
-            <b className="font-semibold text-slate-600">영문 소문자와 하이픈(-)만</b>. 한글·공백·특수문자는 쓰지
-            않습니다. 공개 후에 바꾸면 기존 검색 순위와 외부 링크가 끊깁니다.
-          </Guide>
-        </div>
-      </section>
-
-      <section>
-        <GroupTitle>분류</GroupTitle>
-        <div className="mb-3">
-          <FieldLabel>
-            카테고리
-            <Req />
-          </FieldLabel>
-          <div className="flex flex-wrap gap-1.5">
-            {categories.map((c) => {
-              const on = draft.category_id === c.id;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => onChange({ category_id: c.id })}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    on
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 bg-white text-slate-700"
-                  }`}
-                >
-                  {c.label?.ko || c.id}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mb-3">
-          <FieldLabel>태그</FieldLabel>
-          <TagPicker
-            workId={work.id}
-            selectedIds={tags.map((t) => t.tag_id)}
-            onReload={onReload}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
-          <div>
-            <FieldLabel>
-              표기 연도
-              <Req />
-            </FieldLabel>
-            <TextInput value={draft.year} onChange={(v) => onChange({ year: v })} />
-            <Hint>화면에 보이는 연도</Hint>
-          </div>
-          <div>
-            <FieldLabel>
-              공개일
-              <Req />
-            </FieldLabel>
+        <div className="two">
+          <Field label="클라이언트">
+            <Bi
+              ko={draft.client.ko}
+              en={draft.client.en}
+              onKo={(v) => onChange({ client: locField(draft.client, "ko", v) })}
+              onEn={(v) => onChange({ client: locField(draft.client, "en", v) })}
+            />
+          </Field>
+          <Field label="완공 연도">
             <input
-              type="date"
-              value={draft.published_at}
-              onChange={(e) => onChange({ published_at: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
-            />
-            <Hint>검색엔진 정렬 기준</Hint>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <GroupTitle>대표 이미지 · 배경 영상</GroupTitle>
-        <div className="mb-3">
-          <FieldLabel>
-            대표 이미지
-            <Req />
-          </FieldLabel>
-          <ThumbBox
-            label={fileName(draft.key_image) || "대표 이미지"}
-            src={mediaUrl(siteUrl, draft.key_image)}
-          />
-          <div className="mt-2 max-w-md">
-            <TextInput
-              value={draft.key_image}
-              onChange={(v) => onChange({ key_image: v })}
-              placeholder="경로 또는 URL"
-            />
-          </div>
-          <Guide>
-            <b className="font-semibold text-slate-600">JPG</b> ·{" "}
-            <b className="font-semibold text-slate-600">2560 × 1440</b> (16:9 고정) ·{" "}
-            <b className="font-semibold text-slate-600">2MB 이하</b>
-            <Sep />
-            쓰이는 곳 —{" "}
-            <b className="font-semibold text-slate-600">
-              목록 카드 · 상세 첫 화면 · 관련 콘텐츠 썸네일 · 링크 공유 이미지(카톡·슬랙·링크드인) · 구조화 데이터
-            </b>
-            <br />
-            화면 크기에 맞는 작은 판도, 공유용 1200×630도{" "}
-            <b className="font-semibold text-slate-600">이 한 장에서 자동으로 만듭니다.</b> 따로 올릴 것이 없습니다.
-            <br />
-            사람 얼굴이나 로고는 <b className="font-semibold text-slate-600">가운데</b>에 두세요. 작은 카드에서
-            가장자리가 잘릴 수 있습니다.
-          </Guide>
-        </div>
-
-        <div className="mb-3">
-          <FieldLabel>
-            대체 텍스트
-            <Req />
-          </FieldLabel>
-          <BilingualField
-            ko={draft.key_image_alt.ko}
-            en={draft.key_image_alt.en}
-            onKo={(v) => onChange({ key_image_alt: locField(draft.key_image_alt, "ko", v) })}
-            onEn={(v) => onChange({ key_image_alt: locField(draft.key_image_alt, "en", v) })}
-          />
-        </div>
-
-        <div className="mb-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
-          <div>
-            <FieldLabel>배경 영상 — 큰 화면용</FieldLabel>
-            <ThumbBox label={fileName(draft.loop_video_lg) || "loop-lg.mp4"} />
-            <div className="mt-2">
-              <TextInput
-                value={draft.loop_video_lg}
-                onChange={(v) => onChange({ loop_video_lg: v })}
-                placeholder="경로 또는 URL"
-              />
-            </div>
-            <Guide>
-              <b className="font-semibold text-slate-600">MP4 (H.264)</b> ·{" "}
-              <b className="font-semibold text-slate-600">1280 × 720</b> ·{" "}
-              <b className="font-semibold text-slate-600">1.5MB 이하</b>
-              <br />
-              4~6초 · <b className="font-semibold text-slate-600">24fps</b> · 소리 없음 · 비트레이트 2Mbps
-              <Sep />
-              목록 맨 위 큰 카드, 메인 히어로에 쓰입니다.
-            </Guide>
-          </div>
-          <div>
-            <FieldLabel>배경 영상 — 작은 화면용</FieldLabel>
-            <ThumbBox label={fileName(draft.loop_video_sm) || "loop-sm.mp4"} />
-            <div className="mt-2">
-              <TextInput
-                value={draft.loop_video_sm}
-                onChange={(v) => onChange({ loop_video_sm: v })}
-                placeholder="경로 또는 URL"
-              />
-            </div>
-            <Guide>
-              <b className="font-semibold text-slate-600">MP4 (H.264)</b> ·{" "}
-              <b className="font-semibold text-slate-600">640 × 360</b> ·{" "}
-              <b className="font-semibold text-slate-600">0.5MB 이하</b>
-              <br />
-              4~6초 · <b className="font-semibold text-slate-600">24fps</b> · 소리 없음 · 비트레이트 0.7Mbps
-              <Sep />
-              목록 작은 카드, 메인 작은 칸에 쓰입니다.
-            </Guide>
-          </div>
-        </div>
-
-        <Guide warn>
-          <b className="font-semibold text-slate-600">왜 두 벌인가</b> — 목록 한 화면에 큰 것 1개와 작은 것 8개가 함께
-          깔립니다. 큰 파일 하나로 돌려쓰면 13MB가 나가지만, 나눠 쓰면 5MB로 줄어듭니다.{" "}
-          <b className="font-semibold text-slate-600">
-            작은 화면용을 올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다.
-          </b>
-          <br />
-          프리미어에서 같은 시퀀스를 해상도만 바꿔 두 번 내보내면 됩니다. 내보내기 설정 두 벌을 팀에 공유해 두세요.
-        </Guide>
-
-        <div className="mt-4">
-          <FieldLabel>목록에서 크게 보이기</FieldLabel>
-          <ToggleRow
-            on={draft.is_featured}
-            onToggle={() => onChange({ is_featured: !draft.is_featured })}
-            title="이 프로젝트를 목록 맨 위에 크게 배치"
-            sub="한 번에 한 개만 지정할 수 있습니다"
-          />
-        </div>
-      </section>
-
-      <section>
-        <GroupTitle note="구조화 데이터로 자동 변환됩니다">프로젝트 정보</GroupTitle>
-        <div className="mb-3">
-          <FieldLabel>클라이언트</FieldLabel>
-          <BilingualField
-            ko={draft.client.ko}
-            en={draft.client.en}
-            onKo={(v) => onChange({ client: locField(draft.client, "ko", v) })}
-            onEn={(v) => onChange({ client: locField(draft.client, "en", v) })}
-          />
-        </div>
-        <div className="mb-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
-          <div>
-            <FieldLabel>프로젝트 유형</FieldLabel>
-            <BilingualField
-              ko={draft.project_type.ko}
-              en={draft.project_type.en}
-              onKo={(v) => onChange({ project_type: locField(draft.project_type, "ko", v) })}
-              onEn={(v) => onChange({ project_type: locField(draft.project_type, "en", v) })}
-            />
-          </div>
-          <div>
-            <FieldLabel>완공 연도</FieldLabel>
-            <TextInput
+              className="i"
               value={draft.completed_year}
-              onChange={(v) => onChange({ completed_year: v })}
+              onChange={(e) => onChange({ completed_year: e.target.value })}
+              style={{ maxWidth: 140 }}
             />
-          </div>
+          </Field>
         </div>
-        <div className="mb-3">
-          <FieldLabel>위치</FieldLabel>
-          <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
-            <TextInput
+
+        <Field label="프로젝트 유형">
+          <Bi
+            ko={draft.project_type.ko}
+            en={draft.project_type.en}
+            onKo={(v) => onChange({ project_type: locField(draft.project_type, "ko", v) })}
+            onEn={(v) => onChange({ project_type: locField(draft.project_type, "en", v) })}
+          />
+        </Field>
+
+        <Field
+          label="위치"
+          tip={
+            <>
+              <b>국가 · 도시 · 주소 순서</b>
+              <br />
+              구조화 데이터로 나가므로 실제 행정 주소를 씁니다. 건물 이름만 쓰지 마세요.
+            </>
+          }
+        >
+          <div className="r3">
+            <input
+              className="i"
               value={draft.location_country.ko}
-              onChange={(v) => onChange({ location_country: locField(draft.location_country, "ko", v) })}
               placeholder="국가"
+              onChange={(e) =>
+                onChange({ location_country: locField(draft.location_country, "ko", e.target.value) })
+              }
             />
-            <TextInput
+            <input
+              className="i"
               value={draft.location_city.ko}
-              onChange={(v) => onChange({ location_city: locField(draft.location_city, "ko", v) })}
               placeholder="도시"
+              onChange={(e) =>
+                onChange({ location_city: locField(draft.location_city, "ko", e.target.value) })
+              }
             />
-            <TextInput
+            <input
+              className="i"
               value={draft.location_address.ko}
-              onChange={(v) => onChange({ location_address: locField(draft.location_address, "ko", v) })}
               placeholder="주소"
+              onChange={(e) =>
+                onChange({
+                  location_address: locField(draft.location_address, "ko", e.target.value)
+                })
+              }
             />
           </div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-            <div>
-              <div className="mb-1 flex items-center gap-1">
-                <span className="rounded bg-apollon-50 px-1 py-0.5 text-[10px] font-bold text-apollon-700">
-                  영문
-                </span>
-                <AiBadge />
-              </div>
-              <TextInput
-                value={draft.location_country.en}
-                onChange={(v) => onChange({ location_country: locField(draft.location_country, "en", v) })}
-                ai
-              />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center gap-1">
-                <span className="rounded bg-apollon-50 px-1 py-0.5 text-[10px] font-bold text-apollon-700">
-                  영문
-                </span>
-                <AiBadge />
-              </div>
-              <TextInput
-                value={draft.location_city.en}
-                onChange={(v) => onChange({ location_city: locField(draft.location_city, "en", v) })}
-                ai
-              />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center gap-1">
-                <span className="rounded bg-apollon-50 px-1 py-0.5 text-[10px] font-bold text-apollon-700">
-                  영문
-                </span>
-                <AiBadge />
-              </div>
-              <TextInput
-                value={draft.location_address.en}
-                onChange={(v) => onChange({ location_address: locField(draft.location_address, "en", v) })}
-                ai
-              />
-            </div>
-          </div>
-          <Guide>
-            국가 · 도시 · 주소 순서
-            <Sep />
-            구조화 데이터로 나가므로 <b className="font-semibold text-slate-600">실제 행정 주소</b>를 씁니다. 건물
-            이름만 쓰지 마세요. 해외 프로젝트는 영문으로.
-          </Guide>
-        </div>
-        <div className="mb-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
-          <div>
-            <FieldLabel>규모 · 면적</FieldLabel>
-            <BilingualField
-              ko={draft.scale.ko}
-              en={draft.scale.en}
-              onKo={(v) => onChange({ scale: locField(draft.scale, "ko", v) })}
-              onEn={(v) => onChange({ scale: locField(draft.scale, "en", v) })}
-            />
-            <Guide>
-              <b className="font-semibold text-slate-600">60자 이내</b>
-              <Sep />
-              면적은 ㎡, 길이는 m. 숫자에 <b className="font-semibold text-slate-600">쉼표</b>를 넣습니다. 예)
-              대지면적 129,836㎡ · 연면적 525,289㎡
-            </Guide>
-          </div>
-          <div>
-            <FieldLabel>수상 내역</FieldLabel>
-            <BilingualField
-              ko={draft.awards.ko}
-              en={draft.awards.en}
-              onKo={(v) => onChange({ awards: locField(draft.awards, "ko", v) })}
-              onEn={(v) => onChange({ awards: locField(draft.awards, "en", v) })}
-            />
-          </div>
-        </div>
-        <div>
-          <FieldLabel>참여 크레딧</FieldLabel>
+        </Field>
+
+        <Field
+          label="참여 크레딧"
+          aside={`${credits.length}개`}
+          tip={
+            <>
+              <b>역할은 영문, 회사·사람 이름은 있는 그대로</b>
+              <br />
+              한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.
+              <br />
+              <span className="ex">
+                Developer · Project Management · Architect · Media Architecture Design · Client
+              </span>
+            </>
+          }
+        >
           <RepeatList
+            variant="boxed"
             items={credits}
             addLabel="＋ 크레딧 추가"
             onAdd={async () => {
@@ -478,222 +767,219 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               if (!res.ok) return failOf(res.error);
               await onReload();
             }}
-            renderFields={(item, onChange) => {
+            renderFields={(item, onRowChange) => {
               const name = asLoc(item.name);
               return (
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                  <TextInput
+                <>
+                  <input
+                    className="i"
                     value={item.role}
                     placeholder="역할 (영문)"
-                    onChange={(v) => onChange({ role: v })}
+                    onChange={(e) => onRowChange({ role: e.target.value })}
                   />
-                  <TextInput
+                  <input
+                    className="i"
                     value={name.ko}
-                    placeholder="이름 국문"
-                    onChange={(v) => onChange({ name: locField(name, "ko", v) })}
+                    placeholder="회사·사람 이름"
+                    onChange={(e) => onRowChange({ name: locField(name, "ko", e.target.value) })}
                   />
-                  <TextInput
-                    value={name.en}
-                    placeholder="이름 영문"
-                    onChange={(v) => onChange({ name: locField(name, "en", v) })}
-                  />
-                </div>
+                </>
               );
             }}
-            guide={
-              <Guide>
-                역할은 <b className="font-semibold text-slate-600">영문 표기</b>, 회사·사람 이름은 있는 그대로
-                <Sep />
-                Developer · Project Management · Architect · Construction Management · Media Architecture Design ·
-                Client · 협업 작가 등 <b className="font-semibold text-slate-600">역할별로 한 줄씩</b> 추가합니다.
-                <br />한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.
-              </Guide>
-            }
           />
-        </div>
-      </section>
+        </Field>
+      </FoldGroup>
 
-      <section>
-        <GroupTitle>요약 · 성과</GroupTitle>
-        <div className="mb-3">
-          <FieldLabel
-            extra={
-              <CharPair
-                ko={draft.summary.ko.length}
-                en={draft.summary.en.length}
-                koWarn={80}
-                enWarn={155}
-                koLimit={80}
-                enLimit={155}
-              />
+      <FoldGroup
+        title="배경 영상"
+        summary="목록 카드에서 마우스를 올리면 도는 짧은 영상"
+        filled={videoDone}
+        total={2}
+        countTone={toneOf(videoDone, 2)}
+      >
+        <div className="two">
+          <Field
+            label="큰 화면용"
+            tip={
+              <>
+                <b>MP4 (H.264) · 1280×720 · 1.5MB 이하</b>
+                <br />
+                4~6초 · 24fps · 소리 없음 · 비트레이트 2Mbps
+                <br />
+                목록 맨 위 큰 카드와 메인 히어로에 쓰입니다.
+              </>
             }
           >
-            한 줄 요약
-            <Req />
-          </FieldLabel>
-          <BilingualField
-            ko={draft.summary.ko}
-            en={draft.summary.en}
-            onKo={(v) => onChange({ summary: locField(draft.summary, "ko", v) })}
-            onEn={(v) => onChange({ summary: locField(draft.summary, "en", v) })}
-            multiline
-          />
-          <Guide>
-            <b className="font-semibold text-slate-600">국문 60~80자</b> · 영문 120~155자 ·{" "}
-            <b className="font-semibold text-slate-600">1~2문장</b>
-            <Sep />
-            쓰이는 곳 —{" "}
-            <b className="font-semibold text-slate-600">
-              목록 카드 · 상세 페이지 · 구글 검색 결과 설명 · 링크 공유 미리보기 · AI 인용
-            </b>
-            <br />
-            「무엇을 어떻게 바꿨는가」를 한 문장으로. 형용사보다{" "}
-            <b className="font-semibold text-slate-600">동사와 숫자</b>가 인용됩니다. 사람이 검색할 말(면세점 ·
-            미디어아트 같은)이 자연스럽게 들어가면 좋습니다.
-            <br />
-            좋은 예) 지나가는 통로였던 면세점 K-POP 존을 머무는 몰입형 미디어 공간으로 재구성했습니다.
-          </Guide>
-          {summaryLong ? (
-            <Guide warn>
-              ⚠ <b className="font-semibold text-slate-600">{draft.summary.ko.length}자입니다.</b> 구글 검색
-              결과에서 뒤가 잘립니다.{" "}
-              <button
-                type="button"
-                disabled
-                className="ml-1 inline-flex items-center rounded-md border border-apollon-200 bg-apollon-50 px-2 py-0.5 text-xs font-semibold text-apollon-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ✦ 검색용으로 줄이기
-              </button>
-              <br />
-              <span className="text-slate-400">
-                — 80자를 넘거나 검색어가 하나도 없을 때만 이 줄이 나타납니다. 누르면 80자 이내 문장을 따로 만들어
-                검색 결과에만 씁니다. 화면에는 원래 문장이 그대로 나옵니다.
-              </span>
-            </Guide>
-          ) : null}
-          {summaryLong || draft.search_description.ko || draft.search_description.en ? (
-            <div className="mt-3">
-              <FieldLabel>검색 설명</FieldLabel>
-              <BilingualField
-                ko={draft.search_description.ko}
-                en={draft.search_description.en}
-                onKo={(v) =>
-                  onChange({ search_description: locField(draft.search_description, "ko", v) })
-                }
-                onEn={(v) =>
-                  onChange({ search_description: locField(draft.search_description, "en", v) })
-                }
-                multiline
-              />
-            </div>
-          ) : null}
-        </div>
-        <div>
-          <FieldLabel>성과 수치</FieldLabel>
-          <RepeatList
-            items={metrics}
-            addLabel="＋ 항목 추가"
-            onAdd={async () => {
-              const res = await addMetric(work.id, {
-                value: { ko: "수치", en: "" },
-                sort: metrics.length
-              });
-              if (!res.ok) return failOf(res.error);
-              await onReload();
-            }}
-            onUpdate={async (item: WorkMetric) => {
-              const res = await updateMetric(work.id, item.id, { value: asLoc(item.value) });
-              return res.ok ? { ok: true } : failOf(res.error);
-            }}
-            onDelete={async (item: WorkMetric) => {
-              const res = await deleteMetric(work.id, item.id);
-              if (!res.ok) return failOf(res.error);
-              await onReload();
-            }}
-            onReorder={async (from, to) => {
-              const res = await reorderMetrics(work.id, toOrder(metrics, from, to));
-              if (!res.ok) return failOf(res.error);
-              await onReload();
-            }}
-            renderFields={(item, onChange) => {
-              const value = asLoc(item.value);
-              return (
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <TextInput
-                    value={value.ko}
-                    placeholder="값 국문"
-                    onChange={(v) => onChange({ value: locField(value, "ko", v) })}
-                  />
-                  <TextInput
-                    value={value.en}
-                    placeholder="값 영문"
-                    onChange={(v) => onChange({ value: locField(value, "en", v) })}
-                  />
-                </div>
-              );
-            }}
-            guide={
-              <Guide>
-                <b className="font-semibold text-slate-600">항목당 30자 이내</b> · 3~5개 권장
-                <Sep />
-                AI가 가장 많이 인용하는 부분입니다.{" "}
-                <b className="font-semibold text-slate-600">반드시 숫자를 넣으세요.</b>
+            <ImageUploader
+              bucket="works"
+              folder={`${uploadRoot}/loop`}
+              accept="video"
+              multiple={false}
+              kind="loop-lg"
+              appearance="filecard"
+              siteUrl={siteUrl}
+              value={draft.loop_video_lg || null}
+              emptyHint="MP4 · 1280×720 · 1.5MB 이하"
+              onUploaded={(files) => {
+                const first = files[0];
+                if (first) onChange({ loop_video_lg: first.src });
+              }}
+              onClear={() => onChange({ loop_video_lg: "" })}
+            />
+          </Field>
+          <Field
+            label="작은 화면용"
+            tip={
+              <>
+                <b>MP4 (H.264) · 640×360 · 0.5MB 이하</b>
                 <br />
-                좋은 예) 일평균 방문객 16,000명 <span className="mx-1.5 text-slate-300">·</span> 누적 112만 명(2개월){" "}
-                <span className="mx-1.5 text-slate-300">·</span> 언론 보도 24건
-                <br />
-                나쁜 예) 방문객이 크게 늘었습니다 — 숫자가 없으면 인용되지 않습니다
-              </Guide>
+                올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다.
+              </>
             }
-          />
+          >
+            <ImageUploader
+              bucket="works"
+              folder={`${uploadRoot}/loop`}
+              accept="video"
+              multiple={false}
+              kind="loop-sm"
+              appearance="filecard"
+              siteUrl={siteUrl}
+              value={draft.loop_video_sm || null}
+              emptyHint="MP4 · 640×360 · 0.5MB 이하"
+              onUploaded={(files) => {
+                const first = files[0];
+                if (first) onChange({ loop_video_sm: first.src });
+              }}
+              onClear={() => onChange({ loop_video_sm: "" })}
+            />
+          </Field>
         </div>
-      </section>
+        <div style={{ marginTop: 11 }}>
+          <Alert tone="i">
+            <b>왜 두 벌인가</b> — 목록 한 화면에 큰 것 1개와 작은 것 8개가 함께 깔립니다. 큰 파일
+            하나로 돌려쓰면 13MB 가 나가지만, 나눠 쓰면 5MB 로 줄어듭니다. 프리미어에서 같은 시퀀스를
+            해상도만 바꿔 두 번 내보내면 됩니다.
+          </Alert>
+        </div>
+      </FoldGroup>
 
-      <section>
-        <GroupTitle note="외부에 노출되지 않습니다">내부 연결</GroupTitle>
-        <RepeatList
-          items={folders}
-          addLabel="＋ 폴더 추가"
-          onAdd={async () => {
-            const res = await addFolder(work.id, { kind: "extra", path: "T:\\" });
-            if (!res.ok) return failOf(res.error);
-            await onReload();
-          }}
-          onUpdate={async (item: WorkFolder) => {
-            const res = await updateFolder(work.id, item.id, { kind: item.kind, path: item.path });
-            return res.ok ? { ok: true } : failOf(res.error);
-          }}
-          onDelete={async (item: WorkFolder) => {
-            const res = await deleteFolder(work.id, item.id);
-            if (!res.ok) return failOf(res.error);
-            await onReload();
-          }}
-          onReorder={async () => ({ ok: true })}
-          renderFields={(item, onChange) => (
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={item.kind}
-                onChange={(e) =>
-                  onChange({ kind: e.target.value as WorkFolder["kind"] }, { save: true })
-                }
-                className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
-              >
-                <option value="ko">국문</option>
-                <option value="en">영문</option>
-                <option value="extra">추가</option>
-              </select>
-              <div className="min-w-0 flex-1">
-                <TextInput
-                  value={item.path}
-                  placeholder="경로"
-                  onChange={(v) => onChange({ path: v })}
-                />
-              </div>
-            </div>
-          )}
-          guide={<Hint>나중에 루나가 이 워크와 내부 자료를 같은 프로젝트로 인식합니다</Hint>}
+      <FoldGroup
+        title="태그"
+        summary="워크 목록에서 필터로 쓰입니다"
+        count={`${tags.length}개`}
+        countTone={tagTone}
+      >
+        <Field
+          label="태그"
+          tip={
+            <>
+              <b>3~6개 · 카테고리로 나눌 수 없는 갈래</b>
+              <br />
+              워크 목록 상단의 해시태그 필터에 그대로 나옵니다. 태그를 누르면 같은 태그의 워크가
+              모입니다.
+              <br />
+              <b>여러 프로젝트가 같은 태그를 공유해야 의미가 있습니다.</b> 이 워크에만 해당하는 말은
+              태그가 아닙니다.
+              <ul>
+                <li>좋은 예 — 면세점 · K-POP · 미디어 파사드 · 리조트</li>
+                <li>나쁜 예 — 일평균방문객16000명 · 2024년1월착수 · 김대리담당</li>
+              </ul>
+            </>
+          }
+        >
+          <TagPicker
+            workId={work.id}
+            selectedIds={tags.map((t) => t.tag_id)}
+            onReload={onReload}
+          />
+        </Field>
+      </FoldGroup>
+
+      <FoldGroup
+        title="내부 연결"
+        summary="Work서버 폴더 · 외부에 노출되지 않습니다"
+        filled={folderDone}
+        total={2}
+        countTone={toneOf(folderDone, 2)}
+      >
+        <FolderKindRow
+          label="프로젝트 폴더"
+          required
+          placeholder="T:\..."
+          folder={project}
+          kind="ko"
+          sort={0}
+          workId={work.id}
+          onReload={onReload}
         />
-      </section>
+        <FolderKindRow
+          label="영상 폴더"
+          placeholder="P:\... (없으면 비워둡니다)"
+          folder={video}
+          kind="en"
+          sort={project ? 1 : 0}
+          workId={work.id}
+          onReload={onReload}
+        />
+        {extras.map((item, index) => (
+          <ExtraFolderRow
+            key={item.id}
+            name={item.name}
+            path={item.path}
+            error={extraErrors[item.id]}
+            canMoveUp={index > 0}
+            canMoveDown={index < extras.length - 1}
+            onNameBlur={(value) => void commitExtraName(item.id, value)}
+            onPathBlur={(nextPath) => void commitExtraPath(item.id, nextPath)}
+            onDelete={() => void deleteExtra(item.id)}
+            onMove={(dir) => void moveExtra(index, dir)}
+          />
+        ))}
+        {pendingExtras.map((item) => (
+          <ExtraFolderRow
+            key={item.key}
+            name={item.name}
+            path={item.path}
+            error={extraErrors[item.key]}
+            onNameBlur={(value) =>
+              setPendingExtras((prev) =>
+                prev.map((row) => (row.key === item.key ? { ...row, name: value } : row))
+              )
+            }
+            onPathBlur={(nextPath) => {
+              const name =
+                pendingExtras.find((row) => row.key === item.key)?.name ?? item.name;
+              setPendingExtras((prev) =>
+                prev.map((row) =>
+                  row.key === item.key ? { ...row, path: nextPath, name } : row
+                )
+              );
+              void commitPending({ ...item, name, path: nextPath }, nextPath, name);
+            }}
+            onDelete={() => setPendingExtras((prev) => prev.filter((row) => row.key !== item.key))}
+          />
+        ))}
+        <button
+          type="button"
+          className="btn sm"
+          style={{ marginTop: 4 }}
+          onClick={() =>
+            setPendingExtras((prev) => [
+              ...prev,
+              { key: `${pendingKey}-${prev.length}-${Date.now()}`, name: "", path: "" }
+            ])
+          }
+        >
+          ＋ 폴더 추가
+        </button>
+        <div style={{ marginTop: 10 }}>
+          <Alert tone="i">
+            루나에게 「스타애비뉴 원본 어디 있어?」 라고 물으면 이 경로를 알려줍니다. 홈페이지에는
+            나가지 않습니다.
+          </Alert>
+        </div>
+      </FoldGroup>
     </div>
   );
 }

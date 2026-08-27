@@ -20,6 +20,8 @@ export type WorkFolder = {
   work_id: string;
   kind: "ko" | "en" | "extra";
   path: string;
+  name: string;
+  sort: number;
 };
 
 export type WorkTagEmbed = {
@@ -353,7 +355,14 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
         const f = asRecord(item);
         if (!f || typeof f.id !== "string") return null;
         const kind = f.kind === "en" || f.kind === "extra" ? f.kind : "ko";
-        return { id: f.id, work_id: asString(f.work_id), kind, path: asString(f.path) };
+        return {
+          id: f.id,
+          work_id: asString(f.work_id),
+          kind,
+          path: asString(f.path),
+          name: asString(f.name),
+          sort: asNum(f.sort)
+        };
       })
       .filter((v): v is WorkFolder => v !== null),
     work_tags: asArray(row.work_tags)
@@ -449,7 +458,7 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     scale: asLoc(work.scale),
     awards: asLoc(work.awards),
     year: work.year ?? "",
-    published_at: (work.published_at ?? "").slice(0, 10),
+    published_at: (work.published_at ?? "").slice(0, 10) || todayYmd(),
     is_featured: work.is_featured,
     show_faq: work.show_faq
   };
@@ -486,7 +495,12 @@ export function fileName(src: string | null | undefined): string {
   if (!src) return "";
   const clean = src.split("?")[0] ?? src;
   const parts = clean.split("/");
-  return parts[parts.length - 1] || clean;
+  const raw = parts[parts.length - 1] || clean;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 export function mediaUrl(siteUrl: string, src: string | null | undefined): string | null {
