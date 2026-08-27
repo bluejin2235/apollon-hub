@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   ApiResult,
+  UploadNotice,
   WebsiteMeta,
   WorkListData,
   WorkListItem
@@ -82,7 +83,11 @@ async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiRes
     }
 
     const data = record && "data" in record ? (record.data as T) : (body as T);
-    return { ok: true, data, status: res.status };
+    const notice =
+      record && "notice" in record && record.notice && typeof record.notice === "object"
+        ? (record.notice as UploadNotice)
+        : undefined;
+    return notice ? { ok: true, data, status: res.status, notice } : { ok: true, data, status: res.status };
   } catch {
     return { ok: false, error: "network_error", status: 0 };
   } finally {
@@ -144,6 +149,12 @@ export type BlockLibraryItem = {
   created_by: string | null;
 };
 
+export type UploadProgress = {
+  loaded: number;
+  total: number;
+  percent: number;
+};
+
 export type UploadResult = {
   path: string;
   publicUrl: string;
@@ -154,6 +165,110 @@ export type UploadResult = {
 };
 
 export type OrderItem = { id: string; sort: number };
+
+function parseUploadBody(text: string, status: number): ApiResult<UploadResult> {
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      body = text;
+    }
+  }
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+  if (status < 200 || status >= 300) {
+    return {
+      ok: false,
+      error: typeof record?.error === "string" ? record.error : "request_failed",
+      details: record?.details,
+      status
+    };
+  }
+  if (record && "error" in record && record.error && !("data" in record)) {
+    return {
+      ok: false,
+      error: String(record.error),
+      details: record.details,
+      status
+    };
+  }
+  const data = (record && "data" in record ? record.data : body) as UploadResult;
+  const notice =
+    record && "notice" in record && record.notice && typeof record.notice === "object"
+      ? (record.notice as UploadNotice)
+      : undefined;
+  return notice
+    ? { ok: true, data, status, notice }
+    : { ok: true, data, status };
+}
+
+export function uploadFile(
+  file: File,
+  bucket: string,
+  path: string,
+  opts?: {
+    onProgress?: (progress: UploadProgress) => void;
+    signal?: AbortSignal;
+  }
+): Promise<ApiResult<UploadResult>> {
+  return new Promise((resolve) => {
+    void (async () => {
+      const token = await accessToken();
+      if (!token) {
+        resolve({ ok: false, error: "unauthorized", status: 401 });
+        return;
+      }
+
+      if (opts?.signal?.aborted) {
+        resolve({ ok: false, error: "aborted", status: 0 });
+        return;
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+      form.append("bucket", bucket);
+      form.append("path", path);
+
+      const xhr = new XMLHttpRequest();
+      const timeoutMs =
+        file.size > 80 * 1024 * 1024 ? 1_800_000 : file.size > 20 * 1024 * 1024 ? 600_000 : 180_000;
+      xhr.timeout = timeoutMs;
+      xhr.open("POST", "/api/website/upload");
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      const onAbort = () => xhr.abort();
+      opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || !opts?.onProgress) return;
+        opts.onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          percent: Math.round((event.loaded / event.total) * 100)
+        });
+      };
+
+      xhr.onload = () => {
+        opts?.signal?.removeEventListener("abort", onAbort);
+        resolve(parseUploadBody(xhr.responseText, xhr.status));
+      };
+      xhr.onerror = () => {
+        opts?.signal?.removeEventListener("abort", onAbort);
+        resolve({ ok: false, error: "network_error", status: 0 });
+      };
+      xhr.ontimeout = () => {
+        opts?.signal?.removeEventListener("abort", onAbort);
+        resolve({ ok: false, error: "timeout", status: 0 });
+      };
+      xhr.onabort = () => {
+        opts?.signal?.removeEventListener("abort", onAbort);
+        resolve({ ok: false, error: "aborted", status: 0 });
+      };
+
+      xhr.send(form);
+    })();
+  });
+}
 
 export function getLibrary(): Promise<ApiResult<{ items: BlockLibraryItem[] }>> {
   return websiteFetch<{ items: BlockLibraryItem[] }>("library");
@@ -186,6 +301,24 @@ export function reorderBlocks(sectionId: string, order: OrderItem[]): Promise<Ap
   return websiteFetch(`sections/${sectionId}/blocks`, {
     method: "PUT",
     body: JSON.stringify({ order })
+  });
+}
+
+export function moveBlock(
+  workId: string,
+  body: { blockId: string; toSectionId: string; toSort: number }
+): Promise<
+  ApiResult<{
+    blockId: string;
+    fromSectionId: string;
+    toSectionId: string;
+    toSort: number;
+    updated: number;
+  }>
+> {
+  return websiteFetch(`works/${workId}/blocks/move`, {
+    method: "PUT",
+    body: JSON.stringify(body)
   });
 }
 
@@ -239,14 +372,6 @@ export function reorderSections(workId: string, order: OrderItem[]): Promise<Api
     method: "PUT",
     body: JSON.stringify({ order })
   });
-}
-
-export function uploadFile(file: File, bucket: string, path: string): Promise<ApiResult<UploadResult>> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("bucket", bucket);
-  form.append("path", path);
-  return websiteFetch<UploadResult>("upload", { method: "POST", body: form });
 }
 
 export type WebsiteTagItem = {
@@ -357,6 +482,13 @@ export function updateFolder(
 
 export function deleteFolder(workId: string, folderId: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch(`works/${workId}/folders/${folderId}`, { method: "DELETE" });
+}
+
+export function reorderFolders(workId: string, order: OrderItem[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`works/${workId}/folders`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
 }
 
 export function addFaq(body: unknown): Promise<ApiResult<Record<string, unknown>>> {
