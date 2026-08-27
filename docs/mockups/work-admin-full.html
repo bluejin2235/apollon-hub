@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>워크 어드민 — 구현안</title>
+<style>
+:root{
+--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--chip:#eef0f3;--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;
+--ok:#0f7a45;--okbg:#f0f9f4;--warn:#a35a08;--warnbg:#fdf7f0;--err:#b0231e;--errbg:#fdf3f2;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e9ecf0;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 16px 90px}
+.doch{font-size:23px;margin:0 0 4px;letter-spacing:-.02em}
+.docs{color:var(--dim);font-size:13px;margin:0 0 18px}
+
+.app{background:#fff;border:1px solid #d2d7de;border-radius:12px;overflow:hidden;
+box-shadow:0 4px 18px rgba(0,0,0,.06)}
+
+/* 헤더 */
+.hd{padding:13px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hd .bc{font-size:11.5px;color:var(--faint);width:100%}
+.hd h2{font-size:17.5px;margin:2px 0 0;letter-spacing:-.01em;flex:1;min-width:200px}
+.st{font-size:11px;border-radius:4px;padding:2px 8px;font-weight:700}
+.st.pub{background:var(--okbg);color:var(--ok)}
+.st.dft{background:var(--chip);color:var(--dim)}
+.saved{font-size:11.5px;color:var(--faint)}
+
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:6px 13px;font-size:12.5px;
+background:#fff;color:#3a4049;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:1.4}
+.btn:hover{background:var(--soft)}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.p:hover{background:#453c9e}
+.btn.sm{padding:3px 9px;font-size:11.5px}
+.btn.xs{padding:2px 7px;font-size:11px}
+.btn.ai{background:var(--apbg);border-color:var(--apln);color:var(--ap);font-weight:600}
+.btn.dg{color:var(--err);border-color:#f0d4d2}
+.btn[disabled]{opacity:.35;cursor:default}
+.ico{width:24px;height:24px;border:1px solid #e3e7ec;border-radius:6px;background:#fff;
+display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--dim);cursor:pointer}
+.ico:hover{border-color:#c3cad3;color:#3a4049}
+
+/* 탭 */
+.tabs{display:flex;border-bottom:1px solid var(--line);padding:0 20px;background:var(--soft);gap:0}
+.tab{padding:11px 16px;font-size:13.5px;color:var(--dim);border-bottom:2px solid transparent;
+cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none}
+.tab:hover{color:#3a4049}
+.tab.on{color:var(--ink);font-weight:700;border-bottom-color:var(--ap);background:#fff}
+.pip{width:6px;height:6px;border-radius:50%}
+.pip.f{background:#10b981}.pip.w{background:#f59e0b}.pip.e{background:#cbd5e1}
+.pane{display:none;padding:20px}
+.pane.on{display:block}
+
+/* 필드 */
+.grp{margin-bottom:22px}
+.gt{font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--dim);
+margin-bottom:12px;padding-bottom:7px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.gt .c{font-weight:400;color:var(--faint);font-size:11px;margin-left:auto}
+.fld{margin-bottom:15px}
+.fld:last-child{margin-bottom:0}
+.lab{display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap}
+.lab b{font-size:12.5px;font-weight:600}
+.rq{color:var(--err);font-size:12px}
+.q{width:15px;height:15px;border-radius:50%;border:1px solid #cbd2da;color:var(--faint);
+font-size:9.5px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+background:#fff;user-select:none;flex-shrink:0}
+.q:hover,.q.on{border-color:var(--ap);color:var(--ap);background:var(--apbg)}
+.cn{margin-left:auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.cn .ov{color:var(--err);font-weight:700}
+.cn .nr{color:var(--warn)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+input.i,textarea.i,select.i{width:100%;border:1px solid #dde1e6;border-radius:7px;
+padding:8px 11px;font-size:13px;font-family:inherit;color:#3a4049;background:#fff;line-height:1.5}
+input.i:focus,textarea.i:focus,select.i:focus{outline:none;border-color:var(--ap);
+box-shadow:0 0 0 3px rgba(83,74,183,.09)}
+textarea.i{resize:vertical;min-height:58px}
+.enw{position:relative}
+.enw input.i,.enw textarea.i{background:#faf9fe;border-color:var(--apln);padding-right:36px}
+.enw .aib{position:absolute;right:6px;top:6px;font-size:9.5px;font-weight:800;color:var(--ap);
+background:#fff;border:1px solid var(--apln);border-radius:3px;padding:1px 5px;cursor:pointer}
+.ro{background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:8px 11px;
+font-size:13px;color:#3a4049;display:flex;align-items:center;gap:8px}
+.ro .v{font-weight:600}
+.ro .btn{margin-left:auto}
+.pre{background:var(--soft);border:1px solid var(--line);border-radius:7px 0 0 7px;
+padding:8px 11px;font-size:12.5px;color:var(--faint);white-space:nowrap;border-right:none}
+.slugrow{display:flex}
+.slugrow input.i{border-radius:0 7px 7px 0}
+
+.tip{display:none;font-size:11.5px;color:var(--dim);line-height:1.65;margin-top:6px;
+background:var(--soft);border-left:2px solid var(--apln);border-radius:0 6px 6px 0;padding:9px 12px}
+.tip.on{display:block}
+.tip b{color:#3a4049}
+.tip .ex{color:var(--faint)}
+.tip ul{margin:5px 0 0;padding-left:16px}
+.tip li{margin-bottom:2px}
+
+.tgl{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;user-select:none}
+.tgl i{width:30px;height:17px;background:#cbd2da;border-radius:9px;position:relative;
+display:block;transition:background .16s;flex-shrink:0}
+.tgl i::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;
+background:#fff;border-radius:50%;transition:left .16s}
+.tgl.on i{background:var(--ap)}
+.tgl.on i::after{left:15px}
+
+.chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.chip{font-size:11.5px;background:var(--chip);border-radius:14px;padding:3px 10px;color:#3a4049;
+display:inline-flex;align-items:center;gap:5px}
+.chip .x{color:var(--faint);cursor:pointer;font-size:12px}
+.chip .x:hover{color:var(--err)}
+.chip.add{background:#fff;border:1px dashed #cbd2da;color:var(--faint);cursor:pointer}
+.chip.add:hover{border-color:var(--ap);color:var(--ap)}
+
+/* 접힌 그룹 */
+.fold{border:1px solid var(--line);border-radius:9px;margin-bottom:10px;overflow:hidden}
+.fh{padding:11px 14px;background:var(--soft);display:flex;align-items:center;gap:9px;
+cursor:pointer;user-select:none}
+.fh:hover{background:#f2f4f7}
+.fh b{font-size:12.5px}
+.fh .s{font-size:11.5px;color:var(--faint)}
+.fh .cnt{font-size:11px;margin-left:auto;color:var(--faint)}
+.fh .ar{color:var(--faint);font-size:11px;transition:transform .16s}
+.fb{padding:15px 14px;display:none;border-top:1px solid var(--line)}
+.fold.on .fb{display:block}
+.fold.on .ar{transform:rotate(180deg)}
+
+/* 업로드 */
+.up{border:1.5px dashed #d3d8de;border-radius:9px;padding:20px;text-align:center;
+color:var(--faint);font-size:12px;background:#fcfcfd;cursor:pointer}
+.up:hover{border-color:var(--ap);background:var(--apbg)}
+.up .ic{font-size:20px;color:#c3cad3;display:block;margin-bottom:5px}
+.up .b{display:inline-block;border:1px solid #dde1e6;border-radius:6px;padding:5px 15px;
+background:#fff;color:#3a4049;font-size:12.5px;margin-top:7px;font-weight:600}
+.up .g{font-size:10.5px;color:#b8bfc7;margin-top:7px;line-height:1.5}
+.filecard{border:1px solid var(--line);border-radius:9px;padding:11px;display:flex;gap:11px;align-items:flex-start}
+.filecard .meta{flex:1;min-width:0}
+.filecard .fn{font-size:12.5px;color:#3a4049;font-weight:500;word-break:break-all}
+.filecard .fm{font-size:11px;color:var(--faint);margin-top:2px}
+.filecard .acts{display:flex;gap:5px;margin-top:7px}
+
+.ph{background:linear-gradient(135deg,#5b7a94,#2f4a5e);border-radius:6px;
+display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);
+font-size:10px;position:relative;overflow:hidden;flex-shrink:0}
+.ph.v{background:#191c21;color:#5a626b}
+.ph.e{background:linear-gradient(135deg,#efe9fc,#ddd3f6);color:#8878cf}
+.ph.g{background:#e9ecf0;color:#a9b0ba}
+
+/* 알림 */
+.al{border-radius:0 8px 8px 0;padding:10px 13px;font-size:12px;line-height:1.6;margin-top:8px}
+.al.w{background:var(--warnbg);border:1px solid #eddcc4;border-left:3px solid var(--warn);color:#7a4406}
+.al.e{background:var(--errbg);border:1px solid #f2d6d4;border-left:3px solid var(--err);color:#8c1c18}
+.al.o{background:var(--okbg);border:1px solid #bfe3ce;border-left:3px solid var(--ok);color:#0b5c34}
+.al.i{background:var(--apbg);border:1px solid var(--apln);border-left:3px solid var(--ap);color:#3f3894}
+.al b{font-weight:700}
+
+.luna{background:var(--apbg);border:1px solid var(--apln);border-radius:9px;padding:11px 13px;
+display:flex;gap:10px;margin-bottom:14px;font-size:12.5px;color:#3a4049;line-height:1.6}
+.luna .av{width:24px;height:24px;border-radius:50%;background:var(--ap);color:#fff;
+font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* ── 섹션 · 블록 ── */
+.sec{border:1px solid #d2d7de;border-radius:11px;margin-bottom:13px;overflow:hidden;background:#fff}
+.sech{padding:11px 14px;background:#f3f5f8;display:flex;align-items:center;gap:9px;
+border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.sech:hover{background:#eef1f5}
+.sech .no{width:23px;height:23px;border-radius:6px;background:var(--ink);color:#fff;
+font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sech .nm{font-size:14px;font-weight:700}
+.sech .mt{font-size:11px;color:var(--faint)}
+.sech .ar{color:var(--faint);font-size:11px;transition:transform .16s}
+.sec.on .ar{transform:rotate(180deg)}
+.secb{padding:14px;display:none}
+.sec.on .secb{display:block}
+.secf{margin-bottom:14px;padding-bottom:14px;border-bottom:1px dashed var(--line)}
+
+.blks{padding-left:15px;border-left:2px solid #e0e4ea;margin-left:5px}
+.blk{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;background:#fff}
+.blk.sel{border-color:var(--apln);box-shadow:0 0 0 3px rgba(83,74,183,.07)}
+.bh{padding:8px 11px;display:flex;align-items:center;gap:8px;background:#fbfcfd;
+border-bottom:1px solid var(--line);border-radius:9px 9px 0 0;cursor:pointer;user-select:none}
+.bh:hover{background:#f6f8fa}
+.bh .gr{color:#cbd2da;font-size:12px;cursor:grab}
+.bh .kd{font-size:12px;font-weight:600}
+.bh .c2{font-size:10.5px;color:var(--faint);background:var(--chip);border-radius:3px;padding:1px 6px}
+.bh .c2.w{background:var(--warnbg);color:var(--warn)}
+.bh .ct{display:flex;gap:3px;margin-left:auto}
+.bb{padding:12px;display:none}
+.blk.on .bb{display:block}
+
+.addb{border:1px dashed #d3d8de;border-radius:8px;padding:9px;text-align:center;
+font-size:12px;color:var(--faint);background:#fcfcfd;cursor:pointer}
+.addb:hover{border-color:var(--ap);color:var(--ap);background:var(--apbg)}
+.adds{border:1px dashed #c3cad3;border-radius:10px;padding:13px;text-align:center;
+font-size:13px;color:var(--dim);background:#fff;cursor:pointer}
+.adds:hover{border-color:var(--ap);color:var(--ap);background:var(--apbg)}
+
+/* 배치 슬롯 */
+.eg{display:grid;grid-template-columns:1fr 248px;gap:12px;align-items:start}
+.eg.solo{grid-template-columns:1fr}
+.slots{display:flex;gap:7px;margin-bottom:7px}
+.sl{position:relative;border-radius:6px;overflow:hidden;cursor:pointer;min-width:0}
+.sl.on{outline:2px solid var(--ap);outline-offset:1px}
+.sl .n{position:absolute;left:5px;top:5px;background:rgba(0,0,0,.6);color:#fff;
+font-size:9.5px;border-radius:3px;padding:0 5px;z-index:2}
+.sl .fl{position:absolute;right:5px;top:5px;width:15px;height:15px;border-radius:50%;
+font-size:9px;display:flex;align-items:center;justify-content:center;color:#fff;z-index:2}
+.sl .fl.w{background:#f59e0b}
+.sl .fl.c{background:#64748b}
+.sl .cap{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.7));
+color:#fff;font-size:9.5px;padding:12px 6px 4px;line-height:1.3;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl.mt{border:1.5px dashed #d3d8de;background:#fcfcfd;display:flex;flex-direction:column;
+align-items:center;justify-content:center;color:var(--faint);font-size:10.5px;gap:3px}
+.sl.mt:hover{border-color:var(--ap);background:var(--apbg);color:var(--ap)}
+.hint{font-size:10.5px;color:var(--faint);line-height:1.55}
+.hint b{color:var(--dim)}
+
+.pn{border:1px solid var(--apln);border-radius:9px;background:#faf9fe;padding:12px}
+.pn .ph2{font-size:11.5px;font-weight:700;color:var(--ap);margin-bottom:3px;
+display:flex;align-items:center;gap:6px}
+.pn .pm{font-size:10.5px;color:var(--faint);margin-bottom:10px}
+.pn .fld{margin-bottom:10px}
+.pn .lab b{font-size:11.5px}
+.pn input.i,.pn textarea.i{font-size:12px;padding:6px 9px}
+.pn textarea.i{min-height:44px}
+.pn .cn{font-size:10px}
+.pn.none{display:flex;align-items:center;justify-content:center;text-align:center;
+color:var(--faint);font-size:11.5px;line-height:1.6;min-height:150px;background:var(--soft);
+border-color:var(--line);border-style:dashed}
+
+/* 영상 · 임베드 */
+.segs{display:inline-flex;border:1px solid #dde1e6;border-radius:7px;overflow:hidden;margin-bottom:10px}
+.segs button{border:none;background:#fff;padding:6px 14px;font-size:12.5px;color:#3a4049;
+cursor:pointer;font-family:inherit;border-left:1px solid #dde1e6}
+.segs button:first-child{border-left:none}
+.segs button.on{background:var(--ink);color:#fff;font-weight:600}
+.urlrow{display:flex;gap:6px;margin-bottom:10px}
+.urlrow input.i{flex:1}
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}
+.tb{position:relative;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid transparent}
+.tb.on{border-color:var(--ap)}
+.tb .t{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;
+font-size:9.5px;text-align:center;padding:1px 0}
+.tb.up2{border:1.5px dashed #d3d8de;background:#fcfcfd;display:flex;flex-direction:column;
+align-items:center;justify-content:center;color:var(--faint);font-size:10px;min-height:56px;gap:2px}
+.ytprev{position:relative;border-radius:7px;overflow:hidden}
+.ytprev .ov{position:absolute;left:0;right:0;top:0;padding:8px 10px;
+background:linear-gradient(rgba(0,0,0,.6),transparent);color:#fff}
+.ytprev .ov .t1{font-size:11.5px;font-weight:700;line-height:1.3}
+.ytprev .ov .t2{font-size:10px;opacity:.8;margin-top:1px}
+.ytprev .pl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+width:40px;height:28px;background:rgba(255,0,0,.85);border-radius:6px;
+display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+
+/* FAQ */
+.faq{border:1px solid var(--line);border-radius:9px;margin-bottom:9px}
+.fqh{padding:9px 11px;background:#fbfcfd;border-bottom:1px solid var(--line);
+display:flex;align-items:center;gap:8px;border-radius:9px 9px 0 0;cursor:pointer}
+.fqh .qn{width:22px;height:20px;border-radius:5px;background:var(--chip);color:var(--dim);
+font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.fqh .qt{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fqb{padding:12px;display:none}
+.faq.on .fqb{display:block}
+
+/* 연결 */
+.rels{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.rc{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+.rc .th{height:66px}
+.rc .rb{padding:8px 9px}
+.rc .kd2{font-size:9.5px;background:var(--chip);border-radius:3px;padding:1px 6px;color:var(--dim)}
+.rc .kd2.i{background:#eef4ff;color:#3a5ea8}
+.rc .kd2.p{background:var(--okbg);color:var(--ok)}
+.rc .tt{font-size:11.5px;font-weight:600;margin-top:4px;line-height:1.35;
+display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rc .ac{display:flex;gap:3px;margin-top:7px}
+.rc.mt{border-style:dashed;display:flex;align-items:center;justify-content:center;
+min-height:128px;color:var(--faint);font-size:11.5px;cursor:pointer;flex-direction:column;gap:4px}
+.rc.mt:hover{border-color:var(--ap);color:var(--ap);background:var(--apbg)}
+
+/* 폴더 행 */
+.frow{display:grid;grid-template-columns:150px 1fr auto;gap:7px;margin-bottom:7px;align-items:center}
+.frow .rq2{font-size:10px;color:var(--err)}
+
+/* 하단 */
+.bar{padding:11px 20px;border-top:1px solid var(--line);background:var(--soft);
+display:flex;align-items:center;gap:9px;flex-wrap:wrap;position:sticky;bottom:0}
+.bstat{display:flex;align-items:center;gap:6px;font-size:12.5px}
+.bstat.w{color:var(--warn)}.bstat.o{color:var(--ok)}
+
+/* 블록 추가 모달 */
+.mask{position:fixed;inset:0;background:rgba(16,18,22,.5);z-index:90;display:none;
+align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.mask.on{display:flex}
+.modal{background:#fff;border-radius:13px;width:100%;max-width:900px;overflow:hidden;
+box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.mh{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.mh h3{font-size:16px;margin:0}
+.mh .s{font-size:11.5px;color:var(--faint)}
+.mb{padding:16px 20px;max-height:66vh;overflow:auto}
+.filt{display:flex;gap:5px;margin-bottom:14px;flex-wrap:wrap}
+.filt span{font-size:12px;border:1px solid #dde1e6;border-radius:16px;padding:4px 12px;
+cursor:pointer;color:var(--dim);background:#fff}
+.filt span.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.pc{border:1px solid var(--line);border-radius:9px;overflow:hidden;cursor:pointer;background:#fff}
+.pc:hover{border-color:var(--ap);box-shadow:0 3px 12px rgba(83,74,183,.14)}
+.pc .dg2{height:62px;background:var(--soft);display:flex;align-items:center;
+justify-content:center;gap:3px;padding:9px;border-bottom:1px solid var(--line)}
+.pc .dg2 i{background:#cdd4dc;border-radius:2px;display:block}
+.pc .pb{padding:8px 10px}
+.pc .pn2{font-size:12px;font-weight:600}
+.pc .pd{font-size:10.5px;color:var(--faint);margin-top:2px;line-height:1.45}
+@media (max-width:860px){.two,.r3,.eg,.frow{grid-template-columns:1fr}
+.rels,.cards{grid-template-columns:1fr 1fr}.thumbs{grid-template-columns:1fr 1fr}}
+
+/* ── 슬롯 = 업로드 영역 ── */
+.sl{transition:outline-color .12s,transform .12s}
+.sl[draggable=true]{cursor:grab}
+.sl[draggable=true]:active{cursor:grabbing}
+.sl.drag{opacity:.35}
+.sl.over{outline:2px dashed var(--ap);outline-offset:2px}
+.sl .sacts{position:absolute;left:0;right:0;bottom:0;display:flex;gap:3px;padding:5px;
+opacity:0;transition:opacity .14s;z-index:3;justify-content:flex-end}
+.sl:hover .sacts{opacity:1}
+.sl .sb{font-size:10px;background:rgba(255,255,255,.94);border-radius:4px;padding:2px 8px;
+color:#3a4049;cursor:pointer;font-weight:600}
+.sl .sb:hover{background:#fff}
+.sl .sb.x{color:var(--err)}
+.sl.mt{border:1.5px dashed #d3d8de;background:#fcfcfd;padding:0}
+.sl.mt:hover{border-color:var(--ap);background:var(--apbg)}
+.sl .mtin{display:flex;flex-direction:column;align-items:center;justify-content:center;
+height:100%;color:var(--faint);font-size:10px;line-height:1.4;text-align:center;gap:2px;padding:6px}
+.sl.mt:hover .mtin{color:var(--ap)}
+.sl .pl2{font-size:16px;color:#c3cad3}
+.sl.mt:hover .pl2{color:var(--ap)}
+.scrw{display:flex;gap:6px;overflow-x:auto;margin-bottom:7px;padding-bottom:5px}
+.scrw::-webkit-scrollbar{height:6px}
+.scrw::-webkit-scrollbar-thumb{background:#d3d8de;border-radius:3px}
+
+#tst{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);
+background:var(--ink);color:#fff;font-size:12.5px;padding:9px 18px;border-radius:8px;
+opacity:0;pointer-events:none;transition:.2s;z-index:200}
+#tst.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── 섹션 색 6가지 ── */
+.sec{--sc:#534AB7;--sbg:#f2f0fc;--sln:#d5cff2;--sblk:#faf9fe}
+.sec.c1{--sc:#534AB7;--sbg:#f0eefb;--sln:#d5cff2;--sblk:#fbfaff}
+.sec.c2{--sc:#2563a8;--sbg:#ecf3fb;--sln:#c9dcf0;--sblk:#f9fcff}
+.sec.c3{--sc:#0e7490;--sbg:#eaf6fa;--sln:#bfe3ec;--sblk:#f8fdfe}
+.sec.c4{--sc:#0f7a45;--sbg:#ecf7f1;--sln:#c5e5d3;--sblk:#f8fdfa}
+.sec.c5{--sc:#a35a08;--sbg:#fdf5eb;--sln:#efdcc4;--sblk:#fffcf8}
+.sec.c6{--sc:#a8437a;--sbg:#fbedf4;--sln:#f0cfe0;--sblk:#fffafc}
+
+.sec{border-color:var(--sln);border-left:3px solid var(--sc)}
+.sech{background:var(--sbg);border-bottom-color:var(--sln)}
+.sech:hover{filter:brightness(.985)}
+.sech .no{background:var(--sc)}
+.sech .nm{color:var(--sc)}
+.sech .ar{color:var(--sc);opacity:.6}
+.secb{background:#fff}
+.secf{border-bottom-color:var(--sln)}
+
+/* 블록은 섹션 색의 옅은 버전 */
+.blks{border-left:2px solid var(--sln)}
+.blk{border-color:var(--sln)}
+.blk .bh{background:var(--sblk);border-bottom-color:var(--sln)}
+.blk .bh:hover{background:var(--sbg)}
+.blk .bh .kd{color:var(--sc)}
+.blk.sel{border-color:var(--sc);box-shadow:0 0 0 3px color-mix(in srgb,var(--sc) 10%,transparent)}
+.blks .addb:hover{border-color:var(--sc);color:var(--sc);background:var(--sbg)}
+.sec .sl.on{outline-color:var(--sc)}
+.sec .sl.over{outline-color:var(--sc)}
+.sec .pn{border-color:var(--sln);background:var(--sblk)}
+.sec .pn .ph2{color:var(--sc)}
+
+/* 색 범례 */
+.legend{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:13px;align-items:center}
+.legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);
+border:1px solid var(--line);border-radius:14px;padding:2px 10px;background:#fff}
+.legend .lg i{width:9px;height:9px;border-radius:50%;display:block}
+</style></head><body>
+<div class="wrap">
+<h1 class="doch">워크 어드민 — 구현안</h1>
+<p class="docs">2026.08.27 · 이 화면 그대로 개발합니다 · 탭 4개 · 블록 16종 · 모든 기능 포함</p>
+
+<div class="app">
+  <div class="hd">
+    <div class="bc">워크 › 프로젝트 목록 › 편집</div>
+    <h2>“Star Avenue Renewal” - Lotte Duty Free</h2>
+    <span class="st pub">공개</span>
+    <span class="saved">마지막 저장 17:13</span>
+    <button class="btn">미리보기 ↗</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" onclick="tab(this,'pane-basic')"><i class="pip w"></i>기본정보</div>
+    <div class="tab" onclick="tab(this,'pane-content')"><i class="pip f"></i>본문</div>
+    <div class="tab" onclick="tab(this,'pane-faq')"><i class="pip w"></i>FAQ</div>
+    <div class="tab" onclick="tab(this,'pane-rel')"><i class="pip f"></i>연결</div>
+  </div>
+
+
+<div class="pane on" id="pane-basic">
+
+  <div class="grp">
+    <div class="gt">꼭 채워야 하는 것 <span class="c">5 / 6 완료</span></div>
+
+    <div class="fld">
+      <div class="lab"><b>제목</b><span class="rq">*</span>
+        <span class="q" onclick="qt(this)">?</span>
+        <span class="cn">국문 <span class="ov">39</span> / 22 · 영문 39 / 46</span></div>
+      <div class="two">
+        <input class="i" value="“Star Avenue Renewal” - Lotte Duty Free" placeholder="국문 제목">
+        <div class="enw"><input class="i" value="“Star Avenue Renewal” - Lotte Duty Free" placeholder="영문 제목">
+          <span class="aib" title="국문으로 영문 생성">AI</span></div>
+      </div>
+      <div class="al e">국문이 22자를 넘습니다. 목록 카드에서 세 줄이 되어 흐트러집니다.</div>
+      <div class="tip"><b>국문 8~22자 · 영문 15~46자</b><br>
+        상세 제목 · 목록 카드 · 구글 검색 제목 · 링크 공유 · 관련 콘텐츠 카드에 모두 쓰입니다.
+        검색 제목에는 「 | 아폴론이머시브웍스」가 자동으로 붙습니다.<br>
+        <span class="ex">목록 작은 카드에서 국문 11자가 한 줄입니다.</span></div>
+    </div>
+
+    <div class="fld">
+      <div class="lab"><b>주소</b><span class="rq">*</span><span class="q" onclick="qt(this)">?</span></div>
+      <div class="slugrow"><span class="pre">apollonworks.com/works/</span>
+        <input class="i" value="star-avenue-renewal-lotte-duty-free"></div>
+      <div class="tip"><b>영문 소문자와 하이픈만</b><br>
+        공개 후에 바꾸면 기존 검색 순위와 외부 링크가 끊깁니다.</div>
+    </div>
+
+    <div class="two">
+      <div class="fld">
+        <div class="lab"><b>카테고리</b><span class="rq">*</span></div>
+        <div class="ro"><span class="v">미디어 스페이스</span>
+          <button class="btn xs">바꾸기</button></div>
+      </div>
+      <div class="fld">
+        <div class="lab"><b>표기 연도</b><span class="rq">*</span><span class="q" onclick="qt(this)">?</span></div>
+        <input class="i" value="2026" style="max-width:140px">
+        <div class="tip">화면에 보이는 연도이자 목록 정렬 기준입니다.</div>
+      </div>
+    </div>
+
+    <div class="fld">
+      <div class="lab"><b>대표 이미지</b><span class="rq">*</span><span class="q" onclick="qt(this)">?</span></div>
+      <div class="filecard">
+        <div class="ph" style="width:172px;height:97px">2560 × 1440</div>
+        <div class="meta"><div class="fn">star-avenue-key.jpg</div>
+          <div class="fm">2560 × 1440 · 1.4MB · JPG</div>
+          <div class="acts"><button class="btn sm">바꾸기</button>
+            <button class="btn sm dg">삭제</button></div></div>
+      </div>
+      <div class="tip"><b>긴 변 2560px 권장 · 15MB 이하 · 비율 자유</b><br>
+        목록 카드 · 상세 첫 화면 · 관련 콘텐츠 썸네일 · 링크 공유 이미지에 모두 쓰입니다.
+        축소본과 공유용 1200×630 은 이 한 장에서 자동으로 만듭니다.<br>
+        <span class="ex">사람 얼굴이나 로고는 가운데에 두세요. 작은 카드에서는 가장자리가 잘릴 수 있습니다.</span></div>
+    </div>
+
+    <div class="fld">
+      <div class="lab"><b>한 줄 요약</b><span class="rq">*</span><span class="q" onclick="qt(this)">?</span>
+        <span class="cn">국문 48 / 80 · 영문 <span class="nr">74</span> / 155</span></div>
+      <div class="two">
+        <textarea class="i">지나가는 통로였던 면세점 K-POP 존을 머무는 몰입형 미디어 공간으로 재구성했습니다.</textarea>
+        <div class="enw"><textarea class="i">Transformed a duty-free K-POP passage into an immersive media destination.</textarea>
+          <span class="aib">AI</span></div>
+      </div>
+      <div class="tip"><b>국문 60~80자 · 1~2문장</b><br>
+        목록 카드 · 상세 · 구글 검색 결과 설명 · 링크 공유 · AI 인용에 모두 쓰입니다.
+        형용사보다 <b>동사와 숫자</b>가 인용됩니다.</div>
+    </div>
+  </div>
+
+  <div class="fold"><div class="fh" onclick="fd(this)"><b>프로젝트 정보</b>
+    <span class="s">부제 · 클라이언트 · 유형 · 완공 연도 · 위치 · 크레딧</span>
+    <span class="cnt" style="color:var(--ok)">5 / 6</span><span class="ar">▾</span></div>
+    <div class="fb">
+      <div class="fld"><div class="lab"><b>부제</b><span class="q" onclick="qt(this)">?</span>
+        <span class="cn">국문 22 / 30</span></div>
+        <div class="two"><input class="i" value="스타애비뉴, 롯데면세점 명동본점">
+          <div class="enw"><input class="i" value="Star Avenue, Lotte Duty Free Myeongdong"><span class="aib">AI</span></div></div>
+        <div class="tip">상세 페이지 제목 아래 한 줄. 장소나 클라이언트를 적습니다.<br>
+          <span class="ex">화면 자리는 훈희 이사 디자인 확정 대기 중입니다.</span></div></div>
+
+      <div class="two">
+        <div class="fld"><div class="lab"><b>클라이언트</b></div>
+          <div class="two"><input class="i" value="롯데면세점">
+            <div class="enw"><input class="i" value="Lotte Duty Free"><span class="aib">AI</span></div></div></div>
+        <div class="fld"><div class="lab"><b>완공 연도</b></div>
+          <input class="i" value="2024" style="max-width:140px"></div>
+      </div>
+
+      <div class="fld"><div class="lab"><b>프로젝트 유형</b></div>
+        <div class="two"><input class="i" value="공간 리뉴얼 · 미디어 스페이스 디자인">
+          <div class="enw"><input class="i" value="Space Renewal · Media Space Design"><span class="aib">AI</span></div></div></div>
+
+      <div class="fld"><div class="lab"><b>위치</b><span class="q" onclick="qt(this)">?</span></div>
+        <div class="r3"><input class="i" value="대한민국" placeholder="국가">
+          <input class="i" value="서울" placeholder="도시">
+          <input class="i" value="중구 남대문로 81" placeholder="주소"></div>
+        <div class="tip"><b>국가 · 도시 · 주소 순서</b><br>
+          구조화 데이터로 나가므로 실제 행정 주소를 씁니다. 건물 이름만 쓰지 마세요.</div></div>
+
+      <div class="fld"><div class="lab"><b>참여 크레딧</b><span class="q" onclick="qt(this)">?</span>
+        <span class="cn">2개</span></div>
+        <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden">
+          <div class="frow" style="margin:0;padding:8px 10px;border-bottom:1px solid var(--line);gap:8px">
+            <input class="i" value="Media Space Design" placeholder="역할 (영문)">
+            <input class="i" value="아폴론이머시브웍스" placeholder="회사·사람 이름">
+            <div style="display:flex;gap:3px"><span class="ico">↑</span><span class="ico">↓</span><span class="ico">✕</span></div></div>
+          <div class="frow" style="margin:0;padding:8px 10px;gap:8px">
+            <input class="i" value="Client" placeholder="역할 (영문)">
+            <input class="i" value="롯데면세점" placeholder="회사·사람 이름">
+            <div style="display:flex;gap:3px"><span class="ico">↑</span><span class="ico">↓</span><span class="ico">✕</span></div></div>
+        </div>
+        <button class="btn sm" style="margin-top:7px">＋ 크레딧 추가</button>
+        <div class="tip"><b>역할은 영문, 회사·사람 이름은 있는 그대로</b><br>
+          한 줄에 몰아 쓰면 검색엔진이 전부 「저자 이름」으로 잘못 읽습니다.<br>
+          <span class="ex">Developer · Project Management · Architect · Media Architecture Design · Client</span></div></div>
+    </div></div>
+
+  <div class="fold"><div class="fh" onclick="fd(this)"><b>배경 영상</b>
+    <span class="s">목록 카드에서 마우스를 올리면 도는 짧은 영상</span>
+    <span class="cnt" style="color:var(--warn)">1 / 2</span><span class="ar">▾</span></div>
+    <div class="fb"><div class="two">
+      <div class="fld"><div class="lab"><b>큰 화면용</b><span class="q" onclick="qt(this)">?</span></div>
+        <div class="filecard"><div class="ph v" style="width:106px;height:60px">▶ 1280×720</div>
+          <div class="meta"><div class="fn">star-avenue-loop-lg.mp4</div>
+            <div class="fm">1280×720 · 1.4MB · 5.2초</div>
+            <div class="acts"><button class="btn xs">바꾸기</button>
+              <button class="btn xs dg">삭제</button></div></div></div>
+        <div class="tip"><b>MP4 (H.264) · 1280×720 · 1.5MB 이하</b><br>
+          4~6초 · 24fps · 소리 없음 · 비트레이트 2Mbps<br>
+          목록 맨 위 큰 카드와 메인 히어로에 쓰입니다.</div></div>
+      <div class="fld"><div class="lab"><b>작은 화면용</b><span class="q" onclick="qt(this)">?</span></div>
+        <div class="up" style="padding:15px"><span class="ic">⬆</span>
+          파일을 끌어다 놓거나<br><span class="b">파일 선택</span>
+          <div class="g">MP4 · 640×360 · 0.5MB 이하</div></div>
+        <div class="tip"><b>MP4 (H.264) · 640×360 · 0.5MB 이하</b><br>
+          올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다.</div></div>
+    </div>
+    <div class="al i" style="margin-top:11px"><b>왜 두 벌인가</b> —
+      목록 한 화면에 큰 것 1개와 작은 것 8개가 함께 깔립니다.
+      큰 파일 하나로 돌려쓰면 13MB 가 나가지만, 나눠 쓰면 5MB 로 줄어듭니다.
+      프리미어에서 같은 시퀀스를 해상도만 바꿔 두 번 내보내면 됩니다.</div>
+    </div></div>
+
+  <div class="fold"><div class="fh" onclick="fd(this)"><b>태그</b>
+    <span class="s">워크 목록에서 필터로 쓰입니다</span>
+    <span class="cnt" style="color:var(--ok)">3개</span><span class="ar">▾</span></div>
+    <div class="fb">
+      <div class="fld"><div class="lab"><b>태그</b><span class="q" onclick="qt(this)">?</span></div>
+        <div class="chips">
+          <span class="chip">면세점 <span class="x">✕</span></span>
+          <span class="chip">K-POP <span class="x">✕</span></span>
+          <span class="chip">이머시브 리테일 <span class="x">✕</span></span>
+          <span class="chip add">＋ 추가</span></div>
+        <div class="tip"><b>3~6개 · 카테고리로 나눌 수 없는 갈래</b><br>
+          워크 목록 상단의 해시태그 필터에 그대로 나옵니다.
+          태그를 누르면 같은 태그의 워크가 모입니다.<br>
+          <b>여러 프로젝트가 같은 태그를 공유해야 의미가 있습니다.</b>
+          이 워크에만 해당하는 말은 태그가 아닙니다.
+          <ul><li>좋은 예 — 면세점 · K-POP · 미디어 파사드 · 리조트</li>
+          <li>나쁜 예 — 일평균방문객16000명 · 2024년1월착수 · 김대리담당</li></ul></div></div>
+    </div></div>
+
+  <div class="fold"><div class="fh" onclick="fd(this)"><b>내부 연결</b>
+    <span class="s">Work서버 폴더 · 외부에 노출되지 않습니다</span>
+    <span class="cnt" style="color:var(--warn)">1 / 2</span><span class="ar">▾</span></div>
+    <div class="fb">
+      <div class="frow"><div><b style="font-size:12px">프로젝트 폴더</b><span class="rq2"> *</span></div>
+        <input class="i" value="T:\02 Project\2024\240115 롯데면세점 스타애비뉴 리뉴얼">
+        <span class="ico">✕</span></div>
+      <div class="frow"><div><b style="font-size:12px">영상 폴더</b></div>
+        <input class="i" value="" placeholder="P:\... (없으면 비워둡니다)">
+        <span class="ico">✕</span></div>
+      <div class="frow"><input class="i" placeholder="폴더 이름 (예: 도면 폴더)">
+        <input class="i" placeholder="경로">
+        <span class="ico">✕</span></div>
+      <button class="btn sm" style="margin-top:4px">＋ 폴더 추가</button>
+      <div class="al i" style="margin-top:10px">
+        루나에게 「스타애비뉴 원본 어디 있어?」 라고 물으면 이 경로를 알려줍니다.
+        홈페이지에는 나가지 않습니다.</div>
+    </div></div>
+</div>
+
+<div class="pane" id="pane-content">
+  <div class="luna"><div class="av">L</div>
+    <div>블록 순서가 페이지 왼쪽 <b>앵커 메뉴</b> 순서가 됩니다. 블록 제목이 곧 메뉴 이름입니다.
+      이미지를 다 넣으신 뒤 [AI로 채우기] 를 누르면 글 맥락과 이미지를 함께 읽고
+      대체 텍스트·캡션 초안을 만듭니다.
+      <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">
+        <button class="btn ai sm">✦ AI로 채우기</button>
+        <button class="btn ai sm">✦ 영문 생성</button>
+        <button class="btn sm" onclick="allSec(0)">전체 접기</button>
+        <button class="btn sm" onclick="allSec(1)">전체 펼치기</button></div></div></div>
+
+  <div class="legend"><span style="font-size:11.5px;color:var(--dim);font-weight:600">섹션 색</span>
+    <span class="lg"><i style="background:#534AB7"></i>1</span>
+    <span class="lg"><i style="background:#2563a8"></i>2</span>
+    <span class="lg"><i style="background:#0e7490"></i>3</span>
+    <span class="lg"><i style="background:#0f7a45"></i>4</span>
+    <span class="lg"><i style="background:#a35a08"></i>5</span>
+    <span class="lg"><i style="background:#a8437a"></i>6</span>
+    <span style="font-size:11px;color:var(--faint)">블록은 그 섹션 색의 옅은 버전입니다</span></div>
+
+  <!-- 섹션 1 -->
+  <div class="sec c1 on">
+    <div class="sech" onclick="tgSec(this)"><span class="no">1</span>
+      <span class="nm">Challenge</span>
+      <span class="mt">블록 3개 · 이미지 4 · 영상 1</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb">
+      <div class="secf"><div class="two">
+        <div class="fld"><div class="lab"><b>섹션 제목</b><span class="rq">*</span>
+          <span class="q" onclick="qt(this)">?</span><span class="cn">9 / 16</span></div>
+          <div class="two"><input class="i" value="Challenge">
+            <div class="enw"><input class="i" value="Challenge"><span class="aib">AI</span></div></div>
+          <div class="tip"><b>16자 이내 · 짧을수록 좋습니다</b><br>
+            왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다.
+            섹션은 8개까지. 9개째부터 메뉴가 화면에서 넘칩니다.<br>
+            <span class="ex">자주 쓰는 이름 — Overview · Creative · Space · Synopsis ·
+            Pre-Production · Production · On-site Test · Achievement · Credit</span></div></div>
+        <div class="fld"><div class="lab"><b>기본 설명</b><span class="q" onclick="qt(this)">?</span>
+          <span class="cn">국문 <span class="ov">274</span> / 120</span></div>
+          <div class="two"><textarea class="i" style="min-height:44px">스타애비뉴는 2009년 롯데면세점이 한류 붐과 함께 구축한 공간입니다.</textarea>
+            <div class="enw"><textarea class="i" style="min-height:44px">Star Avenue was built in 2009…</textarea><span class="aib">AI</span></div></div>
+          <div class="tip"><b>국문 60~120자 · 2~3문장</b><br>
+            제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다.
+            이 섹션이 무엇에 대한 것인지를 먼저 쓰세요.<br>
+            <b>빈 줄을 넣으면 문단이 나뉩니다.</b></div></div>
+      </div></div>
+
+      <div class="blks">
+
+        <!-- 영상 블록 -->
+        <div class="blk on">
+          <div class="bh" onclick="tgBlk(this)"><span class="gr">⠿</span>
+            <span class="kd">영상 전폭</span><span class="c2">유튜브</span>
+            <div class="ct" onclick="event.stopPropagation()">
+              <span class="ico">👁</span><span class="ico">↑</span><span class="ico">↓</span>
+              <span class="ico">⧉</span><span class="ico">✕</span></div></div>
+          <div class="bb">
+            <div class="segs"><button class="on" onclick="seg(this)">유튜브 · Vimeo 주소</button>
+              <button onclick="seg(this)">영상 파일 올리기</button></div>
+
+            <div class="fld"><div class="lab"><b>영상 주소</b><span class="rq">*</span>
+              <span class="q" onclick="qt(this)">?</span></div>
+              <div class="urlrow"><input class="i" value="https://www.youtube.com/watch?v=IS2kDTfkWx4">
+                <button class="btn">불러오기</button></div>
+              <div class="tip"><b>유튜브 · Vimeo 주소를 그대로 붙여넣으세요</b><br>
+                재생목록(&list=…)이 붙어 있어도 됩니다. 영상 ID 만 뽑아 씁니다.
+                제목·채널명·썸네일을 자동으로 가져옵니다.<br>
+                비공개(일부 공개)로 올린 영상도 임베드됩니다.</div></div>
+
+            <div class="fld"><div class="lab"><b>화면에 이렇게 나옵니다</b></div>
+              <div class="ytprev"><div class="ph v" style="height:150px"></div>
+                <div class="ov"><div class="t1">K-POP Immersive Retail Design — Star Avenue Renewal</div>
+                  <div class="t2">Apollon Immersive Works</div></div>
+                <div class="pl">▶</div></div>
+              <div class="hint" style="margin-top:6px">
+                유튜브 화면이 그대로 보입니다. 재생 전까지는 이미지 한 장이라 페이지가 가볍습니다.</div></div>
+
+            <div class="fld"><div class="lab"><b>대체 텍스트</b><span class="q" onclick="qt(this)">?</span>
+              <span class="cn">국문 0 / 40</span></div>
+              <div class="two"><input class="i" placeholder="영상에 무엇이 나오는지">
+                <div class="enw"><input class="i" placeholder="영문"><span class="aib">AI</span></div></div>
+              <div class="tip">화면에 보이지 않습니다. 화면낭독기와 검색엔진이 읽습니다.</div></div>
+
+            <div class="fld"><div class="lab"><b>캡션</b><span class="q" onclick="qt(this)">?</span>
+              <span class="cn">국문 0 / 90</span></div>
+              <div class="two"><input class="i" placeholder="영상 아래 한 줄">
+                <div class="enw"><input class="i" placeholder="영문"><span class="aib">AI</span></div></div>
+              <div style="margin-top:7px"><span class="tgl" onclick="tgl(this)"><i></i> 화면에 캡션 표시</span></div>
+              <div class="tip">AI 가 인용하는 것은 캡션입니다. 프로젝트 이름·기술·숫자를 넣으세요.</div></div>
+          </div>
+        </div>
+
+        <!-- 영상 업로드 (썸네일 추천) -->
+        <div class="blk on">
+          <div class="bh" onclick="tgBlk(this)"><span class="gr">⠿</span>
+            <span class="kd">영상 + 글</span><span class="c2">업로드</span>
+            <div class="ct" onclick="event.stopPropagation()">
+              <span class="ico">👁</span><span class="ico">↑</span><span class="ico">↓</span>
+              <span class="ico">⧉</span><span class="ico">✕</span></div></div>
+          <div class="bb">
+            <div class="segs"><button onclick="seg(this)">유튜브 · Vimeo 주소</button>
+              <button class="on" onclick="seg(this)">영상 파일 올리기</button></div>
+
+            <div class="fld"><div class="lab"><b>영상 파일</b><span class="rq">*</span>
+              <span class="q" onclick="qt(this)">?</span></div>
+              <div class="filecard"><div class="ph v" style="width:118px;height:66px">▶ 1920×1080</div>
+                <div class="meta"><div class="fn">02-1 블루랜드_인하우스.mp4</div>
+                  <div class="fm">1920×1080 · 83MB · 1분 42초</div>
+                  <div class="acts"><button class="btn xs">바꾸기</button>
+                    <button class="btn xs dg">삭제</button></div></div></div>
+              <div class="al w">83MB 입니다. 해외 접속에서는 처음 재생까지 몇 초 걸릴 수 있습니다.
+                1920×1080 · 8Mbps 로 다시 내보내면 훨씬 가벼워집니다.</div>
+              <div class="tip"><b>MP4 (H.264) · 200MB 이하 · 클릭하면 재생됩니다</b><br>
+                1920×1080 · VBR 2패스 · 목표 8Mbps · 최대 14Mbps 를 권합니다.
+                인코딩은 소프트웨어(CPU)를 쓰세요.<br>
+                10분이 넘는 영상이라면 유튜브에 올리고 주소를 붙여넣는 편이 낫습니다.</div></div>
+
+            <div class="fld"><div class="lab"><b>재생 전 이미지</b><span class="rq">*</span>
+              <span class="q" onclick="qt(this)">?</span></div>
+              <div class="hint" style="margin-bottom:7px">
+                올린 영상에서 <b>네 장면을 뽑았습니다.</b> 하나를 고르거나 직접 올리세요.</div>
+              <div class="thumbs">
+                <div class="tb on" onclick="pick(this)"><div class="ph" style="height:56px"></div><span class="t">0:10</span></div>
+                <div class="tb" onclick="pick(this)"><div class="ph" style="height:56px"></div><span class="t">0:31</span></div>
+                <div class="tb" onclick="pick(this)"><div class="ph" style="height:56px"></div><span class="t">0:51</span></div>
+                <div class="tb" onclick="pick(this)"><div class="ph" style="height:56px"></div><span class="t">1:11</span></div>
+              </div>
+              <div style="display:flex;gap:5px"><button class="btn sm">다시 뽑기</button>
+                <button class="btn sm">직접 올리기</button></div>
+              <div class="tip"><b>필수입니다.</b> 없으면 재생 전에 검은 화면이 보입니다.<br>
+                영상에서 자동으로 뽑은 장면이라 따로 만들 것이 없습니다.</div></div>
+
+            <div class="fld"><div class="lab"><b>설명</b><span class="rq">*</span>
+              <span class="cn">국문 44 / 240</span></div>
+              <div class="two"><textarea class="i">오로라 스트리트에서 3분 동안 펼쳐지는 미디어 쇼입니다.</textarea>
+                <div class="enw"><textarea class="i">A three-minute media show…</textarea><span class="aib">AI</span></div></div></div>
+
+            <div class="fld"><div class="lab"><b>대체 텍스트 · 캡션</b><span class="q" onclick="qt(this)">?</span></div>
+              <div class="two"><input class="i" placeholder="대체 텍스트 (국문 40자)">
+                <input class="i" placeholder="캡션 (국문 90자)"></div>
+              <div style="margin-top:7px"><span class="tgl" onclick="tgl(this)"><i></i> 화면에 캡션 표시</span></div>
+              <div class="tip">대체 텍스트는 화면에 안 보이고, 캡션은 보입니다.</div></div>
+          </div>
+        </div>
+
+        <div class="addb" onclick="openModal()">＋ 블록 추가</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 섹션 2 (이미지 블록들) -->
+  <div class="sec c2 on">
+    <div class="sech" onclick="tgSec(this)"><span class="no">2</span>
+      <span class="nm">Space</span><span class="mt">블록 5개 · 이미지 12</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb">
+      <div class="secf"><div class="two">
+        <div class="fld"><div class="lab"><b>섹션 제목</b><span class="rq">*</span>
+          <span class="cn">5 / 16</span></div>
+          <div class="two"><input class="i" value="Space">
+            <div class="enw"><input class="i" value="Space"><span class="aib">AI</span></div></div></div>
+        <div class="fld"><div class="lab"><b>기본 설명</b><span class="cn">국문 0 / 120</span></div>
+          <div class="two"><textarea class="i" style="min-height:44px" placeholder="이 섹션이 무엇에 대한 것인지"></textarea>
+            <div class="enw"><textarea class="i" style="min-height:44px"></textarea><span class="aib">AI</span></div></div></div>
+      </div></div>
+      <div class="blks" id="imgblocks"></div>
+    </div>
+  </div>
+
+
+  <div class="sec c3">
+    <div class="sech" onclick="tgSec(this)"><span class="no">3</span>
+      <span class="nm">Contents</span><span class="mt">블록 3개 · 이미지 7</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb"><div class="hint">펼치면 블록이 나옵니다.</div></div></div>
+
+  <div class="sec c4">
+    <div class="sech" onclick="tgSec(this)"><span class="no">4</span>
+      <span class="nm">BI Design</span><span class="mt">블록 2개 · 이미지 2</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb"><div class="hint">펼치면 블록이 나옵니다.</div></div></div>
+
+  <div class="sec c5">
+    <div class="sech" onclick="tgSec(this)"><span class="no">5</span>
+      <span class="nm">Achievement</span><span class="mt">블록 1개 · 이미지 1</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb"><div class="hint">펼치면 블록이 나옵니다.</div></div></div>
+
+  <div class="sec c6">
+    <div class="sech" onclick="tgSec(this)"><span class="no">6</span>
+      <span class="nm">Behind Scene</span><span class="mt">블록 2개 · 이미지 12</span>
+      <span style="flex:1"></span>
+      <button class="btn xs" onclick="event.stopPropagation()">미리보기</button>
+      <span class="ico" onclick="event.stopPropagation()">↑</span>
+      <span class="ico" onclick="event.stopPropagation()">↓</span>
+      <span class="ico" onclick="event.stopPropagation()">✕</span>
+      <span class="ar">▾</span></div>
+    <div class="secb"><div class="hint">펼치면 블록이 나옵니다.</div></div></div>
+
+  <div class="adds">＋ 섹션 추가</div>
+  <p class="hint" style="margin-top:11px">
+    Let's Talk · Company Profile 은 모든 워크에 자동으로 붙는 고정 영역입니다. 여기서 관리하지 않습니다.</p>
+</div>
+
+<div class="pane" id="pane-faq">
+  <div class="fld" style="margin-bottom:16px">
+    <span class="tgl on" onclick="tgl(this)"><i></i> 이 워크에 FAQ 표시</span>
+    <span class="q" onclick="qt(this)" style="margin-left:6px">?</span>
+    <div class="tip"><b>Credit 다음 · Interview 앞에 아코디언으로 들어갑니다</b><br>
+      첫 문항만 펼쳐지고 나머지는 접히지만, <b>접힌 답변도 검색봇과 AI 가 읽습니다.</b>
+      같은 내용이 FAQPage 구조화 데이터로 자동 생성됩니다.<br>
+      <span class="ex">구글은 2023년부터 FAQ 리치결과를 극소수 사이트에만 보여줍니다.
+      우리가 FAQ 를 넣는 이유는 구글 검색화면이 아니라 AI 인용입니다.</span></div>
+  </div>
+
+  <div class="faq on"><div class="fqh" onclick="tgFaq(this)"><span class="qn">Q1</span>
+    <span class="qt">스타애비뉴 리뉴얼은 어떤 프로젝트인가요?</span>
+    <span style="flex:1"></span>
+    <span class="ico" onclick="event.stopPropagation()">↑</span>
+    <span class="ico" onclick="event.stopPropagation()">↓</span>
+    <span class="ico" onclick="event.stopPropagation()">✕</span></div>
+    <div class="fqb">
+      <div class="fld"><div class="lab"><b>질문</b><span class="rq">*</span>
+        <span class="q" onclick="qt(this)">?</span><span class="cn">국문 24 / 45</span></div>
+        <div class="two"><input class="i" value="스타애비뉴 리뉴얼은 어떤 프로젝트인가요?">
+          <div class="enw"><input class="i" value="What is the Star Avenue Renewal project?"><span class="aib">AI</span></div></div>
+        <div class="tip"><b>국문 15~45자 · 물음표로 끝나는 완전한 문장</b><br>
+          사람이 실제로 검색창에 칠 법한 말로 씁니다.<br>
+          <span class="ex">좋은 예) 미디어 파사드 제작 기간은 얼마나 걸리나요?<br>
+          나쁜 예) 제작 기간</span></div></div>
+      <div class="fld"><div class="lab"><b>답변</b><span class="rq">*</span>
+        <span class="q" onclick="qt(this)">?</span><span class="cn">국문 82 / 200</span></div>
+        <div class="two"><textarea class="i">롯데면세점 명동 본점의 K-POP 체험 공간을 몰입형 미디어 공간으로 재구성한 프로젝트입니다. 2024년 1월 오픈했습니다.</textarea>
+          <div class="enw"><textarea class="i">A project that reimagined the K-POP zone…</textarea><span class="aib">AI</span></div></div>
+        <div style="margin-top:7px"><span class="tgl on" onclick="tgl(this)"><i></i> 구조화 데이터에 포함</span></div>
+        <div class="tip"><b>국문 70~200자 · 2~3문장</b><br>
+          <b>첫 문장에 답을 먼저</b> 씁니다. AI 는 첫 문장만 가져가는 경우가 많습니다.
+          숫자와 고유명사를 넣으면 인용될 확률이 올라갑니다.</div></div>
+    </div></div>
+
+  <div class="faq"><div class="fqh" onclick="tgFaq(this)"><span class="qn">Q2</span>
+    <span class="qt">리뉴얼 이후 방문객 수는 어떻게 달라졌나요?</span>
+    <span style="flex:1"></span>
+    <span class="ico" onclick="event.stopPropagation()">↑</span>
+    <span class="ico" onclick="event.stopPropagation()">↓</span>
+    <span class="ico" onclick="event.stopPropagation()">✕</span></div>
+    <div class="fqb"><div class="hint">펼쳐서 편집합니다.</div></div></div>
+
+  <div class="addb" style="margin-top:11px">＋ 문항 추가</div>
+  <div style="margin-top:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <button class="btn ai sm">✦ FAQ 초안 만들기</button>
+    <span class="hint">본문을 읽고 3~5문항을 제안합니다</span></div>
+  <div class="al w" style="margin-top:12px">FAQ 2문항입니다. <b>3~5문항</b>을 권합니다.</div>
+</div>
+
+<div class="pane" id="pane-rel">
+  <div class="luna"><div class="av">L</div>
+    <div>본문 · 태그 · 카테고리를 읽고 <b>어울리는 4개를 골라 넣어 뒀습니다.</b>
+      그대로 두셔도 되고, 마음에 안 드는 것은 빼고 직접 넣으셔도 됩니다.
+      하나를 빼면 그 자리에 다음 후보를 자동으로 채웁니다.
+      <div style="margin-top:8px;display:flex;gap:5px">
+        <button class="btn ai sm">✦ 다시 골라줘</button>
+        <button class="btn sm">＋ 직접 고르기</button></div></div></div>
+
+  <div class="rels">
+    <div class="rc"><div class="th ph"></div><div class="rb"><span class="kd2">워크</span>
+      <div class="tt">인스파이어 리조트 오로라 스트리트</div>
+      <div class="ac"><span class="ico">↑</span><span class="ico">↓</span><span class="ico">✕</span></div></div></div>
+    <div class="rc"><div class="th ph"></div><div class="rb"><span class="kd2 i">인사이트</span>
+      <div class="tt">인스파이어 핑크 고래 쇼는 어떻게 만들었나</div>
+      <div class="ac"><span class="ico">↑</span><span class="ico">↓</span><span class="ico">✕</span></div></div></div>
+    <div class="rc"><div class="th ph"></div><div class="rb"><span class="kd2 p">페이지</span>
+      <div class="tt">Expertise — Media Space</div>
+      <div class="ac"><span class="ico">↑</span><span class="ico">↓</span><span class="ico">✕</span></div></div></div>
+    <div class="rc mt"><span style="font-size:17px">＋</span>직접 고르기</div>
+  </div>
+
+  <div class="fld" style="margin-top:14px">
+    <div class="lab"><b>연결에 대하여</b><span class="q on" onclick="qt(this)">?</span></div>
+    <div class="tip on"><b>화면에는 4개가 나옵니다</b><br>
+      워크 · 인사이트 · 정적 페이지 모두 연결할 수 있습니다.
+      카드 제목은 연결된 콘텐츠의 제목을 그대로 가져옵니다.
+      국문 12자 · 영문 14자가 한 줄이고 두 줄까지 보입니다.<br>
+      마우스를 올리면 그 콘텐츠의 배경 영상이 재생됩니다.<br>
+      <b>같은 카테고리만 넣지 말고 인사이트를 한 개 이상 섞으세요.</b>
+      읽을거리가 있어야 체류시간이 늘어납니다.</div>
+  </div>
+  <div class="al w" style="margin-top:10px">관련 콘텐츠 3개입니다. <b>4개</b>를 권합니다.</div>
+</div>
+
+
+  <div class="bar">
+    <span class="bstat w">▲ 공개하려면 1가지가 더 필요합니다 — 제목이 22자를 넘습니다</span>
+    <span style="flex:1"></span>
+    <button class="btn">임시 저장</button>
+    <button class="btn">공개 전 점검</button>
+    <button class="btn p">등록하기</button>
+  </div>
+</div>
+
+<!-- 블록 추가 모달 -->
+<div class="mask" id="mask" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="mh"><h3>블록 추가</h3><span class="s">고르면 바로 들어갑니다</span>
+      <span style="flex:1"></span><button class="btn sm" onclick="closeModal()">닫기</button></div>
+    <div class="mb">
+      <div class="filt">
+        <span class="on" onclick="filt(this,'전체')">전체</span>
+        <span onclick="filt(this,'이미지')">이미지</span>
+        <span onclick="filt(this,'이미지+글')">이미지+글</span>
+        <span onclick="filt(this,'영상')">영상</span>
+        <span onclick="filt(this,'임베드')">임베드</span>
+        <span onclick="filt(this,'글')">글</span>
+      </div>
+      <div class="cards" id="cards"></div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:26px;background:#fff;border:1px solid #d2d7de;border-radius:11px;padding:18px 22px">
+<div style="font-size:15px;font-weight:700;margin-bottom:10px">지적하신 것 반영</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<tr style="background:var(--soft)"><th style="text-align:left;padding:8px 11px;font-size:11.5px;color:var(--dim);width:26%">지적</th>
+<th style="text-align:left;padding:8px 11px;font-size:11.5px;color:var(--dim)">반영</th></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>카테고리를 또 물음</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">앞에서 정한 값을 <b>읽기 전용</b>으로 표시. 「바꾸기」 버튼만</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>성과 수치</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)"><b>칸을 없앴습니다.</b> 본문에 문장으로 쓰면 구글이 가져갑니다</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>규모·면적 / 수상 내역</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">같은 이유로 <b>없앴습니다</b></td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>태그의 목적</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">워크 목록 <b>필터 전용</b>임을 명시. 「여러 프로젝트가 공유해야 의미가 있다」</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>공개일</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)"><b>없앴습니다.</b> 표기 연도만 씁니다</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>내부 연결이 1개</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)"><b>프로젝트 폴더(필수)</b> + <b>영상 폴더(선택)</b> 기본. 이름·경로로 더 추가</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>유튜브 URL 칸이 없음</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">주소 입력 + <b>불러오기</b> + 화면 미리보기까지</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>썸네일 자동 추천</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">영상 업로드 블록에 <b>네 장면 자동 추출</b> + 다시 뽑기 + 직접 올리기</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>이미지 없을 때</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">빈 칸이 <b>업로드 칸</b>이 됩니다. 상한에 닿으면 사라집니다</td></tr>
+<tr><td style="padding:8px 11px;border-top:1px solid var(--line)"><b>대체 텍스트·캡션</b></td>
+<td style="padding:8px 11px;border-top:1px solid var(--line)">모든 블록에 있습니다. 이미지는 <b>칸을 누르면 오른쪽 패널</b></td></tr>
+</table>
+</div>
+
+</div>
+<script>
+/* ── 배치별 이미지 장수 ── */
+const LIMIT={one:1,bl:1,row2:2,row3:3,off:2,cmp:2,auto:12,scr:8};
+
+const IB=[
+{k:'전폭 이미지',lim:1,t:'one',d:'한 장을 본문 폭 가득. 세로는 원본 비율대로 정해집니다',have:1,cap:'리뉴얼 후 중앙 통로'},
+{k:'2단 나란히',lim:2,t:'row',r:[1.78,1.78],have:2,d:'두 장의 비율 합으로 폭을 나눕니다. 자르지 않고 높이가 같아집니다'},
+{k:'3단 나란히',lim:3,t:'row',r:[1.76,.56,1.0],have:2,sel:1,d:'세 장. 세로 사진이 섞여도 자르지 않습니다'},
+{k:'가로 + 세로',lim:2,t:'off',r:[2,1],crop:1,have:2,d:'왼쪽 가로 사진이 높이를 정하고, 오른쪽은 그 높이에 맞춰 잘립니다'},
+{k:'세로 + 가로',lim:2,t:'off',r:[1,2],crop:0,have:2,d:'오른쪽 가로 사진이 높이를 정하고, 왼쪽이 잘립니다'},
+{k:'자동 배치 갤러리',lim:12,t:'auto',have:7,d:'비율을 보고 줄을 나눕니다. 12장까지 권합니다'},
+{k:'가로 스크롤',lim:8,t:'scr',have:5,d:'순서가 있는 장면. 옆으로 넘겨 봅니다. 8장까지 권합니다'},
+{k:'전체폭 · 여백 없음',lim:1,t:'bl',have:1,d:'본문 폭을 넘어 창 끝까지. 한 워크에 한 번쯤'},
+{k:'이미지 + 글 나란히',lim:1,t:'it',have:1,d:'왼쪽 이미지, 오른쪽 설명'},
+{k:'글 + 큰 이미지',lim:1,t:'ti',have:1,d:'설명을 먼저 읽히고 장면을 보여줍니다'},
+{k:'세로 이미지 + 글',lim:1,t:'pt',have:0,d:'세로로 긴 사진에 맞춘 배치'},
+{k:'임베드',lim:0,t:'emb',have:0,d:'Matterport · Sketchfab · Google Maps'},
+{k:'전후 비교',lim:2,t:'cmp',have:2,d:'가운데 손잡이를 끌어 전후를 비교합니다'},
+{k:'글만',lim:0,t:'txt',have:0,d:'이미지 없이 문단만'}
+];
+
+/* 채워진 슬롯 */
+function fill(h,n,fl,cap){
+  return '<div class="ph" style="height:'+h+'px"></div>'+
+    '<span class="n">'+n+'</span>'+
+    (fl?'<span class="fl '+fl[0]+'">'+fl[1]+'</span>':'')+
+    (cap?'<span class="cap">'+cap+'</span>':'')+
+    '<div class="sacts"><span class="sb">교체</span><span class="sb x">빼기</span></div>';
+}
+/* 빈 슬롯 = 업로드 */
+function empty(h,txt){
+  return '<div class="mtin" style="min-height:'+h+'px"><span class="pl2">＋</span>'+
+    (txt||'끌어다 놓거나<br>눌러서 고르기')+'</div>';
+}
+function S(flex,h,i,b,fl,cap){
+  const filled = i <= b.have;
+  return '<div class="sl'+(filled?'':' mt')+(b.sel===i-1?' on':'')+'" draggable="'+filled+'" '+
+    'style="flex:'+flex+'" onclick="pickSlot(this)">'+
+    (filled?fill(h,i,fl,cap):empty(h))+'</div>';
+}
+
+function slots(b){
+  switch(b.t){
+    case 'one': return '<div class="slots" ondragover="dov(event)" ondrop="drp(event)">'+S(1,96,1,b,null,b.cap)+'</div>';
+    case 'row': return '<div class="slots" ondragover="dov(event)" ondrop="drp(event)">'+
+      b.r.map((r,i)=>S(r,88,i+1,b)).join('')+'</div>';
+    case 'off': return '<div class="slots" ondragover="dov(event)" ondrop="drp(event)">'+
+      b.r.map((r,i)=>S(r,88,i+1,b,b.crop===i?['c','✂']:null)).join('')+'</div>';
+    case 'auto': {
+      const rows=[[1.78,.56,1.78],[1,1.78,.56],[1.5]];
+      let n=0,out='';
+      rows.forEach(rw=>{
+        out+='<div class="slots" style="margin:0" ondragover="dov(event)" ondrop="drp(event)">'+
+          rw.map(f=>{n++;return S(f,58,n,b)}).join('')+
+          (n>=b.have? '<div class="sl mt" style="flex:.6;min-height:58px">'+empty(58,'추가')+'</div>':'')+
+        '</div>';
+      });
+      return '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:7px">'+out+'</div>';
+    }
+    case 'scr': {
+      let out='';
+      for(let i=1;i<=b.have;i++) out+=S('0 0 126px',74,i,b);
+      out+='<div class="sl mt" style="flex:0 0 84px">'+empty(74,'추가')+'</div>';
+      return '<div class="scrw" ondragover="dov(event)" ondrop="drp(event)">'+out+'</div>';
+    }
+    case 'bl': return '<div class="slots" style="margin:0 -12px 7px" ondragover="dov(event)" ondrop="drp(event)">'+
+      '<div class="sl" draggable="true" style="flex:1;border-radius:0" onclick="pickSlot(this)">'+
+      '<div class="ph" style="height:82px;border-radius:0"></div><span class="n">1</span>'+
+      '<div class="sacts"><span class="sb">교체</span><span class="sb x">빼기</span></div></div></div>';
+    case 'it': return '<div class="slots" style="align-items:stretch" ondragover="dov(event)" ondrop="drp(event)">'+
+      S(1,92,1,b)+'<div style="flex:1"><textarea class="i" style="height:92px;min-height:0">기존 공간의 구조를 유지하면서 미디어 레이어로 새로운 서사를 더했습니다.</textarea></div></div>';
+    case 'ti': return '<div class="slots" style="align-items:stretch" ondragover="dov(event)" ondrop="drp(event)">'+
+      '<div style="flex:1"><textarea class="i" style="height:92px;min-height:0">설명을 먼저 읽히고 장면을 보여줍니다.</textarea></div>'+
+      S(1.6,92,1,b)+'</div>';
+    case 'pt': return '<div class="slots" style="align-items:stretch" ondragover="dov(event)" ondrop="drp(event)">'+
+      S(.6,124,1,b)+
+      '<div style="flex:1.4"><textarea class="i" style="height:124px;min-height:0" placeholder="세로 사진 옆에 들어갈 글"></textarea></div></div>';
+    case 'emb': return '<div style="margin-bottom:9px"><div class="segs" style="margin-bottom:8px">'+
+      '<button class="on" onclick="seg(this)">Matterport</button><button onclick="seg(this)">Sketchfab</button>'+
+      '<button onclick="seg(this)">Google Maps</button></div>'+
+      '<div class="urlrow"><input class="i" value="https://my.matterport.com/show/?m=SxQL3iGyoDo">'+
+      '<button class="btn">불러오기</button></div>'+
+      '<div class="ph e" style="height:92px;border-radius:7px">◈ Matterport 공간 투어</div></div>';
+    case 'cmp': return '<div class="slots" ondragover="dov(event)" ondrop="drp(event)">'+
+      '<div class="sl" draggable="true" style="flex:1" onclick="pickSlot(this)">'+
+      '<div style="height:88px;background:linear-gradient(90deg,#5b7a94 50%,#2f4a5e 50%);border-radius:6px"></div>'+
+      '<span class="n">전</span><span class="fl c" style="width:auto;padding:0 5px;border-radius:3px;background:rgba(0,0,0,.6)">후</span>'+
+      '<div class="sacts"><span class="sb">교체</span><span class="sb x">빼기</span></div></div></div>';
+    case 'txt': return '<textarea class="i" style="min-height:78px;margin-bottom:7px">소제목과 문단을 자유롭게 씁니다. 빈 줄을 넣으면 문단이 나뉩니다.</textarea>';
+  }
+  return '';
+}
+
+function panel(b){
+  if(b.t==='txt'||b.t==='emb') return '';
+  if(b.sel==null) return '<div class="pn none">이미지를 누르면<br>대체 텍스트와 캡션을<br>여기서 씁니다</div>';
+  return '<div class="pn"><div class="ph2">2번 이미지</div>'+
+    '<div class="pm">1080 × 1920 · 0.9MB · JPG</div>'+
+    '<div class="fld"><div class="lab"><b>대체 텍스트</b><span class="rq">*</span><span class="cn">8 / 40</span></div>'+
+    '<div class="two" style="gap:5px"><input class="i" value="세로 미디어 기둥">'+
+    '<div class="enw"><input class="i" value="Vertical media column"><span class="aib">AI</span></div></div></div>'+
+    '<div class="fld"><div class="lab"><b>캡션</b><span class="cn">15 / 90</span></div>'+
+    '<textarea class="i">아치 형태가 반복되는 진입부</textarea>'+
+    '<div style="margin-top:6px"><span class="tgl on" onclick="tgl(this)"><i></i> 화면에 표시</span></div></div>'+
+    '<div style="display:flex;gap:4px"><button class="btn xs">교체</button>'+
+    '<button class="btn xs">↑</button><button class="btn xs">↓</button>'+
+    '<button class="btn xs dg">빼기</button></div></div>';
+}
+
+const host=document.getElementById('imgblocks');
+IB.forEach((b,idx)=>{
+  const solo=(b.t==='txt'||b.t==='emb');
+  const cntTxt = b.lim ? (b.have+' / '+b.lim) : (b.t==='emb'?'Matterport':'—');
+  const warn = b.lim && b.have<b.lim;
+  const el=document.createElement('div');
+  el.className='blk'+(idx<7?' on':'');
+  el.innerHTML='<div class="bh" onclick="tgBlk(this)"><span class="gr">⠿</span>'+
+    '<span class="kd">'+b.k+'</span><span class="c2'+(warn?' w':'')+'">'+cntTxt+'</span>'+
+    '<div class="ct" onclick="event.stopPropagation()"><span class="ico">👁</span>'+
+    '<span class="ico">↑</span><span class="ico">↓</span><span class="ico">⧉</span>'+
+    '<span class="ico">✕</span></div></div>'+
+    '<div class="bb"><div class="eg'+(solo?' solo':'')+'">'+
+    '<div>'+slots(b)+'<div class="hint">'+b.d+'</div>'+
+    (b.have===0&&b.lim?'<div class="al w" style="margin-top:7px">이미지가 없습니다. 화면에 아무것도 나오지 않습니다.</div>':'')+
+    (b.t==='auto'?'<div class="al i" style="margin-top:7px">한 장씩 고르지 않아도 됩니다. <b>여러 장을 한 번에 끌어다 놓으세요.</b> 놓은 자리부터 순서대로 들어갑니다. 12장이 넘으면 갤러리를 나누는 편이 낫습니다.</div>':'')+
+    (b.lim&&b.lim<=3&&b.t!=='auto'?'<div class="hint" style="margin-top:5px">여러 장을 한 번에 끌면 앞의 '+b.lim+'장만 들어갑니다. 원하지 않는 것은 [교체]로 바꾸세요.</div>':'')+
+    '</div>'+panel(b)+'</div></div>';
+  host.appendChild(el);
+});
+host.insertAdjacentHTML('beforeend','<div class="addb" onclick="openModal()">＋ 블록 추가</div>');
+
+/* ── 드래그 ── */
+let dragEl=null;
+document.addEventListener('dragstart',e=>{
+  const s=e.target.closest&&e.target.closest('.sl');
+  if(s&&!s.classList.contains('mt')){dragEl=s;s.classList.add('drag')}
+});
+document.addEventListener('dragend',e=>{
+  if(dragEl){dragEl.classList.remove('drag');dragEl=null}
+  document.querySelectorAll('.sl.over').forEach(x=>x.classList.remove('over'));
+});
+function dov(e){
+  e.preventDefault();
+  const s=e.target.closest('.sl');
+  document.querySelectorAll('.sl.over').forEach(x=>x.classList.remove('over'));
+  if(s&&s!==dragEl) s.classList.add('over');
+}
+function drp(e){
+  e.preventDefault();
+  const t=e.target.closest('.sl');
+  document.querySelectorAll('.sl.over').forEach(x=>x.classList.remove('over'));
+  if(!t) return;
+  if(dragEl&&t!==dragEl){
+    /* 자리 교체 */
+    const dp=dragEl.parentElement, tp=t.parentElement;
+    const dn=document.createElement('div'), tn=document.createElement('div');
+    dp.insertBefore(dn,dragEl); tp.insertBefore(tn,t);
+    const ds=dragEl.style.flex, ts=t.style.flex;
+    dp.insertBefore(t,dn); tp.insertBefore(dragEl,tn);
+    dragEl.style.flex=ts; t.style.flex=ds;
+    dn.remove(); tn.remove();
+    renum(dp); if(tp!==dp) renum(tp);
+    toast('순서를 바꿨습니다');
+  } else if(!dragEl){
+    toast('놓은 자리부터 순서대로 들어갑니다');
+  }
+}
+function renum(p){
+  const blk=p.closest('.bb');
+  if(!blk) return;
+  let n=0;
+  blk.querySelectorAll('.sl').forEach(s=>{
+    if(s.classList.contains('mt')) return;
+    n++; const t=s.querySelector('.n'); if(t&&!/[전후]/.test(t.textContent)) t.textContent=n;
+  });
+}
+function toast(m){
+  let t=document.getElementById('tst');
+  if(!t){t=document.createElement('div');t.id='tst';document.body.appendChild(t)}
+  t.textContent=m; t.className='on';
+  clearTimeout(window.__tt); window.__tt=setTimeout(()=>t.className='',1800);
+}
+
+/* ── 공통 동작 ── */
+function qt(e){const f=e.closest('.fld')||e.parentElement.parentElement;
+  const t=f.querySelector('.tip'); if(t){t.classList.toggle('on');e.classList.toggle('on')}}
+function fd(e){e.closest('.fold').classList.toggle('on')}
+function tgSec(e){e.closest('.sec').classList.toggle('on')}
+function tgBlk(e){e.closest('.blk').classList.toggle('on')}
+function tgFaq(e){e.closest('.faq').classList.toggle('on')}
+function tgl(e){e.classList.toggle('on')}
+function seg(e){[...e.parentElement.children].forEach(x=>x.classList.remove('on'));e.classList.add('on')}
+function pick(e){[...e.parentElement.children].forEach(x=>x.classList.remove('on'));e.classList.add('on')}
+function pickSlot(e){
+  if(e.classList.contains('mt')){toast('파일 선택창이 열립니다');return}
+  const bb=e.closest('.bb')||e.parentElement;
+  bb.querySelectorAll('.sl').forEach(x=>x.classList.remove('on'));
+  e.classList.add('on');
+}
+function allSec(v){document.querySelectorAll('.sec').forEach(s=>s.classList.toggle('on',!!v))}
+function tab(e,id){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  e.classList.add('on');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.getElementById(id).classList.add('on')}
+
+/* 블록 추가 모달 */
+const PRESETS=[
+['전폭 이미지','이미지','1장',[[100,34]]],
+['2단 나란히','이미지','2장',[[48,34],[48,34]]],
+['3단 나란히','이미지','3장',[[31,34],[31,34],[31,34]]],
+['가로 + 세로','이미지','2장 · 오른쪽이 잘립니다',[[63,34],[31,34]]],
+['세로 + 가로','이미지','2장 · 왼쪽이 잘립니다',[[31,34],[63,34]]],
+['자동 배치 갤러리','이미지','12장까지',[[38,34],[22,34],[34,34]]],
+['가로 스크롤','이미지','8장까지',[[16,34],[38,34],[38,34],[10,34]]],
+['전체폭 · 여백 없음','이미지','1장 · 창 끝까지',[[100,30]]],
+['이미지 + 글 나란히','이미지+글','1장 + 설명',[[48,34],[48,10]]],
+['글 + 큰 이미지','이미지+글','1장 + 설명',[[38,10],[58,34]]],
+['세로 이미지 + 글','이미지+글','세로 사진 1장',[[30,44],[64,10]]],
+['영상 전폭','영상','유튜브 주소 또는 업로드',[[100,34]]],
+['영상 + 글','영상','영상 + 설명',[[54,34],[42,10]]],
+['임베드','임베드','Matterport · Sketchfab · Maps',[[100,34]]],
+['전후 비교','이미지','2장 · 슬라이더',[[100,34]]],
+['글만','글','이미지 없이 문단만',[[100,8]]]
+];
+function openModal(){document.getElementById('mask').classList.add('on')}
+function closeModal(){document.getElementById('mask').classList.remove('on')}
+function filt(e,k){[...e.parentElement.children].forEach(x=>x.classList.remove('on'));e.classList.add('on');
+  document.querySelectorAll('#cards .pc').forEach(c=>{
+    c.style.display=(k==='전체'||c.dataset.k===k)?'':'none'})}
+const cards=document.getElementById('cards');
+PRESETS.forEach(p=>{const[n,k,d,bars]=p;
+  const dg=bars.map(b=>'<i style="width:'+b[0]+'%;height:'+b[1]+'px"></i>').join('');
+  cards.insertAdjacentHTML('beforeend',
+    '<div class="pc" data-k="'+k+'" onclick="closeModal()"><div class="dg2">'+dg+'</div>'+
+    '<div class="pb"><div class="pn2">'+n+'</div><div class="pd">'+d+'</div></div></div>')});
+</script>
+</body></html>
