@@ -11,9 +11,12 @@ export type PortalHeaderProps = {
   onLogout: () => void;
   /** Hub page uses a non-link title; shells link back to `/hub` */
   hubTitleVariant?: "link" | "text";
+  /** Logo and title link target (default `/hub`) */
+  homeHref?: string;
   maxWidthClass?: string;
   zIndexClass?: string;
   showSettingsLink?: boolean;
+  showHubNotifications?: boolean;
 };
 
 const headerBar = "fixed top-0 left-0 right-0 z-50 w-full border-b border-slate-200 bg-white";
@@ -60,9 +63,11 @@ export function PortalHeader({
   userInfoLine,
   onLogout,
   hubTitleVariant = "link",
+  homeHref = "/hub",
   maxWidthClass = "max-w-7xl",
   zIndexClass = "z-50",
-  showSettingsLink = true
+  showSettingsLink = true,
+  showHubNotifications = true
 }: PortalHeaderProps) {
   const title = (
     <span className="text-base font-bold uppercase tracking-wide text-gray-900 sm:text-[0.95rem]">{APP_TITLE}</span>
@@ -73,11 +78,11 @@ export function PortalHeader({
       <PortalStatsTracker />
       <div className={`mx-auto flex h-14 w-full ${maxWidthClass} items-center justify-between gap-4 px-4 sm:px-6`}>
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/hub" className="shrink-0" aria-label="허브로 이동">
+          <Link href={homeHref} className="shrink-0" aria-label="허브로 이동">
             <LogoMark />
           </Link>
           {hubTitleVariant === "link" ? (
-            <Link href="/hub" className="min-w-0 shrink truncate text-gray-900 hover:text-gray-700">
+            <Link href={homeHref} className="min-w-0 shrink truncate text-gray-900 hover:text-gray-700">
               {title}
             </Link>
           ) : (
@@ -93,7 +98,7 @@ export function PortalHeader({
             {userInfoLine}
           </span>
 
-          <HubNotifications />
+          {showHubNotifications ? <HubNotifications /> : null}
 
           {showSettingsLink ? (
             <Link

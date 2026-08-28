@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireWikiUser, wikiMissingResponse } from "@/lib/wiki/api";
+import { requireWikiUser, wikiMissingResponse, wikiWriteForbiddenForWebsiteTester } from "@/lib/wiki/api";
 import { loadWikiMenu } from "@/lib/wiki/menus";
 import {
   canCreateInWikiMenu,
@@ -42,8 +42,8 @@ export async function GET(request: NextRequest) {
       wiki_ready: wikiReady,
       table_ready: true,
       is_admin: gate.isAdmin,
-      can_edit: menu ? canCreateInWikiMenu(menu, gate.isAdmin) || (menu.editable_by === "admin" && gate.isAdmin) : true,
-      can_create: menu ? canCreateInWikiMenu(menu, gate.isAdmin) : true,
+      can_edit: menu ? canCreateInWikiMenu(menu, gate.isAdmin) && !gate.isWebsiteTester : !gate.isWebsiteTester,
+      can_create: menu ? canCreateInWikiMenu(menu, gate.isAdmin) && !gate.isWebsiteTester : !gate.isWebsiteTester,
       can_toggle_visibility: canToggleWikiVisibility(gate.isAdmin)
     });
   } catch (err) {
@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const gate = await requireWikiUser(request);
   if ("error" in gate) return gate.error;
+  const writeBlocked = wikiWriteForbiddenForWebsiteTester(gate);
+  if (writeBlocked) return writeBlocked;
 
   let body: Record<string, unknown>;
   try {

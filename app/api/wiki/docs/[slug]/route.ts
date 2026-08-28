@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireWikiUser, wikiMissingResponse } from "@/lib/wiki/api";
+import { requireWikiUser, wikiMissingResponse, wikiWriteForbiddenForWebsiteTester } from "@/lib/wiki/api";
 import { loadWikiMenu } from "@/lib/wiki/menus";
 import { notifyWikiRuleChange } from "@/lib/wiki/notify";
 import {
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       canonical_slug: wikiCanonicalSlug(doc.slug),
       wiki_ready: wikiReady,
       is_admin: gate.isAdmin,
-      can_edit: canEditWikiMenu(menu, gate.isAdmin),
+      can_edit: canEditWikiMenu(menu, gate.isAdmin) && !gate.isWebsiteTester,
       can_delete: canDeleteWiki(gate.isAdmin),
       can_toggle_visibility: canToggleWikiVisibility(gate.isAdmin),
       can_move: true
@@ -60,6 +60,8 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 export async function PATCH(request: NextRequest, ctx: Ctx) {
   const gate = await requireWikiUser(request);
   if ("error" in gate) return gate.error;
+  const writeBlocked = wikiWriteForbiddenForWebsiteTester(gate);
+  if (writeBlocked) return writeBlocked;
   const { slug } = await ctx.params;
 
   let body: Record<string, unknown>;

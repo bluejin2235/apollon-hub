@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireWikiUser } from "@/lib/wiki/api";
+import { requireWikiUser, wikiWriteForbiddenForWebsiteTester } from "@/lib/wiki/api";
 
 export const runtime = "nodejs";
 
@@ -21,6 +21,8 @@ function extFor(mime: string, filename: string): string {
 export async function POST(request: NextRequest) {
   const gate = await requireWikiUser(request);
   if ("error" in gate) return gate.error;
+  const writeBlocked = wikiWriteForbiddenForWebsiteTester(gate);
+  if (writeBlocked) return writeBlocked;
 
   let formData: FormData;
   try {

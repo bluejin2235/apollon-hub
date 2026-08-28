@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { getProfileRole, isWebsiteTesterRole } from "@/lib/auth/website-tester";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import { hasLunaAccess } from "@/lib/luna/beta-access";
 import type { User } from "@supabase/supabase-js";
+
+// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
 
 export async function requireWikiUser(request: NextRequest): Promise<
   | {
       user: User;
       admin: NonNullable<ReturnType<typeof getServiceSupabase>>;
       isAdmin: boolean;
+      isWebsiteTester: boolean;
     }
   | { error: NextResponse }
 > {
@@ -22,11 +26,23 @@ export async function requireWikiUser(request: NextRequest): Promise<
       error: NextResponse.json({ error: "Server configuration error" }, { status: 500 })
     };
   }
-  if (!(await hasLunaAccess(admin, user.id))) {
+
+  const role = await getProfileRole(admin, user.id);
+  const isWebsiteTester = isWebsiteTesterRole(role);
+
+  if (!(await hasLunaAccess(admin, user.id, role)) && !isWebsiteTester) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
+
   const isAdmin = await isSuperAdminUser(admin, user);
-  return { user, admin, isAdmin };
+  return { user, admin, isAdmin, isWebsiteTester };
+}
+
+export function wikiWriteForbiddenForWebsiteTester(gate: { isWebsiteTester: boolean }) {
+  if (gate.isWebsiteTester) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
 }
 
 export function wikiMissingResponse() {

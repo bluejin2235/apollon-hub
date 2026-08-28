@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { isSuperAdminUser } from "@/lib/luna/auth";
+import {
+  canAccessWebsiteAdmin,
+  getProfileRole,
+  isWebsiteTesterBlockedApiRequest,
+  isWebsiteTesterRole
+} from "@/lib/auth/website-tester";
 import { websiteAdminFetch } from "@/lib/website/client";
+
+// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
 
 export const runtime = "nodejs";
 
@@ -18,7 +25,8 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  if (!(await isSuperAdminUser(admin, user))) {
+  const role = await getProfileRole(admin, user.id);
+  if (!canAccessWebsiteAdmin(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -26,6 +34,10 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   const joined = (path ?? []).join("/");
   if (!joined || joined.includes("..")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (isWebsiteTesterRole(role) && (await isWebsiteTesterBlockedApiRequest(method, joined, request))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const contentType = request.headers.get("content-type") ?? "";

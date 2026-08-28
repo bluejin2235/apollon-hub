@@ -1,31 +1,17 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { postLoginPathForRole } from "@/lib/auth/website-tester";
 import { APP_TITLE } from "@/lib/portal/app-title";
 import { supabase } from "@/lib/supabase/client";
 
-const POST_LOGIN_FALLBACK = "/hub";
-
-/** 오픈 리다이렉트 방지: "/"로 시작하는 내부 경로만 허용 */
-function resolvePostLoginPath(redirectParam: string | null): string {
-  if (!redirectParam?.trim()) return POST_LOGIN_FALLBACK;
-
-  const path = redirectParam.trim();
-  if (!path.startsWith("/")) return POST_LOGIN_FALLBACK;
-  if (path.startsWith("//")) return POST_LOGIN_FALLBACK;
-  if (/^https?:/i.test(path)) return POST_LOGIN_FALLBACK;
-
-  return path;
-}
+// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
 
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const postLoginPath = useMemo(
-    () => resolvePostLoginPath(searchParams.get("redirect")),
-    [searchParams]
-  );
+  const redirectParam = searchParams.get("redirect");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,13 +24,19 @@ function LoginPageContent() {
         data: { session }
       } = await supabase.auth.getSession();
 
-      if (session) {
-        router.replace(postLoginPath);
-      }
+      if (!session?.user?.id) return;
+
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      router.replace(postLoginPathForRole(profileRow?.role, redirectParam));
     };
 
     void checkSession();
-  }, [router, postLoginPath]);
+  }, [router, redirectParam]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -111,7 +103,7 @@ function LoginPageContent() {
         return;
       }
 
-      router.push(postLoginPath);
+      router.push(postLoginPathForRole(profileRow.role, redirectParam));
     } catch (unexpectedError) {
       console.error("Unexpected login flow error", unexpectedError);
       setErrorMessage("예상치 못한 오류가 발생했습니다. 콘솔 로그를 확인해주세요.");

@@ -18,6 +18,7 @@ import {
   type WorkDetail
 } from "@/lib/website/work-detail";
 import { PublishCheckPanel } from "@/components/website/publish-check-panel";
+import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
@@ -123,6 +124,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = parseEditorTab(searchParams.get("tab"));
+  const { canManageWorks } = useWebsitePermissions();
 
   const [work, setWork] = useState<WorkDetail | null>(null);
   const [draft, setDraft] = useState<WorkBasicDraft | null>(null);
@@ -417,14 +419,18 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           <GhostBtn disabled={saving} onClick={() => void saveTemp()}>
             임시 저장
           </GhostBtn>
-          <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
-          <PrimaryBtn disabled={!canPublish || saving} onClick={() => void publish()}>
-            등록하기
-          </PrimaryBtn>
+          {canManageWorks ? (
+            <>
+              <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
+              <PrimaryBtn disabled={!canPublish || saving} onClick={() => void publish()}>
+                등록하기
+              </PrimaryBtn>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {panelOpen ? (
+      {canManageWorks && panelOpen ? (
         <PublishCheckPanel
           work={work}
           check={
@@ -435,6 +441,12 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
               status: work.status,
               missing_summary_en: false,
               missing_key_alt: false,
+              no_key_image: false,
+              key_image_size_unknown: false,
+              key_image_not_16_9: false,
+              key_image_too_small: false,
+              body_image_too_small: false,
+              empty_blocks: false,
               no_sections: false,
               missing_image_alt: false,
               ai_unconfirmed: false,
