@@ -60,6 +60,7 @@
 .wiki-body .wiki-body-strong,
 .wiki-body strong.wiki-body-strong {
   font-weight: 700;
+  color: inherit;
 }
 
 .wiki-body-em {
@@ -67,8 +68,12 @@
 }
 
 .wiki-body-color .wiki-body-strong,
-.wiki-body-strong > .wiki-body-color {
+.wiki-body-strong .wiki-body-color {
   font-weight: 700;
+}
+
+.wiki-body-color .wiki-body-strong {
+  color: inherit;
 }
 
 .wiki-body-table-wrap {

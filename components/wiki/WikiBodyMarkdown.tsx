@@ -55,7 +55,7 @@ function WikiInlinePartNode({
 }) {
   if (part.type === "bold") {
     return (
-      <strong className="wiki-body-strong" style={{ fontWeight: 700 }}>
+      <strong className="wiki-body-strong">
         <WikiInlineParts parts={part.children} highlightTerms={highlightTerms} />
       </strong>
     );

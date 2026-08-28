@@ -189,8 +189,9 @@
   border-bottom: none;
 }
 
-.gp-pb .wiki-body strong:not(:has(.wiki-body-color)) {
-  color: var(--ink, #16181d);
+.gp-pb .wiki-body .wiki-body-strong {
+  font-weight: 700;
+  color: inherit;
 }
 
 .gp-trunc {

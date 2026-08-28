@@ -147,9 +147,13 @@ export function parseWikiBodyMarkdown(text: string): WikiMdBlock[] {
         tableLines.push(lines[i]!);
         i += 1;
       }
+      const hasSeparator = tableLines.some(isTableSeparator);
       const dataRows = tableLines.filter((row) => !isTableSeparator(row));
-      const headers = dataRows[0] ? parseTableRow(dataRows[0]) : [];
-      const rows = dataRows.slice(1).map(parseTableRow);
+      const headers =
+        hasSeparator && dataRows[0] ? parseTableRow(dataRows[0]) : [];
+      const rows = (
+        hasSeparator ? dataRows.slice(1) : dataRows
+      ).map(parseTableRow);
       blocks.push({ type: "table", headers, rows });
       continue;
     }
@@ -180,7 +184,7 @@ export function parseWikiInline(
         parts.push({
           type: "color",
           color: normalizeWikiHexColor(colorMatch[1]!),
-          children: parseWikiInline(colorMatch[2]!, { allowColor: false })
+          children: parseWikiInline(colorMatch[2]!, { allowColor: true })
         });
         pos += colorMatch[0].length;
         continue;
