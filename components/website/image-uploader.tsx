@@ -9,6 +9,16 @@ import {
   uploadObjectPath,
   type UploadBucket
 } from "@/lib/website/upload-path";
+import {
+  keyImageRejectMessage,
+  validateKeyImageDimensions
+} from "@/lib/website/key-image-rules";
+import {
+  formatImageUploadGuide,
+  formatVideoUploadGuide,
+  SPEC,
+  SPEC_BYTES
+} from "@/lib/website/spec";
 import type { UploadNotice } from "@/lib/website/types";
 import { fileName, mediaUrl } from "@/lib/website/work-detail";
 import "@/components/website/ui/work-admin.css";
@@ -53,30 +63,31 @@ const IMAGE_TYPES = new Set([
   "image/gif"
 ]);
 const VIDEO_TYPES = new Set(["video/mp4"]);
-const IMAGE_MAX_BYTES = 15 * 1024 * 1024;
-const GIF_MAX_BYTES = 50 * 1024 * 1024;
-const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+const IMAGE_MAX_BYTES = SPEC_BYTES.image;
+const GIF_MAX_BYTES = SPEC_BYTES.gif;
+const VIDEO_MAX_BYTES = SPEC_BYTES.video;
 
 const IMAGE_ACCEPT =
   ".jpg,.jpeg,.png,.webp,.avif,.gif,image/jpeg,image/png,image/webp,image/avif,image/gif";
 const VIDEO_ACCEPT = ".mp4,video/mp4";
-const IMAGE_GUIDE = "JPG · PNG · WebP · AVIF · 15MB 이하 · GIF 는 50MB 까지";
-const VIDEO_GUIDE =
-  "MP4 (H.264) · 200MB 이하.\n1920 × 1080 · 8 Mbps 정도가 적당합니다.\n10분이 넘으면 유튜브에 올리고 주소를 붙여넣으세요.";
-
+function formatGuideText(accept: Props["accept"]) {
+  if (accept === "video") return formatVideoUploadGuide();
+  if (accept === "image") return formatImageUploadGuide();
+  return `${formatImageUploadGuide()}. ${formatVideoUploadGuide()}`;
+}
 const VIDEO_TOO_LARGE = {
   message: "홈페이지에 직접 올리기에는 큽니다.",
   advice: [
-    "프리미어에서 1920 × 1080 · VBR 2패스 · 목표 8 Mbps · 최대 14 Mbps 로 다시 내보내면 화질을 거의 유지하면서 용량이 크게 줄어듭니다.",
+    `D-M · 프리미어에서 ${SPEC.detailMovie.w} × ${SPEC.detailMovie.h} · VBR 2패스 · 목표 8 Mbps · 최대 14 Mbps 로 다시내면 화질을 거의 유지하면서 용량이 크게 줄어듭니다.`,
     "인코딩은 소프트웨어(CPU)를 쓰세요. 하드웨어보다 같은 용량에서 화질이 좋습니다.",
     "10분이 넘는 영상이라면 유튜브에 올리고 주소를 붙여넣는 편이 낫습니다."
   ]
 };
 const IMAGE_TOO_LARGE = {
-  message: "이미지는 15MB 까지 올릴 수 있습니다.",
+  message: `이미지는 ${SPEC.limits.image}MB 까지 올릴 수 있습니다.`,
   advice: [
-    "긴 변 2560px 으로 줄이고 JPG 품질 80 으로 저장하면 대부분 2MB 아래가 됩니다.",
-    "포토샵에서 [파일 → 내보내기 → 웹용으로 저장] 을 쓰세요."
+    "원본이 너무 크면 포토샵 등으로 줄여 주세요.",
+    "올리면 서버에서 자동으로 맞춰 저장합니다."
   ]
 };
 const GIF_TOO_LARGE = {
@@ -121,12 +132,6 @@ function limitForFile(file: File): { limit: number; tooLarge: { message: string;
   if (isVideoFile(file)) return { limit: VIDEO_MAX_BYTES, tooLarge: VIDEO_TOO_LARGE };
   if (isGifFile(file)) return { limit: GIF_MAX_BYTES, tooLarge: GIF_TOO_LARGE };
   return { limit: IMAGE_MAX_BYTES, tooLarge: IMAGE_TOO_LARGE };
-}
-
-function formatGuideText(accept: Props["accept"]) {
-  if (accept === "video") return VIDEO_GUIDE;
-  if (accept === "image") return IMAGE_GUIDE;
-  return `${IMAGE_GUIDE}. ${VIDEO_GUIDE}`;
 }
 
 function adviceFromDetails(details: unknown): { message: string; advice: string[] } | null {
@@ -429,15 +434,38 @@ export function ImageUploader({
         continue;
       }
 
-      if (isImage && !isGifFile(file) && file.size > 2 * 1024 * 1024) {
-        nextWarnings.push(`${file.name}: 2MB를 넘습니다. 가능하면 줄이세요.`);
+      if (isVideo && kind === "loop-lg" && file.size > SPEC_BYTES.thumbLarge) {
+        nextWarnings.push(
+          `${file.name}: T-L 권장 ${SPEC.thumbLarge.maxMB}MB를 넘습니다.`
+        );
       }
-      if (isVideo && kind === "loop-lg" && file.size > 1.5 * 1024 * 1024) {
-        nextWarnings.push(`${file.name}: 배경 영상 lg 권장 1.5MB를 넘습니다.`);
+      if (isVideo && kind === "loop-sm" && file.size > SPEC_BYTES.thumbSmall) {
+        nextWarnings.push(
+          `${file.name}: T-S 권장 ${SPEC.thumbSmall.maxMB}MB를 넘습니다.`
+        );
       }
-      if (isVideo && kind === "loop-sm" && file.size > 0.5 * 1024 * 1024) {
-        nextWarnings.push(`${file.name}: 배경 영상 sm 권장 0.5MB를 넘습니다.`);
+
+      if (kind === "key" && isImage) {
+        const dims = await readSize(file);
+        if (!dims?.width || !dims.height) {
+          setError({
+            fileName: file.name,
+            message: "이미지 크기를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.",
+            advice: []
+          });
+          continue;
+        }
+        const reject = validateKeyImageDimensions(dims.width, dims.height);
+        if (reject) {
+          setError({
+            fileName: file.name,
+            message: keyImageRejectMessage(reject),
+            advice: []
+          });
+          continue;
+        }
       }
+
       ok.push(file);
     }
 

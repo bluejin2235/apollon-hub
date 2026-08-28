@@ -20,6 +20,12 @@ import type {
 } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
+import {
+  formatKeyImageEmptyHint,
+  formatThumbLargeHint,
+  formatThumbSmallHint,
+  VIDEO_LABELS
+} from "@/lib/website/spec";
 import { ImageUploader } from "@/components/website/image-uploader";
 import { RepeatList, type SaveResult } from "@/components/website/repeat-list";
 import { TagPicker } from "@/components/website/tag-picker";
@@ -465,20 +471,11 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         <Field
           label="제목"
           required
+          guideAnchorId="text-length"
           counts={[
             { label: "국문", value: draft.title.ko.length, recommend: 11, limit: 22 },
             { label: "영문", value: draft.title.en.length, recommend: 23, limit: 46 }
           ]}
-          tip={
-            <>
-              <b>국문 8~22자 · 영문 15~46자</b>
-              <br />
-              상세 제목 · 목록 카드 · 구글 검색 제목 · 링크 공유 · 관련 콘텐츠 카드에 모두 쓰입니다.
-              검색 제목에는 「 | 아폴론이머시브웍스」가 자동으로 붙습니다.
-              <br />
-              <span className="ex">목록 작은 카드에서 국문 11자가 한 줄입니다.</span>
-            </>
-          }
         >
           <Bi
             ko={draft.title.ko}
@@ -496,6 +493,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         <Field
           label="주소"
           required
+          guideLink
           tip={
             <>
               <b>영문 소문자와 하이픈만</b>
@@ -556,6 +554,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <Field
             label="표기 연도"
             required
+            guideLink
             tip="화면에 보이는 연도이자 목록 정렬 기준입니다."
           >
             <input
@@ -570,18 +569,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         <Field
           label="대표 이미지"
           required
-          tip={
-            <>
-              <b>긴 변 2560px 권장 · 15MB 이하 · 비율 자유</b>
-              <br />
-              목록 카드 · 상세 첫 화면 · 관련 콘텐츠 썸네일 · 링크 공유 이미지에 모두 쓰입니다.
-              축소본과 공유용 1200×630 은 이 한 장에서 자동으로 만듭니다.
-              <br />
-              <span className="ex">
-                사람 얼굴이나 로고는 가운데에 두세요. 작은 카드에서는 가장자리가 잘릴 수 있습니다.
-              </span>
-            </>
-          }
+          guideAnchorId="image-key"
         >
           <ImageUploader
             bucket="works"
@@ -592,30 +580,31 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             appearance="filecard"
             siteUrl={siteUrl}
             value={keyFilled ? draft.key_image : null}
-            emptyHint="JPG · 긴 변 2560px · 15MB 이하"
+            emptyHint={formatKeyImageEmptyHint()}
             onUploaded={(files) => {
               const first = files[0];
-              if (first) onChange({ key_image: first.src });
+              if (first) {
+                onChange({
+                  key_image: first.src,
+                  key_image_width: first.width,
+                  key_image_height: first.height
+                });
+              }
             }}
-            onClear={() => onChange({ key_image: "" })}
+            onClear={() =>
+              onChange({ key_image: "", key_image_width: null, key_image_height: null })
+            }
           />
         </Field>
 
         <Field
           label="한 줄 요약"
           required
+          guideAnchorId="text-length"
           counts={[
             { label: "국문", value: draft.summary.ko.length, recommend: 60, limit: 80 },
             { label: "영문", value: draft.summary.en.length, recommend: 120, limit: 155 }
           ]}
-          tip={
-            <>
-              <b>국문 60~80자 · 1~2문장</b>
-              <br />
-              목록 카드 · 상세 · 구글 검색 결과 설명 · 링크 공유 · AI 인용에 모두 쓰입니다.
-              형용사보다 <b>동사와 숫자</b>가 인용됩니다.
-            </>
-          }
         >
           <Bi
             ko={draft.summary.ko}
@@ -636,6 +625,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       >
         <Field
           label="부제"
+          guideLink
           counts={[
             { label: "국문", value: draft.subtitle.ko.length, limit: 30 },
             { label: "영문", value: draft.subtitle.en.length, limit: 60 }
@@ -686,6 +676,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
         <Field
           label="위치"
+          guideLink
           tip={
             <>
               <b>국가 · 도시 · 주소 순서</b>
@@ -727,6 +718,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         <Field
           label="참여 크레딧"
           aside={`${credits.length}개`}
+          guideLink
           tip={
             <>
               <b>역할은 영문, 회사·사람 이름은 있는 그대로</b>
@@ -792,24 +784,14 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
       <FoldGroup
         title="배경 영상"
+        guideAnchorId="video-loop"
         summary="목록 카드에서 마우스를 올리면 도는 짧은 영상"
         filled={videoDone}
         total={2}
         countTone={toneOf(videoDone, 2)}
       >
         <div className="two">
-          <Field
-            label="큰 화면용"
-            tip={
-              <>
-                <b>MP4 (H.264) · 1280×720 · 1.5MB 이하</b>
-                <br />
-                4~6초 · 24fps · 소리 없음 · 비트레이트 2Mbps
-                <br />
-                목록 맨 위 큰 카드와 메인 히어로에 쓰입니다.
-              </>
-            }
-          >
+          <Field label={VIDEO_LABELS.thumbLarge}>
             <ImageUploader
               bucket="works"
               folder={`${uploadRoot}/loop`}
@@ -819,7 +801,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               appearance="filecard"
               siteUrl={siteUrl}
               value={draft.loop_video_lg || null}
-              emptyHint="MP4 · 1280×720 · 1.5MB 이하"
+              emptyHint={formatThumbLargeHint()}
               onUploaded={(files) => {
                 const first = files[0];
                 if (first) onChange({ loop_video_lg: first.src });
@@ -827,16 +809,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               onClear={() => onChange({ loop_video_lg: "" })}
             />
           </Field>
-          <Field
-            label="작은 화면용"
-            tip={
-              <>
-                <b>MP4 (H.264) · 640×360 · 0.5MB 이하</b>
-                <br />
-                올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다.
-              </>
-            }
-          >
+          <Field label={VIDEO_LABELS.thumbSmall}>
             <ImageUploader
               bucket="works"
               folder={`${uploadRoot}/loop`}
@@ -846,7 +819,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               appearance="filecard"
               siteUrl={siteUrl}
               value={draft.loop_video_sm || null}
-              emptyHint="MP4 · 640×360 · 0.5MB 이하"
+              emptyHint={formatThumbSmallHint()}
               onUploaded={(files) => {
                 const first = files[0];
                 if (first) onChange({ loop_video_sm: first.src });
@@ -872,6 +845,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       >
         <Field
           label="태그"
+          guideLink
           tip={
             <>
               <b>3~6개 · 카테고리로 나눌 수 없는 갈래</b>

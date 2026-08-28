@@ -50,6 +50,12 @@ import {
   TextInput,
   ToggleRow
 } from "@/components/website/work-editor-ui";
+import { GuideTerm } from "@/components/website/ui/GuideTerm";
+import {
+  formatBodyImageHint,
+  formatDetailMovieHint,
+  VIDEO_LABELS
+} from "@/lib/website/spec";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -335,8 +341,18 @@ export function BlockCard({
                 onBlur={() => void flush({ gallery_row_height: rowHeight })}
                 className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
-              <Guide>여러 장을 한 번에 올리면 비율을 보고 알아서 줄을 나눕니다</Guide>
+              <Guide>
+                <GuideTerm anchorId="image-blocks">자동 배치 갤러리</GuideTerm>
+                는 여러 장을 한 번에 올리면 비율을 보고 알아서 줄을 나눕니다.
+              </Guide>
             </div>
+          ) : null}
+
+          {block.preset === "fullbleed" ? (
+            <Guide>
+              <GuideTerm anchorId="image-blocks">전체폭</GuideTerm>
+              은 창 가장자리까지 여백 없이 채웁니다. 이미지 1장만 올릴 수 있습니다.
+            </Guide>
           ) : null}
 
           {(IMAGE_TEXT_LIKE.has(block.preset)) ? (
@@ -397,7 +413,7 @@ export function BlockCard({
                 }}
                 onBlur={() => void flush({ body })}
               />
-              <Guide>
+              <Guide docLink>
                 <b className="font-semibold text-slate-600">글꼴 · 자간 · 글자색은 없습니다.</b> 화면 스타일은 사이트가
                 정합니다
                 <Sep />
@@ -533,15 +549,14 @@ function ImagesEditor({
     <div className="rounded-lg border border-dashed border-slate-300 p-3">
       <div className="mb-2 text-xs font-bold text-slate-500">이미지 · {images.length}장</div>
       <Guide>
-        <b className="font-semibold text-slate-600">JPG</b> · 긴 변{" "}
-        <b className="font-semibold text-slate-600">2560px</b> ·{" "}
-        <b className="font-semibold text-slate-600">2MB 이하</b> ·{" "}
-        <b className="font-semibold text-slate-600">비율 자유</b>
+        <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
         <Sep />
         본문 이미지는 가로·세로·정사각형 아무거나 됩니다. 올린 비율 그대로 들어갑니다.
         <br />
-        <b className="font-semibold text-slate-600">「가로 + 세로」「세로 + 가로」의 큰 쪽은 가로 사진</b>이어야
-        합니다. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
+        <b className="font-semibold text-slate-600">
+          「<GuideTerm anchorId="image-blocks">가로 + 세로</GuideTerm>」「세로 + 가로」의 큰 쪽은 가로 사진
+        </b>
+        이어야 합니다. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
       </Guide>
       <div className="mt-3 space-y-3">
         {images.map((img, i) => (
@@ -568,15 +583,15 @@ function ImagesEditor({
           disabled={atLimit}
           maxFiles={limit === null ? undefined : Math.max(0, limit - images.length)}
           existingNames={images.map((img) => fileName(img.src))}
-          guide={atLimit ? `이 배치는 ${limit}장까지` : "JPG · 긴 변 2560px · 2MB 이하 · 비율 자유"}
+          guide={atLimit ? `이 배치는 ${limit}장까지` : formatBodyImageHint()}
           onUploaded={onAdd}
         />
       </div>
       <Guide>
-        <b className="font-semibold text-slate-600">대체 텍스트</b> — 국문 40자 이내. 화면에 안 보입니다. 무엇이 찍혔는지
+        <GuideTerm anchorId="text-caption">대체 텍스트</GuideTerm> — 국문 40자 이내. 화면에 안 보입니다. 무엇이 찍혔는지
         사실만. 모든 이미지에 필수입니다.
         <br />
-        <b className="font-semibold text-slate-600">캡션</b> — 국문 40~90자, 1~2문장.{" "}
+        <GuideTerm anchorId="text-caption">캡션</GuideTerm> — 국문 40~90자, 1~2문장.{" "}
         <b className="font-semibold text-slate-600">화면에 보입니다.</b> AI가 인용하는 것도 이쪽입니다. 말할 것이 있는
         이미지에만 켜세요. 워크 하나에 <b className="font-semibold text-slate-600">5~8장</b>이 적당합니다.
         <br />
@@ -932,7 +947,7 @@ function VideoFields({
             value={url || null}
             guide={
               <>
-                MP4 (H.264) · 200MB 이하 · 클릭하면 재생됩니다.
+                {formatDetailMovieHint()} · 클릭하면 재생됩니다.
                 <br />
                 더 큰 영상은 유튜브에 올리고 주소를 붙여넣는 편이 낫습니다.
               </>
@@ -1041,15 +1056,21 @@ function VideoFields({
       <Guide>
         {isHosted ? (
           <>
-            <b className="font-semibold text-slate-600">MP4 · 200MB 이하.</b> 클릭하면 재생됩니다.
+            <GuideTerm anchorId="video-main">{VIDEO_LABELS.detailMovie}</GuideTerm> —{" "}
+            <b className="font-semibold text-slate-600">{formatDetailMovieHint()}.</b> 클릭하면 재생됩니다.{" "}
+            <GuideTerm anchorId="video-export">비트레이트</GuideTerm> 2Mbps 이하를 권장합니다.
             <br />
-            목록 카드에서 마우스를 올리면 도는 배경 영상은 기본정보 탭에서 따로 올립니다.
+            목록 카드에서 마우스를 올리면 도는{" "}
+            <GuideTerm anchorId="video-loop">배경 루프</GuideTerm>는 기본정보 탭에서 따로 올립니다.
+            <br />
+            <GuideTerm anchorId="video-main">재생 전 이미지</GuideTerm>가 없으면 재생 전에 검은 화면이 보입니다.
           </>
         ) : (
           <>
             유튜브 · Vimeo · Behance 주소를 그대로 붙여넣으세요.
             <br />
-            재생 버튼을 누르기 전까지는 이미지 한 장만 보이므로 페이지가 가볍습니다.
+            재생 버튼을 누르기 전까지는{" "}
+            <GuideTerm anchorId="video-main">재생 전 이미지</GuideTerm> 한 장만 보이므로 페이지가 가볍습니다.
           </>
         )}
       </Guide>

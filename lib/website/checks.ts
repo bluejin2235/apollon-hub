@@ -3,12 +3,18 @@ import type { CheckWorks, WorkListItem } from "@/lib/website/types";
 export const PROBLEM_FLAGS = [
   "missing_summary_en",
   "missing_key_alt",
+  "no_key_image",
+  "key_image_size_unknown",
+  "key_image_not_16_9",
+  "key_image_too_small",
   "no_sections",
   "missing_image_alt",
   "ai_unconfirmed"
 ] as const;
 
 export const WARN_FLAGS = [
+  "body_image_too_small",
+  "empty_blocks",
   "no_small_loop",
   "faq_on_but_empty",
   "too_many_anchors",
@@ -18,14 +24,22 @@ export const WARN_FLAGS = [
   "summary_too_long"
 ] as const;
 
+export const CHECK_FLAG_COUNT = PROBLEM_FLAGS.length + WARN_FLAGS.length;
+
 export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number], string> =
   {
     missing_summary_en: "영문 요약이 없습니다",
     missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
+    no_key_image: "대표 이미지가 없습니다",
+    key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
+    key_image_not_16_9: "대표 이미지 비율이 16:9가 아닙니다",
+    key_image_too_small: "대표 이미지 해상도가 낮습니다",
+    body_image_too_small: "본문 이미지 해상도가 낮습니다",
+    empty_blocks: "이미지가 없는 본문 블록이 있습니다",
     no_sections: "본문 섹션이 없습니다",
     missing_image_alt: "이미지 대체 텍스트가 없습니다",
     ai_unconfirmed: "AI가 만든 이미지를 아직 확인하지 않았습니다",
-    no_small_loop: "작은 화면용 루프 영상이 없습니다",
+    no_small_loop: "T-S · 작은 화면용 루프 영상이 없습니다",
     faq_on_but_empty: "FAQ가 켜져 있으나 비어 있습니다",
     too_many_anchors: "목차 앵커가 너무 많습니다",
     no_tags: "태그가 없습니다",
@@ -98,19 +112,37 @@ export function summarizeChecks(items: WorkListItem[]): {
     }
   }
 
-  const pass = Math.max(0, items.length * 12 - problem - warn);
+  const pass = Math.max(0, items.length * CHECK_FLAG_COUNT - problem - warn);
   return { problem, warn, pass, issues, published, draft, images, captions };
 }
 
 export function fillBasic(check: CheckWorks | null): "ok" | "warn" {
   if (!check) return "warn";
-  if (check.missing_key_alt || check.missing_summary_en || check.summary_too_long) return "warn";
+  if (
+    check.missing_key_alt ||
+    check.missing_summary_en ||
+    check.summary_too_long ||
+    check.no_key_image ||
+    check.key_image_size_unknown ||
+    check.key_image_not_16_9 ||
+    check.key_image_too_small
+  ) {
+    return "warn";
+  }
   return "ok";
 }
 
 export function fillBody(check: CheckWorks | null): "ok" | "warn" {
   if (!check) return "warn";
-  if (check.no_sections || check.missing_image_alt || check.ai_unconfirmed) return "warn";
+  if (
+    check.no_sections ||
+    check.missing_image_alt ||
+    check.ai_unconfirmed ||
+    check.body_image_too_small ||
+    check.empty_blocks
+  ) {
+    return "warn";
+  }
   return "ok";
 }
 

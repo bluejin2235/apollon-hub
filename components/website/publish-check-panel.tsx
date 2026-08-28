@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { CheckWorks } from "@/lib/website/types";
-import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
+import { CHECK_FLAG_COUNT, PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
+import { formatBodyImageTooSmallHint, formatKeyImageSize } from "@/lib/website/spec";
 import type { EditorTab, WorkDetail } from "@/lib/website/work-detail";
 import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-detail";
 import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
@@ -43,6 +44,34 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       sub: "모든 이미지에 필수입니다."
     },
     {
+      flag: "no_key_image",
+      kind: "problem",
+      tab: "basic",
+      title: "대표 이미지가 없습니다",
+      sub: "목록 카드·링크 공유에 쓰는 대표 이미지를 올려 주세요."
+    },
+    {
+      flag: "key_image_size_unknown",
+      kind: "problem",
+      tab: "basic",
+      title: "대표 이미지 크기 정보가 없습니다",
+      sub: "대표 이미지를 다시 올리면 가로·세로 크기가 함께 저장됩니다."
+    },
+    {
+      flag: "key_image_not_16_9",
+      kind: "problem",
+      tab: "basic",
+      title: "대표 이미지 비율이 16:9가 아닙니다",
+      sub: "16:9로 다시 만들어 올리세요"
+    },
+    {
+      flag: "key_image_too_small",
+      kind: "problem",
+      tab: "basic",
+      title: "대표 이미지 해상도가 낮습니다",
+      sub: `${formatKeyImageSize()} 이상으로 다시 올리세요`
+    },
+    {
       flag: "no_sections",
       kind: "problem",
       tab: "content",
@@ -64,11 +93,28 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       sub: aiSub || "이미지를 다 넣으신 뒤 [AI로 채우기]를 누르면 대체 텍스트·캡션 초안을 만듭니다."
     },
     {
+      flag: "body_image_too_small",
+      kind: "warn",
+      tab: "content",
+      title: "본문 이미지 해상도가 낮습니다",
+      sub: formatBodyImageTooSmallHint(check.body_image_too_small_count)
+    },
+    {
+      flag: "empty_blocks",
+      kind: "warn",
+      tab: "content",
+      title: "이미지가 없는 본문 블록이 있습니다",
+      sub:
+        check.empty_block_count && check.empty_block_count > 0
+          ? `이미지가 없는 블록이 ${check.empty_block_count}개 있습니다. 화면에 안 나옵니다`
+          : "이미지가 없는 블록이 있습니다. 화면에 안 나옵니다"
+    },
+    {
       flag: "no_small_loop",
       kind: "warn",
       tab: "basic",
       title: "배경 루프 영상이 없습니다",
-      sub: "작은 화면용을 올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다."
+      sub: "T-S · 작은 화면용을 올리지 않으면 작은 카드는 영상 없이 대표 이미지만 보입니다."
     },
     {
       flag: "faq_on_but_empty",
@@ -138,7 +184,7 @@ export function PublishCheckPanel({
   const items = copies(work, check);
   const problems = items.filter((i) => i.kind === "problem");
   const warns = items.filter((i) => i.kind === "warn");
-  const passCount = Math.max(0, 12 - problems.length - warns.length);
+  const passCount = Math.max(0, CHECK_FLAG_COUNT - problems.length - warns.length);
   const [passOpen, setPassOpen] = useState(false);
 
   return (
