@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WikiMenu, WikiMenuEditableBy } from "@/lib/wiki/types";
-import { inferWikiMenuSlug, WIKI_SEED_MENUS } from "@/lib/wiki/types";
+import { resolveWikiDocMenuSlug, WIKI_SEED_MENUS } from "@/lib/wiki/types";
 
 function isMissingTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -135,15 +135,12 @@ export async function countDocsByMenu(
   if (error) throw new Error(error.message);
   const map = new Map<string, number>();
   for (const row of data ?? []) {
-    const slug = inferWikiMenuSlug(
-      typeof row.title === "string" ? row.title : "",
-      typeof row.menu_slug === "string"
-        ? row.menu_slug
-        : typeof row.category === "string"
-          ? row.category
-          : "",
-      typeof row.kind === "string" ? row.kind : ""
-    );
+    const slug = resolveWikiDocMenuSlug({
+      title: typeof row.title === "string" ? row.title : "",
+      menu_slug: typeof row.menu_slug === "string" ? row.menu_slug : undefined,
+      category: typeof row.category === "string" ? row.category : undefined,
+      kind: typeof row.kind === "string" ? row.kind : undefined
+    });
     if (!slug) continue;
     if (!opts?.isSuperAdmin && row.visible_to_staff === false) continue;
     map.set(slug, (map.get(slug) ?? 0) + 1);

@@ -9,7 +9,7 @@ import {
   sectionsToContent
 } from "@/lib/wiki/sections";
 import {
-  inferWikiMenuSlug,
+  resolveWikiDocMenuSlug,
   wikiSlugLookupKeys,
   type WikiDoc,
   type WikiDocListItem,
@@ -80,11 +80,12 @@ function parseHistory(raw: unknown): WikiHistoryEntry[] {
 function mapDoc(row: Record<string, unknown>, wikiReady: boolean): WikiDoc {
   const kind = asText(row.kind, "note");
   const slug = asText(row.slug);
-  const menu_slug = inferWikiMenuSlug(
-    asText(row.title, slug),
-    asText(row.menu_slug) || asText(row.category),
+  const menu_slug = resolveWikiDocMenuSlug({
+    title: asText(row.title, slug),
+    menu_slug: asText(row.menu_slug),
+    category: asText(row.category),
     kind
-  );
+  });
   const content = asText(row.content);
   let sections = wikiReady ? parseSections(row.sections) : [];
   if (sections.length === 0 && content) sections = contentToSections(content);

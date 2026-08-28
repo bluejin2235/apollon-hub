@@ -167,8 +167,24 @@ export function inferWikiMenuSlug(
   }
   if (raw === "standards") return "workflow";
   if (raw === "forms" || raw === "form") return "projects";
-  if (raw === "rules" || kind === "policy") return "rules";
+  if (raw === "rules") return "rules";
   return "projects";
+}
+
+/** DB menu_slug 가 있으면 그대로 쓴다. 없을 때만 옛 category·제목으로 추론한다. */
+export function resolveWikiDocMenuSlug(input: {
+  title: string;
+  menu_slug?: string;
+  category?: string;
+  kind?: string;
+}): string {
+  const explicit = (input.menu_slug ?? "").trim();
+  if (explicit) return explicit;
+  return inferWikiMenuSlug(
+    input.title,
+    (input.category ?? "").trim(),
+    input.kind ?? ""
+  );
 }
 
 export const WIKI_SEED_MENUS: WikiMenu[] = [
