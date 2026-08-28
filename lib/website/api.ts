@@ -53,6 +53,7 @@ async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiRes
 
     const res = await fetch(`/api/website/${path.replace(/^\//, "")}`, {
       ...init,
+      credentials: "include",
       headers,
       signal: controller.signal
     });

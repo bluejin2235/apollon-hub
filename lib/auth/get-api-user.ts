@@ -1,8 +1,19 @@
 import { createClient, type User } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
+import { createRouteHandlerSupabaseClient } from "@/lib/supabase/route-handler";
 
-/** Authorization Bearer 토큰으로 Supabase Auth 사용자 검증 */
+/** 쿠키(또는 Authorization Bearer)로 Supabase Auth 사용자 검증 */
 export async function getApiUser(request: NextRequest): Promise<User | null> {
+  try {
+    const supabase = createRouteHandlerSupabaseClient(request);
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) {
+      return data.user;
+    }
+  } catch (e) {
+    console.warn("[getApiUser] cookie session lookup failed", e);
+  }
+
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
   if (!token) return null;

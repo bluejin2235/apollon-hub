@@ -12,7 +12,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
     "@google/genai": "^2.9.0",
-    "@supabase/supabase-js": "^2.54.0",
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.112.4",
     "@types/qrcode": "^1.5.6",
     "dotenv": "^17.4.2",
     "html5-qrcode": "^2.3.8",

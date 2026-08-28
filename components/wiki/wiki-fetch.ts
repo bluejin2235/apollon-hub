@@ -24,6 +24,7 @@ export async function wikiFetch<T>(
   if (!token) throw new WikiApiError("로그인이 필요합니다.", 401);
   const res = await fetch(url, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
@@ -50,6 +51,7 @@ export async function wikiUploadFile(
   fd.append("slug", slug);
   const res = await fetch("/api/wiki/upload", {
     method: "POST",
+    credentials: "include",
     headers: { Authorization: `Bearer ${token}` },
     body: fd
   });
