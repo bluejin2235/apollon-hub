@@ -31,7 +31,6 @@ export function canCreateInWikiMenu(
   isSuperAdmin: boolean
 ): boolean {
   if (!menu || !menu.is_active) return false;
-  if (menu.editable_by === "admin") return false;
   return canEditWikiMenu(menu, isSuperAdmin);
 }
 

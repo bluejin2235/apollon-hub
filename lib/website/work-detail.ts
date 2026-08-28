@@ -108,6 +108,8 @@ export type WorkDetail = {
   summary: Loc | null;
   search_description: Loc | null;
   key_image: string | null;
+  key_image_width: number | null;
+  key_image_height: number | null;
   key_image_alt: Loc | null;
   loop_video_lg: string | null;
   loop_video_sm: string | null;
@@ -146,6 +148,8 @@ export type WorkBasicDraft = {
   summary: Loc;
   search_description: Loc;
   key_image: string;
+  key_image_width: number | null;
+  key_image_height: number | null;
   key_image_alt: Loc;
   loop_video_lg: string;
   loop_video_sm: string;
@@ -303,6 +307,8 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     summary: row.summary ? asLoc(row.summary) : null,
     search_description: row.search_description ? asLoc(row.search_description) : null,
     key_image: typeof row.key_image === "string" ? row.key_image : null,
+    key_image_width: typeof row.key_image_width === "number" ? row.key_image_width : null,
+    key_image_height: typeof row.key_image_height === "number" ? row.key_image_height : null,
     key_image_alt: row.key_image_alt ? asLoc(row.key_image_alt) : null,
     loop_video_lg: typeof row.loop_video_lg === "string" ? row.loop_video_lg : null,
     loop_video_sm: typeof row.loop_video_sm === "string" ? row.loop_video_sm : null,
@@ -420,6 +426,12 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           status,
           missing_summary_en: asBool(check.missing_summary_en),
           missing_key_alt: asBool(check.missing_key_alt),
+          no_key_image: asBool(check.no_key_image),
+          key_image_size_unknown: asBool(check.key_image_size_unknown),
+          key_image_not_16_9: asBool(check.key_image_not_16_9),
+          key_image_too_small: asBool(check.key_image_too_small),
+          body_image_too_small: asBool(check.body_image_too_small),
+          empty_blocks: asBool(check.empty_blocks),
           no_sections: asBool(check.no_sections),
           missing_image_alt: asBool(check.missing_image_alt),
           ai_unconfirmed: asBool(check.ai_unconfirmed),
@@ -431,7 +443,13 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           no_internal_folder: asBool(check.no_internal_folder),
           summary_too_long: asBool(check.summary_too_long),
           image_count: asNum(check.image_count),
-          caption_count: asNum(check.caption_count)
+          caption_count: asNum(check.caption_count),
+          empty_block_count:
+            typeof check.empty_block_count === "number" ? check.empty_block_count : undefined,
+          body_image_too_small_count:
+            typeof check.body_image_too_small_count === "number"
+              ? check.body_image_too_small_count
+              : undefined
         } satisfies import("@/lib/website/types").CheckWorks)
       : null
   };
@@ -446,6 +464,8 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     summary: asLoc(work.summary),
     search_description: asLoc(work.search_description),
     key_image: work.key_image ?? "",
+    key_image_width: work.key_image_width ?? null,
+    key_image_height: work.key_image_height ?? null,
     key_image_alt: asLoc(work.key_image_alt),
     loop_video_lg: work.loop_video_lg ?? "",
     loop_video_sm: work.loop_video_sm ?? "",
@@ -473,6 +493,8 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     summary: draft.summary,
     search_description: draft.search_description,
     key_image: draft.key_image || null,
+    key_image_width: draft.key_image ? draft.key_image_width : null,
+    key_image_height: draft.key_image ? draft.key_image_height : null,
     key_image_alt: draft.key_image_alt,
     loop_video_lg: draft.loop_video_lg || null,
     loop_video_sm: draft.loop_video_sm || null,

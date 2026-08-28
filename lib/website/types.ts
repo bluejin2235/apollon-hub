@@ -10,6 +10,12 @@ export type CheckWorks = {
   no_sections: boolean;
   missing_image_alt: boolean;
   ai_unconfirmed: boolean;
+  no_key_image: boolean;
+  key_image_size_unknown: boolean;
+  key_image_not_16_9: boolean;
+  key_image_too_small: boolean;
+  body_image_too_small: boolean;
+  empty_blocks: boolean;
   no_small_loop: boolean;
   faq_on_but_empty: boolean;
   too_many_anchors: boolean;
@@ -19,6 +25,8 @@ export type CheckWorks = {
   summary_too_long: boolean;
   image_count: number;
   caption_count: number;
+  empty_block_count?: number;
+  body_image_too_small_count?: number;
 };
 
 export type WorkListItem = {
@@ -67,6 +75,14 @@ export type WebsiteMeta = {
   tags: WebsiteTag[];
 };
 
-export type ApiOk<T> = { ok: true; data: T; status: number };
+export type UploadNotice = {
+  kind: string;
+  severity: "high" | "info" | string;
+  title: string;
+  lines: string[];
+  how: string[];
+};
+
+export type ApiOk<T> = { ok: true; data: T; status: number; notice?: UploadNotice };
 export type ApiErr = { ok: false; error: string; details?: unknown; status: number };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
