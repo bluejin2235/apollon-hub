@@ -53,7 +53,7 @@ function pushText(parts: WikiInlinePart[], value: string) {
 }
 
 function findNextInlineSpecial(text: string, from: number, allowColor: boolean): number {
-  let found = -1;
+  const found = -1;
   for (let i = from; i < text.length; i += 1) {
     const ch = text[i]!;
     if (ch === "*" || ch === "`") {
