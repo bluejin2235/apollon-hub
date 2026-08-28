@@ -348,13 +348,6 @@ export function BlockCard({
             </div>
           ) : null}
 
-          {block.preset === "fullbleed" ? (
-            <Guide>
-              <GuideTerm anchorId="image-blocks">전체폭</GuideTerm>
-              은 창 가장자리까지 여백 없이 채웁니다. 이미지 1장만 올릴 수 있습니다.
-            </Guide>
-          ) : null}
-
           {(IMAGE_TEXT_LIKE.has(block.preset)) ? (
             <div>
               <FieldLabel>글 위치</FieldLabel>

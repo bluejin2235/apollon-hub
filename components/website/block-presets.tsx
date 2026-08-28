@@ -6,7 +6,6 @@ export const IMAGE_PRESETS = [
   "offset-reverse",
   "gallery-auto",
   "carousel",
-  "fullbleed",
   "compare"
 ] as const;
 
@@ -39,7 +38,6 @@ export const PRESET_LABEL: Record<string, string> = {
   "offset-reverse": "세로 + 가로",
   "gallery-auto": "자동 배치 갤러리",
   carousel: "가로 스크롤",
-  fullbleed: "전체폭 · 여백 없음",
   compare: "전후 비교",
   "image-text": "이미지 + 글 나란히",
   "text-image": "글 + 큰 이미지",
@@ -58,7 +56,6 @@ export const PRESET_DESCRIPTION: Record<string, string> = {
     "왼쪽에 가로 사진, 오른쪽에 세로 사진. 왼쪽 사진이 높이를 정하고 오른쪽은 그 높이에 맞춰 잘립니다.",
   "offset-reverse":
     "왼쪽에 세로 사진, 오른쪽에 가로 사진. 오른쪽 사진이 높이를 정하고 왼쪽은 그 높이에 맞춰 잘립니다.",
-  fullbleed: "창 전체 폭 · 여백 없음. 이미지 1장만. 원본 비율 그대로.",
   compare: "두 장을 겹쳐 전후를 비교합니다.",
   "gallery-auto": "여러 장을 원본 비율로 자동 배치합니다.",
   carousel: "가로로 넘겨 보는 스크롤 갤러리입니다."
@@ -69,7 +66,6 @@ export const ALL_PRESETS = Object.keys(PRESET_LABEL);
 export function imageLimitForPreset(preset: string): number | null {
   if (
     preset === "full" ||
-    preset === "fullbleed" ||
     preset === "image-text" ||
     preset === "text-image" ||
     preset === "portrait-text"
@@ -125,7 +121,6 @@ export function BlockDiagram({ preset }: { preset: string }) {
 function DiagramInner({ preset }: { preset: string }) {
   switch (preset) {
     case "full":
-    case "fullbleed":
       return <div className={`h-full w-full ${box}`} />;
     case "split":
       return (
