@@ -11,7 +11,7 @@ import {
   updateImage
 } from "@/lib/website/api";
 import type { BlockImage, ContentBlock, Loc } from "@/lib/website/work-detail";
-import { asLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
+import { asLoc, columnsFromBody, emptyLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
 import { TextDupHint } from "@/components/website/text-dup-hint";
 import { useDebouncedValue, useTextDup } from "@/components/website/text-dup-context";
 import {
@@ -21,7 +21,8 @@ import {
   hasBody,
   hasImages,
   imageLimitForPreset,
-  PRESET_LABEL
+  PRESET_LABEL,
+  textColumnCount
 } from "@/components/website/block-presets";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
@@ -39,14 +40,20 @@ import {
   type VideoFrameMeta
 } from "@/lib/website/video-thumbs";
 import {
+  AiBadge,
+  AiBtn,
   BilingualField,
   CharKo,
+  CharPair,
   FieldLabel,
   GhostBtn,
   Guide,
+  LangEn,
+  LangKo,
   locField,
   Sep,
   SmallBtn,
+  TextArea,
   TextInput,
   ToggleRow
 } from "@/components/website/work-editor-ui";
@@ -101,7 +108,15 @@ export function BlockCard({
   const [error, setError] = useState<string | null>(null);
   const [changePreset, setChangePreset] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [body, setBody] = useState<Loc>(asLoc(block.body));
+  const columnCount = textColumnCount(block.preset);
+  const [body, setBody] = useState<Loc>(() =>
+    columnCount > 0 ? emptyLoc() : asLoc(block.body)
+  );
+  const [columns, setColumns] = useState<Loc[]>(() =>
+    columnsFromBody(block.body, columnCount || 2)
+  );
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
   const [videoKind, setVideoKind] = useState(
     block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed")
   );
@@ -117,7 +132,12 @@ export function BlockCard({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setBody(asLoc(block.body));
+    const nextCount = textColumnCount(block.preset);
+    if (nextCount > 0) {
+      setColumns(columnsFromBody(block.body, nextCount));
+    } else {
+      setBody(asLoc(block.body));
+    }
     setVideoKind(block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed"));
     setVideoUrl(block.video_url ?? "");
     setVideoPoster(block.video_poster ?? "");
@@ -376,7 +396,45 @@ export function BlockCard({
             />
           ) : null}
 
-          {hasBody(block.preset) ? (
+          {columnCount > 0 ? (
+            <div>
+              <FieldLabel>본문</FieldLabel>
+              <div
+                className={
+                  columnCount === 3
+                    ? "grid grid-cols-1 gap-3 lg:grid-cols-3"
+                    : "grid grid-cols-1 gap-3 md:grid-cols-2"
+                }
+              >
+                {columns.map((col, index) => (
+                  <ColumnBodyField
+                    key={index}
+                    label={columnLabel(columnCount, index)}
+                    value={col}
+                    onKo={(v) => {
+                      const next = columns.map((item, i) =>
+                        i === index ? locField(item, "ko", v) : item
+                      );
+                      setColumns(next);
+                      schedule({ body: { columns: next } });
+                    }}
+                    onEn={(v) => {
+                      const next = columns.map((item, i) =>
+                        i === index ? locField(item, "en", v) : item
+                      );
+                      setColumns(next);
+                      schedule({ body: { columns: next } });
+                    }}
+                    onBlur={() => void flush({ body: { columns: columnsRef.current } })}
+                  />
+                ))}
+              </div>
+              <Guide>
+                한 칸에 국문 60~120자. 칸끼리 길이를 비슷하게 맞추면 화면에서 높이가 어긋나지
+                않습니다.
+              </Guide>
+            </div>
+          ) : hasBody(block.preset) ? (
             <div>
               <FieldLabel>본문</FieldLabel>
               <BilingualField
@@ -483,6 +541,71 @@ export function BlockCard({
 }
 
 const IMAGE_TEXT_LIKE = new Set(["image-text", "text-image", "portrait-text"]);
+
+function columnLabel(count: number, index: number) {
+  if (count === 2) return index === 0 ? "왼쪽" : "오른쪽";
+  if (index === 0) return "왼쪽";
+  if (index === 1) return "가운데";
+  return "오른쪽";
+}
+
+function ColumnBodyField({
+  label,
+  value,
+  onKo,
+  onEn,
+  onBlur,
+  onAiFill,
+  onGenerateEn
+}: {
+  label: string;
+  value: Loc;
+  onKo: (value: string) => void;
+  onEn: (value: string) => void;
+  onBlur: () => void;
+  onAiFill?: () => void;
+  onGenerateEn?: () => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-2">
+      <FieldLabel
+        extra={
+          <CharPair
+            ko={value.ko.length}
+            en={value.en.length}
+            koLimit={120}
+            enLimit={240}
+            koWarn={60}
+            enWarn={240}
+          />
+        }
+      >
+        {label}
+      </FieldLabel>
+      <div>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <LangKo />
+          <AiBtn disabled={!onAiFill} onClick={onAiFill}>
+            ✦ AI로 채우기
+          </AiBtn>
+        </div>
+        <TextArea value={value.ko} onChange={onKo} onBlur={onBlur} rows={5} />
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1">
+            <LangEn />
+            <AiBadge />
+          </span>
+          <AiBtn disabled={!onGenerateEn} onClick={onGenerateEn}>
+            ✦ 영문 생성
+          </AiBtn>
+        </div>
+        <TextArea value={value.en} onChange={onEn} onBlur={onBlur} rows={5} ai />
+      </div>
+    </div>
+  );
+}
 
 function ImagesEditor({
   images,

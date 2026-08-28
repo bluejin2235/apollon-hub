@@ -11,9 +11,11 @@ export const IMAGE_PRESETS = [
 
 export const IMAGE_TEXT_PRESETS = ["image-text", "text-image", "portrait-text"] as const;
 export const VIDEO_PRESETS = ["video-full", "video-text"] as const;
-export const TEXT_TAB_PRESETS = ["text-only"] as const;
+export const TEXT_TAB_PRESETS = ["text-only", "text-split", "text-triple"] as const;
 export const TEXT_PRESETS = [
   "text-only",
+  "text-split",
+  "text-triple",
   "image-text",
   "text-image",
   "portrait-text",
@@ -65,7 +67,9 @@ export const PRESET_LABEL: Record<string, string> = {
   "video-full": "영상 전폭",
   "video-text": "영상 + 글",
   embed: "임베드",
-  "text-only": "전폭 글"
+  "text-only": "전폭 글",
+  "text-split": "2단 글",
+  "text-triple": "3단 글"
 };
 
 export const PRESET_DESCRIPTION: Record<string, string> = {
@@ -85,7 +89,9 @@ export const PRESET_DESCRIPTION: Record<string, string> = {
   "video-full": "영상을 본문 전폭으로 둡니다.",
   "video-text": "영상과 글을 나란히 둡니다.",
   embed: "Sketchfab · Matterport · Google Maps",
-  "text-only": "본문 폭 가득"
+  "text-only": "본문 폭 가득",
+  "text-split": "글을 두 칸으로 나란히",
+  "text-triple": "글을 세 칸으로 나란히"
 };
 
 export const ALL_PRESETS = Object.keys(PRESET_LABEL);
@@ -118,6 +124,12 @@ export function hasImages(preset: string): boolean {
 
 export function hasBody(preset: string): boolean {
   return (TEXT_PRESETS as readonly string[]).includes(preset);
+}
+
+export function textColumnCount(preset: string): number {
+  if (preset === "text-split") return 2;
+  if (preset === "text-triple") return 3;
+  return 0;
 }
 
 export function pickerTabForPreset(
@@ -280,6 +292,41 @@ function DiagramInner({ preset }: { preset: string }) {
           <div className={`${line} w-full`} />
           <div className={`${line} w-[92%]`} />
           <div className={`${line} w-[78%]`} />
+        </div>
+      );
+    case "text-split":
+      return (
+        <div className="flex h-full w-full gap-1.5">
+          <div className="flex flex-1 flex-col justify-center gap-1 py-1">
+            <div className={`${line} w-full`} />
+            <div className={`${line} w-4/5`} />
+            <div className={`${line} w-3/5`} />
+          </div>
+          <div className="flex flex-1 flex-col justify-center gap-1 py-1">
+            <div className={`${line} w-full`} />
+            <div className={`${line} w-4/5`} />
+            <div className={`${line} w-3/5`} />
+          </div>
+        </div>
+      );
+    case "text-triple":
+      return (
+        <div className="flex h-full w-full gap-1">
+          <div className="flex flex-1 flex-col justify-center gap-1 py-1">
+            <div className={`${line} w-full`} />
+            <div className={`${line} w-4/5`} />
+            <div className={`${line} w-2/3`} />
+          </div>
+          <div className="flex flex-1 flex-col justify-center gap-1 py-1">
+            <div className={`${line} w-full`} />
+            <div className={`${line} w-4/5`} />
+            <div className={`${line} w-2/3`} />
+          </div>
+          <div className="flex flex-1 flex-col justify-center gap-1 py-1">
+            <div className={`${line} w-full`} />
+            <div className={`${line} w-4/5`} />
+            <div className={`${line} w-2/3`} />
+          </div>
         </div>
       );
     default:

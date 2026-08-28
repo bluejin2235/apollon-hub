@@ -1,5 +1,9 @@
 export type Loc = { ko: string; en: string };
 
+/** 전폭 글은 { ko, en }. 칸 글만 columns. 둘을 섞어 저장하지 않는다. */
+export type ColumnsBody = { columns: Loc[] };
+export type BlockBody = Loc | ColumnsBody;
+
 export type WorkCredit = {
   id: string;
   work_id: string;
@@ -49,7 +53,7 @@ export type ContentBlock = {
   section_id: string;
   sort: number;
   preset: string;
-  body: Loc | null;
+  body: BlockBody | null;
   video_kind: string | null;
   video_url: string | null;
   video_poster: string | null;
@@ -180,6 +184,36 @@ export function asLoc(value: unknown): Loc {
   };
 }
 
+export function hasColumns(value: unknown): value is { columns: unknown[] } {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Array.isArray((value as { columns?: unknown }).columns)
+  );
+}
+
+export function asBlockBody(value: unknown): BlockBody | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (hasColumns(value)) {
+    return { columns: value.columns.map(asLoc) };
+  }
+  return asLoc(value);
+}
+
+/** 칸 글 편집용. columns 가 없으면 { ko, en } 을 첫 칸으로만 쓴다. */
+export function columnsFromBody(value: unknown, count: number): Loc[] {
+  const next: Loc[] = [];
+  if (hasColumns(value)) {
+    for (const item of value.columns) next.push(asLoc(item));
+  } else if (value && typeof value === "object" && !Array.isArray(value)) {
+    const loc = asLoc(value);
+    if (loc.ko || loc.en) next.push(loc);
+  }
+  while (next.length < count) next.push(emptyLoc());
+  return next.slice(0, count);
+}
+
 export type EditorTab = "basic" | "content" | "faq" | "related";
 
 export function parseEditorTab(value: string | null): EditorTab {
@@ -259,7 +293,7 @@ function parseBlock(value: unknown): ContentBlock | null {
     section_id: asString(row.section_id),
     sort: asNum(row.sort),
     preset: fallbackPreset(row),
-    body: row.body ? asLoc(row.body) : null,
+    body: row.body ? asBlockBody(row.body) : null,
     video_kind: typeof row.video_kind === "string" ? row.video_kind : null,
     video_url: typeof row.video_url === "string" ? row.video_url : null,
     video_poster: typeof row.video_poster === "string" ? row.video_poster : null,

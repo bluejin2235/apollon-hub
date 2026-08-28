@@ -1,5 +1,10 @@
 export type LocalizedText = { ko?: string; en?: string };
 
+/** 칸 글(text-split · text-triple) body. 전폭 글은 { ko, en } 을 유지한다. */
+export type BodyColumn = { ko?: string; en?: string };
+export type ColumnsBody = { columns: BodyColumn[] };
+export type BlockBodyJson = LocalizedText | ColumnsBody;
+
 export type CheckWorks = {
   id: string;
   slug: string;

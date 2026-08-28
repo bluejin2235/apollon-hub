@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { createBlock } from "@/lib/website/api";
+import { emptyLoc } from "@/lib/website/work-detail";
 import {
   BlockDiagram,
   hasBody,
   pickerItemsForTab,
   PICKER_TABS,
+  textColumnCount,
   type PickerTabId
 } from "@/components/website/block-presets";
 
@@ -29,7 +31,10 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
     setBusyId(preset);
     setError(null);
     const body: Record<string, unknown> = { preset, sort: nextSort };
-    if (hasBody(preset)) {
+    const cols = textColumnCount(preset);
+    if (cols > 0) {
+      body.body = { columns: Array.from({ length: cols }, () => emptyLoc()) };
+    } else if (hasBody(preset)) {
       body.body = { ko: "", en: "" };
     }
     if (preset === "video-full" || preset === "video-text") {

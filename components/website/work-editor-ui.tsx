@@ -329,11 +329,20 @@ export function PreviewBarBtn({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function AiBtn({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
+export function AiBtn({
+  children,
+  disabled,
+  onClick
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
       type="button"
       disabled={disabled}
+      onClick={onClick}
       className="inline-flex items-center rounded-md border border-apollon-200 bg-apollon-50 px-2.5 py-1 text-xs font-semibold text-apollon-700 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
