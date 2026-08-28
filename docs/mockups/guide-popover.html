@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>가이드 팝오버 — UI 안</title>
+<style>
+:root{--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;--ok:#0f7a45;--okbg:#f0f9f4;
+--warn:#a35a08;--warnbg:#fdf7f0;--err:#b0231e;--errbg:#fdf3f2}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.68}
+.pg{max-width:1080px;margin:0 auto;padding:26px 16px 140px}
+h1.doc{font-size:24px;margin:0 0 5px;letter-spacing:-.02em}
+p.docs{color:var(--dim);font-size:13px;margin:0 0 20px}
+.lead{color:#4a515b;font-size:13.5px;margin:0 0 16px;max-width:900px}
+.lead b{color:var(--ink)}
+.big{font-size:18px;font-weight:700;margin:38px 0 10px;padding-bottom:9px;border-bottom:2px solid var(--ink)}
+
+.app{background:#fff;border:1px solid #d2d7de;border-radius:12px;overflow:hidden;
+box-shadow:0 4px 18px rgba(0,0,0,.06);margin-bottom:16px}
+.ah{padding:11px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+.ah b{font-size:14px}
+.ah .s{font-size:11.5px;color:var(--faint);margin-left:auto}
+.ab{padding:20px 22px}
+
+/* 필드 */
+.fld{margin-bottom:17px}
+.lab{display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap}
+.lab b{font-size:12.5px;font-weight:600}
+.rq{color:var(--err);font-size:12px}
+.cn{margin-left:auto;font-size:11px;color:var(--faint)}
+input.i,textarea.i{width:100%;border:1px solid #dde1e6;border-radius:7px;
+padding:8px 11px;font-size:13px;font-family:inherit;color:#3a4049;background:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ── 앵커 (핵심) ── */
+.g{border-bottom:1px dashed #b9b2e0;cursor:help;position:relative;
+color:var(--ap);font-weight:600;padding-bottom:1px}
+.g:hover{background:var(--apbg);border-bottom-style:solid}
+.gq{width:15px;height:15px;border-radius:50%;border:1px solid #cbd2da;color:var(--faint);
+font-size:9.5px;display:inline-flex;align-items:center;justify-content:center;cursor:help;
+background:#fff;flex-shrink:0;position:relative}
+.gq:hover{border-color:var(--ap);color:var(--ap);background:var(--apbg)}
+
+/* ── 팝오버 ── */
+.pop{position:absolute;z-index:80;width:390px;background:#fff;
+border:1px solid #d2d7de;border-radius:11px;box-shadow:0 12px 36px rgba(16,18,22,.18);
+opacity:0;visibility:hidden;transform:translateY(4px);transition:.14s;pointer-events:none}
+.pop.on{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto}
+.ph{padding:11px 15px 9px;border-bottom:1px solid var(--line);display:flex;
+align-items:flex-start;gap:9px;background:var(--soft);border-radius:11px 11px 0 0}
+.ph .t{flex:1;min-width:0}
+.ph .t b{font-size:13.5px;display:block;letter-spacing:-.01em}
+.ph .t .sub{font-size:11px;color:var(--faint);margin-top:1px}
+.ph .cat{font-size:10px;font-weight:700;border-radius:3px;padding:2px 7px;white-space:nowrap;
+background:var(--apbg);color:var(--ap)}
+.pb{padding:12px 15px;max-height:290px;overflow:auto;font-size:12.5px;line-height:1.75}
+.pb p{margin:0 0 8px}.pb p:last-child{margin:0}
+.pb table{width:100%;border-collapse:collapse;font-size:11.5px;margin:7px 0;
+border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.pb th,.pb td{text-align:left;padding:5px 9px;border-bottom:1px solid var(--line)}
+.pb th{background:var(--soft);font-size:10.5px;color:var(--dim);font-weight:700}
+.pb tr:last-child td{border-bottom:none}
+.pb b{color:var(--ink)}
+.pf{padding:9px 15px;border-top:1px solid var(--line);display:flex;align-items:center;
+gap:8px;background:var(--soft);border-radius:0 0 11px 11px}
+.pf a{font-size:11.5px;color:var(--ap);text-decoration:none;font-weight:600}
+.pf a:hover{text-decoration:underline}
+.pf .src{font-size:10.5px;color:var(--faint);margin-left:auto}
+.pop::before{content:"";position:absolute;top:-6px;left:26px;width:11px;height:11px;
+background:var(--soft);border-left:1px solid #d2d7de;border-top:1px solid #d2d7de;
+transform:rotate(45deg)}
+
+/* 안내 문구 */
+.tip{font-size:11.5px;color:var(--dim);line-height:1.65;margin-top:6px;
+background:var(--soft);border-left:2px solid var(--apln);border-radius:0 5px 5px 0;padding:8px 11px}
+.tip b{color:#3a4049}
+
+.box{border-radius:0 8px 8px 0;padding:13px 17px;margin:12px 0;font-size:13px}
+.box.o{background:var(--okbg);border:1px solid #bfe3ce;border-left:3px solid var(--ok)}
+.box.i{background:var(--apbg);border:1px solid var(--apln);border-left:3px solid var(--ap)}
+.box.w{background:var(--warnbg);border:1px solid #eddcc4;border-left:3px solid var(--warn)}
+.box b.h{display:block;margin-bottom:5px}
+.box.o b.h{color:var(--ok)}.box.i b.h{color:var(--ap)}.box.w b.h{color:var(--warn)}
+.box p:last-child{margin:0}
+.box ul{margin:6px 0 0;padding-left:19px}
+
+table.cmp{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0 14px;
+background:#fff;border:1px solid #d6dae0;border-radius:9px;overflow:hidden}
+.cmp th,.cmp td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.cmp th{background:var(--soft);font-size:11px;font-weight:700;color:var(--dim)}
+.cmp tr:last-child td{border-bottom:none}
+.cmp td.c{text-align:center;white-space:nowrap}
+
+.ph2{background:linear-gradient(135deg,#5b7a94,#2f4a5e);border-radius:6px;
+display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);font-size:10px}
+.slot{border:1.5px dashed #d3d8de;border-radius:7px;background:#fcfcfd;
+display:flex;flex-direction:column;align-items:center;justify-content:center;
+color:var(--faint);font-size:11px;gap:3px}
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:5px 12px;font-size:12px;
+background:#fff;color:#3a4049;cursor:pointer;font-family:inherit}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.sm{padding:3px 9px;font-size:11.5px}
+@media (max-width:760px){.two{grid-template-columns:1fr}.pop{width:300px}}
+</style></head><body>
+<div class="pg">
+
+<h1 class="doc">가이드 팝오버 — UI 안</h1>
+<p class="docs">2026.08.28 · 워크 등록 화면에서 제작 가이드를 바로 보여주는 방법</p>
+
+<p class="lead">
+루나 용어사전처럼 <b>마우스를 올리면 그 항목의 가이드가 팝업으로</b> 나옵니다.
+지금은 「?」를 눌러야 짧은 안내가 나오고, 자세한 것은 새 탭으로 가야 합니다.<br>
+<b>아래 파란 밑줄이나 「?」에 마우스를 올려 보세요.</b>
+</p>
+
+<!-- ══ A ══ -->
+<div class="big">A 안 — 「?」에 마우스 올림</div>
+<p class="lead">지금 있는 「?」를 그대로 쓰되, <b>클릭이 아니라 마우스 올림</b>으로 바꿉니다.</p>
+
+<div class="app">
+  <div class="ah"><b>워크 편집 · 기본정보</b><span class="s">A 안</span></div>
+  <div class="ab">
+    <div class="fld">
+      <div class="lab"><b>대표 이미지</b><span class="rq">*</span>
+        <span class="gq" data-pop="key">?</span></div>
+      <div style="display:flex;gap:11px;align-items:flex-start">
+        <div class="ph2" style="width:180px;height:101px">2560 × 1440</div>
+        <div><div style="font-size:12px;color:#3a4049">star-avenue-key.jpg</div>
+          <div style="font-size:11px;color:var(--faint);margin-top:2px">2560 × 1440</div>
+          <div style="margin-top:7px;display:flex;gap:5px">
+            <span class="btn sm">바꾸기</span><span class="btn sm">삭제</span></div></div>
+      </div>
+    </div>
+
+    <div class="fld" style="margin-bottom:0">
+      <div class="lab"><b>배경 영상</b><span class="gq" data-pop="loop">?</span></div>
+      <div class="two">
+        <div class="slot" style="height:74px"><span style="font-size:15px">＋</span>큰 화면용 1280×720</div>
+        <div class="slot" style="height:74px"><span style="font-size:15px">＋</span>작은 화면용 640×360</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="box i">
+  <b class="h">A 안 — 지금 것을 조금만 바꿉니다</b>
+  <p>「?」가 이미 모든 칸에 있습니다. <b>클릭 → 마우스 올림</b>으로 바꾸고
+  내용을 제작 가이드에서 가져오면 됩니다.<br>
+  <b>장점</b> 개발이 가장 적고, 사람들이 이미 「?」를 압니다.<br>
+  <b>단점</b> 「?」가 어디 있는지 찾아야 합니다. 눈에 잘 안 띕니다.</p>
+</div>
+
+<!-- ══ B ══ -->
+<div class="big">B 안 — 용어에 밑줄 (루나 용어사전 방식)</div>
+<p class="lead">본문 안의 <b>용어 자체에 점선 밑줄</b>을 긋고, 마우스를 올리면 그 설명이 나옵니다.</p>
+
+<div class="app">
+  <div class="ah"><b>워크 편집 · 블록</b><span class="s">B 안</span></div>
+  <div class="ab">
+    <div class="fld">
+      <div class="lab"><b>배치</b></div>
+      <p style="font-size:12.5px;color:#4a515b;margin:0 0 9px">
+        <span class="g" data-pop="gallery">자동 배치 갤러리</span>는 최대 12장까지.
+        비율을 보고 줄을 나눕니다.
+        <span class="g" data-pop="crop">가로 + 세로</span> 배치는 오른쪽만 잘리므로
+        왼쪽에 가로 사진을 넣으세요.
+      </p>
+      <div style="display:flex;gap:7px">
+        <div class="ph2" style="flex:1.78;height:62px"></div>
+        <div class="ph2" style="flex:.56;height:62px"></div>
+        <div class="ph2" style="flex:1.78;height:62px"></div>
+      </div>
+    </div>
+
+    <div class="fld" style="margin-bottom:0">
+      <div class="lab"><b>캡션</b><span class="cn">국문 0 / 90</span></div>
+      <input class="i" placeholder="이미지 아래 한 줄">
+      <div class="tip">
+        <span class="g" data-pop="caption">캡션</span>은 AI 가 인용하는 문장입니다.
+        <span class="g" data-pop="alt">대체 텍스트</span>와 다릅니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="box o">
+  <b class="h">B 안 — 루나 용어사전과 같은 방식</b>
+  <p>용어에 밑줄이 있어 <b>「여기 설명이 있다」가 바로 보입니다.</b>
+  찾을 필요가 없습니다.<br>
+  <b>장점</b> 가장 직관적입니다. 루나에서 이미 쓰는 방식이라 익숙합니다.<br>
+  <b>단점</b> 어느 용어에 밑줄을 그을지 정해야 합니다. 너무 많으면 지저분합니다.</p>
+</div>
+
+<!-- ══ C ══ -->
+<div class="big">C 안 — 둘 다</div>
+<p class="lead">칸 이름 옆에는 「?」, 안내 문구 안의 용어에는 밑줄. <b>제 추천입니다.</b></p>
+
+<div class="app">
+  <div class="ah"><b>워크 편집 · 기본정보</b><span class="s">C 안 · 권장</span></div>
+  <div class="ab">
+    <div class="fld">
+      <div class="lab"><b>대표 이미지</b><span class="rq">*</span>
+        <span class="gq" data-pop="key">?</span></div>
+      <div style="display:flex;gap:11px;align-items:flex-start">
+        <div class="ph2" style="width:180px;height:101px">2560 × 1440</div>
+        <div><div style="font-size:12px;color:#3a4049">star-avenue-key.jpg</div>
+          <div style="font-size:11px;color:var(--faint);margin-top:2px">2560 × 1440</div></div>
+      </div>
+      <div class="tip">
+        <span class="g" data-pop="ratio">16:9</span> · 최소 2560×1440 ·
+        목록 카드와 <span class="g" data-pop="og">카톡 공유</span>에 쓰입니다.
+      </div>
+    </div>
+
+    <div class="fld" style="margin-bottom:0">
+      <div class="lab"><b>한 줄 요약</b><span class="rq">*</span>
+        <span class="gq" data-pop="summary">?</span>
+        <span class="cn">국문 48 / 80</span></div>
+      <textarea class="i" style="min-height:52px">지나가는 통로였던 면세점 K-POP 존을 머무는 몰입형 미디어 공간으로 재구성했습니다.</textarea>
+      <div class="tip">
+        구글 검색 결과와 <span class="g" data-pop="ai">AI 인용</span>에 그대로 쓰입니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="big">세 안 비교</div>
+<table class="cmp">
+<tr><th style="width:14%">항목</th><th class="c" style="width:20%">A 「?」만</th>
+<th class="c" style="width:20%">B 밑줄만</th><th class="c" style="width:20%">C 둘 다</th><th>비고</th></tr>
+<tr><td>눈에 띔</td><td class="c">보통</td><td class="c">좋음</td><td class="c"><b>좋음</b></td>
+<td>밑줄이 있으면 설명이 있다는 것을 안다</td></tr>
+<tr><td>화면 정돈</td><td class="c">깔끔</td><td class="c">밑줄 많으면 산만</td><td class="c">보통</td>
+<td>C 는 안내 문구 안에만 밑줄</td></tr>
+<tr><td>개발량</td><td class="c">적음</td><td class="c">보통</td><td class="c">보통</td>
+<td>팝오버 컴포넌트는 공통</td></tr>
+<tr><td>루나와 일관성</td><td class="c">—</td><td class="c"><b>같음</b></td><td class="c"><b>같음</b></td>
+<td>용어사전과 같은 방식</td></tr>
+</table>
+
+<div class="box i">
+  <b class="h">제 의견 — C 안</b>
+  <p><b>칸 이름 옆 「?」</b> 는 그 칸 전체의 규격을 보여줍니다.
+  <b>안내 문구 안의 밑줄</b> 은 「16:9」「카톡 공유」처럼 개별 개념을 설명합니다.</p>
+  <p style="margin-top:6px">둘의 역할이 달라 겹치지 않습니다.
+  밑줄은 <b>안내 문구 안에만</b> 긋고 본문에는 긋지 않으면 산만하지 않습니다.</p>
+</div>
+
+<div class="big">동작 규칙</div>
+<table class="cmp">
+<tr><th style="width:20%">항목</th><th>동작</th></tr>
+<tr><td><b>열림</b></td><td>마우스를 올리고 <b>0.4초</b> 뒤. 지나가다 스치는 것에는 안 열립니다</td></tr>
+<tr><td><b>닫힘</b></td><td>벗어나고 <b>0.3초</b> 뒤. 팝업 위로 마우스를 옮기는 사이에 닫히면 안 됩니다</td></tr>
+<tr><td><b>팝업 안</b></td><td>스크롤·선택·복사 가능. 링크 클릭 가능</td></tr>
+<tr><td><b>위치</b></td><td>기본 아래. 화면 아래가 좁으면 위로. 좌우도 화면 안으로 밀어 넣음</td></tr>
+<tr><td><b>모바일</b></td><td>마우스 올림이 없으므로 <b>탭하면 열림</b>. 바깥을 탭하면 닫힘</td></tr>
+<tr><td><b>키보드</b></td><td>Tab 으로 포커스가 오면 열림. ESC 로 닫힘</td></tr>
+<tr><td><b>내용 출처</b></td><td>제작 가이드 문서(<code>luna_library</code>)의 해당 절. <b>가이드를 고치면 팝업도 바뀝니다</b></td></tr>
+</table>
+
+<div class="box w">
+  <b class="h">중요 — 내용을 두 곳에 쓰지 않습니다</b>
+  <p>팝업 내용을 코드에 적으면 <b>가이드와 어긋납니다.</b>
+  가이드 문서의 절을 그대로 가져와 보여주고,
+  「자세히 보기」를 누르면 그 절로 이동합니다.</p>
+  <p style="margin-top:6px">절이 길면 <b>앞 3~4줄과 첫 표만</b> 보여주고 나머지는 「자세히 보기」로 넘깁니다.</p>
+</div>
+
+<div class="box o" style="margin-top:16px">
+  <b class="h">정해야 할 것</b>
+  <ul>
+    <li><b>A · B · C</b> 중 어느 안으로 할지</li>
+    <li>팝업에 <b>절 전체</b>를 넣을지, <b>앞부분만</b> 넣고 「자세히 보기」로 넘길지</li>
+    <li>인사이트 어드민에도 같이 넣을지 (지금은 화면이 없습니다)</li>
+  </ul>
+</div>
+
+</div>
+
+<!-- 팝오버 원본 -->
+<div id="pops" style="display:none">
+  <div data-k="key" data-t="대표 이미지" data-s="02-1 · 제작 가이드" data-c="이미지">
+    <table><tr><th>항목</th><th>값</th></tr>
+    <tr><td>비율</td><td><b>16 : 9 반드시</b></td></tr>
+    <tr><td>올리는 파일</td><td>최소 <b>2560 × 1440</b></td></tr>
+    <tr><td>보관 파일</td><td>2560 × 1440</td></tr></table>
+    <p>다섯 군데 전부 16:9 상자에 <b>잘라 넣습니다.</b> 사람 얼굴이나 로고는 가운데에 두세요.</p>
+    <p>공유 이미지를 따로 만들지 않아서 <b>이 파일이 그대로 카톡에 나갑니다.</b></p>
+  </div>
+
+  <div data-k="loop" data-t="배경 루프 영상" data-s="03-1 · 제작 가이드" data-c="영상">
+    <table><tr><th></th><th>큰 화면용</th><th>작은 화면용</th></tr>
+    <tr><td>해상도</td><td>1280 × 720</td><td>640 × 360</td></tr>
+    <tr><td>용량</td><td><b>1.5MB</b></td><td><b>0.5MB</b></td></tr></table>
+    <p><b>두 벌을 만들어야 합니다.</b> 하나로 돌려쓰면 목록 한 화면에 13MB 가 나가지만
+    나눠 쓰면 5MB 로 줄어듭니다.</p>
+  </div>
+
+  <div data-k="gallery" data-t="자동 배치 갤러리" data-s="02-3 · 제작 가이드" data-c="배치">
+    <p>여러 장을 한 번에 올리면 각 사진의 가로·세로를 읽고
+    <b>줄마다 높이가 맞도록 알아서 나눕니다.</b></p>
+    <p>가로 사진은 넓게, 세로 사진은 좁게 들어가 빈틈 없이 채워집니다.
+    비율을 신경 쓰지 않고 <b>좋은 사진을 골라 넣기만</b> 하면 됩니다.</p>
+    <p>최대 12장.</p>
+  </div>
+
+  <div data-k="crop" data-t="가로 + 세로" data-s="02-3 · 제작 가이드" data-c="배치">
+    <p>왼쪽 가로 사진이 <b>높이를 정하고</b>, 오른쪽은 그 높이에 맞춰 <b>잘립니다.</b></p>
+    <p>16종 배치 중 <b>자르는 것은 이것과 「세로 + 가로」 둘뿐</b>입니다.
+    나머지는 원본 비율 그대로 나옵니다.</p>
+  </div>
+
+  <div data-k="caption" data-t="캡션" data-s="04-1 · 제작 가이드" data-c="텍스트">
+    <p><b>AI 가 인용하는 문장입니다.</b> ChatGPT·Perplexity 가 우리 프로젝트를
+    설명할 때 가져갑니다.</p>
+    <table><tr><th></th><th>예</th></tr>
+    <tr><td><b>좋은 예</b></td><td>폭 23.5m 미디어월. 15분마다 웰컴쇼가 재생됩니다.</td></tr>
+    <tr><td><b>나쁜 예</b></td><td>아름다운 공간의 모습</td></tr></table>
+    <p>워크 하나에 <b>5~8장</b>이면 충분합니다.</p>
+  </div>
+
+  <div data-k="alt" data-t="대체 텍스트" data-s="04-1 · 제작 가이드" data-c="텍스트">
+    <p><b>화면에 보이지 않습니다.</b> 검색엔진과 화면낭독기가 읽습니다.</p>
+    <p>무엇이 찍혔는지 <b>사실만</b> 적습니다. 국문 40자 이내.
+    <b>모든 이미지에 필수</b>입니다.</p>
+  </div>
+
+  <div data-k="ratio" data-t="16:9" data-s="02-1 · 제작 가이드" data-c="규격">
+    <p>가로와 세로의 비율입니다. <b>2560 × 1440 · 1920 × 1080</b> 이 여기 해당합니다.</p>
+    <p>대표 이미지가 쓰이는 다섯 곳이 전부 16:9 상자라 <b>안 맞으면 잘립니다.</b>
+    그래서 업로드할 때 거부합니다.</p>
+  </div>
+
+  <div data-k="og" data-t="카톡 공유 이미지" data-s="02-1 · 제작 가이드" data-c="규격">
+    <p>카톡·슬랙·링크드인에 링크를 붙였을 때 보이는 이미지입니다.</p>
+    <p>따로 만들지 않고 <b>대표 이미지가 그대로 나갑니다.</b>
+    그래서 16:9 가 더 중요합니다.</p>
+  </div>
+
+  <div data-k="summary" data-t="한 줄 요약" data-s="04-2 · 제작 가이드" data-c="텍스트">
+    <table><tr><th>국문</th><th>영문</th></tr>
+    <tr><td>60 ~ 80자</td><td>120 ~ 155자</td></tr></table>
+    <p>목록 카드 · 상세 · <b>구글 검색 결과 설명</b> · 링크 공유 · AI 인용에 모두 쓰입니다.</p>
+    <p>형용사보다 <b>동사와 숫자</b>가 인용됩니다.</p>
+  </div>
+
+  <div data-k="ai" data-t="AI 인용" data-s="04-1 · 제작 가이드" data-c="텍스트">
+    <p>ChatGPT · Perplexity · Claude 가 우리 프로젝트를 설명할 때
+    가져가는 문장입니다.</p>
+    <p>가장 많이 인용되는 것은 <b>한 줄 요약 · 캡션 · FAQ 답변</b> 세 가지입니다.
+    숫자와 고유명사가 들어 있으면 인용 확률이 올라갑니다.</p>
+  </div>
+</div>
+
+<script>
+const src=document.getElementById('pops');
+const data={};
+[...src.children].forEach(d=>{ data[d.dataset.k]={t:d.dataset.t,s:d.dataset.s,
+  c:d.dataset.c, html:d.innerHTML}; });
+
+const pop=document.createElement('div');
+pop.className='pop';
+document.body.appendChild(pop);
+
+let openT=null, closeT=null, cur=null;
+
+function show(el,key){
+  const d=data[key]; if(!d) return;
+  pop.innerHTML=
+    '<div class="ph"><div class="t"><b>'+d.t+'</b><div class="sub">'+d.s+'</div></div>'+
+    '<span class="cat">'+d.c+'</span></div>'+
+    '<div class="pb">'+d.html+'</div>'+
+    '<div class="pf"><a href="#">자세히 보기 ↗</a>'+
+    '<span class="src">제작·운영 가이드</span></div>';
+  pop.classList.add('on');
+  const r=el.getBoundingClientRect();
+  const pw=pop.offsetWidth, phh=pop.offsetHeight;
+  let left=r.left+window.scrollX-20;
+  let top=r.bottom+window.scrollY+10;
+  if(left+pw>window.innerWidth-14) left=window.innerWidth-pw-14;
+  if(left<14) left=14;
+  if(r.bottom+phh+20>window.innerHeight){ top=r.top+window.scrollY-phh-10; }
+  pop.style.left=left+'px'; pop.style.top=top+'px';
+  cur=el;
+}
+function hide(){ pop.classList.remove('on'); cur=null; }
+
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-pop]');
+  if(el){ clearTimeout(closeT); clearTimeout(openT);
+    openT=setTimeout(()=>show(el,el.dataset.pop),400); return; }
+  if(e.target.closest('.pop')){ clearTimeout(closeT); return; }
+});
+document.addEventListener('mouseout',e=>{
+  const el=e.target.closest('[data-pop]');
+  const inPop=e.target.closest('.pop');
+  if(el||inPop){ clearTimeout(openT); clearTimeout(closeT);
+    closeT=setTimeout(hide,300); }
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') hide(); });
+</script>
+</body></html>
