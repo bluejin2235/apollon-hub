@@ -2,6 +2,8 @@
 
 import { useId, useState, type ReactNode } from "react";
 
+import { GuidePopover } from "@/components/website/ui/GuidePopover";
+
 import "./work-admin.css";
 
 type CountTone = "ok" | "warn" | "faint";
@@ -14,6 +16,7 @@ type FoldGroupProps = {
   countTone?: CountTone;
   filled?: number;
   total?: number;
+  guideAnchorId?: string;
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -27,6 +30,7 @@ export function FoldGroup({
   countTone = "faint",
   filled,
   total,
+  guideAnchorId,
   defaultOpen = false,
   open: openProp,
   onOpenChange,
@@ -55,6 +59,15 @@ export function FoldGroup({
         onClick={() => setOpen(!open)}
       >
         <b>{title}</b>
+        {guideAnchorId ? (
+          <span
+            className="fold-guide"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <GuidePopover anchorId={guideAnchorId}>?</GuidePopover>
+          </span>
+        ) : null}
         {summary ? <span className="s">{summary}</span> : null}
         {countText != null ? (
           <span

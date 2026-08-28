@@ -1,0 +1,246 @@
+/* 가이드 팝오버 — docs/mockups/guide-popover.html */
+
+.gp-anchor {
+  position: relative;
+  display: inline;
+}
+
+.gp-term {
+  border-bottom: 1px dashed #b9b2e0;
+  cursor: help;
+  color: var(--ap, #534ab7);
+  font-weight: 600;
+  padding-bottom: 1px;
+}
+
+.gp-term:hover,
+.gp-term:focus-visible {
+  background: var(--apbg, #f2f0fc);
+  border-bottom-style: solid;
+  outline: none;
+}
+
+.gp-q {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid #cbd2da;
+  color: var(--faint, #9ca3af);
+  font-size: 9.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  background: #fff;
+  flex-shrink: 0;
+  position: relative;
+  font-family: inherit;
+  padding: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.gp-q:hover,
+.gp-q:focus-visible,
+.gp-q.on {
+  border-color: var(--ap, #534ab7);
+  color: var(--ap, #534ab7);
+  background: var(--apbg, #f2f0fc);
+  outline: none;
+}
+
+.gp-pop {
+  position: fixed;
+  z-index: 120;
+  width: 390px;
+  max-width: calc(100vw - 28px);
+  background: #fff;
+  border: 1px solid #d2d7de;
+  border-radius: 11px;
+  box-shadow: 0 12px 36px rgba(16, 18, 22, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0.14s;
+  pointer-events: none;
+}
+
+.gp-pop.on {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.gp-pop.above {
+  transform: translateY(-4px);
+}
+
+.gp-pop.above.on {
+  transform: translateY(0);
+}
+
+.gp-pop::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--gp-arrow-left, 26px);
+  width: 11px;
+  height: 11px;
+  background: var(--soft, #f8f9fb);
+  border-left: 1px solid #d2d7de;
+  border-top: 1px solid #d2d7de;
+  transform: rotate(45deg);
+}
+
+.gp-pop.above::before {
+  top: auto;
+  bottom: -6px;
+  border-left: none;
+  border-top: none;
+  border-right: 1px solid #d2d7de;
+  border-bottom: 1px solid #d2d7de;
+}
+
+.gp-ph {
+  padding: 11px 15px 9px;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: var(--soft, #f8f9fb);
+  border-radius: 11px 11px 0 0;
+}
+
+.gp-ph .gp-t {
+  flex: 1;
+  min-width: 0;
+}
+
+.gp-ph .gp-t b {
+  font-size: 13.5px;
+  display: block;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+  color: var(--ink, #16181d);
+}
+
+.gp-ph .gp-sub {
+  font-size: 11px;
+  color: var(--faint, #9ca3af);
+  margin-top: 1px;
+}
+
+.gp-cat {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  background: var(--apbg, #f2f0fc);
+  color: var(--ap, #534ab7);
+}
+
+.gp-pb {
+  padding: 12px 15px;
+  max-height: 290px;
+  overflow: auto;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink, #16181d);
+}
+
+.gp-pb .wiki-body p {
+  margin: 0 0 8px;
+}
+
+.gp-pb .wiki-body p:last-child {
+  margin-bottom: 0;
+}
+
+.gp-pb .wiki-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  margin: 7px 0;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gp-pb .wiki-body th,
+.gp-pb .wiki-body td {
+  text-align: left;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+}
+
+.gp-pb .wiki-body th {
+  background: var(--soft, #f8f9fb);
+  font-size: 10.5px;
+  color: var(--dim, #6b7280);
+  font-weight: 700;
+}
+
+.gp-pb .wiki-body tr:last-child td {
+  border-bottom: none;
+}
+
+.gp-pb .wiki-body strong:not(:has(.wiki-body-color)) {
+  color: var(--ink, #16181d);
+}
+
+.gp-trunc {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--dim, #6b7280);
+}
+
+.gp-trunc em {
+  font-style: normal;
+  color: var(--ap, #534ab7);
+  font-weight: 700;
+}
+
+.gp-pf {
+  padding: 9px 15px;
+  border-top: 1px solid var(--line, #e5e7eb);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--soft, #f8f9fb);
+  border-radius: 0 0 11px 11px;
+}
+
+.gp-pf a {
+  font-size: 11.5px;
+  color: var(--ap, #534ab7);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.gp-pf a:hover {
+  text-decoration: underline;
+}
+
+.gp-pf .gp-src {
+  font-size: 10.5px;
+  color: var(--faint, #9ca3af);
+  margin-left: auto;
+}
+
+.gp-loading,
+.gp-error {
+  padding: 16px 15px;
+  font-size: 12px;
+  color: var(--dim, #6b7280);
+}
+
+@media (max-width: 760px) {
+  .gp-pop {
+    width: 300px;
+  }
+}
