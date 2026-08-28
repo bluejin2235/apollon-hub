@@ -53,12 +53,12 @@ export function parseWikiBody(body: string): WikiBodyBlock[] {
   for (const hit of hits) {
     if (hit.start < cursor) continue;
     const before = src.slice(cursor, hit.start);
-    if (before.trim()) out.push({ type: "md", text: before.trim() });
+    if (before) out.push({ type: "md", text: before });
     out.push(hit.block);
     cursor = hit.end;
   }
   const rest = src.slice(cursor);
-  if (rest.trim()) out.push({ type: "md", text: rest.trim() });
+  if (rest) out.push({ type: "md", text: rest });
   return out;
 }
 

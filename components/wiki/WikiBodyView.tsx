@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SafeMarkdown } from "@/components/luna/SafeMarkdown";
+import { WikiBodyMarkdown } from "@/components/wiki/WikiBodyMarkdown";
 import { WikiYoutubeEmbed } from "@/components/wiki/WikiYoutubeEmbed";
 import { parseWikiBody } from "@/lib/wiki/media";
 
@@ -115,11 +115,5 @@ function WikiImageLightbox({
 }
 
 function WikiMdChunk({ text }: { text: string }) {
-  return (
-    <SafeMarkdown
-      content={text}
-      highlightTerms
-      className="wiki-md text-[13px] leading-[1.9] text-[#2a2c31] [&_a[href^='http']]:text-[#534AB7] [&_a[target='_blank']]:after:ml-0.5 [&_a[target='_blank']]:after:text-[9px] [&_a[target='_blank']]:after:text-[#9aa0a8] [&_a[target='_blank']]:after:content-['↗']"
-    />
-  );
+  return <WikiBodyMarkdown text={text} highlightTerms />;
 }

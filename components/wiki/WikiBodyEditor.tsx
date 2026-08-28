@@ -1,9 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useRef, useState, type RefObject } from "react";
+import { WikiBodyMarkdown } from "@/components/wiki/WikiBodyMarkdown";
+import { WikiTextColorTool } from "@/components/wiki/WikiTextColorTool";
 import { WikiYoutubeEmbed } from "@/components/wiki/WikiYoutubeEmbed";
 import { wikiFetch, wikiUploadFile } from "@/components/wiki/wiki-fetch";
 import { W } from "@/components/wiki/wiki-theme";
+import { WIKI_TABLE_TEMPLATE } from "@/lib/wiki/body-markdown";
 import {
   parseWikiBody,
   parseYoutubeId,
@@ -11,7 +14,8 @@ import {
   wikiYoutubeToken,
   type WikiBodyBlock
 } from "@/lib/wiki/media";
-
+import { handleWikiTableKeyDown } from "@/lib/wiki/table-cursor";
+import "@/components/wiki/wiki-body.css";
 function serialize(blocks: WikiBodyBlock[]): string {
   return blocks
     .map((b) => {
@@ -53,54 +57,91 @@ function prefixLines(el: HTMLTextAreaElement, prefix: string): string {
   return value.slice(0, from) + nextBlock + value.slice(end);
 }
 
-function AutoTextarea({
+function WikiMdSplitEditor({
   value,
   onChange,
+  textareaRef,
   onPasteUrl,
-  onPasteImage,
-  textareaRef
+  onPasteImage
 }: {
   value: string;
   onChange: (next: string) => void;
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
   onPasteUrl?: (url: string) => boolean;
   onPasteImage?: (file: File) => void;
-  textareaRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const inner = useRef<HTMLTextAreaElement>(null);
-  const ref = textareaRef ?? inner;
+  const innerRef = useRef<HTMLTextAreaElement>(null);
+  const ref = textareaRef ?? innerRef;
+  const [mobileTab, setMobileTab] = useState<"source" | "preview">("source");
 
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(80, el.scrollHeight)}px`;
-  }, [value, ref]);
+  function applyWithCursor(next: string, cursor: number) {
+    onChange(next);
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(cursor, cursor);
+    });
+  }
 
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onPaste={(e) => {
-        const file = e.clipboardData.files[0];
-        if (file && file.type.startsWith("image/")) {
-          e.preventDefault();
-          onPasteImage?.(file);
-          return;
-        }
-        const text = e.clipboardData.getData("text");
-        if (text && onPasteUrl?.(text)) {
-          e.preventDefault();
-        }
-      }}
-      className="w-full resize-none overflow-hidden bg-transparent px-0 py-1 text-[12.5px] leading-[1.95] outline-none"
-      style={{ color: "#2a2c31" }}
-    />
+    <div className="wiki-body-editor-split">
+      <div className="wiki-body-editor-tabs md:hidden">
+        <button
+          type="button"
+          className={`wiki-body-editor-tab${mobileTab === "source" ? " is-active" : ""}`}
+          onClick={() => setMobileTab("source")}
+        >
+          원문
+        </button>
+        <button
+          type="button"
+          className={`wiki-body-editor-tab${mobileTab === "preview" ? " is-active" : ""}`}
+          onClick={() => setMobileTab("preview")}
+        >
+          미리보기
+        </button>
+      </div>
+      <div className="wiki-body-editor-panes">
+        <div
+          className={`wiki-body-editor-source${mobileTab === "preview" ? " max-md:hidden" : ""}`}
+        >
+          <textarea
+            ref={ref}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              handleWikiTableKeyDown(e, value, applyWithCursor);
+            }}
+            onPaste={(e) => {
+              const file = e.clipboardData.files[0];
+              if (file && file.type.startsWith("image/")) {
+                e.preventDefault();
+                onPasteImage?.(file);
+                return;
+              }
+              const text = e.clipboardData.getData("text");
+              if (text && onPasteUrl?.(text)) {
+                e.preventDefault();
+              }
+            }}
+            className="wiki-body-editor-textarea"
+            spellCheck={false}
+          />
+        </div>
+        <div
+          className={`wiki-body-editor-preview wiki-body-editor-preview-pane${
+            mobileTab === "source" ? " max-md:hidden" : ""
+          }`}
+        >
+          <WikiBodyMarkdown text={value} />
+        </div>
+      </div>
+    </div>
   );
 }
 
-export function WikiBodyEditor({
-  value,
+export function WikiBodyEditor({  value,
   onChange,
   slug,
   showHeadingTools,
@@ -186,6 +227,41 @@ export function WikiBodyEditor({
     }
   }
 
+  function insertTable() {
+    const el = focusRef.current;
+    if (!el) {
+      insertAtCursor(WIKI_TABLE_TEMPLATE);
+      return;
+    }
+    const start = el.selectionStart;
+    const next =
+      el.value.slice(0, start) + WIKI_TABLE_TEMPLATE + el.value.slice(start);
+    const rebuilt = display.map((b) =>
+      b.type === "md" && b.text === el.value ? { type: "md" as const, text: next } : b
+    );
+    commit(rebuilt);
+  }
+
+  function applyWithSelection(
+    fn: (el: HTMLTextAreaElement) => {
+      next: string;
+      selectionStart: number;
+      selectionEnd: number;
+    }
+  ) {
+    const el = focusRef.current;
+    if (!el) return;
+    const result = fn(el);
+    const rebuilt = display.map((b) =>
+      b.type === "md" && el.value === b.text ? { type: "md" as const, text: result.next } : b
+    );
+    commit(rebuilt);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(result.selectionStart, result.selectionEnd);
+    });
+  }
+
   function link() {
     const href = window.prompt("연결할 주소", "https://");
     if (!href) return;
@@ -217,8 +293,10 @@ export function WikiBodyEditor({
         <Tool onClick={() => applyToFocused((el) => wrapSelection(el, "*", "*"))}>
           <i>I</i>
         </Tool>
+        <WikiTextColorTool onApply={applyWithSelection} />
         <Tool onClick={() => applyToFocused((el) => prefixLines(el, "- "))}>• 목록</Tool>
         <Tool onClick={() => applyToFocused((el) => prefixLines(el, "1. "))}>1. 번호</Tool>
+        <Tool onClick={insertTable}>표 넣기</Tool>
         <span className="mx-1 h-[15px] w-px" style={{ background: W.line }} />
         <Tool onClick={link}>🔗 링크</Tool>
         <Tool onClick={() => fileRef.current?.click()}>📷 이미지</Tool>
@@ -253,6 +331,9 @@ export function WikiBodyEditor({
           if (f) void addImage(f);
         }}
       />
+      <p className="border-b px-[11px] py-[7px] text-[10.5px] leading-relaxed" style={{ borderColor: W.line2, color: W.faint }}>
+        표는 <code>| 칸 | 칸 |</code> 으로, 소제목은 <code>##</code> 으로, 굵게는 <code>**굵게**</code>, 색은 <code>[color=#b0231e]빨강[/color]</code> 로 씁니다
+      </p>
       <div
         className="px-[14px] py-3"
         onDragOver={(e) => e.preventDefault()}
@@ -286,7 +367,7 @@ export function WikiBodyEditor({
             return <WikiYoutubeEmbed key={`y-${i}`} id={b.id} title={b.title} />;
           }
           return (
-            <AutoTextarea
+            <WikiMdSplitEditor
               key={`t-${i}`}
               value={b.text}
               textareaRef={focusRef}
@@ -301,8 +382,7 @@ export function WikiBodyEditor({
                 commit(next);
               }}
             />
-          );
-        })}
+          );        })}
       </div>
     </div>
   );
