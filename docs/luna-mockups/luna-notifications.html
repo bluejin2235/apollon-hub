@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>알림 페이지</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --hi:#0F6E56; --hi-bg:#E6F5EF;
+    --warn:#B0782B; --warn-bg:#FBF3E4;
+    --err:#B3403A; --err-bg:#FBECEB;
+    --info:#2E6FA8; --info-bg:#E9F1F9;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:960px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:30px 0 4px;padding-top:18px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;position:relative}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:21px;height:21px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:10px;font-weight:800}
+  .hubname{font-size:12.5px;font-weight:800}
+  .hubright{margin-left:auto;font-size:11px;color:var(--sub);display:flex;align-items:center;gap:12px}
+  .bell{position:relative;font-size:15px;cursor:pointer}
+  .bell .dot{position:absolute;top:-4px;right:-6px;background:#E0483E;color:#fff;
+    font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:9px}
+  .body{padding:18px 22px}
+
+  /* 드롭다운 (지금) */
+  .drop{position:absolute;top:46px;right:60px;width:290px;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;box-shadow:0 10px 30px rgba(0,0,0,.14);
+    overflow:hidden;z-index:5}
+  .drop .dh{padding:9px 13px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--line2);
+    display:flex;align-items:center}
+  .drop .dh .sp{flex:1}
+  .drop .dh .rd{font-size:10.5px;color:var(--luna);font-weight:600;cursor:pointer}
+  .drop .di{padding:9px 13px;border-bottom:1px solid var(--line2);cursor:pointer}
+  .drop .di:hover{background:#FBFAFF}
+  .drop .di .t{font-size:11.5px;font-weight:600;line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drop .di .b{font-size:10.5px;color:var(--faint);margin-top:2px;line-height:1.45;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+  .drop .di .m{font-size:9.5px;color:var(--faint);margin-top:3px}
+  .drop .df{padding:9px 13px;text-align:center;font-size:11px;color:var(--luna);
+    font-weight:600;cursor:pointer;background:#FBFAFF}
+
+  /* 페이지 */
+  .pagetitle{font-size:19px;font-weight:800;margin-bottom:3px}
+  .pagesub{font-size:11.5px;color:var(--sub);margin-bottom:15px}
+
+  .toolbar{display:flex;align-items:center;gap:7px;margin-bottom:13px;flex-wrap:wrap}
+  .toolbar .f{font-size:11.5px;padding:5px 12px;border-radius:16px;cursor:pointer;
+    border:1px solid var(--line);color:var(--sub)}
+  .toolbar .f.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:600}
+  .toolbar .f .c{opacity:.75;font-size:10px;margin-left:3px}
+  .toolbar .sp{flex:1}
+  .toolbar .act{font-size:11px;color:var(--luna);font-weight:600;cursor:pointer}
+
+  .daysep{font-size:11px;color:var(--faint);font-weight:700;margin:16px 0 8px;
+    display:flex;align-items:center;gap:9px}
+  .daysep::after{content:"";flex:1;height:1px;background:var(--line2)}
+
+  .card{border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:8px;
+    display:flex;gap:12px;position:relative}
+  .card.unread{border-color:#DDD8F2;background:#FCFBFF}
+  .card.unread::before{content:"";position:absolute;left:0;top:13px;bottom:13px;width:3px;
+    background:var(--luna);border-radius:0 3px 3px 0}
+  .card .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+    font-size:14px;flex-shrink:0}
+  .ic.success{background:var(--hi-bg)}
+  .ic.info{background:var(--info-bg)}
+  .ic.warn{background:var(--warn-bg)}
+  .ic.error{background:var(--err-bg)}
+  .card .c{flex:1;min-width:0}
+  .card .top{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+  .card .t{font-size:13px;font-weight:700}
+  .card .cat{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:6px}
+  .cat.success{background:var(--hi-bg);color:var(--hi)}
+  .cat.info{background:var(--info-bg);color:var(--info)}
+  .cat.warn{background:var(--warn-bg);color:var(--warn)}
+  .cat.error{background:var(--err-bg);color:var(--err)}
+  .card .time{margin-left:auto;font-size:10.5px;color:var(--faint);white-space:nowrap}
+  .card .b{font-size:12.5px;line-height:1.75;color:#2a2c31}
+  .card .b b{font-weight:700}
+  .card .meta{font-size:10.5px;color:var(--faint);margin-top:6px;font-family:var(--mono)}
+  .card .acts{display:flex;gap:6px;margin-top:10px;align-items:center}
+  .btn{padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ghost{border:0;color:var(--faint);background:none}
+  .card .acts .sp{flex:1}
+
+  .empty{text-align:center;padding:40px 0;color:var(--faint);font-size:12px}
+
+  .cmp{display:flex;gap:9px;margin-top:11px}
+  .cmpb{flex:1;border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+    font-size:11.5px;line-height:1.7}
+  .cmpb .l{font-size:10px;margin-bottom:5px;font-weight:700}
+  .pro{color:var(--hi)} .con{color:#B0782B}
+  .verdict{font-size:11.5px;line-height:1.75;background:var(--luna-soft);
+    border-radius:9px;padding:11px 14px;margin-top:12px;color:var(--luna-ink)}
+  .verdict b{font-weight:800}
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">알림 페이지</div>
+<div class="note">지금 251건이 12종류로 쌓여 있습니다. 드롭다운이 좁아 판단이 어렵습니다.</div>
+
+
+<!-- ══════ 지금 ══════ -->
+<div class="secthead">지금 — 드롭다운</div>
+<p class="sectsub">제목이 잘리고 본문이 한 줄만 보입니다. 링크를 눌러야 무슨 일인지 압니다.</p>
+
+<div class="screen" style="min-height:300px">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">
+      이택진 / 공간파트
+      <span class="bell">🔔<span class="dot">9+</span></span>
+    </div>
+  </div>
+  <div class="body" style="opacity:.3">
+    <div style="font-size:19px;font-weight:800">Hub</div>
+  </div>
+
+  <div class="drop">
+    <div class="dh">알림 <span class="sp"></span><span class="rd">모두 읽음</span></div>
+    <div class="di">
+      <div class="t">Work서버 스캔 완료</div>
+      <div class="b">100,941건, +26건, 9분 14초</div>
+      <div class="m">오늘 03:04</div>
+    </div>
+    <div class="di">
+      <div class="t">루나 정기 점검 실패</div>
+      <div class="b">20문항 중 3문항 기준 미달</div>
+      <div class="m">오늘 03:44</div>
+    </div>
+    <div class="di">
+      <div class="t">아침 브리핑</div>
+      <div class="b">오늘 일정 3건 · 어제 대화 12건</div>
+      <div class="m">오늘 08:01</div>
+    </div>
+    <div class="df">더 보기</div>
+  </div>
+</div>
+
+<div class="cmp">
+  <div class="cmpb"><div class="l con">문제</div>
+    제목·본문이 잘려 무슨 일인지 모름<br>
+    링크를 눌러야 알 수 있음<br>
+    지난 것을 찾아보기 어려움<br>
+    종류별로 나눌 수 없음</div>
+  <div class="cmpb"><div class="l pro">그대로 둘 것</div>
+    최근 3~5건을 빠르게 훑는 용도<br>
+    「더 보기」로 페이지 연결</div>
+</div>
+
+
+<!-- ══════ 알림 페이지 ══════ -->
+<div class="secthead">알림 페이지 — /notifications</div>
+<p class="sectsub">「더 보기」를 누르면 여기로 옵니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">
+      이택진 / 공간파트
+      <span class="bell">🔔</span>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="pagetitle">알림</div>
+    <div class="pagesub">안 읽은 것 12건 · 전체 251건</div>
+
+    <div class="toolbar">
+      <span class="f on">전체 <span class="c">251</span></span>
+      <span class="f">안 읽음 <span class="c">12</span></span>
+      <span class="f">루나 <span class="c">158</span></span>
+      <span class="f">Work서버 <span class="c">25</span></span>
+      <span class="f">위키 <span class="c">59</span></span>
+      <span class="f">문제 <span class="c">21</span></span>
+      <span class="sp"></span>
+      <span class="act">모두 읽음</span>
+    </div>
+
+    <div class="daysep">오늘</div>
+
+    <!-- 문제 알림 -->
+    <div class="card unread">
+      <span class="ic error">⚠</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">루나 정기 점검 실패</span>
+          <span class="cat error">점검</span>
+          <span class="time">03:44</span>
+        </div>
+        <div class="b">
+          20문항 중 <b>3문항</b>이 기준에 못 미쳤습니다.<br>
+          · 인스파이어 시즌5 자료 찾아줘 — 자료 0건<br>
+          · SV가 뭐야? — 자신감 3/10<br>
+          · 출장비 규정 — 응답 32초
+        </div>
+        <div class="acts">
+          <span class="btn primary">실패 수집에서 보기</span>
+          <span class="btn">이 종류 알림 끄기</span>
+          <span class="sp"></span>
+          <span class="btn ghost">읽음</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 아침 브리핑 -->
+    <div class="card unread">
+      <span class="ic info">☀</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">아침 브리핑</span>
+          <span class="cat info">루나</span>
+          <span class="time">08:01</span>
+        </div>
+        <div class="b">
+          어제 팀이 루나에 <b>12번</b> 물었고, 그중 <b>2번</b>이 아쉬웠습니다.<br>
+          노션 색인은 03:20에 정상 갱신됐습니다. (1,873페이지 · 3.7분)
+        </div>
+        <div class="acts">
+          <span class="btn primary">대시보드 열기</span>
+          <span class="sp"></span>
+          <span class="btn ghost">읽음</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 스캔 완료 -->
+    <div class="card">
+      <span class="ic success">✓</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">Work서버 스캔 완료</span>
+          <span class="cat success">Work서버</span>
+          <span class="time">03:04</span>
+        </div>
+        <div class="b">
+          <b>100,941건</b> · 새로 추가 26건 · 9분 14초
+        </div>
+        <div class="meta">T 89,606 · P 11,335</div>
+        <div class="acts">
+          <span class="btn">Work서버 설정</span>
+          <span class="sp"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="daysep">어제</div>
+
+    <!-- 지식 후보 -->
+    <div class="card unread">
+      <span class="ic warn">📗</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">지식 후보 3건이 확인을 기다립니다</span>
+          <span class="cat warn">위키</span>
+          <span class="time">어제 21:56</span>
+        </div>
+        <div class="b">
+          어제 대화에서 위키에 없는 판단 기준이 나왔습니다.<br>
+          · 공개공지 프로젝트는 시행사에 먼저 접촉한다<br>
+          · 볼팍견적은 고객에게 보내지 않는다<br>
+          · RFP 검토 시 인허가 범위를 먼저 본다
+        </div>
+        <div class="acts">
+          <span class="btn primary">지식 후보 열기</span>
+          <span class="sp"></span>
+          <span class="btn ghost">읽음</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 노션 색인 실패 -->
+    <div class="card">
+      <span class="ic error">⚠</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">노션 색인 실패</span>
+          <span class="cat error">노션</span>
+          <span class="time">어제 13:32</span>
+        </div>
+        <div class="b">
+          증분 색인이 2분 29초 만에 중단됐습니다.<br>
+          <span style="color:var(--err)">luna_notion_embeddings upsert: statement timeout</span>
+        </div>
+        <div class="meta">0 / 1,867 페이지 · 임베딩 +0</div>
+        <div class="acts">
+          <span class="btn primary">노션 설정 열기</span>
+          <span class="btn">다시 시도</span>
+          <span class="sp"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="daysep">이번 주</div>
+
+    <div class="card">
+      <span class="ic success">🌙</span>
+      <div class="c">
+        <div class="top">
+          <span class="t">자습 완료</span>
+          <span class="cat success">루나</span>
+          <span class="time">8월 20일</span>
+        </div>
+        <div class="b">
+          위키 문서 8건을 읽고 <b>지식 4건</b>을 정리했습니다.
+        </div>
+        <div class="acts">
+          <span class="btn">자습 기록 보기</span>
+          <span class="sp"></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="helper" style="margin-top:18px">
+      더 오래된 알림은 스크롤하면 계속 불러옵니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 핵심 ══════ -->
+<div class="secthead">무엇이 달라지나</div>
+
+<div class="screen">
+  <div class="body">
+    <div style="font-size:12.5px;line-height:2.1;color:#2a2c31">
+      <b>① 본문이 다 보인다</b><br>
+      &nbsp;&nbsp;&nbsp;드롭다운은 한 줄인데 여기선 3~4줄까지.
+      「20문항 중 3문항이 못 미쳤다」가 아니라 <b>어느 문항인지</b>까지 보인다<br><br>
+
+      <b>② 바로 할 수 있다</b><br>
+      &nbsp;&nbsp;&nbsp;[실패 수집에서 보기] [다시 시도] [지식 후보 열기]<br>
+      &nbsp;&nbsp;&nbsp;알림마다 다음 동작이 붙는다. 어디로 가야 할지 안 찾아도 된다<br><br>
+
+      <b>③ 종류별로 거른다</b><br>
+      &nbsp;&nbsp;&nbsp;전체 · 안 읽음 · 루나 · Work서버 · 위키 · <b>문제</b><br>
+      &nbsp;&nbsp;&nbsp;「문제」만 보면 오류·실패만 모여 나온다<br><br>
+
+      <b>④ 날짜로 묶인다</b><br>
+      &nbsp;&nbsp;&nbsp;오늘 · 어제 · 이번 주 · 지난 주<br><br>
+
+      <b>⑤ 안 읽은 것이 구분된다</b><br>
+      &nbsp;&nbsp;&nbsp;왼쪽에 보라색 선 + 옅은 배경
+    </div>
+
+    <div class="verdict">
+      <b>드롭다운은 그대로 둡니다.</b> 최근 3~5건을 빠르게 훑는 용도로는 지금이 맞습니다.<br>
+      「더 보기」가 이 페이지로 연결되고, 판단이 필요한 건 여기서 합니다.
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 물어볼 것 ══════ -->
+<div class="secthead">정해야 할 것</div>
+
+<div class="screen">
+  <div class="body">
+    <div style="font-size:12.5px;line-height:2.1;color:#2a2c31">
+      <b>① 위치</b> — 마이페이지 안? 별도 경로(/notifications)? 설정 탭?<br><br>
+      <b>② 읽음 처리</b> — 지금 읽음 표시가 있나? 없으면 만들지?<br><br>
+      <b>③ 필터 종류</b> — 위 6개가 맞나? 더 필요한 게 있나<br><br>
+      <b>④ 보관 기간</b> — 251건이 계속 쌓이는데 오래된 건 지울지<br><br>
+      <b>⑤ 알림 끄기</b> — 종류별로 끌 수 있게 할지<br>
+      &nbsp;&nbsp;&nbsp;(luna_reflect 가 127건으로 가장 많은데 매번 볼 필요가 있나)
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

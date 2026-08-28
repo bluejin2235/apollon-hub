@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이미지 검색 UI</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --notion:#37352F; --nas:#5B6472;
+    --hi:#0F6E56; --hi-bg:#E6F5EF;
+    --warn:#B0782B; --warn-bg:#FBF3E4;
+    --ours:#2E6FA8; --ref:#8B6D3F;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:880px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:30px 0 4px;padding-top:18px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+  .tl{font-size:10.5px;color:var(--faint);font-family:var(--mono);margin:0 0 6px 2px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;position:relative}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:21px;height:21px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:10px;font-weight:800}
+  .hubname{font-size:12.5px;font-weight:800}
+  .hubright{margin-left:auto;font-size:11px;color:var(--sub)}
+  .body{padding:18px 22px}
+
+  .userq{background:var(--luna);color:#fff;border-radius:16px 16px 4px 16px;
+    padding:10px 15px;font-size:13.5px;display:inline-block;float:right;margin-bottom:16px}
+  .clr{clear:both}
+
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:13px}
+  .tabs span{font-size:12.5px;padding:8px 14px;color:var(--sub);cursor:pointer;
+    border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px}
+  .tabs span.on{color:var(--luna-ink);font-weight:700;border-bottom-color:var(--luna)}
+  .tabs .n{font-size:10.5px;opacity:.7}
+  .tabs .dim{color:var(--faint)}
+
+  /* ── 색인 범위 공지 (A안 · 접힘) ── */
+  .scope{margin-top:14px;border-top:1px solid var(--line2);padding-top:11px}
+  .scopeline{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--faint);
+    cursor:pointer}
+  .scopeline .ic{opacity:.7}
+  .scopeline .sp{flex:1}
+  .scopeline .ask{color:var(--luna);font-weight:600}
+  .scopebody{margin-top:9px;padding:11px 13px;background:#FAFAFB;
+    border:1px solid var(--line2);border-radius:9px}
+  .scopebody .l{font-size:10.5px;color:var(--faint);margin-bottom:7px;line-height:1.6}
+  .kws{display:flex;flex-wrap:wrap;gap:4px}
+  .kw{font-size:10.5px;padding:3px 9px;border-radius:13px;background:var(--panel);
+    border:1px solid var(--line);color:var(--sub)}
+  .kw.special{background:var(--luna-soft);border-color:#DDD8F2;color:var(--luna-ink);
+    font-family:var(--mono);font-size:10px}
+
+  /* ── B안 · 한 줄 ── */
+  .scopeb{margin-top:14px;font-size:10.5px;color:var(--faint);line-height:1.8;
+    padding-top:11px;border-top:1px solid var(--line2)}
+  .scopeb b{color:var(--sub);font-weight:600}
+  .scopeb .ask{color:var(--luna);font-weight:600;cursor:pointer;margin-left:5px}
+
+  /* ── C안 · 카드 ── */
+  .scopec{margin-top:14px;border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+  .scopec .h{padding:9px 13px;background:#FAFAFB;font-size:11px;font-weight:700;
+    color:var(--sub);display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line2)}
+  .scopec .h .sp{flex:1}
+  .scopec .h .ask{font-size:10.5px;color:var(--luna);font-weight:600;cursor:pointer}
+  .scopec .b{padding:11px 13px}
+  .scopec .b .l{font-size:10.5px;color:var(--faint);margin-bottom:8px;line-height:1.65}
+
+  .sech{display:flex;align-items:center;gap:8px;margin:15px 0 8px}
+  .sech .t{font-size:12px;font-weight:700}
+  .sech .n{font-size:10.5px;color:var(--faint)}
+  .sech .sp{flex:1}
+  .sech .more{font-size:11px;color:var(--luna);cursor:pointer;font-weight:600}
+  .sech .fresh{font-size:9.5px;color:var(--hi);background:var(--hi-bg);
+    padding:2px 7px;border-radius:8px;font-weight:700}
+
+  .prog{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:13px;
+    background:#FCFCFD}
+  .proghead{padding:8px 14px;font-size:11px;color:var(--faint);cursor:pointer;
+    display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line2)}
+  .proghead .sp{flex:1}
+  .prow{display:flex;align-items:center;gap:9px;padding:8px 14px;font-size:12px;
+    border-bottom:1px solid var(--line2)}
+  .prow:last-child{border-bottom:0}
+  .prow .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .prow.done .dot{background:var(--hi)}
+  .prow.now .dot{background:var(--luna);animation:pulse 1s infinite}
+  .prow.wait .dot{background:var(--line)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .prow.done{color:var(--sub)}
+  .prow.now{color:var(--ink);font-weight:600;background:#FBFAFF}
+  .prow.wait{color:var(--faint)}
+  .prow .sub{font-size:10.5px;color:var(--faint);font-weight:400}
+  .prow .ms{margin-left:auto;font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+
+  .doc{border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:6px;
+    display:flex;gap:10px;align-items:center;cursor:pointer}
+  .doc:hover{background:#FBFAFF}
+  .doc .ic{font-size:13px;opacity:.6}
+  .doc .c{flex:1;min-width:0}
+  .doc .t{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .doc .s{font-size:10.5px;color:var(--faint);margin-top:2px;font-family:var(--mono);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lb{font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px;flex-shrink:0}
+  .lb.notion{background:#EFEFED;color:var(--notion)}
+  .lb.work{background:#EDEFF2;color:var(--nas)}
+  .lb.stage{background:var(--hi-bg);color:var(--hi)}
+
+  .grid{display:grid;gap:1px;background:var(--line2);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden}
+  .grid.g5{grid-template-columns:repeat(5,1fr)}
+  .grid.g4{grid-template-columns:repeat(4,1fr)}
+  .cell{background:var(--panel);position:relative;cursor:pointer}
+  .cell:hover .ov{opacity:1}
+  .thumb{width:100%;aspect-ratio:4/3}
+  .t1{background:linear-gradient(135deg,#2a3550,#4a6fa5)}
+  .t2{background:linear-gradient(135deg,#1e3a2f,#3d7a5c)}
+  .t3{background:linear-gradient(135deg,#3d2a4a,#6b4e7a)}
+  .t4{background:linear-gradient(135deg,#4a3520,#8b6d3f)}
+  .t5{background:linear-gradient(135deg,#2c2c3a,#5a5a72)}
+  .t6{background:linear-gradient(135deg,#1a2f45,#2e6fa8)}
+  .sk{background:linear-gradient(90deg,#eceef1 25%,#f6f7f9 50%,#eceef1 75%);
+    background-size:200% 100%;animation:sk 1.2s infinite}
+  @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .cell .cap{padding:6px 8px}
+  .cell .cn{font-size:10px;font-weight:600;line-height:1.35;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cell .cp{font-size:9px;color:var(--faint);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{position:absolute;top:5px;left:5px;font-size:8px;font-weight:700;
+    padding:2px 5px;border-radius:5px;color:#fff}
+  .badge.ours{background:rgba(46,111,168,.9)}
+  .badge.ref{background:rgba(139,109,63,.9)}
+  .ov{position:absolute;inset:0;background:rgba(20,20,28,.7);opacity:0;
+    transition:opacity .15s;display:flex;align-items:flex-end;gap:4px;padding:7px}
+  .ov .b{flex:1;text-align:center;font-size:9.5px;font-weight:600;padding:4px 0;
+    border-radius:5px;background:rgba(255,255,255,.92);color:#1c1d21}
+  .cell.more{display:grid;place-items:center;font-size:12px;color:var(--luna);font-weight:600}
+
+  .streaming{font-size:13.5px;line-height:1.85;color:#2a2c31}
+  .caret{display:inline-block;width:2px;height:15px;background:var(--luna);
+    vertical-align:-2px;animation:blink .9s infinite}
+  @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+  .footbar{display:flex;align-items:center;gap:7px;margin-top:13px;flex-wrap:wrap}
+  .pill{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--chip);color:var(--sub)}
+  .footbar .icons{display:flex;gap:9px;margin-left:4px;color:var(--faint);font-size:13px}
+  .footbar .stat{margin-left:auto;font-size:10.5px;color:var(--faint);display:flex;gap:11px}
+  .footbar .stat b{color:var(--sub);font-weight:600}
+  .footbar .stat .g{color:var(--hi);font-weight:700}
+
+  .filters{display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap}
+  .filters span{font-size:11.5px;padding:5px 11px;border-radius:16px;cursor:pointer;
+    border:1px solid var(--line);color:var(--sub)}
+  .filters span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:600}
+  .filters .cnt{opacity:.75;font-size:10px;margin-left:3px}
+
+  .warn{border:1px solid #EBDCC0;background:var(--warn-bg);border-radius:10px;
+    padding:11px 14px;margin-bottom:12px;display:flex;gap:9px;align-items:flex-start}
+  .warn .ic{font-size:12px;margin-top:1px}
+  .warn .c{flex:1;font-size:11.5px;line-height:1.7;color:var(--warn)}
+  .warn .c b{font-weight:700}
+  .warn .p{font-family:var(--mono);font-size:10.5px;margin-top:3px;opacity:.85}
+  .warn .ask{font-size:11px;color:var(--warn);font-weight:700;cursor:pointer;white-space:nowrap}
+
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:11px}
+  .verdict{font-size:11.5px;line-height:1.75;background:var(--luna-soft);
+    border-radius:9px;padding:10px 13px;margin-top:12px;color:var(--luna-ink)}
+  .verdict b{font-weight:800}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 범위 공지 3안 ══════ -->
+<div class="mocklabel">색인 범위 공지 — 세 가지 안</div>
+<div class="note">답변 아래에 붙습니다. 어느 폴더가 검색 대상인지 알려줍니다.</div>
+
+<div class="screen">
+  <div class="body">
+    <div class="sectsub" style="margin-bottom:6px"><b>A안</b> — 한 줄로 접혀 있고 누르면 펼쳐짐</div>
+    <div class="scope" style="margin-top:0;border-top:0;padding-top:0">
+      <div class="scopeline">
+        <span class="ic">🔎</span>
+        <span>이미지는 <b style="color:var(--sub)">레퍼런스·아이데이션·KV·소스</b> 폴더에서만 찾아요</span>
+        <span style="opacity:.6">▾</span>
+        <span class="sp"></span>
+        <span class="ask">폴더 추가 요청</span>
+      </div>
+      <div class="scopebody">
+        <div class="l">각 사업개발·프로젝트 폴더 안에서 아래 이름이 들어간 폴더만 색인합니다.</div>
+        <div class="kws">
+          <span class="kw">Reference</span><span class="kw">References</span><span class="kw">Ref</span>
+          <span class="kw">Ref image</span><span class="kw">참고</span><span class="kw">레퍼런스</span>
+          <span class="kw">ideation</span><span class="kw">아이데이션</span>
+          <span class="kw">Research</span><span class="kw">리서치</span><span class="kw">경쟁사 분석</span>
+          <span class="kw">KV</span><span class="kw">source</span><span class="kw">소스</span>
+          <span class="kw">콘티</span><span class="kw">아트웍</span><span class="kw">art</span>
+          <span class="kw">시뮬레이션</span>
+        </div>
+        <div class="l" style="margin:9px 0 6px">그리고 아래 폴더는 전체를 색인합니다.</div>
+        <div class="kws"><span class="kw special">99 Apollog\01 Trend &amp; Insight</span></div>
+      </div>
+    </div>
+
+    <div class="sectsub" style="margin:26px 0 6px"><b>B안</b> — 한 줄로만. 가장 조용함</div>
+    <div class="scopeb" style="margin-top:0;border-top:0;padding-top:0">
+      🔎 이미지는 각 프로젝트의
+      <b>Reference · Ref · 참고 · 레퍼런스 · ideation · 아이데이션 · Research · 리서치 ·
+      경쟁사 분석 · KV · source · 소스 · 콘티 · 아트웍 · art · 시뮬레이션</b>
+      폴더와 <b>99 Apollog\01 Trend &amp; Insight</b> 에서만 찾습니다.
+      <span class="ask">폴더 추가 요청</span>
+    </div>
+
+    <div class="sectsub" style="margin:26px 0 6px"><b>C안</b> — 카드로 항상 펼쳐둠</div>
+    <div class="scopec" style="margin-top:0">
+      <div class="h">🔎 이미지 검색 범위
+        <span class="sp"></span>
+        <span class="ask">폴더 추가 요청</span>
+      </div>
+      <div class="b">
+        <div class="l">각 사업개발·프로젝트 폴더 안에서 아래 이름이 들어간 폴더만 색인합니다.</div>
+        <div class="kws">
+          <span class="kw">Reference</span><span class="kw">References</span><span class="kw">Ref</span>
+          <span class="kw">Ref image</span><span class="kw">참고</span><span class="kw">레퍼런스</span>
+          <span class="kw">ideation</span><span class="kw">아이데이션</span>
+          <span class="kw">Research</span><span class="kw">리서치</span><span class="kw">경쟁사 분석</span>
+          <span class="kw">KV</span><span class="kw">source</span><span class="kw">소스</span>
+          <span class="kw">콘티</span><span class="kw">아트웍</span><span class="kw">art</span>
+          <span class="kw">시뮬레이션</span>
+          <span class="kw special">99 Apollog\01 Trend &amp; Insight</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="verdict">
+      <b>A안을 권합니다.</b> 평소엔 한 줄이라 방해하지 않고,
+      「왜 이것만 나오지?」 싶을 때 눌러서 전체를 볼 수 있어요.
+      C안은 매번 자리를 많이 차지하고, B안은 키워드가 많아 한 줄이 길어집니다.
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 실제 화면 ══════ -->
+<div class="secthead">실제 화면 — A안 적용</div>
+<div class="tl">18초 · 답변 완료</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">시어터룸 레이저 콘텐츠 레퍼런스</div>
+    <div class="clr"></div>
+
+    <div class="tabs">
+      <span class="on">전체</span>
+      <span>문서 <span class="n">4</span></span>
+      <span>이미지 <span class="n">28</span></span>
+    </div>
+
+    <div class="prog">
+      <div class="proghead"><span>▸</span> 찾는 과정 <span class="sp"></span>
+        <span>위키 3 · 노션 4 · Work 2 · 이미지 28</span></div>
+    </div>
+
+    <div class="streaming">
+      <b>삼성디스플레이 시어터룸</b>의 레이저 콘텐츠 레퍼런스는 두 갈래로 모여 있어요.<br><br>
+      · <b>03 Reference\02 Media</b> — 외부 레이저 쇼 사례 17장<br>
+      · <b>04 Design\01 이마고픽쳐스</b> — 프리비즈와 레이저소스 작업물 11장<br><br>
+      특히 F1 더 무비 캡처가 레이저 궤적과 스모그 표현의 참고로 반복해 쓰였습니다.
+    </div>
+
+    <div class="sech"><span class="t">📄 자료 4건</span>
+      <span class="sp"></span><span class="more">문서 탭 →</span></div>
+    <div class="doc"><span class="ic">📄</span>
+      <div class="c"><div class="t">260318 프리비즈, 레이저소스</div>
+        <div class="s">T:\02 Project\2026\260129 삼성디스플레이 시어터룸\04 Design\01 이마고픽쳐스\</div></div>
+      <span class="lb stage">수행</span><span class="lb work">워크</span></div>
+    <div class="doc"><span class="ic">📄</span>
+      <div class="c"><div class="t">03 Reference\02 Media</div>
+        <div class="s">T:\02 Project\2026\260129 삼성디스플레이 시어터룸\01 Planning\</div></div>
+      <span class="lb notion">노션</span><span class="lb work">워크</span></div>
+
+    <div class="sech"><span class="t">🖼 이미지 28장</span>
+      <span class="sp"></span><span class="more">이미지 탭 →</span></div>
+    <div class="grid g5">
+      <div class="cell"><div class="thumb t3"></div><span class="badge ref">레퍼</span>
+        <div class="cap"><div class="cn">레이저 쇼 참고</div><div class="cp">03 Reference\02 Media</div></div>
+        <div class="ov"><span class="b">크게</span><span class="b">폴더</span></div></div>
+      <div class="cell"><div class="thumb t1"></div><span class="badge ours">시안</span>
+        <div class="cap"><div class="cn">Cut_end 프리비즈</div><div class="cp">04 Design\이마고픽쳐스</div></div>
+        <div class="ov"><span class="b">크게</span><span class="b">폴더</span></div></div>
+      <div class="cell"><div class="thumb t6"></div><span class="badge ref">레퍼</span>
+        <div class="cap"><div class="cn">F1 더 무비 캡처</div><div class="cp">03 Reference\참고이미지</div></div>
+        <div class="ov"><span class="b">크게</span><span class="b">폴더</span></div></div>
+      <div class="cell"><div class="thumb t5"></div><span class="badge ref">레퍼</span>
+        <div class="cap"><div class="cn">모던 단청 #4</div><div class="cp">더후 글로벌\03 Reference</div></div>
+        <div class="ov"><span class="b">크게</span><span class="b">폴더</span></div></div>
+      <div class="cell"><div class="thumb t4"></div><span class="badge ours">시안</span>
+        <div class="cap"><div class="cn">KV소스 260706</div><div class="cp">더후 글로벌\04 Design</div></div>
+        <div class="ov"><span class="b">크게</span><span class="b">폴더</span></div></div>
+    </div>
+
+    <div class="footbar">
+      <span class="pill">이미지 28</span><span class="pill">자료 4</span><span class="pill">위키 3</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat"><span><b>18.2초</b></span><span>의도 <span class="g">9/10</span></span></span>
+    </div>
+
+    <div class="scope">
+      <div class="scopeline">
+        <span class="ic">🔎</span>
+        <span>이미지는 <b style="color:var(--sub)">레퍼런스·아이데이션·KV·소스</b> 폴더에서만 찾아요</span>
+        <span style="opacity:.6">▾</span>
+        <span class="sp"></span>
+        <span class="ask">폴더 추가 요청</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 펼친 상태 ══════ -->
+<div class="secthead">공지를 펼치면</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="footbar" style="margin-top:0">
+      <span class="pill">이미지 28</span><span class="pill">자료 4</span><span class="pill">위키 3</span>
+      <span class="icons">⧉ 👍 👎</span>
+      <span class="stat"><span><b>18.2초</b></span></span>
+    </div>
+
+    <div class="scope">
+      <div class="scopeline">
+        <span class="ic">🔎</span>
+        <span>이미지는 <b style="color:var(--sub)">레퍼런스·아이데이션·KV·소스</b> 폴더에서만 찾아요</span>
+        <span style="opacity:.6">▴</span>
+        <span class="sp"></span>
+        <span class="ask">폴더 추가 요청</span>
+      </div>
+      <div class="scopebody">
+        <div class="l">각 사업개발·프로젝트 폴더 안에서 아래 이름이 들어간 폴더만 색인합니다.</div>
+        <div class="kws">
+          <span class="kw">Reference</span><span class="kw">References</span><span class="kw">Ref</span>
+          <span class="kw">Ref image</span><span class="kw">참고</span><span class="kw">레퍼런스</span>
+          <span class="kw">ideation</span><span class="kw">아이데이션</span>
+          <span class="kw">Research</span><span class="kw">리서치</span><span class="kw">경쟁사 분석</span>
+          <span class="kw">KV</span><span class="kw">source</span><span class="kw">소스</span>
+          <span class="kw">콘티</span><span class="kw">아트웍</span><span class="kw">art</span>
+          <span class="kw">시뮬레이션</span>
+        </div>
+        <div class="l" style="margin:9px 0 6px">그리고 아래 폴더는 전체를 색인합니다.</div>
+        <div class="kws"><span class="kw special">99 Apollog\01 Trend &amp; Insight</span></div>
+      </div>
+    </div>
+
+    <p class="helper">
+      규칙이 바뀌면 이 목록도 자동으로 바뀝니다. 설정에서 관리합니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 범위 밖 ══════ -->
+<div class="secthead">색인 안 된 곳을 물으면</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트</div>
+  </div>
+  <div class="body">
+    <div class="userq">광안리 KCC 공개공지 이미지 보여줘</div>
+    <div class="clr"></div>
+
+    <div class="warn">
+      <span class="ic">⚠</span>
+      <div class="c">
+        <b>이 프로젝트는 아직 이미지 색인이 안 됐어요.</b>
+        <div class="p">T:\02 Project\2021\08 광안KCC 스위첸하버뷰 미디어아트</div>
+      </div>
+      <span class="ask">색인 요청</span>
+    </div>
+
+    <div class="sech" style="margin-top:0"><span class="t">📄 문서는 찾았어요</span><span class="n">3건</span></div>
+    <div class="doc"><span class="ic">📄</span>
+      <div class="c"><div class="t">광안KCC스위첸 공개공지 미디어아트 제안_v.3(확정안)</div>
+        <div class="s">T:\02 Project\2021\08 광안KCC 스위첸하버뷰 미디어아트\02 Document\</div></div>
+      <span class="lb stage">수행</span><span class="lb notion">노션</span><span class="lb work">워크</span></div>
+    <div class="doc"><span class="ic">📄</span>
+      <div class="c"><div class="t">광안KCC스위첸 공개공지 미디어아트 제안_211209_tj</div>
+        <div class="s">T:\01 사업개발\2021\211111 광안KCC스위첸 미디어파사드\01 Document\211209 3차문서\</div></div>
+      <span class="lb notion">노션</span><span class="lb work">워크</span></div>
+
+    <div class="scope">
+      <div class="scopeline">
+        <span class="ic">🔎</span>
+        <span>이미지는 <b style="color:var(--sub)">레퍼런스·아이데이션·KV·소스</b> 폴더에서만 찾아요</span>
+        <span style="opacity:.6">▾</span>
+        <span class="sp"></span>
+        <span class="ask">폴더 추가 요청</span>
+      </div>
+    </div>
+
+    <p class="helper">
+      「색인 요청」을 누르면 슈퍼관리자에게 알림이 갑니다. 예상 장수와 비용이 함께 표시됩니다.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

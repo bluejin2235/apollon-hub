@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>실패 수집 v4</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --hot:#C0392B; --hot-bg:#FDECEA;
+    --warn:#B0782B; --warn-bg:#FBF3E4;
+    --ok:#0F6E56; --ok-bg:#E6F5EF;
+    --dev:#2E6FA8; --dev-bg:#E9F1F9;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:32px 0 4px;padding-top:20px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    position:relative}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .hubname{font-size:13px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--sub)}
+  .hubright .ic{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:10px;color:var(--faint)}
+
+  .body{padding:16px 22px}
+  .tabs1{display:flex;gap:6px;background:#F7F7F9;border-radius:10px;padding:4px;
+    margin-bottom:14px;width:fit-content}
+  .tabs1 span{font-size:12px;padding:6px 12px;border-radius:8px;color:var(--sub);cursor:pointer}
+  .tabs1 span.on{background:var(--panel);color:var(--ink);font-weight:700;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tabs1 .badge{background:var(--hot);color:#fff;font-size:9.5px;padding:1px 6px;
+    border-radius:9px;margin-left:5px;font-weight:700}
+
+  .ptitle{font-size:16px;font-weight:800;margin-bottom:3px}
+  .pdesc{font-size:11.5px;color:var(--sub);margin-bottom:15px}
+
+  .kindtabs{display:flex;gap:7px;margin-bottom:11px}
+  .kindtabs span{font-size:12.5px;padding:8px 14px;border-radius:10px;cursor:pointer;
+    border:1px solid var(--line);display:flex;align-items:center;gap:7px}
+  .kindtabs span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .kindtabs .n{font-size:11px;opacity:.8}
+
+  .statebar{display:flex;gap:14px;font-size:11.5px;color:var(--sub);margin-bottom:14px;
+    padding-bottom:11px;border-bottom:1px solid var(--line2)}
+  .statebar b{color:var(--ink)}
+  .statebar .on{color:var(--luna-ink);font-weight:700}
+
+  /* 간소화된 카드 */
+  .card{border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:8px;
+    cursor:pointer;transition:background .12s}
+  .card:hover{background:#FBFAFF;border-color:#D9D4EE}
+  .ctop{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .tag{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:9px}
+  .tag.human{background:var(--hot-bg);color:var(--hot)}
+  .tag.self{background:var(--warn-bg);color:var(--warn)}
+  .tag.auto{background:var(--chip);color:var(--sub)}
+  .ctop .who{font-size:10.5px;color:var(--faint)}
+  .ctop .when{margin-left:auto;font-size:10.5px;color:var(--faint)}
+  .ctop .sc{font-size:10px;color:var(--faint)}
+  .ctop .sc b{color:var(--warn)}
+
+  .q{font-size:14.5px;font-weight:600;line-height:1.5;margin-bottom:6px}
+  .why{font-size:12.5px;line-height:1.7;color:#2a2c31;
+    background:var(--hot-bg);border-radius:8px;padding:8px 12px;margin-bottom:9px}
+  .why::before{content:'왜 아쉬웠나  ';color:var(--hot);font-size:10px;font-weight:700}
+  .why.self{background:#FBFBFC}
+  .why.self::before{content:'🌙 ';color:var(--sub)}
+
+  .acts{display:flex;gap:6px;align-items:center}
+  .btn{padding:6px 12px;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .btn.devb{background:var(--dev);color:#fff;border-color:var(--dev)}
+  .btn.ghost{color:var(--faint)}
+  .btn.sm{padding:4px 10px;font-size:10.5px}
+  .acts .sp{flex:1}
+  .acts .memo{font-size:10.5px;color:var(--faint)}
+
+  /* 팝업 */
+  .dim{position:absolute;inset:0;background:rgba(20,20,28,.42);border-radius:12px;
+    display:grid;place-items:center;padding:22px}
+  .modal{background:var(--panel);border-radius:14px;width:100%;max-width:620px;
+    max-height:100%;display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 16px 48px rgba(0,0,0,.24)}
+  .mhead{padding:13px 17px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;gap:9px}
+  .mhead .t{font-size:13.5px;font-weight:700}
+  .mhead .sub{font-size:10.5px;color:var(--faint)}
+  .mhead .sp{flex:1}
+  .mhead .x{font-size:16px;color:var(--faint);cursor:pointer;line-height:1}
+  .mbody{padding:16px 18px;overflow-y:auto;flex:1}
+  .mfoot{padding:12px 17px;border-top:1px solid var(--line);background:#FBFBFC;
+    display:flex;gap:7px;align-items:center}
+  .mfoot .memo{font-size:10.5px;color:var(--faint);margin-left:auto}
+
+  /* 대화 말풍선 */
+  .turn{margin-bottom:14px}
+  .turn.u{display:flex;justify-content:flex-end}
+  .bub{max-width:82%;font-size:12.5px;line-height:1.8;padding:11px 14px;border-radius:14px}
+  .turn.u .bub{background:var(--luna);color:#fff;border-radius:14px 14px 4px 14px}
+  .turn.l .bub{background:#F7F6FC;border:1px solid #E8E5F4;border-radius:4px 14px 14px 14px}
+  .turn .meta{font-size:10px;color:var(--faint);margin-top:5px}
+  .turn.u .meta{text-align:right}
+  .turn.focus .bub{box-shadow:0 0 0 2px var(--hot)}
+  .focusmark{font-size:10px;color:var(--hot);font-weight:700;margin-bottom:5px}
+  .ctxline{text-align:center;font-size:10.5px;color:var(--faint);margin:14px 0;
+    position:relative}
+  .ctxline::before{content:'';position:absolute;left:0;right:0;top:50%;
+    height:1px;background:var(--line2)}
+  .ctxline span{background:var(--panel);padding:0 10px;position:relative}
+  .srcline{font-size:10px;color:var(--faint);margin-top:7px}
+  .srcline span{background:var(--chip);padding:2px 7px;border-radius:8px;margin-right:4px}
+
+  /* 개선 입력 */
+  .improve{border:1px solid var(--luna);border-radius:11px;padding:13px 15px;margin-top:10px;
+    background:#FCFBFF}
+  .improve .l{font-size:12px;font-weight:700;color:var(--luna-ink);margin-bottom:7px}
+  .improve .ta{border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+    font-size:12.5px;line-height:1.75;background:var(--panel);min-height:56px;color:#2a2c31}
+  .improve .acts{margin-top:9px}
+
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 1. 목록 ══════ -->
+<div class="mocklabel">화면 1 — 카드는 질문과 사유만</div>
+<div class="note">답변 전문을 빼서 무엇이 문제인지 한눈에 보이게 합니다. 카드를 누르면 대화가 열립니다.</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="tabs1">
+      <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+      <span class="on">실패 수집 <span class="badge">22</span></span>
+      <span>지식후보</span><span>두뇌</span>
+    </div>
+
+    <div class="ptitle">실패 수집</div>
+    <p class="pdesc">잘 안 된 순간만 모읍니다. 카드를 누르면 그때 대화를 볼 수 있어요.</p>
+
+    <div class="kindtabs">
+      <span class="on">전체 <span class="n">22</span></span>
+      <span>👎 사람이 표시 <span class="n">18</span></span>
+      <span>🌙 루나가 낮게 평가 <span class="n">0</span></span>
+      <span>⚙ 자동 감지 <span class="n">4</span></span>
+    </div>
+
+    <div class="statebar">
+      <span class="on">확인할 것 <b>22</b></span>
+      <span>개선한 것 <b>0</b></span>
+      <span>스킵한 것 <b>0</b></span>
+      <span style="margin-left:auto">묶어 보기</span>
+    </div>
+
+    <div class="card">
+      <div class="ctop">
+        <span class="tag human">👎 사람이 표시</span>
+        <span class="who">이택진</span>
+        <span class="sc">의도 <b>9</b> · 자신감 <b>4</b></span>
+        <span class="when">어제 16:12</span>
+      </div>
+      <div class="q">미디어조형물 인허가 프로세스 알려줘</div>
+      <div class="why">미디어 조형물 사업 문서의 설치 가능성 검토, 심의 대응,
+        설치·납품과 유지보수 순으로 알려줘야 하는데 답변이 틀렸음</div>
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">눌러서 대화 보기</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctop">
+        <span class="tag human">👎 사람이 표시</span>
+        <span class="who">이택진</span>
+        <span class="sc">의도 <b>8</b> · 자신감 <b>7</b></span>
+        <span class="when">어제 15:40</span>
+      </div>
+      <div class="q">가상 테스트가 뭐야?</div>
+      <div class="why">인하우스 테스트라고 하지 인아웃테스트라는 말은 사용하지 않아</div>
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">눌러서 대화 보기</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctop">
+        <span class="tag auto">⚙ 자동 감지 · 못 찾음</span>
+        <span class="who">이택진</span>
+        <span class="sc">의도 <b>8</b> · 자신감 <b>5</b></span>
+        <span class="when">오늘 14:26</span>
+      </div>
+      <div class="q">아폴론 출장비 지급 기준이 어떻게 돼?</div>
+      <div class="why self">질문 의도는 명확하나, 보유 자료에서 출장비 지급 기준 규정을
+        찾지 못해 확실한 답변 제시 불가능</div>
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">눌러서 대화 보기</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctop">
+        <span class="tag human">👎 사람이 표시</span>
+        <span class="who">이택진</span>
+        <span class="when">어제 14:02</span>
+      </div>
+      <div class="q">내일 날씨</div>
+      <div class="why">웹 검색이 되는데 기능이 없다고 답함</div>
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">눌러서 대화 보기</span>
+      </div>
+    </div>
+
+    <p class="helper">사유가 없는 것은 「사유 없음」으로 보이고, 대화를 열어 확인할 수 있습니다.</p>
+  </div>
+</div>
+
+
+<!-- ══════ 2. 대화 팝업 ══════ -->
+<div class="secthead">화면 2 — 카드를 누르면 대화가 열린다</div>
+<p class="sectsub">앞뒤 맥락을 함께 보여줍니다. 페이지를 떠나지 않습니다.</p>
+
+<div class="screen" style="min-height:640px">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body" style="opacity:.35">
+    <div class="ptitle">실패 수집</div>
+    <p class="pdesc">잘 안 된 순간만 모읍니다.</p>
+    <div class="card"><div class="q">미디어조형물 인허가 프로세스 알려줘</div></div>
+    <div class="card"><div class="q">가상 테스트가 뭐야?</div></div>
+  </div>
+
+  <div class="dim">
+    <div class="modal">
+      <div class="mhead">
+        <div>
+          <div class="t">미디어조형물 인허가 프로세스 알려줘</div>
+          <div class="sub">어제 16:12 · 이택진 · 👎 사람이 표시</div>
+        </div>
+        <span class="sp"></span>
+        <span class="x">✕</span>
+      </div>
+
+      <div class="mbody">
+        <div class="ctxline"><span>앞선 대화</span></div>
+
+        <div class="turn u">
+          <div>
+            <div class="bub">미디어 조형물 사업이 뭐야?</div>
+            <div class="meta">16:08</div>
+          </div>
+        </div>
+
+        <div class="turn l">
+          <div class="bub">미디어 조형물은 건축물 앞 공개공지나 광장에 설치하는
+            미디어 기반 조형물이에요. 아폴론은 기획·설계부터 콘텐츠까지 맡습니다.</div>
+          <div class="meta">위키 2건 · 기억 6건 · 8.2초</div>
+        </div>
+
+        <div class="ctxline"><span>여기서 아쉬웠다</span></div>
+
+        <div class="turn u">
+          <div>
+            <div class="bub">미디어조형물 인허가 프로세스 알려줘</div>
+            <div class="meta">16:12</div>
+          </div>
+        </div>
+
+        <div class="turn l focus">
+          <div class="focusmark">👎 이 답변에 표시했습니다</div>
+          <div class="bub">미디어조형물 인허가는 조형물의 설치 위치·규모·구조·전기·용도에
+            따라 달라지며, 아폴론이 단독으로 건축설계·인허가를 진행하는 구조는 아닙니다.
+            관련 자격이 없어 건축사·시공사 등 자격 보유 파트너와 컨소시엄으로 진행해야 합니다.<br><br>
+            일반적인 흐름은 다음과 같습니다.<br>
+            1. 기초 검토: 설치 위치, 층고·구조 하중, 외부 조망·동선, 전원·통신, 소방…<br>
+            2. 설치 계획 수립: 조형물 디자인, 구조·전기·제어 계획…<br>
+            3. 관계 전문 분야 검토: 건축·구조·전기·소방·조경…<br>
+            4. 건축주·건물 관리 부서 협의 및 인허가 신청…</div>
+          <div class="srcline">
+            <span>위키 0건</span><span>기억 10건</span><span>웹 5건</span>
+            <span>의도 9 · 자신감 4</span>
+          </div>
+          <div class="meta">16:12 · 24.2초</div>
+        </div>
+
+        <div style="background:var(--hot-bg);border-radius:10px;padding:11px 14px;
+          font-size:12px;line-height:1.75;color:#2a2c31;margin-top:4px">
+          <b style="color:var(--hot);font-size:10px">왜 아쉬웠나</b><br>
+          미디어 조형물 사업 문서의 설치 가능성 검토, 심의 대응,
+          설치·납품과 유지보수 순으로 알려줘야 하는데 답변이 틀렸음
+        </div>
+
+        <div class="ctxline"><span>이후 대화</span></div>
+
+        <div class="turn u">
+          <div>
+            <div class="bub">그 문서 어디 있어?</div>
+            <div class="meta">16:15</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mfoot">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="btn">닫기</span>
+        <span class="memo">전체 대화 열기 ↗</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 3. 팝업 안에서 개선 ══════ -->
+<div class="secthead">화면 3 — 대화를 보고 그 자리에서 개선</div>
+<p class="sectsub">닫았다 다시 찾지 않아도 됩니다.</p>
+
+<div class="screen" style="min-height:520px">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body" style="opacity:.35">
+    <div class="ptitle">실패 수집</div>
+    <div class="card"><div class="q">미디어조형물 인허가 프로세스 알려줘</div></div>
+  </div>
+
+  <div class="dim">
+    <div class="modal">
+      <div class="mhead">
+        <div>
+          <div class="t">미디어조형물 인허가 프로세스 알려줘</div>
+          <div class="sub">어제 16:12 · 이택진 · 👎 사람이 표시</div>
+        </div>
+        <span class="sp"></span>
+        <span class="x">✕</span>
+      </div>
+
+      <div class="mbody">
+        <div class="turn l focus">
+          <div class="focusmark">👎 이 답변에 표시했습니다</div>
+          <div class="bub">미디어조형물 인허가는 조형물의 설치 위치·규모·구조·전기·용도에
+            따라 달라지며… (일반론만 답함)</div>
+          <div class="srcline"><span>위키 0건</span><span>웹 5건</span></div>
+        </div>
+
+        <div class="improve">
+          <div class="l">이렇게 했어야 해요</div>
+          <div class="ta">「미디어 조형물 사업」 문서의
+설치 가능성 검토 → 심의 대응 → 설치·납품과 유지보수 순으로 답해야 해.
+「인허가」로 물으면 그 문서를 못 찾는 것 같아.</div>
+          <div class="acts">
+            <span class="btn primary">보내기</span>
+            <span class="btn">취소</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mfoot">
+        <span class="memo" style="margin-left:0">보내면 DB 수정과 Cursor 프롬프트로 나눠 드립니다</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

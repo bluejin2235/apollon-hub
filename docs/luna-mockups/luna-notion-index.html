@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>노션 색인 관리</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --ok:#0F6E56; --ok-bg:#E6F5EF;
+    --warn:#B0782B; --warn-bg:#FBF3E4;
+    --hot:#C0392B; --hot-bg:#FDECEA;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:920px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:30px 0 4px;padding-top:18px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:21px;height:21px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:10px;font-weight:800}
+  .hubname{font-size:12.5px;font-weight:800}
+  .hubright{margin-left:auto;font-size:11px;color:var(--sub)}
+  .body{padding:16px 22px 22px}
+
+  .tabs1{display:flex;gap:6px;background:#F7F7F9;border-radius:10px;padding:4px;
+    margin-bottom:11px;width:fit-content}
+  .tabs1 span{font-size:12px;padding:6px 12px;border-radius:8px;color:var(--sub)}
+  .tabs1 span.on{background:var(--panel);color:var(--ink);font-weight:700;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tabs2{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .tabs2 span{font-size:12.5px;padding:7px 0;color:var(--sub);border-bottom:2px solid transparent}
+  .tabs2 span.on{color:var(--ink);font-weight:700;border-bottom-color:var(--luna)}
+
+  .ptitle{font-size:16px;font-weight:800;margin-bottom:14px}
+
+  /* 상태 카드 */
+  .status{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:11px;
+    display:flex;align-items:center;gap:11px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex-shrink:0}
+  .dot.warn{background:var(--warn)}
+  .status .c{flex:1}
+  .status .t{font-size:13px;font-weight:700}
+  .status .s{font-size:11px;color:var(--faint);margin-top:2px}
+  .btn{padding:7px 13px;border-radius:9px;font-size:11.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;white-space:nowrap}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.sm{padding:5px 10px;font-size:10.5px}
+
+  /* 숫자 4칸 */
+  .nums{display:flex;gap:9px;margin-bottom:11px}
+  .num{flex:1;border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .num .l{font-size:10.5px;color:var(--faint);margin-bottom:5px}
+  .num .v{font-size:19px;font-weight:800;line-height:1}
+  .num .m{font-size:10.5px;color:var(--faint);margin-top:5px}
+  .num .m.up{color:var(--ok)}
+
+  /* 예약 */
+  .box{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:11px}
+  .boxhead{padding:11px 15px;border-bottom:1px solid var(--line2);background:#FBFBFC;
+    display:flex;align-items:center;gap:9px}
+  .boxhead .t{font-size:12.5px;font-weight:700}
+  .boxhead .s{font-size:10.5px;color:var(--faint)}
+  .boxhead .sp{flex:1}
+  .boxbody{padding:0}
+
+  .schrow{display:flex;align-items:center;gap:12px;padding:13px 15px;
+    border-bottom:1px solid var(--line2)}
+  .schrow:last-child{border-bottom:0}
+  .sw{width:34px;height:19px;border-radius:12px;background:var(--luna);position:relative;
+    flex-shrink:0;cursor:pointer}
+  .sw::after{content:'';position:absolute;top:2px;right:2px;width:15px;height:15px;
+    border-radius:50%;background:#fff}
+  .sw.off{background:var(--line)}
+  .sw.off::after{right:auto;left:2px}
+  .schrow .tm{font-size:15px;font-weight:800;font-family:var(--mono);width:58px}
+  .schrow .c{flex:1;min-width:0}
+  .schrow .t{font-size:12.5px;font-weight:600}
+  .schrow .s{font-size:10.5px;color:var(--faint);margin-top:2px;line-height:1.6}
+  .schrow .kind{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:9px}
+  .kind.full{background:var(--luna-soft);color:var(--luna-ink)}
+  .kind.inc{background:var(--chip);color:var(--sub)}
+
+  .warnline{padding:10px 15px;background:var(--warn-bg);font-size:11px;color:var(--warn);
+    line-height:1.6;border-top:1px solid var(--line2)}
+
+  /* 이력 */
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10.5px;color:var(--faint);text-align:left;padding:8px 15px;
+    border-bottom:1px solid var(--line2);font-weight:600;background:#FBFBFC}
+  th.r,td.r{text-align:right}
+  td{font-size:11.5px;padding:10px 15px;border-bottom:1px solid var(--line2)}
+  tr:last-child td{border-bottom:0}
+  .st{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:9px}
+  .st.ok{background:var(--ok-bg);color:var(--ok)}
+  .st.fail{background:var(--hot-bg);color:var(--hot)}
+  .st.run{background:var(--luna-soft);color:var(--luna-ink)}
+  td .why{font-size:10.5px;color:var(--hot);margin-top:3px}
+  .mono{font-family:var(--mono);font-size:10.5px;color:var(--sub)}
+
+  /* 검색 규칙 (기존 유지) */
+  .rule{display:flex;justify-content:space-between;padding:9px 0;font-size:12px;
+    border-bottom:1px solid var(--line2)}
+  .rule:last-child{border-bottom:0}
+  .rule .l{color:var(--sub)}
+  .rule .v{font-weight:600}
+
+  .two{display:flex;gap:11px}
+  .two > div{flex:1}
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="mocklabel">설정 &gt; LUNA &gt; 지식 &gt; 노션</div>
+<div class="note">지금은 연결 상태와 검색 규칙만 있습니다. 색인 상태·예약·이력을 넣습니다.</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트 / 슈퍼관리자</div>
+  </div>
+  <div class="body">
+    <div class="tabs1">
+      <span>대시보드</span><span class="on">지식</span><span>대화</span><span>자습</span>
+      <span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+    </div>
+    <div class="tabs2">
+      <span>아폴론 지식</span><span>용어사전</span><span>위키</span>
+      <span>충돌 보류함</span><span>Work서버</span><span class="on">노션</span>
+    </div>
+
+    <div class="ptitle">노션</div>
+
+    <!-- 연결 -->
+    <div class="status">
+      <span class="dot"></span>
+      <div class="c">
+        <div class="t">연결됨</div>
+        <div class="s">통합 토큰 정상 · 팀스페이스 3곳 · 접근 가능 페이지 1,860</div>
+      </div>
+      <span class="btn">연결 테스트</span>
+    </div>
+
+    <!-- 색인 현황 -->
+    <div class="nums">
+      <div class="num">
+        <div class="l">색인된 페이지</div>
+        <div class="v">1,860</div>
+        <div class="m">전체와 같음</div>
+      </div>
+      <div class="num">
+        <div class="l">블록</div>
+        <div class="v">76,308</div>
+        <div class="m">평균 41개</div>
+      </div>
+      <div class="num">
+        <div class="l">임베딩</div>
+        <div class="v">28,537</div>
+        <div class="m">15자 미만 제외</div>
+      </div>
+      <div class="num">
+        <div class="l">마지막 색인</div>
+        <div class="v" style="font-size:15px">오늘 13:30</div>
+        <div class="m up">바뀐 것 12건</div>
+      </div>
+    </div>
+
+    <!-- 예약 -->
+    <div class="box">
+      <div class="boxhead">
+        <span class="t">언제 색인하나</span>
+        <span class="s">노션은 읽기만 하므로 업무 중에 돌려도 영향이 없습니다</span>
+        <span class="sp"></span>
+        <span class="btn primary sm">지금 색인</span>
+      </div>
+      <div class="boxbody">
+        <div class="schrow">
+          <span class="sw"></span>
+          <span class="tm">03:20</span>
+          <div class="c">
+            <div class="t">전체 훑기 <span class="kind full">전체</span></div>
+            <div class="s">모든 페이지를 확인하고, 노션에서 사라진 것을 정리합니다.
+              Work서버 스캔(03:00)이 끝난 뒤입니다.</div>
+          </div>
+          <span class="btn sm">시각 바꾸기</span>
+        </div>
+        <div class="schrow">
+          <span class="sw"></span>
+          <span class="tm">13:30</span>
+          <div class="c">
+            <div class="t">바뀐 것만 <span class="kind inc">증분</span></div>
+            <div class="s">점심시간이라 노션을 쓰는 사람이 적습니다.
+              마지막 색인 이후 수정된 페이지만 다시 읽습니다.</div>
+          </div>
+          <span class="btn sm">시각 바꾸기</span>
+        </div>
+      </div>
+      <div class="warnline">
+        바뀐 페이지가 없으면 요청 한 번으로 끝납니다. 비용은 거의 들지 않습니다.
+      </div>
+    </div>
+
+    <!-- 이력 -->
+    <div class="box">
+      <div class="boxhead">
+        <span class="t">색인 이력</span>
+        <span class="s">최근 10회</span>
+      </div>
+      <table>
+        <tr>
+          <th style="width:130px">시각</th>
+          <th style="width:70px">종류</th>
+          <th class="r" style="width:80px">페이지</th>
+          <th class="r" style="width:80px">임베딩</th>
+          <th class="r" style="width:70px">걸린 시간</th>
+          <th style="width:90px">결과</th>
+        </tr>
+        <tr>
+          <td>오늘 13:30</td>
+          <td><span class="kind inc">증분</span></td>
+          <td class="r">12 / 1,860</td>
+          <td class="r">+186</td>
+          <td class="r">42초</td>
+          <td><span class="st ok">완료</span></td>
+        </tr>
+        <tr>
+          <td>오늘 03:20</td>
+          <td><span class="kind full">전체</span></td>
+          <td class="r">1,860</td>
+          <td class="r">+340</td>
+          <td class="r">6분 12초</td>
+          <td><span class="st ok">완료</span></td>
+        </tr>
+        <tr>
+          <td>어제 13:30</td>
+          <td><span class="kind inc">증분</span></td>
+          <td class="r">8 / 1,860</td>
+          <td class="r">+94</td>
+          <td class="r">31초</td>
+          <td><span class="st ok">완료</span></td>
+        </tr>
+        <tr>
+          <td>어제 03:20</td>
+          <td><span class="kind full">전체</span></td>
+          <td class="r">1,326 / 1,860</td>
+          <td class="r">+22,726</td>
+          <td class="r">33분 43초</td>
+          <td><span class="st ok">완료</span>
+            <div class="why" style="color:var(--faint)">첫 전체 색인</div></td>
+        </tr>
+        <tr>
+          <td>어제 14:22</td>
+          <td><span class="kind full">전체</span></td>
+          <td class="r">525 / 1,860</td>
+          <td class="r">+5,689</td>
+          <td class="r">13분</td>
+          <td><span class="st fail">실패</span>
+            <div class="why">임베딩 저장 시간 초과</div></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 검색 규칙 -->
+    <div class="two">
+      <div class="box">
+        <div class="boxhead"><span class="t">검색 규칙</span></div>
+        <div style="padding:4px 15px 11px">
+          <div class="rule"><span class="l">먼저 보는 것</span><span class="v">색인</span></div>
+          <div class="rule"><span class="l">실시간 조회</span><span class="v">최근 수정분만</span></div>
+          <div class="rule"><span class="l">결과 없을 때</span><span class="v">웹으로 보완</span></div>
+          <div class="rule"><span class="l">출처 표기</span><span class="v">노션 / 워크 구분</span></div>
+        </div>
+        <div class="warnline" style="background:#FBFBFC;color:var(--faint)">
+          구체은 두뇌 &gt; L3-02 자료 찾기에서 관리합니다
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="boxhead"><span class="t">색인에서 빼는 것</span>
+          <span class="sp"></span><span class="btn sm">＋ 추가</span></div>
+        <div style="padding:4px 15px 11px">
+          <div class="rule"><span class="l">15자 미만 블록</span><span class="v">제외</span></div>
+          <div class="rule"><span class="l">이미지·파일 캡션</span><span class="v">포함</span></div>
+          <div class="rule"><span class="l">통합 캘린더</span><span class="v">제외</span></div>
+        </div>
+        <div class="warnline" style="background:#FBFBFC;color:var(--faint)">
+          쓸모없는 페이지를 빼면 검색이 정확해지고 비용도 줄어듭니다
+        </div>
+      </div>
+    </div>
+
+    <p class="helper">
+      색인은 노션을 <b>읽기만</b> 합니다. 쓰지 않으므로 업무 중에 돌아도 사용자는 느끼지 못합니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 색인 중 ══════ -->
+<div class="secthead">색인이 도는 중일 때</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트 / 슈퍼관리자</div>
+  </div>
+  <div class="body">
+    <div class="ptitle">노션</div>
+
+    <div class="status" style="border-color:#C9C3E8;background:#FCFBFF">
+      <span class="dot" style="background:var(--luna)"></span>
+      <div class="c">
+        <div class="t">색인 중 · 전체 훑기</div>
+        <div class="s">1,240 / 1,860 페이지 · 블록 51,200 · 임베딩 19,400 · 4분 12초 경과</div>
+      </div>
+      <span class="btn">중단</span>
+    </div>
+
+    <div style="height:5px;border-radius:3px;background:var(--chip);overflow:hidden;margin-bottom:14px">
+      <div style="height:100%;width:67%;background:var(--luna)"></div>
+    </div>
+
+    <p class="helper" style="margin-top:0">
+      중단해도 지금까지 색인한 것은 남습니다. 다시 시작하면 이어서 합니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 실패 ══════ -->
+<div class="secthead">실패했을 때</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright">이택진 / 공간파트 / 슈퍼관리자</div>
+  </div>
+  <div class="body">
+    <div class="ptitle">노션</div>
+
+    <div class="status" style="border-color:#F0D5D0;background:#FEF8F7">
+      <span class="dot" style="background:var(--hot)"></span>
+      <div class="c">
+        <div class="t" style="color:var(--hot)">오늘 03:20 색인 실패</div>
+        <div class="s">임베딩 저장 시간 초과 · 525 / 1,860 에서 멈춤<br>
+          <b>이전 색인은 그대로 있습니다.</b> 검색은 정상 작동합니다.</div>
+      </div>
+      <span class="btn primary">다시 시도</span>
+    </div>
+
+    <div class="nums">
+      <div class="num">
+        <div class="l">색인된 페이지</div>
+        <div class="v">1,860</div>
+        <div class="m" style="color:var(--warn)">어제 13:30 기준</div>
+      </div>
+      <div class="num">
+        <div class="l">블록</div>
+        <div class="v">76,308</div>
+        <div class="m">&nbsp;</div>
+      </div>
+      <div class="num">
+        <div class="l">임베딩</div>
+        <div class="v">28,537</div>
+        <div class="m">&nbsp;</div>
+      </div>
+      <div class="num">
+        <div class="l">마지막 성공</div>
+        <div class="v" style="font-size:15px">어제 13:30</div>
+        <div class="m" style="color:var(--warn)">18시간 전</div>
+      </div>
+    </div>
+
+    <p class="helper" style="margin-top:0">
+      실패해도 이전 색인이 지워지지 않습니다. 검색은 계속 됩니다.<br>
+      슈퍼관리자에게 알림이 갑니다.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

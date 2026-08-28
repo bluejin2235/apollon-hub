@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>위키 개편 — 메뉴·편집·멀티미디어</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --lock:#8A6D2F; --lock-bg:#FAF3E2;
+    --term-bg:#F0EEFA; --term-line:#B9B4D8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:9px;line-height:1.65}
+  .urlbar{font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:9px;
+    background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 11px}
+  .secthead{font-size:13px;font-weight:800;margin:34px 0 4px;padding-top:20px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .hubname{font-size:13px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--sub)}
+  .hubright .ic{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:10px;color:var(--faint)}
+
+  .page{display:flex;min-height:440px}
+  .side{width:184px;border-right:1px solid var(--line);padding:14px 0;flex-shrink:0;
+    display:flex;flex-direction:column}
+  .sidetop{padding:0 13px 10px;display:flex;align-items:center;gap:7px}
+  .sidetop .mark{width:22px;height:22px;border-radius:7px;background:var(--luna);
+    color:#fff;display:grid;place-items:center;font-size:10px}
+  .sidetop .nm{font-size:13px;font-weight:700}
+  .backrow{padding:0 9px 10px;border-bottom:1px solid var(--line2);margin-bottom:10px}
+  .backrow .b{padding:6px 9px;border-radius:8px;font-size:11.5px;color:var(--luna);
+    font-weight:600;cursor:pointer;background:var(--luna-soft)}
+  .navsec{padding:0 9px;margin-bottom:11px}
+  .navlabel{font-size:9.5px;color:var(--faint);padding:0 9px;margin-bottom:5px}
+  .nav{display:flex;align-items:center;gap:6px;padding:6px 9px;border-radius:8px;
+    font-size:12px;color:var(--sub);cursor:pointer;margin-bottom:1px}
+  .nav.on{background:var(--luna-soft);color:var(--luna-ink);font-weight:700}
+  .nav .n{margin-left:auto;font-size:10px;color:var(--faint)}
+  .sidefoot{margin-top:auto;padding:10px 13px 0;border-top:1px solid var(--line2)}
+  .sidefoot .add{font-size:11px;color:var(--luna);cursor:pointer;font-weight:600}
+
+  .main{flex:1;min-width:0;padding:15px 20px}
+  .crumb{font-size:11px;color:var(--faint);margin-bottom:8px}
+  .crumb a{color:var(--luna);text-decoration:none}
+  .crumb .sep{margin:0 5px;color:var(--line)}
+  .doctitle{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .doctitle .lock{font-size:9.5px;font-weight:700;background:var(--lock-bg);color:var(--lock);
+    padding:3px 8px;border-radius:9px;vertical-align:5px;margin-left:7px}
+  .docmeta{font-size:10.5px;color:var(--faint);margin:4px 0 11px}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:15px}
+  .tab{font-size:12px;padding:7px 13px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.on{color:var(--ink);font-weight:700;border-bottom-color:var(--luna)}
+  .tabs .right{margin-left:auto;display:flex;gap:6px;padding-bottom:5px}
+
+  .btn{padding:6px 11px;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c;white-space:nowrap}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.sm{padding:4px 9px;font-size:10.5px}
+
+  /* 목록 */
+  .list{border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 13px;
+    border-bottom:1px solid var(--line2);cursor:pointer}
+  .row:last-child{border-bottom:0}
+  .row:hover{background:#FBFAFF}
+  .row .t{font-size:12.5px;font-weight:600;min-width:150px}
+  .row .s{flex:1;font-size:11px;color:var(--sub);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .row .w{font-size:10px;color:var(--faint)}
+  .row .d{font-size:10px;color:var(--faint);width:38px;text-align:right}
+
+  /* 본문 */
+  .sec{margin-bottom:18px}
+  .sech{display:flex;align-items:baseline;gap:8px;padding-bottom:4px;
+    border-bottom:1px solid var(--line2);margin-bottom:8px}
+  .sech h3{font-size:14.5px;font-weight:700}
+  .sech .edit{margin-left:auto;font-size:10.5px;color:var(--luna);cursor:pointer}
+  .secbody{font-size:12.5px;line-height:1.9;color:#2a2c31}
+  .term{background:var(--term-bg);border-radius:3px;padding:1px 3px;margin:0 -1px;
+    border-bottom:1.5px solid var(--term-line);cursor:pointer}
+
+  /* 미디어 */
+  .media{margin:11px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .media .ph{height:150px;background:linear-gradient(135deg,#E8E5F4,#F5F4FA);
+    display:grid;place-items:center;color:var(--faint);font-size:11.5px}
+  .media .cap{padding:7px 11px;font-size:10.5px;color:var(--faint);background:#FBFBFC}
+  .yt{margin:11px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    position:relative;cursor:pointer}
+  .yt .ph{height:170px;background:linear-gradient(135deg,#2C2A38,#4A4560);
+    display:grid;place-items:center}
+  .yt .play{width:48px;height:34px;background:rgba(255,0,0,.85);border-radius:9px;
+    display:grid;place-items:center;color:#fff;font-size:15px}
+  .yt .cap{padding:8px 11px;font-size:11px;color:var(--sub);background:#FBFBFC;
+    display:flex;align-items:center;gap:7px}
+  .yt .cap .yb{font-size:9px;background:#FF0000;color:#fff;padding:1px 6px;border-radius:4px;font-weight:700}
+  .exlink{color:var(--luna);text-decoration:none;border-bottom:1px solid #DDD9F2}
+  .exlink::after{content:' ↗';font-size:9px;color:var(--faint)}
+
+  /* 편집기 */
+  .editor{border:1px solid var(--luna);border-radius:11px;overflow:hidden}
+  .etoolbar{display:flex;gap:2px;padding:7px 11px;border-bottom:1px solid var(--line2);
+    background:#FBFBFC;flex-wrap:wrap;align-items:center}
+  .etoolbar span{font-size:11px;padding:4px 8px;border-radius:6px;color:var(--sub);cursor:pointer}
+  .etoolbar span:hover{background:var(--chip)}
+  .etoolbar .div{width:1px;height:15px;background:var(--line);margin:0 4px}
+  .etitle{padding:12px 14px 0}
+  .etitle input{width:100%;border:0;font-size:19px;font-weight:800;outline:0;
+    padding:5px 0;border-bottom:1px dashed var(--line)}
+  .etitle .hint{font-size:10px;color:var(--faint);margin:4px 0 0}
+  .ebody{padding:12px 14px;font-size:12.5px;line-height:1.95;color:#2a2c31;
+    background:#FCFCFD;min-height:230px}
+  .ebody .sh{font-size:14px;font-weight:700;margin:14px 0 6px;padding:3px 6px;
+    background:#F4F3FA;border-radius:5px;display:inline-block}
+  .ebody .sh:first-child{margin-top:0}
+  .ebody p{margin-bottom:9px}
+  .efoot{border-top:1px solid var(--line);padding:11px 14px;background:var(--panel)}
+  .sumlabel{font-size:10.5px;color:var(--sub);margin-bottom:5px}
+  .suminput{border:1px solid var(--line);border-radius:8px;padding:7px 11px;
+    font-size:11.5px;color:var(--faint);margin-bottom:10px}
+  .eacts{display:flex;gap:6px;align-items:center}
+  .eacts .hint{margin-left:auto;font-size:10.5px;color:var(--faint)}
+
+  /* 절 편집 (스크롤 없음) */
+  .seced{border:1px solid var(--luna);border-radius:11px;overflow:hidden;margin:10px 0}
+  .secedbar{background:var(--luna-soft);padding:8px 12px;font-size:11.5px;
+    color:var(--luna-ink);font-weight:600;display:flex;gap:8px;align-items:center}
+  .secedbar input{border:1px solid #CFC9EC;border-radius:6px;padding:3px 8px;
+    font-size:12px;font-weight:700;background:#fff;outline:0;width:180px}
+  .secedbar .x{margin-left:auto;cursor:pointer;color:var(--sub)}
+  .secedbody{padding:12px 14px;font-size:12.5px;line-height:1.95;background:#FCFCFD}
+
+  /* 옮기기 */
+  .movebox{border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .moveopts{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0 12px}
+  .moveopts span{font-size:11.5px;padding:6px 12px;border-radius:9px;
+    border:1px solid var(--line);cursor:pointer}
+  .moveopts span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:600}
+
+  /* 메뉴 관리 */
+  .menurow{display:flex;align-items:center;gap:10px;padding:10px 13px;
+    border-bottom:1px solid var(--line2);font-size:12.5px}
+  .menurow:last-child{border-bottom:0}
+  .menurow .grip{color:var(--faint);cursor:grab;font-size:13px}
+  .menurow .nm{font-weight:600;min-width:110px}
+  .menurow .cnt{font-size:10.5px;color:var(--faint);width:36px}
+  .menurow .perm{font-size:10px;padding:2px 8px;border-radius:9px;background:var(--chip);color:var(--sub)}
+  .menurow .perm.adm{background:var(--lock-bg);color:var(--lock)}
+  .menurow .sp{flex:1}
+
+  .urltable{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px}
+  .urltable table{width:100%;border-collapse:collapse}
+  .urltable th{font-size:10.5px;color:var(--faint);text-align:left;padding:6px 8px;
+    border-bottom:1px solid var(--line);font-weight:600}
+  .urltable td{font-size:11.5px;padding:7px 8px;border-bottom:1px solid var(--line2)}
+  .urltable td:first-child{font-family:var(--mono);font-size:11px;color:var(--luna-ink);width:44%}
+  .urltable tr:last-child td{border-bottom:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ URL ══════ -->
+<div class="mocklabel">URL — 문서는 위키 바로 아래. 메뉴를 옮겨도 주소가 안 바뀐다</div>
+<div class="urltable">
+  <table>
+    <tr><th>주소</th><th>무엇</th></tr>
+    <tr><td>/wiki</td><td>홈 → 용어사전으로</td></tr>
+    <tr><td>/wiki/terms</td><td>용어사전 (별도)</td></tr>
+    <tr><td>/wiki/list/projects</td><td>프로젝트 사례 목록</td></tr>
+    <tr><td>/wiki/list/business</td><td>사업 영역 목록</td></tr>
+    <tr><td>/wiki/list/workflow</td><td>일하는 방식 목록</td></tr>
+    <tr><td>/wiki/list/rules</td><td>인사·규정 목록</td></tr>
+    <tr><td><b>/wiki/gwangan-kcc-switzen</b></td><td><b>문서 보기 — 메뉴가 주소에 없다</b></td></tr>
+    <tr><td>/wiki/gwangan-kcc-switzen/edit</td><td>전체 편집</td></tr>
+    <tr><td>/wiki/gwangan-kcc-switzen/edit?section=s2</td><td>그 절만</td></tr>
+    <tr><td>/wiki/gwangan-kcc-switzen/history</td><td>변경 이력</td></tr>
+    <tr><td>/wiki/new</td><td>새 문서</td></tr>
+    <tr><td>/wiki/menus</td><td>메뉴 관리 (관리자)</td></tr>
+  </table>
+  <p style="font-size:11px;color:var(--faint);margin-top:10px;line-height:1.65">
+    문서를 「프로젝트 사례」에서 「사업 영역」으로 옮겨도
+    <span style="font-family:var(--mono)">/wiki/gwangan-kcc-switzen</span> 은 그대로다.
+    링크가 깨지지 않는다.
+  </p>
+</div>
+
+
+<!-- ══════ 1. 목록 ══════ -->
+<div class="secthead">① 왼쪽 메뉴 재구성</div>
+<p class="sectsub">양식·기준·규정 → 성격에 맞는 이름으로. 메뉴는 화면에서 추가·수정할 수 있다.</p>
+<div class="urlbar">localhost:3000/wiki/list/projects</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav on">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">인사·규정 🔒 <span class="n">7</span></div>
+      </div>
+      <div class="sidefoot"><span class="add">＋ 메뉴 관리</span></div>
+    </div>
+
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span>프로젝트 사례</div>
+      <h1 class="doctitle" style="font-size:18px">프로젝트 사례</h1>
+      <p class="docmeta">우리가 한 일. 무엇을 만들었고 무엇을 배웠나 · 누구나 고칠 수 있어요</p>
+
+      <div style="display:flex;gap:6px;margin-bottom:11px">
+        <div style="flex:1;border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+          font-size:12px;color:var(--faint)">이름으로 찾기</div>
+        <div class="btn primary">＋ 새 문서</div>
+      </div>
+
+      <div class="list">
+        <div class="row"><span class="t">광안리 KCC 스위첸</span>
+          <span class="s">주거 공간에 들어간 첫 미디어 조형물, 해안 염분 대응</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+        <div class="row"><span class="t">북한강 스타벅스R</span>
+          <span class="s">루프탑의 나쁜 뷰를 가리는 문 형태 미디어 조형물</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+        <div class="row"><span class="t">역삼 아시아미디어센터</span>
+          <span class="s">공개공지를 야외 미디어 갤러리로 바꾼 사례</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+        <div class="row"><span class="t">스타에비뉴 리뉴얼</span>
+          <span class="s">통로를 목적지로 바꾼 롯데면세점 명동 리뉴얼</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+        <div class="row"><span class="t">트렌디·유스타운</span>
+          <span class="s">최대 규모 미디어 아키텍처. 컨셉부터 인허가까지</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+        <div class="row"><span class="t">LUNAR CRESCENDO</span>
+          <span class="s">작가 이름을 걸고 하드웨어부터 설계한 공공 작품</span>
+          <span class="w">인터뷰 정리</span><span class="d">8/18</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 2. 문서 보기 ══════ -->
+<div class="secthead">② 문서 보기 — 이미지·유튜브·외부 링크</div>
+<div class="urlbar">localhost:3000/wiki/gwangan-kcc-switzen</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 멤버</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav on">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">인사·규정 🔒 <span class="n">7</span></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>프로젝트 사례</a>
+        <span class="sep">›</span>광안리 KCC 스위첸</div>
+      <h1 class="doctitle">광안리 KCC 스위첸 — Quartz Cube</h1>
+      <p class="docmeta">인터뷰 정리가 8월 18일에 마지막으로 고침 · 2판 · 루나가 3번 사용</p>
+
+      <div class="tabs">
+        <div class="tab on">읽기</div>
+        <div class="tab">고치기</div>
+        <div class="tab">변경 이력</div>
+        <div class="right"><span class="btn sm">다른 메뉴로 옮기기</span></div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>무엇을 만들었나</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          오피스텔 1층 <span class="term">공개공지</span>에 설치한 미디어 조형물이다.
+          정육면체 6면 중 3면은 LED 미디어, 3면은 미러 스테인리스로 구성했다.
+        </div>
+        <div class="media">
+          <div class="ph">📷 quartz-cube-full.jpg</div>
+          <div class="cap">완공 후 야간 전경 · 2022.9</div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>가장 중요하게 본 것 — 염분</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          해안에서 300m 거리라 염분 대응이 관건이었다.
+          외장은 스테인리스 316L, 내부는 별도 밀폐 처리했다.
+          자세한 기준은 <a class="exlink">한국건설기술연구원 해안 부식 지침</a>을 참고했다.
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sech"><h3>발주 구조</h3><span class="edit">고치기</span></div>
+        <div class="secbody">
+          실제 고객사는 <span class="term">시행사</span> MDM이었으나 계약은 KCC건설과 체결했다.
+          <span class="term">발주</span> 주체와 의사결정 주체가 다른 특이한 구조였다.
+        </div>
+        <div class="yt">
+          <div class="ph"><div class="play">▶</div></div>
+          <div class="cap"><span class="yb">YouTube</span>
+            <span>Quartz Cube 미디어 연출 — 아폴론이머시브웍스</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 3. 절 편집 ══════ -->
+<div class="secthead">③ 절 편집 — 제목도 고칠 수 있고, 스크롤이 없다</div>
+<p class="sectsub">내용이 길어도 전체가 다 보인다. 편집창 안에서 스크롤하지 않는다.</p>
+<div class="urlbar">localhost:3000/wiki/gwangan-kcc-switzen/edit?section=s3</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 멤버</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page" style="min-height:380px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav on">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">인사·규정 🔒 <span class="n">7</span></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>프로젝트 사례</a>
+        <span class="sep">›</span><a>광안리 KCC 스위첸</a><span class="sep">›</span>고치기</div>
+      <h1 class="doctitle" style="font-size:17px">광안리 KCC 스위첸 — Quartz Cube</h1>
+      <p class="docmeta">이 절만 고치는 중 · 다른 부분은 그대로 둡니다</p>
+
+      <div class="seced">
+        <div class="secedbar">
+          <span>절 제목</span>
+          <input value="발주 구조">
+          <span class="x">✕ 취소</span>
+        </div>
+        <div class="etoolbar">
+          <span><b>B</b></span><span><i>I</i></span><span>• 목록</span><span>1. 번호</span>
+          <div class="div"></div>
+          <span>🔗 링크</span><span>📷 이미지</span><span>▶ 유튜브</span>
+        </div>
+        <div class="secedbody">실제 고객사는 시행사 MDM이었으나 계약은 KCC건설과 체결했다.
+발주 주체와 의사결정 주체가 다른 특이한 구조였다.
+
+[유튜브] Quartz Cube 미디어 연출 — 아폴론이머시브웍스</div>
+        <div class="efoot">
+          <p class="sumlabel">무엇을 왜 바꾸셨나요? <span style="color:var(--faint)">이력에 남습니다</span></p>
+          <div class="suminput">예) 유튜브 영상 추가</div>
+          <div class="eacts">
+            <span class="btn primary">저장</span>
+            <span class="btn">바뀐 곳 보기</span>
+            <span class="btn">취소</span>
+            <span class="hint">저장하면 루나가 바로 씁니다</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 4. 전체 편집 ══════ -->
+<div class="secthead">④ 전체 편집 — 위키피디아처럼 하나의 편집기</div>
+<p class="sectsub">제목·절 제목·본문을 한 화면에서 다 고친다.</p>
+<div class="urlbar">localhost:3000/wiki/gwangan-kcc-switzen/edit</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>김벼리 / 콘텐츠파트 / 멤버</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav on">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">인사·규정 🔒 <span class="n">7</span></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span><a>프로젝트 사례</a>
+        <span class="sep">›</span><a>광안리 KCC 스위첸</a><span class="sep">›</span>전체 고치기</div>
+
+      <div class="tabs">
+        <div class="tab">읽기</div>
+        <div class="tab on">고치기</div>
+        <div class="tab">변경 이력</div>
+      </div>
+
+      <div class="editor">
+        <div class="etoolbar">
+          <span>제목1</span><span>제목2</span>
+          <div class="div"></div>
+          <span><b>B</b></span><span><i>I</i></span><span>• 목록</span><span>1. 번호</span>
+          <div class="div"></div>
+          <span>🔗 링크</span><span>📷 이미지</span><span>▶ 유튜브</span>
+          <div class="div"></div>
+          <span>↩ 되돌리기</span>
+        </div>
+
+        <div class="etitle">
+          <input value="광안리 KCC 스위첸 — Quartz Cube">
+          <p class="hint">문서 제목. 주소는 바뀌지 않습니다</p>
+        </div>
+
+        <div class="ebody">
+          <div class="sh">무엇을 만들었나</div>
+          <p>오피스텔 1층 공개공지에 설치한 미디어 조형물이다.
+            정육면체 6면 중 3면은 LED 미디어, 3면은 미러 스테인리스로 구성했다.</p>
+          <p style="color:var(--faint);font-size:11.5px">📷 quartz-cube-full.jpg — 완공 후 야간 전경</p>
+
+          <div class="sh">가장 중요하게 본 것 — 염분</div>
+          <p>해안에서 300m 거리라 염분 대응이 관건이었다.
+            외장은 스테인리스 316L, 내부는 별도 밀폐 처리했다.</p>
+
+          <div class="sh">발주 구조</div>
+          <p>실제 고객사는 시행사 MDM이었으나 계약은 KCC건설과 체결했다.
+            발주 주체와 의사결정 주체가 다른 특이한 구조였다.</p>
+          <p style="color:var(--faint);font-size:11.5px">▶ Quartz Cube 미디어 연출</p>
+        </div>
+
+        <div class="efoot">
+          <p class="sumlabel">무엇을 왜 바꾸셨나요?</p>
+          <div class="suminput">예) 염분 대응 기준을 구체화</div>
+          <div class="eacts">
+            <span class="btn primary">저장</span>
+            <span class="btn">바뀐 곳 보기</span>
+            <span class="btn">취소</span>
+            <span class="hint">회색 제목을 클릭하면 절 이름을 고칠 수 있습니다</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 5. 옮기기 ══════ -->
+<div class="secthead">⑤ 다른 메뉴로 옮기기 — 주소는 그대로</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page" style="min-height:250px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav on">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span>
+        <a>광안리 KCC 스위첸</a><span class="sep">›</span>옮기기</div>
+      <div class="movebox">
+        <p style="font-size:13px;font-weight:700;margin-bottom:3px">어느 메뉴로 옮길까요?</p>
+        <p style="font-size:11px;color:var(--faint)">지금은 「프로젝트 사례」에 있습니다</p>
+        <div class="moveopts">
+          <span class="on">프로젝트 사례</span>
+          <span>사업 영역</span>
+          <span>일하는 방식</span>
+          <span>회사 기준</span>
+          <span>인사·규정</span>
+        </div>
+        <div class="eacts">
+          <span class="btn primary">옮기기</span>
+          <span class="btn">취소</span>
+          <span class="hint">주소(/wiki/gwangan-kcc-switzen)는 바뀌지 않습니다</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 6. 메뉴 관리 ══════ -->
+<div class="secthead">⑥ 메뉴 관리 — 코드 수정 없이 추가·변경</div>
+<div class="urlbar">localhost:3000/wiki/menus</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="page" style="min-height:330px">
+    <div class="side">
+      <div class="sidetop"><span class="mark">📖</span><span class="nm">Wikipedia</span></div>
+      <div class="backrow"><div class="b">← 루나로 돌아가기</div></div>
+      <div class="navsec">
+        <div class="navlabel">누구나 고칠 수 있어요</div>
+        <div class="nav">용어사전 <span class="n">403</span></div>
+        <div class="nav">프로젝트 사례 <span class="n">6</span></div>
+        <div class="nav">사업 영역 <span class="n">4</span></div>
+        <div class="nav">일하는 방식 <span class="n">4</span></div>
+        <div class="nav">회사 기준 <span class="n">1</span></div>
+      </div>
+      <div class="navsec">
+        <div class="navlabel">읽기만 가능해요</div>
+        <div class="nav">인사·규정 🔒 <span class="n">7</span></div>
+      </div>
+      <div class="sidefoot"><span class="add" style="color:var(--luna-ink);font-weight:700">＋ 메뉴 관리</span></div>
+    </div>
+
+    <div class="main">
+      <div class="crumb"><a>Wikipedia</a><span class="sep">›</span>메뉴 관리</div>
+      <h1 class="doctitle" style="font-size:17px">메뉴 관리</h1>
+      <p class="docmeta">끌어서 순서를 바꿉니다 · 슈퍼관리자만</p>
+
+      <div class="list">
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">용어사전</span>
+          <span class="cnt">403</span><span class="perm">누구나</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span></div>
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">프로젝트 사례</span>
+          <span class="cnt">6</span><span class="perm">누구나</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span><span class="btn sm">숨기기</span></div>
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">사업 영역</span>
+          <span class="cnt">4</span><span class="perm">누구나</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span><span class="btn sm">숨기기</span></div>
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">일하는 방식</span>
+          <span class="cnt">4</span><span class="perm">누구나</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span><span class="btn sm">숨기기</span></div>
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">회사 기준</span>
+          <span class="cnt">1</span><span class="perm">누구나</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span><span class="btn sm">숨기기</span></div>
+        <div class="menurow"><span class="grip">⠿</span><span class="nm">인사·규정</span>
+          <span class="cnt">7</span><span class="perm adm">관리자만</span>
+          <span class="sp"></span><span class="btn sm">이름 바꾸기</span><span class="btn sm">숨기기</span></div>
+      </div>
+
+      <div style="margin-top:11px"><span class="btn primary">＋ 새 메뉴</span></div>
+
+      <p style="font-size:11px;color:var(--faint);margin-top:12px;line-height:1.7">
+        메뉴를 추가해도 코드를 고치지 않습니다.<br>
+        「관리자만」으로 정한 메뉴는 슈퍼관리자만 문서를 고칠 수 있습니다.
+      </p>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

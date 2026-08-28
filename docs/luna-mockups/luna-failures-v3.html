@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>실패 수집 — 개편 v3</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --hot:#C0392B; --hot-bg:#FDECEA;
+    --warn:#B0782B; --warn-bg:#FBF3E4;
+    --ok:#0F6E56; --ok-bg:#E6F5EF;
+    --dev:#2E6FA8; --dev-bg:#E9F1F9;
+    --code-bg:#1E1E28; --code-ink:#E4E2EE;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:1000px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:32px 0 4px;padding-top:20px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .hubname{font-size:13px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--sub)}
+  .hubright .ic{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:10px;color:var(--faint)}
+
+  .body{padding:16px 22px}
+  .tabs1{display:flex;gap:6px;background:#F7F7F9;border-radius:10px;padding:4px;
+    margin-bottom:14px;width:fit-content}
+  .tabs1 span{font-size:12px;padding:6px 12px;border-radius:8px;color:var(--sub);cursor:pointer}
+  .tabs1 span.on{background:var(--panel);color:var(--ink);font-weight:700;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tabs1 .badge{background:var(--hot);color:#fff;font-size:9.5px;padding:1px 6px;
+    border-radius:9px;margin-left:5px;font-weight:700}
+
+  .ptitle{font-size:16px;font-weight:800;margin-bottom:3px}
+  .pdesc{font-size:11.5px;color:var(--sub);margin-bottom:15px}
+
+  .kindtabs{display:flex;gap:7px;margin-bottom:11px}
+  .kindtabs span{font-size:12.5px;padding:8px 14px;border-radius:10px;cursor:pointer;
+    border:1px solid var(--line);display:flex;align-items:center;gap:7px}
+  .kindtabs span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+  .kindtabs .n{font-size:11px;opacity:.8}
+
+  .statebar{display:flex;gap:14px;font-size:11.5px;color:var(--sub);margin-bottom:16px;
+    padding-bottom:11px;border-bottom:1px solid var(--line2)}
+  .statebar b{color:var(--ink)}
+  .statebar .on{color:var(--luna-ink);font-weight:700}
+
+  .card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+  .card.new{border-left:3px solid var(--hot)}
+  .ctop{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .tag{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:9px}
+  .tag.human{background:var(--hot-bg);color:var(--hot)}
+  .tag.self{background:var(--warn-bg);color:var(--warn)}
+  .tag.auto{background:var(--chip);color:var(--sub)}
+  .tag.dev{background:var(--dev-bg);color:var(--dev)}
+  .tag.know{background:var(--ok-bg);color:var(--ok)}
+  .ctop .who{font-size:11px;color:var(--sub)}
+  .ctop .when{margin-left:auto;font-size:10.5px;color:var(--faint)}
+
+  .q{font-size:14px;font-weight:600;line-height:1.5;margin-bottom:8px}
+  .a{font-size:12.5px;line-height:1.75;color:var(--sub);
+    border-left:2px solid var(--line);padding-left:11px;margin-bottom:10px}
+
+  .scores{display:flex;gap:16px;align-items:center;margin-bottom:8px}
+  .score{display:flex;align-items:center;gap:7px}
+  .score .l{font-size:10.5px;color:var(--faint)}
+  .score .bar{width:64px;height:5px;border-radius:3px;background:var(--chip);overflow:hidden}
+  .score .bar i{display:block;height:100%}
+  .score .v{font-size:12px;font-weight:700;width:38px}
+  .score.good .bar i{background:var(--ok)} .score.good .v{color:var(--ok)}
+  .score.mid .bar i{background:var(--warn)} .score.mid .v{color:var(--warn)}
+  .score.bad .bar i{background:var(--hot)} .score.bad .v{color:var(--hot)}
+
+  .selfnote{font-size:11.5px;color:var(--sub);background:#FBFBFC;border-radius:8px;
+    padding:8px 11px;margin-bottom:9px;line-height:1.6}
+  .selfnote::before{content:'🌙 ';}
+
+  .srcs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:11px}
+  .srcs span{font-size:10px;padding:2px 8px;border-radius:9px;background:var(--chip);color:var(--sub)}
+  .srcs span.miss{background:var(--hot-bg);color:var(--hot)}
+
+  .acts{display:flex;gap:6px;align-items:center}
+  .btn{padding:6px 12px;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:#33363c}
+  .btn.primary{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .btn.devb{background:var(--dev);color:#fff;border-color:var(--dev)}
+  .btn.ghost{color:var(--faint)}
+  .btn.sm{padding:4px 10px;font-size:10.5px}
+  .acts .sp{flex:1}
+  .acts .memo{font-size:10.5px;color:var(--faint)}
+
+  /* 개선하기 입력 */
+  .improve{border:1px solid var(--luna);border-radius:11px;padding:13px 15px;margin-top:11px;
+    background:#FCFBFF}
+  .improve .l{font-size:12px;font-weight:700;color:var(--luna-ink);margin-bottom:7px}
+  .improve .ta{border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+    font-size:12.5px;line-height:1.75;background:var(--panel);min-height:60px;color:#2a2c31}
+  .improve .hint{font-size:10.5px;color:var(--faint);margin-top:7px;line-height:1.6}
+  .improve .acts{margin-top:10px}
+
+  /* 접힌 입력 (처리 후) */
+  .sent{background:#FBFBFC;border:1px solid var(--line);border-radius:10px;
+    padding:10px 13px;margin-top:11px;font-size:11.5px;color:var(--sub);line-height:1.7}
+  .sent .l{font-size:10px;color:var(--faint);margin-bottom:4px}
+
+  /* 결과 블록 공통 */
+  .rbox{border-radius:11px;overflow:hidden;margin-top:11px}
+  .rhead{padding:10px 14px;display:flex;align-items:center;gap:8px}
+  .rhead .t{font-size:12px;font-weight:700}
+  .rhead .sp{flex:1}
+  .rhead .c{font-size:10.5px}
+
+  /* DB 수정 */
+  .dbbox{border:1px solid #BFE0D2}
+  .dbhead{background:var(--ok-bg)}
+  .dbhead .t{color:var(--ok)}
+  .dbhead .c{color:var(--ok);opacity:.75}
+  .dbbody{background:var(--panel)}
+  .dbrow{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;
+    border-bottom:1px solid var(--line2)}
+  .dbrow:last-child{border-bottom:0}
+  .cb{width:16px;height:16px;border:1.5px solid var(--ok);border-radius:4px;
+    background:var(--ok);color:#fff;display:grid;place-items:center;
+    font-size:10px;flex-shrink:0;margin-top:2px;cursor:pointer}
+  .cb.off{background:var(--panel);border-color:var(--line);color:transparent}
+  .dbrow .c{flex:1;min-width:0}
+  .dbrow .t{font-size:12.5px;font-weight:700;margin-bottom:4px}
+  .dbrow .t .kindtag{font-size:9px;font-weight:700;padding:1px 6px;border-radius:7px;
+    background:var(--ok-bg);color:var(--ok);margin-right:6px;vertical-align:1px}
+  .dbrow .d{font-size:11.5px;color:var(--sub);line-height:1.75}
+  .dbfoot{padding:11px 14px;border-top:1px solid var(--line2);background:#FBFBFC;
+    display:flex;align-items:center;gap:8px}
+  .dbfoot .memo{font-size:10.5px;color:var(--faint);margin-left:auto}
+
+  /* 개발 프롬프트 */
+  .devbox{border:1px solid var(--dev)}
+  .devhead{background:var(--dev-bg)}
+  .devhead .t{color:var(--dev)}
+  .devcode{background:var(--code-bg);color:var(--code-ink);padding:14px 16px;
+    font-family:var(--mono);font-size:10.5px;line-height:1.85;white-space:pre-wrap;
+    max-height:300px;overflow-y:auto}
+  .devcode .h{color:#9AE6C4}
+  .devcode .k{color:#F0B27A}
+  .devfoot{padding:11px 14px;background:#FBFBFC;border-top:1px solid var(--line2);
+    display:flex;align-items:center;gap:8px}
+  .devfoot .memo{font-size:10.5px;color:var(--faint);margin-left:auto}
+
+  /* 완료 상태 */
+  .done{padding:11px 14px;font-size:11.5px;display:flex;align-items:center;gap:8px}
+  .done.okb{background:var(--ok-bg);color:var(--ok)}
+  .done.devb{background:var(--dev-bg);color:var(--dev)}
+  .done .go{margin-left:auto;font-weight:600;cursor:pointer}
+
+  /* 묶음 */
+  .group{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px}
+  .ghead{padding:11px 15px;background:#FBFBFC;border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;gap:9px}
+  .ghead .t{font-size:13px;font-weight:700}
+  .ghead .c{font-size:10.5px;color:var(--faint)}
+  .ghead .sp{flex:1}
+  .grow{padding:9px 15px;border-bottom:1px solid var(--line2);font-size:12px;display:flex;gap:9px}
+  .grow:last-child{border-bottom:0}
+  .grow .qq{flex:1;font-size:12.5px}
+  .grow .w{font-size:10.5px;color:var(--faint)}
+
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:12px}
+  .flow{font-size:11.5px;color:var(--sub);background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:12px 15px;margin-bottom:12px;line-height:1.9;
+    font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 흐름 ══════ -->
+<div class="mocklabel">흐름 — 한 카드 안에서 아래로 이어진다</div>
+<div class="flow">카드
+  └ [개선하기]  →  「이렇게 했어야 해요」 입력  →  [보내기]
+       └ 아래로 펼쳐짐
+            ├ DB 수정            체크박스(기본 전체) + [완료]
+            └ Cursor 프롬프트    [복사하기] + [완료]
+                                 버튼이 각각 따로</div>
+
+
+<!-- ══════ 1. 목록 ══════ -->
+<div class="secthead">화면 1 — 종류가 먼저, 상태는 그다음</div>
+<p class="sectsub">메뉴 위치: 대시보드 · 지식 · 대화 · 자습 · <b>실패 수집</b> · 지식후보 · 두뇌</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="tabs1">
+      <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+      <span class="on">실패 수집 <span class="badge">24</span></span>
+      <span>지식후보</span><span>두뇌</span>
+    </div>
+
+    <div class="ptitle">실패 수집</div>
+    <p class="pdesc">잘 안 된 순간만 모읍니다. 성공한 답변은 여기 없습니다.</p>
+
+    <div class="kindtabs">
+      <span class="on">전체 <span class="n">24</span></span>
+      <span>👎 사람이 표시 <span class="n">9</span></span>
+      <span>🌙 루나가 낮게 평가 <span class="n">11</span></span>
+      <span>⚙ 자동 감지 <span class="n">4</span></span>
+    </div>
+
+    <div class="statebar">
+      <span class="on">확인할 것 <b>24</b></span>
+      <span>개선한 것 <b>11</b></span>
+      <span>스킵한 것 <b>8</b></span>
+      <span style="margin-left:auto">묶어 보기</span>
+    </div>
+
+    <div class="card new">
+      <div class="ctop">
+        <span class="tag auto">자동 감지 · 못 찾음</span>
+        <span class="who">이택진 · 공간파트</span>
+        <span class="when">오늘 14:26</span>
+      </div>
+      <div class="q">아폴론 출장비 지급 기준이 어떻게 돼?</div>
+      <div class="a">현재 확인된 아폴론 지식에는 출장비 지급 기준이 없습니다.
+        「취업규칙」의 「제15장」에도 출장비 기준은 확인되지 않습니다.</div>
+
+      <div class="scores">
+        <div class="score good"><span class="l">의도 이해</span>
+          <span class="bar"><i style="width:80%"></i></span><span class="v">8/10</span></div>
+        <div class="score mid"><span class="l">답변 자신감</span>
+          <span class="bar"><i style="width:50%"></i></span><span class="v">5/10</span></div>
+      </div>
+
+      <div class="selfnote">질문 의도는 명확하나, 보유 자료에서 출장비 지급 기준 규정을
+        찾지 못해 확실한 답변 제시 불가능</div>
+
+      <div class="srcs">
+        <span>위키 3건</span><span>기억 10건</span>
+        <span class="miss">경비 규정에 출장비 절 없음</span>
+      </div>
+
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">대화 보기 ↗</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctop">
+        <span class="tag human">싫어요</span>
+        <span class="who">성호준 · 콘텐츠파트</span>
+        <span class="when">오늘 11:05</span>
+      </div>
+      <div class="q">인스파이어 시즌3 착수보고서 어디 있어?</div>
+      <div class="a">T:\02 Project\2024\… 경로에 있습니다.</div>
+      <div style="font-size:11.5px;color:var(--hot);background:var(--hot-bg);
+        border-radius:8px;padding:8px 11px;margin-bottom:10px">
+        내용이 틀렸다 — <b>그 경로에 없어요. 2025 폴더입니다</b>
+      </div>
+      <div class="acts">
+        <span class="btn primary">개선하기</span>
+        <span class="btn ghost">스킵하기</span>
+        <span class="sp"></span>
+        <span class="memo">대화 보기 ↗</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 2. 개선하기 입력 ══════ -->
+<div class="secthead">화면 2 — [개선하기]를 누르면 카드 안에서 열린다</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="card">
+      <div class="ctop">
+        <span class="tag auto">자동 감지 · 못 찾음</span>
+        <span class="who">이택진 · 공간파트</span>
+        <span class="when">오늘 14:26</span>
+      </div>
+      <div class="q">아폴론 출장비 지급 기준이 어떻게 돼?</div>
+
+      <div class="improve">
+        <div class="l">이렇게 했어야 해요</div>
+        <div class="ta">출장비는 경비 규정에 넣어야 해.
+숙박 10만원 한도, 식비 실비, 교통은 대중교통 우선.
+그리고 「출장비」를 물으면 「경비 규정」 문서를 봐야 하는데
+지금은 그 연결이 안 되는 것 같아. 검색에서 못 찾더라.</div>
+        <p class="hint">새 사실·위키 누락·답변 방식·개발 필요 — 섞어 적어도 됩니다.
+          루나가 나눠 드립니다.</p>
+        <div class="acts">
+          <span class="btn primary">보내기</span>
+          <span class="btn">취소</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 3. 두 갈래 ══════ -->
+<div class="secthead">화면 3 — 아래로 펼쳐진다. 버튼이 각각 따로</div>
+<p class="sectsub">같은 카드 안이라 어느 실패를 보고 있는지 놓치지 않습니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="card">
+      <div class="ctop">
+        <span class="tag auto">자동 감지 · 못 찾음</span>
+        <span class="who">이택진 · 공간파트</span>
+        <span class="when">오늘 14:26</span>
+      </div>
+      <div class="q">아폴론 출장비 지급 기준이 어떻게 돼?</div>
+
+      <div class="sent">
+        <div class="l">이렇게 했어야 해요</div>
+        출장비는 경비 규정에 넣어야 해. 숙박 10만원 한도, 식비 실비, 교통은 대중교통 우선.
+        그리고 「출장비」를 물으면 「경비 규정」 문서를 봐야 하는데 지금은 그 연결이 안 되는 것 같아.
+      </div>
+
+      <!-- DB 수정 -->
+      <div class="rbox dbbox">
+        <div class="rhead dbhead">
+          <span class="t">📗 DB 수정</span>
+          <span class="sp"></span>
+          <span class="c">2건 · 지식후보로 보냅니다</span>
+        </div>
+        <div class="dbbody">
+          <div class="dbrow">
+            <span class="cb">✓</span>
+            <div class="c">
+              <div class="t"><span class="kindtag">위키</span>「03 경비 규정」에 절 추가 — 출장비</div>
+              <div class="d">
+                · 숙박 10만원 한도<br>
+                · 식비 실비<br>
+                · 교통은 대중교통 우선
+              </div>
+            </div>
+          </div>
+          <div class="dbrow">
+            <span class="cb">✓</span>
+            <div class="c">
+              <div class="t"><span class="kindtag">용어</span>「출장비」 추가</div>
+              <div class="d">같은 말: 출장 경비, 여비</div>
+            </div>
+          </div>
+        </div>
+        <div class="dbfoot">
+          <span class="btn ok">완료</span>
+          <span class="memo">체크한 것만 지식후보로 갑니다. 확정은 거기서 합니다</span>
+        </div>
+      </div>
+
+      <!-- Cursor 프롬프트 -->
+      <div class="rbox devbox">
+        <div class="rhead devhead">
+          <span class="t">⚙ Cursor Agent 프롬프트</span>
+          <span class="sp"></span>
+          <span class="btn sm devb">복사하기</span>
+        </div>
+        <div class="devcode"><span class="h"># 「출장비」로 「경비 규정」을 못 찾는다</span>
+
+<span class="k">## 증상</span>
+질문: "아폴론 출장비 지급 기준이 어떻게 돼?"
+답변: "출장비 지급 기준이 없습니다"
+주입: 위키 3건 · 기억 10건 — 「03 경비 규정」이 안 들어감
+
+<span class="k">## 확인된 것</span>
+· 「03 경비 규정」에 출장 관련 절이 있다
+  「외근·출장 시 교통이용」 「쏘카비즈니스」
+· 「출장비」로 검색하면 안 잡힌다
+· 임베딩 유사도가 임계값(0.35)을 못 넘은 것으로 보인다
+
+<span class="k">## 조사할 것</span>
+1. "출장비 지급 기준" 임베딩과 경비 규정 절들의 실제 유사도
+2. 키워드 매칭에서 「출장」이 잡히는지
+3. 임계값 0.35 가 적절한지
+
+<span class="k">## 하지 말 것</span>
+· 임계값을 임의로 낮추지 마라. 다른 질문이 망가진다
+· 조사 먼저. 원인을 밝힌 뒤 고친다
+
+npx tsc --noEmit + npx next lint(Error 0) 통과 후
+커밋 "fix: 출장비 검색 연결"</div>
+        <div class="devfoot">
+          <span class="btn devb">완료</span>
+          <span class="memo">복사해서 Cursor 에 넣은 뒤 누르세요. 개발 과제로 남습니다</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 4. 완료 후 ══════ -->
+<div class="secthead">화면 4 — 각각 완료하면</div>
+<p class="sectsub">둘 다 완료되면 이 실패는 「개선한 것」으로 넘어갑니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="card">
+      <div class="ctop">
+        <span class="tag auto">자동 감지 · 못 찾음</span>
+        <span class="who">이택진 · 공간파트</span>
+        <span class="when">오늘 14:26</span>
+      </div>
+      <div class="q">아폴론 출장비 지급 기준이 어떻게 돼?</div>
+
+      <div class="rbox dbbox">
+        <div class="done okb">
+          ✓ 지식후보 2건으로 보냈습니다
+          <span class="go">지식후보 보기 ↗</span>
+        </div>
+      </div>
+
+      <div class="rbox devbox">
+        <div class="done devb">
+          ⚙ 개발 과제로 남겼습니다 · 아직 안 고침
+          <span class="go">프롬프트 다시 보기</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="helper">
+      개발 과제는 고쳐질 때까지 남습니다. 같은 원인끼리 묶여 나중에 한 번에 볼 수 있습니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 5. 개발 과제 ══════ -->
+<div class="secthead">화면 5 — 개발 과제가 쌓인다</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트 / 슈퍼관리자</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+
+  <div class="body">
+    <div class="ptitle">실패 수집</div>
+    <div class="kindtabs">
+      <span>전체 <span class="n">24</span></span>
+      <span>👎 사람이 표시 <span class="n">9</span></span>
+      <span>🌙 루나가 낮게 평가 <span class="n">11</span></span>
+      <span>⚙ 자동 감지 <span class="n">4</span></span>
+    </div>
+    <div class="statebar">
+      <span>확인할 것 <b>24</b></span>
+      <span class="on">개선한 것 <b>11</b></span>
+      <span>스킵한 것 <b>8</b></span>
+    </div>
+
+    <div class="group">
+      <div class="ghead">
+        <span class="tag dev">개발 필요</span>
+        <span class="t">검색이 관련 문서를 못 찾음</span>
+        <span class="c">5건</span>
+        <span class="sp"></span>
+        <span class="btn sm devb">프롬프트 합쳐서 복사</span>
+      </div>
+      <div class="grow"><span class="qq">출장비 → 「경비 규정」 못 찾음</span><span class="w">오늘</span></div>
+      <div class="grow"><span class="qq">병가규정 → 「연차 및 휴가」 못 찾음</span><span class="w">어제</span></div>
+      <div class="grow"><span class="qq">미디어조형물 인허가 → 문서엔 「심의」</span><span class="w">어제</span></div>
+      <div class="grow"><span class="qq">KCC 프로젝트 → 문서 제목에 KCC 있음</span><span class="w">8/19</span></div>
+      <div class="grow"><span class="qq">더후 견적서 → Work서버에 있는데 못 찾음</span><span class="w">8/17</span></div>
+    </div>
+
+    <div class="group">
+      <div class="ghead">
+        <span class="tag know">지식으로 해결</span>
+        <span class="t">위키에 없던 내용</span>
+        <span class="c">6건</span>
+        <span class="sp"></span>
+        <span class="btn sm">지식후보 보기</span>
+      </div>
+      <div class="grow"><span class="qq">출장비 지급 기준 → 경비 규정에 절 추가</span><span class="w">오늘</span></div>
+      <div class="grow"><span class="qq">LED 피치 기준 → 하드웨어 문서 필요</span><span class="w">어제</span></div>
+    </div>
+
+    <p class="helper">
+      「프롬프트 합쳐서 복사」를 누르면 5건을 하나로 만들어 줍니다.<br>
+      원인이 같은 것을 모아 고치는 편이 낫습니다.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

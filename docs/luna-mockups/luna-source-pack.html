@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자료 카드 — 노션·Work서버 묶어 보여주기</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --notion:#37352F; --nas:#2E6FA8; --nas-bg:#E9F1F9;
+    --wiki:#0F6E56; --wiki-bg:#E6F5EF;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:20px}
+  .wrap{max-width:960px;margin:0 auto}
+  .mocklabel{margin:0 0 6px;font-size:12px;font-weight:800;color:var(--luna);letter-spacing:.5px}
+  .note{font-size:11.5px;color:var(--sub);margin-bottom:10px;line-height:1.65}
+  .secthead{font-size:13px;font-weight:800;margin:32px 0 4px;padding-top:20px;
+    border-top:2px solid var(--line)}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px}
+
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hubhead{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .logo{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink);
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .hubname{font-size:13px;font-weight:800}
+  .hubright{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--sub)}
+  .hubright .ic{width:22px;height:22px;border:1px solid var(--line);border-radius:6px;
+    display:grid;place-items:center;font-size:10px;color:var(--faint)}
+  .body{padding:18px 22px}
+
+  .bub{background:#F7F6FC;border:1px solid #E8E5F4;border-radius:6px 18px 18px 18px;
+    padding:15px 18px;font-size:13.5px;line-height:1.85;max-width:100%}
+  .bub b{font-weight:700}
+  .bub ul{margin:8px 0 0 18px}
+  .bub li{margin-bottom:5px}
+  .userq{background:var(--luna);color:#fff;border-radius:16px 16px 4px 16px;
+    padding:11px 16px;font-size:13.5px;display:inline-block;float:right;margin-bottom:14px}
+  .clr{clear:both}
+
+  /* 옛 방식 — 따로따로 */
+  .oldwrap{display:flex;gap:10px;margin-top:12px}
+  .oldcol{flex:1;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .oldhead{padding:8px 12px;font-size:11px;font-weight:700;background:#FBFBFC;
+    border-bottom:1px solid var(--line2);color:var(--sub)}
+  .olditem{padding:9px 12px;border-bottom:1px solid var(--line2);font-size:11.5px}
+  .olditem:last-child{border-bottom:0}
+  .olditem .p{font-size:10px;color:var(--faint);font-family:var(--mono);
+    margin-top:3px;word-break:break-all}
+  .dupmark{background:#FDECEA;color:#C0392B;font-size:9px;padding:1px 6px;
+    border-radius:7px;margin-left:5px;font-weight:700}
+
+  /* 새 방식 — 묶은 카드 */
+  .pack{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px}
+  .packhead{padding:12px 15px;background:#FBFBFC;border-bottom:1px solid var(--line2);
+    display:flex;align-items:flex-start;gap:10px}
+  .packhead .icon{width:28px;height:28px;border-radius:8px;background:var(--luna-soft);
+    display:grid;place-items:center;font-size:13px;flex-shrink:0}
+  .packhead .c{flex:1;min-width:0}
+  .packhead .t{font-size:13.5px;font-weight:700;line-height:1.4}
+  .packhead .s{font-size:11px;color:var(--sub);margin-top:3px;line-height:1.6}
+  .packhead .badge{font-size:9.5px;padding:2px 7px;border-radius:8px;
+    background:var(--chip);color:var(--sub);white-space:nowrap}
+
+  .packbody{padding:12px 15px;font-size:12.5px;line-height:1.8;color:#2a2c31}
+
+  .links{border-top:1px solid var(--line2);background:#FCFCFD}
+  .lrow{display:flex;align-items:center;gap:9px;padding:9px 15px;
+    border-bottom:1px solid var(--line2);font-size:11.5px;cursor:pointer}
+  .lrow:last-child{border-bottom:0}
+  .lrow:hover{background:#F7F6FC}
+  .lrow .lb{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:7px;
+    white-space:nowrap;flex-shrink:0}
+  .lb.notion{background:#EFEFED;color:var(--notion)}
+  .lb.nas{background:var(--nas-bg);color:var(--nas)}
+  .lb.wiki{background:var(--wiki-bg);color:var(--wiki)}
+  .lrow .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lrow .v.path{font-family:var(--mono);font-size:10.5px;color:var(--sub)}
+  .lrow .go{color:var(--faint);font-size:11px}
+
+  /* 하위 자료 */
+  .subs{border-top:1px solid var(--line2)}
+  .subhead{padding:8px 15px;font-size:10.5px;color:var(--faint);background:#FBFBFC}
+  .subrow{display:flex;align-items:center;gap:9px;padding:8px 15px 8px 26px;
+    border-top:1px solid var(--line2);font-size:11.5px;cursor:pointer}
+  .subrow:hover{background:#F7F6FC}
+  .subrow .n{font-size:10px;color:var(--faint);width:16px}
+  .subrow .v{flex:1}
+  .subrow .st{font-size:9.5px;padding:1px 6px;border-radius:7px;background:var(--chip);
+    color:var(--faint)}
+
+  .srcbar{display:flex;gap:6px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .srcbar span{font-size:10.5px;padding:3px 9px;border-radius:9px;background:var(--chip);
+    color:var(--sub)}
+  .srcbar .t{margin-left:auto;font-size:10.5px;color:var(--faint)}
+
+  .helper{font-size:11px;color:var(--faint);line-height:1.7;margin-top:12px}
+  .cmp{display:flex;gap:10px;margin-top:8px}
+  .cmpb{flex:1;border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .cmpb .l{font-size:10.5px;color:var(--faint);margin-bottom:6px}
+  .cmpb.bad{border-color:#F0D5D0;background:#FEF8F7}
+  .cmpb.good{border-color:#C9DCEE;background:#F8FBFE}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ══════ 문제 ══════ -->
+<div class="mocklabel">지금 — 같은 자료가 두 번 나온다</div>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="body">
+    <div class="userq">롯데타워 1차 아이데이션 자료 찾아줘</div>
+    <div class="clr"></div>
+
+    <div class="oldwrap">
+      <div class="oldcol">
+        <div class="oldhead">노션 3건</div>
+        <div class="olditem">251209 롯데타워 서울스카이 리뉴얼 _ 1st Ideation
+          <span class="dupmark">중복</span>
+          <div class="p">P:\01 사업개발\251202 롯데타워…\251208 1st Ideation</div></div>
+        <div class="olditem">251209 롯데타워 서울스카이 리뉴얼 아이데이션</div>
+        <div class="olditem">251202 롯데타워 서울스카이 리뉴얼(EB 완료)</div>
+      </div>
+      <div class="oldcol">
+        <div class="oldhead">Work서버 4건</div>
+        <div class="olditem">251209 롯데타워_서울스카이 리뉴얼_1st Ideation_1팀_FIN.pdf
+          <span class="dupmark">중복</span>
+          <div class="p">P:\01 사업개발\251202 롯데타워…\251208 1st Ideation\</div></div>
+        <div class="olditem">251208 1st Ideation
+          <div class="p">P:\01 사업개발\251202 롯데타워…\01 Document\</div></div>
+        <div class="olditem">01 Document
+          <div class="p">P:\01 사업개발\251202 롯데타워 서울스카이 리뉴얼\</div></div>
+      </div>
+    </div>
+
+    <p class="helper">
+      같은 자료를 노션은 「요약」으로, Work서버는 「파일」로 갖고 있는데 따로 나옵니다.<br>
+      경로가 같은데 두 번 세어 「노션 3건 · Work서버 4건」처럼 보입니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 해결 ══════ -->
+<div class="secthead">바꿀 것 — 경로가 같으면 하나로 묶는다</div>
+<p class="sectsub">노션의 nas_path 와 Work서버 경로를 맞춰 한 장으로 만듭니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="body">
+    <div class="userq">롯데타워 1차 아이데이션 자료 찾아줘</div>
+    <div class="clr"></div>
+
+    <div class="bub">
+      롯데타워 서울스카이 리뉴얼의 <b>1차 아이데이션</b>은 2025년 12월 9일 자료예요.
+      신규 리뉴얼 컨셉을 제안하며 랜드마크로서 차별화 콘텐츠를 담았습니다.
+    </div>
+
+    <div class="pack" style="margin-top:12px">
+      <div class="packhead">
+        <span class="icon">📁</span>
+        <div class="c">
+          <div class="t">251209 롯데타워 서울스카이 리뉴얼 _ 1st Ideation</div>
+          <div class="s">2025.12.09 · 롯데타워 서울스카이 리뉴얼 › 1st Ideation</div>
+        </div>
+        <span class="badge">2025 사업개발</span>
+      </div>
+
+      <div class="packbody">
+        서울 한복판의 메인 랜드마크 'Lotte Tower Seoul Sky' 리뉴얼을 통한
+        새로운 경험 및 차별화 콘텐츠 제공을 목표로 제안했다.
+      </div>
+
+      <div class="links">
+        <div class="lrow">
+          <span class="lb notion">노션</span>
+          <span class="v">251209 롯데타워 서울스카이 리뉴얼 _ 1st Ideation</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="lrow">
+          <span class="lb nas">파일</span>
+          <span class="v">251209 롯데타워_서울스카이 리뉴얼_1st Ideation_1팀_FIN.pdf</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="lrow">
+          <span class="lb nas">폴더</span>
+          <span class="v path">P:\01 사업개발\251202 롯데타워 서울스카이 리뉴얼\01 Document\251208 1st Ideation</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="srcbar">
+      <span>노션 1건</span><span>Work서버 1건</span>
+      <span class="t">6.8초 · 의도 9 · 자신감 8</span>
+    </div>
+
+    <p class="helper">
+      한 장에 <b>내용 · 노션 링크 · 원본 파일 · 폴더</b>가 모두 있습니다.<br>
+      건수도 실제 자료 개수로 셉니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 여러 건 ══════ -->
+<div class="secthead">여러 건일 때 — 프로젝트로 묶는다</div>
+<p class="sectsub">한 프로젝트의 자료가 여럿이면 부모 아래로 모읍니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="body">
+    <div class="userq">롯데타워 서울스카이 제안 어떻게 했어?</div>
+    <div class="clr"></div>
+
+    <div class="bub">
+      2025년 12월에 제안했고 <b>아이데이션을 세 차례</b> 거쳐 최종 제안서를 냈어요.
+      <ul>
+        <li><b>1차 (12/09)</b> — 랜드마크 리뉴얼로 새로운 경험과 차별화 콘텐츠</li>
+        <li><b>2차 (12/12)</b> — 코어제안 몽유도원 / 자율제안 Sound Space 로 갈림</li>
+        <li><b>3차 (12/16)</b> — 방향 구체화</li>
+        <li><b>최종 (12/18)</b> — 서울 스카이 명소화 Pre-Concept 제안서</li>
+      </ul>
+    </div>
+
+    <div class="pack" style="margin-top:12px">
+      <div class="packhead">
+        <span class="icon">📂</span>
+        <div class="c">
+          <div class="t">251202 롯데타워 서울스카이 리뉴얼</div>
+          <div class="s">2025 사업개발 · EB 완료 · 자료 4건</div>
+        </div>
+        <span class="badge">완료</span>
+      </div>
+
+      <div class="links">
+        <div class="lrow">
+          <span class="lb notion">노션</span>
+          <span class="v">프로젝트 페이지 열기</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="lrow">
+          <span class="lb nas">폴더</span>
+          <span class="v path">P:\01 사업개발\251202 롯데타워 서울스카이 리뉴얼</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+
+      <div class="subs">
+        <div class="subhead">자료 4건</div>
+        <div class="subrow">
+          <span class="n">1</span>
+          <span class="v">251209 _ 1st Ideation</span>
+          <span class="st">노션 · 파일</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="subrow">
+          <span class="n">2</span>
+          <span class="v">251212 코어제안_몽유도원 / 자율제안_Sound Space</span>
+          <span class="st">노션 · 파일</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="subrow">
+          <span class="n">3</span>
+          <span class="v">251216 _ 3rd 아이데이션</span>
+          <span class="st">노션 · 파일</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="subrow">
+          <span class="n">4</span>
+          <span class="v">251218 _ 서울 스카이 명소화 _ Pre-Concept 제안서</span>
+          <span class="st">노션 · 파일</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="srcbar">
+      <span>노션 4건</span><span>Work서버 4건</span><span>위키 1건</span>
+      <span class="t">8.2초 · 의도 9 · 자신감 9</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════ 한쪽만 있을 때 ══════ -->
+<div class="secthead">한쪽에만 있을 때</div>
+<p class="sectsub">묶을 짝이 없으면 그대로 보여주되 어디 것인지 밝힙니다.</p>
+
+<div class="screen">
+  <div class="hubhead">
+    <div class="logo">A</div><div class="hubname">APOLLON HUB</div>
+    <div class="hubright"><span>이택진 / 공간파트</span>
+      <div class="ic">🔔</div><div class="ic">⚙</div><div class="ic">↪</div></div>
+  </div>
+  <div class="body">
+
+    <div class="pack">
+      <div class="packhead">
+        <span class="icon">📄</span>
+        <div class="c">
+          <div class="t">260513 WTCS 무역센터 미디어 구축 컨설팅</div>
+          <div class="s">진행 중 사업개발 · 노션에만 있음</div>
+        </div>
+        <span class="badge">진행 중</span>
+      </div>
+      <div class="packbody">
+        무역센터 외벽 미디어 구축에 대한 컨설팅 제안. 아직 Work서버에 폴더가 없다.
+      </div>
+      <div class="links">
+        <div class="lrow">
+          <span class="lb notion">노션</span>
+          <span class="v">260513 WTCS 무역센터 미디어 구축 컨설팅</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pack">
+      <div class="packhead">
+        <span class="icon">📄</span>
+        <div class="c">
+          <div class="t">인스파이어 시즌3 수행계획서</div>
+          <div class="s">Work서버에만 있음 · 노션 기록 없음</div>
+        </div>
+      </div>
+      <div class="links">
+        <div class="lrow">
+          <span class="lb nas">파일</span>
+          <span class="v">인스파이어 시즌3_수행계획서_v2.pptx</span>
+          <span class="go">↗</span>
+        </div>
+        <div class="lrow">
+          <span class="lb nas">폴더</span>
+          <span class="v path">T:\02 Project\2025\250310 인스파이어 시즌3\01 Document</span>
+          <span class="go">↗</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="helper">
+      「노션에만 있음」 · 「Work서버에만 있음」을 밝혀두면
+      어디에 기록이 빠졌는지도 보입니다.
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════ 규칙 ══════ -->
+<div class="secthead">묶는 규칙</div>
+
+<div class="screen">
+  <div class="body">
+    <div class="cmp">
+      <div class="cmpb bad">
+        <div class="l">묶지 않는 경우</div>
+        <div style="font-size:12px;line-height:1.8">
+          · 경로가 다르다<br>
+          · 노션에 nas_path 가 없다<br>
+          · Work서버 결과가 상위 폴더다 (파일이 아님)
+        </div>
+      </div>
+      <div class="cmpb good">
+        <div class="l">묶는 경우</div>
+        <div style="font-size:12px;line-height:1.8">
+          · 노션의 nas_path 와 Work서버 경로가 같다<br>
+          · Work서버 파일이 그 폴더 안에 있다<br>
+          · 노션 페이지 제목과 파일명이 겹친다
+        </div>
+      </div>
+    </div>
+
+    <p class="helper" style="margin-top:14px">
+      묶은 뒤에도 <b>원본은 각각 남습니다.</b> 표시만 하나로 합치는 것입니다.<br>
+      건수는 묶인 개수로 셉니다 — 「노션 3건 · Work서버 4건」이 아니라 「자료 4건」.
+    </p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
