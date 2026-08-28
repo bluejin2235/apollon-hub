@@ -1,7 +1,18 @@
+import { Eye, Monitor } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Loc } from "@/lib/website/work-detail";
 
-export function Guide({ children, warn = false }: { children: ReactNode; warn?: boolean }) {
+import { GuideDocLink } from "@/components/website/guide-doc-link";
+
+export function Guide({
+  children,
+  warn = false,
+  docLink = false
+}: {
+  children: ReactNode;
+  warn?: boolean;
+  docLink?: boolean;
+}) {
   return (
     <div
       className={`mt-2 border-l-2 py-1.5 pl-3 leading-relaxed text-slate-500 ${
@@ -10,6 +21,7 @@ export function Guide({ children, warn = false }: { children: ReactNode; warn?: 
       style={{ fontSize: "var(--fs-caption)" }}
     >
       {children}
+      {docLink ? <GuideDocLink /> : null}
     </div>
   );
 }
@@ -281,6 +293,32 @@ export function SmallBtn({
       className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
+    </button>
+  );
+}
+
+export function PreviewMiniBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md border border-apollon-200 bg-apollon-50 px-2 py-0.5 text-[11px] font-semibold text-apollon-700 hover:bg-apollon-100"
+    >
+      <Eye className="h-3 w-3" />
+      미리보기
+    </button>
+  );
+}
+
+export function PreviewBarBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+    >
+      <Monitor className="h-4 w-4" />
+      미리보기 ↗
     </button>
   );
 }

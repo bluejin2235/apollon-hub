@@ -311,6 +311,11 @@
 .wa .fh b {
   font-size: 12.5px;
 }
+.wa .fh .fold-guide {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
 .wa .fh .s {
   font-size: 11.5px;
   color: var(--faint);

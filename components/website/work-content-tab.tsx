@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
 import { Alert, Field } from "@/components/website/ui";
+import { GuideTermProvider } from "@/components/website/ui/GuideTerm";
 import "./ui/work-admin.css";
 
 type Props = {
@@ -254,6 +255,7 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
   const pickerSort = Math.max(0, ...(pickerSection?.content_blocks ?? []).map((b) => b.sort)) + 1;
 
   return (
+    <GuideTermProvider>
     <div className="wa">
       <div className="luna">
         <div className="av">L</div>
@@ -351,6 +353,7 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
         onCancel={() => setDeleteSectionId(null)}
       />
     </div>
+    </GuideTermProvider>
   );
 }
 
@@ -532,6 +535,7 @@ function SectionBody({
           <Field
             label="섹션 제목"
             required
+            guideAnchorId="text-length"
             counts={[
               { label: "국문", value: headline.ko.length, limit: 16 },
               { label: "영문", value: headline.en.length, limit: 16 }

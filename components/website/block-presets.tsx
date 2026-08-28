@@ -1,6 +1,7 @@
 export const IMAGE_PRESETS = [
   "full",
   "split",
+  "triple",
   "offset",
   "offset-reverse",
   "gallery-auto",
@@ -33,8 +34,9 @@ export const EMBED_PROVIDERS = [
 export const PRESET_LABEL: Record<string, string> = {
   full: "전폭 이미지",
   split: "2단 나란히",
-  offset: "2단 2:1",
-  "offset-reverse": "2단 1:2",
+  triple: "3단 나란히",
+  offset: "가로 + 세로",
+  "offset-reverse": "세로 + 가로",
   "gallery-auto": "자동 배치 갤러리",
   carousel: "가로 스크롤",
   fullbleed: "전체폭 · 여백 없음",
@@ -46,6 +48,20 @@ export const PRESET_LABEL: Record<string, string> = {
   "video-text": "영상 + 글",
   embed: "임베드",
   "text-only": "글만"
+};
+
+export const PRESET_DESCRIPTION: Record<string, string> = {
+  full: "본문 전폭. 이미지 1장만. 원본 비율 그대로 보여 줍니다.",
+  split: "두 장을 나란히. 비율이 달라도 자르지 않고 높이를 맞춥니다.",
+  triple: "세 장을 나란히. 비율이 달라도 자르지 않고 높이를 맞춥니다.",
+  offset:
+    "왼쪽에 가로 사진, 오른쪽에 세로 사진. 왼쪽 사진이 높이를 정하고 오른쪽은 그 높이에 맞춰 잘립니다.",
+  "offset-reverse":
+    "왼쪽에 세로 사진, 오른쪽에 가로 사진. 오른쪽 사진이 높이를 정하고 왼쪽은 그 높이에 맞춰 잘립니다.",
+  fullbleed: "창 전체 폭 · 여백 없음. 이미지 1장만. 원본 비율 그대로.",
+  compare: "두 장을 겹쳐 전후를 비교합니다.",
+  "gallery-auto": "여러 장을 원본 비율로 자동 배치합니다.",
+  carousel: "가로로 넘겨 보는 스크롤 갤러리입니다."
 };
 
 export const ALL_PRESETS = Object.keys(PRESET_LABEL);
@@ -62,6 +78,9 @@ export function imageLimitForPreset(preset: string): number | null {
   }
   if (preset === "split" || preset === "offset" || preset === "offset-reverse" || preset === "compare") {
     return 2;
+  }
+  if (preset === "triple") {
+    return 3;
   }
   if (preset === "gallery-auto" || preset === "carousel") {
     return null;
@@ -111,6 +130,14 @@ function DiagramInner({ preset }: { preset: string }) {
     case "split":
       return (
         <div className="flex h-full w-full gap-1">
+          <div className={`flex-1 ${box}`} />
+          <div className={`flex-1 ${box}`} />
+        </div>
+      );
+    case "triple":
+      return (
+        <div className="flex h-full w-full gap-1">
+          <div className={`flex-1 ${box}`} />
           <div className={`flex-1 ${box}`} />
           <div className={`flex-1 ${box}`} />
         </div>
