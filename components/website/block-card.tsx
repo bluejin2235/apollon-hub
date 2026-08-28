@@ -4,16 +4,16 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   addImages,
   createBlock,
-  createLibrary,
   deleteBlock,
   deleteImage,
   reorderImages,
   updateBlock,
   updateImage
 } from "@/lib/website/api";
-import { supabase } from "@/lib/supabase/client";
 import type { BlockImage, ContentBlock, Loc } from "@/lib/website/work-detail";
 import { asLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
+import { TextDupHint } from "@/components/website/text-dup-hint";
+import { useDebouncedValue, useTextDup } from "@/components/website/text-dup-context";
 import {
   ALL_PRESETS,
   defaultTextSide,
@@ -82,15 +82,6 @@ function formatBytes(n: number | null | undefined) {
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-async function currentUserName() {
-  const {
-    data: { session }
-  } = await supabase.auth.getSession();
-  const meta = session?.user?.user_metadata ?? {};
-  if (typeof meta.name === "string" && meta.name.trim()) return meta.name.trim();
-  return session?.user?.email ?? "";
-}
-
 export function BlockCard({
   block,
   index,
@@ -109,7 +100,6 @@ export function BlockCard({
   const [save, setSave] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [changePreset, setChangePreset] = useState(false);
-  const [saveLib, setSaveLib] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [body, setBody] = useState<Loc>(asLoc(block.body));
   const [videoKind, setVideoKind] = useState(
@@ -301,7 +291,6 @@ export function BlockCard({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{presetName}</span>
             <SmallBtn onClick={() => setChangePreset((v) => !v)}>배치 바꾸기</SmallBtn>
-            <SmallBtn onClick={() => setSaveLib(true)}>라이브러리에 저장</SmallBtn>
             <SmallBtn onClick={() => void onClone()}>복제</SmallBtn>
             <SmallBtn onClick={() => setDeleteOpen(true)}>삭제</SmallBtn>
           </div>
@@ -477,14 +466,6 @@ export function BlockCard({
               }}
             />
           ) : null}
-
-          {saveLib ? (
-            <SaveLibraryModal
-              block={block}
-              images={images}
-              onClose={() => setSaveLib(false)}
-            />
-          ) : null}
         </div>
         </div>
       )}
@@ -620,12 +601,23 @@ function ImageRow({
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
   const [visible, setVisible] = useState(image.caption_visible);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textDup = useTextDup();
+  const debouncedAlt = useDebouncedValue(alt, 300);
+  const debouncedCaption = useDebouncedValue(caption, 300);
 
   useEffect(() => {
     setAlt(asLoc(image.alt));
     setCaption(asLoc(image.caption));
     setVisible(image.caption_visible);
   }, [image]);
+
+  useEffect(() => {
+    textDup?.reportAlt(image.id, debouncedAlt);
+  }, [image.id, debouncedAlt, textDup]);
+
+  useEffect(() => {
+    textDup?.reportCaption(image.id, debouncedCaption);
+  }, [image.id, debouncedCaption, textDup]);
 
   function schedule(patch: Record<string, unknown>) {
     if (timer.current) clearTimeout(timer.current);
@@ -686,6 +678,20 @@ function ImageRow({
               if (timer.current) clearTimeout(timer.current);
               void persist({ alt });
             }}
+            koFooter={
+              <TextDupHint
+                kind="alt"
+                value={debouncedAlt.ko}
+                count={textDup?.altDup(debouncedAlt.ko, "ko") ?? 0}
+              />
+            }
+            enFooter={
+              <TextDupHint
+                kind="alt"
+                value={debouncedAlt.en}
+                count={textDup?.altDup(debouncedAlt.en, "en") ?? 0}
+              />
+            }
           />
         </div>
         <div>
@@ -708,6 +714,22 @@ function ImageRow({
               if (timer.current) clearTimeout(timer.current);
               void persist({ caption });
             }}
+            koFooter={
+              <TextDupHint
+                kind="caption"
+                value={debouncedCaption.ko}
+                count={textDup?.captionDup(debouncedCaption.ko, "ko") ?? 0}
+                checkBlockName
+              />
+            }
+            enFooter={
+              <TextDupHint
+                kind="caption"
+                value={debouncedCaption.en}
+                count={textDup?.captionDup(debouncedCaption.en, "en") ?? 0}
+                checkBlockName
+              />
+            }
           />
         </div>
         <ToggleRow
@@ -772,6 +794,12 @@ function VideoFields({
   onAlt: (v: Loc) => void;
   onAltBlur: () => void;
 }) {
+  const textDup = useTextDup();
+  const debouncedAlt = useDebouncedValue(alt, 300);
+  useEffect(() => {
+    textDup?.reportAlt(`video:${blockId}`, debouncedAlt);
+  }, [blockId, debouncedAlt, textDup]);
+
   const isHosted = kind === "hosted" || kind === "loop";
   const previewSrc = url ? mediaUrl(siteUrl, url) : null;
 
@@ -1044,6 +1072,20 @@ function VideoFields({
           onKo={(v) => onAlt(locField(alt, "ko", v))}
           onEn={(v) => onAlt(locField(alt, "en", v))}
           onBlur={onAltBlur}
+          koFooter={
+            <TextDupHint
+              kind="alt"
+              value={debouncedAlt.ko}
+              count={textDup?.altDup(debouncedAlt.ko, "ko") ?? 0}
+            />
+          }
+          enFooter={
+            <TextDupHint
+              kind="alt"
+              value={debouncedAlt.en}
+              count={textDup?.altDup(debouncedAlt.en, "en") ?? 0}
+            />
+          }
         />
       </div>
       <Guide>
@@ -1181,69 +1223,5 @@ function KindChip({
     >
       {children}
     </button>
-  );
-}
-
-function SaveLibraryModal({
-  block,
-  images,
-  onClose
-}: {
-  block: ContentBlock;
-  images: BlockImage[];
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(PRESET_LABEL[block.preset] ?? block.preset);
-  const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      const createdBy = await currentUserName();
-      const config: Record<string, unknown> = {
-        caption_visible: images.some((img) => img.caption_visible)
-      };
-      if (block.gallery_row_height != null) config.gallery_row_height = block.gallery_row_height;
-      if (block.text_side) config.text_side = block.text_side;
-      const res = await createLibrary({
-        name,
-        description: description.trim() || null,
-        preset: block.preset,
-        config,
-        created_by: createdBy
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      onClose();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
-        <h3 className="text-sm font-bold text-slate-900">라이브러리에 저장</h3>
-        <p className="mt-1 text-xs text-slate-500">배치만 저장합니다. 이미지·글 내용은 담지 않습니다.</p>
-        <div className="mt-3 space-y-2">
-          <FieldLabel>이름</FieldLabel>
-          <TextInput value={name} onChange={setName} />
-          <FieldLabel>설명</FieldLabel>
-          <TextInput value={description} onChange={setDescription} />
-        </div>
-        {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <GhostBtn onClick={onClose}>취소</GhostBtn>
-          <GhostBtn disabled={busy || !name.trim()} onClick={() => void submit()}>
-            저장
-          </GhostBtn>
-        </div>
-      </div>
-    </div>
   );
 }

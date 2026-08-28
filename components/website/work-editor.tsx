@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getMeta, getWork, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
+import { applyTextDupChecks } from "@/lib/website/text-dup";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
   countAiUnconfirmed,
@@ -191,7 +192,8 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     [pathname, router, searchParams]
   );
 
-  const check = checkOverride ?? work?.check ?? null;
+  const rawCheck = checkOverride ?? work?.check ?? null;
+  const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
   const limitIssues = draft ? draftLimitProblems(draft) : [];
   const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
   const shortage = work ? shortageLine(work, check, draft) : null;
@@ -433,7 +435,8 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       {canManageWorks && panelOpen ? (
         <PublishCheckPanel
           work={work}
-          check={
+          check={applyTextDupChecks(
+            work,
             check ?? {
               id: work.id,
               slug: work.slug,
@@ -457,10 +460,12 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
               no_related: false,
               no_internal_folder: false,
               summary_too_long: false,
+              duplicate_captions: false,
+              duplicate_alts: false,
               image_count: 0,
               caption_count: 0
             }
-          }
+          )}
           canPublish={canPublish}
           publishing={saving}
           onClose={() => setPanelOpen(false)}

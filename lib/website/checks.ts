@@ -21,7 +21,9 @@ export const WARN_FLAGS = [
   "no_tags",
   "no_related",
   "no_internal_folder",
-  "summary_too_long"
+  "summary_too_long",
+  "duplicate_captions",
+  "duplicate_alts"
 ] as const;
 
 export const CHECK_FLAG_COUNT = PROBLEM_FLAGS.length + WARN_FLAGS.length;
@@ -45,7 +47,9 @@ export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof W
     no_tags: "태그가 없습니다",
     no_related: "연결 콘텐츠가 없습니다",
     no_internal_folder: "내부 폴더가 없습니다",
-    summary_too_long: "요약이 너무 깁니다"
+    summary_too_long: "요약이 너무 깁니다",
+    duplicate_captions: "캡션이 중복됩니다",
+    duplicate_alts: "대체 텍스트가 중복됩니다"
   };
 
 export type HealthIssue = {
@@ -106,7 +110,12 @@ export function summarizeChecks(items: WorkListItem[]): {
           title: workTitle(item),
           flag,
           kind: "warn",
-          label: CHECK_FLAG_LABEL[flag]
+          label:
+            flag === "duplicate_captions" && check.duplicate_caption_count
+              ? `캡션이 중복됩니다 (${check.duplicate_caption_count}건)`
+              : flag === "duplicate_alts" && check.duplicate_alt_count
+                ? `대체 텍스트가 중복됩니다 (${check.duplicate_alt_count}건)`
+                : CHECK_FLAG_LABEL[flag]
         });
       }
     }
@@ -139,7 +148,9 @@ export function fillBody(check: CheckWorks | null): "ok" | "warn" {
     check.missing_image_alt ||
     check.ai_unconfirmed ||
     check.body_image_too_small ||
-    check.empty_blocks
+    check.empty_blocks ||
+    check.duplicate_captions ||
+    check.duplicate_alts
   ) {
     return "warn";
   }

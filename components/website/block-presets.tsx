@@ -11,12 +11,32 @@ export const IMAGE_PRESETS = [
 
 export const IMAGE_TEXT_PRESETS = ["image-text", "text-image", "portrait-text"] as const;
 export const VIDEO_PRESETS = ["video-full", "video-text"] as const;
+export const TEXT_TAB_PRESETS = ["text-only"] as const;
 export const TEXT_PRESETS = [
   "text-only",
   "image-text",
   "text-image",
   "portrait-text",
   "video-text"
+] as const;
+
+export const PICKER_TABS = [
+  { id: "all", label: "전체" },
+  { id: "image", label: "이미지" },
+  { id: "text", label: "글" },
+  { id: "image-text", label: "이미지+글" },
+  { id: "video", label: "영상" },
+  { id: "embed", label: "임베드" }
+] as const;
+
+export type PickerTabId = (typeof PICKER_TABS)[number]["id"];
+
+export const PICKER_PRESETS = [
+  ...IMAGE_PRESETS,
+  ...TEXT_TAB_PRESETS,
+  ...IMAGE_TEXT_PRESETS,
+  ...VIDEO_PRESETS,
+  "embed"
 ] as const;
 
 export const EMBED_PROVIDERS = [
@@ -45,7 +65,7 @@ export const PRESET_LABEL: Record<string, string> = {
   "video-full": "영상 전폭",
   "video-text": "영상 + 글",
   embed: "임베드",
-  "text-only": "글만"
+  "text-only": "전폭 글"
 };
 
 export const PRESET_DESCRIPTION: Record<string, string> = {
@@ -58,7 +78,14 @@ export const PRESET_DESCRIPTION: Record<string, string> = {
     "왼쪽에 세로 사진, 오른쪽에 가로 사진. 오른쪽 사진이 높이를 정하고 왼쪽은 그 높이에 맞춰 잘립니다.",
   compare: "두 장을 겹쳐 전후를 비교합니다.",
   "gallery-auto": "여러 장을 원본 비율로 자동 배치합니다.",
-  carousel: "가로로 넘겨 보는 스크롤 갤러리입니다."
+  carousel: "가로로 넘겨 보는 스크롤 갤러리입니다.",
+  "image-text": "이미지와 글을 나란히 둡니다.",
+  "text-image": "글을 두고 큰 이미지를 옆에 둡니다.",
+  "portrait-text": "세로 이미지와 글을 나란히 둡니다.",
+  "video-full": "영상을 본문 전폭으로 둡니다.",
+  "video-text": "영상과 글을 나란히 둡니다.",
+  embed: "Sketchfab · Matterport · Google Maps",
+  "text-only": "본문 폭 가득"
 };
 
 export const ALL_PRESETS = Object.keys(PRESET_LABEL);
@@ -93,12 +120,25 @@ export function hasBody(preset: string): boolean {
   return (TEXT_PRESETS as readonly string[]).includes(preset);
 }
 
-export function pickerTabForPreset(preset: string): "image" | "image-text" | "video" | "embed" | "other" {
+export function pickerTabForPreset(
+  preset: string
+): Exclude<PickerTabId, "all"> | "other" {
   if ((IMAGE_PRESETS as readonly string[]).includes(preset)) return "image";
+  if ((TEXT_TAB_PRESETS as readonly string[]).includes(preset)) return "text";
   if ((IMAGE_TEXT_PRESETS as readonly string[]).includes(preset)) return "image-text";
   if ((VIDEO_PRESETS as readonly string[]).includes(preset)) return "video";
   if (preset === "embed") return "embed";
   return "other";
+}
+
+export function pickerItemsForTab(tab: PickerTabId) {
+  return PICKER_PRESETS.filter(
+    (preset) => tab === "all" || pickerTabForPreset(preset) === tab
+  ).map((preset) => ({
+    preset,
+    name: PRESET_LABEL[preset] ?? preset,
+    description: PRESET_DESCRIPTION[preset] ?? ""
+  }));
 }
 
 export function defaultTextSide(preset: string): "left" | "right" {

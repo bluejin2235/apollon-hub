@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createBlock, getLibrary, type BlockLibraryItem } from "@/lib/website/api";
-import { BlockDiagram, hasBody, pickerTabForPreset } from "@/components/website/block-presets";
-
-type TabId = "all" | "image" | "image-text" | "video" | "embed" | "saved";
+import { useMemo, useState } from "react";
+import { createBlock } from "@/lib/website/api";
+import {
+  BlockDiagram,
+  hasBody,
+  pickerItemsForTab,
+  PICKER_TABS,
+  type PickerTabId
+} from "@/components/website/block-presets";
 
 type Props = {
   open: boolean;
@@ -15,53 +19,24 @@ type Props = {
 };
 
 export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Props) {
-  const [items, setItems] = useState<BlockLibraryItem[]>([]);
-  const [tab, setTab] = useState<TabId>("all");
+  const [tab, setTab] = useState<PickerTabId>("all");
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const visible = useMemo(() => pickerItemsForTab(tab), [tab]);
+
+  async function pick(preset: string) {
+    setBusyId(preset);
     setError(null);
-    void getLibrary().then((res) => {
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      setItems(res.data.items ?? []);
-    });
-  }, [open]);
-
-  const saved = items.filter((item) => !item.is_default);
-  const tabs: { id: TabId; label: string }[] = [
-    { id: "all", label: "전체" },
-    { id: "image", label: "이미지" },
-    { id: "image-text", label: "이미지+글" },
-    { id: "video", label: "영상" },
-    { id: "embed", label: "임베드" },
-    { id: "saved", label: `우리가 저장한 것 ${saved.length}` }
-  ];
-
-  const visible = useMemo(() => {
-    return items.filter((item) => {
-      if (tab === "all") return true;
-      if (tab === "saved") return !item.is_default;
-      return pickerTabForPreset(item.preset) === tab;
-    });
-  }, [items, tab]);
-
-  async function pick(item: BlockLibraryItem) {
-    setBusyId(item.id);
-    setError(null);
-    const body: Record<string, unknown> = { library_id: item.id, sort: nextSort };
-    if (hasBody(item.preset)) {
+    const body: Record<string, unknown> = { preset, sort: nextSort };
+    if (hasBody(preset)) {
       body.body = { ko: "", en: "" };
     }
-    if (item.preset === "video-full" || item.preset === "video-text") {
+    if (preset === "video-full" || preset === "video-text") {
       body.video_kind = "embed";
       body.video_url = "https://www.youtube.com/watch?v=";
     }
-    if (item.preset === "embed") {
+    if (preset === "embed") {
       body.embed_provider = "youtube";
       body.embed_url = "https://www.youtube.com/watch?v=";
     }
@@ -98,7 +73,7 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
         </div>
 
         <div className="flex gap-1 overflow-x-auto px-5 pt-3">
-          {tabs.map((item) => (
+          {PICKER_TABS.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -119,26 +94,15 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
         <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-4">
           {visible.map((item) => (
             <button
-              key={item.id}
+              key={item.preset}
               type="button"
-              disabled={busyId === item.id}
-              onClick={() => void pick(item)}
+              disabled={busyId === item.preset}
+              onClick={() => void pick(item.preset)}
               className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:border-slate-400 disabled:opacity-50"
             >
               <BlockDiagram preset={item.preset} />
               <div className="space-y-1 p-2.5">
-                <div className="flex items-start justify-between gap-1">
-                  <p className="text-sm font-semibold text-slate-800">{item.name}</p>
-                  <span
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                      item.is_default
-                        ? "bg-apollon-50 text-apollon-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {item.is_default ? "추천" : "우리 것"}
-                  </span>
-                </div>
+                <p className="text-sm font-semibold text-slate-800">{item.name}</p>
                 {item.description ? (
                   <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">{item.description}</p>
                 ) : null}

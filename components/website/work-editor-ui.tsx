@@ -196,7 +196,9 @@ export function BilingualField({
   onEn,
   onBlur,
   multiline,
-  readOnly
+  readOnly,
+  koFooter,
+  enFooter
 }: {
   ko: string;
   en: string;
@@ -205,6 +207,8 @@ export function BilingualField({
   onBlur?: () => void;
   multiline?: boolean;
   readOnly?: boolean;
+  koFooter?: ReactNode;
+  enFooter?: ReactNode;
 }) {
   const Field = multiline ? TextArea : TextInput;
   return (
@@ -214,6 +218,7 @@ export function BilingualField({
           <LangKo />
         </div>
         <Field value={ko} onChange={onKo} onBlur={onBlur} readOnly={readOnly} />
+        {koFooter}
       </div>
       <div className="relative">
         <div className="mb-1 flex items-center gap-1">
@@ -221,6 +226,7 @@ export function BilingualField({
           <AiBadge />
         </div>
         <Field value={en} onChange={onEn} onBlur={onBlur} readOnly={readOnly} ai />
+        {enFooter}
       </div>
     </div>
   );

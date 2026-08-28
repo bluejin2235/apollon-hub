@@ -16,6 +16,7 @@ import { InterviewEditor } from "@/components/website/interview-editor";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
 import { Alert, Field } from "@/components/website/ui";
@@ -255,6 +256,7 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
   const pickerSort = Math.max(0, ...(pickerSection?.content_blocks ?? []).map((b) => b.sort)) + 1;
 
   return (
+    <TextDupProvider work={work}>
     <GuideTermProvider>
     <div className="wa">
       <div className="luna">
@@ -354,6 +356,7 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
       />
     </div>
     </GuideTermProvider>
+    </TextDupProvider>
   );
 }
 

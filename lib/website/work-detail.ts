@@ -442,8 +442,16 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           no_related: asBool(check.no_related),
           no_internal_folder: asBool(check.no_internal_folder),
           summary_too_long: asBool(check.summary_too_long),
+          duplicate_captions: asBool(check.duplicate_captions),
+          duplicate_alts: asBool(check.duplicate_alts),
           image_count: asNum(check.image_count),
           caption_count: asNum(check.caption_count),
+          duplicate_caption_count:
+            typeof check.duplicate_caption_count === "number"
+              ? check.duplicate_caption_count
+              : undefined,
+          duplicate_alt_count:
+            typeof check.duplicate_alt_count === "number" ? check.duplicate_alt_count : undefined,
           empty_block_count:
             typeof check.empty_block_count === "number" ? check.empty_block_count : undefined,
           body_image_too_small_count:

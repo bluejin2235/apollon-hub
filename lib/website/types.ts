@@ -23,8 +23,12 @@ export type CheckWorks = {
   no_related: boolean;
   no_internal_folder: boolean;
   summary_too_long: boolean;
+  duplicate_captions: boolean;
+  duplicate_alts: boolean;
   image_count: number;
   caption_count: number;
+  duplicate_caption_count?: number;
+  duplicate_alt_count?: number;
   empty_block_count?: number;
   body_image_too_small_count?: number;
 };

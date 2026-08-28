@@ -157,6 +157,20 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       tab: "basic",
       title: "요약이 너무 깁니다",
       sub: "구글 검색 결과에서 뒤가 잘립니다."
+    },
+    {
+      flag: "duplicate_captions",
+      kind: "warn",
+      tab: "content",
+      title: `캡션이 중복됩니다 (${check.duplicate_caption_count ?? 0}건)`,
+      sub: "같은 문장이 반복되면 AI 가 인용하지 않습니다."
+    },
+    {
+      flag: "duplicate_alts",
+      kind: "warn",
+      tab: "content",
+      title: `대체 텍스트가 중복됩니다 (${check.duplicate_alt_count ?? 0}건)`,
+      sub: "같은 문장이 반복되면 AI 가 인용하지 않습니다."
     }
   ];
   return all.filter((item) => check[item.flag]);
