@@ -3,13 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { useWikiRoutes } from "@/components/wiki/wiki-routes-context";
 import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiWhen, wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
-import {
-  wikiDocPath,
-  type WikiDocListItem,
-  type WikiMenu
-} from "@/lib/wiki/types";
+import type { WikiDocListItem, WikiMenu } from "@/lib/wiki/types";
 
 type ListPayload = {
   items?: WikiDocListItem[];
@@ -20,6 +17,7 @@ type ListPayload = {
 };
 
 export function WikiDocList({ menuSlug }: { menuSlug: string }) {
+  const routes = useWikiRoutes();
   const [items, setItems] = useState<WikiDocListItem[]>([]);
   const [menu, setMenu] = useState<WikiMenu | null>(null);
   const [query, setQuery] = useState("");
@@ -27,6 +25,7 @@ export function WikiDocList({ menuSlug }: { menuSlug: string }) {
   const [wikiReady, setWikiReady] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const newDocHref = routes.newDocPath(menuSlug);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,14 +36,14 @@ export function WikiDocList({ menuSlug }: { menuSlug: string }) {
       );
       setItems(json.items ?? []);
       setMenu(json.menu ?? null);
-      setCanCreate(json.can_create === true);
+      setCanCreate(json.can_create === true && Boolean(newDocHref));
       setWikiReady(json.wiki_ready !== false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
-  }, [menuSlug]);
+  }, [menuSlug, newDocHref]);
 
   useEffect(() => {
     void load();
@@ -62,8 +61,8 @@ export function WikiDocList({ menuSlug }: { menuSlug: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
       <div className="mb-2 text-[11px]" style={{ color: W.faint }}>
-        <Link href="/wiki/terms" style={{ color: W.luna }}>
-          Wikipedia
+        <Link href={routes.rootHref} style={{ color: W.luna }}>
+          {routes.rootLabel}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
@@ -98,9 +97,9 @@ export function WikiDocList({ menuSlug }: { menuSlug: string }) {
           className="flex-1 rounded-[9px] border px-[11px] py-[7px] text-[12px] outline-none"
           style={{ borderColor: W.line, color: W.ink }}
         />
-        {canCreate ? (
+        {canCreate && newDocHref ? (
           <Link
-            href={`/wiki/new?menu=${encodeURIComponent(menuSlug)}`}
+            href={newDocHref}
             className="whitespace-nowrap rounded-[9px] px-[13px] py-[7px] text-[12px] font-bold text-white"
             style={{ background: W.luna }}
           >
@@ -127,7 +126,7 @@ export function WikiDocList({ menuSlug }: { menuSlug: string }) {
             return (
               <Link
                 key={row.slug}
-                href={wikiDocPath(row.slug)}
+                href={routes.docPath(row.slug)}
                 className="flex items-center gap-[11px] border-b px-[14px] py-3 last:border-b-0"
                 style={{
                   borderColor: W.line2,

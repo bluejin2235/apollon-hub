@@ -4,12 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { WikiDiffView } from "@/components/wiki/WikiDiffView";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { useWikiRoutes } from "@/components/wiki/wiki-routes-context";
 import { wikiEditorLabel, W } from "@/components/wiki/wiki-theme";
 import { formatDiffCounts } from "@/lib/wiki/diff";
 import { sectionsPlain } from "@/lib/wiki/sections";
 import {
-  wikiDocPath,
-  wikiListPath,
   type WikiDoc,
   type WikiHistoryEntry,
   type WikiMenu
@@ -22,6 +21,7 @@ type DocPayload = {
 };
 
 export function WikiDocHistory({ slug }: { slug: string }) {
+  const routes = useWikiRoutes();
   const [doc, setDoc] = useState<WikiDoc | null>(null);
   const [menu, setMenu] = useState<WikiMenu | null>(null);
   const [canEdit, setCanEdit] = useState(false);
@@ -100,19 +100,19 @@ export function WikiDocHistory({ slug }: { slug: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
       <div className="mb-2 text-[11px]" style={{ color: W.faint }}>
-        <Link href="/wiki/terms" style={{ color: W.luna }}>
-          Wikipedia
+        <Link href={routes.rootHref} style={{ color: W.luna }}>
+          {routes.rootLabel}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
         </span>
-        <Link href={wikiListPath(doc.menu_slug)} style={{ color: W.luna }}>
+        <Link href={routes.listPath(doc.menu_slug)} style={{ color: W.luna }}>
           {menu?.name ?? doc.menu_slug}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
         </span>
-        <Link href={wikiDocPath(doc.slug)} style={{ color: W.luna }}>
+        <Link href={routes.docPath(doc.slug)} style={{ color: W.luna }}>
           {doc.title}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
@@ -121,11 +121,11 @@ export function WikiDocHistory({ slug }: { slug: string }) {
         변경 이력
       </div>
       <div className="mb-[17px] flex gap-0.5 border-b" style={{ borderColor: W.line }}>
-        <Link href={wikiDocPath(doc.slug)} className="px-[14px] py-2 text-[12.5px]" style={{ color: W.sub }}>
+        <Link href={routes.docPath(doc.slug)} className="px-[14px] py-2 text-[12.5px]" style={{ color: W.sub }}>
           읽기
         </Link>
         <Link
-          href={`${wikiDocPath(doc.slug)}/edit`}
+          href={routes.docEditPath(doc.slug)}
           className="px-[14px] py-2 text-[12.5px]"
           style={{ color: W.sub }}
         >

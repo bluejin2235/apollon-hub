@@ -7,10 +7,9 @@ import { WikiDiffView } from "@/components/wiki/WikiDiffView";
 import { WikiFullEditor } from "@/components/wiki/WikiFullEditor";
 import { WikiSectionEditor } from "@/components/wiki/WikiSectionEditor";
 import { wikiFetch } from "@/components/wiki/wiki-fetch";
+import { useWikiRoutes } from "@/components/wiki/wiki-routes-context";
 import { W } from "@/components/wiki/wiki-theme";
 import {
-  wikiDocPath,
-  wikiListPath,
   type WikiDoc,
   type WikiMenu
 } from "@/lib/wiki/types";
@@ -24,6 +23,7 @@ type DocPayload = {
 };
 
 export function WikiDocEdit({ slug }: { slug: string }) {
+  const routes = useWikiRoutes();
   const router = useRouter();
   const search = useSearchParams();
   const sectionId = search.get("section");
@@ -49,7 +49,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
         return;
       }
       if (json.canonical_slug && json.canonical_slug !== slug) {
-        router.replace(`${wikiDocPath(json.canonical_slug)}/edit`);
+        router.replace(`${routes.docPath(json.canonical_slug)}/edit`);
         return;
       }
       setDoc(json.item);
@@ -88,7 +88,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
         method: "PATCH",
         body: JSON.stringify({ sections, change_note: changeNote })
       });
-      router.push(wikiDocPath(doc.slug));
+      router.push(routes.docPath(doc.slug));
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장하지 못했습니다.");
     } finally {
@@ -113,7 +113,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
           change_note: next.note
         })
       });
-      router.push(wikiDocPath(doc.slug));
+      router.push(routes.docPath(doc.slug));
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장하지 못했습니다.");
     } finally {
@@ -143,13 +143,13 @@ export function WikiDocEdit({ slug }: { slug: string }) {
     );
   }
 
-  const listHref = wikiListPath(doc.menu_slug);
+  const listHref = routes.listPath(doc.menu_slug);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
       <div className="mb-2 text-[11px]" style={{ color: W.faint }}>
-        <Link href="/wiki/terms" style={{ color: W.luna }}>
-          Wikipedia
+        <Link href={routes.rootHref} style={{ color: W.luna }}>
+          {routes.rootLabel}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
@@ -160,7 +160,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
         </span>
-        <Link href={wikiDocPath(doc.slug)} style={{ color: W.luna }}>
+        <Link href={routes.docPath(doc.slug)} style={{ color: W.luna }}>
           {doc.title}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
@@ -191,7 +191,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
             onHeadingChange={setDraftTitle}
             value={draftBody}
             onChange={setDraftBody}
-            onCancel={() => router.push(wikiDocPath(doc.slug))}
+            onCancel={() => router.push(routes.docPath(doc.slug))}
             changeNote={changeNote}
             onChangeNote={setChangeNote}
             onSave={() => void saveSection()}
@@ -205,7 +205,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
         <>
           <div className="mb-[17px] flex gap-0.5 border-b" style={{ borderColor: W.line }}>
             <Link
-              href={wikiDocPath(doc.slug)}
+              href={routes.docPath(doc.slug)}
               className="px-[14px] py-2 text-[12.5px]"
               style={{ color: W.sub }}
             >
@@ -218,7 +218,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
               고치기
             </span>
             <Link
-              href={`${wikiDocPath(doc.slug)}/history`}
+              href={routes.docHistoryPath(doc.slug)}
               className="px-[14px] py-2 text-[12.5px]"
               style={{ color: W.sub }}
             >
@@ -236,7 +236,7 @@ export function WikiDocEdit({ slug }: { slug: string }) {
             slug={doc.slug}
             busy={busy}
             onSave={(next) => void saveAll(next)}
-            onCancel={() => router.push(wikiDocPath(doc.slug))}
+            onCancel={() => router.push(routes.docPath(doc.slug))}
           />
         </>
       )}

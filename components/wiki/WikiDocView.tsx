@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { WikiBodyView } from "@/components/wiki/WikiBodyView";
+import { WikiDocSections } from "@/components/wiki/WikiDocSections";
 import { wikiFetch, WikiApiError } from "@/components/wiki/wiki-fetch";
+import { useWikiRoutes } from "@/components/wiki/wiki-routes-context";
 import { WikiStaffHiddenMark } from "@/components/wiki/WikiStaffHiddenMark";
 import { formatWikiStamp, W } from "@/components/wiki/wiki-theme";
 import { WIKI_RULES_LOCK_MESSAGE } from "@/lib/wiki/permissions";
 import {
-  wikiDocPath,
-  wikiListPath,
   wikiMakePrompt,
   type WikiDoc,
   type WikiMenu,
@@ -31,6 +30,7 @@ type DocPayload = {
 type NavPayload = { menus?: WikiMenu[]; is_admin?: boolean };
 
 export function WikiDocView({ slug }: { slug: string }) {
+  const routes = useWikiRoutes();
   const router = useRouter();
   const [doc, setDoc] = useState<WikiDoc | null>(null);
   const [menu, setMenu] = useState<WikiMenu | null>(null);
@@ -60,7 +60,7 @@ export function WikiDocView({ slug }: { slug: string }) {
         return;
       }
       if (json.canonical_slug && json.canonical_slug !== slug) {
-        router.replace(wikiDocPath(json.canonical_slug));
+        router.replace(routes.docPath(json.canonical_slug));
         return;
       }
       setDoc(json.item);
@@ -80,7 +80,7 @@ export function WikiDocView({ slug }: { slug: string }) {
     } finally {
       setLoading(false);
     }
-  }, [slug, router]);
+  }, [slug, router, routes]);
 
   useEffect(() => {
     void load();
@@ -139,7 +139,7 @@ export function WikiDocView({ slug }: { slug: string }) {
       await wikiFetch(`/api/wiki/docs/${encodeURIComponent(doc.slug)}`, {
         method: "DELETE"
       });
-      router.push(wikiListPath(doc.menu_slug));
+      router.push(routes.listPath(doc.menu_slug));
     } catch (err) {
       setError(err instanceof Error ? err.message : "삭제하지 못했습니다.");
       setBusy(false);
@@ -160,8 +160,8 @@ export function WikiDocView({ slug }: { slug: string }) {
           404
         </p>
         <h1 className="mt-1 text-[22px] font-extrabold">문서를 찾을 수 없습니다</h1>
-        <Link href="/wiki/terms" className="mt-4 inline-block text-[13px] font-semibold" style={{ color: W.luna }}>
-          Wikipedia로
+        <Link href={routes.rootHref} className="mt-4 inline-block text-[13px] font-semibold" style={{ color: W.luna }}>
+          {routes.rootLabel}로
         </Link>
       </div>
     );
@@ -175,15 +175,16 @@ export function WikiDocView({ slug }: { slug: string }) {
   }
 
   const locked = !canEdit;
-  const showToc = doc.sections.length >= 3;
-  const listHref = wikiListPath(doc.menu_slug);
-  const moveChoices = menus.filter((m) => m.is_active || isAdmin);
+  const listHref = routes.listPath(doc.menu_slug);
+  const moveChoices = routes.hideMoveMenu
+    ? []
+    : menus.filter((m) => m.is_active || isAdmin);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-[22px] py-4">
       <div className="mb-2 text-[11px]" style={{ color: W.faint }}>
-        <Link href="/wiki/terms" style={{ color: W.luna }}>
-          Wikipedia
+        <Link href={routes.rootHref} style={{ color: W.luna }}>
+          {routes.rootLabel}
         </Link>
         <span className="mx-[5px]" style={{ color: W.line }}>
           ›
@@ -219,17 +220,14 @@ export function WikiDocView({ slug }: { slug: string }) {
       </p>
 
       <div className="mb-[17px] flex items-end gap-0.5 border-b" style={{ borderColor: W.line }}>
-        <TabLink on href={wikiDocPath(doc.slug)}>
+        <TabLink on href={routes.docPath(doc.slug)}>
           읽기
         </TabLink>
-        <TabLink
-          href={`${wikiDocPath(doc.slug)}/edit`}
-          disabled={locked}
-        >
-          고치기
-        </TabLink>
-        <TabLink href={`${wikiDocPath(doc.slug)}/history`}>변경 이력</TabLink>
         {canEdit ? (
+          <TabLink href={routes.docEditPath(doc.slug)}>고치기</TabLink>
+        ) : null}
+        <TabLink href={routes.docHistoryPath(doc.slug)}>변경 이력</TabLink>
+        {canEdit && !routes.hideMoveMenu ? (
           <div className="ml-auto pb-[5px]">
             <button
               type="button"
@@ -304,52 +302,17 @@ export function WikiDocView({ slug }: { slug: string }) {
               취소
             </button>
             <span className="ml-auto text-[10.5px]" style={{ color: W.faint }}>
-              주소({wikiDocPath(doc.slug)})는 바뀌지 않습니다
+              주소({routes.docPath(doc.slug)})는 바뀌지 않습니다
             </span>
           </div>
         </div>
       ) : null}
 
-      {showToc ? (
-        <nav
-          className="mb-4 rounded-[11px] border px-3.5 py-3"
-          style={{ borderColor: W.line, background: "#FAFBFC" }}
-        >
-          <div className="mb-1.5 text-[10.5px] font-bold" style={{ color: W.faint }}>
-            차례
-          </div>
-          <ol className="ml-4 list-decimal text-[12.5px]">
-            {doc.sections.map((s) => (
-              <li key={s.id} className="py-0.5">
-                <a href={`#${s.id}`} style={{ color: W.luna }}>
-                  {s.title}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
-      ) : null}
-
-      {doc.sections.map((section) => (
-        <section key={section.id} id={section.id} className="mb-5">
-          <div
-            className="mb-2 flex items-baseline gap-[9px] border-b pb-1"
-            style={{ borderColor: W.line2 }}
-          >
-            <h3 className="text-[15px] font-bold">{section.title}</h3>
-            {canEdit ? (
-              <Link
-                href={`${wikiDocPath(doc.slug)}/edit?section=${encodeURIComponent(section.id)}`}
-                className="ml-auto text-[11px]"
-                style={{ color: W.luna }}
-              >
-                고치기
-              </Link>
-            ) : null}
-          </div>
-          <WikiBodyView text={section.body} />
-        </section>
-      ))}
+      <WikiDocSections
+        sections={doc.sections}
+        canEdit={canEdit}
+        editHref={(sectionId) => routes.docEditPath(doc.slug, sectionId)}
+      />
 
       <div className="mt-[22px] border-t pt-[13px]" style={{ borderColor: W.line }}>
         {doc.related.length > 0 ? (
@@ -362,7 +325,7 @@ export function WikiDocView({ slug }: { slug: string }) {
             ))}
           </p>
         ) : null}
-        {menu?.editable_by !== "admin" ? (
+        {!routes.hideLunaPrompt && menu?.editable_by !== "admin" ? (
           <Link
             href={`/luna?q=${encodeURIComponent(wikiMakePrompt(doc.title))}`}
             prefetch={false}
@@ -438,12 +401,13 @@ function TabLink({
 }
 
 function RelatedLink({ item }: { item: WikiRelated }) {
+  const routes = useWikiRoutes();
   const href =
     item.kind === "term"
-      ? "/wiki/terms"
+      ? routes.rootHref
       : item.slug
-        ? wikiDocPath(item.slug)
-        : "/wiki/terms";
+        ? routes.docPath(item.slug)
+        : routes.rootHref;
   return (
     <Link href={href} className="mr-[9px]" style={{ color: W.luna }}>
       {item.title}
