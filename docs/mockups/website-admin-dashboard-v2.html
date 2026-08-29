@@ -1,0 +1,444 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>홈페이지 어드민 — 대시보드</title><style>
+:root{--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--chip:#eef0f3;--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;
+--ok:#0f7a45;--okbg:#f0f9f4;--okln:#bfe3ce;
+--warn:#a35a08;--warnbg:#fdf7f0;--warnln:#eddcc4;
+--err:#b0231e;--errbg:#fdf2f1;--errln:#f0cecb;
+--ga:#1f6fd8;--sc:#0b8457;--ai:#7c3aed}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.pg{max-width:1240px;margin:0 auto;padding:26px 16px 120px}
+h1.t{font-size:23px;margin:0 0 4px;letter-spacing:-.02em}
+p.s{color:var(--dim);font-size:13px;margin:0 0 22px}
+.big{font-size:17px;font-weight:700;margin:36px 0 9px;padding-bottom:8px;
+border-bottom:2px solid var(--ink);display:flex;align-items:center;gap:9px}
+.big .n{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ap);
+background:var(--apbg);border-radius:4px;padding:2px 7px}
+.lead{color:#4a515b;font-size:13px;margin:0 0 13px;max-width:960px}
+.lead b{color:var(--ink)}
+
+.app{background:#fff;border:1px solid #d2d7de;border-radius:11px;overflow:hidden;
+box-shadow:0 4px 18px rgba(0,0,0,.06);margin-bottom:14px}
+.hd{height:46px;border-bottom:1px solid var(--line);display:flex;align-items:center;
+padding:0 16px;gap:11px;background:#fff}
+.hd .lg{width:22px;height:22px;border-radius:50%;border:1.6px solid var(--ink);
+display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.hd .nm{font-size:13px;font-weight:600;letter-spacing:.02em}
+.hd .rt{margin-left:auto;display:flex;align-items:center;gap:11px;font-size:11.5px;color:var(--dim)}
+.hd .bell{width:21px;height:21px;border-radius:50%;background:var(--errbg);color:var(--err);
+font-size:9.5px;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+.body{display:flex;min-height:560px}
+.side{width:198px;border-right:1px solid var(--line);background:#fcfcfd;
+padding:15px 0;flex-shrink:0}
+.side .tt{padding:0 16px 12px}
+.side .tt .u{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--faint)}
+.side .tt .d{font-size:15px;font-weight:700;margin-top:1px}
+.mi{display:flex;align-items:center;gap:9px;padding:6.5px 16px;font-size:12.5px;
+color:#4a515b;cursor:pointer;border-left:2.5px solid transparent}
+.mi:hover{background:#f4f5f7}
+.mi.on{background:var(--apbg);color:var(--ap);font-weight:600;border-left-color:var(--ap)}
+.mi .ic{width:15px;text-align:center;font-size:12px;opacity:.7}
+.mi .bd{margin-left:auto;font-size:10px;background:var(--err);color:#fff;
+border-radius:8px;padding:1px 6px;font-weight:700}
+.side .sep{height:1px;background:var(--line);margin:10px 16px}
+
+.main{flex:1;padding:20px 22px;min-width:0;background:#fff}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.ph h2{font-size:19px;margin:0;letter-spacing:-.01em}
+.ph .sp{flex:1}
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:5px 12px;font-size:12px;
+background:#fff;color:#3a4049;cursor:pointer;white-space:nowrap}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.sm{padding:3px 9px;font-size:11.5px}
+.upd{color:var(--faint);font-size:11.5px;margin:0 0 18px}
+
+/* 트래픽 카드 */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:#fff}
+.card .l{font-size:11px;color:var(--dim);font-weight:700;display:flex;
+align-items:center;gap:5px;margin-bottom:4px}
+.src{font-size:9px;font-weight:800;border-radius:3px;padding:1px 4px;color:#fff}
+.src.ga{background:var(--ga)}.src.sc{background:var(--sc)}.src.ai{background:var(--ai)}
+.card .v{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.card .v small{font-size:12px;font-weight:400;color:var(--faint)}
+.card .d{font-size:11.5px;margin-top:1px}
+.up{color:var(--ok)}.dn{color:var(--err)}
+.spark{height:26px;display:flex;align-items:flex-end;gap:1.5px;margin-top:8px}
+.spark i{flex:1;border-radius:1px 1px 0 0;display:block}
+.spark.g i{background:#c3d6f2}.spark.g i:last-child{background:var(--ga)}
+.spark.s i{background:#c2e2d3}.spark.s i:last-child{background:var(--sc)}
+.spark.a i{background:#ddd0f7}.spark.a i:last-child{background:var(--ai)}
+.card .sub{font-size:10.5px;color:var(--faint);margin-top:5px;display:flex;gap:9px}
+
+/* 신호등 */
+.health{border:1px solid var(--warnln);background:var(--warnbg);
+border-radius:10px;margin-bottom:14px;overflow:hidden}
+.health.ok{border-color:var(--okln);background:var(--okbg)}
+.hh{display:flex;align-items:center;gap:14px;padding:16px 20px}
+.lamp{width:46px;height:46px;border-radius:50%;flex-shrink:0;
+display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;font-weight:700}
+.lamp.w{background:var(--warn);box-shadow:0 0 0 5px rgba(163,90,8,.1)}
+.lamp.o{background:var(--ok);box-shadow:0 0 0 5px rgba(15,122,69,.1)}
+.hc{flex:1;min-width:0}
+.hc .st{font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--warn)}
+.health.ok .hc .st{color:var(--ok)}
+.hc .ds{font-size:12.5px;color:#4a515b;margin-top:1px}
+.tiers{display:flex;border-top:1px solid var(--warnln)}
+.health.ok .tiers{border-top-color:var(--okln)}
+.tier{flex:1;padding:10px 16px;text-align:center;border-right:1px solid var(--warnln)}
+.health.ok .tier{border-right-color:var(--okln)}
+.tier:last-child{border-right:none}
+.tier .n{font-size:20px;font-weight:700;line-height:1.2}
+.tier .l{font-size:11.5px;color:var(--dim);margin-top:1px}
+.tier.e .n{color:var(--err)}.tier.w .n{color:var(--warn)}.tier.o .n{color:var(--ok)}
+.items{background:#fff;border-top:1px solid var(--warnln)}
+.health.ok .items{border-top-color:var(--okln)}
+.irow{display:flex;align-items:flex-start;gap:11px;padding:10px 20px;
+border-bottom:1px solid var(--line);font-size:12.5px}
+.irow:last-child{border-bottom:none}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.dot.e{background:var(--err)}.dot.w{background:var(--warn)}.dot.o{background:var(--ok)}
+.irow .c{flex:1;min-width:0}
+.irow .t2{font-weight:600}
+.irow .s2{font-size:11.5px;color:var(--dim);margin-top:1px}
+.foot{padding:9px 20px;font-size:11.5px;color:var(--dim);background:var(--soft);
+border-top:1px solid var(--line)}
+
+.blk{border:1px solid var(--line);border-radius:9px;margin-bottom:13px;background:#fff}
+.bh{display:flex;align-items:center;gap:9px;padding:10px 15px;border-bottom:1px solid var(--line)}
+.bh .t3{font-size:13.5px;font-weight:700}
+.bh .sp{flex:1}
+.bh .more{font-size:11.5px;color:var(--dim)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:8px 15px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{background:var(--soft);font-size:10.5px;font-weight:700;color:var(--dim)}
+tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kind{font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;
+background:var(--chip);color:var(--dim);margin-right:6px}
+.cite{font-weight:700;color:var(--ai)}
+.zero{color:var(--faint)}
+
+.mrow{display:flex;align-items:center;gap:10px;padding:9px 15px;
+border-bottom:1px solid var(--line);font-size:12.5px}
+.mrow:last-child{border-bottom:none}
+.mrow .c{flex:1;min-width:0}
+.mrow .nm2{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .mt{font-size:11px;color:var(--faint)}
+.mrow .rdot{width:7px;height:7px;border-radius:50%;background:var(--err);flex-shrink:0}
+.mrow .rdot.off{background:var(--chip)}
+.mrow .tm{font-size:11px;color:var(--faint);white-space:nowrap}
+.st2{font-size:10px;font-weight:700;border-radius:3px;padding:1px 7px}
+.st2.pub{background:var(--okbg);color:var(--ok)}
+.st2.draft{background:var(--warnbg);color:var(--warn)}
+.stat{display:flex;gap:24px;padding:12px 15px;font-size:12.5px;flex-wrap:wrap}
+.stat b{font-size:17px;font-weight:700;margin-right:4px}
+.stat .u{color:var(--dim);font-size:11.5px}
+
+.box{border-radius:0 8px 8px 0;padding:12px 15px;margin:12px 0;font-size:12.5px}
+.box.o{background:var(--okbg);border:1px solid var(--okln);border-left:3px solid var(--ok)}
+.box.w{background:var(--warnbg);border:1px solid var(--warnln);border-left:3px solid var(--warn)}
+.box.i{background:var(--apbg);border:1px solid var(--apln);border-left:3px solid var(--ap)}
+.box b.h{display:block;margin-bottom:4px;font-size:13px}
+.box.o b.h{color:var(--ok)}.box.w b.h{color:var(--warn)}.box.i b.h{color:var(--ap)}
+.box p{margin:0 0 6px}.box p:last-child{margin:0}
+.box ul{margin:6px 0 0;padding-left:19px}
+.mini{font-size:11px;color:var(--faint);margin-top:6px}
+@media (max-width:900px){.side{display:none}.cards{grid-template-columns:repeat(2,1fr)}
+.two{grid-template-columns:1fr}}
+</style></head><body><div class="pg"><h1 class="t">홈페이지 어드민 — 대시보드</h1><p class="s">2026.08.28 · 사이드바 재구성 · 트래픽 + 신호등 + AI 인용</p><div class="app"><div class="hd"><div class="lg">A</div><div class="nm">APOLLON HUB</div><div class="rt"><span>이택진 / 공간파트 / 슈퍼관리자</span><span class="bell">9+</span></div></div><div class="body"><div class="side">
+<div class="tt"><div class="u">WEBSITE</div><div class="d">홈페이지</div></div>
+<div class="mi on"><span class="ic">▤</span>대시보드</div>
+<div class="mi"><span class="ic">⌂</span>홈</div>
+<div class="mi"><span class="ic">▣</span>워크</div>
+<div class="mi"><span class="ic">▤</span>인사이트</div>
+<div class="mi"><span class="ic">◉</span>커리어<span class="bd">1</span></div>
+<div class="mi"><span class="ic">✉</span>Let's Talk<span class="bd">3</span></div>
+<div class="mi"><span class="ic">◈</span>뉴스레터</div>
+<div class="mi"><span class="ic">▭</span>기타</div>
+<div class="sep"></div>
+<div class="mi"><span class="ic">◎</span>검색 · AI</div>
+<div class="mi"><span class="ic">◔</span>통계</div>
+<div class="mi"><span class="ic">⚙</span>설정</div>
+<div class="mi"><span class="ic">▨</span>제작·운영 가이드</div>
+</div><div class="main">
+<div class="ph"><h2>대시보드</h2><span class="sp"></span>
+<span class="btn">홈페이지 열기 ↗</span><span class="btn p">＋ 새 워크</span></div>
+<p class="upd">2026년 8월 28일 금요일 · 통계 마지막 수집 03:10 ·
+검색 데이터는 2일 전까지 반영됩니다</p>
+
+<div class="cards">
+  <div class="card">
+    <div class="l"><span class="src ga">GA</span>방문자</div>
+    <div class="v">1,842</div><div class="d up">▲ 32.4%</div>
+    <div class="spark g"><i style="height:66%"></i><i style="height:44%"></i><i style="height:75%"></i><i style="height:31%"></i><i style="height:34%"></i><i style="height:93%"></i><i style="height:37%"></i><i style="height:71%"></i><i style="height:32%"></i><i style="height:89%"></i><i style="height:52%"></i><i style="height:29%"></i><i style="height:36%"></i><i style="height:80%"></i><i style="height:78%"></i><i style="height:33%"></i><i style="height:55%"></i><i style="height:36%"></i><i style="height:95%"></i><i style="height:79%"></i><i style="height:32%"></i><i style="height:40%"></i><i style="height:53%"></i><i style="height:32%"></i><i style="height:75%"></i><i style="height:31%"></i><i style="height:53%"></i><i style="height:30%"></i><i style="height:42%"></i><i style="height:62%"></i></div>
+    <div class="sub"><span>신규 71%</span><span>재방문 29%</span></div>
+  </div>
+  <div class="card">
+    <div class="l"><span class="src sc">SC</span>검색 노출</div>
+    <div class="v">14,207</div><div class="d up">▲ 118.9%</div>
+    <div class="spark s"><i style="height:78%"></i><i style="height:43%"></i><i style="height:94%"></i><i style="height:40%"></i><i style="height:64%"></i><i style="height:48%"></i><i style="height:38%"></i><i style="height:49%"></i><i style="height:72%"></i><i style="height:37%"></i><i style="height:95%"></i><i style="height:33%"></i><i style="height:32%"></i><i style="height:51%"></i><i style="height:88%"></i><i style="height:93%"></i><i style="height:79%"></i><i style="height:65%"></i><i style="height:84%"></i><i style="height:83%"></i><i style="height:71%"></i><i style="height:63%"></i><i style="height:56%"></i><i style="height:48%"></i><i style="height:56%"></i><i style="height:35%"></i><i style="height:63%"></i><i style="height:92%"></i><i style="height:88%"></i><i style="height:68%"></i></div>
+    <div class="sub"><span>평균 순위 7.4</span></div>
+  </div>
+  <div class="card">
+    <div class="l"><span class="src sc">SC</span>검색 클릭</div>
+    <div class="v">421</div><div class="d dn">▼ 4.0%</div>
+    <div class="spark s"><i style="height:66%"></i><i style="height:48%"></i><i style="height:38%"></i><i style="height:58%"></i><i style="height:24%"></i><i style="height:27%"></i><i style="height:52%"></i><i style="height:46%"></i><i style="height:30%"></i><i style="height:68%"></i><i style="height:41%"></i><i style="height:29%"></i><i style="height:51%"></i><i style="height:46%"></i><i style="height:22%"></i><i style="height:62%"></i><i style="height:24%"></i><i style="height:68%"></i><i style="height:55%"></i><i style="height:56%"></i><i style="height:70%"></i><i style="height:40%"></i><i style="height:41%"></i><i style="height:64%"></i><i style="height:42%"></i><i style="height:58%"></i><i style="height:51%"></i><i style="height:57%"></i><i style="height:49%"></i><i style="height:24%"></i></div>
+    <div class="sub"><span>클릭률 3.0%</span></div>
+  </div>
+  <div class="card">
+    <div class="l"><span class="src ai">AI</span>AI 인용</div>
+    <div class="v">17<small> 건</small></div><div class="d up">▲ 6건</div>
+    <div class="spark a"><i style="height:21%"></i><i style="height:44%"></i><i style="height:70%"></i><i style="height:18%"></i><i style="height:17%"></i><i style="height:49%"></i><i style="height:67%"></i><i style="height:46%"></i><i style="height:59%"></i><i style="height:54%"></i><i style="height:12%"></i><i style="height:69%"></i><i style="height:55%"></i><i style="height:31%"></i><i style="height:24%"></i><i style="height:73%"></i><i style="height:17%"></i><i style="height:37%"></i><i style="height:46%"></i><i style="height:26%"></i><i style="height:41%"></i><i style="height:60%"></i><i style="height:60%"></i><i style="height:73%"></i><i style="height:20%"></i><i style="height:31%"></i><i style="height:67%"></i><i style="height:61%"></i><i style="height:80%"></i><i style="height:45%"></i></div>
+    <div class="sub"><span>질문 42개 중 12개</span></div>
+  </div>
+</div>
+
+<div class="blk">
+  <div class="bh"><span class="t3">오늘 잘 보이는 콘텐츠</span>
+    <span class="sp"></span><span class="more">통계 전체 →</span></div>
+  <table>
+  <tr><th>콘텐츠</th><th class="n">방문</th><th class="n">노출</th>
+    <th class="n">클릭</th><th class="n">AI 인용</th></tr>
+  <tr><td><span class="kind">워크</span>롯데면세점 스타애비뉴 리뉴얼</td>
+    <td class="n">412</td><td class="n">3,208</td><td class="n">96</td>
+    <td class="n cite">5</td></tr>
+  <tr><td><span class="kind">워크</span>인스파이어 Under the Blueland</td>
+    <td class="n">377</td><td class="n">2,914</td><td class="n">88</td>
+    <td class="n cite">6</td></tr>
+  <tr><td><span class="kind">인사이트</span>통로를 목적지로 바꾼 이야기</td>
+    <td class="n">240</td><td class="n">1,861</td><td class="n">57</td>
+    <td class="n cite">3</td></tr>
+  <tr><td><span class="kind">워크</span>Trendy·Youth Town</td>
+    <td class="n">156</td><td class="n">1,102</td><td class="n">31</td>
+    <td class="n cite">2</td></tr>
+  <tr><td><span class="kind">인사이트</span>랜드마크가 공유되는 이유</td>
+    <td class="n">88</td><td class="n">640</td><td class="n">14</td>
+    <td class="n zero">0</td></tr>
+  </table>
+</div>
+
+<div class="health">
+  <div class="hh">
+    <div class="lamp w">!</div>
+    <div class="hc">
+      <div class="st">손볼 것이 있습니다</div>
+      <div class="ds">공개에 지장을 주는 것 2건, 검색·AI 노출에 영향을 주는 것 4건</div>
+    </div>
+  </div>
+  <div class="tiers">
+    <div class="tier e"><div class="n">2</div><div class="l">문제</div></div>
+    <div class="tier w"><div class="n">4</div><div class="l">확인 필요</div></div>
+    <div class="tier o"><div class="n">9</div><div class="l">통과</div></div>
+  </div>
+  <div class="items">
+    <div class="irow"><span class="dot e"></span><span class="c">
+      <span class="t2">이미지를 불러오지 못합니다</span>
+      <div class="s2">워크 「콘텐츠 모듈 테스트」 · 갤러리 4번째 이미지</div></span>
+      <span class="btn sm">고치기</span></div>
+    <div class="irow"><span class="dot e"></span><span class="c">
+      <span class="t2">구글이 2개 페이지를 색인하지 않았습니다</span>
+      <div class="s2">색인되지 않으면 검색에도 AI에도 나오지 않습니다 · Search Console</div></span>
+      <span class="btn sm">확인</span></div>
+    <div class="irow"><span class="dot w"></span><span class="c">
+      <span class="t2">영문이 비어 있는 워크 2건</span>
+      <div class="s2">영어권 AI가 이 프로젝트를 읽지 못합니다</div></span>
+      <span class="btn sm">채우기</span></div>
+    <div class="irow"><span class="dot w"></span><span class="c">
+      <span class="t2">대체 텍스트 없는 이미지 4장</span>
+      <div class="s2">모든 이미지에 필수입니다</div></span>
+      <span class="btn sm">채우기</span></div>
+    <div class="irow"><span class="dot w"></span><span class="c">
+      <span class="t2">캡션이 중복된 이미지 6장</span>
+      <div class="s2">같은 문장이 반복되면 AI가 인용하지 않습니다</div></span>
+      <span class="btn sm">고치기</span></div>
+    <div class="irow"><span class="dot w"></span><span class="c">
+      <span class="t2">검색 설명이 없는 정적 페이지 5건</span>
+      <div class="s2">구글이 본문에서 아무 데나 잘라 씁니다</div></span>
+      <span class="btn sm">채우기</span></div>
+    <div class="irow"><span class="dot o"></span><span class="c">
+      <span class="t2">통과한 검사 9개</span>
+      <div class="s2">사이트맵 · 구조화 데이터 · 국영문 연결 · 대표 이미지 규격 · FAQ …</div></span>
+      <span class="btn sm">펼치기</span></div>
+  </div>
+  <div class="foot">매일 새벽 3시에 검사합니다 · 마지막 검사 오늘 03:10</div>
+</div>
+
+<div class="two">
+  <div class="blk">
+    <div class="bh"><span class="t3">최근 작업</span>
+      <span class="sp"></span><span class="more">전체 →</span></div>
+    <div class="mrow"><span class="c">
+      <span class="nm2"><span class="kind">워크</span>콘텐츠 모듈 테스트</span>
+      <span class="mt">14분 전 저장 · 이택진</span></span>
+      <span class="st2 draft">초안</span><span class="btn sm">미리보기 ↗</span></div>
+    <div class="mrow"><span class="c">
+      <span class="nm2"><span class="kind">인사이트</span>통로를 목적지로 바꾼 이야기</span>
+      <span class="mt">1시간 전 공개 · 이택진</span></span>
+      <span class="st2 pub">공개</span><span class="btn sm">보기 ↗</span></div>
+    <div class="mrow"><span class="c">
+      <span class="nm2"><span class="kind">기타</span>Expertise — FAQ 6문항</span>
+      <span class="mt">어제 · 이택진</span></span>
+      <span class="st2 pub">공개</span><span class="btn sm">보기 ↗</span></div>
+    <div class="mrow"><span class="c">
+      <span class="nm2"><span class="kind">홈</span>노출 카드 배치 변경</span>
+      <span class="mt">어제 · 이택진</span></span>
+      <span class="st2 pub">공개</span><span class="btn sm">보기 ↗</span></div>
+  </div>
+
+  <div class="blk">
+    <div class="bh"><span class="t3">받은 내용</span>
+      <span class="sp"></span><span class="more">전체 →</span></div>
+    <div class="mrow"><span class="rdot"></span><span class="c">
+      <span class="nm2">Let's Talk — 롯데물산 김○○</span>
+      <span class="mt">복합시설 로비 미디어월 검토</span></span>
+      <span class="tm">2시간 전</span></div>
+    <div class="mrow"><span class="rdot"></span><span class="c">
+      <span class="nm2">Let's Talk — Marina Bay Sands</span>
+      <span class="mt">해외 문의</span></span>
+      <span class="tm">어제</span></div>
+    <div class="mrow"><span class="rdot"></span><span class="c">
+      <span class="nm2">커리어 — 콘텐츠기획 지원 1명</span></span>
+      <span class="tm">어제</span></div>
+    <div class="mrow"><span class="rdot off"></span><span class="c">
+      <span class="nm2">뉴스레터 구독 8명</span></span>
+      <span class="tm">이번 주</span></div>
+  </div>
+</div>
+
+<div class="blk">
+  <div class="bh"><span class="t3">콘텐츠 현황</span></div>
+  <div class="stat">
+    <span><b>4</b>워크 <span class="u">공개 4 · 초안 0</span></span>
+    <span><b>0</b>인사이트 <span class="u">아직 등록 전</span></span>
+    <span><b>106</b>이미지 <span class="u">캡션 31 · 없음 4</span></span>
+    <span><b>13</b>홈 카드 <span class="u">9칸 채워짐</span></span>
+  </div>
+</div>
+</div></div></div>
+<div class="big"><span class="n">설계</span>왜 이렇게 만들었나</div>
+
+<div class="box i">
+  <b class="h">대시보드는 「지난 30일이 어땠나」가 아니라 「지금 뭘 해야 하나」입니다</b>
+  <p>그래서 신호등이 화면 가운데에 있고, 각 줄에 <b>「고치기」 버튼</b>이 붙습니다.
+  통계를 깊게 보는 것은 「통계」 메뉴로 넘어갑니다.</p>
+</div>
+
+<div class="box i">
+  <b class="h">트래픽 카드는 맨 위에 둡니다</b>
+  <p>매일 아침 가장 먼저 보는 숫자입니다. 각 카드 아래 <b>30일 미니 그래프</b>가 붙어
+  추세가 바로 보입니다.</p>
+  <p style="margin-top:6px">그 아래 <b>「오늘 잘 보이는 콘텐츠」</b>를 둡니다.
+  국가·시간대·디바이스는 한번 파악하면 잘 안 바뀌지만,
+  <b>매일 달라지는 건 「어느 콘텐츠가 반응하나」</b>이고 그게 다음에 뭘 쓸지를 정합니다.</p>
+</div>
+
+<div class="box w">
+  <b class="h">SEO · AEO · GEO 로 탭을 나누지 않습니다</b>
+  <p>세 이름은 업계 구분이지 우리가 일하는 단위가 아닙니다. 실제로 판단하는 건 이것입니다.</p>
+  <table style="margin:8px 0 0;border:1px solid var(--warnln);border-radius:7px;overflow:hidden">
+  <tr><th style="width:44%">보이는 것</th><th>무슨 뜻인가</th></tr>
+  <tr><td>노출은 많은데 클릭이 없다</td><td>제목 · 설명 문제</td></tr>
+  <tr><td>클릭은 있는데 AI 인용이 0</td><td>본문 깊이 · FAQ 문제</td></tr>
+  <tr><td>둘 다 0</td><td>색인이 안 됐다</td></tr>
+  </table>
+  <p style="margin-top:8px"><b>한 줄에 나란히 놓아야 이 판단이 됩니다.</b>
+  탭으로 나누면 오히려 안 보입니다.</p>
+</div>
+
+<div class="box o">
+  <b class="h">GA를 버리지 않습니다. 가져와서 합칩니다</b>
+  <p>GA는 데이터를 잘 모읍니다. 문제는 세 가지입니다.</p>
+  <ul>
+    <li><b>GA 화면에 우리 콘텐츠 이름이 없습니다.</b>
+      <code>/works/lotte-duty-free-star-avenue</code> 만 보입니다.
+      우리는 DB에 워크가 있으니 <b>이름으로 바꿔 보여줄 수 있습니다.</b>
+      GA 혼자서는 못 하는 일이고, 이 화면을 따로 만드는 가장 큰 이유입니다</li>
+    <li><b>AI 인용을 못 봅니다.</b> 클릭이 없으면 GA에 아무것도 안 남습니다</li>
+    <li><b>검색 노출은 GA가 아니라 Search Console에 있습니다.</b>
+      두 화면을 따로 봐야 합니다</li>
+  </ul>
+  <p style="margin-top:7px">그래서 <b>매일 새벽에 GA4 API · Search Console API로 끌어와</b>
+  <code>website_stats</code>에 날짜별로 쌓고, 한 화면에서 봅니다.</p>
+</div>
+
+<div class="box i">
+  <b class="h">AI 인용은 직접 재야 합니다</b>
+  <p>지금 유입으로 잡히는 것은 ChatGPT 일부와 Perplexity 일부뿐입니다.
+  Claude · Gemini · AI Overviews는 <b>클릭이 있어도 리퍼러가 잘 안 남거나 애초에 클릭이 없습니다.</b></p>
+  <p style="margin-top:6px">그래서 <b>질문 30~50개를 등록해두고 주 1회 각 AI에 던져 기록합니다.</b>
+  아폴론이 나왔는지 · 몇 번째인지 · 어느 페이지를 근거로 삼았는지까지.</p>
+  <p style="margin-top:6px">트렌드 레이더와 구조가 똑같습니다.
+  <b>기존 파이프라인에 질문 목록만 얹으면 됩니다.</b></p>
+</div>
+
+<div class="box w">
+  <b class="h">신호등에 넣는 기준은 하나 — 누르면 갈 곳이 있는가</b>
+  <p>WordPress Site Health가 늘 노란불인 이유는 <b>고칠 수 없는 항목까지 넣기 때문</b>입니다.
+  항상 노란불이면 아무도 안 봅니다.</p>
+  <p style="margin-top:6px">그래서 뺀 것 — 페이지 속도 점수 · 모바일 사용성 경고 · 백링크 수.
+  알아도 그 자리에서 못 고칩니다.</p>
+  <p style="margin-top:6px"><b>「통과 9」를 문제 개수와 함께 보여줍니다.</b>
+  문제만 보이면 항상 나쁜 사이트처럼 느껴집니다.</p>
+</div>
+
+<div class="box o">
+  <b class="h">할 일이 없으면 신호등이 초록으로 바뀝니다</b>
+  <p>항목 목록은 접히고 「사이트가 정상입니다」 한 줄만 남습니다.
+  <b>항상 떠 있으면 무시하게 됩니다.</b></p>
+</div>
+
+<div class="big"><span class="n">＊</span>사이드바</div>
+
+<table style="margin-bottom:14px">
+<tr><th style="width:20%">메뉴</th><th style="width:36%">무엇을 하나</th><th>비고</th></tr>
+<tr><td><b>대시보드</b></td><td>지금 할 일 · 트래픽 요약</td><td>이 화면</td></tr>
+<tr><td><b>홈</b></td><td>메인에 노출할 콘텐츠 배치</td><td>13칸 드래그</td></tr>
+<tr><td><b>워크</b></td><td>프로젝트 목록 · 등록 · 카테고리 · 태그</td><td>완성</td></tr>
+<tr><td><b>인사이트</b></td><td>글 목록 · 등록 · 카테고리 · 태그</td><td>다음 작업</td></tr>
+<tr><td><b>커리어</b></td><td>채용 공고 · <b>지원자</b> · FAQ · 페이지 설명</td><td>사이트 메뉴와 같은 이름</td></tr>
+<tr><td><b>Let's Talk</b></td><td><b>문의 목록</b> · FAQ · 페이지 설명</td><td>같음</td></tr>
+<tr><td><b>뉴스레터</b></td><td>구독자 · 발송 이력</td><td>같음</td></tr>
+<tr><td><b>기타</b></td><td>About · Expertise · Privacy · 이미지</td><td>독립 메뉴로 둘 만큼 크지 않은 것</td></tr>
+<tr><td>검색 · AI</td><td>회사 정보 · 공개 전 점검 · llms.txt</td><td></td></tr>
+<tr><td>통계</td><td>유입 · 검색어 · AI 인용 상세</td><td>오픈 후</td></tr>
+<tr><td>설정</td><td>발행 · 알림 · 권한 · 규격</td><td></td></tr>
+</table>
+
+<div class="box o">
+  <b class="h">「받은 내용」으로 묶지 않고 흩어놓습니다</b>
+  <p>예전 안은 문의 · 인재풀 · 뉴스레터를 한 덩어리로 묶었습니다. 세 가지 이유로 바꿉니다.</p>
+  <ul>
+    <li><b>사이트 메뉴와 이름이 같으면 헷갈리지 않습니다.</b>
+      「Career 페이지 고치려면 어디 가지」가 바로 나옵니다</li>
+    <li><b>한 메뉴 안에서 다 끝납니다.</b> 예전엔 Career 하나 고치려고
+      「페이지」와 「받은 내용」 두 군데를 가야 했습니다</li>
+    <li><b>「받은 내용」이라는 이름이 애매합니다.</b>
+      문의는 답해야 하고 뉴스레터는 그냥 쌓입니다. 성격이 다릅니다</li>
+  </ul>
+</div>
+
+<div class="box i">
+  <b class="h">FAQ는 각 메뉴 안에 둡니다</b>
+  <p>Expertise FAQ는 회사 질문, Career FAQ는 채용 질문, Let's Talk FAQ는 문의 질문입니다.
+  <b>성격이 완전히 달라</b> 한 화면에 모으면 「이건 어디 FAQ지」를 매번 확인해야 합니다.</p>
+  <p style="margin-top:6px">각 메뉴 안에 탭으로 두면 Career를 고칠 때 <b>채용 공고와 FAQ를 같이</b> 봅니다.</p>
+</div>
+
+<div class="box w">
+  <b class="h">정해야 할 것</b>
+  <ul>
+    <li>이 사이드바 구성이 맞는지</li>
+    <li>대시보드에 <b>「오늘 잘 보이는 콘텐츠」</b>를 넣은 것이 맞는지
+      (다른 후보 — 유입 키워드 5 · 방문 경로 비율)</li>
+    <li>다음은 <b>인사이트</b> 화면 목업</li>
+  </ul>
+</div>
+
+<p class="mini" style="margin-top:20px;text-align:center">
+색·글자 크기·여백은 Hub 기존 것을 씁니다. 이 목업은 배치와 구성만 봅니다.</p>
+</div></body></html>
