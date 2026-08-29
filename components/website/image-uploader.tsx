@@ -10,6 +10,8 @@ import {
   type UploadBucket
 } from "@/lib/website/upload-path";
 import {
+  insightKeyImageTooSmall,
+  insightKeyImageWarnMessage,
   keyImageRejectMessage,
   validateKeyImageDimensions
 } from "@/lib/website/key-image-rules";
@@ -32,7 +34,7 @@ export type UploadedMedia = {
   name: string;
 };
 
-type Kind = "gallery" | "poster" | "loop-lg" | "loop-sm" | "key";
+type Kind = "gallery" | "poster" | "loop-lg" | "loop-sm" | "key" | "insight-key";
 
 type Props = {
   bucket: UploadBucket;
@@ -466,6 +468,13 @@ export function ImageUploader({
         }
       }
 
+      if (kind === "insight-key" && isImage) {
+        const dims = await readSize(file);
+        if (dims?.width && dims.height && insightKeyImageTooSmall(dims.width, dims.height)) {
+          nextWarnings.push(`${file.name}: ${insightKeyImageWarnMessage(dims.width, dims.height)}`);
+        }
+      }
+
       ok.push(file);
     }
 
@@ -506,6 +515,7 @@ export function ImageUploader({
         const path = uploadObjectPath(folder, filename);
         const res = await uploadFile(file, bucket, path, {
           signal: controller.signal,
+          fields: kind === "key" || kind === "insight-key" ? { role: "key" } : undefined,
           onProgress: (p) => {
             const overall =
               totalBytes > 0
@@ -636,7 +646,9 @@ export function ImageUploader({
   const thumb =
     kind === "key"
       ? { width: 172, height: 97, video: false }
-      : { width: 106, height: 60, video: true };
+      : kind === "insight-key"
+        ? { width: 150, height: meta?.height && meta.width ? Math.round((150 * meta.height) / meta.width) : 150, video: false }
+        : { width: 106, height: 60, video: true };
 
   if (filled && value) {
     const dims =

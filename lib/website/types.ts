@@ -67,6 +67,60 @@ export type WorkListData = {
   limit: number;
 };
 
+export type CheckInsights = {
+  id: string;
+  slug: string;
+  title_ko: string | null;
+  status: "draft" | "published";
+  missing_summary_en: boolean;
+  missing_key_alt: boolean;
+  no_key_image: boolean;
+  key_image_size_unknown: boolean;
+  key_image_too_small: boolean;
+  no_blocks: boolean;
+  missing_body_en: boolean;
+  missing_qa_en: boolean;
+  empty_blocks: number | boolean;
+  missing_image_alt: boolean;
+  ai_unconfirmed: boolean;
+  body_image_too_small: boolean;
+  faq_on_but_empty: boolean;
+  no_tags: boolean;
+  no_related: boolean;
+  summary_too_long: boolean;
+  stale_draft: boolean;
+  image_count: number;
+};
+
+export type InsightListItem = {
+  id: string;
+  slug: string;
+  title: LocalizedText | null;
+  status: "draft" | "published";
+  category_id: string;
+  year: string | null;
+  published_at: string | null;
+  key_image: string | null;
+  key_image_width: number | null;
+  key_image_height: number | null;
+  show_faq: boolean;
+  updated_at: string;
+  counts: {
+    blocks: number;
+    images: number;
+    tags: number;
+    related: number;
+  };
+  check: CheckInsights | null;
+};
+
+export type InsightListData = {
+  items: InsightListItem[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 export type WebsiteCategory = {
   id: string;
   label: LocalizedText;

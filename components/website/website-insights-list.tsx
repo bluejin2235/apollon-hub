@@ -1,0 +1,637 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { MoreHorizontal } from "lucide-react";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { NewInsightModal } from "@/components/website/new-insight-modal";
+import { useWebsitePermissions } from "@/components/website/website-permissions";
+import { showToast } from "@/components/website/toast";
+import { deleteInsight, getMeta, listInsights, updateInsight } from "@/lib/website/api";
+import { fillInsightBasic, fillInsightBody, fillInsightRelated, insightTitle } from "@/lib/website/checks";
+import type { InsightListItem, WebsiteCategory } from "@/lib/website/types";
+
+const PUBLISH_REDIRECT_KEY = "website-insight-publish-toast";
+
+type SortKey = "recent" | "title" | "published";
+
+const CAT_CHIP: Record<string, string> = {
+  "behind-the-work": "bg-[#eef0fb] text-[#4b5bb5]",
+  interview: "bg-[#eef4fb] text-[#2563a8]",
+  news: "bg-[#f3eefb] text-[#7c3aed]",
+  culture: "bg-[#fdf3ee] text-[#a35a08]",
+  lab: "bg-[#eaf5f0] text-[#0f7a45]"
+};
+
+function mediaUrl(siteUrl: string, src: string | null): string | null {
+  if (!src) return null;
+  if (/^https?:\/\//i.test(src)) return src;
+  const base = siteUrl.replace(/\/$/, "");
+  return `${base}${src.startsWith("/") ? src : `/${src}`}`;
+}
+
+function publicInsightUrl(siteUrl: string, slug: string) {
+  return `${siteUrl.replace(/\/$/, "")}/insights/${slug}`;
+}
+
+function editHref(id: string) {
+  return `/website/insights/${id}?tab=basic`;
+}
+
+function formatError(error: string, details?: unknown) {
+  return error + (details ? ` · ${JSON.stringify(details)}` : "");
+}
+
+function formatPublished(value: string | null) {
+  if (!value) return "—";
+  const d = value.slice(0, 10);
+  const [y, m, day] = d.split("-");
+  if (!y || !m || !day) return d;
+  return `${y}.${m}.${day}`;
+}
+
+function thumbHeight(item: InsightListItem, width: number) {
+  const w = item.key_image_width;
+  const h = item.key_image_height;
+  if (!w || !h || w <= 0 || h <= 0) return width;
+  return Math.round((width * h) / w);
+}
+
+function CategoryChip({ id, label }: { id: string; label: string }) {
+  const chip = CAT_CHIP[id] ?? "bg-slate-100 text-slate-600";
+  return (
+    <span className={`inline-block whitespace-nowrap rounded-[3px] px-[7px] py-0.5 text-[10px] font-bold ${chip}`}>
+      {label}
+    </span>
+  );
+}
+
+function dotClass(state: "ok" | "warn" | "empty") {
+  if (state === "ok") return "bg-[#10b981]";
+  if (state === "warn") return "bg-[#f59e0b]";
+  return "bg-[#d1d5db]";
+}
+
+function FillDots({ item }: { item: InsightListItem }) {
+  const dots = [fillInsightBasic(item.check), fillInsightBody(item.check), fillInsightRelated(item.check)];
+  return (
+    <span className="inline-flex items-center justify-center gap-[3.5px]" title="기본정보 · 본문 · 연결">
+      {dots.map((state, i) => (
+        <i key={i} className={`inline-block h-[7px] w-[7px] rounded-full ${dotClass(state)}`} />
+      ))}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: InsightListItem["status"] }) {
+  const published = status === "published";
+  return (
+    <span
+      className={`inline-block rounded-[3px] px-[7px] py-0.5 text-[10px] font-bold ${
+        published ? "bg-[#f0f9f4] text-[#0f7a45]" : "bg-[#eef0f3] text-[#6b7280]"
+      }`}
+    >
+      {published ? "공개" : "초안"}
+    </span>
+  );
+}
+
+const menuItemClass = "block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50";
+
+function InsightOverflowMenu({
+  item,
+  siteUrl,
+  open,
+  onOpenChange,
+  onUnpublish,
+  onDelete,
+  canManage
+}: {
+  item: InsightListItem;
+  siteUrl: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onUnpublish: () => void;
+  onDelete: () => void;
+  canManage: boolean;
+}) {
+  const published = item.status === "published";
+  const url = publicInsightUrl(siteUrl, item.slug);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const [copied, setCopied] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setCopied(false);
+      setPos(null);
+      return;
+    }
+    function place() {
+      const rect = btnRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    place();
+    function onDoc(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) onOpenChangeRef.current(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onOpenChangeRef.current(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  async function copyUrl() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div ref={rootRef} className="relative" data-stop-row>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="더 보기"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenChange(!open);
+        }}
+        className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && pos ? (
+        <div
+          role="menu"
+          className="fixed z-30 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+          style={{ top: pos.top, right: pos.right }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Link href={editHref(item.id)} role="menuitem" className={menuItemClass}>
+            편집
+          </Link>
+          {published ? (
+            <a href={url} target="_blank" rel="noreferrer" role="menuitem" className={menuItemClass}>
+              홈페이지에서 보기 ↗
+            </a>
+          ) : (
+            <span className="group relative block" title="공개 후에 볼 수 있습니다">
+              <span
+                role="menuitem"
+                aria-disabled="true"
+                className="block w-full cursor-not-allowed px-3 py-1.5 text-left text-sm text-slate-400"
+              >
+                홈페이지에서 보기 ↗
+              </span>
+            </span>
+          )}
+          <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyUrl()}>
+            {copied ? "복사됨" : "주소 복사"}
+          </button>
+          <div className="my-1 border-t border-slate-200" />
+          {canManage && published ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onUnpublish();
+              }}
+            >
+              비공개로 되돌리기
+            </button>
+          ) : null}
+          {canManage ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="block w-full px-3 py-1.5 text-left text-sm text-rose-600 hover:bg-rose-50"
+              onClick={() => {
+                onOpenChange(false);
+                onDelete();
+              }}
+            >
+              삭제
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Thumb({
+  src,
+  item,
+  width
+}: {
+  src: string | null;
+  item: InsightListItem;
+  width: number;
+}) {
+  const height = thumbHeight(item, width);
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt=""
+        width={width}
+        height={height}
+        className="shrink-0 rounded-[5px] object-cover"
+        style={{ width, height }}
+      />
+    );
+  }
+  return (
+    <span
+      className="grid shrink-0 place-items-center rounded-[5px] bg-slate-100 text-[10px] text-slate-400"
+      style={{ width, height }}
+    >
+      —
+    </span>
+  );
+}
+
+export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
+  const router = useRouter();
+  const { canManageWorks } = useWebsitePermissions();
+  const [items, setItems] = useState<InsightListItem[]>([]);
+  const [categories, setCategories] = useState<WebsiteCategory[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [category, setCategory] = useState("all");
+  const [status, setStatus] = useState<"all" | "draft" | "published">("all");
+  const [sortBy, setSortBy] = useState<SortKey>("recent");
+  const [newOpen, setNewOpen] = useState(false);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [unpublishItem, setUnpublishItem] = useState<InsightListItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<InsightListItem | null>(null);
+
+  async function reloadItems() {
+    const insights = await listInsights({ status: "all", limit: 100 });
+    if (!insights.ok) {
+      setError(formatError(insights.error, insights.details));
+      return;
+    }
+    setItems(insights.data.items ?? []);
+    setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [insights, meta] = await Promise.all([listInsights({ status: "all", limit: 100 }), getMeta()]);
+        if (cancelled) return;
+        if (!insights.ok) {
+          setError(formatError(insights.error, insights.details));
+          return;
+        }
+        setItems(insights.data.items ?? []);
+        if (meta.ok) setCategories(meta.data.insightCategories ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PUBLISH_REDIRECT_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PUBLISH_REDIRECT_KEY);
+      const parsed = JSON.parse(raw) as { title?: string };
+      const title = parsed.title?.trim();
+      if (title) {
+        showToast({ message: `'${title}' 이 공개되었습니다`, tone: "ok" });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const labelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) {
+      map.set(c.id, c.label?.ko || c.id);
+    }
+    return map;
+  }, [categories]);
+
+  const filtered = useMemo(() => {
+    const keyword = q.trim().toLowerCase();
+    let rows = items;
+    if (status !== "all") rows = rows.filter((row) => row.status === status);
+    if (category !== "all") rows = rows.filter((row) => row.category_id === category);
+    if (keyword) {
+      rows = rows.filter((row) => {
+        const title = `${row.title?.ko ?? ""} ${row.title?.en ?? ""} ${row.slug}`.toLowerCase();
+        return title.includes(keyword);
+      });
+    }
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      if (sortBy === "title") return insightTitle(a).localeCompare(insightTitle(b), "ko");
+      if (sortBy === "published") {
+        return String(b.published_at ?? "").localeCompare(String(a.published_at ?? ""));
+      }
+      return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+    });
+    return copy;
+  }, [items, q, category, status, sortBy]);
+
+  const published = items.filter((row) => row.status === "published").length;
+  const draft = items.length - published;
+
+  function goEdit(item: InsightListItem) {
+    router.push(editHref(item.id));
+  }
+
+  function onRowClick(event: ReactMouseEvent, item: InsightListItem) {
+    if ((event.target as HTMLElement).closest("[data-stop-row]")) return;
+    goEdit(item);
+  }
+
+  function menuFor(item: InsightListItem, where: "d" | "m") {
+    const id = `${where}-${item.id}`;
+    return (
+      <InsightOverflowMenu
+        item={item}
+        siteUrl={siteUrl}
+        open={menuId === id}
+        onOpenChange={(next) => setMenuId(next ? id : null)}
+        onUnpublish={() => setUnpublishItem(item)}
+        onDelete={() => setDeleteItem(item)}
+        canManage={canManageWorks}
+      />
+    );
+  }
+
+  async function confirmUnpublish() {
+    if (!unpublishItem) return;
+    const res = await updateInsight(unpublishItem.id, { status: "draft" });
+    setUnpublishItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "비공개로 바뀌었습니다", tone: "ok" });
+  }
+
+  async function confirmDelete() {
+    if (!deleteItem) return;
+    const res = await deleteInsight(deleteItem.id);
+    setDeleteItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "삭제되었습니다", tone: "ok" });
+  }
+
+  const deleteTitleKo = deleteItem?.title?.ko?.trim() || (deleteItem ? insightTitle(deleteItem) : "");
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-bold text-slate-900" style={{ fontSize: "var(--fs-title)" }}>
+            인사이트
+          </h1>
+          <p className="mt-1 text-slate-500" style={{ fontSize: "var(--fs-sub)" }}>
+            전체 {items.length} · 공개 {published} · 초안 {draft}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-[7px] border border-[#dde1e6] bg-white px-3 py-[5px] text-xs text-[#3a4049]"
+            title="다음 단계에서 엽니다"
+          >
+            카테고리 · 태그
+          </button>
+          {canManageWorks ? (
+            <button
+              type="button"
+              onClick={() => setNewOpen(true)}
+              className="rounded-[7px] bg-apollon-500 px-3 py-[5px] text-xs font-semibold text-white"
+            >
+              ＋ 새 글
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="제목 · 태그로 찾기"
+          className="min-w-[180px] flex-1 rounded-[7px] border border-[#dde1e6] bg-white px-2.5 py-[5px] text-xs text-[#3a4049]"
+        />
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-[7px] border border-[#dde1e6] bg-white px-2 py-[5px] text-xs text-[#4a515b]"
+          aria-label="카테고리"
+        >
+          <option value="all">카테고리 전체</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label?.ko || c.id}
+            </option>
+          ))}
+        </select>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published")}
+          className="rounded-[7px] border border-[#dde1e6] bg-white px-2 py-[5px] text-xs text-[#4a515b]"
+          aria-label="상태"
+        >
+          <option value="all">상태 전체</option>
+          <option value="published">공개</option>
+          <option value="draft">초안</option>
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortKey)}
+          className="rounded-[7px] border border-[#dde1e6] bg-white px-2 py-[5px] text-xs text-[#4a515b]"
+          aria-label="정렬"
+        >
+          <option value="recent">최신순</option>
+          <option value="title">제목순</option>
+          <option value="published">공개일순</option>
+        </select>
+      </div>
+
+      {loading ? <p className="text-sm text-slate-500">불러오는 중...</p> : null}
+      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+      {!loading && (!error || items.length > 0) ? (
+        <>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[640px] border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-[10.5px] font-bold text-slate-500">
+                  <th className="w-[38%] bg-[#f8f9fb] px-[15px] py-2 font-bold">제목</th>
+                  <th className="w-[13%] bg-[#f8f9fb] px-[15px] py-2 font-bold">카테고리</th>
+                  <th className="w-[9%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">공개일</th>
+                  <th className="w-[10%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">상태</th>
+                  <th className="w-[11%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">채움</th>
+                  <th className="w-[7%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((item) => {
+                  const thumb = mediaUrl(siteUrl, item.key_image);
+                  return (
+                    <tr
+                      key={item.id}
+                      className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                      onClick={(event) => onRowClick(event, item)}
+                    >
+                      <td className="px-[15px] py-2">
+                        <Link href={editHref(item.id)} className="flex items-center gap-2.5">
+                          <Thumb src={thumb} item={item} width={44} />
+                          <span className="min-w-0">
+                            <span className="block text-[12.5px] font-semibold text-slate-900">
+                              {insightTitle(item)}
+                            </span>
+                            <span className="block font-mono text-[10.5px] text-[#9ca3af]">{item.slug}</span>
+                          </span>
+                        </Link>
+                      </td>
+                      <td className="px-[15px] py-2">
+                        <CategoryChip
+                          id={item.category_id}
+                          label={labelById.get(item.category_id) ?? item.category_id}
+                        />
+                      </td>
+                      <td className="px-[15px] py-2 text-center text-slate-600">
+                        {formatPublished(item.published_at)}
+                      </td>
+                      <td className="px-[15px] py-2 text-center">
+                        <StatusBadge status={item.status} />
+                      </td>
+                      <td className="px-[15px] py-2 text-center">
+                        <FillDots item={item} />
+                      </td>
+                      <td
+                        className="px-[15px] py-2 text-center"
+                        data-stop-row
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {menuFor(item, "d")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <ul className="space-y-3 md:hidden">
+            {filtered.map((item) => {
+              const thumb = mediaUrl(siteUrl, item.key_image);
+              return (
+                <li key={item.id}>
+                  <div
+                    className="apollon-card flex cursor-pointer gap-3 p-3"
+                    onClick={(event) => onRowClick(event, item)}
+                  >
+                    <Thumb src={thumb} item={item} width={56} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-slate-900">{insightTitle(item)}</span>
+                      <span className="mt-1 block text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
+                        {labelById.get(item.category_id) ?? item.category_id} · {formatPublished(item.published_at)}
+                      </span>
+                      <span className="mt-2 flex items-center gap-2">
+                        <StatusBadge status={item.status} />
+                        <FillDots item={item} />
+                      </span>
+                    </span>
+                    <span className="shrink-0 self-start" data-stop-row onClick={(event) => event.stopPropagation()}>
+                      {menuFor(item, "m")}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {filtered.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              {items.length === 0 ? "아직 글이 없습니다." : "조건에 맞는 글이 없습니다."}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      <NewInsightModal open={newOpen} onClose={() => setNewOpen(false)} />
+
+      <ConfirmDialog
+        key={unpublishItem ? `unpub-${unpublishItem.id}` : "unpub"}
+        open={Boolean(unpublishItem)}
+        title="홈페이지에서 내려갑니다. 계속할까요?"
+        confirmText="계속"
+        onConfirm={() => confirmUnpublish()}
+        onCancel={() => setUnpublishItem(null)}
+      />
+
+      <ConfirmDialog
+        key={deleteItem ? `del-${deleteItem.id}` : "del"}
+        open={Boolean(deleteItem)}
+        title="이 글을 삭제할까요?"
+        confirmText="삭제"
+        confirmWord={deleteItem?.slug}
+        danger
+        onConfirm={() => confirmDelete()}
+        onCancel={() => setDeleteItem(null)}
+        description={
+          deleteItem ? (
+            <>
+              {deleteItem.status === "published" ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  지금 홈페이지에 공개되어 있습니다. 삭제하면 페이지가 사라집니다.
+                </p>
+              ) : null}
+              <p className="font-bold text-slate-900">{deleteTitleKo}</p>
+              <p>
+                블록 {deleteItem.counts.blocks}개 · 이미지 {deleteItem.counts.images}장이 함께 지워집니다.
+              </p>
+              <p>되돌릴 수 없습니다.</p>
+            </>
+          ) : null
+        }
+      />
+    </div>
+  );
+}

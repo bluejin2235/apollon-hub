@@ -1,4 +1,4 @@
-import type { CheckWorks, WorkListItem } from "@/lib/website/types";
+import type { CheckInsights, CheckWorks, InsightListItem, WorkListItem } from "@/lib/website/types";
 
 export const PROBLEM_FLAGS = [
   "missing_summary_en",
@@ -166,3 +166,87 @@ export function fillRelated(check: CheckWorks | null): "ok" | "empty" {
   if (!check || check.no_related) return "empty";
   return "ok";
 }
+
+export function insightTitle(item: InsightListItem): string {
+  return item.title?.ko?.trim() || item.check?.title_ko || item.slug;
+}
+
+export function fillInsightBasic(check: CheckInsights | null): "ok" | "warn" {
+  if (!check) return "warn";
+  if (
+    check.missing_key_alt ||
+    check.missing_summary_en ||
+    check.summary_too_long ||
+    check.no_key_image ||
+    check.key_image_size_unknown ||
+    check.key_image_too_small
+  ) {
+    return "warn";
+  }
+  return "ok";
+}
+
+export function fillInsightBody(check: CheckInsights | null): "ok" | "warn" {
+  if (!check) return "warn";
+  if (
+    check.no_blocks ||
+    check.missing_body_en ||
+    check.missing_qa_en ||
+    check.missing_image_alt ||
+    check.ai_unconfirmed ||
+    check.body_image_too_small ||
+    Number(check.empty_blocks) > 0
+  ) {
+    return "warn";
+  }
+  return "ok";
+}
+
+export function fillInsightRelated(check: CheckInsights | null): "ok" | "empty" {
+  if (!check || check.no_related) return "empty";
+  return "ok";
+}
+
+export const INSIGHT_PROBLEM_FLAGS = [
+  "missing_summary_en",
+  "missing_key_alt",
+  "no_key_image",
+  "key_image_size_unknown",
+  "key_image_too_small",
+  "no_blocks",
+  "missing_image_alt",
+  "ai_unconfirmed"
+] as const;
+
+export const INSIGHT_WARN_FLAGS = [
+  "missing_body_en",
+  "missing_qa_en",
+  "empty_blocks",
+  "body_image_too_small",
+  "no_tags",
+  "no_related",
+  "summary_too_long",
+  "stale_draft"
+] as const;
+
+export const INSIGHT_CHECK_LABEL: Record<
+  (typeof INSIGHT_PROBLEM_FLAGS)[number] | (typeof INSIGHT_WARN_FLAGS)[number],
+  string
+> = {
+  missing_summary_en: "영문 검색 설명이 없습니다",
+  missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
+  no_key_image: "대표 이미지가 없습니다",
+  key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
+  key_image_too_small: "대표 이미지 긴 변이 2000px 미만입니다",
+  no_blocks: "본문 블록이 없습니다",
+  missing_image_alt: "이미지 대체 텍스트가 없습니다",
+  ai_unconfirmed: "AI가 만든 이미지를 아직 확인하지 않았습니다",
+  missing_body_en: "글 블록 영문이 없습니다",
+  missing_qa_en: "질문·답변 영문이 없습니다",
+  empty_blocks: "비어 있는 블록이 있습니다",
+  body_image_too_small: "본문 이미지 해상도가 낮습니다",
+  no_tags: "태그가 없습니다",
+  no_related: "연결 콘텐츠가 없습니다",
+  summary_too_long: "요약이 너무 깁니다",
+  stale_draft: "초안이 오래되었습니다"
+};

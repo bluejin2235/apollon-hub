@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createTag, getTags, setWorkTags, type WebsiteTagItem } from "@/lib/website/api";
+import {
+  createTag,
+  getTags,
+  setWorkTags,
+  type WebsiteTagItem
+} from "@/lib/website/api";
+import type { ApiResult } from "@/lib/website/types";
 import { SmallBtn, TextInput } from "@/components/website/work-editor-ui";
 import { Chips } from "@/components/website/ui";
 
@@ -11,13 +17,14 @@ type Props = {
   workId: string;
   selectedIds: string[];
   onReload: () => Promise<void>;
+  saveTags?: (id: string, tagIds: string[]) => Promise<ApiResult<{ items: unknown[] }>>;
 };
 
 function tagName(tag: WebsiteTagItem) {
   return tag.label?.ko || tag.label?.en || tag.id;
 }
 
-export function TagPicker({ workId, selectedIds, onReload }: Props) {
+export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTags }: Props) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState<WebsiteTagItem[]>([]);
   const [q, setQ] = useState("");
@@ -64,7 +71,7 @@ export function TagPicker({ workId, selectedIds, onReload }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await setWorkTags(workId, next);
+      const res = await saveTags(workId, next);
       if (!res.ok) {
         setError(res.error);
         return;

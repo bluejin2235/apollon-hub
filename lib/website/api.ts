@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase/client";
 import type {
   ApiResult,
+  InsightListData,
+  InsightListItem,
   UploadNotice,
   WebsiteMeta,
   WorkListData,
@@ -123,6 +125,133 @@ export function deleteWork(id: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch(`works/${id}`, { method: "DELETE" });
 }
 
+export function listInsights(params?: {
+  status?: "all" | "draft" | "published";
+  q?: string;
+  category?: string;
+  page?: number;
+  limit?: number;
+}): Promise<ApiResult<InsightListData>> {
+  return websiteFetch<InsightListData>(`insights${queryString(params)}`);
+}
+
+export function getInsight(id: string): Promise<ApiResult<unknown>> {
+  return websiteFetch(`insights/${id}`);
+}
+
+export function createInsight(body: unknown): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch("insights", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateInsight(id: string, body: unknown): Promise<ApiResult<InsightListItem>> {
+  return websiteFetch(`insights/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function deleteInsight(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insights/${id}`, { method: "DELETE" });
+}
+
+export function createInsightBlock(
+  insightId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/blocks`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateInsightBlock(
+  insightId: string,
+  blockId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/blocks/${blockId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteInsightBlock(
+  insightId: string,
+  blockId: string
+): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insights/${insightId}/blocks/${blockId}`, { method: "DELETE" });
+}
+
+export function reorderInsightBlocks(
+  insightId: string,
+  order: OrderItem[]
+): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`insights/${insightId}/blocks/order`, {
+    method: "PATCH",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function setInsightTags(
+  insightId: string,
+  tagIds: string[]
+): Promise<ApiResult<{ items: unknown[] }>> {
+  return websiteFetch(`insights/${insightId}/tags`, {
+    method: "PUT",
+    body: JSON.stringify({ tagIds })
+  });
+}
+
+export function addInsightRelated(
+  insightId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/related`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function deleteInsightRelated(
+  insightId: string,
+  relatedId: string
+): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insights/${insightId}/related/${relatedId}`, { method: "DELETE" });
+}
+
+export function reorderInsightRelated(
+  insightId: string,
+  order: OrderItem[]
+): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`insights/${insightId}/related`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function addInsightImages(blockId: string, images: unknown[]): Promise<ApiResult<unknown>> {
+  return websiteFetch(`insight-blocks/${blockId}/images`, { method: "POST", body: JSON.stringify(images) });
+}
+
+export function updateInsightImage(
+  blockId: string,
+  imageId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insight-blocks/${blockId}/images/${imageId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteInsightImage(
+  blockId: string,
+  imageId: string
+): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insight-blocks/${blockId}/images/${imageId}`, { method: "DELETE" });
+}
+
+export function reorderInsightImages(
+  blockId: string,
+  order: OrderItem[]
+): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`insight-blocks/${blockId}/images`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
 export function getMeta(): Promise<ApiResult<WebsiteMeta>> {
   return websiteFetch<WebsiteMeta>("meta");
 }
@@ -210,6 +339,7 @@ export function uploadFile(
   opts?: {
     onProgress?: (progress: UploadProgress) => void;
     signal?: AbortSignal;
+    fields?: Record<string, string>;
   }
 ): Promise<ApiResult<UploadResult>> {
   return new Promise((resolve) => {
@@ -229,6 +359,11 @@ export function uploadFile(
       form.append("file", file);
       form.append("bucket", bucket);
       form.append("path", path);
+      if (opts?.fields) {
+        for (const [key, value] of Object.entries(opts.fields)) {
+          form.append(key, value);
+        }
+      }
 
       const xhr = new XMLHttpRequest();
       const timeoutMs =

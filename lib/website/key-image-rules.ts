@@ -64,3 +64,17 @@ export function keyImageRejectMessage(reject: KeyImageReject): string {
     `지금 ${reject.width}×${reject.height} 입니다. 고해상도 화면에서 흐리게 보입니다`
   );
 }
+
+/** 인사이트 대표 이미지 — 비율 자유. 긴 변 2000 미만이면 경고만. */
+export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = 2000;
+
+export function insightKeyImageTooSmall(width: number, height: number): boolean {
+  return width > 0 && height > 0 && Math.max(width, height) < INSIGHT_KEY_IMAGE_MIN_LONG_SIDE;
+}
+
+export function insightKeyImageWarnMessage(width: number, height: number): string {
+  return (
+    `긴 변 ${INSIGHT_KEY_IMAGE_MIN_LONG_SIDE}px 이상을 권장합니다. ` +
+    `지금 ${width}×${height} 입니다. 목록 카드가 흐리게 보일 수 있습니다`
+  );
+}

@@ -1,0 +1,672 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>인사이트 어드민 — A안 블록</title><style>
+:root{--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--chip:#eef0f3;--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;
+--ok:#0f7a45;--okbg:#f0f9f4;--okln:#bfe3ce;
+--warn:#a35a08;--warnbg:#fdf7f0;--warnln:#eddcc4;
+--err:#b0231e;--errbg:#fdf2f1;--errln:#f0cecb;
+--ga:#1f6fd8;--sc:#0b8457;--ai:#7c3aed}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.pg{max-width:1240px;margin:0 auto;padding:26px 16px 120px}
+h1.t{font-size:23px;margin:0 0 4px;letter-spacing:-.02em}
+p.s{color:var(--dim);font-size:13px;margin:0 0 22px}
+.big{font-size:17px;font-weight:700;margin:36px 0 9px;padding-bottom:8px;
+border-bottom:2px solid var(--ink);display:flex;align-items:center;gap:9px}
+.big .n{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ap);
+background:var(--apbg);border-radius:4px;padding:2px 7px}
+.lead{color:#4a515b;font-size:13px;margin:0 0 13px;max-width:960px}
+.lead b{color:var(--ink)}
+
+.app{background:#fff;border:1px solid #d2d7de;border-radius:11px;overflow:hidden;
+box-shadow:0 4px 18px rgba(0,0,0,.06);margin-bottom:14px}
+.hd{height:46px;border-bottom:1px solid var(--line);display:flex;align-items:center;
+padding:0 16px;gap:11px;background:#fff}
+.hd .lg{width:22px;height:22px;border-radius:50%;border:1.6px solid var(--ink);
+display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+.hd .nm{font-size:13px;font-weight:600;letter-spacing:.02em}
+.hd .rt{margin-left:auto;display:flex;align-items:center;gap:11px;font-size:11.5px;color:var(--dim)}
+.hd .bell{width:21px;height:21px;border-radius:50%;background:var(--errbg);color:var(--err);
+font-size:9.5px;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+.body{display:flex;min-height:560px}
+.side{width:198px;border-right:1px solid var(--line);background:#fcfcfd;
+padding:15px 0;flex-shrink:0}
+.side .tt{padding:0 16px 12px}
+.side .tt .u{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--faint)}
+.side .tt .d{font-size:15px;font-weight:700;margin-top:1px}
+.mi{display:flex;align-items:center;gap:9px;padding:6.5px 16px;font-size:12.5px;
+color:#4a515b;cursor:pointer;border-left:2.5px solid transparent}
+.mi:hover{background:#f4f5f7}
+.mi.on{background:var(--apbg);color:var(--ap);font-weight:600;border-left-color:var(--ap)}
+.mi .ic{width:15px;text-align:center;font-size:12px;opacity:.7}
+.mi .bd{margin-left:auto;font-size:10px;background:var(--err);color:#fff;
+border-radius:8px;padding:1px 6px;font-weight:700}
+.side .sep{height:1px;background:var(--line);margin:10px 16px}
+
+.main{flex:1;padding:20px 22px;min-width:0;background:#fff}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.ph h2{font-size:19px;margin:0;letter-spacing:-.01em}
+.ph .sp{flex:1}
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:5px 12px;font-size:12px;
+background:#fff;color:#3a4049;cursor:pointer;white-space:nowrap}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.sm{padding:3px 9px;font-size:11.5px}
+.upd{color:var(--faint);font-size:11.5px;margin:0 0 18px}
+
+/* 트래픽 카드 */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.card{border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:#fff}
+.card .l{font-size:11px;color:var(--dim);font-weight:700;display:flex;
+align-items:center;gap:5px;margin-bottom:4px}
+.src{font-size:9px;font-weight:800;border-radius:3px;padding:1px 4px;color:#fff}
+.src.ga{background:var(--ga)}.src.sc{background:var(--sc)}.src.ai{background:var(--ai)}
+.card .v{font-size:23px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.card .v small{font-size:12px;font-weight:400;color:var(--faint)}
+.card .d{font-size:11.5px;margin-top:1px}
+.up{color:var(--ok)}.dn{color:var(--err)}
+.spark{height:26px;display:flex;align-items:flex-end;gap:1.5px;margin-top:8px}
+.spark i{flex:1;border-radius:1px 1px 0 0;display:block}
+.spark.g i{background:#c3d6f2}.spark.g i:last-child{background:var(--ga)}
+.spark.s i{background:#c2e2d3}.spark.s i:last-child{background:var(--sc)}
+.spark.a i{background:#ddd0f7}.spark.a i:last-child{background:var(--ai)}
+.card .sub{font-size:10.5px;color:var(--faint);margin-top:5px;display:flex;gap:9px}
+
+/* 신호등 */
+.health{border:1px solid var(--warnln);background:var(--warnbg);
+border-radius:10px;margin-bottom:14px;overflow:hidden}
+.health.ok{border-color:var(--okln);background:var(--okbg)}
+.hh{display:flex;align-items:center;gap:14px;padding:16px 20px}
+.lamp{width:46px;height:46px;border-radius:50%;flex-shrink:0;
+display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;font-weight:700}
+.lamp.w{background:var(--warn);box-shadow:0 0 0 5px rgba(163,90,8,.1)}
+.lamp.o{background:var(--ok);box-shadow:0 0 0 5px rgba(15,122,69,.1)}
+.hc{flex:1;min-width:0}
+.hc .st{font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--warn)}
+.health.ok .hc .st{color:var(--ok)}
+.hc .ds{font-size:12.5px;color:#4a515b;margin-top:1px}
+.tiers{display:flex;border-top:1px solid var(--warnln)}
+.health.ok .tiers{border-top-color:var(--okln)}
+.tier{flex:1;padding:10px 16px;text-align:center;border-right:1px solid var(--warnln)}
+.health.ok .tier{border-right-color:var(--okln)}
+.tier:last-child{border-right:none}
+.tier .n{font-size:20px;font-weight:700;line-height:1.2}
+.tier .l{font-size:11.5px;color:var(--dim);margin-top:1px}
+.tier.e .n{color:var(--err)}.tier.w .n{color:var(--warn)}.tier.o .n{color:var(--ok)}
+.items{background:#fff;border-top:1px solid var(--warnln)}
+.health.ok .items{border-top-color:var(--okln)}
+.irow{display:flex;align-items:flex-start;gap:11px;padding:10px 20px;
+border-bottom:1px solid var(--line);font-size:12.5px}
+.irow:last-child{border-bottom:none}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.dot.e{background:var(--err)}.dot.w{background:var(--warn)}.dot.o{background:var(--ok)}
+.irow .c{flex:1;min-width:0}
+.irow .t2{font-weight:600}
+.irow .s2{font-size:11.5px;color:var(--dim);margin-top:1px}
+.foot{padding:9px 20px;font-size:11.5px;color:var(--dim);background:var(--soft);
+border-top:1px solid var(--line)}
+
+.blk{border:1px solid var(--line);border-radius:9px;margin-bottom:13px;background:#fff}
+.bh{display:flex;align-items:center;gap:9px;padding:10px 15px;border-bottom:1px solid var(--line)}
+.bh .t3{font-size:13.5px;font-weight:700}
+.bh .sp{flex:1}
+.bh .more{font-size:11.5px;color:var(--dim)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:8px 15px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{background:var(--soft);font-size:10.5px;font-weight:700;color:var(--dim)}
+tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kind{font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;
+background:var(--chip);color:var(--dim);margin-right:6px}
+.cite{font-weight:700;color:var(--ai)}
+.zero{color:var(--faint)}
+
+.mrow{display:flex;align-items:center;gap:10px;padding:9px 15px;
+border-bottom:1px solid var(--line);font-size:12.5px}
+.mrow:last-child{border-bottom:none}
+.mrow .c{flex:1;min-width:0}
+.mrow .nm2{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .mt{font-size:11px;color:var(--faint)}
+.mrow .rdot{width:7px;height:7px;border-radius:50%;background:var(--err);flex-shrink:0}
+.mrow .rdot.off{background:var(--chip)}
+.mrow .tm{font-size:11px;color:var(--faint);white-space:nowrap}
+.st2{font-size:10px;font-weight:700;border-radius:3px;padding:1px 7px}
+.st2.pub{background:var(--okbg);color:var(--ok)}
+.st2.draft{background:var(--warnbg);color:var(--warn)}
+.stat{display:flex;gap:24px;padding:12px 15px;font-size:12.5px;flex-wrap:wrap}
+.stat b{font-size:17px;font-weight:700;margin-right:4px}
+.stat .u{color:var(--dim);font-size:11.5px}
+
+.box{border-radius:0 8px 8px 0;padding:12px 15px;margin:12px 0;font-size:12.5px}
+.box.o{background:var(--okbg);border:1px solid var(--okln);border-left:3px solid var(--ok)}
+.box.w{background:var(--warnbg);border:1px solid var(--warnln);border-left:3px solid var(--warn)}
+.box.i{background:var(--apbg);border:1px solid var(--apln);border-left:3px solid var(--ap)}
+.box b.h{display:block;margin-bottom:4px;font-size:13px}
+.box.o b.h{color:var(--ok)}.box.w b.h{color:var(--warn)}.box.i b.h{color:var(--ap)}
+.box p{margin:0 0 6px}.box p:last-child{margin:0}
+.box ul{margin:6px 0 0;padding-left:19px}
+.mini{font-size:11px;color:var(--faint);margin-top:6px}
+@media (max-width:900px){.side{display:none}.cards{grid-template-columns:repeat(2,1fr)}
+.two{grid-template-columns:1fr}}
+
+/* ── 인사이트 전용 ── */
+.filt{display:flex;gap:6px;margin-bottom:11px;align-items:center;flex-wrap:wrap}
+.inp{border:1px solid #dde1e6;border-radius:7px;padding:5px 10px;font-size:12px;
+color:#3a4049;background:#fff;min-width:180px}
+.sel{border:1px solid #dde1e6;border-radius:7px;padding:5px 9px;font-size:12px;
+color:#4a515b;background:#fff}
+.th{width:44px;height:44px;border-radius:5px;flex-shrink:0;
+background:linear-gradient(135deg,#5b7a94,#2f4a5e)}
+.th.tall{height:56px}
+.tt2{display:flex;align-items:center;gap:10px}
+.tt2 .nm{font-size:12.5px;font-weight:600}
+.tt2 .sl{font-size:10.5px;color:var(--faint);font-family:ui-monospace,monospace}
+.cat{font-size:10px;font-weight:700;border-radius:3px;padding:2px 7px;white-space:nowrap}
+.cat.bh{background:#eef0fb;color:#4b5bb5}
+.cat.lb{background:#eaf5f0;color:#0f7a45}
+.cat.cu{background:#fdf3ee;color:#a35a08}
+.cat.nw{background:#f3eefb;color:#7c3aed}
+.cat.iv{background:#eef4fb;color:#2563a8}
+.dots{display:flex;gap:3.5px;align-items:center;justify-content:center}
+.dot2{width:7px;height:7px;border-radius:50%}
+.dot2.g{background:#10b981}.dot2.a{background:#f59e0b}.dot2.s{background:#d1d5db}
+.tag{font-size:10px;font-weight:700;border-radius:3px;padding:2px 7px;display:inline-block}
+.tag.pub{background:var(--okbg);color:var(--ok)}
+.tag.dft{background:#eef0f3;color:#6b7280}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:15px}
+.tab{padding:7px 14px;font-size:12.5px;color:var(--dim);cursor:pointer;
+border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px}
+.tab.on{color:var(--ap);font-weight:600;border-bottom-color:var(--ap)}
+.tab .pd{width:6px;height:6px;border-radius:50%}
+.tab .pd.g{background:#10b981}.tab .pd.a{background:#f59e0b}.tab .pd.s{background:#d1d5db}
+
+.fld{margin-bottom:14px}
+.lab{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.lab b{font-size:12px;font-weight:600}
+.lab .rq{color:var(--err);font-size:11px}
+.lab .cnt{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.lab .q{width:14px;height:14px;border-radius:50%;border:1px solid #cbd2da;
+color:var(--faint);font-size:9px;display:inline-flex;align-items:center;
+justify-content:center;cursor:help}
+.ti{width:100%;border:1px solid #dde1e6;border-radius:7px;padding:6px 10px;
+font-size:12.5px;color:#3a4049;background:#fff;font-family:inherit}
+.tip{font-size:11px;color:var(--dim);line-height:1.6;margin-top:5px;
+background:var(--soft);border-left:2px solid var(--apln);border-radius:0 5px 5px 0;padding:7px 10px}
+.two2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.radio{display:flex;gap:8px;margin-bottom:8px}
+.rb{flex:1;border:1px solid #dde1e6;border-radius:7px;padding:8px 11px;font-size:12px;
+color:#4a515b;cursor:pointer;text-align:center}
+.rb.on{border-color:var(--ap);background:var(--apbg);color:var(--ap);font-weight:600}
+
+/* 블록 카드 */
+.bk{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;background:#fff}
+.bkh{display:flex;align-items:center;gap:9px;padding:8px 13px;background:var(--soft);
+border-bottom:1px solid var(--line);border-radius:9px 9px 0 0;font-size:12px}
+.bkh .gr{color:var(--faint);cursor:grab;font-size:13px}
+.bkh .nm3{font-weight:600}
+.bkh .sp{flex:1}
+.bkh .ac{display:flex;gap:5px;color:var(--faint);font-size:12px}
+.bkb{padding:12px 13px}
+.ed{border:1px solid #dde1e6;border-radius:7px;overflow:hidden}
+.edt{display:flex;gap:1px;padding:5px 7px;background:var(--soft);
+border-bottom:1px solid #dde1e6;flex-wrap:wrap}
+.edt span{font-size:11px;color:#4a515b;padding:3px 7px;border-radius:4px;cursor:pointer}
+.edt span:hover{background:#e8eaee}
+.edt .sepv{width:1px;background:#dde1e6;margin:2px 3px}
+.edc{padding:10px 12px;font-size:12.5px;color:#3a4049;line-height:1.75;min-height:70px}
+.edc h4{font-size:13px;margin:0 0 5px}
+.edc p{margin:0 0 8px}
+.slot{border:1.5px dashed #d3d8de;border-radius:7px;background:#fcfcfd;
+display:flex;flex-direction:column;align-items:center;justify-content:center;
+color:var(--faint);font-size:11px;gap:2px;min-height:78px}
+.ph2{aspect-ratio:16/9;background:linear-gradient(135deg,#5b7a94,#2f4a5e);border-radius:6px}
+.addb{border:1.5px dashed #d3d8de;border-radius:9px;padding:11px;text-align:center;
+color:var(--dim);font-size:12.5px;cursor:pointer;background:#fcfcfd}
+.addb:hover{border-color:var(--ap);color:var(--ap)}
+.bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);
+padding:10px 0 0;margin-top:16px;display:flex;align-items:center;gap:8px}
+.bar .msg{font-size:12px;color:var(--warn)}
+.bar .sp{flex:1}
+</style></head><body><div class="pg"><h1 class="t">인사이트 어드민 — A안 (블록)</h1><p class="s">2026.08.28 · 워크 블록 7종 재사용 + 신규 2종</p><div class="big"><span class="n">01</span>목록</div><p class="lead">워크 목록과 구조는 같습니다. <b>썸네일이 세로로 길 수 있다는 것</b>과 <b>채움 점이 세 개</b>라는 점만 다릅니다.</p><div class="app"><div class="hd"><div class="lg">A</div><div class="nm">APOLLON HUB</div><div class="rt"><span>이택진 / 공간파트 / 슈퍼관리자</span><span class="bell">9+</span></div></div><div class="body"><div class="side">
+<div class="tt"><div class="u">WEBSITE</div><div class="d">홈페이지</div></div>
+<div class="mi"><span class="ic">▤</span>대시보드</div>
+<div class="mi"><span class="ic">⌂</span>홈</div>
+<div class="mi"><span class="ic">▣</span>워크</div>
+<div class="mi on"><span class="ic">▤</span>인사이트</div>
+<div class="mi"><span class="ic">◉</span>커리어<span class="bd">1</span></div>
+<div class="mi"><span class="ic">✉</span>Let's Talk<span class="bd">3</span></div>
+<div class="mi"><span class="ic">◈</span>뉴스레터</div>
+<div class="mi"><span class="ic">▭</span>기타</div>
+<div class="sep"></div>
+<div class="mi"><span class="ic">◎</span>검색 · AI</div>
+<div class="mi"><span class="ic">◔</span>통계</div>
+<div class="mi"><span class="ic">⚙</span>설정</div>
+<div class="mi"><span class="ic">▨</span>제작·운영 가이드</div>
+</div><div class="main">
+<div class="ph"><h2>인사이트</h2><span class="sp"></span>
+<span class="btn">카테고리 · 태그</span><span class="btn p">＋ 새 글</span></div>
+<p class="upd">전체 12 · 공개 9 · 초안 3</p>
+
+<div class="filt">
+  <input class="inp" placeholder="제목 · 태그로 찾기">
+  <select class="sel"><option>카테고리 전체</option></select>
+  <select class="sel"><option>상태 전체</option></select>
+  <select class="sel"><option>최신순</option></select>
+</div>
+
+<table>
+<tr><th style="width:38%">제목</th><th style="width:13%">카테고리</th>
+<th class="c" style="width:9%">공개일</th><th class="c" style="width:10%">상태</th>
+<th class="c" style="width:11%">채움</th><th class="c" style="width:7%"></th></tr>
+
+<tr><td><div class="tt2"><div class="th tall"></div>
+  <div><div class="nm">Interview: Jihyun Kim</div>
+  <div class="sl">interview-jihyun-kim</div></div></div></td>
+  <td><span class="cat iv">인터뷰</span></td>
+  <td class="c">2024.11.20</td>
+  <td class="c"><span class="tag pub">공개</span></td>
+  <td class="c"><div class="dots"><span class="dot2 g"></span>
+    <span class="dot2 g"></span><span class="dot2 g"></span></div></td>
+  <td class="c">⋯</td></tr>
+
+<tr><td><div class="tt2"><div class="th"></div>
+  <div><div class="nm">미디어 아키텍처란 무엇인가</div>
+  <div class="sl">what-is-media-architecture</div></div></div></td>
+  <td><span class="cat bh">비하인드</span></td>
+  <td class="c">2026.08.20</td>
+  <td class="c"><span class="tag pub">공개</span></td>
+  <td class="c"><div class="dots"><span class="dot2 g"></span>
+    <span class="dot2 a"></span><span class="dot2 g"></span></div></td>
+  <td class="c">⋯</td></tr>
+
+<tr><td><div class="tt2"><div class="th"></div>
+  <div><div class="nm">Awards, and What Follows</div>
+  <div class="sl">awards-and-what-follows</div></div></div></td>
+  <td><span class="cat nw">뉴스</span></td>
+  <td class="c">2026.08.14</td>
+  <td class="c"><span class="tag pub">공개</span></td>
+  <td class="c"><div class="dots"><span class="dot2 g"></span>
+    <span class="dot2 g"></span><span class="dot2 s"></span></div></td>
+  <td class="c">⋯</td></tr>
+
+<tr><td><div class="tt2"><div class="th"></div>
+  <div><div class="nm">미디어아트 트렌드 집중탐구</div>
+  <div class="sl">media-art-trend-2026</div></div></div></td>
+  <td><span class="cat lb">랩</span></td>
+  <td class="c">—</td>
+  <td class="c"><span class="tag dft">초안</span></td>
+  <td class="c"><div class="dots"><span class="dot2 a"></span>
+    <span class="dot2 a"></span><span class="dot2 s"></span></div></td>
+  <td class="c">⋯</td></tr>
+
+<tr><td><div class="tt2"><div class="th"></div>
+  <div><div class="nm">2026 상반기 워크숍</div>
+  <div class="sl">2026-h1-workshop</div></div></div></td>
+  <td><span class="cat cu">컬처</span></td>
+  <td class="c">2026.07.27</td>
+  <td class="c"><span class="tag pub">공개</span></td>
+  <td class="c"><div class="dots"><span class="dot2 g"></span>
+    <span class="dot2 g"></span><span class="dot2 s"></span></div></td>
+  <td class="c">⋯</td></tr>
+</table>
+
+<div class="box i">
+  <b class="h">워크 목록과 두 가지가 다릅니다</b>
+  <p><b>썸네일이 세로로 길 수 있습니다.</b> 인사이트 카드는 올린 이미지 비율을
+  그대로 따르기 때문입니다. 목록에서 미리 보입니다.</p>
+  <p style="margin-top:5px"><b>「채움」이 점 세 개</b>입니다.
+  기본정보 · 본문 · 연결. 워크의 FAQ 탭이 없습니다.</p>
+</div>
+</div></div></div>
+<div class="big"><span class="n">02</span>기본정보</div><p class="lead"><b>출처 줄</b>이 인사이트에만 있습니다. 「없음 / 언론 보도 / 인물」 중에 고르면 화면에 「Press 헤럴드경제」 또는 「김지현 - 크리에이티브 디렉터」로 나옵니다.</p><div class="app"><div class="hd"><div class="lg">A</div><div class="nm">APOLLON HUB</div><div class="rt"><span>이택진 / 공간파트 / 슈퍼관리자</span><span class="bell">9+</span></div></div><div class="body"><div class="side">
+<div class="tt"><div class="u">WEBSITE</div><div class="d">홈페이지</div></div>
+<div class="mi"><span class="ic">▤</span>대시보드</div>
+<div class="mi"><span class="ic">⌂</span>홈</div>
+<div class="mi"><span class="ic">▣</span>워크</div>
+<div class="mi on"><span class="ic">▤</span>인사이트</div>
+<div class="mi"><span class="ic">◉</span>커리어<span class="bd">1</span></div>
+<div class="mi"><span class="ic">✉</span>Let's Talk<span class="bd">3</span></div>
+<div class="mi"><span class="ic">◈</span>뉴스레터</div>
+<div class="mi"><span class="ic">▭</span>기타</div>
+<div class="sep"></div>
+<div class="mi"><span class="ic">◎</span>검색 · AI</div>
+<div class="mi"><span class="ic">◔</span>통계</div>
+<div class="mi"><span class="ic">⚙</span>설정</div>
+<div class="mi"><span class="ic">▨</span>제작·운영 가이드</div>
+</div><div class="main">
+<div class="ph"><h2>미디어 아키텍처란 무엇인가</h2><span class="sp"></span>
+<span class="btn">미리보기 ↗</span><span class="btn">임시 저장</span>
+<span class="btn p">등록하기</span></div>
+<p class="upd">초안 · 14분 전 저장</p>
+
+<div class="tabs">
+  <div class="tab on"><span class="pd g"></span>기본정보</div>
+  <div class="tab"><span class="pd a"></span>본문</div>
+  <div class="tab"><span class="pd s"></span>연결</div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>카테고리</b><span class="rq">*</span></div>
+  <div class="radio">
+    <div class="rb on">비하인드</div><div class="rb">인터뷰</div>
+    <div class="rb">랩</div><div class="rb">컬처</div><div class="rb">뉴스</div>
+  </div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>제목</b><span class="rq">*</span><span class="q">?</span>
+    <span class="cnt">국문 14 / 30 · 영문 0 / 60</span></div>
+  <input class="ti" value="미디어 아키텍처란 무엇인가">
+  <div class="tip">목록 카드 · 상세 · 검색 결과 · 링크 공유에 모두 쓰입니다.</div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>부제</b><span class="q">?</span>
+    <span class="cnt">국문 48 / 90</span></div>
+  <textarea class="ti" style="min-height:46px">건축 설계 단계부터 미디어를 함께 설계한다는 것이 실제로 무엇을 뜻하는지 정리했습니다.</textarea>
+  <div class="tip">제목 아래 큰 글씨로 나옵니다. 리드 역할입니다.</div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>한 줄 요약</b><span class="rq">*</span><span class="q">?</span>
+    <span class="cnt">국문 52 / 80</span><span class="btn sm">AI</span></div>
+  <textarea class="ti" style="min-height:44px">완성된 건물에 화면을 붙이는 것과, 설계 단계부터 함께 그리는 것의 차이를 짚습니다.</textarea>
+  <div class="tip">목록 카드 · 구글 검색 결과 설명 · AI 인용에 쓰입니다.</div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>대표 이미지</b><span class="rq">*</span><span class="q">?</span></div>
+  <div style="display:flex;gap:11px;align-items:flex-start">
+    <div style="width:150px"><div class="ph2"></div></div>
+    <div style="flex:1">
+      <div style="font-size:12px;color:#3a4049">media-architecture-key.jpg</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:2px">2400 × 1350 · 16:9</div>
+      <div style="margin-top:7px;display:flex;gap:5px">
+        <span class="btn sm">바꾸기</span><span class="btn sm">삭제</span></div>
+    </div>
+  </div>
+  <div class="tip">
+    <b style="color:var(--warn)">비율이 자유입니다.</b>
+    올린 비율 그대로 목록 카드가 만들어집니다. 세로 사진이면 카드가 길어집니다.<br>
+    긴 변 2000 이상 · 같은 갈래끼리 비율을 맞추면 목록이 정돈됩니다.<br>
+    <b style="color:var(--warn)">메인 페이지에 나올 때는 16:9 로 잘립니다.</b>
+  </div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>대체 텍스트</b><span class="rq">*</span>
+    <span class="cnt">국문 22 / 40</span><span class="btn sm">AI</span></div>
+  <input class="ti" value="인스파이어 오로라 스트리트 천장 미디어">
+</div>
+
+<div class="fld">
+  <div class="lab"><b>출처 줄</b><span class="q">?</span></div>
+  <div class="radio">
+    <div class="rb">없음</div><div class="rb on">언론 보도</div><div class="rb">인물</div>
+  </div>
+  <div class="two2">
+    <div><div class="lab" style="margin-bottom:3px"><b style="font-size:11.5px;color:var(--dim)">매체명</b></div>
+      <input class="ti" value="헤럴드경제"></div>
+    <div><div class="lab" style="margin-bottom:3px"><b style="font-size:11.5px;color:var(--dim)">원문 링크</b></div>
+      <input class="ti" value="https://biz.heraldcorp.com/..."></div>
+  </div>
+  <div class="tip">
+    제목 아래에 <b>「Press 헤럴드경제 · 원문보기」</b> 로 나옵니다.<br>
+    「인물」을 고르면 <b>「김지현 - 크리에이티브 디렉터」</b> 형태가 됩니다.
+  </div>
+</div>
+
+<div class="two2">
+  <div class="fld"><div class="lab"><b>연도</b></div><input class="ti" value="2026"></div>
+  <div class="fld"><div class="lab"><b>공개일</b></div><input class="ti" value="2026-08-20"></div>
+</div>
+
+<div class="fld">
+  <div class="lab"><b>태그</b><span class="cnt">3개</span></div>
+  <input class="ti" value="#미디어아키텍처  #Public Design  #Media Art">
+  <div class="tip">워크와 같은 태그를 씁니다. 3~6개 · 태그당 2~10자.</div>
+</div>
+
+<div class="bar">
+  <span class="msg">공개하려면 2가지가 더 필요합니다 — 영문 · 본문</span>
+  <span class="sp"></span>
+  <span class="btn">공개 전 점검</span><span class="btn p">등록하기</span>
+</div>
+</div></div></div>
+<div class="big"><span class="n">03</span>본문</div><p class="lead">워크와 같은 블록 편집입니다. 다만 <b>「글」 블록 하나에 여러 문단이 들어갑니다.</b> 인터뷰 17,000자도 블록 10개면 끝납니다.</p><div class="app"><div class="hd"><div class="lg">A</div><div class="nm">APOLLON HUB</div><div class="rt"><span>이택진 / 공간파트 / 슈퍼관리자</span><span class="bell">9+</span></div></div><div class="body"><div class="side">
+<div class="tt"><div class="u">WEBSITE</div><div class="d">홈페이지</div></div>
+<div class="mi"><span class="ic">▤</span>대시보드</div>
+<div class="mi"><span class="ic">⌂</span>홈</div>
+<div class="mi"><span class="ic">▣</span>워크</div>
+<div class="mi on"><span class="ic">▤</span>인사이트</div>
+<div class="mi"><span class="ic">◉</span>커리어<span class="bd">1</span></div>
+<div class="mi"><span class="ic">✉</span>Let's Talk<span class="bd">3</span></div>
+<div class="mi"><span class="ic">◈</span>뉴스레터</div>
+<div class="mi"><span class="ic">▭</span>기타</div>
+<div class="sep"></div>
+<div class="mi"><span class="ic">◎</span>검색 · AI</div>
+<div class="mi"><span class="ic">◔</span>통계</div>
+<div class="mi"><span class="ic">⚙</span>설정</div>
+<div class="mi"><span class="ic">▨</span>제작·운영 가이드</div>
+</div><div class="main">
+<div class="ph"><h2>미디어 아키텍처란 무엇인가</h2><span class="sp"></span>
+<span class="btn">미리보기 ↗</span><span class="btn">임시 저장</span>
+<span class="btn p">등록하기</span></div>
+<p class="upd">초안 · 14분 전 저장</p>
+
+<div class="tabs">
+  <div class="tab"><span class="pd g"></span>기본정보</div>
+  <div class="tab on"><span class="pd a"></span>본문</div>
+  <div class="tab"><span class="pd s"></span>연결</div>
+</div>
+
+<div style="display:flex;gap:7px;margin-bottom:12px;align-items:center">
+  <span class="btn sm">국문</span><span class="btn sm" style="background:var(--soft)">영문</span>
+  <span style="flex:1"></span>
+  <span class="btn sm">✦ AI로 채우기</span><span class="btn sm">✦ 영문 생성</span>
+  <span class="btn sm">전체 접기</span>
+</div>
+
+<div class="bk">
+  <div class="bkh"><span class="gr">⠿</span><span class="nm3">글</span>
+    <span class="sp"></span><span class="ac">↑ ↓ ⧉ ✕</span></div>
+  <div class="bkb">
+    <div class="ed">
+      <div class="edt">
+        <span>H2</span><span>H3</span><span class="sepv"></span>
+        <span><b>B</b></span><span><i>I</i></span><span class="sepv"></span>
+        <span>• 목록</span><span>1. 번호</span><span class="sepv"></span>
+        <span>🔗 링크</span><span>↩ 되돌리기</span>
+      </div>
+      <div class="edc">
+        <p>건축 설계 초기 단계부터 미디어와 콘텐츠를 함께 설계하는 방식입니다.
+        완성된 건물에 화면을 붙이는 것이 아니라, 구조·조명·조경과 미디어를
+        하나로 계획해 공간 자체가 랜드마크가 되게 만듭니다.</p>
+        <h4>왜 설계 단계부터인가</h4>
+        <p>구조와 전기 계획이 확정된 뒤에는 미디어가 들어갈 자리가 이미 정해집니다.
+        선택지가 줄어들고, 남은 자리에 맞춰 콘텐츠를 끼워 넣게 됩니다.</p>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--faint);margin-top:6px">
+      국문 218자 · 문단 2 · 소제목 1</div>
+  </div>
+</div>
+
+<div class="bk">
+  <div class="bkh"><span class="gr">⠿</span><span class="nm3">전폭 이미지</span>
+    <span class="sp"></span><span class="ac">↑ ↓ ⧉ ✕</span></div>
+  <div class="bkb">
+    <div style="display:flex;gap:11px;align-items:flex-start">
+      <div style="width:180px"><div class="ph2"></div></div>
+      <div style="flex:1">
+        <div class="fld" style="margin-bottom:9px">
+          <div class="lab"><b style="font-size:11.5px">대체 텍스트</b>
+            <span class="rq">*</span><span class="cnt">국문 0 / 40</span>
+            <span class="btn sm">AI</span></div>
+          <input class="ti" placeholder="무엇이 찍혔는지 사실만"></div>
+        <div class="fld" style="margin:0">
+          <div class="lab"><b style="font-size:11.5px">캡션</b>
+            <span class="cnt">국문 0 / 90</span><span class="btn sm">AI</span></div>
+          <input class="ti" placeholder="화면에 보입니다. AI가 인용합니다"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bk">
+  <div class="bkh"><span class="gr">⠿</span><span class="nm3">질문 · 답변</span>
+    <span class="sp"></span><span class="ac">↑ ↓ ⧉ ✕</span></div>
+  <div class="bkb">
+    <div class="fld" style="margin-bottom:10px">
+      <div class="lab"><b style="font-size:11.5px">질문</b><span class="rq">*</span>
+        <span class="cnt">국문 24 / 60</span></div>
+      <input class="ti" value="설계 단계부터 참여하면 무엇이 달라지나요?"></div>
+    <div class="fld" style="margin:0">
+      <div class="lab"><b style="font-size:11.5px">답변</b><span class="rq">*</span>
+        <span class="cnt">국문 96 / 400</span></div>
+      <textarea class="ti" style="min-height:60px">구조와 동선이 미디어와 맞물립니다. 나중에 붙이면 화면이 잘 보이는 자리와 사람이 머무는 자리가 어긋납니다.</textarea></div>
+    <div class="tip">
+      <b>인터뷰에 쓰는 블록입니다.</b> 질문과 답변이 나뉘어 저장되어
+      구조화 데이터로 나갑니다. AI 가 인용할 확률이 올라갑니다.
+    </div>
+  </div>
+</div>
+
+<div class="bk">
+  <div class="bkh"><span class="gr">⠿</span><span class="nm3">2단 나란히</span>
+    <span class="sp"></span><span class="ac">↑ ↓ ⧉ ✕</span></div>
+  <div class="bkb">
+    <div style="display:flex;gap:9px">
+      <div style="flex:1"><div class="ph2"></div>
+        <div style="font-size:10.5px;color:var(--faint);margin-top:5px">
+          alt 있음 · 캡션 없음</div></div>
+      <div style="flex:1"><div class="slot" style="aspect-ratio:16/9;min-height:0">
+        <span style="font-size:16px">＋</span>이미지 넣기</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="addb">＋ 블록 추가</div>
+
+<div class="bar">
+  <span class="msg">공개하려면 2가지가 더 필요합니다 — 영문 · 대체 텍스트</span>
+  <span class="sp"></span>
+  <span class="btn">공개 전 점검</span><span class="btn p">등록하기</span>
+</div>
+</div></div></div>
+<div class="big"><span class="n">04</span>블록 목록</div><p class="lead">워크에서 7종을 가져오고 <b>2종을 새로 만듭니다.</b></p><div class="app"><div class="hd"><div class="lg">A</div><div class="nm">APOLLON HUB</div><div class="rt"><span>이택진 / 공간파트 / 슈퍼관리자</span><span class="bell">9+</span></div></div><div class="body"><div class="side">
+<div class="tt"><div class="u">WEBSITE</div><div class="d">홈페이지</div></div>
+<div class="mi"><span class="ic">▤</span>대시보드</div>
+<div class="mi"><span class="ic">⌂</span>홈</div>
+<div class="mi"><span class="ic">▣</span>워크</div>
+<div class="mi on"><span class="ic">▤</span>인사이트</div>
+<div class="mi"><span class="ic">◉</span>커리어<span class="bd">1</span></div>
+<div class="mi"><span class="ic">✉</span>Let's Talk<span class="bd">3</span></div>
+<div class="mi"><span class="ic">◈</span>뉴스레터</div>
+<div class="mi"><span class="ic">▭</span>기타</div>
+<div class="sep"></div>
+<div class="mi"><span class="ic">◎</span>검색 · AI</div>
+<div class="mi"><span class="ic">◔</span>통계</div>
+<div class="mi"><span class="ic">⚙</span>설정</div>
+<div class="mi"><span class="ic">▨</span>제작·운영 가이드</div>
+</div><div class="main">
+<div class="ph"><h2>블록 추가</h2></div>
+<p class="upd">인사이트에서 쓸 수 있는 블록 9종</p>
+
+<div style="display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px">
+  <div class="tab on">전체</div><div class="tab">글</div>
+  <div class="tab">이미지</div><div class="tab">영상 · 임베드</div>
+</div>
+
+<table>
+<tr><th style="width:18%">블록</th><th style="width:12%">어디서</th><th>무엇</th></tr>
+<tr><td><b>글</b></td><td><span class="cat lb">새로</span></td>
+  <td>여러 문단 + 소제목 + 굵게 + 목록 + 링크를 한 블록에.
+    <b>긴 글은 이것 하나로 씁니다</b></td></tr>
+<tr><td><b>질문 · 답변</b></td><td><span class="cat lb">새로</span></td>
+  <td>인터뷰. 질문과 답변이 나뉘어 저장됩니다</td></tr>
+<tr><td>전폭 이미지</td><td><span class="cat bh">워크</span></td>
+  <td>본문 폭 가득. 가로 사진</td></tr>
+<tr><td>2단 나란히</td><td><span class="cat bh">워크</span></td>
+  <td>두 장. 비율 합으로 폭이 나뉩니다</td></tr>
+<tr><td>3단 나란히</td><td><span class="cat bh">워크</span></td>
+  <td>세 장</td></tr>
+<tr><td>자동 배치 갤러리</td><td><span class="cat bh">워크</span></td>
+  <td>최대 12장. <b>컬처의 사진 모음에 적합</b></td></tr>
+<tr><td>가로 스크롤</td><td><span class="cat bh">워크</span></td>
+  <td>최대 8장. 순서가 있는 장면</td></tr>
+<tr><td>영상 전폭</td><td><span class="cat bh">워크</span></td>
+  <td>유튜브 링크 또는 직접 올리기</td></tr>
+<tr><td>임베드</td><td><span class="cat bh">워크</span></td>
+  <td>Sketchfab · Matterport · Google Maps</td></tr>
+</table>
+
+<div class="box w">
+  <b class="h">워크에 있지만 인사이트에서 안 쓰는 것</b>
+  <p>가로 + 세로 · 세로 + 가로 · 전후 비교 ·
+  이미지 + 글 · 글 + 큰 이미지 · 세로 이미지 + 글</p>
+  <p style="margin-top:5px">워크 전용 배치입니다. 인사이트는 <b>글이 주인공</b>이라
+  이미지를 옆에 붙일 일이 적습니다. 필요해지면 그때 넣습니다.</p>
+</div>
+</div></div></div>
+
+<div class="big"><span class="n">＊</span>정리</div>
+
+<div class="box o">
+  <b class="h">워크와 같은 것</b>
+  <ul>
+    <li>목록 · 등록 · 편집 화면 구조</li>
+    <li>블록 편집 방식 · 드래그로 순서 바꾸기</li>
+    <li>대체 텍스트 · 캡션 · AI로 채우기</li>
+    <li>공개 전 점검 · 미리보기</li>
+    <li>태그 (같은 테이블을 씁니다)</li>
+  </ul>
+  <p style="margin-top:7px"><b>팀원이 새로 배울 것이 거의 없습니다.</b></p>
+</div>
+
+<div class="box w">
+  <b class="h">인사이트에만 있는 것</b>
+  <table style="margin:8px 0 0;border:1px solid var(--warnln);border-radius:7px;overflow:hidden">
+  <tr><th style="width:26%">항목</th><th>내용</th></tr>
+  <tr><td><b>출처 줄</b></td><td>없음 / 언론 보도 / 인물 중 선택</td></tr>
+  <tr><td><b>대표 이미지</b></td><td>비율 자유. 올린 비율대로 목록 카드가 만들어짐</td></tr>
+  <tr><td><b>글 블록</b></td><td>여러 문단을 한 블록에. 긴 글용</td></tr>
+  <tr><td><b>질문·답변 블록</b></td><td>인터뷰. 구조화 데이터로 나감</td></tr>
+  <tr><td><b>FAQ 탭 없음</b></td><td>워크의 4탭 → 3탭</td></tr>
+  <tr><td><b>앵커 메뉴 없음</b></td><td>섹션 계층이 필요 없음. 블록만</td></tr>
+  </table>
+</div>
+
+<div class="box i">
+  <b class="h">지영 부장께 받아야 하는 것</b>
+  <p><b>InsightDetail 이 블록 배열을 받아 그리는 것</b> 하나입니다.</p>
+  <p style="margin-top:6px">워크 블록 렌더러가 이미 있어 7종은 재사용할 수 있을 것으로 보이고,
+  새로 필요한 건 <b>「글」과 「질문·답변」 두 개</b>입니다.</p>
+  <p style="margin-top:6px">8/28 GitHub Issue 로 요청했고 오후 4시 회의에서 논의합니다.
+  <b>못 받으면 위지윅으로 가고 오픈 후 다시 논의합니다.</b></p>
+</div>
+
+<div class="box w">
+  <b class="h">DB 에 추가할 것</b>
+  <p><code>insights.key_image_width</code> · <code>key_image_height</code></p>
+  <p style="margin-top:5px">목록 카드가 이 비율로 만들어지는데 지금 칸이 없습니다.</p>
+</div>
+
+<div class="box o">
+  <b class="h">정해야 할 것</b>
+  <ul>
+    <li>이 구성이 맞는지</li>
+    <li><b>「글」 블록의 에디터에 무엇까지 허용할지</b>
+      — 지금 안은 소제목 · 굵게 · 기울임 · 목록 · 링크. 색과 글꼴은 없음</li>
+    <li>사례 카드(이미지 + 제목 + 설명)를 넣을지
+      — XPACE 트렌드 글에 있던 형태. 지금은 뺐습니다</li>
+    <li>본문 중간에 다른 인사이트를 카드로 끼워넣는 블록이 필요한지</li>
+  </ul>
+</div>
+
+<p class="mini" style="margin-top:20px;text-align:center">
+색·글자 크기·여백은 Hub 기존 것을 씁니다. 이 목업은 배치와 구성만 봅니다.</p>
+</div></body></html>
