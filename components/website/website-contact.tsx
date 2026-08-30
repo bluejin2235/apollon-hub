@@ -267,7 +267,7 @@ export function WebsiteContact() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Let's Talk</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Let’s Talk</h1>
         <p className="mt-1 text-sm text-slate-500">홈페이지로 들어온 문의를 봅니다. 답장은 메일 프로그램에서 합니다.</p>
       </div>
       <div className="flex gap-1 border-b border-slate-200">
