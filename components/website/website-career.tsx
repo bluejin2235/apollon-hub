@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ComingSoon } from "@/components/website/coming-soon";
 import { showToast } from "@/components/website/toast";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { PrimaryBtn } from "@/components/website/work-editor-ui";
 import {
   createJob,
-  deleteJob,
   getJobTargets,
   getTalentTargetsByRole,
   listJobs,
@@ -21,7 +19,6 @@ import {
   JOB_ROLE_LABEL,
   JOB_ROLES,
   TALENT_INTEREST_LABEL,
-  emptyJobDraft,
   formatDotDate,
   interestLabels,
   type JobPosting,
@@ -59,8 +56,8 @@ function JobForm({
   const [employment, setEmployment] = useState(job?.employment ?? "정규직");
   const [experience, setExperience] = useState(job?.experience ?? "무관");
   const [applyUrl, setApplyUrl] = useState(job?.apply_url ?? "");
-  const [postedAt, setPostedAt] = useState(job?.posted_at ?? "");
-  const [closesAt, setClosesAt] = useState(job?.closes_at ?? "");
+  const [postedAt, setPostedAt] = useState(job?.posted_at?.slice(0, 10) ?? "");
+  const [closesAt, setClosesAt] = useState(job?.closes_at?.slice(0, 10) ?? "");
   const [saving, setSaving] = useState(false);
   const [targetCount, setTargetCount] = useState<number | null>(null);
 
@@ -115,23 +112,41 @@ function JobForm({
     };
 
     setSaving(true);
-    const result = job
-      ? await updateJob(job.id, body)
-      : await createJob(body);
-    setSaving(false);
-
-    if (!result.ok) {
+    const saved = job ? await updateJob(job.id, body) : await createJob(body);
+    if (!saved.ok) {
+      setSaving(false);
       showToast({
         message:
-          result.error === "publish_not_ready"
+          saved.error === "publish_not_ready"
             ? "링크와 게시일 없이 게시할 수 없습니다"
             : "저장에 실패했습니다",
         tone: "error"
       });
       return;
     }
+
+    if (status === "open" && saved.data.status !== "open") {
+      const published = await updateJob(saved.data.id, { status: "open" });
+      setSaving(false);
+      if (!published.ok) {
+        showToast({
+          message:
+            published.error === "publish_not_ready"
+              ? "링크와 게시일 없이 게시할 수 없습니다"
+              : "저장은 됐지만 게시하지 못했습니다",
+          tone: "error"
+        });
+        onSaved(saved.data);
+        return;
+      }
+      showToast({ message: "게시했습니다", tone: "ok" });
+      onSaved(published.data);
+      return;
+    }
+
+    setSaving(false);
     showToast({ message: status === "open" ? "게시했습니다" : "저장했습니다", tone: "ok" });
-    onSaved(result.data);
+    onSaved(saved.data);
   }
 
   return (
@@ -239,7 +254,7 @@ function JobForm({
         <PrimaryBtn disabled={!canManage || saving} onClick={() => void save()}>
           저장
         </PrimaryBtn>
-        <PrimaryBtn disabled={!canManage || saving || !canPublish} onClick={() => void save("open")}>
+        <PrimaryBtn disabled={!canManage || saving} onClick={() => void save("open")}>
           게시
         </PrimaryBtn>
         <p className="text-sm text-slate-500">{publishHint}</p>
@@ -363,6 +378,7 @@ function JobsTab() {
       </div>
       {editing === "new" ? (
         <JobForm
+          key="new"
           job={null}
           canManage={canManageWorks}
           onClose={() => setEditing(null)}
@@ -373,6 +389,7 @@ function JobsTab() {
         />
       ) : editing ? (
         <JobForm
+          key={editing.id}
           job={editing}
           canManage={canManageWorks}
           onClose={() => setEditing(null)}
@@ -459,7 +476,7 @@ function AlertsTab() {
         <SummaryCard label="30일 안에 만료" value={data?.summary.expiringSoon ?? 0} />
       </div>
       <div className="flex flex-wrap gap-2">
-        {["all", ...JOB_ROLES].map((id) => (
+        {[...JOB_ROLES, "all"].map((id) => (
           <button
             key={id}
             type="button"
@@ -562,7 +579,11 @@ export function WebsiteCareer() {
       </div>
       {tab === "jobs" ? <JobsTab /> : null}
       {tab === "alerts" ? <AlertsTab /> : null}
-      {tab === "page" ? <ComingSoon title="페이지 설정" hint="카피·FAQ는 다음 단계에서 엽니다" /> : null}
+      {tab === "page" ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-16 text-center text-sm text-slate-400">
+          페이지 설정은 준비 중입니다
+        </div>
+      ) : null}
     </div>
   );
 }

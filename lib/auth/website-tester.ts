@@ -65,6 +65,7 @@ export async function getProfileRole(
 
 const WORK_ID_PATH = /^works\/([^/]+)$/;
 const INSIGHT_ID_PATH = /^insights\/([^/]+)$/;
+const JOB_ID_PATH = /^jobs\/([^/]+)$/;
 
 /** 홈페이지테스터가 website API 프록시에서 막아야 하는 요청 */
 export async function isWebsiteTesterBlockedApiRequest(
@@ -74,11 +75,15 @@ export async function isWebsiteTesterBlockedApiRequest(
 ): Promise<boolean> {
   const path = joinedPath.replace(/\/$/, "").split("?")[0] ?? "";
 
-  if (method === "POST" && (path === "works" || path === "insights")) return true;
+  if (method === "POST" && (path === "works" || path === "insights" || path === "jobs")) return true;
 
-  if (method === "DELETE" && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path))) return true;
+  if (method === "DELETE" && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path) || JOB_ID_PATH.test(path))) {
+    return true;
+  }
 
-  if ((method === "PATCH" || method === "PUT") && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path))) {
+  if (method === "PATCH" && path === "jobs/order") return true;
+
+  if ((method === "PATCH" || method === "PUT") && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path) || JOB_ID_PATH.test(path))) {
     try {
       const text = await request.clone().text();
       if (!text.trim()) return false;
