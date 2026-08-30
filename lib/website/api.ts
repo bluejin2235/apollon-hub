@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import type { JobPosting, TalentPoolList } from "@/lib/website/career";
 import type {
   ApiResult,
   InsightListData,
@@ -675,4 +676,40 @@ export function setInterview(workId: string, body: unknown): Promise<ApiResult<R
 
 export function clearInterview(workId: string): Promise<ApiResult<{ work_id: string }>> {
   return websiteFetch(`works/${workId}/interview`, { method: "DELETE" });
+}
+
+export function listJobs(): Promise<ApiResult<{ items: JobPosting[] }>> {
+  return websiteFetch<{ items: JobPosting[] }>("jobs");
+}
+
+export function createJob(body: unknown): Promise<ApiResult<JobPosting>> {
+  return websiteFetch<JobPosting>("jobs", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateJob(id: string, body: unknown): Promise<ApiResult<JobPosting>> {
+  return websiteFetch<JobPosting>(`jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function deleteJob(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`jobs/${id}`, { method: "DELETE" });
+}
+
+export function reorderJobs(order: { id: string; sort: number }[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch("jobs/order", { method: "PATCH", body: JSON.stringify({ order }) });
+}
+
+export function getJobTargets(id: string): Promise<ApiResult<{ count: number }>> {
+  return websiteFetch<{ count: number }>(`jobs/${id}/targets`);
+}
+
+export function getTalentTargetsByRole(role: string): Promise<ApiResult<{ count: number }>> {
+  return websiteFetch<{ count: number }>(`talent-pool/targets${queryString({ role })}`);
+}
+
+export function listTalentPool(params?: {
+  q?: string;
+  role?: string;
+  filter?: "active" | "all" | "expired";
+}): Promise<ApiResult<TalentPoolList>> {
+  return websiteFetch<TalentPoolList>(`talent-pool${queryString(params)}`);
 }
