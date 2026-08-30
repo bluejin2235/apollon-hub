@@ -463,6 +463,7 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           no_key_image: asBool(check.no_key_image),
           key_image_size_unknown: asBool(check.key_image_size_unknown),
           key_image_not_16_9: asBool(check.key_image_not_16_9),
+          not_16_9: asBool(check.not_16_9),
           key_image_too_small: asBool(check.key_image_too_small),
           body_image_too_small: asBool(check.body_image_too_small),
           empty_blocks: asBool(check.empty_blocks),
@@ -491,7 +492,9 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           body_image_too_small_count:
             typeof check.body_image_too_small_count === "number"
               ? check.body_image_too_small_count
-              : undefined
+              : undefined,
+          not_16_9_count:
+            typeof check.not_16_9_count === "number" ? check.not_16_9_count : undefined
         } satisfies import("@/lib/website/types").CheckWorks)
       : null
   };

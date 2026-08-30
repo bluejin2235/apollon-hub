@@ -1,0 +1,269 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>홈 — 아티클 추가 목업</title>
+<style>
+:root{--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;--err:#b0231e;--ok:#0f7a45;--warn:#a35a08}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.pg{max-width:1000px;margin:0 auto;padding:24px 16px 90px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--dim);font-size:13px;margin:0 0 22px}
+.big{font-size:16px;font-weight:700;margin:30px 0 8px;padding-bottom:7px;
+border-bottom:2px solid var(--ink)}
+.lead{color:#4a515b;font-size:12.5px;margin:0 0 12px}
+
+.win{background:#fff;border:1px solid #d2d7de;border-radius:11px;overflow:hidden;
+box-shadow:0 4px 18px rgba(0,0,0,.07)}
+.wh{display:flex;align-items:center;gap:9px;padding:13px 17px;border-bottom:1px solid var(--line)}
+.wh .t{font-size:15px;font-weight:600}
+.wh .sp{flex:1}
+.wh .x{color:var(--faint);font-size:15px;cursor:pointer}
+
+.tabs{display:flex;gap:2px;padding:0 17px;border-bottom:1px solid var(--line)}
+.tab{padding:9px 14px;font-size:12.5px;color:var(--dim);cursor:pointer;
+border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ap);font-weight:600;border-bottom-color:var(--ap)}
+
+.wb{padding:15px 17px;max-height:430px;overflow:auto}
+
+.filt{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.inp{border:1px solid #dde1e6;border-radius:7px;padding:6px 11px;font-size:12.5px;
+color:#3a4049;background:#fff}
+.inp.full{width:100%}
+.sel{border:1px solid #dde1e6;border-radius:7px;padding:6px 10px;font-size:12.5px;
+color:#4a515b;background:#fff}
+.chip{font-size:11.5px;padding:4px 11px;border-radius:999px;cursor:pointer;
+box-shadow:inset 0 0 0 1px #dde1e6;color:var(--dim)}
+.chip.on{box-shadow:inset 0 0 0 2px var(--ink);color:var(--ink);font-weight:600}
+
+.item{display:flex;align-items:center;gap:11px;padding:9px;border-radius:9px;
+cursor:pointer;border:1px solid transparent}
+.item:hover{background:var(--soft);border-color:var(--line)}
+.item.sel{background:var(--apbg);border-color:var(--apln)}
+.item .th{width:74px;height:42px;border-radius:5px;flex-shrink:0}
+.item .c{flex:1;min-width:0}
+.item .nm{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .mt{font-size:11px;color:var(--faint);margin-top:1px}
+.item .dt{font-size:11px;color:var(--faint);white-space:nowrap}
+.item .used{font-size:10px;color:var(--warn);background:#fdf7f0;border-radius:3px;
+padding:1px 6px;white-space:nowrap}
+.kind{font-size:10px;font-weight:700;border-radius:3px;padding:1px 6px;margin-right:5px}
+.kind.w{background:#eef0fb;color:#4b5bb5}
+.kind.i{background:#f3eefb;color:#7c3aed}
+
+.fld{margin-bottom:14px}
+.lab{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.lab b{font-size:12px;font-weight:600}
+.lab .rq{color:var(--err);font-size:11px}
+.lab .cnt{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.tip{font-size:11px;color:var(--dim);line-height:1.65;margin-top:5px;
+background:var(--soft);border-left:2px solid var(--apln);border-radius:0 5px 5px 0;padding:7px 10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.drop{border:1.5px dashed #d3d8de;border-radius:9px;background:#fcfcfd;
+display:flex;flex-direction:column;align-items:center;justify-content:center;
+gap:3px;color:var(--faint);aspect-ratio:16/9;cursor:pointer;font-size:11.5px}
+.drop:hover{border-color:var(--apln);background:var(--apbg);color:var(--ap)}
+.drop .p{font-size:20px}
+.prev{border-radius:9px;overflow:hidden;aspect-ratio:16/9;position:relative;
+background:linear-gradient(135deg,#5b7a94,#2f4a5e)}
+.prev .cap{position:absolute;left:0;right:0;bottom:0;padding:11px 13px;
+background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.prev .cap .t{margin:0;font-size:12.5px;font-weight:600;color:#fff}
+.prev .cap .m{margin:2px 0 0;font-size:10.5px;color:rgba(255,255,255,.75)}
+.prev .rm{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:6px;
+background:rgba(0,0,0,.5);color:#fff;display:flex;align-items:center;
+justify-content:center;font-size:12px;cursor:pointer}
+
+.wf{display:flex;align-items:center;gap:8px;padding:12px 17px;
+border-top:1px solid var(--line);background:var(--soft)}
+.wf .sp{flex:1}
+.wf .msg{font-size:11.5px;color:var(--dim)}
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:6px 13px;font-size:12.5px;
+background:#fff;color:#3a4049;cursor:pointer}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.p.off{background:#cbd2da;border-color:#cbd2da;cursor:not-allowed}
+
+.note{background:#fff;border:1px solid var(--line);border-radius:10px;
+padding:14px 16px;margin-top:14px;font-size:12.5px;line-height:1.8}
+.note h3{margin:0 0 6px;font-size:13px}
+.note ul{margin:5px 0 0;padding-left:18px}
+.note li{margin-bottom:3px}
+.k{background:var(--apbg);color:var(--ap);border-radius:4px;padding:1px 6px;
+font-size:11.5px;font-weight:600}
+</style></head><body>
+<div class="pg">
+<h1>홈 — 아티클 추가</h1>
+<p class="sub">메인에 올릴 것을 고릅니다 · 콘텐츠에서 고르거나 직접 만듭니다</p>
+
+<div class="big">1 · 콘텐츠에서 고르기</div>
+<p class="lead">메인에 아직 안 걸린 워크·인사이트를 <b>최신순으로</b> 보여줍니다.
+뺐다가 다시 넣을 때도 여기서 찾습니다.</p>
+
+<div class="win">
+<div class="wh"><span class="t">아티클 추가</span><span class="sp"></span><span class="x">✕</span></div>
+<div class="tabs">
+  <div class="tab on">콘텐츠에서 고르기</div>
+  <div class="tab">직접 만들기</div>
+</div>
+<div class="wb">
+  <div class="filt">
+    <input class="inp" style="flex:1;min-width:180px" placeholder="제목으로 찾기">
+    <span class="chip on">전체</span>
+    <span class="chip">워크</span>
+    <span class="chip">인사이트</span>
+    <select class="sel"><option>최신순</option><option>제목순</option></select>
+  </div>
+
+  <div class="item sel">
+    <div class="th" style="background:linear-gradient(135deg,#94816b,#5e4a3a)"></div>
+    <div class="c"><div class="nm"><span class="kind i">인사이트</span>고래가 헤엄치는 3분을 만들기까지</div>
+      <div class="mt">인터뷰</div></div>
+    <div class="dt">2026.08.26</div></div>
+
+  <div class="item">
+    <div class="th" style="background:linear-gradient(135deg,#6b9484,#3a5e4c)"></div>
+    <div class="c"><div class="nm"><span class="kind i">인사이트</span>미디어아트 트렌드 2026</div>
+      <div class="mt">랩</div></div>
+    <div class="dt">2026.08.25</div></div>
+
+  <div class="item">
+    <div class="th" style="background:linear-gradient(135deg,#6b8fa3,#3a5c70)"></div>
+    <div class="c"><div class="nm"><span class="kind w">워크</span>콘텐츠 모듈 테스트</div>
+      <div class="mt">미디어 콘텐츠</div></div>
+    <div class="dt">2026.08.25</div></div>
+
+  <div class="item">
+    <div class="th" style="background:linear-gradient(135deg,#7a6b94,#4a3a5e)"></div>
+    <div class="c"><div class="nm"><span class="kind i">인사이트</span>우리가 가장 많이 다투는 지점</div>
+      <div class="mt">인터뷰</div></div>
+    <div class="dt">2026.08.22</div></div>
+
+  <div class="item">
+    <div class="th" style="background:linear-gradient(135deg,#946b6b,#5e3a3a)"></div>
+    <div class="c"><div class="nm"><span class="kind i">인사이트</span>통로를 목적지로 바꾼 이야기</div>
+      <div class="mt">인터뷰</div></div>
+    <div class="dt">2026.08.20</div></div>
+
+  <div class="item">
+    <div class="th" style="background:linear-gradient(135deg,#8a94a3,#4a5470)"></div>
+    <div class="c"><div class="nm"><span class="kind i">인사이트</span>미디어 아키텍처란 무엇인가</div>
+      <div class="mt">비하인드</div></div>
+    <div class="dt">2026.08.18</div></div>
+
+  <div class="item" style="opacity:.5">
+    <div class="th" style="background:linear-gradient(135deg,#5b7a94,#2f4a5e)"></div>
+    <div class="c"><div class="nm"><span class="kind w">워크</span>Inspire Resort Media Show</div>
+      <div class="mt">미디어 콘텐츠</div></div>
+    <span class="used">이미 걸림</span>
+    <div class="dt">2026.06.10</div></div>
+</div>
+<div class="wf"><span class="msg">고른 것 1개</span><span class="sp"></span>
+  <span class="btn">취소</span><span class="btn p">추가</span></div>
+</div>
+
+<div class="big">2 · 직접 만들기</div>
+<p class="lead">DB 에 없는 것을 걸 때 씁니다. 커리어 · Let's Talk · 외부 기사 같은 것들입니다.</p>
+
+<div class="win">
+<div class="wh"><span class="t">아티클 추가</span><span class="sp"></span><span class="x">✕</span></div>
+<div class="tabs">
+  <div class="tab">콘텐츠에서 고르기</div>
+  <div class="tab on">직접 만들기</div>
+</div>
+<div class="wb">
+
+  <div class="two" style="margin-bottom:14px">
+    <div>
+      <div class="lab"><b>썸네일</b><span class="rq">*</span></div>
+      <div class="prev">
+        <span class="rm">✕</span>
+        <div class="cap"><p class="t">함께 만들어갈 사람을 찾습니다</p>
+          <p class="m">Career</p></div>
+      </div>
+      <div class="tip"><b>16:9 · 긴 변 2000 이상.</b><br>
+        영상도 됩니다. MP4 · 1280×720 · 1.5MB 이하 · 소리 없음</div>
+    </div>
+    <div>
+      <div class="lab"><b>영상 (선택)</b></div>
+      <div class="drop"><div class="p">＋</div>마우스를 올리면 재생됩니다</div>
+      <div class="tip">없으면 이미지만 나옵니다.<br>
+        워크 카드의 T-S 와 같은 규격입니다.</div>
+    </div>
+  </div>
+
+  <div class="fld">
+    <div class="lab"><b>제목</b><span class="rq">*</span><span class="cnt">국문 16 / 30</span></div>
+    <input class="inp full" value="함께 만들어갈 사람을 찾습니다">
+    <div class="tip">카드 아래쪽에 굵게 나옵니다.</div>
+  </div>
+
+  <div class="fld">
+    <div class="lab"><b>한 줄 설명</b><span class="cnt">국문 6 / 40</span></div>
+    <input class="inp full" value="Career">
+    <div class="tip">제목 아래 작게. 워크는 여기에 카테고리가 나옵니다.</div>
+  </div>
+
+  <div class="fld">
+    <div class="lab"><b>링크</b><span class="rq">*</span></div>
+    <div class="filt" style="margin-bottom:6px">
+      <span class="chip on">사이트 안</span>
+      <span class="chip">바깥 주소</span>
+    </div>
+    <select class="sel" style="width:100%">
+      <option>/career — 커리어</option>
+      <option>/contact — Let's Talk</option>
+      <option>/about — About</option>
+      <option>/expertise — Expertise</option>
+      <option>/insight — 인사이트 목록</option>
+      <option>/works — 워크 목록</option>
+    </select>
+    <div class="tip">「바깥 주소」를 고르면 새 창으로 열립니다.
+      기사나 다른 사이트를 걸 때 씁니다.</div>
+  </div>
+
+</div>
+<div class="wf"><span class="msg" style="color:var(--warn)">썸네일과 링크가 필요합니다</span>
+  <span class="sp"></span>
+  <span class="btn">취소</span><span class="btn p">추가</span></div>
+</div>
+
+<div class="big">＊ 등록만으로는 메인에 안 나옵니다</div>
+<p class="lead">워크나 인사이트를 등록하면 목록에는 바로 나오지만
+메인에는 <b>여기서 따로 추가</b>해야 나옵니다.</p>
+
+<div class="win">
+<div class="wh"><span class="t">워크 등록 완료</span><span class="sp"></span><span class="x">✕</span></div>
+<div class="wb" style="max-height:none">
+  <div style="text-align:center;padding:26px 20px">
+    <div style="font-size:28px;color:var(--ok);margin-bottom:8px">✓</div>
+    <p style="margin:0 0 6px;font-size:15px;font-weight:600">등록되었습니다</p>
+    <p style="margin:0;font-size:12.5px;color:var(--dim);line-height:1.9">
+      워크 목록과 검색에는 바로 나옵니다.<br>
+      <b style="color:var(--ink)">메인에 노출하려면 홈에서 따로 추가해 주세요.</b></p>
+  </div>
+</div>
+<div class="wf"><span class="sp"></span>
+  <span class="btn">닫기</span><span class="btn p">홈에서 추가하기 →</span></div>
+</div>
+
+<div class="note">
+<h3>정해주실 것</h3>
+<ul>
+<li><span class="k">1</span> 「콘텐츠에서 고르기」에서 <b>여러 개를 한 번에</b> 고를 수 있게 할까요.
+  고른 만큼 칸이 붙습니다</li>
+<li><span class="k">2</span> 「이미 걸림」을 흐리게 보여주는 게 맞습니까.
+  아예 목록에서 뺄 수도 있습니다</li>
+<li><span class="k">3</span> 직접 만든 칸에 <b>영상</b>이 필요합니까.
+  워크 카드는 마우스를 올리면 영상이 도는데 같게 할지요</li>
+<li><span class="k">4</span> 직접 만든 칸을 <b>어디에 저장</b>할까요.
+  home_feed 에 칸을 늘리거나 별도 테이블을 둡니다</li>
+<li><span class="k">5</span> 「자동」을 없애면 <b>핀도 필요 없어집니다.</b>
+  모든 칸이 고정이니까요. 끌어서 순서만 바꾸면 됩니다</li>
+</ul>
+</div>
+
+</div>
+</body></html>

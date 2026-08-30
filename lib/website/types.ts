@@ -18,6 +18,7 @@ export type CheckWorks = {
   no_key_image: boolean;
   key_image_size_unknown: boolean;
   key_image_not_16_9: boolean;
+  not_16_9: boolean;
   key_image_too_small: boolean;
   body_image_too_small: boolean;
   empty_blocks: boolean;
@@ -36,6 +37,7 @@ export type CheckWorks = {
   duplicate_alt_count?: number;
   empty_block_count?: number;
   body_image_too_small_count?: number;
+  not_16_9_count?: number;
 };
 
 export type WorkListItem = {

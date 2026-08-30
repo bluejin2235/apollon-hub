@@ -28,15 +28,9 @@ import { InsightContentTab } from "@/components/website/insight-content-tab";
 import { InsightPublishCheckPanel } from "@/components/website/insight-publish-check-panel";
 import { InsightRelatedTab } from "@/components/website/insight-related-tab";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
+import { HomePublishNotice } from "@/components/website/home-publish-notice";
 import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
 import { showToast } from "@/components/website/toast";
-
-const PUBLISH_REDIRECT_KEY = "website-publish-toast";
-
-function websiteOrigin() {
-  const raw = process.env.NEXT_PUBLIC_WEBSITE_ORIGIN?.trim() || "http://localhost:3100";
-  return raw.replace(/\/$/, "");
-}
 
 const TABS: { id: InsightEditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
@@ -129,6 +123,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckInsights | null>(null);
+  const [homeNotice, setHomeNotice] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -228,39 +223,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
       setPanelOpen(false);
       await load();
 
-      const title = draft.title.ko.trim() || insight?.slug || "인사이트";
-      const slug = draft.slug || insight?.slug || "";
-      const publicHref = `${websiteOrigin()}/insight/${slug}`;
-      try {
-        sessionStorage.setItem(PUBLISH_REDIRECT_KEY, JSON.stringify({ title, at: Date.now() }));
-      } catch {
-        // ignore
-      }
-
-      showToast({
-        message: "공개되었습니다",
-        tone: "ok",
-        durationMs: 4000,
-        actions: [
-          { label: "홈페이지에서 보기 ↗", href: publicHref },
-          {
-            label: "계속 편집",
-            onClick: () => {
-              cancelPublishNav();
-              try {
-                sessionStorage.removeItem(PUBLISH_REDIRECT_KEY);
-              } catch {
-                // ignore
-              }
-            }
-          }
-        ]
-      });
-
-      publishNavTimer.current = window.setTimeout(() => {
-        publishNavTimer.current = null;
-        router.push("/website/insights");
-      }, 1500);
+      setHomeNotice(true);
     } finally {
       setSaving(false);
     }
@@ -378,6 +341,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
           onPublish={() => void publish()}
         />
       ) : null}
+      <HomePublishNotice open={homeNotice} kind="인사이트" onClose={() => setHomeNotice(false)} />
     </div>
   );
 }

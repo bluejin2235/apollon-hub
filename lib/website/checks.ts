@@ -6,6 +6,7 @@ export const PROBLEM_FLAGS = [
   "no_key_image",
   "key_image_size_unknown",
   "key_image_not_16_9",
+  "not_16_9",
   "key_image_too_small",
   "no_sections",
   "missing_image_alt",
@@ -35,6 +36,7 @@ export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof W
     no_key_image: "대표 이미지가 없습니다",
     key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
     key_image_not_16_9: "대표 이미지 비율이 16:9가 아닙니다",
+    not_16_9: "본문 가로 이미지가 16:9가 아닙니다",
     key_image_too_small: "대표 이미지 해상도가 낮습니다",
     body_image_too_small: "본문 이미지 해상도가 낮습니다",
     empty_blocks: "이미지가 없는 본문 블록이 있습니다",
@@ -147,6 +149,7 @@ export function fillBody(check: CheckWorks | null): "ok" | "warn" {
     check.no_sections ||
     check.missing_image_alt ||
     check.ai_unconfirmed ||
+    check.not_16_9 ||
     check.body_image_too_small ||
     check.empty_blocks ||
     check.duplicate_captions ||

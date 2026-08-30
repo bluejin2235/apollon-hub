@@ -60,7 +60,9 @@ import {
 import { GuideTerm } from "@/components/website/ui/GuideTerm";
 import {
   formatBodyImageHint,
+  formatBodyImageRejectHint,
   formatDetailMovieHint,
+  formatPortraitBodyImageHint,
   VIDEO_LABELS
 } from "@/lib/website/spec";
 
@@ -352,7 +354,7 @@ export function BlockCard({
               />
               <Guide>
                 <GuideTerm anchorId="image-blocks">자동 배치 갤러리</GuideTerm>
-                는 여러 장을 한 번에 올리면 비율을 보고 알아서 줄을 나눕니다.
+                는 여러 장을 한 번에 올리면 가로 길이를 보고 줄을 나눕니다. 가로 이미지는 16:9 입니다.
               </Guide>
             </div>
           ) : null}
@@ -385,6 +387,7 @@ export function BlockCard({
           {hasImages(block.preset) ? (
             <ImagesEditor
               images={images}
+              preset={block.preset}
               blockId={block.id}
               siteUrl={siteUrl}
               uploadRoot={uploadRoot}
@@ -609,6 +612,7 @@ function ColumnBodyField({
 
 function ImagesEditor({
   images,
+  preset,
   blockId,
   siteUrl,
   uploadRoot,
@@ -619,6 +623,7 @@ function ImagesEditor({
   onError
 }: {
   images: BlockImage[];
+  preset: string;
   blockId: string;
   siteUrl: string;
   uploadRoot: string;
@@ -646,14 +651,24 @@ function ImagesEditor({
     <div className="rounded-lg border border-dashed border-slate-300 p-3">
       <div className="mb-2 text-xs font-bold text-slate-500">이미지 · {images.length}장</div>
       <Guide>
-        <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
-        <Sep />
-        본문 이미지는 가로·세로·정사각형 아무거나 됩니다. 올린 비율 그대로 들어갑니다.
-        <br />
-        <b className="font-semibold text-slate-600">
-          「<GuideTerm anchorId="image-blocks">가로 + 세로</GuideTerm>」「세로 + 가로」의 큰 쪽은 가로 사진
-        </b>
-        이어야 합니다. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
+        {preset === "portrait-text" ? (
+          <>
+            <b className="font-semibold text-slate-600">{formatPortraitBodyImageHint()}</b>
+            <Sep />
+            세로 이미지입니다. 비율 검사는 하지 않습니다.
+          </>
+        ) : (
+          <>
+            <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
+            <Sep />
+            {formatBodyImageRejectHint()}. 미리 잘라서 올려 주세요.
+            <br />
+            <b className="font-semibold text-slate-600">
+              「<GuideTerm anchorId="image-blocks">가로 + 세로</GuideTerm>」「세로 + 가로」의 큰 쪽은 가로 사진
+            </b>
+            이어야 합니다. 가로 사진은 16:9. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
+          </>
+        )}
       </Guide>
       <div className="mt-3 space-y-3">
         {images.map((img, i) => (
@@ -677,10 +692,24 @@ function ImagesEditor({
           folder={`${uploadRoot}/blocks/${blockId}`}
           accept="image"
           multiple
+          kind="body"
+          bodyPreset={preset}
           disabled={atLimit}
           maxFiles={limit === null ? undefined : Math.max(0, limit - images.length)}
           existingNames={images.map((img) => fileName(img.src))}
-          guide={atLimit ? `이 배치는 ${limit}장까지` : formatBodyImageHint()}
+          guide={
+            atLimit
+              ? `이 배치는 ${limit}장까지`
+              : preset === "portrait-text"
+                ? formatPortraitBodyImageHint()
+                : (
+                    <>
+                      {formatBodyImageHint()}
+                      <br />
+                      {formatBodyImageRejectHint()}
+                    </>
+                  )
+          }
           onUploaded={onAdd}
         />
       </div>

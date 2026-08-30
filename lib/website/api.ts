@@ -6,6 +6,7 @@ import type {
   InquiryList,
   NewsletterList
 } from "@/lib/website/contact";
+import type { HomeCandidateList, HomeList, HomeSlot } from "@/lib/website/home";
 import type {
   ApiResult,
   InsightListData,
@@ -747,4 +748,42 @@ export function listNewsletter(params?: { q?: string }): Promise<ApiResult<Newsl
 
 export function deleteNewsletter(id: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch<{ id: string }>(`newsletter/${id}`, { method: "DELETE" });
+}
+
+export function listHome(): Promise<ApiResult<HomeList>> {
+  return websiteFetch<HomeList>("home");
+}
+
+export type HomeSlotWrite = {
+  layout?: "wide" | "grid";
+  sort?: number;
+  target_type?: "work" | "insight" | "page" | "custom";
+  work_id?: string;
+  insight_id?: string;
+  page_key?: string;
+  custom_title?: string;
+  custom_subtitle?: string;
+  custom_image?: string;
+  custom_video?: string | null;
+  custom_href?: string;
+};
+
+export function addHomeSlot(body: HomeSlotWrite): Promise<ApiResult<HomeSlot>> {
+  return websiteFetch<HomeSlot>("home", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateHomeSlot(id: string, body: HomeSlotWrite): Promise<ApiResult<HomeSlot>> {
+  return websiteFetch<HomeSlot>(`home/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export function deleteHomeSlot(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch<{ id: string }>(`home/${id}`, { method: "DELETE" });
+}
+
+export function reorderHome(order: { id: string; sort: number }[]): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch("home/order", { method: "PATCH", body: JSON.stringify({ order }) });
+}
+
+export function listHomeCandidates(): Promise<ApiResult<HomeCandidateList>> {
+  return websiteFetch<HomeCandidateList>("home/candidates");
 }

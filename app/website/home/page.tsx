@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/website/coming-soon";
+import { WebsiteHome } from "@/components/website/website-home";
 
 export default function WebsiteHomePage() {
-  return <ComingSoon title="홈" hint="메인에 노출할 콘텐츠를 배치합니다" />;
+  return <WebsiteHome siteUrl={process.env.WEBSITE_API_URL ?? ""} />;
 }

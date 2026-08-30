@@ -16,6 +16,11 @@ import {
   validateKeyImageDimensions
 } from "@/lib/website/key-image-rules";
 import {
+  bodyImageRejectMessage,
+  bodyImageWarnMessage,
+  validateBodyImageDimensions
+} from "@/lib/website/body-image-rules";
+import {
   formatImageUploadGuide,
   formatVideoUploadGuide,
   SPEC,
@@ -34,7 +39,7 @@ export type UploadedMedia = {
   name: string;
 };
 
-type Kind = "gallery" | "poster" | "loop-lg" | "loop-sm" | "key" | "insight-key";
+type Kind = "gallery" | "poster" | "loop-lg" | "loop-sm" | "key" | "insight-key" | "body";
 
 type Props = {
   bucket: UploadBucket;
@@ -44,6 +49,8 @@ type Props = {
   disabled?: boolean;
   maxFiles?: number;
   kind?: Kind;
+  /** kind === "body" 일 때 블록 preset. portrait-text 만 비율 검사를 건너뛴다. */
+  bodyPreset?: string;
   guide?: ReactNode;
   siteUrl?: string;
   value?: string | null;
@@ -317,6 +324,7 @@ export function ImageUploader({
   disabled,
   maxFiles,
   kind = "gallery",
+  bodyPreset,
   guide,
   siteUrl,
   value,
@@ -473,6 +481,29 @@ export function ImageUploader({
         if (dims?.width && dims.height && insightKeyImageTooSmall(dims.width, dims.height)) {
           nextWarnings.push(`${file.name}: ${insightKeyImageWarnMessage(dims.width, dims.height)}`);
         }
+      }
+
+      if (kind === "body" && isImage) {
+        const dims = await readSize(file);
+        if (!dims?.width || !dims.height) {
+          setError({
+            fileName: file.name,
+            message: "이미지 크기를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.",
+            advice: []
+          });
+          continue;
+        }
+        const reject = validateBodyImageDimensions(bodyPreset, dims.width, dims.height);
+        if (reject) {
+          setError({
+            fileName: file.name,
+            message: bodyImageRejectMessage(reject),
+            advice: []
+          });
+          continue;
+        }
+        const warn = bodyImageWarnMessage(bodyPreset, dims.width, dims.height);
+        if (warn) nextWarnings.push(`${file.name}: ${warn}`);
       }
 
       ok.push(file);

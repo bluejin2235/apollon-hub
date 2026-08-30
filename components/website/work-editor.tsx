@@ -25,15 +25,9 @@ import { WorkContentTab } from "@/components/website/work-content-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
 import { GhostBtn, PreviewBarBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
+import { HomePublishNotice } from "@/components/website/home-publish-notice";
 import { showToast } from "@/components/website/toast";
 import { isPreviewOpen, openPreview, PREVIEW_POPUP_BLOCKED, refreshPreview } from "@/lib/website/preview-window";
-
-const PUBLISH_REDIRECT_KEY = "website-publish-toast";
-
-function websiteOrigin() {
-  const raw = process.env.NEXT_PUBLIC_WEBSITE_ORIGIN?.trim() || "http://localhost:3100";
-  return raw.replace(/\/$/, "");
-}
 
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
@@ -137,6 +131,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [previewLive, setPreviewLive] = useState(false);
   const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
+  const [homeNotice, setHomeNotice] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -243,42 +238,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       await load();
       if (isPreviewOpen()) refreshPreview();
 
-      const title = draft.title.ko.trim() || work?.slug || "프로젝트";
-      const slug = draft.slug || work?.slug || "";
-      const publicHref = `${websiteOrigin()}/works/${slug}`;
-      try {
-        sessionStorage.setItem(
-          PUBLISH_REDIRECT_KEY,
-          JSON.stringify({ title, at: Date.now() })
-        );
-      } catch {
-        // ignore
-      }
-
-      showToast({
-        message: "공개되었습니다",
-        tone: "ok",
-        durationMs: 4000,
-        actions: [
-          { label: "홈페이지에서 보기 ↗", href: publicHref },
-          {
-            label: "계속 편집",
-            onClick: () => {
-              cancelPublishNav();
-              try {
-                sessionStorage.removeItem(PUBLISH_REDIRECT_KEY);
-              } catch {
-                // ignore
-              }
-            }
-          }
-        ]
-      });
-
-      publishNavTimer.current = window.setTimeout(() => {
-        publishNavTimer.current = null;
-        router.push("/website/works");
-      }, 1500);
+      setHomeNotice(true);
     } finally {
       setSaving(false);
     }
@@ -447,6 +407,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
               no_key_image: false,
               key_image_size_unknown: false,
               key_image_not_16_9: false,
+              not_16_9: false,
               key_image_too_small: false,
               body_image_too_small: false,
               empty_blocks: false,
@@ -476,6 +437,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           onPublish={() => void publish()}
         />
       ) : null}
+      <HomePublishNotice open={homeNotice} kind="워크" onClose={() => setHomeNotice(false)} />
     </div>
   );
 }
