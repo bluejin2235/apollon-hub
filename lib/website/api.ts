@@ -1,6 +1,12 @@
 import { supabase } from "@/lib/supabase/client";
 import type { JobPosting, TalentPoolList } from "@/lib/website/career";
 import type {
+  InquiryFilter,
+  InquiryItem,
+  InquiryList,
+  NewsletterList
+} from "@/lib/website/contact";
+import type {
   ApiResult,
   InsightListData,
   InsightListItem,
@@ -712,4 +718,33 @@ export function listTalentPool(params?: {
   filter?: "active" | "all" | "expired";
 }): Promise<ApiResult<TalentPoolList>> {
   return websiteFetch<TalentPoolList>(`talent-pool${queryString(params)}`);
+}
+
+export function listInquiries(params?: {
+  q?: string;
+  filter?: InquiryFilter;
+}): Promise<ApiResult<InquiryList>> {
+  return websiteFetch<InquiryList>(`inquiries${queryString(params)}`);
+}
+
+export function getInquiry(id: string): Promise<ApiResult<InquiryItem>> {
+  return websiteFetch<InquiryItem>(`inquiries/${id}`);
+}
+
+export function updateInquiry(
+  id: string,
+  body: { is_read?: boolean; replied_at?: string | null | true; memo?: string | null }
+): Promise<ApiResult<InquiryItem>> {
+  return websiteFetch<InquiryItem>(`inquiries/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function listNewsletter(params?: { q?: string }): Promise<ApiResult<NewsletterList>> {
+  return websiteFetch<NewsletterList>(`newsletter${queryString(params)}`);
+}
+
+export function deleteNewsletter(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch<{ id: string }>(`newsletter/${id}`, { method: "DELETE" });
 }
