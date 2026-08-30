@@ -60,6 +60,7 @@ export function messagePreview(value: string | null | undefined, max = 48): stri
 
 export type NewsletterItem = {
   id: string;
+  name: string | null;
   email: string;
   locale: string;
   confirmed: boolean;

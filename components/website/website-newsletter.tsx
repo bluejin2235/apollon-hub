@@ -18,9 +18,9 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
 
 function downloadCsv(items: NewsletterItem[]) {
   const lines = [
-    ["이메일", "신청일", "로케일"].join(","),
+    ["이름", "이메일", "신청일", "로케일"].join(","),
     ...items.map((row) =>
-      [row.email, formatDotDate(row.created_at), row.locale]
+      [row.name ?? "", row.email, formatDotDate(row.created_at), row.locale]
         .map((cell) => `"${String(cell).replaceAll("\"", "\"\"")}"`)
         .join(",")
     )
@@ -79,7 +79,7 @@ export function WebsiteNewsletter() {
       <div className="flex flex-wrap gap-2">
         <input
           className="min-w-[200px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          placeholder="이메일"
+          placeholder="이름 · 이메일"
           value={q}
           onChange={(event) => setQ(event.target.value)}
         />
@@ -97,6 +97,7 @@ export function WebsiteNewsletter() {
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500">
             <tr>
+              <th className="px-3 py-2 font-medium">이름</th>
               <th className="px-3 py-2 font-medium">이메일</th>
               <th className="px-3 py-2 font-medium">신청일</th>
               <th className="px-3 py-2 font-medium" />
@@ -105,7 +106,8 @@ export function WebsiteNewsletter() {
           <tbody>
             {(data?.items ?? []).map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-3 py-2 text-slate-900">{row.email}</td>
+                <td className="px-3 py-2 text-slate-900">{row.name || "—"}</td>
+                <td className="px-3 py-2 text-slate-600">{row.email}</td>
                 <td className="px-3 py-2 text-slate-600">{formatDotDate(row.created_at)}</td>
                 <td className="px-3 py-2 text-right">
                   <button
