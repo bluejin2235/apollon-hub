@@ -129,6 +129,8 @@ export function BlockCard({
   const [videoUrl, setVideoUrl] = useState(block.video_url ?? "");
   const [videoPoster, setVideoPoster] = useState(block.video_poster ?? "");
   const [videoAlt, setVideoAlt] = useState<Loc>(asLoc(block.video_alt));
+  const [caption, setCaption] = useState<Loc>(asLoc(block.caption));
+  const [captionVisible, setCaptionVisible] = useState(block.caption_visible);
   const [embedProvider, setEmbedProvider] = useState(block.embed_provider ?? "youtube");
   const [embedUrl, setEmbedUrl] = useState(block.embed_url ?? "");
   const [embedTitle, setEmbedTitle] = useState<Loc>(asLoc(block.embed_title));
@@ -149,6 +151,8 @@ export function BlockCard({
     setVideoUrl(block.video_url ?? "");
     setVideoPoster(block.video_poster ?? "");
     setVideoAlt(asLoc(block.video_alt));
+    setCaption(asLoc(block.caption));
+    setCaptionVisible(block.caption_visible);
     setEmbedProvider(block.embed_provider ?? "youtube");
     setEmbedUrl(block.embed_url ?? "");
     setEmbedTitle(asLoc(block.embed_title));
@@ -230,7 +234,9 @@ export function BlockCard({
       embed_title: block.embed_title,
       embed_poster: block.embed_poster,
       gallery_row_height: block.gallery_row_height,
-      text_side: block.text_side
+      text_side: block.text_side,
+      caption: block.caption,
+      caption_visible: block.caption_visible
     });
     if (!res.ok) {
       setError(res.error);
@@ -525,6 +531,17 @@ export function BlockCard({
                 schedule({ video_alt: next });
               }}
               onAltBlur={() => void flush({ video_alt: videoAlt })}
+              caption={caption}
+              captionVisible={captionVisible}
+              onCaption={(next) => {
+                setCaption(next);
+                schedule({ caption: next });
+              }}
+              onCaptionBlur={() => void flush({ caption })}
+              onCaptionVisible={(next) => {
+                setCaptionVisible(next);
+                void flush({ caption_visible: next });
+              }}
             />
           ) : null}
 
@@ -535,6 +552,7 @@ export function BlockCard({
               title={embedTitle}
               poster={embedPoster}
               uploadRoot={uploadRoot}
+              blockId={block.id}
               siteUrl={siteUrl}
               onProvider={setEmbedProvider}
               onUrl={setEmbedUrl}
@@ -547,6 +565,17 @@ export function BlockCard({
               onPoster={(src) => {
                 setEmbedPoster(src);
                 void flush({ embed_poster: src });
+              }}
+              caption={caption}
+              captionVisible={captionVisible}
+              onCaption={(next) => {
+                setCaption(next);
+                schedule({ caption: next });
+              }}
+              onCaptionBlur={() => void flush({ caption })}
+              onCaptionVisible={(next) => {
+                setCaptionVisible(next);
+                void flush({ caption_visible: next });
               }}
             />
           ) : null}
@@ -952,7 +981,12 @@ function VideoFields({
   onUrlCommit,
   onPoster,
   onAlt,
-  onAltBlur
+  onAltBlur,
+  caption,
+  captionVisible,
+  onCaption,
+  onCaptionBlur,
+  onCaptionVisible
 }: {
   kind: string;
   url: string;
@@ -968,12 +1002,21 @@ function VideoFields({
   onPoster: (src: string) => void | Promise<boolean | void>;
   onAlt: (v: Loc) => void;
   onAltBlur: () => void;
+  caption: Loc;
+  captionVisible: boolean;
+  onCaption: (v: Loc) => void;
+  onCaptionBlur: () => void;
+  onCaptionVisible: (v: boolean) => void;
 }) {
   const textDup = useTextDup();
   const debouncedAlt = useDebouncedValue(alt, 300);
+  const debouncedCaption = useDebouncedValue(caption, 300);
   useEffect(() => {
     textDup?.reportAlt(`video:${blockId}`, debouncedAlt);
   }, [blockId, debouncedAlt, textDup]);
+  useEffect(() => {
+    textDup?.reportCaption(blockId, debouncedCaption);
+  }, [blockId, debouncedCaption, textDup]);
 
   const isHosted = kind === "hosted" || kind === "loop";
   const previewSrc = url ? mediaUrl(siteUrl, url) : null;
@@ -1263,6 +1306,38 @@ function VideoFields({
           }
         />
       </div>
+      <div className="mt-2">
+        <FieldLabel extra={<CharKo n={caption.ko.length} warn={90} limit={90} />}>캡션</FieldLabel>
+        <BilingualField
+          ko={caption.ko}
+          en={caption.en}
+          multiline
+          onKo={(v) => onCaption(locField(caption, "ko", v))}
+          onEn={(v) => onCaption(locField(caption, "en", v))}
+          onBlur={onCaptionBlur}
+          koFooter={
+            <TextDupHint
+              kind="caption"
+              value={debouncedCaption.ko}
+              count={textDup?.captionDup(debouncedCaption.ko, "ko") ?? 0}
+              checkBlockName
+            />
+          }
+          enFooter={
+            <TextDupHint
+              kind="caption"
+              value={debouncedCaption.en}
+              count={textDup?.captionDup(debouncedCaption.en, "en") ?? 0}
+              checkBlockName
+            />
+          }
+        />
+      </div>
+      <ToggleRow
+        on={captionVisible}
+        title="화면에 캡션 표시"
+        onToggle={() => onCaptionVisible(!captionVisible)}
+      />
       <Guide>
         {isHosted ? (
           <>
@@ -1294,19 +1369,26 @@ function EmbedFields({
   title,
   poster,
   uploadRoot,
+  blockId,
   siteUrl,
   onProvider,
   onUrl,
   onConfirm,
   onTitle,
   onTitleBlur,
-  onPoster
+  onPoster,
+  caption,
+  captionVisible,
+  onCaption,
+  onCaptionBlur,
+  onCaptionVisible
 }: {
   provider: string;
   url: string;
   title: Loc;
   poster: string;
   uploadRoot: string;
+  blockId: string;
   siteUrl: string;
   onProvider: (v: string) => void;
   onUrl: (v: string) => void;
@@ -1314,7 +1396,18 @@ function EmbedFields({
   onTitle: (v: Loc) => void;
   onTitleBlur: () => void;
   onPoster: (src: string) => void;
+  caption: Loc;
+  captionVisible: boolean;
+  onCaption: (v: Loc) => void;
+  onCaptionBlur: () => void;
+  onCaptionVisible: (v: boolean) => void;
 }) {
+  const textDup = useTextDup();
+  const debouncedCaption = useDebouncedValue(caption, 300);
+  useEffect(() => {
+    textDup?.reportCaption(blockId, debouncedCaption);
+  }, [blockId, debouncedCaption, textDup]);
+
   return (
     <div className="space-y-2">
       <FieldLabel>제공자</FieldLabel>
@@ -1348,13 +1441,45 @@ function EmbedFields({
           </span>
         ))}
       </div>
-      <FieldLabel>제목</FieldLabel>
+      <FieldLabel>대체 텍스트</FieldLabel>
       <BilingualField
         ko={title.ko}
         en={title.en}
         onKo={(v) => onTitle(locField(title, "ko", v))}
         onEn={(v) => onTitle(locField(title, "en", v))}
         onBlur={onTitleBlur}
+      />
+      <div>
+        <FieldLabel extra={<CharKo n={caption.ko.length} warn={90} limit={90} />}>캡션</FieldLabel>
+        <BilingualField
+          ko={caption.ko}
+          en={caption.en}
+          multiline
+          onKo={(v) => onCaption(locField(caption, "ko", v))}
+          onEn={(v) => onCaption(locField(caption, "en", v))}
+          onBlur={onCaptionBlur}
+          koFooter={
+            <TextDupHint
+              kind="caption"
+              value={debouncedCaption.ko}
+              count={textDup?.captionDup(debouncedCaption.ko, "ko") ?? 0}
+              checkBlockName
+            />
+          }
+          enFooter={
+            <TextDupHint
+              kind="caption"
+              value={debouncedCaption.en}
+              count={textDup?.captionDup(debouncedCaption.en, "en") ?? 0}
+              checkBlockName
+            />
+          }
+        />
+      </div>
+      <ToggleRow
+        on={captionVisible}
+        title="화면에 캡션 표시"
+        onToggle={() => onCaptionVisible(!captionVisible)}
       />
       <FieldLabel>재생 전 이미지</FieldLabel>
       <ImageUploader

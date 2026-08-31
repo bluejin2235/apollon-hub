@@ -72,6 +72,10 @@ export function collectWorkTextMaps(work: WorkDetail): { captions: LocMap; alts:
       }
       if (block.preset === "video-full" || block.preset === "video-text") {
         alts[`video:${block.id}`] = asLoc(block.video_alt);
+        captions[block.id] = asLoc(block.caption);
+      }
+      if (block.preset === "embed") {
+        captions[block.id] = asLoc(block.caption);
       }
     }
   }

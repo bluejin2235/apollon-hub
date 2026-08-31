@@ -66,6 +66,8 @@ export type ContentBlock = {
   text_side: "left" | "right" | null;
   from_library_id: string | null;
   show_meta: boolean;
+  caption: Loc | null;
+  caption_visible: boolean;
   block_images?: BlockImage[] | null;
 };
 
@@ -305,6 +307,8 @@ function parseBlock(value: unknown): ContentBlock | null {
     text_side: textSide,
     from_library_id: typeof row.from_library_id === "string" ? row.from_library_id : null,
     show_meta: row.show_meta === true,
+    caption: row.caption ? asLoc(row.caption) : null,
+    caption_visible: asBool(row.caption_visible),
     block_images: asArray(row.block_images).map(parseImage).filter((v): v is BlockImage => v !== null)
   };
 }
