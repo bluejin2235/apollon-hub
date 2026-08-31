@@ -82,6 +82,8 @@ type Props = {
   canMoveDown?: boolean;
   collapsed: boolean;
   onToggle: () => void;
+  isFirstSection?: boolean;
+  metaTakenByOther?: boolean;
 };
 
 function formatBytes(n: number | null | undefined) {
@@ -104,7 +106,9 @@ export function BlockCard({
   canMoveUp = index > 1,
   canMoveDown = index < total,
   collapsed,
-  onToggle
+  onToggle,
+  isFirstSection = false,
+  metaTakenByOther = false
 }: Props) {
   const [save, setSave] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +135,7 @@ export function BlockCard({
   const [embedPoster, setEmbedPoster] = useState(block.embed_poster ?? "");
   const [rowHeight, setRowHeight] = useState(block.gallery_row_height ?? 320);
   const [textSide, setTextSide] = useState<"left" | "right">(block.text_side ?? defaultTextSide(block.preset));
+  const [showMeta, setShowMeta] = useState(block.show_meta);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -150,6 +155,7 @@ export function BlockCard({
     setEmbedPoster(block.embed_poster ?? "");
     setRowHeight(block.gallery_row_height ?? 320);
     setTextSide(block.text_side ?? defaultTextSide(block.preset));
+    setShowMeta(block.show_meta);
   }, [block]);
 
   const images = [...(block.block_images ?? [])].sort((a, b) => a.sort - b.sort);
@@ -334,6 +340,23 @@ export function BlockCard({
                 </button>
               ))}
             </div>
+          ) : null}
+
+          {isFirstSection ? (
+            <ToggleRow
+              on={showMeta}
+              title="기본정보 (사업분야 · 위치 · 클라이언트)"
+              disabled={!showMeta && metaTakenByOther}
+              onToggle={() => {
+                const next = !showMeta;
+                setShowMeta(next);
+                void (async () => {
+                  const ok = await persist({ show_meta: next });
+                  if (ok) await onReload();
+                  else setShowMeta(!next);
+                })();
+              }}
+            />
           ) : null}
 
           {block.preset === "gallery-auto" ? (

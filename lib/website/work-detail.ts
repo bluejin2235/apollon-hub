@@ -65,6 +65,7 @@ export type ContentBlock = {
   gallery_row_height: number | null;
   text_side: "left" | "right" | null;
   from_library_id: string | null;
+  show_meta: boolean;
   block_images?: BlockImage[] | null;
 };
 
@@ -118,7 +119,6 @@ export type WorkDetail = {
   loop_video_lg: string | null;
   loop_video_sm: string | null;
   client: Loc | null;
-  project_type: Loc | null;
   completed_year: string | null;
   location_country: Loc | null;
   location_city: Loc | null;
@@ -158,7 +158,6 @@ export type WorkBasicDraft = {
   loop_video_lg: string;
   loop_video_sm: string;
   client: Loc;
-  project_type: Loc;
   completed_year: string;
   location_country: Loc;
   location_city: Loc;
@@ -305,6 +304,7 @@ function parseBlock(value: unknown): ContentBlock | null {
     gallery_row_height: typeof row.gallery_row_height === "number" ? row.gallery_row_height : null,
     text_side: textSide,
     from_library_id: typeof row.from_library_id === "string" ? row.from_library_id : null,
+    show_meta: row.show_meta === true,
     block_images: asArray(row.block_images).map(parseImage).filter((v): v is BlockImage => v !== null)
   };
 }
@@ -347,7 +347,6 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     loop_video_lg: typeof row.loop_video_lg === "string" ? row.loop_video_lg : null,
     loop_video_sm: typeof row.loop_video_sm === "string" ? row.loop_video_sm : null,
     client: row.client ? asLoc(row.client) : null,
-    project_type: row.project_type ? asLoc(row.project_type) : null,
     completed_year: typeof row.completed_year === "string" ? row.completed_year : null,
     location_country: row.location_country ? asLoc(row.location_country) : null,
     location_city: row.location_city ? asLoc(row.location_city) : null,
@@ -515,7 +514,6 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     loop_video_lg: work.loop_video_lg ?? "",
     loop_video_sm: work.loop_video_sm ?? "",
     client: asLoc(work.client),
-    project_type: asLoc(work.project_type),
     completed_year: work.completed_year ?? "",
     location_country: asLoc(work.location_country),
     location_city: asLoc(work.location_city),
@@ -544,7 +542,6 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     loop_video_lg: draft.loop_video_lg || null,
     loop_video_sm: draft.loop_video_sm || null,
     client: draft.client,
-    project_type: draft.project_type,
     completed_year: draft.completed_year || null,
     location_country: draft.location_country,
     location_city: draft.location_city,

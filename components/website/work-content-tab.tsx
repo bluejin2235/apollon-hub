@@ -644,6 +644,8 @@ function SectionBody({
               collapsed={!openBlockIds.has(block.id)}
               canMoveUp={canMoveUp}
               canMoveDown={canMoveDown}
+              isFirstSection={sectionIndex === 0}
+              metaTakenByOther={blocks.some((item) => item.id !== block.id && item.show_meta)}
               onToggle={() => onToggleBlock(block.id)}
               onMove={(dir) => onMoveBlock(i, dir)}
               onReload={onReload}
