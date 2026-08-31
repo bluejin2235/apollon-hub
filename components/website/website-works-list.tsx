@@ -428,9 +428,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
-          aria-label="카테고리"
+          aria-label="사업분야"
         >
-          <option value="all">전체 카테고리</option>
+          <option value="all">전체 사업분야</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.label?.ko || c.id}
@@ -469,7 +469,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2 pr-3 font-medium">프로젝트</th>
-                  <th className="py-2 pr-3 font-medium">카테고리</th>
+                  <th className="py-2 pr-3 font-medium">사업분야</th>
                   <th className="py-2 pr-3 font-medium">연도</th>
                   <th className="py-2 pr-3 font-medium">상태</th>
                   <th className="py-2 pr-3 font-medium">채움</th>

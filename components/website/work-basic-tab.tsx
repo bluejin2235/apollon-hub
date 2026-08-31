@@ -363,7 +363,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     filled(draft.subtitle.ko) && subtitleDone,
     filled(draft.client.ko),
     filled(draft.completed_year),
-    filled(draft.project_type.ko),
     locationFilled,
     credits.length > 0
   ].filter(Boolean).length;
@@ -513,7 +512,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         </Field>
 
         <div className="two">
-          <Field label="카테고리" required>
+          <Field label="사업분야" required>
             {editingCategory ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <select
@@ -618,10 +617,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
       <FoldGroup
         title="프로젝트 정보"
-        summary="부제 · 클라이언트 · 유형 · 완공 연도 · 위치 · 크레딧"
+        summary="부제 · 클라이언트 · 완공 연도 · 위치 · 크레딧"
         filled={infoDone}
-        total={6}
-        countTone={toneOf(infoDone, 6)}
+        total={5}
+        countTone={toneOf(infoDone, 5)}
       >
         <Field
           label="부제"
@@ -665,15 +664,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </Field>
         </div>
 
-        <Field label="프로젝트 유형">
-          <Bi
-            ko={draft.project_type.ko}
-            en={draft.project_type.en}
-            onKo={(v) => onChange({ project_type: locField(draft.project_type, "ko", v) })}
-            onEn={(v) => onChange({ project_type: locField(draft.project_type, "en", v) })}
-          />
-        </Field>
-
         <Field
           label="위치"
           guideLink
@@ -685,34 +675,38 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             </>
           }
         >
-          <div className="r3">
-            <input
-              className="i"
-              value={draft.location_country.ko}
-              placeholder="국가"
-              onChange={(e) =>
-                onChange({ location_country: locField(draft.location_country, "ko", e.target.value) })
-              }
-            />
-            <input
-              className="i"
-              value={draft.location_city.ko}
-              placeholder="도시"
-              onChange={(e) =>
-                onChange({ location_city: locField(draft.location_city, "ko", e.target.value) })
-              }
-            />
-            <input
-              className="i"
-              value={draft.location_address.ko}
-              placeholder="주소"
-              onChange={(e) =>
-                onChange({
-                  location_address: locField(draft.location_address, "ko", e.target.value)
-                })
-              }
-            />
-          </div>
+          <Bi
+            ko={draft.location_country.ko}
+            en={draft.location_country.en}
+            koPlaceholder="국가"
+            onKo={(v) =>
+              onChange({ location_country: locField(draft.location_country, "ko", v) })
+            }
+            onEn={(v) =>
+              onChange({ location_country: locField(draft.location_country, "en", v) })
+            }
+          />
+          <Bi
+            ko={draft.location_city.ko}
+            en={draft.location_city.en}
+            koPlaceholder="도시"
+            onKo={(v) =>
+              onChange({ location_city: locField(draft.location_city, "ko", v) })
+            }
+            onEn={(v) =>
+              onChange({ location_city: locField(draft.location_city, "en", v) })
+            }
+          />
+          <input
+            className="i"
+            value={draft.location_address.ko}
+            placeholder="주소"
+            onChange={(e) =>
+              onChange({
+                location_address: locField(draft.location_address, "ko", e.target.value)
+              })
+            }
+          />
         </Field>
 
         <Field

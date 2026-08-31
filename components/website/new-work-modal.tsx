@@ -191,7 +191,7 @@ export function NewWorkModal({ open, onClose }: Props) {
 
           <div>
             <FieldLabel>
-              카테고리
+              사업분야
               <Req />
             </FieldLabel>
             <div className="flex flex-col gap-1.5">
