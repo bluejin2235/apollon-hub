@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getMeta, getWork, hideWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
+import { getMeta, getWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote } from "@/lib/website/publish";
@@ -13,7 +13,6 @@ import {
 } from "@/lib/website/text-width";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
-  countAiUnconfirmed,
   draftFromWork,
   formatSavedAt,
   interviewRowOf,
@@ -25,9 +24,9 @@ import {
   type WorkBasicDraft,
   type WorkDetail
 } from "@/lib/website/work-detail";
-import { PublishCheckPanel } from "@/components/website/publish-check-panel";
+import { WorkPublishCheckList, buildWorkCheckItems } from "@/components/website/publish-check-panel";
 import { PublishModal } from "@/components/website/publish-modal";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import type { PartialSaveState } from "@/components/website/partial-save-btn";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
@@ -36,9 +35,23 @@ import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkHistoryTab } from "@/components/website/work-history-tab";
 import { WorkInterviewTab } from "@/components/website/work-interview-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
-import { GhostBtn, PreviewBarBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
 import { showToast } from "@/components/website/toast";
 import { isPreviewOpen, openPreview, PREVIEW_POPUP_BLOCKED, refreshPreview } from "@/lib/website/preview-window";
+
+function barBtnClass(opts?: { accent?: boolean; off?: boolean; checkRed?: boolean }) {
+  const base =
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[13px]";
+  if (opts?.off) {
+    return `${base} cursor-default border-slate-200 bg-white text-slate-500 opacity-40`;
+  }
+  if (opts?.checkRed) {
+    return `${base} border-red-200 bg-white text-red-600 hover:bg-red-50`;
+  }
+  if (opts?.accent) {
+    return `${base} border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50`;
+  }
+  return `${base} border-slate-200 bg-white text-slate-600 hover:bg-slate-50`;
+}
 
 function visibilityLabel(v: WorkSiteVisibility) {
   if (v === "live") return "공개";
@@ -47,8 +60,8 @@ function visibilityLabel(v: WorkSiteVisibility) {
 }
 
 function visibilityClass(v: WorkSiteVisibility) {
-  if (v === "live") return "bg-emerald-50 text-emerald-700";
-  if (v === "hidden") return "bg-slate-200 text-slate-600";
+  if (v === "live") return "bg-emerald-100 text-emerald-700";
+  if (v === "hidden") return "bg-amber-100 text-amber-700";
   return "bg-slate-100 text-slate-600";
 }
 
@@ -125,41 +138,6 @@ function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | nu
   return next;
 }
 
-function shortageLine(
-  work: WorkDetail,
-  check: CheckWorks | null,
-  draft: WorkBasicDraft | null
-): { text: string; ok: boolean } {
-  const limits = draft ? draftLimitProblems(draft) : [];
-  const problems = problemCount(check, work, draft) + limits.length;
-  if (problems > 0) {
-    const extra = limits[0] ? ` — ${limits[0]}` : "";
-    return { text: `공개하려면 ${problems}가지가 더 필요합니다${extra}`, ok: false };
-  }
-  if (check?.ai_unconfirmed) {
-    const n = countAiUnconfirmed(work);
-    return {
-      text: n > 0 ? `AI가 만든 캡션 ${n}개가 확인 전입니다` : "AI가 만든 캡션이 확인 전입니다",
-      ok: false
-    };
-  }
-  if (check?.faq_on_but_empty) {
-    return { text: "FAQ가 비어 있습니다", ok: false };
-  }
-  if (interviewBlocksPublish(work)) {
-    return { text: "인터뷰 표시를 켜둔 채 비우면 공개할 수 없습니다", ok: false };
-  }
-  const related = work.content_related?.length ?? 0;
-  if (related > 0) {
-    return { text: `관련 콘텐츠 ${related}개 지정됨`, ok: true };
-  }
-  const faqs = work.faqs?.length ?? 0;
-  if (faqs > 0) {
-    return { text: `FAQ ${faqs}문항 입력됨`, ok: true };
-  }
-  return { text: "등록할 수 있습니다", ok: true };
-}
-
 function interviewBlocksPublish(work: WorkDetail): boolean {
   return Boolean(interviewSectionOf(work) && !interviewRowOf(work)?.insight_id);
 }
@@ -178,7 +156,6 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fullSaveState, setFullSaveState] = useState<PartialSaveState>("idle");
-  const [panelOpen, setPanelOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [publishPreviewLoading, setPublishPreviewLoading] = useState(false);
   const [publishChangedFields, setPublishChangedFields] = useState<string[]>([]);
@@ -189,6 +166,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [previewLive, setPreviewLive] = useState(false);
   const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
+  const [checkOpen, setCheckOpen] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -251,17 +229,18 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     problemCount(check, work, draft) === 0 &&
     limitIssues.length === 0 &&
     !(work && interviewBlocksPublish(work));
-  const shortage = work ? shortageLine(work, check, draft) : null;
   const visibility = work?.site_visibility ?? "draft";
-  const blockReason = !canPublish && shortage && !shortage.ok ? shortage.text : null;
-  const statusText =
-    visibility === "hidden"
-      ? "사이트에서 보이지 않습니다"
-      : blockReason
-        ? blockReason
-        : visibility === "live" && hasUnpublishedChanges
-          ? "공개 안 된 변경이 있습니다"
-          : shortage?.text ?? null;
+  const hasCardImage = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
+  const checkItems =
+    work && check
+      ? buildWorkCheckItems(work, check, { hasCardImage })
+      : [];
+  const problemItems = checkItems.filter((item) => item.kind === "problem");
+  const warnItems = checkItems.filter((item) => item.kind === "warn");
+  const checkTone: "red" | "yellow" | "green" =
+    problemItems.length > 0 ? "red" : warnItems.length > 0 ? "yellow" : "green";
+  const saveDirty = fullSaveState === "dirty";
+  const publishAccent = checkTone === "green";
 
   const refreshPublishPreview = useCallback(async () => {
     const preview = await publishWorkPreview(workId);
@@ -307,7 +286,6 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       if (!preview.ok) {
         if (preview.status === 409 && preview.error === "publish_blocked") {
           setCheckOverride(mergeCheck(work?.check ?? null, preview.details));
-          setPanelOpen(true);
         } else {
           setError(preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : ""));
         }
@@ -390,7 +368,6 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       if (!published.ok) {
         if (published.status === 400 && published.error === "publish_blocked") {
           setCheckOverride(mergeCheck(work?.check ?? null, published.details));
-          setPanelOpen(true);
           setPublishModalOpen(false);
           return;
         }
@@ -409,28 +386,10 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       }
 
       setPublishModalOpen(false);
-      setPanelOpen(false);
       await load();
       await refreshPublishPreview();
       if (isPreviewOpen()) refreshPreview();
       showToast({ message: "공개되었습니다", tone: "ok" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function hideFromSite() {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await hideWork(workId);
-      if (!res.ok) {
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
-        return;
-      }
-      await load();
-      await refreshPublishPreview();
-      showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
     } finally {
       setSaving(false);
     }
@@ -493,7 +452,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
 
   return (
     <div className="relative pb-28">
-      <p className="mb-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
+      <p className="mb-1 text-[11px] text-slate-400">
         워크 &nbsp;›&nbsp;{" "}
         <Link href="/website/works" className="hover:text-slate-600">
           프로젝트 목록
@@ -501,29 +460,43 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         &nbsp;›&nbsp; 편집
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="font-bold text-slate-900" style={{ fontSize: "var(--fs-title)" }}>
-          {titleKo}
-        </h1>
-        <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${visibilityClass(visibility)}`}
-        >
-          {visibilityLabel(visibility)}
-        </span>
-        <span className="flex-1" />
-        <PreviewBarBtn onClick={() => void handlePreview()} />
-        {previewLive ? (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-            <i className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            연결됨
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h1 className="truncate text-[19px] font-semibold text-slate-900">{titleKo}</h1>
+          <span
+            className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${visibilityClass(visibility)}`}
+          >
+            {visibilityLabel(visibility)}
           </span>
-        ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={barBtnClass()} onClick={() => void handlePreview()}>
+            미리보기 ↗
+          </button>
+          <button
+            type="button"
+            className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
+            disabled={!saveDirty || saving}
+            onClick={() => void saveAll()}
+          >
+            전체 저장
+          </button>
+          {previewLive ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+              <i className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              연결됨
+            </span>
+          ) : null}
+        </div>
       </div>
       {previewBlocked ? (
         <p className="mt-1 text-xs text-rose-600">{PREVIEW_POPUP_BLOCKED}</p>
       ) : null}
-      <p className="mt-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
+      <p className="mt-1 text-[11px] text-slate-400">
         마지막 저장 {formatSavedAt(work.updated_at)}
+        {visibility === "live" && hasUnpublishedChanges ? (
+          <span className="text-amber-700"> · 공개 안 된 변경이 있습니다</span>
+        ) : null}
       </p>
 
       {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
@@ -581,106 +554,87 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         {tab === "history" ? <WorkHistoryTab workId={work.id} /> : null}
       </div>
 
-      <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p
-            className={`min-w-0 flex-1 basis-full text-sm sm:basis-auto ${
-              visibility === "hidden"
-                ? "text-slate-500"
-                : blockReason
-                  ? "text-amber-600"
-                  : visibility === "live" && hasUnpublishedChanges
-                    ? "text-amber-600"
-                    : shortage?.ok
-                      ? "text-emerald-600"
-                      : "text-amber-600"
-            }`}
-          >
-            {statusText}
-          </p>
-          <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
-            <PreviewBarBtn onClick={() => void handlePreview()} />
-            <PartialSaveBtn
-              label="전체 저장"
-              state={fullSaveState}
-              disabled={fullSaveState !== "dirty"}
-              onClick={() => void saveAll()}
-            />
-            {canManageWorks && visibility !== "hidden" ? (
-              <>
-                <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
-                <PrimaryBtn disabled={!canPublish || saving} onClick={() => void openPublishModal()}>
-                  공개하기
-                </PrimaryBtn>
-                {blockReason ? (
-                  <span className="whitespace-nowrap text-[11px] font-medium text-amber-700">
-                    {blockReason}
-                  </span>
-                ) : null}
-              </>
-            ) : null}
-            {canManageWorks && visibility === "live" ? (
-              <GhostBtn disabled={saving} onClick={() => void hideFromSite()}>
-                감추기
-              </GhostBtn>
-            ) : null}
-            {canManageWorks && visibility === "hidden" ? (
-              <PrimaryBtn disabled={saving} onClick={() => void showOnSiteAgain()}>
-                다시 공개
-              </PrimaryBtn>
-            ) : null}
+      <div className="relative sticky bottom-0 z-20 -mx-4 mt-8 sm:-mx-6 lg:-mx-8">
+        {canManageWorks && checkOpen && checkItems.length > 0 ? (
+          <div className="absolute bottom-full left-0 right-0 border-t border-slate-200 bg-white">
+            <div className="max-h-[40vh] overflow-y-auto px-4 sm:px-6 lg:px-8">
+              <WorkPublishCheckList items={checkItems} onGoTab={setTab} overlay />
+            </div>
+            <div className="-mb-px flex justify-center">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-t-lg border border-b-0 border-slate-200 bg-white px-3.5 pb-1 pt-0.5 text-[11px] text-slate-400 hover:text-slate-600"
+                onClick={() => setCheckOpen(false)}
+              >
+                ▾ 접기
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="border-t border-slate-200 bg-white px-4 py-3.5 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <button type="button" className={barBtnClass()} onClick={() => void handlePreview()}>
+              미리보기 ↗
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
+                disabled={!saveDirty || saving}
+                onClick={() => void saveAll()}
+              >
+                전체 저장
+              </button>
+              {canManageWorks ? (
+                <button
+                  type="button"
+                  className={barBtnClass({ checkRed: checkTone === "red" })}
+                  aria-label="점검"
+                  onClick={() => {
+                    if (checkItems.length === 0) return;
+                    setCheckOpen((open) => !open);
+                  }}
+                >
+                  <span
+                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                      checkTone === "red"
+                        ? "bg-red-600"
+                        : checkTone === "yellow"
+                          ? "bg-amber-700"
+                          : "bg-emerald-700"
+                    }`}
+                  />
+                  점검
+                </button>
+              ) : null}
+              {canManageWorks && visibility === "hidden" ? (
+                <button
+                  type="button"
+                  className={barBtnClass({ accent: true })}
+                  disabled={saving}
+                  onClick={() => void showOnSiteAgain()}
+                >
+                  다시 공개
+                </button>
+              ) : null}
+              {canManageWorks && visibility !== "hidden" ? (
+                <button
+                  type="button"
+                  className={barBtnClass({
+                    accent: publishAccent,
+                    off: !canPublish
+                  })}
+                  disabled={!canPublish || saving}
+                  onClick={() => void openPublishModal()}
+                >
+                  공개
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
 
-      {canManageWorks && panelOpen ? (
-        <PublishCheckPanel
-          work={work}
-          check={applyTextDupChecks(
-            work,
-            check ?? {
-              id: work.id,
-              slug: work.slug,
-              title_ko: work.title?.ko ?? null,
-              status: work.status,
-              missing_summary_en: false,
-              missing_key_alt: false,
-              no_key_image: false,
-              key_image_size_unknown: false,
-              key_image_not_16_9: false,
-              not_16_9: false,
-              key_image_too_small: false,
-              body_image_too_small: false,
-              empty_blocks: false,
-              no_sections: false,
-              missing_image_alt: false,
-              ai_unconfirmed: false,
-              no_small_loop: false,
-              faq_on_but_empty: false,
-              too_many_anchors: false,
-              no_tags: false,
-              no_related: false,
-              no_internal_folder: false,
-              summary_too_long: false,
-              duplicate_captions: false,
-              duplicate_alts: false,
-              image_count: 0,
-              caption_count: 0
-            }
-          )}
-          canPublish={canPublish}
-          publishing={saving}
-          onClose={() => setPanelOpen(false)}
-          onGoTab={(next) => {
-            setTab(next);
-            setPanelOpen(false);
-          }}
-          onPublish={() => {
-            setPanelOpen(false);
-            void openPublishModal();
-          }}
-        />
-      ) : null}
       <PublishModal
         open={publishModalOpen}
         loading={publishPreviewLoading}
@@ -690,9 +644,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         note={publishNote}
         noteLoading={publishNoteLoading}
         onNoteChange={setPublishNote}
-        onRegenerate={() => void loadPublishNote(publishChangedFields, publishFirst)}
         onClose={() => setPublishModalOpen(false)}
         onConfirm={() => void confirmPublish()}
+        onRegenerate={() => void loadPublishNote(publishChangedFields, publishFirst)}
       />
     </div>
   );
