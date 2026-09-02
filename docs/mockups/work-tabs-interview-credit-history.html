@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>워크 어드민 · 인터뷰 · 크레딧 · 이력 — 목업</title>
+<style>
+:root{--ink:#0f172a;--ink2:#475569;--ink3:#94a3b8;--line:#e2e8f0;--bg:#f8fafc;
+--req:#dc2626;--warn:#b45309;--ok:#15803d;--acc:#4f46e5;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;padding:24px}
+.page{max-width:980px;margin:0 auto}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
+.tabs a{padding:9px 14px;font-size:14px;color:var(--ink3);text-decoration:none;border-bottom:2px solid transparent;cursor:pointer}
+.tabs a.on{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+.tabs a .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#cbd5e1;margin-right:5px;vertical-align:1px}
+.tabs a.on .dot{background:var(--ok)}
+.scr{display:none}.scr.on{display:block}
+.grph{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:3px}
+.grph h3{font-size:15px;font-weight:600}
+.grpr{display:flex;align-items:center;gap:10px}
+.cnt{font-size:11px;color:var(--ink3)}
+.grpd{font-size:12px;color:var(--ink2);margin-bottom:11px;max-width:76ch}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:20px}
+.f{margin-bottom:16px}
+.f:last-child{margin-bottom:0}
+.fl{display:flex;align-items:center;gap:5px;margin-bottom:5px}
+.fl .nm{font-size:13px;font-weight:500}
+.fl .rq{color:var(--req);font-size:13px}
+.fl .cc{margin-left:auto;font-size:11px;color:var(--ink3)}
+.q{border:0;background:#eef2f7;color:var(--ink3);width:15px;height:15px;border-radius:50%;font-size:10px;line-height:15px;text-align:center;padding:0;cursor:pointer;flex-shrink:0}
+.hint{font-size:11px;color:var(--ink3);margin-top:5px;line-height:1.6}
+.hint.warn{color:var(--warn)}
+input[type=text],textarea{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);background:#fff;color:var(--ink)}
+textarea{resize:vertical;line-height:1.6}
+button.b{font:inherit;font-size:12px;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer}
+button.b.acc{border-color:#c7d2fe;color:var(--acc)}
+button.b.del{color:var(--req)}
+button.b.sm{font-size:11px;padding:4px 9px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.qp{display:none;background:#f8fafc;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-top:9px}
+.qp.on{display:block}
+.qph{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:7px}
+.qph b{font-size:13px;font-weight:600}
+.qp dl{display:grid;grid-template-columns:44px 1fr;gap:3px 10px;font-size:12.5px;color:var(--ink2);line-height:1.7}
+.qp dt{font-weight:600;color:var(--ink)}
+.xb{border:0;background:none;color:var(--ink3);font-size:15px;line-height:1;cursor:pointer;padding:0}
+.sw{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink2)}
+.pickd{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.pickd .th{width:60px;height:60px;border-radius:6px;background:#e8eef5;flex-shrink:0}
+.pickd .meta{flex:1;min-width:0}
+.pickd .t1{font-size:13px;font-weight:500}
+.pickd .t2{font-size:11px;color:var(--ink3);margin-top:2px}
+.cr{display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1fr) 92px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9}
+.cr:last-of-type{border-bottom:0}
+.crh{display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1fr) 92px;gap:8px;font-size:11px;color:var(--ink3);padding-bottom:7px;border-bottom:1px solid var(--line)}
+.crb{display:flex;gap:3px;justify-content:flex-end;color:var(--ink3)}
+.crb button{border:0;background:none;color:var(--ink3);cursor:pointer;font-size:13px;padding:4px 5px}
+.hitem{padding:13px 16px;border-bottom:1px solid var(--line)}
+.hitem:last-child{border-bottom:0}
+.hmeta{font-size:12px;color:var(--ink2);margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px}
+.badge.now{background:#dcfce7;color:var(--ok)}
+.hnote{font-size:13px;line-height:1.7}
+.hnote.old{color:var(--ink2)}
+.ov{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);align-items:center;justify-content:center;padding:24px;z-index:50}
+.ov.on{display:flex}
+.mw{background:#fff;border-radius:12px;padding:18px 20px;width:100%;max-width:520px}
+.mwh{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px}
+.mwh b{font-size:15px;font-weight:600}
+.lst{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+.lrow{display:flex;align-items:center;gap:11px;padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer}
+.lrow:last-child{border-bottom:0}
+.lrow:hover{background:#f8fafc}
+.lrow .th{width:48px;height:48px;border-radius:5px;background:#e8eef5;flex-shrink:0}
+.mwf{display:flex;justify-content:flex-end;gap:8px;margin-top:13px}
+.memo{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 13px;font-size:12px;color:#92400e;line-height:1.7;margin-bottom:18px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="memo">
+  <b>워크 어드민에 탭 세 개를 더합니다.</b> 본문과 FAQ 사이에 인터뷰·크레딧, 맨 뒤에 이력.<br>
+  크레딧은 기본정보의 「프로젝트 정보」에서 빠져 이 탭으로 옮깁니다.
+</div>
+
+<div class="tabs">
+  <a>기본정보</a>
+  <a>본문</a>
+  <a class="on" data-s="s-int"><span class="dot"></span>인터뷰</a>
+  <a data-s="s-cr"><span class="dot"></span>크레딧</a>
+  <a>FAQ</a>
+  <a>연결</a>
+  <a data-s="s-hist"><span class="dot"></span>이력</a>
+</div>
+
+<!-- ═══════ 인터뷰 ═══════ -->
+<section class="scr on" id="s-int">
+  <div class="grph">
+    <h3>인터뷰</h3>
+    <div class="grpr">
+      <label class="sw"><input type="checkbox" checked> 이 워크에 인터뷰 표시</label>
+      <button class="b sm">부분 저장</button>
+    </div>
+  </div>
+  <p class="grpd">워크 상세 하단에 인용문과 사진이 나옵니다. 누르면 연결한 인사이트로 갑니다. 인터뷰가 없는 워크는 꺼두면 됩니다.</p>
+
+  <div class="box">
+
+    <div class="f">
+      <div class="fl">
+        <span class="nm">연결한 인사이트</span><span class="rq">*</span>
+        <button class="q" data-q="ins">?</button>
+      </div>
+      <div class="pickd">
+        <div class="th"></div>
+        <div class="meta">
+          <div class="t1">고래가 헤엄치는 3분을 만들기까지</div>
+          <div class="t2">인사이트 · 비하인드 · 2026. 8. 20 · 공개</div>
+        </div>
+        <button class="b sm" id="open-pick">바꾸기</button>
+      </div>
+      <p class="hint">인사이트 아티클 중에서만 고를 수 있습니다. 직접 입력은 없습니다</p>
+      <div class="qp" id="q-ins">
+        <div class="qph"><b>연결한 인사이트</b><button class="xb" data-x>×</button></div>
+        <dl>
+          <dt>쓰임</dt><dd>워크 상세 하단 인터뷰 자리. 인용문과 사진이 나오고 누르면 그 인사이트로 갑니다</dd>
+          <dt>기준</dt><dd>공개된 인사이트만 고를 수 있습니다</dd>
+          <dt>주의</dt><dd>연결한 인사이트를 감추면 이 워크의 인터뷰도 안 나옵니다</dd>
+          <dt>비면</dt><dd>인터뷰 표시를 켜둔 채 비우면 공개할 수 없습니다</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="f">
+      <div class="fl">
+        <span class="nm">화면에 보일 인용문</span>
+        <button class="q" data-q="quote">?</button>
+        <span class="cc">국문 41 / 80</span>
+      </div>
+      <div class="two">
+        <textarea rows="2">고래가 지나갈 때 사람들이 숨을 멈추는 순간이 있어요.</textarea>
+        <textarea rows="2">There's a moment when people hold their breath.</textarea>
+      </div>
+      <p class="hint">비우면 인사이트의 원래 인용문이 나옵니다</p>
+      <div class="qp" id="q-quote">
+        <div class="qph"><b>화면에 보일 인용문</b><button class="xb" data-x>×</button></div>
+        <dl>
+          <dt>쓰임</dt><dd>인터뷰 자리에 큰 글씨로 나오는 한 문장</dd>
+          <dt>기준</dt><dd>80자 안쪽. 한 문장으로</dd>
+          <dt>주의</dt><dd>인사이트 본문이 길면 그중 이 워크와 맞는 한 문장만 골라 적으세요</dd>
+          <dt>비면</dt><dd>인사이트에 적힌 원래 인용문이 나옵니다</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="f">
+      <div class="fl">
+        <span class="nm">이름 · 직함</span>
+        <button class="q" data-q="who">?</button>
+      </div>
+      <div class="two">
+        <input type="text" value="김벼리 · 콘텐츠기획팀">
+        <input type="text" value="Kim Byeori · Content Planning">
+      </div>
+      <p class="hint">비우면 인사이트에 적힌 이름이 나옵니다</p>
+      <div class="qp" id="q-who">
+        <div class="qph"><b>이름 · 직함</b><button class="xb" data-x>×</button></div>
+        <dl>
+          <dt>쓰임</dt><dd>인용문 아래 작은 글씨</dd>
+          <dt>기준</dt><dd>이름과 직함을 가운뎃점으로 잇습니다</dd>
+          <dt>주의</dt><dd>외부 인물이면 소속을 적으세요</dd>
+          <dt>비면</dt><dd>인사이트에 적힌 이름이 나옵니다</dd>
+        </dl>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════ 크레딧 ═══════ -->
+<section class="scr" id="s-cr">
+  <div class="grph">
+    <h3>크레딧</h3>
+    <div class="grpr">
+      <button class="b sm">＋ 크레딧 추가</button>
+      <button class="b sm">부분 저장</button>
+    </div>
+  </div>
+  <p class="grpd">워크 상세 맨 아래에 적힌 순서대로 나옵니다. 역할은 영문 그대로 표시됩니다.</p>
+
+  <div class="box">
+    <div class="crh">
+      <span>역할</span><span>이름 국문</span><span>이름 영문</span><span></span>
+    </div>
+
+    <div class="cr">
+      <input type="text" value="Client">
+      <input type="text" value="롯데면세점">
+      <input type="text" value="Lotte Duty Free">
+      <div class="crb"><button>↑</button><button>↓</button><button>×</button></div>
+    </div>
+    <div class="cr">
+      <input type="text" value="Media Design">
+      <input type="text" value="아폴론이머시브웍스">
+      <input type="text" value="Apollon Immersive Works">
+      <div class="crb"><button>↑</button><button>↓</button><button>×</button></div>
+    </div>
+    <div class="cr">
+      <input type="text" value="Construction">
+      <input type="text" value="">
+      <input type="text" value="">
+      <div class="crb"><button>↑</button><button>↓</button><button>×</button></div>
+    </div>
+
+    <p class="hint" style="margin-top:11px">역할은 영문으로 적습니다. Client · Media Design · Construction · Lighting 등</p>
+  </div>
+</section>
+
+<!-- ═══════ 이력 ═══════ -->
+<section class="scr" id="s-hist">
+  <div class="grph">
+    <h3>이력</h3>
+    <span class="cnt">공개할 때마다 남습니다</span>
+  </div>
+  <p class="grpd">저장은 남지 않습니다. 「공개하기」를 누른 것만 기록됩니다. 공개 팝업에서 쓴 문장이 그대로 들어갑니다.</p>
+
+  <div class="box" style="padding:0">
+    <div class="hitem">
+      <div class="hmeta">
+        <span class="badge now">지금 공개 중</span>
+        <span>v3 · 2026. 9. 2 오후 2:10 · 이택진</span>
+      </div>
+      <div class="hnote">사업분야에 미디어 아키텍처를 더하고, 한 줄 요약을 다듬었습니다. 이미지 블록 3개와 캡션을 정리했습니다.</div>
+    </div>
+    <div class="hitem">
+      <div class="hmeta"><span>v2 · 2026. 8. 31 오전 11:44 · 이택진</span></div>
+      <div class="hnote old">영문 클라이언트 이름의 오타를 고쳤습니다.</div>
+    </div>
+    <div class="hitem">
+      <div class="hmeta"><span>v1 · 2026. 8. 27 오후 4:02 · 이택진</span></div>
+      <div class="hnote old">처음 공개했습니다.</div>
+    </div>
+  </div>
+
+  <p class="hint">되돌리기는 없습니다. 지난 내용을 보려면 그 버전의 요약만 확인할 수 있습니다.</p>
+</section>
+
+</div>
+
+<div class="ov" id="pick">
+  <div class="mw">
+    <div class="mwh"><b>인사이트 고르기</b><button class="xb" id="close-pick">×</button></div>
+    <input type="text" placeholder="제목으로 찾기" style="margin-bottom:10px">
+    <div class="lst">
+      <div class="lrow"><div class="th"></div><div><div class="t1" style="font-size:13px;font-weight:500">고래가 헤엄치는 3분을 만들기까지</div><div class="t2" style="font-size:11px;color:var(--ink3)">비하인드 · 2026. 8. 20</div></div></div>
+      <div class="lrow"><div class="th"></div><div><div class="t1" style="font-size:13px;font-weight:500">우리가 다투는 지점</div><div class="t2" style="font-size:11px;color:var(--ink3)">인터뷰 · 2026. 8. 14</div></div></div>
+      <div class="lrow"><div class="th"></div><div><div class="t1" style="font-size:13px;font-weight:500">미디어 파사드는 왜 어려운가</div><div class="t2" style="font-size:11px;color:var(--ink3)">랩 · 2026. 7. 30</div></div></div>
+    </div>
+    <div class="mwf"><button class="b" id="cancel-pick">취소</button></div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tabs a[data-s]').forEach(a=>a.addEventListener('click',()=>{
+  document.querySelectorAll('.tabs a').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.scr').forEach(x=>x.classList.remove('on'));
+  a.classList.add('on');
+  document.getElementById(a.dataset.s).classList.add('on');
+}));
+document.querySelectorAll('.q').forEach(b=>b.addEventListener('click',()=>{
+  const p=document.getElementById('q-'+b.dataset.q);
+  document.querySelectorAll('.qp').forEach(x=>{if(x!==p)x.classList.remove('on')});
+  p.classList.toggle('on');
+}));
+document.querySelectorAll('[data-x]').forEach(b=>b.addEventListener('click',()=>b.closest('.qp').classList.remove('on')));
+const pk=document.getElementById('pick');
+document.getElementById('open-pick').addEventListener('click',()=>pk.classList.add('on'));
+document.getElementById('close-pick').addEventListener('click',()=>pk.classList.remove('on'));
+document.getElementById('cancel-pick').addEventListener('click',()=>pk.classList.remove('on'));
+document.querySelectorAll('.lrow').forEach(r=>r.addEventListener('click',()=>pk.classList.remove('on')));
+</script>
+</body>
+</html>
