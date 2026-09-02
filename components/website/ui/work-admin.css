@@ -291,22 +291,39 @@
   margin-bottom: 10px;
   overflow: hidden;
 }
+.wa .fh-row {
+  display: flex;
+  align-items: stretch;
+  background: var(--soft);
+}
+.wa .fh-row:hover {
+  background: #f2f4f7;
+}
 .wa .fh {
   padding: 11px 14px;
-  background: var(--soft);
   display: flex;
   align-items: center;
   gap: 9px;
   cursor: pointer;
   user-select: none;
-  width: 100%;
   border: 0;
   font-family: inherit;
   color: inherit;
   text-align: left;
+  background: transparent;
+}
+.wa .fh-toggle {
+  flex: 1;
+  min-width: 0;
+}
+.wa .fh-extra {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding-right: 14px;
 }
 .wa .fh:hover {
-  background: #f2f4f7;
+  background: transparent;
 }
 .wa .fh b {
   font-size: 12.5px;

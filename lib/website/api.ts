@@ -825,3 +825,71 @@ export function getStatsBundle(params: {
 export function getStatsRealtime(signal?: AbortSignal): Promise<ApiResult<StatsRealtime>> {
   return websiteFetch<StatsRealtime>("stats/realtime", { signal });
 }
+
+export type PublishPreviewData = {
+  changedFields: string[];
+  firstPublish: boolean;
+};
+
+export type PublishData = {
+  version: number;
+  publishedAt: string;
+  changedFields: string[];
+  checkProblems?: string[];
+};
+
+export function publishWorkPreview(workId: string): Promise<ApiResult<PublishPreviewData>> {
+  return websiteFetch<PublishPreviewData>("publish/preview", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "work", contentId: workId })
+  });
+}
+
+export function publishWork(workId: string, changeNote: string): Promise<ApiResult<PublishData>> {
+  return websiteFetch<PublishData>("publish", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "work", contentId: workId, changeNote })
+  });
+}
+
+export function hideWork(workId: string): Promise<ApiResult<{ version: number; isHidden: boolean }>> {
+  return websiteFetch<{ version: number; isHidden: boolean }>("hide", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "work", contentId: workId })
+  });
+}
+
+export function unhideWork(workId: string): Promise<ApiResult<{ version: number; isHidden: boolean }>> {
+  return websiteFetch<{ version: number; isHidden: boolean }>("unhide", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "work", contentId: workId })
+  });
+}
+
+export async function generatePublishNote(
+  changedFields: string[]
+): Promise<{ note: string; source: string }> {
+  const token = await accessToken();
+  if (!token) {
+    return { note: "", source: "fallback" };
+  }
+
+  const res = await fetch("/api/website/luna/publish-note", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ changedFields })
+  });
+
+  const body = (await res.json().catch(() => null)) as {
+    data?: { note?: string; source?: string };
+  } | null;
+
+  return {
+    note: body?.data?.note?.trim() ?? "",
+    source: body?.data?.source ?? "fallback"
+  };
+}

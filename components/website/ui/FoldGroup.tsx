@@ -20,6 +20,8 @@ type FoldGroupProps = {
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** 접이식 헤더 오른쪽 (부분 저장 등) */
+  headerExtra?: ReactNode;
   children?: ReactNode;
 };
 
@@ -34,6 +36,7 @@ export function FoldGroup({
   defaultOpen = false,
   open: openProp,
   onOpenChange,
+  headerExtra,
   children,
 }: FoldGroupProps) {
   const bodyId = useId();
@@ -51,39 +54,42 @@ export function FoldGroup({
 
   return (
     <div className={open ? "wa fold on" : "wa fold"}>
-      <button
-        type="button"
-        className="fh"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen(!open)}
-      >
-        <b>{title}</b>
-        {guideAnchorId ? (
-          <span
-            className="fold-guide"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <GuidePopover anchorId={guideAnchorId}>?</GuidePopover>
+      <div className="fh-row">
+        <button
+          type="button"
+          className="fh fh-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen(!open)}
+        >
+          <b>{title}</b>
+          {guideAnchorId ? (
+            <span
+              className="fold-guide"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <GuidePopover anchorId={guideAnchorId}>?</GuidePopover>
+            </span>
+          ) : null}
+          {summary ? <span className="s">{summary}</span> : null}
+          {countText != null ? (
+            <span
+              className={
+                countTone === "ok" ? "cnt ok" : countTone === "warn" ? "cnt warn" : "cnt"
+              }
+            >
+              {countText}
+            </span>
+          ) : (
+            <span className="cnt" />
+          )}
+          <span className="ar" aria-hidden>
+            ▾
           </span>
-        ) : null}
-        {summary ? <span className="s">{summary}</span> : null}
-        {countText != null ? (
-          <span
-            className={
-              countTone === "ok" ? "cnt ok" : countTone === "warn" ? "cnt warn" : "cnt"
-            }
-          >
-            {countText}
-          </span>
-        ) : (
-          <span className="cnt" />
-        )}
-        <span className="ar" aria-hidden>
-          ▾
-        </span>
-      </button>
+        </button>
+        {headerExtra ? <div className="fh-extra">{headerExtra}</div> : null}
+      </div>
       <div id={bodyId} className="fb">
         {children}
       </div>

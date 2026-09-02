@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getMeta, getWork, setWorkCategories, updateWork } from "@/lib/website/api";
+import { getMeta, getWork, hideWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
+import { fallbackChangeNote, firstPublishNote } from "@/lib/website/publish";
+import type { WorkSiteVisibility } from "@/lib/website/types";
 import {
   overTextWidth,
   textWidth,
@@ -25,15 +27,27 @@ import {
   type WorkDetail
 } from "@/lib/website/work-detail";
 import { PublishCheckPanel } from "@/components/website/publish-check-panel";
+import { PublishModal } from "@/components/website/publish-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
 import { GhostBtn, PreviewBarBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
-import { HomePublishNotice } from "@/components/website/home-publish-notice";
 import { showToast } from "@/components/website/toast";
 import { isPreviewOpen, openPreview, PREVIEW_POPUP_BLOCKED, refreshPreview } from "@/lib/website/preview-window";
+
+function visibilityLabel(v: WorkSiteVisibility) {
+  if (v === "live") return "공개";
+  if (v === "hidden") return "감춤";
+  return "초안";
+}
+
+function visibilityClass(v: WorkSiteVisibility) {
+  if (v === "live") return "bg-emerald-50 text-emerald-700";
+  if (v === "hidden") return "bg-slate-200 text-slate-600";
+  return "bg-slate-100 text-slate-600";
+}
 
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
@@ -134,10 +148,16 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishPreviewLoading, setPublishPreviewLoading] = useState(false);
+  const [publishChangedFields, setPublishChangedFields] = useState<string[]>([]);
+  const [publishFirst, setPublishFirst] = useState(true);
+  const [publishNote, setPublishNote] = useState("");
+  const [publishNoteLoading, setPublishNoteLoading] = useState(false);
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
   const [previewLive, setPreviewLive] = useState(false);
   const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
-  const [homeNotice, setHomeNotice] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -198,6 +218,68 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const limitIssues = draft ? draftLimitProblems(draft) : [];
   const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
   const shortage = work ? shortageLine(work, check, draft) : null;
+  const visibility = work?.site_visibility ?? "draft";
+
+  const refreshPublishPreview = useCallback(async () => {
+    const preview = await publishWorkPreview(workId);
+    if (!preview.ok) return;
+    setPublishChangedFields(preview.data.changedFields ?? []);
+    setPublishFirst(Boolean(preview.data.firstPublish));
+    setHasUnpublishedChanges((preview.data.changedFields ?? []).length > 0);
+  }, [workId]);
+
+  useEffect(() => {
+    if (!work || work.site_visibility === "draft") {
+      setHasUnpublishedChanges(false);
+      return;
+    }
+    void refreshPublishPreview();
+  }, [work, refreshPublishPreview]);
+
+  async function loadPublishNote(fields: string[], first: boolean) {
+    if (first) {
+      setPublishNote(firstPublishNote());
+      return;
+    }
+    setPublishNoteLoading(true);
+    try {
+      const result = await generatePublishNote(fields);
+      setPublishNote(result.note || fallbackChangeNote(fields));
+    } finally {
+      setPublishNoteLoading(false);
+    }
+  }
+
+  async function openPublishModal() {
+    if (!draft) return;
+    setPublishModalOpen(true);
+    setPublishPreviewLoading(true);
+    setError(null);
+    try {
+      if (!(await saveAll({ silent: true }))) {
+        setPublishModalOpen(false);
+        return;
+      }
+      const preview = await publishWorkPreview(workId);
+      if (!preview.ok) {
+        if (preview.status === 409 && preview.error === "publish_blocked") {
+          setCheckOverride(mergeCheck(work?.check ?? null, preview.details));
+          setPanelOpen(true);
+        } else {
+          setError(preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : ""));
+        }
+        setPublishModalOpen(false);
+        return;
+      }
+      const fields = preview.data.changedFields ?? [];
+      const first = Boolean(preview.data.firstPublish);
+      setPublishChangedFields(fields);
+      setPublishFirst(first);
+      await loadPublishNote(fields, first);
+    } finally {
+      setPublishPreviewLoading(false);
+    }
+  }
 
   const onChangeDraft = useCallback((patch: Partial<WorkBasicDraft>) => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -222,50 +304,100 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     return true;
   }
 
-  async function saveTemp() {
-    if (!draft) return;
+  async function saveAll(opts?: { silent?: boolean }) {
+    if (!draft) return false;
     setSaving(true);
     setError(null);
     try {
-      if (!(await saveCategories(draft))) return;
+      if (!(await saveCategories(draft))) return false;
       const result = await updateWork(workId, worksPatchFromDraft(draft));
       if (!result.ok) {
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-        return;
+        return false;
       }
       refreshPreview();
       await load();
-      showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
+      await refreshPublishPreview();
+      if (!opts?.silent) {
+        showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
+      }
+      return true;
     } finally {
       setSaving(false);
     }
   }
 
-  async function publish() {
-    if (!draft) return;
+  async function confirmPublish() {
+    if (!draft || !publishNote.trim()) return;
     setSaving(true);
     setError(null);
     cancelPublishNav();
     try {
-      if (!(await saveCategories(draft))) return;
-      const result = await updateWork(workId, {
-        ...worksPatchFromDraft(draft),
-        status: "published"
-      });
-      if (!result.ok) {
-        if (result.status === 409 && result.error === "publish_blocked") {
-          setCheckOverride(mergeCheck(work?.check ?? null, result.details));
+      if (!(await saveAll({ silent: true }))) return;
+
+      const published = await publishWork(workId, publishNote.trim());
+      if (!published.ok) {
+        if (published.status === 400 && published.error === "publish_blocked") {
+          setCheckOverride(mergeCheck(work?.check ?? null, published.details));
           setPanelOpen(true);
+          setPublishModalOpen(false);
           return;
         }
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setError(
+          published.error + (published.details ? ` · ${JSON.stringify(published.details)}` : "")
+        );
         return;
       }
+
+      const statusPatch = await updateWork(workId, { status: "published" });
+      if (!statusPatch.ok) {
+        setError(
+          statusPatch.error + (statusPatch.details ? ` · ${JSON.stringify(statusPatch.details)}` : "")
+        );
+        return;
+      }
+
+      setPublishModalOpen(false);
       setPanelOpen(false);
       await load();
+      await refreshPublishPreview();
       if (isPreviewOpen()) refreshPreview();
+      showToast({ message: "공개되었습니다", tone: "ok" });
+    } finally {
+      setSaving(false);
+    }
+  }
 
-      setHomeNotice(true);
+  async function hideFromSite() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await hideWork(workId);
+      if (!res.ok) {
+        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        return;
+      }
+      await load();
+      await refreshPublishPreview();
+      showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function showOnSiteAgain() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!(await saveAll({ silent: true }))) return;
+      const res = await unhideWork(workId);
+      if (!res.ok) {
+        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        return;
+      }
+      await load();
+      await refreshPublishPreview();
+      showToast({ message: "다시 공개되었습니다", tone: "ok" });
     } finally {
       setSaving(false);
     }
@@ -323,13 +455,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           {titleKo}
         </h1>
         <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-            work.status === "published"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-slate-100 text-slate-600"
-          }`}
+          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${visibilityClass(visibility)}`}
         >
-          {work.status === "published" ? "공개" : "초안"}
+          {visibilityLabel(visibility)}
         </span>
         <span className="flex-1" />
         <PreviewBarBtn onClick={() => void handlePreview()} />
@@ -398,24 +526,48 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       </div>
 
       <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <p
-            className={`min-w-[180px] flex-1 text-sm ${shortage?.ok ? "text-emerald-600" : "text-amber-600"}`}
+            className={`min-w-0 flex-1 basis-full text-sm sm:basis-auto ${
+              visibility === "hidden"
+                ? "text-slate-500"
+                : visibility === "live" && hasUnpublishedChanges
+                  ? "text-amber-600"
+                  : shortage?.ok
+                    ? "text-emerald-600"
+                    : "text-amber-600"
+            }`}
           >
-            {shortage?.text}
+            {visibility === "hidden"
+              ? "사이트에서 보이지 않습니다"
+              : visibility === "live" && hasUnpublishedChanges
+                ? "공개 안 된 변경이 있습니다"
+                : shortage?.text}
           </p>
-          <PreviewBarBtn onClick={() => void handlePreview()} />
-          <GhostBtn disabled={saving} onClick={() => void saveTemp()}>
-            임시 저장
-          </GhostBtn>
-          {canManageWorks ? (
-            <>
-              <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
-              <PrimaryBtn disabled={!canPublish || saving} onClick={() => void publish()}>
-                등록하기
+          <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
+            <PreviewBarBtn onClick={() => void handlePreview()} />
+            <GhostBtn disabled={saving} onClick={() => void saveAll()}>
+              전체 저장
+            </GhostBtn>
+            {canManageWorks && visibility !== "hidden" ? (
+              <>
+                <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
+                <PrimaryBtn disabled={!canPublish || saving} onClick={() => void openPublishModal()}>
+                  공개하기
+                </PrimaryBtn>
+              </>
+            ) : null}
+            {canManageWorks && visibility === "live" ? (
+              <GhostBtn disabled={saving} onClick={() => void hideFromSite()}>
+                감추기
+              </GhostBtn>
+            ) : null}
+            {canManageWorks && visibility === "hidden" ? (
+              <PrimaryBtn disabled={saving} onClick={() => void showOnSiteAgain()}>
+                다시 공개
               </PrimaryBtn>
-            </>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -461,10 +613,25 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
             setTab(next);
             setPanelOpen(false);
           }}
-          onPublish={() => void publish()}
+          onPublish={() => {
+            setPanelOpen(false);
+            void openPublishModal();
+          }}
         />
       ) : null}
-      <HomePublishNotice open={homeNotice} kind="워크" onClose={() => setHomeNotice(false)} />
+      <PublishModal
+        open={publishModalOpen}
+        loading={publishPreviewLoading}
+        publishing={saving}
+        changedFields={publishChangedFields}
+        firstPublish={publishFirst}
+        note={publishNote}
+        noteLoading={publishNoteLoading}
+        onNoteChange={setPublishNote}
+        onRegenerate={() => void loadPublishNote(publishChangedFields, publishFirst)}
+        onClose={() => setPublishModalOpen(false)}
+        onConfirm={() => void confirmPublish()}
+      />
     </div>
   );
 }

@@ -144,6 +144,9 @@ export type WorkDetail = {
   content_related?: WorkRelated[] | null;
   work_interview?: WorkInterview[] | null;
   check?: import("@/lib/website/types").CheckWorks | null;
+  site_visibility: import("@/lib/website/types").WorkSiteVisibility;
+  published_version: number | null;
+  is_hidden: boolean;
 };
 
 export type WorkCategoryMap = {
@@ -340,6 +343,10 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
   if (!row || typeof row.id !== "string") return null;
 
   const status = row.status === "published" ? "published" : "draft";
+  const siteVisibility =
+    row.site_visibility === "live" || row.site_visibility === "hidden"
+      ? row.site_visibility
+      : "draft";
   const check = asRecord(row.check);
 
   return {
@@ -365,6 +372,9 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     year: typeof row.year === "string" ? row.year : null,
     published_at: typeof row.published_at === "string" ? row.published_at : null,
     status,
+    site_visibility: siteVisibility,
+    published_version: typeof row.published_version === "number" ? row.published_version : null,
+    is_hidden: row.is_hidden === true,
     sort: asNum(row.sort),
     is_featured: asBool(row.is_featured),
     show_faq: asBool(row.show_faq),

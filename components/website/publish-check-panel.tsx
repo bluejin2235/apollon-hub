@@ -268,7 +268,7 @@ export function PublishCheckPanel({
           </p>
           <GhostBtn onClick={onClose}>닫기</GhostBtn>
           <PrimaryBtn disabled={!canPublish || publishing} onClick={onPublish}>
-            등록하기
+            공개하기
           </PrimaryBtn>
         </div>
       </div>

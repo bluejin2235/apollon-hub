@@ -5,6 +5,8 @@ export type BodyColumn = { ko?: string; en?: string };
 export type ColumnsBody = { columns: BodyColumn[] };
 export type BlockBodyJson = LocalizedText | ColumnsBody;
 
+export type WorkSiteVisibility = "draft" | "live" | "hidden";
+
 export type CheckWorks = {
   id: string;
   slug: string;
@@ -61,6 +63,10 @@ export type WorkListItem = {
     related: number;
   };
   check: CheckWorks | null;
+  /** content_published 기준. works.status 와 다를 수 있습니다 */
+  site_visibility: WorkSiteVisibility;
+  published_version: number | null;
+  is_hidden: boolean;
 };
 
 export type WorkListData = {

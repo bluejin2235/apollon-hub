@@ -8,9 +8,9 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { NewWorkModal } from "@/components/website/new-work-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { deleteWork, getMeta, listWorks, updateWork } from "@/lib/website/api";
+import { hideWork, getMeta, listWorks } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
-import type { WebsiteCategory, WorkListItem } from "@/lib/website/types";
+import type { WebsiteCategory, WorkListItem, WorkSiteVisibility } from "@/lib/website/types";
 import {
   categoryIdsFromMap,
   categoryLabelsFromIds
@@ -62,15 +62,22 @@ function FillDots({ item }: { item: WorkListItem }) {
   );
 }
 
-function StatusBadge({ status }: { status: WorkListItem["status"] }) {
-  const published = status === "published";
+function itemVisibility(item: WorkListItem): WorkSiteVisibility {
+  return item.site_visibility ?? (item.status === "published" ? "live" : "draft");
+}
+
+function StatusBadge({ item }: { item: WorkListItem }) {
+  const visibility = itemVisibility(item);
+  const label = visibility === "live" ? "공개" : visibility === "hidden" ? "감춤" : "초안";
+  const className =
+    visibility === "live"
+      ? "bg-emerald-50 text-emerald-700"
+      : visibility === "hidden"
+        ? "bg-slate-200 text-slate-600"
+        : "bg-slate-100 text-slate-600";
   return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-        published ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {published ? "공개" : "초안"}
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>
+      {label}
     </span>
   );
 }
@@ -84,8 +91,7 @@ function WorkOverflowMenu({
   open,
   onOpenChange,
   onPreview,
-  onUnpublish,
-  onDelete,
+  onHide,
   canManageWorks
 }: {
   item: WorkListItem;
@@ -93,11 +99,11 @@ function WorkOverflowMenu({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPreview: () => void;
-  onUnpublish: () => void;
-  onDelete: () => void;
+  onHide: () => void;
   canManageWorks: boolean;
 }) {
-  const published = item.status === "published";
+  const visibility = itemVisibility(item);
+  const liveOnSite = visibility === "live";
   const url = publicWorkUrl(siteUrl, item.slug);
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -182,7 +188,7 @@ function WorkOverflowMenu({
           >
             미리보기 ↗
           </button>
-          {published ? (
+          {liveOnSite ? (
             <a
               href={url}
               target="_blank"
@@ -210,30 +216,17 @@ function WorkOverflowMenu({
             {copied ? "복사됨" : "주소 복사"}
           </button>
           <div className="my-1 border-t border-slate-200" />
-          {canManageWorks && published ? (
+          {canManageWorks && liveOnSite ? (
             <button
               type="button"
               role="menuitem"
               className={menuItemClass}
               onClick={() => {
                 onOpenChange(false);
-                onUnpublish();
+                onHide();
               }}
             >
-              비공개로 되돌리기
-            </button>
-          ) : null}
-          {canManageWorks ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="block w-full px-3 py-1.5 text-left text-sm text-rose-600 hover:bg-rose-50"
-              onClick={() => {
-                onOpenChange(false);
-                onDelete();
-              }}
-            >
-              삭제
+              감추기
             </button>
           ) : null}
         </div>
@@ -251,12 +244,11 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<"all" | "draft" | "published">("all");
+  const [status, setStatus] = useState<"all" | "draft" | "published" | "hidden">("all");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [newOpen, setNewOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [unpublishItem, setUnpublishItem] = useState<WorkListItem | null>(null);
-  const [deleteItem, setDeleteItem] = useState<WorkListItem | null>(null);
+  const [hideItem, setHideItem] = useState<WorkListItem | null>(null);
 
   async function reloadItems() {
     const works = await listWorks({ status: "all", limit: 100 });
@@ -318,7 +310,14 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     let rows = items;
-    if (status !== "all") rows = rows.filter((row) => row.status === status);
+    if (status !== "all") {
+      rows = rows.filter((row) => {
+        const visibility = itemVisibility(row);
+        if (status === "published") return visibility === "live";
+        if (status === "hidden") return visibility === "hidden";
+        return visibility === "draft";
+      });
+    }
     if (category !== "all") {
       rows = rows.filter((row) =>
         categoryIdsFromMap(row.work_categories_map, row.category_id).includes(category)
@@ -339,8 +338,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     return copy;
   }, [items, q, category, status, sortBy]);
 
-  const published = items.filter((row) => row.status === "published").length;
-  const draft = items.length - published;
+  const liveCount = items.filter((row) => itemVisibility(row) === "live").length;
+  const hiddenCount = items.filter((row) => itemVisibility(row) === "hidden").length;
+  const draft = items.length - liveCount - hiddenCount;
 
   function categoryLabel(item: WorkListItem) {
     return categoryLabelsFromIds(
@@ -377,38 +377,23 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
             }
           })();
         }}
-        onUnpublish={() => setUnpublishItem(item)}
-        onDelete={() => setDeleteItem(item)}
+        onHide={() => setHideItem(item)}
         canManageWorks={canManageWorks}
       />
     );
   }
 
-  async function confirmUnpublish() {
-    if (!unpublishItem) return;
-    const res = await updateWork(unpublishItem.id, { status: "draft" });
-    setUnpublishItem(null);
+  async function confirmHide() {
+    if (!hideItem) return;
+    const res = await hideWork(hideItem.id);
+    setHideItem(null);
     if (!res.ok) {
       setError(formatError(res.error, res.details));
       return;
     }
     await reloadItems();
-    showToast({ message: "비공개로 바뀌었습니다", tone: "ok" });
+    showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
   }
-
-  async function confirmDelete() {
-    if (!deleteItem) return;
-    const res = await deleteWork(deleteItem.id);
-    setDeleteItem(null);
-    if (!res.ok) {
-      setError(formatError(res.error, res.details));
-      return;
-    }
-    await reloadItems();
-    showToast({ message: "삭제되었습니다", tone: "ok" });
-  }
-
-  const deleteTitleKo = deleteItem?.title?.ko?.trim() || (deleteItem ? workTitle(deleteItem) : "");
 
   return (
     <div className="space-y-6 pb-10">
@@ -418,7 +403,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
             프로젝트 목록
           </h1>
           <p className="mt-1 text-slate-500" style={{ fontSize: "var(--fs-sub)" }}>
-            전체 {items.length} · 공개 {published} · 초안 {draft}
+            전체 {items.length} · 공개 {liveCount} · 초안 {draft} · 감춤 {hiddenCount}
           </p>
         </div>
         {canManageWorks ? (
@@ -454,13 +439,14 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
         </select>
         <select
           value={status}
-          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published")}
+          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published" | "hidden")}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
           aria-label="상태"
         >
           <option value="all">상태</option>
           <option value="published">공개</option>
           <option value="draft">초안</option>
+          <option value="hidden">감춤</option>
         </select>
         <select
           value={sortBy}
@@ -497,7 +483,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                   return (
                     <tr
                       key={item.id}
-                      className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                      className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                        itemVisibility(item) === "hidden" ? "opacity-60" : ""
+                      }`}
                       onClick={(event) => onRowClick(event, item)}
                     >
                       <td className="py-3 pr-3">
@@ -529,7 +517,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                       </td>
                       <td className="py-3 pr-3 text-slate-600">{item.year ?? "—"}</td>
                       <td className="py-3 pr-3">
-                        <StatusBadge status={item.status} />
+                        <StatusBadge item={item} />
                       </td>
                       <td className="py-3 pr-3">
                         <FillDots item={item} />
@@ -550,7 +538,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
               return (
                 <li key={item.id}>
                   <div
-                    className="apollon-card flex cursor-pointer gap-3 p-3"
+                    className={`apollon-card flex cursor-pointer gap-3 p-3 ${
+                      itemVisibility(item) === "hidden" ? "opacity-60" : ""
+                    }`}
                     onClick={(event) => onRowClick(event, item)}
                   >
                     {thumb ? (
@@ -567,7 +557,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                         {categoryLabel(item)} · {item.year ?? "—"}
                       </span>
                       <span className="mt-2 flex items-center gap-2">
-                        <StatusBadge status={item.status} />
+                        <StatusBadge item={item} />
                         <FillDots item={item} />
                       </span>
                     </span>
@@ -589,40 +579,19 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
       <NewWorkModal open={newOpen} onClose={() => setNewOpen(false)} />
 
       <ConfirmDialog
-        key={unpublishItem ? `unpub-${unpublishItem.id}` : "unpub"}
-        open={Boolean(unpublishItem)}
-        title="홈페이지에서 내려갑니다. 계속할까요?"
-        confirmText="계속"
-        onConfirm={() => confirmUnpublish()}
-        onCancel={() => setUnpublishItem(null)}
-      />
-
-      <ConfirmDialog
-        key={deleteItem ? `del-${deleteItem.id}` : "del"}
-        open={Boolean(deleteItem)}
-        title="이 프로젝트를 삭제할까요?"
-        confirmText="삭제"
-        confirmWord={deleteItem?.slug}
-        danger
-        onConfirm={() => confirmDelete()}
-        onCancel={() => setDeleteItem(null)}
+        key={hideItem ? `hide-${hideItem.id}` : "hide"}
+        open={Boolean(hideItem)}
+        title="사이트에서 감출까요?"
         description={
-          deleteItem ? (
-            <>
-              {deleteItem.status === "published" ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  지금 홈페이지에 공개되어 있습니다. 삭제하면 페이지가 사라집니다.
-                </p>
-              ) : null}
-              <p className="font-bold text-slate-900">{deleteTitleKo}</p>
-              <p>
-                블록 {deleteItem.counts.sections}개 · 이미지 {deleteItem.counts.images}장 · FAQ{" "}
-                {deleteItem.counts.faqs}문항이 함께 지워집니다.
-              </p>
-              <p>되돌릴 수 없습니다.</p>
-            </>
+          hideItem ? (
+            <p>
+              스냅샷은 그대로 남습니다. 언제든 다시 공개할 수 있습니다.
+            </p>
           ) : null
         }
+        confirmText="감추기"
+        onConfirm={() => confirmHide()}
+        onCancel={() => setHideItem(null)}
       />
     </div>
   );
