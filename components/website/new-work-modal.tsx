@@ -5,7 +5,12 @@ import { useEffect, useState } from "react";
 import { createWork, getMeta } from "@/lib/website/api";
 import type { ApiErr, WebsiteCategory } from "@/lib/website/types";
 import { todayYmd } from "@/lib/website/work-detail";
-import { CharKo, FieldLabel, GhostBtn, PrimaryBtn, Req, TextInput } from "@/components/website/work-editor-ui";
+import {
+  textWidth,
+  WORK_TITLE_KO_MAX,
+  WORK_TITLE_KO_RECOMMEND
+} from "@/lib/website/text-width";
+import { CharWidthKo, FieldLabel, GhostBtn, PrimaryBtn, Req, TextInput } from "@/components/website/work-editor-ui";
 
 type Props = {
   open: boolean;
@@ -167,11 +172,19 @@ export function NewWorkModal({ open, onClose }: Props) {
 
         <div className="space-y-4 px-5 py-4">
           <div>
-            <FieldLabel extra={<CharKo n={title.length} warn={22} limit={22} />}>
+            <FieldLabel
+              extra={
+                <CharWidthKo
+                  n={textWidth(title)}
+                  warn={WORK_TITLE_KO_RECOMMEND}
+                  limit={WORK_TITLE_KO_MAX}
+                />
+              }
+            >
               제목(국문)
               <Req />
             </FieldLabel>
-            <TextInput value={title} onChange={onTitleChange} placeholder="국문 22자 권장" />
+            <TextInput value={title} onChange={onTitleChange} placeholder="44 이내 권장" />
           </div>
 
           <div>

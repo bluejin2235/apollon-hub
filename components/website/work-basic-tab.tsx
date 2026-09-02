@@ -21,6 +21,15 @@ import type {
 import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import {
+  overTextWidth,
+  textWidth,
+  withinTextWidth,
+  WORK_TITLE_EN_MAX,
+  WORK_TITLE_EN_RECOMMEND,
+  WORK_TITLE_KO_MAX,
+  WORK_TITLE_KO_RECOMMEND
+} from "@/lib/website/text-width";
+import {
   formatKeyImageEmptyHint,
   formatThumbLargeHint,
   formatThumbSmallHint,
@@ -472,8 +481,18 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           required
           guideAnchorId="text-length"
           counts={[
-            { label: "국문", value: draft.title.ko.length, recommend: 11, limit: 22 },
-            { label: "영문", value: draft.title.en.length, recommend: 23, limit: 46 }
+            {
+              label: "국문",
+              value: textWidth(draft.title.ko),
+              recommend: WORK_TITLE_KO_RECOMMEND,
+              limit: WORK_TITLE_KO_MAX
+            },
+            {
+              label: "영문",
+              value: textWidth(draft.title.en),
+              recommend: WORK_TITLE_EN_RECOMMEND,
+              limit: WORK_TITLE_EN_MAX
+            }
           ]}
         >
           <Bi
@@ -484,8 +503,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             onKo={(v) => onChange({ title: locField(draft.title, "ko", v) })}
             onEn={(v) => onChange({ title: locField(draft.title, "en", v) })}
           />
-          {draft.title.ko.length > 22 ? (
-            <Alert tone="e">국문이 22자를 넘습니다. 목록 카드에서 세 줄이 되어 흐트러집니다.</Alert>
+          {overTextWidth(draft.title.ko, WORK_TITLE_KO_MAX) ? (
+            <Alert tone="e">국문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다.</Alert>
           ) : null}
         </Field>
 

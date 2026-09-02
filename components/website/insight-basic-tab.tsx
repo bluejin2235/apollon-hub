@@ -9,6 +9,11 @@ import { setInsightTags } from "@/lib/website/api";
 import type { InsightBasicDraft, InsightDetail, PressKind } from "@/lib/website/insight-detail";
 import { defaultPressKind, pressKindFromDraft } from "@/lib/website/insight-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
+import {
+  INSIGHT_TITLE_EN_MAX,
+  INSIGHT_TITLE_KO_MAX,
+  textWidth
+} from "@/lib/website/text-width";
 import type { WebsiteCategory } from "@/lib/website/types";
 import "./ui/work-admin.css";
 
@@ -114,8 +119,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         label="제목"
         required
         counts={[
-          { label: "국문", value: draft.title.ko.length, limit: 30 },
-          { label: "영문", value: draft.title.en.length, limit: 60 }
+          { label: "국문", value: textWidth(draft.title.ko), limit: INSIGHT_TITLE_KO_MAX },
+          { label: "영문", value: textWidth(draft.title.en), limit: INSIGHT_TITLE_EN_MAX }
         ]}
         tip="목록 카드 · 상세 · 검색 결과 · 링크 공유에 모두 쓰입니다."
       >

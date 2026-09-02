@@ -3,9 +3,15 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getMeta, getWork, updateWork } from "@/lib/website/api";
+import { getMeta, getWork, setWorkCategories, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
+import {
+  overTextWidth,
+  textWidth,
+  WORK_TITLE_EN_MAX,
+  WORK_TITLE_KO_MAX
+} from "@/lib/website/text-width";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
   countAiUnconfirmed,
@@ -56,11 +62,11 @@ function problemCount(check: CheckWorks | null): number {
 
 function draftLimitProblems(draft: WorkBasicDraft): string[] {
   const issues: string[] = [];
-  if (draft.title.ko.trim() && draft.title.ko.length > 22) {
-    issues.push("제목이 22자를 넘습니다");
+  if (draft.title.ko.trim() && overTextWidth(draft.title.ko, WORK_TITLE_KO_MAX)) {
+    issues.push("국문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
   }
-  if (draft.title.en.length > 46) {
-    issues.push("영문 제목이 46자를 넘습니다");
+  if (textWidth(draft.title.en) > WORK_TITLE_EN_MAX) {
+    issues.push("영문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
   }
   if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
     issues.push("한 줄 요약이 80자를 넘습니다");

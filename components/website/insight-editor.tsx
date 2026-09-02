@@ -23,6 +23,12 @@ import {
   type InsightEditorTab
 } from "@/lib/website/insight-detail";
 import { formatSavedAt } from "@/lib/website/work-detail";
+import {
+  overTextWidth,
+  textWidth,
+  INSIGHT_TITLE_EN_MAX,
+  INSIGHT_TITLE_KO_MAX
+} from "@/lib/website/text-width";
 import { InsightBasicTab } from "@/components/website/insight-basic-tab";
 import { InsightContentTab } from "@/components/website/insight-content-tab";
 import { InsightPublishCheckPanel } from "@/components/website/insight-publish-check-panel";
@@ -57,11 +63,11 @@ function problemCount(check: CheckInsights | null): number {
 
 function draftLimitProblems(draft: InsightBasicDraft): string[] {
   const issues: string[] = [];
-  if (draft.title.ko.trim() && draft.title.ko.length > 30) {
-    issues.push("제목이 30자를 넘습니다");
+  if (draft.title.ko.trim() && overTextWidth(draft.title.ko, INSIGHT_TITLE_KO_MAX)) {
+    issues.push("국문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
   }
-  if (draft.title.en.length > 60) {
-    issues.push("영문 제목이 60자를 넘습니다");
+  if (textWidth(draft.title.en) > INSIGHT_TITLE_EN_MAX) {
+    issues.push("영문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
   }
   if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
     issues.push("한 줄 요약이 80자를 넘습니다");

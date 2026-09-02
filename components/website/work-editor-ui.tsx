@@ -74,6 +74,15 @@ export function CharKo({ n, limit, warn }: { n: number; limit: number; warn: num
   );
 }
 
+/** 제목 칸 — CharKo 와 같지만 폭 기준 값을 넘긴다 */
+export function CharWidthKo({ n, limit, warn }: { n: number; limit: number; warn: number }) {
+  return (
+    <span className="ml-auto font-normal text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
+      국문 <Count n={n} warn={warn} max={limit} /> / {limit}
+    </span>
+  );
+}
+
 function Count({ n, warn, max }: { n: number; warn: number; max: number }) {
   const color = n > max ? "text-red-600" : n > warn ? "text-amber-500" : "";
   return <span className={color}>{n}</span>;
