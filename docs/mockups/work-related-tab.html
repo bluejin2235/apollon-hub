@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>워크 어드민 · 연결 탭 — 목업</title>
+<style>
+:root{--ink:#0f172a;--ink2:#475569;--ink3:#94a3b8;--line:#e2e8f0;--bg:#f8fafc;
+--req:#dc2626;--warn:#b45309;--ok:#15803d;--acc:#4f46e5;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;padding:24px}
+.page{max-width:980px;margin:0 auto}
+.lab{font-size:12px;color:var(--ink2);margin-bottom:8px}
+.note{font-size:11px;color:var(--ink3);margin:6px 0 26px;line-height:1.7}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.grph{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:3px}
+.grph h3{font-size:15px;font-weight:600}
+.grpr{display:flex;align-items:center;gap:9px}
+.grpd{font-size:12px;color:var(--ink2);margin-bottom:12px}
+button.b{font:inherit;font-size:12px;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer;white-space:nowrap}
+button.b:hover{background:#f8fafc}
+button.b.acc{border-color:#c7d2fe;color:var(--acc)}
+button.b.sm{font-size:11px;padding:4px 9px}
+.q{border:0;background:#eef2f7;color:var(--ink3);width:15px;height:15px;border-radius:50%;font-size:10px;line-height:15px;text-align:center;padding:0;cursor:pointer}
+
+/* 카드 4칸 */
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.card .th{aspect-ratio:16/9;background:#e8eef5;position:relative}
+.card .bd{padding:8px 10px 10px}
+.card .kind{font-size:10px;color:var(--ink3);margin-bottom:3px}
+.card .t{font-size:12px;line-height:1.45;height:2.9em;overflow:hidden}
+.card .acts{display:flex;gap:3px;justify-content:space-between;align-items:center;margin-top:7px}
+.card .acts .lr{display:flex;gap:2px}
+.card .acts button{border:0;background:none;color:var(--ink3);cursor:pointer;font-size:12px;padding:2px 4px;line-height:1}
+.card.empty{border-style:dashed;display:flex;align-items:center;justify-content:center;min-height:150px;cursor:pointer;color:var(--ink3);font-size:12px;flex-direction:column;gap:5px}
+.card .luna{position:absolute;top:6px;left:6px;font-size:10px;padding:2px 7px;border-radius:20px;background:rgba(79,70,229,.9);color:#fff}
+.ord{position:absolute;bottom:6px;left:6px;width:18px;height:18px;border-radius:50%;background:rgba(15,23,42,.75);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center}
+
+/* 루나 줄 */
+.lrow{display:flex;align-items:center;gap:10px;background:#f8fafc;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin-bottom:12px}
+.lav{width:22px;height:22px;border-radius:50%;background:#eef2ff;color:var(--acc);font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:600}
+.ltxt{font-size:12px;color:var(--ink2);flex:1;min-width:0}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid #cbd5e1;border-top-color:var(--acc);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:5px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* 팝업 */
+.ov{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);align-items:center;justify-content:center;padding:24px;z-index:50}
+.ov.on{display:flex}
+.mw{background:#fff;border-radius:12px;padding:18px 20px;width:100%;max-width:560px}
+.mwh{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px}
+.mwh b{font-size:15px;font-weight:600}
+.xb{border:0;background:none;color:var(--ink3);font-size:16px;cursor:pointer;padding:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+.seg button{font:inherit;font-size:12px;padding:5px 12px;border:0;background:#fff;color:var(--ink2);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+input[type=text]{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px}
+.lst{max-height:290px;overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+.li{display:flex;align-items:center;gap:11px;padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer}
+.li:last-child{border-bottom:0}
+.li:hover{background:#f8fafc}
+.li .th{width:56px;height:32px;border-radius:4px;background:#e8eef5;flex-shrink:0}
+.li .m{min-width:0;flex:1}
+.li .t{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li .s{font-size:11px;color:var(--ink3);margin-top:1px}
+.li .on{font-size:11px;color:var(--acc)}
+.memo{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 13px;font-size:12px;color:#92400e;line-height:1.7;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="memo">
+  <b>고칠 것 넷</b><br>
+  ① 루나 문구가 「골라 넣어 뒀습니다」라고 하는데 실제로는 안 골랐습니다. 누를 때 만듭니다<br>
+  ② 「직접 고르기」가 위와 빈칸에 중복입니다. 빈칸에만 둡니다<br>
+  ③ 설명 다섯 줄을 물음표로 넣습니다<br>
+  ④ 인사이트도 화면에 나오게 합니다 (지금은 저장만 되고 안 나옴)
+</div>
+
+<div class="lab">① 처음 열었을 때 — 아무것도 안 골랐음</div>
+<div class="box" style="margin-bottom:6px">
+  <div class="grph">
+    <h3>관련 콘텐츠</h3>
+    <div class="grpr">
+      <button class="q">?</button>
+      <button class="b sm">부분 저장</button>
+    </div>
+  </div>
+  <p class="grpd">워크 상세 맨 아래에 이 순서대로 4개가 나옵니다.</p>
+
+  <div class="lrow">
+    <div class="lav">L</div>
+    <div class="ltxt">이 워크와 어울리는 콘텐츠를 루나가 골라 줄 수 있습니다.</div>
+    <button class="b acc">루나에게 추천받기</button>
+  </div>
+
+  <div class="g4">
+    <div class="card empty"><span style="font-size:17px">＋</span><span>직접 고르기</span></div>
+    <div class="card empty"><span style="font-size:17px">＋</span><span>직접 고르기</span></div>
+    <div class="card empty"><span style="font-size:17px">＋</span><span>직접 고르기</span></div>
+    <div class="card empty"><span style="font-size:17px">＋</span><span>직접 고르기</span></div>
+  </div>
+</div>
+<div class="note">「직접 고르기」는 빈칸에만 있습니다. 위쪽 버튼은 루나 추천 하나뿐입니다.</div>
+
+<div class="lab">② 루나가 고르는 중</div>
+<div class="box" style="margin-bottom:6px">
+  <div class="grph">
+    <h3>관련 콘텐츠</h3>
+    <div class="grpr">
+      <button class="q">?</button>
+      <button class="b sm">부분 저장</button>
+    </div>
+  </div>
+  <p class="grpd">워크 상세 맨 아래에 이 순서대로 4개가 나옵니다.</p>
+
+  <div class="lrow">
+    <div class="lav">L</div>
+    <div class="ltxt"><span class="spin"></span>제목 · 한 줄 요약 · 사업분야 · 태그 · 본문을 읽고 있습니다</div>
+  </div>
+
+  <div class="g4">
+    <div class="card empty" style="opacity:.5"><span>…</span></div>
+    <div class="card empty" style="opacity:.5"><span>…</span></div>
+    <div class="card empty" style="opacity:.5"><span>…</span></div>
+    <div class="card empty" style="opacity:.5"><span>…</span></div>
+  </div>
+</div>
+<div class="note">누를 때 만듭니다. 미리 만들어 두지 않습니다. 워크 내용이 바뀌면 추천도 달라져야 하기 때문입니다.</div>
+
+<div class="lab">③ 추천을 받은 뒤</div>
+<div class="box" style="margin-bottom:6px">
+  <div class="grph">
+    <h3>관련 콘텐츠</h3>
+    <div class="grpr">
+      <button class="q">?</button>
+      <button class="b sm">부분 저장</button>
+    </div>
+  </div>
+  <p class="grpd">워크 상세 맨 아래에 이 순서대로 4개가 나옵니다.</p>
+
+  <div class="lrow">
+    <div class="lav">L</div>
+    <div class="ltxt">면세점 · 몰입형 미디어 · K-POP 을 기준으로 골랐습니다. 마음에 안 드는 것은 × 로 빼고 직접 고르셔도 됩니다.</div>
+    <button class="b">다시 골라줘</button>
+  </div>
+
+  <div class="g4">
+    <div class="card">
+      <div class="th"><span class="luna">루나</span><span class="ord">1</span></div>
+      <div class="bd">
+        <div class="kind">워크 · 미디어 콘텐츠</div>
+        <div class="t">Inspire Resort Media Show "Under the Blueland"</div>
+        <div class="acts"><div class="lr"><button>←</button><button>→</button></div><button>×</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="th"><span class="luna">루나</span><span class="ord">2</span></div>
+      <div class="bd">
+        <div class="kind">인사이트 · 비하인드</div>
+        <div class="t">고래가 헤엄치는 3분을 만들기까지</div>
+        <div class="acts"><div class="lr"><button>←</button><button>→</button></div><button>×</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="th"><span class="luna">루나</span><span class="ord">3</span></div>
+      <div class="bd">
+        <div class="kind">워크 · 미디어 아키텍처</div>
+        <div class="t">Trendy·Youth Town Media Architecture</div>
+        <div class="acts"><div class="lr"><button>←</button><button>→</button></div><button>×</button></div>
+      </div>
+    </div>
+    <div class="card empty"><span style="font-size:17px">＋</span><span>직접 고르기</span></div>
+  </div>
+</div>
+<div class="note">
+  루나가 고른 것에 「루나」 표가 붙습니다. 왼쪽 아래 숫자가 화면에 나오는 순서입니다.<br>
+  하나를 빼면 그 자리는 비고, 「직접 고르기」로 바뀝니다. 자동으로 채우지 않습니다.
+</div>
+
+<div class="lab">④ 물음표를 누르면</div>
+<div class="box" style="margin-bottom:6px;background:#f8fafc">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
+    <b style="font-size:13px">관련 콘텐츠</b>
+    <button class="xb">×</button>
+  </div>
+  <dl style="display:grid;grid-template-columns:44px 1fr;gap:3px 10px;font-size:12.5px;color:var(--ink2);line-height:1.7">
+    <dt style="font-weight:600;color:var(--ink)">쓰임</dt>
+    <dd>워크 상세 맨 아래 「Related Articles」 자리. 카드 제목은 연결한 콘텐츠의 제목을 그대로 가져옵니다</dd>
+    <dt style="font-weight:600;color:var(--ink)">기준</dt>
+    <dd>4개. 워크 · 인사이트 · 정적 페이지를 섞어 넣을 수 있습니다. 제목이 국문 12자 · 영문 14자를 넘으면 두 줄이 되고, 더 길면 잘립니다</dd>
+    <dt style="font-weight:600;color:var(--ink)">주의</dt>
+    <dd>같은 사업분야만 넣지 마세요. 인사이트를 하나 이상 섞으면 읽을거리가 생겨 체류 시간이 늘어납니다</dd>
+    <dt style="font-weight:600;color:var(--ink)">비면</dt>
+    <dd>상세 하단에서 갈 곳이 없어 그 페이지가 막다른 길이 됩니다</dd>
+  </dl>
+</div>
+<div class="note">설명 다섯 줄을 화면에서 빼고 여기로 옮깁니다.</div>
+
+<div class="lab">⑤ 「직접 고르기」를 누르면</div>
+<div style="min-height:330px;background:rgba(15,23,42,.45);border-radius:12px;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div class="mw">
+    <div class="mwh"><b>콘텐츠 고르기</b><button class="xb">×</button></div>
+    <div class="seg">
+      <button class="on">전체</button>
+      <button>워크</button>
+      <button>인사이트</button>
+      <button>페이지</button>
+    </div>
+    <input type="text" placeholder="제목으로 찾기">
+    <div class="lst">
+      <div class="li">
+        <div class="th"></div>
+        <div class="m"><div class="t">Inspire Resort Media Show "Under the Blueland"</div><div class="s">워크 · 미디어 콘텐츠 · 2023</div></div>
+        <span class="on">✓</span>
+      </div>
+      <div class="li">
+        <div class="th"></div>
+        <div class="m"><div class="t">고래가 헤엄치는 3분을 만들기까지</div><div class="s">인사이트 · 비하인드 · 2026. 8. 20</div></div>
+        <span class="on">✓</span>
+      </div>
+      <div class="li">
+        <div class="th"></div>
+        <div class="m"><div class="t">Trendy·Youth Town Media Architecture</div><div class="s">워크 · 미디어 아키텍처 · 2022</div></div>
+      </div>
+      <div class="li">
+        <div class="th"></div>
+        <div class="m"><div class="t">우리가 다투는 지점</div><div class="s">인사이트 · 인터뷰 · 2026. 8. 14</div></div>
+      </div>
+      <div class="li">
+        <div class="th"></div>
+        <div class="m"><div class="t">Expertise</div><div class="s">페이지</div></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px">
+      <span style="font-size:11px;color:var(--ink3)">2 / 4 골랐습니다</span>
+      <div style="display:flex;gap:7px"><button class="b">취소</button><button class="b acc">넣기</button></div>
+    </div>
+  </div>
+</div>
+<div class="note">
+  공개된 것만 나옵니다. 이미 고른 것에는 ✓ 가 붙고, 다시 누르면 빠집니다.<br>
+  4개를 다 채우면 더 고를 수 없습니다.
+</div>
+
+</div>
+</body>
+</html>

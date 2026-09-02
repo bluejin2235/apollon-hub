@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>워크 편집 · 상단/하단 버튼 바 — 목업</title>
+<style>
+:root{--ink:#0f172a;--ink2:#475569;--ink3:#94a3b8;--line:#e2e8f0;--bg:#f8fafc;
+--req:#dc2626;--warn:#b45309;--ok:#15803d;--acc:#4f46e5;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;padding:24px}
+.page{max-width:980px;margin:0 auto}
+.lab{font-size:12px;color:var(--ink2);margin-bottom:8px}
+.note{font-size:11px;color:var(--ink3);margin:6px 0 24px;line-height:1.7}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px}
+
+/* 상단 */
+.hd{padding:16px 18px;margin-bottom:24px}
+.crumb{font-size:11px;color:var(--ink3);margin-bottom:5px}
+.hdrow{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.hdl{display:flex;align-items:center;gap:9px;min-width:0}
+.title{font-size:19px;font-weight:600}
+.badge{font-size:11px;padding:2px 9px;border-radius:20px;white-space:nowrap}
+.badge.pub{background:#dcfce7;color:var(--ok)}
+.badge.draft{background:#eef2f7;color:var(--ink2)}
+.badge.hid{background:#fef3c7;color:var(--warn)}
+.saved{font-size:11px;color:var(--ink3);margin-top:4px}
+
+/* 버튼 */
+button.b{font:inherit;font-size:13px;padding:6px 13px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer;white-space:nowrap}
+button.b:hover{background:#f8fafc}
+button.b.acc{border-color:#c7d2fe;color:var(--acc)}
+button.b.off{opacity:.4;cursor:default}
+button.b.chk{display:inline-flex;align-items:center;gap:6px}
+button.b.chk.red{border-color:#fecaca;color:var(--req)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dot.g{background:var(--ok)}.dot.y{background:var(--warn)}.dot.r{background:var(--req)}
+
+/* 하단 */
+.ft{padding:14px 18px 16px}
+.ftrow{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ftr{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chks{border-top:1px solid var(--line);margin-top:14px;padding-top:4px}
+.ci{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-top:1px solid #f1f5f9}
+.ci:first-child{border-top:0}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap}
+.tag.must{background:#fee2e2;color:var(--req)}
+.tag.rec{background:#fef3c7;color:var(--warn)}
+.cim{min-width:0;flex:1}
+.cit{font-size:13px}
+.cid{font-size:11px;color:var(--ink3);margin-top:2px}
+.go{font:inherit;font-size:11px;padding:4px 9px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer;flex-shrink:0}
+
+/* 목록 메뉴 */
+.menu{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px 0;width:186px;font-size:13px}
+.menu div{padding:8px 16px}
+.menu .sep{border-top:1px solid var(--line);margin:4px 0;padding:0}
+.menu .hid{color:var(--warn)}
+.side{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.handle{display:flex;justify-content:center;margin-bottom:-1px;position:relative;z-index:1}
+.handle button{font:inherit;font-size:11px;padding:3px 14px 4px;border:1px solid var(--line);border-bottom:0;background:#fff;border-radius:8px 8px 0 0;color:var(--ink3);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.handle button:hover{color:var(--ink2)}
+.memo{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 13px;font-size:12px;color:#92400e;line-height:1.7;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="memo">
+  <b>버튼 배치를 정리합니다.</b><br>
+  상단 — 제목 오른쪽 끝에 미리보기 · 전체 저장<br>
+  하단 왼쪽 — 미리보기 / 하단 오른쪽 — 전체 저장 · 점검 · 공개<br>
+  점검 버튼에는 「점검」과 색 점만.<br>
+  <b>점검 목록은 접혀 있습니다.</b> 「점검」을 누르면 버튼 바 위로 펼쳐지고, 가운데 손잡이로 다시 접습니다.<br>
+  <b>감추기는 편집 화면에서 빼고 목록의 ··· 메뉴에만 둡니다.</b>
+</div>
+
+<div class="lab">상단</div>
+<div class="box hd">
+  <div class="crumb">워크 › 프로젝트 목록 › 편집</div>
+  <div class="hdrow">
+    <div class="hdl">
+      <span class="title">&ldquo;Star Avenue Renewal&rdquo; - Lotte Duty Free</span>
+      <span class="badge pub">공개</span>
+    </div>
+    <div class="ftr">
+      <button class="b">미리보기 ↗</button>
+      <button class="b">전체 저장</button>
+    </div>
+  </div>
+  <div class="saved">마지막 저장 2026. 9. 2 오후 5:49</div>
+</div>
+
+<div class="lab">하단 — 평소 · 접힌 상태</div>
+<div class="box ft">
+  <div class="ftrow">
+    <button class="b">미리보기 ↗</button>
+    <div class="ftr">
+      <button class="b off">전체 저장</button>
+      <button class="b chk red"><span class="dot r"></span>점검</button>
+      <button class="b off">공개</button>
+    </div>
+  </div>
+</div>
+<div class="note">평소에는 버튼 한 줄만 보입니다. 화면을 가리지 않습니다.<br>필수가 남아 있으면 「공개」가 눌리지 않고 점검 버튼이 빨간 테두리가 됩니다.</div>
+
+<div class="lab">「점검」을 누르면 — 버튼 바 위로 펼쳐짐</div>
+<div class="box" style="padding:0;overflow:hidden">
+  <div class="chks" style="border-top:0;margin:0;padding:4px 18px 0">
+    <div class="ci">
+      <span class="tag must">필수</span>
+      <div class="cim">
+        <div class="cit">본문 이미지에 대체 텍스트가 없습니다</div>
+        <div class="cid">본문 · 3번째 블록 · 이미지 2장</div>
+      </div>
+      <button class="go">가기</button>
+    </div>
+    <div class="ci">
+      <span class="tag rec">권장</span>
+      <div class="cim">
+        <div class="cit">관련 워크가 연결되지 않았습니다</div>
+        <div class="cid">연결 · 상세 하단에서 갈 곳이 없습니다</div>
+      </div>
+      <button class="go">가기</button>
+    </div>
+    <div class="ci">
+      <span class="tag rec">권장</span>
+      <div class="cim">
+        <div class="cit">태그가 없습니다</div>
+        <div class="cid">기본정보 · 목록 필터에서 찾을 수 없습니다</div>
+      </div>
+      <button class="go">가기</button>
+    </div>
+  </div>
+  <div class="handle" style="margin:8px 0 0"><button>▾ 접기</button></div>
+  <div class="ft" style="border-top:1px solid var(--line);padding-top:14px">
+    <div class="ftrow">
+      <button class="b">미리보기 ↗</button>
+      <div class="ftr">
+        <button class="b off">전체 저장</button>
+        <button class="b chk red"><span class="dot r"></span>점검</button>
+        <button class="b off">공개</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">목록이 버튼 바 위로 올라옵니다. 버튼은 늘 같은 자리에 있습니다.<br>가운데 손잡이나 「점검」을 다시 누르면 접힙니다.
+
+<div class="lab">하단 — 노랑 · 권장만 남음 · 저장할 것이 있음</div>
+<div class="box ft">
+  <div class="ftrow">
+    <button class="b">미리보기 ↗</button>
+    <div class="ftr">
+      <button class="b acc">전체 저장</button>
+      <button class="b chk"><span class="dot y"></span>점검</button>
+      <button class="b">공개</button>
+    </div>
+  </div>
+</div>
+<div class="note">권장만 남으면 공개할 수 있습니다. 노란 점입니다.<br>고친 것이 있으면 「전체 저장」이 강조색이 됩니다.</div>
+
+<div class="lab">하단 — 초록 · 빠진 것 없음</div>
+<div class="box ft">
+  <div class="ftrow">
+    <button class="b">미리보기 ↗</button>
+    <div class="ftr">
+      <button class="b off">전체 저장</button>
+      <button class="b chk"><span class="dot g"></span>점검</button>
+      <button class="b acc">공개</button>
+    </div>
+  </div>
+</div>
+<div class="note">빠진 것이 없으면 아래 목록이 아예 없습니다. 「공개」가 강조색이 됩니다.</div>
+
+<div class="lab">하단 — 감춤</div>
+<div class="box ft">
+  <div class="ftrow">
+    <button class="b">미리보기 ↗</button>
+    <div class="ftr">
+      <button class="b off">전체 저장</button>
+      <button class="b chk"><span class="dot g"></span>점검</button>
+      <button class="b acc">다시 공개</button>
+    </div>
+  </div>
+</div>
+<div class="note">감춘 워크는 상단 배지가 「감춤」이 되고, 「공개」가 「다시 공개」로 바뀝니다.</div>
+
+<div class="lab">감추기는 목록의 ··· 메뉴에만</div>
+<div class="side">
+  <div class="menu">
+    <div>편집</div>
+    <div>미리보기</div>
+    <div>복제</div>
+    <div class="sep"></div>
+    <div class="hid">감추기</div>
+  </div>
+  <div class="note" style="margin:0;flex:1;min-width:220px">
+    편집 화면에서 감추기를 뺍니다. 고치는 중에 누를 일이 없습니다.<br>
+    목록에서 여러 건을 정리할 때 쓰는 기능입니다.<br>
+    감춘 워크는 목록에서 흐리게 보이고, 같은 메뉴에서 「다시 공개」로 돌립니다.<br>
+    삭제는 없습니다.
+  </div>
+</div>
+
+</div>
+</body>
+</html>
