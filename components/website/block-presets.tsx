@@ -5,6 +5,7 @@ export const IMAGE_PRESETS = [
   "offset",
   "offset-reverse",
   "gallery-auto",
+  "stack",
   "carousel",
   "compare"
 ] as const;
@@ -59,6 +60,7 @@ export const PRESET_LABEL: Record<string, string> = {
   offset: "가로 + 세로",
   "offset-reverse": "세로 + 가로",
   "gallery-auto": "자동 배치 갤러리",
+  stack: "위아래 두 장",
   carousel: "가로 스크롤",
   compare: "전후 비교",
   "image-text": "이미지 + 글 나란히",
@@ -82,6 +84,7 @@ export const PRESET_DESCRIPTION: Record<string, string> = {
     "왼쪽에 세로 사진, 오른쪽에 가로 사진. 오른쪽 사진이 높이를 정하고 왼쪽은 그 높이에 맞춰 잘립니다.",
   compare: "두 장을 겹쳐 전후를 비교합니다.",
   "gallery-auto": "여러 장을 자동 배치합니다.",
+  stack: "가로 이미지를 위아래로 붙여 하나로 보이게 합니다",
   carousel: "가로로 넘겨 보는 스크롤 갤러리입니다.",
   "image-text": "이미지와 글을 나란히 둡니다.",
   "text-image": "글을 두고 큰 이미지를 옆에 둡니다.",
@@ -111,7 +114,7 @@ export function imageLimitForPreset(preset: string): number | null {
   if (preset === "triple") {
     return 3;
   }
-  if (preset === "gallery-auto" || preset === "carousel") {
+  if (preset === "gallery-auto" || preset === "stack" || preset === "carousel") {
     return null;
   }
   return 0;
@@ -124,6 +127,14 @@ export function hasImages(preset: string): boolean {
 
 export function hasBody(preset: string): boolean {
   return (TEXT_PRESETS as readonly string[]).includes(preset);
+}
+
+export function isVideoPreset(preset: string): boolean {
+  return (VIDEO_PRESETS as readonly string[]).includes(preset);
+}
+
+export function isEmbedPreset(preset: string): boolean {
+  return preset === "embed";
 }
 
 export function textColumnCount(preset: string): number {
@@ -209,6 +220,13 @@ function DiagramInner({ preset }: { preset: string }) {
           <div className={`flex-[1.8] ${box}`} />
           <div className={`flex-[0.9] ${box}`} />
           <div className={`flex-[1.3] ${box}`} />
+        </div>
+      );
+    case "stack":
+      return (
+        <div className="flex h-full w-full flex-col gap-0.5">
+          <div className={`h-[46%] w-full ${box}`} />
+          <div className={`flex-1 w-full ${box}`} />
         </div>
       );
     case "carousel":

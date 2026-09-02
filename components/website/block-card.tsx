@@ -21,6 +21,8 @@ import {
   hasBody,
   hasImages,
   imageLimitForPreset,
+  isEmbedPreset,
+  isVideoPreset,
   PRESET_LABEL,
   textColumnCount
 } from "@/components/website/block-presets";
@@ -125,8 +127,12 @@ export function BlockCard({
   );
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
-  const [videoKind, setVideoKind] = useState(
-    block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed")
+  const [videoKind, setVideoKind] = useState(() =>
+    isVideoPreset(block.preset)
+      ? block.video_kind === "loop"
+        ? "hosted"
+        : (block.video_kind ?? "embed")
+      : "embed"
   );
   const [videoUrl, setVideoUrl] = useState(block.video_url ?? "");
   const [videoPoster, setVideoPoster] = useState(block.video_poster ?? "");
@@ -150,7 +156,13 @@ export function BlockCard({
     } else {
       setBody(asLoc(block.body));
     }
-    setVideoKind(block.video_kind === "loop" ? "hosted" : (block.video_kind ?? "embed"));
+    setVideoKind(
+      isVideoPreset(block.preset)
+        ? block.video_kind === "loop"
+          ? "hosted"
+          : (block.video_kind ?? "embed")
+        : "embed"
+    );
     setVideoUrl(block.video_url ?? "");
     setVideoPoster(block.video_poster ?? "");
     setVideoAlt(asLoc(block.video_alt));
@@ -184,16 +196,8 @@ export function BlockCard({
 
   function buildFullPatch(): Record<string, unknown> {
     const patch: Record<string, unknown> = {
-      video_kind: videoKind === "hosted" && block.preset.startsWith("video-loop") ? "loop" : videoKind,
-      video_url: videoUrl || null,
-      video_poster: videoPoster || null,
-      video_alt: videoAlt,
       caption,
       caption_visible: captionVisible,
-      embed_provider: embedProvider,
-      embed_url: embedUrl || null,
-      embed_title: embedTitle,
-      embed_poster: embedPoster || null,
       gallery_row_height: rowHeight,
       text_side: textSide,
       show_meta: showMeta
@@ -201,8 +205,23 @@ export function BlockCard({
 
     if (columnCount > 0) {
       patch.body = { columns };
-    } else {
+    } else if (hasBody(block.preset)) {
       patch.body = body;
+    }
+
+    if (isVideoPreset(block.preset)) {
+      patch.video_kind =
+        videoKind === "hosted" && block.preset.startsWith("video-loop") ? "loop" : videoKind;
+      patch.video_url = videoUrl || null;
+      patch.video_poster = videoPoster || null;
+      patch.video_alt = videoAlt;
+    }
+
+    if (isEmbedPreset(block.preset)) {
+      patch.embed_provider = embedProvider;
+      patch.embed_url = embedUrl || null;
+      patch.embed_title = embedTitle;
+      patch.embed_poster = embedPoster || null;
     }
 
     return patch;
@@ -556,18 +575,23 @@ export function BlockCard({
               poster={videoPoster}
               alt={videoAlt}
               uploadRoot={uploadRoot}
+              workId={workId}
               blockId={block.id}
               siteUrl={siteUrl}
               onKind={(v) => {
                 setVideoKind(v);
                 setVideoUrl("");
+                if (v === "hosted") return;
                 void flush({ video_kind: v, video_url: null });
               }}
               onUrl={(v) => {
                 setVideoUrl(v);
                 schedule({ video_url: v, video_kind: videoKind });
               }}
-              onUrlBlur={() => void flush({ video_url: videoUrl, video_kind: videoKind })}
+              onUrlBlur={() => {
+                if (videoKind === "hosted" && !videoUrl.trim()) return;
+                void flush({ video_url: videoUrl, video_kind: videoKind });
+              }}
               onUrlCommit={(v) => {
                 setVideoUrl(v);
                 void flush({ video_url: v || null, video_kind: "hosted" });
@@ -767,6 +791,13 @@ function ImagesEditor({
             <b className="font-semibold text-slate-600">{formatFullBodyImageHint()}</b>
             <Sep />
             세로·정사각·가로 모두 올릴 수 있습니다.
+          </>
+        ) : preset === "stack" ? (
+          <>
+            <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
+            <Sep />
+            가로 이미지를 위에서 아래로 붙입니다. <b className="font-semibold text-slate-600">2장 이상</b>이어야
+            화면에 나옵니다.
           </>
         ) : (
           <>
@@ -1021,6 +1052,7 @@ function VideoFields({
   poster,
   alt,
   uploadRoot,
+  workId,
   blockId,
   siteUrl,
   onKind,
@@ -1041,6 +1073,7 @@ function VideoFields({
   poster: string;
   alt: Loc;
   uploadRoot: string;
+  workId: string;
   blockId: string;
   siteUrl: string;
   onKind: (v: string) => void;
@@ -1229,6 +1262,7 @@ function VideoFields({
             bucket="works"
             folder={`${uploadRoot}/blocks/${blockId}`}
             accept="video"
+            workId={workId}
             multiple={false}
             siteUrl={siteUrl}
             value={url || null}

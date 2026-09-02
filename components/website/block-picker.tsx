@@ -37,10 +37,6 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
     } else if (hasBody(preset)) {
       body.body = { ko: "", en: "" };
     }
-    if (preset === "video-full" || preset === "video-text") {
-      body.video_kind = "embed";
-      body.video_url = "https://www.youtube.com/watch?v=";
-    }
     if (preset === "embed") {
       body.embed_provider = "youtube";
       body.embed_url = "https://www.youtube.com/watch?v=";
