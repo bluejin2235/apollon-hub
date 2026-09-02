@@ -220,7 +220,8 @@ export function parseInsightDetail(value: unknown): InsightDetail | null {
           target_type: asString(r.target_type),
           target_work_id: typeof r.target_work_id === "string" ? r.target_work_id : null,
           target_insight_id: typeof r.target_insight_id === "string" ? r.target_insight_id : null,
-          target_page_key: typeof r.target_page_key === "string" ? r.target_page_key : null
+          target_page_key: typeof r.target_page_key === "string" ? r.target_page_key : null,
+          picked_by: r.picked_by === "luna" ? "luna" : "human"
         };
       })
       .filter((v): v is WorkRelated => v !== null),

@@ -532,6 +532,8 @@ export type SearchHit = {
   key_image: string | null;
   category: string | null;
   status: string;
+  year?: string | null;
+  published_at?: string | null;
 };
 
 export function getTags(): Promise<ApiResult<{ items: WebsiteTagItem[] }>> {
@@ -684,9 +686,68 @@ export function reorderRelated(workId: string, order: OrderItem[]): Promise<ApiR
 export function searchContent(
   q: string,
   type: "work" | "insight" | "page",
-  limit = 20
+  limit = 20,
+  opts?: { published?: boolean }
 ): Promise<ApiResult<SearchHit[]>> {
-  return websiteFetch<SearchHit[]>(`search${queryString({ q: q || undefined, type, limit })}`);
+  return websiteFetch<SearchHit[]>(
+    `search${queryString({
+      q: q || undefined,
+      type,
+      limit,
+      published: opts?.published ? "1" : undefined
+    })}`
+  );
+}
+
+export type RelatedRecommendPick = SearchHit & {
+  type: "work" | "insight";
+};
+
+export type RelatedRecommendResult = {
+  picks: RelatedRecommendPick[];
+  reason: string;
+};
+
+export async function recommendRelated(
+  workId: string
+): Promise<ApiResult<RelatedRecommendResult>> {
+  const token = await accessToken();
+  if (!token) {
+    return { ok: false, error: "unauthorized", status: 401 };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+
+  try {
+    const res = await fetch("/api/website/luna/related-recommend", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ workId }),
+      signal: controller.signal
+    });
+    const body = (await res.json().catch(() => null)) as {
+      data?: RelatedRecommendResult;
+      error?: string;
+    } | null;
+    const picks = body?.data?.picks;
+    if (!res.ok || !Array.isArray(picks) || picks.length !== 4 || !body?.data?.reason) {
+      return {
+        ok: false,
+        error: body?.error ?? "luna_failed",
+        status: res.status
+      };
+    }
+    return { ok: true, data: body.data, status: res.status };
+  } catch {
+    return { ok: false, error: "network_error", status: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function setInterview(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {

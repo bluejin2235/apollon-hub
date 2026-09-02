@@ -96,6 +96,7 @@ export type WorkRelated = {
   target_work_id: string | null;
   target_insight_id: string | null;
   target_page_key: string | null;
+  picked_by: "human" | "luna";
 };
 
 export type WorkInterview = {
@@ -513,7 +514,8 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           target_type: asString(r.target_type),
           target_work_id: typeof r.target_work_id === "string" ? r.target_work_id : null,
           target_insight_id: typeof r.target_insight_id === "string" ? r.target_insight_id : null,
-          target_page_key: typeof r.target_page_key === "string" ? r.target_page_key : null
+          target_page_key: typeof r.target_page_key === "string" ? r.target_page_key : null,
+          picked_by: r.picked_by === "luna" ? "luna" : "human"
         };
       })
       .filter((v): v is WorkRelated => v !== null),
@@ -540,8 +542,8 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           missing_key_alt: asBool(check.missing_key_alt),
           no_key_image: asBool(check.no_key_image),
           key_image_size_unknown: asBool(check.key_image_size_unknown),
-          key_image_not_16_9: asBool(check.key_image_not_16_9),
-          not_16_9: asBool(check.not_16_9),
+          key_image_not_16_9: false,
+          not_16_9: false,
           key_image_too_small: asBool(check.key_image_too_small),
           body_image_too_small: asBool(check.body_image_too_small),
           empty_blocks: asBool(check.empty_blocks),
