@@ -11,6 +11,7 @@ type Props = {
   firstPublish: boolean;
   note: string;
   noteLoading: boolean;
+  checkSkipWarning?: boolean;
   onNoteChange: (value: string) => void;
   onRegenerate: () => void;
   onClose: () => void;
@@ -25,6 +26,7 @@ export function PublishModal({
   firstPublish,
   note,
   noteLoading,
+  checkSkipWarning = false,
   onNoteChange,
   onRegenerate,
   onClose,
@@ -55,6 +57,9 @@ export function PublishModal({
               ? "처음 공개합니다. 사이트에 올라갈 내용을 확인하세요."
               : "바뀐 내용을 사이트에 반영합니다."}
           </p>
+          {checkSkipWarning ? (
+            <p className="mt-2 text-sm text-amber-700">점검을 통과하지 못한 상태로 공개합니다</p>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">

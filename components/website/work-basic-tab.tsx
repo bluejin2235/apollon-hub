@@ -168,7 +168,7 @@ function useFoldPartialSave(workId: string, onReload: () => Promise<void>) {
         return false;
       }
       setState("saved");
-      window.setTimeout(() => setState("idle"), 2000);
+      window.setTimeout(() => setState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       await onReload();
       return true;
     },
@@ -628,11 +628,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             <span className={screenDone >= 5 ? "cnt" : "cnt warn"}>
               {screenDone} / 5
             </span>
-            <PartialSaveBtn
-              state={screenPartial.state}
-              disabled={screenPartial.state !== "dirty"}
-              onClick={() => void saveScreen()}
-            />
+            <PartialSaveBtn state={screenPartial.state} onClick={() => void saveScreen()} />
           </div>
         </div>
         <p className="grpd">방문자가 사이트에서 실제로 보는 값입니다.</p>
@@ -849,11 +845,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <h3>이미지와 영상</h3>
           <div className="grpr">
             <span className={mediaDone >= 3 ? "cnt" : "cnt warn"}>{mediaDone} / 3</span>
-            <PartialSaveBtn
-              state={mediaPartial.state}
-              disabled={mediaPartial.state !== "dirty"}
-              onClick={() => void saveMedia()}
-            />
+            <PartialSaveBtn state={mediaPartial.state} onClick={() => void saveMedia()} />
           </div>
         </div>
         <p className="grpd">
@@ -1124,11 +1116,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <h3>검색과 AI 가 읽는 것</h3>
           <div className="grpr">
             <span className={searchDone >= 3 ? "cnt" : "cnt warn"}>{searchDone} / 3</span>
-            <PartialSaveBtn
-              state={searchPartial.state}
-              disabled={searchPartial.state !== "dirty"}
-              onClick={() => void saveSearch()}
-            />
+            <PartialSaveBtn state={searchPartial.state} onClick={() => void saveSearch()} />
           </div>
         </div>
         <p className="grpd">화면에는 안 보이지만 구글과 AI 가 읽어갑니다. 비면 검색에서 잡히지 않습니다.</p>

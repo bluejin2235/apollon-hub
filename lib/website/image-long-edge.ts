@@ -6,10 +6,21 @@ export function imageLongEdgeRejectMessage(width: number, height: number) {
   return `긴 변이 1600 이상이어야 합니다. 지금 ${width}×${height} 입니다`;
 }
 
+export function isGifImageSrc(src: string | null | undefined): boolean {
+  if (!src) return false;
+  return /\.gif(?:$|[?#])/i.test(src);
+}
+
+export function isGifMime(mime: string | null | undefined): boolean {
+  return mime === "image/gif";
+}
+
 export function isLongEdgeTooSmall(
   width: number | null | undefined,
-  height: number | null | undefined
+  height: number | null | undefined,
+  opts?: { mime?: string | null; src?: string | null }
 ) {
+  if (isGifMime(opts?.mime) || isGifImageSrc(opts?.src)) return false;
   if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
     return false;
   }

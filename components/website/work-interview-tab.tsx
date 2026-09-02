@@ -243,7 +243,7 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
       return;
     }
     setSaveState("saved");
-    window.setTimeout(() => setSaveState("idle"), 2000);
+    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
     await onReload();
   }
 
@@ -273,7 +273,6 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
           </label>
           <PartialSaveBtn
             state={saveState}
-            disabled={saveState !== "dirty"}
             onClick={() => void savePartial()}
           />
         </div>

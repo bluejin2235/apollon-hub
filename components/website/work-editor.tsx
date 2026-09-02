@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getMeta, getWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
-import { fallbackChangeNote, firstPublishNote } from "@/lib/website/publish";
+import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { WorkSiteVisibility } from "@/lib/website/types";
 import {
   WORK_TITLE_EN_MAX
@@ -25,6 +25,7 @@ import {
   type WorkDetail
 } from "@/lib/website/work-detail";
 import { WorkPublishCheckList, buildWorkCheckItems } from "@/components/website/publish-check-panel";
+import { buildVideoBlockCheckItems, findVideoBlockGaps } from "@/lib/website/video-block-check";
 import { PublishModal } from "@/components/website/publish-modal";
 import type { PartialSaveState } from "@/components/website/partial-save-btn";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
@@ -110,6 +111,7 @@ function problemCount(
   let n = PROBLEM_FLAGS.filter((flag) => flag !== "no_card_image" && check[flag]).length;
   const hasCard = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
   if (!hasCard) n += 1;
+  if (work) n += findVideoBlockGaps(work).length;
   return n;
 }
 
@@ -229,11 +231,13 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     problemCount(check, work, draft) === 0 &&
     limitIssues.length === 0 &&
     !(work && interviewBlocksPublish(work));
+  const skipCheck = skipPublishCheck();
+  const allowPublish = canPublish || skipCheck;
   const visibility = work?.site_visibility ?? "draft";
   const hasCardImage = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
   const checkItems =
     work && check
-      ? buildWorkCheckItems(work, check, { hasCardImage })
+      ? [...buildWorkCheckItems(work, check, { hasCardImage }), ...buildVideoBlockCheckItems(work)]
       : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");
   const warnItems = checkItems.filter((item) => item.kind === "warn");
@@ -346,7 +350,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       await load();
       await refreshPublishPreview();
       setFullSaveState("saved");
-      window.setTimeout(() => setFullSaveState("idle"), 2000);
+      window.setTimeout(() => setFullSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       if (!opts?.silent) {
         showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
       }
@@ -476,7 +480,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           <button
             type="button"
             className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
-            disabled={!saveDirty || saving}
+            disabled={saving}
             onClick={() => void saveAll()}
           >
             전체 저장
@@ -580,7 +584,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
               <button
                 type="button"
                 className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
-                disabled={!saveDirty || saving}
+                disabled={saving}
                 onClick={() => void saveAll()}
               >
                 전체 저장
@@ -622,9 +626,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
                   type="button"
                   className={barBtnClass({
                     accent: publishAccent,
-                    off: !canPublish
+                    off: !allowPublish
                   })}
-                  disabled={!canPublish || saving}
+                  disabled={!allowPublish || saving}
                   onClick={() => void openPublishModal()}
                 >
                   공개
@@ -632,6 +636,11 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
               ) : null}
             </div>
           </div>
+          {skipCheck ? (
+            <p className="mt-2 text-[11px] text-amber-700">
+              개발 중 · 점검을 건너뛰고 공개할 수 있습니다
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -643,6 +652,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         firstPublish={publishFirst}
         note={publishNote}
         noteLoading={publishNoteLoading}
+        checkSkipWarning={skipCheck && !canPublish}
         onNoteChange={setPublishNote}
         onClose={() => setPublishModalOpen(false)}
         onConfirm={() => void confirmPublish()}

@@ -25,7 +25,7 @@ function statusText(state: PartialSaveState): string | null {
   return null;
 }
 
-/** 버튼 문구는 고정. 상태는 옆 글자 */
+/** 버튼 문구는 고정. 상태는 옆 글자. 저장 중일 때만 비활성 */
 export function PartialSaveBtn({
   state,
   disabled,
@@ -42,7 +42,7 @@ export function PartialSaveBtn({
     <span className="inline-flex items-center gap-2">
       <button
         type="button"
-        disabled={disabled || state === "saving" || state === "idle" || state === "saved"}
+        disabled={disabled || state === "saving"}
         onClick={(event) => {
           event.stopPropagation();
           onClick();

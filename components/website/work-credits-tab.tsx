@@ -131,7 +131,7 @@ export function WorkCreditsTab({ work, onReload }: Props) {
     }
 
     setSaveState("saved");
-    window.setTimeout(() => setSaveState("idle"), 2000);
+    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
     await onReload();
   }
 
@@ -145,7 +145,6 @@ export function WorkCreditsTab({ work, onReload }: Props) {
           </button>
           <PartialSaveBtn
             state={saveState}
-            disabled={saveState !== "dirty"}
             onClick={() => void savePartial()}
           />
         </div>

@@ -10,7 +10,7 @@ import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-d
 export type CheckItemKind = "problem" | "warn";
 
 export type WorkCheckItem = {
-  flag: (typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number];
+  flag: (typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number] | `video:${string}`;
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
@@ -210,7 +210,7 @@ export function buildWorkCheckItems(
     if (item.flag === "no_card_image") return !hasCard;
     if (item.flag === "key_image_too_small") return keyTooSmall;
     if (item.flag === "body_image_too_small") return bodySmallCount > 0;
-    return Boolean(check[item.flag]);
+    return Boolean(check[item.flag as keyof CheckWorks]);
   });
 }
 

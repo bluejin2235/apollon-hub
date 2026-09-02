@@ -25,10 +25,11 @@ import {
   textColumnCount
 } from "@/components/website/block-presets";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn, AutoSaveLabel, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { PosterPicker } from "@/components/website/poster-picker";
 import { uploadFile } from "@/lib/website/api";
+import { describeBlockError } from "@/lib/website/block-error";
 import {
   sanitizeUploadFilename,
   uploadObjectPath
@@ -61,7 +62,6 @@ import {
 import { GuideTerm } from "@/components/website/ui/GuideTerm";
 import {
   formatBodyImageHint,
-  formatBodyImageRejectHint,
   formatDetailMovieHint,
   formatFullBodyImageHint,
   formatPortraitBodyImageHint,
@@ -208,9 +208,13 @@ export function BlockCard({
     return patch;
   }
 
+  function markDirty() {
+    setSave((cur) => (cur === "saving" ? cur : "dirty"));
+  }
+
   function queueChange(patch: Record<string, unknown>) {
     pendingRef.current = { ...pendingRef.current, ...patch };
-    setSave((cur) => (cur === "saving" ? cur : "dirty"));
+    markDirty();
   }
 
   function schedule(patch: Record<string, unknown>) {
@@ -224,7 +228,7 @@ export function BlockCard({
     const ok = await persist(patch);
     if (ok) {
       setSave("saved");
-      window.setTimeout(() => setSave("idle"), 2000);
+      window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       await onReload();
     }
   }
@@ -236,7 +240,7 @@ export function BlockCard({
       const res = await updateBlock(sectionId, block.id, patch);
       if (!res.ok) {
         setSave("error");
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        setError(describeBlockError(res.error, res.details));
         return false;
       }
       return true;
@@ -346,7 +350,6 @@ export function BlockCard({
         >
           <PartialSaveBtn
             state={save === "error" ? "dirty" : save}
-            disabled={save !== "dirty"}
             onClick={() => void savePartial()}
           />
           <button type="button" className="ico" disabled={!canMoveUp} onClick={() => onMove(-1)}>
@@ -430,7 +433,7 @@ export function BlockCard({
               />
               <Guide>
                 <GuideTerm anchorId="image-blocks">자동 배치 갤러리</GuideTerm>
-                는 여러 장을 한 번에 올리면 가로 길이를 보고 줄을 나눕니다. 가로 이미지는 16:9 입니다.
+                는 여러 장을 한 번에 올리면 가로 길이를 보고 줄을 나눕니다.
               </Guide>
             </div>
           ) : null}
@@ -471,6 +474,7 @@ export function BlockCard({
               limit={limit}
               onReload={onReload}
               onAdd={onAddMedia}
+              onDirty={markDirty}
               onError={setError}
             />
           ) : null}
@@ -719,6 +723,7 @@ function ImagesEditor({
   limit,
   onReload,
   onAdd,
+  onDirty,
   onError
 }: {
   images: BlockImage[];
@@ -730,6 +735,7 @@ function ImagesEditor({
   limit: number | null;
   onReload: () => Promise<void>;
   onAdd: (files: UploadedMedia[]) => void;
+  onDirty: () => void;
   onError: (msg: string | null) => void;
 }) {
 
@@ -754,7 +760,7 @@ function ImagesEditor({
           <>
             <b className="font-semibold text-slate-600">{formatPortraitBodyImageHint()}</b>
             <Sep />
-            세로 이미지입니다. 비율 검사는 하지 않습니다.
+            세로 이미지입니다.
           </>
         ) : preset === "full" ? (
           <>
@@ -765,13 +771,6 @@ function ImagesEditor({
         ) : (
           <>
             <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
-            <Sep />
-            {formatBodyImageRejectHint()}. 미리 잘라서 올려 주세요.
-            <br />
-            <b className="font-semibold text-slate-600">
-              「<GuideTerm anchorId="image-blocks">가로 + 세로</GuideTerm>」「세로 + 가로」의 큰 쪽은 가로 사진
-            </b>
-            이어야 합니다. 가로 사진은 16:9. 작은 쪽만 높이에 맞춰 잘릴 수 있습니다.
           </>
         )}
       </Guide>
@@ -788,10 +787,15 @@ function ImagesEditor({
             onDown={() => void move(i, 1)}
             onReload={onReload}
             onError={onError}
+            onDirty={onDirty}
           />
         ))}
       </div>
       <div className="mt-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <AutoSaveLabel />
+          <span className="text-[11px] text-slate-400">이미지는 올리는 즉시 저장됩니다</span>
+        </div>
         <ImageUploader
           bucket="works"
           folder={`${uploadRoot}/blocks/${blockId}`}
@@ -802,21 +806,7 @@ function ImagesEditor({
           disabled={atLimit}
           maxFiles={limit === null ? undefined : Math.max(0, limit - images.length)}
           existingNames={images.map((img) => fileName(img.src))}
-          guide={
-            atLimit
-              ? `이 배치는 ${limit}장까지`
-              : preset === "portrait-text"
-                ? formatPortraitBodyImageHint()
-                : preset === "full"
-                  ? formatFullBodyImageHint()
-                  : (
-                    <>
-                      {formatBodyImageHint()}
-                      <br />
-                      {formatBodyImageRejectHint()}
-                    </>
-                  )
-          }
+          guide={atLimit ? `이 배치는 ${limit}장까지` : undefined}
           onUploaded={onAdd}
         />
       </div>
@@ -844,7 +834,8 @@ function ImageRow({
   onUp,
   onDown,
   onReload,
-  onError
+  onError,
+  onDirty
 }: {
   image: BlockImage;
   blockId: string;
@@ -855,6 +846,7 @@ function ImageRow({
   onDown: () => void;
   onReload: () => Promise<void>;
   onError: (msg: string | null) => void;
+  onDirty: () => void;
 }) {
   const [alt, setAlt] = useState<Loc>(asLoc(image.alt));
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
@@ -879,6 +871,7 @@ function ImageRow({
   }, [image.id, debouncedCaption, textDup]);
 
   function schedule(patch: Record<string, unknown>) {
+    onDirty();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void persist(patch), 1500);
   }
@@ -1152,10 +1145,10 @@ function VideoFields({
     setPickError(null);
     try {
       const sec = Math.floor(at);
-      const filename = sanitizeUploadFilename(`${sourceStem}-poster-${sec}.jpg`);
+      const filename = sanitizeUploadFilename(`poster-${sec}.jpg`);
       const path = uploadObjectPath(`${uploadRoot}/poster`, filename);
       const file = new File([blob], filename, { type: "image/jpeg" });
-      const res = await uploadFile(file, "works", path);
+      const res = await uploadFile(file, "works", path, { fields: { role: "key" } });
       if (!res.ok) {
         setPickError(res.error || "올리지 못했습니다");
         return;

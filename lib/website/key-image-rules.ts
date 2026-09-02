@@ -24,9 +24,10 @@ export type KeyImageReject = { kind: "size"; width: number; height: number };
 
 export function validateKeyImageDimensions(
   width: number,
-  height: number
+  height: number,
+  opts?: { mime?: string | null; src?: string | null }
 ): KeyImageReject | null {
-  if (isLongEdgeTooSmall(width, height)) {
+  if (isLongEdgeTooSmall(width, height, opts)) {
     return { kind: "size", width, height };
   }
   return null;
@@ -38,8 +39,12 @@ export function keyImageRejectMessage(reject: KeyImageReject): string {
 
 export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = IMAGE_MIN_LONG_EDGE;
 
-export function insightKeyImageTooSmall(width: number, height: number): boolean {
-  return isLongEdgeTooSmall(width, height);
+export function insightKeyImageTooSmall(
+  width: number,
+  height: number,
+  opts?: { mime?: string | null; src?: string | null }
+): boolean {
+  return isLongEdgeTooSmall(width, height, opts);
 }
 
 export function insightKeyImageWarnMessage(width: number, height: number): string {

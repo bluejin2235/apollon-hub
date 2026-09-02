@@ -573,11 +573,12 @@ export function ImageUploader({
     }
   }
 
-  const formatGuide = (
-    <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-400">
-      {formatGuideText(accept)}
-    </p>
-  );
+  const formatGuide =
+    kind === "body" ? null : (
+      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-400">
+        {formatGuideText(accept)}
+      </p>
+    );
 
   const input = (
     <input

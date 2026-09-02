@@ -73,10 +73,6 @@ export async function prepareImageForUpload(
     return { ok: false, error: "이미지 크기를 읽지 못했습니다" };
   }
 
-  if (Math.max(size.width, size.height) < IMAGE_MIN_LONG_EDGE) {
-    return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height) };
-  }
-
   const from = { width: size.width, height: size.height, bytes: file.size };
 
   if (isGifFile(file)) {
@@ -91,6 +87,10 @@ export async function prepareImageForUpload(
         line: `${from.width}×${from.height} · ${formatBytes(from.bytes)}`
       }
     };
+  }
+
+  if (Math.max(size.width, size.height) < IMAGE_MIN_LONG_EDGE) {
+    return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height) };
   }
 
   const maxLong = kind === "key" ? KEY_STORE_LONG_EDGE : BODY_STORE_LONG_EDGE;

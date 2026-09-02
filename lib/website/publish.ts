@@ -33,3 +33,8 @@ export function fallbackChangeNote(changedFields: string[]): string {
 export function firstPublishNote() {
   return "처음 공개했습니다";
 }
+
+/** 개발 중 임시. 값이 정확히 true 일 때만 점검을 건너뜁니다. 오픈 전에 끄세요. */
+export function skipPublishCheck(): boolean {
+  return process.env.NEXT_PUBLIC_SKIP_PUBLISH_CHECK === "true";
+}

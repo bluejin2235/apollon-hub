@@ -9,9 +9,10 @@ export type BodyImageReject = { kind: "size"; width: number; height: number };
 export function validateBodyImageDimensions(
   _preset: string | undefined,
   width: number,
-  height: number
+  height: number,
+  opts?: { mime?: string | null; src?: string | null }
 ): BodyImageReject | null {
-  if (isLongEdgeTooSmall(width, height)) {
+  if (isLongEdgeTooSmall(width, height, opts)) {
     return { kind: "size", width, height };
   }
   return null;
