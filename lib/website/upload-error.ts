@@ -47,8 +47,31 @@ export function describeUploadError(
   if (error === "process_failed") {
     return { message: "이미지를 처리하지 못했습니다", advice };
   }
+  if (error === "signed_url_failed") {
+    return { message: detailMessage ?? "서명 주소를 만들지 못했습니다", advice };
+  }
+  if (error === "invalid_kind") {
+    return { message: "이 종류는 서명 업로드를 할 수 없습니다", advice };
+  }
+  if (error === "work_not_found") {
+    return { message: "워크를 찾지 못했습니다", advice };
+  }
   if (error === "upload_failed") {
-    return { message: "저장소에 올리지 못했습니다", advice };
+    return { message: detailMessage ?? "저장소에 올리지 못했습니다", advice };
+  }
+  if (error === "upload_body_read_failed") {
+    return {
+      message:
+        detailMessage ??
+        "업로드 본문을 읽지 못했습니다. 파일이 200MB를 넘거나 전송 중 끊겼을 수 있습니다",
+      advice
+    };
+  }
+  if (error === "upload_error" || error === "proxy_failed") {
+    return {
+      message: detailMessage ?? "서버에서 업로드를 처리하지 못했습니다",
+      advice
+    };
   }
   if (error === "unsupported_type") {
     return { message: typeof rec?.mime === "string" ? `이 형식은 올릴 수 없습니다 (${rec.mime})` : "이 형식은 올릴 수 없습니다", advice };
@@ -62,9 +85,10 @@ export function describeUploadError(
   if (error === "request_failed" || !error) {
     return {
       message:
-        status > 0
-          ? `요청이 서버에 도달하지 못했습니다 (${status})`
-          : "요청이 서버에 도달하지 못했습니다",
+        detailMessage ??
+        (status > 0
+          ? `서버 오류 (${status})`
+          : "업로드 요청에 실패했습니다"),
       advice
     };
   }
