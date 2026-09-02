@@ -7,6 +7,7 @@ import type {
   NewsletterList
 } from "@/lib/website/contact";
 import type { HomeCandidateList, HomeList, HomeSlot } from "@/lib/website/home";
+import type { StatsQueryResult } from "@/lib/website/stats";
 import type {
   ApiResult,
   InsightListData,
@@ -786,4 +787,12 @@ export function reorderHome(order: { id: string; sort: number }[]): Promise<ApiR
 
 export function listHomeCandidates(): Promise<ApiResult<HomeCandidateList>> {
   return websiteFetch<HomeCandidateList>("home/candidates");
+}
+
+export function getStats(params: {
+  from: string;
+  to: string;
+  kind?: string;
+}): Promise<ApiResult<StatsQueryResult>> {
+  return websiteFetch<StatsQueryResult>(`stats${queryString(params)}`);
 }

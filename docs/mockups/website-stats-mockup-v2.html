@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>홈페이지 통계 — 목업 v2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{--ink:#16171a;--ink2:#5b5f66;--ink3:#8b9098;--line:#e6e8ec;--bg:#f5f6f8;--card:#fff;
+--up:#0f7a56;--dn:#b93b3b;--wn:#8a5a06;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#9085e9;--r:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55}
+.wrap{display:flex;min-height:100vh}
+.side{width:190px;flex-shrink:0;background:#fff;border-right:1px solid var(--line);padding:20px 0;position:sticky;top:0;height:100vh}
+.side h1{font-size:13px;font-weight:600;padding:0 20px 14px;color:var(--ink2)}
+.nav{display:block;padding:9px 20px;font-size:14px;color:var(--ink2);text-decoration:none;border-left:2px solid transparent;cursor:pointer}
+.nav.on{color:var(--ink);font-weight:600;border-left-color:var(--ink);background:#f4f5f7}
+.navsub{font-size:11px;color:var(--ink3);padding:0 20px 8px;margin-top:14px}
+.main{flex:1;padding:0 28px 60px;max-width:1240px}
+
+.bar{position:sticky;top:0;background:var(--bg);padding:18px 0 12px;z-index:5;border-bottom:1px solid var(--line);margin-bottom:20px}
+.bar .row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.seg button{font:inherit;font-size:12.5px;padding:6px 12px;border:0;background:#fff;color:var(--ink2);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--s3);display:inline-block;margin-right:6px;animation:p 2s infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+.livebox{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2)}
+.livebox b{font-size:19px;font-weight:600;color:var(--ink)}
+
+h2.pt{font-size:21px;font-weight:600;margin-bottom:4px}
+.lede{font-size:13px;color:var(--ink2);margin-bottom:18px;max-width:76ch}
+.sec{margin-bottom:26px}
+.sech{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+.sech h3{font-size:15.5px;font-weight:600}
+.stamp{font-size:11px;color:var(--ink3);background:#eaecf0;padding:3px 9px;border-radius:20px}
+.note{font-size:12px;color:var(--ink2);margin-bottom:10px;max-width:78ch}
+.foot{font-size:11.5px;color:var(--ink3);margin-top:8px;line-height:1.7}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px}
+.ct{font-size:12.5px;font-weight:600;color:var(--ink2);margin-bottom:10px}
+.grid{display:grid;gap:10px}
+.g5{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.kpi .lab{font-size:12px;color:var(--ink2);display:flex;gap:5px;align-items:center}
+.kpi .val{font-size:23px;font-weight:600;margin:2px 0 1px;letter-spacing:-.01em}
+.kpi .sub{font-size:11.5px;color:var(--ink3)}
+.spark{height:26px;margin-top:6px}
+.up{color:var(--up)}.dn{color:var(--dn)}.wn{color:var(--wn)}
+.q{border:0;background:#eaecf0;color:var(--ink3);width:15px;height:15px;border-radius:50%;font-size:10px;cursor:pointer;line-height:15px;padding:0}
+.luna{background:#fff;border:1px solid var(--line);border-left:3px solid var(--ink);border-radius:0 var(--r) var(--r) 0;padding:15px 19px;margin-bottom:14px}
+.luna .who{font-size:11.5px;color:var(--ink3);margin-bottom:7px}
+.luna p{font-size:15.5px;line-height:1.75}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;color:var(--ink3);font-weight:500;text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px;border-bottom:1px solid #f1f3f6;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.t2{font-size:11.5px;color:var(--ink3)}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;background:#eaecf0;color:var(--ink2);white-space:nowrap}
+.tag.g{background:#e4f3ed;color:var(--up)}.tag.r{background:#fbebea;color:var(--dn)}.tag.y{background:#fdf2e0;color:var(--wn)}
+.mini{height:5px;border-radius:3px;background:#eef0f3;overflow:hidden;min-width:60px}
+.mini i{display:block;height:100%;background:var(--s1)}
+.cb{position:relative;width:100%;height:200px}
+.cb.sm{height:150px}.cb.lg{height:250px}.cb.xl{height:300px}
+.sw{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:5px}
+.lg2{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--ink2);margin-bottom:9px}
+.screen{display:none}.screen.on{display:block}
+.panel{display:none;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 17px;margin-top:10px}
+.panel b{font-weight:600;display:inline-block;min-width:36px}
+.panel div{padding:3px 0;font-size:13px;color:var(--ink2)}
+.hm{display:grid;grid-template-columns:34px repeat(24,1fr);gap:2px;font-size:10px;color:var(--ink3)}
+.hm i{aspect-ratio:1;border-radius:2px;background:#eef0f3;display:block}
+.hm .lbl{display:flex;align-items:center}
+.fn{display:flex;align-items:flex-end;gap:5px;height:140px;margin:26px 0 30px}
+.fn>div{flex:1;background:var(--s1);border-radius:5px 5px 0 0;position:relative;opacity:.9}
+.fn span{position:absolute;bottom:calc(100% + 4px);left:0;right:0;text-align:center;font-size:12.5px;font-weight:600}
+.fn em{position:absolute;top:calc(100% + 5px);left:0;right:0;text-align:center;font-size:10.5px;color:var(--ink3);font-style:normal;line-height:1.35}
+.fn u{position:absolute;top:calc(100% + 34px);left:0;right:0;text-align:center;font-size:10.5px;color:var(--dn);text-decoration:none}
+.chip{font:inherit;font-size:12px;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:20px;color:var(--ink2);cursor:pointer;margin:0 4px 6px 0}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="side">
+  <h1>홈페이지 통계</h1>
+  <a class="nav on" data-s="s1">요약</a>
+  <a class="nav" data-s="s2">콘텐츠</a>
+  <a class="nav" data-s="s3">검색</a>
+  <div class="navsub">AI</div>
+  <a class="nav" data-s="s4">AI 노출</a>
+  <a class="nav" data-s="s5">AI 크롤러</a>
+  <div class="navsub">사람</div>
+  <a class="nav" data-s="s6">행동</a>
+</nav>
+
+<main class="main">
+<div class="bar">
+  <div class="row">
+    <div class="seg">
+      <button>오늘</button><button>7일</button><button class="on">30일</button>
+      <button>3개월</button><button>6개월</button><button>1년</button><button>직접 설정</button>
+    </div>
+    <div class="livebox"><span><span class="dot"></span>지금</span><b>3</b><span>Star Avenue · 홈 · Career</span></div>
+  </div>
+</div>
+
+<!-- ═══════════ 1 요약 ═══════════ -->
+<section class="screen on" id="s1">
+  <h2 class="pt">요약</h2>
+  <p class="lede">이번 기간에 무엇이 달라졌고 그래서 무엇을 할지 정하는 화면입니다.</p>
+
+  <div class="luna"><div class="who">루나가 읽은 이번 기간 · 8월 30일</div>
+  <p>AI를 통한 방문이 처음으로 검색을 넘었습니다. 대부분 「미디어파사드 시공」으로 들어와 스타애비뉴 한 장만 보고 나갔습니다. 워크는 잘 읽히는데 그다음으로 갈 길이 없습니다. 문의는 0건입니다.</p></div>
+
+  <div class="sec">
+    <div class="sech"><h3>이번 기간</h3><span class="stamp">방문 어제까지 · 검색 8월 28일까지</span></div>
+    <div class="grid g5">
+      <div class="kpi"><div class="lab">방문 <button class="q" data-k="visit">?</button></div><div class="val">248</div><div class="sub up">▲ 26%</div><div class="spark"><canvas id="k1"></canvas></div></div>
+      <div class="kpi"><div class="lab">검색 노출 <button class="q" data-k="imp">?</button></div><div class="val">3,412</div><div class="sub up">▲ 41%</div><div class="spark"><canvas id="k2"></canvas></div></div>
+      <div class="kpi"><div class="lab">AI 유입 <button class="q" data-k="ai">?</button></div><div class="val">62</div><div class="sub up">▲ 114%</div><div class="spark"><canvas id="k3"></canvas></div></div>
+      <div class="kpi"><div class="lab">이탈률 <button class="q" data-k="bounce">?</button></div><div class="val">71%</div><div class="sub dn">▲ 19%p</div><div class="spark"><canvas id="k4"></canvas></div></div>
+      <div class="kpi"><div class="lab">문의 <button class="q" data-k="lead">?</button></div><div class="val">0</div><div class="sub">—</div><div class="spark"><canvas id="k5"></canvas></div></div>
+    </div>
+    <div class="panel" id="panel"></div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">방문 추이 — 실선 이번 기간, 점선 지난 기간</div><div class="cb"><canvas id="c_trend"></canvas></div></div>
+      <div class="card"><div class="ct">경로별 비중</div><div class="cb"><canvas id="c_pie"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>어디로 들어왔나</h3></div>
+    <p class="note">경로마다 사람의 성격이 다릅니다. 수보다 머문 시간과 본 페이지 수를 같이 보세요.</p>
+    <div class="grid g2">
+      <div class="card"><div class="ct">경로별 일별 추이</div><div class="cb"><canvas id="c_src"></canvas></div></div>
+      <div class="card"><div class="ct">경로별 질 — 오른쪽 위일수록 좋음</div><div class="cb"><canvas id="c_qual"></canvas></div></div>
+    </div>
+    <p class="foot">AI로 들어온 사람이 가장 오래, 가장 깊이 봅니다. 수는 적어도 질이 높습니다.</p>
+  </div>
+
+  <div class="sec">
+    <div class="grid g3">
+      <div class="card"><div class="ct">국가</div><div class="cb sm"><canvas id="c_ctry"></canvas></div></div>
+      <div class="card"><div class="ct">기기</div><div class="cb sm"><canvas id="c_dev"></canvas></div></div>
+      <div class="card"><div class="ct">언어별 페이지</div><div class="cb sm"><canvas id="c_lang"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>어떤 말로 들어왔나</h3><span class="stamp">검색 8월 28일 · AI 8월 30일</span></div>
+    <div class="grid g2">
+      <div class="card"><div class="ct"><span class="sw" style="background:var(--s1)"></span>검색엔진 — 노출 대비 클릭</div><div class="cb"><canvas id="c_kw"></canvas></div>
+      <p class="foot">막대가 긴데 점이 왼쪽에 있으면 노출은 많고 클릭이 없는 것입니다.</p></div>
+      <div class="card"><div class="ct"><span class="sw" style="background:var(--s3)"></span>AI — 질문별 언급 (4개 AI 중)</div><div class="cb"><canvas id="c_aikw"></canvas></div>
+      <p class="foot">0으로 뜬 질문이 다음 글감입니다.</p></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>이번 기간 할 일</h3><span class="stamp">루나가 뽑음</span></div>
+    <div class="card"><table>
+      <tr><td style="width:60px"><span class="tag r">높음</span></td><td>Star Avenue 아래에 관련 워크가 없습니다<div class="t2">84명 중 71명이 여기서 나갔습니다. 78%까지 읽었으니 내용이 아니라 길의 문제입니다</div></td></tr>
+      <tr><td><span class="tag y">중간</span></td><td>「미디어아트 회사」 제목을 다시 쓸 때입니다<div class="t2">890번 노출됐는데 클릭 1건, 평균 순위 14.6위</div></td></tr>
+      <tr><td><span class="tag">낮음</span></td><td>Trendy Youth Town이 sitemap에 없습니다<div class="t2">올린 지 9일인데 크롤러가 한 번도 오지 않았습니다</div></td></tr>
+    </table></div>
+  </div>
+  <p class="foot">AI 유입은 실제보다 적게 잡힙니다. 유입처를 남기지 않는 방문이 35~70%입니다. 구글 AI 개요 클릭은 일반 검색에 섞입니다. 검색어는 일부가 가려집니다.</p>
+</section>
+
+<!-- ═══════════ 2 콘텐츠 ═══════════ -->
+<section class="screen" id="s2">
+  <h2 class="pt">콘텐츠</h2>
+  <p class="lede">사이트의 모든 페이지를 봅니다. 어디가 많이 읽히고, 어디로 들어와 어디로 가는지 봅니다.</p>
+
+  <div class="sec">
+    <div class="sech"><h3>페이지 종류별</h3><span class="stamp">어제까지</span></div>
+    <div class="grid g2">
+      <div class="card"><div class="ct">조회 비중</div><div class="cb"><canvas id="c_type"></canvas></div></div>
+      <div class="card"><div class="ct">종류별 추이</div><div class="cb"><canvas id="c_typetrend"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>모든 페이지</h3></div>
+    <div style="margin-bottom:8px">
+      <button class="chip on">전체</button><button class="chip">워크</button><button class="chip">인사이트</button>
+      <button class="chip">회사 소개</button><button class="chip">커리어</button><button class="chip">문의</button>
+      <button class="chip">국문</button><button class="chip">영문</button>
+    </div>
+    <div class="card"><div class="cb xl"><canvas id="c_pages"></canvas></div></div>
+    <div class="card" style="margin-top:10px"><table>
+      <tr><th>페이지</th><th>종류</th><th class="num">조회</th><th class="num">진입</th><th class="num">읽은 깊이</th><th class="num">이탈</th><th class="num">다음</th></tr>
+      <tr><td>Star Avenue Renewal<div class="t2">/works/star-avenue-renewal</div></td><td class="t2">워크 상세</td><td class="num">84</td><td class="num">62</td><td class="num up">78%</td><td class="num dn">85%</td><td class="num dn">0</td></tr>
+      <tr><td>홈<div class="t2">/</div></td><td class="t2">홈</td><td class="num">61</td><td class="num">44</td><td class="num">41%</td><td class="num">51%</td><td class="num">30</td></tr>
+      <tr><td>Inspire Resort Media Show<div class="t2">/works/inspire-resort</div></td><td class="t2">워크 상세</td><td class="num">41</td><td class="num">18</td><td class="num">54%</td><td class="num">61%</td><td class="num">3</td></tr>
+      <tr><td>고래가 헤엄치는 3분<div class="t2">/insight/interview-inspire</div></td><td class="t2">인사이트 글</td><td class="num">33</td><td class="num">21</td><td class="num up">91%</td><td class="num">42%</td><td class="num up">11</td></tr>
+      <tr><td>Career<div class="t2">/career</div></td><td class="t2">커리어</td><td class="num">30</td><td class="num">14</td><td class="num up">88%</td><td class="num">64%</td><td class="num">6</td></tr>
+      <tr><td>인재풀 등록<div class="t2">/career/talent-pool</div></td><td class="t2">커리어 하위</td><td class="num">11</td><td class="num">1</td><td class="num">72%</td><td class="num">45%</td><td class="num">2</td></tr>
+      <tr><td>Works 목록<div class="t2">/works</div></td><td class="t2">목록</td><td class="num">58</td><td class="num">9</td><td class="num">36%</td><td class="num">22%</td><td class="num up">44</td></tr>
+      <tr><td>Expertise<div class="t2">/expertise</div></td><td class="t2">회사 소개</td><td class="num">24</td><td class="num">5</td><td class="num">67%</td><td class="num">58%</td><td class="num">8</td></tr>
+      <tr><td>About<div class="t2">/about</div></td><td class="t2">회사 소개</td><td class="num">22</td><td class="num">7</td><td class="num">73%</td><td class="num">49%</td><td class="num">9</td></tr>
+      <tr><td>Let's Talk<div class="t2">/contact</div></td><td class="t2">문의</td><td class="num">14</td><td class="num">2</td><td class="num">81%</td><td class="num dn">100%</td><td class="num dn">0</td></tr>
+      <tr><td>Trendy Youth Town<div class="t2">/works/trendy-youth-town</div></td><td class="t2">워크 상세</td><td class="num">18</td><td class="num">4</td><td class="num dn">33%</td><td class="num">72%</td><td class="num dn">0</td></tr>
+    </table></div>
+    <p class="foot"><b>진입</b> 이 페이지로 사이트를 시작한 사람 · <b>읽은 깊이</b> 어디까지 내려 읽었는지 · <b>다음</b> 다른 페이지로 넘어간 수</p>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>어디로 들어와 어디로 가나</h3></div>
+    <p class="note">왼쪽이 유입 경로, 가운데가 처음 본 페이지, 오른쪽이 그다음입니다. 굵기가 사람 수입니다.</p>
+    <div class="card"><div id="flow" style="width:100%;overflow-x:auto"></div></div>
+    <p class="foot">홈으로만 들어오지 않습니다. 워크 상세로 바로 들어오는 사람이 가장 많습니다.</p>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">읽은 깊이 분포 — 어디까지 내려 읽었나</div><div class="cb"><canvas id="c_scroll"></canvas></div></div>
+      <div class="card"><div class="ct">진입 대비 이탈 — 크기가 조회수</div><div class="cb"><canvas id="c_bub"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>채워야 할 것</h3></div>
+    <p class="note">검색과 AI가 읽어가는 항목 중 비어 있는 것입니다.</p>
+    <div class="card"><div class="cb"><canvas id="c_fill"></canvas></div></div>
+  </div>
+</section>
+
+<!-- ═══════════ 3 검색 ═══════════ -->
+<section class="screen" id="s3">
+  <h2 class="pt">검색</h2>
+  <p class="lede">구글 검색에서 우리가 얼마나 보이는지 봅니다. 회사 이름 외의 검색어가 늘어야 새 사람이 옵니다.</p>
+
+  <div class="sec">
+    <div class="sech"><h3>전체</h3><span class="stamp">8월 28일까지 · 구글이 3일 늦게 줍니다</span></div>
+    <div class="grid g4">
+      <div class="kpi"><div class="lab">노출</div><div class="val">3,412</div><div class="sub up">▲ 41%</div></div>
+      <div class="kpi"><div class="lab">클릭</div><div class="val">128</div><div class="sub up">▲ 22%</div></div>
+      <div class="kpi"><div class="lab">클릭률</div><div class="val">3.8%</div><div class="sub">보통 2~5%</div></div>
+      <div class="kpi"><div class="lab">평균 순위</div><div class="val">8.2</div><div class="sub">1쪽은 10위</div></div>
+    </div>
+    <div class="card" style="margin-top:10px"><div class="ct">노출과 클릭 — 노출만 늘고 클릭이 안 늘면 제목 문제</div><div class="cb"><canvas id="c_gsc"></canvas></div></div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">순위 분포 — 몇 위에 몇 개가 있나</div><div class="cb"><canvas id="c_rank"></canvas></div></div>
+      <div class="card"><div class="ct">색인 상태</div><div class="cb"><canvas id="c_idx"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>검색어</h3></div>
+    <p class="note">가로축이 평균 순위, 세로축이 노출입니다. 왼쪽 위가 좋고, 오른쪽 위가 기회입니다.</p>
+    <div class="card"><div class="cb lg"><canvas id="c_kwmap"></canvas></div></div>
+    <div class="card" style="margin-top:10px"><table>
+      <tr><th>검색어</th><th>들어온 페이지</th><th class="num">노출</th><th class="num">클릭</th><th class="num">클릭률</th><th class="num">순위</th><th></th></tr>
+      <tr><td>미디어파사드 시공</td><td class="t2">Star Avenue</td><td class="num">1,240</td><td class="num">34</td><td class="num">2.7%</td><td class="num">8.2</td><td></td></tr>
+      <tr><td>미디어아트 회사</td><td class="t2">홈</td><td class="num">890</td><td class="num">1</td><td class="num dn">0.1%</td><td class="num">14.6</td><td><span class="tag r">제목 손볼 것</span></td></tr>
+      <tr><td>면세점 미디어아트</td><td class="t2">Star Avenue</td><td class="num">412</td><td class="num">19</td><td class="num">4.6%</td><td class="num">4.1</td><td></td></tr>
+      <tr><td>랜드마크 미디어 연출</td><td class="t2">홈</td><td class="num">308</td><td class="num">2</td><td class="num dn">0.6%</td><td class="num">18.4</td><td><span class="tag y">2쪽 밖</span></td></tr>
+      <tr><td>아폴론이머시브웍스</td><td class="t2">홈</td><td class="num">204</td><td class="num">61</td><td class="num up">29.9%</td><td class="num">1.2</td><td></td></tr>
+    </table></div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">회사 이름 대 일반 검색어</div><div class="cb sm"><canvas id="c_brand"></canvas></div>
+      <p class="foot">회사 이름으로 들어오는 것은 이미 아는 사람입니다. 파란색이 늘어야 새 사람이 옵니다.</p></div>
+      <div class="card"><div class="ct">국문 · 영문</div><div class="cb sm"><canvas id="c_gsclang"></canvas></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 4 AI 노출 ═══════════ -->
+<section class="screen" id="s4">
+  <h2 class="pt">AI 노출</h2>
+  <p class="lede">AI에 질문을 던져 아폴론이 답변에 나오는지 셉니다. AI 회사가 이 데이터를 주지 않아 직접 물어보는 방법뿐입니다.</p>
+
+  <div class="sec">
+    <div class="sech"><h3>이번 주</h3><span class="stamp">8월 30일 새벽 측정 · 주 1회</span></div>
+    <div class="grid g4">
+      <div class="kpi"><div class="lab">등록 질문</div><div class="val">42</div><div class="sub">4개 AI × 42</div></div>
+      <div class="kpi"><div class="lab">언급된 질문</div><div class="val">18</div><div class="sub up">▲ 4 · 43%</div></div>
+      <div class="kpi"><div class="lab">평균 순서</div><div class="val">2.4</div><div class="sub">답변에서 몇 번째</div></div>
+      <div class="kpi"><div class="lab">인용 페이지</div><div class="val">7</div><div class="sub">우리 페이지 중</div></div>
+    </div>
+    <div class="grid g2" style="margin-top:10px">
+      <div class="card"><div class="ct">주별 추이 — 흐름을 보세요</div><div class="cb"><canvas id="c_ai"></canvas></div></div>
+      <div class="card"><div class="ct">AI별 언급률</div><div class="cb"><canvas id="c_aibot"></canvas></div></div>
+    </div>
+    <p class="foot">AI 답변은 매번 조금씩 달라집니다. 한 번의 값보다 여러 주의 흐름을 보세요.</p>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">경쟁사 대비 언급 — 같은 질문에서</div><div class="cb"><canvas id="c_comp"></canvas></div></div>
+      <div class="card"><div class="ct">AI가 근거로 삼은 우리 페이지</div><div class="cb"><canvas id="c_cite"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>질문별 결과</h3></div>
+    <p class="note">칸이 진할수록 자주 언급됩니다. 흰 칸이 빈틈입니다.</p>
+    <div class="card"><table>
+      <tr><th>질문</th><th class="num">ChatGPT</th><th class="num">Claude</th><th class="num">Gemini</th><th class="num">Perplexity</th><th>대신 나온 곳</th></tr>
+      <tr><td>미디어파사드 잘하는 회사</td><td class="num up">2위</td><td class="num up">1위</td><td class="num up">3위</td><td class="num up">2위</td><td class="t2">—</td></tr>
+      <tr><td>인스파이어 오로라 제작사</td><td class="num up">1위</td><td class="num up">1위</td><td class="num">—</td><td class="num up">1위</td><td class="t2">—</td></tr>
+      <tr><td>리테일 미디어 연출 사례</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="t2">디스트릭트 · 이앤씨</td></tr>
+      <tr><td>공항 미디어아트 업체</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="t2">디스트릭트 · 자이언트스텝</td></tr>
+      <tr><td>미디어파사드 유지보수 비용</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="num dn">—</td><td class="t2">아무도 안 나옴</td></tr>
+    </table></div>
+    <p class="foot">「아무도 안 나옴」은 기회입니다. 경쟁사도 그 주제로 쓴 글이 없다는 뜻입니다.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>사실 확인</h3></div>
+    <p class="note">AI가 아폴론에 대해 틀린 말을 하는지 봅니다. 틀린 정보가 퍼지면 바로잡기 어렵습니다.</p>
+    <div class="card"><table>
+      <tr><td>Gemini가 설립연도를 2019년이라고 답함<div class="t2">실제 2015년 · 8월 30일 확인</div></td><td class="num"><span class="tag r">틀림</span></td></tr>
+      <tr><td>ChatGPT가 인스파이어를 다른 회사 작업으로 설명<div class="t2">8월 30일 확인</div></td><td class="num"><span class="tag r">틀림</span></td></tr>
+    </table></div>
+    <p class="foot">회사 정보(JSON-LD)와 About 본문을 명확히 쓰면 줄어듭니다.</p>
+  </div>
+</section>
+
+<!-- ═══════════ 5 AI 크롤러 ═══════════ -->
+<section class="screen" id="s5">
+  <h2 class="pt">AI 크롤러</h2>
+  <p class="lede">AI 회사의 수집 로봇이 다녀갔는지 봅니다. 로봇이 오지 않으면 아무리 잘 써도 인용될 수 없습니다. 인용의 앞 단계입니다.</p>
+
+  <div class="sec">
+    <div class="grid g4">
+      <div class="kpi"><div class="lab">로봇 방문</div><div class="val">784</div><div class="sub">사람의 3.2배</div></div>
+      <div class="kpi"><div class="lab">사람 방문</div><div class="val">248</div><div class="sub">—</div></div>
+      <div class="kpi"><div class="lab">평균 응답</div><div class="val">240ms</div><div class="sub">느리면 덜 읽어 감</div></div>
+      <div class="kpi"><div class="lab">크롤 안 된 글</div><div class="val">1</div><div class="sub dn">9일째</div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">로봇별 방문</div><div class="cb"><canvas id="c_bots"></canvas></div></div>
+      <div class="card"><div class="ct">로봇과 사람 — 일별</div><div class="cb"><canvas id="c_bot"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>글 올린 뒤 며칠 만에 왔나</h3></div>
+    <p class="note">짧을수록 좋습니다. 열흘이 넘으면 sitemap이나 링크 문제입니다.</p>
+    <div class="card"><div class="cb"><canvas id="c_lag"></canvas></div></div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>로봇 허용 상태</h3></div>
+    <div class="card"><table>
+      <tr><th>로봇</th><th>어느 회사</th><th class="num">방문</th><th>마지막</th><th></th></tr>
+      <tr><td>GPTBot</td><td class="t2">OpenAI</td><td class="num">312</td><td class="t2">어제</td><td><span class="tag g">허용</span></td></tr>
+      <tr><td>ClaudeBot</td><td class="t2">Anthropic</td><td class="num">198</td><td class="t2">어제</td><td><span class="tag g">허용</span></td></tr>
+      <tr><td>PerplexityBot</td><td class="t2">Perplexity</td><td class="num">144</td><td class="t2">2일 전</td><td><span class="tag g">허용</span></td></tr>
+      <tr><td>Google-Extended</td><td class="t2">Gemini 학습용</td><td class="num">89</td><td class="t2">3일 전</td><td><span class="tag g">허용</span></td></tr>
+      <tr><td>Bytespider</td><td class="t2">ByteDance</td><td class="num">41</td><td class="t2">어제</td><td><span class="tag">검토 필요</span></td></tr>
+    </table></div>
+    <p class="foot">robots.txt에서 로봇마다 허용·차단을 정할 수 있습니다. 막으면 그 AI는 우리를 인용할 수 없습니다. 서버 기록에서 추리는 값이라 로봇이 이름을 속이면 잘못 잡힙니다.</p>
+  </div>
+</section>
+
+<!-- ═══════════ 6 행동 ═══════════ -->
+<section class="screen" id="s6">
+  <h2 class="pt">행동</h2>
+  <p class="lede">들어온 사람이 무엇을 하는지 봅니다. 홈페이지의 목표는 오래 머물다 문의로 이어지는 것입니다.</p>
+
+  <div class="sec">
+    <div class="sech"><h3>문의까지 가는 길</h3><span class="stamp">어제까지</span></div>
+    <p class="note">단계마다 얼마나 빠져나가는지 봅니다. 가장 크게 줄어드는 곳이 손볼 자리입니다.</p>
+    <div class="card">
+      <div class="fn">
+        <div style="height:100%"><span>248</span><em>들어옴</em></div>
+        <div style="height:52%"><span>129</span><em>워크·인사이트<br>봄</em><u>−48%</u></div>
+        <div style="height:19%"><span>47</span><em>두 개 이상<br>봄</em><u>−64%</u></div>
+        <div style="height:7%"><span>14</span><em>Let's Talk<br>열람</em><u>−70%</u></div>
+        <div style="height:2%"><span>0</span><em>문의<br>보냄</em><u>−100%</u></div>
+      </div>
+      <p class="foot" style="margin-top:20px">첫 페이지에서 두 번째로 넘어가는 지점에서 가장 많이 빠집니다. 248명 중 119명이 한 장만 보고 나갔습니다.</p>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">머문 시간 분포</div><div class="cb"><canvas id="c_time"></canvas></div></div>
+      <div class="card"><div class="ct">본 페이지 수 분포</div><div class="cb"><canvas id="c_depth"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>언제 오나</h3></div>
+    <p class="note">진할수록 방문이 많은 시간입니다. 새 글을 올릴 시간을 정할 때 씁니다.</p>
+    <div class="card"><div id="heat" class="hm"></div></div>
+  </div>
+
+  <div class="sec">
+    <div class="grid g2">
+      <div class="card"><div class="ct">많이 나가는 페이지</div><div class="cb"><canvas id="c_exit"></canvas></div></div>
+      <div class="card"><div class="ct">신규와 재방문</div><div class="cb"><canvas id="c_ret"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sech"><h3>문의 · 뉴스레터 · 인재풀</h3><span class="stamp">실시간</span></div>
+    <div class="grid g3">
+      <div class="kpi"><div class="lab">프로젝트 문의</div><div class="val">0</div><div class="sub">이번 기간</div></div>
+      <div class="kpi"><div class="lab">뉴스레터 구독</div><div class="val">4</div><div class="sub up">▲ 2</div></div>
+      <div class="kpi"><div class="lab">인재풀 등록</div><div class="val">2</div><div class="sub">—</div></div>
+    </div>
+    <div class="card" style="margin-top:10px"><div class="ct">제출 추이</div><div class="cb sm"><canvas id="c_sub"></canvas></div></div>
+  </div>
+</section>
+
+</main></div>
+
+<script>
+const M='#8b9098',G='#eef0f3',C=['#2a78d6','#eb6834','#1baf7a','#eda100','#9085e9'];
+const D=['8/25','8/26','8/27','8/28','8/29','8/30','8/31'];
+const nolg={legend:{display:false}};
+const B={responsive:true,maintainAspectRatio:false,plugins:nolg,
+ scales:{x:{grid:{display:false},ticks:{color:M,font:{size:10.5}}},y:{grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}}}};
+const HB={responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:nolg,
+ scales:{x:{grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}},y:{grid:{display:false},ticks:{color:M,font:{size:11.5}}}}};
+const LG={legend:{position:'bottom',labels:{color:M,font:{size:11},boxWidth:9,boxHeight:9,usePointStyle:true,pointStyle:'rectRounded',padding:12}}};
+const L=(d,c,dash)=>({data:d,borderColor:c,backgroundColor:c,borderWidth:2,tension:.3,pointRadius:0,borderDash:dash||[]});
+const bar=(d,c,t)=>({data:d,backgroundColor:c||C[0],borderRadius:4,barThickness:t||18});
+const mk=(id,cfg)=>{try{const e=document.getElementById(id);if(e)new Chart(e,cfg)}catch(err){console.warn(id,err)}};
+document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>{
+ document.querySelectorAll('.nav').forEach(x=>x.classList.remove('on'));
+ document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));
+ n.classList.add('on');document.getElementById(n.dataset.s).classList.add('on');window.scrollTo(0,0);}));
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>{
+ b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
+document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{
+ b.parentNode.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
+const spark=(id,d,c)=>mk(id,{type:'line',data:{labels:d.map((_,i)=>i),datasets:[{data:d,borderColor:c,borderWidth:1.5,tension:.35,pointRadius:0,fill:true,backgroundColor:c+'18'}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:nolg,scales:{x:{display:false},y:{display:false}}}});
+
+spark('k1',[22,24,26,31,28,35,42],'#2a78d6');
+spark('k2',[380,410,520,610,480,540,472],'#2a78d6');
+spark('k3',[2,4,15,12,10,12,7],'#1baf7a');
+spark('k4',[52,55,61,66,68,70,71],'#b93b3b');
+spark('k5',[0,0,0,0,0,0,0],'#8b9098');
+
+mk('c_trend',{type:'line',data:{labels:D,datasets:[L([28,31,44,39,35,42,29],C[0]),L([22,24,26,23,27,25,20],M,[5,4])]},options:B});
+mk('c_pie',{type:'doughnut',data:{labels:['검색 79','직접 62','AI 62','SNS 45'],datasets:[{data:[79,62,62,45],backgroundColor:C,borderWidth:2,borderColor:'#fff'}]},
+ options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:LG}});
+mk('c_src',{type:'line',data:{labels:D,datasets:[L([14,13,12,11,10,11,8],C[0]),L([9,10,8,9,8,10,8],C[1]),L([2,4,15,12,10,12,7],C[2]),L([3,4,9,7,7,9,6],C[3])]},
+ options:{...B,plugins:{legend:{position:'bottom',labels:{color:M,font:{size:11},boxWidth:9,boxHeight:9,usePointStyle:true,pointStyle:'rectRounded',padding:12,generateLabels:()=>['검색','직접','AI','SNS'].map((t,i)=>({text:t,fillStyle:C[i],strokeStyle:C[i],lineWidth:0}))}}}}});
+mk('c_qual',{type:'bubble',data:{datasets:[
+ {label:'검색',data:[{x:100,y:2.1,r:16}],backgroundColor:C[0]+'cc'},
+ {label:'직접',data:[{x:55,y:1.3,r:14}],backgroundColor:C[1]+'cc'},
+ {label:'AI',data:[{x:130,y:3.4,r:14}],backgroundColor:C[2]+'cc'},
+ {label:'SNS',data:[{x:40,y:1.1,r:12}],backgroundColor:C[3]+'cc'}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:LG,
+  scales:{x:{title:{display:true,text:'머문 시간(초)',color:M,font:{size:10.5}},min:0,max:160,grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}},
+          y:{title:{display:true,text:'본 페이지 수',color:M,font:{size:10.5}},min:0,max:4,grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}}}}});
+mk('c_ctry',{type:'bar',data:{labels:['한국','미국','일본','대만','기타'],datasets:[bar([158,34,21,12,23],C[0],14)]},options:HB});
+mk('c_dev',{type:'doughnut',data:{labels:['데스크톱','모바일','태블릿'],datasets:[{data:[194,52,2],backgroundColor:[C[0],C[1],C[3]],borderWidth:2,borderColor:'#fff'}]},
+ options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:LG}});
+mk('c_lang',{type:'doughnut',data:{labels:['국문 68%','영문 32%'],datasets:[{data:[169,79],backgroundColor:[C[0],C[2]],borderWidth:2,borderColor:'#fff'}]},
+ options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:LG}});
+mk('c_kw',{type:'bar',data:{labels:['미디어파사드 시공','미디어아트 회사','면세점 미디어아트','랜드마크 미디어 연출','아폴론이머시브웍스'],
+ datasets:[{type:'bar',data:[1240,890,412,308,204],backgroundColor:'#cfd8e4',borderRadius:4,barThickness:15},
+           {type:'bar',data:[34,1,19,2,61],backgroundColor:C[0],borderRadius:4,barThickness:15}]},options:HB});
+mk('c_aikw',{type:'bar',data:{labels:['미디어파사드 잘하는 회사','인스파이어 오로라 제작사','몰입형 전시 기획 절차','리테일 미디어 연출 사례','공항 미디어아트 업체'],
+ datasets:[{data:[4,3,1,0.06,0.06],backgroundColor:[C[2],C[2],C[3],'#e3b3b1','#e3b3b1'],borderRadius:4,barThickness:15}]},
+ options:{...HB,scales:{...HB.scales,x:{...HB.scales.x,max:4}}}});
+
+/* 2 콘텐츠 */
+mk('c_type',{type:'doughnut',data:{labels:['워크 상세','목록','홈','인사이트','회사 소개','커리어','문의'],
+ datasets:[{data:[143,58,61,33,46,41,14],backgroundColor:[C[0],'#7aa9e3',C[1],C[2],C[3],C[4],'#c9ced6'],borderWidth:2,borderColor:'#fff'}]},
+ options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:LG}});
+mk('c_typetrend',{type:'line',data:{labels:D,datasets:[L([18,20,26,24,22,25,18],C[0]),L([6,7,5,6,5,7,4],C[2]),L([8,9,7,8,7,9,6],C[3])]},options:B});
+mk('c_pages',{type:'bar',data:{labels:['Star Avenue','홈','Works 목록','Inspire Resort','고래가 헤엄치는 3분','Career','Expertise','About','Trendy Youth Town','Let\'s Talk','인재풀 등록'],
+ datasets:[{data:[84,61,58,41,33,30,24,22,18,14,11],backgroundColor:[C[0],C[1],'#7aa9e3',C[0],C[2],C[4],C[3],C[3],C[0],'#c9ced6',C[4]],borderRadius:4,barThickness:15}]},options:HB});
+mk('c_scroll',{type:'bar',data:{labels:['25%','50%','75%','100%'],datasets:[
+ {label:'워크',data:[92,74,61,48],backgroundColor:C[0],borderRadius:3,barThickness:16},
+ {label:'인사이트',data:[96,91,88,79],backgroundColor:C[2],borderRadius:3,barThickness:16}]},options:{...B,plugins:LG}});
+mk('c_bub',{type:'bubble',data:{datasets:[
+ {label:'Star Avenue',data:[{x:62,y:85,r:20}],backgroundColor:C[0]+'cc'},
+ {label:'홈',data:[{x:44,y:51,r:16}],backgroundColor:C[1]+'cc'},
+ {label:'고래가 헤엄치는 3분',data:[{x:21,y:42,r:12}],backgroundColor:C[2]+'cc'},
+ {label:'Trendy Youth Town',data:[{x:4,y:72,r:9}],backgroundColor:C[3]+'cc'}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:LG,
+  scales:{x:{title:{display:true,text:'진입',color:M,font:{size:10.5}},min:0,max:75,grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}},
+          y:{title:{display:true,text:'이탈률(%)',color:M,font:{size:10.5}},min:30,max:95,grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}}}}});
+mk('c_fill',{type:'bar',data:{labels:['Star Avenue','Inspire Resort','Trendy Youth Town','고래가 헤엄치는 3분'],datasets:[
+ {label:'채워짐',data:[1,2,0,4],backgroundColor:C[2],borderRadius:3,barThickness:18,stack:'a'},
+ {label:'비어 있음',data:[3,2,4,0],backgroundColor:'#e3b3b1',borderRadius:3,barThickness:18,stack:'a'}]},
+ options:{...HB,plugins:LG,scales:{...HB.scales,x:{...HB.scales.x,stacked:true,max:4},y:{...HB.scales.y,stacked:true}}}});
+
+(()=>{const el=document.getElementById('flow');if(!el)return;
+ const A=[['검색',79],['AI',62],['직접',38],['SNS',28]];
+ const Bm=[['Star Avenue',70],['홈',76],['고래가 헤엄치는 3분',18],['Inspire',16],['Career',12],['인재풀',5]];
+ const Cn=[['나감',143],['Works 목록',52],['Inspire',11],['인재풀 등록',5]];
+ const F1=[[0,0,41],[1,0,29],[2,1,38],[0,1,22],[1,2,18],[3,1,16],[0,4,16],[3,4,12]];
+ const F2=[[0,0,71],[0,1,8],[1,1,44],[1,0,31],[2,3,11],[2,0,9],[3,0,24],[4,3,5],[4,0,8]];
+ const W=980,H=340,cw=118,x1=0,x2=(W-cw)/2,x3=W-cw,pad=7;
+ const col=(a,x)=>{const t=a.reduce((s,v)=>s+v[1],0),g=pad*(a.length-1),sc=(H-g)/t;let y=0;
+  return a.map(v=>{const h=Math.max(v[1]*sc,13),o={n:v[0],y,h,x};y+=h+pad;return o})};
+ const L1=col(A,x1),L2=col(Bm,x2),L3=col(Cn,x3);
+ const rib=(a,b,ya,yb,h,c)=>{const x0=a.x+cw,x9=b.x,m=(x0+x9)/2;
+  return '<path d="M'+x0+','+ya+' C'+m+','+ya+' '+m+','+yb+' '+x9+','+yb+' L'+x9+','+(yb+h)+' C'+m+','+(yb+h)+' '+m+','+(ya+h)+' '+x0+','+(ya+h)+' Z" fill="'+c+'" opacity=".42"/>'};
+ let s='',oa={},ob={},ob2={},oc={};
+ F1.forEach(([i,j,v])=>{const a=L1[i],b=L2[j],sc1=a.h/A[i][1],sc2=b.h/Bm[j][1];
+  const ya=a.y+(oa[i]||0),yb=b.y+(ob[j]||0),h=v*Math.min(sc1,sc2);
+  s+=rib(a,b,ya,yb,h,'#8fb6e0');oa[i]=(oa[i]||0)+h;ob[j]=(ob[j]||0)+h});
+ F2.forEach(([i,j,v])=>{const a=L2[i],b=L3[j],sc1=a.h/Bm[i][1],sc2=b.h/Cn[j][1];
+  const ya=a.y+(ob2[i]||0)+(ob[i]||0)*0,yb=b.y+(oc[j]||0),h=v*Math.min(sc1,sc2);
+  s+=rib(a,b,ya,yb,h,Cn[j][0]==='나감'?'#dcb2b0':'#8fd8c0');ob2[i]=(ob2[i]||0)+h;oc[j]=(oc[j]||0)+h});
+ const nd=(a,arr,anchor)=>a.map((o,i)=>'<rect x="'+o.x+'" y="'+o.y+'" width="'+cw+'" height="'+o.h+'" rx="3" fill="#2a3340" opacity=".82"/>'+
+  '<text x="'+(o.x+cw/2)+'" y="'+(o.y+o.h/2-1)+'" text-anchor="middle" font-size="11" fill="#fff">'+o.n+'</text>'+
+  '<text x="'+(o.x+cw/2)+'" y="'+(o.y+o.h/2+12)+'" text-anchor="middle" font-size="10" fill="#c8ced6">'+arr[i][1]+'</text>').join('');
+ el.innerHTML='<svg viewBox="-4 -22 '+(W+8)+' '+(H+30)+'" width="100%" style="min-width:760px;height:'+(H+52)+'px">'+
+  '<text x="'+(x1+cw/2)+'" y="-8" text-anchor="middle" font-size="11" fill="#8b9098">어디서 왔나</text>'+
+  '<text x="'+(x2+cw/2)+'" y="-8" text-anchor="middle" font-size="11" fill="#8b9098">처음 본 페이지</text>'+
+  '<text x="'+(x3+cw/2)+'" y="-8" text-anchor="middle" font-size="11" fill="#8b9098">그다음</text>'+
+  s+nd(L1,A)+nd(L2,Bm)+nd(L3,Cn)+'</svg>';})();
+
+/* 3 검색 */
+mk('c_gsc',{type:'bar',data:{labels:D,datasets:[
+ {type:'bar',data:[380,410,520,610,480,540,472],backgroundColor:'#cfd8e4',borderRadius:3,barThickness:20,yAxisID:'y'},
+ {type:'line',data:[12,14,22,26,18,20,16],borderColor:C[1],borderWidth:2,tension:.3,pointRadius:2,yAxisID:'y1'}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:LG,
+  scales:{x:{grid:{display:false},ticks:{color:M,font:{size:10.5}}},
+   y:{grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}},title:{display:true,text:'노출',color:M,font:{size:10}}},
+   y1:{position:'right',grid:{display:false},border:{display:false},ticks:{color:M,font:{size:10.5}},title:{display:true,text:'클릭',color:M,font:{size:10}}}}}});
+mk('c_rank',{type:'bar',data:{labels:['1~3위','4~10위','11~20위','21위 밖'],datasets:[bar([3,11,18,42],[C[2],C[0],C[3],'#c9ced6'],26)]},options:B});
+mk('c_idx',{type:'doughnut',data:{labels:['색인됨 71','크롤 후 대기 4','발견 안 됨 3','제외 1'],
+ datasets:[{data:[71,4,3,1],backgroundColor:[C[2],C[3],'#e3b3b1','#c9ced6'],borderWidth:2,borderColor:'#fff'}]},
+ options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:LG}});
+mk('c_kwmap',{type:'bubble',data:{datasets:[
+ {label:'미디어파사드 시공',data:[{x:8.2,y:1240,r:16}],backgroundColor:C[0]+'cc'},
+ {label:'미디어아트 회사',data:[{x:14.6,y:890,r:14}],backgroundColor:'#d9534f cc'.replace(' ','')},
+ {label:'면세점 미디어아트',data:[{x:4.1,y:412,r:11}],backgroundColor:C[2]+'cc'},
+ {label:'랜드마크 미디어 연출',data:[{x:18.4,y:308,r:10}],backgroundColor:C[3]+'cc'},
+ {label:'아폴론이머시브웍스',data:[{x:1.2,y:204,r:9}],backgroundColor:C[4]+'cc'}]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:LG,
+  scales:{x:{title:{display:true,text:'평균 순위 (왼쪽이 좋음)',color:M,font:{size:10.5}},min:0,max:22,grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}},
+          y:{title:{display:true,text:'노출',color:M,font:{size:10.5}},grid:{color:G},border:{display:false},ticks:{color:M,font:{size:10.5}}}}}});
+mk('c_brand',{type:'bar',data:{labels:['7월','8월'],datasets:[
+ {label:'회사 이름',data:[142,204],backgroundColor:'#c9ced6',borderRadius:3,barThickness:30,stack:'a'},
+ {label:'일반 검색어',data:[1280,3208],backgroundColor:C[0],borderRadius:3,barThickness:30,stack:'a'}]},
+ options:{...B,plugins:LG,scales:{...B.scales,x:{...B.scales.x,stacked:true},y:{...B.scales.y,stacked:true}}}});
+mk('c_gsclang',{type:'bar',data:{labels:['노출','클릭'],datasets:[
+ {label:'국문',data:[2890,118],backgroundColor:C[0],borderRadius:3,barThickness:26,stack:'a'},
+ {label:'영문',data:[522,10],backgroundColor:C[2],borderRadius:3,barThickness:26,stack:'a'}]},
+ options:{...HB,plugins:LG,scales:{...HB.scales,x:{...HB.scales.x,stacked:true,type:'logarithmic'},y:{...HB.scales.y,stacked:true}}}});
+
+/* 4 AI */
+mk('c_ai',{type:'line',data:{labels:['7/26','8/2','8/9','8/16','8/23','8/30'],datasets:[
+ {data:[6,8,9,12,14,18],borderColor:C[2],backgroundColor:C[2]+'20',borderWidth:2,tension:.3,pointRadius:3,fill:true}]},options:B});
+mk('c_aibot',{type:'bar',data:{labels:['ChatGPT','Perplexity','Claude','Gemini'],datasets:[bar([21,19,14,8],[C[2],C[2],C[0],'#e3b3b1'],16)]},
+ options:{...HB,scales:{...HB.scales,x:{...HB.scales.x,max:42}}}});
+mk('c_comp',{type:'bar',data:{labels:['디스트릭트','아폴론','자이언트스텝','닷밀','이앤씨'],datasets:[bar([31,18,14,9,6],['#c9ced6',C[2],'#c9ced6','#c9ced6','#c9ced6'],15)]},options:HB});
+mk('c_cite',{type:'bar',data:{labels:['Star Avenue','홈','고래가 헤엄치는 3분','About','Inspire Resort'],datasets:[bar([11,8,6,3,2],C[4],15)]},options:HB});
+
+/* 5 크롤러 */
+mk('c_bots',{type:'bar',data:{labels:['GPTBot','ClaudeBot','PerplexityBot','Google-Extended','Bytespider'],datasets:[bar([312,198,144,89,41],[C[0],C[2],C[4],C[3],'#c9ced6'],15)]},options:HB});
+mk('c_bot',{type:'line',data:{labels:D,datasets:[
+ {data:[38,42,51,66,58,71,44],borderColor:C[2],backgroundColor:C[2]+'18',borderWidth:2,tension:.3,pointRadius:0,fill:true},
+ L([28,31,44,39,35,42,29],C[0],[4,3])]},options:{...B,plugins:LG}});
+mk('c_lag',{type:'bar',data:{labels:['Star Avenue','고래가 헤엄치는 3분','Inspire Resort','우리가 다투는 지점','Trendy Youth Town'],
+ datasets:[bar([1,2,2,4,9],[C[2],C[2],C[2],C[3],'#d9534f'],15)]},options:{...HB,scales:{...HB.scales,x:{...HB.scales.x,title:{display:true,text:'며칠 만에 크롤됐나',color:M,font:{size:10.5}}}}}});
+
+/* 6 행동 */
+mk('c_time',{type:'bar',data:{labels:['10초 미만','10~30초','30초~1분','1~3분','3분 이상'],datasets:[bar([88,54,41,42,23],[ '#e3b3b1','#eecfae',C[0],C[0],C[2]],26)]},options:B});
+mk('c_depth',{type:'bar',data:{labels:['1쪽','2쪽','3쪽','4쪽','5쪽 이상'],datasets:[bar([119,58,37,22,12],['#e3b3b1',C[0],C[0],C[2],C[2]],26)]},options:B});
+mk('c_exit',{type:'bar',data:{labels:['Star Avenue','홈','Career','Inspire Resort','Let\'s Talk'],datasets:[bar([71,34,22,18,14],['#d9534f','#e3b3b1','#c9ced6','#c9ced6','#c9ced6'],15)]},options:HB});
+mk('c_ret',{type:'bar',data:{labels:D,datasets:[
+ {label:'신규',data:[24,26,38,33,29,36,25],backgroundColor:C[0],borderRadius:3,barThickness:16,stack:'a'},
+ {label:'재방문',data:[4,5,6,6,6,6,4],backgroundColor:C[2],borderRadius:3,barThickness:16,stack:'a'}]},
+ options:{...B,plugins:LG,scales:{...B.scales,x:{...B.scales.x,stacked:true},y:{...B.scales.y,stacked:true}}}});
+mk('c_sub',{type:'bar',data:{labels:['5월','6월','7월','8월'],datasets:[
+ {label:'문의',data:[2,1,3,0],backgroundColor:C[0],borderRadius:3,barThickness:20,stack:'a'},
+ {label:'뉴스레터',data:[1,3,2,4],backgroundColor:C[2],borderRadius:3,barThickness:20,stack:'a'},
+ {label:'인재풀',data:[0,1,1,2],backgroundColor:C[3],borderRadius:3,barThickness:20,stack:'a'}]},
+ options:{...B,plugins:LG,scales:{...B.scales,x:{...B.scales.x,stacked:true},y:{...B.scales.y,stacked:true}}}});
+
+/* heatmap */
+(()=>{const h=document.getElementById('heat');if(!h)return;
+ const days=['월','화','수','목','금','토','일'];
+ const v=[[1,0,0,0,1,0,1,2,5,9,12,14,11,13,15,14,12,9,7,6,5,4,3,2],
+          [0,1,0,0,0,1,2,3,6,11,14,16,13,15,17,15,11,8,6,5,4,3,2,1],
+          [1,0,1,0,0,1,2,4,7,12,15,18,14,16,18,16,13,9,7,6,4,3,2,1],
+          [0,0,0,1,0,1,3,4,6,10,13,15,12,14,16,14,11,8,6,4,3,3,2,1],
+          [1,1,0,0,0,2,2,3,5,9,11,13,10,12,13,11,9,7,5,4,4,3,2,2],
+          [2,1,1,0,0,0,1,1,2,4,6,7,6,7,8,7,6,5,5,4,4,3,3,2],
+          [2,1,1,1,0,0,1,1,2,3,5,6,5,6,7,6,5,4,4,4,3,3,2,2]];
+ let html='<div></div>';
+ for(let i=0;i<24;i++) html+='<div style="text-align:center;font-size:9px">'+(i%3===0?i:'')+'</div>';
+ v.forEach((row,d)=>{html+='<div class="lbl">'+days[d]+'</div>';
+   row.forEach(n=>{const a=Math.min(n/18,1);html+='<i style="background:rgba(42,120,214,'+(0.06+a*0.88)+')"></i>'})});
+ h.innerHTML=html;})();
+
+
+
+const H={
+ visit:['방문','<div><b>무엇</b> 사이트에 들어온 사람의 수입니다. 같은 사람이 여러 번 와도 하루 한 번으로 셉니다.</div><div><b>기준</b> 늘어나는 추세인지가 중요합니다.</div><div><b>할 일</b> 줄었다면 검색 순위와 색인 상태를 먼저 보세요.</div><div><b>한계</b> 광고 차단 프로그램을 쓰면 빠집니다.</div>'],
+ imp:['검색 노출','<div><b>무엇</b> 구글 검색 결과에 우리가 보인 횟수입니다. 눌리지 않아도 셉니다.</div><div><b>기준</b> 노출이 늘고 클릭이 안 늘면 제목이 안 걸리는 것입니다.</div><div><b>할 일</b> 검색 화면에서 클릭률이 낮은 검색어의 제목을 다시 쓰세요.</div><div><b>한계</b> 구글이 3일 늦게 줍니다.</div>'],
+ ai:['AI 유입','<div><b>무엇</b> ChatGPT·Gemini·Claude·Perplexity 답변을 통해 들어온 방문입니다.</div><div><b>기준</b> 아직 전체의 1% 안팎이 보통입니다. 다만 오래 머물고 여러 장을 봅니다.</div><div><b>할 일</b> AI 노출 화면의 빈틈 질문으로 글을 쓰면 늘어납니다.</div><div><b>한계</b> 유입처를 남기지 않는 방문이 35~70%라 적게 잡힙니다.</div>'],
+ bounce:['이탈률','<div><b>무엇</b> 들어와서 아무것도 누르지 않고 나간 비율입니다.</div><div><b>기준</b> 보통 40~60%. 70%를 넘으면 다음으로 갈 길이 없다는 뜻입니다.</div><div><b>할 일</b> 그 페이지에 관련 콘텐츠를 연결하면 내려갑니다.</div><div><b>한계</b> 한 장을 오래 읽고 나간 것도 이탈로 잡힙니다.</div>'],
+ lead:['문의','<div><b>무엇</b> Let\'s Talk 폼으로 실제 보내진 건수입니다.</div><div><b>기준</b> 이 사이트의 최종 목표입니다. 방문이 늘어도 0이면 길이 막힌 것입니다.</div><div><b>할 일</b> 행동 화면의 깔때기에서 어디서 끊기는지 보세요.</div><div><b>한계</b> 메일이나 전화로 오는 문의는 잡히지 않습니다.</div>']};
+const p=document.getElementById('panel');
+document.querySelectorAll('.q').forEach(b=>b.addEventListener('click',()=>{const d=H[b.dataset.k];if(!d)return;
+ p.innerHTML='<div style="font-weight:600;font-size:14px;margin-bottom:5px">'+d[0]+'</div>'+d[1];p.style.display='block';}));
+</script>
+</body>
+</html>
