@@ -84,8 +84,8 @@ export type SummaryKpi = {
 export function buildKpis(bundle: StatsBundle | null): SummaryKpi[] {
   const ga4 = pick(bundle, "daily", "ga4", "current");
   const ga4Prev = pick(bundle, "daily", "ga4", "previous");
-  const gsc = pick(bundle, "daily", "gsc", "current");
-  const gscPrev = pick(bundle, "daily", "gsc", "previous");
+  const gsc = pickRows(bundle, "daily", ["gsc", "gsc_http"], "current");
+  const gscPrev = pickRows(bundle, "daily", ["gsc", "gsc_http"], "previous");
 
   const aiNow = pick(bundle, "channel", "ga4", "current").filter((row) =>
     AI_CHANNEL.test(row.key ?? "")
@@ -299,9 +299,14 @@ export function buildLanguage(bundle: StatsBundle | null): StatsSlice[] {
   ];
 }
 
-/** 검색어 — 노출 많은 순 다섯 개 */
+/**
+ * 검색어 — 노출 많은 순 다섯 개.
+ *
+ * 검색어에는 날짜가 없다. 옛 CSV 가 기간 합계로만 줘서 기간으로 자를 수 없다.
+ * 그래서 current 가 아니라 overall 을 읽는다. 담은 기간은 검색 화면에 적혀 있다.
+ */
 export function buildKeywords(bundle: StatsBundle | null): StatsRow[] {
-  const rows = pick(bundle, "query", "gsc", "current");
+  const rows = pickRows(bundle, "query", ["gsc", "gsc_http"], "overall");
   const map = new Map<string, { impressions: number; clicks: number }>();
 
   for (const row of rows) {
@@ -317,4 +322,142 @@ export function buildKeywords(bundle: StatsBundle | null): StatsRow[] {
     .sort((a, b) => b[1].impressions - a[1].impressions)
     .slice(0, 5)
     .map(([name, value]) => ({ name, impressions: value.impressions, clicks: value.clicks }));
+}
+
+/* ─────────────────────── 루나 총평 · 할 일에 넘길 숫자 ─────────────────────── */
+
+/** 0~1 비율 → 사람이 읽는 백분율 숫자 (56 · 4.4) */
+function ratePct(rate: number | null, digits = 1): number | null {
+  if (rate == null || !Number.isFinite(rate)) return null;
+  const factor = 10 ** digits;
+  return Math.round(rate * 100 * factor) / factor;
+}
+
+/** 초 → 「1분 12초」. 루나에게 넘길 때만 쓴다 */
+function durationKo(seconds: number | null): string | null {
+  if (seconds == null || !Number.isFinite(seconds)) return null;
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes <= 0) return `${rest}초`;
+  if (rest === 0) return `${minutes}분`;
+  return `${minutes}분 ${rest}초`;
+}
+
+export type SummaryBriefFacts = {
+  from: string;
+  to: string;
+  visits: { current: number | null; previous: number | null };
+  impressions: { current: number | null; previous: number | null };
+  clicks: { current: number | null; previous: number | null };
+  /** 검색 클릭률 (%). 노출이 있을 때만 */
+  clickRate: { current: number | null; previous: number | null };
+  aiSessions: { current: number | null; previous: number | null };
+  /** 이탈률 (%). 소수 0.56 이 아니라 56 */
+  bounceRate: { current: number | null; previous: number | null };
+  /** 참여율 (%) */
+  engagementRate: { current: number | null; previous: number | null };
+  /** 평균 참여시간 — 「1분 12초」 문자열 */
+  avgEngagementTime: { current: string | null; previous: string | null };
+  leads: { current: number | null; previous: number | null };
+  channels: { name: string; sessions: number }[];
+  queries: { name: string; impressions: number; clicks: number; clickRate: number | null }[];
+  pages: { path: string; views: number }[];
+};
+
+/**
+ * 루나에게 넘길 숫자·이름만 뽑는다. 본문·긴 설명은 넣지 않는다.
+ * 비율은 백분율, 시간은 「분·초」 문자열. 기간에 값이 없으면 null.
+ */
+export function buildSummaryBriefFacts(
+  bundle: StatsBundle | null,
+  from: string,
+  to: string
+): SummaryBriefFacts | null {
+  if (!bundle) return null;
+
+  const ga4 = pick(bundle, "daily", "ga4", "current");
+  const ga4Prev = pick(bundle, "daily", "ga4", "previous");
+  const gsc = pickRows(bundle, "daily", ["gsc", "gsc_http"], "current");
+  const gscPrev = pickRows(bundle, "daily", ["gsc", "gsc_http"], "previous");
+
+  const visits = total(ga4, "users");
+  const impressions = total(gsc, "impressions");
+  if (visits == null && impressions == null) return null;
+
+  const aiNow = pick(bundle, "channel", "ga4", "current").filter((row) =>
+    AI_CHANNEL.test(row.key ?? "")
+  );
+  const aiPrev = pick(bundle, "channel", "ga4", "previous").filter((row) =>
+    AI_CHANNEL.test(row.key ?? "")
+  );
+  const leadNow = pick(bundle, "event", "ga4", "current").filter((row) => row.key === LEAD_EVENT);
+  const leadPrev = pick(bundle, "event", "ga4", "previous").filter((row) => row.key === LEAD_EVENT);
+
+  const engaged = weighted(ga4, "engagement_rate", "sessions");
+  const engagedPrev = weighted(ga4Prev, "engagement_rate", "sessions");
+  const clicksNow = total(gsc, "clicks");
+  const clicksPrev = total(gscPrev, "clicks");
+  const impressionsPrev = total(gscPrev, "impressions");
+
+  const channels = ranked(sumByKey(pick(bundle, "channel", "ga4", "current"), "sessions"))
+    .slice(0, 5)
+    .map((item) => ({ name: item.name, sessions: item.value }));
+
+  const queries = buildKeywords(bundle)
+    .slice(0, 5)
+    .map((row) => {
+      const imp = Number(row.impressions) || 0;
+      const clk = Number(row.clicks) || 0;
+      return {
+        name: String(row.name),
+        impressions: imp,
+        clicks: clk,
+        clickRate: imp > 0 ? ratePct(clk / imp) : null
+      };
+    });
+
+  const pages = ranked(sumByKey(pick(bundle, "page", "ga4", "current"), "views"))
+    .slice(0, 5)
+    .map((item) => ({ path: item.name, views: item.value }));
+
+  return {
+    from,
+    to,
+    visits: { current: visits, previous: total(ga4Prev, "users") },
+    impressions: { current: impressions, previous: impressionsPrev },
+    clicks: { current: clicksNow, previous: clicksPrev },
+    clickRate: {
+      current:
+        impressions != null && impressions > 0 && clicksNow != null
+          ? ratePct(clicksNow / impressions)
+          : null,
+      previous:
+        impressionsPrev != null && impressionsPrev > 0 && clicksPrev != null
+          ? ratePct(clicksPrev / impressionsPrev)
+          : null
+    },
+    aiSessions: { current: total(aiNow, "sessions"), previous: total(aiPrev, "sessions") },
+    bounceRate: {
+      current: engaged == null ? null : ratePct(1 - engaged),
+      previous: engagedPrev == null ? null : ratePct(1 - engagedPrev)
+    },
+    engagementRate: {
+      current: ratePct(engaged),
+      previous: ratePct(engagedPrev)
+    },
+    avgEngagementTime: {
+      current: durationKo(weighted(ga4, "avg_seconds", "sessions")),
+      previous: durationKo(weighted(ga4Prev, "avg_seconds", "sessions"))
+    },
+    leads: { current: total(leadNow, "events"), previous: total(leadPrev, "events") },
+    channels,
+    queries,
+    pages
+  };
+}
+
+/** 같은 기간·같은 숫자면 캐시 키를 같게 한다 */
+export function summaryBriefFingerprint(facts: SummaryBriefFacts): string {
+  return JSON.stringify(facts);
 }

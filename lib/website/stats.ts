@@ -8,7 +8,10 @@ export type MetricCompare = {
 export type StatsPoint = {
   source: string;
   kind: string;
+  /** 날짜 없는 합계 행은 빈 문자열이다 */
   date: string;
+  /** GA4 속성 ID. GSC·옛 합계는 null */
+  property_id?: string | null;
   key: string | null;
   key2: string | null;
   clicks: number | null;
@@ -23,6 +26,9 @@ export type StatsPoint = {
   avg_seconds: number | null;
   views: number | null;
   events: number | null;
+  /** 날짜 없는 합계 행이 담은 기간. 날짜가 있는 행은 null */
+  period_from: string | null;
+  period_to: string | null;
 };
 
 export type KeyCompare = {
@@ -39,18 +45,26 @@ export type KeyCompare = {
   position: MetricCompare;
 };
 
+/** 날짜 없는 합계가 담은 기간 */
+export type StatsPeriod = { from: string; to: string };
+
 export type StatsQueryResult = {
   from: string;
   to: string;
   prev_from: string;
   prev_to: string;
   kind: string;
+  /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];
+  /** 그 앞 같은 길이 기간의 일별 행 */
   previous: StatsPoint[];
-  /** 옛 사이트 집계 중 기간 안에 날짜가 있는 것 */
-  baseline: StatsPoint[];
-  /** 옛 사이트 집계 중 날짜가 없는 것 — 기간과 무관한 전체 합계다 */
-  baseline_overall: StatsPoint[];
+  /**
+   * date 가 NULL 인 합계 행. 기간과 무관하게 늘 들어온다.
+   * 옛 CSV 가 검색어·국가·기기·페이지를 기간 합계로만 줬기 때문이다.
+   */
+  overall: StatsPoint[];
+  /** overall 이 담은 기간. 화면이 「언제부터 언제까지의 합계」인지 밝힌다 */
+  overall_period: StatsPeriod | null;
   totals: {
     users: MetricCompare;
     new_users: MetricCompare;

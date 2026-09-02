@@ -20,6 +20,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -87,6 +88,12 @@ export type StatsScatterGroup = {
 
 export type StatsRow = Record<string, string | number | null>;
 
+/**
+ * 날짜 축에 긋는 세로선. 앞뒤가 다른 사이트라는 것을 알린다.
+ * x 는 data 안에 실제로 있는 가로축 값이어야 한다.
+ */
+export type StatsMark = { x: string; label: string };
+
 type Common = {
   /** 그래프 높이(px). 목업 기본 200 */
   height?: number;
@@ -95,6 +102,8 @@ type Common = {
   className?: string;
   /** 축·툴팁 숫자 표기 */
   format?: (value: number) => string;
+  /** 날짜 축 그래프에만. 없으면 그리지 않는다 */
+  mark?: StatsMark;
 };
 
 export type StatsChartProps = Common &
@@ -208,6 +217,31 @@ function legendNode(show: boolean | undefined, items: { value: string; color: st
   );
 }
 
+/**
+ * 오픈 시점 세로선. 왼쪽이 원페이지 시절, 오른쪽이 새 사이트다.
+ * mark 가 없으면(공개일이 안 정해졌거나 기간 밖이면) 아무것도 그리지 않는다.
+ */
+function markLine(mark: StatsMark | undefined, yAxisId?: string) {
+  if (!mark) return null;
+  return (
+    <ReferenceLine
+      x={mark.x}
+      yAxisId={yAxisId}
+      stroke={STATS_TEXT}
+      strokeDasharray="4 4"
+      strokeWidth={1}
+      ifOverflow="extendDomain"
+    >
+      <Label
+        value={mark.label}
+        position="insideTopLeft"
+        offset={6}
+        style={{ fontSize: 10, fill: STATS_TEXT }}
+      />
+    </ReferenceLine>
+  );
+}
+
 function seriesLegend(series: StatsSeries[]) {
   return series.map((item, index) => ({
     value: item.name ?? item.key,
@@ -298,6 +332,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, undefined, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
+        {markLine(props.mark)}
         {props.series.map((series, index) => (
           <Line
             key={series.key}
@@ -322,6 +357,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, props.max, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
+        {markLine(props.mark)}
         {props.series.map((series, index) => (
           <Bar
             key={series.key}
@@ -375,6 +411,7 @@ function chartBody(props: StatsChartProps) {
         </YAxis>
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend([...props.bars, ...props.lines]))}
+        {markLine(props.mark, "left")}
         {props.bars.map((series, index) => (
           <Bar
             key={series.key}

@@ -3,9 +3,9 @@
  * npx tsx scripts/verify-stats-search-ui.ts
  *
  * 보는 것
- *  1 옛 사이트 값이 실제로 그려지는가 (막대·선·거품·도넛의 개수)
- *  2 「옛 사이트」임이 화면에 밝혀져 있는가
- *  3 새 사이트 자리가 빈 상태로 나오는가
+ *  1 새/옛 사이트 구분이 사라졌는가
+ *  2 1년을 고르면 추이가 그려지는가
+ *  3 30일을 고르면 최근만 나오는가 (1년보다 점이 적다)
  *  4 기간을 바꾸면 다시 조회하는가
  */
 import { config } from "dotenv";
@@ -114,49 +114,35 @@ async function login(
  */
 const READ_SCREEN = `(() => {
   var text = function (el) { return (el && el.textContent ? el.textContent : "").trim(); };
-  var count = function (root, sel) { return root.querySelectorAll(sel).length; };
-
-  var sections = Array.prototype.map.call(
-    document.querySelectorAll(".ws-sec.ws-side"),
-    function (sec) {
-      return {
-        title: text(sec.querySelector("h3")),
-        legacy: sec.classList.contains("ws-side-legacy"),
-        stamp: text(sec.querySelector(".ws-stamp")),
-        kpis: Array.prototype.map.call(sec.querySelectorAll(".ws-kpi"), function (kpi) {
-          return {
-            label: text(kpi.querySelector(".ws-lab-text")),
-            value: text(kpi.querySelector(".ws-val")),
-            delta: text(kpi.querySelector(".ws-delta"))
-          };
-        }),
-        bars: count(sec, ".recharts-bar-rectangle"),
-        lines: count(sec, ".recharts-line-curve"),
-        dots: count(sec, ".recharts-symbols"),
-        sectors: count(sec, ".recharts-pie-sector"),
-        emptyStates: Array.prototype.map
-          .call(sec.querySelectorAll(".ws-chart"), text)
-          .filter(function (t) {
-            return t.indexOf("데이터가 없습니다") >= 0 || t.indexOf("불러오는 중") >= 0;
-          }),
-        blocked: Array.prototype.map.call(sec.querySelectorAll(".ws-blocked"), function (el) {
-          return text(el).slice(0, 34);
-        }),
-        tableRows: count(sec, ".ws-table tbody tr")
-      };
-    }
-  );
+  var body = document.body.textContent || "";
+  var kpis = Array.prototype.map.call(document.querySelectorAll(".ws-kpi"), function (kpi) {
+    return {
+      label: text(kpi.querySelector(".ws-lab-text")),
+      value: text(kpi.querySelector(".ws-val"))
+    };
+  });
+  var stamps = Array.prototype.map.call(document.querySelectorAll(".ws-stamp"), function (el) {
+    return text(el);
+  });
 
   return {
     heading: text(document.querySelector("h2.ws-pt")),
-    legacyStampCount: document.querySelectorAll(".ws-stamp-legacy").length,
-    mentionsLegacy: (document.body.textContent || "").indexOf("옛 사이트") >= 0,
-    sections: sections,
-    firstKeywordRows: Array.prototype.slice
-      .call(document.querySelectorAll(".ws-table tbody tr"), 0, 2)
-      .map(function (tr) {
-        return Array.prototype.map.call(tr.querySelectorAll("td"), text);
-      })
+    mentionsLegacy: body.indexOf("옛 사이트") >= 0,
+    mentionsNewSite: body.indexOf("새 사이트") >= 0 && body.indexOf("새 사이트 공개") < 0,
+    sideLegacy: document.querySelectorAll(".ws-side-legacy, .ws-side-live").length,
+    kpis: kpis,
+    stamps: stamps.slice(0, 4),
+    bars: document.querySelectorAll(".recharts-bar-rectangle").length,
+    lines: document.querySelectorAll(".recharts-line-curve").length,
+    dots: document.querySelectorAll(".recharts-symbols").length,
+    sectors: document.querySelectorAll(".recharts-pie-sector").length,
+    refLines: document.querySelectorAll(".recharts-reference-line").length,
+    tableRows: document.querySelectorAll(".ws-table tbody tr").length,
+    emptyCharts: Array.prototype.map
+      .call(document.querySelectorAll(".ws-chart"), text)
+      .filter(function (t) {
+        return t.indexOf("데이터가 없습니다") >= 0;
+      }).length
   };
 })()`;
 
@@ -215,43 +201,33 @@ async function main() {
       throw new Error(`no ws-pt — landed on ${page.url()}`);
     });
 
-    // 조회가 끝나 값이 붙을 때까지
-    await page
-      .locator(".ws-side-legacy .ws-val")
-      .first()
-      .waitFor({ timeout: 60_000 });
+    await page.locator(".ws-kpi .ws-val").first().waitFor({ timeout: 60_000 });
     await page.waitForTimeout(2500);
 
     report.default30d = await readScreen(page);
     report.callsAfterFirstLoad = statsCalls.length;
+    report.firstCall = statsCalls[0] ?? null;
     await page.screenshot({
       path: resolve(OUT_DIR, "search-30d.png"),
       fullPage: true,
     });
 
-    // 블록마다 따로 찍어 눈으로 본다
-    const blocks = page.locator(".ws-sec.ws-side");
-    for (let i = 0; i < (await blocks.count()); i += 1) {
-      await blocks.nth(i).screenshot({ path: resolve(OUT_DIR, `block-${i}.png`) });
-    }
-
-    // 기간 바꾸기 — 1년으로
     const before = statsCalls.length;
     await page.locator(".ws-seg button", { hasText: "1년" }).click();
     await page.waitForTimeout(4000);
     report.callsAfterPeriodChange = statsCalls.length;
     report.refetched = statsCalls.length > before;
-    report.lastCall = statsCalls[statsCalls.length - 1] ?? null;
+    report.yearCall = statsCalls[statsCalls.length - 1] ?? null;
     report.year = await readScreen(page);
     await page.screenshot({
       path: resolve(OUT_DIR, "search-1y.png"),
       fullPage: true,
     });
 
-    // 기간 바꾸기 — 오늘로. 옛 사이트 값이 없는 기간이라 빈 상태가 나와야 한다
     await page.locator(".ws-seg button", { hasText: "오늘" }).click();
     await page.waitForTimeout(4000);
     report.today = await readScreen(page);
+    report.todayCall = statsCalls[statsCalls.length - 1] ?? null;
 
     report.consoleErrors = consoleErrors;
   } finally {

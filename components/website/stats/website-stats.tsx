@@ -19,13 +19,17 @@ import {
   STATS_MUTED,
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { clip } from "@/components/website/stats/stats-data";
+import { clip, launchMark, pickRows } from "@/components/website/stats/stats-data";
 import {
   ChartSlot,
   SectionHead,
   type LoadStatus,
   type StatsData
 } from "@/components/website/stats/stats-slot";
+import {
+  TODO_LEVEL_LABEL,
+  loadSummaryBrief
+} from "@/components/website/stats/summary-brief-cache";
 import {
   buildCountry,
   buildDevice,
@@ -35,18 +39,18 @@ import {
   buildSourceDaily,
   buildSourcePie,
   buildSourceQuality,
+  buildSummaryBriefFacts,
   buildTrend,
+  summaryBriefFingerprint,
   SUMMARY_KINDS
 } from "@/components/website/stats/summary-data";
 import {
   AI_QUESTION_COLORS,
   AI_QUESTION_SAMPLE,
-  LUNA_SAMPLE,
-  SUMMARY_LIMIT_NOTE,
-  TODO_SAMPLE
+  SUMMARY_LIMIT_NOTE
 } from "@/components/website/stats/summary-sample";
 import "./stats.css";
-import { getStatsBundle, getStatsRealtime } from "@/lib/website/api";
+import { getStatsBundle, getStatsRealtime, type StatsBriefResult } from "@/lib/website/api";
 import {
   PERIOD_PRESETS,
   STATS_SCREENS,
@@ -161,16 +165,84 @@ function ScreenShell({
   );
 }
 
+type BriefState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: StatsBriefResult }
+  | { status: "error" };
+
 /**
- * 목업의 .luna — 루나 총평.
- * 임시 값이다. 총평을 쓰려면 기간 데이터를 읽고 글을 짓는 단계가 있어야 하는데
- * 아직 없다. 읽을 데이터도 아직 없다.
+ * 루나 총평·할 일. 숫자만 API 에 넘기고, 같은 기간·같은 지문은 localStorage 캐시.
  */
-function LunaBlock() {
+function useSummaryBrief(data: StatsData, from: string, to: string): {
+  state: BriefState;
+  retry: () => void;
+} {
+  const [retryTick, setRetryTick] = useState(0);
+  const [state, setState] = useState<BriefState>({ status: "idle" });
+
+  useEffect(() => {
+    if (data.status === "loading") {
+      setState({ status: "loading" });
+      return;
+    }
+    if (data.status === "error") {
+      setState({ status: "error" });
+      return;
+    }
+
+    const facts = buildSummaryBriefFacts(data.bundle, from, to);
+    if (!facts) {
+      setState({ status: "idle" });
+      return;
+    }
+
+    const fingerprint = summaryBriefFingerprint(facts);
+    let cancelled = false;
+    setState({ status: "loading" });
+
+    void loadSummaryBrief(from, to, fingerprint, facts).then((result) => {
+      if (cancelled) return;
+      if (!result.ok || !result.data?.summary) {
+        setState({ status: "error" });
+        return;
+      }
+      setState({ status: "ready", data: result.data });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.bundle, data.status, from, to, retryTick]);
+
+  return {
+    state,
+    retry: () => setRetryTick((n) => n + 1)
+  };
+}
+
+function LunaBlock({
+  state,
+  onRetry
+}: {
+  state: BriefState;
+  onRetry: () => void;
+}) {
+  if (state.status === "idle") return null;
+
   return (
     <div className="ws-luna">
-      <div className="ws-who">{LUNA_SAMPLE.who} · 임시 값</div>
-      <p>{LUNA_SAMPLE.text}</p>
+      <div className="ws-who">루나가 읽은 이번 기간</div>
+      {state.status === "loading" ? <p>요약을 만드는 중입니다…</p> : null}
+      {state.status === "ready" ? <p>{state.data.summary}</p> : null}
+      {state.status === "error" ? (
+        <div className="ws-luna-fail">
+          <p>요약을 만들지 못했습니다</p>
+          <button type="button" className="ws-retry" onClick={onRetry}>
+            다시 시도
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -224,6 +296,10 @@ function SummaryKpis({ data }: { data: StatsData }) {
 function TrendAndSources({ data }: { data: StatsData }) {
   const trend = useMemo(() => buildTrend(data.bundle), [data.bundle]);
   const pie = useMemo(() => buildSourcePie(data.bundle), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec ws-g2">
@@ -234,6 +310,7 @@ function TrendAndSources({ data }: { data: StatsData }) {
             type="line"
             data={trend}
             xKey="date"
+            mark={mark ?? undefined}
             series={[
               { key: "current", name: "이번 기간", color: STATS_COLORS[0] },
               { key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }
@@ -254,6 +331,10 @@ function TrendAndSources({ data }: { data: StatsData }) {
 function HowTheyArrived({ data }: { data: StatsData }) {
   const daily = useMemo(() => buildSourceDaily(data.bundle), [data.bundle]);
   const quality = useMemo(() => buildSourceQuality(data.bundle), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "channel", "ga4", "current")),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec">
@@ -265,7 +346,14 @@ function HowTheyArrived({ data }: { data: StatsData }) {
         <div className="ws-card">
           <div className="ws-ct">경로별 일별 추이</div>
           <ChartSlot status={data.status} empty={daily.rows.length === 0}>
-            <StatsChart type="line" data={daily.rows} xKey="date" legend series={daily.series} />
+            <StatsChart
+              type="line"
+              data={daily.rows}
+              xKey="date"
+              legend
+              mark={mark ?? undefined}
+              series={daily.series}
+            />
           </ChartSlot>
         </div>
         <div className="ws-card">
@@ -374,19 +462,17 @@ function WhatWordsBrought({ data }: { data: StatsData }) {
   );
 }
 
-/**
- * 임시 값이다. 할 일은 여러 화면의 값을 견줘 뽑아야 하는데 그 규칙을 아직
- * 만들지 않았고, 견줄 데이터도 아직 없다.
- */
-function TodoList() {
+function TodoList({ state }: { state: BriefState }) {
+  if (state.status !== "ready" || state.data.todos.length === 0) return null;
+
   return (
     <div className="ws-sec">
-      <SectionHead title="이번 기간 할 일" stamp="임시 값" />
+      <SectionHead title="이번 기간 할 일" />
       <div className="ws-card">
         <ul className="ws-todo">
-          {TODO_SAMPLE.map((item) => (
-            <li key={item.title}>
-              <span className={`ws-tag ws-tag-${item.level}`}>{item.levelLabel}</span>
+          {state.data.todos.map((item) => (
+            <li key={`${item.level}-${item.title}`}>
+              <span className={`ws-tag ws-tag-${item.level}`}>{TODO_LEVEL_LABEL[item.level]}</span>
               <div>
                 {item.title}
                 <div className="ws-t2">{item.reason}</div>
@@ -402,18 +488,20 @@ function TodoList() {
 /**
  * 요약 화면 전체.
  * KPI·추이·경로·국가·기기·언어·검색어는 website_stats 를 읽는다.
- * AI 질문·할 일·루나 총평은 아직 담을 표가 없어 임시 값이다.
+ * 루나 총평·할 일은 숫자만 Anthropic 에 넘긴다. AI 질문 막대만 아직 임시 값.
  */
-function SummaryScreen({ data }: { data: StatsData }) {
+function SummaryScreen({ data, from, to }: { data: StatsData; from: string; to: string }) {
+  const brief = useSummaryBrief(data, from, to);
+
   return (
     <>
-      <LunaBlock />
+      <LunaBlock state={brief.state} onRetry={brief.retry} />
       <SummaryKpis data={data} />
       <TrendAndSources data={data} />
       <HowTheyArrived data={data} />
       <WhoCame data={data} />
       <WhatWordsBrought data={data} />
-      <TodoList />
+      <TodoList state={brief.state} />
       <p className="ws-foot">{SUMMARY_LIMIT_NOTE}</p>
     </>
   );
@@ -575,7 +663,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
         <div className="ws-body">
           {screen === "summary" ? (
           <ScreenShell id="summary">
-            <SummaryScreen data={data} />
+            <SummaryScreen data={data} from={from} to={to} />
           </ScreenShell>
           ) : null}
 

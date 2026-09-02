@@ -33,7 +33,7 @@ import {
   STATS_COLORS,
   STATS_MUTED
 } from "@/components/website/stats/stats-chart";
-import { dash, intText } from "@/components/website/stats/stats-data";
+import { dash, intText, launchMark, pickRows } from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /* ─────────────────────── 1. 문의까지 가는 길 ─────────────────────── */
@@ -102,6 +102,10 @@ function DwellAndDepth({ data }: { data: StatsData }) {
   const dwell = useMemo(() => buildDwellTrend(data.bundle), [data.bundle]);
   const depth = useMemo(() => buildDepthTrend(data.bundle), [data.bundle]);
   const summary = useMemo(() => buildDwellSummary(data.bundle), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec ws-g2">
@@ -113,6 +117,7 @@ function DwellAndDepth({ data }: { data: StatsData }) {
             type="line"
             data={dwell}
             xKey="date"
+            mark={mark ?? undefined}
             format={(value) => `${Math.round(value)}초`}
             series={[{ key: "seconds", name: "머문 시간", color: STATS_COLORS[0] }]}
           />
@@ -127,6 +132,7 @@ function DwellAndDepth({ data }: { data: StatsData }) {
             type="line"
             data={depth}
             xKey="date"
+            mark={mark ?? undefined}
             format={(value) => `${value.toFixed(1)}장`}
             series={[{ key: "pages", name: "본 페이지", color: STATS_COLORS[2] }]}
           />
@@ -204,6 +210,10 @@ function WhenTheyCome({ data }: { data: StatsData }) {
 function ExitAndReturn({ data }: { data: StatsData }) {
   const bounced = useMemo(() => buildBouncedEntries(data.bundle), [data.bundle]);
   const returning = useMemo(() => buildNewVsReturning(data.bundle), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec ws-g2">
@@ -233,6 +243,7 @@ function ExitAndReturn({ data }: { data: StatsData }) {
             data={returning}
             xKey="date"
             legend
+            mark={mark ?? undefined}
             series={[
               { key: "fresh", name: "신규", color: STATS_COLORS[0], stackId: "a" },
               { key: "again", name: "재방문", color: STATS_COLORS[2], stackId: "a" }
@@ -253,6 +264,10 @@ function ExitAndReturn({ data }: { data: StatsData }) {
 function Submissions({ data }: { data: StatsData }) {
   const kpis = useMemo(() => buildLeadKpis(data.bundle), [data.bundle]);
   const trend = useMemo(() => buildLeadTrend(data.bundle), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "event", "ga4", "current")),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec">
@@ -278,6 +293,7 @@ function Submissions({ data }: { data: StatsData }) {
             xKey="date"
             height={170}
             legend
+            mark={mark ?? undefined}
             series={LEAD_EVENTS.map((event) => ({
               key: event.id,
               name: event.label,

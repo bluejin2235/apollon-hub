@@ -1,14 +1,15 @@
 /**
  * 검색 화면이 쓰는 값 만들기.
  *
- * 이 화면만 사정이 다르다. 다른 화면은 그릴 값이 아직 없지만 여기는 옛 사이트의
- * 검색 성과가 website_stats_baseline 에 남아 있다. 그래서 두 갈래를 끝까지
- * 갈라 둔다.
+ * apollonworks.com 하나의 데이터다. 「새 사이트」와 「옛 사이트」로 나누지
+ * 않는다. 같은 도메인이고 어느 시점에 내용이 바뀌었을 뿐이다. 그 시점은
+ * 그래프의 세로선 하나로 알린다.
  *
- *   새 사이트  website_stats 의 gsc — current·previous. 지금은 0행
- *   옛 사이트  website_stats_baseline — baseline·baseline_overall
- *
- * 섞으면 옛 실적이 지금 실적처럼 보인다. 한 그래프 안에 같이 두지 않는다.
+ * ── 두 갈래로 들어온다
+ *   current·previous  kind=daily. 날짜가 있어 기간으로 잘린다
+ *   overall           kind=query·country·device·page. 날짜가 없다.
+ *                     옛 CSV 가 기간 합계로만 줘서 기간으로 자를 수 없다.
+ *                     어느 기간을 담았는지는 overall_period 로 함께 온다.
  */
 
 import {
@@ -25,6 +26,7 @@ import {
   intText,
   makeDelta,
   numText,
+  overallPeriod,
   pctText,
   pickRows,
   ranked,
@@ -40,33 +42,27 @@ import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
 export const SEARCH_KINDS = ["daily", "query", "country", "device", "page"];
 
 /**
- * 어느 사이트의 값인가.
- *   live    지금 사이트 — website_stats
- *   legacy  옛 사이트 — website_stats_baseline
+ * 검색 값은 출처가 gsc 또는 gsc_http 다. 합친 뒤에는 같은 사이트의 앞뒤 기간이다.
+ * 하나만 고르면 1년을 골라도 뒤쪽만 나온다.
  */
-export type SearchSide = "live" | "legacy";
+const SEARCH_SOURCES = ["gsc", "gsc_http"] as const;
 
-/** 새 사이트는 기간으로 자른 값, 옛 사이트는 날짜가 있는 baseline 행 */
-function dailyRows(bundle: StatsBundle | null, side: SearchSide): StatsPoint[] {
-  return side === "live"
-    ? pickRows(bundle, "daily", "gsc", "current")
-    : pickRows(bundle, "daily", "gsc", "baseline");
+/** 고른 기간 안의 일별 검색 성과 */
+export function searchDaily(bundle: StatsBundle | null): StatsPoint[] {
+  return pickRows(bundle, "daily", SEARCH_SOURCES, "current");
 }
 
-/**
- * 옛 사이트의 검색어·국가·기기·페이지는 날짜가 없다. 전체 기간 합계로 한 번에
- * 들어와 있어 기간으로 자를 수 없다. 기간 안의 값과 섞지 않도록 따로 읽는다.
- */
+/** 날짜 없는 합계 행 — 기간과 무관하다 */
 function overallRows(bundle: StatsBundle | null, kind: string): StatsPoint[] {
-  return pickRows(bundle, kind, "gsc", "baseline_overall");
+  return pickRows(bundle, kind, SEARCH_SOURCES, "overall");
 }
 
-/** 옛 사이트 일별 값이 실제로 걸린 날짜 범위. 도장 문구에 쓴다 */
-export function legacyRange(bundle: StatsBundle | null): { from: string; to: string } | null {
-  const rows = dailyRows(bundle, "legacy").filter((row) => row.date);
-  if (rows.length === 0) return null;
-  const sorted = [...rows].sort(byDate);
-  return { from: sorted[0].date, to: sorted[sorted.length - 1].date };
+/** 합계 행이 담은 기간. 표 옆에 적는다 */
+export function searchOverallPeriod(
+  bundle: StatsBundle | null,
+  kind = "query"
+): { from: string; to: string } | null {
+  return overallPeriod(bundle, kind);
 }
 
 /* ─────────────────────── 1. 전체 KPI ─────────────────────── */
@@ -87,15 +83,10 @@ function ctrOf(rows: StatsPoint[]): number | null {
   return clicks / impressions;
 }
 
-/**
- * 노출·클릭·클릭률·평균 순위.
- *
- * 옛 사이트는 지난 기간 값을 받아 오지 않는다. 조회 계층이 baseline 을 이번
- * 기간만 읽기 때문이다. 그래서 변화 줄이 비어 있다. 지어내지 않는다.
- */
-export function buildSearchKpis(bundle: StatsBundle | null, side: SearchSide): SearchKpi[] {
-  const cur = dailyRows(bundle, side);
-  const prev = side === "live" ? pickRows(bundle, "daily", "gsc", "previous") : [];
+/** 노출·클릭·클릭률·평균 순위. 고른 기간과 그 앞 기간을 견준다 */
+export function buildSearchKpis(bundle: StatsBundle | null): SearchKpi[] {
+  const cur = searchDaily(bundle);
+  const prev = pickRows(bundle, "daily", SEARCH_SOURCES, "previous");
 
   const curImp = sumField(cur, "impressions");
   const curClick = sumField(cur, "clicks");
@@ -143,8 +134,8 @@ export function buildSearchKpis(bundle: StatsBundle | null, side: SearchSide): S
 /* ─────────────────────── 2. 노출과 클릭 추이 ─────────────────────── */
 
 /** 막대는 노출, 선은 클릭. 두 값의 크기가 스무 배쯤 차이 나 축을 나눈다 */
-export function buildSearchTrend(bundle: StatsBundle | null, side: SearchSide): StatsRow[] {
-  return [...dailyRows(bundle, side)].sort(byDate).map((row) => ({
+export function buildSearchTrend(bundle: StatsBundle | null): StatsRow[] {
+  return [...searchDaily(bundle)].sort(byDate).map((row) => ({
     date: shortDate(row.date),
     impressions: row.impressions,
     clicks: row.clicks
@@ -221,8 +212,8 @@ export type BrandSplit = {
 };
 
 /**
- * 옛 사이트 검색어에는 날짜가 없다. 목업처럼 달별로 쌓을 수 없어 전체 합계를
- * 비율로 보인다. 「일반이 늘어야 한다」는 흐름은 새 사이트 값이 쌓여야 보인다.
+ * 검색어에는 날짜가 없다. 목업처럼 달별로 쌓을 수 없어 합계를 비율로 보인다.
+ * 「일반이 늘어야 한다」는 흐름은 날짜 있는 검색어가 쌓여야 보인다.
  */
 export function buildBrandSplit(bundle: StatsBundle | null): BrandSplit {
   const rows = overallRows(bundle, "query");
@@ -375,9 +366,9 @@ const LANG_COLOR: Record<LangId, string> = {
 /**
  * 경로 앞에 /en 이 붙으면 영문이다.
  *
- * 다만 옛 사이트 노출의 절반 이상이 회사 소개 PDF 한 장이다. 파일은 경로에
- * /en 이 없어 그대로 두면 국문으로 잡혀 국문 노출이 부풀어 오른다. 언어를
- * 알 수 없는 문서는 따로 센다.
+ * 다만 노출의 절반 이상이 회사 소개 PDF 한 장이다. 파일은 경로에 /en 이 없어
+ * 그대로 두면 국문으로 잡혀 국문 노출이 부풀어 오른다. 언어를 알 수 없는
+ * 문서는 따로 센다.
  */
 function langOf(path: string): LangId {
   const clean = path.split("?")[0].split("#")[0];

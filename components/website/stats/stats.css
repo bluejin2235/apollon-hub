@@ -241,6 +241,28 @@
   margin: 0;
 }
 
+.ws-luna-fail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-retry {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.ws-retry:hover {
+  border-color: var(--ink);
+}
+
 /* 목업의 「이번 기간 할 일」 표 */
 .ws-todo {
   list-style: none;
@@ -582,31 +604,6 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/*
-  검색 화면 전용 — 옛 사이트 값과 새 사이트 값을 눈으로 갈라 둔다.
-  두 값이 나란히 있으면 옛 실적이 지금 실적처럼 읽힌다.
-  왼쪽 띠 색과 도장 색으로 어느 쪽인지 늘 보이게 한다.
-*/
-.ws-side {
-  border-left: 3px solid var(--line);
-  padding-left: 15px;
-}
-
-.ws-side-live {
-  border-left-color: #2a78d6;
-}
-
-.ws-side-legacy {
-  border-left-color: #b08a3e;
-}
-
-/* 옛 사이트임을 밝히는 도장. 회색 도장과 섞이면 안 되어 색을 달리한다 */
-.ws-stamp-legacy {
-  background: #f6ecd6;
-  color: #7a5a12;
-  font-weight: 600;
 }
 
 /* 못 만든 자리에 이유를 적는다 */

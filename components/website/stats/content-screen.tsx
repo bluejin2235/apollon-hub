@@ -30,7 +30,7 @@ import {
   type PageFilterId
 } from "@/components/website/stats/content-data";
 import { StatsChart } from "@/components/website/stats/stats-chart";
-import { dash, intText, pctText } from "@/components/website/stats/stats-data";
+import { dash, intText, launchMark, pctText, pickRows } from "@/components/website/stats/stats-data";
 import { StatsSankey } from "@/components/website/stats/stats-sankey";
 import { ChartSlot, SectionHead, type LoadStatus, type StatsData } from "@/components/website/stats/stats-slot";
 import { listInsights, listWorks } from "@/lib/website/api";
@@ -76,6 +76,11 @@ function ByPageType({ data, pie, trend }: {
   pie: ReturnType<typeof buildTypePie>;
   trend: ReturnType<typeof buildTypeTrend>;
 }) {
+  const mark = useMemo(
+    () => launchMark(pickRows(data.bundle, "page", "ga4", "current")),
+    [data.bundle]
+  );
+
   return (
     <div className="ws-sec">
       <SectionHead title="페이지 종류별" stamp="어제까지" />
@@ -89,7 +94,14 @@ function ByPageType({ data, pie, trend }: {
         <div className="ws-card">
           <div className="ws-ct">종류별 추이</div>
           <ChartSlot status={data.status} empty={trend.rows.length === 0}>
-            <StatsChart type="line" data={trend.rows} xKey="date" legend series={trend.series} />
+            <StatsChart
+              type="line"
+              data={trend.rows}
+              xKey="date"
+              legend
+              mark={mark ?? undefined}
+              series={trend.series}
+            />
           </ChartSlot>
         </div>
       </div>

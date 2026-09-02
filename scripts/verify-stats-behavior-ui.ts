@@ -160,8 +160,8 @@ function fakeResult(kind: string, current: unknown[], previous: unknown[] = []) 
     kind,
     current,
     previous,
-    baseline: [],
-    baseline_overall: [],
+    overall: [],
+    overall_period: null,
     totals: {},
     by_key: [],
   };

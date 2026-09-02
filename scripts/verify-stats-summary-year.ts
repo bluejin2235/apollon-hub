@@ -1,7 +1,6 @@
 /**
- * 요약·콘텐츠·검색 세 화면이 도우미 함수를 공용 파일로 옮긴 뒤에도
- * 그대로 열리는지 본다.
- * npx tsx scripts/verify-stats-screens-smoke.ts
+ * 요약 1년 — 루나 총평 단위(이탈률 %) · 캐시 무효화 확인
+ * npx tsx scripts/verify-stats-summary-year.ts
  */
 import { config } from "dotenv";
 import { resolve } from "node:path";
@@ -11,7 +10,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chromium, type BrowserContext, type Page } from "playwright";
 
 const HUB_URL = process.env.LUNA_UI_BASE_URL ?? "http://localhost:3000";
-const SCREENS = ["summary", "content", "search", "behavior"] as const;
 
 function projectRef(url: string): string {
   return new URL(url).hostname.split(".")[0]!;
@@ -73,15 +71,17 @@ async function login(
   await page.goto(HUB_URL, { waitUntil: "domcontentloaded", timeout: 120_000 });
 }
 
-const COUNT_MARKS = `(() => ({
-  heading: (document.querySelector("h2.ws-pt") || {}).textContent || "",
-  charts: document.querySelectorAll(".ws-chart").length,
-  bars: document.querySelectorAll(".recharts-bar-rectangle").length,
-  lines: document.querySelectorAll(".recharts-line-curve").length,
-  sectors: document.querySelectorAll(".recharts-pie-sector").length,
-  dots: document.querySelectorAll(".recharts-symbols").length,
-  dashes: (document.body.textContent || "").split("—").length - 1
-}))()`;
+const READ = `(() => {
+  var text = function (el) { return (el && el.textContent ? el.textContent : "").trim(); };
+  var luna = document.querySelector(".ws-luna");
+  var lunaText = luna ? text(luna.querySelector("p")) : null;
+  return {
+    lunaText: lunaText,
+    hasDecimalBounce: lunaText ? /이탈률[^。\\n]*0\\.\\d+/.test(lunaText) : false,
+    hasPctBounce: lunaText ? /이탈률[^。\\n]*\\d+(\\.\\d+)?\\s*%/.test(lunaText) : false,
+    hasBare056: lunaText ? /\\b0\\.5\\d\\b/.test(lunaText) : false
+  };
+})()`;
 
 async function main() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -99,51 +99,85 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-
-  const errors: Record<string, string[]> = {};
-  let current = "boot";
+  const consoleErrors: string[] = [];
   page.on("console", (msg) => {
-    if (msg.type() !== "error") return;
-    (errors[current] ??= []).push(msg.text().slice(0, 160));
-  });
-  page.on("pageerror", (err) => {
-    (errors[current] ??= []).push(`pageerror: ${err.message.slice(0, 160)}`);
+    if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 160));
   });
 
-  const out: Record<string, unknown> = {};
-  const statsCalls: string[] = [];
-  page.on("request", (req) => {
-    if (req.url().includes("/api/website/stats?")) statsCalls.push(req.url());
-  });
   try {
     await login(context, page, session, supabaseUrl);
-    for (const screen of SCREENS) {
-      current = screen;
-      const before = statsCalls.length;
-      await page.goto(`${HUB_URL}/website/stats/${screen}`, {
-        waitUntil: "domcontentloaded",
-        timeout: 180_000,
-      });
-      await page.locator("h2.ws-pt").waitFor({ timeout: 120_000 });
-      await page.waitForTimeout(2500);
-      await page.locator(".ws-seg button", { hasText: "1년" }).click();
-      await page.waitForTimeout(2500);
-      out[screen] = {
-        ...(await page.evaluate(COUNT_MARKS)),
-        mentionsLegacy: ((await page.locator("body").innerText()) ?? "").includes("옛 사이트"),
-        refetched: statsCalls.length > before + 1,
-        lastFrom: statsCalls[statsCalls.length - 1] ?? null,
-      };
-    }
+
+    // 옛 루나 문장 캐시 삭제
+    await page.evaluate(() => {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.indexOf("ws-stats-brief:") === 0) keys.push(key);
+      }
+      keys.forEach((key) => localStorage.removeItem(key));
+    });
+
+    await page.goto(`${HUB_URL}/website/stats/summary`, {
+      waitUntil: "domcontentloaded",
+      timeout: 180_000,
+    });
+    await page.locator("h2.ws-pt").waitFor({ timeout: 60_000 });
+    await page.locator(".ws-seg button", { hasText: "1년" }).click();
+
+    await page.waitForFunction(
+      () => {
+        const val = document.querySelector(".ws-kpi .ws-val");
+        return val && (val.textContent || "").trim() !== "—" && (val.textContent || "").trim() !== "";
+      },
+      { timeout: 90_000 },
+    );
+
+    await page.waitForFunction(
+      () => {
+        const luna = document.querySelector(".ws-luna");
+        if (!luna) return false;
+        const t = (luna.textContent || "").trim();
+        return (
+          t.indexOf("요약을 만드는 중") < 0 &&
+          (t.indexOf("요약을 만들지 못했습니다") >= 0 ||
+            (luna.querySelector("p") && (luna.querySelector("p")!.textContent || "").length > 20))
+        );
+      },
+      { timeout: 120_000 },
+    );
+
+    const screen = await page.evaluate(READ);
+    const ok =
+      typeof screen.lunaText === "string" &&
+      screen.lunaText.length > 0 &&
+      !screen.hasDecimalBounce &&
+      !screen.hasBare056 &&
+      screen.hasPctBounce;
+
+    console.log("\n=== summary 1y units ===");
+    console.log(
+      JSON.stringify(
+        {
+          ok,
+          lunaText: screen.lunaText,
+          checks: {
+            hasDecimalBounce: screen.hasDecimalBounce,
+            hasBare056: screen.hasBare056,
+            hasPctBounce: screen.hasPctBounce,
+          },
+          consoleErrors,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!ok) process.exitCode = 1;
   } finally {
     await browser.close();
   }
-
-  console.log("\n=== stats screens smoke ===");
-  console.log(JSON.stringify({ screens: out, errors }, null, 2));
 }
 
-main().catch((e) => {
-  console.error(e);
+main().catch((err) => {
+  console.error(err);
   process.exit(1);
 });
