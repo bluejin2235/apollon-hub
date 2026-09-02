@@ -22,6 +22,8 @@ export type CheckWorks = {
   key_image_not_16_9: boolean;
   not_16_9: boolean;
   key_image_too_small: boolean;
+  /** check_works 뷰에 없으면 에디터에서 card_image 로 계산한다 */
+  no_card_image?: boolean;
   body_image_too_small: boolean;
   empty_blocks: boolean;
   no_small_loop: boolean;

@@ -118,8 +118,14 @@ export type WorkDetail = {
   key_image_width: number | null;
   key_image_height: number | null;
   key_image_alt: Loc | null;
+  card_image: string | null;
+  card_image_source: string | null;
+  card_image_width: number | null;
+  card_image_height: number | null;
   loop_video_lg: string | null;
   loop_video_sm: string | null;
+  loop_lg_posters: string[];
+  loop_sm_posters: string[];
   client: Loc | null;
   location_country: Loc | null;
   location_city: Loc | null;
@@ -167,8 +173,14 @@ export type WorkBasicDraft = {
   key_image_width: number | null;
   key_image_height: number | null;
   key_image_alt: Loc;
+  card_image: string;
+  card_image_source: string;
+  card_image_width: number | null;
+  card_image_height: number | null;
   loop_video_lg: string;
   loop_video_sm: string;
+  loop_lg_posters: string[];
+  loop_sm_posters: string[];
   client: Loc;
   location_country: Loc;
   location_city: Loc;
@@ -192,6 +204,11 @@ export function asLoc(value: unknown): Loc {
     ko: typeof row.ko === "string" ? row.ko : "",
     en: typeof row.en === "string" ? row.en : ""
   };
+}
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
 }
 
 export function hasColumns(value: unknown): value is { columns: unknown[] } {
@@ -224,11 +241,40 @@ export function columnsFromBody(value: unknown, count: number): Loc[] {
   return next.slice(0, count);
 }
 
-export type EditorTab = "basic" | "content" | "faq" | "related";
+export type EditorTab =
+  | "basic"
+  | "content"
+  | "interview"
+  | "credits"
+  | "faq"
+  | "related"
+  | "history";
 
 export function parseEditorTab(value: string | null): EditorTab {
-  if (value === "content" || value === "faq" || value === "related") return value;
+  if (
+    value === "content" ||
+    value === "interview" ||
+    value === "credits" ||
+    value === "faq" ||
+    value === "related" ||
+    value === "history"
+  ) {
+    return value;
+  }
   return "basic";
+}
+
+export function locOrNull(value: Loc): Loc | null {
+  return value.ko.trim() || value.en.trim() ? value : null;
+}
+
+export function interviewSectionOf(work: WorkDetail): WorkSection | null {
+  return (work.work_sections ?? []).find((section) => section.kind === "interview") ?? null;
+}
+
+export function interviewRowOf(work: WorkDetail): WorkInterview | null {
+  const rows = work.work_interview ?? [];
+  return rows[0] ?? null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -361,8 +407,14 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     key_image_width: typeof row.key_image_width === "number" ? row.key_image_width : null,
     key_image_height: typeof row.key_image_height === "number" ? row.key_image_height : null,
     key_image_alt: row.key_image_alt ? asLoc(row.key_image_alt) : null,
+    card_image: typeof row.card_image === "string" ? row.card_image : null,
+    card_image_source: typeof row.card_image_source === "string" ? row.card_image_source : null,
+    card_image_width: typeof row.card_image_width === "number" ? row.card_image_width : null,
+    card_image_height: typeof row.card_image_height === "number" ? row.card_image_height : null,
     loop_video_lg: typeof row.loop_video_lg === "string" ? row.loop_video_lg : null,
     loop_video_sm: typeof row.loop_video_sm === "string" ? row.loop_video_sm : null,
+    loop_lg_posters: asStringList(row.loop_lg_posters),
+    loop_sm_posters: asStringList(row.loop_sm_posters),
     client: row.client ? asLoc(row.client) : null,
     location_country: row.location_country ? asLoc(row.location_country) : null,
     location_city: row.location_city ? asLoc(row.location_city) : null,
@@ -565,8 +617,14 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     key_image_width: work.key_image_width ?? null,
     key_image_height: work.key_image_height ?? null,
     key_image_alt: asLoc(work.key_image_alt),
+    card_image: work.card_image ?? "",
+    card_image_source: work.card_image_source ?? "",
+    card_image_width: work.card_image_width ?? null,
+    card_image_height: work.card_image_height ?? null,
     loop_video_lg: work.loop_video_lg ?? "",
     loop_video_sm: work.loop_video_sm ?? "",
+    loop_lg_posters: [...(work.loop_lg_posters ?? [])],
+    loop_sm_posters: [...(work.loop_sm_posters ?? [])],
     client: asLoc(work.client),
     location_country: asLoc(work.location_country),
     location_city: asLoc(work.location_city),
@@ -585,7 +643,7 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     slug: draft.slug,
     // 대표는 항상 첫 번째입니다.
     category_id: draft.category_ids[0] || draft.category_id,
-    title: draft.title,
+    title: { ko: draft.title.en || draft.title.ko, en: draft.title.en || draft.title.ko },
     subtitle: draft.subtitle,
     summary: draft.summary,
     search_description: draft.search_description,
@@ -593,8 +651,14 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     key_image_width: draft.key_image ? draft.key_image_width : null,
     key_image_height: draft.key_image ? draft.key_image_height : null,
     key_image_alt: draft.key_image_alt,
+    card_image: draft.card_image || null,
+    card_image_source: draft.card_image ? draft.card_image_source || null : null,
+    card_image_width: draft.card_image ? draft.card_image_width : null,
+    card_image_height: draft.card_image ? draft.card_image_height : null,
     loop_video_lg: draft.loop_video_lg || null,
     loop_video_sm: draft.loop_video_sm || null,
+    loop_lg_posters: draft.loop_lg_posters,
+    loop_sm_posters: [],
     client: draft.client,
     location_country: draft.location_country,
     location_city: draft.location_city,

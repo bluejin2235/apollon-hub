@@ -21,6 +21,8 @@ const LOG = "[extractFrames]";
 
 const PRIMARY_RATIOS = [0, 0.2, 0.4, 0.6, 0.8];
 const ALT_RATIOS = [0.1, 0.3, 0.5, 0.7, 0.9];
+/** T-L 첫 프레임 */
+export const LOOP_FIRST_FRAME_RATIOS = [0] as const;
 
 function waitEvent(target: EventTarget, type: string, timeoutMs = 20_000) {
   return new Promise<void>((resolve, reject) => {
@@ -242,6 +244,15 @@ export async function extractFramesAlt(
   onProgress?: (done: number, total: number) => void
 ): Promise<ExtractedFrame[]> {
   return extractAtRatios(file, ALT_RATIOS, onMeta, onProgress);
+}
+
+/** T-L 업로드 시 썸네일 후보 — 첫 프레임만 */
+export async function extractLoopPosters(
+  file: File,
+  onMeta?: (meta: VideoFrameMeta) => void,
+  onProgress?: (done: number, total: number) => void
+): Promise<ExtractedFrame[]> {
+  return extractAtRatios(file, [...LOOP_FIRST_FRAME_RATIOS], onMeta, onProgress);
 }
 
 export function revokeFrameUrls(frames: ExtractedFrame[]) {

@@ -6,6 +6,8 @@ type Props = {
   state: PartialSaveState;
   disabled?: boolean;
   onClick: () => void;
+  /** 기본 「부분 저장」. 하단은 「전체 저장」 */
+  label?: string;
 };
 
 /** 접이식 블록 — 즉시 저장 (태그·폴더 등) */
@@ -17,35 +19,49 @@ export function AutoSaveLabel() {
   );
 }
 
-/** 접이식 블록 오른쪽 위 부분 저장 */
-export function PartialSaveBtn({ state, disabled, onClick }: Props) {
-  const label =
-    state === "saved"
-      ? "방금 저장"
-      : state === "dirty"
-        ? "저장 안 함"
-        : state === "saving"
-          ? "저장 중..."
-          : "부분 저장";
+function statusText(state: PartialSaveState): string | null {
+  if (state === "dirty") return "저장할 것이 있습니다";
+  if (state === "saved") return "저장되었습니다";
+  return null;
+}
 
-  const className =
-    state === "dirty"
-      ? "inline-flex items-center rounded-md border border-apollon-500 bg-apollon-50 px-2 py-1 text-[11px] font-semibold text-apollon-700 hover:bg-apollon-100 disabled:opacity-40"
-      : state === "saved"
-        ? "inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700"
-        : "inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40";
+/** 버튼 문구는 고정. 상태는 옆 글자 */
+export function PartialSaveBtn({
+  state,
+  disabled,
+  onClick,
+  label = "부분 저장"
+}: Props) {
+  const status = statusText(state);
+  const emphasize = state === "dirty";
+  const className = emphasize
+    ? "inline-flex items-center rounded-md border border-apollon-500 bg-apollon-50 px-2 py-1 text-[11px] font-semibold text-apollon-700 hover:bg-apollon-100 disabled:opacity-40"
+    : "inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40";
 
   return (
-    <button
-      type="button"
-      disabled={disabled || state === "saving"}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-      className={className}
-    >
-      {label}
-    </button>
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        disabled={disabled || state === "saving" || state === "idle" || state === "saved"}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        className={className}
+      >
+        {label}
+      </button>
+      {status ? (
+        <span
+          className={
+            state === "dirty"
+              ? "text-[11px] font-medium text-amber-700"
+              : "text-[11px] font-medium text-emerald-700"
+          }
+        >
+          {status}
+        </span>
+      ) : null}
+    </span>
   );
 }

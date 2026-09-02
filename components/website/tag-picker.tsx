@@ -209,7 +209,7 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
           className="i"
           value={q}
           disabled={busy}
-          placeholder="태그 입력 후 Enter"
+          placeholder="태그를 치고 엔터"
           onChange={(event) => {
             setQ(event.target.value);
             setError(null);
