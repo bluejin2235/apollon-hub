@@ -430,7 +430,17 @@ export function StatsChart(props: StatsChartProps) {
 
   return (
     <div className={className ? `ws-chart ${className}` : "ws-chart"} style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      {/*
+        Recharts 3 ResponsiveContainer 는 첫 렌더에서 크기를 -1 로 두고
+        ResizeObserver 측정 후에야 선·도넛을 그린다. 부모(.ws-chart)는
+        height 가 이미 정해져 있어도 같은 현상이 난다. initialDimension 으로
+        첫 프레임부터 그리게 한다.
+      */}
+      <ResponsiveContainer
+        width="100%"
+        height="100%"
+        initialDimension={{ width: 320, height }}
+      >
         {chartBody(props)}
       </ResponsiveContainer>
     </div>
