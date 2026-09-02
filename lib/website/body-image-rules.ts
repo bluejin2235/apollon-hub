@@ -1,6 +1,6 @@
 import { SPEC } from "@/lib/website/spec";
 
-/** 본문 가로 이미지 — 16:9 ±1.8%, 긴 변 최소 1600 · 권장 3200 */
+/** 본문 가로 이미지 — 긴 변 최소 1600 · 권장 3200 */
 export const BODY_LANDSCAPE_ASPECT = 16 / 9;
 export const BODY_LANDSCAPE_ASPECT_TOLERANCE = 0.018;
 export const BODY_LANDSCAPE_MIN_LONG = SPEC.bodyImage.minLong;
@@ -22,9 +22,7 @@ export function isPortraitTextPreset(preset: string | undefined): boolean {
   return preset === "portrait-text";
 }
 
-export type BodyImageReject =
-  | { kind: "aspect"; width: number; height: number }
-  | { kind: "size"; width: number; height: number };
+export type BodyImageReject = { kind: "size"; width: number; height: number };
 
 export function validateBodyImageDimensions(
   preset: string | undefined,
@@ -33,9 +31,6 @@ export function validateBodyImageDimensions(
 ): BodyImageReject | null {
   if (isPortraitTextPreset(preset)) return null;
   if (!isLandscapeBodyImage(width, height)) return null;
-  if (!isBodyLandscape16x9(width, height)) {
-    return { kind: "aspect", width, height };
-  }
   if (Math.max(width, height) < BODY_LANDSCAPE_MIN_LONG) {
     return { kind: "size", width, height };
   }
@@ -43,9 +38,6 @@ export function validateBodyImageDimensions(
 }
 
 export function bodyImageRejectMessage(reject: BodyImageReject): string {
-  if (reject.kind === "aspect") {
-    return `16:9 로 잘라서 올려주세요. 지금 이미지는 ${reject.width}×${reject.height} 입니다.`;
-  }
   return (
     `긴 변 ${BODY_LANDSCAPE_MIN_LONG}px 이상이 필요합니다. ` +
     `지금 ${reject.width}×${reject.height} 입니다.`
@@ -68,11 +60,7 @@ export function bodyImageWarnMessage(
     }
     return null;
   }
-  if (
-    isLandscapeBodyImage(width, height) &&
-    isBodyLandscape16x9(width, height) &&
-    longSide < BODY_LANDSCAPE_RECOMMEND_LONG
-  ) {
+  if (isLandscapeBodyImage(width, height) && longSide < BODY_LANDSCAPE_RECOMMEND_LONG) {
     return (
       `긴 변 ${BODY_LANDSCAPE_RECOMMEND_LONG}px 이상을 권장합니다. ` +
       `지금 ${width}×${height} 입니다.`

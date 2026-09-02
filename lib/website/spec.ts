@@ -1,7 +1,7 @@
 /** 워크 어드민·업로드 화면에 쓰는 규격 (가이드 문서와 동일한 값) */
 export const SPEC = {
   keyImage: { ratio: "16:9", minWidth: 2560, minHeight: 1440 },
-  bodyImage: { ratio: "16:9", minLong: 1600, recommendLong: 3200 },
+  bodyImage: { minLong: 1600, recommendLong: 3200 },
   /** T-L · Thumbnail Large */
   thumbLarge: { w: 1280, h: 720, maxMB: 1.5 },
   /** T-S · Thumbnail Small */
@@ -38,11 +38,15 @@ export function formatKeyImageEmptyHint(): string {
 }
 
 export function formatBodyImageHint(): string {
-  return `16:9 · 긴 변 ${SPEC.bodyImage.recommendLong} 이상 권장 (최소 ${SPEC.bodyImage.minLong})`;
+  return `긴 변 ${SPEC.bodyImage.recommendLong} 이상 권장 (최소 ${SPEC.bodyImage.minLong})`;
+}
+
+export function formatFullBodyImageHint(): string {
+  return `${formatBodyImageHint()} · 원본 비율 그대로 표시됩니다`;
 }
 
 export function formatBodyImageRejectHint(): string {
-  return "16:9 가 아니면 등록되지 않습니다";
+  return `긴 변 ${SPEC.bodyImage.minLong}px 미만은 등록되지 않습니다`;
 }
 
 export function formatPortraitBodyImageHint(): string {

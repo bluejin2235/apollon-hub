@@ -25,6 +25,7 @@ import {
   textColumnCount
 } from "@/components/website/block-presets";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { PosterPicker } from "@/components/website/poster-picker";
 import { uploadFile } from "@/lib/website/api";
@@ -62,11 +63,12 @@ import {
   formatBodyImageHint,
   formatBodyImageRejectHint,
   formatDetailMovieHint,
+  formatFullBodyImageHint,
   formatPortraitBodyImageHint,
   VIDEO_LABELS
 } from "@/lib/website/spec";
 
-type SaveState = "idle" | "saving" | "saved" | "error";
+type SaveState = PartialSaveState | "error";
 
 type Props = {
   block: ContentBlock;
@@ -139,6 +141,7 @@ export function BlockCard({
   const [textSide, setTextSide] = useState<"left" | "right">(block.text_side ?? defaultTextSide(block.preset));
   const [showMeta, setShowMeta] = useState(block.show_meta);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
     const nextCount = textColumnCount(block.preset);
@@ -179,9 +182,51 @@ export function BlockCard({
         ? (EMBED_PROVIDERS.find((item) => item.id === block.embed_provider)?.label ?? "임베드")
         : null;
 
+  function buildFullPatch(): Record<string, unknown> {
+    const patch: Record<string, unknown> = {
+      video_kind: videoKind === "hosted" && block.preset.startsWith("video-loop") ? "loop" : videoKind,
+      video_url: videoUrl || null,
+      video_poster: videoPoster || null,
+      video_alt: videoAlt,
+      caption,
+      caption_visible: captionVisible,
+      embed_provider: embedProvider,
+      embed_url: embedUrl || null,
+      embed_title: embedTitle,
+      embed_poster: embedPoster || null,
+      gallery_row_height: rowHeight,
+      text_side: textSide,
+      show_meta: showMeta
+    };
+
+    if (columnCount > 0) {
+      patch.body = { columns };
+    } else {
+      patch.body = body;
+    }
+
+    return patch;
+  }
+
+  function queueChange(patch: Record<string, unknown>) {
+    pendingRef.current = { ...pendingRef.current, ...patch };
+    setSave((cur) => (cur === "saving" ? cur : "dirty"));
+  }
+
   function schedule(patch: Record<string, unknown>) {
+    queueChange(patch);
+  }
+
+  async function savePartial() {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void persist(patch), 1500);
+    const patch = { ...buildFullPatch(), ...pendingRef.current };
+    pendingRef.current = {};
+    const ok = await persist(patch);
+    if (ok) {
+      setSave("saved");
+      window.setTimeout(() => setSave("idle"), 2000);
+      await onReload();
+    }
   }
 
   async function persist(patch: Record<string, unknown>): Promise<boolean> {
@@ -194,7 +239,6 @@ export function BlockCard({
         setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
         return false;
       }
-      setSave("saved");
       return true;
     } catch (err) {
       setSave("error");
@@ -296,12 +340,15 @@ export function BlockCard({
         <span className="gr">⠿</span>
         <span className="kd">{presetName}</span>
         {chip ? <span className="c2">{chip}</span> : null}
-        {save === "saving" ? <span className="c2">저장 중</span> : null}
-        {save === "saved" ? <span className="c2">저장됨</span> : null}
         <div
           className="ct"
           onClick={(event) => event.stopPropagation()}
         >
+          <PartialSaveBtn
+            state={save === "error" ? "dirty" : save}
+            disabled={save !== "dirty"}
+            onClick={() => void savePartial()}
+          />
           <button type="button" className="ico" disabled={!canMoveUp} onClick={() => onMove(-1)}>
             ↑
           </button>
@@ -709,6 +756,12 @@ function ImagesEditor({
             <Sep />
             세로 이미지입니다. 비율 검사는 하지 않습니다.
           </>
+        ) : preset === "full" ? (
+          <>
+            <b className="font-semibold text-slate-600">{formatFullBodyImageHint()}</b>
+            <Sep />
+            세로·정사각·가로 모두 올릴 수 있습니다.
+          </>
         ) : (
           <>
             <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>
@@ -754,7 +807,9 @@ function ImagesEditor({
               ? `이 배치는 ${limit}장까지`
               : preset === "portrait-text"
                 ? formatPortraitBodyImageHint()
-                : (
+                : preset === "full"
+                  ? formatFullBodyImageHint()
+                  : (
                     <>
                       {formatBodyImageHint()}
                       <br />

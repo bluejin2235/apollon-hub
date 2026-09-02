@@ -93,16 +93,6 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       sub: aiSub || "이미지를 다 넣으신 뒤 [AI로 채우기]를 누르면 대체 텍스트·캡션 초안을 만듭니다."
     },
     {
-      flag: "not_16_9",
-      kind: "problem",
-      tab: "content",
-      title: "본문 가로 이미지가 16:9가 아닙니다",
-      sub:
-        check.not_16_9_count && check.not_16_9_count > 0
-          ? `${check.not_16_9_count}장을 16:9로 잘라서 다시 올려 주세요`
-          : "16:9로 잘라서 다시 올려 주세요"
-    },
-    {
       flag: "body_image_too_small",
       kind: "warn",
       tab: "content",

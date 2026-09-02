@@ -17,7 +17,7 @@ type Props = {
   sectionId: string;
   nextSort: number;
   onClose: () => void;
-  onPicked: () => void;
+  onPicked: (blockId: string) => void;
 };
 
 export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Props) {
@@ -51,7 +51,12 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
         setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
         return;
       }
-      onPicked();
+      const blockId = (res.data as { id?: string }).id;
+      if (!blockId) {
+        setError("block_id_missing");
+        return;
+      }
+      onPicked(blockId);
       onClose();
     } finally {
       setBusyId(null);

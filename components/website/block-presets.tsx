@@ -73,7 +73,7 @@ export const PRESET_LABEL: Record<string, string> = {
 };
 
 export const PRESET_DESCRIPTION: Record<string, string> = {
-  full: "본문 전폭. 이미지 1장만. 가로는 16:9 로 올려야 합니다.",
+  full: "본문 전폭. 이미지 1장만. 원본 비율 그대로 표시됩니다.",
   split: "두 장을 나란히. 가로 이미지는 16:9. 높이를 맞춥니다.",
   triple: "세 장을 나란히. 가로 이미지는 16:9. 높이를 맞춥니다.",
   offset:

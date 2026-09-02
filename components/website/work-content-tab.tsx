@@ -16,6 +16,7 @@ import { InterviewEditor } from "@/components/website/interview-editor";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
@@ -340,7 +341,14 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
           sectionId={pickerFor}
           nextSort={pickerSort}
           onClose={() => setPickerFor(null)}
-          onPicked={() => {
+          onPicked={(blockId) => {
+            setOpenBlockIds((prev) => {
+              const next = new Set(prev);
+              next.add(blockId);
+              return next;
+            });
+            ensureOpen(pickerFor);
+            setPickerFor(null);
             void onReload();
           }}
         />
@@ -420,7 +428,7 @@ function SectionCard({
         <span className="no">{index}</span>
         <span className="nm">{title}</span>
         <span className="mt">{summary}</span>
-        <span style={{ flex: 1 }} />
+        <span className="flex-1" />
         <button
           type="button"
           className="ico"
@@ -513,26 +521,42 @@ function SectionBody({
   const [headline, setHeadline] = useState<Loc>(asLoc(section.headline));
   const [lead, setLead] = useState<Loc>(asLoc(section.lead));
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveState, setSaveState] = useState<PartialSaveState>("idle");
 
   useEffect(() => {
     setHeadline(asLoc(section.headline));
     setLead(asLoc(section.lead));
+    setSaveState("idle");
   }, [section]);
 
-  function schedule(patch: Record<string, unknown>) {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void persist(patch), 1500);
+  function markDirty() {
+    setSaveState((cur) => (cur === "saving" ? cur : "dirty"));
   }
 
-  async function persist(patch: Record<string, unknown>) {
-    const res = await updateSection(workId, section.id, patch);
-    if (!res.ok) setError(res.error);
+  async function savePartial() {
+    setSaveState("saving");
+    setError(null);
+    const res = await updateSection(workId, section.id, { headline, lead });
+    if (!res.ok) {
+      setError(res.error);
+      setSaveState("dirty");
+      return;
+    }
+    setSaveState("saved");
+    window.setTimeout(() => setSaveState("idle"), 2000);
+    await onReload();
   }
 
   return (
     <>
-      {error ? <p style={{ fontSize: 11, color: "var(--err)", marginBottom: 8 }}>{error}</p> : null}
+      <div className="mb-3 flex justify-end">
+        <PartialSaveBtn
+          state={saveState}
+          disabled={saveState !== "dirty"}
+          onClick={() => void savePartial()}
+        />
+      </div>
+      {error ? <p className="mb-2 text-[11px] text-rose-600">{error}</p> : null}
       <div className="secf">
         <div className="two">
           <Field
@@ -563,16 +587,12 @@ function SectionBody({
               onKo={(v) => {
                 const next = locField(headline, "ko", v);
                 setHeadline(next);
-                schedule({ headline: next });
+                markDirty();
               }}
               onEn={(v) => {
                 const next = locField(headline, "en", v);
                 setHeadline(next);
-                schedule({ headline: next });
-              }}
-              onBlur={() => {
-                if (timer.current) clearTimeout(timer.current);
-                void persist({ headline });
+                markDirty();
               }}
             />
           </Field>
@@ -601,16 +621,12 @@ function SectionBody({
               onKo={(v) => {
                 const next = locField(lead, "ko", v);
                 setLead(next);
-                schedule({ lead: next });
+                markDirty();
               }}
               onEn={(v) => {
                 const next = locField(lead, "en", v);
                 setLead(next);
-                schedule({ lead: next });
-              }}
-              onBlur={() => {
-                if (timer.current) clearTimeout(timer.current);
-                void persist({ lead });
+                markDirty();
               }}
             />
           </Field>

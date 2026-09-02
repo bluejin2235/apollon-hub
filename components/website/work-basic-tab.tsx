@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import {
   addCredit,
   addFolder,
@@ -9,7 +9,8 @@ import {
   reorderCredits,
   reorderFolders,
   updateCredit,
-  updateFolder
+  updateFolder,
+  updateWork
 } from "@/lib/website/api";
 import type { WebsiteCategory } from "@/lib/website/types";
 import type {
@@ -36,6 +37,7 @@ import {
   VIDEO_LABELS
 } from "@/lib/website/spec";
 import { ImageUploader } from "@/components/website/image-uploader";
+import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { RepeatList, type SaveResult } from "@/components/website/repeat-list";
 import { TagPicker } from "@/components/website/tag-picker";
 import { locField } from "@/components/website/work-editor-ui";
@@ -83,12 +85,45 @@ function toneOf(done: number, total: number): "ok" | "warn" | "faint" {
   return "warn";
 }
 
+function useFoldPartialSave(workId: string, onReload: () => Promise<void>) {
+  const [state, setState] = useState<PartialSaveState>("idle");
+
+  const markDirty = useCallback(() => {
+    setState((cur) => (cur === "saving" ? cur : "dirty"));
+  }, []);
+
+  const save = useCallback(
+    async (patch: Record<string, unknown>) => {
+      setState("saving");
+      const res = await updateWork(workId, patch);
+      if (!res.ok) {
+        setState("dirty");
+        return false;
+      }
+      setState("saved");
+      window.setTimeout(() => setState("idle"), 2000);
+      await onReload();
+      return true;
+    },
+    [workId, onReload],
+  );
+
+  const headerExtra = (buildPatch: () => Record<string, unknown>) => (
+    <PartialSaveBtn
+      state={state}
+      disabled={state !== "dirty"}
+      onClick={() => void save(buildPatch())}
+    />
+  );
+
+  return { markDirty, headerExtra };
+}
+
 function splitFolders(folders: WorkFolder[]) {
   const sorted = [...folders].sort((a, b) => a.sort - b.sort);
   const isProject = (item: WorkFolder) =>
     item.kind === "ko" || item.name.trim() === "프로젝트 폴더";
-  const isVideo = (item: WorkFolder) =>
-    item.kind === "en" || item.name.trim() === "영상 폴더";
+  const isVideo = (item: WorkFolder) => item.kind === "en";
   const project =
     sorted.find(isProject) ??
     sorted.find((item) => filled(item.path) && !isVideo(item)) ??
@@ -183,7 +218,6 @@ function FolderKindRow({
 }) {
   const [local, setLocal] = useState(folder?.path ?? "");
   const [error, setError] = useState<string | null>(null);
-  const shown = folder?.name?.trim() || label;
 
   useEffect(() => {
     setLocal(folder?.path ?? "");
@@ -231,7 +265,7 @@ function FolderKindRow({
     <>
       <div className="frow">
         <div>
-          <b style={{ fontSize: 12 }}>{shown}</b>
+          <b style={{ fontSize: 12 }}>{label}</b>
           {required ? <span className="rq2"> *</span> : null}
         </div>
         <input
@@ -344,6 +378,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const [pendingExtras, setPendingExtras] = useState<PendingExtra[]>([]);
   const [extraErrors, setExtraErrors] = useState<Record<string, string>>({});
   const pendingKey = useId();
+  const infoPartial = useFoldPartialSave(work.id, onReload);
+  const videoPartial = useFoldPartialSave(work.id, onReload);
 
   const selectedCategories = draft.category_ids.map((id) => ({
     id,
@@ -735,6 +771,13 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         filled={infoDone}
         total={4}
         countTone={toneOf(infoDone, 4)}
+        headerExtra={infoPartial.headerExtra(() => ({
+          subtitle: draft.subtitle,
+          client: draft.client,
+          location_country: draft.location_country,
+          location_city: draft.location_city,
+          location_address: draft.location_address,
+        }))}
       >
         <Field
           label="부제"
@@ -754,8 +797,14 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <Bi
             ko={draft.subtitle.ko}
             en={draft.subtitle.en}
-            onKo={(v) => onChange({ subtitle: locField(draft.subtitle, "ko", v) })}
-            onEn={(v) => onChange({ subtitle: locField(draft.subtitle, "en", v) })}
+            onKo={(v) => {
+              infoPartial.markDirty();
+              onChange({ subtitle: locField(draft.subtitle, "ko", v) });
+            }}
+            onEn={(v) => {
+              infoPartial.markDirty();
+              onChange({ subtitle: locField(draft.subtitle, "en", v) });
+            }}
           />
         </Field>
 
@@ -763,8 +812,14 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <Bi
             ko={draft.client.ko}
             en={draft.client.en}
-            onKo={(v) => onChange({ client: locField(draft.client, "ko", v) })}
-            onEn={(v) => onChange({ client: locField(draft.client, "en", v) })}
+            onKo={(v) => {
+              infoPartial.markDirty();
+              onChange({ client: locField(draft.client, "ko", v) });
+            }}
+            onEn={(v) => {
+              infoPartial.markDirty();
+              onChange({ client: locField(draft.client, "en", v) });
+            }}
           />
         </Field>
 
@@ -783,33 +838,38 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             ko={draft.location_country.ko}
             en={draft.location_country.en}
             koPlaceholder="국가"
-            onKo={(v) =>
-              onChange({ location_country: locField(draft.location_country, "ko", v) })
-            }
-            onEn={(v) =>
-              onChange({ location_country: locField(draft.location_country, "en", v) })
-            }
+            onKo={(v) => {
+              infoPartial.markDirty();
+              onChange({ location_country: locField(draft.location_country, "ko", v) });
+            }}
+            onEn={(v) => {
+              infoPartial.markDirty();
+              onChange({ location_country: locField(draft.location_country, "en", v) });
+            }}
           />
           <Bi
             ko={draft.location_city.ko}
             en={draft.location_city.en}
             koPlaceholder="도시"
-            onKo={(v) =>
-              onChange({ location_city: locField(draft.location_city, "ko", v) })
-            }
-            onEn={(v) =>
-              onChange({ location_city: locField(draft.location_city, "en", v) })
-            }
+            onKo={(v) => {
+              infoPartial.markDirty();
+              onChange({ location_city: locField(draft.location_city, "ko", v) });
+            }}
+            onEn={(v) => {
+              infoPartial.markDirty();
+              onChange({ location_city: locField(draft.location_city, "en", v) });
+            }}
           />
           <input
             className="i"
             value={draft.location_address.ko}
             placeholder="주소"
-            onChange={(e) =>
+            onChange={(e) => {
+              infoPartial.markDirty();
               onChange({
-                location_address: locField(draft.location_address, "ko", e.target.value)
-              })
-            }
+                location_address: locField(draft.location_address, "ko", e.target.value),
+              });
+            }}
           />
         </Field>
 
@@ -887,6 +947,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         filled={videoDone}
         total={2}
         countTone={toneOf(videoDone, 2)}
+        headerExtra={videoPartial.headerExtra(() => ({
+          loop_video_lg: draft.loop_video_lg || null,
+          loop_video_sm: draft.loop_video_sm || null,
+        }))}
       >
         <div className="two">
           <Field label={VIDEO_LABELS.thumbLarge}>
@@ -902,9 +966,15 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               emptyHint={formatThumbLargeHint()}
               onUploaded={(files) => {
                 const first = files[0];
-                if (first) onChange({ loop_video_lg: first.src });
+                if (first) {
+                  videoPartial.markDirty();
+                  onChange({ loop_video_lg: first.src });
+                }
               }}
-              onClear={() => onChange({ loop_video_lg: "" })}
+              onClear={() => {
+                videoPartial.markDirty();
+                onChange({ loop_video_lg: "" });
+              }}
             />
           </Field>
           <Field label={VIDEO_LABELS.thumbSmall}>
@@ -920,9 +990,15 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               emptyHint={formatThumbSmallHint()}
               onUploaded={(files) => {
                 const first = files[0];
-                if (first) onChange({ loop_video_sm: first.src });
+                if (first) {
+                  videoPartial.markDirty();
+                  onChange({ loop_video_sm: first.src });
+                }
               }}
-              onClear={() => onChange({ loop_video_sm: "" })}
+              onClear={() => {
+                videoPartial.markDirty();
+                onChange({ loop_video_sm: "" });
+              }}
             />
           </Field>
         </div>
@@ -940,6 +1016,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         summary="워크 목록에서 필터로 쓰입니다"
         count={`${tags.length}개`}
         countTone={tagTone}
+        headerExtra={<AutoSaveLabel />}
       >
         <Field
           label="태그"
@@ -974,6 +1051,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         filled={folderDone}
         total={2}
         countTone={toneOf(folderDone, 2)}
+        headerExtra={<AutoSaveLabel />}
       >
         <FolderKindRow
           label="프로젝트 폴더"
@@ -986,7 +1064,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           onReload={onReload}
         />
         <FolderKindRow
-          label="영상 폴더"
+          label="사업개발 폴더"
           placeholder="P:\... (없으면 비워둡니다)"
           folder={video}
           kind="en"

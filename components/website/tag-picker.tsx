@@ -9,7 +9,6 @@ import {
 } from "@/lib/website/api";
 import type { ApiResult } from "@/lib/website/types";
 import { SmallBtn, TextInput } from "@/components/website/work-editor-ui";
-import { Chips } from "@/components/website/ui";
 
 const TAG_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -24,8 +23,11 @@ function tagName(tag: WebsiteTagItem) {
   return tag.label?.ko || tag.label?.en || tag.id;
 }
 
+function slugFromInput(value: string) {
+  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
+}
+
 export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTags }: Props) {
-  const [open, setOpen] = useState(false);
   const [all, setAll] = useState<WebsiteTagItem[]>([]);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
@@ -34,7 +36,9 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
   const [newEn, setNewEn] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [openSuggest, setOpenSuggest] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  const enRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void getTags().then((res) => {
@@ -43,29 +47,31 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
   }, []);
 
   useEffect(() => {
-    if (!open) return;
     function onDoc(event: MouseEvent) {
       if (!boxRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setCreating(false);
+        setOpenSuggest(false);
       }
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  }, []);
 
   const selected = useMemo(() => {
     const byId = new Map(all.map((tag) => [tag.id, tag]));
     return selectedIds.map((id) => byId.get(id) ?? { id, label: { ko: id } });
   }, [all, selectedIds]);
 
+  const needle = q.trim().toLowerCase();
+
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return all.filter((tag) => {
-      if (!needle) return true;
-      return `${tag.id} ${tagName(tag)}`.toLowerCase().includes(needle);
-    });
-  }, [all, q]);
+    if (!needle) return all.filter((tag) => !selectedIds.includes(tag.id)).slice(0, 8);
+    return all
+      .filter((tag) => {
+        if (selectedIds.includes(tag.id)) return false;
+        return `${tag.id} ${tagName(tag)}`.toLowerCase().includes(needle);
+      })
+      .slice(0, 8);
+  }, [all, needle, selectedIds]);
 
   async function replace(next: string[]) {
     setBusy(true);
@@ -82,11 +88,18 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     }
   }
 
+  function resetInput() {
+    setQ("");
+    setCreating(false);
+    setNewId("");
+    setNewKo("");
+    setNewEn("");
+    setOpenSuggest(false);
+  }
+
   async function add(id: string) {
     if (selectedIds.includes(id)) return;
-    setOpen(false);
-    setCreating(false);
-    setQ("");
+    resetInput();
     await replace([...selectedIds, id]);
   }
 
@@ -94,10 +107,18 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     await replace(selectedIds.filter((item) => item !== id));
   }
 
-  function startCreate() {
+  function beginCreate(source: string) {
+    const slug = slugFromInput(source);
+    if (!TAG_ID_RE.test(slug)) {
+      setError("id는 영문 소문자·하이픈만 쓸 수 있습니다");
+      return;
+    }
     setCreating(true);
-    const slug = q.trim().toLowerCase().replace(/[\s_]+/g, "-");
-    if (TAG_ID_RE.test(slug)) setNewId(slug);
+    setNewId(slug);
+    setNewKo(source.trim());
+    setNewEn("");
+    setOpenSuggest(false);
+    window.setTimeout(() => enRef.current?.focus(), 0);
   }
 
   async function makeTag() {
@@ -115,80 +136,144 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
         return;
       }
       setAll((prev) => [...prev, created.data]);
-      setCreating(false);
-      setNewId("");
-      setNewKo("");
-      setNewEn("");
+      resetInput();
       await add(created.data.id);
     } finally {
       setBusy(false);
     }
   }
 
-  const noneMatch = filtered.length === 0;
+  function pickExisting(tag: WebsiteTagItem) {
+    void add(tag.id);
+  }
+
+  function handleEnter() {
+    if (busy) return;
+    if (creating) {
+      void makeTag();
+      return;
+    }
+
+    const text = q.trim();
+    if (!text) return;
+
+    const slug = slugFromInput(text);
+    const byId = all.find((tag) => tag.id === slug);
+    if (byId) {
+      void add(byId.id);
+      return;
+    }
+
+    const byName = all.find(
+      (tag) => tagName(tag).toLowerCase() === text.toLowerCase() && !selectedIds.includes(tag.id),
+    );
+    if (byName) {
+      void add(byName.id);
+      return;
+    }
+
+    if (filtered.length === 1) {
+      void add(filtered[0]!.id);
+      return;
+    }
+
+    if (all.some((tag) => tag.id === slug)) {
+      void add(slug);
+      return;
+    }
+
+    beginCreate(text);
+  }
 
   return (
-    <div>
-      <div className="relative" ref={boxRef}>
-        <Chips
-          items={selected.map((tag) => ({ id: tag.id, label: tagName(tag) }))}
-          onRemove={(id) => {
-            if (!busy) void remove(id);
+    <div ref={boxRef}>
+      <div className="wa chips">
+        {selected.map((tag) => (
+          <span key={tag.id} className="chip">
+            {tagName(tag)}
+            <button
+              type="button"
+              className="x"
+              aria-label={`${tagName(tag)} 삭제`}
+              disabled={busy}
+              onClick={() => void remove(tag.id)}
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+
+      <div className="relative mt-2">
+        <input
+          className="i"
+          value={q}
+          disabled={busy}
+          placeholder="태그 입력 후 Enter"
+          onChange={(event) => {
+            setQ(event.target.value);
+            setError(null);
+            setOpenSuggest(true);
+            if (creating) setCreating(false);
           }}
-          onAdd={() => {
-            setOpen((v) => !v);
-            setCreating(false);
+          onFocus={() => setOpenSuggest(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              handleEnter();
+            }
+            if (event.key === "Escape") {
+              resetInput();
+            }
           }}
         />
-        {open ? (
-          <div className="absolute left-0 z-20 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-            <TextInput value={q} onChange={setQ} placeholder="태그 검색" />
-            <ul className="mt-2 max-h-48 overflow-y-auto">
-              {filtered.map((tag) => {
-                const on = selectedIds.includes(tag.id);
-                return (
-                  <li key={tag.id}>
-                    <button
-                      type="button"
-                      disabled={on || busy}
-                      onClick={() => void add(tag.id)}
-                      className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
-                        on ? "text-slate-300" : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span>{tagName(tag)}</span>
-                      <span className="text-slate-400">{tag.id}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {noneMatch || creating ? (
-              <div className="mt-2 border-t border-slate-100 pt-2">
-                {!creating ? (
-                  <SmallBtn onClick={startCreate}>새 태그 만들기</SmallBtn>
-                ) : (
-                  <div className="space-y-1.5">
-                    <TextInput value={newId} onChange={setNewId} placeholder="id (영문 소문자·하이픈)" />
-                    <TextInput value={newKo} onChange={setNewKo} placeholder="국문" />
-                    <TextInput value={newEn} onChange={setNewEn} placeholder="영문" />
-                    <div className="flex gap-1">
-                      <SmallBtn disabled={busy} onClick={() => void makeTag()}>
-                        만들기
-                      </SmallBtn>
-                      <SmallBtn onClick={() => setCreating(false)}>취소</SmallBtn>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="mt-2 border-t border-slate-100 pt-2">
-                <SmallBtn onClick={startCreate}>새 태그 만들기</SmallBtn>
-              </div>
-            )}
-          </div>
+        {openSuggest && needle && filtered.length > 0 && !creating ? (
+          <ul className="absolute left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+            {filtered.map((tag) => (
+              <li key={tag.id}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => pickExisting(tag)}
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  <span>{tagName(tag)}</span>
+                  <span className="text-slate-400">{tag.id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         ) : null}
       </div>
+
+      {creating ? (
+        <div className="mt-2 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+          <p className="text-xs text-slate-500">새 태그 — id·국문·영문을 확인하고 Enter 로 만듭니다</p>
+          <TextInput value={newId} onChange={setNewId} placeholder="id (영문 소문자·하이픈)" />
+          <TextInput value={newKo} onChange={setNewKo} placeholder="국문" />
+          <input
+            ref={enRef}
+            className="i"
+            value={newEn}
+            placeholder="영문"
+            onChange={(event) => setNewEn(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void makeTag();
+              }
+            }}
+          />
+          <div className="flex gap-1">
+            <SmallBtn disabled={busy} onClick={() => void makeTag()}>
+              만들기
+            </SmallBtn>
+            <SmallBtn onClick={resetInput}>취소</SmallBtn>
+          </div>
+        </div>
+      ) : null}
+
       {error ? <p className="mt-1 text-xs text-rose-600">{error}</p> : null}
     </div>
   );
