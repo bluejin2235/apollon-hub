@@ -349,6 +349,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     filled(draft.category_id),
     filled(draft.year),
     keyFilled,
+    filled(draft.key_image_alt.ko),
     summaryDone
   ].filter(Boolean).length;
 
@@ -362,7 +363,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const infoDone = [
     filled(draft.subtitle.ko) && subtitleDone,
     filled(draft.client.ko),
-    filled(draft.completed_year),
     locationFilled,
     credits.length > 0
   ].filter(Boolean).length;
@@ -464,7 +464,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     <div className="wa">
       <div className="grp">
         <div className="gt">
-          꼭 채워야 하는 것 <span className="c">{requiredDone} / 6 완료</span>
+          꼭 채워야 하는 것 <span className="c">{requiredDone} / 7 완료</span>
         </div>
 
         <Field
@@ -551,7 +551,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             )}
           </Field>
           <Field
-            label="표기 연도"
+            label="완공 연도"
             required
             guideLink
             tip="화면에 보이는 연도이자 목록 정렬 기준입니다."
@@ -597,6 +597,19 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         </Field>
 
         <Field
+          label="대체 텍스트"
+          required
+          counts={[{ label: "국문", value: draft.key_image_alt.ko.length, limit: 40 }]}
+        >
+          <Bi
+            ko={draft.key_image_alt.ko}
+            en={draft.key_image_alt.en}
+            onKo={(v) => onChange({ key_image_alt: locField(draft.key_image_alt, "ko", v) })}
+            onEn={(v) => onChange({ key_image_alt: locField(draft.key_image_alt, "en", v) })}
+          />
+        </Field>
+
+        <Field
           label="한 줄 요약"
           required
           guideAnchorId="text-length"
@@ -617,10 +630,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
       <FoldGroup
         title="프로젝트 정보"
-        summary="부제 · 클라이언트 · 완공 연도 · 위치 · 크레딧"
+        summary="부제 · 클라이언트 · 위치 · 크레딧"
         filled={infoDone}
-        total={5}
-        countTone={toneOf(infoDone, 5)}
+        total={4}
+        countTone={toneOf(infoDone, 4)}
       >
         <Field
           label="부제"
@@ -645,24 +658,14 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           />
         </Field>
 
-        <div className="two">
-          <Field label="클라이언트">
-            <Bi
-              ko={draft.client.ko}
-              en={draft.client.en}
-              onKo={(v) => onChange({ client: locField(draft.client, "ko", v) })}
-              onEn={(v) => onChange({ client: locField(draft.client, "en", v) })}
-            />
-          </Field>
-          <Field label="완공 연도">
-            <input
-              className="i"
-              value={draft.completed_year}
-              onChange={(e) => onChange({ completed_year: e.target.value })}
-              style={{ maxWidth: 140 }}
-            />
-          </Field>
-        </div>
+        <Field label="클라이언트">
+          <Bi
+            ko={draft.client.ko}
+            en={draft.client.en}
+            onKo={(v) => onChange({ client: locField(draft.client, "ko", v) })}
+            onEn={(v) => onChange({ client: locField(draft.client, "en", v) })}
+          />
+        </Field>
 
         <Field
           label="위치"

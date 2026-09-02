@@ -211,7 +211,7 @@ export function NewWorkModal({ open, onClose }: Props) {
 
           <div>
             <FieldLabel>
-              표기 연도
+              완공 연도
               <Req />
             </FieldLabel>
             <TextInput value={year} onChange={setYear} />

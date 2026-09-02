@@ -121,7 +121,6 @@ export type WorkDetail = {
   loop_video_lg: string | null;
   loop_video_sm: string | null;
   client: Loc | null;
-  completed_year: string | null;
   location_country: Loc | null;
   location_city: Loc | null;
   location_address: Loc | null;
@@ -160,7 +159,6 @@ export type WorkBasicDraft = {
   loop_video_lg: string;
   loop_video_sm: string;
   client: Loc;
-  completed_year: string;
   location_country: Loc;
   location_city: Loc;
   location_address: Loc;
@@ -351,7 +349,6 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     loop_video_lg: typeof row.loop_video_lg === "string" ? row.loop_video_lg : null,
     loop_video_sm: typeof row.loop_video_sm === "string" ? row.loop_video_sm : null,
     client: row.client ? asLoc(row.client) : null,
-    completed_year: typeof row.completed_year === "string" ? row.completed_year : null,
     location_country: row.location_country ? asLoc(row.location_country) : null,
     location_city: row.location_city ? asLoc(row.location_city) : null,
     location_address: row.location_address ? asLoc(row.location_address) : null,
@@ -518,7 +515,6 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     loop_video_lg: work.loop_video_lg ?? "",
     loop_video_sm: work.loop_video_sm ?? "",
     client: asLoc(work.client),
-    completed_year: work.completed_year ?? "",
     location_country: asLoc(work.location_country),
     location_city: asLoc(work.location_city),
     location_address: asLoc(work.location_address),
@@ -546,7 +542,6 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     loop_video_lg: draft.loop_video_lg || null,
     loop_video_sm: draft.loop_video_sm || null,
     client: draft.client,
-    completed_year: draft.completed_year || null,
     location_country: draft.location_country,
     location_city: draft.location_city,
     location_address: draft.location_address,
