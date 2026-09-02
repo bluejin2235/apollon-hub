@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
@@ -7,36 +7,61 @@ import {
   MetricHintPanel,
   type MetricHint
 } from "@/components/website/stats/metric-hint";
+import { BEHAVIOR_KINDS } from "@/components/website/stats/behavior-data";
+import { BehaviorScreen } from "@/components/website/stats/behavior-screen";
+import { CONTENT_KINDS } from "@/components/website/stats/content-data";
+import { ContentScreen } from "@/components/website/stats/content-screen";
+import { SEARCH_KINDS } from "@/components/website/stats/search-data";
+import { SearchScreen } from "@/components/website/stats/search-screen";
 import {
   StatsChart,
   STATS_COLORS,
+  STATS_MUTED,
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
+import { clip } from "@/components/website/stats/stats-data";
+import {
+  ChartSlot,
+  SectionHead,
+  type LoadStatus,
+  type StatsData
+} from "@/components/website/stats/stats-slot";
+import {
+  buildCountry,
+  buildDevice,
+  buildKeywords,
+  buildKpis,
+  buildLanguage,
+  buildSourceDaily,
+  buildSourcePie,
+  buildSourceQuality,
+  buildTrend,
+  SUMMARY_KINDS
+} from "@/components/website/stats/summary-data";
 import {
   AI_QUESTION_COLORS,
   AI_QUESTION_SAMPLE,
-  COUNTRY_SAMPLE,
-  DEVICE_SAMPLE,
-  KEYWORD_IMPRESSION_COLOR,
-  KEYWORD_SAMPLE,
-  KPI_SAMPLE,
-  LANGUAGE_SAMPLE,
   LUNA_SAMPLE,
-  SOURCE_DAILY_SAMPLE,
-  SOURCE_PIE_SAMPLE,
-  SOURCE_QUALITY_SAMPLE,
   SUMMARY_LIMIT_NOTE,
-  TODO_SAMPLE,
-  TREND_SAMPLE
+  TODO_SAMPLE
 } from "@/components/website/stats/summary-sample";
 import "./stats.css";
-import { getStats } from "@/lib/website/api";
+import { getStatsBundle, getStatsRealtime } from "@/lib/website/api";
 import {
   PERIOD_PRESETS,
   STATS_SCREENS,
   type PeriodPresetId,
+  type StatsBundle,
   type StatsScreenId
 } from "@/lib/website/stats";
+
+/** 화면마다 필요한 kind 가 다르다. 안 쓰는 것까지 받지 않는다 */
+const KINDS_BY_SCREEN: Partial<Record<StatsScreenId, string[]>> = {
+  summary: SUMMARY_KINDS,
+  content: CONTENT_KINDS,
+  search: SEARCH_KINDS,
+  behavior: BEHAVIOR_KINDS
+};
 
 /** 요약 화면 KPI. summary 는 카드 안 한 줄, 나머지는 물음표 패널에만 나온다. */
 const SUMMARY_HINTS: MetricHint[] = [
@@ -136,36 +161,32 @@ function ScreenShell({
   );
 }
 
-function SectionHead({ title, stamp }: { title: string; stamp?: string }) {
-  return (
-    <div className="ws-sech">
-      <h3>{title}</h3>
-      {stamp ? <span className="ws-stamp">{stamp}</span> : null}
-    </div>
-  );
-}
-
-/** 목업의 .luna — 루나 총평 */
+/**
+ * 목업의 .luna — 루나 총평.
+ * 임시 값이다. 총평을 쓰려면 기간 데이터를 읽고 글을 짓는 단계가 있어야 하는데
+ * 아직 없다. 읽을 데이터도 아직 없다.
+ */
 function LunaBlock() {
   return (
     <div className="ws-luna">
-      <div className="ws-who">{LUNA_SAMPLE.who}</div>
+      <div className="ws-who">{LUNA_SAMPLE.who} · 임시 값</div>
       <p>{LUNA_SAMPLE.text}</p>
     </div>
   );
 }
 
-function SummaryKpis() {
+function SummaryKpis({ data }: { data: StatsData }) {
   const panelId = useId();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = SUMMARY_HINTS.find((hint) => hint.id === openId) ?? null;
+  const kpis = useMemo(() => buildKpis(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
-      <SectionHead title="이번 기간" stamp="방문 어제까지 · 검색 8월 28일까지" />
+      <SectionHead title="이번 기간" />
       <div className="ws-kpis">
         {SUMMARY_HINTS.map((hint) => {
-          const kpi = KPI_SAMPLE.find((item) => item.id === hint.id);
+          const kpi = kpis.find((item) => item.id === hint.id);
           return (
             <div className="ws-kpi" key={hint.id}>
               <div className="ws-lab">
@@ -180,7 +201,7 @@ function SummaryKpis() {
               <div className="ws-val">{kpi?.value ?? "—"}</div>
               <div className={`ws-delta ws-${kpi?.tone ?? "flat"}`}>{kpi?.delta ?? "—"}</div>
               <p className="ws-kpi-sub">{hint.summary}</p>
-              {kpi ? (
+              {kpi && kpi.spark.length > 0 ? (
                 <StatsChart
                   type="spark"
                   data={kpi.spark}
@@ -200,126 +221,144 @@ function SummaryKpis() {
   );
 }
 
-function TrendAndSources() {
+function TrendAndSources({ data }: { data: StatsData }) {
+  const trend = useMemo(() => buildTrend(data.bundle), [data.bundle]);
+  const pie = useMemo(() => buildSourcePie(data.bundle), [data.bundle]);
+
   return (
     <div className="ws-sec ws-g2">
       <div className="ws-card">
         <div className="ws-ct">방문 추이 — 실선 이번 기간, 점선 지난 기간</div>
-        <StatsChart
-          type="line"
-          data={TREND_SAMPLE}
-          xKey="date"
-          series={[
-            { key: "current", name: "이번 기간", color: STATS_COLORS[0] },
-            { key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }
-          ]}
-        />
+        <ChartSlot status={data.status} empty={trend.length === 0}>
+          <StatsChart
+            type="line"
+            data={trend}
+            xKey="date"
+            series={[
+              { key: "current", name: "이번 기간", color: STATS_COLORS[0] },
+              { key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }
+            ]}
+          />
+        </ChartSlot>
       </div>
       <div className="ws-card">
         <div className="ws-ct">경로별 비중</div>
-        <StatsChart type="doughnut" data={SOURCE_PIE_SAMPLE} legend />
+        <ChartSlot status={data.status} empty={pie.length === 0}>
+          <StatsChart type="doughnut" data={pie} legend />
+        </ChartSlot>
       </div>
     </div>
   );
 }
 
-function HowTheyArrived() {
+function HowTheyArrived({ data }: { data: StatsData }) {
+  const daily = useMemo(() => buildSourceDaily(data.bundle), [data.bundle]);
+  const quality = useMemo(() => buildSourceQuality(data.bundle), [data.bundle]);
+
   return (
     <div className="ws-sec">
       <SectionHead title="어디로 들어왔나" />
       <p className="ws-note">
-        경로마다 사람의 성격이 다릅니다. 수보다 머문 시간과 본 페이지 수를 같이 보세요.
+        경로마다 사람의 성격이 다릅니다. 수보다 머문 시간과 참여율을 같이 보세요.
       </p>
       <div className="ws-g2">
         <div className="ws-card">
           <div className="ws-ct">경로별 일별 추이</div>
-          <StatsChart
-            type="line"
-            data={SOURCE_DAILY_SAMPLE}
-            xKey="date"
-            legend
-            series={[
-              { key: "search", name: "검색", color: STATS_COLORS[0] },
-              { key: "direct", name: "직접", color: STATS_COLORS[1] },
-              { key: "ai", name: "AI", color: STATS_COLORS[2] },
-              { key: "sns", name: "SNS", color: STATS_COLORS[3] }
-            ]}
-          />
+          <ChartSlot status={data.status} empty={daily.rows.length === 0}>
+            <StatsChart type="line" data={daily.rows} xKey="date" legend series={daily.series} />
+          </ChartSlot>
         </div>
         <div className="ws-card">
           <div className="ws-ct">경로별 질 — 오른쪽 위일수록 좋음</div>
-          <p className="ws-cs">가로 머문 시간(초) · 세로 본 페이지 수 · 원 크기 방문 수</p>
-          <StatsChart
-            type="scatter"
-            groups={SOURCE_QUALITY_SAMPLE}
-            xDomain={[0, 160]}
-            yDomain={[0, 4]}
-            sizeRange={[40, 700]}
-            legend
-          />
+          {/* 목업은 세로가 「본 페이지 수」였지만 GA4 channel 리포트에 없다 */}
+          <p className="ws-cs">가로 머문 시간(초) · 세로 참여율(%) · 원 크기 방문 수</p>
+          <ChartSlot status={data.status} empty={quality.length === 0}>
+            <StatsChart
+              type="scatter"
+              groups={quality}
+              yDomain={[0, 100]}
+              sizeRange={[40, 700]}
+              legend
+            />
+          </ChartSlot>
         </div>
       </div>
-      <p className="ws-foot">
-        AI로 들어온 사람이 가장 오래, 가장 깊이 봅니다. 수는 적어도 질이 높습니다.
-      </p>
     </div>
   );
 }
 
-function WhoCame() {
+function WhoCame({ data }: { data: StatsData }) {
+  const country = useMemo(() => buildCountry(data.bundle), [data.bundle]);
+  const device = useMemo(() => buildDevice(data.bundle), [data.bundle]);
+  const language = useMemo(() => buildLanguage(data.bundle), [data.bundle]);
+
   return (
     <div className="ws-sec ws-g3">
       <div className="ws-card">
         <div className="ws-ct">국가</div>
-        <StatsChart
-          type="hbar"
-          data={COUNTRY_SAMPLE}
-          xKey="name"
-          height={150}
-          labelWidth={52}
-          series={[{ key: "value", name: "방문", color: STATS_COLORS[0] }]}
-        />
+        <ChartSlot status={data.status} empty={country.length === 0} height={150}>
+          <StatsChart
+            type="hbar"
+            data={country}
+            xKey="name"
+            height={150}
+            labelWidth={52}
+            series={[{ key: "value", name: "방문", color: STATS_COLORS[0] }]}
+          />
+        </ChartSlot>
       </div>
       <div className="ws-card">
         <div className="ws-ct">기기</div>
-        <StatsChart type="doughnut" data={DEVICE_SAMPLE} height={150} legend />
+        <ChartSlot status={data.status} empty={device.length === 0} height={150}>
+          <StatsChart type="doughnut" data={device} height={150} legend />
+        </ChartSlot>
       </div>
       <div className="ws-card">
         <div className="ws-ct">언어별 페이지</div>
-        <StatsChart type="doughnut" data={LANGUAGE_SAMPLE} height={150} legend />
+        <ChartSlot status={data.status} empty={language.length === 0} height={150}>
+          <StatsChart type="doughnut" data={language} height={150} legend />
+        </ChartSlot>
       </div>
     </div>
   );
 }
 
-function WhatWordsBrought() {
+function WhatWordsBrought({ data }: { data: StatsData }) {
+  const keywords = useMemo(() => buildKeywords(data.bundle), [data.bundle]);
+
   return (
     <div className="ws-sec">
-      <SectionHead title="어떤 말로 들어왔나" stamp="검색 8월 28일 · AI 8월 30일" />
+      <SectionHead title="어떤 말로 들어왔나" />
       <div className="ws-g2">
         <div className="ws-card">
           <div className="ws-ct">
             <span className="ws-sw" style={{ background: STATS_COLORS[0] }} />
             검색엔진 — 노출 대비 클릭
           </div>
-          <StatsChart
-            type="hbar"
-            data={KEYWORD_SAMPLE}
-            xKey="name"
-            labelWidth={128}
-            legend
-            series={[
-              { key: "impressions", name: "노출", color: KEYWORD_IMPRESSION_COLOR },
-              { key: "clicks", name: "클릭", color: STATS_COLORS[0] }
-            ]}
-          />
-          <p className="ws-foot">노출 막대가 긴데 클릭 막대가 짧으면 제목이 안 걸리는 것입니다.</p>
+          <ChartSlot status={data.status} empty={keywords.length === 0}>
+            <StatsChart
+              type="hbar"
+              data={keywords}
+              xKey="name"
+              labelWidth={128}
+              legend
+              series={[
+                { key: "impressions", name: "노출", color: STATS_MUTED },
+                { key: "clicks", name: "클릭", color: STATS_COLORS[0] }
+              ]}
+            />
+            <p className="ws-foot">노출 막대가 긴데 클릭 막대가 짧으면 제목이 안 걸리는 것입니다.</p>
+          </ChartSlot>
         </div>
         <div className="ws-card">
           <div className="ws-ct">
             <span className="ws-sw" style={{ background: STATS_COLORS[2] }} />
             AI — 질문별 언급 (4개 AI 중)
           </div>
+          {/*
+            임시 값이다. AI에 직접 물어 답변에 나오는지 세는 표가 아직 없다.
+            website_stats 에는 이 값을 담을 kind 가 없어 연결할 곳이 없다.
+          */}
           <StatsChart
             type="hbar"
             data={AI_QUESTION_SAMPLE}
@@ -328,17 +367,21 @@ function WhatWordsBrought() {
             max={4}
             series={[{ key: "count", name: "언급한 AI", colorByPoint: AI_QUESTION_COLORS }]}
           />
-          <p className="ws-foot">0으로 뜬 질문이 다음 글감입니다.</p>
+          <p className="ws-foot">임시 값입니다. AI 노출을 세는 표를 아직 만들지 않았습니다.</p>
         </div>
       </div>
     </div>
   );
 }
 
+/**
+ * 임시 값이다. 할 일은 여러 화면의 값을 견줘 뽑아야 하는데 그 규칙을 아직
+ * 만들지 않았고, 견줄 데이터도 아직 없다.
+ */
 function TodoList() {
   return (
     <div className="ws-sec">
-      <SectionHead title="이번 기간 할 일" stamp="루나가 뽑음" />
+      <SectionHead title="이번 기간 할 일" stamp="임시 값" />
       <div className="ws-card">
         <ul className="ws-todo">
           {TODO_SAMPLE.map((item) => (
@@ -356,20 +399,77 @@ function TodoList() {
   );
 }
 
-/** 요약 화면 전체. 값은 전부 임시다 — summary-sample.ts */
-function SummaryScreen() {
+/**
+ * 요약 화면 전체.
+ * KPI·추이·경로·국가·기기·언어·검색어는 website_stats 를 읽는다.
+ * AI 질문·할 일·루나 총평은 아직 담을 표가 없어 임시 값이다.
+ */
+function SummaryScreen({ data }: { data: StatsData }) {
   return (
     <>
       <LunaBlock />
-      <SummaryKpis />
-      <TrendAndSources />
-      <HowTheyArrived />
-      <WhoCame />
-      <WhatWordsBrought />
+      <SummaryKpis data={data} />
+      <TrendAndSources data={data} />
+      <HowTheyArrived data={data} />
+      <WhoCame data={data} />
+      <WhatWordsBrought data={data} />
       <TodoList />
       <p className="ws-foot">{SUMMARY_LIMIT_NOTE}</p>
     </>
   );
+}
+
+type LiveVisitors = {
+  count: number | null;
+  pages: string[];
+};
+
+/**
+ * GA4 Realtime — 30초마다. 오류여도 통계 화면은 멈추지 않는다.
+ *
+ * Realtime 은 pagePath 가 없어 unifiedScreenName(페이지 제목) 을 그대로 쓴다.
+ * 경로 → 워크·인사이트 제목 매핑은 할 수 없다.
+ */
+function useLiveVisitors(): LiveVisitors {
+  const [live, setLive] = useState<LiveVisitors>({ count: null, pages: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function pull() {
+      const result = await getStatsRealtime(controller.signal);
+      if (cancelled) return;
+      if (!result.ok || result.data.activeUsers === null) {
+        setLive({ count: null, pages: [] });
+        return;
+      }
+      const names = result.data.pages
+        .slice(0, 3)
+        .map((row) => clip(row.name, 28));
+      setLive({ count: result.data.activeUsers, pages: names });
+    }
+
+    void pull();
+    const timer = setInterval(() => {
+      void pull();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, []);
+
+  return live;
+}
+
+function liveVisitorText(live: LiveVisitors): string {
+  if (live.count === null) return "지금 보고 있는 사람 —";
+  const head = `지금 보고 있는 사람 ${live.count}`;
+  if (live.count === 0 || live.pages.length === 0) return head;
+  return `${head} · ${live.pages.join(" · ")}`;
 }
 
 export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
@@ -378,16 +478,40 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   const initial = rangeForPreset("30d", today);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+  const [bundle, setBundle] = useState<StatsBundle | null>(null);
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const kinds = KINDS_BY_SCREEN[screen];
+  const live = useLiveVisitors();
 
   useEffect(() => {
-    let cancelled = false;
-    void getStats({ from, to, kind: "daily" }).then((result) => {
-      if (cancelled || !result.ok) return;
-    });
+    if (!kinds) {
+      setBundle(null);
+      setStatus("ready");
+      return;
+    }
+
+    const controller = new AbortController();
+    setStatus("loading");
+
+    void getStatsBundle({ from, to, kinds, signal: controller.signal }).then(
+      (result) => {
+        if (controller.signal.aborted) return;
+        if (!result.ok) {
+          setBundle(null);
+          setStatus("error");
+          return;
+        }
+        setBundle(result.data);
+        setStatus("ready");
+      }
+    );
+
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [from, to]);
+  }, [from, to, kinds]);
+
+  const data: StatsData = { bundle, status };
 
   function applyPreset(next: PeriodPresetId) {
     setPreset(next);
@@ -441,7 +565,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
             </div>
             <div className="ws-live" aria-label="지금 접속">
               <span className="ws-dot" aria-hidden />
-              <span>지금 보고 있는 사람 —</span>
+              <span>{liveVisitorText(live)}</span>
             </div>
           </div>
         </div>
@@ -451,15 +575,27 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
         <div className="ws-body">
           {screen === "summary" ? (
           <ScreenShell id="summary">
-            <SummaryScreen />
+            <SummaryScreen data={data} />
           </ScreenShell>
           ) : null}
 
-          {screen === "content" ? <ScreenShell id="content" /> : null}
-          {screen === "search" ? <ScreenShell id="search" /> : null}
+          {screen === "content" ? (
+            <ScreenShell id="content">
+              <ContentScreen data={data} />
+            </ScreenShell>
+          ) : null}
+          {screen === "search" ? (
+            <ScreenShell id="search">
+              <SearchScreen data={data} />
+            </ScreenShell>
+          ) : null}
           {screen === "ai-visibility" ? <ScreenShell id="ai-visibility" /> : null}
           {screen === "ai-crawler" ? <ScreenShell id="ai-crawler" /> : null}
-          {screen === "behavior" ? <ScreenShell id="behavior" /> : null}
+          {screen === "behavior" ? (
+            <ScreenShell id="behavior">
+              <BehaviorScreen data={data} />
+            </ScreenShell>
+          ) : null}
         </div>
       </div>
     </div>

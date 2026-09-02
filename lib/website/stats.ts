@@ -26,6 +26,8 @@ export type StatsPoint = {
 };
 
 export type KeyCompare = {
+  /** ga4 와 gsc 가 같은 kind 를 쓴다. 섞이면 안 되므로 출처를 남긴다 */
+  source: string;
   key: string | null;
   key2: string | null;
   users: MetricCompare;
@@ -45,7 +47,10 @@ export type StatsQueryResult = {
   kind: string;
   current: StatsPoint[];
   previous: StatsPoint[];
+  /** 옛 사이트 집계 중 기간 안에 날짜가 있는 것 */
   baseline: StatsPoint[];
+  /** 옛 사이트 집계 중 날짜가 없는 것 — 기간과 무관한 전체 합계다 */
+  baseline_overall: StatsPoint[];
   totals: {
     users: MetricCompare;
     new_users: MetricCompare;
@@ -60,6 +65,22 @@ export type StatsQueryResult = {
     avg_seconds: MetricCompare;
   };
   by_key: KeyCompare[];
+};
+
+/** kind 여러 개를 한 번에 받은 것 */
+export type StatsBundle = Record<string, StatsQueryResult>;
+
+/** GA4 Realtime — 부를 때마다 새로 받는다. DB 에 쌓지 않는다 */
+export type StatsRealtimePage = {
+  /** Realtime 의 unifiedScreenName — 경로가 아니라 페이지 제목이다 */
+  name: string;
+  users: number;
+};
+
+export type StatsRealtime = {
+  /** GA4 오류면 null. 0 명과 구분한다 */
+  activeUsers: number | null;
+  pages: StatsRealtimePage[];
 };
 
 export type StatsScreenId =

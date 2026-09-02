@@ -349,6 +349,16 @@
   .ws-kpis {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
+
+  /* 검색 화면은 KPI 가 넷이다 */
+  .ws-kpis-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* 행동 화면의 제출 KPI 는 셋이다 */
+  .ws-kpis-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .ws-kpi {
@@ -490,6 +500,275 @@
   border: 1px solid var(--line);
   border-radius: var(--r);
   padding: 15px 17px;
+}
+
+/* 나란히 놓인 카드 사이 — 그래프 아래 표 */
+.ws-card-gap {
+  margin-top: 10px;
+}
+
+/* 목업의 .chip — 표를 거르는 단추 */
+.ws-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ws-chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  color: var(--ink2);
+  cursor: pointer;
+}
+
+.ws-chip:hover {
+  border-color: var(--ink3);
+  color: var(--ink);
+}
+
+.ws-chip.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+/* 종류 칩과 언어 칩을 눈으로 갈라 준다 */
+.ws-chip-gap {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+  margin: 0 4px;
+}
+
+/* 목업의 table — 좁아지면 가로로 민다 */
+.ws-table-wrap {
+  overflow-x: auto;
+}
+
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ws-table th {
+  font-size: 11px;
+  color: var(--ink3);
+  font-weight: 500;
+  text-align: left;
+  padding: 8px 9px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.ws-table td {
+  padding: 9px;
+  border-bottom: 1px solid #f1f3f6;
+  vertical-align: middle;
+}
+
+.ws-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* 목업의 .num — 숫자 칸 */
+.ws-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+  검색 화면 전용 — 옛 사이트 값과 새 사이트 값을 눈으로 갈라 둔다.
+  두 값이 나란히 있으면 옛 실적이 지금 실적처럼 읽힌다.
+  왼쪽 띠 색과 도장 색으로 어느 쪽인지 늘 보이게 한다.
+*/
+.ws-side {
+  border-left: 3px solid var(--line);
+  padding-left: 15px;
+}
+
+.ws-side-live {
+  border-left-color: #2a78d6;
+}
+
+.ws-side-legacy {
+  border-left-color: #b08a3e;
+}
+
+/* 옛 사이트임을 밝히는 도장. 회색 도장과 섞이면 안 되어 색을 달리한다 */
+.ws-stamp-legacy {
+  background: #f6ecd6;
+  color: #7a5a12;
+  font-weight: 600;
+}
+
+/* 못 만든 자리에 이유를 적는다 */
+.ws-blocked {
+  font-size: 12px;
+  color: var(--ink2);
+  background: #f7f8fa;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0;
+  line-height: 1.75;
+}
+
+/* 못 만든 이유를 그래프·막대 아래에 붙일 때 */
+.ws-blocked-gap {
+  margin-top: 10px;
+}
+
+.ws-blocked code {
+  font-size: 11.5px;
+  background: #eceef2;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.ws-foot code {
+  font-size: 11px;
+  background: #eceef2;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/*
+  목업의 .fn — 문의까지 가는 깔때기.
+  차트 라이브러리를 쓰지 않고 막대 높이만 %로 준다.
+  칸마다 위에 숫자, 아래에 이름과 「들어옴의 몇 %」가 붙는다.
+*/
+.ws-fn {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 130px;
+  margin: 30px 0 52px;
+}
+
+.ws-fn-col {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.ws-fn-fill {
+  width: 100%;
+  background: #2a78d6;
+  opacity: 0.85;
+  border-radius: 5px 5px 0 0;
+  min-height: 3px;
+}
+
+/* 셀 수 없는 칸 — 채우지 않고 테두리만 둔다 */
+.ws-fn-none {
+  width: 100%;
+  height: 26px;
+  border: 1px dashed var(--line);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: repeating-linear-gradient(
+    45deg,
+    #f7f8fa,
+    #f7f8fa 4px,
+    #eef0f3 4px,
+    #eef0f3 8px
+  );
+}
+
+.ws-fn b {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ws-fn-col-none b {
+  color: var(--ink3);
+  font-weight: 500;
+}
+
+.ws-fn em {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--ink3);
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.ws-fn u {
+  position: absolute;
+  top: calc(100% + 34px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--ink2);
+  text-decoration: none;
+}
+
+/*
+  목업의 .hm — 요일 × 시간 히트맵.
+  왼쪽 한 칸이 요일 이름, 나머지 24칸이 시간이다. CSS grid 로만 그린다.
+*/
+.ws-hm {
+  display: grid;
+  grid-template-columns: 30px repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  font-size: 10px;
+  color: var(--ink3);
+}
+
+.ws-hm i {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: #eef0f3;
+  display: block;
+  min-width: 0;
+}
+
+.ws-hm-lbl {
+  display: flex;
+  align-items: center;
+}
+
+.ws-hm-hour {
+  text-align: center;
+  font-size: 9px;
+}
+
+/* 검색어 갈래 점 — 회사 이름/일반 */
+.ws-dotmark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+/* 표 안 태그가 여러 개 붙을 수 있다 */
+.ws-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 /* 목업의 .ct — 카드 제목 */

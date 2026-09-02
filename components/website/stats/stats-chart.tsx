@@ -13,6 +13,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Label,
   Legend,
   Line,
   LineChart,
@@ -113,6 +115,21 @@ export type StatsChartProps = Common &
         series: StatsSeries[];
         /** 값축 최대. 없으면 데이터에 맞춘다 */
         max?: number;
+      }
+    | {
+        /**
+         * 막대와 선을 겹친다. 값 크기가 크게 다를 때 쓴다.
+         * 노출 3,000 과 클릭 100 을 한 축에 두면 선이 바닥에 붙는다.
+         */
+        type: "combo";
+        data: StatsRow[];
+        xKey: string;
+        /** 왼쪽 축 */
+        bars: StatsSeries[];
+        /** 오른쪽 축 */
+        lines: StatsSeries[];
+        leftLabel?: string;
+        rightLabel?: string;
       }
     | {
         /** 가로 막대 — 이름이 세로축으로 간다 */
@@ -323,6 +340,73 @@ function chartBody(props: StatsChartProps) {
     );
   }
 
+  if (props.type === "combo") {
+    const axisLabel = (text: string | undefined, side: "left" | "right") =>
+      text ? (
+        <Label
+          value={text}
+          position={side === "left" ? "insideTopLeft" : "insideTopRight"}
+          offset={-2}
+          style={{ fontSize: 10, fill: STATS_TEXT }}
+        />
+      ) : null;
+
+    return (
+      <ComposedChart data={props.data} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid vertical={false} stroke={STATS_GRID} />
+        <XAxis
+          dataKey={props.xKey}
+          tick={TICK}
+          tickLine={false}
+          axisLine={{ stroke: STATS_GRID }}
+        />
+        <YAxis yAxisId="left" tick={TICK} tickLine={false} axisLine={false} width={48}>
+          {axisLabel(props.leftLabel, "left")}
+        </YAxis>
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={TICK}
+          tickLine={false}
+          axisLine={false}
+          width={40}
+        >
+          {axisLabel(props.rightLabel, "right")}
+        </YAxis>
+        {tooltip(props.format)}
+        {legendNode(props.legend, seriesLegend([...props.bars, ...props.lines]))}
+        {props.bars.map((series, index) => (
+          <Bar
+            key={series.key}
+            yAxisId="left"
+            dataKey={series.key}
+            name={series.name ?? series.key}
+            fill={colorAt(index, series.color)}
+            stackId={series.stackId}
+            radius={[3, 3, 0, 0]}
+            maxBarSize={20}
+            isAnimationActive={false}
+          />
+        ))}
+        {props.lines.map((series, index) => (
+          <Line
+            key={series.key}
+            yAxisId="right"
+            type="monotone"
+            dataKey={series.key}
+            name={series.name ?? series.key}
+            stroke={colorAt(props.bars.length + index, series.color)}
+            strokeWidth={2}
+            strokeDasharray={series.dashed ? "5 4" : undefined}
+            dot={false}
+            activeDot={{ r: 3 }}
+            isAnimationActive={false}
+          />
+        ))}
+      </ComposedChart>
+    );
+  }
+
   if (props.type === "hbar") {
     return (
       <BarChart
@@ -422,6 +506,41 @@ function chartBody(props: StatsChartProps) {
         />
       ))}
     </ScatterChart>
+  );
+}
+
+/**
+ * 그래프 자리에 값이 없을 때. 축도 범례도 그리지 않는다.
+ * 0 을 그린 그래프와 헷갈리지 않게 글로만 말한다.
+ */
+export function StatsEmpty({
+  height = DEFAULT_HEIGHT,
+  title = "아직 데이터가 없습니다",
+  hint
+}: {
+  height?: number;
+  title?: string;
+  hint?: string;
+}) {
+  return (
+    <div
+      className="ws-chart"
+      style={{
+        height,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 4,
+        textAlign: "center",
+        color: STATS_TEXT,
+        fontSize: 12.5,
+        lineHeight: 1.6
+      }}
+    >
+      <span>{title}</span>
+      {hint ? <span style={{ fontSize: 11.5, opacity: 0.8 }}>{hint}</span> : null}
+    </div>
   );
 }
 

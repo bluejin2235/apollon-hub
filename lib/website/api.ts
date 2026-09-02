@@ -7,7 +7,7 @@ import type {
   NewsletterList
 } from "@/lib/website/contact";
 import type { HomeCandidateList, HomeList, HomeSlot } from "@/lib/website/home";
-import type { StatsQueryResult } from "@/lib/website/stats";
+import type { StatsBundle, StatsQueryResult, StatsRealtime } from "@/lib/website/stats";
 import type {
   ApiResult,
   InsightListData,
@@ -806,4 +806,22 @@ export function getStats(params: {
   kind?: string;
 }): Promise<ApiResult<StatsQueryResult>> {
   return websiteFetch<StatsQueryResult>(`stats${queryString(params)}`);
+}
+
+/** kind 여러 개를 한 번에 읽는다. 응답은 kind 를 열쇠로 한 묶음이다 */
+export function getStatsBundle(params: {
+  from: string;
+  to: string;
+  kinds: string[];
+  signal?: AbortSignal;
+}): Promise<ApiResult<StatsBundle>> {
+  const { from, to, kinds, signal } = params;
+  return websiteFetch<StatsBundle>(`stats${queryString({ from, to, kinds: kinds.join(",") })}`, {
+    signal
+  });
+}
+
+/** GA4 Realtime — 지금 접속자. DB 를 거치지 않는다 */
+export function getStatsRealtime(signal?: AbortSignal): Promise<ApiResult<StatsRealtime>> {
+  return websiteFetch<StatsRealtime>("stats/realtime", { signal });
 }
