@@ -4,22 +4,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Film, ImageIcon, X } from "lucide-react";
 import { uploadFile } from "@/lib/website/api";
 import { showToast } from "@/components/website/toast";
+import { formatBytes } from "@/lib/website/image-long-edge";
+import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
+import { describeUploadError } from "@/lib/website/upload-error";
 import {
-  sanitizeUploadFilename,
+  newStoredFilename,
   uploadObjectPath,
   type UploadBucket
 } from "@/lib/website/upload-path";
-import {
-  insightKeyImageTooSmall,
-  insightKeyImageWarnMessage,
-  keyImageRejectMessage,
-  validateKeyImageDimensions
-} from "@/lib/website/key-image-rules";
-import {
-  bodyImageRejectMessage,
-  bodyImageWarnMessage,
-  validateBodyImageDimensions
-} from "@/lib/website/body-image-rules";
 import {
   formatImageUploadGuide,
   formatVideoUploadGuide,
@@ -64,20 +56,10 @@ type Props = {
   emptyHint?: string;
 };
 
-const IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/avif",
-  "image/gif"
-]);
 const VIDEO_TYPES = new Set(["video/mp4"]);
-const IMAGE_MAX_BYTES = SPEC_BYTES.image;
-const GIF_MAX_BYTES = SPEC_BYTES.gif;
 const VIDEO_MAX_BYTES = SPEC_BYTES.video;
 
-const IMAGE_ACCEPT =
-  ".jpg,.jpeg,.png,.webp,.avif,.gif,image/jpeg,image/png,image/webp,image/avif,image/gif";
+const IMAGE_ACCEPT = "image/*,.heic,.heif,image/heic,image/heif";
 const VIDEO_ACCEPT = ".mp4,video/mp4";
 function formatGuideText(accept: Props["accept"]) {
   if (accept === "video") return formatVideoUploadGuide();
@@ -92,28 +74,19 @@ const VIDEO_TOO_LARGE = {
     "10분이 넘는 영상이라면 유튜브에 올리고 주소를 붙여넣는 편이 낫습니다."
   ]
 };
-const IMAGE_TOO_LARGE = {
-  message: `이미지는 ${SPEC.limits.image}MB 까지 올릴 수 있습니다.`,
-  advice: [
-    "원본이 너무 크면 포토샵 등으로 줄여 주세요.",
-    "올리면 서버에서 자동으로 맞춰 저장합니다."
-  ]
-};
-const GIF_TOO_LARGE = {
-  message: "GIF 가 너무 큽니다.",
-  advice: ["MP4 로 바꾸면 보통 10분의 1 이하가 됩니다. 위 안내를 참고하세요."]
-};
 
 type UploadError = { fileName: string; message: string; advice: string[] };
 
 type ProgressState = {
   fileName: string;
+  phase: "shrink" | "upload";
   percent: number;
   loaded: number;
   total: number;
   index: number;
   count: number;
   overallPercent: number;
+  shrinkLine: string | null;
 };
 
 function acceptAttr(accept: Props["accept"]) {
@@ -122,43 +95,24 @@ function acceptAttr(accept: Props["accept"]) {
   return `${IMAGE_ACCEPT},${VIDEO_ACCEPT}`;
 }
 
-function isImageFile(file: File) {
-  if (IMAGE_TYPES.has(file.type)) return true;
-  return /\.(jpe?g|png|webp|avif|gif)$/i.test(file.name);
-}
-
 function isVideoFile(file: File) {
-  if (VIDEO_TYPES.has(file.type)) return true;
+  if (VIDEO_TYPES.has(file.type) || file.type.startsWith("video/")) return true;
   return /\.mp4$/i.test(file.name);
 }
 
-function isGifFile(file: File) {
-  if (file.type === "image/gif") return true;
-  return /\.gif$/i.test(file.name);
+function isImageFile(file: File) {
+  if (isVideoFile(file)) return false;
+  if (file.type.startsWith("image/")) return true;
+  return /\.(jpe?g|png|webp|avif|gif|heic|heif|bmp|tif|tiff)$/i.test(file.name);
 }
 
-function limitForFile(file: File): { limit: number; tooLarge: { message: string; advice: string[] } } {
-  if (isVideoFile(file)) return { limit: VIDEO_MAX_BYTES, tooLarge: VIDEO_TOO_LARGE };
-  if (isGifFile(file)) return { limit: GIF_MAX_BYTES, tooLarge: GIF_TOO_LARGE };
-  return { limit: IMAGE_MAX_BYTES, tooLarge: IMAGE_TOO_LARGE };
-}
-
-function adviceFromDetails(details: unknown): { message: string; advice: string[] } | null {
-  if (!details || typeof details !== "object") return null;
-  const rec = details as Record<string, unknown>;
-  const message = typeof rec.message === "string" ? rec.message : null;
-  const advice = Array.isArray(rec.advice)
-    ? rec.advice.filter((item): item is string => typeof item === "string")
-    : [];
-  if (!message && advice.length === 0) return null;
-  return { message: message ?? "올릴 수 없습니다", advice };
-}
-
-function formatBytes(n: number | null | undefined) {
-  if (n == null || Number.isNaN(n)) return "";
-  if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+function extForUpload(file: File) {
+  if (file.type === "image/gif" || /\.gif$/i.test(file.name)) return "gif";
+  if (isVideoFile(file)) return "mp4";
+  if (file.type === "image/jpeg" || /\.jpe?g$/i.test(file.name)) return "jpg";
+  const match = /\.([a-z0-9]+)$/i.exec(file.name);
+  if (match?.[1]) return match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+  return "jpg";
 }
 
 function displayName(src: string | null | undefined): string {
@@ -170,23 +124,9 @@ function isVideoSrc(src: string, accept: Props["accept"]) {
   return /\.mp4(?:$|\?)/i.test(src);
 }
 
-function readSize(file: File): Promise<{ width: number; height: number } | null> {
-  if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp|avif|gif)$/i.test(file.name)) {
-    return Promise.resolve(null);
-  }
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    img.src = url;
-  });
+function prepareKind(kind: Kind): "key" | "body" {
+  if (kind === "key" || kind === "insight-key" || kind === "poster") return "key";
+  return "body";
 }
 
 function noticeKey(notice: UploadNotice, fileKey: string) {
@@ -252,7 +192,15 @@ function UploadNoticeBox({
   );
 }
 
-function ErrorBox({ error, onDismiss }: { error: UploadError; onDismiss: () => void }) {
+function ErrorBox({
+  error,
+  onDismiss,
+  onRetry
+}: {
+  error: UploadError;
+  onDismiss: () => void;
+  onRetry?: () => void;
+}) {
   return (
     <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-900">
       <div className="flex items-start justify-between gap-2">
@@ -275,6 +223,15 @@ function ErrorBox({ error, onDismiss }: { error: UploadError; onDismiss: () => v
           ))}
         </ul>
       ) : null}
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 rounded border border-rose-200 bg-white px-2.5 py-1 text-xs font-medium text-rose-800 hover:bg-rose-100"
+        >
+          다시 시도
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -286,6 +243,7 @@ function ProgressBox({
   progress: ProgressState;
   onCancel: () => void;
 }) {
+  const label = progress.phase === "shrink" ? "줄이는 중" : "올리는 중";
   return (
     <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800">
       <div className="flex items-start justify-between gap-2">
@@ -300,13 +258,30 @@ function ProgressBox({
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
         <div
-          className="h-full rounded-full bg-apollon-500 transition-[width] duration-150"
-          style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
+          className={`h-full rounded-full bg-apollon-500 transition-[width] duration-150 ${
+            progress.percent >= 100
+              ? "w-full"
+              : progress.percent >= 75
+                ? "w-3/4"
+                : progress.percent >= 50
+                  ? "w-1/2"
+                  : progress.percent >= 25
+                    ? "w-1/4"
+                    : progress.phase === "shrink"
+                      ? "w-1/12"
+                      : "w-0"
+          }`}
         />
       </div>
       <p className="mt-1.5 text-xs text-slate-500">
-        올리는 중 {progress.percent}% · {formatBytes(progress.loaded)} / {formatBytes(progress.total)}
+        {label}
+        {progress.phase === "upload"
+          ? ` ${progress.percent}% · ${formatBytes(progress.loaded)} / ${formatBytes(progress.total)}`
+          : ""}
       </p>
+      {progress.shrinkLine ? (
+        <p className="mt-0.5 text-xs text-slate-500">{progress.shrinkLine}</p>
+      ) : null}
       {progress.count > 1 ? (
         <p className="mt-0.5 text-xs text-slate-500">
           {progress.count}장 중 {progress.index}번째 · 전체 {progress.overallPercent}%
@@ -324,7 +299,6 @@ export function ImageUploader({
   disabled,
   maxFiles,
   kind = "gallery",
-  bodyPreset,
   guide,
   siteUrl,
   value,
@@ -337,6 +311,7 @@ export function ImageUploader({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const retryFilesRef = useRef<File[] | null>(null);
   const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -402,6 +377,7 @@ export function ImageUploader({
 
   async function handleFiles(list: FileList | File[]) {
     const files = Array.from(list).slice(0, maxFiles ?? list.length);
+    retryFilesRef.current = files;
     const ok: File[] = [];
     const nextWarnings: string[] = [];
     setError(null);
@@ -410,10 +386,10 @@ export function ImageUploader({
     for (const file of files) {
       const isImage = isImageFile(file);
       const isVideo = isVideoFile(file);
-      if (accept === "image" && !isImage) {
+      if (accept === "image" && isVideo) {
         setError({
           fileName: file.name,
-          message: "jpeg/png/webp/avif/gif 만 올릴 수 있습니다",
+          message: "이미지가 아닙니다",
           advice: []
         });
         continue;
@@ -429,17 +405,16 @@ export function ImageUploader({
       if (accept === "both" && !isImage && !isVideo) {
         setError({
           fileName: file.name,
-          message: "지원하지 않는 형식입니다",
+          message: "이미지 또는 MP4 가 아닙니다",
           advice: []
         });
         continue;
       }
-      const { limit, tooLarge } = limitForFile(file);
-      if (file.size > limit) {
+      if (isVideo && file.size > VIDEO_MAX_BYTES) {
         setError({
           fileName: file.name,
-          message: tooLarge.message,
-          advice: tooLarge.advice
+          message: VIDEO_TOO_LARGE.message,
+          advice: VIDEO_TOO_LARGE.advice
         });
         continue;
       }
@@ -453,57 +428,6 @@ export function ImageUploader({
         nextWarnings.push(
           `${file.name}: T-S 권장 ${SPEC.thumbSmall.maxMB}MB를 넘습니다.`
         );
-      }
-
-      if (kind === "key" && isImage) {
-        const dims = await readSize(file);
-        if (!dims?.width || !dims.height) {
-          setError({
-            fileName: file.name,
-            message: "이미지 크기를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.",
-            advice: []
-          });
-          continue;
-        }
-        const reject = validateKeyImageDimensions(dims.width, dims.height);
-        if (reject) {
-          setError({
-            fileName: file.name,
-            message: keyImageRejectMessage(reject),
-            advice: []
-          });
-          continue;
-        }
-      }
-
-      if (kind === "insight-key" && isImage) {
-        const dims = await readSize(file);
-        if (dims?.width && dims.height && insightKeyImageTooSmall(dims.width, dims.height)) {
-          nextWarnings.push(`${file.name}: ${insightKeyImageWarnMessage(dims.width, dims.height)}`);
-        }
-      }
-
-      if (kind === "body" && isImage) {
-        const dims = await readSize(file);
-        if (!dims?.width || !dims.height) {
-          setError({
-            fileName: file.name,
-            message: "이미지 크기를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.",
-            advice: []
-          });
-          continue;
-        }
-        const reject = validateBodyImageDimensions(bodyPreset, dims.width, dims.height);
-        if (reject) {
-          setError({
-            fileName: file.name,
-            message: bodyImageRejectMessage(reject),
-            advice: []
-          });
-          continue;
-        }
-        const warn = bodyImageWarnMessage(bodyPreset, dims.width, dims.height);
-        if (warn) nextWarnings.push(`${file.name}: ${warn}`);
       }
 
       ok.push(file);
@@ -521,75 +445,97 @@ export function ImageUploader({
     );
     const uploaded: UploadedMedia[] = [];
     let latestNotice: { payload: UploadNotice; key: string } | null = null;
-    const totalBytes = ok.reduce((sum, file) => sum + file.size, 0);
-    let completedBytes = 0;
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
       for (let i = 0; i < ok.length; i++) {
         if (controller.signal.aborted) break;
-        const file = ok[i]!;
+        const original = ok[i]!;
+        let send = original;
+        let shrinkLine: string | null = null;
+        let preparedWidth: number | null = null;
+        let preparedHeight: number | null = null;
+
+        if (isImageFile(original)) {
+          setProgress({
+            fileName: original.name,
+            phase: "shrink",
+            percent: 8,
+            loaded: 0,
+            total: original.size,
+            index: i + 1,
+            count: ok.length,
+            overallPercent: Math.round((i / ok.length) * 100),
+            shrinkLine: null
+          });
+          const prepared = await prepareImageForUpload(original, prepareKind(kind));
+          if (!prepared.ok) {
+            setError({
+              fileName: original.name,
+              message: prepared.error,
+              advice: []
+            });
+            break;
+          }
+          send = prepared.data.file;
+          shrinkLine = prepared.data.line;
+          preparedWidth = prepared.data.to.width;
+          preparedHeight = prepared.data.to.height;
+        }
+
         setProgress({
-          fileName: file.name,
+          fileName: original.name,
+          phase: "upload",
           percent: 0,
           loaded: 0,
-          total: file.size,
+          total: send.size,
           index: i + 1,
           count: ok.length,
-          overallPercent:
-            totalBytes > 0 ? Math.round((completedBytes / totalBytes) * 100) : 0
+          overallPercent: Math.round((i / ok.length) * 100),
+          shrinkLine
         });
-        const dims = await readSize(file);
-        const filename = sanitizeUploadFilename(file.name, used);
+
+        const filename = newStoredFilename(extForUpload(send), used);
         used.add(filename.toLowerCase());
         const path = uploadObjectPath(folder, filename);
-        const res = await uploadFile(file, bucket, path, {
+        const role =
+          kind === "key" || kind === "insight-key" || kind === "poster" ? "key" : undefined;
+        const res = await uploadFile(send, bucket, path, {
           signal: controller.signal,
-          fields: kind === "key" || kind === "insight-key" ? { role: "key" } : undefined,
+          fields: role ? { role } : undefined,
           onProgress: (p) => {
-            const overall =
-              totalBytes > 0
-                ? Math.round(((completedBytes + p.loaded) / totalBytes) * 100)
-                : p.percent;
             setProgress({
-              fileName: file.name,
+              fileName: original.name,
+              phase: "upload",
               percent: p.percent,
               loaded: p.loaded,
-              total: p.total || file.size,
+              total: p.total || send.size,
               index: i + 1,
               count: ok.length,
-              overallPercent: overall
+              overallPercent: Math.round(((i + p.percent / 100) / ok.length) * 100),
+              shrinkLine
             });
           }
         });
 
         if (!res.ok) {
-          if (res.error === "aborted") {
-            setError({
-              fileName: file.name,
-              message: "업로드를 취소했습니다",
-              advice: []
-            });
-            break;
-          }
-          const parsed = adviceFromDetails(res.details);
+          const parsed = describeUploadError(res.error, res.status, res.details);
           setError({
-            fileName: file.name,
-            message: parsed?.message ?? res.error,
-            advice: parsed?.advice ?? []
+            fileName: original.name,
+            message: parsed.message,
+            advice: parsed.advice
           });
           break;
         }
 
-        completedBytes += file.size;
         uploaded.push({
           src: res.data.publicUrl || `/${res.data.path}`,
-          width: res.data.width ?? dims?.width ?? null,
-          height: res.data.height ?? dims?.height ?? null,
+          width: res.data.width ?? preparedWidth,
+          height: res.data.height ?? preparedHeight,
           size: res.data.size,
           mime: res.data.mime,
-          name: filename
+          name: fileName(res.data.path || filename)
         });
         if (res.notice) {
           const key = noticeKey(res.notice, res.data.path || filename);
@@ -650,7 +596,20 @@ export function ImageUploader({
 
   const topAlerts = (
     <>
-      {error ? <ErrorBox error={error} onDismiss={() => setError(null)} /> : null}
+      {error ? (
+        <ErrorBox
+          error={error}
+          onDismiss={() => setError(null)}
+          onRetry={
+            retryFilesRef.current
+              ? () => {
+                  const next = retryFilesRef.current;
+                  if (next) void handleFiles(next);
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {progress ? <ProgressBox progress={progress} onCancel={cancelUpload} /> : null}
       {notice ? (
         <UploadNoticeBox

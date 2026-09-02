@@ -1,10 +1,7 @@
-import { SPEC } from "@/lib/website/spec";
+import { IMAGE_MIN_LONG_EDGE, imageLongEdgeRejectMessage, isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
 
-/** 대표 이미지 — 16:9 ±1%, 가로 최소 2560px */
-export const KEY_IMAGE_MIN_WIDTH = SPEC.keyImage.minWidth;
-export const KEY_IMAGE_MIN_HEIGHT = SPEC.keyImage.minHeight;
-export const KEY_IMAGE_ASPECT = 16 / 9;
-export const KEY_IMAGE_ASPECT_TOLERANCE = 0.01;
+export const KEY_IMAGE_MIN_WIDTH = IMAGE_MIN_LONG_EDGE;
+export const KEY_IMAGE_MIN_HEIGHT = IMAGE_MIN_LONG_EDGE;
 
 function gcd(a: number, b: number): number {
   let x = Math.abs(a);
@@ -23,58 +20,28 @@ export function formatImageRatioLabel(width: number, height: number): string {
   return `${width / g}:${height / g}`;
 }
 
-export function isKeyImageAspectRatio(width: number, height: number): boolean {
-  if (width <= 0 || height <= 0) return false;
-  const ratio = width / height;
-  const delta = Math.abs(ratio - KEY_IMAGE_ASPECT) / KEY_IMAGE_ASPECT;
-  return delta <= KEY_IMAGE_ASPECT_TOLERANCE;
-}
-
-export function isKeyImageWideEnough(width: number): boolean {
-  return width >= KEY_IMAGE_MIN_WIDTH;
-}
-
-export type KeyImageReject =
-  | { kind: "aspect"; width: number; height: number }
-  | { kind: "size"; width: number; height: number };
+export type KeyImageReject = { kind: "size"; width: number; height: number };
 
 export function validateKeyImageDimensions(
   width: number,
   height: number
 ): KeyImageReject | null {
-  if (!isKeyImageAspectRatio(width, height)) {
-    return { kind: "aspect", width, height };
-  }
-  if (!isKeyImageWideEnough(width)) {
+  if (isLongEdgeTooSmall(width, height)) {
     return { kind: "size", width, height };
   }
   return null;
 }
 
 export function keyImageRejectMessage(reject: KeyImageReject): string {
-  const ratio = formatImageRatioLabel(reject.width, reject.height);
-  if (reject.kind === "aspect") {
-    return (
-      `대표 이미지는 ${SPEC.keyImage.ratio} 여야 합니다. 지금 ${reject.width}×${reject.height} (${ratio}) 입니다. ` +
-      "목록 카드와 카톡 공유에서 위아래가 잘립니다"
-    );
-  }
-  return (
-    `최소 ${KEY_IMAGE_MIN_WIDTH}×${KEY_IMAGE_MIN_HEIGHT} 이 필요합니다. ` +
-    `지금 ${reject.width}×${reject.height} 입니다. 고해상도 화면에서 흐리게 보입니다`
-  );
+  return imageLongEdgeRejectMessage(reject.width, reject.height);
 }
 
-/** 인사이트 대표 이미지 — 비율 자유. 긴 변 2000 미만이면 경고만. */
-export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = 2000;
+export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = IMAGE_MIN_LONG_EDGE;
 
 export function insightKeyImageTooSmall(width: number, height: number): boolean {
-  return width > 0 && height > 0 && Math.max(width, height) < INSIGHT_KEY_IMAGE_MIN_LONG_SIDE;
+  return isLongEdgeTooSmall(width, height);
 }
 
 export function insightKeyImageWarnMessage(width: number, height: number): string {
-  return (
-    `긴 변 ${INSIGHT_KEY_IMAGE_MIN_LONG_SIDE}px 이상을 권장합니다. ` +
-    `지금 ${width}×${height} 입니다. 목록 카드가 흐리게 보일 수 있습니다`
-  );
+  return imageLongEdgeRejectMessage(width, height);
 }

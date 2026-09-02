@@ -5,7 +5,6 @@ export const PROBLEM_FLAGS = [
   "missing_key_alt",
   "no_key_image",
   "key_image_size_unknown",
-  "key_image_not_16_9",
   "key_image_too_small",
   "no_card_image",
   "no_sections",
@@ -35,8 +34,7 @@ export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof W
     missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
     no_key_image: "대표 이미지가 없습니다",
     key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
-    key_image_not_16_9: "대표 이미지 비율이 16:9가 아닙니다",
-    key_image_too_small: "대표 이미지 해상도가 낮습니다",
+    key_image_too_small: "대표 이미지 긴 변이 1600 미만입니다",
     no_card_image: "썸네일에 쓸 이미지가 없습니다",
     body_image_too_small: "본문 이미지 해상도가 낮습니다",
     empty_blocks: "이미지가 없는 본문 블록이 있습니다",
@@ -135,7 +133,6 @@ export function fillBasic(check: CheckWorks | null): "ok" | "warn" {
     check.summary_too_long ||
     check.no_key_image ||
     check.key_image_size_unknown ||
-    check.key_image_not_16_9 ||
     check.key_image_too_small
   ) {
     return "warn";
@@ -239,7 +236,7 @@ export const INSIGHT_CHECK_LABEL: Record<
   missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
   no_key_image: "대표 이미지가 없습니다",
   key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
-  key_image_too_small: "대표 이미지 긴 변이 2000px 미만입니다",
+    key_image_too_small: "대표 이미지 긴 변이 1600 미만입니다",
   no_blocks: "본문 블록이 없습니다",
   missing_image_alt: "이미지 대체 텍스트가 없습니다",
   ai_unconfirmed: "AI가 만든 이미지를 아직 확인하지 않았습니다",

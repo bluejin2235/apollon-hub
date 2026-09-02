@@ -15,8 +15,8 @@ export type VideoFrameMeta = {
   duration: number;
 };
 
-const MAX_WIDTH = 1600;
-const JPEG_QUALITY = 0.85;
+const MAX_WIDTH = 2560;
+const JPEG_QUALITY = 0.9;
 const LOG = "[extractFrames]";
 
 const PRIMARY_RATIOS = [0, 0.2, 0.4, 0.6, 0.8];
@@ -180,7 +180,8 @@ async function extractAtRatios(
           continue;
         }
 
-        const scale = vw > MAX_WIDTH ? MAX_WIDTH / vw : 1;
+        const long = Math.max(vw, vh);
+        const scale = long > MAX_WIDTH ? MAX_WIDTH / long : 1;
         const w = Math.max(1, Math.round(vw * scale));
         const h = Math.max(1, Math.round(vh * scale));
         if (canvas.width !== w) canvas.width = w;

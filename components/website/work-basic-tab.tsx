@@ -15,6 +15,8 @@ import { mediaUrl } from "@/lib/website/work-detail";
 import { WORK_TITLE_EN_MAX } from "@/lib/website/text-width";
 import { extractLoopPosters, revokeFrameUrls } from "@/lib/website/video-thumbs";
 import { sanitizeUploadFilename, uploadObjectPath, workFolderPrefix } from "@/lib/website/upload-path";
+import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
+import { describeUploadError } from "@/lib/website/upload-error";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TagPicker } from "@/components/website/tag-picker";
@@ -76,8 +78,8 @@ const HELP = {
   key: {
     title: "대표 이미지",
     use: "목록 카드 · 메인 페이지 · 관련 콘텐츠 카드. 아래 「썸네일에 쓸 이미지」의 후보가 됩니다",
-    rule: "16:9 반드시. 최소 2560 × 1440. 보관은 2560 × 1440 으로 자동 변환됩니다",
-    note: "형식과 용량은 신경 쓰지 않아도 됩니다. 자동으로 바뀝니다. GIF 만 예외로 올린 그대로 나갑니다. 16:9 가 아니면 거부됩니다. 배경 영상 첫 장면과 맞추면 카드가 자연스럽습니다",
+    rule: "긴 변이 1600 이상이어야 합니다. 보관은 긴 변 2560 으로 맞춥니다",
+    note: "형식과 용량은 신경 쓰지 않아도 됩니다. 자동으로 바뀝니다. GIF 만 예외로 올린 그대로 나갑니다. 배경 영상 첫 장면과 맞추면 카드가 자연스럽습니다",
     empty: "공개할 수 없습니다"
   },
   tl: {
@@ -229,7 +231,7 @@ async function uploadLoopFirstFrame(file: File, folder: string): Promise<string[
     const name = sanitizeUploadFilename("loop-poster-first.jpg");
     const path = uploadObjectPath(folder, name);
     const blobFile = new File([frame.blob], name, { type: "image/jpeg" });
-    const res = await uploadFile(blobFile, "works", path);
+    const res = await uploadFile(blobFile, "works", path, { fields: { role: "key" } });
     if (res.ok && res.data?.publicUrl) {
       return [res.data.publicUrl];
     }
@@ -913,7 +915,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 }}
               />
               <p className="spec">
-                16:9 · 최소 2560 × 1440
+                긴 변 1600 이상
                 <br />
                 {draft.key_image_width && draft.key_image_height ? (
                   <span className="now">
@@ -1078,15 +1080,26 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   e.target.value = "";
                   if (!file) return;
                   void (async () => {
-                    const name = sanitizeUploadFilename(file.name);
+                    const prepared = await prepareImageForUpload(file, "key");
+                    if (!prepared.ok) {
+                      showToast({ message: prepared.error, tone: "error" });
+                      return;
+                    }
+                    const name = sanitizeUploadFilename(prepared.data.file.name, [], prepared.data.file.type);
                     const path = uploadObjectPath(`${uploadRoot}/card`, name);
-                    const res = await uploadFile(file, "works", path);
-                    if (!res.ok || !res.data?.publicUrl) return;
+                    const res = await uploadFile(prepared.data.file, "works", path, {
+                      fields: { role: "key" }
+                    });
+                    if (!res.ok || !res.data?.publicUrl) {
+                      const parsed = describeUploadError(res.ok ? "request_failed" : res.error, res.ok ? 0 : res.status, res.ok ? undefined : res.details);
+                      showToast({ message: parsed.message, tone: "error" });
+                      return;
+                    }
                     pickCard(
                       res.data.publicUrl,
                       "upload",
-                      res.data.width ?? null,
-                      res.data.height ?? null
+                      res.data.width ?? prepared.data.to.width,
+                      res.data.height ?? prepared.data.to.height
                     );
                   })();
                 }}

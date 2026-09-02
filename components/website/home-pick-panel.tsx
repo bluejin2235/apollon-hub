@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { showToast } from "@/components/website/toast";
 import { addHomeSlot, listHomeCandidates, uploadFile, type HomeSlotWrite } from "@/lib/website/api";
 import { homeTitle, type HomeCandidate, type HomeLayout } from "@/lib/website/home";
-import { isKeyImageAspectRatio } from "@/lib/website/key-image-rules";
 import { SPEC, SPEC_BYTES, formatThumbLargeHint, formatThumbSmallHint } from "@/lib/website/spec";
 import { sanitizeUploadFilename, uploadObjectPath } from "@/lib/website/upload-path";
+import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
+import { describeUploadError } from "@/lib/website/upload-error";
 
 const INTERNAL = [
   { href: "/career", label: "/career — 커리어" },
@@ -28,22 +29,6 @@ function formatDay(value: string | null) {
   if (!value) return "";
   const d = value.slice(0, 10);
   return d.replaceAll("-", ".");
-}
-
-function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    img.src = url;
-  });
 }
 
 type Tab = "pick" | "custom";
@@ -143,36 +128,41 @@ export function HomePickPanel({
 
   async function uploadMedia(file: File, kind: "image" | "video") {
     if (kind === "image") {
-      const size = await readImageSize(file);
-      if (!size || !isKeyImageAspectRatio(size.width, size.height)) {
-        showToast({ message: "썸네일은 16:9 이어야 합니다", tone: "error" });
+      const prepared = await prepareImageForUpload(file, "key");
+      if (!prepared.ok) {
+        showToast({ message: prepared.error, tone: "error" });
         return;
       }
-      if (Math.max(size.width, size.height) < 2000) {
-        showToast({ message: "긴 변 2000 이상이 필요합니다", tone: "error" });
+      const name = sanitizeUploadFilename(prepared.data.file.name, [], prepared.data.file.type);
+      const path = uploadObjectPath(`home/custom/${Date.now()}/${wide ? "tl" : "ts"}`, name);
+      const result = await uploadFile(prepared.data.file, "site", path, {
+        fields: { role: "key" }
+      });
+      if (!result.ok) {
+        const parsed = describeUploadError(result.error, result.status, result.details);
+        showToast({ message: parsed.message, tone: "error" });
         return;
       }
-    } else {
-      if (file.type !== "video/mp4") {
-        showToast({ message: "영상은 MP4 만 됩니다", tone: "error" });
-        return;
-      }
-      if (file.size > videoMaxBytes) {
-        showToast({ message: `영상은 ${videoMaxMB}MB 이하여야 합니다`, tone: "error" });
-        return;
-      }
+      setThumb(result.data.publicUrl);
+      return;
+    }
+    if (file.type !== "video/mp4") {
+      showToast({ message: "영상은 MP4 만 됩니다", tone: "error" });
+      return;
+    }
+    if (file.size > videoMaxBytes) {
+      showToast({ message: `영상은 ${videoMaxMB}MB 이하여야 합니다`, tone: "error" });
+      return;
     }
     const name = sanitizeUploadFilename(file.name);
     const path = uploadObjectPath(`home/custom/${Date.now()}/${wide ? "tl" : "ts"}`, name);
-    const result = await uploadFile(file, "site", path, {
-      fields: kind === "image" ? { role: "key" } : undefined
-    });
+    const result = await uploadFile(file, "site", path);
     if (!result.ok) {
-      showToast({ message: "올리지 못했습니다", tone: "error" });
+      const parsed = describeUploadError(result.error, result.status, result.details);
+      showToast({ message: parsed.message, tone: "error" });
       return;
     }
-    if (kind === "image") setThumb(result.data.publicUrl);
-    else setVideo(result.data.publicUrl);
+    setVideo(result.data.publicUrl);
   }
 
   async function submitPick() {
@@ -399,7 +389,7 @@ export function HomePickPanel({
                     </label>
                   )}
                   <div className="mt-[5px] rounded-r-[5px] border-l-2 border-[#d5cff2] bg-[#f8f9fb] px-2.5 py-[7px] text-[11px] leading-[1.65] text-[#6b7280]">
-                    <b>16:9 · 긴 변 2000 이상.</b>
+                    <b>긴 변 1600 이상.</b>
                     <br />
                     영상도 됩니다. {videoHint}
                   </div>

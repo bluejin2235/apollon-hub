@@ -1,70 +1,32 @@
+import { IMAGE_MIN_LONG_EDGE, imageLongEdgeRejectMessage, isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
 import { SPEC } from "@/lib/website/spec";
 
-/** 본문 가로 이미지 — 긴 변 최소 1600 · 권장 3200 */
-export const BODY_LANDSCAPE_ASPECT = 16 / 9;
-export const BODY_LANDSCAPE_ASPECT_TOLERANCE = 0.018;
 export const BODY_LANDSCAPE_MIN_LONG = SPEC.bodyImage.minLong;
-export const BODY_LANDSCAPE_RECOMMEND_LONG = SPEC.bodyImage.recommendLong;
-export const PORTRAIT_TEXT_WARN_LONG = 2000;
-
-export function isLandscapeBodyImage(width: number, height: number): boolean {
-  return width > 0 && height > 0 && width >= height;
-}
-
-export function isBodyLandscape16x9(width: number, height: number): boolean {
-  if (width <= 0 || height <= 0) return false;
-  const ratio = width / height;
-  const delta = Math.abs(ratio - BODY_LANDSCAPE_ASPECT) / BODY_LANDSCAPE_ASPECT;
-  return delta <= BODY_LANDSCAPE_ASPECT_TOLERANCE;
-}
-
-export function isPortraitTextPreset(preset: string | undefined): boolean {
-  return preset === "portrait-text";
-}
+export const BODY_LANDSCAPE_RECOMMEND_LONG = SPEC.bodyImage.storeLong;
 
 export type BodyImageReject = { kind: "size"; width: number; height: number };
 
 export function validateBodyImageDimensions(
-  preset: string | undefined,
+  _preset: string | undefined,
   width: number,
   height: number
 ): BodyImageReject | null {
-  if (isPortraitTextPreset(preset)) return null;
-  if (!isLandscapeBodyImage(width, height)) return null;
-  if (Math.max(width, height) < BODY_LANDSCAPE_MIN_LONG) {
+  if (isLongEdgeTooSmall(width, height)) {
     return { kind: "size", width, height };
   }
   return null;
 }
 
 export function bodyImageRejectMessage(reject: BodyImageReject): string {
-  return (
-    `긴 변 ${BODY_LANDSCAPE_MIN_LONG}px 이상이 필요합니다. ` +
-    `지금 ${reject.width}×${reject.height} 입니다.`
-  );
+  return imageLongEdgeRejectMessage(reject.width, reject.height);
 }
 
 export function bodyImageWarnMessage(
-  preset: string | undefined,
-  width: number,
-  height: number
+  _preset: string | undefined,
+  _width: number,
+  _height: number
 ): string | null {
-  if (width <= 0 || height <= 0) return null;
-  const longSide = Math.max(width, height);
-  if (isPortraitTextPreset(preset)) {
-    if (longSide < PORTRAIT_TEXT_WARN_LONG) {
-      return (
-        `긴 변 ${PORTRAIT_TEXT_WARN_LONG}px 이상을 권장합니다. ` +
-        `지금 ${width}×${height} 입니다.`
-      );
-    }
-    return null;
-  }
-  if (isLandscapeBodyImage(width, height) && longSide < BODY_LANDSCAPE_RECOMMEND_LONG) {
-    return (
-      `긴 변 ${BODY_LANDSCAPE_RECOMMEND_LONG}px 이상을 권장합니다. ` +
-      `지금 ${width}×${height} 입니다.`
-    );
-  }
   return null;
 }
+
+export { IMAGE_MIN_LONG_EDGE };

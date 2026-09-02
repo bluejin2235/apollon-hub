@@ -184,7 +184,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
           appearance="filecard"
           siteUrl={siteUrl}
           value={keyFilled ? draft.key_image : null}
-          emptyHint="비율이 자유입니다. 긴 변 2000 이상을 권장합니다."
+          emptyHint="긴 변 1600 이상이어야 합니다."
           onUploaded={(files) => {
             const first = files[0];
             if (first) {
@@ -199,7 +199,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         />
         <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
           <b className="text-amber-700">비율이 자유입니다.</b> 올린 비율 그대로 목록 카드가 만들어집니다.
-          세로 사진이면 카드가 길어집니다. 긴 변 2000 이상 · 같은 갈래끼리 비율을 맞추면 목록이 정돈됩니다.
+          세로 사진이면 카드가 길어집니다. 긴 변 1600 이상이어야 합니다.
           <br />
           <b className="text-amber-700">메인 페이지에 나올 때는 16:9 로 잘립니다.</b>
         </p>
