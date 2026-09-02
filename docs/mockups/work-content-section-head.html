@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>워크 본문 · 섹션 머리 — 목업</title>
+<style>
+:root{--ink:#0f172a;--ink2:#475569;--ink3:#94a3b8;--line:#e2e8f0;--bg:#f8fafc;
+--req:#dc2626;--warn:#b45309;--ok:#15803d;--acc:#4f46e5;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;padding:24px}
+.page{max-width:1000px;margin:0 auto}
+.lab{font-size:12px;color:var(--ink2);margin-bottom:8px}
+.note{font-size:11px;color:var(--ink3);margin:6px 0 26px;line-height:1.7}
+.memo{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 13px;font-size:12px;color:#92400e;line-height:1.7;margin-bottom:20px}
+
+.sec{background:#fff;border:1px solid #c7d2fe;border-radius:12px;overflow:hidden}
+.sech{display:flex;align-items:center;gap:9px;background:#eef2ff;padding:9px 14px}
+.sech .no{width:20px;height:20px;border-radius:5px;background:var(--acc);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sech .t{font-size:14px;font-weight:600}
+.sech .m{font-size:11px;color:var(--ink3)}
+.sech .r{margin-left:auto;display:flex;gap:3px;color:var(--ink3)}
+.sech .r button{border:0;background:none;color:var(--ink3);cursor:pointer;font-size:13px;padding:3px 5px}
+.secb{padding:14px 16px 16px}
+
+.f{margin-bottom:14px}
+.fl{display:flex;align-items:center;gap:5px;margin-bottom:6px}
+.fl .nm{font-size:13px;font-weight:500}
+.fl .rq{color:var(--req);font-size:13px}
+.fl .cc{margin-left:auto;font-size:11px;color:var(--ink3)}
+.q{border:0;background:#eef2f7;color:var(--ink3);width:15px;height:15px;border-radius:50%;font-size:10px;line-height:15px;text-align:center;padding:0;cursor:pointer}
+
+.lang{display:grid;grid-template-columns:38px minmax(0,1fr);gap:8px;align-items:center;margin-bottom:7px}
+.lang:last-child{margin-bottom:0}
+.lang .tag{font-size:11px;color:var(--ink3);text-align:right}
+input[type=text]{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r)}
+.ai{position:relative}
+.ai .btn{position:absolute;right:5px;top:5px;font-size:10px;padding:2px 6px;border:1px solid #c7d2fe;background:#fff;border-radius:5px;color:var(--acc);cursor:pointer}
+
+/* 기본 설명 — 누르는 영역 */
+.drop{border:1px dashed #cbd5e1;border-radius:var(--r);padding:11px 13px;cursor:pointer;background:#fbfdff;min-height:64px}
+.drop:hover{border-color:#94a3b8;background:#f8fafc}
+.drop .ph{font-size:12px;color:var(--ink3)}
+.drop .body{font-size:13px;line-height:1.7;color:var(--ink)}
+.drop .body b{font-weight:600}
+.drop .foot{font-size:10px;color:var(--ink3);margin-top:7px;display:flex;justify-content:space-between}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+button.b{font:inherit;font-size:12px;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer}
+button.b.acc{border-color:#c7d2fe;color:var(--acc)}
+button.b.sm{font-size:11px;padding:4px 9px}
+
+/* 팝업 */
+.ovwrap{background:rgba(15,23,42,.5);border-radius:12px;padding:18px;min-height:520px;display:flex;align-items:stretch}
+.mw{background:#fff;border-radius:12px;width:100%;display:flex;flex-direction:column}
+.mwh{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}
+.mwh b{font-size:15px;font-weight:600}
+.mwh .sub{font-size:11px;color:var(--ink3);margin-left:8px}
+.xb{border:0;background:none;color:var(--ink3);font-size:16px;cursor:pointer;padding:0}
+.tb{display:flex;gap:2px;padding:8px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.tb button{font:inherit;font-size:12px;min-width:28px;height:26px;border:1px solid transparent;background:none;border-radius:5px;color:var(--ink2);cursor:pointer}
+.tb button:hover{background:#f1f5f9}
+.tb .sep{width:1px;height:18px;background:var(--line);margin:0 5px}
+.tb .cl{display:flex;gap:3px;align-items:center;margin-left:2px}
+.tb .cl i{width:15px;height:15px;border-radius:4px;display:inline-block;cursor:pointer;border:1px solid rgba(0,0,0,.08)}
+.mwb{display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1}
+.pane{padding:14px 18px}
+.pane+.pane{border-left:1px solid var(--line)}
+.ph2{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ph2 .lg{font-size:12px;font-weight:600}
+.ph2 .cc{font-size:11px;color:var(--ink3)}
+.ed{min-height:280px;border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;font-size:14px;line-height:1.8}
+.ed b{font-weight:600}
+.mwf{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-top:1px solid var(--line)}
+.mwf .hint{font-size:11px;color:var(--ink3)}
+.mwf .btns{display:flex;gap:8px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="memo">
+  <b>본문 탭 섹션 머리를 고칩니다.</b><br>
+  ① 섹션 제목 — 국문 · 영문을 한 줄씩. 어느 쪽인지 표시<br>
+  ② 기본 설명 — 좁은 칸을 없애고 누르는 영역으로. 누르면 큰 창이 열림<br>
+  ③ 큰 창에서 국·영문을 좌우로 · 편집 도구로 볼드 · 색 · 줄바꿈<br>
+  ④ 안내 네 줄은 물음표로
+</div>
+
+<div class="lab">지금 — 좁아서 안 보임</div>
+<div class="sec" style="border-color:var(--line);margin-bottom:6px">
+  <div class="sech" style="background:#f8fafc">
+    <span class="no">1</span><span class="t">Challenge</span>
+    <span class="m">블록 5개 · 이미지 1 · 영상 1</span>
+  </div>
+  <div class="secb">
+    <div class="grid2">
+      <div>
+        <div class="fl"><span class="nm">섹션 제목</span><span class="rq">*</span><span class="cc">국문 9/16 · 영문 9/16</span></div>
+        <div class="grid2">
+          <input type="text" value="Challenge">
+          <input type="text" value="Challenge">
+        </div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:7px;line-height:1.7">
+          <b style="color:var(--ink)">16자 이내 · 짧을수록 좋습니다</b><br>
+          왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 측면에서 잘립니다.<br>
+          자주 쓰는 이름 — Overview · Creative · Space · Synopsis …
+        </div>
+      </div>
+      <div>
+        <div class="fl"><span class="nm">기본 설명</span><span class="cc">국문 /120 · 영문 /240</span></div>
+        <div class="grid2">
+          <div style="border:1px solid var(--line);border-radius:var(--r);padding:7px 9px;font-size:12px;height:52px;overflow:hidden;color:var(--ink2)">스타에비뉴는 2009년 롯데면세점이 한류 붐과 함께 공간 마케팅의 거점으로 구축한 공간이다…</div>
+          <div style="border:1px solid var(--line);border-radius:var(--r);padding:7px 9px;font-size:12px;height:52px;overflow:hidden;color:var(--ink2)">Star Avenue was established in 2009 as a flagship…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">칸이 네 개가 한 줄에 들어가 제목도 설명도 두 줄만 보입니다. 어느 쪽이 국문인지 알 수 없습니다.</div>
+
+<div class="lab">바꿈 — 섹션 머리</div>
+<div class="sec" style="margin-bottom:6px">
+  <div class="sech">
+    <span class="no">1</span><span class="t">Challenge</span>
+    <span class="m">블록 5개 · 이미지 1 · 영상 1</span>
+    <span class="r"><button>↑</button><button>↓</button><button>⧉</button><button>×</button></span>
+  </div>
+  <div class="secb">
+
+    <div class="f">
+      <div class="fl">
+        <span class="nm">섹션 제목</span><span class="rq">*</span>
+        <button class="q">?</button>
+        <span class="cc">국문 <b>9</b>/16 · 영문 <b>9</b>/16</span>
+      </div>
+      <div class="lang">
+        <span class="tag">국문</span>
+        <input type="text" value="Challenge">
+      </div>
+      <div class="lang">
+        <span class="tag">영문</span>
+        <div class="ai"><input type="text" value="Challenge"><button class="btn">AI</button></div>
+      </div>
+      <div style="font-size:11px;color:var(--ink3);margin-top:6px">왼쪽 앵커 메뉴에 그대로 들어갑니다. 16자 이내</div>
+    </div>
+
+    <div class="f" style="margin-bottom:0">
+      <div class="fl">
+        <span class="nm">기본 설명</span>
+        <button class="q">?</button>
+        <span class="cc">국문 <b>98</b>/120 · 영문 <b>212</b>/240</span>
+      </div>
+      <div class="lang">
+        <span class="tag">국문</span>
+        <div class="drop">
+          <div class="body">스타에비뉴는 2009년 롯데면세점이 <b>한류 붐</b>과 함께 공간 마케팅의 거점으로 구축한 공간이다. 15년이 지나 통로로만 쓰이게 된 이곳을 다시 머무는 곳으로 바꾸는 일이었다.</div>
+          <div class="foot"><span>눌러서 고치기</span><span>98 / 120</span></div>
+        </div>
+      </div>
+      <div class="lang">
+        <span class="tag">영문</span>
+        <div class="drop">
+          <div class="body">Star Avenue was established in 2009 as Lotte Duty Free's spatial marketing hub during the <b>Korean Wave</b>. Fifteen years on, it had become a passage. The task was to make it a destination again.</div>
+          <div class="foot"><span>눌러서 고치기</span><span>212 / 240</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--ink3);margin-top:6px">누르면 큰 창이 열립니다. 볼드 · 색 · 줄바꿈을 쓸 수 있습니다</div>
+    </div>
+
+  </div>
+</div>
+<div class="note">
+  제목은 국문 한 줄 · 영문 한 줄. 왼쪽에 어느 쪽인지 적습니다.<br>
+  기본 설명은 좁은 칸 대신 누르는 영역입니다. 저장한 내용이 그 자리에 그대로 보입니다.<br>
+  안내 네 줄은 물음표로 옮깁니다.
+</div>
+
+<div class="lab">비어 있을 때</div>
+<div class="sec" style="margin-bottom:6px">
+  <div class="sech" style="background:#f8fafc;border-bottom:1px solid var(--line)">
+    <span class="no" style="background:#94a3b8">2</span><span class="t" style="color:var(--ink3)">제목 없음</span>
+    <span class="m">블록 0개</span>
+  </div>
+  <div class="secb">
+    <div class="f">
+      <div class="fl"><span class="nm">섹션 제목</span><span class="rq">*</span><button class="q">?</button><span class="cc">국문 <b>0</b>/16</span></div>
+      <div class="lang"><span class="tag">국문</span><input type="text" placeholder="Overview"></div>
+      <div class="lang"><span class="tag">영문</span><div class="ai"><input type="text" placeholder="Overview"><button class="btn">AI</button></div></div>
+    </div>
+    <div class="f" style="margin-bottom:0">
+      <div class="fl"><span class="nm">기본 설명</span><button class="q">?</button></div>
+      <div class="lang"><span class="tag">국문</span><div class="drop"><div class="ph">눌러서 쓰기</div></div></div>
+      <div class="lang"><span class="tag">영문</span><div class="drop"><div class="ph">눌러서 쓰기</div></div></div>
+    </div>
+  </div>
+</div>
+<div class="note">비어 있으면 「눌러서 쓰기」만 보입니다.</div>
+
+<div class="lab">눌렀을 때 — 브라우저 전체를 쓰는 창</div>
+<div class="ovwrap">
+  <div class="mw">
+    <div class="mwh">
+      <div><b>기본 설명</b><span class="sub">1 Challenge</span></div>
+      <button class="xb">×</button>
+    </div>
+    <div class="tb">
+      <button title="굵게"><b>B</b></button>
+      <button title="기울임"><i>I</i></button>
+      <button title="밑줄" style="text-decoration:underline">U</button>
+      <span class="sep"></span>
+      <div class="cl">
+        <i style="background:#0f172a"></i>
+        <i style="background:#b0231e"></i>
+        <i style="background:#a35a08"></i>
+        <i style="background:#0f7a45"></i>
+        <i style="background:#534ab7"></i>
+      </div>
+      <span class="sep"></span>
+      <button title="줄바꿈">↵</button>
+      <button title="목록">≡</button>
+      <button title="서식 지우기">⌫</button>
+    </div>
+    <div class="mwb">
+      <div class="pane">
+        <div class="ph2"><span class="lg">국문</span><span class="cc">98 / 120</span></div>
+        <div class="ed">스타에비뉴는 2009년 롯데면세점이 <b>한류 붐</b>과 함께 공간 마케팅의 거점으로 구축한 공간이다. 15년이 지나 통로로만 쓰이게 된 이곳을 다시 머무는 곳으로 바꾸는 일이었다.</div>
+      </div>
+      <div class="pane">
+        <div class="ph2"><span class="lg">영문</span><span class="cc">212 / 240</span></div>
+        <div class="ed">Star Avenue was established in 2009 as Lotte Duty Free's spatial marketing hub during the <b>Korean Wave</b>. Fifteen years on, it had become a passage. The task was to make it a destination again.</div>
+      </div>
+    </div>
+    <div class="mwf">
+      <span class="hint">이미지는 넣을 수 없습니다. 아래 블록에서 넣으세요</span>
+      <div class="btns">
+        <button class="b">취소</button>
+        <button class="b acc">저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">
+  왼쪽 국문 · 오른쪽 영문. 편집 도구는 볼드 · 기울임 · 밑줄 · 색 · 줄바꿈 · 목록 · 서식 지우기.<br>
+  <b>이미지 넣기는 없습니다.</b> 이미지는 아래 블록에서 넣습니다.<br>
+  「저장」을 누르면 섹션 머리의 그 자리에 서식 그대로 보입니다. 다시 누르면 이 창이 열립니다.
+</div>
+
+</div>
+</body>
+</html>
