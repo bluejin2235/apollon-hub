@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import {
   createSection,
   deleteSection,
@@ -15,12 +15,19 @@ import { workFolderPrefix } from "@/lib/website/upload-path";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { LeadHtmlModal, LEAD_EN_LIMIT, LEAD_KO_LIMIT } from "@/components/website/lead-html-modal";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
 import { Alert, Field } from "@/components/website/ui";
 import { GuideTermProvider } from "@/components/website/ui/GuideTerm";
+import {
+  leadCharCount,
+  leadIsEmpty,
+  leadLooksLikeHtml,
+  sanitizeLeadHtml
+} from "@/lib/website/lead-html";
 import "./ui/work-admin.css";
 
 type Props = {
@@ -59,61 +66,87 @@ function Bi({
   en,
   onKo,
   onEn,
-  onBlur,
-  multiline,
-  koPlaceholder,
-  enPlaceholder
+  placeholder
 }: {
   ko: string;
   en: string;
   onKo: (v: string) => void;
   onEn: (v: string) => void;
-  onBlur?: () => void;
-  multiline?: boolean;
-  koPlaceholder?: string;
-  enPlaceholder?: string;
+  placeholder?: string;
 }) {
   return (
-    <div className="two">
-      {multiline ? (
-        <textarea
-          className="i"
-          value={ko}
-          placeholder={koPlaceholder}
-          style={{ minHeight: 44 }}
-          onChange={(e) => onKo(e.target.value)}
-          onBlur={onBlur}
-        />
-      ) : (
+    <>
+      <div className="seclang">
+        <span className="tag">국문</span>
         <input
           className="i"
           value={ko}
-          placeholder={koPlaceholder}
+          placeholder={placeholder}
           onChange={(e) => onKo(e.target.value)}
-          onBlur={onBlur}
         />
-      )}
-      <div className="enw">
-        {multiline ? (
-          <textarea
-            className="i"
-            value={en}
-            placeholder={enPlaceholder}
-            style={{ minHeight: 44 }}
-            onChange={(e) => onEn(e.target.value)}
-            onBlur={onBlur}
-          />
-        ) : (
+      </div>
+      <div className="seclang">
+        <span className="tag">영문</span>
+        <div className="enw">
           <input
             className="i"
             value={en}
-            placeholder={enPlaceholder}
+            placeholder={placeholder}
             onChange={(e) => onEn(e.target.value)}
-            onBlur={onBlur}
           />
-        )}
-        <AiBadge />
+          <AiBadge />
+        </div>
       </div>
+    </>
+  );
+}
+
+function LeadDrop({
+  html,
+  limit,
+  onOpen
+}: {
+  html: string;
+  limit: number;
+  onOpen: () => void;
+}) {
+  const empty = leadIsEmpty(html);
+  const count = leadCharCount(html);
+  const asHtml = leadLooksLikeHtml(html);
+
+  function onKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpen();
+    }
+  }
+
+  return (
+    <div
+      className="lead-drop"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={onKey}
+    >
+      {empty ? (
+        <span className="lead-ph">눌러서 쓰기</span>
+      ) : asHtml ? (
+        <span
+          className="lead-html"
+          dangerouslySetInnerHTML={{ __html: sanitizeLeadHtml(html) }}
+        />
+      ) : (
+        <span className="lead-html is-plain">{html}</span>
+      )}
+      {empty ? null : (
+        <span className="lead-foot">
+          <span>눌러서 고치기</span>
+          <span>
+            {count} / {limit}
+          </span>
+        </span>
+      )}
     </div>
   );
 }
@@ -516,6 +549,7 @@ function SectionBody({
   const [lead, setLead] = useState<Loc>(asLoc(section.lead));
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<PartialSaveState>("idle");
+  const [leadOpen, setLeadOpen] = useState(false);
 
   useEffect(() => {
     setHeadline(asLoc(section.headline));
@@ -537,7 +571,7 @@ function SectionBody({
       return;
     }
     setSaveState("saved");
-    window.setTimeout(() => setSaveState("idle"), 2000);
+    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
     await onReload();
   }
 
@@ -546,86 +580,89 @@ function SectionBody({
       <div className="mb-3 flex justify-end">
         <PartialSaveBtn
           state={saveState}
-          disabled={saveState !== "dirty"}
           onClick={() => void savePartial()}
         />
       </div>
       {error ? <p className="mb-2 text-[11px] text-rose-600">{error}</p> : null}
       <div className="secf">
-        <div className="two">
-          <Field
-            label="섹션 제목"
-            required
-            guideAnchorId="text-length"
-            counts={[
-              { label: "국문", value: headline.ko.length, limit: 16 },
-              { label: "영문", value: headline.en.length, limit: 16 }
-            ]}
-            tip={
-              <>
-                <b>16자 이내 · 짧을수록 좋습니다</b>
-                <br />
-                왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다. 섹션은 8개까지.
-                9개째부터 메뉴가 화면에서 넘칩니다.
-                <br />
-                <span className="ex">
-                  자주 쓰는 이름 — Overview · Creative · Space · Synopsis · Pre-Production ·
-                  Production · On-site Test · Achievement · Credit
-                </span>
-              </>
-            }
-          >
-            <Bi
-              ko={headline.ko}
-              en={headline.en}
-              onKo={(v) => {
-                const next = locField(headline, "ko", v);
-                setHeadline(next);
-                markDirty();
-              }}
-              onEn={(v) => {
-                const next = locField(headline, "en", v);
-                setHeadline(next);
-                markDirty();
-              }}
-            />
-          </Field>
-          <Field
-            label="기본 설명"
-            counts={[
-              { label: "국문", value: lead.ko.length, recommend: 60, limit: 120 },
-              { label: "영문", value: lead.en.length, recommend: 120, limit: 240 }
-            ]}
-            tip={
-              <>
-                <b>국문 60~120자 · 2~3문장</b>
-                <br />
-                제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다. 이 섹션이
-                무엇에 대한 것인지를 먼저 쓰세요.
-                <br />
-                <b>빈 줄을 넣으면 문단이 나뉩니다.</b>
-              </>
-            }
-          >
-            <Bi
-              ko={lead.ko}
-              en={lead.en}
-              multiline
-              koPlaceholder="이 섹션이 무엇에 대한 것인지"
-              onKo={(v) => {
-                const next = locField(lead, "ko", v);
-                setLead(next);
-                markDirty();
-              }}
-              onEn={(v) => {
-                const next = locField(lead, "en", v);
-                setLead(next);
-                markDirty();
-              }}
-            />
-          </Field>
-        </div>
+        <Field
+          label="섹션 제목"
+          required
+          counts={[
+            { label: "국문", value: headline.ko.length, limit: 16 },
+            { label: "영문", value: headline.en.length, limit: 16 }
+          ]}
+          tip={
+            <>
+              <b>16자 이내 · 짧을수록 좋습니다</b>
+              <br />
+              왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다. 섹션은 8개까지.
+              9개째부터 메뉴가 화면에서 넘칩니다.
+              <br />
+              <span className="ex">
+                자주 쓰는 이름 — Overview · Creative · Space · Synopsis · Pre-Production ·
+                Production · On-site Test · Achievement · Credit
+              </span>
+            </>
+          }
+        >
+          <Bi
+            ko={headline.ko}
+            en={headline.en}
+            placeholder="Overview"
+            onKo={(v) => {
+              const next = locField(headline, "ko", v);
+              setHeadline(next);
+              markDirty();
+            }}
+            onEn={(v) => {
+              const next = locField(headline, "en", v);
+              setHeadline(next);
+              markDirty();
+            }}
+          />
+          <div className="hint-line">왼쪽 앵커 메뉴에 그대로 들어갑니다. 16자 이내</div>
+        </Field>
+        <Field
+          label="기본 설명"
+          counts={[
+            { label: "국문", value: leadCharCount(lead.ko), recommend: 240, limit: LEAD_KO_LIMIT },
+            { label: "영문", value: leadCharCount(lead.en), recommend: 480, limit: LEAD_EN_LIMIT }
+          ]}
+          tip={
+            <>
+              <b>국문 300자 · 영문 600자 · 2~3문장</b>
+              <br />
+              제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다. 이 섹션이
+              무엇에 대한 것인지를 먼저 쓰세요.
+              <br />
+              <b>빈 줄을 넣으면 문단이 나뉩니다.</b>
+            </>
+          }
+        >
+          <div className="seclang">
+            <span className="tag">국문</span>
+            <LeadDrop html={lead.ko} limit={LEAD_KO_LIMIT} onOpen={() => setLeadOpen(true)} />
+          </div>
+          <div className="seclang">
+            <span className="tag">영문</span>
+            <LeadDrop html={lead.en} limit={LEAD_EN_LIMIT} onOpen={() => setLeadOpen(true)} />
+          </div>
+          <div className="hint-line">누르면 큰 창이 열립니다. 볼드 · 색 · 줄바꿈을 쓸 수 있습니다</div>
+        </Field>
       </div>
+      <LeadHtmlModal
+        open={leadOpen}
+        subtitle={`${sectionIndex + 1} ${headline.ko.trim() || headline.en.trim() || "제목 없음"}`}
+        ko={lead.ko}
+        en={lead.en}
+        onCancel={() => setLeadOpen(false)}
+        onSave={(next) => {
+          setLead({ ko: next.ko, en: next.en });
+          markDirty();
+          setLeadOpen(false);
+        }}
+      />
 
       <div className="blks">
         {blocks.map((block, i) => {
