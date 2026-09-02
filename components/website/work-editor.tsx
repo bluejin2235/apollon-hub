@@ -9,16 +9,15 @@ import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote } from "@/lib/website/publish";
 import type { WorkSiteVisibility } from "@/lib/website/types";
 import {
-  overTextWidth,
-  textWidth,
-  WORK_TITLE_EN_MAX,
-  WORK_TITLE_KO_MAX
+  WORK_TITLE_EN_MAX
 } from "@/lib/website/text-width";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
   countAiUnconfirmed,
   draftFromWork,
   formatSavedAt,
+  interviewRowOf,
+  interviewSectionOf,
   parseEditorTab,
   parseWorkDetail,
   worksPatchFromDraft,
@@ -28,10 +27,14 @@ import {
 } from "@/lib/website/work-detail";
 import { PublishCheckPanel } from "@/components/website/publish-check-panel";
 import { PublishModal } from "@/components/website/publish-modal";
+import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
+import { WorkCreditsTab } from "@/components/website/work-credits-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
+import { WorkHistoryTab } from "@/components/website/work-history-tab";
+import { WorkInterviewTab } from "@/components/website/work-interview-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
 import { GhostBtn, PreviewBarBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
 import { showToast } from "@/components/website/toast";
@@ -52,8 +55,11 @@ function visibilityClass(v: WorkSiteVisibility) {
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
   { id: "content", label: "본문" },
+  { id: "interview", label: "인터뷰" },
+  { id: "credits", label: "크레딧" },
   { id: "faq", label: "FAQ" },
-  { id: "related", label: "연결" }
+  { id: "related", label: "연결" },
+  { id: "history", label: "이력" }
 ];
 
 function dotClass(state: "ok" | "warn" | "empty") {
@@ -62,24 +68,41 @@ function dotClass(state: "ok" | "warn" | "empty") {
   return "bg-slate-300";
 }
 
-function tabDot(tab: EditorTab, check: CheckWorks | null): "ok" | "warn" | "empty" {
+function tabDot(tab: EditorTab, check: CheckWorks | null, work: WorkDetail | null): "ok" | "warn" | "empty" {
   if (tab === "basic") return fillBasic(check);
   if (tab === "content") return fillBody(check);
+  if (tab === "interview") {
+    const on = Boolean(work && interviewSectionOf(work));
+    const has = Boolean(work && interviewRowOf(work)?.insight_id);
+    if (on && !has) return "warn";
+    if (has) return "ok";
+    return "empty";
+  }
+  if (tab === "credits") {
+    return (work?.work_credits?.length ?? 0) > 0 ? "ok" : "empty";
+  }
   if (tab === "faq") return fillFaq(check);
+  if (tab === "history") {
+    return work?.published_version != null ? "ok" : "empty";
+  }
   return fillRelated(check);
 }
 
-function problemCount(check: CheckWorks | null): number {
+function problemCount(
+  check: CheckWorks | null,
+  work?: WorkDetail | null,
+  draft?: WorkBasicDraft | null,
+): number {
   if (!check) return PROBLEM_FLAGS.length;
-  return PROBLEM_FLAGS.filter((flag) => check[flag]).length;
+  let n = PROBLEM_FLAGS.filter((flag) => flag !== "no_card_image" && check[flag]).length;
+  const hasCard = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
+  if (!hasCard) n += 1;
+  return n;
 }
 
 function draftLimitProblems(draft: WorkBasicDraft): string[] {
   const issues: string[] = [];
-  if (draft.title.ko.trim() && overTextWidth(draft.title.ko, WORK_TITLE_KO_MAX)) {
-    issues.push("국문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
-  }
-  if (textWidth(draft.title.en) > WORK_TITLE_EN_MAX) {
+  if (draft.title.en.length > WORK_TITLE_EN_MAX) {
     issues.push("영문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
   }
   if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
@@ -108,7 +131,7 @@ function shortageLine(
   draft: WorkBasicDraft | null
 ): { text: string; ok: boolean } {
   const limits = draft ? draftLimitProblems(draft) : [];
-  const problems = problemCount(check) + limits.length;
+  const problems = problemCount(check, work, draft) + limits.length;
   if (problems > 0) {
     const extra = limits[0] ? ` — ${limits[0]}` : "";
     return { text: `공개하려면 ${problems}가지가 더 필요합니다${extra}`, ok: false };
@@ -123,6 +146,9 @@ function shortageLine(
   if (check?.faq_on_but_empty) {
     return { text: "FAQ가 비어 있습니다", ok: false };
   }
+  if (interviewBlocksPublish(work)) {
+    return { text: "인터뷰 표시를 켜둔 채 비우면 공개할 수 없습니다", ok: false };
+  }
   const related = work.content_related?.length ?? 0;
   if (related > 0) {
     return { text: `관련 콘텐츠 ${related}개 지정됨`, ok: true };
@@ -132,6 +158,10 @@ function shortageLine(
     return { text: `FAQ ${faqs}문항 입력됨`, ok: true };
   }
   return { text: "등록할 수 있습니다", ok: true };
+}
+
+function interviewBlocksPublish(work: WorkDetail): boolean {
+  return Boolean(interviewSectionOf(work) && !interviewRowOf(work)?.insight_id);
 }
 
 export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: string }) {
@@ -147,6 +177,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fullSaveState, setFullSaveState] = useState<PartialSaveState>("idle");
   const [panelOpen, setPanelOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [publishPreviewLoading, setPublishPreviewLoading] = useState(false);
@@ -216,9 +247,21 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const rawCheck = checkOverride ?? work?.check ?? null;
   const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
   const limitIssues = draft ? draftLimitProblems(draft) : [];
-  const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
+  const canPublish =
+    problemCount(check, work, draft) === 0 &&
+    limitIssues.length === 0 &&
+    !(work && interviewBlocksPublish(work));
   const shortage = work ? shortageLine(work, check, draft) : null;
   const visibility = work?.site_visibility ?? "draft";
+  const blockReason = !canPublish && shortage && !shortage.ok ? shortage.text : null;
+  const statusText =
+    visibility === "hidden"
+      ? "사이트에서 보이지 않습니다"
+      : blockReason
+        ? blockReason
+        : visibility === "live" && hasUnpublishedChanges
+          ? "공개 안 된 변경이 있습니다"
+          : shortage?.text ?? null;
 
   const refreshPublishPreview = useCallback(async () => {
     const preview = await publishWorkPreview(workId);
@@ -283,6 +326,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
 
   const onChangeDraft = useCallback((patch: Partial<WorkBasicDraft>) => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+    setFullSaveState((cur) => (cur === "saving" ? cur : "dirty"));
   }, []);
 
   /**
@@ -307,17 +351,24 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   async function saveAll(opts?: { silent?: boolean }) {
     if (!draft) return false;
     setSaving(true);
+    setFullSaveState("saving");
     setError(null);
     try {
-      if (!(await saveCategories(draft))) return false;
+      if (!(await saveCategories(draft))) {
+        setFullSaveState("dirty");
+        return false;
+      }
       const result = await updateWork(workId, worksPatchFromDraft(draft));
       if (!result.ok) {
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setFullSaveState("dirty");
         return false;
       }
       refreshPreview();
       await load();
       await refreshPublishPreview();
+      setFullSaveState("saved");
+      window.setTimeout(() => setFullSaveState("idle"), 2000);
       if (!opts?.silent) {
         showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
       }
@@ -491,7 +542,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
                   : "border-transparent text-slate-500"
               }`}
             >
-              <i className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(tabDot(item.id, check))}`} />
+              <i className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(tabDot(item.id, check, work))}`} />
               {item.label}
             </button>
           );
@@ -512,6 +563,10 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         {tab === "content" ? (
           <WorkContentTab work={work} siteUrl={siteUrl} onReload={load} />
         ) : null}
+        {tab === "interview" ? (
+          <WorkInterviewTab work={work} siteUrl={siteUrl} onReload={load} />
+        ) : null}
+        {tab === "credits" ? <WorkCreditsTab work={work} onReload={load} /> : null}
         {tab === "faq" ? (
           <WorkFaqTab
             work={work}
@@ -523,6 +578,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         {tab === "related" ? (
           <WorkRelatedTab work={work} siteUrl={siteUrl} onReload={load} />
         ) : null}
+        {tab === "history" ? <WorkHistoryTab workId={work.id} /> : null}
       </div>
 
       <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -531,30 +587,36 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
             className={`min-w-0 flex-1 basis-full text-sm sm:basis-auto ${
               visibility === "hidden"
                 ? "text-slate-500"
-                : visibility === "live" && hasUnpublishedChanges
+                : blockReason
                   ? "text-amber-600"
-                  : shortage?.ok
-                    ? "text-emerald-600"
-                    : "text-amber-600"
+                  : visibility === "live" && hasUnpublishedChanges
+                    ? "text-amber-600"
+                    : shortage?.ok
+                      ? "text-emerald-600"
+                      : "text-amber-600"
             }`}
           >
-            {visibility === "hidden"
-              ? "사이트에서 보이지 않습니다"
-              : visibility === "live" && hasUnpublishedChanges
-                ? "공개 안 된 변경이 있습니다"
-                : shortage?.text}
+            {statusText}
           </p>
           <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto">
             <PreviewBarBtn onClick={() => void handlePreview()} />
-            <GhostBtn disabled={saving} onClick={() => void saveAll()}>
-              전체 저장
-            </GhostBtn>
+            <PartialSaveBtn
+              label="전체 저장"
+              state={fullSaveState}
+              disabled={fullSaveState !== "dirty"}
+              onClick={() => void saveAll()}
+            />
             {canManageWorks && visibility !== "hidden" ? (
               <>
                 <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
                 <PrimaryBtn disabled={!canPublish || saving} onClick={() => void openPublishModal()}>
                   공개하기
                 </PrimaryBtn>
+                {blockReason ? (
+                  <span className="whitespace-nowrap text-[11px] font-medium text-amber-700">
+                    {blockReason}
+                  </span>
+                ) : null}
               </>
             ) : null}
             {canManageWorks && visibility === "live" ? (

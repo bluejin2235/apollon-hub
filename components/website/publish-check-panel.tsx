@@ -21,8 +21,11 @@ type CheckCopy = {
 const TAB_LABEL: Record<EditorTab, string> = {
   basic: "기본정보 →",
   content: "본문 →",
+  interview: "인터뷰 →",
+  credits: "크레딧 →",
   faq: "FAQ →",
-  related: "연결 →"
+  related: "연결 →",
+  history: "이력 →"
 };
 
 function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
@@ -70,6 +73,13 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       tab: "basic",
       title: "대표 이미지 해상도가 낮습니다",
       sub: `${formatKeyImageSize()} 이상으로 다시 올리세요`
+    },
+    {
+      flag: "no_card_image",
+      kind: "problem",
+      tab: "basic",
+      title: "썸네일에 쓸 이미지가 없습니다",
+      sub: "목록 카드와 링크 공유에 쓸 이미지를 고르세요."
     },
     {
       flag: "no_sections",
@@ -173,7 +183,12 @@ function copies(work: WorkDetail, check: CheckWorks): CheckCopy[] {
       sub: "같은 문장이 반복되면 AI 가 인용하지 않습니다."
     }
   ];
-  return all.filter((item) => check[item.flag]);
+  return all.filter((item) => {
+    if (item.flag === "no_card_image") {
+      return !work.card_image?.trim();
+    }
+    return Boolean(check[item.flag]);
+  });
 }
 
 type Props = {

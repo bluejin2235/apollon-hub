@@ -48,7 +48,19 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
       init.body = await request.formData();
     } else {
       const text = await request.text();
-      if (text) init.body = text;
+      if (text) {
+        if (method === "POST" && joined === "publish") {
+          try {
+            const json = JSON.parse(text) as Record<string, unknown>;
+            if (!json.publishedBy) json.publishedBy = user.id;
+            init.body = JSON.stringify(json);
+          } catch {
+            init.body = text;
+          }
+        } else {
+          init.body = text;
+        }
+      }
     }
   }
 

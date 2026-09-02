@@ -826,6 +826,66 @@ export function getStatsRealtime(signal?: AbortSignal): Promise<ApiResult<StatsR
   return websiteFetch<StatsRealtime>("stats/realtime", { signal });
 }
 
+export type StatsBriefTodo = {
+  level: "high" | "mid" | "low";
+  title: string;
+  reason: string;
+};
+
+export type StatsBriefResult = {
+  summary: string;
+  todos: StatsBriefTodo[];
+};
+
+/** 요약 화면 루나 총평·할 일. Hub 가 Anthropic 을 부른다 (proxy 아님) */
+export async function postStatsBrief(
+  facts: unknown,
+  signal?: AbortSignal
+): Promise<ApiResult<StatsBriefResult>> {
+  const token = await accessToken();
+  if (!token) {
+    return { ok: false, error: "unauthorized", status: 401 };
+  }
+
+  const controller = new AbortController();
+  const onIncomingAbort = () => controller.abort();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onIncomingAbort, { once: true });
+  }
+
+  try {
+    const res = await fetch("/api/website/luna/stats-brief", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ facts }),
+      signal: controller.signal
+    });
+    const body = (await res.json().catch(() => null)) as {
+      data?: StatsBriefResult;
+      error?: string;
+    } | null;
+    if (!res.ok || !body?.data?.summary) {
+      return {
+        ok: false,
+        error: body?.error ?? "luna_failed",
+        status: res.status
+      };
+    }
+    return { ok: true, data: body.data, status: res.status };
+  } catch {
+    return { ok: false, error: "network_error", status: 0 };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onIncomingAbort);
+  }
+}
+
 export type PublishPreviewData = {
   changedFields: string[];
   firstPublish: boolean;
@@ -850,6 +910,24 @@ export function publishWork(workId: string, changeNote: string): Promise<ApiResu
     method: "POST",
     body: JSON.stringify({ contentType: "work", contentId: workId, changeNote })
   });
+}
+
+export type PublishHistoryItem = {
+  version: number;
+  published_at: string;
+  published_by: string | null;
+  published_by_name: string | null;
+  change_note: string | null;
+  is_current: boolean;
+};
+
+export function getPublishHistory(
+  contentType: "work" | "insight",
+  contentId: string
+): Promise<ApiResult<{ items: PublishHistoryItem[] }>> {
+  return websiteFetch<{ items: PublishHistoryItem[] }>(
+    `publish/history${queryString({ contentType, contentId })}`
+  );
 }
 
 export function hideWork(workId: string): Promise<ApiResult<{ version: number; isHidden: boolean }>> {

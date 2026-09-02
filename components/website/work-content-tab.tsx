@@ -9,10 +9,9 @@ import {
   reorderSections,
   updateSection
 } from "@/lib/website/api";
-import type { ContentBlock, Loc, WorkDetail, WorkInterview, WorkSection } from "@/lib/website/work-detail";
+import type { ContentBlock, Loc, WorkDetail, WorkSection } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
-import { InterviewEditor } from "@/components/website/interview-editor";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
@@ -120,8 +119,9 @@ function Bi({
 }
 
 export function WorkContentTab({ work, siteUrl, onReload }: Props) {
-  const sections = [...(work.work_sections ?? [])].sort((a, b) => a.sort - b.sort);
-  const interviews = work.work_interview ?? [];
+  const sections = [...(work.work_sections ?? [])]
+    .filter((section) => section.kind !== "interview")
+    .sort((a, b) => a.sort - b.sort);
   const allBlockIds = sections.flatMap((section) =>
     (section.content_blocks ?? []).map((block) => block.id)
   );
@@ -314,7 +314,6 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
           workId={work.id}
           uploadRoot={workFolderPrefix(work.slug, work.id)}
           siteUrl={siteUrl}
-          interview={interviews.find((i) => i.section_id === section.id) ?? null}
           open={openIds.has(section.id)}
           openBlockIds={openBlockIds}
           onToggle={() => toggle(section.id)}
@@ -378,7 +377,6 @@ function SectionCard({
   workId,
   uploadRoot,
   siteUrl,
-  interview,
   open,
   openBlockIds,
   onToggle,
@@ -398,7 +396,6 @@ function SectionCard({
   workId: string;
   uploadRoot: string;
   siteUrl: string;
-  interview: WorkInterview | null;
   open: boolean;
   openBlockIds: Set<string>;
   onToggle: () => void;
@@ -472,7 +469,6 @@ function SectionCard({
             workId={workId}
             uploadRoot={uploadRoot}
             siteUrl={siteUrl}
-            interview={interview}
             isInterview={isInterview}
             blocks={blocks}
             openBlockIds={openBlockIds}
@@ -494,7 +490,6 @@ function SectionBody({
   workId,
   uploadRoot,
   siteUrl,
-  interview,
   isInterview,
   blocks,
   openBlockIds,
@@ -509,7 +504,6 @@ function SectionBody({
   workId: string;
   uploadRoot: string;
   siteUrl: string;
-  interview: WorkInterview | null;
   isInterview: boolean;
   blocks: ContentBlock[];
   openBlockIds: Set<string>;
@@ -632,16 +626,6 @@ function SectionBody({
           </Field>
         </div>
       </div>
-
-      {isInterview ? (
-        <InterviewEditor
-          workId={workId}
-          sectionId={section.id}
-          interview={interview}
-          siteUrl={siteUrl}
-          onReload={onReload}
-        />
-      ) : null}
 
       <div className="blks">
         {blocks.map((block, i) => {
