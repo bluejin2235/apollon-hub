@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Film, ImageIcon, X } from "lucide-react";
-import { uploadFile } from "@/lib/website/api";
+import { uploadFile, uploadVideo, type SignedUploadKind } from "@/lib/website/api";
 import { showToast } from "@/components/website/toast";
 import { formatBytes } from "@/lib/website/image-long-edge";
 import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
@@ -37,6 +37,8 @@ type Props = {
   bucket: UploadBucket;
   folder: string;
   accept: "image" | "video" | "both";
+  /** 영상 직접 업로드. 서버가 경로를 정한다 */
+  workId?: string;
   multiple?: boolean;
   disabled?: boolean;
   maxFiles?: number;
@@ -122,6 +124,13 @@ function displayName(src: string | null | undefined): string {
 function isVideoSrc(src: string, accept: Props["accept"]) {
   if (accept === "video") return /\.mp4(?:$|\?)/i.test(src) || !/^https?:\/\//i.test(src);
   return /\.mp4(?:$|\?)/i.test(src);
+}
+
+function signedKindFor(kind: Kind, accept: Props["accept"]): SignedUploadKind {
+  if (kind === "loop-lg") return "loop_lg";
+  if (kind === "loop-sm") return "loop_sm";
+  if (accept === "video") return "video";
+  return "video";
 }
 
 function prepareKind(kind: Kind): "key" | "body" {
@@ -295,6 +304,7 @@ export function ImageUploader({
   bucket,
   folder,
   accept,
+  workId,
   multiple = false,
   disabled,
   maxFiles,
@@ -496,28 +506,45 @@ export function ImageUploader({
           shrinkLine
         });
 
+        if (isVideoFile(original) && !workId) {
+          setError({
+            fileName: original.name,
+            message: "워크가 없어 영상을 직접 올릴 수 없습니다",
+            advice: []
+          });
+          break;
+        }
+
         const filename = newStoredFilename(extForUpload(send), used);
         used.add(filename.toLowerCase());
-        const path = uploadObjectPath(folder, filename);
-        const role =
-          kind === "key" || kind === "insight-key" || kind === "poster" ? "key" : undefined;
-        const res = await uploadFile(send, bucket, path, {
-          signal: controller.signal,
-          fields: role ? { role } : undefined,
-          onProgress: (p) => {
-            setProgress({
-              fileName: original.name,
-              phase: "upload",
-              percent: p.percent,
-              loaded: p.loaded,
-              total: p.total || send.size,
-              index: i + 1,
-              count: ok.length,
-              overallPercent: Math.round(((i + p.percent / 100) / ok.length) * 100),
-              shrinkLine
-            });
-          }
-        });
+        const onProgress = (p: { percent: number; loaded: number; total: number }) => {
+          setProgress({
+            fileName: original.name,
+            phase: "upload",
+            percent: p.percent,
+            loaded: p.loaded,
+            total: p.total || send.size,
+            index: i + 1,
+            count: ok.length,
+            overallPercent: Math.round(((i + p.percent / 100) / ok.length) * 100),
+            shrinkLine
+          });
+        };
+
+        const res =
+          isVideoFile(original) && workId
+            ? await uploadVideo(send, workId, signedKindFor(kind, accept), {
+                signal: controller.signal,
+                onProgress
+              })
+            : await uploadFile(send, bucket, uploadObjectPath(folder, filename), {
+                signal: controller.signal,
+                fields:
+                  kind === "key" || kind === "insight-key" || kind === "poster"
+                    ? { role: "key" }
+                    : undefined,
+                onProgress
+              });
 
         if (!res.ok) {
           const parsed = describeUploadError(res.error, res.status, res.details);

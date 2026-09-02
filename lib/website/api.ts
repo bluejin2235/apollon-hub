@@ -341,6 +341,142 @@ function parseUploadBody(text: string, status: number): ApiResult<UploadResult> 
     : { ok: true, data, status };
 }
 
+export type SignedUploadKind = "loop_lg" | "loop_sm" | "video";
+
+export type SignedUploadTicket = {
+  signedUrl: string;
+  token: string;
+  path: string;
+  publicUrl: string;
+  bucket: "works";
+};
+
+function parseStorageError(text: string, status: number): { error: string; message: string } {
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      body = text;
+    }
+  }
+  const rec = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+  const message =
+    (typeof rec?.message === "string" && rec.message) ||
+    (typeof rec?.error === "string" && rec.error) ||
+    (typeof body === "string" && body.trim()) ||
+    (status > 0 ? `저장소 오류 (${status})` : "저장소에 올리지 못했습니다");
+  return { error: "upload_failed", message };
+}
+
+export function requestSignedUpload(body: {
+  workId: string;
+  kind: SignedUploadKind;
+  size?: number;
+}): Promise<ApiResult<SignedUploadTicket>> {
+  return websiteFetch<SignedUploadTicket>("upload/signed", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function putToSignedUrl(
+  ticket: SignedUploadTicket,
+  file: File,
+  opts?: {
+    onProgress?: (progress: UploadProgress) => void;
+    signal?: AbortSignal;
+  }
+): Promise<ApiResult<UploadResult>> {
+  return new Promise((resolve) => {
+    if (opts?.signal?.aborted) {
+      resolve({ ok: false, error: "aborted", status: 0 });
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    const timeoutMs =
+      file.size > 80 * 1024 * 1024 ? 1_800_000 : file.size > 20 * 1024 * 1024 ? 600_000 : 180_000;
+    xhr.timeout = timeoutMs;
+    xhr.open("PUT", ticket.signedUrl);
+    xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+    xhr.setRequestHeader("x-upsert", "false");
+
+    const onAbort = () => xhr.abort();
+    opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !opts?.onProgress) return;
+      opts.onProgress({
+        loaded: event.loaded,
+        total: event.total,
+        percent: Math.round((event.loaded / event.total) * 100)
+      });
+    };
+
+    xhr.onload = () => {
+      opts?.signal?.removeEventListener("abort", onAbort);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({
+          ok: true,
+          data: {
+            path: ticket.path,
+            publicUrl: ticket.publicUrl,
+            width: null,
+            height: null,
+            size: file.size,
+            mime: file.type || "video/mp4"
+          },
+          status: xhr.status
+        });
+        return;
+      }
+      const parsed = parseStorageError(xhr.responseText, xhr.status);
+      resolve({
+        ok: false,
+        error: parsed.error,
+        details: { message: parsed.message },
+        status: xhr.status
+      });
+    };
+    xhr.onerror = () => {
+      opts?.signal?.removeEventListener("abort", onAbort);
+      resolve({
+        ok: false,
+        error: "network_error",
+        details: { message: "저장소에 연결하지 못했습니다" },
+        status: 0
+      });
+    };
+    xhr.ontimeout = () => {
+      opts?.signal?.removeEventListener("abort", onAbort);
+      resolve({ ok: false, error: "timeout", status: 0 });
+    };
+    xhr.onabort = () => {
+      opts?.signal?.removeEventListener("abort", onAbort);
+      resolve({ ok: false, error: "aborted", status: 0 });
+    };
+
+    xhr.send(file);
+  });
+}
+
+export async function uploadVideo(
+  file: File,
+  workId: string,
+  kind: SignedUploadKind,
+  opts?: {
+    onProgress?: (progress: UploadProgress) => void;
+    signal?: AbortSignal;
+  }
+): Promise<ApiResult<UploadResult>> {
+  const ticket = await requestSignedUpload({ workId, kind, size: file.size });
+  if (!ticket.ok) return ticket;
+  const put = await putToSignedUrl(ticket.data, file, opts);
+  if (!put.ok) return put;
+  return ticket.notice ? { ...put, notice: ticket.notice } : put;
+}
+
 export function uploadFile(
   file: File,
   bucket: string,

@@ -928,6 +928,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 bucket="works"
                 folder={`${uploadRoot}/loop`}
                 accept="video"
+                workId={work.id}
                 multiple={false}
                 kind="loop-lg"
                 appearance="filecard"
@@ -967,6 +968,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 bucket="works"
                 folder={`${uploadRoot}/loop`}
                 accept="video"
+                workId={work.id}
                 multiple={false}
                 kind="loop-sm"
                 appearance="filecard"
