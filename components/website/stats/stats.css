@@ -10,6 +10,7 @@
   --up: #0f7a56;
   --dn: #b93b3b;
   --r: 10px;
+  --ws-bar-height: 72px;
   min-height: calc(100vh - 8rem);
   margin: -2rem -1rem 0;
   color: var(--ink);
@@ -33,6 +34,8 @@
 }
 
 .ws-main {
+  container-type: inline-size;
+  container-name: ws-main;
   padding: 0 28px 60px;
   max-width: 1240px;
 }
@@ -40,11 +43,20 @@
 .ws-bar {
   position: sticky;
   top: 0;
-  background: var(--bg);
-  padding: 18px 0 12px;
   z-index: 5;
+  background-color: #f5f6f8;
+  padding: 18px 0 12px;
+  margin-bottom: 0;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 20px;
+  /* sticky 시 위·아래로 본문이 비치지 않게 배경을 확장한다 */
+  box-shadow:
+    0 -100vh 0 100vh #f5f6f8,
+    0 1px 0 0 var(--line);
+}
+
+/* sticky 바 높이만큼 위 여백 — 스크롤해도 제목이 바에 먹히기 전에 버퍼가 소진된다 */
+.ws-screen {
+  padding-top: var(--ws-bar-height);
 }
 
 .ws-bar-row {
@@ -104,9 +116,10 @@
 .ws-live {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 13px;
   color: var(--ink2);
+  white-space: nowrap;
 }
 
 .ws-dot {
@@ -115,7 +128,7 @@
   border-radius: 50%;
   background: #1baf7a;
   display: inline-block;
-  margin-right: 6px;
+  flex-shrink: 0;
   animation: ws-pulse 2s infinite;
 }
 
@@ -138,7 +151,8 @@
 .ws-pt {
   font-size: 21px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin: 0 0 4px;
+  scroll-margin-top: calc(var(--ws-bar-height) + 8px);
 }
 
 .ws-lede {
@@ -148,17 +162,30 @@
   max-width: 76ch;
 }
 
+.ws-sec {
+  margin-bottom: 26px;
+}
+
+/* 넓으면 한 줄에 다섯 개, 좁아지면 자연스럽게 접힌다 */
 .ws-kpis {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+}
+
+@container ws-main (min-width: 480px) {
+  .ws-kpis {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 .ws-kpi {
+  min-width: 0;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: var(--r);
-  padding: 12px 14px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
 }
 
 .ws-lab {
@@ -167,6 +194,12 @@
   display: flex;
   gap: 5px;
   align-items: center;
+  min-width: 0;
+}
+
+.ws-lab-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ws-val {
@@ -197,13 +230,17 @@
   color: #fff;
 }
 
-.ws-hint-summary {
+/* 카드 안 한 줄. 길어지면 잘리지 않고 줄바꿈한다 */
+.ws-kpi-sub {
   font-size: 11.5px;
   color: var(--ink3);
   margin-top: 4px;
   line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
+/* KPI 줄 전체 아래 가로 패널. 어느 물음표를 눌러도 같은 자리에 뜬다 */
 .ws-hint-panel {
   display: block;
   background: #fff;
@@ -213,22 +250,51 @@
   margin-top: 10px;
 }
 
-.ws-hint-panel .ws-hint-title {
-  font-weight: 600;
-  font-size: 14px;
+.ws-hint-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 5px;
 }
 
-.ws-hint-panel div {
+.ws-hint-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.ws-hint-close {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink2);
+  border-radius: 20px;
+  padding: 3px 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ws-hint-close:hover {
+  background: #f4f5f7;
+  color: var(--ink);
+}
+
+.ws-hint-row {
+  display: flex;
+  gap: 8px;
+  margin: 0;
   padding: 3px 0;
   font-size: 13px;
   color: var(--ink2);
 }
 
-.ws-hint-panel b {
+.ws-hint-row b {
   font-weight: 600;
-  display: inline-block;
+  flex-shrink: 0;
   min-width: 36px;
+  color: var(--ink);
 }
 
 @media (max-width: 800px) {
