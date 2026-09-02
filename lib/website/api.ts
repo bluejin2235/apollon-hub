@@ -558,6 +558,17 @@ export function setWorkTags(
   });
 }
 
+/** 첫 번째가 대표입니다. 홈페이지 쪽에서 works.category_id 도 함께 맞춥니다 */
+export function setWorkCategories(
+  workId: string,
+  categoryIds: string[]
+): Promise<ApiResult<{ items: unknown[] }>> {
+  return websiteFetch(`works/${workId}/categories`, {
+    method: "PUT",
+    body: JSON.stringify({ categoryIds })
+  });
+}
+
 export function addCredit(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
   return websiteFetch(`works/${workId}/credits`, { method: "POST", body: JSON.stringify(body) });
 }

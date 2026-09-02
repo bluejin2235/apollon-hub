@@ -345,17 +345,44 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const [extraErrors, setExtraErrors] = useState<Record<string, string>>({});
   const pendingKey = useId();
 
+  const selectedCategories = draft.category_ids.map((id) => ({
+    id,
+    label: categories.find((item) => item.id === id)?.label?.ko || id
+  }));
+  const addableCategories = categories.filter(
+    (item) => !draft.category_ids.includes(item.id)
+  );
   const categoryLabel =
-    categories.find((item) => item.id === draft.category_id)?.label?.ko || draft.category_id || "—";
+    selectedCategories.map((item) => item.label).join(" · ") || "—";
+
+  function addCategory(id: string) {
+    if (!id || draft.category_ids.includes(id)) return;
+    onChange({ category_ids: [...draft.category_ids, id] });
+  }
+
+  function removeCategory(id: string) {
+    if (draft.category_ids.length <= 1) return;
+    onChange({ category_ids: draft.category_ids.filter((item) => item !== id) });
+  }
+
+  function moveCategory(index: number, dir: -1 | 1) {
+    const next = [...draft.category_ids];
+    const to = index + dir;
+    if (to < 0 || to >= next.length) return;
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved);
+    onChange({ category_ids: next });
+  }
   const keyFilled = !isPlaceholderKey(draft.key_image);
   const titleDone =
-    withinLimit(draft.title.ko, 22) && draft.title.en.length <= 46;
+    withinTextWidth(draft.title.ko, WORK_TITLE_KO_MAX) &&
+    textWidth(draft.title.en) <= WORK_TITLE_EN_MAX;
   const summaryDone =
     withinLimit(draft.summary.ko, 80) && draft.summary.en.length <= 155;
   const requiredDone = [
     titleDone,
     filled(draft.slug),
-    filled(draft.category_id),
+    draft.category_ids.length > 0,
     filled(draft.year),
     keyFilled,
     filled(draft.key_image_alt.ko),
@@ -530,19 +557,71 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
         </Field>
 
-        <div className="two">
-          <Field label="사업분야" required>
-            {editingCategory ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Field
+          label="사업분야"
+          required
+          tip={
+            <>
+              <b>여러 개를 고를 수 있습니다.</b> 첫 번째가 대표입니다.
+              <br />
+              목록 필터는 고른 분야 전부에서 걸리고, 카드에는 가운뎃점으로 이어 나옵니다.
+              <br />
+              <span className="ex">상세 페이지 제목 아래에는 대표 하나만 나옵니다.</span>
+            </>
+          }
+        >
+          {editingCategory ? (
+            <div>
+              <div className="fld repeat-box">
+                {selectedCategories.map((item, index) => (
+                  <div className="repeat-row" key={item.id}>
+                    <span className="whitespace-nowrap">{item.label}</span>
+                    <span className="repeat-save">{index === 0 ? "대표" : ""}</span>
+                    <div className="repeat-acts">
+                      <button
+                        type="button"
+                        className="ico"
+                        title="위로"
+                        disabled={index === 0}
+                        onClick={() => moveCategory(index, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="ico"
+                        title="아래로"
+                        disabled={index === selectedCategories.length - 1}
+                        onClick={() => moveCategory(index, 1)}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="ico"
+                        title="빼기"
+                        disabled={selectedCategories.length <= 1}
+                        onClick={() => removeCategory(item.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="ro">
                 <select
                   className="i"
-                  value={draft.category_id}
-                  onChange={(e) => {
-                    onChange({ category_id: e.target.value });
-                    setEditingCategory(false);
-                  }}
+                  value=""
+                  disabled={addableCategories.length === 0}
+                  onChange={(e) => addCategory(e.target.value)}
                 >
-                  {categories.map((item) => (
+                  <option value="">
+                    {addableCategories.length === 0
+                      ? "더 고를 분야가 없습니다"
+                      : "＋ 분야 더 고르기"}
+                  </option>
+                  {addableCategories.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label?.ko || item.id}
                     </option>
@@ -556,33 +635,36 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   완료
                 </button>
               </div>
-            ) : (
-              <div className="ro">
-                <span className="v">{categoryLabel}</span>
-                <button
-                  type="button"
-                  className="btn xs"
-                  onClick={() => setEditingCategory(true)}
-                >
-                  바꾸기
-                </button>
-              </div>
-            )}
-          </Field>
-          <Field
-            label="완공 연도"
-            required
-            guideLink
-            tip="화면에 보이는 연도이자 목록 정렬 기준입니다."
-          >
-            <input
-              className="i"
-              value={draft.year}
-              onChange={(e) => onChange({ year: e.target.value })}
-              style={{ maxWidth: 140 }}
-            />
-          </Field>
-        </div>
+            </div>
+          ) : (
+            <div className="ro">
+              <span className="v whitespace-nowrap">
+                {categoryLabel}
+              </span>
+              <button
+                type="button"
+                className="btn xs"
+                onClick={() => setEditingCategory(true)}
+              >
+                바꾸기
+              </button>
+            </div>
+          )}
+        </Field>
+
+        <Field
+          label="완공 연도"
+          required
+          guideLink
+          tip="화면에 보이는 연도이자 목록 정렬 기준입니다."
+        >
+          <input
+            className="i"
+            value={draft.year}
+            onChange={(e) => onChange({ year: e.target.value })}
+            style={{ maxWidth: 140 }}
+          />
+        </Field>
 
         <Field
           label="대표 이미지"

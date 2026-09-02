@@ -46,6 +46,7 @@ export type WorkListItem = {
   title: LocalizedText | null;
   status: "draft" | "published";
   category_id: string;
+  work_categories_map?: Array<{ category_id: string; sort: number }> | null;
   year: string | null;
   published_at: string | null;
   key_image: string | null;

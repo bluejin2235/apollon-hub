@@ -138,6 +138,7 @@ export type WorkDetail = {
   work_credits?: WorkCredit[] | null;
   work_metrics?: WorkMetric[] | null;
   work_folders?: WorkFolder[] | null;
+  work_categories_map?: WorkCategoryMap[] | null;
   work_tags?: WorkTagEmbed[] | null;
   faqs?: WorkFaq[] | null;
   content_related?: WorkRelated[] | null;
@@ -145,8 +146,15 @@ export type WorkDetail = {
   check?: import("@/lib/website/types").CheckWorks | null;
 };
 
+export type WorkCategoryMap = {
+  category_id: string;
+  sort: number;
+};
+
 export type WorkBasicDraft = {
   slug: string;
+  /** work_categories_map 순서. 첫 번째가 대표이고 works.category_id 가 됩니다 */
+  category_ids: string[];
   category_id: string;
   title: Loc;
   subtitle: Loc;
@@ -405,6 +413,14 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
         };
       })
       .filter((v): v is WorkFolder => v !== null),
+    work_categories_map: asArray(row.work_categories_map)
+      .map((item) => {
+        const m = asRecord(item);
+        if (!m || typeof m.category_id !== "string") return null;
+        return { category_id: m.category_id, sort: asNum(m.sort) } satisfies WorkCategoryMap;
+      })
+      .filter((v): v is WorkCategoryMap => v !== null)
+      .sort((a, b) => a.sort - b.sort),
     work_tags: asArray(row.work_tags)
       .map((item) => {
         const t = asRecord(item);
@@ -500,9 +516,36 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
   };
 }
 
+/** work_categories_map 을 sort 순서로 펴고, 비어 있으면 대표 하나만 씁니다 */
+export function categoryIdsFromMap(
+  map: WorkCategoryMap[] | null | undefined,
+  fallbackCategoryId?: string | null
+): string[] {
+  const ids: string[] = [];
+
+  for (const row of [...(map ?? [])].sort((a, b) => a.sort - b.sort)) {
+    if (row.category_id && !ids.includes(row.category_id)) ids.push(row.category_id);
+  }
+
+  if (ids.length > 0) return ids;
+  return fallbackCategoryId ? [fallbackCategoryId] : [];
+}
+
+export function categoryIdsFromWork(work: WorkDetail): string[] {
+  return categoryIdsFromMap(work.work_categories_map, work.category_id);
+}
+
+export function categoryLabelsFromIds(
+  ids: string[],
+  labelById: Map<string, string>
+): string {
+  return ids.map((id) => labelById.get(id) ?? id).join(" · ");
+}
+
 export function draftFromWork(work: WorkDetail): WorkBasicDraft {
   return {
     slug: work.slug ?? "",
+    category_ids: categoryIdsFromWork(work),
     category_id: work.category_id ?? "",
     title: asLoc(work.title),
     subtitle: asLoc(work.subtitle),
@@ -530,7 +573,8 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
 export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unknown> {
   return {
     slug: draft.slug,
-    category_id: draft.category_id,
+    // 대표는 항상 첫 번째입니다.
+    category_id: draft.category_ids[0] || draft.category_id,
     title: draft.title,
     subtitle: draft.subtitle,
     summary: draft.summary,

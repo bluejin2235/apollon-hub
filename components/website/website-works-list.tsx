@@ -11,6 +11,10 @@ import { showToast } from "@/components/website/toast";
 import { deleteWork, getMeta, listWorks, updateWork } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
 import type { WebsiteCategory, WorkListItem } from "@/lib/website/types";
+import {
+  categoryIdsFromMap,
+  categoryLabelsFromIds
+} from "@/lib/website/work-detail";
 import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window";
 
 const PUBLISH_REDIRECT_KEY = "website-publish-toast";
@@ -315,7 +319,11 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     const keyword = q.trim().toLowerCase();
     let rows = items;
     if (status !== "all") rows = rows.filter((row) => row.status === status);
-    if (category !== "all") rows = rows.filter((row) => row.category_id === category);
+    if (category !== "all") {
+      rows = rows.filter((row) =>
+        categoryIdsFromMap(row.work_categories_map, row.category_id).includes(category)
+      );
+    }
     if (keyword) {
       rows = rows.filter((row) => {
         const title = `${row.title?.ko ?? ""} ${row.title?.en ?? ""} ${row.slug}`.toLowerCase();
@@ -333,6 +341,13 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
 
   const published = items.filter((row) => row.status === "published").length;
   const draft = items.length - published;
+
+  function categoryLabel(item: WorkListItem) {
+    return categoryLabelsFromIds(
+      categoryIdsFromMap(item.work_categories_map, item.category_id),
+      labelById
+    );
+  }
 
   function goEdit(item: WorkListItem) {
     router.push(editHref(item.id));
@@ -464,16 +479,16 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
 
       {!loading && (!error || items.length > 0) ? (
         <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="py-2 pr-3 font-medium">프로젝트</th>
-                  <th className="py-2 pr-3 font-medium">사업분야</th>
-                  <th className="py-2 pr-3 font-medium">연도</th>
-                  <th className="py-2 pr-3 font-medium">상태</th>
-                  <th className="py-2 pr-3 font-medium">채움</th>
-                  <th className="py-2 font-medium" />
+                  <th className="w-[34%] py-2 pr-3 font-medium">프로젝트</th>
+                  <th className="w-[32%] py-2 pr-3 font-medium">사업분야</th>
+                  <th className="w-[8%] py-2 pr-3 font-medium">연도</th>
+                  <th className="w-[10%] py-2 pr-3 font-medium">상태</th>
+                  <th className="w-[8%] py-2 pr-3 font-medium">채움</th>
+                  <th className="w-[8%] py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -507,8 +522,10 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                           </span>
                         </Link>
                       </td>
-                      <td className="py-3 pr-3 text-slate-600">
-                        {labelById.get(item.category_id) ?? item.category_id}
+                      <td className="max-w-0 py-3 pr-3 text-slate-600">
+                        <span className="line-clamp-2" title={categoryLabel(item)}>
+                          {categoryLabel(item)}
+                        </span>
                       </td>
                       <td className="py-3 pr-3 text-slate-600">{item.year ?? "—"}</td>
                       <td className="py-3 pr-3">
@@ -546,8 +563,8 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium text-slate-900">{workTitle(item)}</span>
-                      <span className="mt-1 block text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
-                        {labelById.get(item.category_id) ?? item.category_id} · {item.year ?? "—"}
+                      <span className="mt-1 block whitespace-nowrap text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
+                        {categoryLabel(item)} · {item.year ?? "—"}
                       </span>
                       <span className="mt-2 flex items-center gap-2">
                         <StatusBadge status={item.status} />

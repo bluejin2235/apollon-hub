@@ -203,11 +203,31 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
+  /**
+   * work_categories_map 을 다시 씁니다. 홈페이지 쪽에서 works.category_id 도
+   * 첫 번째로 맞춰 주므로, 이어지는 works 패치와 같은 값이 됩니다.
+   */
+  async function saveCategories(next: WorkBasicDraft) {
+    if (next.category_ids.length === 0) {
+      setError("사업분야는 최소 하나가 필요합니다");
+      return false;
+    }
+
+    const result = await setWorkCategories(workId, next.category_ids);
+    if (!result.ok) {
+      setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+      return false;
+    }
+
+    return true;
+  }
+
   async function saveTemp() {
     if (!draft) return;
     setSaving(true);
     setError(null);
     try {
+      if (!(await saveCategories(draft))) return;
       const result = await updateWork(workId, worksPatchFromDraft(draft));
       if (!result.ok) {
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
@@ -227,6 +247,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     setError(null);
     cancelPublishNav();
     try {
+      if (!(await saveCategories(draft))) return;
       const result = await updateWork(workId, {
         ...worksPatchFromDraft(draft),
         status: "published"
