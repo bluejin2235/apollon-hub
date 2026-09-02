@@ -7,6 +7,28 @@ import {
   MetricHintPanel,
   type MetricHint
 } from "@/components/website/stats/metric-hint";
+import {
+  StatsChart,
+  STATS_COLORS,
+  STATS_TEXT
+} from "@/components/website/stats/stats-chart";
+import {
+  AI_QUESTION_COLORS,
+  AI_QUESTION_SAMPLE,
+  COUNTRY_SAMPLE,
+  DEVICE_SAMPLE,
+  KEYWORD_IMPRESSION_COLOR,
+  KEYWORD_SAMPLE,
+  KPI_SAMPLE,
+  LANGUAGE_SAMPLE,
+  LUNA_SAMPLE,
+  SOURCE_DAILY_SAMPLE,
+  SOURCE_PIE_SAMPLE,
+  SOURCE_QUALITY_SAMPLE,
+  SUMMARY_LIMIT_NOTE,
+  TODO_SAMPLE,
+  TREND_SAMPLE
+} from "@/components/website/stats/summary-sample";
 import "./stats.css";
 import { getStats } from "@/lib/website/api";
 import {
@@ -114,6 +136,25 @@ function ScreenShell({
   );
 }
 
+function SectionHead({ title, stamp }: { title: string; stamp?: string }) {
+  return (
+    <div className="ws-sech">
+      <h3>{title}</h3>
+      {stamp ? <span className="ws-stamp">{stamp}</span> : null}
+    </div>
+  );
+}
+
+/** 목업의 .luna — 루나 총평 */
+function LunaBlock() {
+  return (
+    <div className="ws-luna">
+      <div className="ws-who">{LUNA_SAMPLE.who}</div>
+      <p>{LUNA_SAMPLE.text}</p>
+    </div>
+  );
+}
+
 function SummaryKpis() {
   const panelId = useId();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -121,27 +162,213 @@ function SummaryKpis() {
 
   return (
     <div className="ws-sec">
+      <SectionHead title="이번 기간" stamp="방문 어제까지 · 검색 8월 28일까지" />
       <div className="ws-kpis">
-        {SUMMARY_HINTS.map((hint) => (
-          <div className="ws-kpi" key={hint.id}>
-            <div className="ws-lab">
-              <span className="ws-lab-text">{hint.title}</span>
-              <MetricHintButton
-                hint={hint}
-                open={openId === hint.id}
-                panelId={panelId}
-                onToggle={() => setOpenId((current) => (current === hint.id ? null : hint.id))}
-              />
+        {SUMMARY_HINTS.map((hint) => {
+          const kpi = KPI_SAMPLE.find((item) => item.id === hint.id);
+          return (
+            <div className="ws-kpi" key={hint.id}>
+              <div className="ws-lab">
+                <span className="ws-lab-text">{hint.title}</span>
+                <MetricHintButton
+                  hint={hint}
+                  open={openId === hint.id}
+                  panelId={panelId}
+                  onToggle={() => setOpenId((current) => (current === hint.id ? null : hint.id))}
+                />
+              </div>
+              <div className="ws-val">{kpi?.value ?? "—"}</div>
+              <div className={`ws-delta ws-${kpi?.tone ?? "flat"}`}>{kpi?.delta ?? "—"}</div>
+              <p className="ws-kpi-sub">{hint.summary}</p>
+              {kpi ? (
+                <StatsChart
+                  type="spark"
+                  data={kpi.spark}
+                  dataKey="v"
+                  color={kpi.sparkColor}
+                  height={26}
+                />
+              ) : null}
             </div>
-            <div className="ws-val">—</div>
-            <p className="ws-kpi-sub">{hint.summary}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {open ? (
         <MetricHintPanel id={panelId} hint={open} onClose={() => setOpenId(null)} />
       ) : null}
     </div>
+  );
+}
+
+function TrendAndSources() {
+  return (
+    <div className="ws-sec ws-g2">
+      <div className="ws-card">
+        <div className="ws-ct">방문 추이 — 실선 이번 기간, 점선 지난 기간</div>
+        <StatsChart
+          type="line"
+          data={TREND_SAMPLE}
+          xKey="date"
+          series={[
+            { key: "current", name: "이번 기간", color: STATS_COLORS[0] },
+            { key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }
+          ]}
+        />
+      </div>
+      <div className="ws-card">
+        <div className="ws-ct">경로별 비중</div>
+        <StatsChart type="doughnut" data={SOURCE_PIE_SAMPLE} legend />
+      </div>
+    </div>
+  );
+}
+
+function HowTheyArrived() {
+  return (
+    <div className="ws-sec">
+      <SectionHead title="어디로 들어왔나" />
+      <p className="ws-note">
+        경로마다 사람의 성격이 다릅니다. 수보다 머문 시간과 본 페이지 수를 같이 보세요.
+      </p>
+      <div className="ws-g2">
+        <div className="ws-card">
+          <div className="ws-ct">경로별 일별 추이</div>
+          <StatsChart
+            type="line"
+            data={SOURCE_DAILY_SAMPLE}
+            xKey="date"
+            legend
+            series={[
+              { key: "search", name: "검색", color: STATS_COLORS[0] },
+              { key: "direct", name: "직접", color: STATS_COLORS[1] },
+              { key: "ai", name: "AI", color: STATS_COLORS[2] },
+              { key: "sns", name: "SNS", color: STATS_COLORS[3] }
+            ]}
+          />
+        </div>
+        <div className="ws-card">
+          <div className="ws-ct">경로별 질 — 오른쪽 위일수록 좋음</div>
+          <p className="ws-cs">가로 머문 시간(초) · 세로 본 페이지 수 · 원 크기 방문 수</p>
+          <StatsChart
+            type="scatter"
+            groups={SOURCE_QUALITY_SAMPLE}
+            xDomain={[0, 160]}
+            yDomain={[0, 4]}
+            sizeRange={[40, 700]}
+            legend
+          />
+        </div>
+      </div>
+      <p className="ws-foot">
+        AI로 들어온 사람이 가장 오래, 가장 깊이 봅니다. 수는 적어도 질이 높습니다.
+      </p>
+    </div>
+  );
+}
+
+function WhoCame() {
+  return (
+    <div className="ws-sec ws-g3">
+      <div className="ws-card">
+        <div className="ws-ct">국가</div>
+        <StatsChart
+          type="hbar"
+          data={COUNTRY_SAMPLE}
+          xKey="name"
+          height={150}
+          labelWidth={52}
+          series={[{ key: "value", name: "방문", color: STATS_COLORS[0] }]}
+        />
+      </div>
+      <div className="ws-card">
+        <div className="ws-ct">기기</div>
+        <StatsChart type="doughnut" data={DEVICE_SAMPLE} height={150} legend />
+      </div>
+      <div className="ws-card">
+        <div className="ws-ct">언어별 페이지</div>
+        <StatsChart type="doughnut" data={LANGUAGE_SAMPLE} height={150} legend />
+      </div>
+    </div>
+  );
+}
+
+function WhatWordsBrought() {
+  return (
+    <div className="ws-sec">
+      <SectionHead title="어떤 말로 들어왔나" stamp="검색 8월 28일 · AI 8월 30일" />
+      <div className="ws-g2">
+        <div className="ws-card">
+          <div className="ws-ct">
+            <span className="ws-sw" style={{ background: STATS_COLORS[0] }} />
+            검색엔진 — 노출 대비 클릭
+          </div>
+          <StatsChart
+            type="hbar"
+            data={KEYWORD_SAMPLE}
+            xKey="name"
+            labelWidth={128}
+            legend
+            series={[
+              { key: "impressions", name: "노출", color: KEYWORD_IMPRESSION_COLOR },
+              { key: "clicks", name: "클릭", color: STATS_COLORS[0] }
+            ]}
+          />
+          <p className="ws-foot">노출 막대가 긴데 클릭 막대가 짧으면 제목이 안 걸리는 것입니다.</p>
+        </div>
+        <div className="ws-card">
+          <div className="ws-ct">
+            <span className="ws-sw" style={{ background: STATS_COLORS[2] }} />
+            AI — 질문별 언급 (4개 AI 중)
+          </div>
+          <StatsChart
+            type="hbar"
+            data={AI_QUESTION_SAMPLE}
+            xKey="name"
+            labelWidth={128}
+            max={4}
+            series={[{ key: "count", name: "언급한 AI", colorByPoint: AI_QUESTION_COLORS }]}
+          />
+          <p className="ws-foot">0으로 뜬 질문이 다음 글감입니다.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TodoList() {
+  return (
+    <div className="ws-sec">
+      <SectionHead title="이번 기간 할 일" stamp="루나가 뽑음" />
+      <div className="ws-card">
+        <ul className="ws-todo">
+          {TODO_SAMPLE.map((item) => (
+            <li key={item.title}>
+              <span className={`ws-tag ws-tag-${item.level}`}>{item.levelLabel}</span>
+              <div>
+                {item.title}
+                <div className="ws-t2">{item.reason}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/** 요약 화면 전체. 값은 전부 임시다 — summary-sample.ts */
+function SummaryScreen() {
+  return (
+    <>
+      <LunaBlock />
+      <SummaryKpis />
+      <TrendAndSources />
+      <HowTheyArrived />
+      <WhoCame />
+      <WhatWordsBrought />
+      <TodoList />
+      <p className="ws-foot">{SUMMARY_LIMIT_NOTE}</p>
+    </>
   );
 }
 
@@ -219,17 +446,21 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
           </div>
         </div>
 
-        {screen === "summary" ? (
-          <ScreenShell id="summary">
-            <SummaryKpis />
-          </ScreenShell>
-        ) : null}
+        <div className="ws-bar-spacer" aria-hidden="true" />
 
-        {screen === "content" ? <ScreenShell id="content" /> : null}
-        {screen === "search" ? <ScreenShell id="search" /> : null}
-        {screen === "ai-visibility" ? <ScreenShell id="ai-visibility" /> : null}
-        {screen === "ai-crawler" ? <ScreenShell id="ai-crawler" /> : null}
-        {screen === "behavior" ? <ScreenShell id="behavior" /> : null}
+        <div className="ws-body">
+          {screen === "summary" ? (
+          <ScreenShell id="summary">
+            <SummaryScreen />
+          </ScreenShell>
+          ) : null}
+
+          {screen === "content" ? <ScreenShell id="content" /> : null}
+          {screen === "search" ? <ScreenShell id="search" /> : null}
+          {screen === "ai-visibility" ? <ScreenShell id="ai-visibility" /> : null}
+          {screen === "ai-crawler" ? <ScreenShell id="ai-crawler" /> : null}
+          {screen === "behavior" ? <ScreenShell id="behavior" /> : null}
+        </div>
       </div>
     </div>
   );

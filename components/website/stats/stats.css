@@ -11,8 +11,9 @@
   --dn: #b93b3b;
   --r: 10px;
   --ws-bar-height: 72px;
+  --ws-bar-gap: 20px;
   min-height: calc(100vh - 8rem);
-  margin: -2rem -1rem 0;
+  margin: 0 -1rem 0;
   color: var(--ink);
   font-size: 14px;
   line-height: 1.55;
@@ -54,9 +55,19 @@
     0 1px 0 0 var(--line);
 }
 
-/* sticky 바 높이만큼 위 여백 — 스크롤해도 제목이 바에 먹히기 전에 버퍼가 소진된다 */
+/* 기간 바와 본문 사이 — 목업의 .bar margin-bottom 과 같다 */
+.ws-bar-spacer {
+  display: flow-root;
+  height: var(--ws-bar-gap);
+  flex-shrink: 0;
+}
+
+.ws-body {
+  padding-top: 0;
+}
+
 .ws-screen {
-  padding-top: var(--ws-bar-height);
+  display: flow-root;
 }
 
 .ws-bar-row {
@@ -162,8 +173,169 @@
   max-width: 76ch;
 }
 
+/* 목업의 .sec */
 .ws-sec {
   margin-bottom: 26px;
+}
+
+/* 목업의 .sech — 소제목 줄 */
+.ws-sech {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.ws-sech h3 {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* 목업의 .stamp — 언제까지 값인지 */
+.ws-stamp {
+  font-size: 11px;
+  color: var(--ink3);
+  background: #eaecf0;
+  padding: 3px 9px;
+  border-radius: 20px;
+}
+
+/* 목업의 .note — 소제목 아래 설명 */
+.ws-note {
+  font-size: 12px;
+  color: var(--ink2);
+  margin: 0 0 10px;
+  max-width: 78ch;
+}
+
+/* 목업의 .foot — 아래 붙는 각주 */
+.ws-foot {
+  font-size: 11.5px;
+  color: var(--ink3);
+  margin: 8px 0 0;
+  line-height: 1.7;
+}
+
+/* 목업의 .luna — 루나 총평 */
+.ws-luna {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink);
+  border-radius: 0 var(--r) var(--r) 0;
+  padding: 15px 19px;
+  margin-bottom: 14px;
+}
+
+.ws-who {
+  font-size: 11.5px;
+  color: var(--ink3);
+  margin-bottom: 7px;
+}
+
+.ws-luna p {
+  font-size: 15.5px;
+  line-height: 1.75;
+  margin: 0;
+}
+
+/* 목업의 「이번 기간 할 일」 표 */
+.ws-todo {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-todo li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #f1f3f6;
+}
+
+.ws-todo li:first-child {
+  padding-top: 0;
+}
+
+.ws-todo li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* 목업의 .t2 — 딸린 설명 */
+.ws-t2 {
+  font-size: 11.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+
+/* 목업의 .tag */
+.ws-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #eaecf0;
+  color: var(--ink2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ws-tag-high {
+  background: #fbebea;
+  color: var(--dn);
+}
+
+.ws-tag-mid {
+  background: #fdf2e0;
+  color: #8a5a06;
+}
+
+/* 그래프 범례 — 직접 그린다 (stats-chart.tsx) */
+.ws-lg {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--ink3);
+}
+
+.ws-lg li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.ws-lg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 카드 제목 아래 축 설명 한 줄 */
+.ws-cs {
+  font-size: 11px;
+  color: var(--ink3);
+  margin: -4px 0 6px;
+}
+
+/* 목업의 .sw — 카드 제목 앞 색 표식 */
+.ws-sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 5px;
 }
 
 /* 넓으면 한 줄에 다섯 개, 좁아지면 자연스럽게 접힌다 */
@@ -228,6 +400,20 @@
 .ws-q[aria-expanded="true"] {
   background: var(--ink);
   color: #fff;
+}
+
+/* 목업의 .kpi .sub — 지난 기간과 비교 */
+.ws-delta {
+  font-size: 11.5px;
+  color: var(--ink3);
+}
+
+.ws-up {
+  color: var(--up);
+}
+
+.ws-down {
+  color: var(--dn);
 }
 
 /* 카드 안 한 줄. 길어지면 잘리지 않고 줄바꿈한다 */
@@ -295,6 +481,48 @@
   flex-shrink: 0;
   min-width: 36px;
   color: var(--ink);
+}
+
+/* 목업의 .card */
+.ws-card {
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 15px 17px;
+}
+
+/* 목업의 .ct — 카드 제목 */
+.ws-ct {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink2);
+  margin-bottom: 10px;
+}
+
+/* 목업의 .grid.g2 · .g3 — 좁으면 쌓이고 넓으면 나란히 */
+.ws-g2,
+.ws-g3 {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container ws-main (min-width: 560px) {
+  .ws-g2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ws-g3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 목업의 .cb — 그래프 자리 */
+.ws-chart {
+  position: relative;
+  width: 100%;
+  min-width: 0;
 }
 
 @media (max-width: 800px) {
