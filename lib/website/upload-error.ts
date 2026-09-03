@@ -56,6 +56,9 @@ export function describeUploadError(
   if (error === "work_not_found") {
     return { message: "워크를 찾지 못했습니다", advice };
   }
+  if (error === "insight_not_found") {
+    return { message: "인사이트를 찾지 못했습니다", advice };
+  }
   if (error === "upload_failed") {
     return { message: detailMessage ?? "저장소에 올리지 못했습니다", advice };
   }
@@ -68,6 +71,12 @@ export function describeUploadError(
     };
   }
   if (error === "upload_error" || error === "proxy_failed") {
+    if (detailMessage && /formdata|boundary/i.test(detailMessage)) {
+      return {
+        message: "파일이 너무 커서 업로드 본문이 잘렸습니다. GIF 는 Storage 직접 업로드로 다시 시도됩니다.",
+        advice
+      };
+    }
     return {
       message: detailMessage ?? "서버에서 업로드를 처리하지 못했습니다",
       advice

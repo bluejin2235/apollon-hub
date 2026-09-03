@@ -27,6 +27,16 @@ export function describeBlockError(
       return "이미지가 너무 많습니다";
     case "preset_image_limit":
       return "이 블록 종류에 맞지 않는 이미지 수입니다";
+    case "network_error":
+      return "연결이 끊어졌습니다. 잠시 뒤 다시 시도해 주세요";
+    case "timeout":
+      return "시간이 초과되었습니다. 잠시 뒤 다시 시도해 주세요";
+    case "block_not_found":
+      return "이미 삭제된 블록입니다. 새로고침해 주세요";
+    case "website_timeout":
+      return "홈페이지 서버가 응답하지 않습니다";
+    case "website_unreachable":
+      return "홈페이지 서버에 연결하지 못했습니다";
     default:
       return error;
   }

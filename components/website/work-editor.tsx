@@ -27,11 +27,12 @@ import {
 import { WorkPublishCheckList, buildWorkCheckItems } from "@/components/website/publish-check-panel";
 import { buildVideoBlockCheckItems, findVideoBlockGaps } from "@/lib/website/video-block-check";
 import { PublishModal } from "@/components/website/publish-modal";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import type { PartialSaveState } from "@/components/website/partial-save-btn";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { WorkBasicTab } from "@/components/website/work-basic-tab";
 import { WorkContentTab } from "@/components/website/work-content-tab";
-import { WorkCreditsTab } from "@/components/website/work-credits-tab";
+import { WorkCreditsTab, type CreditsTabHandle } from "@/components/website/work-credits-tab";
 import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkHistoryTab } from "@/components/website/work-history-tab";
 import { WorkInterviewTab } from "@/components/website/work-interview-tab";
@@ -165,6 +166,9 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [publishNote, setPublishNote] = useState("");
   const [publishNoteLoading, setPublishNoteLoading] = useState(false);
   const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
+  const [creditsDirty, setCreditsDirty] = useState(false);
+  const [saveBeforePublishOpen, setSaveBeforePublishOpen] = useState(false);
+  const creditsSaveRef = useRef<CreditsTabHandle | null>(null);
   const [previewLive, setPreviewLive] = useState(false);
   const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
@@ -245,6 +249,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     problemItems.length > 0 ? "red" : warnItems.length > 0 ? "yellow" : "green";
   const saveDirty = fullSaveState === "dirty";
   const publishAccent = checkTone === "green";
+  const hasLocalUnsaved = saveDirty || creditsDirty;
 
   const refreshPublishPreview = useCallback(async () => {
     const preview = await publishWorkPreview(workId);
@@ -276,7 +281,22 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     }
   }
 
-  async function openPublishModal() {
+  async function saveLocalUnsaved(): Promise<boolean> {
+    if (creditsDirty) {
+      const ok = await creditsSaveRef.current?.save();
+      if (!ok) {
+        setTab("credits");
+        setError("크레딧을 먼저 저장해 주세요");
+        return false;
+      }
+    }
+    if (fullSaveState === "dirty") {
+      if (!(await saveAll({ silent: true }))) return false;
+    }
+    return true;
+  }
+
+  async function proceedOpenPublishModal() {
     if (!draft) return;
     setPublishModalOpen(true);
     setPublishPreviewLoading(true);
@@ -304,6 +324,21 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     } finally {
       setPublishPreviewLoading(false);
     }
+  }
+
+  async function openPublishModal() {
+    if (!draft) return;
+    if (hasLocalUnsaved) {
+      setSaveBeforePublishOpen(true);
+      return;
+    }
+    await proceedOpenPublishModal();
+  }
+
+  async function confirmSaveBeforePublish() {
+    setSaveBeforePublishOpen(false);
+    if (!(await saveLocalUnsaved())) return;
+    await proceedOpenPublishModal();
   }
 
   const onChangeDraft = useCallback((patch: Partial<WorkBasicDraft>) => {
@@ -366,6 +401,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     setError(null);
     cancelPublishNav();
     try {
+      if (!(await saveLocalUnsaved())) return;
       if (!(await saveAll({ silent: true }))) return;
 
       const published = await publishWork(workId, publishNote.trim());
@@ -543,7 +579,14 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         {tab === "interview" ? (
           <WorkInterviewTab work={work} siteUrl={siteUrl} onReload={load} />
         ) : null}
-        {tab === "credits" ? <WorkCreditsTab work={work} onReload={load} /> : null}
+        <div className={tab === "credits" ? undefined : "hidden"}>
+          <WorkCreditsTab
+            work={work}
+            onReload={load}
+            onDirtyChange={setCreditsDirty}
+            saveRef={creditsSaveRef}
+          />
+        </div>
         {tab === "faq" ? (
           <WorkFaqTab
             work={work}
@@ -643,6 +686,19 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           ) : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={saveBeforePublishOpen}
+        title="저장하지 않은 변경이 있습니다. 저장하고 공개할까요?"
+        confirmText="저장하고 공개"
+        onConfirm={() => void confirmSaveBeforePublish()}
+        onCancel={() => setSaveBeforePublishOpen(false)}
+        description={
+          <p>
+            화면에만 있는 글자는 공개에 들어가지 않습니다. 먼저 저장한 뒤 공개 화면을 엽니다.
+          </p>
+        }
+      />
 
       <PublishModal
         open={publishModalOpen}

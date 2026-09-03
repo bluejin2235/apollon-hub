@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Film, ImageIcon, X } from "lucide-react";
-import { uploadFile, uploadVideo, type SignedUploadKind } from "@/lib/website/api";
+import { uploadFile, uploadGif, uploadVideo, type SignedUploadKind } from "@/lib/website/api";
 import { showToast } from "@/components/website/toast";
 import { formatBytes } from "@/lib/website/image-long-edge";
 import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
@@ -37,7 +37,13 @@ type Props = {
   bucket: UploadBucket;
   folder: string;
   accept: "image" | "video" | "both";
-  /** 영상 직접 업로드. 서버가 경로를 정한다 */
+  /**
+   * 영상·GIF 직접 업로드 대상.
+   * contentType+contentId 권장. workId 는 워크 전용 예전 인자.
+   */
+  contentType?: "work" | "insight";
+  contentId?: string;
+  /** @deprecated contentType="work" + contentId 로 바꿔 주세요 */
   workId?: string;
   multiple?: boolean;
   disabled?: boolean;
@@ -56,10 +62,15 @@ type Props = {
   /** 워크 어드민 목업 파일카드 / 점선 업로드 */
   appearance?: "default" | "filecard";
   emptyHint?: string;
+  /** 파일카드 「바꾸기」 앞에 붙는 버튼 */
+  extraActions?: ReactNode;
+  /** 파일카드 미리보기를 숨기고 버튼만 */
+  hideThumb?: boolean;
 };
 
 const VIDEO_TYPES = new Set(["video/mp4"]);
 const VIDEO_MAX_BYTES = SPEC_BYTES.video;
+const GIF_MAX_BYTES = 50 * 1024 * 1024;
 
 const IMAGE_ACCEPT = "image/*,.heic,.heif,image/heic,image/heif";
 const VIDEO_ACCEPT = ".mp4,video/mp4";
@@ -102,6 +113,11 @@ function isVideoFile(file: File) {
   return /\.mp4$/i.test(file.name);
 }
 
+function isGifFile(file: File) {
+  if (file.type === "image/gif") return true;
+  return /\.gif$/i.test(file.name);
+}
+
 function isImageFile(file: File) {
   if (isVideoFile(file)) return false;
   if (file.type.startsWith("image/")) return true;
@@ -131,6 +147,20 @@ function signedKindFor(kind: Kind, accept: Props["accept"]): SignedUploadKind {
   if (kind === "loop-sm") return "loop_sm";
   if (accept === "video") return "video";
   return "video";
+}
+
+function resolveSignedTarget(props: {
+  contentType?: "work" | "insight";
+  contentId?: string;
+  workId?: string;
+}): { contentType: "work" | "insight"; contentId: string } | null {
+  if (props.contentType && props.contentId) {
+    return { contentType: props.contentType, contentId: props.contentId };
+  }
+  if (props.workId) {
+    return { contentType: "work", contentId: props.workId };
+  }
+  return null;
 }
 
 function prepareKind(kind: Kind): "key" | "body" {
@@ -304,6 +334,8 @@ export function ImageUploader({
   bucket,
   folder,
   accept,
+  contentType,
+  contentId,
   workId,
   multiple = false,
   disabled,
@@ -317,7 +349,9 @@ export function ImageUploader({
   onLocalFiles,
   onClear,
   appearance = "default",
-  emptyHint
+  emptyHint,
+  extraActions,
+  hideThumb
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -428,6 +462,14 @@ export function ImageUploader({
         });
         continue;
       }
+      if (isGifFile(file) && file.size > GIF_MAX_BYTES) {
+        setError({
+          fileName: file.name,
+          message: "GIF 가 너무 큽니다 (한도 50MB).",
+          advice: ["MP4 로 바꾸면 보통 10분의 1 이하가 됩니다."]
+        });
+        continue;
+      }
 
       if (isVideo && kind === "loop-lg" && file.size > SPEC_BYTES.thumbLarge) {
         nextWarnings.push(
@@ -506,10 +548,21 @@ export function ImageUploader({
           shrinkLine
         });
 
-        if (isVideoFile(original) && !workId) {
+        const signedTarget = resolveSignedTarget({ contentType, contentId, workId });
+
+        if (isVideoFile(original) && !signedTarget) {
           setError({
             fileName: original.name,
-            message: "워크가 없어 영상을 직접 올릴 수 없습니다",
+            message: "콘텐츠가 없어 영상을 직접 올릴 수 없습니다",
+            advice: []
+          });
+          break;
+        }
+
+        if (isGifFile(original) && !signedTarget) {
+          setError({
+            fileName: original.name,
+            message: "콘텐츠가 없어 GIF 를 직접 올릴 수 없습니다",
             advice: []
           });
           break;
@@ -532,19 +585,24 @@ export function ImageUploader({
         };
 
         const res =
-          isVideoFile(original) && workId
-            ? await uploadVideo(send, workId, signedKindFor(kind, accept), {
+          isVideoFile(original) && signedTarget
+            ? await uploadVideo(send, signedTarget, signedKindFor(kind, accept), {
                 signal: controller.signal,
                 onProgress
               })
-            : await uploadFile(send, bucket, uploadObjectPath(folder, filename), {
-                signal: controller.signal,
-                fields:
-                  kind === "key" || kind === "insight-key" || kind === "poster"
-                    ? { role: "key" }
-                    : undefined,
-                onProgress
-              });
+            : isGifFile(original) && signedTarget
+              ? await uploadGif(send, signedTarget, folder, {
+                  signal: controller.signal,
+                  onProgress
+                })
+              : await uploadFile(send, bucket, uploadObjectPath(folder, filename), {
+                  signal: controller.signal,
+                  fields:
+                    kind === "key" || kind === "insight-key" || kind === "poster"
+                      ? { role: "key" }
+                      : undefined,
+                  onProgress
+                });
 
         if (!res.ok) {
           const parsed = describeUploadError(res.error, res.status, res.details);
@@ -699,17 +757,20 @@ export function ImageUploader({
           {input}
           {topAlerts}
           <div className="filecard">
-            <div
-              className={thumb.video || video ? "ph v" : "ph"}
-              style={{ width: thumb.width, height: thumb.height }}
-            >
-              {preview}
-            </div>
+            {hideThumb ? null : (
+              <div
+                className={thumb.video || video ? "ph v" : "ph"}
+                style={{ width: thumb.width, height: thumb.height }}
+              >
+                {preview}
+              </div>
+            )}
             <div className="meta">
               <div className="fn">
                 {[name, dims].filter(Boolean).join(" · ") || "파일"}
               </div>
               <div className="acts">
+                {extraActions}
                 <button
                   type="button"
                   className={btn}

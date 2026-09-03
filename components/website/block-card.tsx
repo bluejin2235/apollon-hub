@@ -278,10 +278,21 @@ export function BlockCard({
   }
 
   async function onDelete() {
+    if (timer.current) clearTimeout(timer.current);
+    pendingRef.current = {};
+    setError(null);
+    const path = `sections/${sectionId}/blocks/${block.id}`;
+    console.info("[block-delete] request", { method: "DELETE", path, sectionId, blockId: block.id });
     const res = await deleteBlock(sectionId, block.id);
+    console.info("[block-delete] response", {
+      ok: res.ok,
+      status: res.status,
+      error: res.ok ? null : res.error,
+      details: res.ok ? null : res.details
+    });
     setDeleteOpen(false);
     if (!res.ok) {
-      setError(res.error);
+      setError(describeBlockError(res.error, res.details));
       return;
     }
     await onReload();
@@ -487,6 +498,7 @@ export function BlockCard({
               images={images}
               preset={block.preset}
               blockId={block.id}
+              workId={workId}
               siteUrl={siteUrl}
               uploadRoot={uploadRoot}
               atLimit={atLimit}
@@ -741,6 +753,7 @@ function ImagesEditor({
   images,
   preset,
   blockId,
+  workId,
   siteUrl,
   uploadRoot,
   atLimit,
@@ -753,6 +766,7 @@ function ImagesEditor({
   images: BlockImage[];
   preset: string;
   blockId: string;
+  workId: string;
   siteUrl: string;
   uploadRoot: string;
   atLimit: boolean;
@@ -831,6 +845,7 @@ function ImagesEditor({
           bucket="works"
           folder={`${uploadRoot}/blocks/${blockId}`}
           accept="image"
+          workId={workId}
           multiple
           kind="body"
           bodyPreset={preset}
@@ -1289,9 +1304,9 @@ function VideoFields({
           {previewSrc ? (
             <video
               src={previewSrc}
-              muted
               controls
               playsInline
+              preload="metadata"
               className="mt-2 max-h-48 w-full rounded-md bg-black object-contain"
             />
           ) : null}

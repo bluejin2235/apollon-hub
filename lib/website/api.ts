@@ -100,8 +100,16 @@ async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiRes
         ? (record.notice as UploadNotice)
         : undefined;
     return notice ? { ok: true, data, status: res.status, notice } : { ok: true, data, status: res.status };
-  } catch {
-    return { ok: false, error: "network_error", status: 0 };
+  } catch (err) {
+    if (controller.signal.aborted && !incoming?.aborted) {
+      return { ok: false, error: "timeout", status: 0 };
+    }
+    return {
+      ok: false,
+      error: "network_error",
+      details: { message: err instanceof Error ? err.message : "연결이 끊어졌습니다" },
+      status: 0
+    };
   } finally {
     if (timer) clearTimeout(timer);
     incoming?.removeEventListener("abort", onIncomingAbort);
@@ -158,6 +166,51 @@ export function updateInsight(id: string, body: unknown): Promise<ApiResult<Insi
 
 export function deleteInsight(id: string): Promise<ApiResult<{ id: string }>> {
   return websiteFetch(`insights/${id}`, { method: "DELETE" });
+}
+
+export function createInsightSection(
+  insightId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/sections`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateInsightSection(
+  insightId: string,
+  sectionId: string,
+  body: unknown
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/sections/${sectionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteInsightSection(
+  insightId: string,
+  sectionId: string
+): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insights/${insightId}/sections/${sectionId}`, { method: "DELETE" });
+}
+
+export function reorderInsightSections(
+  insightId: string,
+  order: OrderItem[]
+): Promise<ApiResult<{ updated: number }>> {
+  return websiteFetch(`insights/${insightId}/sections`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
+export function moveInsightBlock(
+  insightId: string,
+  body: { blockId: string; toSectionId: string; toSort: number }
+): Promise<ApiResult<Record<string, unknown>>> {
+  return websiteFetch(`insights/${insightId}/blocks/move`, {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
 }
 
 export function createInsightBlock(
@@ -266,7 +319,8 @@ export function getMeta(): Promise<ApiResult<WebsiteMeta>> {
 }
 
 export function getPreviewUrl(opts: {
-  workId: string;
+  workId?: string;
+  insightId?: string;
   sectionId?: string;
   blockId?: string;
   locale?: string;
@@ -341,15 +395,31 @@ function parseUploadBody(text: string, status: number): ApiResult<UploadResult> 
     : { ok: true, data, status };
 }
 
-export type SignedUploadKind = "loop_lg" | "loop_sm" | "video";
+export type SignedUploadKind = "loop_lg" | "loop_sm" | "video" | "gif";
+
+export type SignedUploadContentType = "work" | "insight";
+
+export type SignedUploadTarget = {
+  contentType: SignedUploadContentType;
+  contentId: string;
+};
 
 export type SignedUploadTicket = {
   signedUrl: string;
   token: string;
   path: string;
   publicUrl: string;
-  bucket: "works";
+  bucket: "works" | "insights";
 };
+
+function asSignedTarget(
+  target: SignedUploadTarget | string
+): SignedUploadTarget {
+  if (typeof target === "string") {
+    return { contentType: "work", contentId: target };
+  }
+  return target;
+}
 
 function parseStorageError(text: string, status: number): { error: string; message: string } {
   let body: unknown = null;
@@ -370,9 +440,13 @@ function parseStorageError(text: string, status: number): { error: string; messa
 }
 
 export function requestSignedUpload(body: {
-  workId: string;
+  contentType?: SignedUploadContentType;
+  contentId?: string;
+  /** @deprecated contentType+contentId 로 바꿔 주세요. 당분간 유지합니다. */
+  workId?: string;
   kind: SignedUploadKind;
   size?: number;
+  folder?: string;
 }): Promise<ApiResult<SignedUploadTicket>> {
   return websiteFetch<SignedUploadTicket>("upload/signed", {
     method: "POST",
@@ -399,7 +473,7 @@ export function putToSignedUrl(
       file.size > 80 * 1024 * 1024 ? 1_800_000 : file.size > 20 * 1024 * 1024 ? 600_000 : 180_000;
     xhr.timeout = timeoutMs;
     xhr.open("PUT", ticket.signedUrl);
-    xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     xhr.setRequestHeader("x-upsert", "false");
 
     const onAbort = () => xhr.abort();
@@ -463,18 +537,47 @@ export function putToSignedUrl(
 
 export async function uploadVideo(
   file: File,
-  workId: string,
+  target: SignedUploadTarget | string,
   kind: SignedUploadKind,
+  opts?: {
+    onProgress?: (progress: UploadProgress) => void;
+    signal?: AbortSignal;
+    folder?: string;
+  }
+): Promise<ApiResult<UploadResult>> {
+  const resolved = asSignedTarget(target);
+  const ticket = await requestSignedUpload({
+    contentType: resolved.contentType,
+    contentId: resolved.contentId,
+    // 예전 서버·프록시 호환
+    ...(resolved.contentType === "work" ? { workId: resolved.contentId } : {}),
+    kind,
+    size: file.size,
+    folder: opts?.folder
+  });
+  if (!ticket.ok) return ticket;
+  const put = await putToSignedUrl(ticket.data, file, opts);
+  if (!put.ok) return put;
+  const mime = file.type || (kind === "gif" ? "image/gif" : "video/mp4");
+  const data: UploadResult = {
+    ...put.data,
+    mime,
+    size: file.size
+  };
+  return ticket.notice ? { ...put, data, notice: ticket.notice } : { ...put, data };
+}
+
+/** GIF 는 서버를 거치지 않고 Storage 로 직접 올린다 (미들웨어 10MB 상한 회피). */
+export async function uploadGif(
+  file: File,
+  target: SignedUploadTarget | string,
+  folder: string,
   opts?: {
     onProgress?: (progress: UploadProgress) => void;
     signal?: AbortSignal;
   }
 ): Promise<ApiResult<UploadResult>> {
-  const ticket = await requestSignedUpload({ workId, kind, size: file.size });
-  if (!ticket.ok) return ticket;
-  const put = await putToSignedUrl(ticket.data, file, opts);
-  if (!put.ok) return put;
-  return ticket.notice ? { ...put, notice: ticket.notice } : put;
+  return uploadVideo(file, target, "gif", { ...opts, folder });
 }
 
 export function uploadFile(
@@ -733,6 +836,24 @@ export function reorderCredits(workId: string, order: OrderItem[]): Promise<ApiR
   });
 }
 
+export type CreditWriteItem = {
+  id?: string;
+  role: string;
+  name: { ko: string; en: string };
+  sort: number;
+};
+
+/** 크레딧 전체를 한 번에 맞춘다 */
+export function replaceCredits(
+  workId: string,
+  items: CreditWriteItem[]
+): Promise<ApiResult<{ items: unknown[]; updated: number }>> {
+  return websiteFetch(`works/${workId}/credits`, {
+    method: "PUT",
+    body: JSON.stringify({ items })
+  });
+}
+
 export function addMetric(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
   return websiteFetch(`works/${workId}/metrics`, { method: "POST", body: JSON.stringify(body) });
 }
@@ -845,7 +966,8 @@ export type RelatedRecommendResult = {
 };
 
 export async function recommendRelated(
-  workId: string
+  workId: string,
+  opts?: { insightId?: string }
 ): Promise<ApiResult<RelatedRecommendResult>> {
   const token = await accessToken();
   if (!token) {
@@ -863,7 +985,7 @@ export async function recommendRelated(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ workId }),
+      body: JSON.stringify(opts?.insightId ? { insightId: opts.insightId } : { workId }),
       signal: controller.signal
     });
     const body = (await res.json().catch(() => null)) as {
@@ -1109,6 +1231,23 @@ export function publishWork(workId: string, changeNote: string): Promise<ApiResu
   });
 }
 
+export function publishInsightPreview(insightId: string): Promise<ApiResult<PublishPreviewData>> {
+  return websiteFetch<PublishPreviewData>("publish/preview", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "insight", contentId: insightId })
+  });
+}
+
+export function publishInsight(
+  insightId: string,
+  changeNote: string
+): Promise<ApiResult<PublishData>> {
+  return websiteFetch<PublishData>("publish", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "insight", contentId: insightId, changeNote })
+  });
+}
+
 export type PublishHistoryItem = {
   version: number;
   published_at: string;
@@ -1138,6 +1277,24 @@ export function unhideWork(workId: string): Promise<ApiResult<{ version: number;
   return websiteFetch<{ version: number; isHidden: boolean }>("unhide", {
     method: "POST",
     body: JSON.stringify({ contentType: "work", contentId: workId })
+  });
+}
+
+export function hideInsight(
+  insightId: string
+): Promise<ApiResult<{ version: number; isHidden: boolean }>> {
+  return websiteFetch<{ version: number; isHidden: boolean }>("hide", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "insight", contentId: insightId })
+  });
+}
+
+export function unhideInsight(
+  insightId: string
+): Promise<ApiResult<{ version: number; isHidden: boolean }>> {
+  return websiteFetch<{ version: number; isHidden: boolean }>("unhide", {
+    method: "POST",
+    body: JSON.stringify({ contentType: "insight", contentId: insightId })
   });
 }
 
