@@ -8,11 +8,20 @@ import {
   type WorkTagEmbed
 } from "@/lib/website/work-detail";
 
-export type InsightEditorTab = "basic" | "content" | "related";
+export type InsightEditorTab = "basic" | "content" | "related" | "history";
+
+export type InsightSection = {
+  id: string;
+  insight_id: string;
+  sort: number;
+  headline: Loc | null;
+  lead: Loc | null;
+};
 
 export type InsightBlock = {
   id: string;
   insight_id: string;
+  section_id: string | null;
   sort: number;
   preset: string;
   body: Loc | null;
@@ -39,6 +48,7 @@ export type InsightDetail = {
   key_image_width: number | null;
   key_image_height: number | null;
   key_image_alt: Loc | null;
+  key_image_ratio: string | null;
   quote: Loc | null;
   attribution: Loc | null;
   portrait: string | null;
@@ -46,13 +56,18 @@ export type InsightDetail = {
   press_person: string | null;
   press_role: string | null;
   press_href: string | null;
+  press_date: string | null;
   year: string | null;
   published_at: string | null;
   status: "draft" | "published";
+  site_visibility: import("@/lib/website/types").WorkSiteVisibility;
+  published_version: number | null;
+  is_hidden: boolean;
   sort: number;
   show_faq: boolean;
   created_at: string;
   updated_at: string;
+  insight_sections?: InsightSection[] | null;
   insight_blocks?: InsightBlock[] | null;
   insight_tags?: WorkTagEmbed[] | null;
   content_related?: WorkRelated[] | null;
@@ -70,31 +85,30 @@ export type InsightBasicDraft = {
   key_image_width: number | null;
   key_image_height: number | null;
   key_image_alt: Loc;
+  key_image_ratio: KeyImageRatio | "";
   press_outlet: string;
-  press_person: string;
-  press_role: string;
   press_href: string;
+  press_date: string;
   year: string;
   published_at: string;
 };
 
-export type PressKind = "none" | "press" | "person";
+export type KeyImageRatio = "1:1" | "3:4" | "16:9";
+
+export const KEY_IMAGE_RATIOS: KeyImageRatio[] = ["1:1", "3:4", "16:9"];
+
+export function parseKeyImageRatio(value: unknown): KeyImageRatio | "" {
+  if (value === "1:1" || value === "3:4" || value === "16:9") return value;
+  return "";
+}
 
 export function parseInsightEditorTab(value: string | null): InsightEditorTab {
-  if (value === "content" || value === "related") return value;
+  if (value === "content" || value === "related" || value === "history") return value;
   return "basic";
 }
 
-export function defaultPressKind(categoryId: string): PressKind {
-  if (categoryId === "interview") return "person";
-  if (categoryId === "news") return "press";
-  return "none";
-}
-
-export function pressKindFromDraft(draft: InsightBasicDraft, categoryId: string): PressKind {
-  if (draft.press_outlet.trim()) return "press";
-  if (draft.press_person.trim() || draft.press_role.trim()) return "person";
-  return defaultPressKind(categoryId);
+export function isNewsCategory(categoryId: string) {
+  return categoryId === "news";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -151,6 +165,7 @@ function parseBlock(value: unknown): InsightBlock | null {
   return {
     id: row.id,
     insight_id: asString(row.insight_id),
+    section_id: typeof row.section_id === "string" ? row.section_id : null,
     sort: asNum(row.sort),
     preset: typeof row.preset === "string" ? row.preset : "text",
     body: row.body ? asLoc(row.body) : null,
@@ -172,6 +187,10 @@ export function parseInsightDetail(value: unknown): InsightDetail | null {
   const row = asRecord(value);
   if (!row || typeof row.id !== "string") return null;
   const status = row.status === "published" ? "published" : "draft";
+  const siteVisibility =
+    row.site_visibility === "live" || row.site_visibility === "hidden"
+      ? row.site_visibility
+      : "draft";
   const check = asRecord(row.check);
 
   return {
@@ -186,6 +205,7 @@ export function parseInsightDetail(value: unknown): InsightDetail | null {
     key_image_width: typeof row.key_image_width === "number" ? row.key_image_width : null,
     key_image_height: typeof row.key_image_height === "number" ? row.key_image_height : null,
     key_image_alt: row.key_image_alt ? asLoc(row.key_image_alt) : null,
+    key_image_ratio: parseKeyImageRatio(row.key_image_ratio) || null,
     quote: row.quote ? asLoc(row.quote) : null,
     attribution: row.attribution ? asLoc(row.attribution) : null,
     portrait: typeof row.portrait === "string" ? row.portrait : null,
@@ -193,13 +213,33 @@ export function parseInsightDetail(value: unknown): InsightDetail | null {
     press_person: typeof row.press_person === "string" ? row.press_person : null,
     press_role: typeof row.press_role === "string" ? row.press_role : null,
     press_href: typeof row.press_href === "string" ? row.press_href : null,
+    press_date:
+      typeof row.press_date === "string"
+        ? row.press_date.slice(0, 10)
+        : null,
     year: typeof row.year === "string" ? row.year : null,
     published_at: typeof row.published_at === "string" ? row.published_at : null,
     status,
+    site_visibility: siteVisibility,
+    published_version: typeof row.published_version === "number" ? row.published_version : null,
+    is_hidden: row.is_hidden === true,
     sort: asNum(row.sort),
     show_faq: asBool(row.show_faq),
     created_at: asString(row.created_at),
     updated_at: asString(row.updated_at),
+    insight_sections: asArray(row.insight_sections)
+      .map((item) => {
+        const s = asRecord(item);
+        if (!s || typeof s.id !== "string") return null;
+        return {
+          id: s.id,
+          insight_id: asString(s.insight_id) || asString(row.id),
+          sort: asNum(s.sort),
+          headline: s.headline ? asLoc(s.headline) : null,
+          lead: s.lead ? asLoc(s.lead) : null
+        };
+      })
+      .filter((v): v is InsightSection => v !== null),
     insight_blocks: asArray(row.insight_blocks)
       .map(parseBlock)
       .filter((v): v is InsightBlock => v !== null),
@@ -266,16 +306,17 @@ export function draftFromInsight(insight: InsightDetail): InsightBasicDraft {
     key_image_width: insight.key_image_width ?? null,
     key_image_height: insight.key_image_height ?? null,
     key_image_alt: asLoc(insight.key_image_alt),
+    key_image_ratio: parseKeyImageRatio(insight.key_image_ratio),
     press_outlet: insight.press_outlet ?? "",
-    press_person: insight.press_person ?? "",
-    press_role: insight.press_role ?? "",
     press_href: insight.press_href ?? "",
+    press_date: (insight.press_date ?? "").slice(0, 10),
     year: insight.year ?? "",
     published_at: (insight.published_at ?? "").slice(0, 10)
   };
 }
 
 export function insightPatchFromDraft(draft: InsightBasicDraft): Record<string, unknown> {
+  const news = isNewsCategory(draft.category_id);
   return {
     slug: draft.slug,
     category_id: draft.category_id,
@@ -287,10 +328,10 @@ export function insightPatchFromDraft(draft: InsightBasicDraft): Record<string, 
     key_image_width: draft.key_image ? draft.key_image_width : null,
     key_image_height: draft.key_image ? draft.key_image_height : null,
     key_image_alt: draft.key_image_alt,
-    press_outlet: draft.press_outlet.trim() || null,
-    press_person: draft.press_person.trim() || null,
-    press_role: draft.press_role.trim() || null,
-    press_href: draft.press_href.trim() || null,
+    key_image_ratio: draft.key_image ? draft.key_image_ratio || null : null,
+    press_outlet: news ? draft.press_outlet.trim() || null : null,
+    press_href: news ? draft.press_href.trim() || null : null,
+    press_date: news ? draft.press_date.trim() || null : null,
     year: draft.year || null,
     published_at: draft.published_at || null
   };

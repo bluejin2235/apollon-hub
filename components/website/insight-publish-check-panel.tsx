@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { CheckInsights } from "@/lib/website/types";
 import {
   INSIGHT_CHECK_LABEL,
@@ -12,25 +11,25 @@ import {
   type InsightDetail,
   type InsightEditorTab
 } from "@/lib/website/insight-detail";
-import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
 
-type ItemKind = "problem" | "warn";
+export type InsightCheckItemKind = "problem" | "warn";
 
-type CheckCopy = {
+export type InsightCheckItem = {
   flag: (typeof INSIGHT_PROBLEM_FLAGS)[number] | (typeof INSIGHT_WARN_FLAGS)[number];
-  kind: ItemKind;
+  kind: InsightCheckItemKind;
   tab: InsightEditorTab;
   title: string;
-  sub: string;
+  where: string;
 };
 
-const TAB_LABEL: Record<InsightEditorTab, string> = {
-  basic: "기본정보 →",
-  content: "본문 →",
-  related: "연결 →"
+const TAB_NAME: Record<InsightEditorTab, string> = {
+  basic: "기본정보",
+  content: "본문",
+  related: "연결",
+  history: "이력"
 };
 
-const FLAG_TAB: Record<CheckCopy["flag"], InsightEditorTab> = {
+const FLAG_TAB: Record<InsightCheckItem["flag"], InsightEditorTab> = {
   missing_summary_en: "basic",
   missing_key_alt: "basic",
   no_key_image: "basic",
@@ -49,7 +48,7 @@ const FLAG_TAB: Record<CheckCopy["flag"], InsightEditorTab> = {
   no_related: "related"
 };
 
-const FLAG_SUB: Record<CheckCopy["flag"], string> = {
+const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
   missing_summary_en: "영어권 검색과 AI에 이 글이 노출되지 않습니다",
   missing_key_alt: "모든 이미지에 필수입니다.",
   no_key_image: "목록 카드·링크 공유에 쓰는 대표 이미지를 올려 주세요.",
@@ -68,15 +67,22 @@ const FLAG_SUB: Record<CheckCopy["flag"], string> = {
   stale_draft: "초안이 오래되었습니다. 내용을 확인하고 저장하세요."
 };
 
-function flagOn(check: CheckInsights, flag: CheckCopy["flag"]): boolean {
+function whereLine(tab: InsightEditorTab, detail: string) {
+  return `${TAB_NAME[tab]} · ${detail}`;
+}
+
+function flagOn(check: CheckInsights, flag: InsightCheckItem["flag"]): boolean {
   const value = check[flag];
   if (flag === "empty_blocks") return Number(value) > 0;
   return Boolean(value);
 }
 
-function copies(insight: InsightDetail, check: CheckInsights): CheckCopy[] {
+export function buildInsightCheckItems(
+  insight: InsightDetail,
+  check: CheckInsights
+): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
-  const all: CheckCopy[] = [
+  const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => ({
       flag,
       kind: "problem" as const,
@@ -85,7 +91,7 @@ function copies(insight: InsightDetail, check: CheckInsights): CheckCopy[] {
         flag === "ai_unconfirmed" && aiCount > 0
           ? `AI가 만든 캡션 ${aiCount}개가 확인 전입니다`
           : INSIGHT_CHECK_LABEL[flag],
-      sub: FLAG_SUB[flag]
+      where: whereLine(FLAG_TAB[flag], FLAG_SUB[flag])
     })),
     ...INSIGHT_WARN_FLAGS.map((flag) => ({
       flag,
@@ -95,127 +101,52 @@ function copies(insight: InsightDetail, check: CheckInsights): CheckCopy[] {
         flag === "empty_blocks" && Number(check.empty_blocks) > 0
           ? `비어 있는 블록이 ${Number(check.empty_blocks)}개 있습니다`
           : INSIGHT_CHECK_LABEL[flag],
-      sub: FLAG_SUB[flag]
+      where: whereLine(FLAG_TAB[flag], FLAG_SUB[flag])
     }))
   ];
   return all.filter((item) => flagOn(check, item.flag));
 }
 
-const CHECK_FLAG_COUNT = INSIGHT_PROBLEM_FLAGS.length + INSIGHT_WARN_FLAGS.length;
-
-type Props = {
-  insight: InsightDetail;
-  check: CheckInsights;
-  canPublish: boolean;
-  publishing?: boolean;
-  onClose: () => void;
-  onGoTab: (tab: InsightEditorTab) => void;
-  onPublish: () => void;
-};
-
-export function InsightPublishCheckPanel({
-  insight,
-  check,
-  canPublish,
-  publishing,
-  onClose,
+export function InsightPublishCheckList({
+  items,
   onGoTab,
-  onPublish
-}: Props) {
-  const items = copies(insight, check);
-  const problems = items.filter((i) => i.kind === "problem");
-  const warns = items.filter((i) => i.kind === "warn");
-  const passCount = Math.max(0, CHECK_FLAG_COUNT - problems.length - warns.length);
-  const [passOpen, setPassOpen] = useState(false);
+  overlay = false
+}: {
+  items: InsightCheckItem[];
+  onGoTab: (tab: InsightEditorTab) => void;
+  overlay?: boolean;
+}) {
+  if (items.length === 0) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="insight-publish-check-title"
-      onClick={onClose}
-    >
-      <div className="apollon-card w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
-          <h2 id="insight-publish-check-title" className="text-sm font-bold text-slate-900">
-            공개 전 점검
-          </h2>
-          <span className="text-xs text-slate-500">
-            문제 {problems.length} · 확인 필요 {warns.length} · 통과 {passCount}
+    <div className={overlay ? "pt-1" : "mt-3.5 border-t border-slate-200 pt-1"}>
+      {items.map((item) => (
+        <div
+          key={item.flag}
+          className="flex items-start gap-2.5 border-t border-slate-100 py-2 first:border-t-0"
+        >
+          <span
+            className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] ${
+              item.kind === "problem"
+                ? "bg-red-100 text-red-600"
+                : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {item.kind === "problem" ? "필수" : "권장"}
           </span>
-          <button type="button" className="ml-auto text-slate-400" onClick={onClose} aria-label="닫기">
-            ✕
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] text-slate-900">{item.title}</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">{item.where}</p>
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+            onClick={() => onGoTab(item.tab)}
+          >
+            가기
           </button>
         </div>
-
-        <div className="max-h-[60vh] overflow-y-auto">
-          {problems.map((item) => (
-            <CheckRow key={item.flag} item={item} tone="problem" onGo={() => onGoTab(item.tab)} />
-          ))}
-          {warns.map((item) => (
-            <CheckRow key={item.flag} item={item} tone="warn" onGo={() => onGoTab(item.tab)} />
-          ))}
-          <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
-            <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-800">통과한 검사 {passCount}개</p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                제목 국·영문 · 대표 이미지 · 요약 · 카테고리 · 태그 · 본문 블록 · 대체 텍스트 · 연결
-              </p>
-              {passOpen ? (
-                <p className="mt-2 text-xs text-slate-400">
-                  워크와 달리 16:9 · 섹션 · FAQ 검사는 없습니다.
-                </p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="shrink-0 text-xs font-medium text-apollon-700"
-              onClick={() => setPassOpen((v) => !v)}
-            >
-              {passOpen ? "접기" : "펼치기"}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="min-w-0 flex-1 text-sm text-rose-600">
-            {problems.length > 0 ? `문제 ${problems.length}건을 해결해야 등록할 수 있습니다` : null}
-          </p>
-          <GhostBtn onClick={onClose}>닫기</GhostBtn>
-          <PrimaryBtn disabled={!canPublish || publishing} onClick={onPublish}>
-            등록하기
-          </PrimaryBtn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CheckRow({
-  item,
-  tone,
-  onGo
-}: {
-  item: CheckCopy;
-  tone: ItemKind;
-  onGo: () => void;
-}) {
-  return (
-    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3">
-      <span
-        className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-          tone === "problem" ? "bg-rose-500" : "bg-amber-500"
-        }`}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-        <p className="mt-0.5 text-xs text-slate-500">{item.sub}</p>
-      </div>
-      <button type="button" className="shrink-0 text-xs font-medium text-apollon-700" onClick={onGo}>
-        {TAB_LABEL[item.tab]}
-      </button>
+      ))}
     </div>
   );
 }

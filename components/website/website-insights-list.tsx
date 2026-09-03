@@ -8,9 +8,9 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { NewInsightModal } from "@/components/website/new-insight-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { deleteInsight, getMeta, listInsights, updateInsight } from "@/lib/website/api";
+import { getMeta, hideInsight, listInsights } from "@/lib/website/api";
 import { fillInsightBasic, fillInsightBody, fillInsightRelated, insightTitle } from "@/lib/website/checks";
-import type { InsightListItem, WebsiteCategory } from "@/lib/website/types";
+import type { InsightListItem, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
 
 const PUBLISH_REDIRECT_KEY = "website-insight-publish-toast";
 
@@ -51,13 +51,6 @@ function formatPublished(value: string | null) {
   return `${y}.${m}.${day}`;
 }
 
-function thumbHeight(item: InsightListItem, width: number) {
-  const w = item.key_image_width;
-  const h = item.key_image_height;
-  if (!w || !h || w <= 0 || h <= 0) return width;
-  return Math.round((width * h) / w);
-}
-
 function CategoryChip({ id, label }: { id: string; label: string }) {
   const chip = CAT_CHIP[id] ?? "bg-slate-100 text-slate-600";
   return (
@@ -84,15 +77,22 @@ function FillDots({ item }: { item: InsightListItem }) {
   );
 }
 
-function StatusBadge({ status }: { status: InsightListItem["status"] }) {
-  const published = status === "published";
+function itemVisibility(item: InsightListItem): WorkSiteVisibility {
+  return item.site_visibility ?? (item.status === "published" ? "live" : "draft");
+}
+
+function StatusBadge({ item }: { item: InsightListItem }) {
+  const visibility = itemVisibility(item);
+  const label = visibility === "live" ? "공개" : visibility === "hidden" ? "감춤" : "초안";
+  const className =
+    visibility === "live"
+      ? "bg-[#f0f9f4] text-[#0f7a45]"
+      : visibility === "hidden"
+        ? "bg-[#f5f0e8] text-[#8a6a2f]"
+        : "bg-[#eef0f3] text-[#6b7280]";
   return (
-    <span
-      className={`inline-block rounded-[3px] px-[7px] py-0.5 text-[10px] font-bold ${
-        published ? "bg-[#f0f9f4] text-[#0f7a45]" : "bg-[#eef0f3] text-[#6b7280]"
-      }`}
-    >
-      {published ? "공개" : "초안"}
+    <span className={`inline-block rounded-[3px] px-[7px] py-0.5 text-[10px] font-bold ${className}`}>
+      {label}
     </span>
   );
 }
@@ -104,19 +104,17 @@ function InsightOverflowMenu({
   siteUrl,
   open,
   onOpenChange,
-  onUnpublish,
-  onDelete,
+  onHide,
   canManage
 }: {
   item: InsightListItem;
   siteUrl: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUnpublish: () => void;
-  onDelete: () => void;
+  onHide: () => void;
   canManage: boolean;
 }) {
-  const published = item.status === "published";
+  const liveOnSite = itemVisibility(item) === "live";
   const url = publicInsightUrl(siteUrl, item.slug);
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -190,7 +188,7 @@ function InsightOverflowMenu({
           <Link href={editHref(item.id)} role="menuitem" className={menuItemClass}>
             편집
           </Link>
-          {published ? (
+          {liveOnSite ? (
             <a href={url} target="_blank" rel="noreferrer" role="menuitem" className={menuItemClass}>
               홈페이지에서 보기 ↗
             </a>
@@ -209,30 +207,17 @@ function InsightOverflowMenu({
             {copied ? "복사됨" : "주소 복사"}
           </button>
           <div className="my-1 border-t border-slate-200" />
-          {canManage && published ? (
+          {canManage && liveOnSite ? (
             <button
               type="button"
               role="menuitem"
               className={menuItemClass}
               onClick={() => {
                 onOpenChange(false);
-                onUnpublish();
+                onHide();
               }}
             >
-              비공개로 되돌리기
-            </button>
-          ) : null}
-          {canManage ? (
-            <button
-              type="button"
-              role="menuitem"
-              className="block w-full px-3 py-1.5 text-left text-sm text-rose-600 hover:bg-rose-50"
-              onClick={() => {
-                onOpenChange(false);
-                onDelete();
-              }}
-            >
-              삭제
+              감추기
             </button>
           ) : null}
         </div>
@@ -241,34 +226,32 @@ function InsightOverflowMenu({
   );
 }
 
+function thumbClass(item: InsightListItem) {
+  const ratio = item.key_image_ratio;
+  // 폭 56px 고정. 비율은 높이만 달라지게 (3:4 ≈ 75px < 100px)
+  const base = "w-14 shrink-0 rounded object-cover";
+  if (ratio === "1:1") return `${base} aspect-square`;
+  if (ratio === "3:4") return `${base} aspect-[3/4]`;
+  if (ratio === "16:9") return `${base} aspect-video`;
+  return `${base} aspect-video`;
+}
+
 function Thumb({
   src,
-  item,
-  width
+  item
 }: {
   src: string | null;
   item: InsightListItem;
-  width: number;
 }) {
-  const height = thumbHeight(item, width);
+  const cls = thumbClass(item);
   if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt=""
-        width={width}
-        height={height}
-        className="shrink-0 rounded-[5px] object-cover"
-        style={{ width, height }}
-      />
+      <img src={src} alt="" className={cls} />
     );
   }
   return (
-    <span
-      className="grid shrink-0 place-items-center rounded-[5px] bg-slate-100 text-[10px] text-slate-400"
-      style={{ width, height }}
-    >
+    <span className={`grid place-items-center bg-slate-100 text-[10px] text-slate-400 ${cls}`}>
       —
     </span>
   );
@@ -283,12 +266,11 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<"all" | "draft" | "published">("all");
+  const [status, setStatus] = useState<"all" | "draft" | "published" | "hidden">("all");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [newOpen, setNewOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [unpublishItem, setUnpublishItem] = useState<InsightListItem | null>(null);
-  const [deleteItem, setDeleteItem] = useState<InsightListItem | null>(null);
+  const [hideItem, setHideItem] = useState<InsightListItem | null>(null);
 
   async function reloadItems() {
     const insights = await listInsights({ status: "all", limit: 100 });
@@ -339,7 +321,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const labelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const c of categories) {
-      map.set(c.id, c.label?.ko || c.id);
+      map.set(c.id, c.id === "behind-the-work" ? "비하인드 워크" : c.label?.ko || c.id);
     }
     return map;
   }, [categories]);
@@ -347,7 +329,14 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     let rows = items;
-    if (status !== "all") rows = rows.filter((row) => row.status === status);
+    if (status !== "all") {
+      rows = rows.filter((row) => {
+        const visibility = itemVisibility(row);
+        if (status === "published") return visibility === "live";
+        if (status === "hidden") return visibility === "hidden";
+        return visibility === "draft";
+      });
+    }
     if (category !== "all") rows = rows.filter((row) => row.category_id === category);
     if (keyword) {
       rows = rows.filter((row) => {
@@ -366,8 +355,9 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
     return copy;
   }, [items, q, category, status, sortBy]);
 
-  const published = items.filter((row) => row.status === "published").length;
-  const draft = items.length - published;
+  const liveCount = items.filter((row) => itemVisibility(row) === "live").length;
+  const hiddenCount = items.filter((row) => itemVisibility(row) === "hidden").length;
+  const draft = items.length - liveCount - hiddenCount;
 
   function goEdit(item: InsightListItem) {
     router.push(editHref(item.id));
@@ -386,38 +376,23 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
         siteUrl={siteUrl}
         open={menuId === id}
         onOpenChange={(next) => setMenuId(next ? id : null)}
-        onUnpublish={() => setUnpublishItem(item)}
-        onDelete={() => setDeleteItem(item)}
+        onHide={() => setHideItem(item)}
         canManage={canManageWorks}
       />
     );
   }
 
-  async function confirmUnpublish() {
-    if (!unpublishItem) return;
-    const res = await updateInsight(unpublishItem.id, { status: "draft" });
-    setUnpublishItem(null);
+  async function confirmHide() {
+    if (!hideItem) return;
+    const res = await hideInsight(hideItem.id);
+    setHideItem(null);
     if (!res.ok) {
       setError(formatError(res.error, res.details));
       return;
     }
     await reloadItems();
-    showToast({ message: "비공개로 바뀌었습니다", tone: "ok" });
+    showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
   }
-
-  async function confirmDelete() {
-    if (!deleteItem) return;
-    const res = await deleteInsight(deleteItem.id);
-    setDeleteItem(null);
-    if (!res.ok) {
-      setError(formatError(res.error, res.details));
-      return;
-    }
-    await reloadItems();
-    showToast({ message: "삭제되었습니다", tone: "ok" });
-  }
-
-  const deleteTitleKo = deleteItem?.title?.ko?.trim() || (deleteItem ? insightTitle(deleteItem) : "");
 
   return (
     <div className="space-y-6 pb-10">
@@ -427,7 +402,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
             인사이트
           </h1>
           <p className="mt-1 text-slate-500" style={{ fontSize: "var(--fs-sub)" }}>
-            전체 {items.length} · 공개 {published} · 초안 {draft}
+            전체 {items.length} · 공개 {liveCount} · 초안 {draft} · 감춤 {hiddenCount}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -472,13 +447,14 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
         </select>
         <select
           value={status}
-          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published")}
+          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published" | "hidden")}
           className="rounded-[7px] border border-[#dde1e6] bg-white px-2 py-[5px] text-xs text-[#4a515b]"
           aria-label="상태"
         >
           <option value="all">상태 전체</option>
           <option value="published">공개</option>
           <option value="draft">초안</option>
+          <option value="hidden">감춤</option>
         </select>
         <select
           value={sortBy}
@@ -497,16 +473,16 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
 
       {!loading && (!error || items.length > 0) ? (
         <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[640px] border-collapse text-left text-xs">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-[10.5px] font-bold text-slate-500">
-                  <th className="w-[38%] bg-[#f8f9fb] px-[15px] py-2 font-bold">제목</th>
-                  <th className="w-[13%] bg-[#f8f9fb] px-[15px] py-2 font-bold">카테고리</th>
-                  <th className="w-[9%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">공개일</th>
-                  <th className="w-[10%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">상태</th>
-                  <th className="w-[11%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold">채움</th>
-                  <th className="w-[7%] bg-[#f8f9fb] px-[15px] py-2 text-center font-bold" />
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="w-[40%] py-2 pr-3 font-medium">제목</th>
+                  <th className="w-[18%] py-2 pr-3 font-medium">카테고리</th>
+                  <th className="w-[12%] py-2 pr-3 font-medium">공개일</th>
+                  <th className="w-[12%] py-2 pr-3 font-medium">상태</th>
+                  <th className="w-[10%] py-2 pr-3 font-medium">채움</th>
+                  <th className="w-[8%] py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -515,37 +491,41 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
                   return (
                     <tr
                       key={item.id}
-                      className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                      className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${
+                        itemVisibility(item) === "hidden" ? "opacity-60" : ""
+                      }`}
                       onClick={(event) => onRowClick(event, item)}
                     >
-                      <td className="px-[15px] py-2">
-                        <Link href={editHref(item.id)} className="flex items-center gap-2.5">
-                          <Thumb src={thumb} item={item} width={44} />
+                      <td className="max-w-0 py-3 pr-3">
+                        <Link href={editHref(item.id)} className="flex items-center gap-3">
+                          <Thumb src={thumb} item={item} />
                           <span className="min-w-0">
-                            <span className="block text-[12.5px] font-semibold text-slate-900">
+                            <span className="line-clamp-2 block font-medium text-slate-900">
                               {insightTitle(item)}
                             </span>
-                            <span className="block font-mono text-[10.5px] text-[#9ca3af]">{item.slug}</span>
+                            <span className="block truncate text-xs text-slate-400">
+                              /insight/{item.slug}
+                            </span>
                           </span>
                         </Link>
                       </td>
-                      <td className="px-[15px] py-2">
+                      <td className="max-w-0 py-3 pr-3">
                         <CategoryChip
                           id={item.category_id}
                           label={labelById.get(item.category_id) ?? item.category_id}
                         />
                       </td>
-                      <td className="px-[15px] py-2 text-center text-slate-600">
+                      <td className="py-3 pr-3 text-slate-600">
                         {formatPublished(item.published_at)}
                       </td>
-                      <td className="px-[15px] py-2 text-center">
-                        <StatusBadge status={item.status} />
+                      <td className="py-3 pr-3">
+                        <StatusBadge item={item} />
                       </td>
-                      <td className="px-[15px] py-2 text-center">
+                      <td className="py-3 pr-3">
                         <FillDots item={item} />
                       </td>
                       <td
-                        className="px-[15px] py-2 text-center"
+                        className="py-3 text-right"
                         data-stop-row
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -564,17 +544,19 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
               return (
                 <li key={item.id}>
                   <div
-                    className="apollon-card flex cursor-pointer gap-3 p-3"
+                    className={`apollon-card flex cursor-pointer gap-3 p-3 ${
+                      itemVisibility(item) === "hidden" ? "opacity-60" : ""
+                    }`}
                     onClick={(event) => onRowClick(event, item)}
                   >
-                    <Thumb src={thumb} item={item} width={56} />
+                    <Thumb src={thumb} item={item} />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-slate-900">{insightTitle(item)}</span>
-                      <span className="mt-1 block text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
+                      <span className="line-clamp-2 block font-medium text-slate-900">{insightTitle(item)}</span>
+                      <span className="mt-1 block truncate text-xs text-slate-500">
                         {labelById.get(item.category_id) ?? item.category_id} · {formatPublished(item.published_at)}
                       </span>
                       <span className="mt-2 flex items-center gap-2">
-                        <StatusBadge status={item.status} />
+                        <StatusBadge item={item} />
                         <FillDots item={item} />
                       </span>
                     </span>
@@ -598,40 +580,21 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
       <NewInsightModal open={newOpen} onClose={() => setNewOpen(false)} />
 
       <ConfirmDialog
-        key={unpublishItem ? `unpub-${unpublishItem.id}` : "unpub"}
-        open={Boolean(unpublishItem)}
-        title="홈페이지에서 내려갑니다. 계속할까요?"
-        confirmText="계속"
-        onConfirm={() => confirmUnpublish()}
-        onCancel={() => setUnpublishItem(null)}
-      />
-
-      <ConfirmDialog
-        key={deleteItem ? `del-${deleteItem.id}` : "del"}
-        open={Boolean(deleteItem)}
-        title="이 글을 삭제할까요?"
-        confirmText="삭제"
-        confirmWord={deleteItem?.slug}
-        danger
-        onConfirm={() => confirmDelete()}
-        onCancel={() => setDeleteItem(null)}
+        key={hideItem ? `hide-${hideItem.id}` : "hide"}
+        open={Boolean(hideItem)}
+        title="사이트에서 감출까요?"
         description={
-          deleteItem ? (
-            <>
-              {deleteItem.status === "published" ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  지금 홈페이지에 공개되어 있습니다. 삭제하면 페이지가 사라집니다.
-                </p>
-              ) : null}
-              <p className="font-bold text-slate-900">{deleteTitleKo}</p>
-              <p>
-                블록 {deleteItem.counts.blocks}개 · 이미지 {deleteItem.counts.images}장이 함께 지워집니다.
-              </p>
-              <p>되돌릴 수 없습니다.</p>
-            </>
+          hideItem ? (
+            <p>
+              스냅샷은 그대로 남습니다. 언제든 다시 공개할 수 있습니다.
+            </p>
           ) : null
         }
+        confirmText="감추기"
+        onConfirm={() => confirmHide()}
+        onCancel={() => setHideItem(null)}
       />
+
     </div>
   );
 }

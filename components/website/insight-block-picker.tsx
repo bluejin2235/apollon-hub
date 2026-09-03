@@ -1,46 +1,133 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BlockDiagram } from "@/components/website/block-presets";
+import {
+  BlockDiagram,
+  PRESET_DESCRIPTION,
+  PRESET_LABEL,
+  PICKER_TABS,
+  type PickerTabId
+} from "@/components/website/block-presets";
 import { createInsightBlock } from "@/lib/website/api";
 
-type TabId = "all" | "text" | "image";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "all", label: "전체" },
-  { id: "text", label: "글" },
-  { id: "image", label: "이미지" }
+/** insight_block_preset 아홉 개. 워크 피커 설명·그림을 그대로 쓴다. */
+const ITEMS: {
+  preset: string;
+  name: string;
+  description: string;
+  tab: Exclude<PickerTabId, "all">;
+  diagram: string;
+}[] = [
+  {
+    preset: "text",
+    name: "글",
+    description: PRESET_DESCRIPTION["text-only"] ?? "본문 폭 가득",
+    tab: "text",
+    diagram: "text-only"
+  },
+  {
+    preset: "qa",
+    name: "질문 · 답변",
+    description: "인터뷰. 질문과 답변이 나뉘어 저장됩니다",
+    tab: "text",
+    diagram: "text-split"
+  },
+  {
+    preset: "full",
+    name: PRESET_LABEL.full,
+    description: PRESET_DESCRIPTION.full,
+    tab: "image",
+    diagram: "full"
+  },
+  {
+    preset: "split",
+    name: PRESET_LABEL.split,
+    description: PRESET_DESCRIPTION.split,
+    tab: "image",
+    diagram: "split"
+  },
+  {
+    preset: "triple",
+    name: PRESET_LABEL.triple,
+    description: PRESET_DESCRIPTION.triple,
+    tab: "image",
+    diagram: "triple"
+  },
+  {
+    preset: "gallery-auto",
+    name: PRESET_LABEL["gallery-auto"],
+    description: PRESET_DESCRIPTION["gallery-auto"],
+    tab: "image",
+    diagram: "gallery-auto"
+  },
+  {
+    preset: "stack",
+    name: PRESET_LABEL.stack,
+    description: PRESET_DESCRIPTION.stack,
+    tab: "image",
+    diagram: "stack"
+  },
+  {
+    preset: "carousel",
+    name: PRESET_LABEL.carousel,
+    description: PRESET_DESCRIPTION.carousel,
+    tab: "image",
+    diagram: "carousel"
+  },
+  {
+    preset: "video-full",
+    name: PRESET_LABEL["video-full"],
+    description: PRESET_DESCRIPTION["video-full"],
+    tab: "video",
+    diagram: "video-full"
+  },
+  {
+    preset: "embed",
+    name: PRESET_LABEL.embed,
+    description: PRESET_DESCRIPTION.embed,
+    tab: "embed",
+    diagram: "embed"
+  }
 ];
 
-/** DB enum 은 그대로. 공개 화면에 나오는 것만 모달에 둔다. */
-const ITEMS: { preset: string; name: string; description: string; tab: Exclude<TabId, "all">; diagram?: string }[] = [
-  { preset: "text", name: "글", description: "여러 문단 + 소제목 + 굵게 + 목록 + 링크를 한 블록에", tab: "text", diagram: "text-only" },
-  { preset: "qa", name: "질문 · 답변", description: "인터뷰. 질문과 답변이 나뉘어 저장됩니다", tab: "text", diagram: "text-split" },
-  { preset: "full", name: "전폭 이미지", description: "본문 폭 가득. 가로 사진", tab: "image" }
-];
+const TABS = PICKER_TABS.filter(
+  (tab) => tab.id === "all" || tab.id === "text" || tab.id === "image" || tab.id === "video" || tab.id === "embed"
+);
 
 type Props = {
   open: boolean;
   insightId: string;
+  sectionId: string;
   nextSort: number;
   onClose: () => void;
-  onPicked: () => void;
+  onPicked: (blockId: string) => void;
 };
 
-export function InsightBlockPicker({ open, insightId, nextSort, onClose, onPicked }: Props) {
-  const [tab, setTab] = useState<TabId>("all");
+export function InsightBlockPicker({ open, insightId, sectionId, nextSort, onClose, onPicked }: Props) {
+  const [tab, setTab] = useState<PickerTabId>("all");
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const visible = useMemo(() => ITEMS.filter((item) => tab === "all" || item.tab === tab), [tab]);
+  const visible = useMemo(
+    () => ITEMS.filter((item) => tab === "all" || item.tab === tab),
+    [tab]
+  );
 
   async function pick(preset: string) {
     setBusyId(preset);
     setError(null);
-    const body: Record<string, unknown> = { preset, sort: nextSort };
+    const body: Record<string, unknown> = { preset, sort: nextSort, section_id: sectionId };
     if (preset === "text") body.body = { ko: "", en: "" };
     if (preset === "qa") {
       body.question = { ko: "", en: "" };
       body.answer = { ko: "", en: "" };
+    }
+    if (preset === "video-full") {
+      body.video_kind = "hosted";
+      body.video_url = "";
+    }
+    if (preset === "embed") {
+      body.embed_provider = "youtube";
+      body.embed_url = "https://www.youtube.com/watch?v=";
     }
     try {
       const res = await createInsightBlock(insightId, body);
@@ -48,7 +135,10 @@ export function InsightBlockPicker({ open, insightId, nextSort, onClose, onPicke
         setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
         return;
       }
-      onPicked();
+      const blockId = typeof (res.data as { id?: unknown } | undefined)?.id === "string"
+        ? (res.data as { id: string }).id
+        : "";
+      onPicked(blockId);
       onClose();
     } finally {
       setBusyId(null);
@@ -63,7 +153,7 @@ export function InsightBlockPicker({ open, insightId, nextSort, onClose, onPicke
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-base font-bold text-slate-900">블록 추가</h2>
-            <p className="mt-0.5 text-sm text-slate-500">지금 화면에 나오는 블록만 고를 수 있습니다</p>
+            <p className="mt-0.5 text-sm text-slate-500">고르면 바로 들어갑니다</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
             닫기
@@ -93,7 +183,7 @@ export function InsightBlockPicker({ open, insightId, nextSort, onClose, onPicke
               onClick={() => void pick(item.preset)}
               className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:border-slate-400 disabled:opacity-50"
             >
-              <BlockDiagram preset={item.diagram ?? item.preset} />
+              <BlockDiagram preset={item.diagram} />
               <div className="space-y-1 p-2.5">
                 <p className="text-sm font-semibold text-slate-800">{item.name}</p>
                 <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">{item.description}</p>
@@ -101,9 +191,6 @@ export function InsightBlockPicker({ open, insightId, nextSort, onClose, onPicke
             </button>
           ))}
         </div>
-        <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-          영상 · 임베드 · 여러 장 배치는 디자인 확정 후 열립니다
-        </p>
       </div>
     </div>
   );

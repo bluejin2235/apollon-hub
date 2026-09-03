@@ -114,6 +114,7 @@ export type InsightListItem = {
   key_image: string | null;
   key_image_width: number | null;
   key_image_height: number | null;
+  key_image_ratio?: string | null;
   show_faq: boolean;
   updated_at: string;
   counts: {
@@ -123,6 +124,9 @@ export type InsightListItem = {
     related: number;
   };
   check: CheckInsights | null;
+  site_visibility?: WorkSiteVisibility;
+  published_version?: number | null;
+  is_hidden?: boolean;
 };
 
 export type InsightListData = {

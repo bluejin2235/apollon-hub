@@ -3,18 +3,25 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getInsight, getMeta, updateInsight } from "@/lib/website/api";
+import {
+  generatePublishNote,
+  getInsight,
+  getMeta,
+  publishInsight,
+  publishInsightPreview,
+  unhideInsight,
+  updateInsight
+} from "@/lib/website/api";
 import {
   fillInsightBasic,
   fillInsightBody,
   fillInsightRelated,
   INSIGHT_PROBLEM_FLAGS
 } from "@/lib/website/checks";
-import type { CheckInsights, WebsiteCategory } from "@/lib/website/types";
+import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
+import type { CheckInsights, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
 import {
-  countInsightAiUnconfirmed,
   draftFromInsight,
-  emptyInsightCheck,
   insightPatchFromDraft,
   parseInsightDetail,
   parseInsightEditorTab,
@@ -31,18 +38,57 @@ import {
 } from "@/lib/website/text-width";
 import { InsightBasicTab } from "@/components/website/insight-basic-tab";
 import { InsightContentTab } from "@/components/website/insight-content-tab";
-import { InsightPublishCheckPanel } from "@/components/website/insight-publish-check-panel";
+import {
+  buildInsightCheckItems,
+  InsightPublishCheckList
+} from "@/components/website/insight-publish-check-panel";
 import { InsightRelatedTab } from "@/components/website/insight-related-tab";
+import { WorkHistoryTab } from "@/components/website/work-history-tab";
+import { PublishModal } from "@/components/website/publish-modal";
+import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
-import { HomePublishNotice } from "@/components/website/home-publish-notice";
-import { GhostBtn, PrimaryBtn } from "@/components/website/work-editor-ui";
 import { showToast } from "@/components/website/toast";
+import {
+  isPreviewOpen,
+  openPreview,
+  PREVIEW_POPUP_BLOCKED,
+  refreshPreview
+} from "@/lib/website/preview-window";
+import type { PartialSaveState } from "@/components/website/partial-save-btn";
 
 const TABS: { id: InsightEditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
   { id: "content", label: "본문" },
-  { id: "related", label: "연결" }
+  { id: "related", label: "연결" },
+  { id: "history", label: "이력" }
 ];
+
+function barBtnClass(opts?: { accent?: boolean; off?: boolean; checkRed?: boolean }) {
+  const base =
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[13px]";
+  if (opts?.off) {
+    return `${base} cursor-default border-slate-200 bg-white text-slate-500 opacity-40`;
+  }
+  if (opts?.checkRed) {
+    return `${base} border-red-200 bg-white text-red-600 hover:bg-red-50`;
+  }
+  if (opts?.accent) {
+    return `${base} border-indigo-200 bg-white text-indigo-600 hover:bg-indigo-50`;
+  }
+  return `${base} border-slate-200 bg-white text-slate-600 hover:bg-slate-50`;
+}
+
+function visibilityLabel(v: WorkSiteVisibility) {
+  if (v === "live") return "공개";
+  if (v === "hidden") return "감춤";
+  return "초안";
+}
+
+function visibilityClass(v: WorkSiteVisibility) {
+  if (v === "live") return "bg-emerald-100 text-emerald-700";
+  if (v === "hidden") return "bg-amber-100 text-amber-700";
+  return "bg-slate-100 text-slate-600";
+}
 
 function dotClass(state: "ok" | "warn" | "empty") {
   if (state === "ok") return "bg-emerald-500";
@@ -53,7 +99,8 @@ function dotClass(state: "ok" | "warn" | "empty") {
 function tabDot(tab: InsightEditorTab, check: CheckInsights | null): "ok" | "warn" | "empty" {
   if (tab === "basic") return fillInsightBasic(check);
   if (tab === "content") return fillInsightBody(check);
-  return fillInsightRelated(check);
+  if (tab === "related") return fillInsightRelated(check);
+  return "ok";
 }
 
 function problemCount(check: CheckInsights | null): number {
@@ -89,31 +136,6 @@ function mergeCheck(check: CheckInsights | null, details: unknown): CheckInsight
   return next;
 }
 
-function shortageLine(
-  insight: InsightDetail,
-  check: CheckInsights | null,
-  draft: InsightBasicDraft | null
-): { text: string; ok: boolean } {
-  const limits = draft ? draftLimitProblems(draft) : [];
-  const problems = problemCount(check) + limits.length;
-  if (problems > 0) {
-    const extra = limits[0] ? ` — ${limits[0]}` : "";
-    return { text: `공개하려면 ${problems}가지가 더 필요합니다${extra}`, ok: false };
-  }
-  if (check?.ai_unconfirmed) {
-    const n = countInsightAiUnconfirmed(insight);
-    return {
-      text: n > 0 ? `AI가 만든 캡션 ${n}개가 확인 전입니다` : "AI가 만든 캡션이 확인 전입니다",
-      ok: false
-    };
-  }
-  const related = insight.content_related?.length ?? 0;
-  if (related > 0) {
-    return { text: `관련 콘텐츠 ${related}개 지정됨`, ok: true };
-  }
-  return { text: "등록할 수 있습니다", ok: true };
-}
-
 export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -127,9 +149,19 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [fullSaveState, setFullSaveState] = useState<PartialSaveState>("idle");
   const [checkOverride, setCheckOverride] = useState<CheckInsights | null>(null);
-  const [homeNotice, setHomeNotice] = useState(false);
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishPreviewLoading, setPublishPreviewLoading] = useState(false);
+  const [publishChangedFields, setPublishChangedFields] = useState<string[]>([]);
+  const [publishFirst, setPublishFirst] = useState(false);
+  const [publishNote, setPublishNote] = useState("");
+  const [publishNoteLoading, setPublishNoteLoading] = useState(false);
+  const [saveBeforePublishOpen, setSaveBeforePublishOpen] = useState(false);
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
+  const [previewLive, setPreviewLive] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -184,52 +216,188 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
   const check = rawCheck;
   const limitIssues = draft ? draftLimitProblems(draft) : [];
   const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
-  const shortage = insight ? shortageLine(insight, check, draft) : null;
+  const skipCheck = skipPublishCheck();
+  const allowPublish = skipCheck || canPublish;
+  const visibility = insight?.site_visibility ?? "draft";
+  const checkItems =
+    insight && check ? buildInsightCheckItems(insight, check) : [];
+  const problemItems = checkItems.filter((item) => item.kind === "problem");
+  const warnItems = checkItems.filter((item) => item.kind === "warn");
+  const checkTone: "red" | "yellow" | "green" =
+    problemItems.length > 0 ? "red" : warnItems.length > 0 ? "yellow" : "green";
+  const saveDirty = fullSaveState === "dirty";
+  const publishAccent = checkTone === "green";
+  const hasLocalUnsaved = saveDirty;
 
-  const onChangeDraft = useCallback((patch: Partial<InsightBasicDraft>) => {
-    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
-  }, []);
+  const refreshPublishPreview = useCallback(async () => {
+    const preview = await publishInsightPreview(insightId);
+    if (!preview.ok) return;
+    setPublishChangedFields(preview.data.changedFields ?? []);
+    setPublishFirst(Boolean(preview.data.firstPublish));
+    setHasUnpublishedChanges((preview.data.changedFields ?? []).length > 0);
+  }, [insightId]);
 
-  async function saveTemp() {
-    if (!draft) return;
+  useEffect(() => {
+    if (!insight || insight.site_visibility === "draft") {
+      setHasUnpublishedChanges(false);
+      return;
+    }
+    void refreshPublishPreview();
+  }, [insight, refreshPublishPreview]);
+
+  async function loadPublishNote(fields: string[], first: boolean) {
+    if (first) {
+      setPublishNote(firstPublishNote());
+      return;
+    }
+    setPublishNoteLoading(true);
+    try {
+      const result = await generatePublishNote(fields);
+      setPublishNote(result.note || fallbackChangeNote(fields));
+    } finally {
+      setPublishNoteLoading(false);
+    }
+  }
+
+  async function handlePreview() {
+    setPreviewBlocked(false);
+    try {
+      const opened = await openPreview({ insightId, locale: "ko" });
+      setPreviewLive(opened);
+      if (!opened) setPreviewBlocked(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "미리보기를 열지 못했습니다");
+    }
+  }
+
+  async function saveAll(opts?: { silent?: boolean }) {
+    if (!draft) return false;
     setSaving(true);
+    setFullSaveState("saving");
     setError(null);
     try {
       const result = await updateInsight(insightId, insightPatchFromDraft(draft));
       if (!result.ok) {
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
-        return;
+        setFullSaveState("dirty");
+        return false;
       }
+      refreshPreview();
       await load();
-      showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
+      await refreshPublishPreview();
+      setFullSaveState("saved");
+      window.setTimeout(() => setFullSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
+      if (!opts?.silent) {
+        showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
+      }
+      return true;
     } finally {
       setSaving(false);
     }
   }
 
-  async function publish() {
+  async function proceedOpenPublishModal() {
     if (!draft) return;
+    setPublishModalOpen(true);
+    setPublishPreviewLoading(true);
+    setError(null);
+    try {
+      if (!(await saveAll({ silent: true }))) {
+        setPublishModalOpen(false);
+        return;
+      }
+      const preview = await publishInsightPreview(insightId);
+      if (!preview.ok) {
+        if (preview.status === 409 && preview.error === "publish_blocked") {
+          setCheckOverride(mergeCheck(insight?.check ?? null, preview.details));
+        } else {
+          setError(preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : ""));
+        }
+        setPublishModalOpen(false);
+        return;
+      }
+      const fields = preview.data.changedFields ?? [];
+      const first = Boolean(preview.data.firstPublish);
+      setPublishChangedFields(fields);
+      setPublishFirst(first);
+      await loadPublishNote(fields, first);
+    } finally {
+      setPublishPreviewLoading(false);
+    }
+  }
+
+  async function openPublishModal() {
+    if (!draft) return;
+    if (hasLocalUnsaved) {
+      setSaveBeforePublishOpen(true);
+      return;
+    }
+    await proceedOpenPublishModal();
+  }
+
+  async function confirmSaveBeforePublish() {
+    setSaveBeforePublishOpen(false);
+    if (!(await saveAll({ silent: true }))) return;
+    await proceedOpenPublishModal();
+  }
+
+  const onChangeDraft = useCallback((patch: Partial<InsightBasicDraft>) => {
+    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+    setFullSaveState((cur) => (cur === "saving" ? cur : "dirty"));
+  }, []);
+
+  async function confirmPublish() {
+    if (!draft || !publishNote.trim()) return;
     setSaving(true);
     setError(null);
     cancelPublishNav();
     try {
-      const result = await updateInsight(insightId, {
-        ...insightPatchFromDraft(draft),
-        status: "published"
-      });
-      if (!result.ok) {
-        if (result.status === 409 && result.error === "publish_blocked") {
-          setCheckOverride(mergeCheck(insight?.check ?? null, result.details));
-          setPanelOpen(true);
+      if (!(await saveAll({ silent: true }))) return;
+
+      const published = await publishInsight(insightId, publishNote.trim());
+      if (!published.ok) {
+        if (published.status === 400 && published.error === "publish_blocked") {
+          setCheckOverride(mergeCheck(insight?.check ?? null, published.details));
+          setPublishModalOpen(false);
           return;
         }
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setError(
+          published.error + (published.details ? ` · ${JSON.stringify(published.details)}` : "")
+        );
         return;
       }
-      setPanelOpen(false);
-      await load();
 
-      setHomeNotice(true);
+      const statusPatch = await updateInsight(insightId, { status: "published" });
+      if (!statusPatch.ok) {
+        setError(
+          statusPatch.error + (statusPatch.details ? ` · ${JSON.stringify(statusPatch.details)}` : "")
+        );
+        return;
+      }
+
+      setPublishModalOpen(false);
+      await load();
+      await refreshPublishPreview();
+      if (isPreviewOpen()) refreshPreview();
+      showToast({ message: "공개되었습니다", tone: "ok" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function showOnSiteAgain() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!(await saveAll({ silent: true }))) return;
+      const res = await unhideInsight(insightId);
+      if (!res.ok) {
+        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        return;
+      }
+      await load();
+      await refreshPublishPreview();
+      showToast({ message: "다시 공개되었습니다", tone: "ok" });
     } finally {
       setSaving(false);
     }
@@ -246,7 +414,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
 
   return (
     <div className="relative pb-28">
-      <p className="mb-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
+      <p className="mb-1 text-[11px] text-slate-400">
         인사이트 &nbsp;›&nbsp;{" "}
         <Link href="/website/insights" className="hover:text-slate-600">
           글 목록
@@ -254,22 +422,43 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
         &nbsp;›&nbsp; 편집
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="font-bold text-slate-900" style={{ fontSize: "var(--fs-title)" }}>
-          {titleKo}
-        </h1>
-        <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-            insight.status === "published"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-slate-100 text-slate-600"
-          }`}
-        >
-          {insight.status === "published" ? "공개" : "초안"}
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h1 className="truncate text-[19px] font-semibold text-slate-900">{titleKo}</h1>
+          <span
+            className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${visibilityClass(visibility)}`}
+          >
+            {visibilityLabel(visibility)}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={barBtnClass()} onClick={() => void handlePreview()}>
+            미리보기 ↗
+          </button>
+          <button
+            type="button"
+            className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
+            disabled={saving}
+            onClick={() => void saveAll()}
+          >
+            전체 저장
+          </button>
+          {previewLive ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+              <i className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              연결됨
+            </span>
+          ) : null}
+        </div>
       </div>
-      <p className="mt-1 text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
+      {previewBlocked ? (
+        <p className="mt-1 text-xs text-rose-600">{PREVIEW_POPUP_BLOCKED}</p>
+      ) : null}
+      <p className="mt-1 text-[11px] text-slate-400">
         마지막 저장 {formatSavedAt(insight.updated_at)}
+        {visibility === "live" && hasUnpublishedChanges ? (
+          <span className="text-amber-700"> · 공개 안 된 변경이 있습니다</span>
+        ) : null}
       </p>
 
       {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
@@ -312,42 +501,124 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
         {tab === "related" ? (
           <InsightRelatedTab insight={insight} siteUrl={siteUrl} onReload={load} />
         ) : null}
+        {tab === "history" ? (
+          <WorkHistoryTab workId={insight.id} contentType="insight" />
+        ) : null}
       </div>
 
-      <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className={`min-w-[180px] flex-1 text-sm ${shortage?.ok ? "text-emerald-600" : "text-amber-600"}`}>
-            {shortage?.text}
-          </p>
-          <GhostBtn disabled={saving} onClick={() => void saveTemp()}>
-            임시 저장
-          </GhostBtn>
-          {canManageWorks ? (
-            <>
-              <GhostBtn onClick={() => setPanelOpen(true)}>공개 전 점검</GhostBtn>
-              <PrimaryBtn disabled={!canPublish || saving} onClick={() => void publish()}>
-                등록하기
-              </PrimaryBtn>
-            </>
+      <div className="relative sticky bottom-0 z-20 -mx-4 mt-8 sm:-mx-6 lg:-mx-8">
+        {canManageWorks && checkOpen && checkItems.length > 0 ? (
+          <div className="absolute bottom-full left-0 right-0 border-t border-slate-200 bg-white">
+            <div className="max-h-[40vh] overflow-y-auto px-4 sm:px-6 lg:px-8">
+              <InsightPublishCheckList items={checkItems} onGoTab={setTab} overlay />
+            </div>
+            <div className="-mb-px flex justify-center">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-t-lg border border-b-0 border-slate-200 bg-white px-3.5 pb-1 pt-0.5 text-[11px] text-slate-400 hover:text-slate-600"
+                onClick={() => setCheckOpen(false)}
+              >
+                ▾ 접기
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="border-t border-slate-200 bg-white px-4 py-3.5 sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <button type="button" className={barBtnClass()} onClick={() => void handlePreview()}>
+              미리보기 ↗
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={barBtnClass({ accent: saveDirty, off: !saveDirty })}
+                disabled={saving}
+                onClick={() => void saveAll()}
+              >
+                전체 저장
+              </button>
+              {canManageWorks ? (
+                <button
+                  type="button"
+                  className={barBtnClass({ checkRed: checkTone === "red" })}
+                  aria-label="점검"
+                  onClick={() => {
+                    if (checkItems.length === 0) return;
+                    setCheckOpen((open) => !open);
+                  }}
+                >
+                  <span
+                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                      checkTone === "red"
+                        ? "bg-red-600"
+                        : checkTone === "yellow"
+                          ? "bg-amber-700"
+                          : "bg-emerald-700"
+                    }`}
+                  />
+                  점검
+                </button>
+              ) : null}
+              {canManageWorks && visibility === "hidden" ? (
+                <button
+                  type="button"
+                  className={barBtnClass({ accent: true })}
+                  disabled={saving}
+                  onClick={() => void showOnSiteAgain()}
+                >
+                  다시 공개
+                </button>
+              ) : null}
+              {canManageWorks && visibility !== "hidden" ? (
+                <button
+                  type="button"
+                  className={barBtnClass({
+                    accent: publishAccent,
+                    off: !allowPublish
+                  })}
+                  disabled={!allowPublish || saving}
+                  onClick={() => void openPublishModal()}
+                >
+                  공개
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {skipCheck ? (
+            <p className="mt-2 text-[11px] text-amber-700">
+              개발 중 · 점검을 건너뛰고 공개할 수 있습니다
+            </p>
           ) : null}
         </div>
       </div>
 
-      {canManageWorks && panelOpen ? (
-        <InsightPublishCheckPanel
-          insight={insight}
-          check={check ?? emptyInsightCheck(insight)}
-          canPublish={canPublish}
-          publishing={saving}
-          onClose={() => setPanelOpen(false)}
-          onGoTab={(next) => {
-            setTab(next);
-            setPanelOpen(false);
-          }}
-          onPublish={() => void publish()}
-        />
-      ) : null}
-      <HomePublishNotice open={homeNotice} kind="인사이트" onClose={() => setHomeNotice(false)} />
+      <ConfirmDialog
+        open={saveBeforePublishOpen}
+        title="저장하지 않은 변경이 있습니다. 저장하고 공개할까요?"
+        confirmText="저장하고 공개"
+        onConfirm={() => void confirmSaveBeforePublish()}
+        onCancel={() => setSaveBeforePublishOpen(false)}
+        description={
+          <p>
+            화면에만 있는 글자는 공개에 들어가지 않습니다. 먼저 저장한 뒤 공개 화면을 엽니다.
+          </p>
+        }
+      />
+
+      <PublishModal
+        open={publishModalOpen}
+        loading={publishPreviewLoading}
+        publishing={saving}
+        changedFields={publishChangedFields}
+        firstPublish={publishFirst}
+        note={publishNote}
+        noteLoading={publishNoteLoading}
+        checkSkipWarning={skipCheck && !canPublish}
+        onNoteChange={setPublishNote}
+        onClose={() => setPublishModalOpen(false)}
+        onConfirm={() => void confirmPublish()}
+        onRegenerate={() => void loadPublishNote(publishChangedFields, publishFirst)}
+      />
     </div>
   );
 }

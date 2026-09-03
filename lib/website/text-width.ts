@@ -32,9 +32,9 @@ export const WORK_TITLE_EN_MAX = 46;
 export const WORK_TITLE_KO_RECOMMEND = 22;
 export const WORK_TITLE_EN_RECOMMEND = 23;
 
-/** 인사이트 제목 — 국문 칸 30자×2, 영문 칸 60 */
-export const INSIGHT_TITLE_KO_MAX = 60;
-export const INSIGHT_TITLE_EN_MAX = 60;
+/** 인사이트 제목 — 워크와 같게 국문 44 · 영문 46 */
+export const INSIGHT_TITLE_KO_MAX = 44;
+export const INSIGHT_TITLE_EN_MAX = 46;
 
 export function withinTextWidth(value: string, max: number): boolean {
   const text = value.trim();
