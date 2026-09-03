@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BlockDiagram,
   PRESET_DESCRIPTION,
@@ -10,7 +11,7 @@ import {
 } from "@/components/website/block-presets";
 import { createInsightBlock } from "@/lib/website/api";
 
-/** insight_block_preset 아홉 개. 워크 피커 설명·그림을 그대로 쓴다. */
+/** insight_block_preset 열 개. DB 와 같은 목록. */
 const ITEMS: {
   preset: string;
   name: string;
@@ -91,7 +92,12 @@ const ITEMS: {
 ];
 
 const TABS = PICKER_TABS.filter(
-  (tab) => tab.id === "all" || tab.id === "text" || tab.id === "image" || tab.id === "video" || tab.id === "embed"
+  (tab) =>
+    tab.id === "all" ||
+    tab.id === "text" ||
+    tab.id === "image" ||
+    tab.id === "video" ||
+    tab.id === "embed"
 );
 
 type Props = {
@@ -103,14 +109,26 @@ type Props = {
   onPicked: (blockId: string) => void;
 };
 
-export function InsightBlockPicker({ open, insightId, sectionId, nextSort, onClose, onPicked }: Props) {
+export function InsightBlockPicker({
+  open,
+  insightId,
+  sectionId,
+  nextSort,
+  onClose,
+  onPicked
+}: Props) {
   const [tab, setTab] = useState<PickerTabId>("all");
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const visible = useMemo(
     () => ITEMS.filter((item) => tab === "all" || item.tab === tab),
     [tab]
   );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function pick(preset: string) {
     setBusyId(preset);
@@ -135,9 +153,10 @@ export function InsightBlockPicker({ open, insightId, sectionId, nextSort, onClo
         setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
         return;
       }
-      const blockId = typeof (res.data as { id?: unknown } | undefined)?.id === "string"
-        ? (res.data as { id: string }).id
-        : "";
+      const blockId =
+        typeof (res.data as { id?: unknown } | undefined)?.id === "string"
+          ? (res.data as { id: string }).id
+          : "";
       onPicked(blockId);
       onClose();
     } finally {
@@ -145,53 +164,65 @@ export function InsightBlockPicker({ open, insightId, sectionId, nextSort, onClo
     }
   }
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-10 sm:pt-16">
-      <div className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-10 sm:pt-16">
+      <div className="flex max-h-[min(88vh,920px)] w-full max-w-4xl flex-col rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-base font-bold text-slate-900">블록 추가</h2>
             <p className="mt-0.5 text-sm text-slate-500">고르면 바로 들어갑니다</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
+          >
             닫기
           </button>
         </div>
-        <div className="flex gap-1 overflow-x-auto px-5 pt-3">
+        <div className="flex shrink-0 gap-1 overflow-x-auto px-5 pt-3">
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
               className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs ${
-                tab === item.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-600"
+                tab === item.id
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-600"
               }`}
             >
               {item.label}
             </button>
           ))}
         </div>
-        {error ? <p className="px-5 pt-3 text-sm text-rose-600">{error}</p> : null}
-        <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3">
-          {visible.map((item) => (
-            <button
-              key={item.preset}
-              type="button"
-              disabled={busyId === item.preset}
-              onClick={() => void pick(item.preset)}
-              className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:border-slate-400 disabled:opacity-50"
-            >
-              <BlockDiagram preset={item.diagram} />
-              <div className="space-y-1 p-2.5">
-                <p className="text-sm font-semibold text-slate-800">{item.name}</p>
-                <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">{item.description}</p>
-              </div>
-            </button>
-          ))}
+        {error ? <p className="shrink-0 px-5 pt-3 text-sm text-rose-600">{error}</p> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-3">
+            {visible.map((item) => (
+              <button
+                key={item.preset}
+                type="button"
+                data-insight-preset={item.preset}
+                disabled={busyId === item.preset}
+                onClick={() => void pick(item.preset)}
+                className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:border-slate-400 disabled:opacity-50"
+              >
+                <BlockDiagram preset={item.diagram} />
+                <div className="space-y-1 p-2.5">
+                  <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                  <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">
+                    {item.description}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -556,7 +556,6 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
           no_tags: asBool(check.no_tags),
           no_related: asBool(check.no_related),
           no_internal_folder: asBool(check.no_internal_folder),
-          summary_too_long: asBool(check.summary_too_long),
           duplicate_captions: asBool(check.duplicate_captions),
           duplicate_alts: asBool(check.duplicate_alts),
           image_count: asNum(check.image_count),

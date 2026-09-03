@@ -368,8 +368,8 @@ export function HomePickPanel({
                         ✕
                       </button>
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-[13px] py-[11px]">
-                        <p className="m-0 text-[12.5px] font-semibold text-white">{title || "제목"}</p>
-                        <p className="mt-0.5 text-[10.5px] text-white/75">{subtitle || "한 줄 설명"}</p>
+                        <p className="m-0 line-clamp-2 text-[12.5px] font-semibold text-white">{title || "제목"}</p>
+                        <p className="mt-0.5 line-clamp-1 text-[10.5px] text-white/75">{subtitle || "한 줄 설명"}</p>
                       </div>
                     </div>
                   ) : (
@@ -437,11 +437,10 @@ export function HomePickPanel({
                 <div className="mb-[5px] flex items-center gap-1.5">
                   <b className="text-xs font-semibold">제목</b>
                   <span className="text-[11px] text-[#b0231e]">*</span>
-                  <span className="ml-auto text-[10.5px] text-[#9ca3af]">국문 {title.trim().length} / 30</span>
+                  <span className="ml-auto text-[10.5px] text-[#9ca3af]">국문 {title.trim().length}</span>
                 </div>
                 <input
                   value={title}
-                  maxLength={30}
                   onChange={(event) => setTitle(event.target.value)}
                   className="w-full rounded-[7px] border border-[#dde1e6] bg-white px-[11px] py-1.5 text-[12.5px] text-[#3a4049]"
                 />
@@ -453,11 +452,10 @@ export function HomePickPanel({
               <div className="mb-[14px]">
                 <div className="mb-[5px] flex items-center gap-1.5">
                   <b className="text-xs font-semibold">한 줄 설명</b>
-                  <span className="ml-auto text-[10.5px] text-[#9ca3af]">국문 {subtitle.trim().length} / 40</span>
+                  <span className="ml-auto text-[10.5px] text-[#9ca3af]">국문 {subtitle.trim().length}</span>
                 </div>
                 <input
                   value={subtitle}
-                  maxLength={40}
                   onChange={(event) => setSubtitle(event.target.value)}
                   className="w-full rounded-[7px] border border-[#dde1e6] bg-white px-[11px] py-1.5 text-[12.5px] text-[#3a4049]"
                 />

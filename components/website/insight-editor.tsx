@@ -30,12 +30,6 @@ import {
   type InsightEditorTab
 } from "@/lib/website/insight-detail";
 import { formatSavedAt } from "@/lib/website/work-detail";
-import {
-  overTextWidth,
-  textWidth,
-  INSIGHT_TITLE_EN_MAX,
-  INSIGHT_TITLE_KO_MAX
-} from "@/lib/website/text-width";
 import { InsightBasicTab } from "@/components/website/insight-basic-tab";
 import { InsightContentTab } from "@/components/website/insight-content-tab";
 import {
@@ -106,23 +100,6 @@ function tabDot(tab: InsightEditorTab, check: CheckInsights | null): "ok" | "war
 function problemCount(check: CheckInsights | null): number {
   if (!check) return INSIGHT_PROBLEM_FLAGS.length;
   return INSIGHT_PROBLEM_FLAGS.filter((flag) => Boolean(check[flag])).length;
-}
-
-function draftLimitProblems(draft: InsightBasicDraft): string[] {
-  const issues: string[] = [];
-  if (draft.title.ko.trim() && overTextWidth(draft.title.ko, INSIGHT_TITLE_KO_MAX)) {
-    issues.push("국문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
-  }
-  if (textWidth(draft.title.en) > INSIGHT_TITLE_EN_MAX) {
-    issues.push("영문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
-  }
-  if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
-    issues.push("한 줄 요약이 80자를 넘습니다");
-  }
-  if (draft.summary.en.length > 155) {
-    issues.push("영문 요약이 155자를 넘습니다");
-  }
-  return issues;
 }
 
 function mergeCheck(check: CheckInsights | null, details: unknown): CheckInsights | null {
@@ -214,8 +191,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
 
   const rawCheck = checkOverride ?? insight?.check ?? null;
   const check = rawCheck;
-  const limitIssues = draft ? draftLimitProblems(draft) : [];
-  const canPublish = problemCount(check) === 0 && limitIssues.length === 0;
+  const canPublish = problemCount(check) === 0;
   const skipCheck = skipPublishCheck();
   const allowPublish = skipCheck || canPublish;
   const visibility = insight?.site_visibility ?? "draft";

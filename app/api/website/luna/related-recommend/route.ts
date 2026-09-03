@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser } from "@/lib/auth/get-api-user";
 import { websiteAdminFetch } from "@/lib/website/client";
+import { parseInsightDetail, type InsightDetail } from "@/lib/website/insight-detail";
 import { parseWorkDetail, tagLabel, type WorkDetail } from "@/lib/website/work-detail";
 
 type SearchHit = {
@@ -89,6 +90,32 @@ function bodyText(work: WorkDetail): string {
   return parts.join("\n").slice(0, 6000);
 }
 
+function insightBodyText(insight: InsightDetail): string {
+  const parts: string[] = [];
+  const sections = insight.insight_sections ?? [];
+  const blocks = insight.insight_blocks ?? [];
+  if (sections.length > 0) {
+    for (const section of sections) {
+      const headline = locLine(section.headline);
+      const lead = locLine(section.lead);
+      if (headline) parts.push(headline);
+      if (lead) parts.push(lead);
+      for (const block of blocks.filter((item) => item.section_id === section.id)) {
+        if (!block.body) continue;
+        const text = stripHtml(locLine(block.body));
+        if (text) parts.push(text);
+      }
+    }
+  } else {
+    for (const block of blocks) {
+      if (!block.body) continue;
+      const text = stripHtml(locLine(block.body));
+      if (text) parts.push(text);
+    }
+  }
+  return parts.join("\n").slice(0, 6000);
+}
+
 function hitTitle(hit: SearchHit): string {
   if (typeof hit.title === "string" && hit.title.trim()) return hit.title;
   if (hit.title && typeof hit.title === "object") {
@@ -125,13 +152,15 @@ export async function POST(request: NextRequest) {
   }
 
   let workId = "";
+  let insightId = "";
   try {
-    const body = (await request.json()) as { workId?: unknown };
+    const body = (await request.json()) as { workId?: unknown; insightId?: unknown };
     workId = typeof body.workId === "string" ? body.workId.trim() : "";
+    insightId = typeof body.insightId === "string" ? body.insightId.trim() : "";
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  if (!workId) {
+  if (!workId && !insightId) {
     return NextResponse.json({ error: "invalid_work" }, { status: 400 });
   }
 
@@ -141,27 +170,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "api_key_missing" }, { status: 503 });
   }
 
-  const [workRes, worksRes, insightsRes, metaRes] = await Promise.all([
-    websiteAdminFetch(`/api/admin/works/${workId}`),
+  const [sourceRes, worksRes, insightsRes, metaRes] = await Promise.all([
+    websiteAdminFetch(insightId ? `/api/admin/insights/${insightId}` : `/api/admin/works/${workId}`),
     websiteAdminFetch("/api/admin/search?type=work&published=1&limit=50"),
     websiteAdminFetch("/api/admin/search?type=insight&published=1&limit=50"),
     websiteAdminFetch("/api/admin/meta")
   ]);
 
-  if (workRes.status !== 200) {
+  if (sourceRes.status !== 200) {
+    return NextResponse.json({ error: insightId ? "insight_not_found" : "work_not_found" }, { status: 404 });
+  }
+
+  const work = insightId ? null : parseWorkDetail(unwrapData(sourceRes.body));
+  const insight = insightId ? parseInsightDetail(unwrapData(sourceRes.body)) : null;
+  if (insightId && !insight) {
+    return NextResponse.json({ error: "insight_not_found" }, { status: 404 });
+  }
+  if (!insightId && !work) {
     return NextResponse.json({ error: "work_not_found" }, { status: 404 });
   }
 
-  const work = parseWorkDetail(unwrapData(workRes.body));
-  if (!work) {
-    return NextResponse.json({ error: "work_not_found" }, { status: 404 });
-  }
-
+  const selfWorkId = work?.id ?? "";
+  const selfInsightId = insight?.id ?? "";
   const workHits = (unwrapData<SearchHit[]>(worksRes.body) ?? []).filter(
-    (hit) => hit.type === "work" && hit.id !== work.id && hit.status === "published"
+    (hit) => hit.type === "work" && hit.id !== selfWorkId && hit.status === "published"
   );
   const insightHits = (unwrapData<SearchHit[]>(insightsRes.body) ?? []).filter(
-    (hit) => hit.type === "insight" && hit.status === "published"
+    (hit) => hit.type === "insight" && hit.id !== selfInsightId && hit.status === "published"
   );
   const candidates = [...workHits, ...insightHits];
   if (candidates.length < 4) {
@@ -171,6 +206,7 @@ export async function POST(request: NextRequest) {
   const byKey = new Map(candidates.map((hit) => [`${hit.type}:${hit.id}`, hit]));
   const meta = unwrapData<{
     workCategories?: Array<{ id: string; label?: { ko?: string; en?: string } }>;
+    insightCategories?: Array<{ id: string; label?: { ko?: string; en?: string } }>;
   }>(metaRes.body);
   const catNames = new Map(
     (meta?.workCategories ?? []).map((cat) => [
@@ -178,10 +214,20 @@ export async function POST(request: NextRequest) {
       cat.label?.ko?.trim() || cat.label?.en?.trim() || cat.id
     ])
   );
-  const fields = (work.work_categories_map ?? [])
-    .map((item) => catNames.get(item.category_id) ?? item.category_id)
-    .filter(Boolean);
-  const tags = (work.work_tags ?? []).map(tagLabel).filter(Boolean);
+  const insightCatNames = new Map(
+    (meta?.insightCategories ?? []).map((cat) => [
+      cat.id,
+      cat.label?.ko?.trim() || cat.label?.en?.trim() || cat.id
+    ])
+  );
+  const fields = work
+    ? (work.work_categories_map ?? [])
+        .map((item) => catNames.get(item.category_id) ?? item.category_id)
+        .filter(Boolean)
+    : [insightCatNames.get(insight?.category_id ?? "") ?? insight?.category_id].filter(Boolean);
+  const tags = work
+    ? (work.work_tags ?? []).map(tagLabel).filter(Boolean)
+    : (insight?.insight_tags ?? []).map(tagLabel).filter(Boolean);
 
   const candidateLines = candidates
     .slice(0, 80)
@@ -194,23 +240,40 @@ export async function POST(request: NextRequest) {
     })
     .join("\n");
 
-  const prompt = [
-    "홈페이지 워크 상세 하단 Related Articles에 넣을 공개 콘텐츠 4개를 고르세요.",
-    "후보는 아래 목록에만 있습니다. 목록에 없는 id는 쓰지 마세요.",
-    "자기 자신 워크는 빼세요. 워크와 인사이트를 섞는 것이 좋습니다.",
-    "같은 사업분야만 고르지 마세요.",
-    "",
-    "이 워크:",
-    `제목: ${locLine(work.title)}`,
-    `한 줄 요약: ${locLine(work.summary)}`,
-    `사업분야: ${fields.join(" · ") || "없음"}`,
-    `태그: ${tags.join(" · ") || "없음"}`,
-    "본문:",
-    bodyText(work) || "없음",
-    "",
-    "후보:",
-    candidateLines
-  ].join("\n");
+  const prompt = work
+    ? [
+        "홈페이지 워크 상세 하단 Related Articles에 넣을 공개 콘텐츠 4개를 고르세요.",
+        "후보는 아래 목록에만 있습니다. 목록에 없는 id는 쓰지 마세요.",
+        "자기 자신 워크는 빼세요. 워크와 인사이트를 섞는 것이 좋습니다.",
+        "같은 사업분야만 고르지 마세요.",
+        "",
+        "이 워크:",
+        `제목: ${locLine(work.title)}`,
+        `한 줄 요약: ${locLine(work.summary)}`,
+        `사업분야: ${fields.join(" · ") || "없음"}`,
+        `태그: ${tags.join(" · ") || "없음"}`,
+        "본문:",
+        bodyText(work) || "없음",
+        "",
+        "후보:",
+        candidateLines
+      ].join("\n")
+    : [
+        "홈페이지 인사이트 상세 하단 Related Articles에 넣을 공개 콘텐츠 4개를 고르세요.",
+        "후보는 아래 목록에만 있습니다. 목록에 없는 id는 쓰지 마세요.",
+        "자기 자신 인사이트는 빼세요. 워크와 인사이트를 섞는 것이 좋습니다.",
+        "",
+        "이 인사이트:",
+        `제목: ${locLine(insight?.title)}`,
+        `한 줄 요약: ${locLine(insight?.summary)}`,
+        `분류: ${fields.join(" · ") || "없음"}`,
+        `태그: ${tags.join(" · ") || "없음"}`,
+        "본문:",
+        (insight ? insightBodyText(insight) : "") || "없음",
+        "",
+        "후보:",
+        candidateLines
+      ].join("\n");
 
   try {
     const client = new Anthropic({ apiKey });

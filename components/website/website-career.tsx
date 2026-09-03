@@ -87,8 +87,8 @@ function JobForm({
 
   async function save(status?: JobStatus) {
     if (!canManage) return;
-    if (titleLen < 2 || titleLen > 40) {
-      showToast({ message: "포지션명은 2–40자입니다", tone: "warn" });
+    if (titleLen < 2) {
+      showToast({ message: "포지션명을 입력하세요", tone: "warn" });
       return;
     }
     if (applyUrl.trim() && !httpsOk(applyUrl)) {
@@ -161,15 +161,11 @@ function JobForm({
         <label className="sm:col-span-2 block">
           <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-700">
             포지션명
-            <span className={titleLen > 40 ? "text-rose-600" : titleLen > 20 ? "text-amber-600" : "text-slate-400"}>
-              {titleLen} / 40
-              <span className="ml-1 font-normal text-slate-400">(권장 20)</span>
-            </span>
+            <span className="text-slate-400">{titleLen}</span>
           </span>
           <input
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
             value={title}
-            maxLength={40}
             onChange={(event) => setTitle(event.target.value)}
             disabled={!canManage}
           />

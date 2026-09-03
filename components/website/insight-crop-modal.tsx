@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { uploadFile } from "@/lib/website/api";
-import { KEY_STORE_LONG_EDGE } from "@/lib/website/image-long-edge";
-import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
+import { KEY_STORE_LONG_EDGE, INSIGHT_KEY_MIN_LONG_EDGE, insightKeyCropTooSmallMessage } from "@/lib/website/image-long-edge";
 import { showToast } from "@/components/website/toast";
 import { describeUploadError } from "@/lib/website/upload-error";
 import { newStoredFilename, uploadObjectPath } from "@/lib/website/upload-path";
@@ -255,6 +254,10 @@ export function InsightCropModal({
     setBusy(true);
     try {
       const long = Math.max(rect.w, rect.h);
+      if (long < INSIGHT_KEY_MIN_LONG_EDGE) {
+        showToast({ tone: "error", message: insightKeyCropTooSmallMessage() });
+        return;
+      }
       const scale = long > KEY_STORE_LONG_EDGE ? KEY_STORE_LONG_EDGE / long : 1;
       const outW = Math.max(1, Math.round(rect.w * scale));
       const outH = Math.max(1, Math.round(rect.h * scale));
@@ -272,14 +275,9 @@ export function InsightCropModal({
         );
       });
       const raw = new File([blob], "key-crop.jpg", { type: "image/jpeg" });
-      const prepared = await prepareImageForUpload(raw, "key");
-      if (!prepared.ok) {
-        showToast({ tone: "error", message: prepared.error });
-        return;
-      }
       const filename = newStoredFilename("jpg");
-      const res = await uploadFile(prepared.data.file, "insights", uploadObjectPath(folder, filename), {
-        fields: { role: "key" }
+      const res = await uploadFile(raw, "insights", uploadObjectPath(folder, filename), {
+        fields: { role: "insight-key" }
       });
       if (!res.ok || !res.data?.publicUrl) {
         const parsed = describeUploadError(
@@ -292,8 +290,8 @@ export function InsightCropModal({
       }
       onSaved({
         src: res.data.publicUrl,
-        width: prepared.data.to.width,
-        height: prepared.data.to.height,
+        width: res.data.width ?? outW,
+        height: res.data.height ?? outH,
         ratio
       });
       onClose();

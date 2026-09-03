@@ -176,7 +176,7 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
         </Guide>
       </div>
       <div>
-        <FieldLabel extra={<CharKo n={quote.ko.length} warn={70} limit={70} />}>
+        <FieldLabel extra={<CharKo n={quote.ko.length} />}>
           화면에 보일 인용문
           <Req />
         </FieldLabel>
@@ -194,16 +194,13 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
           }}
         />
         <Guide>
-          <b className="font-semibold text-slate-600">국문 40~70자</b> ·{" "}
-          <b className="font-semibold text-slate-600">세 줄까지</b>
-          <Sep />
-          팝업을 열기 전 카드에 크게 보이는 문장입니다. 70자를 넘으면 네 줄이 되어 카드가 흐트러집니다.
+          팝업을 열기 전 카드에 크게 보이는 문장입니다.
           <br />
           인사이트 본문에서 <b className="font-semibold text-slate-600">가장 강한 한 문장</b>을 골라 넣으세요.
         </Guide>
       </div>
       <div>
-        <FieldLabel extra={<CharKo n={attribution.ko.length} warn={24} limit={24} />}>
+        <FieldLabel extra={<CharKo n={attribution.ko.length} />}>
           이름 · 직함
           <Req />
         </FieldLabel>
@@ -223,8 +220,7 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
           }}
         />
         <Guide>
-          <b className="font-semibold text-slate-600">국문 24자 이내</b> · 형식은{" "}
-          <b className="font-semibold text-slate-600">이름 - 직함</b>
+          형식은 <b className="font-semibold text-slate-600">이름 - 직함</b>
           <Sep />
           프로필 이미지는 정사각형 <b className="font-semibold text-slate-600">600 × 600</b> · JPG · 300KB 이하
         </Guide>

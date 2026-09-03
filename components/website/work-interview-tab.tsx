@@ -47,7 +47,7 @@ const HELP: Record<
   quote: {
     title: "화면에 보일 인용문",
     use: "인터뷰 자리에 큰 글씨로 나오는 한 문장",
-    rule: "80자 안쪽. 한 문장으로",
+    rule: "한 문장으로",
     note: "인사이트 본문이 길면 그중 이 워크와 맞는 한 문장만 골라 적으세요",
     empty: "인사이트에 적힌 원래 인용문이 나옵니다"
   },
@@ -322,9 +322,7 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
             >
               ?
             </button>
-            <span className={quote.ko.length > 80 ? "cc over" : "cc"}>
-              국문 {quote.ko.length} / 80
-            </span>
+            <span className="cc">국문 {quote.ko.length}</span>
           </div>
           <div className="two">
             <textarea

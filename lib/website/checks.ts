@@ -21,7 +21,6 @@ export const WARN_FLAGS = [
   "no_tags",
   "no_related",
   "no_internal_folder",
-  "summary_too_long",
   "duplicate_captions",
   "duplicate_alts"
 ] as const;
@@ -47,7 +46,6 @@ export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof W
     no_tags: "태그가 없습니다",
     no_related: "연결 콘텐츠가 없습니다",
     no_internal_folder: "내부 폴더가 없습니다",
-    summary_too_long: "요약이 너무 깁니다",
     duplicate_captions: "캡션이 중복됩니다",
     duplicate_alts: "대체 텍스트가 중복됩니다"
   };
@@ -130,7 +128,6 @@ export function fillBasic(check: CheckWorks | null): "ok" | "warn" {
   if (
     check.missing_key_alt ||
     check.missing_summary_en ||
-    check.summary_too_long ||
     check.no_key_image ||
     check.key_image_size_unknown ||
     check.key_image_too_small
@@ -175,7 +172,6 @@ export function fillInsightBasic(check: CheckInsights | null): "ok" | "warn" {
   if (
     check.missing_key_alt ||
     check.missing_summary_en ||
-    check.summary_too_long ||
     check.no_key_image ||
     check.key_image_size_unknown ||
     check.key_image_too_small
@@ -224,7 +220,6 @@ export const INSIGHT_WARN_FLAGS = [
   "body_image_too_small",
   "no_tags",
   "no_related",
-  "summary_too_long",
   "stale_draft"
 ] as const;
 
@@ -236,7 +231,7 @@ export const INSIGHT_CHECK_LABEL: Record<
   missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
   no_key_image: "대표 이미지가 없습니다",
   key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
-    key_image_too_small: "대표 이미지 긴 변이 1600 미만입니다",
+  key_image_too_small: "대표 이미지 긴 변이 800 미만입니다",
   no_blocks: "본문 블록이 없습니다",
   missing_image_alt: "이미지 대체 텍스트가 없습니다",
   ai_unconfirmed: "AI가 만든 이미지를 아직 확인하지 않았습니다",
@@ -246,6 +241,5 @@ export const INSIGHT_CHECK_LABEL: Record<
   body_image_too_small: "본문 이미지 해상도가 낮습니다",
   no_tags: "태그가 없습니다",
   no_related: "연결 콘텐츠가 없습니다",
-  summary_too_long: "요약이 너무 깁니다",
   stale_draft: "초안이 오래되었습니다"
 };

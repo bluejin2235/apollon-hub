@@ -32,7 +32,6 @@ export type CheckWorks = {
   no_tags: boolean;
   no_related: boolean;
   no_internal_folder: boolean;
-  summary_too_long: boolean;
   duplicate_captions: boolean;
   duplicate_alts: boolean;
   image_count: number;
@@ -98,7 +97,6 @@ export type CheckInsights = {
   faq_on_but_empty: boolean;
   no_tags: boolean;
   no_related: boolean;
-  summary_too_long: boolean;
   stale_draft: boolean;
   image_count: number;
 };

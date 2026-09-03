@@ -36,7 +36,6 @@ const FLAG_TAB: Record<InsightCheckItem["flag"], InsightEditorTab> = {
   key_image_size_unknown: "basic",
   key_image_too_small: "basic",
   no_tags: "basic",
-  summary_too_long: "basic",
   stale_draft: "basic",
   no_blocks: "content",
   missing_body_en: "content",
@@ -53,17 +52,16 @@ const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
   missing_key_alt: "모든 이미지에 필수입니다.",
   no_key_image: "목록 카드·링크 공유에 쓰는 대표 이미지를 올려 주세요.",
   key_image_size_unknown: "대표 이미지를 다시 올리면 가로·세로 크기가 함께 저장됩니다.",
-  key_image_too_small: "긴 변이 1600 이상이어야 합니다.",
+  key_image_too_small: "긴 변이 800 이상이어야 합니다.",
   no_blocks: "본문 탭에서 블록을 쌓아 주세요. 섹션은 없습니다.",
-  missing_image_alt: "대체 텍스트 — 국문 40자 이내. 화면에 안 보입니다.",
+  missing_image_alt: "대체 텍스트를 채워 주세요. 화면에 안 보입니다.",
   ai_unconfirmed: "AI가 만든 캡션을 확인해야 공개할 수 있습니다.",
   missing_body_en: "글 블록의 영문을 채워 주세요.",
   missing_qa_en: "질문·답변 블록의 영문을 채워 주세요.",
   empty_blocks: "비어 있는 블록은 화면에 안 나옵니다.",
   body_image_too_small: "본문 이미지 긴 변이 1600 미만입니다.",
-  no_tags: "3~6개 · 태그당 2~10자",
+  no_tags: "3~6개",
   no_related: "화면에는 4개가 나옵니다",
-  summary_too_long: "구글 검색 결과에서 뒤가 잘립니다.",
   stale_draft: "초안이 오래되었습니다. 내용을 확인하고 저장하세요."
 };
 

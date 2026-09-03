@@ -286,7 +286,6 @@ export function parseInsightDetail(value: unknown): InsightDetail | null {
           faq_on_but_empty: asBool(check.faq_on_but_empty),
           no_tags: asBool(check.no_tags),
           no_related: asBool(check.no_related),
-          summary_too_long: asBool(check.summary_too_long),
           stale_draft: asBool(check.stale_draft),
           image_count: asNum(check.image_count)
         }
@@ -372,7 +371,6 @@ export function emptyInsightCheck(insight: InsightDetail): CheckInsights {
     faq_on_but_empty: false,
     no_tags: false,
     no_related: false,
-    summary_too_long: false,
     stale_draft: false,
     image_count: 0
   };

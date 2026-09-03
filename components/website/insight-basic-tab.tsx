@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ImageUploader } from "@/components/website/image-uploader";
 import {
   InsightCropModal,
@@ -12,14 +12,13 @@ import { PartialSaveBtn, type PartialSaveState } from "@/components/website/part
 import { TagPicker } from "@/components/website/tag-picker";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
-import { setInsightTags, updateInsight } from "@/lib/website/api";
+import { setInsightTags, updateInsight, generateInsightSlug } from "@/lib/website/api";
 import {
   isNewsCategory,
   type InsightBasicDraft,
   type InsightDetail,
   type KeyImageRatio
 } from "@/lib/website/insight-detail";
-import { INSIGHT_TITLE_KO_MAX, textWidth } from "@/lib/website/text-width";
 import type { WebsiteCategory } from "@/lib/website/types";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { mediaUrl } from "@/lib/website/work-detail";
@@ -53,8 +52,8 @@ const HELP = {
   title: {
     title: "제목",
     use: "목록 카드 · 상세 맨 위 · 브라우저 탭 · 검색 결과 제목 · 링크 공유 제목",
-    rule: "44. 넘으면 목록 카드에서 여러 줄이 됩니다",
-    note: "국문 화면에서도 이 영문 제목이 그대로 나옵니다. 따옴표와 하이픈도 글자 수에 들어갑니다",
+    rule: "목록 카드 · 상세 맨 위 · 브라우저 탭 · 검색 결과 제목 · 링크 공유 제목",
+    note: "검색 결과에는 앞부분만 표시됩니다",
     empty: "공개할 수 없습니다"
   },
   sub: {
@@ -88,7 +87,7 @@ const HELP = {
   key: {
     title: "대표 이미지",
     use: "목록 카드와 상세 맨 위에 쓰입니다. 인사이트는 배경 영상이 없습니다.",
-    rule: "올릴 때 — 비율·크기 제한 없음. 긴 변 1600 이상. 저장 — 고른 비율로 잘라 한 장만",
+    rule: "올릴 때 — 비율·크기 제한 없음. 자른 긴 변 800 이상. 저장 — 고른 비율로 잘라 한 장만",
     note: (
       <>
         목록은 비율이 다른 카드가 섞여 리듬을 만듭니다.
@@ -110,14 +109,14 @@ const HELP = {
   sum: {
     title: "한 줄 요약",
     use: "구글 검색 결과에서 제목 아래 나오는 설명문. 링크를 공유할 때도 이 글이 보입니다. 화면에는 나오지 않습니다",
-    rule: "국문 80자 · 영문 155자. 넘으면 검색 결과에서 잘립니다",
-    note: "무엇을 어떻게 바꿨는지 한 문장으로. 검색하는 사람이 이 글을 보고 누를지 정합니다",
+    rule: "무엇을 어떻게 바꿨는지 한 문장으로. 검색하는 사람이 이 글을 보고 누를지 정합니다",
+    note: "검색 결과에는 앞부분만 표시됩니다",
     empty: "공개할 수 없습니다. 검색 결과에 설명이 없으면 클릭률이 떨어집니다"
   },
   alt: {
     title: "대체 텍스트",
     use: "이미지가 안 뜰 때 그 자리에 나오는 글. 화면 읽기 프로그램이 읽어주고, 검색엔진과 AI 도 이 글로 이미지를 이해합니다",
-    rule: "보이는 것을 그대로 씁니다. 40자 안쪽",
+    rule: "보이는 것을 그대로 씁니다",
     note: "「이미지」 「사진」 같은 말은 넣지 마세요. 무엇이 찍혀 있는지만 적습니다",
     empty: "공개할 수 없습니다"
   }
@@ -140,6 +139,17 @@ function apiFailMessage(res: { error: string; details?: unknown }): string {
 
 function isPlaceholderKey(src: string) {
   return !src.trim() || /placeholder-wide/i.test(src);
+}
+
+function isPlaceholderSlug(slug: string) {
+  return !slug.trim() || /^insight-\d+$/i.test(slug.trim());
+}
+
+function isDefaultTitle(title: { ko: string; en: string }) {
+  const ko = title.ko.trim();
+  const en = title.en.trim();
+  if (!ko && !en) return true;
+  return (ko === "새 글" || !ko) && (en === "New" || !en);
 }
 
 function useFoldPartialSave(onReload: () => Promise<void>) {
@@ -206,13 +216,18 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const news = isNewsCategory(draft.category_id);
   const [openHelp, setOpenHelp] = useState<keyof typeof HELP | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
+  const [slugBusy, setSlugBusy] = useState(false);
+  const [slugError, setSlugError] = useState<string | null>(null);
   const screenPartial = useFoldPartialSave(onReload);
   const mediaPartial = useFoldPartialSave(onReload);
   const searchPartial = useFoldPartialSave(onReload);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const lastLunaSlugRef = useRef<string | null>(null);
+  const slugTimerRef = useRef<number | null>(null);
+  const slugSeqRef = useRef(0);
+  const canAutoSlug = insight.status !== "published";
 
-  const titleKoWidth = textWidth(draft.title.ko);
   const chosenRatio: InsightCropRatio =
     draft.key_image_ratio ||
     ratioFromSize(draft.key_image_width, draft.key_image_height) ||
@@ -230,7 +245,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const mediaDone = [keyFilled].filter(Boolean).length;
   const searchDone = [
     filled(draft.slug),
-    filled(draft.summary.ko) && draft.summary.ko.length <= 80 && draft.summary.en.length <= 155,
+    filled(draft.summary.ko),
     filled(draft.key_image_alt.ko)
   ].filter(Boolean).length;
 
@@ -252,6 +267,49 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
     searchPartial.markDirty();
     onChange(next);
   }
+
+  async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
+    if (!canAutoSlug) return;
+    if (!opts?.force && isDefaultTitle(title)) return;
+    if (!title.ko.trim() && !title.en.trim()) return;
+    const current = draftRef.current.slug;
+    if (!opts?.force) {
+      const userLocked =
+        !isPlaceholderSlug(current) &&
+        (lastLunaSlugRef.current == null || current !== lastLunaSlugRef.current);
+      if (userLocked) return;
+    }
+    const seq = ++slugSeqRef.current;
+    setSlugBusy(true);
+    setSlugError(null);
+    const res = await generateInsightSlug(title);
+    if (seq !== slugSeqRef.current) return;
+    setSlugBusy(false);
+    if (!res.ok) {
+      setSlugError(res.reason);
+      showToast({ tone: "error", message: res.reason });
+      if (!draftRef.current.slug.trim()) {
+        patchSearch({ slug: `insight-${Date.now()}` });
+      }
+      return;
+    }
+    lastLunaSlugRef.current = res.slug;
+    patchSearch({ slug: res.slug });
+  }
+
+  function scheduleSlugFromTitle(title: { ko: string; en: string }) {
+    if (!canAutoSlug) return;
+    if (slugTimerRef.current) window.clearTimeout(slugTimerRef.current);
+    slugTimerRef.current = window.setTimeout(() => {
+      void fillSlugFromTitle(title);
+    }, 700);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (slugTimerRef.current) window.clearTimeout(slugTimerRef.current);
+    };
+  }, []);
 
   async function saveScreen() {
     return screenPartial.save(async () => {
@@ -360,8 +418,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <button type="button" className="q" onClick={() => toggleHelp("title")}>
                 ?
               </button>
-              <span className={titleKoWidth > INSIGHT_TITLE_KO_MAX ? "cc over" : "cc"}>
-                국문 <b>{titleKoWidth}</b> / {INSIGHT_TITLE_KO_MAX}
+              <span className="cc">
+                국문 {draft.title.ko.length} · 영문 {draft.title.en.length}
               </span>
             </div>
             <div className="seclang">
@@ -369,7 +427,11 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <input
                 className="i"
                 value={draft.title.ko}
-                onChange={(e) => patchScreen({ title: locField(draft.title, "ko", e.target.value) })}
+                onChange={(e) => {
+                  const title = locField(draft.title, "ko", e.target.value);
+                  patchScreen({ title });
+                  scheduleSlugFromTitle(title);
+                }}
               />
             </div>
             <div className="seclang">
@@ -378,9 +440,14 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 className="i"
                 value={draft.title.en}
                 placeholder="영문 제목"
-                onChange={(e) => patchScreen({ title: locField(draft.title, "en", e.target.value) })}
+                onChange={(e) => {
+                  const title = locField(draft.title, "en", e.target.value);
+                  patchScreen({ title });
+                  scheduleSlugFromTitle(title);
+                }}
               />
             </div>
+            <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <HelpPanel
               open={openHelp === "title"}
               body={HELP.title}
@@ -394,6 +461,9 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <button type="button" className="q" onClick={() => toggleHelp("sub")}>
                 ?
               </button>
+              <span className="cc">
+                국문 {draft.subtitle.ko.length} · 영문 {draft.subtitle.en.length}
+              </span>
             </div>
             <div className="seclang">
               <span className="tag">국문</span>
@@ -434,7 +504,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 </div>
                 <input
                   className="i"
-                  type="text"
+                  type="date"
                   value={draft.published_at}
                   onChange={(e) => patchScreen({ published_at: e.target.value })}
                 />
@@ -538,7 +608,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 hideThumb={keyFilled}
                 siteUrl={siteUrl}
                 value={keyFilled ? draft.key_image : null}
-                emptyHint="긴 변 1600 이상이어야 합니다."
+                emptyHint="자른 긴 변이 800 이상이어야 합니다."
                 extraActions={
                   keyFilled ? (
                     <button
@@ -573,7 +643,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             </div>
             <div>
               <p className="spec">
-                <b>올릴 때</b> — 비율·크기 제한 없음. 긴 변 1600 이상
+                <b>올릴 때</b> — 비율·크기 제한 없음. 자른 긴 변 800 이상
                 <br />
                 <b>저장</b> — 고른 비율로 잘라 한 장만
                 <br />
@@ -631,7 +701,18 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 value={draft.slug}
                 onChange={(e) => patchSearch({ slug: e.target.value })}
               />
+              {canAutoSlug ? (
+                <button
+                  type="button"
+                  className="btn sm slug-remake"
+                  disabled={slugBusy || isDefaultTitle(draft.title)}
+                  onClick={() => void fillSlugFromTitle(draft.title, { force: true })}
+                >
+                  {slugBusy ? "만드는 중…" : "다시 만들기"}
+                </button>
+              ) : null}
             </div>
+            {slugError ? <p className="hint-line warn">{slugError}</p> : null}
             <p className="hint-line warn">공개한 뒤에는 바꾸지 마세요. 검색 순위가 초기화됩니다</p>
             <HelpPanel
               open={openHelp === "slug"}
@@ -648,8 +729,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 ?
               </button>
               <span className="cc">
-                국문 <b>{draft.summary.ko.length}</b>/80 · 영문 <b>{draft.summary.en.length}</b>
-                /155
+                국문 {draft.summary.ko.length} · 영문 {draft.summary.en.length}
               </span>
             </div>
             <div className="two">
@@ -670,7 +750,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 }
               />
             </div>
-            <p className="hint-line">검색 결과에 제목 아래 나오는 설명문입니다</p>
+            <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <HelpPanel open={openHelp === "sum"} body={HELP.sum} onClose={() => setOpenHelp(null)} />
           </div>
 
@@ -681,8 +761,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <button type="button" className="q" onClick={() => toggleHelp("alt")}>
                 ?
               </button>
-              <span className={draft.key_image_alt.ko.length > 40 ? "cc over" : "cc"}>
-                국문 <b>{draft.key_image_alt.ko.length}</b> / 40
+              <span className="cc">
+                국문 {draft.key_image_alt.ko.length} · 영문 {draft.key_image_alt.en.length}
               </span>
             </div>
             <div className="two">
