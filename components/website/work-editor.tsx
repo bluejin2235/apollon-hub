@@ -8,9 +8,6 @@ import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/
 import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
 import type { WorkSiteVisibility } from "@/lib/website/types";
-import {
-  WORK_TITLE_EN_MAX
-} from "@/lib/website/text-width";
 import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
   draftFromWork,
@@ -116,20 +113,6 @@ function problemCount(
   return n;
 }
 
-function draftLimitProblems(draft: WorkBasicDraft): string[] {
-  const issues: string[] = [];
-  if (draft.title.en.length > WORK_TITLE_EN_MAX) {
-    issues.push("영문이 너무 깁니다. 목록 카드에서 여러 줄이 됩니다");
-  }
-  if (draft.summary.ko.trim() && draft.summary.ko.length > 80) {
-    issues.push("한 줄 요약이 80자를 넘습니다");
-  }
-  if (draft.summary.en.length > 155) {
-    issues.push("영문 요약이 155자를 넘습니다");
-  }
-  return issues;
-}
-
 function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | null {
   if (!check || !details || typeof details !== "object") return check;
   const next = { ...check };
@@ -230,11 +213,8 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
 
   const rawCheck = checkOverride ?? work?.check ?? null;
   const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
-  const limitIssues = draft ? draftLimitProblems(draft) : [];
   const canPublish =
-    problemCount(check, work, draft) === 0 &&
-    limitIssues.length === 0 &&
-    !(work && interviewBlocksPublish(work));
+    problemCount(check, work, draft) === 0 && !(work && interviewBlocksPublish(work));
   const skipCheck = skipPublishCheck();
   const allowPublish = canPublish || skipCheck;
   const visibility = work?.site_visibility ?? "draft";

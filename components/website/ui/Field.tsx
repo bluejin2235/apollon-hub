@@ -10,10 +10,6 @@ import "./work-admin.css";
 export type FieldCount = {
   label?: string;
   value: number;
-  /** 권장. 초과 시 주황 (.nr) */
-  recommend?: number;
-  /** 한계. 초과 시 빨강 (.ov) */
-  limit: number;
 };
 
 type FieldProps = {
@@ -33,15 +29,10 @@ type FieldProps = {
 };
 
 function CountPart({ item }: { item: FieldCount }) {
-  const overLimit = item.value > item.limit;
-  const overRecommend =
-    item.recommend != null && item.value > item.recommend && !overLimit;
-  const cls = overLimit ? "ov" : overRecommend ? "nr" : undefined;
   return (
     <>
       {item.label ? `${item.label} ` : null}
-      <span className={cls}>{item.value}</span>
-      {` / ${item.limit}`}
+      <span>{item.value}</span>
     </>
   );
 }
@@ -85,7 +76,7 @@ export function Field({
         {!aside && counts && counts.length > 0 ? (
           <span className="cn">
             {counts.map((item, index) => (
-              <span key={`${item.label ?? ""}-${item.limit}`}>
+              <span key={`${item.label ?? "n"}-${index}`}>
                 {index > 0 ? " · " : null}
                 <CountPart item={item} />
               </span>

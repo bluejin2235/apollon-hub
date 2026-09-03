@@ -12,7 +12,6 @@ import {
 import type { WebsiteCategory } from "@/lib/website/types";
 import type { WorkBasicDraft, WorkDetail, WorkFolder } from "@/lib/website/work-detail";
 import { mediaUrl } from "@/lib/website/work-detail";
-import { WORK_TITLE_EN_MAX } from "@/lib/website/text-width";
 import { extractLoopPosters, revokeFrameUrls } from "@/lib/website/video-thumbs";
 import { sanitizeUploadFilename, uploadObjectPath, workFolderPrefix } from "@/lib/website/upload-path";
 import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
@@ -46,8 +45,8 @@ const HELP = {
   title: {
     title: "제목",
     use: "목록 카드 · 상세 맨 위 · 브라우저 탭 · 검색 결과 제목 · 링크 공유 제목",
-    rule: "46자. 넘으면 목록 카드에서 여러 줄이 됩니다",
-    note: "국문 화면에서도 이 영문 제목이 그대로 나옵니다. 따옴표와 하이픈도 글자 수에 들어갑니다",
+    rule: "영문으로만 입력합니다. 목록 카드와 상세 맨 위에 나옵니다",
+    note: "국문 화면에서도 이 영문 제목이 그대로 나옵니다",
     empty: "공개할 수 없습니다"
   },
   cat: {
@@ -113,14 +112,14 @@ const HELP = {
   sum: {
     title: "한 줄 요약",
     use: "구글 검색 결과에서 제목 아래 나오는 설명문. 링크를 공유할 때도 이 글이 보입니다. 화면에는 나오지 않습니다",
-    rule: "국문 80자 · 영문 155자. 넘으면 검색 결과에서 잘립니다",
-    note: "무엇을 어떻게 바꿨는지 한 문장으로. 검색하는 사람이 이 글을 보고 누를지 정합니다",
+    rule: "무엇을 어떻게 바꿨는지 한 문장으로. 검색하는 사람이 이 글을 보고 누를지 정합니다",
+    note: "검색 결과에는 앞부분만 표시됩니다",
     empty: "공개할 수 없습니다. 검색 결과에 설명이 없으면 클릭률이 떨어집니다"
   },
   alt: {
     title: "대체 텍스트",
     use: "이미지가 안 뜰 때 그 자리에 나오는 글. 화면 읽기 프로그램이 읽어주고, 검색엔진과 AI 도 이 글로 이미지를 이해합니다",
-    rule: "보이는 것을 그대로 씁니다. 40자 안쪽",
+    rule: "보이는 것을 그대로 씁니다",
     note: "「이미지」 「사진」 같은 말은 넣지 마세요. 무엇이 찍혀 있는지만 적습니다",
     empty: "공개할 수 없습니다"
   },
@@ -391,7 +390,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const keyFilled = !isPlaceholderKey(draft.key_image);
   const cardFilled = filled(draft.card_image);
   const screenDone = [
-    filled(titleEn) && titleCount <= WORK_TITLE_EN_MAX,
+    filled(titleEn),
     draft.category_ids.length > 0,
     filled(draft.year),
     tags.length > 0,
@@ -404,7 +403,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   ].filter(Boolean).length;
   const searchDone = [
     filled(draft.slug),
-    filled(draft.summary.ko) && draft.summary.ko.length <= 80 && draft.summary.en.length <= 155,
+    filled(draft.summary.ko),
     filled(draft.key_image_alt.ko)
   ].filter(Boolean).length;
 
@@ -641,11 +640,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               <button type="button" className="q" onClick={() => toggleHelp("title")}>
                 ?
               </button>
-              <span className={titleCount > WORK_TITLE_EN_MAX ? "cc over" : "cc"}>
-                <b>{titleCount}</b> / {WORK_TITLE_EN_MAX}
-              </span>
+              <span className="cc">영문 {titleCount}</span>
             </div>
             <input className="i" value={titleEn} onChange={(e) => setTitleEn(e.target.value)} />
+            <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <p className="hint-line">영문으로만 입력합니다. 목록 카드와 상세 맨 위에 나옵니다</p>
             <HelpPanel
               open={openHelp === "title"}
@@ -1190,10 +1188,9 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               />
             </div>
             <div className="sum-foot">
-              <p className="hint-line">검색 결과에 제목 아래 나오는 설명문입니다</p>
+              <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
               <span className="cc">
-                국문 <b>{draft.summary.ko.length}</b>/80 · 영문 <b>{draft.summary.en.length}</b>
-                /155
+                국문 {draft.summary.ko.length} · 영문 {draft.summary.en.length}
               </span>
             </div>
             <HelpPanel
@@ -1210,8 +1207,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               <button type="button" className="q" onClick={() => toggleHelp("alt")}>
                 ?
               </button>
-              <span className={draft.key_image_alt.ko.length > 40 ? "cc over" : "cc"}>
-                국문 <b>{draft.key_image_alt.ko.length}</b> / 40
+              <span className="cc">
+                국문 {draft.key_image_alt.ko.length} · 영문 {draft.key_image_alt.en.length}
               </span>
             </div>
             <div className="two">
@@ -1353,7 +1350,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
           <div className="two">
             <div>
-              <p className="hint-line">국문 · {summaryDraft.ko.length} / 80</p>
+              <p className="hint-line">국문 · {summaryDraft.ko.length}</p>
               <textarea
                 className="i"
                 rows={7}
@@ -1362,7 +1359,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               />
             </div>
             <div>
-              <p className="hint-line">영문 · {summaryDraft.en.length} / 155</p>
+              <p className="hint-line">영문 · {summaryDraft.en.length}</p>
               <textarea
                 className="i"
                 rows={7}

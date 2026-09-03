@@ -1,4 +1,10 @@
-import { IMAGE_MIN_LONG_EDGE, imageLongEdgeRejectMessage, isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
+import {
+  IMAGE_MIN_LONG_EDGE,
+  INSIGHT_KEY_MIN_LONG_EDGE,
+  imageLongEdgeRejectMessage,
+  insightKeyCropTooSmallMessage,
+  isLongEdgeTooSmall
+} from "@/lib/website/image-long-edge";
 
 export const KEY_IMAGE_MIN_WIDTH = IMAGE_MIN_LONG_EDGE;
 export const KEY_IMAGE_MIN_HEIGHT = IMAGE_MIN_LONG_EDGE;
@@ -37,16 +43,20 @@ export function keyImageRejectMessage(reject: KeyImageReject): string {
   return imageLongEdgeRejectMessage(reject.width, reject.height);
 }
 
-export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = IMAGE_MIN_LONG_EDGE;
+export const INSIGHT_KEY_IMAGE_MIN_LONG_SIDE = INSIGHT_KEY_MIN_LONG_EDGE;
 
 export function insightKeyImageTooSmall(
   width: number,
   height: number,
   opts?: { mime?: string | null; src?: string | null }
 ): boolean {
-  return isLongEdgeTooSmall(width, height, opts);
+  return isLongEdgeTooSmall(width, height, { ...opts, minLong: INSIGHT_KEY_MIN_LONG_EDGE });
 }
 
 export function insightKeyImageWarnMessage(width: number, height: number): string {
-  return imageLongEdgeRejectMessage(width, height);
+  return imageLongEdgeRejectMessage(width, height, INSIGHT_KEY_MIN_LONG_EDGE);
+}
+
+export function insightKeyCropRejectMessage() {
+  return insightKeyCropTooSmallMessage();
 }

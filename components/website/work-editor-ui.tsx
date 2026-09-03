@@ -44,48 +44,31 @@ export function AiBadge() {
 
 export function CharPair({
   ko,
-  en,
-  koLimit,
-  enLimit,
-  koWarn,
-  enWarn
+  en
 }: {
   ko: number;
   en: number;
-  koLimit: number;
-  enLimit: number;
-  koWarn: number;
-  enWarn: number;
 }) {
   return (
     <span className="ml-auto font-normal text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
-      국문 <Count n={ko} warn={koWarn} max={koLimit} /> / {koLimit}
+      국문 {ko}
       {" · "}
-      영문 <Count n={en} warn={enWarn} max={enLimit} /> / {enLimit}
+      영문 {en}
     </span>
   );
 }
 
-export function CharKo({ n, limit, warn }: { n: number; limit: number; warn: number }) {
+export function CharKo({ n }: { n: number }) {
   return (
     <span className="ml-auto font-normal text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
-      국문 <Count n={n} warn={warn} max={limit} /> / {limit}
+      국문 {n}
     </span>
   );
 }
 
-/** 제목 칸 — CharKo 와 같지만 폭 기준 값을 넘긴다 */
-export function CharWidthKo({ n, limit, warn }: { n: number; limit: number; warn: number }) {
-  return (
-    <span className="ml-auto font-normal text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
-      국문 <Count n={n} warn={warn} max={limit} /> / {limit}
-    </span>
-  );
-}
-
-function Count({ n, warn, max }: { n: number; warn: number; max: number }) {
-  const color = n > max ? "text-red-600" : n > warn ? "text-amber-500" : "";
-  return <span className={color}>{n}</span>;
+/** @deprecated CharKo 와 동일. 폭 한도 UI 제거 후 호환용 */
+export function CharWidthKo({ n }: { n: number }) {
+  return <CharKo n={n} />;
 }
 
 export function FieldLabel({

@@ -106,7 +106,7 @@ export function buildWorkCheckItems(
       kind: "problem",
       tab: "content",
       title: "본문 이미지에 대체 텍스트가 없습니다",
-      where: whereLine("content", "대체 텍스트 — 국문 40자 이내. 화면에 안 보입니다")
+      where: whereLine("content", "대체 텍스트를 채워 주세요. 화면에 안 보입니다")
     },
     {
       flag: "ai_unconfirmed",
@@ -182,13 +182,6 @@ export function buildWorkCheckItems(
       tab: "basic",
       title: "내부 폴더가 없습니다",
       where: whereLine("basic", "나중에 루나가 이 워크와 내부 자료를 같은 프로젝트로 인식합니다")
-    },
-    {
-      flag: "summary_too_long",
-      kind: "warn",
-      tab: "basic",
-      title: "요약이 너무 깁니다",
-      where: whereLine("basic", "구글 검색 결과에서 뒤가 잘립니다")
     },
     {
       flag: "duplicate_captions",

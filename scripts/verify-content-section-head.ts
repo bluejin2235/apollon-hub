@@ -162,7 +162,7 @@ async function main() {
     await drop.click();
     await page.locator(".lead-ov").waitFor({ state: "visible", timeout: 10_000 });
 
-    const editor = page.locator(".lead-ed").first();
+    const editor = page.locator(".rte-ed").first();
     await editor.click();
     await page.keyboard.press("Home");
     await page.keyboard.down("Shift");

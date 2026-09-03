@@ -47,7 +47,6 @@ import {
   AiBadge,
   AiBtn,
   BilingualField,
-  CharKo,
   CharPair,
   FieldLabel,
   GhostBtn,
@@ -544,8 +543,7 @@ export function BlockCard({
                 ))}
               </div>
               <Guide>
-                한 칸에 국문 60~120자. 칸끼리 길이를 비슷하게 맞추면 화면에서 높이가 어긋나지
-                않습니다.
+                칸끼리 길이를 비슷하게 맞추면 화면에서 높이가 어긋나지 않습니다.
               </Guide>
             </div>
           ) : hasBody(block.preset) ? (
@@ -571,11 +569,9 @@ export function BlockCard({
                 <b className="font-semibold text-slate-600">글꼴 · 자간 · 글자색은 없습니다.</b> 화면 스타일은 사이트가
                 정합니다
                 <Sep />
-                한 문단은 <b className="font-semibold text-slate-600">국문 150자 이내</b>가 읽기 좋습니다. 그보다 길면
-                문단을 나누세요.
+                한 문단이 길면 문단을 나누세요.
                 <br />
-                소제목은 <b className="font-semibold text-slate-600">국문 20자 이내</b>. 소제목 아래 첫 문장에 결론을 쓰면
-                AI가 그 덩어리를 인용합니다.
+                소제목 아래 첫 문장에 결론을 쓰면 AI가 그 덩어리를 인용합니다.
               </Guide>
             </div>
           ) : null}
@@ -715,10 +711,6 @@ function ColumnBodyField({
           <CharPair
             ko={value.ko.length}
             en={value.en.length}
-            koLimit={120}
-            enLimit={240}
-            koWarn={60}
-            enWarn={240}
           />
         }
       >
@@ -857,10 +849,10 @@ function ImagesEditor({
         />
       </div>
       <Guide>
-        <GuideTerm anchorId="text-caption">대체 텍스트</GuideTerm> — 국문 40자 이내. 화면에 안 보입니다. 무엇이 찍혔는지
+        <GuideTerm anchorId="text-caption">대체 텍스트</GuideTerm> — 화면에 안 보입니다. 무엇이 찍혔는지
         사실만. 모든 이미지에 필수입니다.
         <br />
-        <GuideTerm anchorId="text-caption">캡션</GuideTerm> — 국문 40~90자, 1~2문장.{" "}
+        <GuideTerm anchorId="text-caption">캡션</GuideTerm> — 1~2문장.{" "}
         <b className="font-semibold text-slate-600">화면에 보입니다.</b> AI가 인용하는 것도 이쪽입니다. 말할 것이 있는
         이미지에만 켜세요. 워크 하나에 <b className="font-semibold text-slate-600">5~8장</b>이 적당합니다.
         <br />
@@ -958,7 +950,11 @@ function ImageRow({
           <button type="button" onClick={() => void remove()} className="text-rose-600">삭제</button>
         </div>
         <div>
-          <FieldLabel extra={<CharKo n={alt.ko.length} warn={40} limit={40} />}>대체 텍스트</FieldLabel>
+          <FieldLabel
+            extra={<CharPair ko={alt.ko.length} en={alt.en.length} />}
+          >
+            대체 텍스트
+          </FieldLabel>
           <BilingualField
             ko={alt.ko}
             en={alt.en}
@@ -993,7 +989,11 @@ function ImageRow({
           />
         </div>
         <div>
-          <FieldLabel extra={<CharKo n={caption.ko.length} warn={90} limit={90} />}>캡션</FieldLabel>
+          <FieldLabel
+            extra={<CharPair ko={caption.ko.length} en={caption.en.length} />}
+          >
+            캡션
+          </FieldLabel>
           <BilingualField
             ko={caption.ko}
             en={caption.en}
@@ -1404,7 +1404,11 @@ function VideoFields({
         />
       </div>
       <div className="mt-2">
-        <FieldLabel extra={<CharKo n={caption.ko.length} warn={90} limit={90} />}>캡션</FieldLabel>
+        <FieldLabel
+          extra={<CharPair ko={caption.ko.length} en={caption.en.length} />}
+        >
+          캡션
+        </FieldLabel>
         <BilingualField
           ko={caption.ko}
           en={caption.en}
@@ -1440,7 +1444,7 @@ function VideoFields({
           <>
             <GuideTerm anchorId="video-main">{VIDEO_LABELS.detailMovie}</GuideTerm> —{" "}
             <b className="font-semibold text-slate-600">{formatDetailMovieHint()}.</b> 클릭하면 재생됩니다.{" "}
-            <GuideTerm anchorId="video-export">비트레이트</GuideTerm> 2Mbps 이하를 권장합니다.
+            <GuideTerm anchorId="video-export">비트레이트</GuideTerm> 목표 8Mbps · 최대 14Mbps.
             <br />
             목록 카드에서 마우스를 올리면 도는{" "}
             <GuideTerm anchorId="video-loop">배경 루프</GuideTerm>는 기본정보 탭에서 따로 올립니다.
@@ -1547,7 +1551,11 @@ function EmbedFields({
         onBlur={onTitleBlur}
       />
       <div>
-        <FieldLabel extra={<CharKo n={caption.ko.length} warn={90} limit={90} />}>캡션</FieldLabel>
+        <FieldLabel
+          extra={<CharPair ko={caption.ko.length} en={caption.en.length} />}
+        >
+          캡션
+        </FieldLabel>
         <BilingualField
           ko={caption.ko}
           en={caption.en}

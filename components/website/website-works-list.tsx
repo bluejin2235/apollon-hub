@@ -503,7 +503,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                             </span>
                           )}
                           <span className="min-w-0">
-                            <span className="block font-medium text-slate-900">{workTitle(item)}</span>
+                            <span className="block line-clamp-2 font-medium text-slate-900">{workTitle(item)}</span>
                             <span className="block truncate text-slate-400" style={{ fontSize: "var(--fs-caption)" }}>
                               /works/{item.slug}
                             </span>
@@ -552,7 +552,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-slate-900">{workTitle(item)}</span>
+                      <span className="block line-clamp-2 font-medium text-slate-900">{workTitle(item)}</span>
                       <span className="mt-1 block whitespace-nowrap text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
                         {categoryLabel(item)} · {item.year ?? "—"}
                       </span>

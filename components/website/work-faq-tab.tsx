@@ -6,10 +6,11 @@ import { addFaq, deleteFaq, reorderFaqs, updateFaq } from "@/lib/website/api";
 import type { Loc, WorkDetail, WorkFaq } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { AutoSaveLabel } from "@/components/website/partial-save-btn";
 import {
   AiBtn,
   BilingualField,
-  CharKo,
+  CharPair,
   FieldLabel,
   GhostBtn,
   Guide,
@@ -80,7 +81,17 @@ export function WorkFaqTab({ work, saving, onToggleShowFaq, onReload }: Props) {
   }
 
   return (
-    <div>
+    <div className="wa">
+      <div className="grph">
+        <h3>FAQ</h3>
+        <div className="grpr">
+          <AutoSaveLabel />
+        </div>
+      </div>
+      <p className="grpd">
+        문항을 고치면 포커스를 벗어날 때 바로 저장됩니다. 워크 상세 맨 아래에 아코디언으로 나옵니다.
+      </p>
+
       <div className="mb-5">
         <ToggleRow
           on={work.show_faq}
@@ -218,7 +229,11 @@ function FaqCard({
       {open ? (
         <div className="space-y-3 p-3.5">
           <div>
-            <FieldLabel extra={<CharKo n={question.ko.length} warn={45} limit={45} />}>질문</FieldLabel>
+            <FieldLabel
+              extra={<CharPair ko={question.ko.length} en={question.en.length} />}
+            >
+              질문
+            </FieldLabel>
             <BilingualField
               ko={question.ko}
               en={question.en}
@@ -227,8 +242,7 @@ function FaqCard({
               onBlur={() => void persist()}
             />
             <Guide>
-              <b className="font-semibold text-slate-600">국문 15~45자</b> · 반드시{" "}
-              <b className="font-semibold text-slate-600">물음표로 끝나는 완전한 문장</b>
+              반드시 <b className="font-semibold text-slate-600">물음표로 끝나는 완전한 문장</b>
               <Sep />
               사람이 검색창이나 AI에 실제로 칠 법한 말로 씁니다.
               <br />
@@ -239,7 +253,11 @@ function FaqCard({
             </Guide>
           </div>
           <div>
-            <FieldLabel extra={<CharKo n={answer.ko.length} warn={200} limit={200} />}>답변</FieldLabel>
+            <FieldLabel
+              extra={<CharPair ko={answer.ko.length} en={answer.en.length} />}
+            >
+              답변
+            </FieldLabel>
             <BilingualField
               ko={answer.ko}
               en={answer.en}
@@ -249,11 +267,8 @@ function FaqCard({
               onBlur={() => void persist()}
             />
             <Guide>
-              <b className="font-semibold text-slate-600">국문 70~200자</b> ·{" "}
-              <b className="font-semibold text-slate-600">2~3문장</b>
+              <b className="font-semibold text-slate-600">2~3문장</b>이 AI 인용에 잘 맞습니다.
               <Sep />
-              이 길이가 AI 인용에 가장 좋습니다. 너무 짧으면 인용할 내용이 없고, 너무 길면 통째로 인용되지 않습니다.
-              <br />
               <b className="font-semibold text-slate-600">첫 문장에 답을 먼저</b> 쓰고 그다음에 설명합니다. 프로젝트
               이름·숫자·기술 용어를 넣으세요.
             </Guide>

@@ -1,9 +1,14 @@
 export const IMAGE_MIN_LONG_EDGE = 1600;
+export const INSIGHT_KEY_MIN_LONG_EDGE = 800;
 export const BODY_STORE_LONG_EDGE = 3200;
 export const KEY_STORE_LONG_EDGE = 2560;
 
-export function imageLongEdgeRejectMessage(width: number, height: number) {
-  return `긴 변이 1600 이상이어야 합니다. 지금 ${width}×${height} 입니다`;
+export function imageLongEdgeRejectMessage(width: number, height: number, minLong = IMAGE_MIN_LONG_EDGE) {
+  return `긴 변이 ${minLong} 이상이어야 합니다. 지금 ${width}×${height} 입니다`;
+}
+
+export function insightKeyCropTooSmallMessage() {
+  return "자른 크기가 너무 작습니다. 더 넓게 잘라 주세요";
 }
 
 export function isGifImageSrc(src: string | null | undefined): boolean {
@@ -18,13 +23,13 @@ export function isGifMime(mime: string | null | undefined): boolean {
 export function isLongEdgeTooSmall(
   width: number | null | undefined,
   height: number | null | undefined,
-  opts?: { mime?: string | null; src?: string | null }
+  opts?: { mime?: string | null; src?: string | null; minLong?: number }
 ) {
   if (isGifMime(opts?.mime) || isGifImageSrc(opts?.src)) return false;
   if (typeof width !== "number" || typeof height !== "number" || width <= 0 || height <= 0) {
     return false;
   }
-  return Math.max(width, height) < IMAGE_MIN_LONG_EDGE;
+  return Math.max(width, height) < (opts?.minLong ?? IMAGE_MIN_LONG_EDGE);
 }
 
 export function formatBytes(n: number | null | undefined) {

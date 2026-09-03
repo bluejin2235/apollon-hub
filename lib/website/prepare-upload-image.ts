@@ -1,13 +1,14 @@
 import {
   BODY_STORE_LONG_EDGE,
   IMAGE_MIN_LONG_EDGE,
+  INSIGHT_KEY_MIN_LONG_EDGE,
   KEY_STORE_LONG_EDGE,
   formatBytes,
   formatShrinkLine,
   imageLongEdgeRejectMessage
 } from "@/lib/website/image-long-edge";
 
-export type PrepareKind = "body" | "key";
+export type PrepareKind = "body" | "key" | "insight-key";
 
 export type PreparedImage = {
   file: File;
@@ -89,11 +90,12 @@ export async function prepareImageForUpload(
     };
   }
 
-  if (Math.max(size.width, size.height) < IMAGE_MIN_LONG_EDGE) {
-    return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height) };
+  const minLong = kind === "insight-key" ? INSIGHT_KEY_MIN_LONG_EDGE : IMAGE_MIN_LONG_EDGE;
+  if (Math.max(size.width, size.height) < minLong) {
+    return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height, minLong) };
   }
 
-  const maxLong = kind === "key" ? KEY_STORE_LONG_EDGE : BODY_STORE_LONG_EDGE;
+  const maxLong = kind === "body" ? BODY_STORE_LONG_EDGE : KEY_STORE_LONG_EDGE;
   const next = fitLongEdge(size.width, size.height, maxLong);
   const canvas = document.createElement("canvas");
   canvas.width = next.width;
