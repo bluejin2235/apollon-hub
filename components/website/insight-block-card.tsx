@@ -14,7 +14,7 @@ import {
   type PartialSaveState
 } from "@/components/website/partial-save-btn";
 import { Field } from "@/components/website/ui";
-import { locField, TextInput } from "@/components/website/work-editor-ui";
+import { locField, TextInput, ToggleRow } from "@/components/website/work-editor-ui";
 import { imageLimitForPreset } from "@/components/website/block-presets";
 import {
   addInsightImages,
@@ -721,10 +721,12 @@ function InsightImageRow({
 }) {
   const [alt, setAlt] = useState<Loc>(asLoc(image.alt));
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
+  const [visible, setVisible] = useState(Boolean(image.caption_visible));
 
   useEffect(() => {
     setAlt(asLoc(image.alt));
     setCaption(asLoc(image.caption));
+    setVisible(Boolean(image.caption_visible));
   }, [image]);
 
   return (
@@ -819,6 +821,15 @@ function InsightImageRow({
             </div>
           </div>
         </Field>
+        <ToggleRow
+          on={visible}
+          title="화면에 캡션 표시"
+          onToggle={() => {
+            const next = !visible;
+            setVisible(next);
+            onQueueImage(image.id, { caption_visible: next });
+          }}
+        />
       </div>
     </div>
   );

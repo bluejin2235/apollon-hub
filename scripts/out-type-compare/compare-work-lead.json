@@ -1,0 +1,26 @@
+{
+  "viewport": "1920x1080",
+  "public": {
+    "fontSize": "20px",
+    "lineHeight": "30px",
+    "width": 831.4,
+    "height": 150,
+    "approxLines": 5,
+    "text": "스타에비뉴는 2009년 롯데면세점이 한류 붐과 함께 공간 마케팅의 거점으로 구축한 공간입니다. 이후 약 17년간 관광 트렌드와 방문객의 소비 방식은 크게 변화했고, 스타에비뉴 역시 롯데면세점과 명동을 대표하는 랜드마"
+  },
+  "editor": {
+    "fontSize": "20px",
+    "lineHeight": "30px",
+    "width": 831,
+    "height": 150,
+    "approxLines": 5,
+    "text": "스타에비뉴는 2009년 롯데면세점이 한류 붐과 함께 공간 마케팅의 거점으로 구축한 공간입니다. 이후 약 17년간 관광 트렌드와 방문객의 소비 방식은 크게 변화했고, 스타에비뉴 역시 롯데면세점과 명동을 대표하는 랜드마"
+  },
+  "lineMatch": true,
+  "fontMatch": true,
+  "widthDelta": -0.4,
+  "screenshots": {
+    "public": "D:\\Dev\\apollon-hub\\scripts\\out-type-compare\\compare-public-lead-1920.png",
+    "editor": "D:\\Dev\\apollon-hub\\scripts\\out-type-compare\\compare-editor-lead-1920.png"
+  }
+}

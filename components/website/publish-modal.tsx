@@ -12,6 +12,8 @@ type Props = {
   note: string;
   noteLoading: boolean;
   checkSkipWarning?: boolean;
+  /** 공개 실패 시 팝업 안에 보여 줄 이유. 있으면 열어 둔다 */
+  error?: string | null;
   onNoteChange: (value: string) => void;
   onRegenerate: () => void;
   onClose: () => void;
@@ -27,6 +29,7 @@ export function PublishModal({
   note,
   noteLoading,
   checkSkipWarning = false,
+  error = null,
   onNoteChange,
   onRegenerate,
   onClose,
@@ -108,6 +111,12 @@ export function PublishModal({
                   <p className="mt-1 text-xs text-slate-400">루나가 초안을 쓰는 중...</p>
                 ) : null}
               </div>
+
+              {error ? (
+                <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </div>
+              ) : null}
             </>
           )}
         </div>

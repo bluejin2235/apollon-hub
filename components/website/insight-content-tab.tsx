@@ -18,9 +18,17 @@ type Props = {
   insight: InsightDetail;
   siteUrl: string;
   onReload: () => Promise<void>;
+  focusBlockId?: string | null;
+  onFocusConsumed?: () => void;
 };
 
-export function InsightContentTab({ insight, siteUrl, onReload }: Props) {
+export function InsightContentTab({
+  insight,
+  siteUrl,
+  onReload,
+  focusBlockId = null,
+  onFocusConsumed
+}: Props) {
   const sections = [...(insight.insight_sections ?? [])].sort((a, b) => a.sort - b.sort);
   const homeSection = sections[0] ?? null;
   const allBlocks = flattenBlocks(sections, insight.insight_blocks ?? []);
@@ -28,6 +36,23 @@ export function InsightContentTab({ insight, siteUrl, onReload }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ensuringRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusBlockId) return;
+    setOpenBlockIds((prev) => {
+      const next = new Set(prev);
+      next.add(focusBlockId);
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      document.getElementById(`insight-block-${focusBlockId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      onFocusConsumed?.();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusBlockId, onFocusConsumed]);
 
   useEffect(() => {
     if (homeSection || ensuringRef.current) return;

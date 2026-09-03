@@ -16,6 +16,7 @@ import {
   fillInsightBasic,
   fillInsightBody,
   fillInsightRelated,
+  INSIGHT_CHECK_LABEL,
   INSIGHT_PROBLEM_FLAGS
 } from "@/lib/website/checks";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
@@ -34,6 +35,7 @@ import { InsightBasicTab } from "@/components/website/insight-basic-tab";
 import { InsightContentTab } from "@/components/website/insight-content-tab";
 import {
   buildInsightCheckItems,
+  findMissingInsightImageAlts,
   InsightPublishCheckList
 } from "@/components/website/insight-publish-check-panel";
 import { InsightRelatedTab } from "@/components/website/insight-related-tab";
@@ -113,6 +115,28 @@ function mergeCheck(check: CheckInsights | null, details: unknown): CheckInsight
   return next;
 }
 
+function publishBlockedMessage(details: unknown, insight: InsightDetail | null): string {
+  const flags =
+    details && typeof details === "object"
+      ? Object.entries(details as Record<string, unknown>)
+          .filter(([, v]) => v === true)
+          .map(([k]) => k)
+      : [];
+  if (flags.includes("missing_image_alt") && insight) {
+    const spots = findMissingInsightImageAlts(insight);
+    if (spots.length === 1) {
+      return `${spots[0]!.label}에 대체 텍스트가 없습니다`;
+    }
+    if (spots.length > 1) {
+      return `${spots[0]!.label}에 대체 텍스트가 없습니다 · 외 ${spots.length - 1}곳`;
+    }
+  }
+  const labels = flags.map(
+    (flag) => INSIGHT_CHECK_LABEL[flag as keyof typeof INSIGHT_CHECK_LABEL] ?? flag
+  );
+  return labels.length > 0 ? labels.join(" · ") : "공개할 수 없습니다";
+}
+
 export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -135,6 +159,8 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
   const [publishFirst, setPublishFirst] = useState(false);
   const [publishNote, setPublishNote] = useState("");
   const [publishNoteLoading, setPublishNoteLoading] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
   const [saveBeforePublishOpen, setSaveBeforePublishOpen] = useState(false);
   const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
   const [previewBlocked, setPreviewBlocked] = useState(false);
@@ -276,20 +302,24 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     if (!draft) return;
     setPublishModalOpen(true);
     setPublishPreviewLoading(true);
+    setPublishError(null);
     setError(null);
     try {
       if (!(await saveAll({ silent: true }))) {
-        setPublishModalOpen(false);
+        setPublishError("저장에 실패했습니다. 다시 시도해 주세요.");
         return;
       }
       const preview = await publishInsightPreview(insightId);
       if (!preview.ok) {
         if (preview.status === 409 && preview.error === "publish_blocked") {
           setCheckOverride(mergeCheck(insight?.check ?? null, preview.details));
-        } else {
-          setError(preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : ""));
+          setPublishError(publishBlockedMessage(preview.details, insight));
+          setCheckOpen(true);
+          return;
         }
-        setPublishModalOpen(false);
+        setPublishError(
+          preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : "")
+        );
         return;
       }
       const fields = preview.data.changedFields ?? [];
@@ -326,18 +356,23 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     if (!draft || !publishNote.trim()) return;
     setSaving(true);
     setError(null);
+    setPublishError(null);
     cancelPublishNav();
     try {
-      if (!(await saveAll({ silent: true }))) return;
+      if (!(await saveAll({ silent: true }))) {
+        setPublishError("저장에 실패했습니다. 다시 시도해 주세요.");
+        return;
+      }
 
       const published = await publishInsight(insightId, publishNote.trim());
       if (!published.ok) {
-        if (published.status === 400 && published.error === "publish_blocked") {
+        if (published.error === "publish_blocked") {
           setCheckOverride(mergeCheck(insight?.check ?? null, published.details));
-          setPublishModalOpen(false);
+          setPublishError(publishBlockedMessage(published.details, insight));
+          setCheckOpen(true);
           return;
         }
-        setError(
+        setPublishError(
           published.error + (published.details ? ` · ${JSON.stringify(published.details)}` : "")
         );
         return;
@@ -345,19 +380,36 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
 
       const statusPatch = await updateInsight(insightId, { status: "published" });
       if (!statusPatch.ok) {
-        setError(
+        if (statusPatch.error === "publish_blocked") {
+          // 스냅샷은 이미 올라감. 점검 목록은 갱신하되 팝업에 이유를 남긴다.
+          setCheckOverride(mergeCheck(insight?.check ?? null, statusPatch.details));
+          setPublishError(publishBlockedMessage(statusPatch.details, insight));
+          setCheckOpen(true);
+          return;
+        }
+        setPublishError(
           statusPatch.error + (statusPatch.details ? ` · ${JSON.stringify(statusPatch.details)}` : "")
         );
         return;
       }
 
       setPublishModalOpen(false);
+      setPublishError(null);
       await load();
       await refreshPublishPreview();
       if (isPreviewOpen()) refreshPreview();
       showToast({ message: "공개되었습니다", tone: "ok" });
     } finally {
       setSaving(false);
+    }
+  }
+
+  function goCheckTab(next: InsightEditorTab) {
+    setCheckOpen(false);
+    setTab(next);
+    const withBlock = checkItems.find((item) => item.tab === next && item.blockId);
+    if (withBlock?.blockId) {
+      setFocusBlockId(withBlock.blockId);
     }
   }
 
@@ -472,7 +524,13 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
           />
         ) : null}
         {tab === "content" ? (
-          <InsightContentTab insight={insight} siteUrl={siteUrl} onReload={load} />
+          <InsightContentTab
+            insight={insight}
+            siteUrl={siteUrl}
+            onReload={load}
+            focusBlockId={focusBlockId}
+            onFocusConsumed={() => setFocusBlockId(null)}
+          />
         ) : null}
         {tab === "related" ? (
           <InsightRelatedTab insight={insight} siteUrl={siteUrl} onReload={load} />
@@ -486,7 +544,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
         {canManageWorks && checkOpen && checkItems.length > 0 ? (
           <div className="absolute bottom-full left-0 right-0 border-t border-slate-200 bg-white">
             <div className="max-h-[40vh] overflow-y-auto px-4 sm:px-6 lg:px-8">
-              <InsightPublishCheckList items={checkItems} onGoTab={setTab} overlay />
+              <InsightPublishCheckList items={checkItems} onGoTab={goCheckTab} overlay />
             </div>
             <div className="-mb-px flex justify-center">
               <button
@@ -590,8 +648,12 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
         note={publishNote}
         noteLoading={publishNoteLoading}
         checkSkipWarning={skipCheck && !canPublish}
+        error={publishError}
         onNoteChange={setPublishNote}
-        onClose={() => setPublishModalOpen(false)}
+        onClose={() => {
+          setPublishModalOpen(false);
+          setPublishError(null);
+        }}
         onConfirm={() => void confirmPublish()}
         onRegenerate={() => void loadPublishNote(publishChangedFields, publishFirst)}
       />

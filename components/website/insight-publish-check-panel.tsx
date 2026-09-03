@@ -11,6 +11,7 @@ import {
   type InsightDetail,
   type InsightEditorTab
 } from "@/lib/website/insight-detail";
+import { asLoc } from "@/lib/website/work-detail";
 
 export type InsightCheckItemKind = "problem" | "warn";
 
@@ -20,6 +21,8 @@ export type InsightCheckItem = {
   tab: InsightEditorTab;
   title: string;
   where: string;
+  /** 본문 탭에서 펼칠 블록 */
+  blockId?: string;
 };
 
 const TAB_NAME: Record<InsightEditorTab, string> = {
@@ -65,6 +68,61 @@ const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
   stale_draft: "초안이 오래되었습니다. 내용을 확인하고 저장하세요."
 };
 
+const BLOCK_PRESET_LABEL: Record<string, string> = {
+  text: "글",
+  qa: "질문 · 답변",
+  full: "전폭 이미지",
+  split: "2단 나란히",
+  triple: "3단 나란히",
+  "gallery-auto": "자동 배치 갤러리",
+  stack: "위아래 두 장",
+  carousel: "가로 스크롤",
+  "video-full": "영상 전폭",
+  embed: "임베드"
+};
+
+export type MissingImageAltSpot = {
+  blockId: string;
+  blockIndex: number;
+  imageIndex: number;
+  label: string;
+};
+
+/** 국문 대체 텍스트가 비어 있는 본문 이미지 위치 */
+export function findMissingInsightImageAlts(insight: InsightDetail): MissingImageAltSpot[] {
+  const sections = [...(insight.insight_sections ?? [])].sort((a, b) => a.sort - b.sort);
+  const sectionIds = new Set(sections.map((s) => s.id));
+  const blocks = [...(insight.insight_blocks ?? [])].sort((a, b) => a.sort - b.sort);
+  const ordered = [
+    ...sections.flatMap((section) => blocks.filter((b) => b.section_id === section.id)),
+    ...blocks.filter((b) => !b.section_id || !sectionIds.has(b.section_id))
+  ];
+  // 중복 제거 (section 없는 블록이 두 번 잡히지 않게)
+  const seen = new Set<string>();
+  const unique = ordered.filter((b) => {
+    if (seen.has(b.id)) return false;
+    seen.add(b.id);
+    return true;
+  });
+
+  const spots: MissingImageAltSpot[] = [];
+  unique.forEach((block, blockIndex) => {
+    const images = [...(block.insight_images ?? [])].sort((a, b) => a.sort - b.sort);
+    images.forEach((image, imageIndex) => {
+      const alt = asLoc(image.alt);
+      if (alt.ko.trim()) return;
+      const preset = BLOCK_PRESET_LABEL[block.preset] ?? block.preset;
+      spots.push({
+        blockId: block.id,
+        blockIndex: blockIndex + 1,
+        imageIndex: imageIndex + 1,
+        label: `본문 ${blockIndex + 1}번째 블록(${preset}) · 이미지 ${imageIndex + 1}장`
+      });
+    });
+  });
+  return spots;
+}
+
 function whereLine(tab: InsightEditorTab, detail: string) {
   return `${TAB_NAME[tab]} · ${detail}`;
 }
@@ -80,17 +138,41 @@ export function buildInsightCheckItems(
   check: CheckInsights
 ): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
+  const missingAlts = findMissingInsightImageAlts(insight);
   const all: InsightCheckItem[] = [
-    ...INSIGHT_PROBLEM_FLAGS.map((flag) => ({
-      flag,
-      kind: "problem" as const,
-      tab: FLAG_TAB[flag],
-      title:
-        flag === "ai_unconfirmed" && aiCount > 0
-          ? `AI가 만든 캡션 ${aiCount}개가 확인 전입니다`
-          : INSIGHT_CHECK_LABEL[flag],
-      where: whereLine(FLAG_TAB[flag], FLAG_SUB[flag])
-    })),
+    ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
+      let title = INSIGHT_CHECK_LABEL[flag];
+      let where = whereLine(FLAG_TAB[flag], FLAG_SUB[flag]);
+      let blockId: string | undefined;
+
+      if (flag === "ai_unconfirmed" && aiCount > 0) {
+        title = `AI가 만든 캡션 ${aiCount}개가 확인 전입니다`;
+      }
+
+      if (flag === "missing_image_alt" && missingAlts.length > 0) {
+        const first = missingAlts[0]!;
+        title =
+          missingAlts.length === 1
+            ? `${first.label}에 대체 텍스트가 없습니다`
+            : `${first.label}에 대체 텍스트가 없습니다 · 외 ${missingAlts.length - 1}곳`;
+        where = whereLine(
+          "content",
+          missingAlts.length === 1
+            ? "대체 텍스트를 채워 주세요. 화면에 안 보입니다."
+            : missingAlts.map((s) => s.label).join(" · ")
+        );
+        blockId = first.blockId;
+      }
+
+      return {
+        flag,
+        kind: "problem" as const,
+        tab: FLAG_TAB[flag],
+        title,
+        where,
+        blockId
+      };
+    }),
     ...INSIGHT_WARN_FLAGS.map((flag) => ({
       flag,
       kind: "warn" as const,
