@@ -180,9 +180,21 @@
 }
 .wa .slugrow {
   display: flex;
+  align-items: stretch;
+  gap: 8px;
 }
 .wa .slugrow input.i {
   border-radius: 0 7px 7px 0;
+  min-width: 0;
+  flex: 1;
+}
+.wa .slugrow .slug-remake {
+  flex-shrink: 0;
+  align-self: center;
+}
+.wa input.i[type="date"] {
+  min-height: 38px;
+  color-scheme: light;
 }
 
 .wa .tip {
@@ -903,6 +915,10 @@
   border-color: var(--sc);
   color: var(--sc);
   background: var(--sbg);
+}
+.wa .addb:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 .wa .adds {
   border: 1.5px dashed #c3cad3;
