@@ -68,10 +68,18 @@ function serializeChildren(el: HTMLElement): string {
     .join("");
 }
 
+function isVisuallyEmptyHtml(inner: string): boolean {
+  return !inner
+    .replace(/<br\s*\/?>/gi, "")
+    .replace(/&nbsp;/gi, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
+
 function asParagraph(inner: string): string {
-  const trimmed = inner.trim();
-  if (!trimmed) return "";
-  return `<p>${trimmed}</p>`;
+  if (isVisuallyEmptyHtml(inner)) return "";
+  return `<p>${inner.trim()}</p>`;
 }
 
 function serialize(node: Node): string {
@@ -148,13 +156,23 @@ export function sanitizeInsightHtml(html: string): string {
   if (!root) {
     return escapeText(trimmed.replace(/<[^>]+>/g, ""));
   }
-  const out = serializeChildren(root)
-    .replace(/(<p>\s*<\/p>)+/gi, "")
+  let out = serializeChildren(root)
+    .replace(/<p>(?:\s|<br\s*\/?>|&nbsp;|\u00a0)*<\/p>/gi, "")
     .replace(/^(<br\s*\/?>)+/gi, "")
     .replace(/(<br\s*\/?>)+$/gi, "")
     .trim();
   if (!out) return "";
-  if (/^<(p|ul)\b/i.test(out)) return out;
+  if (!/<p\b/i.test(out) && /<br\s*\/?>/i.test(out)) {
+    out = out
+      .split(/<br\s*\/?>/i)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .map((part) => asParagraph(part))
+      .join("");
+  }
+  out = out.replace(/<p>(?:\s|<br\s*\/?>|&nbsp;|\u00a0)*<\/p>/gi, "").trim();
+  if (!out) return "";
+  if (/^<(p|ul|h[23])\b/i.test(out)) return out;
   return asParagraph(out);
 }
 
@@ -173,7 +191,33 @@ export function insightLooksLikeHtml(value: string): boolean {
 
 export function insightToEditorHtml(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (insightLooksLikeHtml(value)) return sanitizeInsightHtml(value);
-  return insightPlainToHtml(value);
+  if (!trimmed) return "<p><br></p>";
+  if (insightLooksLikeHtml(value)) {
+    const clean = sanitizeInsightHtml(value);
+    if (!clean) return "<p><br></p>";
+    if (/^<(p|ul|h[23])\b/i.test(clean)) return clean;
+    return asParagraph(clean);
+  }
+  return insightPlainToHtml(value) || "<p><br></p>";
+}
+
+export function insightPlainText(html: string): string {
+  return sanitizeInsightHtml(html)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\u00a0/g, " ");
+}
+
+export function insightCharCount(html: string): number {
+  return insightPlainText(html).replace(/\n+/g, "").length;
+}
+
+export function insightIsEmpty(html: string): boolean {
+  return insightCharCount(html) === 0;
 }

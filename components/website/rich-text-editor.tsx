@@ -19,10 +19,32 @@ export type RichTextField = {
   onBlur?: () => void;
 };
 
+/** 공개 화면마다 폭·문단 간격이 다르다. 쓰는 쪽이 자기 값을 고른다. */
+export type RichTextSurface = "work-lead" | "insight-body";
+
+/** 공개 화면 실측(1920) 기준 기본값. prop 으로 덮어쓸 수 있다. */
+export const RICH_TEXT_SURFACE_DEFAULTS: Record<
+  RichTextSurface,
+  { fontSize: string; lineHeight: string; contentWidth: number }
+> = {
+  /* content__body type(b1) · p 폭 831.4 */
+  "work-lead": { fontSize: "20px", lineHeight: "30px", contentWidth: 831 },
+  /* 팝업만 축소: 15px · 줄바꿈 맞추려 1312×15/20=984 */
+  "insight-body": { fontSize: "15px", lineHeight: "23px", contentWidth: 984 }
+};
+
 type Props = {
   fields: RichTextField[];
   sanitize: (html: string) => string;
   toEditorHtml: (text: string) => string;
+  /** 워크 기본 설명 · 인사이트 본문 — 문단 간격 클래스 */
+  surface: RichTextSurface;
+  /** 공개 화면 글자 크기. 없으면 surface 기본값 */
+  fontSize?: string;
+  /** 공개 화면 줄 간격. 없으면 surface 기본값 */
+  lineHeight?: string;
+  /** 공개 화면 본문 칸 폭(px). 없으면 surface 기본값 */
+  contentWidth?: number;
 };
 
 function run(command: string, value?: string) {
@@ -31,9 +53,22 @@ function run(command: string, value?: string) {
 
 /**
  * 글 편집기 하나. 워크 기본 설명 · 인사이트 본문이 같이 씁니다.
- * 도구를 여기만 고치면 모든 칸에 같이 적용됩니다.
+ * 도구는 공유하고, 크기·폭·문단 간격은 surface / prop 으로 나눕니다.
  */
-export function RichTextEditor({ fields, sanitize, toEditorHtml }: Props) {
+export function RichTextEditor({
+  fields,
+  sanitize,
+  toEditorHtml,
+  surface,
+  fontSize,
+  lineHeight,
+  contentWidth
+}: Props) {
+  const defaults = RICH_TEXT_SURFACE_DEFAULTS[surface];
+  const size = fontSize ?? defaults.fontSize;
+  const leading = lineHeight ?? defaults.lineHeight;
+  const width = contentWidth ?? defaults.contentWidth;
+
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const activeId = useRef(fields[0]?.id ?? "");
   const fieldsRef = useRef(fields);
@@ -53,7 +88,7 @@ export function RichTextEditor({ fields, sanitize, toEditorHtml }: Props) {
     for (const field of fieldsRef.current) {
       const el = refs.current[field.id];
       if (!el) continue;
-      const next = field.value || "<p></p>";
+      const next = field.value || "<p><br></p>";
       if (el.innerHTML !== next) el.innerHTML = next;
     }
   }, [valueKey]);
@@ -121,6 +156,11 @@ export function RichTextEditor({ fields, sanitize, toEditorHtml }: Props) {
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
   }
+
+  // 크기·폭은 CSS .rte-ed--{surface}. 인라인 style 금지.
+  void size;
+  void leading;
+  void width;
 
   return (
     <div className="rte">
@@ -191,7 +231,7 @@ export function RichTextEditor({ fields, sanitize, toEditorHtml }: Props) {
                 ref={(el) => {
                   refs.current[field.id] = el;
                 }}
-                className="rte-ed"
+                className={`rte-ed rte-ed--${surface}`}
                 contentEditable
                 suppressContentEditableWarning
                 onFocus={() => {

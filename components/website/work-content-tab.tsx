@@ -15,7 +15,7 @@ import { workFolderPrefix } from "@/lib/website/upload-path";
 import { BlockCard } from "@/components/website/block-card";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
-import { LeadHtmlModal, LEAD_EN_LIMIT, LEAD_KO_LIMIT } from "@/components/website/lead-html-modal";
+import { LeadHtmlModal } from "@/components/website/lead-html-modal";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
@@ -103,11 +103,9 @@ function Bi({
 
 function LeadDrop({
   html,
-  limit,
   onOpen
 }: {
   html: string;
-  limit: number;
   onOpen: () => void;
 }) {
   const empty = leadIsEmpty(html);
@@ -133,18 +131,16 @@ function LeadDrop({
         <span className="lead-ph">눌러서 쓰기</span>
       ) : asHtml ? (
         <span
-          className="lead-html"
+          className="lead-html lead-html--work-lead"
           dangerouslySetInnerHTML={{ __html: sanitizeLeadHtml(html) }}
         />
       ) : (
-        <span className="lead-html is-plain">{html}</span>
+        <span className="lead-html lead-html--work-lead is-plain">{html}</span>
       )}
       {empty ? null : (
         <span className="lead-foot">
           <span>눌러서 고치기</span>
-          <span>
-            {count} / {limit}
-          </span>
+          <span>{count}</span>
         </span>
       )}
     </div>
@@ -589,14 +585,12 @@ function SectionBody({
           label="섹션 제목"
           required
           counts={[
-            { label: "국문", value: headline.ko.length, limit: 16 },
-            { label: "영문", value: headline.en.length, limit: 16 }
+            { label: "국문", value: headline.ko.length },
+            { label: "영문", value: headline.en.length }
           ]}
           tip={
             <>
-              <b>16자 이내 · 짧을수록 좋습니다</b>
-              <br />
-              왼쪽 앵커 메뉴에 그대로 들어갑니다. 길면 메뉴에서 잘립니다. 섹션은 8개까지.
+              왼쪽 앵커 메뉴에 그대로 들어갑니다. 섹션은 8개까지.
               9개째부터 메뉴가 화면에서 넘칩니다.
               <br />
               <span className="ex">
@@ -621,18 +615,16 @@ function SectionBody({
               markDirty();
             }}
           />
-          <div className="hint-line">왼쪽 앵커 메뉴에 그대로 들어갑니다. 16자 이내</div>
+          <div className="hint-line">왼쪽 앵커 메뉴에 그대로 들어갑니다</div>
         </Field>
         <Field
           label="기본 설명"
           counts={[
-            { label: "국문", value: leadCharCount(lead.ko), recommend: 240, limit: LEAD_KO_LIMIT },
-            { label: "영문", value: leadCharCount(lead.en), recommend: 480, limit: LEAD_EN_LIMIT }
+            { label: "국문", value: leadCharCount(lead.ko) },
+            { label: "영문", value: leadCharCount(lead.en) }
           ]}
           tip={
             <>
-              <b>국문 300자 · 영문 600자 · 2~3문장</b>
-              <br />
               제목 바로 옆 고정 위치라 길이가 들쭉날쭉하면 블록마다 높이가 달라집니다. 이 섹션이
               무엇에 대한 것인지를 먼저 쓰세요.
               <br />
@@ -642,11 +634,11 @@ function SectionBody({
         >
           <div className="seclang">
             <span className="tag">국문</span>
-            <LeadDrop html={lead.ko} limit={LEAD_KO_LIMIT} onOpen={() => setLeadOpen(true)} />
+            <LeadDrop html={lead.ko} onOpen={() => setLeadOpen(true)} />
           </div>
           <div className="seclang">
             <span className="tag">영문</span>
-            <LeadDrop html={lead.en} limit={LEAD_EN_LIMIT} onOpen={() => setLeadOpen(true)} />
+            <LeadDrop html={lead.en} onOpen={() => setLeadOpen(true)} />
           </div>
           <div className="hint-line">누르면 큰 창이 열립니다. 볼드 · 색 · 줄바꿈을 쓸 수 있습니다</div>
         </Field>
@@ -656,6 +648,11 @@ function SectionBody({
         subtitle={`${sectionIndex + 1} ${headline.ko.trim() || headline.en.trim() || "제목 없음"}`}
         ko={lead.ko}
         en={lead.en}
+        surface="work-lead"
+        limits={{ ko: 500, en: 1000 }}
+        fontSize="20px"
+        lineHeight="30px"
+        contentWidth={831}
         onCancel={() => setLeadOpen(false)}
         onSave={(next) => {
           setLead({ ko: next.ko, en: next.en });
