@@ -1325,3 +1325,39 @@ export async function generatePublishNote(
     source: body?.data?.source ?? "fallback"
   };
 }
+
+export async function generateInsightSlug(title: {
+  ko: string;
+  en: string;
+}): Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
+  const token = await accessToken();
+  if (!token) {
+    return { ok: false, reason: "로그인이 필요합니다" };
+  }
+
+  const res = await fetch("/api/website/luna/insight-slug", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ title })
+  });
+
+  const body = (await res.json().catch(() => null)) as {
+    data?: { slug?: string };
+    reason?: string;
+    error?: string;
+  } | null;
+
+  const slug = body?.data?.slug?.trim() ?? "";
+  if (res.ok && slug) {
+    return { ok: true, slug };
+  }
+
+  return {
+    ok: false,
+    reason: body?.reason?.trim() || body?.error?.trim() || "주소를 만들지 못했습니다"
+  };
+}

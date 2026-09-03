@@ -163,8 +163,9 @@ function resolveSignedTarget(props: {
   return null;
 }
 
-function prepareKind(kind: Kind): "key" | "body" {
-  if (kind === "key" || kind === "insight-key" || kind === "poster") return "key";
+function prepareKind(kind: Kind): "key" | "body" | "insight-key" {
+  if (kind === "insight-key") return "insight-key";
+  if (kind === "key" || kind === "poster") return "key";
   return "body";
 }
 
@@ -598,9 +599,11 @@ export function ImageUploader({
               : await uploadFile(send, bucket, uploadObjectPath(folder, filename), {
                   signal: controller.signal,
                   fields:
-                    kind === "key" || kind === "insight-key" || kind === "poster"
-                      ? { role: "key" }
-                      : undefined,
+                    kind === "insight-key"
+                      ? { role: "insight-key" }
+                      : kind === "key" || kind === "poster"
+                        ? { role: "key" }
+                        : undefined,
                   onProgress
                 });
 
