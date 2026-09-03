@@ -6,6 +6,7 @@ import "./ui/work-admin.css";
 
 type Props = {
   workId: string;
+  contentType?: "work" | "insight";
 };
 
 function formatHistoryWhen(iso: string): string {
@@ -28,13 +29,13 @@ function formatHistoryWhen(iso: string): string {
   return `${pick("year")}. ${pick("month")}. ${pick("day")} ${dayPeriod} ${hour}:${minute}`;
 }
 
-export function WorkHistoryTab({ workId }: Props) {
+export function WorkHistoryTab({ workId, contentType = "work" }: Props) {
   const [items, setItems] = useState<PublishHistoryItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getPublishHistory("work", workId).then((res) => {
+    void getPublishHistory(contentType, workId).then((res) => {
       if (cancelled) return;
       if (!res.ok) {
         setError(res.error);
@@ -46,7 +47,7 @@ export function WorkHistoryTab({ workId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [workId]);
+  }, [workId, contentType]);
 
   const list = items ?? [];
 

@@ -1,7 +1,8 @@
 import { getPreviewUrl } from "@/lib/website/api";
 
 export type PreviewTarget = {
-  workId: string;
+  workId?: string;
+  insightId?: string;
   sectionId?: string;
   blockId?: string;
   locale?: "ko" | "en";

@@ -46,7 +46,22 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   try {
     if (method !== "GET" && method !== "HEAD") {
       if (contentType.includes("multipart/form-data")) {
+        const expected = Number(request.headers.get("content-length") || 0);
         const raw = await request.arrayBuffer();
+        if (expected > 0 && raw.byteLength < expected) {
+          return NextResponse.json(
+            {
+              error: "upload_body_read_failed",
+              details: {
+                message:
+                  "업로드 본문이 미들웨어에서 잘렸습니다. GIF·큰 파일은 Storage 직접 업로드를 쓰거나 파일 크기를 줄여 주세요.",
+                received: raw.byteLength,
+                expected
+              }
+            },
+            { status: 413 }
+          );
+        }
         init.body = raw;
         const headers = new Headers(init.headers);
         headers.set("Content-Type", contentType);

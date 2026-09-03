@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         {
           role: "user",
           content: [
-            "홈페이지 워크를 공개할 때 남기는 변경 요약문을 한국어 한 문장으로 써 주세요.",
+            "홈페이지 글(워크·인사이트)을 공개할 때 남기는 변경 요약문을 한국어 한 문장으로 써 주세요.",
             "친절하고 간결하게. 80자 이내.",
             "바뀐 항목:",
             changedFields.map((field) => `- ${field}`).join("\n"),
