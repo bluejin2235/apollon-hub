@@ -27,8 +27,8 @@ export const RICH_TEXT_SURFACE_DEFAULTS: Record<
   RichTextSurface,
   { fontSize: string; lineHeight: string; contentWidth: number }
 > = {
-  /* content__body type(b1) · p 폭 831.4 */
-  "work-lead": { fontSize: "20px", lineHeight: "30px", contentWidth: 831 },
+  /* 팝업만 축소: 공개 20/30·p 831.4 → 15px · 831.4×15/20=624 */
+  "work-lead": { fontSize: "15px", lineHeight: "23px", contentWidth: 624 },
   /* 팝업만 축소: 15px · 줄바꿈 맞추려 1312×15/20=984 */
   "insight-body": { fontSize: "15px", lineHeight: "23px", contentWidth: 984 }
 };

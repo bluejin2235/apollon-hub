@@ -2025,16 +2025,19 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* 워크 기본 설명 편집기 = 공개 content__body 20/30 · 폭 831 */
+/* 워크 기본 설명 팝업 — 공개 content__body 20/30·p폭 831.4 대비
+   편집기만 15px · 폭 624(831.4×15/20)로 줄바꿈 맞춤. 인사이트(984)와 다름 */
 .wa .rte-ed--work-lead {
-  --rte-font-size: 20px;
-  --rte-line-height: 30px;
-  --rte-content-width: 831px;
-  font-size: 20px;
-  line-height: 30px;
-  width: 831px;
-  min-width: 831px;
-  max-width: 831px;
+  --rte-font-size: 15px;
+  --rte-line-height: 23px;
+  --rte-content-width: 624px;
+  font-size: 15px;
+  line-height: 23px;
+  width: 624px;
+  min-width: 624px;
+  max-width: 624px;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* 인사이트 팝업 — 공개 20px 대비 편집기만 15px · 폭 984(1312×15/20)로 줄바꿈 맞춤 */
