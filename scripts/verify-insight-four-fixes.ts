@@ -16,6 +16,15 @@ const SITE_URL =
   process.env.SITE_URL ?? websiteEnv.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3100";
 const OUT = resolve(process.cwd(), "scripts/out-insight-four-fixes");
 
+// 콘텐츠 DB 는 웹사이트 프로젝트. 인증은 허브.
+const CONTENT_URL = websiteEnv.NEXT_PUBLIC_SUPABASE_URL!;
+const CONTENT_SERVICE =
+  websiteEnv.SUPABASE_SECRET_KEY ?? websiteEnv.SUPABASE_SERVICE_ROLE_KEY!;
+const HUB_URL_SB = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const HUB_SERVICE = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const HUB_ANON =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
 type Session = {
   access_token: string;
   refresh_token: string;
@@ -92,79 +101,81 @@ async function login(
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const anonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-  const admin = createClient(supabaseUrl, serviceKey, {
+  const content = createClient(CONTENT_URL, CONTENT_SERVICE, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  const admin = createClient(HUB_URL_SB, HUB_SERVICE, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  // 롯데면세점 기사 찾기
-  const { data: insights } = await admin
+  const listed = await content
     .from("insights")
     .select("id, slug, title")
-    .ilike("title->>ko", "%롯데%면세%")
-    .limit(5);
-  const insight =
-    (insights ?? [])[0] ??
-    (
-      await admin
-        .from("insights")
-        .select("id, slug, title")
-        .eq("slug", "insight-1788401143052")
-        .maybeSingle()
-    ).data;
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  console.log("insights list", listed.error?.message ?? null, (listed.data ?? []).length);
+
+  let insight: { id: string; slug: string; title: unknown } | null = null;
+  for (const row of listed.data ?? []) {
+    const title = JSON.stringify(row.title ?? "");
+    if (/롯데|면세|Lotte|lotte/i.test(title) || /lotte|duty/i.test(String(row.slug))) {
+      insight = row as { id: string; slug: string; title: unknown };
+      break;
+    }
+  }
+  if (!insight) {
+    insight = (listed.data?.[0] as { id: string; slug: string; title: unknown } | undefined) ?? null;
+  }
+  if (!insight) {
+    const fixed = await content
+      .from("insights")
+      .select("id, slug, title")
+      .eq("id", "bbdfef0f-ea89-4785-ab9d-916065544b34")
+      .maybeSingle();
+    insight = (fixed.data as { id: string; slug: string; title: unknown } | null) ?? null;
+  }
 
   if (!insight) throw new Error("insight not found");
-  const insightId = insight.id as string;
-  const slug = insight.slug as string;
+  const insightId = insight.id;
+  const slug = insight.slug;
+  console.log("using insight", insightId, slug, JSON.stringify(insight.title));
 
-  // 본문 이미지 중 하나를 비운 대체텍스트로 맞춘 뒤 복구용 백업
-  const { data: images } = await admin
-    .from("insight_images")
-    .select("id, block_id, alt, caption, caption_visible, sort")
-    .not("block_id", "is", null)
-    .limit(20);
-
-  const targetImage = (images ?? []).find((img) => {
-    // 이 인사이트 블록에 속한 것만
-    return true;
-  });
-
-  // 블록→인사이트 매핑
-  const { data: blocks } = await admin
+  // 본문 이미지
+  const { data: blocks } = await content
     .from("insight_blocks")
     .select("id, sort, preset")
     .eq("insight_id", insightId)
     .order("sort");
-  const blockIds = new Set((blocks ?? []).map((b) => b.id));
-  const insightImages = (images ?? []).filter((img) => blockIds.has(img.block_id));
+  const blockIds = (blocks ?? []).map((b) => b.id);
+  const { data: images } = await content
+    .from("insight_images")
+    .select("id, block_id, alt, caption, caption_visible, sort")
+    .in("block_id", blockIds.length ? blockIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const insightImages = images ?? [];
   const img = insightImages[0];
   if (!img) throw new Error("no insight images");
 
   const altBackup = img.alt;
   const captionVisBackup = img.caption_visible;
 
-  await admin
+  await content
     .from("insight_images")
     .update({ alt: { ko: "", en: "" }, caption_visible: true })
     .eq("id", img.id);
 
-  // caption 있는 이미지에 캡션 채우기 (표시 테스트)
   if (img.caption == null || !(img.caption as { ko?: string })?.ko) {
-    await admin
+    await content
       .from("insight_images")
       .update({ caption: { ko: "캡션 표시 확인용", en: "caption check" } })
       .eq("id", img.id);
   }
 
-  const session = await createSession(admin, anonKey, supabaseUrl, await pickAdminEmail(admin));
+  const session = await createSession(admin, HUB_ANON, HUB_URL_SB, await pickAdminEmail(admin));
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await login(context, page, session, supabaseUrl);
+  await login(context, page, session, HUB_URL_SB);
 
   const report: Record<string, unknown> = {
     insightId,
@@ -240,14 +251,14 @@ async function main() {
   }
 
   // —— 3: 대체텍스트 채우고 공개 → 팝업 닫힘 ——
-  await admin.from("insight_images").update({ alt: altBackup ?? { ko: "복구 대체텍스트", en: "alt" } }).eq("id", img.id);
+  await content.from("insight_images").update({ alt: altBackup ?? { ko: "복구 대체텍스트", en: "alt" } }).eq("id", img.id);
   // 국문이 비어 있으면 채움
   const ko =
     altBackup && typeof altBackup === "object" && typeof (altBackup as { ko?: string }).ko === "string"
       ? (altBackup as { ko: string }).ko.trim()
       : "";
   if (!ko) {
-    await admin
+    await content
       .from("insight_images")
       .update({ alt: { ko: "복구 대체텍스트", en: "restored alt" } })
       .eq("id", img.id);
@@ -309,14 +320,14 @@ async function main() {
   }
 
   // —— 4: 캡션 스위치 off → 공개 화면에서 캡션 없음 ——
-  await admin.from("insight_images").update({ caption_visible: false }).eq("id", img.id);
+  await content.from("insight_images").update({ caption_visible: false }).eq("id", img.id);
   // 스냅샷에 반영하려면 재공개가 필요 — 미리보기로 확인
   const previewRes = await page.evaluate(async (id) => {
     // 미리보기 토큰이 있는 환경이면
     return id;
   }, insightId);
 
-  await page.goto(`${SITE_URL}/preview/insights/${insightId}?token=${encodeURIComponent(websiteEnv.PREVIEW_TOKEN ?? websiteEnv.NEXT_PUBLIC_PREVIEW_TOKEN ?? "")}&locale=ko`, {
+  await page.goto(`${SITE_URL}/preview/insights/${insightId}?token=${encodeURIComponent(websiteEnv.PREVIEW_SECRET ?? "")}&locale=ko`, {
     waitUntil: "networkidle",
     timeout: 60_000
   }).catch(() => null);
@@ -327,7 +338,7 @@ async function main() {
     report.previewLoaded && !previewBody.includes("캡션 표시 확인용");
 
   // caption_visible true 로 되돌린 뒤 미리보기
-  await admin.from("insight_images").update({ caption_visible: true }).eq("id", img.id);
+  await content.from("insight_images").update({ caption_visible: true }).eq("id", img.id);
   await page.reload({ waitUntil: "networkidle" }).catch(() => null);
   await page.waitForTimeout(1000);
   const previewBody2 = await page.locator("body").innerText().catch(() => "");
@@ -335,7 +346,7 @@ async function main() {
 
   // —— 5: Related Articles ——
   // 연결이 있는지 확인
-  const { data: related } = await admin
+  const { data: related } = await content
     .from("content_related")
     .select("*")
     .eq("source_insight_id", insightId)
@@ -354,7 +365,7 @@ async function main() {
   await page.screenshot({ path: resolve(OUT, "04-public-related.png"), fullPage: true });
 
   // 복구
-  await admin
+  await content
     .from("insight_images")
     .update({
       alt: altBackup,

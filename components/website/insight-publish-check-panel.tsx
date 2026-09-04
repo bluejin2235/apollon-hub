@@ -68,19 +68,6 @@ const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
   stale_draft: "초안이 오래되었습니다. 내용을 확인하고 저장하세요."
 };
 
-const BLOCK_PRESET_LABEL: Record<string, string> = {
-  text: "글",
-  qa: "질문 · 답변",
-  full: "전폭 이미지",
-  split: "2단 나란히",
-  triple: "3단 나란히",
-  "gallery-auto": "자동 배치 갤러리",
-  stack: "위아래 두 장",
-  carousel: "가로 스크롤",
-  "video-full": "영상 전폭",
-  embed: "임베드"
-};
-
 export type MissingImageAltSpot = {
   blockId: string;
   blockIndex: number;
@@ -111,12 +98,11 @@ export function findMissingInsightImageAlts(insight: InsightDetail): MissingImag
     images.forEach((image, imageIndex) => {
       const alt = asLoc(image.alt);
       if (alt.ko.trim()) return;
-      const preset = BLOCK_PRESET_LABEL[block.preset] ?? block.preset;
       spots.push({
         blockId: block.id,
         blockIndex: blockIndex + 1,
         imageIndex: imageIndex + 1,
-        label: `본문 ${blockIndex + 1}번째 블록(${preset}) · 이미지 ${imageIndex + 1}장`
+        label: `본문 ${blockIndex + 1}번째 블록 · 이미지 ${imageIndex + 1}장`
       });
     });
   });
@@ -189,11 +175,11 @@ export function buildInsightCheckItems(
 
 export function InsightPublishCheckList({
   items,
-  onGoTab,
+  onGo,
   overlay = false
 }: {
   items: InsightCheckItem[];
-  onGoTab: (tab: InsightEditorTab) => void;
+  onGo: (item: InsightCheckItem) => void;
   overlay?: boolean;
 }) {
   if (items.length === 0) return null;
@@ -221,7 +207,7 @@ export function InsightPublishCheckList({
           <button
             type="button"
             className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
-            onClick={() => onGoTab(item.tab)}
+            onClick={() => onGo(item)}
           >
             가기
           </button>

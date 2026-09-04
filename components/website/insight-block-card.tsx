@@ -827,7 +827,14 @@ function InsightImageRow({
           onToggle={() => {
             const next = !visible;
             setVisible(next);
-            onQueueImage(image.id, { caption_visible: next });
+            void updateInsightImage(blockId, image.id, { caption_visible: next }).then((res) => {
+              if (!res.ok) {
+                setVisible(!next);
+                onError(res.error);
+                return;
+              }
+              void onReload();
+            });
           }}
         />
       </div>

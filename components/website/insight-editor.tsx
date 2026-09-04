@@ -36,7 +36,8 @@ import { InsightContentTab } from "@/components/website/insight-content-tab";
 import {
   buildInsightCheckItems,
   findMissingInsightImageAlts,
-  InsightPublishCheckList
+  InsightPublishCheckList,
+  type InsightCheckItem
 } from "@/components/website/insight-publish-check-panel";
 import { InsightRelatedTab } from "@/components/website/insight-related-tab";
 import { WorkHistoryTab } from "@/components/website/work-history-tab";
@@ -115,13 +116,20 @@ function mergeCheck(check: CheckInsights | null, details: unknown): CheckInsight
   return next;
 }
 
+function blockerFlags(details: unknown): string[] {
+  if (!details || typeof details !== "object") return [];
+  return Object.entries(details as Record<string, unknown>)
+    .filter(([, v]) => v === true)
+    .map(([k]) => k);
+}
+
+function isPublishBlocked(error: string): boolean {
+  return error === "publish_blocked" || error.startsWith("publish_blocked");
+}
+
+/** 점검 차단 사유 — 코드·JSON 대신 위치 문구 */
 function publishBlockedMessage(details: unknown, insight: InsightDetail | null): string {
-  const flags =
-    details && typeof details === "object"
-      ? Object.entries(details as Record<string, unknown>)
-          .filter(([, v]) => v === true)
-          .map(([k]) => k)
-      : [];
+  const flags = blockerFlags(details);
   if (flags.includes("missing_image_alt") && insight) {
     const spots = findMissingInsightImageAlts(insight);
     if (spots.length === 1) {
@@ -135,6 +143,23 @@ function publishBlockedMessage(details: unknown, insight: InsightDetail | null):
     (flag) => INSIGHT_CHECK_LABEL[flag as keyof typeof INSIGHT_CHECK_LABEL] ?? flag
   );
   return labels.length > 0 ? labels.join(" · ") : "공개할 수 없습니다";
+}
+
+function formatPublishApiError(
+  error: string,
+  details: unknown,
+  insight: InsightDetail | null
+): string {
+  if (isPublishBlocked(error)) {
+    return publishBlockedMessage(details, insight);
+  }
+  if (details && typeof details === "object" && "message" in details) {
+    const message = (details as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return `${error} · ${message}`;
+    }
+  }
+  return error;
 }
 
 export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
@@ -167,23 +192,24 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
   const [previewLive, setPreviewLive] = useState(false);
   const publishNavTimer = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<InsightDetail | null> => {
     try {
       const [insightRes, metaRes] = await Promise.all([getInsight(insightId), getMeta()]);
       if (!insightRes.ok) {
         setError(insightRes.error + (insightRes.details ? ` · ${JSON.stringify(insightRes.details)}` : ""));
-        return;
+        return null;
       }
       const parsed = parseInsightDetail(insightRes.data);
       if (!parsed) {
         setError("insight_not_found");
-        return;
+        return null;
       }
       setInsight(parsed);
       setDraft(draftFromInsight(parsed));
       setCheckOverride(null);
       if (metaRes.ok) setCategories(metaRes.data.insightCategories ?? []);
       setError(null);
+      return parsed;
     } finally {
       setLoading(false);
     }
@@ -272,8 +298,8 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     }
   }
 
-  async function saveAll(opts?: { silent?: boolean }) {
-    if (!draft) return false;
+  async function saveAll(opts?: { silent?: boolean; keepSaving?: boolean }): Promise<InsightDetail | null> {
+    if (!draft) return null;
     setSaving(true);
     setFullSaveState("saving");
     setError(null);
@@ -282,19 +308,19 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
       if (!result.ok) {
         setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
         setFullSaveState("dirty");
-        return false;
+        return null;
       }
       refreshPreview();
-      await load();
+      const fresh = await load();
       await refreshPublishPreview();
       setFullSaveState("saved");
       window.setTimeout(() => setFullSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       if (!opts?.silent) {
         showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
       }
-      return true;
+      return fresh;
     } finally {
-      setSaving(false);
+      if (!opts?.keepSaving) setSaving(false);
     }
   }
 
@@ -305,21 +331,20 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     setPublishError(null);
     setError(null);
     try {
-      if (!(await saveAll({ silent: true }))) {
+      const fresh = await saveAll({ silent: true });
+      if (!fresh) {
         setPublishError("저장에 실패했습니다. 다시 시도해 주세요.");
         return;
       }
       const preview = await publishInsightPreview(insightId);
       if (!preview.ok) {
-        if (preview.status === 409 && preview.error === "publish_blocked") {
-          setCheckOverride(mergeCheck(insight?.check ?? null, preview.details));
-          setPublishError(publishBlockedMessage(preview.details, insight));
+        if (isPublishBlocked(preview.error) || blockerFlags(preview.details).length > 0) {
+          setCheckOverride(mergeCheck(fresh.check ?? null, preview.details));
+          setPublishError(publishBlockedMessage(preview.details, fresh));
           setCheckOpen(true);
           return;
         }
-        setPublishError(
-          preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : "")
-        );
+        setPublishError(formatPublishApiError(preview.error, preview.details, fresh));
         return;
       }
       const fields = preview.data.changedFields ?? [];
@@ -359,42 +384,44 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     setPublishError(null);
     cancelPublishNav();
     try {
-      if (!(await saveAll({ silent: true }))) {
+      const fresh = await saveAll({ silent: true, keepSaving: true });
+      if (!fresh) {
         setPublishError("저장에 실패했습니다. 다시 시도해 주세요.");
         return;
       }
 
       const published = await publishInsight(insightId, publishNote.trim());
       if (!published.ok) {
-        if (published.error === "publish_blocked") {
-          setCheckOverride(mergeCheck(insight?.check ?? null, published.details));
-          setPublishError(publishBlockedMessage(published.details, insight));
+        if (isPublishBlocked(published.error) || blockerFlags(published.details).length > 0) {
+          setCheckOverride(mergeCheck(fresh.check ?? null, published.details));
+          setPublishError(publishBlockedMessage(published.details, fresh));
           setCheckOpen(true);
           return;
         }
-        setPublishError(
-          published.error + (published.details ? ` · ${JSON.stringify(published.details)}` : "")
-        );
+        setPublishError(formatPublishApiError(published.error, published.details, fresh));
         return;
       }
+
+      // 스냅샷이 올라간 뒤에는 성공으로 보고 팝업을 닫는다 (상태 패치 실패와 분리)
+      setPublishModalOpen(false);
+      setPublishError(null);
 
       const statusPatch = await updateInsight(insightId, { status: "published" });
       if (!statusPatch.ok) {
-        if (statusPatch.error === "publish_blocked") {
-          // 스냅샷은 이미 올라감. 점검 목록은 갱신하되 팝업에 이유를 남긴다.
-          setCheckOverride(mergeCheck(insight?.check ?? null, statusPatch.details));
-          setPublishError(publishBlockedMessage(statusPatch.details, insight));
+        if (isPublishBlocked(statusPatch.error) || blockerFlags(statusPatch.details).length > 0) {
+          setCheckOverride(mergeCheck(fresh.check ?? null, statusPatch.details));
           setCheckOpen(true);
-          return;
+          setError(publishBlockedMessage(statusPatch.details, fresh));
+        } else {
+          setError(formatPublishApiError(statusPatch.error, statusPatch.details, fresh));
         }
-        setPublishError(
-          statusPatch.error + (statusPatch.details ? ` · ${JSON.stringify(statusPatch.details)}` : "")
-        );
+        await load();
+        await refreshPublishPreview();
+        if (isPreviewOpen()) refreshPreview();
+        showToast({ message: "공개되었습니다", tone: "ok" });
         return;
       }
 
-      setPublishModalOpen(false);
-      setPublishError(null);
       await load();
       await refreshPublishPreview();
       if (isPreviewOpen()) refreshPreview();
@@ -404,12 +431,13 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     }
   }
 
-  function goCheckTab(next: InsightEditorTab) {
+  function goCheckItem(item: InsightCheckItem) {
     setCheckOpen(false);
-    setTab(next);
-    const withBlock = checkItems.find((item) => item.tab === next && item.blockId);
-    if (withBlock?.blockId) {
-      setFocusBlockId(withBlock.blockId);
+    setTab(item.tab);
+    if (item.blockId) {
+      // 같은 블록을 다시 「가기」해도 스크롤되도록 한 번 비운다
+      setFocusBlockId(null);
+      window.setTimeout(() => setFocusBlockId(item.blockId!), 0);
     }
   }
 
@@ -520,20 +548,30 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
             insight={insight}
             categories={categories}
             siteUrl={siteUrl}
-            onReload={load}
+            onReload={async () => {
+              await load();
+            }}
           />
         ) : null}
         {tab === "content" ? (
           <InsightContentTab
             insight={insight}
             siteUrl={siteUrl}
-            onReload={load}
+            onReload={async () => {
+              await load();
+            }}
             focusBlockId={focusBlockId}
             onFocusConsumed={() => setFocusBlockId(null)}
           />
         ) : null}
         {tab === "related" ? (
-          <InsightRelatedTab insight={insight} siteUrl={siteUrl} onReload={load} />
+          <InsightRelatedTab
+            insight={insight}
+            siteUrl={siteUrl}
+            onReload={async () => {
+              await load();
+            }}
+          />
         ) : null}
         {tab === "history" ? (
           <WorkHistoryTab workId={insight.id} contentType="insight" />
@@ -544,7 +582,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
         {canManageWorks && checkOpen && checkItems.length > 0 ? (
           <div className="absolute bottom-full left-0 right-0 border-t border-slate-200 bg-white">
             <div className="max-h-[40vh] overflow-y-auto px-4 sm:px-6 lg:px-8">
-              <InsightPublishCheckList items={checkItems} onGoTab={goCheckTab} overlay />
+              <InsightPublishCheckList items={checkItems} onGo={goCheckItem} overlay />
             </div>
             <div className="-mb-px flex justify-center">
               <button
