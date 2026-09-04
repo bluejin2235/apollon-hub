@@ -14,7 +14,7 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 const HUB_URL = process.env.LUNA_UI_BASE_URL ?? "http://localhost:3000";
 const WORK_ID = "3cdc1043-8d3b-4f60-9d67-3283508f7e1d";
 const WORK_URL = `${HUB_URL}/website/works/${WORK_ID}?tab=content`;
-const HINT = "긴 변이 1600 이상이어야 합니다";
+const HINT = "긴 변이 1600 픽셀 이상의 이미지를 권장합니다.";
 
 type Session = {
   access_token: string;

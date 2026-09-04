@@ -1,5 +1,5 @@
 /**
- * GIF 는 1600 검사 제외 · JPG 는 거부
+ * 본문 JPG 작은 이미지는 허용 · GIF 는 1600 검사 제외 · 대표(key) JPG 는 거부
  * npx tsx scripts/verify-gif-upload.ts
  */
 import { config } from "dotenv";
@@ -34,12 +34,12 @@ async function makeGif800() {
     .toBuffer();
 }
 
-async function upload(buffer: Buffer, name: string, mime: string) {
+async function upload(buffer: Buffer, name: string, mime: string, role: string) {
   const form = new FormData();
   form.append("file", new File([new Uint8Array(buffer)], name, { type: mime }));
   form.append("bucket", "works");
   form.append("path", `verify/gif-test/${Date.now()}/${name}`);
-  form.append("role", "body");
+  form.append("role", role);
   const res = await fetch(`${SITE_URL}/api/admin/upload`, {
     method: "POST",
     headers: adminHeaders(),
@@ -57,15 +57,22 @@ async function main() {
   const jpg = await makeJpeg800();
   const gif = await makeGif800();
 
-  const jpgRes = await upload(jpg, "small-800.jpg", "image/jpeg");
-  const gifRes = await upload(gif, "small-800.gif", "image/gif");
+  const bodyJpgRes = await upload(jpg, "small-800.jpg", "image/jpeg", "body");
+  const keyJpgRes = await upload(jpg, "small-800-key.jpg", "image/jpeg", "key");
+  const gifRes = await upload(gif, "small-800.gif", "image/gif", "body");
 
   const report = {
-    jpg: {
-      status: jpgRes.status,
-      error: jpgRes.json.error ?? null,
-      message: jpgRes.json.details?.message ?? null,
-      ok: jpgRes.status === 400 && jpgRes.json.error === "image_too_small",
+    bodyJpg: {
+      status: bodyJpgRes.status,
+      error: bodyJpgRes.json.error ?? null,
+      message: bodyJpgRes.json.details?.message ?? null,
+      ok: bodyJpgRes.status === 200 && bodyJpgRes.json.data?.width === 800,
+    },
+    keyJpg: {
+      status: keyJpgRes.status,
+      error: keyJpgRes.json.error ?? null,
+      message: keyJpgRes.json.details?.message ?? null,
+      ok: keyJpgRes.status === 400 && keyJpgRes.json.error === "image_too_small",
     },
     gif: {
       status: gifRes.status,
@@ -85,7 +92,7 @@ async function main() {
   };
 
   console.log(JSON.stringify(report, null, 2));
-  if (!report.jpg.ok || !report.gif.ok) process.exit(1);
+  if (!report.bodyJpg.ok || !report.keyJpg.ok || !report.gif.ok) process.exit(1);
 }
 
 main().catch((err) => {
