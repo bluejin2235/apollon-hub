@@ -156,6 +156,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const [previewBlocked, setPreviewBlocked] = useState(false);
   const [checkOverride, setCheckOverride] = useState<CheckWorks | null>(null);
   const [checkOpen, setCheckOpen] = useState(false);
+  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
   const publishNavTimer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -210,6 +211,15 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     },
     [pathname, router, searchParams]
   );
+
+  function goCheckItem(item: { tab: EditorTab; blockId?: string }) {
+    setCheckOpen(false);
+    setTab(item.tab);
+    if (item.blockId) {
+      setFocusBlockId(null);
+      window.setTimeout(() => setFocusBlockId(item.blockId!), 0);
+    }
+  }
 
   const rawCheck = checkOverride ?? work?.check ?? null;
   const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
@@ -554,7 +564,13 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
           />
         ) : null}
         {tab === "content" ? (
-          <WorkContentTab work={work} siteUrl={siteUrl} onReload={load} />
+          <WorkContentTab
+            work={work}
+            siteUrl={siteUrl}
+            onReload={load}
+            focusBlockId={focusBlockId}
+            onFocusConsumed={() => setFocusBlockId(null)}
+          />
         ) : null}
         {tab === "interview" ? (
           <WorkInterviewTab work={work} siteUrl={siteUrl} onReload={load} />
@@ -585,7 +601,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         {canManageWorks && checkOpen && checkItems.length > 0 ? (
           <div className="absolute bottom-full left-0 right-0 border-t border-slate-200 bg-white">
             <div className="max-h-[40vh] overflow-y-auto px-4 sm:px-6 lg:px-8">
-              <WorkPublishCheckList items={checkItems} onGoTab={setTab} overlay />
+              <WorkPublishCheckList items={checkItems} onGo={goCheckItem} overlay />
             </div>
             <div className="-mb-px flex justify-center">
               <button

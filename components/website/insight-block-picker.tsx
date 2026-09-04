@@ -55,6 +55,13 @@ const ITEMS: {
     diagram: "triple"
   },
   {
+    preset: "quint",
+    name: PRESET_LABEL.quint,
+    description: PRESET_DESCRIPTION.quint,
+    tab: "image",
+    diagram: "quint"
+  },
+  {
     preset: "gallery-auto",
     name: PRESET_LABEL["gallery-auto"],
     description: PRESET_DESCRIPTION["gallery-auto"],

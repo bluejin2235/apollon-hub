@@ -189,8 +189,8 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
     let cancelled = false;
     async function hydrate() {
       const [works, insights, pages] = await Promise.all([
-        searchContent("", "work", 50, { published: true }),
-        searchContent("", "insight", 50, { published: true }),
+        searchContent("", "work", 500),
+        searchContent("", "insight", 500),
         searchContent("", "page", 50)
       ]);
       const map = new Map<string, SearchHit>();
@@ -448,8 +448,8 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
         open={picker}
         types={PICKER_TYPES}
         includeAllTab
-        publishedOnly
         confirmMode
+        searchLimit={500}
         excludeKeys={excludeKeys}
         selectedHits={selectedHits}
         siteUrl={siteUrl}

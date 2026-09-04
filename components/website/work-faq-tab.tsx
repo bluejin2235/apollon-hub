@@ -6,7 +6,7 @@ import { addFaq, deleteFaq, reorderFaqs, updateFaq } from "@/lib/website/api";
 import type { Loc, WorkDetail, WorkFaq } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
-import { AutoSaveLabel } from "@/components/website/partial-save-btn";
+import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import {
   AiBtn,
   BilingualField,
@@ -170,25 +170,43 @@ function FaqCard({
   const [open, setOpen] = useState(index === 1);
   const [question, setQuestion] = useState<Loc>(asLoc(faq.question));
   const [answer, setAnswer] = useState<Loc>(asLoc(faq.answer));
-  const [save, setSave] = useState<"idle" | "saving" | "saved">("idle");
+  const [save, setSave] = useState<PartialSaveState>("idle");
   const questionRef = useRef(question);
   const answerRef = useRef(answer);
   questionRef.current = question;
   answerRef.current = answer;
+  const savedQuestion = useRef(asLoc(faq.question));
+  const savedAnswer = useRef(asLoc(faq.answer));
 
   useEffect(() => {
-    setQuestion(asLoc(faq.question));
-    setAnswer(asLoc(faq.answer));
+    const qNext = asLoc(faq.question);
+    const aNext = asLoc(faq.answer);
+    setQuestion(qNext);
+    setAnswer(aNext);
+    savedQuestion.current = qNext;
+    savedAnswer.current = aNext;
+    setSave("idle");
   }, [faq]);
+
+  function markDirty(nextQ: Loc, nextA: Loc) {
+    const dirty =
+      nextQ.ko !== savedQuestion.current.ko ||
+      nextQ.en !== savedQuestion.current.en ||
+      nextA.ko !== savedAnswer.current.ko ||
+      nextA.en !== savedAnswer.current.en;
+    setSave((cur) => (cur === "saving" ? cur : dirty ? "dirty" : "idle"));
+  }
 
   async function persist() {
     setSave("saving");
     try {
       await onSave(questionRef.current, answerRef.current);
+      savedQuestion.current = questionRef.current;
+      savedAnswer.current = answerRef.current;
       setSave("saved");
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 1200);
-    } finally {
-      setSave((cur) => (cur === "saving" ? "idle" : cur));
+    } catch {
+      setSave("dirty");
     }
   }
 
@@ -201,8 +219,9 @@ function FaqCard({
           <span className="rounded bg-slate-400 px-1.5 py-0.5 text-[10px] font-bold text-white">{index}</span>
           <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{q}</span>
         </button>
-        {save === "saving" ? <span className="text-[11px] text-slate-400">저장 중</span> : null}
-        {save === "saved" ? <span className="text-[11px] text-emerald-600">저장됨</span> : null}
+        <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+          <PartialSaveBtn state={save} onClick={() => void persist()} />
+        </div>
         <button
           type="button"
           disabled={index <= 1}
@@ -237,8 +256,16 @@ function FaqCard({
             <BilingualField
               ko={question.ko}
               en={question.en}
-              onKo={(v) => setQuestion(locField(question, "ko", v))}
-              onEn={(v) => setQuestion(locField(question, "en", v))}
+              onKo={(v) => {
+                const next = locField(question, "ko", v);
+                setQuestion(next);
+                markDirty(next, answer);
+              }}
+              onEn={(v) => {
+                const next = locField(question, "en", v);
+                setQuestion(next);
+                markDirty(next, answer);
+              }}
               onBlur={() => void persist()}
             />
             <Guide>
@@ -262,8 +289,16 @@ function FaqCard({
               ko={answer.ko}
               en={answer.en}
               multiline
-              onKo={(v) => setAnswer(locField(answer, "ko", v))}
-              onEn={(v) => setAnswer(locField(answer, "en", v))}
+              onKo={(v) => {
+                const next = locField(answer, "ko", v);
+                setAnswer(next);
+                markDirty(question, next);
+              }}
+              onEn={(v) => {
+                const next = locField(answer, "en", v);
+                setAnswer(next);
+                markDirty(question, next);
+              }}
               onBlur={() => void persist()}
             />
             <Guide>

@@ -2,6 +2,7 @@ export const IMAGE_PRESETS = [
   "full",
   "split",
   "triple",
+  "quint",
   "offset",
   "offset-reverse",
   "gallery-auto",
@@ -57,6 +58,7 @@ export const PRESET_LABEL: Record<string, string> = {
   full: "전폭 이미지",
   split: "2단 나란히",
   triple: "3단 나란히",
+  quint: "5단 나란히",
   offset: "가로 + 세로",
   "offset-reverse": "세로 + 가로",
   "gallery-auto": "자동 배치 갤러리",
@@ -78,6 +80,7 @@ export const PRESET_DESCRIPTION: Record<string, string> = {
   full: "본문 전폭. 이미지 1장만. 원본 비율 그대로 표시됩니다.",
   split: "두 장을 나란히. 높이를 맞춥니다.",
   triple: "세 장을 나란히. 높이를 맞춥니다.",
+  quint: "다섯 장을 나란히. 높이를 맞춥니다.",
   offset:
     "왼쪽에 가로 사진, 오른쪽에 세로 사진. 왼쪽 사진이 높이를 정하고 오른쪽은 그 높이에 맞춰 잘립니다.",
   "offset-reverse":
@@ -113,6 +116,9 @@ export function imageLimitForPreset(preset: string): number | null {
   }
   if (preset === "triple") {
     return 3;
+  }
+  if (preset === "quint") {
+    return 5;
   }
   if (preset === "gallery-auto" || preset === "stack" || preset === "carousel") {
     return null;
@@ -195,6 +201,16 @@ function DiagramInner({ preset }: { preset: string }) {
     case "triple":
       return (
         <div className="flex h-full w-full gap-1">
+          <div className={`flex-1 ${box}`} />
+          <div className={`flex-1 ${box}`} />
+          <div className={`flex-1 ${box}`} />
+        </div>
+      );
+    case "quint":
+      return (
+        <div className="flex h-full w-full gap-0.5">
+          <div className={`flex-1 ${box}`} />
+          <div className={`flex-1 ${box}`} />
           <div className={`flex-1 ${box}`} />
           <div className={`flex-1 ${box}`} />
           <div className={`flex-1 ${box}`} />

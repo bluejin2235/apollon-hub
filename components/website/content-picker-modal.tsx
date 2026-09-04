@@ -53,6 +53,8 @@ type Props = {
   excludeKeys: Set<string>;
   selectedHits?: SearchHit[];
   maxSelected?: number;
+  /** 검색 API limit. 연결 직접 고르기는 전부 보이게 높게 */
+  searchLimit?: number;
   confirmMode?: boolean;
   siteUrl?: string;
   title?: string;
@@ -71,6 +73,7 @@ export function ContentPickerModal({
   excludeKeys,
   selectedHits,
   maxSelected = 4,
+  searchLimit = 20,
   confirmMode = false,
   siteUrl = "",
   title = "콘텐츠 고르기",
@@ -136,7 +139,7 @@ export function ContentPickerModal({
             tab === "all" ? types.filter((type) => type !== "page") : [tab];
           const results = await Promise.all(
             fetchTypes.map((type) =>
-              searchContent(q, type, 20, publishedOnly ? { published: true } : undefined)
+              searchContent(q, type, searchLimit, publishedOnly ? { published: true } : undefined)
             )
           );
           if (cancelled) return;
@@ -171,7 +174,7 @@ export function ContentPickerModal({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, q, tab, types, publishedOnly, excludeKeys, confirmMode]);
+  }, [open, q, tab, types, publishedOnly, excludeKeys, confirmMode, searchLimit]);
 
   const pickedKeys = useMemo(() => new Set(picked.map(hitKey)), [picked]);
   const selectedCount = picked.length;

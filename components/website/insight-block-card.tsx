@@ -34,6 +34,7 @@ import {
 } from "@/lib/website/insight-html";
 import type { InsightBlock } from "@/lib/website/insight-detail";
 import { asLoc, fileName, mediaUrl, type Loc } from "@/lib/website/work-detail";
+import { formatPixelSize, SmallImageMarks } from "@/components/website/small-image-confirm";
 
 const PRESET_LABEL: Record<string, string> = {
   text: "글",
@@ -41,6 +42,7 @@ const PRESET_LABEL: Record<string, string> = {
   full: "전폭 이미지",
   split: "2단 나란히",
   triple: "3단 나란히",
+  quint: "5단 나란히",
   "gallery-auto": "자동 배치 갤러리",
   stack: "위아래 두 장",
   carousel: "가로 스크롤",
@@ -739,12 +741,13 @@ function InsightImageRow({
       </div>
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-center gap-2 text-[10.5px] text-slate-400">
-          <span className="truncate">{name}</span>
-          {image.width && image.height ? (
-            <span>
-              {image.width} × {image.height}
-            </span>
-          ) : null}
+          <div className="sic-fn min-w-0 flex-1">
+            <span className="truncate">{name}</span>
+            {image.width && image.height ? (
+              <span className="sic-dim">{formatPixelSize(image.width, image.height)}</span>
+            ) : null}
+            <SmallImageMarks width={image.width} height={image.height} src={image.src} />
+          </div>
           <button
             type="button"
             className="ml-auto text-rose-600"

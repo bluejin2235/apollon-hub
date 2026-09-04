@@ -7,6 +7,7 @@ import {
   deleteBlock,
   deleteImage,
   reorderImages,
+  resolveEmbedUrl,
   updateBlock,
   updateImage
 } from "@/lib/website/api";
@@ -61,6 +62,7 @@ import {
   ToggleRow
 } from "@/components/website/work-editor-ui";
 import { GuideTerm } from "@/components/website/ui/GuideTerm";
+import { formatPixelSize, SmallImageMarks } from "@/components/website/small-image-confirm";
 import {
   formatBodyImageHint,
   formatDetailMovieHint,
@@ -88,13 +90,6 @@ type Props = {
   isFirstSection?: boolean;
   metaTakenByOther?: boolean;
 };
-
-function formatBytes(n: number | null | undefined) {
-  if (!n) return "";
-  if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)}MB`;
-}
 
 export function BlockCard({
   block,
@@ -639,7 +634,29 @@ export function BlockCard({
               siteUrl={siteUrl}
               onProvider={setEmbedProvider}
               onUrl={setEmbedUrl}
-              onConfirm={() => void flush({ embed_provider: embedProvider, embed_url: embedUrl })}
+              onConfirm={() => {
+                void (async () => {
+                  let nextUrl = embedUrl.trim();
+                  let nextProvider = embedProvider;
+                  const host = (() => {
+                    try {
+                      return new URL(nextUrl.includes("://") ? nextUrl : `https://${nextUrl}`)
+                        .hostname.replace(/^(www|m)\./, "")
+                        .toLowerCase();
+                    } catch {
+                      return "";
+                    }
+                  })();
+                  if (host === "skfb.ly" || host === "sketchfab.com") {
+                    nextProvider = "sketchfab";
+                    const resolved = await resolveEmbedUrl(nextUrl);
+                    if (resolved.ok && resolved.data.url) nextUrl = resolved.data.url;
+                  }
+                  setEmbedProvider(nextProvider);
+                  setEmbedUrl(nextUrl);
+                  await flush({ embed_provider: nextProvider, embed_url: nextUrl });
+                })();
+              }}
               onTitle={(next) => {
                 setEmbedTitle(next);
                 schedule({ embed_title: next });
@@ -926,9 +943,8 @@ function ImageRow({
   }
 
   const src = mediaUrl(siteUrl, image.src);
-  const resLabel = [image.width && image.height ? `${image.width}×${image.height}` : "", formatBytes(null)]
-    .filter(Boolean)
-    .join(" · ");
+  const dims =
+    image.width && image.height ? formatPixelSize(image.width, image.height) : "";
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_1fr]">
@@ -942,9 +958,11 @@ function ImageRow({
       </div>
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className="truncate font-medium text-slate-700">{fileName(image.src)}</span>
-          {resLabel ? <span>{resLabel}</span> : null}
-          <span className="flex-1" />
+          <div className="sic-fn min-w-0 flex-1">
+            <span className="truncate font-medium text-slate-700">{fileName(image.src)}</span>
+            {dims ? <span className="sic-dim">{dims}</span> : null}
+            <SmallImageMarks width={image.width} height={image.height} src={image.src} />
+          </div>
           <button type="button" disabled={!canUp} onClick={onUp} className="disabled:opacity-30">↑</button>
           <button type="button" disabled={!canDown} onClick={onDown} className="disabled:opacity-30">↓</button>
           <button type="button" onClick={() => void remove()} className="text-rose-600">삭제</button>

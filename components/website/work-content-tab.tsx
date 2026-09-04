@@ -34,6 +34,8 @@ type Props = {
   work: WorkDetail;
   siteUrl: string;
   onReload: () => Promise<void>;
+  focusBlockId?: string | null;
+  onFocusConsumed?: () => void;
 };
 
 const SECTION_COLORS = [
@@ -147,7 +149,13 @@ function LeadDrop({
   );
 }
 
-export function WorkContentTab({ work, siteUrl, onReload }: Props) {
+export function WorkContentTab({
+  work,
+  siteUrl,
+  onReload,
+  focusBlockId = null,
+  onFocusConsumed
+}: Props) {
   const sections = [...(work.work_sections ?? [])]
     .filter((section) => section.kind !== "interview")
     .sort((a, b) => a.sort - b.sort);
@@ -159,6 +167,35 @@ export function WorkContentTab({ work, siteUrl, onReload }: Props) {
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteSectionId, setDeleteSectionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusBlockId) return;
+    const section = [...(work.work_sections ?? [])]
+      .filter((item) => item.kind !== "interview")
+      .find((item) => (item.content_blocks ?? []).some((block) => block.id === focusBlockId));
+    if (section) {
+      setOpenIds((prev) => {
+        if (prev.has(section.id)) return prev;
+        const next = new Set(prev);
+        next.add(section.id);
+        return next;
+      });
+    }
+    setOpenBlockIds((prev) => {
+      if (prev.has(focusBlockId)) return prev;
+      const next = new Set(prev);
+      next.add(focusBlockId);
+      return next;
+    });
+    const timer = window.setTimeout(() => {
+      document.getElementById(`content-block-${focusBlockId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      onFocusConsumed?.();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusBlockId, onFocusConsumed, work.work_sections]);
 
   function toggle(id: string) {
     setOpenIds((prev) => {
