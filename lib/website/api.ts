@@ -6,7 +6,7 @@ import type {
   InquiryList,
   NewsletterList
 } from "@/lib/website/contact";
-import type { HomeCandidateList, HomeList, HomeSlot } from "@/lib/website/home";
+import type { HomeCandidateList, HomeList, HomeSlot, HomeWrite } from "@/lib/website/home";
 import type { StatsBundle, StatsQueryResult, StatsRealtime } from "@/lib/website/stats";
 import type {
   ApiResult,
@@ -1124,6 +1124,20 @@ export function reorderHome(order: { id: string; sort: number }[]): Promise<ApiR
 
 export function listHomeCandidates(): Promise<ApiResult<HomeCandidateList>> {
   return websiteFetch<HomeCandidateList>("home/candidates");
+}
+
+export function saveHomeFeed(items: HomeWrite[]): Promise<ApiResult<HomeList>> {
+  return websiteFetch<HomeList>("home/save", {
+    method: "POST",
+    body: JSON.stringify({ items })
+  });
+}
+
+export function publishHomeFeed(items: HomeWrite[]): Promise<ApiResult<HomeList>> {
+  return websiteFetch<HomeList>("home/publish", {
+    method: "POST",
+    body: JSON.stringify({ items })
+  });
 }
 
 export function getStats(params: {

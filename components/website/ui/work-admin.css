@@ -2567,4 +2567,245 @@
   color: #94a3b8;
 }
 
+/* 홈 자동 피드 */
+.ha-ph {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 12px;
+  flex-wrap: wrap;
+}
+.ha-ph h1 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.ha-d2 {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 2px;
+}
+.ha-sp {
+  flex: 1;
+}
+.ha-btn {
+  border: 1px solid #dde1e6;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: #fff;
+  color: #3a4049;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.ha-btn:hover {
+  background: var(--soft);
+}
+.ha-btn.is-primary {
+  background: var(--ap);
+  border-color: var(--ap);
+  color: #fff;
+  font-weight: 600;
+}
+.ha-btn.is-primary:hover {
+  background: #463d9e;
+}
+.ha-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ha-tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+  flex-wrap: wrap;
+}
+.ha-hint {
+  font-size: 11px;
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ha-hint-pin {
+  color: var(--ap);
+}
+.ha-canvas {
+  padding: 18px 4px;
+  background: var(--soft);
+}
+.ha-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ha-row--wide {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+.ha-row--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.ha-cell {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+}
+.ha-cell.is-pinned {
+  box-shadow: inset 0 0 0 2.5px var(--ap);
+}
+.ha-cell.is-dragging {
+  opacity: 0.4;
+}
+.ha-cell:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+.ha-cell.is-pinned:hover {
+  box-shadow: inset 0 0 0 2.5px var(--ap), 0 6px 16px rgba(0, 0, 0, 0.14);
+}
+.ha-cell__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ha-cell__bg--empty {
+  background: #e2e8f0;
+}
+.ha-cell__cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 13px 15px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+.ha-cell__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.ha-cell__title.is-small {
+  font-size: 11.5px;
+}
+.ha-cell__meta {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.ha-cell__tl,
+.ha-cell__tr,
+.ha-cell__pin {
+  position: absolute;
+  top: 9px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+.ha-cell__tl {
+  left: 9px;
+}
+.ha-cell__pin,
+.ha-cell__tr {
+  right: 9px;
+}
+.ha-cell__tr {
+  top: 37px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.ha-cell:hover .ha-cell__tr {
+  opacity: 1;
+}
+.ha-chip {
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  padding: 0 8px;
+  font-weight: 500;
+  backdrop-filter: blur(4px);
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ha-chip--sq {
+  width: 24px;
+  padding: 0;
+  font-size: 12px;
+}
+.ha-chip--drag {
+  cursor: grab;
+}
+.ha-chip--drag:active {
+  cursor: grabbing;
+}
+.ha-chip.is-pin {
+  background: var(--ap);
+}
+.ha-chip.is-off {
+  color: rgba(255, 255, 255, 0.55);
+}
+.ha-chip:hover {
+  background: rgba(0, 0, 0, 0.72);
+}
+.ha-chip.is-pin:hover {
+  background: var(--ap);
+}
+.ha-slot-placeholder {
+  aspect-ratio: 16 / 9;
+}
+.ha-more {
+  display: block;
+  margin: 16px auto 0;
+  border: 1px solid #dde1e6;
+  border-radius: 7px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  background: #fff;
+  color: #3a4049;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ha-more:hover {
+  background: #fff;
+  border-color: var(--apln);
+  color: var(--ap);
+}
+.ha-foot {
+  padding: 13px 4px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.9;
+}
+.ha-foot b {
+  color: #3a4049;
+}
+.ha-pinmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ap);
+  font-weight: 600;
+}
+
 
