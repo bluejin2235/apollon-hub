@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/website/coming-soon";
+import { WebsiteEtc } from "@/components/website/website-etc";
 
 export default function WebsiteEtcPage() {
-  return <ComingSoon title="기타" hint="About · Expertise · Privacy · 이미지" />;
+  return <WebsiteEtc siteUrl={process.env.WEBSITE_API_URL ?? ""} />;
 }

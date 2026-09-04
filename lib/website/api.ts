@@ -956,6 +956,13 @@ export function searchContent(
   );
 }
 
+/** skfb.ly 등 짧은 임베드 주소를 실제 주소로 펼친다 */
+export function resolveEmbedUrl(url: string): Promise<ApiResult<{ url: string }>> {
+  return websiteFetch<{ url: string }>(
+    `embed/resolve${queryString({ url: url.trim() || undefined })}`
+  );
+}
+
 export type RelatedRecommendPick = SearchHit & {
   type: "work" | "insight";
 };
@@ -1359,5 +1366,72 @@ export async function generateInsightSlug(title: {
   return {
     ok: false,
     reason: body?.reason?.trim() || body?.error?.trim() || "주소를 만들지 못했습니다"
+  };
+}
+
+export type PageSchemaType = "Organization" | "WebPage" | "none";
+
+export type PageMetaRow = {
+  key: string;
+  title: { ko: string; en: string };
+  summary: { ko: string; en: string } | null;
+  search_description: { ko: string; en: string } | null;
+  ai_summary: { ko: string; en: string } | null;
+  schema_type: PageSchemaType;
+  og_image: string | null;
+  og_image_width: number | null;
+  og_image_height: number | null;
+  updated_at: string;
+};
+
+export function listPageMeta(): Promise<ApiResult<{ items: PageMetaRow[] }>> {
+  return websiteFetch<{ items: PageMetaRow[] }>("page-meta");
+}
+
+export function updatePageMeta(
+  key: string,
+  body: Record<string, unknown>
+): Promise<ApiResult<PageMetaRow>> {
+  return websiteFetch<PageMetaRow>(`page-meta/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function generatePageMetaDraft(
+  key: string
+): Promise<
+  { ok: true; data: { ko: string; en: string } } | { ok: false; reason: string }
+> {
+  const token = await accessToken();
+  if (!token) {
+    return { ok: false, reason: "로그인이 필요합니다" };
+  }
+
+  const res = await fetch("/api/website/luna/page-meta-draft", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ key })
+  });
+
+  const body = (await res.json().catch(() => null)) as {
+    data?: { ko?: string; en?: string };
+    reason?: string;
+    error?: string;
+  } | null;
+
+  const ko = body?.data?.ko?.trim() ?? "";
+  const en = body?.data?.en?.trim() ?? "";
+  if (ko || en) {
+    return { ok: true, data: { ko, en } };
+  }
+
+  return {
+    ok: false,
+    reason: body?.reason?.trim() || body?.error?.trim() || "초안을 만들지 못했습니다"
   };
 }
