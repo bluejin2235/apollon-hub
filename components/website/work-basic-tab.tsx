@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   addFolder,
   deleteFolder,
+  generateInsightSlug,
   setWorkCategories,
   updateFolder,
   updateWork,
@@ -134,6 +135,17 @@ const HELP = {
 
 function filled(value: string | null | undefined) {
   return Boolean(value?.trim());
+}
+
+function isPlaceholderSlug(slug: string) {
+  return !slug.trim() || /^work-\d+$/i.test(slug.trim());
+}
+
+function isDefaultTitle(title: { ko: string; en: string }) {
+  const ko = title.ko.trim();
+  const en = title.en.trim();
+  if (!ko && !en) return true;
+  return (ko === "New Project" || !ko) && (en === "New Project" || !en);
 }
 
 function apiFailMessage(res: { error: string; details?: unknown }): string {
@@ -368,15 +380,21 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const [openHelp, setOpenHelp] = useState<keyof typeof HELP | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState(draft.summary);
+  const [slugBusy, setSlugBusy] = useState(false);
+  const [slugError, setSlugError] = useState<string | null>(null);
   const pendingKey = useId();
   const loopLgFile = useRef<File | null>(null);
   const cardUploadRef = useRef<HTMLInputElement>(null);
+  const lastLunaSlugRef = useRef<string | null>(null);
+  const slugTimerRef = useRef<number | null>(null);
+  const slugSeqRef = useRef(0);
 
   const screenPartial = useFoldPartialSave(work.id, onReload);
   const mediaPartial = useFoldPartialSave(work.id, onReload);
   const searchPartial = useFoldPartialSave(work.id, onReload);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const canAutoSlug = work.status !== "published";
 
   const selectedCategories = draft.category_ids.map((id) => ({
     id,
@@ -411,9 +429,59 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     setOpenHelp((cur) => (cur === id ? null : id));
   }
 
+  function patchSearch(next: Partial<WorkBasicDraft>) {
+    searchPartial.markDirty();
+    onChange(next);
+  }
+
+  async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
+    if (!canAutoSlug) return;
+    if (!opts?.force && isDefaultTitle(title)) return;
+    if (!title.ko.trim() && !title.en.trim()) return;
+    const current = draftRef.current.slug;
+    if (!opts?.force) {
+      const userLocked =
+        !isPlaceholderSlug(current) &&
+        (lastLunaSlugRef.current == null || current !== lastLunaSlugRef.current);
+      if (userLocked) return;
+    }
+    const seq = ++slugSeqRef.current;
+    setSlugBusy(true);
+    setSlugError(null);
+    const res = await generateInsightSlug(title);
+    if (seq !== slugSeqRef.current) return;
+    setSlugBusy(false);
+    if (!res.ok) {
+      setSlugError(res.reason);
+      showToast({ tone: "error", message: res.reason });
+      if (!draftRef.current.slug.trim()) {
+        patchSearch({ slug: `work-${Date.now()}` });
+      }
+      return;
+    }
+    lastLunaSlugRef.current = res.slug;
+    patchSearch({ slug: res.slug });
+  }
+
+  function scheduleSlugFromTitle(title: { ko: string; en: string }) {
+    if (!canAutoSlug) return;
+    if (slugTimerRef.current) window.clearTimeout(slugTimerRef.current);
+    slugTimerRef.current = window.setTimeout(() => {
+      void fillSlugFromTitle(title);
+    }, 700);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (slugTimerRef.current) window.clearTimeout(slugTimerRef.current);
+    };
+  }, []);
+
   function setTitleEn(value: string) {
     screenPartial.markDirty();
-    onChange({ title: { ko: value, en: value } });
+    const title = { ko: value, en: value };
+    onChange({ title });
+    scheduleSlugFromTitle(title);
   }
 
   function addCategory(id: string) {
@@ -1135,12 +1203,20 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               <input
                 className="i"
                 value={draft.slug}
-                onChange={(e) => {
-                  searchPartial.markDirty();
-                  onChange({ slug: e.target.value });
-                }}
+                onChange={(e) => patchSearch({ slug: e.target.value })}
               />
+              {canAutoSlug ? (
+                <button
+                  type="button"
+                  className="btn sm slug-remake"
+                  disabled={slugBusy || isDefaultTitle(draft.title)}
+                  onClick={() => void fillSlugFromTitle(draft.title, { force: true })}
+                >
+                  {slugBusy ? "만드는 중…" : "다시 만들기"}
+                </button>
+              ) : null}
             </div>
+            {slugError ? <p className="hint-line warn">{slugError}</p> : null}
             <p className="hint-line warn">공개한 뒤에는 바꾸지 마세요. 검색 순위가 초기화됩니다</p>
             <HelpPanel
               open={openHelp === "slug"}

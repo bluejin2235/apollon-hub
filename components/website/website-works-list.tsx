@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
-import { NewWorkModal } from "@/components/website/new-work-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { hideWork, getMeta, listWorks } from "@/lib/website/api";
+import { createWork, hideWork, getMeta, listWorks } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
-import type { WebsiteCategory, WorkListItem, WorkSiteVisibility } from "@/lib/website/types";
+import type { ApiErr, WebsiteCategory, WorkListItem, WorkSiteVisibility } from "@/lib/website/types";
 import {
   categoryIdsFromMap,
   categoryLabelsFromIds
@@ -18,6 +17,16 @@ import {
 import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window";
 
 const PUBLISH_REDIRECT_KEY = "website-publish-toast";
+const WEBSITE_DOWN_MESSAGE =
+  "홈페이지 개발 서버(localhost:3100)가 응답하지 않습니다. 서버가 떠 있는지 확인한 뒤 다시 시도하세요.";
+
+function isWebsiteDown(result: ApiErr) {
+  return (
+    result.error === "website_timeout" ||
+    result.error === "website_unreachable" ||
+    result.error === "network_error"
+  );
+}
 
 type SortKey = "recent" | "title" | "year";
 
@@ -246,7 +255,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState<"all" | "draft" | "published" | "hidden">("all");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
-  const [newOpen, setNewOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [hideItem, setHideItem] = useState<WorkListItem | null>(null);
 
@@ -395,6 +404,54 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
   }
 
+  async function createNewProject() {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      let cats = categories;
+      if (cats.length === 0) {
+        const meta = await getMeta();
+        if (!meta.ok) {
+          if (isWebsiteDown(meta)) {
+            setError(WEBSITE_DOWN_MESSAGE);
+            return;
+          }
+          setError(formatError(meta.error, meta.details));
+          return;
+        }
+        cats = meta.data.workCategories ?? [];
+        setCategories(cats);
+      }
+      const categoryId = cats[0]?.id;
+      if (!categoryId) {
+        setError("사업분야가 없습니다. 메타를 확인하세요.");
+        return;
+      }
+      const res = await createWork({
+        slug: `work-${Date.now()}`,
+        category_id: categoryId,
+        year: String(new Date().getFullYear()),
+        title: { ko: "New Project", en: "New Project" },
+        summary: { ko: "작성 중입니다.", en: "" },
+        key_image: "/works/placeholder-wide.svg"
+      });
+      if (!res.ok) {
+        if (isWebsiteDown(res)) {
+          setError(WEBSITE_DOWN_MESSAGE);
+          return;
+        }
+        setError(formatError(res.error, res.details));
+        return;
+      }
+      router.push(`/website/works/${res.data.id}?tab=basic`);
+    } catch {
+      setError(WEBSITE_DOWN_MESSAGE);
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -409,10 +466,11 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
         {canManageWorks ? (
           <button
             type="button"
-            onClick={() => setNewOpen(true)}
-            className="rounded-lg bg-apollon-500 px-4 py-2 text-sm font-semibold text-white"
+            disabled={creating}
+            onClick={() => void createNewProject()}
+            className="rounded-lg bg-apollon-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            ＋ 새 프로젝트
+            {creating ? "만드는 중…" : "＋ 새 프로젝트"}
           </button>
         ) : null}
       </div>
@@ -575,8 +633,6 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
           ) : null}
         </>
       ) : null}
-
-      <NewWorkModal open={newOpen} onClose={() => setNewOpen(false)} />
 
       <ConfirmDialog
         key={hideItem ? `hide-${hideItem.id}` : "hide"}
