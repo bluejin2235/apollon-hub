@@ -1,7 +1,7 @@
 /** 워크 어드민·업로드 화면에 쓰는 규격 (가이드 문서와 동일한 값) */
 export const SPEC = {
   keyImage: { minLong: 1600, storeLong: 2560 },
-  bodyImage: { minLong: 1600, storeLong: 3200 },
+  bodyImage: { minLong: 1600, storeLong: 3200, frameW: 1600, frameH: 900 },
   /** T-L · Thumbnail Large */
   thumbLarge: { w: 1280, h: 720, maxMB: 1.5 },
   /** T-S · Thumbnail Small */
@@ -36,7 +36,7 @@ export function formatKeyImageEmptyHint(): string {
 }
 
 export function formatBodyImageHint(): string {
-  return `긴 변이 ${SPEC.bodyImage.minLong} 이상이어야 합니다`;
+  return `긴 변이 ${SPEC.bodyImage.minLong} 픽셀 이상의 이미지를 권장합니다.`;
 }
 
 export function formatFullBodyImageHint(): string {
@@ -64,7 +64,7 @@ export function formatDetailMovieHint(): string {
 }
 
 export function formatImageUploadGuide(): string {
-  return formatBodyImageHint();
+  return formatKeyImageHint();
 }
 
 export function formatVideoUploadGuide(): string {
@@ -78,3 +78,20 @@ export function formatBodyImageTooSmallHint(count?: number): string {
   }
   return `긴 변이 ${min} 미만인 이미지가 있습니다`;
 }
+
+export function formatSmallBodyImageTitle(count: number): string {
+  return `작은 이미지가 ${count}장 있습니다`;
+}
+
+export function formatSmallBodyImageWhere(blockIndex: number): string {
+  return `${blockIndex}번째 블록 · 긴 변 ${SPEC.bodyImage.minLong} 미만`;
+}
+
+export const SMALL_IMAGE_PILL = "작은 이미지";
+export const SMALL_IMAGE_HINT = "긴 변 1600 미만 · 크게 볼 때 흐릴 수 있습니다";
+export const SMALL_IMAGE_CONFIRM_LEAD_BEFORE = "긴 변이 ";
+export const SMALL_IMAGE_CONFIRM_LEAD_EMPHASIS = "1600 픽셀";
+export const SMALL_IMAGE_CONFIRM_LEAD_AFTER = " 이상의 이미지를 권장합니다.";
+export const SMALL_IMAGE_CONFIRM_FRAME = "1600 × 900";
+export const SMALL_IMAGE_CONFIRM_FOOT_1 = "업로드한 이미지 실제 1600×900 기준 사이즈";
+export const SMALL_IMAGE_CONFIRM_FOOT_2 = "그래도 업로드 하겠습니까?";

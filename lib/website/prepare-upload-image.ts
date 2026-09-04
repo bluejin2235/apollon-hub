@@ -23,7 +23,7 @@ function isGifFile(file: File) {
   return /\.gif$/i.test(file.name);
 }
 
-function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
+export function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -90,9 +90,11 @@ export async function prepareImageForUpload(
     };
   }
 
-  const minLong = kind === "insight-key" ? INSIGHT_KEY_MIN_LONG_EDGE : IMAGE_MIN_LONG_EDGE;
-  if (Math.max(size.width, size.height) < minLong) {
-    return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height, minLong) };
+  if (kind !== "body") {
+    const minLong = kind === "insight-key" ? INSIGHT_KEY_MIN_LONG_EDGE : IMAGE_MIN_LONG_EDGE;
+    if (Math.max(size.width, size.height) < minLong) {
+      return { ok: false, error: imageLongEdgeRejectMessage(size.width, size.height, minLong) };
+    }
   }
 
   const maxLong = kind === "body" ? BODY_STORE_LONG_EDGE : KEY_STORE_LONG_EDGE;

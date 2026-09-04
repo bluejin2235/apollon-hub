@@ -4,8 +4,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Film, ImageIcon, X } from "lucide-react";
 import { uploadFile, uploadGif, uploadVideo, type SignedUploadKind } from "@/lib/website/api";
 import { showToast } from "@/components/website/toast";
-import { formatBytes } from "@/lib/website/image-long-edge";
-import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
+import { formatBytes, IMAGE_MIN_LONG_EDGE, isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
+import { prepareImageForUpload, readImageSize } from "@/lib/website/prepare-upload-image";
+import {
+  formatPixelSize,
+  isCoverUploadKind,
+  SmallImageConfirm,
+  SmallImageMarks
+} from "@/components/website/small-image-confirm";
 import { describeUploadError } from "@/lib/website/upload-error";
 import {
   newStoredFilename,
@@ -165,7 +171,7 @@ function resolveSignedTarget(props: {
 
 function prepareKind(kind: Kind): "key" | "body" | "insight-key" {
   if (kind === "insight-key") return "insight-key";
-  if (kind === "key" || kind === "poster") return "key";
+  if (kind === "key") return "key";
   return "body";
 }
 
@@ -363,6 +369,12 @@ export function ImageUploader({
   const [error, setError] = useState<UploadError | null>(null);
   const [notice, setNotice] = useState<{ payload: UploadNotice; key: string } | null>(null);
   const dismissedNotices = useRef(new Set<string>());
+  const confirmRef = useRef<{ resolve: (ok: boolean) => void } | null>(null);
+  const [confirm, setConfirm] = useState<{
+    previewUrl: string;
+    width: number;
+    height: number;
+  } | null>(null);
   const [meta, setMeta] = useState<{
     src: string;
     width: number | null;
@@ -408,11 +420,34 @@ export function ImageUploader({
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (confirmRef.current) {
+        confirmRef.current.resolve(false);
+        confirmRef.current = null;
+      }
     };
   }, []);
 
+  function askSmallConfirm(file: File, width: number, height: number): Promise<boolean> {
+    const previewUrl = URL.createObjectURL(file);
+    return new Promise((resolve) => {
+      confirmRef.current = {
+        resolve: (ok) => {
+          URL.revokeObjectURL(previewUrl);
+          confirmRef.current = null;
+          setConfirm(null);
+          resolve(ok);
+        }
+      };
+      setConfirm({ previewUrl, width, height });
+    });
+  }
+
+  function settleConfirm(ok: boolean) {
+    confirmRef.current?.resolve(ok);
+  }
+
   function openPicker() {
-    if (disabled || progress) return;
+    if (disabled || progress || confirm) return;
     inputRef.current?.click();
   }
 
@@ -470,6 +505,22 @@ export function ImageUploader({
           advice: ["MP4 로 바꾸면 보통 10분의 1 이하가 됩니다."]
         });
         continue;
+      }
+
+      if (
+        isImage &&
+        !isGifFile(file) &&
+        !isCoverUploadKind(kind) &&
+        !isVideo
+      ) {
+        const size = await readImageSize(file);
+        if (
+          size &&
+          isLongEdgeTooSmall(size.width, size.height, { minLong: IMAGE_MIN_LONG_EDGE })
+        ) {
+          const accepted = await askSmallConfirm(file, size.width, size.height);
+          if (!accepted) continue;
+        }
       }
 
       if (isVideo && kind === "loop-lg" && file.size > SPEC_BYTES.thumbLarge) {
@@ -601,7 +652,7 @@ export function ImageUploader({
                   fields:
                     kind === "insight-key"
                       ? { role: "insight-key" }
-                      : kind === "key" || kind === "poster"
+                      : kind === "key"
                         ? { role: "key" }
                         : undefined,
                   onProgress
@@ -662,11 +713,11 @@ export function ImageUploader({
   }
 
   const formatGuide =
-    kind === "body" ? null : (
+    isCoverUploadKind(kind) ? (
       <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-400">
         {formatGuideText(accept)}
       </p>
-    );
+    ) : null;
 
   const input = (
     <input
@@ -675,7 +726,7 @@ export function ImageUploader({
       className="sr-only"
       accept={acceptAttr(accept)}
       multiple={multiple}
-      disabled={disabled || Boolean(progress)}
+      disabled={disabled || Boolean(progress) || Boolean(confirm)}
       onChange={(e) => {
         if (e.target.files?.length) void handleFiles(e.target.files);
         e.target.value = "";
@@ -722,6 +773,17 @@ export function ImageUploader({
     </>
   );
 
+  const confirmLayer = (
+    <SmallImageConfirm
+      open={Boolean(confirm)}
+      previewUrl={confirm?.previewUrl ?? ""}
+      width={confirm?.width ?? 0}
+      height={confirm?.height ?? 0}
+      onUpload={() => settleConfirm(true)}
+      onCancel={() => settleConfirm(false)}
+    />
+  );
+
   const thumb =
     kind === "key"
       ? { width: 172, height: 97, video: false }
@@ -731,12 +793,8 @@ export function ImageUploader({
 
   if (filled && value) {
     const dims =
-      meta?.width && meta?.height ? `${meta.width}×${meta.height}` : "";
-    const size = formatBytes(meta?.size);
+      meta?.width && meta?.height ? formatPixelSize(meta.width, meta.height) : "";
     const name = meta?.name || displayName(value);
-    const ext = name.split(".").pop()?.toUpperCase() ?? "";
-    const info = [name, dims, size].filter(Boolean).join(" · ");
-    const fm = appearance === "filecard" ? dims : [dims, size, ext].filter(Boolean).join(" · ");
     const preview = (
       <>
         {previewSrc && video ? (
@@ -759,6 +817,7 @@ export function ImageUploader({
         <div className="wa">
           {input}
           {topAlerts}
+          {confirmLayer}
           <div className="filecard">
             {hideThumb ? null : (
               <div
@@ -769,8 +828,16 @@ export function ImageUploader({
               </div>
             )}
             <div className="meta">
-              <div className="fn">
-                {[name, dims].filter(Boolean).join(" · ") || "파일"}
+              <div className="sic-fn">
+                <span className="fn">{name || "파일"}</span>
+                {dims ? <span className="sic-dim">{dims}</span> : null}
+                {isCoverUploadKind(kind) ? null : (
+                  <SmallImageMarks
+                    width={meta?.width}
+                    height={meta?.height}
+                    src={value}
+                  />
+                )}
               </div>
               <div className="acts">
                 {extraActions}
@@ -804,6 +871,7 @@ export function ImageUploader({
       <div>
         {input}
         {topAlerts}
+        {confirmLayer}
         <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-2.5">
           <div className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-[10px] text-slate-400">
             {previewSrc && video ? (
@@ -819,7 +887,17 @@ export function ImageUploader({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-slate-800">{info || "파일"}</p>
+            <div className="sic-fn">
+              <p className="truncate text-sm text-slate-800">{name || "파일"}</p>
+              {dims ? <span className="sic-dim">{dims}</span> : null}
+              {isCoverUploadKind(kind) ? null : (
+                <SmallImageMarks
+                  width={meta?.width}
+                  height={meta?.height}
+                  src={value}
+                />
+              )}
+            </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -915,6 +993,7 @@ export function ImageUploader({
     <div className={appearance === "filecard" ? "wa" : undefined}>
       {input}
       {topAlerts}
+      {confirmLayer}
       {emptyBlock}
       {bottomNotes}
     </div>

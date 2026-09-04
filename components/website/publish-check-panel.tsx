@@ -2,8 +2,9 @@
 
 import type { CheckWorks } from "@/lib/website/types";
 import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
-import { formatBodyImageTooSmallHint } from "@/lib/website/spec";
+import { formatSmallBodyImageTitle, formatSmallBodyImageWhere } from "@/lib/website/spec";
 import { isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
+import { listSmallWorkBodyImages } from "@/lib/website/small-body-image";
 import type { EditorTab, WorkDetail } from "@/lib/website/work-detail";
 import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-detail";
 
@@ -15,6 +16,7 @@ export type WorkCheckItem = {
   tab: EditorTab;
   title: string;
   where: string;
+  blockId?: string;
 };
 
 const TAB_NAME: Record<EditorTab, string> = {
@@ -42,14 +44,9 @@ export function buildWorkCheckItems(
   const hasCard =
     opts?.hasCardImage !== undefined ? opts.hasCardImage : Boolean(work.card_image?.trim());
   const keyTooSmall = isLongEdgeTooSmall(work.key_image_width, work.key_image_height);
-  let bodySmallCount = 0;
-  for (const section of work.work_sections ?? []) {
-    for (const block of section.content_blocks ?? []) {
-      for (const image of block.block_images ?? []) {
-        if (isLongEdgeTooSmall(image.width, image.height)) bodySmallCount += 1;
-      }
-    }
-  }
+  const smallBody = listSmallWorkBodyImages(work);
+  const bodySmallCount = smallBody.length;
+  const firstSmall = smallBody[0];
 
   const all: WorkCheckItem[] = [
     {
@@ -123,8 +120,14 @@ export function buildWorkCheckItems(
       flag: "body_image_too_small",
       kind: "warn",
       tab: "content",
-      title: "본문 이미지 해상도가 낮습니다",
-      where: whereLine("content", formatBodyImageTooSmallHint(bodySmallCount || check.body_image_too_small_count))
+      title: formatSmallBodyImageTitle(bodySmallCount || check.body_image_too_small_count || 0),
+      where: whereLine(
+        "content",
+        firstSmall
+          ? formatSmallBodyImageWhere(firstSmall.blockIndex)
+          : formatSmallBodyImageWhere(1)
+      ),
+      blockId: firstSmall?.blockId
     },
     {
       flag: "empty_blocks",
@@ -209,11 +212,11 @@ export function buildWorkCheckItems(
 
 export function WorkPublishCheckList({
   items,
-  onGoTab,
+  onGo,
   overlay = false
 }: {
   items: WorkCheckItem[];
-  onGoTab: (tab: EditorTab) => void;
+  onGo: (item: WorkCheckItem) => void;
   overlay?: boolean;
 }) {
   if (items.length === 0) return null;
@@ -241,7 +244,7 @@ export function WorkPublishCheckList({
           <button
             type="button"
             className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
-            onClick={() => onGoTab(item.tab)}
+            onClick={() => onGo(item)}
           >
             가기
           </button>

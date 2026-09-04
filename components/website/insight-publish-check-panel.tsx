@@ -7,6 +7,11 @@ import {
   INSIGHT_WARN_FLAGS
 } from "@/lib/website/checks";
 import {
+  formatSmallBodyImageTitle,
+  formatSmallBodyImageWhere
+} from "@/lib/website/spec";
+import { listSmallInsightBodyImages } from "@/lib/website/small-body-image";
+import {
   countInsightAiUnconfirmed,
   type InsightDetail,
   type InsightEditorTab
@@ -125,6 +130,7 @@ export function buildInsightCheckItems(
 ): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
   const missingAlts = findMissingInsightImageAlts(insight);
+  const smallBody = listSmallInsightBodyImages(insight);
   const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
       let title = INSIGHT_CHECK_LABEL[flag];
@@ -159,18 +165,36 @@ export function buildInsightCheckItems(
         blockId
       };
     }),
-    ...INSIGHT_WARN_FLAGS.map((flag) => ({
-      flag,
-      kind: "warn" as const,
-      tab: FLAG_TAB[flag],
-      title:
-        flag === "empty_blocks" && Number(check.empty_blocks) > 0
-          ? `비어 있는 블록이 ${Number(check.empty_blocks)}개 있습니다`
-          : INSIGHT_CHECK_LABEL[flag],
-      where: whereLine(FLAG_TAB[flag], FLAG_SUB[flag])
-    }))
+    ...INSIGHT_WARN_FLAGS.map((flag) => {
+      let title = INSIGHT_CHECK_LABEL[flag];
+      let where = whereLine(FLAG_TAB[flag], FLAG_SUB[flag]);
+      let blockId: string | undefined;
+      if (flag === "empty_blocks" && Number(check.empty_blocks) > 0) {
+        title = `비어 있는 블록이 ${Number(check.empty_blocks)}개 있습니다`;
+      }
+      if (flag === "body_image_too_small") {
+        const first = smallBody[0];
+        title = formatSmallBodyImageTitle(smallBody.length);
+        where = whereLine(
+          "content",
+          first ? formatSmallBodyImageWhere(first.blockIndex) : formatSmallBodyImageWhere(1)
+        );
+        blockId = first?.blockId;
+      }
+      return {
+        flag,
+        kind: "warn" as const,
+        tab: FLAG_TAB[flag],
+        title,
+        where,
+        blockId
+      };
+    })
   ];
-  return all.filter((item) => flagOn(check, item.flag));
+  return all.filter((item) => {
+    if (item.flag === "body_image_too_small") return smallBody.length > 0;
+    return flagOn(check, item.flag);
+  });
 }
 
 export function InsightPublishCheckList({
