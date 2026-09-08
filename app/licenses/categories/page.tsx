@@ -4,8 +4,6 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { isFkRestrictError } from "@/lib/licenses/service-categories";
 import { supabase } from "@/lib/supabase/client";
 
-type MemberRole = "슈퍼관리자" | "중간관리자" | "멤버";
-
 type CategoryRow = {
   id: string;
   name: string;
@@ -17,7 +15,6 @@ type CategoryRow = {
 };
 
 export default function LicenseCategoriesPage() {
-  const [role, setRole] = useState<MemberRole | null>(null);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -29,8 +26,6 @@ export default function LicenseCategoriesPage() {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [inputName, setInputName] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const canManage = role === "슈퍼관리자" || role === "중간관리자";
 
   const loadCategories = useCallback(async () => {
     const [catRes, svcRes] = await Promise.all([
@@ -83,20 +78,6 @@ export default function LicenseCategoriesPage() {
     const run = async () => {
       setLoading(true);
       setError("");
-
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
-        setRole((profile?.role as MemberRole | undefined) ?? null);
-      }
-
       await loadCategories();
       setLoading(false);
     };
@@ -260,15 +241,13 @@ export default function LicenseCategoriesPage() {
           <h1 className="text-2xl font-bold text-slate-900">카테고리 설정</h1>
           <p className="mt-1 text-sm text-slate-600">라이선스 서비스 카테고리를 관리합니다.</p>
         </div>
-        {canManage ? (
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="rounded-xl bg-apollon-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-apollon-400"
-          >
-            + 카테고리 추가
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={openCreateModal}
+          className="rounded-xl bg-apollon-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-apollon-400"
+        >
+          + 카테고리 추가
+        </button>
       </header>
 
       {message ? (
@@ -291,16 +270,13 @@ export default function LicenseCategoriesPage() {
                 <th className="px-4 py-3 text-right font-medium">전체 서비스 수</th>
                 <th className="px-4 py-3 text-right font-medium">월 구독 수</th>
                 <th className="px-4 py-3 text-right font-medium">년 구독 수</th>
-                {canManage ? <th className="px-4 py-3 text-right font-medium">작업</th> : null}
+                <th className="px-4 py-3 text-right font-medium">작업</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {categories.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={canManage ? 5 : 4}
-                    className="px-4 py-10 text-center text-slate-500"
-                  >
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
                     등록된 카테고리가 없습니다.
                   </td>
                 </tr>
@@ -316,26 +292,24 @@ export default function LicenseCategoriesPage() {
                     <td className="px-4 py-3 text-right tabular-nums">{row.total}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.monthly}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.yearly}</td>
-                    {canManage ? (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(row)}
-                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-                          >
-                            수정
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(row)}
-                            className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      </td>
-                    ) : null}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(row)}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row)}
+                          className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
