@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { KST_OFFSET_MS, toKstDateString } from "@/lib/mail/hub-email";
 import { resolveUiContractType } from "@/lib/licenses/calc";
+import { mapServiceRows } from "@/lib/licenses/service-categories";
 import type { License } from "@/lib/licenses/types";
 
 const FX_FALLBACK = { USD: 1525, EUR: 1690 } as const;
@@ -116,7 +117,9 @@ export async function GET(request: NextRequest) {
   const [servicesRes, profilesRes, usdKrw, eurKrw] = await Promise.all([
     supabase
       .from("services")
-      .select("id, name, cost, cost_monthly, currency, license_count, contract_type, cost_type, payment_day, payment_month, category")
+      .select(
+        "id, name, cost, cost_monthly, currency, license_count, contract_type, cost_type, payment_day, payment_month, category, category_id, service_categories(name)"
+      )
       .eq("is_hub_card", false)
       .eq("status", "활성")
       .in("contract_type", ["월 구독", "년 구독"]),
@@ -131,7 +134,7 @@ export async function GET(request: NextRequest) {
   }
 
   const activeMemberCount = profilesRes.data?.length ?? 0;
-  const services = (servicesRes.data ?? []) as License[];
+  const services = mapServiceRows(servicesRes.data ?? []);
 
   let processed = 0;
   let skipped = 0;
@@ -146,9 +149,11 @@ export async function GET(request: NextRequest) {
     const costNum = Number(service.cost ?? service.cost_monthly ?? 0);
     const costMonthly = Number(service.cost_monthly ?? service.cost ?? 0);
     const category =
-      service.category != null && String(service.category).trim().length > 0
-        ? String(service.category).trim()
-        : null;
+      service.category_name != null && String(service.category_name).trim().length > 0
+        ? String(service.category_name).trim()
+        : service.category != null && String(service.category).trim().length > 0
+          ? String(service.category).trim()
+          : null;
     const { costMonthlyKrw, fxRate } = computePaymentCostMonthlyKrw(service, usdKrw, eurKrw);
 
     const { error } = await supabase.from("service_cost_history").insert({

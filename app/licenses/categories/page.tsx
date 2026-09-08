@@ -1,53 +1,31 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { isFkRestrictError } from "@/lib/licenses/service-categories";
 import { supabase } from "@/lib/supabase/client";
 
 type MemberRole = "슈퍼관리자" | "중간관리자" | "멤버";
 
 type CategoryRow = {
+  id: string;
   name: string;
+  sort_order: number;
+  is_active: boolean;
   total: number;
   monthly: number;
   yearly: number;
-  isVirtual: boolean;
 };
-
-type ServiceCategoryRow = {
-  category: string;
-  contract_type: string | null;
-};
-
-function aggregateCategories(rows: ServiceCategoryRow[]): CategoryRow[] {
-  const map = new Map<string, { total: number; monthly: number; yearly: number }>();
-
-  for (const row of rows) {
-    const cat = row.category?.trim();
-    if (!cat) continue;
-    if (!map.has(cat)) {
-      map.set(cat, { total: 0, monthly: 0, yearly: 0 });
-    }
-    const entry = map.get(cat)!;
-    entry.total += 1;
-    if (row.contract_type === "월 구독") entry.monthly += 1;
-    if (row.contract_type === "년 구독") entry.yearly += 1;
-  }
-
-  return [...map.entries()]
-    .map(([name, counts]) => ({ name, ...counts, isVirtual: false }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-}
 
 export default function LicenseCategoriesPage() {
   const [role, setRole] = useState<MemberRole | null>(null);
-  const [dbCategories, setDbCategories] = useState<CategoryRow[]>([]);
-  const [virtualCategories, setVirtualCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [inputName, setInputName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -55,18 +33,50 @@ export default function LicenseCategoriesPage() {
   const canManage = role === "슈퍼관리자" || role === "중간관리자";
 
   const loadCategories = useCallback(async () => {
-    const { data, error: fetchError } = await supabase
-      .from("services")
-      .select("category, contract_type")
-      .eq("is_hub_card", false)
-      .not("category", "is", null);
+    const [catRes, svcRes] = await Promise.all([
+      supabase
+        .from("service_categories")
+        .select("id, name, sort_order, is_active")
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("services")
+        .select("category_id, contract_type")
+        .eq("is_hub_card", false)
+        .not("category_id", "is", null)
+    ]);
 
-    if (fetchError) {
-      setError(fetchError.message);
+    if (catRes.error) {
+      setError(catRes.error.message);
+      return;
+    }
+    if (svcRes.error) {
+      setError(svcRes.error.message);
       return;
     }
 
-    setDbCategories(aggregateCategories((data ?? []) as ServiceCategoryRow[]));
+    const counts = new Map<string, { total: number; monthly: number; yearly: number }>();
+    for (const row of svcRes.data ?? []) {
+      const id = typeof row.category_id === "string" ? row.category_id : "";
+      if (!id) continue;
+      if (!counts.has(id)) counts.set(id, { total: 0, monthly: 0, yearly: 0 });
+      const entry = counts.get(id)!;
+      entry.total += 1;
+      if (row.contract_type === "월 구독") entry.monthly += 1;
+      if (row.contract_type === "년 구독") entry.yearly += 1;
+    }
+
+    setCategories(
+      (catRes.data ?? []).map((row) => {
+        const c = counts.get(row.id) ?? { total: 0, monthly: 0, yearly: 0 };
+        return {
+          id: row.id as string,
+          name: String(row.name ?? ""),
+          sort_order: Number(row.sort_order) || 0,
+          is_active: row.is_active !== false,
+          ...c
+        };
+      })
+    );
   }, []);
 
   useEffect(() => {
@@ -93,18 +103,9 @@ export default function LicenseCategoriesPage() {
     void run();
   }, [loadCategories]);
 
-  const categories = useMemo(() => {
-    const merged = [...dbCategories];
-    for (const name of virtualCategories) {
-      if (!merged.some((row) => row.name === name)) {
-        merged.push({ name, total: 0, monthly: 0, yearly: 0, isVirtual: true });
-      }
-    }
-    return merged.sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  }, [dbCategories, virtualCategories]);
-
   const openCreateModal = () => {
     setModalMode("create");
+    setEditingId(null);
     setEditingName(null);
     setInputName("");
     setMessage("");
@@ -112,10 +113,11 @@ export default function LicenseCategoriesPage() {
     setModalOpen(true);
   };
 
-  const openEditModal = (name: string) => {
+  const openEditModal = (row: CategoryRow) => {
     setModalMode("edit");
-    setEditingName(name);
-    setInputName(name);
+    setEditingId(row.id);
+    setEditingName(row.name);
+    setInputName(row.name);
     setMessage("");
     setError("");
     setModalOpen(true);
@@ -123,6 +125,7 @@ export default function LicenseCategoriesPage() {
 
   const closeModal = () => {
     setModalOpen(false);
+    setEditingId(null);
     setEditingName(null);
     setInputName("");
   };
@@ -136,7 +139,7 @@ export default function LicenseCategoriesPage() {
     }
 
     const duplicate = categories.some(
-      (row) => row.name === trimmed && row.name !== editingName
+      (row) => row.name === trimmed && row.id !== editingId
     );
     if (duplicate) {
       setError("이미 존재하는 카테고리명입니다.");
@@ -147,41 +150,47 @@ export default function LicenseCategoriesPage() {
     setError("");
 
     if (modalMode === "create") {
-      setVirtualCategories((prev) =>
-        prev.includes(trimmed) ? prev : [...prev, trimmed].sort((a, b) => a.localeCompare(b, "ko"))
-      );
+      const maxSort = categories.reduce((m, r) => Math.max(m, r.sort_order), 0);
+      const { error: insertError } = await supabase.from("service_categories").insert({
+        name: trimmed,
+        sort_order: maxSort + 10,
+        is_active: true
+      });
+      setSaving(false);
+      if (insertError) {
+        const msg = insertError.message.toLowerCase();
+        if (insertError.code === "23505" || msg.includes("unique") || msg.includes("duplicate")) {
+          setError("이미 존재하는 카테고리명입니다.");
+        } else {
+          setError(insertError.message);
+        }
+        return;
+      }
+      await loadCategories();
       setMessage(`"${trimmed}" 카테고리를 추가했습니다.`);
-      setSaving(false);
       closeModal();
       return;
     }
 
-    if (!editingName) {
+    if (!editingId) {
       setSaving(false);
-      return;
-    }
-
-    const target = categories.find((row) => row.name === editingName);
-    if (target?.isVirtual || target?.total === 0) {
-      setVirtualCategories((prev) =>
-        prev.map((name) => (name === editingName ? trimmed : name)).sort((a, b) => a.localeCompare(b, "ko"))
-      );
-      setMessage(`카테고리명을 "${trimmed}"(으)로 변경했습니다.`);
-      setSaving(false);
-      closeModal();
       return;
     }
 
     const { error: updateError } = await supabase
-      .from("services")
-      .update({ category: trimmed })
-      .eq("category", editingName)
-      .eq("is_hub_card", false);
+      .from("service_categories")
+      .update({ name: trimmed, updated_at: new Date().toISOString() })
+      .eq("id", editingId);
 
     setSaving(false);
 
     if (updateError) {
-      setError(updateError.message);
+      const msg = updateError.message.toLowerCase();
+      if (updateError.code === "23505" || msg.includes("unique") || msg.includes("duplicate")) {
+        setError("이미 존재하는 카테고리명입니다.");
+      } else {
+        setError(updateError.message);
+      }
       return;
     }
 
@@ -195,17 +204,49 @@ export default function LicenseCategoriesPage() {
     setError("");
 
     if (row.total > 0) {
-      setError(`"${row.name}" 카테고리에 연결된 서비스가 ${row.total}개 있어 삭제할 수 없습니다.`);
+      setError(
+        `${row.total}개 서비스가 사용 중입니다. 먼저 해당 서비스의 카테고리를 변경하세요.`
+      );
       return;
     }
 
-    if (row.isVirtual || virtualCategories.includes(row.name)) {
-      setVirtualCategories((prev) => prev.filter((name) => name !== row.name));
-      setMessage(`"${row.name}" 카테고리를 목록에서 제거했습니다.`);
+    const { count, error: countError } = await supabase
+      .from("services")
+      .select("id", { count: "exact", head: true })
+      .eq("category_id", row.id)
+      .eq("is_hub_card", false);
+
+    if (countError) {
+      setError(countError.message);
       return;
     }
 
-    setMessage(`"${row.name}" 카테고리를 목록에서 제거했습니다.`);
+    const used = count ?? 0;
+    if (used > 0) {
+      setError(
+        `${used}개 서비스가 사용 중입니다. 먼저 해당 서비스의 카테고리를 변경하세요.`
+      );
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("service_categories")
+      .delete()
+      .eq("id", row.id);
+
+    if (deleteError) {
+      if (isFkRestrictError(deleteError)) {
+        setError(
+          `서비스가 사용 중입니다. 먼저 해당 서비스의 카테고리를 변경하세요.`
+        );
+      } else {
+        setError(deleteError.message);
+      }
+      return;
+    }
+
+    await loadCategories();
+    setMessage(`"${row.name}" 카테고리를 삭제했습니다.`);
   };
 
   if (loading) {
@@ -235,7 +276,7 @@ export default function LicenseCategoriesPage() {
           {message}
         </p>
       ) : null}
-      {error ? (
+      {error && !modalOpen ? (
         <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {error}
         </p>
@@ -265,8 +306,13 @@ export default function LicenseCategoriesPage() {
                 </tr>
               ) : (
                 categories.map((row) => (
-                  <tr key={row.name} className="text-slate-800">
-                    <td className="px-4 py-3 font-medium">{row.name}</td>
+                  <tr key={row.id} className="text-slate-800">
+                    <td className="px-4 py-3 font-medium">
+                      {row.name}
+                      {!row.is_active ? (
+                        <span className="ml-2 text-xs font-normal text-slate-400">(비활성)</span>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.total}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.monthly}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{row.yearly}</td>
@@ -275,7 +321,7 @@ export default function LicenseCategoriesPage() {
                         <div className="flex justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => openEditModal(row.name)}
+                            onClick={() => openEditModal(row)}
                             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                           >
                             수정

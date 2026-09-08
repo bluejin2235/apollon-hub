@@ -13,11 +13,15 @@ import { SharePageButton } from "@/components/ui/share-page-button";
 import { useCanManageLicense } from "@/lib/services/use-service-permissions";
 import { computeLicenseNextRenewal, formatCurrency, computeLicenseCostBreakdown } from "@/lib/licenses/calc";
 import type { ServiceChangedField } from "@/lib/licenses/service-change-log";
+import {
+  licenseCategoryLabel,
+  mapServiceRow
+} from "@/lib/licenses/service-categories";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
 
-/* ──────────────── 카테고리 → 컬러 팔레트 (목록 카드와 동일 매핑) ──────────────── */
+/* ──────────────── 카테고리 → 컬러 팔레트 (category_id 시드 + 이름 fallback) ──────────────── */
 
 type CategoryPalette = {
   iconBg: string;
@@ -50,14 +54,33 @@ const PALETTE_ROSE: CategoryPalette = {
   iconText: "text-rose-700",
   pill: "bg-rose-100 text-rose-700"
 };
+const PALETTE_INDIGO: CategoryPalette = {
+  iconBg: "bg-indigo-100",
+  iconText: "text-indigo-700",
+  pill: "bg-indigo-100 text-indigo-700"
+};
 const PALETTE_SLATE: CategoryPalette = {
   iconBg: "bg-slate-200",
   iconText: "text-slate-600",
   pill: "bg-slate-100 text-slate-600"
 };
 
-function categoryPalette(category: string | null | undefined): CategoryPalette {
-  const c = (category ?? "").trim();
+const SEED_CATEGORY_PALETTE: Record<string, CategoryPalette> = {
+  "fa925ef5-fa20-4777-8ca2-e142f312ace1": PALETTE_BLUE, // 전사/공통
+  "938ed2cb-27f0-4276-8b87-e8a58cfa80b2": PALETTE_GREEN, // 기획/공간
+  "e5520952-fa86-4ed3-a7f7-893bfd5ad9d7": PALETTE_INDIGO, // 디자인/공간
+  "cb24abab-206d-436f-b1cf-1e4b21e53117": PALETTE_PURPLE, // 디자인/공통
+  "49e0dde2-dc62-4eff-865e-6f05d76253ec": PALETTE_PURPLE, // 디자인/비주얼
+  "3c491cba-f64d-4494-b02d-d1a903db1213": PALETTE_SLATE // 기타
+};
+
+function categoryPalette(
+  categoryId: string | null | undefined,
+  categoryName?: string | null
+): CategoryPalette {
+  const id = (categoryId ?? "").trim();
+  if (id && SEED_CATEGORY_PALETTE[id]) return SEED_CATEGORY_PALETTE[id]!;
+  const c = (categoryName ?? "").trim();
   if (!c) return PALETTE_ROSE;
   if (c.includes("디자인")) return PALETTE_PURPLE;
   if (c.includes("개발")) return PALETTE_BLUE;
@@ -239,11 +262,11 @@ export default function LicenseDetailPage() {
       // `select("*")` — services 전 컬럼(계약·결제·날짜·url·description 등). RLS로 허용된 열만 내려옴.
       const { data: row } = await supabase
         .from("services")
-        .select("*")
+        .select("*, service_categories ( id, name, sort_order, is_active )")
         .eq("id", id)
         .eq("is_hub_card", false)
         .maybeSingle();
-      const lic = (row ?? null) as License | null;
+      const lic = row ? mapServiceRow(row as Record<string, unknown>) : null;
       setLicense(lic);
       await reloadCardHolder(lic);
       setLoading(false);
@@ -311,7 +334,7 @@ export default function LicenseDetailPage() {
     );
   }
 
-  const palette = categoryPalette(license.category);
+  const palette = categoryPalette(license.category_id, licenseCategoryLabel(license));
 
   // 상태 뱃지
   const statusActive = license.status !== "비활성";
@@ -395,7 +418,7 @@ export default function LicenseDetailPage() {
                 <span className="text-sm font-medium text-slate-600">{license.plan}</span>
               ) : null}
             </div>
-            <p className="mt-0.5 text-sm text-slate-500">{license.category}</p>
+            <p className="mt-0.5 text-sm text-slate-500">{licenseCategoryLabel(license)}</p>
           </div>
         </div>
         <div className="flex gap-2">

@@ -27,6 +27,11 @@ import {
   type CostContractFilter,
   type CostMetricKey
 } from "@/lib/licenses/cost-analytics";
+import { getCategoryColorHex } from "@/lib/licenses/category-colors";
+import {
+  licenseCategoryLabel,
+  mapServiceRows
+} from "@/lib/licenses/service-categories";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -92,6 +97,7 @@ type CostChartTooltipProps = {
     value?: number | string;
     color?: string;
     dataKey?: string | number;
+    name?: string;
   }>;
 };
 
@@ -102,7 +108,12 @@ function CostChartTooltip({ active, label, payload }: CostChartTooltipProps) {
     .map((entry) => {
       const dataKey = String(entry.dataKey ?? "");
       const value = typeof entry.value === "number" ? entry.value : Number(entry.value);
-      return { dataKey, value, color: entry.color ?? "#64748b" };
+      return {
+        dataKey,
+        name: entry.name || tooltipSeriesLabel(dataKey),
+        value,
+        color: entry.color ?? "#64748b"
+      };
     })
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => b.value - a.value);
@@ -123,7 +134,7 @@ function CostChartTooltip({ active, label, payload }: CostChartTooltipProps) {
                 style={{ backgroundColor: row.color }}
                 aria-hidden
               />
-              <span className="truncate text-[11px] text-slate-600">{tooltipSeriesLabel(row.dataKey)}</span>
+              <span className="truncate text-[11px] text-slate-600">{row.name}</span>
             </span>
             <span className="shrink-0 text-[12px] font-medium tabular-nums text-slate-900">
               {formatTooltipValue(row.dataKey, row.value)}
@@ -158,12 +169,16 @@ export default function LicensesCostsPage() {
     const run = async () => {
       setLoading(true);
       const [sRes, pRes] = await Promise.all([
-        supabase.from("services").select("*").eq("is_hub_card", false).order("name"),
+        supabase
+          .from("services")
+          .select("*, service_categories ( id, name, sort_order, is_active )")
+          .eq("is_hub_card", false)
+          .order("name"),
         supabase
           .from("profiles")
           .select("id, email, name, department, role, status, created_at")
       ]);
-      setServices((sRes.data ?? []) as License[]);
+      setServices(mapServiceRows(sRes.data ?? []));
       setProfiles((pRes.data ?? []) as Profile[]);
       setLoading(false);
     };
@@ -186,12 +201,25 @@ export default function LicensesCostsPage() {
   }, [period, customStart, customEnd, currentYm]);
 
   const categoryOptions = useMemo(() => {
-    const set = new Set<string>();
+    const map = new Map<string, string>();
     for (const s of services) {
-      const c = (s.category ?? "").trim();
-      if (c) set.add(c);
+      if (!s.category_id) continue;
+      map.set(s.category_id, licenseCategoryLabel(s));
     }
-    return ["전체", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ko"))];
+    return [
+      { id: "전체", name: "전체" },
+      ...[...map.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+    ];
+  }, [services]);
+
+  const categoryNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of services) {
+      if (s.category_id) m.set(s.category_id, licenseCategoryLabel(s));
+    }
+    return m;
   }, [services]);
 
   const serviceOptions = useMemo(
@@ -232,14 +260,14 @@ export default function LicensesCostsPage() {
   const topCategories = useMemo(() => {
     const totals = new Map<string, number>();
     for (const row of monthRows) {
-      for (const [cat, v] of Object.entries(row.byCategory)) {
-        totals.set(cat, (totals.get(cat) ?? 0) + v.subscriptionKrw);
+      for (const [catId, v] of Object.entries(row.byCategory)) {
+        totals.set(catId, (totals.get(catId) ?? 0) + v.subscriptionKrw);
       }
     }
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
-      .map(([name]) => name);
+      .map(([id]) => id);
   }, [monthRows]);
 
   const chartData = useMemo(() => {
@@ -253,8 +281,8 @@ export default function LicensesCostsPage() {
         members: row.memberCount,
         perMember: Math.round(row.perMemberKrw)
       };
-      for (const cat of topCategories) {
-        base[`cat_${cat}`] = row.byCategory[cat]?.subscriptionKrw ?? 0;
+      for (const catId of topCategories) {
+        base[`cat_${catId}`] = row.byCategory[catId]?.subscriptionKrw ?? 0;
       }
       return base;
     });
@@ -360,15 +388,20 @@ export default function LicensesCostsPage() {
           />
         ) : null}
         {metrics.includes("byCategory")
-          ? topCategories.map((cat, i) => {
-              const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+          ? topCategories.map((catId, i) => {
+              const color =
+                getCategoryColorHex(catId) || CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+              const label =
+                monthRows[0]?.byCategory[catId]?.name ||
+                categoryNameById.get(catId) ||
+                catId;
               return (
                 <Line
-                  key={cat}
+                  key={catId}
                   yAxisId="krw"
                   type="monotone"
-                  dataKey={`cat_${cat}`}
-                  name={cat}
+                  dataKey={`cat_${catId}`}
+                  name={label}
                   stroke={color}
                   strokeWidth={1.5}
                   dot={{ r: 3, fill: color, strokeWidth: 0 }}
@@ -430,15 +463,20 @@ export default function LicensesCostsPage() {
           />
         ) : null}
         {metrics.includes("byCategory")
-          ? topCategories.map((cat, i) => {
-              const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+          ? topCategories.map((catId, i) => {
+              const color =
+                getCategoryColorHex(catId) || CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+              const label =
+                monthRows[0]?.byCategory[catId]?.name ||
+                categoryNameById.get(catId) ||
+                catId;
               return (
                 <Area
-                  key={cat}
+                  key={catId}
                   yAxisId="krw"
                   type="monotone"
-                  dataKey={`cat_${cat}`}
-                  name={cat}
+                  dataKey={`cat_${catId}`}
+                  name={label}
                   stroke={color}
                   fill={color}
                   fillOpacity={0.3}
@@ -527,8 +565,8 @@ export default function LicensesCostsPage() {
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 {categoryOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>

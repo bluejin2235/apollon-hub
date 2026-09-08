@@ -2,6 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { resolveUiContractType } from "@/lib/licenses/calc";
+import {
+  licenseCategoryLabel,
+  mapServiceRow
+} from "@/lib/licenses/service-categories";
 import { buildHubEmailShell, buildInfoTable, EMAIL_HEADER_LICENSE } from "@/lib/mail/hub-email";
 
 const HUB_LICENSES_BASE = "https://hub.apollonworks.com/licenses";
@@ -110,7 +114,7 @@ export async function POST(request: NextRequest) {
     const [serviceRes, userRes, assigneesRes, superAdminsRes] = await Promise.all([
       supabase
         .from("services")
-        .select("id, name, category, contract_type")
+        .select("id, name, category, category_id, contract_type, service_categories(name)")
         .eq("id", serviceId)
         .eq("is_hub_card", false)
         .maybeSingle(),
@@ -147,10 +151,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Service not found" }, { status: 404 });
     }
 
-    const serviceName = String(serviceRes.data.name ?? "").trim() || "—";
-    const category = String(serviceRes.data.category ?? "").trim() || "—";
+    const service = mapServiceRow(serviceRes.data as Record<string, unknown>);
+    const serviceName = String(service.name ?? "").trim() || "—";
+    const categoryLabel = licenseCategoryLabel(service);
+    const category = categoryLabel === "카테고리 미분류" ? "—" : categoryLabel;
     const contractType = resolveUiContractType({
-      contract_type: serviceRes.data.contract_type
+      contract_type: service.contract_type
     } as Parameters<typeof resolveUiContractType>[0]);
     const userName = userRes.data?.name?.trim() || "—";
 

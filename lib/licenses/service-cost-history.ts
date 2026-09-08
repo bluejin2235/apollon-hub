@@ -65,6 +65,7 @@ export async function insertServiceCostHistory(
     | "contract_type"
     | "cost_type"
     | "category"
+    | "category_name"
   >,
   activeMemberCount: number,
   usdKrw?: number,
@@ -72,10 +73,11 @@ export async function insertServiceCostHistory(
 ): Promise<void> {
   const costNum = Number(service.cost ?? service.cost_monthly ?? 0);
   const costMonthly = Number(service.cost_monthly ?? service.cost ?? 0);
-  const category =
-    service.category != null && String(service.category).trim().length > 0
-      ? String(service.category).trim()
-      : null;
+  const categoryLabel =
+    (service.category_name != null && String(service.category_name).trim()) ||
+    (service.category != null && String(service.category).trim()) ||
+    "";
+  const category = categoryLabel.length > 0 ? categoryLabel : null;
   const costMonthlyKrw = computeCostMonthlyKrw(service, usdKrw, eurKrw);
 
   const { error } = await client.from("service_cost_history").insert({

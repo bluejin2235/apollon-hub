@@ -16,6 +16,10 @@ import {
   licenseListCostBadgeLabel
 } from "@/lib/licenses/calc";
 import type { License, Profile } from "@/lib/licenses/types";
+import {
+  licenseCategoryLabel,
+  mapServiceRows
+} from "@/lib/licenses/service-categories";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
 
@@ -44,99 +48,7 @@ const INACTIVE_STYLE: CategoryStyle = {
   pillText: "text-slate-400"
 };
 
-/** 명시 카테고리 (exact match, 현재 데이터 기준) */
-const EXPLICIT_CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  "전사/공통": {
-    cardBg: "bg-blue-50",
-    cardBorder: "border-blue-200",
-    iconBg: "bg-blue-200",
-    iconText: "text-blue-700",
-    pillBg: "bg-blue-100",
-    pillText: "text-blue-700"
-  },
-  "기획/공통": {
-    cardBg: "bg-emerald-50",
-    cardBorder: "border-emerald-200",
-    iconBg: "bg-emerald-200",
-    iconText: "text-emerald-700",
-    pillBg: "bg-emerald-100",
-    pillText: "text-emerald-700"
-  },
-  "디자인/공통": {
-    cardBg: "bg-purple-50",
-    cardBorder: "border-purple-200",
-    iconBg: "bg-purple-200",
-    iconText: "text-purple-700",
-    pillBg: "bg-purple-100",
-    pillText: "text-purple-700"
-  },
-  "디자인/공간": {
-    cardBg: "bg-indigo-50",
-    cardBorder: "border-indigo-200",
-    iconBg: "bg-indigo-200",
-    iconText: "text-indigo-700",
-    pillBg: "bg-indigo-100",
-    pillText: "text-indigo-700"
-  },
-  "디자인/비주얼": {
-    cardBg: "bg-violet-50",
-    cardBorder: "border-violet-200",
-    iconBg: "bg-violet-200",
-    iconText: "text-violet-700",
-    pillBg: "bg-violet-100",
-    pillText: "text-violet-700"
-  },
-  "디자인/비주얼,공간": {
-    cardBg: "bg-fuchsia-50",
-    cardBorder: "border-fuchsia-200",
-    iconBg: "bg-fuchsia-200",
-    iconText: "text-fuchsia-700",
-    pillBg: "bg-fuchsia-100",
-    pillText: "text-fuchsia-700"
-  },
-  "개발/공통": {
-    cardBg: "bg-cyan-50",
-    cardBorder: "border-cyan-200",
-    iconBg: "bg-cyan-200",
-    iconText: "text-cyan-700",
-    pillBg: "bg-cyan-100",
-    pillText: "text-cyan-700"
-  },
-  "마케팅/공통": {
-    cardBg: "bg-orange-50",
-    cardBorder: "border-orange-200",
-    iconBg: "bg-orange-200",
-    iconText: "text-orange-700",
-    pillBg: "bg-orange-100",
-    pillText: "text-orange-700"
-  },
-  "콘텐츠/공통": {
-    cardBg: "bg-amber-50",
-    cardBorder: "border-amber-200",
-    iconBg: "bg-amber-200",
-    iconText: "text-amber-700",
-    pillBg: "bg-amber-100",
-    pillText: "text-amber-700"
-  },
-  "공간/공통": {
-    cardBg: "bg-teal-50",
-    cardBorder: "border-teal-200",
-    iconBg: "bg-teal-200",
-    iconText: "text-teal-700",
-    pillBg: "bg-teal-100",
-    pillText: "text-teal-700"
-  },
-  "전사/공": {
-    cardBg: "bg-sky-50",
-    cardBorder: "border-sky-200",
-    iconBg: "bg-sky-200",
-    iconText: "text-sky-700",
-    pillBg: "bg-sky-100",
-    pillText: "text-sky-700"
-  }
-};
-
-/** 신규 카테고리 — 동일 문자열은 항상 동일 색 (해시 % 길이) */
+/** 활성 카드: category_id 해시 배색 (이름 변경에도 색 유지) */
 const AUTO_CATEGORY_PALETTES: CategoryStyle[] = [
   {
     cardBg: "bg-rose-50",
@@ -229,16 +141,12 @@ function hashCategoryKey(s: string): number {
 }
 
 /**
- * 활성 카드: 카테고리 exact match → 명시 팔레트, 없으면 해시 자동 배색.
+ * 활성 카드: category_id 해시 배색 (이름 변경에도 색 유지).
  */
-function categoryStyleActive(category: string | null | undefined): CategoryStyle {
-  const c = (category ?? "").trim();
-  if (EXPLICIT_CATEGORY_STYLES[c]) {
-    return EXPLICIT_CATEGORY_STYLES[c];
-  }
-  const key = c || "__empty__";
+function categoryStyleActive(categoryId: string | null | undefined): CategoryStyle {
+  const key = (categoryId ?? "").trim() || "__empty__";
   const idx = hashCategoryKey(key) % AUTO_CATEGORY_PALETTES.length;
-  return AUTO_CATEGORY_PALETTES[idx];
+  return AUTO_CATEGORY_PALETTES[idx]!;
 }
 
 /** USD/EUR 등 원본 통화 포맷팅 (소수점 없는 정수 단위) */
@@ -286,12 +194,12 @@ export default function LicensesListPage() {
       const [l, p] = await Promise.all([
         supabase
           .from("services")
-          .select("*")
+          .select("*, service_categories ( id, name, sort_order, is_active )")
           .eq("is_hub_card", false)
           .order("updated_at", { ascending: false }),
         supabase.from("profiles").select("id, name, email, department, role, status")
       ]);
-      setLicenses((l.data ?? []) as License[]);
+      setLicenses(mapServiceRows(l.data ?? []));
       setProfiles((p.data ?? []) as Profile[]);
       setLoading(false);
     };
@@ -309,12 +217,14 @@ export default function LicensesListPage() {
 
   /** 데이터에 실제 존재하는 카테고리만 옵션으로 노출 */
   const categoryOptions = useMemo(() => {
-    const set = new Set<string>();
+    const map = new Map<string, string>();
     for (const row of licenses) {
-      const c = (row.category ?? "").trim();
-      if (c) set.add(c);
+      if (!row.category_id) continue;
+      map.set(row.category_id, licenseCategoryLabel(row));
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [licenses]);
 
   /** 검색 + 상태 + 카테고리 필터 적용 */
@@ -322,9 +232,11 @@ export default function LicensesListPage() {
     const q = searchQuery.trim().toLowerCase();
     return licenses.filter((row) => {
       if (statusFilter !== "전체" && row.status !== statusFilter) return false;
-      if (categoryFilter !== "전체" && (row.category ?? "").trim() !== categoryFilter) return false;
+      if (categoryFilter !== "전체" && (row.category_id ?? "") !== categoryFilter) {
+        return false;
+      }
       if (q) {
-        const blob = [row.name, row.plan, row.plan_name, row.category]
+        const blob = [row.name, row.plan, row.plan_name, licenseCategoryLabel(row)]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -411,8 +323,8 @@ export default function LicensesListPage() {
           >
             <option value="전체">전체 카테고리</option>
             {categoryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c.id} value={c.id}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -438,7 +350,7 @@ export default function LicensesListPage() {
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((row) => {
             const inactive = row.status === "비활성";
-            const style = inactive ? INACTIVE_STYLE : categoryStyleActive(row.category);
+            const style = inactive ? INACTIVE_STYLE : categoryStyleActive(row.category_id);
             const assignee = row.assignee_id ? assigneeMap.get(row.assignee_id) ?? null : null;
             // payment_day / payment_month 기반으로 오늘 이후 가장 가까운 결제일 계산.
             const nextPaymentDate = computeLicenseNextRenewal(row);
@@ -512,7 +424,7 @@ export default function LicensesListPage() {
                         inactive ? "text-slate-400" : "text-slate-600"
                       }`}
                     >
-                      {(row.category && row.category.trim()) || "카테고리 미분류"}
+                      {licenseCategoryLabel(row)}
                     </span>
                     <span
                       className={`shrink-0 text-[11px] font-semibold ${

@@ -312,7 +312,8 @@ export function activeProfiles(profiles: Profile[]): Profile[] {
 export function aggregateByCategory(licenses: License[]): Record<string, number> {
   const m: Record<string, number> = {};
   licenses.forEach((l) => {
-    m[l.category] = (m[l.category] ?? 0) + l.license_count;
+    const key = l.category_id ?? `name:${(l.category_name ?? l.category ?? "").trim() || "미분류"}`;
+    m[key] = (m[key] ?? 0) + l.license_count;
   });
   return m;
 }

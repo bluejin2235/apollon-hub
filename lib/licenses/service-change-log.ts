@@ -125,7 +125,7 @@ export function buildServiceChangeSnapshot(license: License): ServiceChangeSnaps
     contract_type: resolveUiContractType(license),
     payment_day: license.payment_day ?? null,
     payment_month: license.payment_month ?? null,
-    category: (license.category ?? "").trim(),
+    category: (license.category_name ?? license.category ?? "").trim(),
     status: license.status === "비활성" ? "비활성" : "활성",
     notes,
     purpose

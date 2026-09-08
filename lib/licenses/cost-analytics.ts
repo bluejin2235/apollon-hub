@@ -26,7 +26,10 @@ export const COST_METRIC_LABELS: Record<CostMetricKey, string> = {
   byCategory: "카테고리별"
 };
 
-export type CategoryBreakdown = Record<string, { subscriptionKrw: number; perpetualKrw: number }>;
+export type CategoryBreakdown = Record<
+  string,
+  { name: string; subscriptionKrw: number; perpetualKrw: number }
+>;
 
 export type MonthCostRow = {
   month: string;
@@ -40,6 +43,7 @@ export type MonthCostRow = {
 };
 
 export type CostFilters = {
+  /** category_id 또는 "전체" */
   category: string;
   serviceId: string;
   contractType: CostContractFilter;
@@ -116,21 +120,25 @@ function licenseInactiveFromMonth(s: License, currentYm: string): string | null 
 
 function mergeCategoryBreakdown(
   target: CategoryBreakdown,
-  cat: string,
+  catId: string,
+  catName: string,
   sub: number,
   perp: number
 ): void {
-  if (!target[cat]) target[cat] = { subscriptionKrw: 0, perpetualKrw: 0 };
-  target[cat].subscriptionKrw += sub;
-  target[cat].perpetualKrw += perp;
+  if (!target[catId]) {
+    target[catId] = { name: catName, subscriptionKrw: 0, perpetualKrw: 0 };
+  }
+  target[catId].subscriptionKrw += sub;
+  target[catId].perpetualKrw += perp;
 }
 
 /** UI 필터만 적용 (현재 status 로 제외하지 않음 — 월별 활성 기간으로 판단) */
 export function filterServicesForCost(services: License[], filters: CostFilters): License[] {
   return services.filter((s) => {
     if ((s as License & { is_hub_card?: boolean }).is_hub_card) return false;
-    const cat = (s.category ?? "").trim() || "카테고리 미분류";
-    if (filters.category !== "전체" && cat !== filters.category) return false;
+    if (filters.category !== "전체" && (s.category_id ?? "") !== filters.category) {
+      return false;
+    }
     if (filters.serviceId !== "전체" && s.id !== filters.serviceId) return false;
     if (!passesContractFilter(resolveUiContractType(s), filters.contractType)) return false;
     return true;
@@ -186,16 +194,23 @@ function computeSingleMonth(
 
     const ui = resolveUiContractType(s);
     const b = computeLicenseCostBreakdown(s, rates);
-    const cat = (s.category ?? "").trim() || "카테고리 미분류";
 
     if (isPerpetualContract(ui)) {
       const perp = perpetualKrw(b);
       perpetualTotal += perp;
-      mergeCategoryBreakdown(byCategory, cat, 0, perp);
+      if (s.category_id) {
+        const catName =
+          (s.category_name ?? s.category ?? "").trim() || "카테고리 미분류";
+        mergeCategoryBreakdown(byCategory, s.category_id, catName, 0, perp);
+      }
     } else {
       const sub = monthlyKrw(b);
       subscriptionKrw += sub;
-      mergeCategoryBreakdown(byCategory, cat, sub, 0);
+      if (s.category_id) {
+        const catName =
+          (s.category_name ?? s.category ?? "").trim() || "카테고리 미분류";
+        mergeCategoryBreakdown(byCategory, s.category_id, catName, sub, 0);
+      }
     }
   }
 

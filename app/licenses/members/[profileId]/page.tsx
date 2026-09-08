@@ -15,6 +15,10 @@ import {
   partitionMemberLicenses,
   type MemberLicenseCostView
 } from "@/lib/licenses/member-license";
+import {
+  licenseCategoryLabel,
+  mapServiceRows
+} from "@/lib/licenses/service-categories";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { supabase } from "@/lib/supabase/client";
@@ -93,8 +97,8 @@ function LicenseRow({
   const b = costView.breakdown;
   const ui = resolveUiContractType(license);
   const suffix = licenseCostSuffix(ui);
-  const category = (license.category ?? "").trim() || "카테고리 미분류";
-  const iconColor = getCategoryColorHex(category);
+  const category = licenseCategoryLabel(license);
+  const iconColor = getCategoryColorHex(license.category_id ?? category);
 
   return (
     <li className="flex items-start justify-between gap-4 border-b border-slate-100 py-4 last:border-0">
@@ -184,13 +188,16 @@ export default function LicensesMemberDetailPage() {
           .from("profiles")
           .select("id, email, name, department, role, status, created_at")
           .order("name", { ascending: true }),
-        supabase.from("services").select("*").eq("is_hub_card", false),
+        supabase
+          .from("services")
+          .select("*, service_categories ( id, name, sort_order, is_active )")
+          .eq("is_hub_card", false),
         supabase.from("license_users").select("service_id").eq("profile_id", profileId)
       ]);
 
       setProfile((profileRes.data ?? null) as Profile | null);
       setAllProfiles((profilesRes.data ?? []) as Profile[]);
-      setAllServices((servicesRes.data ?? []) as License[]);
+      setAllServices(mapServiceRows(servicesRes.data ?? []));
       const ids = new Set<string>();
       for (const row of usersRes.data ?? []) {
         if (row.service_id) ids.add(row.service_id as string);

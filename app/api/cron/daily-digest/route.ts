@@ -11,6 +11,7 @@ import {
   toKstDateString
 } from "@/lib/mail/hub-email";
 import { restaurantPrimaryCategory } from "@/lib/restaurants/types";
+import { mapServiceRow } from "@/lib/licenses/service-categories";
 
 type ProfileJoin = { name: string | null } | { name: string | null }[] | null;
 
@@ -315,7 +316,9 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false }),
     supabase
       .from("services")
-      .select("id, name, category, assignee:profiles!assignee_id(name)")
+      .select(
+        "id, name, category, category_id, service_categories(name), assignee:profiles!assignee_id(name)"
+      )
       .eq("is_hub_card", false)
       .gte("created_at", startIso)
       .lt("created_at", endIso)
@@ -368,11 +371,14 @@ export async function GET(request: NextRequest) {
     managerName: joinName(row.manager as ProfileJoin)
   }));
 
-  const licenses = (licensesRes.data ?? []).map((row) => ({
-    name: String(row.name ?? ""),
-    category: String(row.category ?? ""),
-    assigneeName: joinName(row.assignee as ProfileJoin)
-  }));
+  const licenses = (licensesRes.data ?? []).map((row) => {
+    const mapped = mapServiceRow(row as Record<string, unknown>);
+    return {
+      name: String(mapped.name ?? ""),
+      category: (mapped.category_name ?? mapped.category ?? "").trim() || "—",
+      assigneeName: joinName(row.assignee as ProfileJoin)
+    };
+  });
 
   const html = buildDigestHtml({
     dateLabelKst,

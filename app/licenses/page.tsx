@@ -24,6 +24,10 @@ import {
   resolveUiContractType
 } from "@/lib/licenses/calc";
 import { getCategoryColorHex } from "@/lib/licenses/category-colors";
+import {
+  licenseCategoryLabel,
+  mapServiceRows
+} from "@/lib/licenses/service-categories";
 import type { License, Profile } from "@/lib/licenses/types";
 import { useKrwRates } from "@/lib/licenses/use-krw-rates";
 import { TableScrollHint } from "@/components/ui/table-scroll-hint";
@@ -61,6 +65,7 @@ function perpetualTotalKrwForDashboard(
 
 type CategoryRow = {
   key: string;
+  name: string;
   serviceCount: number;
   subscriptionMonthlyKrw: number;
   perpetualKrw: number;
@@ -245,7 +250,7 @@ export default function LicensesDashboardPage() {
       const [l, p] = await Promise.all([
         supabase
           .from("services")
-          .select("*")
+          .select("*, service_categories ( id, name, sort_order, is_active )")
           .eq("is_hub_card", false)
           .order("created_at", { ascending: false }),
         supabase
@@ -254,7 +259,7 @@ export default function LicensesDashboardPage() {
           .order("created_at", { ascending: true })
       ]);
       console.warn("[licenses] setLicenses called, count:", (l.data ?? []).length);
-      setLicenses((l.data ?? []) as License[]);
+      setLicenses(mapServiceRows(l.data ?? []));
       setProfiles((p.data ?? []) as Profile[]);
       setLoading(false);
     };
@@ -303,15 +308,29 @@ export default function LicensesDashboardPage() {
   const { sortedCategoryRows, totalSubscriptionMonthlyForShare } = useMemo(() => {
     const map = new Map<
       string,
-      { serviceCount: number; subscriptionMonthlyKrw: number; perpetualKrw: number }
+      {
+        name: string;
+        serviceCount: number;
+        subscriptionMonthlyKrw: number;
+        perpetualKrw: number;
+      }
     >();
 
     for (const l of licenses) {
-      const key = (l.category ?? "").trim() || "카테고리 미분류";
+      // category_id null (허브카드 등)은 카테고리 집계에서 제외
+      if (!l.category_id) continue;
+      const key = l.category_id;
+      const name = licenseCategoryLabel(l);
       if (!map.has(key)) {
-        map.set(key, { serviceCount: 0, subscriptionMonthlyKrw: 0, perpetualKrw: 0 });
+        map.set(key, {
+          name,
+          serviceCount: 0,
+          subscriptionMonthlyKrw: 0,
+          perpetualKrw: 0
+        });
       }
       const row = map.get(key)!;
+      row.name = name;
       row.serviceCount += 1;
 
       if (!isActiveService(l)) continue;
@@ -332,6 +351,7 @@ export default function LicensesDashboardPage() {
     const sortedCategoryRows: CategoryRow[] = [...map.entries()]
       .map(([key, v]) => ({
         key,
+        name: v.name,
         serviceCount: v.serviceCount,
         subscriptionMonthlyKrw: v.subscriptionMonthlyKrw,
         perpetualKrw: v.perpetualKrw,
@@ -341,7 +361,7 @@ export default function LicensesDashboardPage() {
         if (b.subscriptionMonthlyKrw !== a.subscriptionMonthlyKrw) {
           return b.subscriptionMonthlyKrw - a.subscriptionMonthlyKrw;
         }
-        return a.key.localeCompare(b.key, "ko");
+        return a.name.localeCompare(b.name, "ko");
       });
 
     return { sortedCategoryRows, totalSubscriptionMonthlyForShare };
@@ -370,7 +390,7 @@ export default function LicensesDashboardPage() {
     return sortedCategoryRows
       .filter((r) => r.subscriptionMonthlyKrw > 0)
       .map((r) => ({
-        name: r.key,
+        name: r.name,
         value: r.subscriptionMonthlyKrw,
         fill: r.color
       }));
@@ -622,7 +642,7 @@ export default function LicensesDashboardPage() {
                               className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
                               style={{ backgroundColor: row.color }}
                             />
-                            <span className="min-w-0 break-words">{row.key}</span>
+                            <span className="min-w-0 break-words">{row.name}</span>
                           </span>
                         </td>
                         <td className="py-3 pr-2 text-right align-top tabular-nums">{row.serviceCount}개</td>

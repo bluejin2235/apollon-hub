@@ -18,7 +18,15 @@ export type License = {
   id: string;
   name: string;
   plan: string;
-  category: string;
+  /** service_categories.id */
+  category_id: string | null;
+  /** join 된 service_categories.name (표시·이력 스냅샷용) */
+  category_name?: string | null;
+  /**
+   * @deprecated text 컬럼. 신규 코드는 category_name / category_id 사용.
+   * mapServiceRow 가 join 이름을 채워 이력 스냅샷 호환을 유지한다.
+   */
+  category?: string | null;
   status: string;
   cost_monthly: number;
   /** services DB: 월간/연간/영구. 레거시는 contract_type 없이 이 필드만 채워진 경우가 있음 */

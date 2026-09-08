@@ -9,6 +9,7 @@ import type {
   Profile
 } from "@/lib/licenses/types";
 import { activeProfiles, resolveUiContractType } from "@/lib/licenses/calc";
+import { mapServiceRow } from "@/lib/licenses/service-categories";
 import {
   insertServiceCostHistory,
   shouldRecordCostHistory
@@ -197,7 +198,7 @@ function buildLicenseNotifyChanges(
   license: License,
   next: {
     name: string;
-    category: string;
+    categoryName: string;
     contractType: ContractType;
     status: LicenseStatus;
     costNum: number;
@@ -248,8 +249,9 @@ function buildLicenseNotifyChanges(
     });
   }
 
-  const oldCategory = (license.category ?? "").trim() || "기타";
-  const newCategory = next.category.trim() || "기타";
+  const oldCategory =
+    (license.category_name ?? license.category ?? "").trim() || "기타";
+  const newCategory = next.categoryName.trim() || "기타";
   if (oldCategory !== newCategory) {
     changes.push({
       field: "category",
@@ -362,7 +364,7 @@ function toNotifyServicePayload(saved: License, contractType: ContractType) {
     id: saved.id,
     name: saved.name,
     plan: saved.plan ?? null,
-    category: saved.category ?? null,
+    category: saved.category_name ?? saved.category ?? null,
     contract_type: saved.contract_type ?? contractType,
     cost: Number(saved.cost ?? saved.cost_monthly ?? 0),
     cost_monthly: Number(saved.cost_monthly ?? saved.cost ?? 0),
@@ -423,8 +425,10 @@ export function LicenseFormModal({
       (license?.plan && license.plan.trim()) ||
       ""
   );
-  const [category, setCategory] = useState(license?.category ?? "");
-  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [categoryId, setCategoryId] = useState(license?.category_id ?? "");
+  const [categoryOptions, setCategoryOptions] = useState<
+    { id: string; name: string; is_active: boolean }[]
+  >([]);
   const [currency, setCurrency] = useState(license?.currency ?? "KRW");
   const [cost, setCost] = useState(
     license?.cost != null && license.cost > 0
@@ -512,34 +516,33 @@ export function LicenseFormModal({
   useEffect(() => {
     const run = async () => {
       const { data } = await supabase
-        .from("services")
-        .select("category")
-        .eq("is_hub_card", false)
-        .not("category", "is", null)
-        .order("category", { ascending: true });
+        .from("service_categories")
+        .select("id, name, is_active")
+        .order("sort_order", { ascending: true });
 
-      const unique = Array.from(
-        new Set(
-          (data ?? [])
-            .map((row) => row.category)
-            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        )
-      ).sort((a, b) => a.localeCompare(b, "ko"));
-
-      setCategoryOptions(unique);
+      setCategoryOptions(
+        (data ?? []).map((row) => ({
+          id: String(row.id),
+          name: String(row.name ?? ""),
+          is_active: row.is_active !== false
+        }))
+      );
     };
     void run();
   }, []);
 
   const categorySelectOptions = useMemo(() => {
-    const options = [...categoryOptions];
-    const current = category.trim();
-    if (current && !options.includes(current)) {
-      options.push(current);
-      options.sort((a, b) => a.localeCompare(b, "ko"));
+    const active = categoryOptions.filter((o) => o.is_active);
+    const currentId = categoryId.trim();
+    if (currentId && !active.some((o) => o.id === currentId)) {
+      const inactive = categoryOptions.find((o) => o.id === currentId);
+      if (inactive) return [...active, inactive];
+      const fallbackName =
+        (license?.category_name ?? license?.category ?? "").trim() || "이전 카테고리";
+      return [...active, { id: currentId, name: fallbackName, is_active: false }];
     }
-    return options;
-  }, [categoryOptions, category]);
+    return active;
+  }, [categoryOptions, categoryId, license?.category_name, license?.category]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -569,6 +572,17 @@ export function LicenseFormModal({
       setError("라이선스 수량은 비우거나 1 이상이어야 합니다.");
       return;
     }
+
+    if (!categoryId.trim()) {
+      setError("카테고리를 선택해주세요.");
+      return;
+    }
+
+    const selectedCategory = categorySelectOptions.find((o) => o.id === categoryId.trim());
+    const categoryName =
+      selectedCategory?.name ||
+      (license?.category_name ?? license?.category ?? "").trim() ||
+      "기타";
 
     // 결제일 / 계약일
     //   - 월 구독: payment_day + start_date 컬럼
@@ -611,7 +625,9 @@ export function LicenseFormModal({
       // services 직접 컬럼 (purpose / payment_method / memo / card_holder_id 컬럼 없음)
       name: trimmedName,
       plan: planName.trim() || trimmedName,
-      category: category.trim() || "기타",
+      category_id: categoryId.trim(),
+      // text 컬럼은 유지(삭제 예정). join 표시명과 동기화
+      category: categoryName,
       status,
       cost: costNum,
       cost_monthly: costNum,
@@ -645,7 +661,7 @@ export function LicenseFormModal({
       const { data, error: insertError } = await supabase
         .from("services")
         .insert(servicePayload)
-        .select()
+        .select("*, service_categories ( id, name, sort_order, is_active )")
         .single();
 
       if (insertError || !data) {
@@ -655,7 +671,7 @@ export function LicenseFormModal({
         return;
       }
 
-      const saved = data as License;
+      const saved = mapServiceRow(data as Record<string, unknown>);
       await insertServiceCostHistory(
         supabase,
         saved,
@@ -702,7 +718,7 @@ export function LicenseFormModal({
       .update(servicePayload)
       .eq("id", license.id)
       .eq("is_hub_card", false)
-      .select()
+      .select("*, service_categories ( id, name, sort_order, is_active )")
       .single();
 
     if (updateError || !data) {
@@ -712,7 +728,7 @@ export function LicenseFormModal({
       return;
     }
 
-    const saved = data as License;
+    const saved = mapServiceRow(data as Record<string, unknown>);
     if (
       shouldRecordCostHistory(license, {
         cost: costNum,
@@ -742,7 +758,7 @@ export function LicenseFormModal({
         license,
         {
           name: trimmedName,
-          category: category.trim() || "기타",
+          categoryName,
           contractType,
           status,
           costNum,
@@ -820,14 +836,16 @@ export function LicenseFormModal({
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">카테고리</label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                required
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-gray-900 focus:border-apollon-400 focus:outline-none focus:ring-2 focus:ring-apollon-500/40"
               >
                 <option value="">선택하세요</option>
                 {categorySelectOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                    {!option.is_active ? " (비활성)" : ""}
                   </option>
                 ))}
               </select>
