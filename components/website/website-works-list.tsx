@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
 import { createWork, cloneWork, deleteWork, hideWork, unhideWork, getMeta, listWorks } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
 import type { ApiErr, WebsiteCategory, WorkListItem, WorkSiteVisibility } from "@/lib/website/types";
 import {
@@ -42,7 +43,7 @@ function editHref(id: string) {
 }
 
 function formatError(error: string, details?: unknown) {
-  return error + (details ? ` · ${JSON.stringify(details)}` : "");
+  return apiFailMessage({ error, details });
 }
 
 function dotClass(state: "ok" | "warn" | "empty") {

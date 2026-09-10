@@ -2,6 +2,7 @@
 
 import { useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { replaceCredits } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { asLoc, emptyLoc, type Loc, type WorkCredit, type WorkDetail } from "@/lib/website/work-detail";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import "./ui/work-admin.css";
@@ -49,23 +50,12 @@ function sameRows(a: Draft[], b: Draft[]) {
 }
 
 function describeCreditError(error: string, details?: unknown): string {
-  const rec = details && typeof details === "object" ? (details as Record<string, unknown>) : null;
-  const detailMessage = typeof rec?.message === "string" ? rec.message : null;
-  if (detailMessage) return detailMessage;
-
   if (error === "credit_name_ko_required") return "이름 국문은 필수입니다";
   if (error === "credit_role_required") return "역할을 적어 주세요";
   if (error === "invalid_name") return "이름 형식이 올바르지 않습니다";
   if (error === "invalid_items") return "크레딧 목록 형식이 올바르지 않습니다";
-  if (error === "database_error") {
-    const msg = typeof rec?.message === "string" ? rec.message : "";
-    if (msg.includes("work_credits_name_ko")) return "이름 국문은 필수입니다";
-    return msg || "데이터베이스에 저장하지 못했습니다";
-  }
   if (error === "request_failed") return "서버가 크레딧 저장을 거절했습니다";
-  if (error === "network_error") return "연결이 끊어졌습니다";
-  if (error === "unauthorized") return "로그인이 필요합니다";
-  return error || "저장에 실패했습니다";
+  return apiFailMessage({ error, details });
 }
 
 export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props) {

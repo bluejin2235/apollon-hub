@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getMeta, getWork, publishWork, publishWorkPreview, setWorkCategories, unhideWork, updateWork, generatePublishNote } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillBasic, fillBody, fillFaq, fillRelated, PROBLEM_FLAGS } from "@/lib/website/checks";
 import { applyTextDupChecks } from "@/lib/website/text-dup";
 import { fallbackChangeNote, firstPublishNote, skipPublishCheck } from "@/lib/website/publish";
@@ -81,7 +82,10 @@ function dotClass(state: "ok" | "warn" | "empty") {
 }
 
 function tabDot(tab: EditorTab, check: CheckWorks | null, work: WorkDetail | null): "ok" | "warn" | "empty" {
-  if (tab === "basic") return fillBasic(check);
+  if (tab === "basic") {
+    if (!work?.summary?.ko?.trim() || !work?.key_image_alt?.ko?.trim()) return "warn";
+    return fillBasic(check);
+  }
   if (tab === "content") return fillBody(check);
   if (tab === "interview") {
     const on = Boolean(work && interviewSectionOf(work));
@@ -106,11 +110,28 @@ function problemCount(
   draft?: WorkBasicDraft | null,
 ): number {
   if (!check) return PROBLEM_FLAGS.length;
-  let n = PROBLEM_FLAGS.filter((flag) => flag !== "no_card_image" && check[flag]).length;
+  let n = PROBLEM_FLAGS.filter(
+    (flag) =>
+      flag !== "no_card_image" &&
+      flag !== "missing_summary_en" &&
+      flag !== "missing_key_alt" &&
+      check[flag]
+  ).length;
   const hasCard = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
   if (!hasCard) n += 1;
+  const summaryKo = draft?.summary.ko ?? work?.summary?.ko ?? "";
+  const altKo = draft?.key_image_alt.ko ?? work?.key_image_alt?.ko ?? "";
+  if (!summaryKo.trim()) n += 1;
+  if (!altKo.trim()) n += 1;
   if (work) n += findVideoBlockGaps(work).length;
   return n;
+}
+
+function failCtx(draft: WorkBasicDraft | null | undefined) {
+  return {
+    summaryKo: draft?.summary.ko,
+    keyAltKo: draft?.key_image_alt.ko
+  };
 }
 
 function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | null {
@@ -163,7 +184,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     try {
       const [workRes, metaRes] = await Promise.all([getWork(workId), getMeta()]);
       if (!workRes.ok) {
-        setError(workRes.error + (workRes.details ? ` · ${JSON.stringify(workRes.details)}` : ""));
+        setError(apiFailMessage(workRes, failCtx(null)));
         return;
       }
       const parsed = parseWorkDetail(workRes.data);
@@ -212,12 +233,20 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     [pathname, router, searchParams]
   );
 
-  function goCheckItem(item: { tab: EditorTab; blockId?: string }) {
+  function goCheckItem(item: { tab: EditorTab; blockId?: string; focusId?: string }) {
     setCheckOpen(false);
     setTab(item.tab);
     if (item.blockId) {
       setFocusBlockId(null);
       window.setTimeout(() => setFocusBlockId(item.blockId!), 0);
+    }
+    if (item.focusId) {
+      window.setTimeout(() => {
+        const el = document.getElementById(item.focusId!);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        const focusable = el?.querySelector("textarea, input") as HTMLElement | null;
+        focusable?.focus();
+      }, 80);
     }
   }
 
@@ -231,7 +260,14 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
   const hasCardImage = Boolean(work?.card_image?.trim() || draft?.card_image?.trim());
   const checkItems =
     work && check
-      ? [...buildWorkCheckItems(work, check, { hasCardImage }), ...buildVideoBlockCheckItems(work)]
+      ? [
+          ...buildWorkCheckItems(work, check, {
+            hasCardImage,
+            summaryKo: draft?.summary.ko,
+            keyAltKo: draft?.key_image_alt.ko
+          }),
+          ...buildVideoBlockCheckItems(work)
+        ]
       : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");
   const warnItems = checkItems.filter((item) => item.kind === "warn");
@@ -300,8 +336,11 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       if (!preview.ok) {
         if (preview.status === 409 && preview.error === "publish_blocked") {
           setCheckOverride(mergeCheck(work?.check ?? null, preview.details));
+          setError(apiFailMessage(preview, failCtx(draft)));
+          setCheckOpen(true);
         } else {
-          setError(preview.error + (preview.details ? ` · ${JSON.stringify(preview.details)}` : ""));
+          setError(apiFailMessage(preview, failCtx(draft)));
+          setCheckOpen(true);
         }
         setPublishModalOpen(false);
         return;
@@ -348,7 +387,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
 
     const result = await setWorkCategories(workId, next.category_ids);
     if (!result.ok) {
-      setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+      setError(apiFailMessage(result, failCtx(next)));
       return false;
     }
 
@@ -367,7 +406,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       }
       const result = await updateWork(workId, worksPatchFromDraft(draft));
       if (!result.ok) {
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setError(apiFailMessage(result, failCtx(draft)));
         setFullSaveState("dirty");
         return false;
       }
@@ -399,19 +438,22 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
         if (published.status === 400 && published.error === "publish_blocked") {
           setCheckOverride(mergeCheck(work?.check ?? null, published.details));
           setPublishModalOpen(false);
+          setError(apiFailMessage(published, failCtx(draft)));
+          setCheckOpen(true);
           return;
         }
-        setError(
-          published.error + (published.details ? ` · ${JSON.stringify(published.details)}` : "")
-        );
+        setError(apiFailMessage(published, failCtx(draft)));
+        setCheckOpen(true);
         return;
       }
 
       const statusPatch = await updateWork(workId, { status: "published" });
       if (!statusPatch.ok) {
-        setError(
-          statusPatch.error + (statusPatch.details ? ` · ${JSON.stringify(statusPatch.details)}` : "")
-        );
+        if (statusPatch.error === "publish_blocked" || statusPatch.status === 409) {
+          setCheckOverride(mergeCheck(work?.check ?? null, statusPatch.details));
+        }
+        setError(apiFailMessage(statusPatch, failCtx(draft)));
+        setCheckOpen(true);
         return;
       }
 
@@ -432,7 +474,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       if (!(await saveAll({ silent: true }))) return;
       const res = await unhideWork(workId);
       if (!res.ok) {
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        setError(apiFailMessage(res, failCtx(draft)));
         return;
       }
       await load();
@@ -448,7 +490,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     try {
       const result = await updateWork(workId, { show_faq: next });
       if (!result.ok) {
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setError(apiFailMessage(result, failCtx(draft)));
         return;
       }
       await load();

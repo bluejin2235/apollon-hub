@@ -9,6 +9,7 @@ import {
   reorderSections,
   updateSection
 } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import type { ContentBlock, Loc, WorkDetail, WorkSection } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
@@ -19,7 +20,6 @@ import { LeadHtmlModal } from "@/components/website/lead-html-modal";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
-import { locField } from "@/components/website/work-editor-ui";
 import { Alert, Field } from "@/components/website/ui";
 import { GuideTermProvider } from "@/components/website/ui/GuideTerm";
 import {
@@ -48,59 +48,20 @@ const SECTION_COLORS = [
 ] as const;
 
 function sectionTitle(section: WorkSection) {
-  return section.headline?.ko?.trim() || section.headline?.en?.trim() || "제목 없음";
+  return section.headline?.en?.trim() || section.headline?.ko?.trim() || "제목 없음";
 }
 
 function colorClass(index: number) {
   return SECTION_COLORS[index % SECTION_COLORS.length]!.id;
 }
 
-function AiBadge() {
-  return (
-    <button type="button" className="aib" disabled title="국문으로 영문 생성">
-      AI
-    </button>
-  );
+/** 앵커 메뉴용. DB 는 {ko,en} 유지하되 값은 항상 동일하게 맞춘다 */
+function headlineBoth(value: string): Loc {
+  return { ko: value, en: value };
 }
 
-function Bi({
-  ko,
-  en,
-  onKo,
-  onEn,
-  placeholder
-}: {
-  ko: string;
-  en: string;
-  onKo: (v: string) => void;
-  onEn: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <>
-      <div className="seclang">
-        <span className="tag">국문</span>
-        <input
-          className="i"
-          value={ko}
-          placeholder={placeholder}
-          onChange={(e) => onKo(e.target.value)}
-        />
-      </div>
-      <div className="seclang">
-        <span className="tag">영문</span>
-        <div className="enw">
-          <input
-            className="i"
-            value={en}
-            placeholder={placeholder}
-            onChange={(e) => onEn(e.target.value)}
-          />
-          <AiBadge />
-        </div>
-      </div>
-    </>
-  );
+function headlineInputValue(loc: Loc) {
+  return loc.en || loc.ko;
 }
 
 function LeadDrop({
@@ -236,7 +197,7 @@ export function WorkContentTab({
 
   async function addSection() {
     const res = await createSection(work.id, {
-      headline: { ko: "새 섹션", en: "New section" },
+      headline: headlineBoth("New section"),
       kind: "basic",
       sort: (sections[sections.length - 1]?.sort ?? 0) + 1
     });
@@ -244,7 +205,9 @@ export function WorkContentTab({
       setError(res.error);
       return;
     }
+    const newId = typeof res.data.id === "string" ? res.data.id : null;
     await onReload();
+    if (newId) ensureOpen(newId);
   }
 
   async function moveSection(index: number, dir: -1 | 1) {
@@ -300,7 +263,7 @@ export function WorkContentTab({
       toSort
     });
     if (!res.ok) {
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+      setError(apiFailMessage(res));
       return;
     }
 
@@ -597,7 +560,9 @@ function SectionBody({
   async function savePartial() {
     setSaveState("saving");
     setError(null);
-    const res = await updateSection(workId, section.id, { headline, lead });
+    const syncedHeadline = headlineBoth(headlineInputValue(headline));
+    setHeadline(syncedHeadline);
+    const res = await updateSection(workId, section.id, { headline: syncedHeadline, lead });
     if (!res.ok) {
       setError(res.error);
       setSaveState("dirty");
@@ -607,6 +572,8 @@ function SectionBody({
     window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
     await onReload();
   }
+
+  const headlineValue = headlineInputValue(headline);
 
   return (
     <>
@@ -621,10 +588,7 @@ function SectionBody({
         <Field
           label="섹션 제목"
           required
-          counts={[
-            { label: "국문", value: headline.ko.length },
-            { label: "영문", value: headline.en.length }
-          ]}
+          counts={[{ value: headlineValue.length }]}
           tip={
             <>
               왼쪽 앵커 메뉴에 그대로 들어갑니다. 섹션은 8개까지.
@@ -637,22 +601,16 @@ function SectionBody({
             </>
           }
         >
-          <Bi
-            ko={headline.ko}
-            en={headline.en}
+          <input
+            className="i"
+            value={headlineValue}
             placeholder="Overview"
-            onKo={(v) => {
-              const next = locField(headline, "ko", v);
-              setHeadline(next);
-              markDirty();
-            }}
-            onEn={(v) => {
-              const next = locField(headline, "en", v);
-              setHeadline(next);
+            onChange={(e) => {
+              setHeadline(headlineBoth(e.target.value));
               markDirty();
             }}
           />
-          <div className="hint-line">왼쪽 앵커 메뉴에 그대로 들어갑니다</div>
+          <div className="hint-line">왼쪽 메뉴에 나옵니다. 영문으로 씁니다. 16자 이내</div>
         </Field>
         <Field
           label="기본 설명"
@@ -682,7 +640,7 @@ function SectionBody({
       </div>
       <LeadHtmlModal
         open={leadOpen}
-        subtitle={`${sectionIndex + 1} ${headline.ko.trim() || headline.en.trim() || "제목 없음"}`}
+        subtitle={`${sectionIndex + 1} ${headlineValue.trim() || "제목 없음"}`}
         ko={lead.ko}
         en={lead.en}
         surface="work-lead"

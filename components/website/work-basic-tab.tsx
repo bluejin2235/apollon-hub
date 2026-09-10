@@ -18,9 +18,18 @@ import { sanitizeUploadFilename, uploadObjectPath, workFolderPrefix } from "@/li
 import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
 import { describeUploadError } from "@/lib/website/upload-error";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
+import { InsightCropModal } from "@/components/website/insight-crop-modal";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TagPicker } from "@/components/website/tag-picker";
 import { showToast } from "@/components/website/toast";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
+import {
+  formatImageRatioLabel,
+  isNearWorkKeyRatio,
+  workKeyCropFitsMin,
+  workKeyCropResultSize,
+  workKeyTooSmallAfterCropMessage
+} from "@/lib/website/key-image-rules";
 import "./ui/work-admin.css";
 
 type Props = {
@@ -78,7 +87,7 @@ const HELP = {
   key: {
     title: "대표 이미지",
     use: "목록 카드 · 메인 페이지 · 관련 콘텐츠 카드. 아래 「썸네일에 쓸 이미지」의 후보가 됩니다",
-    rule: "긴 변이 1600 이상이어야 합니다. 보관은 긴 변 2560 으로 맞춥니다",
+    rule: "16:9 · 최소 2560×1440. 비율이 다르면 올려 둔 뒤 잘라 맞춥니다",
     note: "형식과 용량은 신경 쓰지 않아도 됩니다. 자동으로 바뀝니다. GIF 만 예외로 올린 그대로 나갑니다. 배경 영상 첫 장면과 맞추면 카드가 자연스럽습니다",
     empty: "공개할 수 없습니다"
   },
@@ -146,17 +155,6 @@ function isDefaultTitle(title: { ko: string; en: string }) {
   const en = title.en.trim();
   if (!ko && !en) return true;
   return (ko === "New Project" || !ko) && (en === "New Project" || !en);
-}
-
-function apiFailMessage(res: { error: string; details?: unknown }): string {
-  const details = res.details;
-  if (details && typeof details === "object" && !Array.isArray(details)) {
-    const message = (details as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) {
-      return `${res.error}: ${message}`;
-    }
-  }
-  return res.error + (details != null ? ` · ${JSON.stringify(details)}` : "");
 }
 
 function isPlaceholderKey(src: string) {
@@ -382,6 +380,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const [summaryDraft, setSummaryDraft] = useState(draft.summary);
   const [slugBusy, setSlugBusy] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const pendingKey = useId();
   const loopLgFile = useRef<File | null>(null);
   const cardUploadRef = useRef<HTMLInputElement>(null);
@@ -406,6 +405,12 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const titleEn = draft.title.en;
   const titleCount = titleEn.length;
   const keyFilled = !isPlaceholderKey(draft.key_image);
+  const keyW = draft.key_image_width ?? 0;
+  const keyH = draft.key_image_height ?? 0;
+  const keyRatioOk = keyFilled && keyW > 0 && keyH > 0 && isNearWorkKeyRatio(keyW, keyH);
+  const keyCropFits = keyFilled && keyW > 0 && keyH > 0 && workKeyCropFitsMin(keyW, keyH);
+  const keyNeedsCrop = keyFilled && keyW > 0 && keyH > 0 && !keyRatioOk && keyCropFits;
+  const keyTooSmallForCrop = keyFilled && keyW > 0 && keyH > 0 && !keyRatioOk && !keyCropFits;
   const cardFilled = filled(draft.card_image);
   const screenDone = [
     filled(titleEn),
@@ -577,6 +582,15 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   async function saveMedia() {
     return mediaPartial.save(async () => {
       const d = draftRef.current;
+      const kw = d.key_image_width ?? 0;
+      const kh = d.key_image_height ?? 0;
+      if (d.key_image && !isPlaceholderKey(d.key_image) && kw > 0 && kh > 0 && !isNearWorkKeyRatio(kw, kh)) {
+        showToast({
+          tone: "error",
+          message: "대표 이미지가 16:9 가 아닙니다. 16:9 로 자른 뒤 저장하세요."
+        });
+        return false;
+      }
       const res = await updateWork(work.id, {
         key_image: d.key_image || null,
         key_image_width: d.key_image ? d.key_image_width : null,
@@ -607,7 +621,13 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         key_image_alt: d.key_image_alt
       });
       if (!res.ok) {
-        showToast({ tone: "error", message: apiFailMessage(res) });
+        showToast({
+          tone: "error",
+          message: apiFailMessage(res, {
+            summaryKo: d.summary.ko,
+            keyAltKo: d.key_image_alt.ko
+          })
+        });
         return false;
       }
       return true;
@@ -939,6 +959,17 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 siteUrl={siteUrl}
                 value={keyFilled ? draft.key_image : null}
                 emptyHint="올리기"
+                extraActions={
+                  keyRatioOk ? (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() => setCropOpen(true)}
+                    >
+                      다시 자르기
+                    </button>
+                  ) : undefined
+                }
                 onUploaded={(files) => {
                   const first = files[0];
                   if (!first) return;
@@ -972,8 +1003,29 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   onChange(patch);
                 }}
               />
+              {keyNeedsCrop ? (
+                <div className="key-warn">
+                  <b>16:9 가 아닙니다.</b> 지금은 {formatImageRatioLabel(keyW, keyH)} 입니다.
+                  <br />
+                  이대로는 저장할 수 없습니다. 16:9 로 잘라주세요.
+                  <div className="row">
+                    <span className="hint">
+                      자르면 {workKeyCropResultSize(keyW, keyH).width} ×{" "}
+                      {workKeyCropResultSize(keyW, keyH).height} 이 됩니다
+                    </span>
+                    <span className="sp" />
+                    <button type="button" className="btn w" onClick={() => setCropOpen(true)}>
+                      16:9 로 자르기
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {keyTooSmallForCrop ? (
+                <div className="key-warn err">{workKeyTooSmallAfterCropMessage(keyW, keyH)}</div>
+              ) : null}
+              {keyRatioOk ? <div className="key-ok">16:9 로 저장되었습니다.</div> : null}
               <p className="spec">
-                긴 변 1600 이상
+                16:9 · 최소 2560×1440
                 <br />
                 {draft.key_image_width && draft.key_image_height ? (
                   <span className="now">
@@ -1225,7 +1277,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             />
           </div>
 
-          <div className="f">
+          <div className="f" id="work-field-summary">
             <div className="fl">
               <span className="nm">한 줄 요약</span>
               <span className="rq">*</span>
@@ -1276,7 +1328,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             />
           </div>
 
-          <div className="f">
+          <div className="f" id="work-field-key-alt">
             <div className="fl">
               <span className="nm">카드 이미지 대체 텍스트</span>
               <span className="rq">*</span>
@@ -1463,6 +1515,34 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
         </div>
       </div>
+
+      <InsightCropModal
+        open={cropOpen}
+        src={draft.key_image}
+        siteUrl={siteUrl}
+        folder={`${uploadRoot}/key`}
+        ratios={["16:9"]}
+        initialRatio="16:9"
+        chrome="work-key"
+        bucket="works"
+        uploadRole="key"
+        onClose={() => setCropOpen(false)}
+        onSaved={(next) => {
+          mediaPartial.markDirty();
+          const patch: Partial<WorkBasicDraft> = {
+            key_image: next.src,
+            key_image_width: next.width,
+            key_image_height: next.height
+          };
+          if (!cardFilled || cardSource === "key") {
+            patch.card_image = next.src;
+            patch.card_image_source = "key";
+            patch.card_image_width = next.width;
+            patch.card_image_height = next.height;
+          }
+          onChange(patch);
+        }}
+      />
     </div>
   );
 }

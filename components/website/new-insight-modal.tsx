@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createInsight, getMeta } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import type { ApiErr, WebsiteCategory } from "@/lib/website/types";
 
 type Props = {
@@ -17,16 +18,6 @@ const CAT_CHIP: Record<string, string> = {
   culture: "bg-[#fdf3ee] text-[#a35a08]",
   lab: "bg-[#eaf5f0] text-[#0f7a45]"
 };
-
-function formatDetails(details: unknown) {
-  if (details == null) return "";
-  if (typeof details === "string") return details;
-  try {
-    return JSON.stringify(details, null, 2);
-  } catch {
-    return String(details);
-  }
-}
 
 const WEBSITE_DOWN_MESSAGE =
   "홈페이지 개발 서버(localhost:3100)가 응답하지 않습니다.\n서버가 떠 있는지 확인한 뒤 다시 시도하세요.";
@@ -51,7 +42,7 @@ export function NewInsightModal({ open, onClose }: Props) {
     setBusyId(null);
     void getMeta().then((res) => {
       if (!res.ok) {
-        setError(res.error + (res.details ? `\n${formatDetails(res.details)}` : ""));
+        setError(apiFailMessage(res));
         return;
       }
       setCategories(res.data.insightCategories ?? []);
@@ -90,7 +81,7 @@ export function NewInsightModal({ open, onClose }: Props) {
           setError(WEBSITE_DOWN_MESSAGE);
           return;
         }
-        setError(res.error + (res.details ? `\n${formatDetails(res.details)}` : ""));
+        setError(apiFailMessage(res));
         return;
       }
       onClose();

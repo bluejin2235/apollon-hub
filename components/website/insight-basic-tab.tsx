@@ -13,6 +13,7 @@ import { TagPicker } from "@/components/website/tag-picker";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
 import { setInsightTags, updateInsight, generateInsightSlug } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
   isNewsCategory,
   type InsightBasicDraft,
@@ -124,17 +125,6 @@ const HELP = {
 
 function filled(value: string | null | undefined) {
   return Boolean(value?.trim());
-}
-
-function apiFailMessage(res: { error: string; details?: unknown }): string {
-  const details = res.details;
-  if (details && typeof details === "object" && !Array.isArray(details)) {
-    const message = (details as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) {
-      return `${res.error}: ${message}`;
-    }
-  }
-  return res.error + (details != null ? ` · ${JSON.stringify(details)}` : "");
 }
 
 function isPlaceholderKey(src: string) {
@@ -342,7 +332,13 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         key_image_ratio: d.key_image ? d.key_image_ratio || null : null
       });
       if (!res.ok) {
-        showToast({ tone: "error", message: apiFailMessage(res) });
+        showToast({
+          tone: "error",
+          message: apiFailMessage(res, {
+            summaryKo: d.summary.ko,
+            keyAltKo: d.key_image_alt.ko
+          })
+        });
         return false;
       }
       return true;
@@ -358,7 +354,13 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         key_image_alt: d.key_image_alt
       });
       if (!res.ok) {
-        showToast({ tone: "error", message: apiFailMessage(res) });
+        showToast({
+          tone: "error",
+          message: apiFailMessage(res, {
+            summaryKo: d.summary.ko,
+            keyAltKo: d.key_image_alt.ko
+          })
+        });
         return false;
       }
       return true;
@@ -721,7 +723,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             />
           </div>
 
-          <div className="f">
+          <div className="f" id="insight-field-summary">
             <div className="fl">
               <span className="nm">한 줄 요약</span>
               <span className="rq">*</span>
@@ -754,7 +756,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             <HelpPanel open={openHelp === "sum"} body={HELP.sum} onClose={() => setOpenHelp(null)} />
           </div>
 
-          <div className="f">
+          <div className="f" id="insight-field-key-alt">
             <div className="fl">
               <span className="nm">대체 텍스트</span>
               <span className="rq">*</span>
@@ -796,6 +798,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
         src={draft.key_image}
         siteUrl={siteUrl}
         folder={`${uploadRoot}/key`}
+        ratios={["1:1", "3:4", "16:9"]}
         initialRatio={chosenRatio}
         onClose={() => setCropOpen(false)}
         onSaved={(next) => {

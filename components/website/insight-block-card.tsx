@@ -25,6 +25,7 @@ import {
   updateInsightBlock,
   updateInsightImage
 } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
   insightCharCount,
   insightIsEmpty,
@@ -197,7 +198,7 @@ export function InsightBlockCard({
         const res = await updateInsightBlock(insightId, block.id, blockPatch);
         if (!res.ok) {
           setSave("error");
-          setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+          setError(apiFailMessage(res));
           return;
         }
       }
@@ -206,7 +207,7 @@ export function InsightBlockCard({
         const res = await updateInsight(insightId, personPatch);
         if (!res.ok) {
           setSave("error");
-          setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+          setError(apiFailMessage(res));
           return;
         }
       }

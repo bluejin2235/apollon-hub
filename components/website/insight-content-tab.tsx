@@ -6,6 +6,7 @@ import {
   moveInsightBlock,
   reorderInsightBlocks
 } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import type { InsightBlock, InsightDetail, InsightSection } from "@/lib/website/insight-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { InsightBlockCard } from "@/components/website/insight-block-card";
@@ -111,7 +112,7 @@ export function InsightContentTab({
       toSort
     });
     if (!res.ok) {
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+      setError(apiFailMessage(res));
       return;
     }
     await onReload();

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { listWorks } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { summarizeChecks, type HealthIssue } from "@/lib/website/checks";
 import type { WorkListItem } from "@/lib/website/types";
 
@@ -18,7 +19,7 @@ export function WebsiteDashboard({ siteUrl }: { siteUrl: string }) {
         const result = await listWorks({ status: "all", limit: 100 });
         if (cancelled) return;
         if (!result.ok) {
-          setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+          setError(apiFailMessage(result));
           return;
         }
         setItems(result.data.items ?? []);

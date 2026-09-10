@@ -2,6 +2,7 @@
 
 import type { CheckWorks } from "@/lib/website/types";
 import { PROBLEM_FLAGS, WARN_FLAGS } from "@/lib/website/checks";
+import { PUBLISH_MSG_ALT, PUBLISH_MSG_SUMMARY } from "@/lib/website/api-fail-message";
 import { formatSmallBodyImageTitle, formatSmallBodyImageWhere } from "@/lib/website/spec";
 import { isLongEdgeTooSmall } from "@/lib/website/image-long-edge";
 import { listSmallWorkBodyImages } from "@/lib/website/small-body-image";
@@ -11,12 +12,14 @@ import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-d
 export type CheckItemKind = "problem" | "warn";
 
 export type WorkCheckItem = {
-  flag: (typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number] | `video:${string}`;
+  flag: (typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number] | `video:${string}` | "missing_summary";
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
   where: string;
   blockId?: string;
+  /** 기본정보 탭 안 특정 칸으로 스크롤 */
+  focusId?: string;
 };
 
 const TAB_NAME: Record<EditorTab, string> = {
@@ -37,7 +40,7 @@ function whereLine(tab: EditorTab, detail: string) {
 export function buildWorkCheckItems(
   work: WorkDetail,
   check: CheckWorks,
-  opts?: { hasCardImage?: boolean }
+  opts?: { hasCardImage?: boolean; summaryKo?: string | null; keyAltKo?: string | null }
 ): WorkCheckItem[] {
   const aiCount = countAiUnconfirmed(work);
   const aiSub = aiUnconfirmedBySection(work);
@@ -47,21 +50,25 @@ export function buildWorkCheckItems(
   const smallBody = listSmallWorkBodyImages(work);
   const bodySmallCount = smallBody.length;
   const firstSmall = smallBody[0];
+  const summaryKo = opts?.summaryKo ?? work.summary?.ko ?? "";
+  const keyAltKo = opts?.keyAltKo ?? work.key_image_alt?.ko ?? "";
 
   const all: WorkCheckItem[] = [
     {
-      flag: "missing_summary_en",
+      flag: "missing_summary",
       kind: "problem",
       tab: "basic",
-      title: "검색 설명(영문)이 비어 있습니다",
-      where: whereLine("basic", "영어권 검색과 AI에 이 프로젝트가 노출되지 않습니다")
+      title: PUBLISH_MSG_SUMMARY,
+      where: whereLine("basic", "검색과 AI 가 이 프로젝트를 읽습니다"),
+      focusId: "work-field-summary"
     },
     {
       flag: "missing_key_alt",
       kind: "problem",
       tab: "basic",
-      title: "대표 이미지 대체 텍스트가 없습니다",
-      where: whereLine("basic", "모든 이미지에 필수입니다")
+      title: PUBLISH_MSG_ALT,
+      where: whereLine("basic", "이미지를 못 보는 사람과 AI 가 읽습니다"),
+      focusId: "work-field-key-alt"
     },
     {
       flag: "no_key_image",
@@ -203,9 +210,16 @@ export function buildWorkCheckItems(
   ];
 
   return all.filter((item) => {
+    if (item.flag === "missing_summary") {
+      return !summaryKo.trim();
+    }
+    if (item.flag === "missing_key_alt") {
+      return !keyAltKo.trim();
+    }
     if (item.flag === "no_card_image") return !hasCard;
     if (item.flag === "key_image_too_small") return keyTooSmall;
     if (item.flag === "body_image_too_small") return bodySmallCount > 0;
+    if (item.flag === "missing_summary_en") return false;
     return Boolean(check[item.flag as keyof CheckWorks]);
   });
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { PUBLISH_MSG_ALT, PUBLISH_MSG_SUMMARY } from "@/lib/website/api-fail-message";
 import type { CheckInsights } from "@/lib/website/types";
 import {
   INSIGHT_CHECK_LABEL,
@@ -28,6 +29,7 @@ export type InsightCheckItem = {
   where: string;
   /** 본문 탭에서 펼칠 블록 */
   blockId?: string;
+  focusId?: string;
 };
 
 const TAB_NAME: Record<InsightEditorTab, string> = {
@@ -56,8 +58,8 @@ const FLAG_TAB: Record<InsightCheckItem["flag"], InsightEditorTab> = {
 };
 
 const FLAG_SUB: Record<InsightCheckItem["flag"], string> = {
-  missing_summary_en: "영어권 검색과 AI에 이 글이 노출되지 않습니다",
-  missing_key_alt: "모든 이미지에 필수입니다.",
+  missing_summary_en: "검색과 AI 가 이 글을 읽습니다",
+  missing_key_alt: "이미지를 못 보는 사람과 AI 가 읽습니다",
   no_key_image: "목록 카드·링크 공유에 쓰는 대표 이미지를 올려 주세요.",
   key_image_size_unknown: "대표 이미지를 다시 올리면 가로·세로 크기가 함께 저장됩니다.",
   key_image_too_small: "긴 변이 800 이상이어야 합니다.",
@@ -126,16 +128,29 @@ function flagOn(check: CheckInsights, flag: InsightCheckItem["flag"]): boolean {
 
 export function buildInsightCheckItems(
   insight: InsightDetail,
-  check: CheckInsights
+  check: CheckInsights,
+  opts?: { summaryKo?: string | null; keyAltKo?: string | null }
 ): InsightCheckItem[] {
   const aiCount = countInsightAiUnconfirmed(insight);
   const missingAlts = findMissingInsightImageAlts(insight);
   const smallBody = listSmallInsightBodyImages(insight);
+  const summaryKo = opts?.summaryKo ?? asLoc(insight.summary).ko;
+  const keyAltKo = opts?.keyAltKo ?? asLoc(insight.key_image_alt).ko;
   const all: InsightCheckItem[] = [
     ...INSIGHT_PROBLEM_FLAGS.map((flag) => {
       let title = INSIGHT_CHECK_LABEL[flag];
       let where = whereLine(FLAG_TAB[flag], FLAG_SUB[flag]);
       let blockId: string | undefined;
+      let focusId: string | undefined;
+
+      if (flag === "missing_summary_en") {
+        title = PUBLISH_MSG_SUMMARY;
+        focusId = "insight-field-summary";
+      }
+      if (flag === "missing_key_alt") {
+        title = PUBLISH_MSG_ALT;
+        focusId = "insight-field-key-alt";
+      }
 
       if (flag === "ai_unconfirmed" && aiCount > 0) {
         title = `AI가 만든 캡션 ${aiCount}개가 확인 전입니다`;
@@ -162,7 +177,8 @@ export function buildInsightCheckItems(
         tab: FLAG_TAB[flag],
         title,
         where,
-        blockId
+        blockId,
+        focusId
       };
     }),
     ...INSIGHT_WARN_FLAGS.map((flag) => {
@@ -192,6 +208,12 @@ export function buildInsightCheckItems(
     })
   ];
   return all.filter((item) => {
+    if (item.flag === "missing_summary_en") {
+      return !summaryKo.trim();
+    }
+    if (item.flag === "missing_key_alt") {
+      return !keyAltKo.trim();
+    }
     if (item.flag === "body_image_too_small") return smallBody.length > 0;
     return flagOn(check, item.flag);
   });

@@ -29,8 +29,8 @@ export const CHECK_FLAG_COUNT = PROBLEM_FLAGS.length + WARN_FLAGS.length;
 
 export const CHECK_FLAG_LABEL: Record<(typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number], string> =
   {
-    missing_summary_en: "영문 요약이 없습니다",
-    missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
+    missing_summary_en: "한 줄 요약을 넣어 주세요",
+    missing_key_alt: "대체 텍스트를 넣어 주세요",
     no_key_image: "대표 이미지가 없습니다",
     key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
     key_image_too_small: "대표 이미지 긴 변이 1600 미만입니다",
@@ -127,7 +127,6 @@ export function fillBasic(check: CheckWorks | null): "ok" | "warn" {
   if (!check) return "warn";
   if (
     check.missing_key_alt ||
-    check.missing_summary_en ||
     check.no_key_image ||
     check.key_image_size_unknown ||
     check.key_image_too_small
@@ -171,7 +170,6 @@ export function fillInsightBasic(check: CheckInsights | null): "ok" | "warn" {
   if (!check) return "warn";
   if (
     check.missing_key_alt ||
-    check.missing_summary_en ||
     check.no_key_image ||
     check.key_image_size_unknown ||
     check.key_image_too_small
@@ -227,8 +225,8 @@ export const INSIGHT_CHECK_LABEL: Record<
   (typeof INSIGHT_PROBLEM_FLAGS)[number] | (typeof INSIGHT_WARN_FLAGS)[number],
   string
 > = {
-  missing_summary_en: "영문 검색 설명이 없습니다",
-  missing_key_alt: "대표 이미지 대체 텍스트가 없습니다",
+  missing_summary_en: "한 줄 요약을 넣어 주세요",
+  missing_key_alt: "대체 텍스트를 넣어 주세요",
   no_key_image: "대표 이미지가 없습니다",
   key_image_size_unknown: "대표 이미지 크기 정보가 없습니다",
   key_image_too_small: "대표 이미지 긴 변이 800 미만입니다",

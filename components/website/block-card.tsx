@@ -11,6 +11,7 @@ import {
   updateBlock,
   updateImage
 } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import type { BlockImage, ContentBlock, Loc } from "@/lib/website/work-detail";
 import { asLoc, columnsFromBody, emptyLoc, fileName, mediaUrl } from "@/lib/website/work-detail";
 import { TextDupHint } from "@/components/website/text-dup-hint";
@@ -336,7 +337,7 @@ export function BlockCard({
     setChangePreset(false);
     const res = await updateBlock(sectionId, block.id, { preset: next });
     if (!res.ok) {
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+      setError(apiFailMessage(res));
       return;
     }
     await onReload();
@@ -356,7 +357,7 @@ export function BlockCard({
       }))
     );
     if (!res.ok) {
-      setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+      setError(apiFailMessage(res));
       return;
     }
     await onReload();

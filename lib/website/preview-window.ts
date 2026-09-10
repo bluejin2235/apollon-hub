@@ -1,4 +1,5 @@
 import { getPreviewUrl } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 
 export type PreviewTarget = {
   workId?: string;
@@ -30,7 +31,7 @@ export function isPreviewOpen() {
 export async function openPreview(target: PreviewTarget): Promise<boolean> {
   const res = await getPreviewUrl(target);
   if (!res.ok) {
-    throw new Error(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+    throw new Error(apiFailMessage(res));
   }
 
   const url = res.data.url;

@@ -9,6 +9,7 @@ import { NewInsightModal } from "@/components/website/new-insight-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
 import { getMeta, hideInsight, unhideInsight, listInsights, cloneInsight, deleteInsight, publishInsightPreview } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillInsightBasic, fillInsightBody, fillInsightRelated, insightTitle } from "@/lib/website/checks";
 import type { InsightListItem, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
 import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window";
@@ -37,7 +38,7 @@ function editHref(id: string) {
 }
 
 function formatError(error: string, details?: unknown) {
-  return error + (details ? ` · ${JSON.stringify(details)}` : "");
+  return apiFailMessage({ error, details });
 }
 
 function formatPublished(value: string | null) {

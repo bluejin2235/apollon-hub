@@ -12,6 +12,7 @@ import {
   unhideInsight,
   updateInsight
 } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
   fillInsightBasic,
   fillInsightBody,
@@ -30,7 +31,7 @@ import {
   type InsightDetail,
   type InsightEditorTab
 } from "@/lib/website/insight-detail";
-import { formatSavedAt } from "@/lib/website/work-detail";
+import { formatSavedAt, asLoc } from "@/lib/website/work-detail";
 import { InsightBasicTab } from "@/components/website/insight-basic-tab";
 import { InsightContentTab } from "@/components/website/insight-content-tab";
 import {
@@ -93,16 +94,37 @@ function dotClass(state: "ok" | "warn" | "empty") {
   return "bg-slate-300";
 }
 
-function tabDot(tab: InsightEditorTab, check: CheckInsights | null): "ok" | "warn" | "empty" {
-  if (tab === "basic") return fillInsightBasic(check);
+function tabDot(tab: InsightEditorTab, check: CheckInsights | null, insight?: InsightDetail | null): "ok" | "warn" | "empty" {
+  if (tab === "basic") {
+    if (!asLoc(insight?.summary).ko.trim() || !asLoc(insight?.key_image_alt).ko.trim()) return "warn";
+    return fillInsightBasic(check);
+  }
   if (tab === "content") return fillInsightBody(check);
   if (tab === "related") return fillInsightRelated(check);
   return "ok";
 }
 
-function problemCount(check: CheckInsights | null): number {
+function problemCount(
+  check: CheckInsights | null,
+  insight?: InsightDetail | null,
+  draft?: InsightBasicDraft | null
+): number {
   if (!check) return INSIGHT_PROBLEM_FLAGS.length;
-  return INSIGHT_PROBLEM_FLAGS.filter((flag) => Boolean(check[flag])).length;
+  let n = INSIGHT_PROBLEM_FLAGS.filter(
+    (flag) => flag !== "missing_summary_en" && flag !== "missing_key_alt" && Boolean(check[flag])
+  ).length;
+  const summaryKo = draft?.summary.ko ?? asLoc(insight?.summary).ko;
+  const altKo = draft?.key_image_alt.ko ?? asLoc(insight?.key_image_alt).ko;
+  if (!summaryKo.trim()) n += 1;
+  if (!altKo.trim()) n += 1;
+  return n;
+}
+
+function failCtx(insight: InsightDetail | null | undefined, draft?: InsightBasicDraft | null) {
+  return {
+    summaryKo: draft?.summary.ko ?? asLoc(insight?.summary).ko,
+    keyAltKo: draft?.key_image_alt.ko ?? asLoc(insight?.key_image_alt).ko
+  };
 }
 
 function mergeCheck(check: CheckInsights | null, details: unknown): CheckInsights | null {
@@ -127,7 +149,6 @@ function isPublishBlocked(error: string): boolean {
   return error === "publish_blocked" || error.startsWith("publish_blocked");
 }
 
-/** 점검 차단 사유 — 코드·JSON 대신 위치 문구 */
 function publishBlockedMessage(details: unknown, insight: InsightDetail | null): string {
   const flags = blockerFlags(details);
   if (flags.includes("missing_image_alt") && insight) {
@@ -139,6 +160,8 @@ function publishBlockedMessage(details: unknown, insight: InsightDetail | null):
       return `${spots[0]!.label}에 대체 텍스트가 없습니다 · 외 ${spots.length - 1}곳`;
     }
   }
+  const fromApi = apiFailMessage({ error: "publish_blocked", details }, failCtx(insight));
+  if (fromApi && fromApi !== "공개하려면 점검 항목을 채워 주세요") return fromApi;
   const labels = flags.map(
     (flag) => INSIGHT_CHECK_LABEL[flag as keyof typeof INSIGHT_CHECK_LABEL] ?? flag
   );
@@ -153,13 +176,7 @@ function formatPublishApiError(
   if (isPublishBlocked(error)) {
     return publishBlockedMessage(details, insight);
   }
-  if (details && typeof details === "object" && "message" in details) {
-    const message = (details as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) {
-      return `${error} · ${message}`;
-    }
-  }
-  return error;
+  return apiFailMessage({ error, details }, failCtx(insight));
 }
 
 export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
@@ -196,7 +213,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     try {
       const [insightRes, metaRes] = await Promise.all([getInsight(insightId), getMeta()]);
       if (!insightRes.ok) {
-        setError(insightRes.error + (insightRes.details ? ` · ${JSON.stringify(insightRes.details)}` : ""));
+        setError(apiFailMessage(insightRes, failCtx(null)));
         return null;
       }
       const parsed = parseInsightDetail(insightRes.data);
@@ -243,12 +260,17 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
 
   const rawCheck = checkOverride ?? insight?.check ?? null;
   const check = rawCheck;
-  const canPublish = problemCount(check) === 0;
+  const canPublish = problemCount(check, insight, draft) === 0;
   const skipCheck = skipPublishCheck();
   const allowPublish = skipCheck || canPublish;
   const visibility = insight?.site_visibility ?? "draft";
   const checkItems =
-    insight && check ? buildInsightCheckItems(insight, check) : [];
+    insight && check
+      ? buildInsightCheckItems(insight, check, {
+          summaryKo: draft?.summary.ko,
+          keyAltKo: draft?.key_image_alt.ko
+        })
+      : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");
   const warnItems = checkItems.filter((item) => item.kind === "warn");
   const checkTone: "red" | "yellow" | "green" =
@@ -306,7 +328,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     try {
       const result = await updateInsight(insightId, insightPatchFromDraft(draft));
       if (!result.ok) {
-        setError(result.error + (result.details ? ` · ${JSON.stringify(result.details)}` : ""));
+        setError(apiFailMessage(result, failCtx(insight, draft)));
         setFullSaveState("dirty");
         return null;
       }
@@ -439,6 +461,14 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
       setFocusBlockId(null);
       window.setTimeout(() => setFocusBlockId(item.blockId!), 0);
     }
+    if (item.focusId) {
+      window.setTimeout(() => {
+        const el = document.getElementById(item.focusId!);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        const focusable = el?.querySelector("textarea, input") as HTMLElement | null;
+        focusable?.focus();
+      }, 80);
+    }
   }
 
   async function showOnSiteAgain() {
@@ -448,7 +478,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
       if (!(await saveAll({ silent: true }))) return;
       const res = await unhideInsight(insightId);
       if (!res.ok) {
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        setError(apiFailMessage(res, failCtx(insight, draft)));
         return;
       }
       await load();
@@ -533,7 +563,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
                   : "border-transparent text-slate-500"
               }`}
             >
-              <i className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(tabDot(item.id, check))}`} />
+              <i className={`inline-block h-1.5 w-1.5 rounded-full ${dotClass(tabDot(item.id, check, insight))}`} />
               {item.label}
             </button>
           );

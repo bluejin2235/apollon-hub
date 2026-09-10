@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createBlock } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { emptyLoc } from "@/lib/website/work-detail";
 import {
   BlockDiagram,
@@ -44,7 +45,7 @@ export function BlockPicker({ open, sectionId, nextSort, onClose, onPicked }: Pr
     try {
       const res = await createBlock(sectionId, body);
       if (!res.ok) {
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        setError(apiFailMessage(res));
         return;
       }
       const blockId = (res.data as { id?: string }).id;

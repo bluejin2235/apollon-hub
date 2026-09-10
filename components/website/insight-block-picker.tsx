@@ -10,6 +10,7 @@ import {
   type PickerTabId
 } from "@/components/website/block-presets";
 import { createInsightBlock } from "@/lib/website/api";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 
 /** insight_block_preset 열 개. DB 와 같은 목록. */
 const ITEMS: {
@@ -157,7 +158,7 @@ export function InsightBlockPicker({
     try {
       const res = await createInsightBlock(insightId, body);
       if (!res.ok) {
-        setError(res.error + (res.details ? ` · ${JSON.stringify(res.details)}` : ""));
+        setError(apiFailMessage(res));
         return;
       }
       const blockId =
