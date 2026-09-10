@@ -8,9 +8,10 @@ import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { NewInsightModal } from "@/components/website/new-insight-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { getMeta, hideInsight, listInsights } from "@/lib/website/api";
+import { getMeta, hideInsight, unhideInsight, listInsights, cloneInsight, deleteInsight, publishInsightPreview } from "@/lib/website/api";
 import { fillInsightBasic, fillInsightBody, fillInsightRelated, insightTitle } from "@/lib/website/checks";
 import type { InsightListItem, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
+import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window";
 
 const PUBLISH_REDIRECT_KEY = "website-insight-publish-toast";
 
@@ -29,10 +30,6 @@ function mediaUrl(siteUrl: string, src: string | null): string | null {
   if (/^https?:\/\//i.test(src)) return src;
   const base = siteUrl.replace(/\/$/, "");
   return `${base}${src.startsWith("/") ? src : `/${src}`}`;
-}
-
-function publicInsightUrl(siteUrl: string, slug: string) {
-  return `${siteUrl.replace(/\/$/, "")}/insights/${slug}`;
 }
 
 function editHref(id: string) {
@@ -101,31 +98,34 @@ const menuItemClass = "block w-full px-3 py-1.5 text-left text-sm text-slate-700
 
 function InsightOverflowMenu({
   item,
-  siteUrl,
   open,
   onOpenChange,
+  onPreview,
+  onClone,
   onHide,
+  onUnhide,
+  onDelete,
   canManage
 }: {
   item: InsightListItem;
-  siteUrl: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onPreview: () => void;
+  onClone: () => void;
   onHide: () => void;
+  onUnhide: () => void;
+  onDelete: () => void;
   canManage: boolean;
 }) {
-  const liveOnSite = itemVisibility(item) === "live";
-  const url = publicInsightUrl(siteUrl, item.slug);
+  const visibility = itemVisibility(item);
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
-  const [copied, setCopied] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setCopied(false);
       setPos(null);
       return;
     }
@@ -153,15 +153,6 @@ function InsightOverflowMenu({
     };
   }, [open]);
 
-  async function copyUrl() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
     <div ref={rootRef} className="relative" data-stop-row>
       <button
@@ -181,33 +172,52 @@ function InsightOverflowMenu({
       {open && pos ? (
         <div
           role="menu"
-          className="fixed z-30 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+          className="fixed z-30 w-44 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
           style={{ top: pos.top, right: pos.right }}
           onClick={(event) => event.stopPropagation()}
         >
           <Link href={editHref(item.id)} role="menuitem" className={menuItemClass}>
             편집
           </Link>
-          {liveOnSite ? (
-            <a href={url} target="_blank" rel="noreferrer" role="menuitem" className={menuItemClass}>
-              홈페이지에서 보기 ↗
-            </a>
-          ) : (
-            <span className="group relative block" title="공개 후에 볼 수 있습니다">
-              <span
-                role="menuitem"
-                aria-disabled="true"
-                className="block w-full cursor-not-allowed px-3 py-1.5 text-left text-sm text-slate-400"
-              >
-                홈페이지에서 보기 ↗
-              </span>
-            </span>
-          )}
-          <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyUrl()}>
-            {copied ? "복사됨" : "주소 복사"}
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItemClass}
+            onClick={() => {
+              onOpenChange(false);
+              onPreview();
+            }}
+          >
+            미리보기
           </button>
-          <div className="my-1 border-t border-slate-200" />
-          {canManage && liveOnSite ? (
+          {canManage ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onClone();
+              }}
+            >
+              복제
+            </button>
+          ) : null}
+          {canManage ? <div className="my-1 border-t border-slate-200" /> : null}
+          {canManage && visibility === "draft" ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={`${menuItemClass} text-rose-600 hover:bg-rose-50`}
+              onClick={() => {
+                onOpenChange(false);
+                onDelete();
+              }}
+            >
+              삭제
+            </button>
+          ) : null}
+          {canManage && visibility === "live" ? (
             <button
               type="button"
               role="menuitem"
@@ -218,6 +228,19 @@ function InsightOverflowMenu({
               }}
             >
               감추기
+            </button>
+          ) : null}
+          {canManage && visibility === "hidden" ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onUnhide();
+              }}
+            >
+              다시 공개
             </button>
           ) : null}
         </div>
@@ -271,6 +294,8 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const [newOpen, setNewOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [hideItem, setHideItem] = useState<InsightListItem | null>(null);
+  const [unhideItem, setUnhideItem] = useState<InsightListItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<InsightListItem | null>(null);
 
   async function reloadItems() {
     const insights = await listInsights({ status: "all", limit: 100 });
@@ -373,10 +398,38 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
     return (
       <InsightOverflowMenu
         item={item}
-        siteUrl={siteUrl}
         open={menuId === id}
         onOpenChange={(next) => setMenuId(next ? id : null)}
+        onPreview={() => {
+          setMenuId(null);
+          void (async () => {
+            try {
+              const preview = await publishInsightPreview(item.id);
+              if (!preview.ok) {
+                setError(formatError(preview.error, preview.details));
+                return;
+              }
+              const ok = await openPreview({ insightId: item.id, locale: "ko" });
+              if (!ok) setError(PREVIEW_POPUP_BLOCKED);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "preview_failed");
+            }
+          })();
+        }}
+        onClone={() => {
+          void (async () => {
+            const res = await cloneInsight(item.id);
+            if (!res.ok) {
+              setError(formatError(res.error, res.details));
+              return;
+            }
+            showToast({ message: "복제했습니다", tone: "ok" });
+            router.push(editHref(res.data.id));
+          })();
+        }}
         onHide={() => setHideItem(item)}
+        onUnhide={() => setUnhideItem(item)}
+        onDelete={() => setDeleteItem(item)}
         canManage={canManageWorks}
       />
     );
@@ -392,6 +445,30 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
     }
     await reloadItems();
     showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
+  }
+
+  async function confirmUnhide() {
+    if (!unhideItem) return;
+    const res = await unhideInsight(unhideItem.id);
+    setUnhideItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "다시 공개했습니다", tone: "ok" });
+  }
+
+  async function confirmDelete() {
+    if (!deleteItem) return;
+    const res = await deleteInsight(deleteItem.id);
+    setDeleteItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "삭제했습니다", tone: "ok" });
   }
 
   return (
@@ -595,6 +672,32 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
         onCancel={() => setHideItem(null)}
       />
 
+      <ConfirmDialog
+        key={unhideItem ? `unhide-${unhideItem.id}` : "unhide"}
+        open={Boolean(unhideItem)}
+        title="다시 공개할까요?"
+        description={unhideItem ? <p>감춰 두었던 스냅샷이 사이트에 다시 나갑니다.</p> : null}
+        confirmText="다시 공개"
+        onConfirm={() => confirmUnhide()}
+        onCancel={() => setUnhideItem(null)}
+      />
+
+      <ConfirmDialog
+        key={deleteItem ? `delete-${deleteItem.id}` : "delete"}
+        open={Boolean(deleteItem)}
+        title="정말 지울까요? 되돌릴 수 없습니다"
+        description={
+          deleteItem ? (
+            <p>
+              「{insightTitle(deleteItem)}」와 딸린 섹션·블록·이미지·연결이 함께 삭제됩니다.
+            </p>
+          ) : null
+        }
+        confirmText="삭제"
+        danger
+        onConfirm={() => confirmDelete()}
+        onCancel={() => setDeleteItem(null)}
+      />
     </div>
   );
 }

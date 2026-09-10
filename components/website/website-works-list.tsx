@@ -7,7 +7,7 @@ import { MoreHorizontal } from "lucide-react";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { createWork, hideWork, getMeta, listWorks } from "@/lib/website/api";
+import { createWork, cloneWork, deleteWork, hideWork, unhideWork, getMeta, listWorks } from "@/lib/website/api";
 import { fillBasic, fillBody, fillFaq, fillRelated, workTitle } from "@/lib/website/checks";
 import type { ApiErr, WebsiteCategory, WorkListItem, WorkSiteVisibility } from "@/lib/website/types";
 import {
@@ -35,10 +35,6 @@ function mediaUrl(siteUrl: string, src: string | null): string | null {
   if (/^https?:\/\//i.test(src)) return src;
   const base = siteUrl.replace(/\/$/, "");
   return `${base}${src.startsWith("/") ? src : `/${src}`}`;
-}
-
-function publicWorkUrl(siteUrl: string, slug: string) {
-  return `${siteUrl.replace(/\/$/, "")}/works/${slug}`;
 }
 
 function editHref(id: string) {
@@ -96,34 +92,34 @@ const menuItemClass =
 
 function WorkOverflowMenu({
   item,
-  siteUrl,
   open,
   onOpenChange,
   onPreview,
+  onClone,
   onHide,
+  onUnhide,
+  onDelete,
   canManageWorks
 }: {
   item: WorkListItem;
-  siteUrl: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPreview: () => void;
+  onClone: () => void;
   onHide: () => void;
+  onUnhide: () => void;
+  onDelete: () => void;
   canManageWorks: boolean;
 }) {
   const visibility = itemVisibility(item);
-  const liveOnSite = visibility === "live";
-  const url = publicWorkUrl(siteUrl, item.slug);
   const rootRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
-  const [copied, setCopied] = useState(false);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setCopied(false);
       setPos(null);
       return;
     }
@@ -151,15 +147,6 @@ function WorkOverflowMenu({
     };
   }, [open]);
 
-  async function copyUrl() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
     <div ref={rootRef} className="relative" data-stop-row>
       <button
@@ -179,7 +166,7 @@ function WorkOverflowMenu({
       {open && pos ? (
         <div
           role="menu"
-          className="fixed z-30 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+          className="fixed z-30 w-44 rounded-md border border-slate-200 bg-white py-1 shadow-lg"
           style={{ top: pos.top, right: pos.right }}
           onClick={(event) => event.stopPropagation()}
         >
@@ -195,37 +182,36 @@ function WorkOverflowMenu({
               onPreview();
             }}
           >
-            미리보기 ↗
+            미리보기
           </button>
-          {liveOnSite ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
+          {canManageWorks ? (
+            <button
+              type="button"
               role="menuitem"
               className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onClone();
+              }}
             >
-              홈페이지에서 보기 ↗
-            </a>
-          ) : (
-            <span className="group relative block" title="공개 후에 볼 수 있습니다">
-              <span
-                role="menuitem"
-                aria-disabled="true"
-                className="block w-full cursor-not-allowed px-3 py-1.5 text-left text-sm text-slate-400"
-              >
-                홈페이지에서 보기 ↗
-              </span>
-              <span className="pointer-events-none absolute right-full top-1/2 z-30 mr-2 hidden w-max -translate-y-1/2 rounded bg-slate-800 px-2 py-1 text-[11px] text-white group-hover:block">
-                공개 후에 볼 수 있습니다
-              </span>
-            </span>
-          )}
-          <button type="button" role="menuitem" className={menuItemClass} onClick={() => void copyUrl()}>
-            {copied ? "복사됨" : "주소 복사"}
-          </button>
-          <div className="my-1 border-t border-slate-200" />
-          {canManageWorks && liveOnSite ? (
+              복제
+            </button>
+          ) : null}
+          {canManageWorks ? <div className="my-1 border-t border-slate-200" /> : null}
+          {canManageWorks && visibility === "draft" ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={`${menuItemClass} text-rose-600 hover:bg-rose-50`}
+              onClick={() => {
+                onOpenChange(false);
+                onDelete();
+              }}
+            >
+              삭제
+            </button>
+          ) : null}
+          {canManageWorks && visibility === "live" ? (
             <button
               type="button"
               role="menuitem"
@@ -236,6 +222,19 @@ function WorkOverflowMenu({
               }}
             >
               감추기
+            </button>
+          ) : null}
+          {canManageWorks && visibility === "hidden" ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => {
+                onOpenChange(false);
+                onUnhide();
+              }}
+            >
+              다시 공개
             </button>
           ) : null}
         </div>
@@ -258,6 +257,8 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
   const [creating, setCreating] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [hideItem, setHideItem] = useState<WorkListItem | null>(null);
+  const [unhideItem, setUnhideItem] = useState<WorkListItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<WorkListItem | null>(null);
 
   async function reloadItems() {
     const works = await listWorks({ status: "all", limit: 100 });
@@ -372,7 +373,6 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     return (
       <WorkOverflowMenu
         item={item}
-        siteUrl={siteUrl}
         open={menuId === id}
         onOpenChange={(next) => setMenuId(next ? id : null)}
         onPreview={() => {
@@ -386,7 +386,20 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
             }
           })();
         }}
+        onClone={() => {
+          void (async () => {
+            const res = await cloneWork(item.id);
+            if (!res.ok) {
+              setError(formatError(res.error, res.details));
+              return;
+            }
+            showToast({ message: "복제했습니다", tone: "ok" });
+            router.push(editHref(res.data.id));
+          })();
+        }}
         onHide={() => setHideItem(item)}
+        onUnhide={() => setUnhideItem(item)}
+        onDelete={() => setDeleteItem(item)}
         canManageWorks={canManageWorks}
       />
     );
@@ -404,34 +417,37 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     showToast({ message: "사이트에서 감췄습니다", tone: "ok" });
   }
 
+  async function confirmUnhide() {
+    if (!unhideItem) return;
+    const res = await unhideWork(unhideItem.id);
+    setUnhideItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "다시 공개했습니다", tone: "ok" });
+  }
+
+  async function confirmDelete() {
+    if (!deleteItem) return;
+    const res = await deleteWork(deleteItem.id);
+    setDeleteItem(null);
+    if (!res.ok) {
+      setError(formatError(res.error, res.details));
+      return;
+    }
+    await reloadItems();
+    showToast({ message: "삭제했습니다", tone: "ok" });
+  }
+
   async function createNewProject() {
     if (creating) return;
     setCreating(true);
     setError(null);
     try {
-      let cats = categories;
-      if (cats.length === 0) {
-        const meta = await getMeta();
-        if (!meta.ok) {
-          if (isWebsiteDown(meta)) {
-            setError(WEBSITE_DOWN_MESSAGE);
-            return;
-          }
-          setError(formatError(meta.error, meta.details));
-          return;
-        }
-        cats = meta.data.workCategories ?? [];
-        setCategories(cats);
-      }
-      const categoryId = cats[0]?.id;
-      if (!categoryId) {
-        setError("사업분야가 없습니다. 메타를 확인하세요.");
-        return;
-      }
       const res = await createWork({
         slug: `work-${Date.now()}`,
-        category_id: categoryId,
-        year: String(new Date().getFullYear()),
         title: { ko: "New Project", en: "New Project" },
         summary: { ko: "작성 중입니다.", en: "" },
         key_image: "/works/placeholder-wide.svg"
@@ -648,6 +664,34 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
         confirmText="감추기"
         onConfirm={() => confirmHide()}
         onCancel={() => setHideItem(null)}
+      />
+
+      <ConfirmDialog
+        key={unhideItem ? `unhide-${unhideItem.id}` : "unhide"}
+        open={Boolean(unhideItem)}
+        title="다시 공개할까요?"
+        description={unhideItem ? <p>감춰 두었던 스냅샷이 사이트에 다시 나갑니다.</p> : null}
+        confirmText="다시 공개"
+        onConfirm={() => confirmUnhide()}
+        onCancel={() => setUnhideItem(null)}
+      />
+
+      <ConfirmDialog
+        key={deleteItem ? `delete-${deleteItem.id}` : "delete"}
+        open={Boolean(deleteItem)}
+        title="정말 지울까요? 되돌릴 수 없습니다"
+        description={
+          deleteItem ? (
+            <p>
+              「{workTitle(deleteItem)}」와 딸린 섹션·블록·이미지·인터뷰·크레딧·FAQ·연결이 함께
+              삭제됩니다.
+            </p>
+          ) : null
+        }
+        confirmText="삭제"
+        danger
+        onConfirm={() => confirmDelete()}
+        onCancel={() => setDeleteItem(null)}
       />
     </div>
   );

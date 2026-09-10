@@ -138,8 +138,12 @@ export function updateWork(id: string, body: unknown): Promise<ApiResult<WorkLis
   return websiteFetch(`works/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
-export function deleteWork(id: string): Promise<ApiResult<{ id: string }>> {
+export function deleteWork(id: string): Promise<ApiResult<{ id: string; storage?: unknown }>> {
   return websiteFetch(`works/${id}`, { method: "DELETE" });
+}
+
+export function cloneWork(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${id}/clone`, { method: "POST", body: "{}" });
 }
 
 export function listInsights(params?: {
@@ -164,8 +168,12 @@ export function updateInsight(id: string, body: unknown): Promise<ApiResult<Insi
   return websiteFetch(`insights/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
-export function deleteInsight(id: string): Promise<ApiResult<{ id: string }>> {
+export function deleteInsight(id: string): Promise<ApiResult<{ id: string; storage?: unknown }>> {
   return websiteFetch(`insights/${id}`, { method: "DELETE" });
+}
+
+export function cloneInsight(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`insights/${id}/clone`, { method: "POST", body: "{}" });
 }
 
 export function createInsightSection(
