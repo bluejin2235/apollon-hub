@@ -1,0 +1,252 @@
+<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>대표 이미지 16:9 자르기 — 목업</title>
+<style>
+:root{--ink:#16181d;--dim:#6b7280;--faint:#9ca3af;--line:#e5e7eb;--soft:#f8f9fb;
+--ap:#534AB7;--apbg:#f2f0fc;--apln:#d5cff2;
+--err:#b0231e;--errbg:#fdf2f1;--errln:#f0cecb;
+--warn:#a35a08;--warnbg:#fdf7f0;--warnln:#eddcc4;--ok:#0f7a45}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);
+font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.6}
+.pg{max-width:940px;margin:0 auto;padding:24px 16px 90px}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--dim);font-size:13px;margin:0 0 22px}
+.big{font-size:16px;font-weight:700;margin:32px 0 8px;padding-bottom:7px;
+border-bottom:2px solid var(--ink)}
+.lead{color:#4a515b;font-size:12.5px;margin:0 0 12px}
+
+.card{background:#fff;border:1px solid #d2d7de;border-radius:11px;
+padding:18px 20px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+
+.lab{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.lab b{font-size:12.5px;font-weight:600}
+.lab .rq{color:var(--err);font-size:11px}
+.lab .sp{flex:1}
+.lab .cnt{font-size:10.5px;color:var(--faint)}
+
+.thumb{display:flex;gap:14px;align-items:flex-start}
+.thumb .im{width:190px;flex-shrink:0;border-radius:8px;overflow:hidden;position:relative}
+.thumb .im img{display:block;width:100%}
+.ph{aspect-ratio:2560/1707;background:linear-gradient(135deg,#5b7a94,#2f4a5e)}
+.ph.ok{aspect-ratio:16/9}
+.thumb .meta{flex:1;min-width:0}
+.thumb .fn{font-size:12px;color:#3a4049}
+.thumb .sz{font-size:11px;color:var(--faint);margin-top:2px}
+.thumb .btns{margin-top:9px;display:flex;gap:5px;flex-wrap:wrap}
+
+.btn{border:1px solid #dde1e6;border-radius:7px;padding:5px 12px;font-size:12px;
+background:#fff;color:#3a4049;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--soft)}
+.btn.p{background:var(--ap);border-color:var(--ap);color:#fff;font-weight:600}
+.btn.w{background:var(--warn);border-color:var(--warn);color:#fff;font-weight:600}
+.btn.sm{padding:4px 10px;font-size:11.5px}
+
+.warn{margin-top:10px;background:var(--warnbg);border:1px solid var(--warnln);
+border-left:3px solid var(--warn);border-radius:0 7px 7px 0;padding:10px 13px;
+font-size:12px;color:#5c3d10;line-height:1.7}
+.warn b{color:var(--warn)}
+.warn .row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.warn .row .sp{flex:1}
+
+.okbox{margin-top:10px;background:#f0f9f4;border:1px solid #bfe3ce;
+border-left:3px solid var(--ok);border-radius:0 7px 7px 0;padding:9px 13px;
+font-size:12px;color:#12603a}
+
+.tip{font-size:11px;color:var(--dim);line-height:1.65;margin-top:8px;
+background:var(--soft);border-left:2px solid var(--apln);border-radius:0 5px 5px 0;padding:7px 10px}
+
+/* 팝업 */
+.bd{position:relative;background:rgba(0,0,0,.5);border-radius:11px;padding:26px 20px}
+.dlg{background:#fff;border-radius:12px;max-width:620px;margin:0 auto;overflow:hidden;
+box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.dh{display:flex;align-items:center;gap:9px;padding:13px 17px;border-bottom:1px solid var(--line)}
+.dh .t{font-size:15px;font-weight:600}
+.dh .sp{flex:1}
+.dh .x{color:var(--faint);font-size:15px;cursor:pointer}
+.db{padding:15px 17px}
+
+.stage{position:relative;background:#1a1d22;border-radius:8px;overflow:hidden;
+aspect-ratio:2560/1707}
+.stage .src{position:absolute;inset:0;
+background:linear-gradient(135deg,#5b7a94,#2f4a5e)}
+.stage .dark{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.stage .win{position:absolute;left:0;right:0;top:12.2%;height:75.6%;
+box-shadow:0 0 0 2px #fff, 0 0 0 9999px rgba(0,0,0,.55);
+cursor:move;background:linear-gradient(135deg,#5b7a94,#2f4a5e);
+background-size:100% 132%;background-position:center}
+.stage .win .h{position:absolute;left:0;right:0;height:12px;cursor:ns-resize}
+.stage .win .h.t{top:-6px}.stage .win .h.b{bottom:-6px}
+.stage .win .h::after{content:"";position:absolute;left:50%;top:50%;
+transform:translate(-50%,-50%);width:34px;height:3px;border-radius:2px;background:#fff}
+.stage .grid{position:absolute;inset:0;pointer-events:none}
+.stage .grid i{position:absolute;background:rgba(255,255,255,.28)}
+.stage .grid i.v1{left:33.33%;top:0;bottom:0;width:1px}
+.stage .grid i.v2{left:66.66%;top:0;bottom:0;width:1px}
+.stage .grid i.h1{top:33.33%;left:0;right:0;height:1px}
+.stage .grid i.h2{top:66.66%;left:0;right:0;height:1px}
+.stage .badge{position:absolute;left:9px;top:9px;background:rgba(0,0,0,.6);
+color:#fff;font-size:10.5px;font-weight:600;border-radius:5px;padding:3px 8px;
+backdrop-filter:blur(4px)}
+
+.info{display:flex;align-items:center;gap:14px;margin-top:11px;font-size:11.5px;color:var(--dim)}
+.info b{color:#3a4049}
+.info .sp{flex:1}
+
+.df{display:flex;align-items:center;gap:8px;padding:12px 17px;
+border-top:1px solid var(--line);background:var(--soft)}
+.df .sp{flex:1}
+.df .msg{font-size:11.5px;color:var(--dim)}
+
+.note{background:#fff;border:1px solid var(--line);border-radius:10px;
+padding:14px 16px;margin-top:14px;font-size:12.5px;line-height:1.8}
+.note h3{margin:0 0 6px;font-size:13px}
+.note ul{margin:5px 0 0;padding-left:18px}
+.note li{margin-bottom:4px}
+.k{background:var(--apbg);color:var(--ap);border-radius:4px;padding:1px 6px;
+font-size:11.5px;font-weight:600}
+</style></head><body>
+<div class="pg">
+<h1>대표 이미지 16:9 자르기</h1>
+<p class="sub">비율이 안 맞으면 경고가 뜨고, 버튼을 누르면 팝업에서 자릅니다</p>
+
+<div class="big">1 · 16:9 가 아닐 때</div>
+<p class="lead">업로드는 됩니다. <b>썸네일 아래에 경고와 버튼</b>이 나옵니다.</p>
+
+<div class="card">
+  <div class="lab"><b>대표 이미지</b><span class="rq">*</span></div>
+  <div class="thumb">
+    <div class="im"><div class="ph"></div></div>
+    <div class="meta">
+      <div class="fn">aurora-express-key.jpg</div>
+      <div class="sz">2560 × 1707 · 3:2</div>
+      <div class="btns">
+        <span class="btn sm">바꾸기</span>
+        <span class="btn sm">삭제</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="warn">
+    <b>16:9 가 아닙니다.</b> 지금은 3:2 입니다.<br>
+    이대로는 저장할 수 없습니다. 16:9 로 잘라주세요.
+    <div class="row">
+      <span style="font-size:11px;color:#8a6a35">
+        자르면 2560 × 1440 이 됩니다</span>
+      <span class="sp"></span>
+      <span class="btn w">16:9 로 자르기</span>
+    </div>
+  </div>
+
+  <div class="tip">
+    목록 카드와 상세 페이지에 쓰입니다.<br>
+    16:9 · 최소 2560×1440
+  </div>
+</div>
+
+<div class="big">2 · 자르기 팝업</div>
+<p class="lead">틀을 <b>위아래로 끌어</b> 어느 부분을 쓸지 고릅니다. 비율은 16:9 로 고정입니다.</p>
+
+<div class="bd">
+<div class="dlg">
+  <div class="dh"><span class="t">16:9 로 자르기</span><span class="sp"></span>
+    <span class="x">✕</span></div>
+  <div class="db">
+    <div class="stage">
+      <div class="src"></div>
+      <div class="win">
+        <div class="grid">
+          <i class="v1"></i><i class="v2"></i><i class="h1"></i><i class="h2"></i>
+        </div>
+        <div class="h t"></div>
+        <div class="h b"></div>
+      </div>
+      <div class="badge">16 : 9 고정</div>
+    </div>
+
+    <div class="info">
+      <span>원본 <b>2560 × 1707</b></span>
+      <span>→</span>
+      <span>저장 <b>2560 × 1440</b></span>
+      <span class="sp"></span>
+      <span class="btn sm">가운데로</span>
+    </div>
+
+    <div class="tip">
+      틀을 끌어 어느 부분을 쓸지 고릅니다.<br>
+      목록 카드와 상세 페이지에 쓰입니다. 16:9 로만 저장됩니다.
+    </div>
+  </div>
+  <div class="df"><span class="msg">위아래 267px 이 잘립니다</span>
+    <span class="sp"></span>
+    <span class="btn">취소</span><span class="btn p">이 부분으로 자르기</span></div>
+</div>
+</div>
+
+<div class="big">3 · 자른 뒤</div>
+
+<div class="card">
+  <div class="lab"><b>대표 이미지</b><span class="rq">*</span></div>
+  <div class="thumb">
+    <div class="im"><div class="ph ok"></div></div>
+    <div class="meta">
+      <div class="fn">aurora-express-key.jpg</div>
+      <div class="sz">2560 × 1440 · 16:9</div>
+      <div class="btns">
+        <span class="btn sm">다시 자르기</span>
+        <span class="btn sm">바꾸기</span>
+        <span class="btn sm">삭제</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="okbox">16:9 로 저장되었습니다.</div>
+
+  <div class="lab" style="margin-top:16px"><b>대체 텍스트</b><span class="rq">*</span>
+    <span class="sp"></span><span class="cnt">국문 0 / 40</span>
+    <span class="btn sm">AI</span></div>
+  <input style="width:100%;border:1px solid #dde1e6;border-radius:7px;
+    padding:6px 10px;font-size:12.5px;font-family:inherit"
+    placeholder="무엇이 찍혔는지 사실만">
+</div>
+
+<div class="big">4 · 원본이 너무 작을 때</div>
+
+<div class="card">
+  <div class="lab"><b>대표 이미지</b><span class="rq">*</span></div>
+  <div class="thumb">
+    <div class="im"><div class="ph"></div></div>
+    <div class="meta">
+      <div class="fn">small-photo.jpg</div>
+      <div class="sz">1800 × 1200 · 3:2</div>
+      <div class="btns"><span class="btn sm">바꾸기</span><span class="btn sm">삭제</span></div>
+    </div>
+  </div>
+
+  <div class="warn" style="background:var(--errbg);border-color:var(--errln);
+    border-left-color:var(--err);color:#7a1a16">
+    <b style="color:var(--err)">이미지가 작습니다.</b><br>
+    16:9 로 자르면 1800 × 1013 이 되어 최소 크기(2560 × 1440)에 못 미칩니다.<br>
+    더 큰 이미지를 올려주세요.
+  </div>
+</div>
+
+<div class="note">
+<h3>정해주실 것</h3>
+<ul>
+<li><span class="k">1</span> 자르기 버튼을 <b>경고 안에</b> 둘까요,
+  <b>썸네일 옆 버튼 줄</b>에 둘까요</li>
+<li><span class="k">2</span> 16:9 이미지를 올렸을 때도
+  <b>「다시 자르기」</b> 버튼을 보여줄까요.
+  구도를 바꾸고 싶을 수 있습니다</li>
+<li><span class="k">3</span> 자르기 팝업에 <b>확대·축소</b>가 필요할까요.
+  지금은 틀을 끌어 위치만 고릅니다.
+  확대가 되면 일부만 크게 쓸 수 있지만 화질이 떨어집니다</li>
+<li><span class="k">4</span> 가로가 모자란 경우
+  (예: 세로로 긴 사진)는 좌우가 아니라 위아래로 잘리는데,
+  그때 <b>좌우로도 끌 수 있게</b> 할까요</li>
+</ul>
+</div>
+
+</div>
+</body></html>
