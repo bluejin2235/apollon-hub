@@ -110,7 +110,7 @@ export type WorkInterview = {
 export type WorkDetail = {
   id: string;
   slug: string;
-  category_id: string;
+  category_id: string | null;
   title: Loc | null;
   subtitle: Loc | null;
   summary: Loc | null;
@@ -642,8 +642,8 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
 export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unknown> {
   return {
     slug: draft.slug,
-    // 대표는 항상 첫 번째입니다.
-    category_id: draft.category_ids[0] || draft.category_id,
+    // 대표는 항상 첫 번째입니다. 비우면 null.
+    category_id: draft.category_ids[0] || draft.category_id || null,
     title: { ko: draft.title.en || draft.title.ko, en: draft.title.en || draft.title.ko },
     subtitle: draft.subtitle,
     summary: draft.summary,
