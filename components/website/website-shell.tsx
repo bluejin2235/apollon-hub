@@ -14,8 +14,6 @@ import { canAccessWebsiteAdmin, isWebsiteTesterRole } from "@/lib/auth/website-t
 import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 
-// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
-
 export function WebsiteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();

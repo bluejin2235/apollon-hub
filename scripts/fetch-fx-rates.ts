@@ -1,12 +1,13 @@
 /**
- * USD/KRW 일별 환율 수집 → fx_daily_rates upsert.
+ * USD/KRW · EUR/KRW 일별 환율 수집 → fx_daily_rates upsert.
  *
  *   npx tsx scripts/fetch-fx-rates.ts
- *   npx tsx scripts/fetch-fx-rates.ts --from=2026-04-01 --to=2026-08-20
+ *   npx tsx scripts/fetch-fx-rates.ts --from=2025-01-01 --to=2026-09-08
  *   npx tsx scripts/fetch-fx-rates.ts --daily
  *
  * 기본(인자 없음): api_usage 최소일 14일 전부터 오늘(KST)까지 Frankfurter 백필.
  * 주말·공휴일은 API에 없으면 건너뛰고, 조회 시 직전 영업일 환율을 쓴다.
+ * source='frankfurter' 로 upsert. 기존 credit_records 행은 API 값이 있으면 덮어쓴다.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -79,7 +80,7 @@ async function main() {
   });
   console.log("[fetch-fx-rates] samples");
   for (const row of result.samples) {
-    console.log(`  ${row.date}  ${row.usd_krw}  ${row.source}`);
+    console.log(`  ${row.date}  usd=${row.usd_krw}  eur=${row.eur_krw ?? "null"}  ${row.source}`);
   }
 
   const { count } = await admin
@@ -87,14 +88,23 @@ async function main() {
     .select("date", { count: "exact", head: true });
   const { data: bounds } = await admin
     .from("fx_daily_rates")
-    .select("date, usd_krw, source")
+    .select("date, usd_krw, eur_krw, source")
     .order("date", { ascending: true });
   const first = bounds?.[0];
   const last = bounds?.[bounds.length - 1];
+  const bySource = new Map<string, number>();
+  let eurFilled = 0;
+  for (const row of bounds ?? []) {
+    const src = row.source ?? "(null)";
+    bySource.set(src, (bySource.get(src) ?? 0) + 1);
+    if (row.eur_krw != null) eurFilled += 1;
+  }
   console.log("[fetch-fx-rates] table", {
     rows: count,
     min: first?.date ?? null,
-    max: last?.date ?? null
+    max: last?.date ?? null,
+    eur_krw_filled: eurFilled,
+    by_source: Object.fromEntries(bySource)
   });
 }
 

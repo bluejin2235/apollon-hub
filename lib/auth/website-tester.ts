@@ -1,20 +1,26 @@
-// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
+// 홈페이지 어드민 접근. 홈페이지테스터는 미들웨어로 다른 서비스를 막는다.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { NextRequest } from "next/server";
 
 export const WEBSITE_TESTER_ROLE = "홈페이지테스터";
+
+const WEBSITE_ADMIN_ROLES = new Set([
+  "슈퍼관리자",
+  "중간관리자",
+  "멤버",
+  WEBSITE_TESTER_ROLE
+]);
 
 export function isWebsiteTesterRole(role: string | null | undefined): boolean {
   return String(role ?? "").trim() === WEBSITE_TESTER_ROLE;
 }
 
+/** Hub에 로그인한 직원(슈퍼·중간·멤버·홈페이지테스터)은 홈페이지 어드민을 쓸 수 있다 */
 export function canAccessWebsiteAdmin(role: string | null | undefined): boolean {
-  const r = String(role ?? "").trim();
-  return r === "슈퍼관리자" || isWebsiteTesterRole(r);
+  return WEBSITE_ADMIN_ROLES.has(String(role ?? "").trim());
 }
 
-/** 미들웨어: 홈페이지테스터가 접근할 수 있는 경로 */
+/** 미들웨어: 홈페이지테스터가 접근할 수 있는 경로 (다른 서비스는 막음) */
 export function isWebsiteTesterPathAllowed(pathname: string): boolean {
   if (pathname === "/") return true;
   if (pathname.startsWith("/website")) return true;
@@ -61,38 +67,4 @@ export async function getProfileRole(
   }
 
   return typeof data?.role === "string" ? data.role : null;
-}
-
-const WORK_ID_PATH = /^works\/([^/]+)$/;
-const INSIGHT_ID_PATH = /^insights\/([^/]+)$/;
-const JOB_ID_PATH = /^jobs\/([^/]+)$/;
-
-/** 홈페이지테스터가 website API 프록시에서 막아야 하는 요청 */
-export async function isWebsiteTesterBlockedApiRequest(
-  method: string,
-  joinedPath: string,
-  request: NextRequest
-): Promise<boolean> {
-  const path = joinedPath.replace(/\/$/, "").split("?")[0] ?? "";
-
-  if (method === "POST" && (path === "works" || path === "insights" || path === "jobs")) return true;
-
-  if (method === "DELETE" && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path) || JOB_ID_PATH.test(path))) {
-    return true;
-  }
-
-  if (method === "PATCH" && path === "jobs/order") return true;
-
-  if ((method === "PATCH" || method === "PUT") && (WORK_ID_PATH.test(path) || INSIGHT_ID_PATH.test(path) || JOB_ID_PATH.test(path))) {
-    try {
-      const text = await request.clone().text();
-      if (!text.trim()) return false;
-      const body = JSON.parse(text) as unknown;
-      if (body && typeof body === "object" && "status" in body) return true;
-    } catch {
-      return false;
-    }
-  }
-
-  return false;
 }

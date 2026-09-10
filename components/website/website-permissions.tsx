@@ -1,12 +1,11 @@
 "use client";
 
-// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
-
 import { createContext, useContext, type ReactNode } from "react";
 import { isWebsiteTesterRole } from "@/lib/auth/website-tester";
 
 type WebsitePermissions = {
   isWebsiteTester: boolean;
+  /** 홈페이지 어드민에 들어온 사람은 등록·저장·공개·감추기·편성 모두 가능 */
   canManageWorks: boolean;
 };
 
@@ -28,7 +27,7 @@ export function WebsitePermissionsProvider({
     <WebsitePermissionsContext.Provider
       value={{
         isWebsiteTester,
-        canManageWorks: !isWebsiteTester
+        canManageWorks: true
       }}
     >
       {children}

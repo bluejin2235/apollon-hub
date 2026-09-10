@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import {
-  canAccessWebsiteAdmin,
-  getProfileRole,
-  isWebsiteTesterBlockedApiRequest,
-  isWebsiteTesterRole
-} from "@/lib/auth/website-tester";
+import { canAccessWebsiteAdmin, getProfileRole } from "@/lib/auth/website-tester";
 import { websiteAdminFetch } from "@/lib/website/client";
-
-// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
 
 export const runtime = "nodejs";
 
@@ -34,10 +27,6 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   const joined = (path ?? []).join("/");
   if (!joined || joined.includes("..")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  if (isWebsiteTesterRole(role) && (await isWebsiteTesterBlockedApiRequest(method, joined, request))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const contentType = request.headers.get("content-type") ?? "";

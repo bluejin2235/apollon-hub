@@ -6,7 +6,7 @@ export function WebsiteTesterBanner() {
       className="fixed top-14 left-0 right-0 z-40 border-b border-slate-200 bg-slate-50/95 px-4 py-1.5 text-center text-[11px] text-slate-600 backdrop-blur-sm"
       role="status"
     >
-      홈페이지 개발 검토용 계정입니다. 등록·삭제는 할 수 없습니다
+      홈페이지 개발 검토용 계정입니다. 홈페이지 어드민만 사용할 수 있습니다
     </div>
   );
 }

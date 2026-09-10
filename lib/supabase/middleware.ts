@@ -7,8 +7,7 @@ import {
   isWebsiteTesterRole
 } from "@/lib/auth/website-tester";
 
-// TODO(홈페이지 오픈 후 삭제) 개발 기간 한정 테스트 계정 권한
-
+/** 홈페이지테스터만 다른 Hub 서비스를 막는다. 멤버·중간관리자는 그대로. */
 async function fetchWebsiteTesterRole(userId: string): Promise<string | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secret = process.env.SUPABASE_SECRET_KEY;
