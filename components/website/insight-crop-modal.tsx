@@ -1,15 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uploadFile } from "@/lib/website/api";
-import { KEY_STORE_LONG_EDGE, INSIGHT_KEY_MIN_LONG_EDGE, insightKeyCropTooSmallMessage } from "@/lib/website/image-long-edge";
+import {
+  KEY_STORE_LONG_EDGE,
+  INSIGHT_KEY_MIN_LONG_EDGE,
+  insightKeyCropTooSmallMessage
+} from "@/lib/website/image-long-edge";
+import {
+  WORK_KEY_RATIO,
+  WORK_KEY_STORE_HEIGHT,
+  WORK_KEY_STORE_WIDTH,
+  workKeyCropFitsMin
+} from "@/lib/website/key-image-rules";
 import { showToast } from "@/components/website/toast";
 import { describeUploadError } from "@/lib/website/upload-error";
-import { newStoredFilename, uploadObjectPath } from "@/lib/website/upload-path";
+import { newStoredFilename, uploadObjectPath, type UploadBucket } from "@/lib/website/upload-path";
 import { mediaUrl } from "@/lib/website/work-detail";
 import "./ui/work-admin.css";
 
 export type InsightCropRatio = "1:1" | "3:4" | "16:9";
+
+const ALL_RATIOS: InsightCropRatio[] = ["1:1", "3:4", "16:9"];
 
 const RATIOS: {
   id: InsightCropRatio;
@@ -102,6 +114,27 @@ function cropRect(
   };
 }
 
+/** 워크 대표 — 확대 없이 최대 16:9 대비 scale(0.55~1) 로 크기만 */
+function workKeyCropRect(imgW: number, imgH: number, scale: number, panX: number, panY: number) {
+  const cropAspect = WORK_KEY_RATIO;
+  const imgAspect = imgW / imgH;
+  let maxW: number;
+  let maxH: number;
+  if (imgAspect >= cropAspect) {
+    maxH = imgH;
+    maxW = maxH * cropAspect;
+  } else {
+    maxW = imgW;
+    maxH = maxW / cropAspect;
+  }
+  const s = Math.min(1, Math.max(0.55, scale));
+  const w = Math.min(imgW, maxW * s);
+  const h = Math.min(imgH, maxH * s);
+  const maxX = Math.max(0, imgW - w);
+  const maxY = Math.max(0, imgH - h);
+  return { x: maxX * panX, y: maxY * panY, w, h, maxX, maxY };
+}
+
 function drawCrop(
   canvas: HTMLCanvasElement | null,
   img: HTMLImageElement | null,
@@ -145,7 +178,13 @@ type Props = {
   src: string;
   siteUrl: string;
   folder: string;
+  /** 기본 인사이트 세 가지. 워크는 ['16:9'] */
+  ratios?: InsightCropRatio[];
   initialRatio?: InsightCropRatio;
+  /** insight = 기존 UI, work-key = 목업 스테이지 UI */
+  chrome?: "insight" | "work-key";
+  bucket?: UploadBucket;
+  uploadRole?: string;
   onClose: () => void;
   onSaved: (next: { src: string; width: number; height: number; ratio: InsightCropRatio }) => void;
 };
@@ -155,12 +194,27 @@ export function InsightCropModal({
   src,
   siteUrl,
   folder,
+  ratios = ALL_RATIOS,
   initialRatio,
+  chrome = "insight",
+  bucket = "insights",
+  uploadRole = "insight-key",
   onClose,
   onSaved
 }: Props) {
-  const [ratio, setRatio] = useState<InsightCropRatio>(initialRatio ?? "3:4");
+  const allowed = useMemo(() => {
+    const set = new Set(ratios);
+    return RATIOS.filter((item) => set.has(item.id));
+  }, [ratios]);
+
+  const defaultRatio =
+    initialRatio && allowed.some((item) => item.id === initialRatio)
+      ? initialRatio
+      : allowed[0]?.id ?? "3:4";
+
+  const [ratio, setRatio] = useState<InsightCropRatio>(defaultRatio);
   const [zoom, setZoom] = useState(100);
+  const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0.5, y: 0.5 });
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -168,19 +222,68 @@ export function InsightCropModal({
   const cropRef = useRef<HTMLCanvasElement>(null);
   const deskRef = useRef<HTMLCanvasElement>(null);
   const mobRef = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    mode: "pan" | "resize";
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+    scale: number;
+  } | null>(null);
 
+  const isWorkKey = chrome === "work-key";
+  const showRatioPicker = !isWorkKey && allowed.length > 1;
   const meta = ratioMeta(ratio);
-  const zoomFactor = zoom / 100;
-  const rect =
-    img && img.naturalWidth
-      ? cropRect(img.naturalWidth, img.naturalHeight, meta.rw, meta.rh, zoomFactor, pan.x, pan.y)
-      : { x: 0, y: 0, w: 0, h: 0 };
+
+  const rect = useMemo(() => {
+    if (!img || !img.naturalWidth) return { x: 0, y: 0, w: 0, h: 0, maxX: 0, maxY: 0 };
+    if (isWorkKey) {
+      return workKeyCropRect(img.naturalWidth, img.naturalHeight, scale, pan.x, pan.y);
+    }
+    const r = cropRect(
+      img.naturalWidth,
+      img.naturalHeight,
+      meta.rw,
+      meta.rh,
+      zoom / 100,
+      pan.x,
+      pan.y
+    );
+    return { ...r, maxX: Math.max(0, img.naturalWidth - r.w), maxY: Math.max(0, img.naturalHeight - r.h) };
+  }, [img, isWorkKey, scale, pan.x, pan.y, meta.rw, meta.rh, zoom]);
+
+  const storeSize = useMemo(() => {
+    if (rect.w <= 0) return { w: 0, h: 0 };
+    const long = Math.max(rect.w, rect.h);
+    if (long <= 0) return { w: 0, h: 0 };
+    // 워크: 긴 변을 항상 2560으로. 인사이트: 넘을 때만 줄임.
+    const s = isWorkKey
+      ? KEY_STORE_LONG_EDGE / long
+      : long > KEY_STORE_LONG_EDGE
+        ? KEY_STORE_LONG_EDGE / long
+        : 1;
+    return {
+      w: Math.max(1, Math.round(rect.w * s)),
+      h: Math.max(1, Math.round(rect.h * s))
+    };
+  }, [rect.w, rect.h, isWorkKey]);
+
+  const trimMessage = useMemo(() => {
+    if (!img || !isWorkKey) return "";
+    const trimX = Math.max(0, Math.round(img.naturalWidth - rect.w));
+    const trimY = Math.max(0, Math.round(img.naturalHeight - rect.h));
+    if (trimY > 0 && trimX === 0) return `위아래 ${trimY}px 이 잘립니다`;
+    if (trimX > 0 && trimY === 0) return `좌우 ${trimX}px 이 잘립니다`;
+    if (trimX > 0 && trimY > 0) return `좌우 ${trimX}px · 위아래 ${trimY}px 이 잘립니다`;
+    return "원본 전체가 들어갑니다";
+  }, [img, isWorkKey, rect.w, rect.h]);
 
   useEffect(() => {
     if (!open) return;
-    setRatio(initialRatio ?? "3:4");
+    setRatio(defaultRatio);
     setZoom(100);
+    setScale(1);
     setPan({ x: 0.5, y: 0.5 });
     setImg(null);
     let cancelled = false;
@@ -197,7 +300,7 @@ export function InsightCropModal({
     return () => {
       cancelled = true;
     };
-  }, [open, src, siteUrl, initialRatio]);
+  }, [open, src, siteUrl, defaultRatio]);
 
   const paint = useCallback(() => {
     drawCrop(cropRef.current, img, rect);
@@ -218,32 +321,51 @@ export function InsightCropModal({
     return () => window.removeEventListener("resize", onResize);
   }, [open, paint]);
 
-  function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+  function onPointerDown(event: React.PointerEvent, mode: "pan" | "resize" = "pan") {
     if (!img) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+    (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     setGrabbing(true);
-    drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+    drag.current = {
+      mode,
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      scale
+    };
   }
 
-  function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+  function onPointerMove(event: React.PointerEvent) {
     const start = drag.current;
-    const canvas = cropRef.current;
-    if (!start || !canvas || !img) return;
-    const maxX = Math.max(1, img.naturalWidth - rect.w);
-    const maxY = Math.max(1, img.naturalHeight - rect.h);
-    const dx = ((event.clientX - start.x) / canvas.clientWidth) * rect.w;
-    const dy = ((event.clientY - start.y) / canvas.clientHeight) * rect.h;
-    setPan({
-      x: Math.min(1, Math.max(0, start.panX - dx / maxX)),
-      y: Math.min(1, Math.max(0, start.panY - dy / maxY))
-    });
+    if (!start || !img) return;
+    if (start.mode === "resize" && isWorkKey) {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const dy = event.clientY - start.y;
+      const delta = (-dy / stage.clientHeight) * 1.4;
+      setScale(Math.min(1, Math.max(0.55, start.scale + delta)));
+      return;
+    }
+    const maxX = Math.max(1, rect.maxX || img.naturalWidth - rect.w);
+    const maxY = Math.max(1, rect.maxY || img.naturalHeight - rect.h);
+    const stage = stageRef.current ?? cropRef.current;
+    const refW = stage && "clientWidth" in stage ? stage.clientWidth : 1;
+    const refH = stage && "clientHeight" in stage ? stage.clientHeight : 1;
+    const dx = ((event.clientX - start.x) / Math.max(1, refW)) * rect.w;
+    const dy = ((event.clientY - start.y) / Math.max(1, refH)) * rect.h;
+    // 남는 축으로만 이동
+    const nextX = rect.maxX > 1 ? Math.min(1, Math.max(0, start.panX - dx / maxX)) : 0.5;
+    const nextY = rect.maxY > 1 ? Math.min(1, Math.max(0, start.panY - dy / maxY)) : 0.5;
+    setPan({ x: nextX, y: nextY });
   }
 
-  function onPointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+  function onPointerUp(event: React.PointerEvent) {
     drag.current = null;
     setGrabbing(false);
     try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+      (event.target as HTMLElement).releasePointerCapture?.(event.pointerId);
     } catch {
       // already released
     }
@@ -253,14 +375,24 @@ export function InsightCropModal({
     if (!img || rect.w <= 0) return;
     setBusy(true);
     try {
-      const long = Math.max(rect.w, rect.h);
-      if (long < INSIGHT_KEY_MIN_LONG_EDGE) {
-        showToast({ tone: "error", message: insightKeyCropTooSmallMessage() });
-        return;
+      if (isWorkKey) {
+        if (!workKeyCropFitsMin(img.naturalWidth, img.naturalHeight)) {
+          showToast({
+            tone: "error",
+            message: `자른 결과가 ${WORK_KEY_STORE_WIDTH}×${WORK_KEY_STORE_HEIGHT} 미만입니다. 더 큰 이미지를 올려주세요.`
+          });
+          return;
+        }
+      } else {
+        const long = Math.max(rect.w, rect.h);
+        if (long < INSIGHT_KEY_MIN_LONG_EDGE) {
+          showToast({ tone: "error", message: insightKeyCropTooSmallMessage() });
+          return;
+        }
       }
-      const scale = long > KEY_STORE_LONG_EDGE ? KEY_STORE_LONG_EDGE / long : 1;
-      const outW = Math.max(1, Math.round(rect.w * scale));
-      const outH = Math.max(1, Math.round(rect.h * scale));
+
+      const outW = storeSize.w;
+      const outH = storeSize.h;
       const canvas = document.createElement("canvas");
       canvas.width = outW;
       canvas.height = outH;
@@ -276,8 +408,8 @@ export function InsightCropModal({
       });
       const raw = new File([blob], "key-crop.jpg", { type: "image/jpeg" });
       const filename = newStoredFilename("jpg");
-      const res = await uploadFile(raw, "insights", uploadObjectPath(folder, filename), {
-        fields: { role: "insight-key" }
+      const res = await uploadFile(raw, bucket, uploadObjectPath(folder, filename), {
+        fields: { role: uploadRole }
       });
       if (!res.ok || !res.data?.publicUrl) {
         const parsed = describeUploadError(
@@ -307,8 +439,113 @@ export function InsightCropModal({
 
   if (!open) return null;
 
+  if (isWorkKey) {
+    const imgW = img?.naturalWidth ?? 0;
+    const imgH = img?.naturalHeight ?? 0;
+    const winLeft = imgW > 0 ? (rect.x / imgW) * 100 : 0;
+    const winTop = imgH > 0 ? (rect.y / imgH) * 100 : 0;
+    const winW = imgW > 0 ? (rect.w / imgW) * 100 : 100;
+    const winH = imgH > 0 ? (rect.h / imgH) * 100 : 100;
+    const previewUrl = mediaUrl(siteUrl, src) || src;
+
+    return (
+      <div className="wa ov on" role="dialog" aria-modal="true" aria-label="16:9 로 자르기">
+        <div className="mw key-crop-mw">
+          <div className="mwh">
+            <b>16:9 로 자르기</b>
+            <button type="button" className="xb" onClick={onClose} aria-label="닫기">
+              ×
+            </button>
+          </div>
+          <div className="key-crop-body">
+            <div
+              ref={stageRef}
+              className={`key-crop-stage${grabbing ? " grabbing" : ""}`}
+              style={imgW && imgH ? { aspectRatio: `${imgW} / ${imgH}` } : undefined}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img className="key-crop-src" src={previewUrl} alt="" draggable={false} />
+              <div
+                className="key-crop-win"
+                style={{ left: `${winLeft}%`, top: `${winTop}%`, width: `${winW}%`, height: `${winH}%` }}
+                onPointerDown={(e) => onPointerDown(e, "pan")}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+              >
+                <div className="key-crop-grid" aria-hidden>
+                  <i className="v1" />
+                  <i className="v2" />
+                  <i className="h1" />
+                  <i className="h2" />
+                </div>
+                <div
+                  className="key-crop-handle t"
+                  onPointerDown={(e) => onPointerDown(e, "resize")}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                />
+                <div
+                  className="key-crop-handle b"
+                  onPointerDown={(e) => onPointerDown(e, "resize")}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                />
+              </div>
+              <div className="key-crop-badge">16 : 9 고정</div>
+            </div>
+
+            <div className="key-crop-info">
+              <span>
+                원본 <b>{imgW && imgH ? `${imgW} × ${imgH}` : "—"}</b>
+              </span>
+              <span>→</span>
+              <span>
+                저장 <b>{storeSize.w && storeSize.h ? `${storeSize.w} × ${storeSize.h}` : "—"}</b>
+              </span>
+              <span className="sp" />
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => {
+                  setPan({ x: 0.5, y: 0.5 });
+                  setScale(1);
+                }}
+              >
+                가운데로
+              </button>
+            </div>
+
+            <div className="tip on key-crop-tip">
+              틀을 끌어 어느 부분을 쓸지 고릅니다.
+              <br />
+              목록 카드와 상세 페이지에 쓰입니다. 16:9 로만 저장됩니다.
+            </div>
+          </div>
+          <div className="mwf key-crop-foot">
+            <span className="key-crop-trim">{trimMessage}</span>
+            <span className="sp" />
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>
+              취소
+            </button>
+            <button
+              type="button"
+              className="btn acc"
+              onClick={() => void save()}
+              disabled={busy || !img}
+            >
+              이 부분으로 자르기
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="ov on" role="dialog" aria-modal="true" aria-label="비율 고르고 자르기">
+    <div className="wa ov on" role="dialog" aria-modal="true" aria-label="비율 고르고 자르기">
       <div className="mw crop-mw">
         <div className="mwh">
           <b>비율 고르고 자르기</b>
@@ -321,7 +558,7 @@ export function InsightCropModal({
             <div className={`cropbox ${meta.cls}${grabbing ? " grabbing" : ""}`}>
               <canvas
                 ref={cropRef}
-                onPointerDown={onPointerDown}
+                onPointerDown={(e) => onPointerDown(e, "pan")}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
@@ -329,27 +566,31 @@ export function InsightCropModal({
             </div>
           </div>
           <div className="side">
-            <h4>비율</h4>
-            <div className="ratios">
-              {RATIOS.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={item.id === ratio ? "rbtn on" : "rbtn"}
-                  onClick={() => {
-                    setRatio(item.id);
-                    setZoom(100);
-                    setPan({ x: 0.5, y: 0.5 });
-                  }}
-                >
-                  <span className={`shape ${item.shape}`} />
-                  <div>
-                    <div className="t">{item.title}</div>
-                    <div className="d">{item.desc}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            {showRatioPicker ? (
+              <>
+                <h4>비율</h4>
+                <div className="ratios">
+                  {allowed.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={item.id === ratio ? "rbtn on" : "rbtn"}
+                      onClick={() => {
+                        setRatio(item.id);
+                        setZoom(100);
+                        setPan({ x: 0.5, y: 0.5 });
+                      }}
+                    >
+                      <span className={`shape ${item.shape}`} />
+                      <div>
+                        <div className="t">{item.title}</div>
+                        <div className="d">{item.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
             <h4>크기</h4>
             <div className="zoom">
               <span className="zm">－</span>
