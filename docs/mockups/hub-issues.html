@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hub 이슈 게시판 — 목업</title>
+<style>
+:root{--ink:#0f172a;--ink2:#475569;--ink3:#94a3b8;--line:#e2e8f0;--bg:#f8fafc;
+--req:#dc2626;--warn:#b45309;--ok:#15803d;--acc:#4f46e5;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Pretendard","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;padding:24px}
+.page{max-width:1040px;margin:0 auto}
+.lab{font-size:12px;color:var(--ink2);margin:28px 0 8px}
+.lab:first-of-type{margin-top:0}
+.note{font-size:11px;color:var(--ink3);margin:8px 0 0;line-height:1.7}
+.memo{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:11px 14px;font-size:12px;color:#92400e;line-height:1.8;margin-bottom:22px}
+.box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+
+.hd{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.hd h3{font-size:17px;font-weight:600}
+.hd .sub{font-size:12px;color:var(--ink3);margin-top:2px}
+.hdr{display:flex;gap:8px;align-items:center}
+
+button.b{font:inherit;font-size:12px;padding:6px 12px;border:1px solid var(--line);background:#fff;border-radius:var(--r);color:var(--ink2);cursor:pointer;white-space:nowrap}
+button.b.acc{border-color:#c7d2fe;color:var(--acc);background:#f5f6ff}
+button.b.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button.b.sm{font-size:11px;padding:4px 9px}
+input[type=text],textarea,select{width:100%;font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);background:#fff;color:var(--ink)}
+textarea{resize:vertical;line-height:1.7}
+
+/* 상태 */
+.st{font-size:11px;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.st i{width:6px;height:6px;border-radius:50%;display:inline-block}
+.st.new    {background:#eef2ff;color:#4f46e5} .st.new i{background:#4f46e5}
+.st.doing  {background:#fef3c7;color:#b45309} .st.doing i{background:#b45309}
+.st.done   {background:#dcfce7;color:#15803d} .st.done i{background:#15803d}
+.st.hold   {background:#f1f5f9;color:#64748b} .st.hold i{background:#94a3b8}
+.st.no     {background:#fee2e2;color:#dc2626} .st.no i{background:#dc2626}
+
+.kind{font-size:11px;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.kind.bug{background:#fee2e2;color:#dc2626}
+.kind.idea{background:#eef2ff;color:#4f46e5}
+.kind.ask{background:#f1f5f9;color:#475569}
+
+/* 요약 줄 */
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.sm{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer}
+.sm.on{border-color:var(--acc);background:#f5f6ff}
+.sm .n{font-size:22px;font-weight:600;line-height:1.2}
+.sm .t{font-size:12px;color:var(--ink2);margin-top:3px}
+.sm.new .n{color:#4f46e5}
+.sm.doing .n{color:#b45309}
+.sm.done .n{color:#15803d}
+
+/* 필터 */
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.filters input{flex:1;min-width:180px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{font:inherit;font-size:12px;padding:6px 12px;border:0;background:#fff;color:var(--ink2);cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+
+/* 목록 */
+table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+th{font-size:11px;color:var(--ink3);font-weight:500;text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 9px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.done{opacity:.55}
+.ti{display:flex;align-items:center;gap:7px;min-width:0}
+.ti .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t2{font-size:11px;color:var(--ink3);margin-top:2px}
+.cm{font-size:11px;color:var(--ink3);white-space:nowrap}
+.who{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.av{width:20px;height:20px;border-radius:50%;background:#e8eef5;font-size:10px;display:flex;align-items:center;justify-content:center;color:var(--ink2);flex-shrink:0}
+
+/* 칸반 */
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.col{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:10px}
+.col h4{font-size:12px;font-weight:600;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between}
+.col h4 .c{font-size:11px;color:var(--ink3);font-weight:400}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px 11px;margin-bottom:7px;cursor:grab}
+.card .t{font-size:12.5px;line-height:1.45;margin-bottom:6px}
+.card .m{display:flex;align-items:center;justify-content:space-between;gap:6px}
+
+/* 상세 */
+.detail-hd{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+.detail-hd .top{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+.detail-hd h2{font-size:19px;font-weight:600;line-height:1.4}
+.detail-hd .meta{font-size:12px;color:var(--ink3);margin-top:6px}
+.post{display:flex;gap:11px;padding:14px 0;border-bottom:1px solid #f1f5f9}
+.post .av{width:30px;height:30px;font-size:11px}
+.post .body{flex:1;min-width:0}
+.post .who2{font-size:12.5px;font-weight:500;margin-bottom:3px}
+.post .who2 span{font-weight:400;color:var(--ink3);margin-left:6px;font-size:11px}
+.post .txt{font-size:13.5px;line-height:1.8}
+.post .txt .mention{color:var(--acc);background:#eef2ff;padding:1px 5px;border-radius:4px}
+.post.sys{background:#f8fafc;margin:0 -18px;padding:11px 18px;border-bottom:1px solid #f1f5f9}
+.post.sys .txt{font-size:12px;color:var(--ink2)}
+
+.writebox{border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;margin-top:14px}
+.writebox .tools{display:flex;justify-content:space-between;align-items:center;margin-top:9px}
+
+.side{display:grid;grid-template-columns:1fr 210px;gap:18px;align-items:start}
+.sidecard{border:1px solid var(--line);border-radius:12px;padding:13px 14px;font-size:12.5px}
+.sidecard h5{font-size:11px;color:var(--ink3);margin-bottom:8px;font-weight:500}
+.sidecard + .sidecard{margin-top:10px}
+.sidecard .row{display:flex;align-items:center;gap:7px;padding:5px 0}
+
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto}
+.tbl th{font-size:11px;color:var(--ink3);padding:7px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.eb{font:inherit;font-size:12px;min-width:26px;height:25px;border:1px solid transparent;background:none;border-radius:5px;color:var(--ink2);cursor:pointer;padding:0 6px}
+.eb:hover{background:#f1f5f9}
+.esep{width:1px;height:16px;background:var(--line);margin:0 5px;display:inline-block}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block;cursor:pointer;border:1px solid rgba(0,0,0,.08)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="memo">
+  <b>Hub 안에 「이슈」 게시판을 만듭니다.</b><br>
+  GitHub 이슈와 비슷하지만 <b>개발자가 아닌 직원이 쓰는 곳</b>입니다.<br><br>
+  · 오류를 알리거나 「이렇게 됐으면」을 올립니다<br>
+  · 댓글로 진행 상황을 이야기합니다<br>
+  · 상태로 <b>할 것 · 실행 중 · 끝난 것</b>을 한눈에 봅니다<br>
+  · @이름 을 쓰면 그 사람에게 알립니다
+</div>
+
+<div class="lab">① 목록 — 위에 요약, 아래에 목록</div>
+<div class="box">
+  <div class="hd">
+    <div>
+      <h3>이슈</h3>
+      <div class="sub">불편한 것과 바라는 것을 여기에 올려 주세요</div>
+    </div>
+    <div class="hdr">
+      <div class="seg">
+        <button class="on">목록</button>
+        <button>보드</button>
+      </div>
+      <button class="b pri">＋ 새 이슈</button>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="sm new on"><div class="n">4</div><div class="t">접수</div></div>
+    <div class="sm doing"><div class="n">3</div><div class="t">실행 중</div></div>
+    <div class="sm done"><div class="n">12</div><div class="t">완료</div></div>
+    <div class="sm"><div class="n">2</div><div class="t">보류</div></div>
+  </div>
+
+  <div class="filters">
+    <input type="text" placeholder="제목 · 내용 찾기">
+    <select><option>전체 종류</option><option>안 돼요</option><option>이렇게 됐으면</option><option>물어봐요</option></select>
+    <select><option>전체 서비스</option><option>홈페이지</option><option>라이선스</option><option>물품창고</option><option>루나</option></select>
+    <select><option>최신순</option><option>오래된순</option><option>댓글 많은순</option></select>
+  </div>
+
+  <table>
+    <colgroup><col style="width:auto"><col style="width:100px"><col style="width:110px"><col style="width:90px"><col style="width:60px"></colgroup>
+    <tr><th>제목</th><th>상태</th><th>올린 사람</th><th>맡은 사람</th><th>댓글</th></tr>
+
+    <tr>
+      <td>
+        <div class="ti">
+          <span class="kind bug">안 돼요</span>
+          <span class="txt">워크 이미지를 올리면 오류가 뜹니다</span>
+        </div>
+        <div class="t2">홈페이지 · 2시간 전</div>
+      </td>
+      <td><span class="st new"><i></i>접수</span></td>
+      <td><div class="who"><span class="av">김</span>김벼리</div></td>
+      <td><span style="color:var(--ink3)">—</span></td>
+      <td class="cm">💬 0</td>
+    </tr>
+
+    <tr>
+      <td>
+        <div class="ti">
+          <span class="kind idea">이렇게 됐으면</span>
+          <span class="txt">인사이트에도 이력 탭이 있으면 좋겠어요</span>
+        </div>
+        <div class="t2">홈페이지 · 어제</div>
+      </td>
+      <td><span class="st doing"><i></i>실행 중</span></td>
+      <td><div class="who"><span class="av">박</span>박지영</div></td>
+      <td><div class="who"><span class="av">이</span>이택진</div></td>
+      <td class="cm">💬 5</td>
+    </tr>
+
+    <tr>
+      <td>
+        <div class="ti">
+          <span class="kind ask">물어봐요</span>
+          <span class="txt">대체 텍스트는 꼭 넣어야 하나요?</span>
+        </div>
+        <div class="t2">홈페이지 · 3일 전</div>
+      </td>
+      <td><span class="st doing"><i></i>실행 중</span></td>
+      <td><div class="who"><span class="av">최</span>최다인</div></td>
+      <td><div class="who"><span class="av">이</span>이택진</div></td>
+      <td class="cm">💬 2</td>
+    </tr>
+
+    <tr class="done">
+      <td>
+        <div class="ti">
+          <span class="kind bug">안 돼요</span>
+          <span class="txt">홈페이지 메뉴를 눌러도 안 들어가집니다</span>
+        </div>
+        <div class="t2">홈페이지 · 5일 전</div>
+      </td>
+      <td><span class="st done"><i></i>완료</span></td>
+      <td><div class="who"><span class="av">정</span>정하늘</div></td>
+      <td><div class="who"><span class="av">이</span>이택진</div></td>
+      <td class="cm">💬 3</td>
+    </tr>
+
+    <tr class="done">
+      <td>
+        <div class="ti">
+          <span class="kind idea">이렇게 됐으면</span>
+          <span class="txt">물품창고에서 QR 여러 개를 한 번에 뽑고 싶어요</span>
+        </div>
+        <div class="t2">물품창고 · 2주 전</div>
+      </td>
+      <td><span class="st hold"><i></i>보류</span></td>
+      <td><div class="who"><span class="av">윤</span>윤서진</div></td>
+      <td><span style="color:var(--ink3)">—</span></td>
+      <td class="cm">💬 1</td>
+    </tr>
+  </table>
+</div>
+<p class="note">
+  위의 숫자를 누르면 그 상태만 걸러 봅니다.<br>
+  끝난 것은 흐리게 보입니다. 지우지 않습니다.
+</p>
+
+<div class="lab">② 보드 — 한눈에 보기</div>
+<div class="board">
+  <div class="col">
+    <h4>접수 <span class="c">4</span></h4>
+    <div class="card">
+      <div class="t">워크 이미지를 올리면 오류가 뜹니다</div>
+      <div class="m"><span class="kind bug">안 돼요</span><span class="cm">김벼리</span></div>
+    </div>
+    <div class="card">
+      <div class="t">뉴스레터 미리보기가 깨져요</div>
+      <div class="m"><span class="kind bug">안 돼요</span><span class="cm">최다인</span></div>
+    </div>
+    <div class="card">
+      <div class="t">라이선스 만료 알림을 더 일찍 받고 싶어요</div>
+      <div class="m"><span class="kind idea">이렇게 됐으면</span><span class="cm">윤서진</span></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h4>실행 중 <span class="c">3</span></h4>
+    <div class="card">
+      <div class="t">인사이트에도 이력 탭이 있으면 좋겠어요</div>
+      <div class="m"><span class="kind idea">이렇게 됐으면</span><span class="cm">이택진</span></div>
+    </div>
+    <div class="card">
+      <div class="t">대체 텍스트는 꼭 넣어야 하나요?</div>
+      <div class="m"><span class="kind ask">물어봐요</span><span class="cm">이택진</span></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h4>완료 <span class="c">12</span></h4>
+    <div class="card" style="opacity:.6">
+      <div class="t">홈페이지 메뉴를 눌러도 안 들어가집니다</div>
+      <div class="m"><span class="kind bug">안 돼요</span><span class="cm">이택진</span></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h4>보류 <span class="c">2</span></h4>
+    <div class="card" style="opacity:.6">
+      <div class="t">물품창고에서 QR 여러 개를 한 번에</div>
+      <div class="m"><span class="kind idea">이렇게 됐으면</span><span class="cm">윤서진</span></div>
+    </div>
+  </div>
+</div>
+<p class="note">카드를 끌어 옮기면 상태가 바뀝니다.</p>
+
+<div class="lab">③ 새 이슈 쓰기</div>
+<div class="box">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px">
+    <div>
+      <div style="font-size:12px;color:var(--ink2);margin-bottom:5px">어떤 이야기인가요</div>
+      <div style="display:flex;gap:6px">
+        <button class="b sm" style="border-color:#fecaca;color:var(--req);background:#fef2f2">안 돼요</button>
+        <button class="b sm">이렇게 됐으면</button>
+        <button class="b sm">물어봐요</button>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:12px;color:var(--ink2);margin-bottom:5px">어디에서요</div>
+      <select><option>홈페이지</option><option>라이선스</option><option>물품창고</option><option>루나</option><option>그 밖</option></select>
+    </div>
+  </div>
+
+  <div style="margin-bottom:11px">
+    <input type="text" placeholder="한 줄로 무슨 일인지 적어 주세요">
+  </div>
+
+  <div style="border:1px solid var(--line);border-radius:var(--r);overflow:hidden">
+    <div style="display:flex;gap:2px;padding:7px 10px;border-bottom:1px solid var(--line);background:#fbfdff;align-items:center;flex-wrap:wrap">
+      <button class="eb"><b>B</b></button>
+      <button class="eb"><i>I</i></button>
+      <button class="eb" style="text-decoration:underline">U</button>
+      <span class="esep"></span>
+      <span style="display:flex;gap:3px;align-items:center">
+        <i class="sw" style="background:#0f172a"></i>
+        <i class="sw" style="background:#b0231e"></i>
+        <i class="sw" style="background:#a35a08"></i>
+        <i class="sw" style="background:#0f7a45"></i>
+        <i class="sw" style="background:#534ab7"></i>
+      </span>
+      <span class="esep"></span>
+      <button class="eb">≡</button>
+      <button class="eb">1.</button>
+      <button class="eb">🔗</button>
+      <span class="esep"></span>
+      <button class="eb">🖼 이미지</button>
+      <button class="eb">🎬 영상</button>
+      <span class="esep"></span>
+      <button class="eb" style="font-size:11px">글자만</button>
+    </div>
+    <div style="min-height:150px;padding:12px 14px;font-size:14px;line-height:1.9;color:var(--ink3)">
+      언제 · 어디서 · 무엇을 하다가 그랬는지 적어 주세요.<br><br>
+      화면을 캡처해서 붙여넣으셔도 됩니다.<br>
+      @이름 을 쓰면 그 사람에게 알림이 갑니다.
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+    <div style="font-size:11px;color:var(--ink3)">홈페이지 어드민과 같은 편집기입니다</div>
+    <div style="display:flex;gap:8px">
+      <button class="b">취소</button>
+      <button class="b pri">올리기</button>
+    </div>
+  </div>
+</div>
+<p class="note">
+  <b>어렵게 쓰지 않으셔도 됩니다.</b> 「이게 안 돼요」 한 줄이면 충분합니다.<br>
+  올리면 이택진에게 알림이 갑니다.
+</p>
+
+<div class="lab">④ 상세 — 댓글로 이야기합니다</div>
+<div class="side">
+  <div class="box">
+    <div class="detail-hd">
+      <div class="top">
+        <span class="kind idea">이렇게 됐으면</span>
+        <span class="st doing"><i></i>실행 중</span>
+        <span style="font-size:12px;color:var(--ink3)">#24</span>
+      </div>
+      <h2>인사이트에도 이력 탭이 있으면 좋겠어요</h2>
+      <div class="meta">박지영 · 어제 오후 3:14 · 홈페이지</div>
+    </div>
+
+    <div class="post">
+      <span class="av">박</span>
+      <div class="body">
+        <div class="who2">박지영 <span>어제 오후 3:14</span></div>
+        <div class="txt">
+          워크에는 이력 탭이 있어서 언제 무엇을 공개했는지 볼 수 있는데,
+          인사이트에는 없더라고요.<br><br>
+          뉴스는 고칠 일이 자주 생겨서 이력이 있으면 좋겠습니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="post">
+      <span class="av">이</span>
+      <div class="body">
+        <div class="who2">이택진 <span>어제 오후 4:02</span></div>
+        <div class="txt">
+          <span class="mention">@박지영</span> 맞습니다. 워크와 같은 걸로 넣겠습니다.<br>
+          이번 주에 해보겠습니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="post sys">
+      <span class="av" style="background:transparent">⚙</span>
+      <div class="body">
+        <div class="txt">이택진 님이 상태를 <b>접수</b> → <b>실행 중</b> 으로 바꿨습니다 · 어제 오후 4:02</div>
+      </div>
+    </div>
+
+    <div class="post">
+      <span class="av">이</span>
+      <div class="body">
+        <div class="who2">이택진 <span>오늘 오전 11:30</span></div>
+        <div class="txt">
+          넣었습니다. 인사이트 편집 화면 맨 오른쪽에 <b>이력</b> 탭이 생겼습니다.<br>
+          확인해 보시고 이상하면 알려 주세요.
+        </div>
+      </div>
+    </div>
+
+    <div class="writebox">
+      <div style="display:flex;gap:2px;padding:6px 0 9px;border-bottom:1px solid #f1f5f9;margin-bottom:9px;align-items:center;flex-wrap:wrap">
+        <button class="eb"><b>B</b></button>
+        <button class="eb"><i>I</i></button>
+        <span class="esep"></span>
+        <button class="eb">🔗</button>
+        <button class="eb">🖼</button>
+        <button class="eb">🎬</button>
+      </div>
+      <div style="min-height:58px;font-size:13.5px;line-height:1.8;color:var(--ink3)">댓글을 남겨 주세요. @이름 으로 부를 수 있습니다</div>
+      <div class="tools">
+        <span style="font-size:11px;color:var(--ink3)">이미지를 붙여넣을 수 있습니다</span>
+        <div style="display:flex;gap:7px">
+          <button class="b sm">완료로</button>
+          <button class="b sm acc">댓글</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="sidecard">
+      <h5>상태</h5>
+      <select style="font-size:12px">
+        <option>접수</option>
+        <option selected>실행 중</option>
+        <option>완료</option>
+        <option>보류</option>
+        <option>취소</option>
+      </select>
+    </div>
+
+    <div class="sidecard">
+      <h5>맡은 사람</h5>
+      <div class="row"><span class="av">이</span>이택진</div>
+      <button class="b sm" style="width:100%;margin-top:6px">바꾸기</button>
+    </div>
+
+    <div class="sidecard">
+      <h5>보고 있는 사람</h5>
+      <div class="row"><span class="av">박</span>박지영</div>
+      <div class="row"><span class="av">이</span>이택진</div>
+      <button class="b sm" style="width:100%;margin-top:6px">나도 보기</button>
+    </div>
+
+    <div class="sidecard">
+      <h5>어디</h5>
+      <div style="color:var(--ink2)">홈페이지</div>
+    </div>
+  </div>
+</div>
+
+<div class="lab">⑤ 상태 다섯</div>
+<div class="box">
+  <table class="tbl">
+    <tr><th style="width:120px">상태</th><th style="width:150px">언제</th><th>누가 바꾸나</th></tr>
+    <tr><td><span class="st new"><i></i>접수</td><td>올리면 자동으로</td><td>—</td></tr>
+    <tr><td><span class="st doing"><i></i>실행 중</td><td>맡기로 했을 때</td><td>맡은 사람</td></tr>
+    <tr><td><span class="st done"><i></i>완료</td><td>다 됐을 때</td><td>맡은 사람 또는 올린 사람</td></tr>
+    <tr><td><span class="st hold"><i></i>보류</td><td>지금은 못 할 때</td><td>맡은 사람</td></tr>
+    <tr><td><span class="st no"><i></i>취소</td><td>취소 정했을 때</td><td>맡은 사람. 이유를 댓글로</td></tr>
+  </table>
+  <p class="note">「취소」도 남깁니다. 보류 같은 이야기가 또 나올 때 근거가 됩니다.</p>
+</div>
+
+<div class="lab">⑥ 알림 — 정해야 할 것</div>
+<div class="box">
+  <table class="tbl">
+    <tr><th style="width:180px">언제</th><th style="width:110px">누구에게</th><th>어떻게</th></tr>
+    <tr><td>새 이슈가 올라옴</td><td>이택진</td><td><b>?</b></td></tr>
+    <tr><td>@이름 으로 불렀을 때</td><td>그 사람</td><td><b>?</b></td></tr>
+    <tr><td>내 이슈에 댓글이 달림</td><td>올린 사람</td><td><b>?</b></td></tr>
+    <tr><td>내 이슈 상태가 바뀜</td><td>올린 사람</td><td><b>?</b></td></tr>
+    <tr><td>나에게 맡겨짐</td><td>맡은 사람</td><td><b>?</b></td></tr>
+  </table>
+  <p class="note">
+    <b>이메일과 인앱 알림을 어떻게 나눌지 정해야 합니다.</b><br>
+    이메일은 주 1~2회가 한계입니다. 매번 보내면 사람들이 안 읽습니다.<br>
+    아래 세 가지를 정해 주세요.
+  </p>
+  <div style="background:#f8fafc;border-radius:var(--r);padding:12px 14px;margin-top:11px;font-size:12.5px;line-height:1.9">
+    <b>1</b> &nbsp; 이메일은 언제만 보낼까요<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;예) 새 이슈와 @부름만. 댓글은 인앱만<br><br>
+    <b>2</b> &nbsp; 건별인가요 묶음인가요<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;예) 하루에 여러 건이면 저녁에 한 번 묶어서<br><br>
+    <b>3</b> &nbsp; 이택진에게 전부 갈까요<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;예) 새 이슈만. 댓글은 그 이슈에 관련된 사람만
+  </div>
+</div>
+
+<div class="lab">⑦ Hub 메인에서</div>
+<div class="box">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">지금 — HUB 게시판</div>
+      <div style="border:1px solid var(--line);border-radius:var(--r);padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink3);margin-bottom:9px">
+          <span>총 2건</span><span style="color:var(--acc)">✎ 글쓰기</span>
+        </div>
+        <div style="font-size:13px;padding:6px 0">허브 메인화면 개편</div>
+        <div style="font-size:13px;padding:6px 0">라이선스 매니져 이관 완료</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">더함 — 이슈</div>
+      <div style="border:1px solid var(--line);border-radius:var(--r);padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink3);margin-bottom:9px">
+          <span>새로 4 · 실행 중 3</span><span style="color:var(--acc)">＋ 새 이슈</span>
+        </div>
+        <div style="font-size:13px;padding:6px 0;display:flex;gap:6px;align-items:center">
+          <span class="kind bug">안 돼요</span>워크 이미지를 올리면 오류가
+        </div>
+        <div style="font-size:13px;padding:6px 0;display:flex;gap:6px;align-items:center">
+          <span class="kind idea">이렇게</span>인사이트에도 이력 탭이
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">
+    게시판과 따로 둡니다. 성격이 다릅니다.<br>
+    게시판은 알림, 이슈는 논의입니다.
+  </p>
+</div>
+
+</div>
+</body>
+</html>
