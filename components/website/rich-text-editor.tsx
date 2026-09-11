@@ -45,6 +45,9 @@ type Props = {
   lineHeight?: string;
   /** 공개 화면 본문 칸 폭(px). 없으면 surface 기본값 */
   contentWidth?: number;
+  /** 이미지·영상 넣기. 문의 게시판만 켠다 */
+  allowMedia?: boolean;
+  onUploadFile?: (file: File) => Promise<string | null>;
 };
 
 function run(command: string, value?: string) {
@@ -62,7 +65,9 @@ export function RichTextEditor({
   surface,
   fontSize,
   lineHeight,
-  contentWidth
+  contentWidth,
+  allowMedia = false,
+  onUploadFile
 }: Props) {
   const defaults = RICH_TEXT_SURFACE_DEFAULTS[surface];
   const size = fontSize ?? defaults.fontSize;
@@ -70,9 +75,12 @@ export function RichTextEditor({
   const width = contentWidth ?? defaults.contentWidth;
 
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const activeId = useRef(fields[0]?.id ?? "");
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
+  const uploadRef = useRef(onUploadFile);
+  uploadRef.current = onUploadFile;
 
   useEffect(() => {
     try {
@@ -127,6 +135,43 @@ export function RichTextEditor({
     emit(activeId.current);
   }
 
+  function insertMediaHtml(url: string, kind: "image" | "video") {
+    focusActive();
+    if (kind === "video") {
+      run("insertHTML", `<p><video src="${url}" controls></video></p>`);
+    } else {
+      run("insertHTML", `<p><img src="${url}" alt=""></p>`);
+    }
+    emit(activeId.current);
+  }
+
+  async function uploadAndInsert(file: File) {
+    const upload = uploadRef.current;
+    if (!upload) return;
+    try {
+      const url = await upload(file);
+      if (!url) {
+        showToast({ message: "파일을 올리지 못했습니다", tone: "error" });
+        return;
+      }
+      const kind = file.type.startsWith("video/") ? "video" : "image";
+      insertMediaHtml(url, kind);
+    } catch {
+      showToast({ message: "파일을 올리지 못했습니다", tone: "error" });
+    }
+  }
+
+  function pickMedia(kind: "image" | "video") {
+    if (kind === "video") {
+      const href = window.prompt("영상 주소", "https://");
+      if (href?.trim()) {
+        insertMediaHtml(href.trim(), "video");
+        return;
+      }
+    }
+    fileRef.current?.click();
+  }
+
   async function pastePlain() {
     focusActive();
     try {
@@ -143,6 +188,19 @@ export function RichTextEditor({
   }
 
   function onPaste(event: ClipboardEvent<HTMLDivElement>, id: string) {
+    const files = Array.from(event.clipboardData.files ?? []).filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
+    );
+    if (allowMedia && files.length > 0 && uploadRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      void (async () => {
+        for (const file of files) {
+          await uploadAndInsert(file);
+        }
+      })();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const html = event.clipboardData.getData("text/html");
@@ -155,6 +213,16 @@ export function RichTextEditor({
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
+    if (!allowMedia || !uploadRef.current) return;
+    const files = Array.from(event.dataTransfer.files ?? []).filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
+    );
+    if (files.length === 0) return;
+    void (async () => {
+      for (const file of files) {
+        await uploadAndInsert(file);
+      }
+    })();
   }
 
   // 크기·폭은 CSS .rte-ed--{surface}. 인라인 style 금지.
@@ -206,6 +274,17 @@ export function RichTextEditor({
         <button type="button" title="링크" onClick={link}>
           링크
         </button>
+        {allowMedia ? (
+          <>
+            <span className="rte-sep" />
+            <button type="button" title="이미지" onClick={() => pickMedia("image")}>
+              🖼 이미지
+            </button>
+            <button type="button" title="영상" onClick={() => pickMedia("video")}>
+              🎬 영상
+            </button>
+          </>
+        ) : null}
         <button type="button" title="서식 지우기" onClick={() => tool("removeFormat")}>
           ⌫
         </button>
@@ -247,6 +326,19 @@ export function RichTextEditor({
           </div>
         ))}
       </div>
+      {allowMedia ? (
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,video/mp4,video/webm"
+          className="rte-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void uploadAndInsert(file);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

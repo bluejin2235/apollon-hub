@@ -36,7 +36,8 @@ export const CATEGORY_PREF_LABEL: Record<string, string> = {
   luna_report: "주간 보고",
   luna_consolidation: "지식 통합",
   luna_notion_index: "노션 색인",
-  luna_study: "자습"
+  luna_study: "자습",
+  hub_issue: "문의 게시판"
 };
 
 export function categoryPrefLabel(category: string): string {
@@ -48,6 +49,7 @@ export function categoryBadge(category: string): string {
   if (category === "nas_scan") return "Work서버";
   if (category === "wiki_rules") return "위키";
   if (category === "luna_notion_index") return "노션";
+  if (category === "hub_issue") return "문의";
   if (category.startsWith("luna_")) return "루나";
   return "알림";
 }

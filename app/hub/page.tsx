@@ -11,6 +11,9 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { useHasLunaAccess } from "@/lib/luna/use-has-luna-access";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { supabase } from "@/lib/supabase/client";
+import { loadIssueSummary } from "@/lib/issues/client";
+import { kindClass, type IssueSummary } from "@/lib/issues/types";
+import "@/components/issues/issues.css";
 
 // ── 타입 ──────────────────────────────────────────────
 interface TodayStats {
@@ -195,7 +198,8 @@ const SERVICES = [
   { label: "트렌드 레이더", sub: "Radar", icon: "ti-radar", color: "#EF9F27", href: "/research" },
   { label: "AI비용관리", sub: "Arte", icon: "ti-chart-bar", color: "#EF9F27", href: "/agents" },
   { label: "물품창고", sub: "Supplies", icon: "ti-package", color: "#1D9E75", href: "/supplies" },
-  { label: "아슐랭", sub: "Restaurant", icon: "ti-tools-kitchen-2", color: "#D85A30", href: "/restaurants" }
+  { label: "아슐랭", sub: "Restaurant", icon: "ti-tools-kitchen-2", color: "#D85A30", href: "/restaurants" },
+  { label: "문의 게시판", sub: "Issues", icon: "ti-message-report", color: "#4f46e5", href: "/issues" }
 ];
 
 function weatherIcon(condition: string) {
@@ -227,6 +231,11 @@ export default function ServiceHubPage() {
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [posts, setPosts] = useState<HubPostRow[]>([]);
   const [postCount, setPostCount] = useState(0);
+  const [issueSummary, setIssueSummary] = useState<IssueSummary>({
+    접수: 0,
+    "실행 중": 0,
+    recent: []
+  });
   const [writeOpen, setWriteOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<HubPostRow | null>(null);
   const [detailPost, setDetailPost] = useState<HubPostRow | null>(null);
@@ -348,10 +357,20 @@ export default function ServiceHubPage() {
     setPostCount(count ?? 0);
   }, []);
 
+  const loadIssues = useCallback(async () => {
+    try {
+      const summary = await loadIssueSummary();
+      setIssueSummary(summary);
+    } catch (err) {
+      console.error("[hub] issues summary", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (status !== "ready") return;
     void loadPosts();
-  }, [status, loadPosts]);
+    void loadIssues();
+  }, [status, loadPosts, loadIssues]);
 
   const onDeletePost = useCallback(async () => {
     if (!deleteTarget || deleteBusy) return;
@@ -527,7 +546,7 @@ export default function ServiceHubPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pb-5 md:grid-cols-7">
+            <div className="grid grid-cols-2 gap-2 pb-5 md:grid-cols-4 xl:grid-cols-8">
               <Link
                 href={lunaRoomHref}
                 className="col-span-2 flex flex-col rounded-xl px-3 py-3.5 md:col-span-1 md:px-3.5 md:py-3"
@@ -647,6 +666,57 @@ export default function ServiceHubPage() {
             </div>
 
             <div>
+              <div
+                className="mb-2 text-xs font-medium tracking-wider"
+                style={{ color: C.textMuted, letterSpacing: "0.05em" }}
+              >
+                문의 게시판
+              </div>
+              <div
+                className="overflow-hidden rounded-xl"
+                style={{ background: C.surface2, border: `0.5px solid ${C.border}` }}
+              >
+                <div
+                  className="flex items-center justify-between px-4 py-3"
+                  style={{ borderBottom: `0.5px solid ${C.border}` }}
+                >
+                  <span className="text-xs" style={{ color: C.textMuted }}>
+                    접수 {issueSummary.접수} · 실행 중 {issueSummary["실행 중"]}
+                  </span>
+                  <Link
+                    href="/issues/new"
+                    className="rounded-md px-3 py-1 text-xs no-underline"
+                    style={{ background: C.bgAccent, color: C.textAccent }}
+                  >
+                    ＋ 새 문의
+                  </Link>
+                </div>
+                {issueSummary.recent.length === 0 ? (
+                  <div className="px-4 py-4 text-center text-sm" style={{ color: C.textMuted }}>
+                    아직 문의가 없습니다
+                  </div>
+                ) : (
+                  issueSummary.recent.map((item, i) => (
+                    <Link
+                      key={item.id}
+                      href={`/issues/${item.seq}`}
+                      className="flex w-full items-center gap-2 px-4 py-3 text-left no-underline"
+                      style={{
+                        borderTop: i === 0 ? undefined : `0.5px solid ${C.border}`,
+                        color: "inherit"
+                      }}
+                    >
+                      <span className={`iss-kind ${kindClass(item.kind)}`}>{item.kind}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
+                        {item.title}
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
               <div
                 className="mb-2 text-xs font-medium tracking-wider"
                 style={{ color: C.textMuted, letterSpacing: "0.05em" }}

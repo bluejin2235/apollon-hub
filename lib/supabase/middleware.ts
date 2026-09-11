@@ -53,6 +53,7 @@ export async function updateSession(request: NextRequest) {
     const role = await fetchWebsiteTesterRole(user.id);
     if (isWebsiteTesterRole(role)) {
       const { pathname } = request.nextUrl;
+      // 허용: /website · /issues · /api/issues 등. 설정·라이선스·물품창고·아르테·트렌드레이더는 막음.
       if (!isWebsiteTesterPathAllowed(pathname)) {
         const redirectUrl = request.nextUrl.clone();
         redirectUrl.pathname = "/website";

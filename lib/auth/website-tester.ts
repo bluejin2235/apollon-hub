@@ -24,9 +24,11 @@ export function canAccessWebsiteAdmin(role: string | null | undefined): boolean 
 export function isWebsiteTesterPathAllowed(pathname: string): boolean {
   if (pathname === "/") return true;
   if (pathname.startsWith("/website")) return true;
+  if (pathname.startsWith("/issues")) return true;
   if (pathname.startsWith("/api/auth")) return true;
   if (pathname.startsWith("/api/website")) return true;
   if (pathname.startsWith("/api/wiki")) return true;
+  if (pathname.startsWith("/api/issues")) return true;
   return false;
 }
 
@@ -44,7 +46,7 @@ export function postLoginPathForRole(
     return fallback;
   }
 
-  if (isWebsiteTesterRole(role) && !path.startsWith("/website")) {
+  if (isWebsiteTesterRole(role) && !isWebsiteTesterPathAllowed(path)) {
     return "/website";
   }
 
