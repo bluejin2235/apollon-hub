@@ -44,3 +44,5 @@ scripts/out-*/
 run-media-dryrun.bat
 docs/image_test/
 docs/audit/highlight-screens/
+.vercel
+.env*

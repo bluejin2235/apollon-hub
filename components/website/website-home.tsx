@@ -25,11 +25,11 @@ function mediaUrl(siteUrl: string, src: string | null): string | null {
 }
 
 function toWrite(items: HomeItem[]): HomeWrite[] {
-  return items.map((item) => ({
+  return items.map((item, index) => ({
     type: item.type,
     id: item.id,
     pinned: item.pinned,
-    pin_sort: item.pinned ? item.pin_sort : null,
+    pin_sort: index + 1,
     layout: item.layout
   }));
 }
@@ -153,8 +153,10 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
   const [shown, setShown] = useState(PAGE_SIZE);
   const [dragId, setDragId] = useState<string | null>(null);
   const dragIdRef = useRef<string | null>(null);
+  const busyRef = useRef<"save" | "publish" | null>(null);
   const itemsRef = useRef<HomeItem[]>([]);
   itemsRef.current = items;
+  busyRef.current = busy;
 
   const load = useCallback(async () => {
     const result = await listHome();
@@ -203,6 +205,10 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
       endDrag();
       return;
     }
+    if (busyRef.current) {
+      endDrag();
+      return;
+    }
     const current = itemsRef.current;
     const from = current.findIndex((row) => homeItemKey(row) === fromKey);
     const to = current.findIndex((row) => homeItemKey(row) === targetKey);
@@ -211,29 +217,16 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
     const next = [...current];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    setItems(
-      next.map((item, index) => {
-        if (homeItemKey(item) === fromKey) {
-          return { ...item, pinned: true, pin_sort: index + 1 };
-        }
-        if (item.pinned) {
-          return { ...item, pin_sort: index + 1 };
-        }
-        return item;
-      })
-    );
+    const ordered = next.map((item, index) => ({ ...item, pin_sort: index + 1 }));
+    setItems(ordered);
+    void persist(ordered);
   }
 
   function pinItem(target: HomeItem) {
     setItems((current) =>
-      current.map((item, index) => {
+      current.map((item) => {
         if (homeItemKey(item) !== homeItemKey(target)) return item;
-        const pinned = !item.pinned;
-        return {
-          ...item,
-          pinned,
-          pin_sort: pinned ? index + 1 : null
-        };
+        return { ...item, pinned: !item.pinned };
       })
     );
   }
@@ -244,32 +237,43 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
     );
   }
 
-  async function save() {
-    if (busy) return;
+  async function persist(next: HomeItem[], toastOk?: string) {
+    if (busyRef.current) return false;
     setBusy("save");
-    const result = await saveHomeFeed(toWrite(items));
+    busyRef.current = "save";
+    const result = await saveHomeFeed(toWrite(next));
     if (!result.ok) {
       showToast({ message: "저장하지 못했습니다", tone: "error" });
       setBusy(null);
-      return;
+      busyRef.current = null;
+      return false;
     }
     applyFeed(result.data);
-    showToast({ message: "저장했습니다", tone: "ok" });
+    if (toastOk) showToast({ message: toastOk, tone: "ok" });
     setBusy(null);
+    busyRef.current = null;
+    return true;
+  }
+
+  async function save() {
+    await persist(itemsRef.current, "저장했습니다");
   }
 
   async function publish() {
-    if (busy) return;
+    if (busyRef.current) return;
     setBusy("publish");
-    const result = await publishHomeFeed(toWrite(items));
+    busyRef.current = "publish";
+    const result = await publishHomeFeed(toWrite(itemsRef.current));
     if (!result.ok) {
       showToast({ message: "게시하지 못했습니다", tone: "error" });
       setBusy(null);
+      busyRef.current = null;
       return;
     }
     applyFeed(result.data);
     showToast({ message: "게시했습니다", tone: "ok" });
     setBusy(null);
+    busyRef.current = null;
   }
 
   return (
@@ -278,7 +282,7 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
         <div>
           <h1>홈</h1>
           <p className="ha-d2">
-            메인에 나오는 그대로 보입니다 · 고정 {pinnedCount} · 자동 {autoCount}
+            끌어 옮긴 순서가 그대로 저장됩니다 · 고정 {pinnedCount} · 자동 {autoCount}
           </p>
         </div>
         <span className="ha-sp" />
@@ -310,8 +314,8 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
       <div className="ha-tool">
         <span className="ha-sp" />
         <span className="ha-hint">
-          <span className="ha-hint-pin">📌</span> 핀을 꽂으면 새 글이 올라와도 자리를 지킵니다 · ⠿ 로 끌어 옮기면 핀이
-          꽂힙니다
+          <span className="ha-hint-pin">📌</span> 핀을 꽂으면 새 글이 올라와도 밀리지 않습니다 · ⠿ 로 끌어 옮기면 그
+          자리에서 저장됩니다
         </span>
       </div>
 
@@ -372,12 +376,9 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
       </div>
 
       <div className="ha-foot">
-        <span className="ha-pinmark">📌 고정</span> 은 그 자리를 지킵니다. 새 글이 올라와도 밀리지
-        않습니다.
+        <span className="ha-pinmark">📌 고정</span> 은 새 글이 올라와도 밀리지 않습니다.
         <br />
-        나머지 칸은 <b>고정을 건너뛰고 최신순으로</b> 채워집니다.
-        <br />
-        오래된 글은 아래로 내려가고 마지막 칸을 넘으면 사라집니다.
+        끌어 옮긴 순서가 저장됩니다. 칸 크기와 핀은 저장을 누르세요.
         {unpublished && !dirty ? (
           <>
             <br />

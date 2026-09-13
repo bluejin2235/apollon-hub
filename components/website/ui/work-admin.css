@@ -1912,6 +1912,13 @@
   flex-wrap: wrap;
   align-items: center;
 }
+.wa .rte-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
 .wa .rte-tb button {
   font: inherit;
   font-size: 12px;
