@@ -1,7 +1,8 @@
-/** tsx 검증용 — server-only 무시 */
 const Module = require("module");
-const orig = Module.prototype.require;
-Module.prototype.require = function (id) {
-  if (id === "server-only") return {};
-  return orig.apply(this, arguments);
+const path = require("path");
+const empty = path.join(__dirname, "empty-module.cjs");
+const orig = Module._resolveFilename;
+Module._resolveFilename = function (request, parent, isMain, options) {
+  if (request === "server-only") return empty;
+  return orig.call(this, request, parent, isMain, options);
 };

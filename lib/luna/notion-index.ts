@@ -80,6 +80,14 @@ export type IndexedPage = {
   object_type: string;
   archived: boolean;
   last_edited_time: string | null;
+  /** Notion properties 원본. 임베딩하지 않는다. */
+  properties: Record<string, unknown> | null;
+};
+
+export type NotionRelationRow = {
+  from_page_id: string;
+  to_page_id: string;
+  property_name: string;
 };
 
 export function newScanBatch(): string {
@@ -148,7 +156,109 @@ export function extractBlockText(block: NotionBlock): string {
     if (!payload || typeof payload !== "object") return "";
     return plainFromRichText((payload as { caption?: unknown }).caption);
   }
+  if (type === "table_row") {
+    const payload = block.table_row;
+    if (!payload || typeof payload !== "object") return "";
+    const cells = (payload as { cells?: unknown }).cells;
+    if (!Array.isArray(cells)) return "";
+    return cells
+      .map((cell) => plainFromRichText(cell))
+      .filter(Boolean)
+      .join(" | ");
+  }
+  if (type === "table") {
+    const flat = block.table_flat_text;
+    return typeof flat === "string" ? flat.trim() : "";
+  }
   return "";
+}
+
+/** 32hex / uuid / 노션 URL → dashed page id */
+export function notionPageIdFromRef(raw: string): string | null {
+  const hex = raw.replace(/-/g, "").match(/[0-9a-fA-F]{32}/)?.[0]?.toLowerCase();
+  if (!hex) return null;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function relationIdsFromProperty(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const prop = value as {
+    type?: string;
+    relation?: Array<{ id?: string }>;
+  };
+  const ids: string[] = [];
+  if (prop.type === "relation" && Array.isArray(prop.relation)) {
+    for (const row of prop.relation) {
+      if (row?.id) {
+        const id = notionPageIdFromRef(row.id);
+        if (id) ids.push(id);
+      }
+    }
+  }
+  const visit = (node: unknown) => {
+    if (typeof node === "string") {
+      if (!/notion\.(so|com)\//i.test(node) && !/^[0-9a-f-]{32,36}$/i.test(node)) {
+        return;
+      }
+      const id = notionPageIdFromRef(node);
+      if (id) ids.push(id);
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+    }
+  };
+  visit(value);
+  return [...new Set(ids)];
+}
+
+/** 관계 속성만 풀어서 저장. 임베딩하지 않는다. */
+export function extractNotionRelations(
+  pageId: string,
+  properties: Record<string, unknown> | null | undefined
+): NotionRelationRow[] {
+  if (!properties) return [];
+  const out: NotionRelationRow[] = [];
+  const seen = new Set<string>();
+  for (const [name, value] of Object.entries(properties)) {
+    if (!value || typeof value !== "object") continue;
+    const type = (value as { type?: string }).type;
+    if (type && type !== "relation") continue;
+    if (!type && !Array.isArray(value)) continue;
+    for (const toId of relationIdsFromProperty(value)) {
+      if (toId === pageId) continue;
+      const key = `${toId}\0${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        from_page_id: pageId,
+        to_page_id: toId,
+        property_name: name
+      });
+    }
+  }
+  return out;
+}
+
+/** table 바로 뒤 table_row 를 표 텍스트로 붙인다. 행 블록 자체도 남긴다. */
+export function attachTableFlatText(blocks: NotionBlock[]): NotionBlock[] {
+  const flat = new Map<string, string>();
+  for (let i = 0; i < blocks.length; i += 1) {
+    if (blocks[i]?.type !== "table") continue;
+    const rows: string[] = [];
+    for (let j = i + 1; j < blocks.length; j += 1) {
+      if (blocks[j]?.type !== "table_row") break;
+      const text = extractBlockText(blocks[j]!).replace(/\s+/g, " ").trim();
+      if (text) rows.push(text);
+    }
+    if (rows.length > 0 && blocks[i]?.id) flat.set(blocks[i]!.id, rows.join("\n"));
+  }
+  if (flat.size === 0) return blocks;
+  return blocks.map((block) => {
+    const text = block.id ? flat.get(block.id) : undefined;
+    if (!text) return block;
+    return { ...block, table_flat_text: text };
+  });
 }
 
 export class NotionIndexClient {
@@ -206,21 +316,80 @@ export class NotionIndexClient {
     return null;
   }
 
-  async fetchPageBlocks(pageId: string): Promise<NotionBlock[]> {
+  async fetchBlockChildren(blockId: string): Promise<NotionBlock[]> {
     const out: NotionBlock[] = [];
     let cursor: string | undefined;
     while (true) {
       const url =
-        `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100` +
+        `https://api.notion.com/v1/blocks/${blockId}/children?page_size=100` +
         (cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : "");
       const res = await fetch(url, { headers: this.headers });
       if (!res.ok) {
         throw new Error(
-          `notion blocks ${pageId} ${res.status}: ${(await res.text()).slice(0, 200)}`
+          `notion blocks ${blockId} ${res.status}: ${(await res.text()).slice(0, 200)}`
         );
       }
       const data = (await res.json()) as {
         results?: NotionBlock[];
+        has_more?: boolean;
+        next_cursor?: string | null;
+      };
+      out.push(...(data.results ?? []));
+      if (!data.has_more) break;
+      cursor = data.next_cursor ?? undefined;
+      await this.wait();
+    }
+    return out;
+  }
+
+  /** 표·단 안에 들어간 table_row 까지. child_page / child_database 는 별도 페이지라 내려가지 않는다. */
+  async fetchPageBlocks(pageId: string): Promise<NotionBlock[]> {
+    const top = await this.fetchBlockChildren(pageId);
+    const out: NotionBlock[] = [];
+    const walk = async (blocks: NotionBlock[]) => {
+      for (const block of blocks) {
+        out.push(block);
+        const type = block.type ?? "";
+        if (
+          block.has_children &&
+          (type === "table" ||
+            type === "column_list" ||
+            type === "column" ||
+            type === "synced_block")
+        ) {
+          const children = await this.fetchBlockChildren(block.id);
+          await walk(children);
+        }
+      }
+    };
+    await walk(top);
+    return out;
+  }
+
+  async queryDatabasePages(databaseId: string): Promise<NotionSearchObject[]> {
+    const out: NotionSearchObject[] = [];
+    let cursor: string | undefined;
+    while (true) {
+      const body: Record<string, unknown> = { page_size: 100 };
+      if (cursor) body.start_cursor = cursor;
+      const res = await fetch(
+        `https://api.notion.com/v1/databases/${databaseId}/query`,
+        {
+          method: "POST",
+          headers: this.headers,
+          body: JSON.stringify(body)
+        }
+      );
+      if (!res.ok) {
+        const text = (await res.text()).slice(0, 240);
+        if (res.status === 404 || res.status === 400) {
+          console.warn(`[notion-index] database query skip ${databaseId}: ${text}`);
+          return out;
+        }
+        throw new Error(`notion database ${databaseId} ${res.status}: ${text}`);
+      }
+      const data = (await res.json()) as {
+        results?: NotionSearchObject[];
         has_more?: boolean;
         next_cursor?: string | null;
       };
@@ -313,6 +482,34 @@ export function collectPagesFromSearch(
   return [...byId.values()];
 }
 
+/**
+ * 검색은 빈 쿼리에서도 DB 행을 빠뜨릴 수 있다.
+ * 연동에 공유된 database 는 query 로 행을 합친다.
+ * 공유되지 않은 DB 는 404 — 그건 연동 공유 문제다.
+ */
+export async function collectPagesWithDatabaseRows(
+  client: NotionIndexClient,
+  searchResults: NotionSearchObject[]
+): Promise<{ pages: NotionSearchObject[]; databasesQueried: number; added: number }> {
+  const byId = new Map<string, NotionSearchObject>();
+  for (const page of collectPagesFromSearch(searchResults)) {
+    byId.set(page.id, page);
+  }
+  const databases = searchResults.filter(
+    (item) => item.object === "database" && !item.archived
+  );
+  let added = 0;
+  for (const db of databases) {
+    const rows = await client.queryDatabasePages(db.id);
+    for (const row of rows) {
+      if (row.object !== "page" || row.archived) continue;
+      if (!byId.has(row.id)) added += 1;
+      byId.set(row.id, row);
+    }
+  }
+  return { pages: [...byId.values()], databasesQueried: databases.length, added };
+}
+
 export function pageToIndexed(
   page: NotionSearchObject,
   meta: Map<string, NotionSearchObject>
@@ -339,13 +536,18 @@ export function pageToIndexed(
     url: page.url ?? null,
     object_type: page.object,
     archived: Boolean(page.archived),
-    last_edited_time: page.last_edited_time ?? null
+    last_edited_time: page.last_edited_time ?? null,
+    properties:
+      page.properties && typeof page.properties === "object"
+        ? page.properties
+        : null
   };
 }
 
 export function blocksToIndexed(pageId: string, blocks: NotionBlock[]): IndexedBlock[] {
+  const withTables = attachTableFlatText(blocks);
   const out: IndexedBlock[] = [];
-  blocks.forEach((block, position) => {
+  withTables.forEach((block, position) => {
     const text = extractBlockText(block).replace(/\s+/g, " ").trim();
     const block_id = block.id;
     if (!block_id) return;

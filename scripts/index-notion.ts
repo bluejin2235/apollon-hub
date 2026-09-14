@@ -16,7 +16,8 @@ import {
   blocksToIndexed,
   buildMetaGraph,
   chunk,
-  collectPagesFromSearch,
+  collectPagesWithDatabaseRows,
+  extractNotionRelations,
   createEmbeddingsBatch,
   estimateEmbeddingCostUsd,
   firstNasPath,
@@ -530,8 +531,11 @@ async function main(): Promise<void> {
   log(`[index-notion] scan_batch=${scanBatch} previous_pages=${previousCount}`);
 
   const searchResults = await client.searchAll();
-  const pagesRaw = collectPagesFromSearch(searchResults);
-  log(`페이지 수집 ${pagesRaw.length.toLocaleString()} / ${pagesRaw.length.toLocaleString()}`);
+  const collected = await collectPagesWithDatabaseRows(client, searchResults);
+  const pagesRaw = collected.pages;
+  log(
+    `페이지 수집 ${pagesRaw.length.toLocaleString()} (DB query +${collected.added}, databases ${collected.databasesQueried})`
+  );
 
   const meta = await buildMetaGraph(client, searchResults);
   const pages: PageRow[] = pagesRaw.map((page) => ({
@@ -560,6 +564,15 @@ async function main(): Promise<void> {
     const hasChunkEmbeds = (existingEmbedCounts.get(page.page_id) ?? 0) > 0;
 
     if (metaUnchanged && hasChunkEmbeds) {
+      await admin
+        .from("luna_notion_pages")
+        .update({ properties: page.properties })
+        .eq("page_id", page.page_id);
+      const rels = extractNotionRelations(page.page_id, page.properties);
+      await admin.from("luna_notion_relations").delete().eq("from_page_id", page.page_id);
+      if (rels.length > 0) {
+        await admin.from("luna_notion_relations").insert(rels);
+      }
       skippedUnchanged += 1;
       const blockN = existingBlockCounts.get(page.page_id) ?? 0;
       const embedN = existingEmbedCounts.get(page.page_id) ?? 0;
@@ -580,6 +593,11 @@ async function main(): Promise<void> {
       runningEmbeds += written.chunks;
     } else {
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+      const rels = extractNotionRelations(page.page_id, page.properties);
+      await admin.from("luna_notion_relations").delete().eq("from_page_id", page.page_id);
+      if (rels.length > 0) {
+        await admin.from("luna_notion_relations").insert(rels);
+      }
 
       const rawBlocks = await client.fetchPageBlocks(page.page_id);
       const indexed = blocksToIndexed(page.page_id, rawBlocks);

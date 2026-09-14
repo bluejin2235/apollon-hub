@@ -6,8 +6,9 @@ import {
   blocksToIndexed,
   buildMetaGraph,
   chunk,
-  collectPagesFromSearch,
+  collectPagesWithDatabaseRows,
   createEmbeddingsBatch,
+  extractNotionRelations,
   firstNasPath,
   newScanBatch,
   NotionIndexClient,
@@ -16,7 +17,8 @@ import {
   NOTION_INDEX_VALIDATE_RATIO,
   pageToIndexed,
   type IndexedBlock,
-  type IndexedPage
+  type IndexedPage,
+  type NotionRelationRow
 } from "@/lib/luna/notion-index";
 import {
   blocksToChunks,
@@ -114,11 +116,14 @@ export type NotionIndexCheckpoint = {
       object_type: string;
       archived: boolean;
       last_edited_time: string | null;
+      properties?: Record<string, unknown> | null;
     }
   >;
   cursor?: number;
   phase?: "init" | "pages" | "orphan" | "done";
   changed_pages?: number;
+  properties_written?: boolean;
+  db_rows_added?: number;
 };
 
 type ExistingPage = {
@@ -613,7 +618,11 @@ async function initCheckpoint(
   const exclude = await getNotionIndexExclude(admin);
   const client = new NotionIndexClient(notionToken);
   const searchResults = await client.searchAll();
-  const pagesRaw = collectPagesFromSearch(searchResults);
+  const collected = await collectPagesWithDatabaseRows(client, searchResults);
+  const pagesRaw = collected.pages;
+  console.log(
+    `[notion-index] search+db pages=${pagesRaw.length} databases=${collected.databasesQueried} added=${collected.added}`
+  );
   const meta = await buildMetaGraph(client, searchResults);
 
   const page_meta: NonNullable<NotionIndexCheckpoint["page_meta"]> = {};
@@ -636,7 +645,8 @@ async function initCheckpoint(
       url: indexed.url,
       object_type: indexed.object_type,
       archived: indexed.archived,
-      last_edited_time: indexed.last_edited_time
+      last_edited_time: indexed.last_edited_time,
+      properties: indexed.properties
     };
   }
 
@@ -646,8 +656,60 @@ async function initCheckpoint(
     page_meta,
     cursor: 0,
     phase: "pages",
-    changed_pages: 0
+    changed_pages: 0,
+    properties_written: false,
+    db_rows_added: collected.added
   };
+}
+
+async function replacePageRelations(
+  admin: SupabaseClient,
+  pageId: string,
+  rows: NotionRelationRow[]
+): Promise<void> {
+  const { error: delErr } = await admin
+    .from("luna_notion_relations")
+    .delete()
+    .eq("from_page_id", pageId);
+  if (delErr) throw new Error(`luna_notion_relations delete: ${delErr.message}`);
+  if (rows.length === 0) return;
+  const { error } = await admin.from("luna_notion_relations").insert(rows);
+  if (error) throw new Error(`luna_notion_relations insert: ${error.message}`);
+}
+
+async function pagesNeedingTableRows(
+  admin: SupabaseClient
+): Promise<Set<string>> {
+  const withTable = new Set<string>();
+  const withRow = new Set<string>();
+  for (const type of ["table", "table_row"] as const) {
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await admin
+        .from("luna_notion_blocks")
+        .select("page_id")
+        .eq("block_type", type)
+        .range(from, from + pageSize - 1);
+      if (error) {
+        if (isMissingTableError(error)) return new Set();
+        throw error;
+      }
+      const rows = data ?? [];
+      for (const row of rows) {
+        const id = row.page_id as string;
+        if (type === "table") withTable.add(id);
+        else withRow.add(id);
+      }
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+  }
+  const need = new Set<string>();
+  for (const id of withTable) {
+    if (!withRow.has(id)) need.add(id);
+  }
+  return need;
 }
 
 /**
@@ -741,6 +803,7 @@ export async function runNotionIndexChunk(
     const client = new NotionIndexClient(notionToken);
     const existingPages = await loadExistingPages(admin);
     const existingBlockCounts = await countByPage(admin, "luna_notion_blocks");
+    const needTableRows = await pagesNeedingTableRows(admin);
 
     const pageIds = cp.page_ids ?? [];
     const pageMeta = cp.page_meta ?? {};
@@ -811,6 +874,7 @@ export async function runNotionIndexChunk(
       const page: PageRow = {
         page_id: pageId,
         ...meta,
+        properties: meta.properties ?? null,
         scan_batch: scanBatch,
         indexed_at: null
       };
@@ -821,6 +885,63 @@ export async function runNotionIndexChunk(
         sameEditedTime(prev?.last_edited_time, page.last_edited_time);
 
       if (unchanged) {
+        if (!cp.properties_written) {
+          const { error: propErr } = await admin
+            .from("luna_notion_pages")
+            .update({ properties: page.properties })
+            .eq("page_id", pageId);
+          if (propErr) {
+            throw new Error(`luna_notion_pages properties: ${propErr.message}`);
+          }
+          await replacePageRelations(
+            admin,
+            pageId,
+            extractNotionRelations(pageId, page.properties)
+          );
+        }
+        if (needTableRows.has(pageId)) {
+          try {
+            const rawBlocks = await client.fetchPageBlocks(pageId);
+            const indexed = blocksToIndexed(pageId, rawBlocks);
+            const tableBlocks = indexed.filter(
+              (b) => b.block_type === "table" || b.block_type === "table_row"
+            );
+            if (tableBlocks.length > 0) {
+              await upsertBatch(
+                admin,
+                "luna_notion_blocks",
+                tableBlocks,
+                "block_id"
+              );
+              const tableChunks = blocksToChunks(pageId, tableBlocks, {
+                minChars,
+                pageTitle: page.title
+              });
+              if (tableChunks.length > 0) {
+                await upsertBatch(
+                  admin,
+                  "luna_notion_chunks",
+                  tableChunks as unknown as Record<string, unknown>[],
+                  "chunk_id"
+                );
+                const embedded = await embedAndSaveChunks(
+                  admin,
+                  tableChunks,
+                  minChars,
+                  page.path_titles
+                );
+                embeddingsAdded += embedded.created;
+              }
+            }
+            needTableRows.delete(pageId);
+          } catch (tableErr) {
+            const msg =
+              tableErr instanceof Error ? tableErr.message : String(tableErr);
+            console.error(
+              `[notion-index] table backfill ${pageId.slice(0, 8)}: ${msg.slice(0, 200)}`
+            );
+          }
+        }
         pagesSkipped += 1;
         pagesProcessed += 1;
         blocks += existingBlockCounts.get(pageId) ?? 0;
@@ -829,6 +950,11 @@ export async function runNotionIndexChunk(
       }
 
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+      await replacePageRelations(
+        admin,
+        pageId,
+        extractNotionRelations(pageId, page.properties)
+      );
       try {
         const rawBlocks = await client.fetchPageBlocks(pageId);
         const indexed = blocksToIndexed(pageId, rawBlocks);
@@ -893,6 +1019,8 @@ export async function runNotionIndexChunk(
         });
       }
     }
+
+    cp.properties_written = true;
 
     // orphan cleanup (full only)
     if (run.mode === "full") {

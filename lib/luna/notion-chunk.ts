@@ -386,6 +386,14 @@ function collectPieces(
       pieces.push({ block_id: b.block_id, block_type: type, text });
       continue;
     }
+    if (type === "table") {
+      if (!text) continue;
+      pieces.push({ block_id: b.block_id, block_type: type, text });
+      continue;
+    }
+    if (type === "table_row") {
+      continue;
+    }
     if (text) {
       pieces.push({ block_id: b.block_id, block_type: type, text });
     }
