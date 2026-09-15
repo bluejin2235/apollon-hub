@@ -122,7 +122,7 @@ export function LunaAdminSecondary({ onGo }: Props) {
             <span className="n">{data.perspectives.length}</span>
             <span className="sp" />
             {data.perspectives.length === 0 ? (
-              <span className="n">자습이 돌면 생깁니다</span>
+              <span className="n">아직 없음</span>
             ) : null}
           </div>
           {data.perspectives.length === 0 ? (

@@ -35,18 +35,38 @@ export type LunaPerspectiveRow = {
   last_used_at: string | null;
 };
 
-export async function listLinks(
+async function fetchKind(
   admin: SupabaseClient,
-  kind?: LunaLinkKind | null
+  kind: LunaLinkKind,
+  opts?: { role?: string; limit?: number }
 ): Promise<LunaLinkRow[]> {
-  let q = admin.from("luna_links").select("*").order("created_at", { ascending: false }).limit(200);
-  if (kind) q = q.eq("kind", kind);
+  let q = admin
+    .from("luna_links")
+    .select("*")
+    .eq("kind", kind)
+    .order("created_at", { ascending: false })
+    .limit(opts?.limit ?? 200);
+  if (opts?.role) q = q.filter("evidence->>role", "eq", opts.role);
   const { data, error } = await q;
   if (error) {
     if (!isMissingTableError(error)) console.error("[luna-admin/links]", error);
     return [];
   }
   return (data ?? []) as LunaLinkRow[];
+}
+
+export async function listLinks(
+  admin: SupabaseClient,
+  kind?: LunaLinkKind | null
+): Promise<LunaLinkRow[]> {
+  if (kind === "belongs") return fetchKind(admin, "belongs", { role: "bundle", limit: 200 });
+  if (kind === "same" || kind === "follows") return fetchKind(admin, kind, { limit: 200 });
+  const [same, belongs, follows] = await Promise.all([
+    fetchKind(admin, "same", { limit: 80 }),
+    fetchKind(admin, "belongs", { role: "bundle", limit: 80 }),
+    fetchKind(admin, "follows", { limit: 80 })
+  ]);
+  return [...same, ...belongs, ...follows];
 }
 
 export async function countLinks(
