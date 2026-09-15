@@ -26,11 +26,15 @@ export type TonightItem = {
   excluded: boolean;
   when: "tonight" | "tomorrow" | "brain";
   failure_ids: string[];
+  expected?: string;
+  kind?: string;
+  verifiable?: boolean;
 };
 
 export type TonightState = {
   items: TonightItem[];
   generated_at: string;
+  source?: "autonomous" | "failures";
 };
 
 export type SentRow = {

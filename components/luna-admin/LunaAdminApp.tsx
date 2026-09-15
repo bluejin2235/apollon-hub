@@ -20,6 +20,7 @@ import { LunaFailures } from "@/components/luna/failures/LunaFailures";
 import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
 import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
 import { LunaSelfstudyHistory } from "@/components/luna/selfstudy/LunaSelfstudyHistory";
+import { LunaStudyRunHistory } from "@/components/luna-admin/LunaStudyRunHistory";
 import { LunaSelfstudySettings } from "@/components/luna/selfstudy/LunaSelfstudySettings";
 import { LunaSelfstudyLearned } from "@/components/luna/selfstudy/LunaSelfstudyLearned";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
@@ -166,7 +167,14 @@ function renderBody(
     return <LunaTalkHistory />;
   }
   if (menu === "selfstudy") {
-    if (sub === "history") return <LunaSelfstudyHistory />;
+    if (sub === "history") {
+      return (
+        <>
+          <LunaStudyRunHistory />
+          <LunaSelfstudyHistory />
+        </>
+      );
+    }
     if (sub === "links") return <LunaAdminLinkProgress onGo={go} />;
     if (sub === "learned") return <LunaSelfstudyLearned />;
     if (sub === "settings") return <LunaSelfstudySettings />;

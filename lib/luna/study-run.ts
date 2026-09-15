@@ -1,0 +1,484 @@
+/**
+ * 선정된 아젠다를 돌리고 luna_study_runs 에 남긴다.
+ * 하루 LLM 비용 상한 $1.
+ */
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AgendaCandidate, SelectedAgenda } from "@/lib/luna/study-agenda";
+import { STUDY_DAILY_COST_USD } from "@/lib/luna/study-agenda";
+
+export type StudyRunRow = {
+  id: string;
+  agenda: string;
+  why: string;
+  expected: string;
+  kind: string;
+  scope: Record<string, unknown>;
+  started_at: string;
+  finished_at: string | null;
+  result: Record<string, unknown>;
+  outcome: "improved" | "no_change" | "failed" | null;
+  cost_usd: number;
+  llm_calls: number;
+};
+
+export type StudyRunResult = {
+  run: StudyRunRow;
+  stopped_for_cost?: boolean;
+};
+
+async function todayCostUsd(admin: SupabaseClient): Promise<number> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const { data } = await admin
+    .from("luna_study_runs")
+    .select("cost_usd")
+    .gte("started_at", start.toISOString());
+  return (data ?? []).reduce(
+    (s, r) => s + (typeof r.cost_usd === "number" ? r.cost_usd : 0),
+    0
+  );
+}
+
+async function insertRun(
+  admin: SupabaseClient,
+  row: Omit<StudyRunRow, "id" | "finished_at" | "result" | "outcome" | "cost_usd" | "llm_calls"> & {
+    cost_usd?: number;
+    llm_calls?: number;
+    result?: Record<string, unknown>;
+    outcome?: StudyRunRow["outcome"];
+    finished_at?: string | null;
+  }
+): Promise<StudyRunRow> {
+  const { data, error } = await admin
+    .from("luna_study_runs")
+    .insert({
+      agenda: row.agenda,
+      why: row.why,
+      expected: row.expected,
+      kind: row.kind,
+      scope: row.scope,
+      started_at: row.started_at,
+      finished_at: row.finished_at ?? null,
+      result: row.result ?? {},
+      outcome: row.outcome ?? null,
+      cost_usd: row.cost_usd ?? 0,
+      llm_calls: row.llm_calls ?? 0
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as StudyRunRow;
+}
+
+async function finishRun(
+  admin: SupabaseClient,
+  id: string,
+  patch: Partial<StudyRunRow>
+): Promise<StudyRunRow> {
+  const { data, error } = await admin
+    .from("luna_study_runs")
+    .update({
+      finished_at: patch.finished_at ?? new Date().toISOString(),
+      result: patch.result ?? {},
+      outcome: patch.outcome ?? null,
+      cost_usd: patch.cost_usd ?? 0,
+      llm_calls: patch.llm_calls ?? 0
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as StudyRunRow;
+}
+
+/** 문서로 만든 질문에 그 문서가 나오는지 — 검증 가능 (키워드·제목, LLM 0) */
+async function runProbeRetrieval(
+  admin: SupabaseClient,
+  scope: Record<string, unknown>,
+  limit: number
+): Promise<{
+  result: Record<string, unknown>;
+  outcome: StudyRunRow["outcome"];
+  cost_usd: number;
+  llm_calls: number;
+}> {
+  const {
+    compactKeywordText,
+    includesKeywordCompact,
+    matchNotionChunksByKeyword
+  } = await import("@/lib/luna/notion-keyword");
+
+  const failureIds = Array.isArray(scope.failure_ids)
+    ? (scope.failure_ids as string[]).slice(0, limit)
+    : [];
+  if (failureIds.length > 0) {
+    const { data: fails } = await admin
+      .from("luna_failures")
+      .select("id, question")
+      .in("id", failureIds);
+    const questions = (fails ?? [])
+      .map((f) => String(f.question ?? "").trim())
+      .filter((q) => q.length >= 2)
+      .slice(0, limit);
+
+    let hit = 0;
+    let miss = 0;
+    const misses: Array<{ question: string }> = [];
+    for (const q of questions) {
+      const words = q
+        .split(/\s+/)
+        .map((w) => w.replace(/[^\p{L}\p{N}_-]/gu, ""))
+        .filter((w) => w.length >= 2)
+        .slice(0, 6);
+      const kwHits = await matchNotionChunksByKeyword(
+        admin,
+        words.length ? words : [q],
+        { limit: 40 }
+      );
+      if (kwHits.length > 0) hit += 1;
+      else {
+        miss += 1;
+        if (misses.length < 12) misses.push({ question: q.slice(0, 100) });
+      }
+    }
+    const total = hit + miss;
+    return {
+      result: {
+        mode: "failure_questions",
+        probed: total,
+        hit,
+        miss,
+        miss_rate: total ? Number((miss / total).toFixed(3)) : 0,
+        misses,
+        learned:
+          miss > 0
+            ? `검색 실패 질문 ${miss}건이 색인 키워드로도 0건`
+            : "표본 실패 질문은 키워드로 뭔가 잡혔습니다 (관련성 별도)",
+        next:
+          miss > 0
+            ? "0건 질문의 고유명사를 뽑아 용어·별칭 후보로"
+            : "관련성 채점(정답 page)로 한 단계 더",
+        scope_note: scope
+      },
+      outcome: miss > 0 ? "improved" : total === 0 ? "failed" : "no_change",
+      cost_usd: 0,
+      llm_calls: 0
+    };
+  }
+
+  const { data: pages, error } = await admin
+    .from("luna_notion_pages")
+    .select("page_id, title")
+    .eq("archived", false)
+    .not("title", "is", null)
+    .order("indexed_at", { ascending: false })
+    .limit(Math.max(limit * 20, 400));
+  if (error) throw new Error(error.message);
+
+  const all = (pages ?? [])
+    .map((p) => ({
+      page_id: String(p.page_id),
+      title: String(p.title ?? "").trim()
+    }))
+    .filter((p) => p.title.length >= 2);
+
+  const sample = all.slice(0, limit);
+  let hit = 0;
+  let miss = 0;
+  const misses: Array<{ title: string; page_id: string }> = [];
+
+  for (const page of sample) {
+    const needle = compactKeywordText(page.title);
+    if (needle.length < 2) {
+      miss += 1;
+      continue;
+    }
+    const ranked = all
+      .map((cand) => ({
+        page_id: cand.page_id,
+        score: includesKeywordCompact(cand.title, page.title) ? 2 : 0
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 15);
+    const found = ranked.some((r) => r.page_id === page.page_id);
+    if (found) hit += 1;
+    else {
+      miss += 1;
+      if (misses.length < 12) misses.push({ title: page.title, page_id: page.page_id });
+    }
+  }
+
+  // 청크 존재 여부 보강 — 제목 자습만으로 안 잡히면 본문 색인 공백 신호
+  let noChunk = 0;
+  for (const m of misses.slice(0, 8)) {
+    const { count } = await admin
+      .from("luna_notion_chunks")
+      .select("id", { count: "exact", head: true })
+      .eq("page_id", m.page_id);
+    if (!count) noChunk += 1;
+  }
+
+  const total = hit + miss;
+  const missRate = total ? miss / total : 0;
+  const learned =
+    miss > 0
+      ? noChunk > 0
+        ? `못 찾은 ${miss}건 중 청크 0건 ${noChunk} — 본문 색인 공백 가능`
+        : "제목 키워드만으로는 자기 문서를 상위권에 못 올리는 경우가 있습니다"
+      : "표본에서는 제목 키워드로 자기 문서를 찾았습니다";
+
+  return {
+    result: {
+      probed: total,
+      hit,
+      miss,
+      miss_rate: Number(missRate.toFixed(3)),
+      misses,
+      no_chunk_among_misses: noChunk,
+      learned,
+      next:
+        miss > 0
+          ? "못 찾은 문서의 고유명사·별칭을 다음 후보로 뽑을 것"
+          : "표본을 늘리거나 다른 부족함으로 이동",
+      scope_note: scope
+    },
+    outcome: miss > 0 ? "improved" : total === 0 ? "failed" : "no_change",
+    cost_usd: 0,
+    llm_calls: 0
+  };
+}
+
+async function runInspectGap(
+  admin: SupabaseClient,
+  candidate: AgendaCandidate
+): Promise<{
+  result: Record<string, unknown>;
+  outcome: StudyRunRow["outcome"];
+  cost_usd: number;
+  llm_calls: number;
+}> {
+  void admin;
+  return {
+    result: {
+      inspected: true,
+      why: candidate.why,
+      scope: candidate.scope,
+      learned: "수치 점검만 수행 — 자동 수정은 검증 가능한 아젠다에서",
+      next: "검증 가능한 항목이 예산에 들어오면 그쪽을 우선"
+    },
+    outcome: "no_change",
+    cost_usd: 0,
+    llm_calls: 0
+  };
+}
+
+async function runRefreshStale(
+  admin: SupabaseClient,
+  limit: number
+): Promise<{
+  result: Record<string, unknown>;
+  outcome: StudyRunRow["outcome"];
+  cost_usd: number;
+  llm_calls: number;
+}> {
+  const staleBefore = new Date(Date.now() - 14 * 86400000).toISOString();
+  const { data, error } = await admin
+    .from("luna_notion_pages")
+    .select("page_id, title, indexed_at")
+    .lt("indexed_at", staleBefore)
+    .order("indexed_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  const sample = (data ?? []).map((r) => ({
+    page_id: r.page_id,
+    title: r.title,
+    indexed_at: r.indexed_at
+  }));
+  return {
+    result: {
+      listed: sample.length,
+      sample,
+      learned: "오래된 색인 후보를 목록으로 뽑았습니다 (이번 실행은 재색인 큐잉만)",
+      next: "노션 색인 러너에 이 page_id 들을 넘기면 갱신됩니다",
+      note: "안전: 자동 대량 재색인은 상한 안에서만"
+    },
+    outcome: sample.length > 0 ? "improved" : "no_change",
+    cost_usd: 0,
+    llm_calls: 0
+  };
+}
+
+async function runMaterializeSecondary(
+  admin: SupabaseClient,
+  scope: Record<string, unknown>
+): Promise<{
+  result: Record<string, unknown>;
+  outcome: StudyRunRow["outcome"];
+  cost_usd: number;
+  llm_calls: number;
+}> {
+  const years = Array.isArray(scope.thin_years)
+    ? (scope.thin_years as string[])
+    : [];
+  const { count: sameNeed } = await admin
+    .from("luna_links")
+    .select("id", { count: "exact", head: true })
+    .eq("kind", "same")
+    .neq("source", "human")
+    .neq("status", "rejected");
+  return {
+    result: {
+      thin_years: years,
+      same_need: sameNeed ?? 0,
+      learned: "2차 데이터가 얇은 범위를 확인했습니다",
+      next: "자습 › 2차 데이터 만들기 또는 build-links 범위 실행",
+      note: "대량 build-links 는 별도 상한 작업 — 여기선 진단만"
+    },
+    outcome: (sameNeed ?? 0) > 0 || years.length > 0 ? "improved" : "no_change",
+    cost_usd: 0,
+    llm_calls: 0
+  };
+}
+
+export async function executeStudyAgenda(
+  admin: SupabaseClient,
+  candidate: AgendaCandidate,
+  opts?: { limit?: number }
+): Promise<StudyRunResult> {
+  const spent = await todayCostUsd(admin);
+  if (spent >= STUDY_DAILY_COST_USD) {
+    const run = await insertRun(admin, {
+      agenda: candidate.agenda,
+      why: candidate.why,
+      expected: candidate.expected,
+      kind: candidate.kind,
+      scope: candidate.scope,
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      result: {
+        stopped: true,
+        reason: `하루 비용 상한 $${STUDY_DAILY_COST_USD} 도달 (이미 $${spent.toFixed(4)})`
+      },
+      outcome: "failed",
+      cost_usd: 0,
+      llm_calls: 0
+    });
+    return { run, stopped_for_cost: true };
+  }
+
+  const started = new Date().toISOString();
+  const draft = await insertRun(admin, {
+    agenda: candidate.agenda,
+    why: candidate.why,
+    expected: candidate.expected,
+    kind: candidate.kind,
+    scope: candidate.scope,
+    started_at: started
+  });
+
+  const limit = opts?.limit ?? 40;
+  try {
+    let out: Awaited<ReturnType<typeof runProbeRetrieval>>;
+    if (candidate.kind === "probe_retrieval") {
+      out = await runProbeRetrieval(admin, candidate.scope, limit);
+    } else if (candidate.kind === "refresh_stale") {
+      out = await runRefreshStale(admin, limit);
+    } else if (candidate.kind === "materialize_secondary") {
+      out = await runMaterializeSecondary(admin, candidate.scope);
+    } else {
+      out = await runInspectGap(admin, candidate);
+    }
+
+    if (spent + out.cost_usd > STUDY_DAILY_COST_USD) {
+      out = {
+        ...out,
+        result: {
+          ...out.result,
+          cost_capped: true,
+          note: `비용 상한 $${STUDY_DAILY_COST_USD}`
+        }
+      };
+    }
+
+    const run = await finishRun(admin, draft.id, {
+      result: out.result,
+      outcome: out.outcome,
+      cost_usd: out.cost_usd,
+      llm_calls: out.llm_calls
+    });
+    return { run, stopped_for_cost: Boolean((out.result as { cost_capped?: boolean }).cost_capped) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const run = await finishRun(admin, draft.id, {
+      result: { error: message },
+      outcome: "failed",
+      cost_usd: 0,
+      llm_calls: 0
+    });
+    return { run };
+  }
+}
+
+export async function runSelectedTonight(
+  admin: SupabaseClient,
+  items: SelectedAgenda[],
+  opts?: { limitPerItem?: number }
+): Promise<{ runs: StudyRunRow[]; stopped_for_cost: boolean }> {
+  const runs: StudyRunRow[] = [];
+  let stopped = false;
+  for (const item of items) {
+    if (item.excluded || item.when !== "tonight") continue;
+    if (!item.verifiable) continue;
+    const res = await executeStudyAgenda(admin, item, {
+      limit: opts?.limitPerItem ?? 40
+    });
+    runs.push(res.run);
+    if (res.stopped_for_cost) {
+      stopped = true;
+      break;
+    }
+  }
+  return { runs, stopped_for_cost: stopped };
+}
+
+export async function listStudyRuns(
+  admin: SupabaseClient,
+  limit = 50
+): Promise<StudyRunRow[]> {
+  const { data, error } = await admin
+    .from("luna_study_runs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[luna/study-run] list", error);
+    return [];
+  }
+  return (data ?? []) as StudyRunRow[];
+}
+
+/** 블루진 반응 → 신호 */
+export async function recordStudyFeedback(
+  admin: SupabaseClient,
+  opts: {
+    runId: string;
+    userId: string;
+    verdict: "good" | "why" | "bad";
+    note?: string;
+  }
+): Promise<void> {
+  const { insertLunaSignal } = await import("@/lib/luna/signals");
+  const kind =
+    opts.verdict === "good" ? "positive" : opts.verdict === "bad" ? "negative" : "correction";
+  await insertLunaSignal(admin, {
+    kind,
+    source: "question_answer",
+    subject_type: "question",
+    subject_id: opts.runId,
+    reason: opts.verdict,
+    note: opts.note,
+    user_id: opts.userId,
+    context: { channel: "study_feedback", study_run_id: opts.runId }
+  });
+}

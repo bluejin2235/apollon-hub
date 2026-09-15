@@ -125,15 +125,21 @@ export async function collectMorningSummaryParts(
     parts.push(withLink(line, LUNA_LINKS.brainEval));
   }
 
-  // 2) 자습 — 돌았으면 0건이어도 한 줄
+  // 2) 자습 — 자율 실행 + 기존 stuck 문답
+  const { collectStudyMorningLines } = await import("@/lib/luna/study-report");
+  const studyLines = await collectStudyMorningLines(admin, startIso, endIso);
+  for (const line of studyLines) {
+    parts.push(withLink(line, LUNA_LINKS.selfstudyHistory));
+  }
+
   const selfstudy = await getSelfstudyStatus(admin);
   const last = selfstudy.last_run;
   if (last && inWindow(last.finished_at, startIso, endIso)) {
     if (last.submitted > 0) {
       parts.push(
-        withLink(`자습 ${last.submitted}문답 제출`, LUNA_LINKS.selfstudyHistory)
+        withLink(`자습 문답 ${last.submitted}건 제출`, LUNA_LINKS.selfstudyHistory)
       );
-    } else {
+    } else if (studyLines.length === 0) {
       parts.push(
         withLink(
           "자습 — 어제는 막힌 것이 없어 건너뛰었어요",

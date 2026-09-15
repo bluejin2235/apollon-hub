@@ -1,30 +1,12 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildFailureAnalysis } from "@/lib/luna-admin/analysis";
+import { selectTonightAgenda } from "@/lib/luna/study-agenda";
 import type { TonightItem, TonightState, SentRow } from "@/lib/luna-admin/types";
 
 export const TONIGHT_SETTINGS_KEY = "luna_admin_tonight";
 export const SENT_SETTINGS_KEY = "luna_admin_sent";
 
 export type { TonightItem, TonightState, SentRow };
-
-const EFFECT: Record<string, string> = {
-  "named-entity-index": "예상 검색 실패 감소",
-  "work-link": "노션 ↔ Work 묶기",
-  "wiki-draft": "규정 질문 답변",
-  "prompt-fix": "되물음 처리",
-  "answer-depth": "얕은 답 감소",
-  "knowledge-fix": "틀린 지식 교정"
-};
-
-const MINUTES: Record<string, number> = {
-  "named-entity-index": 20,
-  "work-link": 40,
-  "wiki-draft": 25,
-  "prompt-fix": 15,
-  "answer-depth": 20,
-  "knowledge-fix": 20
-};
 
 async function readJsonSetting<T>(
   admin: SupabaseClient,
@@ -78,43 +60,36 @@ export async function addSentRow(
   return next;
 }
 
+/** 루나가 DB를 훑어 오늘 밤 할 일을 스스로 정한다. */
 export async function loadTonightState(admin: SupabaseClient): Promise<TonightState> {
   const saved = await readJsonSetting<Partial<TonightState>>(admin, TONIGHT_SETTINGS_KEY, {});
   const excluded = new Set(
     (saved.items ?? []).filter((i) => i.excluded).map((i) => i.id)
   );
 
-  const analysis = await buildFailureAnalysis(admin);
-  const items: TonightItem[] = [];
+  const { selected } = await selectTonightAgenda(admin, { excludedIds: excluded });
 
-  for (const group of analysis.groups) {
-    for (const action of group.actions) {
-      if (action.when === "brain") continue;
-      if (items.some((i) => i.id === action.id)) {
-        const existing = items.find((i) => i.id === action.id);
-        if (existing) {
-          existing.failure_ids = [...new Set([...existing.failure_ids, ...group.failure_ids])];
-          existing.why = `${existing.why} · ${group.title} ${group.count}건`;
-        }
-        continue;
-      }
-      items.push({
-        id: action.id,
-        title: action.title,
-        what: group.common_cause,
-        why: `실패 수집 「${group.title}」 ${group.count}건`,
-        effect: EFFECT[action.id] ?? "실패 감소",
-        minutes: MINUTES[action.id] ?? 20,
-        excluded: excluded.has(action.id),
-        when: action.when,
-        failure_ids: group.failure_ids
-      });
-    }
-  }
+  const items: TonightItem[] = selected.map((s) => ({
+    id: s.id,
+    title: s.agenda,
+    what: s.expected,
+    why: s.why,
+    effect: s.verifiable ? "스스로 채점 가능" : "사람 판단 필요",
+    minutes: s.minutes,
+    excluded: s.excluded,
+    when: s.when,
+    failure_ids: Array.isArray(s.scope.failure_ids)
+      ? (s.scope.failure_ids as string[])
+      : [],
+    expected: s.expected,
+    kind: s.kind,
+    verifiable: s.verifiable
+  }));
 
   const merged: TonightState = {
     items,
-    generated_at: new Date().toISOString()
+    generated_at: new Date().toISOString(),
+    source: "autonomous"
   };
   await writeJsonSetting(admin, TONIGHT_SETTINGS_KEY, merged);
   return merged;

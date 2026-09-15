@@ -6,8 +6,10 @@ import {
   includeTonightItem,
   loadTonightState
 } from "@/lib/luna-admin/tonight";
+import { runSelectedTonight } from "@/lib/luna/study-run";
 import { runDailySelfstudy } from "@/lib/luna/selfstudy";
 import { ADMIN_SELFSTUDY_HOUR, ADMIN_SELFSTUDY_MINUTE } from "@/lib/luna-admin/schedule";
+import { selectTonightAgenda } from "@/lib/luna/study-agenda";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -44,8 +46,21 @@ export async function POST(request: NextRequest) {
   }
   if (body.action === "run") {
     try {
-      const result = await runDailySelfstudy(gate.admin, { force: true, notify: true });
-      return NextResponse.json({ ok: true, result });
+      const state = await loadTonightState(gate.admin);
+      const { selected } = await selectTonightAgenda(gate.admin, {
+        excludedIds: new Set(state.items.filter((i) => i.excluded).map((i) => i.id))
+      });
+      const study = await runSelectedTonight(gate.admin, selected, {
+        limitPerItem: 40
+      });
+      // 기존 stuck 문답 자습도 이어서 (후보함)
+      let stuck: unknown = null;
+      try {
+        stuck = await runDailySelfstudy(gate.admin, { force: true, notify: true });
+      } catch (err) {
+        stuck = { error: err instanceof Error ? err.message : String(err) };
+      }
+      return NextResponse.json({ ok: true, study, stuck });
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "실행 실패" },
