@@ -501,7 +501,11 @@ export default function ResearchLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-white md:h-auto md:max-h-none md:min-h-screen md:overflow-visible">
-      <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
+      <PortalHeader
+        userInfoLine={userInfoLine}
+        onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
+      />
 
       <div
         className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pt-14 md:h-[calc(100vh-3.5rem)] ${MOBILE_SUBNAV_PADDING}`}

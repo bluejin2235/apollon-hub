@@ -44,6 +44,7 @@ export function DevnoteShell({ children }: { children: ReactNode }) {
           userInfoLine={userInfoLine}
           onLogout={() => void signOutAndRedirectToLogin()}
           maxWidthClass="max-w-none"
+          role={profile?.role}
         />
         <main className="flex min-h-0 flex-1 items-center justify-center px-6 pt-14 text-center">
           <div>
@@ -63,6 +64,7 @@ export function DevnoteShell({ children }: { children: ReactNode }) {
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
         maxWidthClass="max-w-none"
+        role={profile?.role}
       />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden pt-14">
         <DevnoteNavChrome nav={nav}>{children}</DevnoteNavChrome>

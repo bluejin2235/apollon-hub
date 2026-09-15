@@ -21,6 +21,7 @@ export function SuppliesShell({ children }: { children: ReactNode }) {
       <PortalHeader
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
       />
       <div className="min-h-[calc(100vh-3.5rem)] w-full bg-white pt-14 text-gray-900">
         <div className="mx-auto w-full max-w-7xl px-4 pb-20 pt-6 md:pb-0">

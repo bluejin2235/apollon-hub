@@ -398,6 +398,7 @@ export default function ServiceHubPage() {
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
         hubTitleVariant="text"
+        role={profile?.role}
       />
 
       <div className="pb-10 pt-14">

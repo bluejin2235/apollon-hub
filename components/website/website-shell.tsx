@@ -42,6 +42,7 @@ export function WebsiteShell({ children }: { children: ReactNode }) {
           homeHref={isWebsiteTester ? "/website" : "/hub"}
           showSettingsLink={!isWebsiteTester}
           showHubNotifications={!isWebsiteTester}
+          role={profile?.role}
         />
 
         {isWebsiteTester ? <WebsiteTesterBanner /> : null}

@@ -21,6 +21,7 @@ export default function GlossaryLayout({ children }: { children: ReactNode }) {
       <PortalHeader
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
       />
       <div className="flex min-h-0 w-full flex-1 overflow-hidden pt-14">
         {children}

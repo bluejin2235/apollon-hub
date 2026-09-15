@@ -366,6 +366,7 @@ function SettingsPageInner() {
       <LunaAdminApp
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
         onLogout={handleLogout}
+        role={sessionProfile.role}
       />
     );
   }
@@ -376,6 +377,7 @@ function SettingsPageInner() {
         userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
         onLogout={handleLogout}
         showSettingsLink={false}
+        role={sessionProfile.role}
       />
 
       <div className="pb-10 pt-14">

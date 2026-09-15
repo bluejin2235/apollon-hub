@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Menu, X } from "lucide-react";
 import { HubNotifications } from "@/components/portal/hub-notifications";
 import { PortalStatsTracker } from "@/components/portal/portal-stats-tracker";
 import { APP_TITLE } from "@/lib/portal/app-title";
@@ -17,6 +20,8 @@ export type PortalHeaderProps = {
   zIndexClass?: string;
   showSettingsLink?: boolean;
   showHubNotifications?: boolean;
+  /** `profiles.role`. 「개발노트」는 슈퍼관리자에게만 보인다. */
+  role?: string;
 };
 
 const headerBar = "fixed top-0 left-0 right-0 z-50 w-full border-b border-slate-200 bg-white";
@@ -59,6 +64,30 @@ function IconLogout(props: { className?: string }) {
   );
 }
 
+function navLinkClass(active: boolean) {
+  return `rounded-md px-2.5 py-1.5 text-sm ${
+    active
+      ? "bg-slate-900 font-semibold text-white"
+      : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+  }`;
+}
+
+function DevnoteNavLink({
+  className,
+  onClick
+}: {
+  className?: string;
+  onClick?: () => void;
+}) {
+  const pathname = usePathname() ?? "";
+  const active = pathname === "/devnote" || pathname.startsWith("/devnote/");
+  return (
+    <Link href="/devnote" onClick={onClick} className={`${navLinkClass(active)} ${className ?? ""}`}>
+      개발노트
+    </Link>
+  );
+}
+
 export function PortalHeader({
   userInfoLine,
   onLogout,
@@ -67,8 +96,36 @@ export function PortalHeader({
   maxWidthClass = "max-w-7xl",
   zIndexClass = "z-50",
   showSettingsLink = true,
-  showHubNotifications = true
+  showHubNotifications = true,
+  role
 }: PortalHeaderProps) {
+  const pathname = usePathname();
+  const showDevnote = role === "슈퍼관리자";
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!mobileMenuRef.current?.contains(event.target as Node)) {
+        setMobileOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname, role]);
+
   const title = (
     <span className="text-base font-bold uppercase tracking-wide text-gray-900 sm:text-[0.95rem]">{APP_TITLE}</span>
   );
@@ -88,9 +145,41 @@ export function PortalHeader({
           ) : (
             <p className="min-w-0 shrink truncate text-gray-900">{title}</p>
           )}
+
+          {showDevnote ? (
+            <nav className="ml-1 hidden items-center gap-0.5 md:flex" aria-label="허브 메뉴">
+              <DevnoteNavLink />
+            </nav>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+          {showDevnote ? (
+            <div className="relative md:hidden" ref={mobileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMobileOpen((open) => !open)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-gray-900 transition hover:border-slate-400 hover:bg-slate-50"
+                aria-label="메뉴"
+                aria-expanded={mobileOpen}
+                title="메뉴"
+              >
+                {mobileOpen ? <X className="h-5 w-5" strokeWidth={1.75} /> : <Menu className="h-5 w-5" strokeWidth={1.75} />}
+              </button>
+              {mobileOpen ? (
+                <nav
+                  className="absolute right-0 top-full z-[60] mt-2 min-w-[10rem] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                  aria-label="허브 메뉴"
+                >
+                  <DevnoteNavLink
+                    className="mx-1 block"
+                    onClick={() => setMobileOpen(false)}
+                  />
+                </nav>
+              ) : null}
+            </div>
+          ) : null}
+
           <span
             className="min-w-0 max-w-[min(46vw,24rem)] truncate text-xs text-gray-900 sm:max-w-[min(56vw,32rem)] sm:text-sm"
             title={userInfoLine}

@@ -22,6 +22,7 @@ export function IssuesShell({ children }: { children: ReactNode }) {
       <PortalHeader
         userInfoLine={userInfoLine}
         onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
       />
       <div className="min-h-[calc(100vh-3.5rem)] w-full bg-[#f8fafc] pt-14 text-gray-900">
         <div className="iss mx-auto w-full max-w-[1040px] px-4 pb-20 pt-6 md:pb-8">{children}</div>

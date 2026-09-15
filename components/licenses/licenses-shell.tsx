@@ -22,7 +22,11 @@ export function LicensesShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
+      <PortalHeader
+        userInfoLine={userInfoLine}
+        onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
+      />
 
       <div className={`flex h-screen w-full pt-14 ${MOBILE_SUBNAV_PADDING}`}>
         <aside className="sticky top-14 z-10 hidden h-[calc(100vh-3.5rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 px-4 py-6 md:block">

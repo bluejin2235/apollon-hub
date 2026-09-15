@@ -44,7 +44,11 @@ export function AgentsShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <PortalHeader userInfoLine={userInfoLine} onLogout={() => void signOutAndRedirectToLogin()} />
+      <PortalHeader
+        userInfoLine={userInfoLine}
+        onLogout={() => void signOutAndRedirectToLogin()}
+        role={profile?.role}
+      />
 
       <Suspense fallback={<p className="px-4 py-6 pt-20 text-sm text-slate-500">불러오는 중…</p>}>
         <AgentsShellContent>{children}</AgentsShellContent>

@@ -42,6 +42,7 @@ import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
 type Props = {
   userInfoLine: string;
   onLogout: () => void;
+  role?: string;
 };
 
 export function LunaAdminApp(props: Props) {
@@ -52,7 +53,7 @@ export function LunaAdminApp(props: Props) {
   );
 }
 
-function LunaAdminAppInner({ userInfoLine, onLogout }: Props) {
+function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const route = resolveAdminRoute(searchParams.get("menu"), searchParams.get("sub"));
@@ -102,6 +103,7 @@ function LunaAdminAppInner({ userInfoLine, onLogout }: Props) {
         userInfoLine={userInfoLine}
         onLogout={onLogout}
         showSettingsLink={false}
+        role={role}
       />
       <div className="luna-admin mx-auto max-w-[1020px] px-4 pb-16 pt-16">
         <div className="admin-head">
