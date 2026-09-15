@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA 관리자 — 전체 화면 설계</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-soft:#EEEDFE; --luna-ink:#3C3489;
+    --g:#0F6E56; --g-bg:#E6F5EF;
+    --y:#B0782B; --y-bg:#FBF3E4;
+    --r:#B3403A; --r-bg:#FBECEB;
+    --b:#2E6FA8; --b-bg:#E9F1F9;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+    padding:22px 18px 60px;line-height:1.6;font-size:13px}
+  .wrap{max-width:1020px;margin:0 auto}
+
+  header{margin-bottom:22px;padding-bottom:16px;border-bottom:2px solid var(--line)}
+  h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin-bottom:4px}
+  .sub{font-size:12px;color:var(--sub)}
+
+  .secthead{font-size:15px;font-weight:800;margin:36px 0 3px;padding-top:20px;
+    border-top:2px solid var(--line);display:flex;align-items:center;gap:9px}
+  .secthead .no{width:22px;height:22px;border-radius:6px;background:var(--luna);color:#fff;
+    display:grid;place-items:center;font-size:11px;font-weight:800}
+  .sectsub{font-size:11.5px;color:var(--sub);margin-bottom:12px;padding-left:31px}
+
+  .note{font-size:11.5px;color:var(--sub);line-height:1.8;margin:8px 0}
+  .note b{color:var(--ink)}
+
+  /* 화면 틀 */
+  .screen{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;margin-bottom:10px}
+  .nav{display:flex;gap:2px;padding:10px 16px 0;border-bottom:1px solid var(--line);
+    overflow-x:auto}
+  .nav span{font-size:12px;padding:7px 13px;color:var(--sub);white-space:nowrap;
+    border-bottom:2px solid transparent;cursor:pointer}
+  .nav span.on{color:var(--luna-ink);font-weight:700;border-bottom-color:var(--luna)}
+  .nav span .n{font-size:10px;opacity:.7;margin-left:3px}
+  .nav span .dot{display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:#E0483E;margin-left:4px;vertical-align:middle}
+  .sub2{display:flex;gap:2px;padding:8px 16px 0;border-bottom:1px solid var(--line2)}
+  .sub2 span{font-size:11.5px;padding:6px 11px;color:var(--faint);
+    border-bottom:2px solid transparent;cursor:pointer}
+  .sub2 span.on{color:var(--luna-ink);font-weight:700;border-bottom-color:var(--luna)}
+  .body{padding:16px 18px}
+
+  /* 신호등 */
+  .flow{display:flex;align-items:stretch;gap:0;margin-bottom:14px}
+  .stage{flex:1;border:1px solid var(--line);padding:11px 13px;position:relative}
+  .stage:first-child{border-radius:10px 0 0 10px}
+  .stage:last-child{border-radius:0 10px 10px 0}
+  .stage + .stage{border-left:0}
+  .stage .s{font-size:10px;font-weight:800;letter-spacing:.3px;margin-bottom:4px}
+  .stage .t{font-size:12.5px;font-weight:700;margin-bottom:3px}
+  .stage .d{font-size:10.5px;color:var(--faint);line-height:1.6}
+  .stage.g{background:var(--g-bg)} .stage.g .s{color:var(--g)}
+  .stage.y{background:var(--y-bg)} .stage.y .s{color:var(--y)}
+  .stage.r{background:var(--r-bg)} .stage.r .s{color:var(--r)}
+  .stage .arrow{position:absolute;right:-7px;top:50%;transform:translateY(-50%);
+    font-size:13px;color:var(--faint);z-index:2;background:var(--panel);
+    width:14px;text-align:center}
+
+  .alert{background:var(--r-bg);border-left:3px solid var(--r);border-radius:9px;
+    padding:12px 15px;margin-bottom:12px;display:flex;align-items:center;gap:12px}
+  .alert .c{flex:1}
+  .alert .t{font-size:13px;font-weight:800;color:var(--r);margin-bottom:3px}
+  .alert .d{font-size:11.5px;color:var(--r);line-height:1.7}
+
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:12px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .card .l{font-size:10.5px;color:var(--faint);margin-bottom:4px}
+  .card .v{font-size:19px;font-weight:800;letter-spacing:-.5px}
+  .card .v .u{font-size:11px;font-weight:400;color:var(--faint);margin-left:3px}
+  .card .m{font-size:10px;color:var(--faint);margin-top:3px}
+  .card.g .v{color:var(--g)} .card.r .v{color:var(--r)} .card.y .v{color:var(--y)}
+
+  .sech{display:flex;align-items:center;gap:8px;margin:16px 0 8px}
+  .sech .t{font-size:12.5px;font-weight:800}
+  .sech .n{font-size:10.5px;color:var(--faint)}
+  .sech .sp{flex:1}
+  .sech .a{font-size:11px;color:var(--luna);font-weight:600;cursor:pointer}
+
+  .row{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line2);
+    align-items:flex-start}
+  .row:last-child{border-bottom:0}
+  .row .ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;
+    font-size:12px;flex-shrink:0}
+  .ic.g{background:var(--g-bg)} .ic.y{background:var(--y-bg)}
+  .ic.r{background:var(--r-bg)} .ic.b{background:var(--b-bg)}
+  .ic.p{background:var(--luna-soft)}
+  .row .c{flex:1;min-width:0}
+  .row .t{font-size:12.5px;font-weight:700;margin-bottom:3px}
+  .row .d{font-size:11.5px;color:var(--sub);line-height:1.75}
+  .row .m{font-size:10.5px;color:var(--faint);margin-top:4px;font-family:var(--mono)}
+  .row .r{margin-left:auto;font-size:10.5px;color:var(--faint);white-space:nowrap;
+    padding-left:10px}
+
+  .btn{font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel);color:#33363c;cursor:pointer;white-space:nowrap;font-weight:600}
+  .btn.p{background:var(--luna);color:#fff;border-color:var(--luna)}
+  .btn.g{border-color:#BFE2D5;color:var(--g);background:var(--g-bg)}
+  .btn.sm{font-size:10px;padding:3px 9px}
+  .btns{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+
+  .tag{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:6px;display:inline-block}
+  .tag.g{background:var(--g-bg);color:var(--g)}
+  .tag.y{background:var(--y-bg);color:var(--y)}
+  .tag.r{background:var(--r-bg);color:var(--r)}
+  .tag.b{background:var(--b-bg);color:var(--b)}
+  .tag.p{background:var(--luna-soft);color:var(--luna-ink)}
+  .tag.gray{background:var(--chip);color:var(--faint)}
+
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{text-align:left;padding:7px 9px;background:#FAFAFB;color:var(--faint);
+    font-weight:700;font-size:10px;border-bottom:1px solid var(--line)}
+  td{padding:8px 9px;border-bottom:1px solid var(--line2);vertical-align:top;line-height:1.7}
+  tr:last-child td{border-bottom:0}
+  td.mono{font-family:var(--mono);font-size:10.5px;color:var(--sub)}
+
+  .bar{height:6px;background:var(--line2);border-radius:3px;overflow:hidden;margin-top:5px}
+  .bar i{display:block;height:100%;background:var(--luna);border-radius:3px}
+  .bar i.g{background:var(--g)}
+
+  .pair{display:flex;gap:9px;align-items:stretch;margin:7px 0}
+  .pair .side{flex:1;border:1px solid var(--line);border-radius:9px;padding:11px 13px}
+  .pair .side .s{font-size:10px;color:var(--faint);margin-bottom:4px}
+  .pair .side .t{font-size:12px;font-weight:700;line-height:1.6}
+  .pair .side .m{font-size:10.5px;color:var(--faint);margin-top:5px}
+  .pair .mid{display:grid;place-items:center;font-size:15px;color:var(--faint);width:22px}
+
+  .tree{font-family:var(--mono);font-size:11px;line-height:2;color:#33363c;
+    background:#FAFAFB;border-radius:9px;padding:13px 16px;white-space:pre;overflow-x:auto}
+
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}
+  .chips span{font-size:11px;padding:4px 11px;border-radius:14px;
+    border:1px solid var(--line);color:var(--sub);cursor:pointer}
+  .chips span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:600}
+
+  .why{background:var(--luna-soft);border-radius:9px;padding:11px 14px;margin:9px 0;
+    font-size:11.5px;line-height:1.85;color:var(--luna-ink)}
+  .why b{font-weight:800}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .mini{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .mini .t{font-size:12px;font-weight:700;margin-bottom:6px}
+  .mini .d{font-size:11px;color:var(--sub);line-height:1.8}
+
+  .skel{background:var(--line2);border-radius:5px;height:9px;margin:5px 0}
+  .skel.w60{width:60%} .skel.w40{width:40%} .skel.w80{width:80%}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>LUNA 관리자 — 전체 화면 설계</h1>
+  <div class="sub">바퀴가 도는 순서로 배열 · 블루진 전용 · 2026.09.15</div>
+</header>
+
+<div class="note">
+<b>설계 원칙 셋</b><br>
+① 메뉴 순서 = 바퀴가 도는 순서. 왼쪽부터 읽으면 흐름이 보인다<br>
+② 멈추면 대시보드 맨 위에 빨갛게. 다음날 알 수 있어야 한다<br>
+③ 실패가 자습의 입력. 루나가 실패를 분석해 오늘 밤 할 일을 정한다
+</div>
+
+
+<!-- ══════════ 1. 대시보드 ══════════ -->
+<div class="secthead"><span class="no">1</span>대시보드</div>
+<p class="sectsub">바퀴가 지금 도는지, 어디서 멈췄는지.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span class="on">대시보드</span><span>지식</span><span>대화</span>
+    <span>자습<span class="dot"></span></span><span>실패 수집<span class="n">26</span></span>
+    <span>지식후보<span class="n">5</span></span><span>두뇌</span>
+  </div>
+  <div class="body">
+
+    <div class="alert">
+      <div class="c">
+        <div class="t">⚠ 자습이 32일째 돌지 않고 있습니다</div>
+        <div class="d">마지막 실행 08.13 · 재료는 3건 쌓여 있음 · 그동안 2차 데이터가 0건 증가</div>
+      </div>
+      <span class="btn p">지금 실행</span>
+      <span class="btn">원인 보기</span>
+    </div>
+
+    <div class="flow">
+      <div class="stage g">
+        <div class="s">🟢 수집</div>
+        <div class="t">정상</div>
+        <div class="d">노션 03:20 · Work 03:04<br>이미지 8.23 이후 없음</div>
+        <span class="arrow">→</span>
+      </div>
+      <div class="stage r">
+        <div class="s">🔴 학습</div>
+        <div class="t">32일째 멈춤</div>
+        <div class="d">자습 0건<br>2차 데이터 34건 그대로</div>
+        <span class="arrow">→</span>
+      </div>
+      <div class="stage y">
+        <div class="s">🟡 확정</div>
+        <div class="t">재료 없음</div>
+        <div class="d">대기 0건<br>학습이 멈춰 올라오는 게 없음</div>
+        <span class="arrow">→</span>
+      </div>
+      <div class="stage g">
+        <div class="s">🟢 적용</div>
+        <div class="t">정상</div>
+        <div class="d">프롬프트 17개<br>모델 자동 교체 동작</div>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="l">1차 데이터</div>
+        <div class="v">104,999</div><div class="m">어제 +26</div></div>
+      <div class="card r"><div class="l">2차 데이터</div>
+        <div class="v">34</div><div class="m">32일째 변화 없음</div></div>
+      <div class="card"><div class="l">이번 주 대화</div>
+        <div class="v">1<span class="u">건</span></div><div class="m">1명</div></div>
+      <div class="card y"><div class="l">내가 답할 것</div>
+        <div class="v">5</div><div class="m">충돌 2 · 후보 3</div></div>
+    </div>
+
+    <div class="sech"><span class="t">오늘 밤 할 일</span>
+      <span class="n">03:00 예정</span><span class="sp"></span>
+      <span class="a">자습 →</span></div>
+    <div class="row">
+      <span class="ic p">1</span>
+      <div class="c">
+        <div class="t">고유명사 색인</div>
+        <div class="d">실패 수집의 「검색 못 찾음」 3건을 분석한 결과</div>
+      </div>
+      <span class="r">예상 3건 해결</span>
+    </div>
+    <div class="row">
+      <span class="ic p">2</span>
+      <div class="c">
+        <div class="t">2025년 프로젝트 연결</div>
+        <div class="d">노션 ↔ Work서버 묶기</div>
+      </div>
+      <span class="r">47% → 80%</span>
+    </div>
+
+  </div>
+</div>
+
+<div class="why">
+  <b>지금 대시보드와 다른 점.</b> 지금은 지식·대화·지식후보·자습·두뇌의 숫자를 나열합니다.
+  그러면 <b>어디서 멈췄는지</b>를 사람이 읽어내야 합니다.<br>
+  바꾼 화면은 4단계 중 막힌 곳을 신호등으로 먼저 보여주고, 맨 위에 빨간 경고를 띄웁니다.
+  한 달 멈춘 것을 다음날 알 수 있어야 합니다.
+</div>
+
+
+<!-- ══════════ 2. 지식 ══════════ -->
+<div class="secthead"><span class="no">2</span>지식 — 1차 데이터</div>
+<p class="sectsub">원천. 있는 그대로 읽어온 것.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span class="on">지식</span><span>대화</span>
+    <span>자습</span><span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span class="on">1차 데이터</span><span>2차 데이터</span></div>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><div class="l">Work서버</div><div class="v">101,603</div>
+        <div class="m">오늘 03:04 · +26</div></div>
+      <div class="card"><div class="l">노션</div><div class="v">2,098</div>
+        <div class="m">오늘 13:30 · 관계 34</div></div>
+      <div class="card y"><div class="l">이미지</div><div class="v">753</div>
+        <div class="m">77,065 중 1%</div></div>
+      <div class="card"><div class="l">위키 · 용어</div><div class="v">43<span class="u">· 402</span></div>
+        <div class="m">사람이 씀</div></div>
+    </div>
+
+    <div class="sech"><span class="t">원천별 상세</span></div>
+    <table>
+      <tr><th>원천</th><th>규모</th><th>색인 주기</th><th>마지막</th><th>상태</th></tr>
+      <tr><td>Work서버</td><td>101,603건 · 중요 84경로</td><td>매일 03:00</td>
+          <td>오늘 03:04 · 11분</td><td><span class="tag g">정상</span></td></tr>
+      <tr><td>노션</td><td>2,098p · 블록 88,560</td><td>03:20 전체 · 13:30 증분</td>
+          <td>오늘 13:30 · 14분</td><td><span class="tag g">정상</span></td></tr>
+      <tr><td>이미지</td><td>753 / 77,065</td><td>04:00 (비활성)</td>
+          <td>08.23</td><td><span class="tag y">멈춤</span></td></tr>
+      <tr><td>위키</td><td>43문서 · 263섹션</td><td>저장 즉시</td>
+          <td>—</td><td><span class="tag g">정상</span></td></tr>
+      <tr><td>용어사전</td><td>402</td><td>저장 즉시</td>
+          <td>—</td><td><span class="tag g">정상</span></td></tr>
+    </table>
+
+    <p class="note" style="margin-top:12px">
+    각 행을 누르면 기존 화면(경로 표기 · 중요 경로 · 색인 이력 · 문서 목록)이 열립니다.
+    </p>
+  </div>
+</div>
+
+
+<div class="secthead"><span class="no">3</span>지식 — 2차 데이터</div>
+<p class="sectsub">루나가 만든 것. 원천에 없던 연결.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span class="on">지식</span><span>대화</span>
+    <span>자습</span><span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span>1차 데이터</span><span class="on">2차 데이터</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="on">전체 34</span><span>같은 것 6</span><span>속한 것 22</span>
+      <span>이어진 것 6</span><span>판단 기준 66</span><span>관점 0</span>
+    </div>
+
+    <div class="sech"><span class="t">같은 것</span><span class="n">6</span>
+      <span class="sp"></span><span class="a">확인 대기 12 →</span></div>
+    <div class="pair">
+      <div class="side">
+        <div class="s">Work · 사업개발</div>
+        <div class="t">260423 동탄더샵모델하우스</div>
+        <div class="m">T:\01 사업개발\2026</div>
+      </div>
+      <div class="mid">=</div>
+      <div class="side">
+        <div class="s">Work · 프로젝트</div>
+        <div class="t">260723 아크메르동탄 모델하우스</div>
+        <div class="m">T:\02 Project\2026</div>
+      </div>
+      <div style="display:grid;place-items:center;padding-left:6px">
+        <span class="tag g">블루진 확인</span>
+      </div>
+    </div>
+    <div class="pair">
+      <div class="side">
+        <div class="s">Work</div>
+        <div class="t">260108 해운대스퀘어 공공부지사업</div>
+      </div>
+      <div class="mid">=</div>
+      <div class="side">
+        <div class="s">노션</div>
+        <div class="t">260108 해운대구남로 미디어쇼</div>
+      </div>
+      <div style="display:grid;place-items:center;padding-left:6px">
+        <span class="tag g">블루진 확인</span>
+      </div>
+    </div>
+
+    <div class="sech"><span class="t">속한 것</span><span class="n">22</span></div>
+    <div class="tree">인스파이어 시즌4 제안                      노션 · 사업개발 DB
+  ├ 관련 일정          10건
+  ├ 아이데이션          4건
+  ├ 회의록              4건
+  └ Work 폴더    T:\01 사업개발\2026\260710 인스파이어 시즌4
+        ├ 문서 47건
+        └ 이미지 0건                            ← 아직 색인 안 됨</div>
+
+    <div class="sech"><span class="t">이어진 것</span><span class="n">6</span></div>
+    <div class="row">
+      <span class="ic b">→</span>
+      <div class="c">
+        <div class="t">230526 노원달빛산책 → 230802 노원달빛산책</div>
+        <div class="d">사업개발에서 프로젝트로. 수주됨</div>
+      </div>
+      <span class="r">이름 일치 · 자동</span>
+    </div>
+
+    <div class="sech"><span class="t">관점</span><span class="n">0</span>
+      <span class="sp"></span><span class="a">자습이 돌면 생깁니다</span></div>
+    <p class="note">데이터에 자주 나오는 말과 자주 묻는 말에서 저절로 발견됩니다.
+    자주 쓰이면 굵어지고, 안 쓰이면 시듭니다.</p>
+  </div>
+</div>
+
+<div class="why">
+  <b>왜 셋으로 나눴나.</b> 연결의 종류가 셋뿐이고 만드는 방법도, 보는 방식도 다릅니다.<br>
+  · <b>같은 것</b> — 이름·날짜로 판정. 애매하면 물어봄. 좌우 대조로 봄<br>
+  · <b>속한 것</b> — 경로·노션 관계로 확정. 거의 자동. 트리로 봄<br>
+  · <b>이어진 것</b> — 단계 규칙으로 확정. 자동. 흐름으로 봄<br><br>
+  「연결」 하나로 묶으면 섞여서 못 봅니다.
+</div>
+
+
+<!-- ══════════ 4. 대화 ══════════ -->
+<div class="secthead"><span class="no">4</span>대화</div>
+<p class="sectsub">들어오는 것. 기존 화면 유지.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span class="on">대화</span>
+    <span>자습</span><span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span class="on">대화 이력</span><span>구술·문서</span><span>관측 지표</span></div>
+  <div class="body">
+    <div class="grid2">
+      <div class="mini"><div class="t">대화 이력</div>
+        <div class="d">사용자별 추이 · 순위 · 반응 필터(좋아요·싫어요·정정)<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+      <div class="mini"><div class="t">구술·문서</div>
+        <div class="d">블루진이 말한 것 · 회사 문서<br>
+        <span style="color:var(--faint)">지금 원문 0편 — 안 쓰이고 있음</span></div></div>
+    </div>
+    <div class="mini" style="margin-top:9px"><div class="t">관측 지표</div>
+      <div class="d">되물음률 · 검색 0건 · 재검색 발생 · 가정 확인 · 주 단위 요약<br>
+      <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+  </div>
+</div>
+
+
+<!-- ══════════ 5. 자습 ══════════ -->
+<div class="secthead"><span class="no">5</span>자습 — 오늘 밤 할 일</div>
+<p class="sectsub">심장. 실패 분석 결과로 오늘 할 일이 정해진다.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span>
+    <span class="on">자습<span class="dot"></span></span><span>실패 수집</span>
+    <span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span class="on">오늘 밤 할 일</span><span>자습 이력</span>
+    <span>2차 데이터 만들기</span><span>자습 설정</span></div>
+  <div class="body">
+
+    <div class="alert" style="background:var(--y-bg);border-left-color:var(--y)">
+      <div class="c">
+        <div class="t" style="color:var(--y)">32일째 실행되지 않았습니다</div>
+        <div class="d" style="color:var(--y)">그동안 할 일은 쌓여 있었습니다. 원인 확인이 필요합니다.</div>
+      </div>
+      <span class="btn p">지금 실행</span>
+    </div>
+
+    <div class="sech"><span class="t">오늘 밤 03:00 에 할 일</span>
+      <span class="n">실패 분석에서 자동 선정</span>
+      <span class="sp"></span><span class="a">순서 바꾸기</span></div>
+
+    <div class="row">
+      <span class="ic p">1</span>
+      <div class="c">
+        <div class="t">고유명사 색인</div>
+        <div class="d">노션 아이데이션 문서에서 프로그램·작품 이름을 뽑아 용어 후보로 만듭니다.</div>
+        <div class="m">실패 수집 「검색 못 찾음」 3건 · lucky · 삼척 · 덱스터스튜디오</div>
+        <div class="btns">
+          <span class="btn sm">제외</span><span class="btn sm">근거 보기</span>
+        </div>
+      </div>
+      <span class="r">예상 3건 해결<br>약 20분</span>
+    </div>
+
+    <div class="row">
+      <span class="ic p">2</span>
+      <div class="c">
+        <div class="t">2025년 프로젝트 연결</div>
+        <div class="d">노션 페이지와 Work 폴더를 묶습니다. 확실한 것은 저장하고 애매한 것은 물어봅니다.</div>
+        <div class="m">2차 데이터 · 연도 역순 · 2026 완료 → 2025 진행 중</div>
+        <div class="bar"><i style="width:47%"></i></div>
+        <div class="btns">
+          <span class="btn sm">제외</span>
+        </div>
+      </div>
+      <span class="r">47% → 80%<br>약 40분</span>
+    </div>
+
+    <div class="row">
+      <span class="ic p">3</span>
+      <div class="c">
+        <div class="t">용어사전 자가검증</div>
+        <div class="d">「볼팍견적이 뭐야」를 던져 그 용어가 검색되는지 확인합니다. 정답이 명확한 검증입니다.</div>
+        <div class="m">402개 중 미검증 180개 · 오늘 60개</div>
+        <div class="btns"><span class="btn sm">제외</span></div>
+      </div>
+      <span class="r">약 15분</span>
+    </div>
+
+    <div class="sech"><span class="t">건너뛰는 것</span><span class="n">2</span></div>
+    <div class="row">
+      <span class="ic" style="background:var(--chip)">—</span>
+      <div class="c">
+        <div class="t" style="color:var(--faint)">이미지 색인 증분</div>
+        <div class="d">작업 스케줄러가 비활성 상태입니다</div>
+      </div>
+      <span class="r">켜기 →</span>
+    </div>
+  </div>
+</div>
+
+<div class="why">
+  <b>지금과 가장 크게 다른 점.</b> 지금 자습은 「막힌 순간」에서 주제를 고를 뿐입니다.<br>
+  바꾼 구조는 <b>실패 수집을 루나가 분석해서</b> 오늘 밤 할 일을 스스로 정합니다.
+  블루진은 아침에 보고 「이건 빼」만 하면 됩니다.
+</div>
+
+
+<div class="secthead"><span class="no">6</span>자습 — 2차 데이터 만들기</div>
+<p class="sectsub">연도 역순으로 전체를 한 번 훑는 진행률.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span>
+    <span class="on">자습</span><span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span>오늘 밤 할 일</span><span>자습 이력</span>
+    <span class="on">2차 데이터 만들기</span><span>자습 설정</span></div>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><div class="l">전체 진행률</div><div class="v">18<span class="u">%</span></div>
+        <div class="m">2026 완료 · 2025 진행 중</div></div>
+      <div class="card g"><div class="l">자동 확정</div><div class="v">34</div>
+        <div class="m">확신도 0.9 이상</div></div>
+      <div class="card y"><div class="l">물어볼 것</div><div class="v">12</div>
+        <div class="m">지식후보로</div></div>
+      <div class="card"><div class="l">보류</div><div class="v">7</div>
+        <div class="m">근거 부족</div></div>
+    </div>
+
+    <table>
+      <tr><th>연도</th><th>프로젝트</th><th>노션</th><th>이미지</th><th>진행</th><th></th></tr>
+      <tr><td><b>2026</b></td><td>19</td><td>324</td><td>753</td>
+          <td style="width:130px"><div class="bar"><i class="g" style="width:100%"></i></div></td>
+          <td><span class="tag g">완료</span></td></tr>
+      <tr><td><b>2025</b></td><td>38</td><td>612</td><td>0</td>
+          <td><div class="bar"><i style="width:47%"></i></div></td>
+          <td><span class="tag p">오늘 밤</span></td></tr>
+      <tr><td>2024</td><td>41</td><td>—</td><td>0</td>
+          <td><div class="bar"><i style="width:0"></i></div></td>
+          <td><span class="tag gray">대기</span></td></tr>
+      <tr><td>2023</td><td>35</td><td>—</td><td>0</td>
+          <td><div class="bar"><i style="width:0"></i></div></td>
+          <td><span class="tag gray">대기</span></td></tr>
+      <tr><td>2022 이전</td><td>100</td><td>—</td><td>0</td>
+          <td><div class="bar"><i style="width:0"></i></div></td>
+          <td><span class="tag gray">대기</span></td></tr>
+    </table>
+
+    <div class="sech"><span class="t">막힌 것</span><span class="n">12</span>
+      <span class="sp"></span><span class="a">지식후보에서 답하기 →</span></div>
+    <div class="row">
+      <span class="ic y">?</span>
+      <div class="c">
+        <div class="t">이름이 달라 같은 건인지 판단 불가</div>
+        <div class="d">2025년에서 12건. 블루진이 답하면 다음부터 같은 규칙으로 처리합니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 7. 실패 수집 ══════════ -->
+<div class="secthead"><span class="no">7</span>실패 수집 — 루나의 분석</div>
+<p class="sectsub">자습의 입력. 왜 실패했는지 루나가 읽고 할 일을 뽑는다.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+    <span class="on">실패 수집<span class="n">26</span></span>
+    <span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span>원인별</span><span class="on">루나의 분석</span><span>자습으로 보낸 것</span></div>
+  <div class="body">
+
+    <div class="sech"><span class="t">분석 결과</span>
+      <span class="n">어제 26건을 읽었습니다</span></div>
+
+    <div class="row">
+      <span class="ic r">🔍</span>
+      <div class="c">
+        <div class="t">검색이 문서를 못 찾음 <span class="tag r">3건</span></div>
+        <div class="d">
+          <b>공통 원인</b> — 문서 안의 고유명사가 색인에 안 잡힙니다.
+          「lucky」는 아이데이션 문서 본문에 있는 프로그램 이름인데
+          용어사전에도 없고 제목에도 없어 검색에 걸리지 않습니다.
+        </div>
+        <div class="m">lucky 프로그램 · 삼척 프로젝트 경로 · 덱스터스튜디오</div>
+        <div class="btns">
+          <span class="btn p sm">① 고유명사 색인 — 오늘 밤</span>
+          <span class="btn sm">② Work 연결 만들기 — 내일 밤</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="ic y">💬</span>
+      <div class="c">
+        <div class="t">되묻고 답을 못 알아들음 <span class="tag y">3건</span></div>
+        <div class="d">
+          <b>공통 원인</b> — 선택지를 냈는데 「1번」이라고만 답하면
+          원래 질문과 이어붙이지 못합니다.
+        </div>
+        <div class="m">1 · 1번 · 1·2 모두</div>
+        <div class="btns">
+          <span class="btn sm">프롬프트 수정 제안 — 두뇌로</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="ic y">❓</span>
+      <div class="c">
+        <div class="t">질문 의도를 못 잡음 <span class="tag y">2건</span></div>
+        <div class="d">
+          <b>공통 원인</b> — 「분석해줘」처럼 대상이 없는 요청에서
+          무엇을 분석할지 되묻지 않고 그냥 답했습니다.
+        </div>
+        <div class="btns"><span class="btn sm">프롬프트 수정 제안</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="ic g">✓</span>
+      <div class="c">
+        <div class="t">정기 점검 <span class="tag gray">67건</span></div>
+        <div class="d">사람이 겪은 게 아니라 루나가 스스로 돌린 점검입니다. 별도로 봅니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+    <span class="on">실패 수집</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span>원인별</span><span>루나의 분석</span><span class="on">자습으로 보낸 것</span></div>
+  <div class="body">
+    <table>
+      <tr><th>실패</th><th>보낸 날</th><th>자습 주제</th><th>결과</th><th>해결</th></tr>
+      <tr><td>lucky 프로그램을 못 찾음</td><td>오늘</td>
+          <td>고유명사 색인</td><td class="mono">대기</td>
+          <td><span class="tag gray">—</span></td></tr>
+      <tr><td>삼척 경로를 못 찾음</td><td>오늘</td>
+          <td>고유명사 색인</td><td class="mono">대기</td>
+          <td><span class="tag gray">—</span></td></tr>
+      <tr><td>공개공지 사례 검색 0건</td><td>08.12</td>
+          <td>공개공지 프로젝트 정리</td><td class="mono">지식 2건</td>
+          <td><span class="tag g">해결</span></td></tr>
+    </table>
+    <p class="note">어느 실패가 어느 자습이 됐고, 실제로 해결됐는지 추적합니다.
+    해결이 안 되면 다른 방법을 시도합니다.</p>
+  </div>
+</div>
+
+
+<!-- ══════════ 8. 지식후보 ══════════ -->
+<div class="secthead"><span class="no">8</span>지식후보</div>
+<p class="sectsub">사람이 확정하는 곳. 충돌을 여기로 옮겼다.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+    <span>실패 수집</span><span class="on">지식후보<span class="n">5</span></span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span class="on">대기 후보<span class="n">3</span></span>
+    <span>내가 답할 차례</span><span>충돌<span class="n">2</span></span><span>처리 이력</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="on">전체 3</span><span>루나의 질문 2</span><span>대화에서 1</span>
+      <span>자습에서 0</span><span>구술·문서 0</span>
+    </div>
+
+    <div class="row">
+      <span class="ic p">🌙</span>
+      <div class="c">
+        <div class="t">「해운대스퀘어 공공부지사업」과 「해운대구남로 미디어쇼」가 같은 건인가요?</div>
+        <div class="d">Work 폴더와 노션 페이지의 날짜코드가 260108 로 같습니다. 이름은 다릅니다.</div>
+        <div class="m">2차 데이터 · 같은 것 · 확신도 0.72</div>
+        <div class="btns">
+          <span class="btn p sm">같아요</span><span class="btn sm">달라요</span>
+          <span class="btn sm">모르겠어요</span><span class="btn sm">나중에</span>
+        </div>
+      </div>
+      <span class="r">자습에서<br>오늘</span>
+    </div>
+
+    <div class="row">
+      <span class="ic p">🌙</span>
+      <div class="c">
+        <div class="t">「인사\채용\2026」 아래 폴더 12개가 전부 지원자 이름인가요?</div>
+        <div class="d">폴더 이름이 모두 사람 이름 형태입니다. 확인되면 「올해 면접 본 사람」에 답할 수 있습니다.</div>
+        <div class="m">2차 데이터 · 폴더 뜻 · 확신도 0.81</div>
+        <div class="btns">
+          <span class="btn p sm">맞아요</span><span class="btn sm">아니요</span>
+          <span class="btn sm">나중에</span>
+        </div>
+      </div>
+      <span class="r">자습에서<br>오늘</span>
+    </div>
+
+    <div class="row">
+      <span class="ic b">💬</span>
+      <div class="c">
+        <div class="t">외부 신규 협력 후보 기업은 Work·노션보다 외부 웹 검색을 우선 조사한다</div>
+        <div class="d">대화에서 나온 판단 기준입니다.</div>
+        <div class="m">대화에서 · 08.20 · 이택진</div>
+        <div class="btns">
+          <span class="btn p sm">확정</span><span class="btn sm">고쳐서 확정</span>
+          <span class="btn sm">반려</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+    <span>실패 수집</span><span class="on">지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2"><span>대기 후보</span><span>내가 답할 차례</span>
+    <span class="on">충돌<span class="n">2</span></span><span>처리 이력</span></div>
+  <div class="body">
+    <p class="note" style="color:var(--r)">보류 중인 지식은 루나가 답변에 쓰지 않습니다. 확정해 주세요.</p>
+    <div class="pair">
+      <div class="side">
+        <div class="s">이택진 · 08.19 · 대화에서</div>
+        <div class="t">광안리 KCC 프로젝트는 시행 주체와 시공 주체가 분리된 발주 구조로 추진된다.</div>
+        <div class="m"><span class="btn sm" style="margin-top:6px">이걸로 확정</span></div>
+      </div>
+      <div class="mid">⚡</div>
+      <div class="side">
+        <div class="s">이택진 · 08.19 · 대화에서</div>
+        <div class="t">광안리 KCC 프로젝트에서 아폴론의 계약 상대방은 시행사 MDM이 아니라 시공사 KCC건설이다.</div>
+        <div class="m"><span class="btn sm" style="margin-top:6px">이걸로 확정</span></div>
+      </div>
+    </div>
+    <div class="btns">
+      <span class="btn p sm">병합해서 확정</span><span class="btn sm">둘 다 폐기</span>
+      <span style="font-size:10.5px;color:var(--faint);padding:5px 0">병합 시 두 문장을 합친 초안을 루나가 만들어 줍니다</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 9. 두뇌 ══════════ -->
+<div class="secthead"><span class="no">9</span>두뇌</div>
+<p class="sectsub">고치는 것. 기존 6개 화면 유지.</p>
+
+<div class="screen">
+  <div class="nav">
+    <span>대시보드</span><span>지식</span><span>대화</span><span>자습</span>
+    <span>실패 수집</span><span>지식후보</span><span class="on">두뇌</span>
+  </div>
+  <div class="sub2"><span class="on">프롬프트</span><span>유형</span><span>자기개선</span>
+    <span>성장 루프</span><span>모델·비용</span><span>정기 점검</span></div>
+  <div class="body">
+    <div class="grid2">
+      <div class="mini"><div class="t">프롬프트</div>
+        <div class="d">L1~L5 · 17개 · 꺼진 것 23<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+      <div class="mini"><div class="t">유형</div>
+        <div class="d">알기 · 찾기 · 만들기 · 배우기 · 인사<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+      <div class="mini"><div class="t">자기개선</div>
+        <div class="d">L2~L4는 스스로 · L1·L5는 사람만<br>
+        <span style="color:var(--faint)">실패 수집의 제안이 여기로 들어옴</span></div></div>
+      <div class="mini"><div class="t">성장 루프</div>
+        <div class="d">주간 목표 · 밤사이 요약<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+      <div class="mini"><div class="t">모델·비용</div>
+        <div class="d">S·A·B·C 등급 · 주 1회 자동 교체<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+      <div class="mini"><div class="t">정기 점검</div>
+        <div class="d">매일 03:40 · 주간 일요일 03:50<br>
+        <span style="color:var(--faint)">기존 화면 그대로</span></div></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════ 흐름 ══════════ -->
+<div class="secthead"><span class="no">✦</span>메뉴가 곧 바퀴</div>
+
+<div class="screen">
+  <div class="body">
+    <div class="tree">지식        대화        자습        실패 수집     지식후보      두뇌
+ 쌓임   →   들어옴   →   돈다    →    막힘     →    확정     →    고침
+  ↑                                                                  │
+  └──────────────────────────────────────────────────────────────────┘</div>
+
+    <p class="note" style="margin-top:12px">
+    왼쪽부터 읽으면 바퀴가 도는 순서와 같습니다.<br>
+    <b>실패 수집이 자습 뒤에 있는 이유</b> — 자습이 돌다가 막힌 것이 실패로 쌓이고,
+    그 실패를 분석해 다음 자습 주제가 나옵니다. 두 화면이 서로를 먹입니다.
+    </p>
+  </div>
+</div>
+
+
+<div class="secthead"><span class="no">✦</span>정해야 할 것</div>
+<div class="screen">
+  <div class="body">
+    <div class="row">
+      <span class="ic y">1</span>
+      <div class="c"><div class="t">지식후보를 하루에 몇 개까지 볼 수 있나</div>
+        <div class="d">자습의 확신도 기준을 정하는 데 필요합니다. 5개 / 10개 / 20개</div></div>
+    </div>
+    <div class="row">
+      <span class="ic y">2</span>
+      <div class="c"><div class="t">2차 데이터를 어디까지 거슬러 올라갈 것인가</div>
+        <div class="d">2022년 이전은 프로젝트 100개가 넘습니다. 전부 할지, 최근 3년만 할지</div></div>
+    </div>
+    <div class="row">
+      <span class="ic y">3</span>
+      <div class="c"><div class="t">진입 경로</div>
+        <div class="d">기존 /settings 는 팀원용으로 두고, 블루진은 어디로 들어올지</div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { LunaSettingsTab } from "@/components/settings/luna-settings-tab";
+import { LunaAdminApp } from "@/components/luna-admin/LunaAdminApp";
 import { MyLoansTab } from "@/components/settings/my-loans-tab";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
@@ -356,6 +357,17 @@ function SettingsPageInner() {
 
   if (status === "checking" || !sessionProfile) {
     return <PortalAuthChecking />;
+  }
+
+  const legacyTab = searchParams.get("tab");
+  const useLegacySettings = Boolean(legacyTab && isSettingsTabKey(legacyTab));
+  if (sessionProfile.role === "슈퍼관리자" && !useLegacySettings) {
+    return (
+      <LunaAdminApp
+        userInfoLine={formatPortalHeaderUserInfo(sessionProfile)}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (

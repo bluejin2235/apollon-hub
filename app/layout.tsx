@@ -4,6 +4,7 @@ import { Noto_Sans_KR } from "next/font/google";
 import { LunaLearnButton } from "@/components/luna/LunaLearnButton";
 import { APP_TITLE } from "@/lib/portal/app-title";
 import "./globals.css";
+import "@/components/luna-admin/admin.css";
 
 const notoSansKr = Noto_Sans_KR({
   subsets: ["latin"],
