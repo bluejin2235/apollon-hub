@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { getRateForDate, USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
+import { findPrevConfirmedRate, USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
 
 export { USD_KRW_FALLBACK };
 
@@ -59,11 +59,22 @@ export async function fetchLiveUsdKrwRateForUpload(): Promise<number> {
   return USD_KRW_FALLBACK;
 }
 
-/** 결제일 기준 USD→KRW: 전일 이전 가장 최근 확정 환율 (fx_daily_rates) */
-export async function fetchUsdKrwRateForDate(dateIso: string): Promise<number> {
-  const rate = await getRateForDate(supabase, dateIso);
-  if (rate != null) return rate;
-  return USD_KRW_FALLBACK;
+export type PaidAtFxHit = {
+  rate: number;
+  fxDate: string;
+};
+
+/**
+ * 결제일 기준 USD→KRW.
+ * fx_daily_rates 에서 결제일 전일 이전 가장 최근 확정 환율.
+ * 없으면 null (호출측에서 경고 — 1380 을 조용히 쓰지 않음).
+ */
+export async function fetchUsdKrwRateForDate(dateIso: string): Promise<PaidAtFxHit | null> {
+  const date = dateIso.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const hit = await findPrevConfirmedRate(supabase, date);
+  if (!hit) return null;
+  return { rate: hit.usd_krw, fxDate: hit.date };
 }
 
 /** credit_records 의 가장 최근 usd_krw_rate */

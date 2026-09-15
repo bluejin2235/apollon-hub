@@ -2,6 +2,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { normalizePaidAt } from "@/lib/arte/parse-paid-at";
+import { kstIsoDate } from "@/lib/fx/dates";
 
 const client = new Anthropic();
 
@@ -31,6 +33,9 @@ export async function POST(req: NextRequest) {
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     const safeMediaType = allowedTypes.includes(mediaType) ? mediaType : "image/jpeg";
 
+    const todayKst = kstIsoDate();
+    const todayYear = todayKst.slice(0, 4);
+
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 512,
@@ -49,6 +54,7 @@ export async function POST(req: NextRequest) {
             {
               type: "text",
               text: `이 이미지는 AI 서비스 결제 영수증 또는 결제 화면입니다.
+오늘 날짜는 ${todayKst} (Asia/Seoul) 이다. 현재 연도는 ${todayYear}년이다.
 다음 정보를 JSON으로만 응답해줘. 다른 텍스트 없이 JSON만.
 {
   "service_name": "서비스명 (예: Hailuo, Kling, OpenAI, Anthropic)",
@@ -59,6 +65,10 @@ export async function POST(req: NextRequest) {
   "memo": "간단한 메모 (없으면 빈 문자열)"
 }
 금액은 원래 통화 그대로 반환해줘. 달러를 원화로 변환하지 말고 currency 필드로 구분해줘.
+paid_at 규칙:
+- 반드시 YYYY-MM-DD. 월·일만 보이면 연도는 ${todayYear}을 써라.
+- 2자리 연도(24, 25, 26)는 20xx로 변환하되, 그 날짜가 오늘(${todayKst})보다 미래면 연도를 ${todayYear}로 바꿔라.
+- 학습 데이터의 연도(2024, 2025 등)를 임의로 넣지 마라. 영수증에 연도가 없으면 오늘 연도 ${todayYear}만 사용해라.
 확실하지 않은 필드는 빈 문자열로 반환해줘.`
             }
           ]
@@ -68,7 +78,9 @@ export async function POST(req: NextRequest) {
 
     const text = message.content.find((c) => c.type === "text")?.text ?? "{}";
     const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    const parsed = JSON.parse(clean) as { paid_at?: unknown; [key: string]: unknown };
+    const paidRaw = typeof parsed.paid_at === "string" ? parsed.paid_at : "";
+    parsed.paid_at = normalizePaidAt(paidRaw, todayKst).iso;
     return NextResponse.json(parsed);
   } catch (e) {
     console.error("[parse-receipt]", e);

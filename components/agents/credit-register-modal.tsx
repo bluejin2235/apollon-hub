@@ -1,6 +1,12 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
+import {
+  isPaidAtSuspicious,
+  normalizePaidAt,
+  paidAtSuspiciousConfirmMessage
+} from "@/lib/arte/parse-paid-at";
 import { fetchUsdKrwRateForDate, formatKrw } from "@/lib/arte/usd-krw-rate";
+import { kstIsoDate } from "@/lib/fx/dates";
 import { supabase } from "@/lib/supabase/client";
 
 type Props = {
@@ -39,7 +45,7 @@ const emptyForm = (): ParsedInfo => ({
   currency: "KRW",
   amount_krw: "",
   usd_krw_rate: null,
-  paid_at: new Date().toISOString().slice(0, 10),
+  paid_at: kstIsoDate(),
   memo: ""
 });
 
@@ -47,13 +53,17 @@ async function convertAmountToKrw(
   amount: string,
   currency: string,
   paidAt: string
-): Promise<{ amount_krw: string; usd_krw_rate: number | null }> {
+): Promise<{ amount_krw: string; usd_krw_rate: number | null; fxMissing: boolean }> {
   const num = parseFloat(amount.replace(/,/g, "")) || 0;
   if (currency === "USD") {
-    const rate = await fetchUsdKrwRateForDate(paidAt);
-    return { amount_krw: String(Math.round(num * rate)), usd_krw_rate: rate };
+    const iso = paidAt.trim() ? normalizePaidAt(paidAt).iso : kstIsoDate();
+    const hit = await fetchUsdKrwRateForDate(iso);
+    if (!hit) {
+      return { amount_krw: "", usd_krw_rate: null, fxMissing: true };
+    }
+    return { amount_krw: String(Math.round(num * hit.rate)), usd_krw_rate: hit.rate, fxMissing: false };
   }
-  return { amount_krw: String(Math.round(num)), usd_krw_rate: null };
+  return { amount_krw: String(Math.round(num)), usd_krw_rate: null, fxMissing: false };
 }
 
 async function resizeImage(file: File): Promise<File> {
@@ -116,16 +126,23 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   const [form, setForm] = useState<ParsedInfo>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [fxMissing, setFxMissing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const applyConversion = useCallback(async (next: ParsedInfo) => {
     if (!next.amount.trim()) {
+      setFxMissing(false);
       setForm({ ...next, amount_krw: "", usd_krw_rate: null });
       return;
     }
     setConverting(true);
     try {
-      const converted = await convertAmountToKrw(next.amount, next.currency, next.paid_at);
+      const { fxMissing: missing, ...converted } = await convertAmountToKrw(
+        next.amount,
+        next.currency,
+        next.paid_at
+      );
+      setFxMissing(missing);
       setForm({ ...next, ...converted });
     } finally {
       setConverting(false);
@@ -168,7 +185,9 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
             ? "KRW"
             : "KRW";
       const amount = parsed.amount ?? parsed.amount_krw ?? "";
-      const paidAt = parsed.paid_at || form.paid_at;
+      const paidAt = parsed.paid_at?.trim()
+        ? normalizePaidAt(parsed.paid_at).iso
+        : kstIsoDate();
 
       const next: ParsedInfo = {
         ...form,
@@ -183,9 +202,15 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
       };
 
       if (amount) {
-        const converted = await convertAmountToKrw(amount, currency, paidAt);
+        const { fxMissing: missing, ...converted } = await convertAmountToKrw(
+          amount,
+          currency,
+          paidAt
+        );
+        setFxMissing(missing);
         setForm({ ...next, ...converted });
       } else {
+        setFxMissing(false);
         setForm(next);
       }
       setStep("confirm");
@@ -198,15 +223,44 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   };
 
   const handleSave = async () => {
-    if (!form.service_name || !form.amount || !form.paid_at || !form.amount_krw) return;
+    if (!form.service_name || !form.amount) return;
+    if (form.currency === "USD" && fxMissing) return;
 
-    const amountKrw = Number(form.amount_krw.replace(/,/g, ""));
+    const paidAt = form.paid_at.trim() ? normalizePaidAt(form.paid_at).iso : kstIsoDate();
+    const paidAtKind = isPaidAtSuspicious(paidAt);
+    const paidAtConfirm = paidAtSuspiciousConfirmMessage(paidAt, paidAtKind);
+    if (paidAtConfirm) {
+      const confirmedDate = window.confirm(paidAtConfirm);
+      if (!confirmedDate) return;
+    }
+
+    let amountKrwStr = form.amount_krw;
+    let usdKrwRate = form.usd_krw_rate;
+    if (paidAt !== form.paid_at || !amountKrwStr) {
+      const { fxMissing: missing, amount_krw, usd_krw_rate } = await convertAmountToKrw(
+        form.amount,
+        form.currency,
+        paidAt
+      );
+      if (missing) {
+        setFxMissing(true);
+        setForm((p) => ({ ...p, paid_at: paidAt, amount_krw: "", usd_krw_rate: null }));
+        return;
+      }
+      amountKrwStr = amount_krw;
+      usdKrwRate = usd_krw_rate;
+      setFxMissing(false);
+      setForm((p) => ({ ...p, paid_at: paidAt, amount_krw, usd_krw_rate }));
+    }
+    if (!amountKrwStr) return;
+
+    const amountKrw = Number(amountKrwStr.replace(/,/g, ""));
     const { data: duplicates, error: dupError } = await supabase
       .from("credit_records")
       .select("id")
       .eq("service_name", form.service_name)
       .eq("amount_krw", amountKrw)
-      .eq("paid_at", form.paid_at);
+      .eq("paid_at", paidAt);
 
     if (dupError) {
       console.error(dupError);
@@ -216,7 +270,7 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
     if ((duplicates?.length ?? 0) > 0) {
       const amountLabel = amountKrw.toLocaleString("ko-KR", { style: "currency", currency: "KRW" });
       const confirmed = window.confirm(
-        `동일한 등록 내역이 이미 있습니다.\n(서비스: ${form.service_name}, 금액: ${amountLabel}, 날짜: ${form.paid_at})\n그래도 등록하시겠습니까?`
+        `동일한 등록 내역이 이미 있습니다.\n(서비스: ${form.service_name}, 금액: ${amountLabel}, 날짜: ${paidAt})\n그래도 등록하시겠습니까?`
       );
       if (!confirmed) return;
     }
@@ -251,9 +305,9 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
         payment_type: form.payment_type,
         amount_krw: amountKrw,
         amount_usd: amountUsd,
-        usd_krw_rate: form.usd_krw_rate,
+        usd_krw_rate: usdKrwRate,
         currency: form.currency,
-        paid_at: form.paid_at,
+        paid_at: paidAt,
         memo: form.memo || null,
         image_path,
         registered_by: user?.id ?? null
@@ -272,9 +326,9 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
             payment_type: form.payment_type,
             amount_krw: amountKrw,
             amount_usd: amountUsd,
-            usd_krw_rate: form.usd_krw_rate,
+            usd_krw_rate: usdKrwRate,
             currency: form.currency,
-            paid_at: form.paid_at,
+            paid_at: paidAt,
             memo: form.memo || null,
             registered_by_name: registeredByName
           })
@@ -292,6 +346,9 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
   };
 
   const skipToManual = () => setStep("confirm");
+
+  const paidAtPreview = form.paid_at.trim() ? normalizePaidAt(form.paid_at).iso : kstIsoDate();
+  const paidAtSuspicious = form.paid_at.trim() ? isPaidAtSuspicious(paidAtPreview) : null;
 
   const krwPreview =
     form.currency === "USD" && form.amount_krw && form.usd_krw_rate
@@ -436,9 +493,17 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
                     ))}
                   </select>
                 </div>
-                {form.currency === "USD" && (
+                {form.currency === "USD" && converting && (
+                  <p className="mt-1.5 text-xs text-slate-500">환율 계산 중…</p>
+                )}
+                {form.currency === "USD" && !converting && !fxMissing && (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    {converting ? "환율 계산 중…" : krwPreview ?? "금액을 입력하면 원화 환산액이 표시됩니다."}
+                    {krwPreview ?? "금액을 입력하면 원화 환산액이 표시됩니다."}
+                  </p>
+                )}
+                {form.currency === "USD" && fxMissing && !converting && (
+                  <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    결제일에 해당하는 환율을 찾지 못했습니다. 날짜를 확인하거나 잠시 후 다시 시도해 주세요. 1380원으로 임의 환산하지 않습니다.
                   </p>
                 )}
               </div>
@@ -453,6 +518,13 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
                   }}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 />
+                {paidAtSuspicious && (
+                  <p className="mt-1.5 text-xs text-amber-700">
+                    {paidAtSuspicious === "year_mismatch"
+                      ? `결제일이 ${paidAtPreview}로 인식되었습니다. 연도가 맞는지 확인해 주세요.`
+                      : `결제일이 ${paidAtPreview}로 인식되었습니다. 맞는지 확인해 주세요.`}
+                  </p>
+                )}
               </div>
             </div>
             <div>
@@ -472,7 +544,14 @@ export function CreditRegisterModal({ onClose, onSaved }: Props) {
               <button
                 type="button"
                 onClick={() => void handleSave()}
-                disabled={saving || converting || !form.service_name || !form.amount || !form.amount_krw}
+                disabled={
+                  saving ||
+                  converting ||
+                  !form.service_name ||
+                  !form.amount ||
+                  !form.amount_krw ||
+                  (form.currency === "USD" && fxMissing)
+                }
                 className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
               >
                 {saving ? "저장 중…" : "등록 완료"}
