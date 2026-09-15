@@ -9,6 +9,7 @@ import {
 } from "@/lib/luna-admin/links";
 import { countQuestions } from "@/lib/luna-admin/questions";
 import { loadTonightState } from "@/lib/luna-admin/tonight";
+import { listCandidateRuleQuestions } from "@/lib/luna/rules";
 import {
   formatIdleLabel,
   kstCalendarDaysAgo,
@@ -52,7 +53,8 @@ export async function buildAdminDashboard(
     promptActive,
     weekTalk,
     weekUsers,
-    tonight
+    tonight,
+    ruleQuestions
   ] = await Promise.all([
     buildPrimarySources(admin),
     getSelfstudyStatus(admin),
@@ -85,7 +87,8 @@ export async function buildAdminDashboard(
       .select("user_id")
       .gte("updated_at", weekStart)
       .limit(2000),
-    loadTonightState(admin)
+    loadTonightState(admin),
+    listCandidateRuleQuestions(admin)
   ]);
 
   const collectLight = worstLight(primary.work.status, primary.notion.status, primary.image.status);
@@ -203,6 +206,12 @@ export async function buildAdminDashboard(
   return {
     stages,
     alerts,
+    rule_questions: ruleQuestions.map((q) => ({
+      id: q.id,
+      title: q.title,
+      body: q.body,
+      signal_count: q.signal_count
+    })),
     cards: {
       primary: primary.work.count + primary.notion.count + primary.image.count + primary.wiki.count + primary.glossary.count,
       primary_delta_label: `Work ${primary.work.count.toLocaleString("ko-KR")} · 노션 ${primary.notion.count.toLocaleString("ko-KR")}`,

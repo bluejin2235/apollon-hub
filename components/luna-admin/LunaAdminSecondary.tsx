@@ -5,6 +5,10 @@ import { adminFetch } from "@/components/luna-admin/fetch";
 import { SamePairCard } from "@/components/luna-admin/SamePairCard";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
+import {
+  LINK_REJECT_REASON_IDS,
+  LINK_REJECT_REASON_LABELS
+} from "@/lib/luna/signals-shared";
 
 type Chip = "all" | "same" | "belongs" | "follows" | "criteria" | "perspective";
 type SameFilter = "all" | "need" | "confirmed" | "rejected";
@@ -75,6 +79,9 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ text: string; undo: UndoSnap[] } | null>(null);
+  const [rejectIds, setRejectIds] = useState<string[] | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>("");
+  const [rejectNote, setRejectNote] = useState("");
 
   useEffect(() => {
     setChip(initialChip);
@@ -124,7 +131,11 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
     return rows.filter((r) => r.status !== "rejected");
   }, [data, chip, sameFilter]);
 
-  async function review(ids: string[], action: "reject" | "confirm") {
+  async function review(
+    ids: string[],
+    action: "reject" | "confirm",
+    extra?: { reason?: string | null; note?: string | null }
+  ) {
     if (ids.length === 0) return;
     const snaps: UndoSnap[] = (data?.links ?? [])
       .filter((r) => ids.includes(r.id))
@@ -135,15 +146,30 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
       }));
     await adminFetch("/api/luna-admin/links", {
       method: "POST",
-      body: JSON.stringify({ action, ids })
+      body: JSON.stringify({
+        action,
+        ids,
+        reason: extra?.reason ?? null,
+        note: extra?.note ?? null
+      })
     });
     setSelected(new Set());
+    setRejectIds(null);
+    setRejectReason("");
+    setRejectNote("");
     if (action === "reject") {
       setToast({ text: `${ids.length}건을 아니라고 했습니다`, undo: snaps });
     } else {
       setToast(null);
     }
     await load();
+  }
+
+  function askReject(ids: string[]) {
+    if (ids.length === 0) return;
+    setRejectIds(ids);
+    setRejectReason("");
+    setRejectNote("");
   }
 
   async function undo() {
@@ -294,7 +320,7 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
                 <button
                   type="button"
                   className="btn sm"
-                  onClick={() => void review([...selected], "reject")}
+                  onClick={() => askReject([...selected])}
                 >
                   ✕ 아니에요 {selected.size}
                 </button>
@@ -325,7 +351,7 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
                 row={row}
                 checked={selected.has(row.id)}
                 onToggle={() => toggle(row.id)}
-                onReject={() => void review([row.id], "reject")}
+                onReject={() => askReject([row.id])}
                 onConfirm={() => void review([row.id], "confirm")}
               />
             ))
@@ -376,6 +402,58 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
             ))
           )}
         </>
+      ) : null}
+
+      {rejectIds ? (
+        <div className="toast" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+          <div className="t" style={{ fontWeight: 700 }}>
+            왜 아닌가요? (건너뛸 수 있어요)
+          </div>
+          <div className="btns" style={{ flexWrap: "wrap" }}>
+            {LINK_REJECT_REASON_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={`btn sm ${rejectReason === id ? "p" : ""}`}
+                onClick={() => setRejectReason(id)}
+              >
+                {LINK_REJECT_REASON_LABELS[id]}
+              </button>
+            ))}
+          </div>
+          {rejectReason === "other" ? (
+            <input
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value.slice(0, 300))}
+              placeholder="직접 입력"
+              className="search"
+            />
+          ) : null}
+          <div className="btns">
+            <button
+              type="button"
+              className="btn p sm"
+              onClick={() =>
+                void review(rejectIds, "reject", {
+                  reason: rejectReason || null,
+                  note: rejectReason === "other" ? rejectNote : null
+                })
+              }
+            >
+              반영
+            </button>
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => void review(rejectIds, "reject", {})}
+            >
+              건너뛰기
+            </button>
+            <button type="button" className="btn sm" onClick={() => setRejectIds(null)}>
+              취소
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {toast ? (

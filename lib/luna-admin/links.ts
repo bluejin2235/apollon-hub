@@ -2,6 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isMissingTableError } from "@/lib/luna-admin/db";
 import { LINK_ASK_MIN, LINK_AUTO_SAVE } from "@/lib/luna-admin/confidence";
+import { insertLunaSignal } from "@/lib/luna/signals";
+import { isLinkRejectReason } from "@/lib/luna/signals-shared";
 
 export type LunaLinkKind = "same" | "belongs" | "follows";
 export type LunaLinkStatus = "active" | "pending" | "rejected";
@@ -171,6 +173,8 @@ export async function reviewSameLinks(
     action: SameReviewAction;
     ids: string[];
     undo?: Array<{ id: string; status: LunaLinkStatus; source: string }>;
+    reason?: string | null;
+    note?: string | null;
   }
 ): Promise<{ updated: number }> {
   const ids = [...new Set(opts.ids.filter(Boolean))];
@@ -192,15 +196,53 @@ export async function reviewSameLinks(
   }
   if (ids.length === 0) return { updated: 0 };
   const now = new Date().toISOString();
-  const patch =
-    opts.action === "reject"
-      ? { status: "rejected" as const }
-      : {
-          source: "human" as const,
-          status: "active" as const,
-          confirmed_by: userId,
-          confirmed_at: now
-        };
+
+  if (opts.action === "reject") {
+    const { data: before } = await admin
+      .from("luna_links")
+      .select("id, evidence")
+      .eq("kind", "same")
+      .in("id", ids);
+    for (const row of before ?? []) {
+      const ev = {
+        ...((row.evidence as Record<string, unknown>) ?? {})
+      };
+      if (opts.reason && isLinkRejectReason(opts.reason)) {
+        ev.reject_reason = opts.reason;
+      }
+      if (opts.note?.trim()) ev.reject_note = opts.note.trim().slice(0, 300);
+      const { error } = await admin
+        .from("luna_links")
+        .update({ status: "rejected", evidence: ev })
+        .eq("id", row.id);
+      if (error) throw new Error(error.message);
+      void insertLunaSignal(admin, {
+        kind: "negative",
+        source: "link_reject",
+        subject_type: "link",
+        subject_id: row.id as string,
+        reason: opts.reason ?? null,
+        note: opts.note ?? null,
+        context: {
+          from_title: ev.from_title ?? null,
+          to_title: ev.to_title ?? null
+        },
+        user_id: userId
+      }).catch((err) => console.error("[luna-admin/links] signal", err));
+    }
+    await syncQuestionsForSameLinks(admin, userId, {
+      action: "reject",
+      ids
+    });
+    return { updated: ids.length };
+  }
+
+  const patch = {
+    source: "human" as const,
+    status: "active" as const,
+    confirmed_by: userId,
+    confirmed_at: now
+  };
   const { error, count } = await admin
     .from("luna_links")
     .update(patch, { count: "exact" })
@@ -211,6 +253,16 @@ export async function reviewSameLinks(
     action: opts.action,
     ids
   });
+  for (const id of ids) {
+    void insertLunaSignal(admin, {
+      kind: "positive",
+      source: "question_answer",
+      subject_type: "link",
+      subject_id: id,
+      reason: "같아요",
+      user_id: userId
+    }).catch((err) => console.error("[luna-admin/links] signal confirm", err));
+  }
   return { updated: count ?? ids.length };
 }
 

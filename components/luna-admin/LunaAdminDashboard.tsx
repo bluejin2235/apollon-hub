@@ -14,6 +14,7 @@ export function LunaAdminDashboard({ onGo }: Props) {
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
+  const [ruleBusy, setRuleBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,11 +45,64 @@ export function LunaAdminDashboard({ onGo }: Props) {
     }
   }
 
+  async function answerRule(id: string, accept: boolean) {
+    setRuleBusy(id);
+    try {
+      await adminFetch("/api/luna-admin/rules", {
+        method: "POST",
+        body: JSON.stringify({ id, accept })
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "규칙 응답 실패");
+    } finally {
+      setRuleBusy(null);
+    }
+  }
+
   if (error && !data) return <p className="empty">{error}</p>;
   if (!data) return <p className="empty">불러오는 중…</p>;
 
+  const ruleQuestions = data.rule_questions ?? [];
+
   return (
     <>
+      {ruleQuestions.length > 0 ? (
+        <div className="alert" style={{ background: "#EEEDFE", borderLeftColor: "#534AB7" }}>
+          <div className="c">
+            <div className="t">
+              🌙 루나가 규칙을 물어봅니다 · {ruleQuestions.length}건
+            </div>
+            <div className="d">{ruleQuestions[0]!.body}</div>
+            <div className="btns" style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="btn p"
+                disabled={ruleBusy === ruleQuestions[0]!.id}
+                onClick={() => void answerRule(ruleQuestions[0]!.id, true)}
+              >
+                맞아요
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={ruleBusy === ruleQuestions[0]!.id}
+                onClick={() => void answerRule(ruleQuestions[0]!.id, false)}
+              >
+                아니요
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => onGo(buildLunaAdminUrl("selfstudy", "learned"))}
+              >
+                자세히
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {data.alerts.map((alert) => (
         <div key={alert.title} className="alert">
           <div className="c">

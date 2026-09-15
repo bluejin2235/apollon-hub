@@ -3,8 +3,7 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import {
   clipFeedbackNote,
-  FEEDBACK_REASON_LABELS,
-  isFeedbackReason
+  feedbackReasonLabel
 } from "@/lib/luna/feedback";
 
 export const runtime = "nodejs";
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
         content: typeof row.content === "string" ? row.content : "",
         created_at: typeof row.created_at === "string" ? row.created_at : at,
         at,
-        reason: isFeedbackReason(reasonRaw) ? reasonRaw : null,
+        reason: typeof reasonRaw === "string" ? reasonRaw : null,
         note: clipFeedbackNote(meta.feedback_note)
       };
     })
@@ -159,7 +158,7 @@ export async function GET(request: NextRequest) {
       question: preview(asked, 120),
       answer: preview(row.content, 120),
       reason: row.reason,
-      reason_label: row.reason ? FEEDBACK_REASON_LABELS[row.reason] : null,
+      reason_label: feedbackReasonLabel(row.reason),
       note: row.note
     };
   });

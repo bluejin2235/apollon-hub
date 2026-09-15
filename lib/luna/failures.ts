@@ -18,6 +18,8 @@ import {
   failureCauseMeta,
   type FailureCauseType
 } from "@/lib/luna/failure-cause";
+import { insertLunaSignal } from "@/lib/luna/signals";
+import type { InsertLunaSignalInput } from "@/lib/luna/signals-shared";
 
 export type { FailureKind, FailureKindFilter, FailureSignal };
 export type { FailureCauseType } from "@/lib/luna/failure-cause";
@@ -369,6 +371,13 @@ export async function recordLunaFailure(
           console.error("[luna/failures] merge delete dupes", delErr);
         }
       }
+      void mirrorFailureSignal(admin, {
+        failureId: keeper.id,
+        messageId: input.messageId ?? null,
+        askedBy: input.askedBy ?? null,
+        signals: mergedSignals,
+        question
+      });
       return keeper.id;
     }
   }
@@ -394,7 +403,51 @@ export async function recordLunaFailure(
     if (!isMissingTable(error)) console.error("[luna/failures] insert", error);
     return null;
   }
-  return (data?.id as string) ?? null;
+  const newId = (data?.id as string) ?? null;
+  if (newId) {
+    void mirrorFailureSignal(admin, {
+      failureId: newId,
+      messageId: input.messageId ?? null,
+      askedBy: input.askedBy ?? null,
+      signals: incomingSignals,
+      question
+    });
+  }
+  return newId;
+}
+
+function mirrorFailureSignal(
+  admin: SupabaseClient,
+  opts: {
+    failureId: string;
+    messageId: string | null;
+    askedBy: string | null;
+    signals: FailureSignal[];
+    question: string;
+  }
+) {
+  if (opts.signals.includes("thumbs_down")) return;
+  let source: InsertLunaSignalInput["source"] = "followup";
+  let kind: InsertLunaSignalInput["kind"] = "negative";
+  if (opts.signals.includes("correction")) {
+    source = "chat_correction";
+    kind = "correction";
+  } else if (
+    opts.signals.includes("zero_search") ||
+    opts.signals.includes("not_found")
+  ) {
+    source = "search_zero";
+  }
+  void insertLunaSignal(admin, {
+    kind,
+    source,
+    subject_type: opts.messageId ? "answer" : "failure",
+    subject_id: opts.messageId || opts.failureId,
+    reason: opts.signals[0] ?? null,
+    note: opts.question.slice(0, 200) || null,
+    context: { failure_id: opts.failureId, signals: opts.signals },
+    user_id: opts.askedBy
+  }).catch((err) => console.error("[luna/failures] signal", err));
 }
 
 export async function recordAutoFailuresFromAnswer(

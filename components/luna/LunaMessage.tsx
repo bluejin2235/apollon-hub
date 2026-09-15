@@ -1593,7 +1593,7 @@ export function LunaMessage({
               ) : (
                 <div className="mt-1.5">
                   <p className="mb-1 text-[10.5px] text-[#9aa0a8]">
-                    무엇이 아쉬웠나요?
+                    무엇이 아쉬웠나요? (건너뛸 수 있어요)
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {FEEDBACK_REASON_IDS.map((rid) => (
@@ -1621,7 +1621,21 @@ export function LunaMessage({
                     className="mt-1.5 w-full resize-none rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[12px] leading-[1.45] text-[#33363c] outline-none placeholder:text-[#9aa0a8] focus:border-[#c4bff0]"
                     rows={2}
                   />
-                  <div className="mt-1 flex items-center justify-end">
+                  <div className="mt-1 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void sendFeedback("bad", {
+                          reason: null,
+                          note: "",
+                          collapse: true
+                        })
+                      }
+                      className="rounded-md px-2.5 py-1 text-[11px] font-medium text-[#6b6f76] hover:bg-[#f3f4f6] disabled:opacity-60"
+                    >
+                      건너뛰기
+                    </button>
                     <button
                       type="button"
                       disabled={busy}

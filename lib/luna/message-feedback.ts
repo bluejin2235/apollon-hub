@@ -7,6 +7,7 @@ import {
   type FeedbackReason
 } from "@/lib/luna/feedback";
 import { recordLunaFailure } from "@/lib/luna/failures";
+import { insertLunaSignal } from "@/lib/luna/signals";
 
 export type MessageFeedbackValue = "good" | "bad" | null;
 
@@ -148,6 +149,38 @@ export async function saveLunaMessageFeedback(
         feedback_note: savedMeta.feedback_note ?? null
       }
     }).catch((err) => console.error("[luna/messages] failure thumbs_down", err));
+
+    void insertLunaSignal(admin, {
+      kind: "negative",
+      source: "thumbs",
+      subject_type: "answer",
+      subject_id: messageId,
+      reason:
+        typeof savedMeta.feedback_reason === "string"
+          ? savedMeta.feedback_reason
+          : null,
+      note:
+        typeof savedMeta.feedback_note === "string"
+          ? savedMeta.feedback_note
+          : null,
+      context: {
+        conversation_id: message.conversation_id,
+        question:
+          typeof priorUser?.content === "string" ? priorUser.content.slice(0, 200) : null
+      },
+      user_id: user.id
+    }).catch((err) => console.error("[luna/messages] signal thumbs", err));
+  }
+
+  if (savedFeedback === "good") {
+    void insertLunaSignal(admin, {
+      kind: "positive",
+      source: "thumbs",
+      subject_type: "answer",
+      subject_id: messageId,
+      context: { conversation_id: message.conversation_id },
+      user_id: user.id
+    }).catch((err) => console.error("[luna/messages] signal thumbs up", err));
   }
 
   return {

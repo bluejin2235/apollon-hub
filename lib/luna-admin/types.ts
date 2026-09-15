@@ -46,6 +46,12 @@ export type SentRow = {
 export type AdminDashboard = {
   stages: StageView[];
   alerts: AdminAlert[];
+  rule_questions: Array<{
+    id: string;
+    title: string;
+    body: string;
+    signal_count: number;
+  }>;
   cards: {
     primary: number;
     primary_delta_label: string;

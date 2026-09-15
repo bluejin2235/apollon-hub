@@ -53,6 +53,8 @@ export async function POST(request: NextRequest) {
     action?: "reject" | "confirm" | "undo";
     ids?: string[];
     undo?: Array<{ id: string; status: "active" | "pending" | "rejected"; source: string }>;
+    reason?: string | null;
+    note?: string | null;
   } = {};
   try {
     body = (await request.json()) as typeof body;
@@ -66,7 +68,9 @@ export async function POST(request: NextRequest) {
     const result = await reviewSameLinks(gate.admin, gate.user.id, {
       action: body.action,
       ids: body.ids ?? [],
-      undo: body.undo
+      undo: body.undo,
+      reason: body.reason,
+      note: body.note
     });
     return NextResponse.json(result);
   } catch (err) {
