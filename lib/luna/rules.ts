@@ -3,6 +3,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   autoVerdictForSamePair,
   BUILTIN_LINK_RULES,
+  classifyClientOrProject,
+  humanRuleFromRejectReason,
+  isDocTypeStopwordCandidate,
+  isGarbageRuleCandidate,
+  isSeasonMarker,
+  overlappingTokens,
+  projectNameTokens,
+  rejectReasonKey,
   ruleQuestionText,
   type LunaRuleRow,
   type LunaRuleStatus
@@ -184,87 +192,293 @@ export async function rejudgeNeedWithBuiltinRules(
 
 export async function mineRuleCandidatesFromSignals(
   admin: SupabaseClient
-): Promise<{ reason_rules: number; stopwords: number }> {
-  const { data, error } = await admin
-    .from("luna_signals")
-    .select("id, reason, note, context, source")
-    .eq("kind", "negative")
-    .order("created_at", { ascending: false })
-    .limit(2000);
-  if (error) {
-    if (!isMissingTable(error)) console.error("[luna/rules] mine", error);
-    return { reason_rules: 0, stopwords: 0 };
+): Promise<{ reason_rules: number; stopwords: number; dropped: number }> {
+  const proper = await collectProperStopwordsAndRules(admin);
+  const mined = await upsertProperCandidates(admin, proper);
+  const dropped = await dropNonProperCandidates(admin, proper);
+  return { ...mined, dropped };
+}
+
+/** 올바른 후보만 candidate 로 유지하고 나머지는 dropped */
+async function dropNonProperCandidates(
+  admin: SupabaseClient,
+  proper: ProperSets
+): Promise<number> {
+  const rows = await listRules(admin, { status: "candidate" });
+  let n = 0;
+  for (const row of rows) {
+    const shouldKeep =
+      (row.pattern_type === "stopword" &&
+        proper.stopwords.has(row.pattern_value)) ||
+      (row.pattern_type === "rule" &&
+        (proper.rules.has(row.pattern_value) ||
+          proper.rules.has(row.pattern_value.replace(/^reason:/, ""))));
+    if (shouldKeep && !isGarbageRuleCandidate(row)) continue;
+    const { error } = await admin
+      .from("luna_rules")
+      .update({
+        status: "dropped",
+        evidence: {
+          ...row.evidence,
+          dropped_reason: "refine_2026_rule_candidates",
+          dropped_at: new Date().toISOString()
+        }
+      })
+      .eq("id", row.id)
+      .eq("status", "candidate");
+    if (!error) n += 1;
+  }
+  return n;
+}
+
+/** 올바른 후보 집합에 없는 candidate 는 dropped 로. */
+export async function dropGarbageRuleCandidates(
+  admin: SupabaseClient
+): Promise<number> {
+  const proper = await collectProperStopwordsAndRules(admin);
+  return dropNonProperCandidates(admin, proper);
+}
+
+type ProperSets = {
+  stopwords: Map<string, { count: number; evidence: Record<string, unknown> }>;
+  rules: Map<string, { count: number; evidence: Record<string, unknown> }>;
+};
+
+async function collectProperStopwordsAndRules(
+  admin: SupabaseClient
+): Promise<ProperSets> {
+  const stopwords = new Map<
+    string,
+    { count: number; evidence: Record<string, unknown> }
+  >();
+  const rules = new Map<
+    string,
+    { count: number; evidence: Record<string, unknown> }
+  >();
+
+  const rejected = await loadRejectedSamePairs(admin);
+  const projectNames = await loadProjectNameSet(admin);
+  const glossary = await loadGlossaryNameSet(admin);
+
+  // ① 불용어: rejected 쌍의 겹친 토큰만 (대화 문장에서 뽑지 않음)
+  const wordPairs = new Map<
+    string,
+    Array<{ left: string; right: string; id: string }>
+  >();
+  for (const row of rejected) {
+    const overlap = overlappingTokens(row.left, row.right);
+    for (const w of overlap) {
+      const list = wordPairs.get(w) ?? [];
+      list.push({ left: row.left, right: row.right, id: row.id });
+      wordPairs.set(w, list);
+    }
   }
 
-  const byReason = new Map<string, string[]>();
-  const wordHits = new Map<string, string[]>();
-
-  for (const row of data ?? []) {
-    const id = row.id as string;
-    const reason = typeof row.reason === "string" ? row.reason.trim() : "";
-    if (reason && reason !== "other") {
-      const list = byReason.get(reason) ?? [];
-      list.push(id);
-      byReason.set(reason, list);
-    }
-    const ctx = (row.context ?? {}) as Record<string, unknown>;
-    const blob = [
-      typeof ctx.from_title === "string" ? ctx.from_title : "",
-      typeof ctx.to_title === "string" ? ctx.to_title : "",
-      typeof row.note === "string" ? row.note : ""
-    ]
-      .join(" ")
-      .toLowerCase();
-    const words = blob.match(/[가-힣]{2,12}/g) ?? [];
-    const uniq = [...new Set(words)];
-    for (const w of uniq) {
-      if (w.length < 3) continue;
-      const list = wordHits.get(w) ?? [];
-      if (list.length < 20) list.push(id);
-      wordHits.set(w, list);
-    }
-  }
-
-  let reasonRules = 0;
-  for (const [reason, ids] of byReason) {
-    if (ids.length < 3) continue;
-    const patternValue = `reason:${reason}`;
-    const upserted = await upsertCandidateRule(admin, {
-      scope: "link",
-      pattern_type: "rule",
-      pattern_value: patternValue,
-      signal_count: ids.length,
+  for (const [word, pairs] of wordPairs) {
+    if (pairs.length < 3) continue;
+    if (isSeasonMarker(word)) continue;
+    // glossary 고유명사는 절대 불용어 후보가 아님
+    if (glossary.has(word)) continue;
+    const kind = classifyClientOrProject(
+      word,
+      pairs.map((p) => ({ left: p.left, right: p.right }))
+    );
+    // 한 계열 프로젝트명 → 불용어 아님
+    if (kind === "project") continue;
+    // 전역으로도 프로젝트명으로 보이는 앞말 (발주처 분류가 아닐 때)
+    if (kind !== "client" && projectNames.has(word)) continue;
+    // 문서유형(unknown)은 알려진 유형어만
+    if (kind === "unknown" && !isDocTypeStopwordCandidate(word)) continue;
+    stopwords.set(word, {
+      count: pairs.length,
       evidence: {
-        reason,
-        signal_ids: ids.slice(0, 12),
-        sample: ruleQuestionText({
-          pattern_type: "rule",
-          pattern_value: patternValue,
-          signal_count: ids.length,
-          evidence: { sample: `같은 이유「${reason}」가 ${ids.length}건` }
-        })
+        sample: `「${word}」이 겹쳐 잘못 연결된 것이 ${pairs.length}건 있었습니다.`,
+        link_ids: pairs.slice(0, 12).map((p) => p.id),
+        examples: pairs.slice(0, 3).map((p) => `${p.left} ✕ ${p.right}`),
+        classify: kind
       }
     });
-    if (upserted) reasonRules += 1;
   }
 
-  let stopwords = 0;
-  for (const [word, ids] of wordHits) {
+  // ③ rule: rejected_reason 이 같은 것 3건+
+  const byReason = new Map<string, string[]>();
+  for (const row of rejected) {
+    const reason = rejectReasonKey(row.evidence);
+    if (!reason) continue;
+    if (!humanRuleFromRejectReason(reason)) continue;
+    const list = byReason.get(reason) ?? [];
+    list.push(row.id);
+    byReason.set(reason, list);
+  }
+  for (const [reason, ids] of byReason) {
     if (ids.length < 3) continue;
-    const upserted = await upsertCandidateRule(admin, {
+    // builtin active 와 같은 값이면 후보로 올리지 않음 (이미 활성)
+    if (
+      reason === "same_client_diff_target" ||
+      reason === "same_date_done_marker"
+    ) {
+      continue;
+    }
+    const text = humanRuleFromRejectReason(reason)!;
+    rules.set(reason, {
+      count: ids.length,
+      evidence: {
+        reason,
+        sample: `${text} (${ids.length}건에서 같은 이유로 기각됐습니다. 규칙으로 쓸까요?)`,
+        link_ids: ids.slice(0, 12)
+      }
+    });
+  }
+
+  return { stopwords, rules };
+}
+
+async function upsertProperCandidates(
+  admin: SupabaseClient,
+  proper: ProperSets
+): Promise<{ reason_rules: number; stopwords: number }> {
+  let reasonRules = 0;
+  let stopwords = 0;
+
+  for (const [word, info] of proper.stopwords) {
+    const ok = await upsertCandidateRule(admin, {
       scope: "link",
       pattern_type: "stopword",
       pattern_value: word,
-      signal_count: ids.length,
-      evidence: {
-        signal_ids: ids.slice(0, 12),
-        sample: `「${word}」이 겹쳐 잘못 연결된 것이 ${ids.length}건 있었습니다.`
-      }
+      signal_count: info.count,
+      evidence: info.evidence
     });
-    if (upserted) stopwords += 1;
+    if (ok) stopwords += 1;
+  }
+
+  for (const [reason, info] of proper.rules) {
+    const ok = await upsertCandidateRule(admin, {
+      scope: "link",
+      pattern_type: "rule",
+      pattern_value: reason,
+      signal_count: info.count,
+      evidence: info.evidence
+    });
+    if (ok) reasonRules += 1;
   }
 
   return { reason_rules: reasonRules, stopwords };
+}
+
+type RejectedPair = {
+  id: string;
+  left: string;
+  right: string;
+  evidence: Record<string, unknown>;
+};
+
+async function loadRejectedSamePairs(
+  admin: SupabaseClient
+): Promise<RejectedPair[]> {
+  const rows: RejectedPair[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await admin
+      .from("luna_links")
+      .select("id, evidence, from_id, to_id")
+      .eq("kind", "same")
+      .eq("status", "rejected")
+      .order("id")
+      .range(from, from + 499);
+    if (error) {
+      if (!isMissingTable(error)) console.error("[luna/rules] rejected", error);
+      break;
+    }
+    const part = data ?? [];
+    for (const row of part) {
+      const left = evidenceTitle(row as never, "from");
+      const right = evidenceTitle(row as never, "to");
+      rows.push({
+        id: row.id as string,
+        left,
+        right,
+        evidence: (row.evidence as Record<string, unknown>) ?? {}
+      });
+    }
+    if (part.length < 500) break;
+    from += 500;
+  }
+  return rows;
+}
+
+/**
+ * 프로젝트 고유명사 집합.
+ * - glossary 는 별도 로드
+ * - 전역으로 「앞말 + 의미 있는 뒷말이 거의 하나」인 토큰만 프로젝트명
+ *   (문서유형만 다른 시리즈명 포함)
+ */
+async function loadProjectNameSet(admin: SupabaseClient): Promise<Set<string>> {
+  const prefixTails = new Map<string, Set<string>>();
+  let from = 0;
+  for (;;) {
+    const { data, error } = await admin
+      .from("luna_links")
+      .select("evidence")
+      .eq("kind", "same")
+      .order("id")
+      .range(from, from + 499);
+    if (error) {
+      if (!isMissingTable(error)) console.error("[luna/rules] projects", error);
+      break;
+    }
+    const part = data ?? [];
+    for (const row of part) {
+      for (const side of ["from", "to"] as const) {
+        const title = evidenceTitle(row as never, side);
+        const tokens = projectNameTokens(title);
+        if (tokens.length === 0) continue;
+        const head = tokens[0]!;
+        // 문서유형을 뺀 뒷말 — 없으면 시리즈 단독
+        const rest = tokens.slice(1).filter((t) => {
+          const noise = [
+            "콘텐츠",
+            "컨텐츠",
+            "제안서",
+            "프로젝트",
+            "리뉴얼",
+            "제작",
+            "구축",
+            "최종",
+            "tj",
+            "eb",
+            "bl"
+          ];
+          return !noise.includes(t);
+        });
+        const tail = rest.join(" ") || "(series)";
+        const set = prefixTails.get(head) ?? new Set<string>();
+        set.add(tail);
+        prefixTails.set(head, set);
+      }
+    }
+    if (part.length < 500) break;
+    from += 500;
+  }
+
+  const out = new Set<string>();
+  for (const [head, tails] of prefixTails) {
+    // 의미 있는 뒷말 종류 ≤1 → 프로젝트/시리즈명
+    if (tails.size <= 1) out.add(head);
+  }
+  return out;
+}
+
+async function loadGlossaryNameSet(admin: SupabaseClient): Promise<Set<string>> {
+  const set = new Set<string>();
+  const { data } = await admin
+    .from("glossary_terms")
+    .select("term_ko")
+    .limit(2000);
+  for (const row of data ?? []) {
+    const t = typeof row.term_ko === "string" ? row.term_ko.trim().toLowerCase() : "";
+    if (t.length >= 2) set.add(t);
+  }
+  return set;
 }
 
 async function upsertCandidateRule(
@@ -285,12 +499,16 @@ async function upsertCandidateRule(
     .eq("pattern_value", row.pattern_value)
     .maybeSingle();
   if (existing?.id) {
-    if (existing.status === "dropped" || existing.status === "active") return false;
+    if (existing.status === "active") return false;
+    // dropped 였어도 정제 기준에 맞으면 candidate 로 다시 연다
     await admin
       .from("luna_rules")
       .update({
-        signal_count: Math.max(existing.signal_count ?? 0, row.signal_count),
-        evidence: row.evidence
+        status: "candidate",
+        signal_count: row.signal_count,
+        evidence: row.evidence,
+        confirmed_at: null,
+        confirmed_by: null
       })
       .eq("id", existing.id);
     return true;
