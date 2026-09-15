@@ -128,8 +128,66 @@ async function main() {
   check("같은 것 칩에 건수", /같은 것\s*[1-9]/.test(secondary), failed);
   check("속한 것 칩에 건수", /속한 것\s*[1-9]/.test(secondary), failed);
   check("이어진 것 칩에 건수", /이어진 것\s*[1-9]/.test(secondary), failed);
-  check("사람 확인 또는 자동 태그", /사람 확인|자동/.test(secondary), failed);
+  check("근거 한 줄", /이름 유사도|LLM 판정|블루진 확인|확인함/.test(secondary), failed);
   await page.screenshot({ path: resolve(OUT, "01-secondary.png"), fullPage: true });
+
+  await page.getByRole("button", { name: /같은 것/ }).click();
+  await page.waitForTimeout(2000);
+  const sameText = await page.locator("body").innerText();
+  check("확인 필요 칩", /확인 필요\s+\d+/.test(sameText), failed);
+  check("확인함 칩", /확인함\s+\d+/.test(sameText), failed);
+  check("아니라고 한 것 칩", /아니라고 한 것\s+\d+/.test(sameText), failed);
+  check("아니에요 버튼", (await page.getByRole("button", { name: "✕ 아니에요" }).count()) > 0, failed);
+  check("맞아요 버튼", (await page.getByRole("button", { name: "✓ 맞아요" }).count()) > 0, failed);
+
+  const apiRes = await page.request.get(`${HUB_URL}/api/luna-admin/links?kind=same`);
+  const payload = (await apiRes.json()) as {
+    links: Array<{
+      kind: string;
+      source: string;
+      status: string;
+      confidence: number;
+      evidence?: { similarity?: number };
+    }>;
+  };
+  const need = payload.links.filter(
+    (l) => l.kind === "same" && l.source !== "human" && l.status !== "rejected"
+  );
+  const simOf = (l: (typeof need)[0]) =>
+    typeof l.evidence?.similarity === "number" ? l.evidence.similarity : 1;
+  let orderOk = true;
+  for (let i = 1; i < need.length; i += 1) {
+    const prev = need[i - 1]!;
+    const cur = need[i]!;
+    if (prev.confidence < cur.confidence - 1e-6) continue;
+    if (cur.confidence < prev.confidence - 1e-6) {
+      orderOk = false;
+      break;
+    }
+    if (simOf(prev) - simOf(cur) > 1e-6) {
+      orderOk = false;
+      break;
+    }
+  }
+  check(
+    `정렬 확신도 낮은 순 (${need.length}건 ${need[0]?.confidence}→${need.at(-1)?.confidence})`,
+    orderOk && need.length > 1,
+    failed
+  );
+
+  const pairCount = await page.locator(".luna-admin .pair").count();
+  const firstTitle = (await page.locator(".luna-admin .pair .side .t").first().textContent()) ?? "";
+  await page.locator(".luna-admin .pair").first().getByRole("button", { name: "✕ 아니에요" }).click();
+  await page.waitForTimeout(1500);
+  const afterCount = await page.locator(".luna-admin .pair").count();
+  const afterReject = await page.locator("body").innerText();
+  check("✕ 후 목록에서 사라짐", Boolean(firstTitle) && afterCount === pairCount - 1, failed);
+  check("되돌리기 토스트", afterReject.includes("되돌리기"), failed);
+  await page.getByRole("button", { name: "되돌리기" }).click();
+  await page.waitForTimeout(1500);
+  const afterUndoCount = await page.locator(".luna-admin .pair").count();
+  check("되돌리기 후 복구", afterUndoCount === pairCount, failed);
+  await page.screenshot({ path: resolve(OUT, "01b-same-review.png"), fullPage: true });
 
   await page.getByRole("button", { name: /속한 것/ }).click();
   await page.waitForTimeout(1200);

@@ -75,10 +75,53 @@ export function normalizeName(name: string): string {
     .trim();
 }
 
-/** pg_trgm 과 같은 3-gram Dice */
+/** 「같은 것」 이름에서 빼는 흔한 말. 긴 것부터. */
+export const SAME_STOPWORDS = [
+  "미디어아키텍처",
+  "미디어아키텍쳐",
+  "컨셉디자인",
+  "수행계획서",
+  "미디어파사드",
+  "미디어아트",
+  "제안서",
+  "콘텐츠",
+  "컨텐츠",
+  "프로젝트",
+  "리뉴얼",
+  "제작",
+  "구축",
+  "최종",
+  "1차",
+  "2차",
+  "3차",
+  "tj완료",
+  "bl완료",
+  "eb완료",
+  "보안"
+].sort((a, b) => b.length - a.length);
+
+export function coreForSame(name: string): string {
+  let s = normalizeName(name);
+  for (const w of SAME_STOPWORDS) {
+    const needle = w.toLowerCase();
+    while (s.includes(needle)) s = s.split(needle).join(" ");
+  }
+  return s.replace(/\s+/g, " ").trim();
+}
+
+export function sameCoreCharCount(core: string): number {
+  return core.replace(/\s+/g, "").length;
+}
+
+export function sameCoreTooThin(core: string): boolean {
+  return sameCoreCharCount(core) < 3;
+}
+
+/** pg_trgm 과 같은 3-gram Dice. 불용어를 뺀 뒤 계산한다. */
 export function trigramSimilarity(a: string, b: string): number {
-  const left = normalizeName(a);
-  const right = normalizeName(b);
+  const left = coreForSame(a);
+  const right = coreForSame(b);
+  if (sameCoreTooThin(left) || sameCoreTooThin(right)) return 0;
   if (!left || !right) return 0;
   if (left === right) return 1;
   const grams = (s: string) => {
@@ -94,6 +137,30 @@ export function trigramSimilarity(a: string, b: string): number {
   let inter = 0;
   for (const g of ga) if (gb.has(g)) inter += 1;
   return (2 * inter) / (ga.size + gb.size);
+}
+
+export function sameReasonLine(row: {
+  source: string;
+  evidence?: Record<string, unknown> | null;
+  from_id?: string;
+  to_id?: string;
+}): string {
+  if (row.source === "human") return "블루진 확인";
+  const ev = row.evidence ?? {};
+  if (ev.note === "블루진 확인" || ev.note === "Work=노션 동일") return "블루진 확인";
+  if (row.source === "llm") return "LLM 판정";
+  const simRaw = ev.similarity;
+  const sim =
+    typeof simRaw === "number" && Number.isFinite(simRaw)
+      ? simRaw
+      : trigramSimilarity(
+          String(ev.from_title ?? row.from_id ?? ""),
+          String(ev.to_title ?? row.to_id ?? "")
+        );
+  const sameDate = ev.same_date === true;
+  const simTxt = `이름 유사도 ${sim.toFixed(2)}`;
+  if (sameDate) return simTxt;
+  return `${simTxt} · 날짜코드 다름`;
 }
 
 export function inspireSeason(name: string): number | null {

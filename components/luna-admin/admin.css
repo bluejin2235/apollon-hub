@@ -327,6 +327,55 @@
 .luna-admin .bar i.g { background: var(--g); }
 
 .luna-admin .pair { display: flex; gap: 9px; align-items: stretch; margin: 7px 0; }
+.luna-admin .pair.dim { opacity: 0.72; }
+.luna-admin .pairchk {
+  display: grid;
+  place-items: start center;
+  padding-top: 14px;
+  width: 18px;
+  flex: 0 0 18px;
+}
+.luna-admin .rev {
+  flex: 0 0 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+.luna-admin .rev .why {
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+.luna-admin .rev .btns { margin-top: 0; }
+.luna-admin .chkall {
+  font-size: 11px;
+  color: var(--sub);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+.luna-admin .bulk { display: inline-flex; gap: 5px; }
+.luna-admin .chips.subchips { padding-top: 0; margin-top: -4px; }
+.luna-admin .toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  background: #1c1d21;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 12px 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.luna-admin .toast .btn { background: #fff; }
 .luna-admin .pair .side {
   flex: 1;
   border: 1px solid var(--line);

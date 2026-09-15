@@ -35,38 +35,134 @@ export type LunaPerspectiveRow = {
   last_used_at: string | null;
 };
 
+function sameSim(row: LunaLinkRow): number {
+  const v = row.evidence?.similarity;
+  return typeof v === "number" && Number.isFinite(v) ? v : 1;
+}
+
+export function sortSameLinks(rows: LunaLinkRow[]): LunaLinkRow[] {
+  return [...rows].sort((a, b) => {
+    const c = a.confidence - b.confidence;
+    if (Math.abs(c) > 1e-6) return c;
+    return sameSim(a) - sameSim(b);
+  });
+}
+
 async function fetchKind(
   admin: SupabaseClient,
   kind: LunaLinkKind,
-  opts?: { role?: string; limit?: number }
+  opts?: { role?: string; limit?: number; includeRejected?: boolean }
 ): Promise<LunaLinkRow[]> {
   let q = admin
     .from("luna_links")
     .select("*")
     .eq("kind", kind)
-    .order("created_at", { ascending: false })
+    .order("confidence", { ascending: true })
     .limit(opts?.limit ?? 200);
   if (opts?.role) q = q.filter("evidence->>role", "eq", opts.role);
+  if (!opts?.includeRejected) q = q.neq("status", "rejected");
   const { data, error } = await q;
   if (error) {
     if (!isMissingTableError(error)) console.error("[luna-admin/links]", error);
     return [];
   }
-  return (data ?? []) as LunaLinkRow[];
+  const rows = (data ?? []) as LunaLinkRow[];
+  return kind === "same" ? sortSameLinks(rows) : rows;
 }
 
 export async function listLinks(
   admin: SupabaseClient,
-  kind?: LunaLinkKind | null
+  kind?: LunaLinkKind | null,
+  opts?: { includeRejected?: boolean }
 ): Promise<LunaLinkRow[]> {
   if (kind === "belongs") return fetchKind(admin, "belongs", { role: "bundle", limit: 200 });
-  if (kind === "same" || kind === "follows") return fetchKind(admin, kind, { limit: 200 });
+  if (kind === "same") {
+    return fetchKind(admin, "same", {
+      limit: 500,
+      includeRejected: opts?.includeRejected !== false
+    });
+  }
+  if (kind === "follows") return fetchKind(admin, "follows", { limit: 200 });
   const [same, belongs, follows] = await Promise.all([
     fetchKind(admin, "same", { limit: 80 }),
     fetchKind(admin, "belongs", { role: "bundle", limit: 80 }),
     fetchKind(admin, "follows", { limit: 80 })
   ]);
-  return [...same, ...belongs, ...follows];
+  return [...sortSameLinks(same), ...belongs, ...follows];
+}
+
+export async function sameReviewCounts(admin: SupabaseClient) {
+  const [all, need, confirmed, rejected] = await Promise.all([
+    countSame(admin, { notRejected: true }),
+    countSame(admin, { need: true }),
+    countSame(admin, { human: true }),
+    countSame(admin, { rejected: true })
+  ]);
+  return { all, need, confirmed, rejected };
+}
+
+async function countSame(
+  admin: SupabaseClient,
+  filter: { notRejected?: boolean; need?: boolean; human?: boolean; rejected?: boolean }
+): Promise<number> {
+  let q = admin
+    .from("luna_links")
+    .select("id", { count: "exact", head: true })
+    .eq("kind", "same");
+  if (filter.rejected) q = q.eq("status", "rejected");
+  if (filter.notRejected) q = q.neq("status", "rejected");
+  if (filter.human) q = q.eq("source", "human");
+  if (filter.need) q = q.neq("source", "human").neq("status", "rejected");
+  const { count, error } = await q;
+  if (error) {
+    if (!isMissingTableError(error)) console.error("[luna-admin/links] same", error);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+export type SameReviewAction = "reject" | "confirm" | "undo";
+
+export async function reviewSameLinks(
+  admin: SupabaseClient,
+  userId: string,
+  opts: {
+    action: SameReviewAction;
+    ids: string[];
+    undo?: Array<{ id: string; status: LunaLinkStatus; source: string }>;
+  }
+): Promise<{ updated: number }> {
+  const ids = [...new Set(opts.ids.filter(Boolean))];
+  if (opts.action === "undo") {
+    const rows = opts.undo ?? [];
+    for (const row of rows) {
+      const { error } = await admin
+        .from("luna_links")
+        .update({ status: row.status, source: row.source })
+        .eq("id", row.id)
+        .eq("kind", "same");
+      if (error) throw new Error(error.message);
+    }
+    return { updated: rows.length };
+  }
+  if (ids.length === 0) return { updated: 0 };
+  const now = new Date().toISOString();
+  const patch =
+    opts.action === "reject"
+      ? { status: "rejected" as const }
+      : {
+          source: "human" as const,
+          status: "active" as const,
+          confirmed_by: userId,
+          confirmed_at: now
+        };
+  const { error, count } = await admin
+    .from("luna_links")
+    .update(patch, { count: "exact" })
+    .eq("kind", "same")
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+  return { updated: count ?? ids.length };
 }
 
 export async function countLinks(
