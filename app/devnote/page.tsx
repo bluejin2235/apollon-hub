@@ -1,10 +1,10 @@
+import { Suspense } from "react";
+import { DevnoteOverviewScreen } from "@/components/devnote/devnote-overview-screen";
+
 export default function DevnoteOverviewPage() {
   return (
-    <div>
-      <p className="mb-2.5 text-xs text-[#858C9A]">개발노트</p>
-      <h1 className="text-[26px] font-bold tracking-tight text-[#15171C]">
-        기본 정보
-      </h1>
-    </div>
+    <Suspense fallback={<p className="text-sm text-[#858C9A]">불러오는 중…</p>}>
+      <DevnoteOverviewScreen />
+    </Suspense>
   );
 }
