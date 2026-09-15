@@ -56,3 +56,49 @@ export function parseDevnoteOverviewTab(
   if (raw === "env" || raw === "structure" || raw === "principles") return raw;
   return "body";
 }
+
+export type DevnoteServiceTab = "overview" | "decisions" | "data" | "todos";
+
+export type DevnoteServiceRow = {
+  id: string;
+  slug: string;
+  name: string;
+  path: string | null;
+  repo: string | null;
+  status: DevnoteStatus;
+  overview: string;
+  data_notes: string;
+  updated_at: string | null;
+};
+
+export type DevnoteDecisionRow = {
+  id: string;
+  service_id: string | null;
+  decided_on: string;
+  what: string;
+  why: string;
+  is_key: boolean;
+};
+
+export type DevnoteTodoRow = {
+  id: string;
+  service_id: string | null;
+  title: string;
+  body: string | null;
+  done: boolean;
+  sort_order: number;
+};
+
+export const STATUS_LABEL: Record<DevnoteStatus, string> = {
+  live: "운영 중",
+  wip: "개발 중",
+  stuck: "막힘",
+  doc: "문서만"
+};
+
+export function parseDevnoteServiceTab(
+  raw: string | null | undefined
+): DevnoteServiceTab {
+  if (raw === "decisions" || raw === "data" || raw === "todos") return raw;
+  return "overview";
+}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { DevnoteMarkdown } from "@/components/devnote/devnote-markdown";
+import { DevnoteMarkdownPanel } from "@/components/devnote/devnote-markdown-panel";
+import { DevnoteButton, DevnoteError } from "@/components/devnote/devnote-ui";
 import {
   formatDevnoteDate,
   loadDevnoteOverview,
@@ -60,23 +61,19 @@ export function DevnoteOverviewScreen() {
     setError(null);
   }, [tab]);
 
-  const content = row[tab];
-  const empty = !content.trim();
-  const lineCount = useMemo(
-    () => Math.max(18, draft.split("\n").length + 2),
-    [draft]
-  );
-
   function startEdit() {
     setDraft(row[tab]);
     setError(null);
     setEditing(true);
   }
 
-  function cancelEdit() {
-    setEditing(false);
-    setError(null);
-    setDraft(row[tab]);
+  function goTab(next: DevnoteOverviewTab) {
+    const href = tabHref(next);
+    if (pathname === "/devnote" && href === "/devnote") {
+      router.replace("/devnote", { scroll: false });
+      return;
+    }
+    router.replace(href, { scroll: false });
   }
 
   async function save() {
@@ -94,15 +91,6 @@ export function DevnoteOverviewScreen() {
     }
   }
 
-  function goTab(next: DevnoteOverviewTab) {
-    const href = tabHref(next);
-    if (pathname === "/devnote" && href === "/devnote") {
-      router.replace("/devnote", { scroll: false });
-      return;
-    }
-    router.replace(href, { scroll: false });
-  }
-
   return (
     <div>
       <p className="mb-2.5 text-xs text-[#858C9A]">개발노트</p>
@@ -118,13 +106,7 @@ export function DevnoteOverviewScreen() {
           ) : null}
         </div>
         {!editing ? (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="rounded-[7px] border border-[#E2E5EA] bg-white px-3 py-1.5 text-[13px] text-[#4A505C] hover:bg-[#F7F8FA]"
-          >
-            편집
-          </button>
+          <DevnoteButton onClick={startEdit}>편집</DevnoteButton>
         ) : null}
       </div>
 
@@ -148,62 +130,25 @@ export function DevnoteOverviewScreen() {
         })}
       </div>
 
-      {error && !editing ? (
-        <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
-          {error}
-        </p>
-      ) : null}
+      {error && !editing ? <DevnoteError message={error} /> : null}
 
       {loading ? (
         <p className="text-sm text-[#858C9A]">불러오는 중…</p>
-      ) : editing ? (
-        <div>
-          {error ? (
-            <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
-              {error}
-            </p>
-          ) : null}
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={lineCount}
-            disabled={saving}
-            className="min-h-[400px] w-full resize-none rounded-lg border border-[#E2E5EA] bg-white p-3 font-mono text-[13px] leading-relaxed text-[#15171C] [field-sizing:content] disabled:opacity-70"
-          />
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void save()}
-              className="rounded-[7px] border border-[#15171C] bg-[#15171C] px-3 py-1.5 text-[13px] text-white disabled:opacity-50"
-            >
-              {saving ? "저장 중" : "저장"}
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={cancelEdit}
-              className="rounded-[7px] border border-[#E2E5EA] bg-white px-3 py-1.5 text-[13px] text-[#4A505C] disabled:opacity-50"
-            >
-              취소
-            </button>
-          </div>
-        </div>
-      ) : empty ? (
-        <div className="rounded-[10px] border border-dashed border-[#E2E5EA] px-6 py-8 text-center">
-          <p className="text-[13px] text-[#858C9A]">
-            아직 비어 있습니다. 편집을 눌러 적어주세요.
-          </p>
-          <button
-            type="button"
-            onClick={startEdit}
-            className="mt-3 rounded-[7px] border border-[#E2E5EA] bg-white px-3 py-1.5 text-[13px] text-[#4A505C] hover:bg-[#F7F8FA]"
-          >
-            편집
-          </button>
-        </div>
       ) : (
-        <DevnoteMarkdown content={content} />
+        <DevnoteMarkdownPanel
+          content={row[tab]}
+          editing={editing}
+          draft={draft}
+          saving={saving}
+          error={editing ? error : null}
+          onChangeDraft={setDraft}
+          onSave={() => void save()}
+          onCancel={() => {
+            setEditing(false);
+            setError(null);
+          }}
+          onStartEdit={startEdit}
+        />
       )}
     </div>
   );

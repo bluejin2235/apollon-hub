@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+import { DevnoteServiceScreen } from "@/components/devnote/devnote-service-screen";
+
 export default async function DevnoteServicePage({
   params
 }: {
@@ -5,11 +8,8 @@ export default async function DevnoteServicePage({
 }) {
   const { slug } = await params;
   return (
-    <div>
-      <p className="mb-2.5 text-xs text-[#858C9A]">개발노트 · 서비스</p>
-      <h1 className="text-[26px] font-bold tracking-tight text-[#15171C]">
-        {slug}
-      </h1>
-    </div>
+    <Suspense fallback={<p className="text-sm text-[#858C9A]">불러오는 중…</p>}>
+      <DevnoteServiceScreen slug={slug} />
+    </Suspense>
   );
 }
