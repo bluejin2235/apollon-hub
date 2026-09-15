@@ -384,7 +384,22 @@
 }
 .luna-admin .pair .side .s { font-size: 10px; color: var(--faint); margin-bottom: 4px; }
 .luna-admin .pair .side .t { font-size: 12px; font-weight: 700; line-height: 1.6; }
-.luna-admin .pair .side .m { font-size: 10.5px; color: var(--faint); margin-top: 5px; }
+.luna-admin .pair .side .m { font-size: 10.5px; color: var(--faint); margin-top: 5px; word-break: break-all; }
+.luna-admin .pair .side .x {
+  font-size: 10.5px;
+  color: var(--sub);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.luna-admin .pair-foot {
+  margin: 2px 0 18px;
+  padding-left: 2px;
+}
+.luna-admin .pair-foot .why {
+  font-size: 11px;
+  color: var(--faint);
+  margin-bottom: 8px;
+}
 .luna-admin .pair .mid {
   display: grid;
   place-items: center;

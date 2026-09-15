@@ -130,6 +130,13 @@ export type LinkProgressPayload = {
   years: YearProgressRow[];
 };
 
+export type PairSideView = {
+  typeLabel: string;
+  title: string;
+  path: string;
+  facts: string;
+};
+
 export type LunaQuestionRow = {
   id: string;
   question: string;
@@ -143,4 +150,15 @@ export type LunaQuestionRow = {
   confidence: number | null;
   link_id: string | null;
   created_at: string;
+  pair?: {
+    left: PairSideView;
+    right: PairSideView;
+    reason: string;
+  } | null;
 };
+
+/** 2차 「같은 것」판정 질문 — 지식후보 UI에서는 빼고 「같은 것」으로 보낸다. */
+export function isSameLinkQuestion(row: Pick<LunaQuestionRow, "context" | "link_id">): boolean {
+  return row.context?.kind === "same" || Boolean(row.link_id);
+}
+

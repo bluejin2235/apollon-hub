@@ -17,7 +17,11 @@ type RawQuestion = {
   target_user_id: string | null;
   created_at: string;
   source?: string | null;
+  link_id?: string | null;
 };
+
+const QUESTION_SELECT =
+  "id, question, context, status, answer, answered_by, answered_at, target_user_id, created_at, source, link_id";
 
 function parseContext(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -45,7 +49,9 @@ function mapRow(row: RawQuestion): LunaQuestionRow {
   const why = typeof ctx.why === "string" ? ctx.why : "";
   const confidence =
     typeof ctx.confidence === "number" ? ctx.confidence : null;
-  const linkId = typeof ctx.link_id === "string" ? ctx.link_id : null;
+  const linkId =
+    (typeof row.link_id === "string" && row.link_id) ||
+    (typeof ctx.link_id === "string" ? ctx.link_id : null);
   return {
     id: row.id,
     question: row.question,
@@ -68,9 +74,7 @@ export async function listQuestions(
 ): Promise<LunaQuestionRow[]> {
   let q = admin
     .from("luna_questions")
-    .select(
-      "id, question, context, status, answer, answered_by, answered_at, target_user_id, created_at, source"
-    )
+    .select(QUESTION_SELECT)
     .order("created_at", { ascending: false })
     .limit(200);
   if (opts?.status) q = q.eq("status", opts.status);
@@ -114,9 +118,7 @@ export async function answerQuestion(
       answered_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select(
-      "id, question, context, status, answer, answered_by, answered_at, target_user_id, created_at, source"
-    )
+    .select(QUESTION_SELECT)
     .maybeSingle();
   if (error) {
     if (!isMissingTableError(error)) console.error("[luna-admin/questions] answer", error);

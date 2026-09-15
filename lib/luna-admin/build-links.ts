@@ -25,6 +25,7 @@ import {
   yearFromPath,
   type WorkFolder
 } from "@/lib/luna-admin/link-parse";
+import { questionDedupeKey } from "@/lib/luna-admin/pair-view";
 
 export type BuildKind = "belongs" | "follows" | "same" | "perspectives";
 
@@ -1359,7 +1360,12 @@ function contextPairKey(context: unknown): string {
       return "";
     }
   }
-  return `${String(obj.from_id ?? "")}\t${String(obj.to_id ?? "")}`;
+  return questionDedupeKey({
+    from_id: String(obj.from_id ?? ""),
+    to_id: String(obj.to_id ?? ""),
+    to_type: String(obj.to_type ?? ""),
+    to_title: String(obj.to_title ?? "")
+  });
 }
 
 async function ensureSameQuestions(
@@ -1414,7 +1420,14 @@ async function ensureSameQuestions(
   const toInsert: Array<Record<string, unknown>> = [];
 
   for (const row of pendingSame) {
-    const pairKey = `${row.from_id}\t${row.to_id}`;
+    const fromTitle = String(row.evidence?.from_title ?? row.from_id);
+    const toTitle = String(row.evidence?.to_title ?? row.to_id);
+    const pairKey = questionDedupeKey({
+      from_id: row.from_id,
+      to_id: row.to_id,
+      to_type: row.to_type,
+      to_title: toTitle
+    });
     if (qKeys.has(pairKey)) continue;
     const k = linkKey({
       from_type: row.from_type,
@@ -1424,8 +1437,6 @@ async function ensureSameQuestions(
       kind: "same"
     });
     const draft = draftByKey.get(k);
-    const fromTitle = String(row.evidence?.from_title ?? row.from_id);
-    const toTitle = String(row.evidence?.to_title ?? row.to_id);
     toInsert.push({
       question:
         draft?.question ?? `「${fromTitle}」와 「${toTitle}」는 같은 건인가요?`,
@@ -1440,9 +1451,12 @@ async function ensureSameQuestions(
         to_id: row.to_id,
         from_title: fromTitle,
         to_title: toTitle,
+        from_path: String(row.evidence?.from_path ?? ""),
+        to_path: String(row.evidence?.to_path ?? ""),
         confidence: draft?.confidence ?? row.confidence,
         link_id: row.id
       }),
+      link_id: row.id,
       options: ["같다", "다르다"],
       category: "판단기준",
       source: "conflict",

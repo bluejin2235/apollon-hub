@@ -39,8 +39,8 @@ export async function GET(request: NextRequest) {
       to_label: evidenceTitle(row, "to"),
       from_path: evidencePath(row, "from"),
       to_path: evidencePath(row, "to"),
-      from_type_label: typeLabel(row.from_type),
-      to_type_label: typeLabel(row.to_type),
+      from_type_label: typeLabel(row.from_type, { path: evidencePath(row, "from") }),
+      to_type_label: typeLabel(row.to_type, { path: evidencePath(row, "to") }),
       reason: sameReasonLine(row)
     }))
   });

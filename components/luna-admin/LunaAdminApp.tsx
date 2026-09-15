@@ -59,6 +59,16 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
   const route = resolveAdminRoute(searchParams.get("menu"), searchParams.get("sub"));
   const sourceRaw = searchParams.get("source");
   const source = isPrimarySource(sourceRaw) ? sourceRaw : null;
+  const chipParam = searchParams.get("chip");
+  const secondaryChip =
+    chipParam === "same" ||
+    chipParam === "belongs" ||
+    chipParam === "follows" ||
+    chipParam === "criteria" ||
+    chipParam === "perspective" ||
+    chipParam === "all"
+      ? chipParam
+      : "all";
   const [badges, setBadges] = useState({
     failures: 0,
     candidates: 0,
@@ -118,7 +128,9 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
             onMenu={onMenu}
             onSub={onSub}
           />
-          <div className="body">{renderBody(route.menu, route.sub, source, go)}</div>
+          <div className="body">
+            {renderBody(route.menu, route.sub, source, go, secondaryChip)}
+          </div>
         </div>
       </div>
     </main>
@@ -129,13 +141,16 @@ function renderBody(
   menu: LunaAdminMenu,
   sub: LunaAdminSub | null,
   source: LunaAdminPrimarySource | null,
-  go: (href: string) => void
+  go: (href: string) => void,
+  secondaryChip: "all" | "same" | "belongs" | "follows" | "criteria" | "perspective"
 ) {
   if (menu === "dashboard") {
     return <LunaAdminDashboard onGo={go} />;
   }
   if (menu === "knowledge") {
-    if (sub === "secondary") return <LunaAdminSecondary onGo={go} />;
+    if (sub === "secondary") {
+      return <LunaAdminSecondary onGo={go} initialChip={secondaryChip} />;
+    }
     return (
       <LunaAdminPrimary
         source={source}
@@ -164,7 +179,7 @@ function renderBody(
     if (sub === "mine") return <LunaAdminMine />;
     if (sub === "conflict") return <LunaKnowledgeConflict />;
     if (sub === "history") return <LunaCandidatesHistory />;
-    return <LunaAdminPending />;
+    return <LunaAdminPending onGo={go} />;
   }
   if (menu === "brain") {
     if (sub === "types") return <LunaBrainTypes />;

@@ -182,6 +182,18 @@ async function main() {
     const cText = await page.locator("body").innerText();
     check("지식후보 › 충돌", cText.includes("충돌"), failed);
 
+    await page.getByRole("button", { name: "대기 후보", exact: true }).click();
+    await page.getByRole("button", { name: /루나의 질문/ }).click();
+    await page.waitForTimeout(1500);
+    const qText = await page.locator("body").innerText();
+    check(
+      "2차 판정은 같은 것으로 안내",
+      /2차 데이터 판정/.test(qText) && qText.includes("같은 것에서 보기"),
+      failed
+    );
+    check("지식후보에 같은 것 좌우 카드 없음", (await page.locator(".luna-admin .pair").count()) === 0, failed);
+    await page.screenshot({ path: resolve(OUT, "03b-questions.png"), fullPage: true });
+
     await page.getByRole("button", { name: "두뇌", exact: true }).click();
     await page.waitForTimeout(1500);
     const bText = await page.locator("body").innerText();

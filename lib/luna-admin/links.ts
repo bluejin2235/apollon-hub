@@ -123,6 +123,47 @@ async function countSame(
 
 export type SameReviewAction = "reject" | "confirm" | "undo";
 
+async function syncQuestionsForSameLinks(
+  admin: SupabaseClient,
+  userId: string,
+  opts: {
+    action: SameReviewAction;
+    ids: string[];
+  }
+): Promise<void> {
+  const ids = [...new Set(opts.ids.filter(Boolean))];
+  if (ids.length === 0) return;
+  const now = new Date().toISOString();
+
+  if (opts.action === "undo") {
+    const { error } = await admin
+      .from("luna_questions")
+      .update({
+        status: "pending",
+        answer: null,
+        answered_by: null,
+        answered_at: null
+      })
+      .in("link_id", ids)
+      .in("status", ["answered", "skipped"]);
+    if (error) console.error("[luna-admin/links] reopen questions", error);
+    return;
+  }
+
+  const answer = opts.action === "confirm" ? "같아요" : "달라요";
+  const { error } = await admin
+    .from("luna_questions")
+    .update({
+      status: "answered",
+      answer,
+      answered_by: userId,
+      answered_at: now
+    })
+    .in("link_id", ids)
+    .eq("status", "pending");
+  if (error) console.error("[luna-admin/links] close questions", error);
+}
+
 export async function reviewSameLinks(
   admin: SupabaseClient,
   userId: string,
@@ -143,6 +184,10 @@ export async function reviewSameLinks(
         .eq("kind", "same");
       if (error) throw new Error(error.message);
     }
+    await syncQuestionsForSameLinks(admin, userId, {
+      action: "undo",
+      ids: rows.map((r) => r.id)
+    });
     return { updated: rows.length };
   }
   if (ids.length === 0) return { updated: 0 };
@@ -162,6 +207,10 @@ export async function reviewSameLinks(
     .eq("kind", "same")
     .in("id", ids);
   if (error) throw new Error(error.message);
+  await syncQuestionsForSameLinks(admin, userId, {
+    action: opts.action,
+    ids
+  });
   return { updated: count ?? ids.length };
 }
 
@@ -258,12 +307,4 @@ export function evidencePath(row: LunaLinkRow, side: "from" | "to"): string {
   return typeof v === "string" ? v : "";
 }
 
-export function typeLabel(type: string): string {
-  if (type === "project") return "Work · 프로젝트";
-  if (type === "nas_path") return "Work";
-  if (type === "notion_page") return "노션";
-  if (type === "image") return "이미지";
-  if (type === "term") return "용어";
-  if (type === "wiki") return "위키";
-  return type;
-}
+export { typeLabel } from "@/lib/luna-admin/pair-view";

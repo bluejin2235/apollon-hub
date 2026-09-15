@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
+import { SamePairCard } from "@/components/luna-admin/SamePairCard";
 import { LunaKnowledgeTab } from "@/components/settings/luna-knowledge-tab";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
 
@@ -55,6 +56,7 @@ type UndoSnap = { id: string; status: "active" | "pending" | "rejected"; source:
 
 type Props = {
   onGo: (href: string) => void;
+  initialChip?: Chip;
 };
 
 function belongsTree(row: LinkView): string {
@@ -66,13 +68,18 @@ function belongsTree(row: LinkView): string {
   return `${row.from_label.padEnd(38)}  ${row.from_type_label}\n${kids || `  └ ${row.to_label}`}`;
 }
 
-export function LunaAdminSecondary({ onGo }: Props) {
-  const [chip, setChip] = useState<Chip>("all");
+export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
+  const [chip, setChip] = useState<Chip>(initialChip);
   const [sameFilter, setSameFilter] = useState<SameFilter>("need");
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ text: string; undo: UndoSnap[] } | null>(null);
+
+  useEffect(() => {
+    setChip(initialChip);
+    if (initialChip === "same") setSameFilter("need");
+  }, [initialChip]);
 
   const load = useCallback(async () => {
     try {
@@ -400,28 +407,32 @@ function SameCard({
   const rejected = row.status === "rejected";
   const canCheck = !human;
   return (
-    <div className={`pair ${rejected ? "dim" : ""}`}>
-      {canCheck ? (
-        <label className="pairchk">
-          <input type="checkbox" checked={checked} onChange={onToggle} />
-        </label>
-      ) : (
-        <span className="pairchk" />
-      )}
-      <div className="side">
-        <div className="s">{row.from_type_label}</div>
-        <div className="t">{row.from_label}</div>
-        {row.from_path ? <div className="m">{row.from_path}</div> : null}
-      </div>
-      <div className="mid">=</div>
-      <div className="side">
-        <div className="s">{row.to_type_label}</div>
-        <div className="t">{row.to_label}</div>
-        {row.to_path ? <div className="m">{row.to_path}</div> : null}
-      </div>
-      <div className="rev">
-        <div className="why">{row.reason || "근거 없음"}</div>
-        {human ? (
+    <SamePairCard
+      left={{
+        typeLabel: row.from_type_label,
+        title: row.from_label,
+        path: row.from_path,
+        facts: ""
+      }}
+      right={{
+        typeLabel: row.to_type_label,
+        title: row.to_label,
+        path: row.to_path,
+        facts: ""
+      }}
+      reason={row.reason || "근거 없음"}
+      dim={rejected}
+      checkbox={
+        canCheck ? (
+          <label className="pairchk">
+            <input type="checkbox" checked={checked} onChange={onToggle} />
+          </label>
+        ) : (
+          <span className="pairchk" />
+        )
+      }
+      actions={
+        human ? (
           <span className="tag g">확인함</span>
         ) : (
           <div className="btns">
@@ -434,9 +445,9 @@ function SameCard({
               ✓ 맞아요
             </button>
           </div>
-        )}
-      </div>
-    </div>
+        )
+      }
+    />
   );
 }
 
