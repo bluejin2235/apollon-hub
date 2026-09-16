@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
-import { runEvalExam } from "@/lib/luna/eval-exam";
+import { runEvalExam, reapStuckEvalRuns } from "@/lib/luna/eval-exam";
+import { logMissingEnvGroups } from "@/lib/luna/env-keys";
 import {
   alreadyRanTierToday,
   getEvalSchedule,
@@ -9,7 +10,7 @@ import {
 } from "@/lib/luna/eval-schedule";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /**
  * GET /api/cron/luna-eval
@@ -39,9 +40,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    logMissingEnvGroups("luna-eval");
+    const reaped = await reapStuckEvalRuns(admin);
     const schedule = await getEvalSchedule(admin);
     const out: Record<string, unknown> = {
       schedule,
+      reaped,
       light: { skipped: true, reason: "not due" },
       heavy: { skipped: true, reason: "not due" }
     };
@@ -54,7 +58,8 @@ export async function GET(request: NextRequest) {
           trigger: "cron_light",
           tier: "light",
           force: true,
-          notify: true
+          notify: true,
+          budgetMs: 700_000
         });
       }
     } else if (!schedule.light.enabled) {
@@ -69,7 +74,8 @@ export async function GET(request: NextRequest) {
           trigger: "cron_heavy",
           tier: "heavy",
           force: true,
-          notify: true
+          notify: true,
+          budgetMs: 700_000
         });
       }
     } else if (!schedule.heavy.enabled) {

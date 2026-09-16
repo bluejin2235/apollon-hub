@@ -297,6 +297,39 @@ export async function shouldSkipExamForCooldown(
   return { skip: false };
 }
 
+/** Vercel 타임아웃으로 남은 running 시험을 멈춤 처리 */
+export async function reapStuckEvalRuns(
+  admin: SupabaseClient,
+  olderThanMs = 15 * 60 * 1000
+): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  const { data, error } = await admin
+    .from("luna_eval_runs")
+    .select("id")
+    .eq("status", "running")
+    .lt("started_at", cutoff);
+  if (error) {
+    console.error("[luna/eval-exam] reap list", error);
+    return 0;
+  }
+  let n = 0;
+  for (const row of data ?? []) {
+    const { error: upErr } = await admin
+      .from("luna_eval_runs")
+      .update({
+        status: "stopped",
+        finished_at: new Date().toISOString()
+      })
+      .eq("id", row.id)
+      .eq("status", "running");
+    if (!upErr) n += 1;
+  }
+  if (n > 0) {
+    console.warn(`[luna/eval-exam] reaped ${n} stuck running runs`);
+  }
+  return n;
+}
+
 async function recomputeRunCountsFromAuto(
   admin: SupabaseClient,
   runId: string
@@ -884,6 +917,8 @@ export async function runEvalExam(
     categories?: string[] | null;
     maxCases?: number | null;
     notify?: boolean;
+    /** 이 시각 이후에는 새 문항을 시작하지 않고 부분 채점한다 */
+    budgetMs?: number;
   }
 ): Promise<EvalExamResult> {
   if (!opts.force) {
@@ -960,9 +995,24 @@ export async function runEvalExam(
   }
 
   const runId = run.id as string;
+  const budgetMs =
+    opts.budgetMs ??
+    (opts.trigger === "cron_light" || opts.trigger === "cron_heavy"
+      ? 700_000
+      : undefined);
+  const deadline =
+    budgetMs != null ? Date.now() + budgetMs : Number.POSITIVE_INFINITY;
 
   try {
+    let aborted = 0;
     for (const c of active) {
+      if (Date.now() + 180_000 > deadline) {
+        aborted = 1;
+        console.warn(
+          `[luna/eval-exam] time budget — 남은 문항은 건너뜁니다 (${c.id})`
+        );
+        break;
+      }
       try {
         await executeEvalCase(admin, runId, c.id);
       } catch (err) {
@@ -985,6 +1035,10 @@ export async function runEvalExam(
           { onConflict: "run_id,case_id" }
         );
       }
+    }
+
+    if (aborted) {
+      console.warn("[luna/eval-exam] finished with time budget (partial)");
     }
 
     const finishedAt = new Date().toISOString();

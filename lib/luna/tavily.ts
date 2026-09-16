@@ -41,7 +41,11 @@ export async function searchTavily(
 ): Promise<LunaCard[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey || !query.trim()) {
-    console.log("[luna/tavily] skipped", { hasKey: !!apiKey, query });
+    if (!apiKey && query.trim()) {
+      console.error(
+        "[luna/tavily] TAVILY_API_KEY 를 찾을 수 없어 웹검색을 건너뜁니다"
+      );
+    }
     return [];
   }
 

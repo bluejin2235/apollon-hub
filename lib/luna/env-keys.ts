@@ -12,6 +12,8 @@ export type EnvAliasGroup = {
   crons: string[];
   /** true 면 없어도 체크리스트를 빨강으로 만들지 않음 */
   optional?: boolean;
+  /** true 면 Vercel 배포에서만 필수 — 로컬 .env 에는 없을 수 있다 */
+  vercelOnly?: boolean;
 };
 
 export const ENV_ALIAS_GROUPS: EnvAliasGroup[] = [
@@ -85,7 +87,8 @@ export const ENV_ALIAS_GROUPS: EnvAliasGroup[] = [
       "/api/cron/daily-digest",
       "/api/cron/license-digest",
       "/api/cron/license-expiry"
-    ]
+    ],
+    vercelOnly: true
   },
   {
     id: "resend_from",
@@ -96,13 +99,15 @@ export const ENV_ALIAS_GROUPS: EnvAliasGroup[] = [
       "/api/cron/daily-digest",
       "/api/cron/license-digest",
       "/api/cron/license-expiry"
-    ]
+    ],
+    vercelOnly: true
   },
   {
     id: "admin_report_to",
     label: "아침 리포트 수신자",
     names: ["LUNA_ADMIN_REPORT_TO"],
-    crons: ["/api/cron/luna-admin-report"]
+    crons: ["/api/cron/luna-admin-report"],
+    vercelOnly: true
   },
   {
     id: "tavily",
@@ -154,6 +159,7 @@ export function missingEnvGroups(): MissingEnvGroup[] {
   const missing: MissingEnvGroup[] = [];
   for (const group of ENV_ALIAS_GROUPS) {
     if (group.optional) continue;
+    if (group.vercelOnly && !process.env.VERCEL) continue;
     if (envAny(group.names)) continue;
     missing.push({
       id: group.id,

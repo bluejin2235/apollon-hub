@@ -419,7 +419,7 @@ export async function alreadyRanTierToday(
   const { startIso, endIso } = kstDayBounds();
   const { data, error } = await admin
     .from("luna_eval_runs")
-    .select("id, note, status")
+    .select("id, note, status, started_at")
     .eq("tier", tier)
     .gte("started_at", startIso)
     .lt("started_at", endIso)
@@ -432,10 +432,13 @@ export async function alreadyRanTierToday(
   }
   return (data ?? []).some((r) => {
     const note = typeof r.note === "string" ? r.note : "";
-    return (
-      note.includes(triggerPrefix) &&
-      (r.status === "done" || r.status === "running")
-    );
+    if (!note.includes(triggerPrefix)) return false;
+    if (r.status === "done") return true;
+    if (r.status !== "running") return false;
+    const started =
+      typeof r.started_at === "string" ? Date.parse(r.started_at) : NaN;
+    if (Number.isNaN(started)) return false;
+    return Date.now() - started < 12 * 60 * 1000;
   });
 }
 
