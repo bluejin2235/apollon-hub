@@ -289,6 +289,16 @@ export async function collectMorningSummaryParts(
     parts.push(withLink(wikiLine, "/wiki"));
   }
 
+  const { collectMediaIndexMorningLine } = await import(
+    "@/lib/luna/media-index-runs"
+  );
+  const mediaLine = await collectMediaIndexMorningLine(admin, startIso, endIso);
+  if (mediaLine) {
+    parts.push(
+      withLink(mediaLine, "/settings?menu=knowledge&sub=primary")
+    );
+  }
+
   return { parts, dateLabel, startIso, endIso };
 }
 

@@ -36,6 +36,11 @@ import {
   upsertMediaIndex,
   type MediaIndexRow
 } from "@/lib/luna/media-index-store";
+import {
+  finishMediaIndexRun,
+  startMediaIndexRun,
+  updateMediaIndexRunProgress
+} from "@/lib/luna/media-index-runs";
 import { THUMB_BUCKET } from "@/lib/luna/media-index-rules";
 import {
   collectMediaCandidates,
@@ -848,9 +853,15 @@ async function runIndex(opts: CliOpts): Promise<void> {
   const glossary = await loadVisualGlossary(admin);
   console.log(`glossary: ${glossary.length} terms · model: ${mediaVisionModel()}`);
 
+  const indexedPaths = await loadAllIndexedPaths(admin);
+  console.log(`already indexed paths: ${indexedPaths.size}`);
+
   let work = stats.candidates;
   if (opts.limit != null) {
-    work = sampleCandidatesByIncludeRule(stats.candidates, opts.limit, {
+    // 스모크·제한 실행: 아직 DB에 없는 후보를 우선 (전부 skip 방지)
+    const pending = stats.candidates.filter((c) => !indexedPaths.has(c.path));
+    const pool = pending.length > 0 ? pending : stats.candidates;
+    work = sampleCandidatesByIncludeRule(pool, opts.limit, {
       maxPerFolder: 10
     });
     const byRule: Record<string, number> = {};
@@ -858,7 +869,7 @@ async function runIndex(opts: CliOpts): Promise<void> {
       byRule[c.includeRule] = (byRule[c.includeRule] ?? 0) + 1;
     }
     console.log(
-      `limit sample (${work.length}): ${Object.entries(byRule)
+      `limit sample (${work.length} / pending ${pending.length}): ${Object.entries(byRule)
         .map(([k, v]) => `${k}=${v}`)
         .join(", ")}`
     );
@@ -872,6 +883,7 @@ async function runIndex(opts: CliOpts): Promise<void> {
   let failed = 0;
   let visionIn = 0;
   let visionOut = 0;
+  let lastPath: string | null = null;
   const failReasons: Record<string, number> = {};
   const indexedRows: Array<{
     path: string;
@@ -889,107 +901,190 @@ async function runIndex(opts: CliOpts): Promise<void> {
   const model = mediaVisionModel();
   const price = resolveOfficialPrice(model);
 
-  function runningCostUsd(): number | null {
-    if (!price) return null;
+  function runningCostUsd(): number {
+    if (!price) return 0;
     return (
       (visionIn / 1_000_000) * price.input +
       (visionOut / 1_000_000) * price.output
     );
   }
 
-  for (let i = 0; i < work.length; i++) {
-    const item = work[i]!;
-    process.stdout.write(`[${i + 1}/${work.length}] ${item.fileName} … `);
-    try {
-      const r = await indexOne(admin, item, glossary, notionCache);
-      if (r.status === "indexed") {
-        indexed++;
-        visionIn += r.visionIn;
-        visionOut += r.visionOut;
-        indexedRows.push({
-          path: r.path,
-          drive: r.drive,
-          project: r.project,
-          folderCategory: r.folderCategory,
-          category: r.category,
-          description: r.description,
-          purpose: r.purpose,
-          termsUsed: r.termsUsed,
-          thumbnailUrl: r.thumbnailUrl,
-          notionMatched: r.notionMatched
-        });
-        console.log("ok");
-      } else if (r.status === "skipped") {
-        skipped++;
-        console.log("skip (mtime)");
-      } else {
-        failed++;
-        failReasons[r.reason] = (failReasons[r.reason] ?? 0) + 1;
-        console.log(`fail (${r.reason})`);
-      }
-    } catch (e) {
-      failed++;
-      const reason = e instanceof Error ? e.message : String(e);
-      failReasons[reason.slice(0, 120)] = (failReasons[reason.slice(0, 120)] ?? 0) + 1;
-      console.log("error:", reason);
-    }
-
-    const done = i + 1;
-    if (done % 100 === 0 || done === work.length) {
-      const elapsed = Date.now() - tBatch;
-      const remaining = work.length - done;
-      const etaMs = done > 0 ? (elapsed / done) * remaining : 0;
-      const cost = runningCostUsd();
-      const pct = ((100 * done) / work.length).toFixed(1);
-      console.log(
-        `[progress] ${done}/${work.length} (${pct}%) · ok=${indexed} skip=${skipped} fail=${failed}` +
-          ` · cost=$${cost != null ? cost.toFixed(4) : "?"}` +
-          ` · in=${visionIn.toLocaleString("ko-KR")} out=${visionOut.toLocaleString("ko-KR")}` +
-          ` · elapsed=${(elapsed / 1000 / 60).toFixed(1)}m` +
-          ` · eta≈${(etaMs / 1000 / 60).toFixed(1)}m`
-      );
-    }
-  }
-
-  const elapsedMs = Date.now() - tBatch;
-  let estUsd: number | null = runningCostUsd();
-
-  console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
-  if (indexed > 0 || failed > 0 || skipped > 0) {
-    printBatchReport({
+  function progressSnapshot() {
+    return {
       indexed,
       skipped,
       failed,
-      failReasons,
       visionIn,
       visionOut,
-      elapsedMs,
-      model,
-      estUsd,
-      rows: indexedRows
-    });
+      costUsd: runningCostUsd(),
+      lastPath,
+      failReasons
+    };
   }
 
+  const runId = await startMediaIndexRun(admin, {
+    root,
+    model,
+    limitN: opts.limit,
+    candidateTotal: stats.candidates.length,
+    workTotal: work.length
+  });
+  if (runId) console.log(`run id: ${runId}`);
+
+  let finishing = false;
+  const markInterrupted = async (why: string) => {
+    if (finishing || !runId) return;
+    finishing = true;
+    await finishMediaIndexRun(admin, runId, "interrupted", progressSnapshot(), why);
+  };
+  const onSig = () => {
+    void markInterrupted("signal").finally(() => process.exit(1));
+  };
+  process.once("SIGINT", onSig);
+  process.once("SIGTERM", onSig);
+
   try {
-    const storage = await summarizeStorage(admin);
-    const thumbMb = storage.thumbBytes / (1024 * 1024);
-    const largeMb = storage.largeBytes / (1024 * 1024);
-    console.log(
-      `Storage: thumb ${storage.thumbCount} · ${thumbMb.toFixed(2)} MB · large ${storage.largeCount} · ${largeMb.toFixed(2)} MB`
-    );
-    if (indexed > 0 && estUsd != null && elapsedMs > 0) {
-      const perImgUsd = estUsd / indexed;
-      const perImgSec = elapsedMs / indexed / 1000;
+    for (let i = 0; i < work.length; i++) {
+      const item = work[i]!;
+      lastPath = item.path;
+      process.stdout.write(`[${i + 1}/${work.length}] ${item.fileName} … `);
+      try {
+        const r = await indexOne(admin, item, glossary, notionCache);
+        if (r.status === "indexed") {
+          indexed++;
+          visionIn += r.visionIn;
+          visionOut += r.visionOut;
+          indexedRows.push({
+            path: r.path,
+            drive: r.drive,
+            project: r.project,
+            folderCategory: r.folderCategory,
+            category: r.category,
+            description: r.description,
+            purpose: r.purpose,
+            termsUsed: r.termsUsed,
+            thumbnailUrl: r.thumbnailUrl,
+            notionMatched: r.notionMatched
+          });
+          console.log("ok");
+        } else if (r.status === "skipped") {
+          skipped++;
+          console.log("skip (mtime)");
+        } else {
+          failed++;
+          failReasons[r.reason] = (failReasons[r.reason] ?? 0) + 1;
+          console.log(`fail (${r.reason})`);
+        }
+      } catch (e) {
+        failed++;
+        const reason = e instanceof Error ? e.message : String(e);
+        failReasons[reason.slice(0, 120)] =
+          (failReasons[reason.slice(0, 120)] ?? 0) + 1;
+        console.log("error:", reason);
+      }
+
+      const done = i + 1;
+      if (done % 25 === 0 || done === work.length) {
+        if (runId) {
+          await updateMediaIndexRunProgress(admin, runId, progressSnapshot());
+        }
+      }
+      if (done % 100 === 0 || done === work.length) {
+        const elapsed = Date.now() - tBatch;
+        const remaining = work.length - done;
+        const etaMs = done > 0 ? (elapsed / done) * remaining : 0;
+        const cost = runningCostUsd();
+        const pct = ((100 * done) / work.length).toFixed(1);
+        console.log(
+          `[progress] ${done}/${work.length} (${pct}%) · ok=${indexed} skip=${skipped} fail=${failed}` +
+            ` · cost=$${cost.toFixed(4)}` +
+            ` · in=${visionIn.toLocaleString("ko-KR")} out=${visionOut.toLocaleString("ko-KR")}` +
+            ` · elapsed=${(elapsed / 1000 / 60).toFixed(1)}m` +
+            ` · eta≈${(etaMs / 1000 / 60).toFixed(1)}m`
+        );
+      }
+    }
+
+    const elapsedMs = Date.now() - tBatch;
+    const estUsd = runningCostUsd();
+
+    console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
+    if (indexed > 0 || failed > 0 || skipped > 0) {
+      printBatchReport({
+        indexed,
+        skipped,
+        failed,
+        failReasons,
+        visionIn,
+        visionOut,
+        elapsedMs,
+        model,
+        estUsd,
+        rows: indexedRows
+      });
+    }
+
+    if (runId) {
+      finishing = true;
+      await finishMediaIndexRun(admin, runId, "done", progressSnapshot());
+    }
+
+    try {
+      const storage = await summarizeStorage(admin);
+      const thumbMb = storage.thumbBytes / (1024 * 1024);
+      const largeMb = storage.largeBytes / (1024 * 1024);
       console.log(
-        `${SCALE_LARGE_CORPUS.toLocaleString("ko-KR")}장 전체 색인 예상: $${(perImgUsd * SCALE_LARGE_CORPUS).toFixed(2)} · ${((perImgSec * SCALE_LARGE_CORPUS) / 3600).toFixed(1)}h`
+        `Storage: thumb ${storage.thumbCount} · ${thumbMb.toFixed(2)} MB · large ${storage.largeCount} · ${largeMb.toFixed(2)} MB`
+      );
+      if (indexed > 0 && estUsd > 0 && elapsedMs > 0) {
+        const perImgUsd = estUsd / indexed;
+        const perImgSec = elapsedMs / indexed / 1000;
+        console.log(
+          `${SCALE_LARGE_CORPUS.toLocaleString("ko-KR")}장 전체 색인 예상: $${(perImgUsd * SCALE_LARGE_CORPUS).toFixed(2)} · ${((perImgSec * SCALE_LARGE_CORPUS) / 3600).toFixed(1)}h`
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "Storage summary failed:",
+        e instanceof Error ? e.message : e
       );
     }
   } catch (e) {
-    console.warn(
-      "Storage summary failed:",
-      e instanceof Error ? e.message : e
-    );
+    const msg = e instanceof Error ? e.message : String(e);
+    if (runId && !finishing) {
+      finishing = true;
+      await finishMediaIndexRun(admin, runId, "failed", progressSnapshot(), msg);
+    }
+    throw e;
+  } finally {
+    process.off("SIGINT", onSig);
+    process.off("SIGTERM", onSig);
   }
+}
+
+async function loadAllIndexedPaths(
+  admin: SupabaseClient
+): Promise<Set<string>> {
+  const paths = new Set<string>();
+  let from = 0;
+  const page = 1000;
+  for (;;) {
+    const { data, error } = await admin
+      .from("luna_media_index")
+      .select("path")
+      .range(from, from + page - 1);
+    if (error) {
+      console.warn("[index-media] load paths", error.message);
+      break;
+    }
+    const rows = data ?? [];
+    for (const r of rows) {
+      if (typeof r.path === "string") paths.add(r.path);
+    }
+    if (rows.length < page) break;
+    from += page;
+  }
+  return paths;
 }
 
 const opts = parseArgs(process.argv.slice(2));

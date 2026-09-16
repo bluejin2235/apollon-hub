@@ -157,7 +157,7 @@ export async function buildPrimarySources(
     count: imageCount,
     extra_count: IMAGE_CORPUS_TOTAL,
     size_label: `${imageCount.toLocaleString("ko-KR")} / ${IMAGE_CORPUS_TOTAL.toLocaleString("ko-KR")}`,
-    schedule_label: "04:00 (증분)",
+    schedule_label: "01:00 (증분)",
     last_iso: imageLast,
     last_label: formatWhen(imageLast),
     duration_label: "—",
