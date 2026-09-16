@@ -47,7 +47,7 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
 
   const expected =
     gap.method === "probe_retrieval"
-      ? "문서로 만든 질문에 그 문서가 나오는지 채점"
+      ? "정답 문서가 상위 k에 오는지 채점(모드 A) · 실패 질문은 사람 확인(모드 B)"
       : gap.method === "materialize_secondary"
         ? "연결 건수·애매 건수가 늘어나는지 확인"
         : gap.method === "refresh_stale"

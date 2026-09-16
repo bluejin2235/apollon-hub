@@ -22,7 +22,11 @@ export function formatStudyRunReportLines(runs: StudyRunRow[]): string[] {
     const next = typeof result.next === "string" ? result.next : null;
     const probed =
       typeof result.probed === "number"
-        ? `${result.probed}건 시험 · 못 찾음 ${result.miss ?? 0}`
+        ? result.mode === "failure_review"
+          ? `${result.probed}건 사람 확인용(자동 hit/miss 없음)`
+          : typeof result.hit_at_5 === "number"
+            ? `${result.probed}문항 · hit@1 ${result.hit_at_1 ?? 0} · hit@5 ${result.hit_at_5 ?? 0} · miss ${result.miss ?? 0}`
+            : `${result.probed}건 시험 · 못 찾음 ${result.miss ?? 0}`
         : typeof result.listed === "number"
           ? `${result.listed}건 목록`
           : typeof result.error === "string"

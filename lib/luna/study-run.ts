@@ -91,7 +91,7 @@ async function finishRun(
   return data as StudyRunRow;
 }
 
-/** 문서로 만든 질문에 그 문서가 나오는지 — 검증 가능 (키워드·제목, LLM 0) */
+/** 정답 문서 id 기반 검색 시험 (모드 A) / 실패 질문 사람 확인 (모드 B) */
 async function runProbeRetrieval(
   admin: SupabaseClient,
   scope: Record<string, unknown>,
@@ -102,150 +102,13 @@ async function runProbeRetrieval(
   cost_usd: number;
   llm_calls: number;
 }> {
-  const {
-    compactKeywordText,
-    includesKeywordCompact,
-    matchNotionChunksByKeyword
-  } = await import("@/lib/luna/notion-keyword");
-
-  const failureIds = Array.isArray(scope.failure_ids)
-    ? (scope.failure_ids as string[]).slice(0, limit)
-    : [];
-  if (failureIds.length > 0) {
-    const { data: fails } = await admin
-      .from("luna_failures")
-      .select("id, question")
-      .in("id", failureIds);
-    const questions = (fails ?? [])
-      .map((f) => String(f.question ?? "").trim())
-      .filter((q) => q.length >= 2)
-      .slice(0, limit);
-
-    let hit = 0;
-    let miss = 0;
-    const misses: Array<{ question: string }> = [];
-    for (const q of questions) {
-      const words = q
-        .split(/\s+/)
-        .map((w) => w.replace(/[^\p{L}\p{N}_-]/gu, ""))
-        .filter((w) => w.length >= 2)
-        .slice(0, 6);
-      const kwHits = await matchNotionChunksByKeyword(
-        admin,
-        words.length ? words : [q],
-        { limit: 40 }
-      );
-      if (kwHits.length > 0) hit += 1;
-      else {
-        miss += 1;
-        if (misses.length < 12) misses.push({ question: q.slice(0, 100) });
-      }
-    }
-    const total = hit + miss;
-    return {
-      result: {
-        mode: "failure_questions",
-        probed: total,
-        hit,
-        miss,
-        miss_rate: total ? Number((miss / total).toFixed(3)) : 0,
-        misses,
-        learned:
-          miss > 0
-            ? `검색 실패 질문 ${miss}건이 색인 키워드로도 0건`
-            : "표본 실패 질문은 키워드로 뭔가 잡혔습니다 (관련성 별도)",
-        next:
-          miss > 0
-            ? "0건 질문의 고유명사를 뽑아 용어·별칭 후보로"
-            : "관련성 채점(정답 page)로 한 단계 더",
-        scope_note: scope
-      },
-      outcome: miss > 0 ? "improved" : total === 0 ? "failed" : "no_change",
-      cost_usd: 0,
-      llm_calls: 0
-    };
-  }
-
-  const { data: pages, error } = await admin
-    .from("luna_notion_pages")
-    .select("page_id, title")
-    .eq("archived", false)
-    .not("title", "is", null)
-    .order("indexed_at", { ascending: false })
-    .limit(Math.max(limit * 20, 400));
-  if (error) throw new Error(error.message);
-
-  const all = (pages ?? [])
-    .map((p) => ({
-      page_id: String(p.page_id),
-      title: String(p.title ?? "").trim()
-    }))
-    .filter((p) => p.title.length >= 2);
-
-  const sample = all.slice(0, limit);
-  let hit = 0;
-  let miss = 0;
-  const misses: Array<{ title: string; page_id: string }> = [];
-
-  for (const page of sample) {
-    const needle = compactKeywordText(page.title);
-    if (needle.length < 2) {
-      miss += 1;
-      continue;
-    }
-    const ranked = all
-      .map((cand) => ({
-        page_id: cand.page_id,
-        score: includesKeywordCompact(cand.title, page.title) ? 2 : 0
-      }))
-      .filter((r) => r.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 15);
-    const found = ranked.some((r) => r.page_id === page.page_id);
-    if (found) hit += 1;
-    else {
-      miss += 1;
-      if (misses.length < 12) misses.push({ title: page.title, page_id: page.page_id });
-    }
-  }
-
-  // 청크 존재 여부 보강 — 제목 자습만으로 안 잡히면 본문 색인 공백 신호
-  let noChunk = 0;
-  for (const m of misses.slice(0, 8)) {
-    const { count } = await admin
-      .from("luna_notion_chunks")
-      .select("id", { count: "exact", head: true })
-      .eq("page_id", m.page_id);
-    if (!count) noChunk += 1;
-  }
-
-  const total = hit + miss;
-  const missRate = total ? miss / total : 0;
-  const learned =
-    miss > 0
-      ? noChunk > 0
-        ? `못 찾은 ${miss}건 중 청크 0건 ${noChunk} — 본문 색인 공백 가능`
-        : "제목 키워드만으로는 자기 문서를 상위권에 못 올리는 경우가 있습니다"
-      : "표본에서는 제목 키워드로 자기 문서를 찾았습니다";
-
+  const { runProbeRetrievalExam } = await import("@/lib/luna/probe-retrieval");
+  const out = await runProbeRetrievalExam(admin, scope, limit);
   return {
-    result: {
-      probed: total,
-      hit,
-      miss,
-      miss_rate: Number(missRate.toFixed(3)),
-      misses,
-      no_chunk_among_misses: noChunk,
-      learned,
-      next:
-        miss > 0
-          ? "못 찾은 문서의 고유명사·별칭을 다음 후보로 뽑을 것"
-          : "표본을 늘리거나 다른 부족함으로 이동",
-      scope_note: scope
-    },
-    outcome: miss > 0 ? "improved" : total === 0 ? "failed" : "no_change",
-    cost_usd: 0,
-    llm_calls: 0
+    result: { ...out.result, scope_note: scope },
+    outcome: out.outcome,
+    cost_usd: out.cost_usd,
+    llm_calls: out.llm_calls
   };
 }
 

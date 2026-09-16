@@ -106,6 +106,7 @@ async function scanFailureCauses(
     human_failure: true,
     stale_days: null,
     scope: {
+      mode: "failure_review",
       cause,
       failure_ids: causeRows.slice(0, 40).map((r) => r.id)
     }
@@ -156,7 +157,7 @@ async function scanTalkSearchQuality(
       impact: zero * 2,
       human_failure: true,
       stale_days: null,
-      scope: { window_days: 30, metric: "search_zero" }
+      scope: { mode: "answer_key", window_days: 30, metric: "search_zero", page_limit: 20 }
     });
   }
   if (requery > 0) {
@@ -172,7 +173,7 @@ async function scanTalkSearchQuality(
       impact: requery,
       human_failure: true,
       stale_days: null,
-      scope: { window_days: 30, metric: "requery" }
+      scope: { mode: "answer_key", window_days: 30, metric: "requery", page_limit: 20 }
     });
   }
   return gaps;
