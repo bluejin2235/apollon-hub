@@ -145,28 +145,51 @@ async function runRefreshStale(
   cost_usd: number;
   llm_calls: number;
 }> {
-  const staleBefore = new Date(Date.now() - 14 * 86400000).toISOString();
-  const { data, error } = await admin
-    .from("luna_notion_pages")
-    .select("page_id, title, indexed_at")
-    .lt("indexed_at", staleBefore)
-    .order("indexed_at", { ascending: true })
-    .limit(limit);
-  if (error) throw new Error(error.message);
-  const sample = (data ?? []).map((r) => ({
-    page_id: r.page_id,
-    title: r.title,
-    indexed_at: r.indexed_at
-  }));
+  const {
+    countIndexQueue,
+    enqueueNotionRefresh,
+    loadLastQueueStudyResult
+  } = await import("@/lib/luna/index-queue");
+  const lastDrain = await loadLastQueueStudyResult(admin);
+  const queued = await enqueueNotionRefresh({
+    admin,
+    queuedBy: "selfstudy"
+  });
+  const counts = await countIndexQueue(admin);
+  const sample = queued.sample.slice(0, limit);
+  const lastLine =
+    lastDrain && typeof lastDrain.result_line === "string"
+      ? lastDrain.result_line
+      : null;
   return {
     result: {
-      listed: sample.length,
+      did: `오래된 색인 ${queued.inserted}건을 대기열에 넣었습니다`,
+      result_line: lastLine
+        ? `${lastLine} · 대기열 pending ${counts.pending}`
+        : `대기열에 ${queued.inserted}건 추가 · pending ${counts.pending} · 이미 있음 ${queued.skipped}`,
+      listed: queued.inserted,
+      queued: queued.inserted,
+      skipped_already: queued.skipped,
+      stale_found: queued.staleFound,
+      null_props_found: queued.nullPropsFound,
+      pending: counts.pending,
+      running: counts.running,
+      last_drain: lastDrain,
       sample,
-      learned: "오래된 색인 후보를 목록으로 뽑았습니다 (이번 실행은 재색인 큐잉만)",
-      next: "노션 색인 러너에 이 page_id 들을 넘기면 갱신됩니다",
-      note: "안전: 자동 대량 재색인은 상한 안에서만"
+      learned:
+        "대기열(luna_index_queue)에 넣었습니다. 색인 러너가 last_edited_time 과 무관하게 강제 재색인합니다",
+      next:
+        counts.pending > 0
+          ? "다음 색인 실행이 대기열부터 최대 200건 처리합니다. 나머지는 그다음 실행으로"
+          : "대기열이 비었습니다",
+      note: "한 실행 상한 200건 — 한꺼번에 돌리지 않음"
     },
-    outcome: sample.length > 0 ? "improved" : "no_change",
+    outcome:
+      queued.inserted > 0 ||
+      counts.pending > 0 ||
+      (typeof lastDrain?.processed === "number" && lastDrain.processed > 0)
+        ? "improved"
+        : "no_change",
     cost_usd: 0,
     llm_calls: 0
   };

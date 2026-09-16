@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { contentHash, embeddingToSql } from "@/lib/luna/embedding";
+import { openaiApiKey } from "@/lib/luna/env-keys";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 import { lunaNotify } from "@/lib/luna/notify";
 import {
@@ -30,6 +31,15 @@ import {
   pathIsExcluded,
   type NotionIndexMode
 } from "@/lib/luna/notion-index-settings";
+import {
+  INDEX_QUEUE_DRAIN_MAX,
+  claimIndexQueue,
+  countIndexQueue,
+  finishIndexQueueItem,
+  measureNotionPageFacts,
+  recordIndexQueueStudyResult,
+  type IndexQueueDrainStats
+} from "@/lib/luna/index-queue";
 
 function isMissingTableError(err: unknown): boolean {
   const msg =
@@ -124,7 +134,45 @@ export type NotionIndexCheckpoint = {
   changed_pages?: number;
   properties_written?: boolean;
   db_rows_added?: number;
+  /** 이 실행에서 대기열로 강제 재색인한 건수 (상한 200) */
+  queue_drained_this_run?: number;
+  queue_remaining?: number;
+  queue_acc?: {
+    processed: number;
+    failed: number;
+    duration_ms: number;
+    relations_before: number;
+    relations_after: number;
+    properties_filled_before: number;
+    properties_filled_after: number;
+  };
 };
+
+type PageMetaMap = NonNullable<NotionIndexCheckpoint["page_meta"]>;
+
+/** process 내 청크 이어가기용 — DB checkpoint 에서 properties 를 빼도 메모리에 유지 */
+const pageMetaMemory = new Map<string, PageMetaMap>();
+
+/** jsonb 타임아웃 방지: properties 는 DB checkpoint 에 넣지 않는다 */
+function slimCheckpoint(cp: NotionIndexCheckpoint): NotionIndexCheckpoint {
+  const page_meta: PageMetaMap = {};
+  for (const [id, meta] of Object.entries(cp.page_meta ?? {})) {
+    page_meta[id] = {
+      title: meta.title,
+      parent_type: meta.parent_type,
+      parent_id: meta.parent_id,
+      root_title: meta.root_title,
+      path_titles: meta.path_titles,
+      depth: meta.depth,
+      nas_path: meta.nas_path,
+      url: meta.url,
+      object_type: meta.object_type,
+      archived: meta.archived,
+      last_edited_time: meta.last_edited_time
+    };
+  }
+  return { ...cp, page_meta };
+}
 
 type ExistingPage = {
   last_edited_time: string | null;
@@ -373,20 +421,24 @@ async function embedAndSaveChunks(
       });
     });
     if (rows.length === 0) continue;
-    await withTimeoutRetries(
-      `chunk_embeddings upsert n=${rows.length}`,
-      async () => {
-        const { error } = await admin
-          .from("luna_notion_chunk_embeddings")
-          .upsert(rows, { onConflict: "chunk_id" });
-        if (error) {
-          throw new Error(
-            `luna_notion_chunk_embeddings upsert: ${error.message}`
-          );
-        }
-      }
-    );
-    created += rows.length;
+    // vector(1536) jsonb 가 커서 1건씩. 타임아웃 시 페이지 단위로 넘어가게 상위에서 catch.
+    for (const row of rows) {
+      await withTimeoutRetries(
+        `chunk_embeddings upsert n=1`,
+        async () => {
+          const { error } = await admin
+            .from("luna_notion_chunk_embeddings")
+            .upsert(row, { onConflict: "chunk_id" });
+          if (error) {
+            throw new Error(
+              `luna_notion_chunk_embeddings upsert: ${error.message}`
+            );
+          }
+        },
+        [3000, 8000]
+      );
+      created += 1;
+    }
   }
 
   return { created, skippedShort, skippedHash };
@@ -611,8 +663,8 @@ async function initCheckpoint(
 ): Promise<NotionIndexCheckpoint> {
   const notionToken = process.env.NOTION_TOKEN?.trim();
   if (!notionToken) throw new Error("NOTION_TOKEN 이 없습니다");
-  if (!process.env.LUNA_OPENAI_API_KEY?.trim()) {
-    throw new Error("LUNA_OPENAI_API_KEY 가 없습니다");
+  if (!openaiApiKey()) {
+    throw new Error("LUNA_OPENAI_API_KEY / OPENAI_API_KEY 가 없습니다");
   }
 
   const exclude = await getNotionIndexExclude(admin);
@@ -675,6 +727,213 @@ async function replacePageRelations(
   if (rows.length === 0) return;
   const { error } = await admin.from("luna_notion_relations").insert(rows);
   if (error) throw new Error(`luna_notion_relations insert: ${error.message}`);
+}
+
+/**
+ * last_edited_time 과 무관하게 노션에서 페이지를 다시 읽는다.
+ * 권한 변경·properties null 은 시각이 안 바뀌기 때문.
+ */
+async function forceReindexPage(
+  admin: SupabaseClient,
+  client: NotionIndexClient,
+  pageId: string,
+  opts: { minChars: number; scanBatch: string }
+): Promise<{ blocks: number; embeddings: number }> {
+  const live = await client.fetchMeta(pageId);
+  if (!live || live.object === "unknown") {
+    throw new Error("노션에서 페이지를 읽을 수 없음");
+  }
+  const meta = await buildMetaGraph(client, [live]);
+  const indexedPage = pageToIndexed(live, meta);
+  const page: PageRow = {
+    ...indexedPage,
+    scan_batch: opts.scanBatch,
+    indexed_at: null
+  };
+  await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+  await replacePageRelations(
+    admin,
+    pageId,
+    extractNotionRelations(pageId, page.properties)
+  );
+  const rawBlocks = await client.fetchPageBlocks(pageId);
+  const indexed = blocksToIndexed(pageId, rawBlocks);
+  const bodyText = indexed.map((b) => b.text).join("\n");
+  const nas = firstNasPath([bodyText, page.title]);
+  if (nas) page.nas_path = nas;
+  await upsertBatch(admin, "luna_notion_blocks", indexed, "block_id");
+  await deleteStaleBlocksForPage(
+    admin,
+    pageId,
+    new Set(indexed.map((b) => b.block_id))
+  );
+  const chunked = await savePageChunks(
+    admin,
+    pageId,
+    indexed,
+    opts.minChars,
+    page.title,
+    page.path_titles
+  );
+  const doneAt = new Date().toISOString();
+  const { error: doneErr } = await admin
+    .from("luna_notion_pages")
+    .update({ indexed_at: doneAt, nas_path: page.nas_path })
+    .eq("page_id", pageId);
+  if (doneErr) {
+    throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
+  }
+  return { blocks: indexed.length, embeddings: chunked.embeddings };
+}
+
+function emptyDrainStats(durationMs: number): IndexQueueDrainStats {
+  return {
+    claimed: 0,
+    processed: 0,
+    failed: 0,
+    remaining: 0,
+    duration_ms: durationMs,
+    relations_before: 0,
+    relations_after: 0,
+    properties_filled_before: 0,
+    properties_filled_after: 0,
+    sample_errors: []
+  };
+}
+
+/** 대기열 pending 을 강제 재색인. 한 호출 최대 max 건. */
+export async function drainIndexQueue(
+  admin: SupabaseClient,
+  opts: { max: number; budgetMs: number }
+): Promise<IndexQueueDrainStats> {
+  const t0 = Date.now();
+  const max = Math.max(0, opts.max);
+  if (max <= 0) {
+    const counts = await countIndexQueue(admin);
+    return { ...emptyDrainStats(0), remaining: counts.pending };
+  }
+  const notionToken = process.env.NOTION_TOKEN?.trim();
+  if (!notionToken) throw new Error("NOTION_TOKEN 이 없습니다");
+  const client = new NotionIndexClient(notionToken);
+  const exclude = await getNotionIndexExclude(admin);
+  const minChars = exclude.min_block_length;
+  const scanBatch = newScanBatch();
+
+  let processed = 0;
+  let failed = 0;
+  let claimed = 0;
+  let relationsBefore = 0;
+  let relationsAfter = 0;
+  let propertiesBefore = 0;
+  let propertiesAfter = 0;
+  const sample_errors: string[] = [];
+
+  while (processed + failed < max && Date.now() - t0 < opts.budgetMs) {
+    const batch = await claimIndexQueue(admin, 1);
+    const item = batch[0];
+    if (!item) break;
+    claimed += 1;
+    if (item.source !== "notion") {
+      await finishIndexQueueItem(admin, item.id, {
+        status: "failed",
+        error: `source ${item.source} 는 노션 러너에서 처리하지 않음`
+      });
+      failed += 1;
+      continue;
+    }
+    try {
+      const before = await measureNotionPageFacts(admin, [item.target_id]);
+      relationsBefore += before.relations;
+      propertiesBefore += before.propertiesFilled;
+      await forceReindexPage(admin, client, item.target_id, {
+        minChars,
+        scanBatch
+      });
+      const after = await measureNotionPageFacts(admin, [item.target_id]);
+      relationsAfter += after.relations;
+      propertiesAfter += after.propertiesFilled;
+      await finishIndexQueueItem(admin, item.id, { status: "done" });
+      processed += 1;
+      if (processed % 10 === 0) {
+        console.log(
+          `[notion-index] queue force ${processed}/${max} fail=${failed} elapsed_sec=${Math.round((Date.now() - t0) / 1000)}`
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await finishIndexQueueItem(admin, item.id, {
+        status: "failed",
+        error: message.slice(0, 500)
+      });
+      failed += 1;
+      if (sample_errors.length < 8) {
+        sample_errors.push(`${item.target_id.slice(0, 8)}: ${message.slice(0, 160)}`);
+      }
+      console.error(
+        `[notion-index] queue fail ${item.target_id.slice(0, 8)}: ${message.slice(0, 200)}`
+      );
+    }
+  }
+
+  const counts = await countIndexQueue(admin);
+  return {
+    claimed,
+    processed,
+    failed,
+    remaining: counts.pending,
+    duration_ms: Date.now() - t0,
+    relations_before: relationsBefore,
+    relations_after: relationsAfter,
+    properties_filled_before: propertiesBefore,
+    properties_filled_after: propertiesAfter,
+    sample_errors
+  };
+}
+
+function mergeQueueAcc(
+  prev: NotionIndexCheckpoint["queue_acc"] | undefined,
+  drain: IndexQueueDrainStats
+): NonNullable<NotionIndexCheckpoint["queue_acc"]> {
+  if (!prev) {
+    return {
+      processed: drain.processed,
+      failed: drain.failed,
+      duration_ms: drain.duration_ms,
+      relations_before: drain.relations_before,
+      relations_after: drain.relations_after,
+      properties_filled_before: drain.properties_filled_before,
+      properties_filled_after: drain.properties_filled_after
+    };
+  }
+  return {
+    processed: prev.processed + drain.processed,
+    failed: prev.failed + drain.failed,
+    duration_ms: prev.duration_ms + drain.duration_ms,
+    relations_before: prev.relations_before + drain.relations_before,
+    relations_after: prev.relations_after + drain.relations_after,
+    properties_filled_before:
+      prev.properties_filled_before + drain.properties_filled_before,
+    properties_filled_after:
+      prev.properties_filled_after + drain.properties_filled_after
+  };
+}
+
+function accToDrainStats(
+  acc: NonNullable<NotionIndexCheckpoint["queue_acc"]>,
+  remaining: number
+): IndexQueueDrainStats {
+  return {
+    claimed: acc.processed + acc.failed,
+    processed: acc.processed,
+    failed: acc.failed,
+    remaining,
+    duration_ms: acc.duration_ms,
+    relations_before: acc.relations_before,
+    relations_after: acc.relations_after,
+    properties_filled_before: acc.properties_filled_before,
+    properties_filled_after: acc.properties_filled_after,
+    sample_errors: []
+  };
 }
 
 async function pagesNeedingTableRows(
@@ -771,13 +1030,114 @@ export async function runNotionIndexChunk(
 
   try {
     let cp = { ...run.checkpoint };
+
+    const queueRoom = INDEX_QUEUE_DRAIN_MAX - (cp.queue_drained_this_run ?? 0);
+    if (queueRoom > 0) {
+      const remainBudget = Math.max(
+        8_000,
+        budgetMs - (Date.now() - chunkStarted)
+      );
+      const drain = await drainIndexQueue(admin, {
+        max: queueRoom,
+        budgetMs: remainBudget
+      });
+      const drainedNow = drain.processed + drain.failed;
+      if (drainedNow > 0 || drain.remaining > 0) {
+        cp = {
+          ...cp,
+          queue_drained_this_run: (cp.queue_drained_this_run ?? 0) + drainedNow,
+          queue_remaining: drain.remaining,
+          queue_acc: mergeQueueAcc(cp.queue_acc, drain)
+        };
+        run = await updateRun(admin, run.id, {
+          pages_processed: run.pages_processed + drain.processed,
+          checkpoint: slimCheckpoint(cp)
+        });
+      }
+
+      const quotaFull =
+        (cp.queue_drained_this_run ?? 0) >= INDEX_QUEUE_DRAIN_MAX;
+      const budgetLeft = Date.now() - chunkStarted < budgetMs;
+      const inPages = Boolean(cp.page_ids?.length) && cp.phase === "pages";
+      const queueWorkDoneThisRun =
+        quotaFull || (drain.remaining === 0 && (cp.queue_acc?.processed ?? 0) + (cp.queue_acc?.failed ?? 0) > 0);
+
+      if (queueWorkDoneThisRun && cp.queue_acc) {
+        await recordIndexQueueStudyResult(
+          admin,
+          accToDrainStats(cp.queue_acc, drain.remaining),
+          { index_run_id: run.id }
+        );
+      }
+
+      if (drain.remaining > 0 && !quotaFull) {
+        return { run, continued: true, done: false };
+      }
+
+      if (drain.remaining > 0 && quotaFull && !inPages) {
+        const finished = new Date().toISOString();
+        const durationMs = Math.max(
+          0,
+          new Date(finished).getTime() - new Date(run.started_at).getTime()
+        );
+        run = await updateRun(admin, run.id, {
+          status: "success",
+          finished_at: finished,
+          duration_ms: durationMs,
+          error_message: null,
+          checkpoint: slimCheckpoint({ ...cp, phase: "done" })
+        });
+        pageMetaMemory.delete(run.id);
+        return { run, continued: false, done: true };
+      }
+
+      if (!budgetLeft && inPages) {
+        return { run, continued: true, done: false };
+      }
+    }
+
     if (!cp.phase || cp.phase === "init" || !cp.page_ids?.length) {
-      cp = await initCheckpoint(admin);
+      const queueKeep = {
+        queue_drained_this_run: cp.queue_drained_this_run,
+        queue_remaining: cp.queue_remaining,
+        queue_acc: cp.queue_acc
+      };
+      cp = { ...(await initCheckpoint(admin)), ...queueKeep };
+      if (cp.page_meta) pageMetaMemory.set(run.id, cp.page_meta);
       run = await updateRun(admin, run.id, {
         pages_total: cp.page_ids?.length ?? 0,
-        checkpoint: cp
+        checkpoint: slimCheckpoint(cp)
       });
-      cp = run.checkpoint;
+      cp = { ...run.checkpoint, page_meta: pageMetaMemory.get(run.id) ?? run.checkpoint.page_meta };
+    } else if (!pageMetaMemory.has(run.id)) {
+      const sampleId = cp.page_ids[0];
+      const hasProps =
+        sampleId != null &&
+        cp.page_meta?.[sampleId] != null &&
+        "properties" in (cp.page_meta[sampleId] ?? {});
+      if (!hasProps) {
+        const fresh = await initCheckpoint(admin);
+        if (fresh.page_meta) pageMetaMemory.set(run.id, fresh.page_meta);
+        cp = {
+          ...cp,
+          page_ids: fresh.page_ids ?? cp.page_ids,
+          page_meta: fresh.page_meta,
+          scan_batch: cp.scan_batch ?? fresh.scan_batch,
+          properties_written: cp.properties_written
+        };
+        run = await updateRun(admin, run.id, {
+          pages_total: cp.page_ids?.length ?? 0,
+          checkpoint: slimCheckpoint(cp)
+        });
+        cp = {
+          ...run.checkpoint,
+          page_meta: pageMetaMemory.get(run.id) ?? run.checkpoint.page_meta
+        };
+      } else if (cp.page_meta) {
+        pageMetaMemory.set(run.id, cp.page_meta);
+      }
+    } else {
+      cp = { ...cp, page_meta: pageMetaMemory.get(run.id) ?? cp.page_meta };
     }
 
     if (run.abort_requested) {
@@ -791,8 +1151,9 @@ export async function runNotionIndexChunk(
         finished_at: finished,
         duration_ms: durationMs,
         error_message: "사용자 중단 · 지금까지 색인한 것은 남음",
-        checkpoint: { ...cp, phase: "done" }
+        checkpoint: slimCheckpoint({ ...cp, phase: "done" })
       });
+      pageMetaMemory.delete(run.id);
       return { run, continued: false, done: true };
     }
 
@@ -817,18 +1178,22 @@ export async function runNotionIndexChunk(
 
     while (cursor < pageIds.length) {
       if (Date.now() - chunkStarted > budgetMs) {
+        const nextCp: NotionIndexCheckpoint = {
+          ...cp,
+          cursor,
+          phase: "pages",
+          changed_pages: changedPages,
+          scan_batch: scanBatch,
+          page_ids: pageIds,
+          page_meta: pageMeta
+        };
+        pageMetaMemory.set(run.id, pageMeta);
         run = await updateRun(admin, run.id, {
           pages_processed: pagesProcessed,
           pages_skipped: pagesSkipped,
           blocks,
           embeddings_added: embeddingsAdded,
-          checkpoint: {
-            ...cp,
-            cursor,
-            phase: "pages",
-            changed_pages: changedPages,
-            scan_batch: scanBatch
-          }
+          checkpoint: slimCheckpoint(nextCp)
         });
         return { run, continued: true, done: false };
       }
@@ -853,13 +1218,16 @@ export async function runNotionIndexChunk(
           blocks,
           embeddings_added: embeddingsAdded,
           error_message: "사용자 중단 · 지금까지 색인한 것은 남음",
-          checkpoint: {
+          checkpoint: slimCheckpoint({
             ...cp,
             cursor,
             phase: "done",
-            changed_pages: changedPages
-          }
+            changed_pages: changedPages,
+            page_ids: pageIds,
+            page_meta: pageMeta
+          })
         });
+        pageMetaMemory.delete(run.id);
         return { run, continued: false, done: true };
       }
 
@@ -1002,20 +1370,22 @@ export async function runNotionIndexChunk(
       cursor += 1;
 
       if (cursor % 10 === 0) {
+        const midCp: NotionIndexCheckpoint = {
+          ...cp,
+          cursor,
+          phase: "pages",
+          changed_pages: changedPages,
+          scan_batch: scanBatch,
+          page_ids: pageIds,
+          page_meta: pageMeta
+        };
+        pageMetaMemory.set(run.id, pageMeta);
         await updateRun(admin, run.id, {
           pages_processed: pagesProcessed,
           pages_skipped: pagesSkipped,
           blocks,
           embeddings_added: embeddingsAdded,
-          checkpoint: {
-            ...cp,
-            cursor,
-            phase: "pages",
-            changed_pages: changedPages,
-            scan_batch: scanBatch,
-            page_ids: pageIds,
-            page_meta: pageMeta
-          }
+          checkpoint: slimCheckpoint(midCp)
         });
       }
     }
@@ -1059,11 +1429,13 @@ export async function runNotionIndexChunk(
         page_ids: pageIds
       }
     });
+    pageMetaMemory.delete(run.id);
     return { run, continued: false, done: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "색인 실패";
     console.error("[notion-index]", err);
     const failed = await failRun(admin, run, message);
+    pageMetaMemory.delete(run.id);
     return { run: failed, continued: false, done: true };
   }
 }
