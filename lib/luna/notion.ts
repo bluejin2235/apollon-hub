@@ -38,9 +38,33 @@ export type NotionSource = {
   path_titles?: string[];
   /** 제안 단계 vs 수행 프로젝트 (조회 시 경로로 판정) */
   work_stage?: "executed" | "proposal" | "unknown";
+  /** 2차 링크를 따라와 추가된 문서 */
+  link_expanded?: boolean;
+  /** belongs/same/follows/perspective */
+  via_link?: string;
+  /** luna_links project to_id 등 — UI 묶음 키 */
+  project_key?: string | null;
+  /** 관점 매칭으로 가중된 경우 */
+  perspective?: string;
 };
 
 export type NotionSearchStatus = "ok" | "empty" | "skipped" | "error";
+
+export type NotionSearchSecondaryMeta = {
+  link_added: number;
+  link_ms: number;
+  links_followed: number;
+  perspectives: string[];
+  perspective_ms: number;
+  project_groups: Array<{
+    title: string;
+    notion: number;
+    meetings: number;
+    ideation: number;
+    proposals: number;
+    work: number;
+  }>;
+};
 
 export type NotionSearchOutcome = {
   status: NotionSearchStatus;
@@ -49,6 +73,7 @@ export type NotionSearchOutcome = {
   rounds: number;
   error?: string;
   httpStatus?: number;
+  secondary?: NotionSearchSecondaryMeta;
 };
 
 type NotionSearchResult = {
@@ -675,7 +700,11 @@ export function mergeNotionSearchOutcomes(
 }
 
 export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
-  return sources
+  const groups = summarizeGroupsInline(sources);
+  const head = groups.length
+    ? `[프로젝트 묶음]\n${groups.join("\n")}\n\n`
+    : "";
+  const body = sources
     .filter((s) => (s.title ?? "").trim().length > 0)
     .map((s) => {
       const title = s.title.trim();
@@ -685,7 +714,13 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
           : s.work_stage === "proposal"
             ? "[제안]"
             : "";
-      const lines = [`- ${stage ? `${stage} ` : ""}${title} — ${s.url}`];
+      const via = s.link_expanded
+        ? ` · 연결(${s.via_link ?? "link"})`
+        : "";
+      const lines = [`- ${stage ? `${stage} ` : ""}${title}${via} — ${s.url}`];
+      if (s.project_key) {
+        lines.push(`  프로젝트: ${s.project_key}`);
+      }
       if (s.section) {
         lines.push(`  절: ${s.section}`);
       }
@@ -708,6 +743,41 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
       return lines.join("\n");
     })
     .join("\n");
+  return head + body;
+}
+
+function summarizeGroupsInline(sources: NotionSource[]): string[] {
+  const byKey = new Map<string, NotionSource[]>();
+  for (const s of sources) {
+    const key = s.project_key;
+    if (!key) continue;
+    const list = byKey.get(key) ?? [];
+    list.push(s);
+    byKey.set(key, list);
+  }
+  const lines: string[] = [];
+  for (const [key, list] of byKey) {
+    if (list.length < 2) continue;
+    let meetings = 0;
+    let ideation = 0;
+    let proposals = 0;
+    let work = 0;
+    for (const s of list) {
+      if (/회의|미팅|meeting/i.test(s.title)) meetings += 1;
+      else if (/아이데이션|ideation/i.test(s.title)) ideation += 1;
+      else if (/제안|기획안/i.test(s.title)) proposals += 1;
+      if (s.nas_path) work += 1;
+    }
+    const bits = [
+      `노션 ${list.length}`,
+      meetings ? `회의록 ${meetings}` : "",
+      ideation ? `아이데이션 ${ideation}` : "",
+      proposals ? `제안 ${proposals}` : "",
+      work ? `Work ${work}` : ""
+    ].filter(Boolean);
+    lines.push(`- ${key}: ${bits.join(" · ")}`);
+  }
+  return lines.slice(0, 8);
 }
 
 /** 검색 결과에 단계 표시·질문 가중치 반영 후 재정렬 */

@@ -46,6 +46,9 @@ export type SourcePackItem = {
   displayScore?: number;
   /** 제안 단계 vs 수행 프로젝트 */
   workStage?: WorkStage;
+  /** luna_links 프로젝트 키 */
+  projectKey?: string | null;
+  linkExpanded?: boolean;
 };
 
 export type SourcePackProject = {
@@ -429,7 +432,9 @@ function packFromNotion(
       typeof source.similarity === "number" && Number.isFinite(source.similarity)
         ? Math.min(1, Math.max(0, source.similarity))
         : undefined,
-    workStage
+    workStage,
+    projectKey: source.project_key ?? null,
+    linkExpanded: Boolean(source.link_expanded)
   };
 }
 
@@ -568,10 +573,15 @@ function groupPacksIntoProjects(
   notions: NotionSource[]
 ): SourcePackView[] {
   const byParent = new Map<string, SourcePackItem[]>();
+  const byProjectKey = new Map<string, SourcePackItem[]>();
   const noParent: SourcePackItem[] = [];
 
   for (const item of items) {
-    if (item.parentId) {
+    if (item.projectKey) {
+      const list = byProjectKey.get(item.projectKey) ?? [];
+      list.push(item);
+      byProjectKey.set(item.projectKey, list);
+    } else if (item.parentId) {
       const list = byParent.get(item.parentId) ?? [];
       list.push(item);
       byParent.set(item.parentId, list);
@@ -583,66 +593,116 @@ function groupPacksIntoProjects(
   const views: SourcePackView[] = [];
   const consumed = new Set<string>();
 
-  for (const [parentId, group] of byParent) {
-    const parentSelf = group.find((c) => c.id === parentId);
+  const pushProjectGroup = (
+    groupKey: string,
+    group: SourcePackItem[],
+    titleHint: string | null
+  ) => {
+    const parentSelf = group.find((c) => c.id === groupKey);
+    const parentNotion = notions.find((n) => n.id === groupKey);
+    const tentativeTitle = (
+      titleHint ||
+      parentNotion?.title ||
+      parentSelf?.title ||
+      ""
+    ).trim();
+    // 노션 DB 루트(아이데이션 DB 등)로 묶지 않음
+    if (/DB$/i.test(tentativeTitle) || /DB$/i.test(groupKey.trim())) {
+      for (const c of group) {
+        if (!consumed.has(c.id)) {
+          views.push({ kind: "item", ...c });
+          consumed.add(c.id);
+        }
+      }
+      return;
+    }
+
     const children = group
-      .filter((c) => c.id !== parentId)
+      .filter((c) => c.id !== groupKey)
       .sort(
         (a, b) => a.dateKey - b.dateKey || a.title.localeCompare(b.title, "ko")
       );
+    const members = children.length > 0 ? children : group;
+    const useChildren =
+      children.length >= 2 ? children : members.length >= 2 ? members : [];
 
-    if (children.length >= PROJECT_MIN_CHILDREN) {
-      const parentNotion = notions.find((n) => n.id === parentId);
-      const sample = children[0]!;
-      const parentTitle = (
-        parentNotion?.title ||
-        parentSelf?.title ||
-        sample.pathTitles[sample.pathTitles.length - 2] ||
-        sample.title
-      )
-        .replace(/\(EB 완료\)|\(TJ완료\)/g, "")
-        .trim();
-      const parentPath = parentNotion ? notionPath(parentNotion) : null;
-
-      for (const m of children) consumed.add(m.id);
-      if (parentSelf) consumed.add(parentSelf.id);
-
-      const projectStage =
-        parentNotion?.work_stage ??
-        parentSelf?.workStage ??
-        children.find((c) => c.workStage && c.workStage !== "unknown")
-          ?.workStage ??
-        sample.workStage;
-
-      views.push({
-        kind: "project",
-        id: `project:${parentId}`,
-        title: parentTitle,
-        subtitle: `${badgeFromPath(sample.pathTitles) || "프로젝트"} · 자료 ${children.length}건`,
-        badge: badgeFromPath(parentNotion?.path_titles ?? sample.pathTitles),
-        notion: parentNotion
-          ? {
-              title: parentNotion.title,
-              url: parentNotion.url,
-              id: parentNotion.id
-            }
-          : parentSelf?.notion ?? null,
-        folder: parentPath
-          ? toFolder(parentPath)
-          : parentSelf?.folder ??
-            children.find((m) => m.folder)?.folder ??
-            null,
-        children,
-        score: Math.max(...children.map((c) => c.score), parentSelf?.score ?? 0),
-        workStage: projectStage
-      });
-      continue;
+    if (useChildren.length < 2) {
+      for (const c of group) {
+        if (!consumed.has(c.id)) {
+          views.push({ kind: "item", ...c });
+          consumed.add(c.id);
+        }
+      }
+      return;
     }
 
-    for (const c of group) {
-      views.push({ kind: "item", ...c });
-      consumed.add(c.id);
+    const sample = useChildren[0]!;
+    const parentTitle = (
+      titleHint ||
+      parentNotion?.title ||
+      parentSelf?.title ||
+      sample.projectKey ||
+      sample.pathTitles[sample.pathTitles.length - 2] ||
+      sample.title
+    )
+      .replace(/\(EB 완료\)|\(TJ완료\)/g, "")
+      .trim();
+    if (/DB$/i.test(parentTitle)) {
+      for (const c of group) {
+        if (!consumed.has(c.id)) {
+          views.push({ kind: "item", ...c });
+          consumed.add(c.id);
+        }
+      }
+      return;
     }
+
+    const parentPath = parentNotion ? notionPath(parentNotion) : null;
+    for (const m of useChildren) consumed.add(m.id);
+    if (parentSelf) consumed.add(parentSelf.id);
+    for (const m of group) consumed.add(m.id);
+
+    const projectStage =
+      parentNotion?.work_stage ??
+      parentSelf?.workStage ??
+      useChildren.find((c) => c.workStage && c.workStage !== "unknown")
+        ?.workStage ??
+      sample.workStage;
+
+    views.push({
+      kind: "project",
+      id: `project:${groupKey}`,
+      title: parentTitle,
+      subtitle: summarizeProjectSubtitle(useChildren),
+      badge: badgeFromPath(parentNotion?.path_titles ?? sample.pathTitles),
+      notion: parentNotion
+        ? {
+            title: parentNotion.title,
+            url: parentNotion.url,
+            id: parentNotion.id
+          }
+        : parentSelf?.notion ?? null,
+      folder: parentPath
+        ? toFolder(parentPath)
+        : parentSelf?.folder ??
+          useChildren.find((m) => m.folder)?.folder ??
+          null,
+      children: useChildren,
+      score: Math.max(
+        ...useChildren.map((c) => c.score),
+        parentSelf?.score ?? 0
+      ),
+      workStage: projectStage
+    });
+  };
+
+  for (const [parentId, group] of byParent) {
+    pushProjectGroup(parentId, group, null);
+  }
+  for (const [pkey, group] of byProjectKey) {
+    const remaining = group.filter((c) => !consumed.has(c.id));
+    if (remaining.length === 0) continue;
+    pushProjectGroup(pkey, remaining, pkey);
   }
 
   for (const s of noParent) {
@@ -650,6 +710,35 @@ function groupPacksIntoProjects(
   }
 
   return views;
+}
+
+function summarizeProjectSubtitle(children: SourcePackItem[]): string {
+  let meetings = 0;
+  let ideation = 0;
+  let proposals = 0;
+  let notion = 0;
+  let work = 0;
+  let images = 0;
+  for (const c of children) {
+    if (c.notion) notion += 1;
+    if (c.files.length > 0 || c.folder) work += 1;
+    if (c.onlySide === null && !c.notion && c.files.some((f) => /\.(png|jpe?g|webp|gif)$/i.test(f.name))) {
+      images += 1;
+    }
+    if (/회의|미팅|meeting|워크숍/i.test(c.title)) meetings += 1;
+    else if (/아이데이션|ideation/i.test(c.title)) ideation += 1;
+    else if (/제안|기획안/i.test(c.title)) proposals += 1;
+  }
+  const bits = [
+    notion ? `노션 ${notion}` : "",
+    meetings ? `회의록 ${meetings}` : "",
+    ideation ? `아이데이션 ${ideation}` : "",
+    proposals ? `제안 ${proposals}` : "",
+    work ? `Work ${work}` : "",
+    images ? `이미지 ${images}` : ""
+  ].filter(Boolean);
+  if (bits.length === 0) return `자료 ${children.length}건`;
+  return bits.join(" · ");
 }
 
 /** 배지용 — 묶인 자료 개수 (프로젝트는 자식 수) */

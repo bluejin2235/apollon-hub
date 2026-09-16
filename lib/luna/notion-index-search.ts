@@ -14,6 +14,13 @@ import {
 } from "@/lib/luna/notion";
 import { matchNamedEntities, NAMED_ENTITY_SEED } from "@/lib/luna/named-entities";
 import {
+  applyPerspectivesToSources,
+  annotateSeedsWithProjectKeys,
+  expandSourcesViaLinks,
+  mergeExpandedSources,
+  summarizeProjectGroups
+} from "@/lib/luna/search-secondary";
+import {
   matchNotionChunksByKeyword,
   mergeNotionHybridChunkHits,
   notionSearchKeywords,
@@ -684,6 +691,8 @@ export async function searchNotionForLuna(
     skipLive?: boolean;
     /** 목록형: 상위 20청크 · 페이지당 1 */
     listing?: boolean;
+    /** 2차 링크·관점 확장 (기본 true) */
+    useSecondary?: boolean;
   }
 ): Promise<NotionSearchOutcome> {
   const started = Date.now();
@@ -885,9 +894,69 @@ export async function searchNotionForLuna(
     ? annotateNotionSourcesWithWorkStage(merged.sources, queryText)
     : merged.sources;
 
+  const useSecondary = opts?.useSecondary !== false;
+  let finalSources = stagedSources;
+  let secondaryMeta: NotionSearchOutcome["secondary"] = {
+    link_added: 0,
+    link_ms: 0,
+    links_followed: 0,
+    perspectives: [],
+    perspective_ms: 0,
+    project_groups: []
+  };
+
+  if (useSecondary && finalSources.length > 0) {
+    try {
+      const withProjects = await annotateSeedsWithProjectKeys(
+        admin,
+        finalSources
+      );
+      const persp = await applyPerspectivesToSources(
+        admin,
+        queryText || keywords,
+        withProjects
+      );
+      const expanded = await expandSourcesViaLinks(admin, persp.sources);
+      finalSources = mergeExpandedSources(persp.sources, expanded.sources);
+      if (queryText) {
+        finalSources = annotateNotionSourcesWithWorkStage(
+          finalSources,
+          queryText
+        );
+      }
+      const groups = summarizeProjectGroups(finalSources);
+      secondaryMeta = {
+        link_added: expanded.stats.added,
+        link_ms: expanded.stats.ms,
+        links_followed: expanded.stats.links_followed,
+        perspectives: persp.stats.names,
+        perspective_ms: persp.stats.ms,
+        project_groups: groups.map((g) => ({
+          title: g.title,
+          notion: g.notion,
+          meetings: g.meetings,
+          ideation: g.ideation,
+          proposals: g.proposals,
+          work: g.work
+        }))
+      };
+      console.log("[luna/notion-index] secondary", {
+        perspectives: secondaryMeta.perspectives,
+        link_added: secondaryMeta.link_added,
+        link_ms: secondaryMeta.link_ms,
+        perspective_ms: secondaryMeta.perspective_ms,
+        groups: secondaryMeta.project_groups.length,
+        final: finalSources.length
+      });
+    } catch (err) {
+      console.error("[luna/notion-index] secondary failed", err);
+    }
+  }
+
   return {
     ...merged,
-    sources: stagedSources,
-    queries: [...new Set([...merged.queries, "index"])]
+    sources: finalSources,
+    queries: [...new Set([...merged.queries, "index"])],
+    secondary: secondaryMeta
   };
 }
