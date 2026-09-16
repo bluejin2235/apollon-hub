@@ -78,6 +78,9 @@ async function main() {
     `follows  inserted=${report.follows.inserted} would=${report.follows.would} skip=${report.follows.skipped}`
   );
   console.log(
+    `         nas=${report.follows.nas_name} notion=${report.follows.notion_relations} dual=${report.follows.dual_source} reclass=${report.follows.reclassified_from_belongs}`
+  );
+  console.log(
     `same     inserted=${report.same.inserted} would=${report.same.would} human=${report.same.human} auto=${report.same.auto} ask=${report.same.asked} drop=${report.same.dropped}`
   );
   console.log(

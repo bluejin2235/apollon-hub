@@ -26,6 +26,11 @@ import {
   type WorkFolder
 } from "@/lib/luna-admin/link-parse";
 import { questionDedupeKey } from "@/lib/luna-admin/pair-view";
+import {
+  classifyNotionRelationProperty,
+  isBdToProjectFollowPair,
+  type ClassifiedNotionRelation
+} from "@/lib/luna-admin/notion-relation-kinds";
 
 export type BuildKind = "belongs" | "follows" | "same" | "perspectives";
 
@@ -55,7 +60,12 @@ export type BuildLinksReport = {
     notion_pages: number;
     notion_relations: number;
   };
-  follows: KindCount;
+  follows: KindCount & {
+    nas_name: number;
+    notion_relations: number;
+    dual_source: number;
+    reclassified_from_belongs: number;
+  };
   same: KindCount & {
     human: number;
     auto: number;
@@ -453,7 +463,13 @@ export async function buildLinks(
       notion_pages: 0,
       notion_relations: 0
     },
-    follows: emptyKind(),
+    follows: {
+      ...emptyKind(),
+      nas_name: 0,
+      notion_relations: 0,
+      dual_source: 0,
+      reclassified_from_belongs: 0
+    },
     same: { ...emptyKind(), human: 0, auto: 0, asked: 0, dropped: 0 },
     perspectives: { ...emptyKind(), top: [] },
     questions: 0,
@@ -642,8 +658,14 @@ export async function buildLinks(
 
     const relDrafts: LinkDraft[] = [];
     for (const rel of relations) {
-      const fromPage = notionById.get(rel.from_page_id);
-      const toPage = notionById.get(rel.to_page_id);
+      const classified = classifyNotionRelationProperty(rel.property_name);
+      const oriented = orientNotionRelation(rel, classified, notionById);
+      if (!oriented) continue;
+      // follows 는 아래 follows 블록에서 NAS 와 합쳐 넣는다
+      if (oriented.kind === "follows") continue;
+
+      const fromPage = notionById.get(oriented.from_page_id);
+      const toPage = notionById.get(oriented.to_page_id);
       const fromYear = fromPage ? notionProjectHint(fromPage).year : null;
       const toYear = toPage ? notionProjectHint(toPage).year : null;
       if (yearFilter && !yearOk(fromYear, yearFilter) && !yearOk(toYear, yearFilter)) {
@@ -651,9 +673,9 @@ export async function buildLinks(
       }
       relDrafts.push({
         from_type: "notion_page",
-        from_id: rel.from_page_id,
+        from_id: oriented.from_page_id,
         to_type: "notion_page",
-        to_id: rel.to_page_id,
+        to_id: oriented.to_page_id,
         kind: "belongs",
         confidence: 1,
         source: "rule",
@@ -662,8 +684,9 @@ export async function buildLinks(
           role: "relation",
           property_name: rel.property_name,
           year: fromYear ?? toYear,
-          from_title: fromPage?.title ?? rel.from_page_id,
-          to_title: toPage?.title ?? rel.to_page_id
+          from_title: fromPage?.title ?? oriented.from_page_id,
+          to_title: toPage?.title ?? oriented.to_page_id,
+          relation_kind: "belongs"
         }
       });
     }
@@ -743,20 +766,34 @@ export async function buildLinks(
 
   if (runFollows) {
     log("[build-links] follows…");
+    const reclass = await reclassifyBelongsRelationsToFollows(
+      admin,
+      notionById,
+      dryRun,
+      log
+    );
+    report.follows.reclassified_from_belongs = reclass.moved;
+
+    const byMerge = new Map<string, FollowMergeDraft>();
+
+    // NAS 폴더명 매칭
     const bd = workFolders.filter((f) => f.isBd);
     const delivery = workFolders.filter((f) => f.isDelivery);
-    const drafts: LinkDraft[] = [];
     for (const from of bd) {
       for (const to of delivery) {
         if (skipInspirePair(from.project, to.project)) continue;
         if (normalizeCore(from.coreName) !== normalizeCore(to.coreName)) continue;
-        drafts.push({
+        if (yearFilter && !yearOk(to.year, yearFilter) && !yearOk(from.year, yearFilter)) {
+          continue;
+        }
+        const mergeKey = followMergeKey(from.coreName, to.coreName);
+        upsertFollowMerge(byMerge, mergeKey, {
           from_type: "nas_path",
           from_id: from.fullPath,
           to_type: "nas_path",
           to_id: to.fullPath,
           kind: "follows",
-          confidence: 1,
+          confidence: 0.9,
           source: "rule",
           status: "active",
           evidence: {
@@ -765,15 +802,102 @@ export async function buildLinks(
             from_path: from.fullPath,
             to_title: to.project,
             to_path: to.fullPath,
-            rule: "이름 동일 · 사업개발→프로젝트"
-          }
+            rule: "이름 동일 · 사업개발→프로젝트",
+            sources: ["nas_name"]
+          },
+          merge_key: mergeKey,
+          sources: new Set(["nas_name"])
         });
       }
     }
-    const inserted = await insertLinks(admin, drafts, existing, dryRun, log);
-    report.follows = inserted;
+
+    // 노션 「전환된 프로젝트」 / 「연결(사업개발)」 등
+    let notionFollowScanned = 0;
+    for (const rel of relations) {
+      const classified = classifyNotionRelationProperty(rel.property_name);
+      const oriented = orientNotionRelation(rel, classified, notionById);
+      if (!oriented || oriented.kind !== "follows") continue;
+      notionFollowScanned += 1;
+
+      const fromPage = notionById.get(oriented.from_page_id);
+      const toPage = notionById.get(oriented.to_page_id);
+      const fromTitle = fromPage?.title ?? oriented.from_page_id;
+      const toTitle = toPage?.title ?? oriented.to_page_id;
+      const fromYear = fromPage ? notionProjectHint(fromPage).year : null;
+      const toYear = toPage ? notionProjectHint(toPage).year : null;
+      if (yearFilter && !yearOk(fromYear, yearFilter) && !yearOk(toYear, yearFilter)) {
+        continue;
+      }
+
+      const fromCore =
+        fromPage && notionProjectHint(fromPage).project
+          ? stripDateCode(notionProjectHint(fromPage).project!)
+          : stripDateCode(fromTitle);
+      const toCore =
+        toPage && notionProjectHint(toPage).project
+          ? stripDateCode(notionProjectHint(toPage).project!)
+          : stripDateCode(toTitle);
+      const mergeKey = followMergeKey(fromCore, toCore);
+
+      upsertFollowMerge(byMerge, mergeKey, {
+        from_type: "notion_page",
+        from_id: oriented.from_page_id,
+        to_type: "notion_page",
+        to_id: oriented.to_page_id,
+        kind: "follows",
+        confidence: 0.9,
+        source: "rule",
+        status: "active",
+        evidence: {
+          role: "relation",
+          property_name: rel.property_name,
+          year: toYear ?? fromYear,
+          from_title: fromTitle,
+          to_title: toTitle,
+          rule: "노션 관계 · 사업개발→프로젝트",
+          sources: ["notion_relation"],
+          direction: classified.direction
+        },
+        merge_key: mergeKey,
+        sources: new Set(["notion_relation"])
+      });
+    }
+    report.follows.notion_relations = notionFollowScanned;
+    report.follows.nas_name = [...byMerge.values()].filter((d) =>
+      d.sources.has("nas_name")
+    ).length;
+
+    const drafts: LinkDraft[] = [];
+    let dual = 0;
+    for (const draft of byMerge.values()) {
+      const sources = [...draft.sources];
+      if (sources.length >= 2) {
+        dual += 1;
+        draft.confidence = 1;
+      }
+      draft.evidence = {
+        ...draft.evidence,
+        sources,
+        merge_key: draft.merge_key
+      };
+      drafts.push({
+        from_type: draft.from_type,
+        from_id: draft.from_id,
+        to_type: draft.to_type,
+        to_id: draft.to_id,
+        kind: "follows",
+        confidence: draft.confidence,
+        source: draft.source,
+        status: draft.status,
+        evidence: draft.evidence
+      });
+    }
+    report.follows.dual_source = dual;
+
+    const inserted = await upsertFollowLinks(admin, drafts, existing, dryRun, log);
+    report.follows = { ...report.follows, ...inserted };
     log(
-      `[build-links] follows scanned=${inserted.scanned} inserted=${inserted.inserted} skip=${inserted.skipped} would=${inserted.would}`
+      `[build-links] follows scanned=${inserted.scanned} inserted=${inserted.inserted} skip=${inserted.skipped} would=${inserted.would} nas=${report.follows.nas_name} notion=${report.follows.notion_relations} dual=${dual} reclass=${reclass.moved}`
     );
   }
 
@@ -1478,4 +1602,452 @@ async function ensureSameQuestions(
 
 function normalizeCore(name: string): string {
   return name.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function followCoreKey(title: string): string {
+  return stripDateCode(title)
+    .toLowerCase()
+    .replace(/[()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function followMergeKey(fromTitle: string, toTitle: string): string {
+  return `${followCoreKey(fromTitle)}=>${followCoreKey(toTitle)}`;
+}
+
+type OrientedRelation = {
+  kind: "belongs" | "follows";
+  from_page_id: string;
+  to_page_id: string;
+};
+
+/**
+ * 속성 규칙 + (follows 일 때) BD→프로젝트 검증.
+ * 캘린더→사업개발 같은 「연결(사업개발)」은 belongs 로 되돌린다.
+ */
+function orientNotionRelation(
+  rel: RelationRow,
+  classified: ClassifiedNotionRelation,
+  notionById: Map<string, NotionPage>
+): OrientedRelation | null {
+  let fromId = rel.from_page_id;
+  let toId = rel.to_page_id;
+  const kind = classified.kind;
+
+  if (kind === "same") return null;
+
+  if (kind === "follows") {
+    if (classified.direction === "reverse") {
+      fromId = rel.to_page_id;
+      toId = rel.from_page_id;
+    }
+    const fromPage = notionById.get(fromId);
+    const toPage = notionById.get(toId);
+    if (!fromPage || !toPage) return null;
+    if (!isBdToProjectFollowPair(fromPage, toPage)) {
+      // 전환이 아니면 속한 것 — 원본 방향 유지
+      return {
+        kind: "belongs",
+        from_page_id: rel.from_page_id,
+        to_page_id: rel.to_page_id
+      };
+    }
+    return { kind: "follows", from_page_id: fromId, to_page_id: toId };
+  }
+
+  return {
+    kind: "belongs",
+    from_page_id: fromId,
+    to_page_id: toId
+  };
+}
+
+type FollowMergeDraft = LinkDraft & {
+  merge_key: string;
+  sources: Set<string>;
+};
+
+function upsertFollowMerge(
+  map: Map<string, FollowMergeDraft>,
+  mergeKey: string,
+  incoming: FollowMergeDraft
+): void {
+  // 같은 코어가 약간만 다른 키로 들어오면 기존 키에 붙인다
+  let key = mergeKey;
+  let existing = map.get(key);
+  if (!existing) {
+    for (const [k, row] of map) {
+      if (followKeysCompatible(k, mergeKey)) {
+        key = k;
+        existing = row;
+        break;
+      }
+    }
+  }
+  if (!existing) {
+    map.set(key, incoming);
+    return;
+  }
+  for (const s of incoming.sources) existing.sources.add(s);
+  const prevSources = Array.isArray(existing.evidence.sources)
+    ? (existing.evidence.sources as string[])
+    : [];
+  const nextSources = [...new Set([...prevSources, ...incoming.sources])];
+  existing.evidence = {
+    ...existing.evidence,
+    ...incoming.evidence,
+    sources: nextSources,
+    nas_from_path:
+      existing.evidence.from_path ??
+      incoming.evidence.from_path ??
+      existing.evidence.nas_from_path,
+    nas_to_path:
+      existing.evidence.to_path ??
+      incoming.evidence.to_path ??
+      existing.evidence.nas_to_path,
+    notion_from_id:
+      existing.from_type === "notion_page"
+        ? existing.from_id
+        : incoming.from_type === "notion_page"
+          ? incoming.from_id
+          : existing.evidence.notion_from_id,
+    notion_to_id:
+      existing.to_type === "notion_page"
+        ? existing.to_id
+        : incoming.to_type === "notion_page"
+          ? incoming.to_id
+          : existing.evidence.notion_to_id,
+    property_name:
+      incoming.evidence.property_name ?? existing.evidence.property_name
+  };
+  // NAS 가 있으면 엔티티는 NAS 유지(기존 5건 호환), 노션 id 는 evidence 에
+  if (existing.from_type === "nas_path" && incoming.from_type === "notion_page") {
+    // keep NAS endpoints
+  } else if (
+    existing.from_type === "notion_page" &&
+    incoming.from_type === "nas_path"
+  ) {
+    existing.from_type = incoming.from_type;
+    existing.from_id = incoming.from_id;
+    existing.to_type = incoming.to_type;
+    existing.to_id = incoming.to_id;
+    existing.evidence.from_title =
+      incoming.evidence.from_title ?? existing.evidence.from_title;
+    existing.evidence.to_title =
+      incoming.evidence.to_title ?? existing.evidence.to_title;
+    existing.evidence.from_path = incoming.evidence.from_path;
+    existing.evidence.to_path = incoming.evidence.to_path;
+  }
+  if (existing.sources.size >= 2) existing.confidence = 1;
+  else {
+    existing.confidence = Math.max(existing.confidence, incoming.confidence);
+  }
+}
+
+function followKeysCompatible(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [af, at] = a.split("=>");
+  const [bf, bt] = b.split("=>");
+  if (!af || !at || !bf || !bt) return false;
+  const fromOk =
+    af === bf ||
+    (af.length >= 4 && bf.includes(af)) ||
+    (bf.length >= 4 && af.includes(bf));
+  const toOk =
+    at === bt ||
+    (at.length >= 4 && bt.includes(at)) ||
+    (bt.length >= 4 && at.includes(bt));
+  return fromOk && toOk;
+}
+
+/** 기존 belongs(relation) 중 follows 규칙을 만족하는 것을 옮긴다 */
+async function reclassifyBelongsRelationsToFollows(
+  admin: SupabaseClient,
+  notionById: Map<string, NotionPage>,
+  dryRun: boolean,
+  log: (msg: string) => void
+): Promise<{ moved: number; samples: Array<{ from: string; to: string }> }> {
+  const samples: Array<{ from: string; to: string }> = [];
+  let moved = 0;
+  let from = 0;
+  const pageSize = 500;
+  for (;;) {
+    const { data, error } = await admin
+      .from("luna_links")
+      .select("id, from_type, from_id, to_type, to_id, evidence, confidence")
+      .eq("kind", "belongs")
+      .eq("from_type", "notion_page")
+      .eq("to_type", "notion_page")
+      .filter("evidence->>role", "eq", "relation")
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`reclassify follows: ${error.message}`);
+    const rows = data ?? [];
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      const ev = (row.evidence as Record<string, unknown>) ?? {};
+      const prop =
+        typeof ev.property_name === "string" ? ev.property_name : "";
+      if (!prop) continue;
+      const classified = classifyNotionRelationProperty(prop);
+      if (classified.kind !== "follows") continue;
+
+      const oriented = orientNotionRelation(
+        {
+          from_page_id: String(row.from_id),
+          to_page_id: String(row.to_id),
+          property_name: prop
+        },
+        classified,
+        notionById
+      );
+      if (!oriented || oriented.kind !== "follows") continue;
+
+      const fromPage = notionById.get(oriented.from_page_id);
+      const toPage = notionById.get(oriented.to_page_id);
+      const nextEvidence = {
+        ...ev,
+        role: "relation",
+        property_name: prop,
+        relation_kind: "follows",
+        direction: classified.direction,
+        sources: Array.isArray(ev.sources)
+          ? [...new Set([...(ev.sources as string[]), "notion_relation"])]
+          : ["notion_relation"],
+        from_title: fromPage?.title ?? ev.from_title,
+        to_title: toPage?.title ?? ev.to_title,
+        rule: "노션 관계 · 사업개발→프로젝트 (재분류)"
+      };
+
+      if (dryRun) {
+        moved += 1;
+        if (samples.length < 5) {
+          samples.push({
+            from: String(nextEvidence.from_title ?? oriented.from_page_id),
+            to: String(nextEvidence.to_title ?? oriented.to_page_id)
+          });
+        }
+        continue;
+      }
+
+      // kind 변경 + 방향 교정. 유니크 충돌 시 기존 follows 에 합치고 belongs 삭제
+      const { data: conflict } = await admin
+        .from("luna_links")
+        .select("id, evidence, confidence")
+        .eq("from_type", "notion_page")
+        .eq("from_id", oriented.from_page_id)
+        .eq("to_type", "notion_page")
+        .eq("to_id", oriented.to_page_id)
+        .eq("kind", "follows")
+        .maybeSingle();
+
+      if (conflict?.id && conflict.id !== row.id) {
+        const prevEv = (conflict.evidence as Record<string, unknown>) ?? {};
+        const mergedSources = [
+          ...new Set([
+            ...(Array.isArray(prevEv.sources) ? (prevEv.sources as string[]) : []),
+            ...(Array.isArray(nextEvidence.sources)
+              ? (nextEvidence.sources as string[])
+              : ["notion_relation"])
+          ])
+        ];
+        await admin
+          .from("luna_links")
+          .update({
+            confidence: Math.max(
+              Number(conflict.confidence) || 0,
+              0.9,
+              mergedSources.length >= 2 ? 1 : 0.9
+            ),
+            evidence: { ...prevEv, ...nextEvidence, sources: mergedSources }
+          })
+          .eq("id", conflict.id);
+        await admin.from("luna_links").delete().eq("id", row.id);
+      } else {
+        const { error: upErr } = await admin
+          .from("luna_links")
+          .update({
+            kind: "follows",
+            from_id: oriented.from_page_id,
+            to_id: oriented.to_page_id,
+            confidence: Math.max(Number(row.confidence) || 0, 0.9),
+            evidence: nextEvidence
+          })
+          .eq("id", row.id);
+        if (upErr) {
+          log(`[build-links] reclassify skip ${row.id}: ${upErr.message}`);
+          continue;
+        }
+      }
+      moved += 1;
+      if (samples.length < 5) {
+        samples.push({
+          from: String(nextEvidence.from_title ?? oriented.from_page_id),
+          to: String(nextEvidence.to_title ?? oriented.to_page_id)
+        });
+      }
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  if (moved) {
+    log(`[build-links] reclassified belongs→follows ${moved}건`);
+  }
+  return { moved, samples };
+}
+
+/**
+ * follows 전용 upsert — 이미 있으면 evidence.sources 를 합친다.
+ */
+async function upsertFollowLinks(
+  admin: SupabaseClient,
+  rows: LinkDraft[],
+  existing: Set<string>,
+  dryRun: boolean,
+  log: (msg: string) => void
+): Promise<KindCount> {
+  const count = emptyKind();
+  count.scanned = rows.length;
+  if (rows.length === 0) return count;
+
+  // 기존 follows 로드 (merge 용)
+  const existingFollows: Array<{
+    id: string;
+    from_type: string;
+    from_id: string;
+    to_type: string;
+    to_id: string;
+    confidence: number;
+    evidence: Record<string, unknown>;
+  }> = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await admin
+      .from("luna_links")
+      .select("id, from_type, from_id, to_type, to_id, confidence, evidence")
+      .eq("kind", "follows")
+      .range(offset, offset + 499);
+    if (error) throw new Error(`follows load: ${error.message}`);
+    const part = data ?? [];
+    for (const row of part) {
+      existingFollows.push({
+        id: String(row.id),
+        from_type: String(row.from_type),
+        from_id: String(row.from_id),
+        to_type: String(row.to_type),
+        to_id: String(row.to_id),
+        confidence: Number(row.confidence) || 0,
+        evidence: (row.evidence as Record<string, unknown>) ?? {}
+      });
+    }
+    if (part.length < 500) break;
+    offset += 500;
+  }
+
+  const fresh: LinkDraft[] = [];
+  for (const row of rows) {
+    const k = linkKey(row);
+    const exact = existingFollows.find(
+      (e) =>
+        e.from_type === row.from_type &&
+        e.from_id === row.from_id &&
+        e.to_type === row.to_type &&
+        e.to_id === row.to_id
+    );
+    const rowMerge =
+      typeof row.evidence.merge_key === "string"
+        ? row.evidence.merge_key
+        : followMergeKey(
+            String(row.evidence.from_title ?? ""),
+            String(row.evidence.to_title ?? "")
+          );
+    const semantic = existingFollows.find((e) => {
+      const ek =
+        typeof e.evidence.merge_key === "string"
+          ? e.evidence.merge_key
+          : followMergeKey(
+              String(e.evidence.from_title ?? ""),
+              String(e.evidence.to_title ?? "")
+            );
+      return followKeysCompatible(ek, rowMerge);
+    });
+
+    const target = exact ?? semantic;
+    if (target) {
+      const prevSources = Array.isArray(target.evidence.sources)
+        ? (target.evidence.sources as string[])
+        : target.evidence.rule
+          ? ["nas_name"]
+          : [];
+      const nextSources = [
+        ...new Set([
+          ...prevSources,
+          ...(Array.isArray(row.evidence.sources)
+            ? (row.evidence.sources as string[])
+            : [])
+        ])
+      ];
+      const confidence =
+        nextSources.length >= 2
+          ? 1
+          : Math.max(target.confidence, row.confidence);
+      if (!dryRun) {
+        await admin
+          .from("luna_links")
+          .update({
+            confidence,
+            evidence: {
+              ...target.evidence,
+              ...row.evidence,
+              sources: nextSources,
+              merge_key: rowMerge
+            }
+          })
+          .eq("id", target.id);
+      }
+      count.skipped += 1;
+      existing.add(k);
+      continue;
+    }
+
+    if (existing.has(k)) {
+      count.skipped += 1;
+      continue;
+    }
+    fresh.push(row);
+  }
+
+  count.would = fresh.length;
+  if (dryRun || fresh.length === 0) return count;
+
+  const batchSize = 200;
+  for (let i = 0; i < fresh.length; i += batchSize) {
+    const batch = fresh.slice(i, i + batchSize);
+    const { error } = await admin.from("luna_links").upsert(
+      batch.map((row) => ({
+        from_type: row.from_type,
+        from_id: row.from_id,
+        to_type: row.to_type,
+        to_id: row.to_id,
+        kind: row.kind,
+        confidence: row.confidence,
+        evidence: row.evidence,
+        source: row.source,
+        status: row.status,
+        confirmed_by: row.confirmed_by ?? null,
+        confirmed_at: row.confirmed_at ?? null
+      })),
+      {
+        onConflict: "from_type,from_id,to_type,to_id,kind",
+        ignoreDuplicates: true
+      }
+    );
+    if (error) throw new Error(`luna_links follows insert: ${error.message}`);
+    for (const row of batch) existing.add(linkKey(row));
+    count.inserted += batch.length;
+  }
+  if (fresh.length) log(`  follows insert ${fresh.length}건`);
+  return count;
 }
