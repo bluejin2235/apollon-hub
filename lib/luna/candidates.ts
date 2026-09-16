@@ -8,6 +8,7 @@ import type {
 } from "@/lib/luna/candidate-types";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
 
 export type {
   CandidateSource,
@@ -60,7 +61,7 @@ const DIALOGUE_FALLBACK = `후보함에서 사람과 대화할 때의 원칙:
 사람의 시간은 비싸다. 문답은 짧게, 한 번에 하나만.`;
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LunaTier, LunaUsageFeature } from "@/lib/luna/brain-models";
+import { anthropicApiKey, googleApiKey, openaiApiKey } from "@/lib/luna/env-keys";
 
 export type { LunaTier } from "@/lib/luna/brain-models";
 
@@ -29,13 +30,13 @@ const FALLBACK: Pick<LunaTierModel, "model_id" | "model_label" | "provider"> = {
 
 function hasProviderKey(provider: string): boolean {
   if (provider === "anthropic") {
-    return Boolean(process.env.hubtrendchat_claude?.trim());
+    return Boolean(anthropicApiKey());
   }
   if (provider === "openai") {
-    return Boolean(process.env.LUNA_OPENAI_API_KEY?.trim());
+    return Boolean(openaiApiKey());
   }
   if (provider === "google") {
-    return Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim());
+    return Boolean(googleApiKey());
   }
   return false;
 }

@@ -5,6 +5,7 @@
  * gemini-3.7-flash)을 쓰는 경우가 많다. -low/-medium 등은 AA 측정 설정 접미사라
  * API 모델명에 없을 수 있다.
  */
+import { googleApiKey, openaiApiKey } from "@/lib/luna/env-keys";
 
 export type ApiProvider = "openai" | "google" | "anthropic";
 
@@ -120,8 +121,8 @@ export function isSlugCallable(
 export async function fetchProviderModelCatalog(): Promise<ProviderModelCatalog> {
   const openai = new Set<string>();
   const google = new Set<string>();
-  const openaiKey = process.env.LUNA_OPENAI_API_KEY?.trim();
-  const googleKey = process.env.LUNA_GOOGLE_API_KEY?.trim();
+  const openaiKey = openaiApiKey();
+  const googleKey = googleApiKey();
 
   if (openaiKey) {
     try {

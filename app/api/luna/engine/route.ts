@@ -3,6 +3,11 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import { cacheHitRate } from "@/lib/luna/model-pricing";
 import { artificialAnalysisApiKey } from "@/lib/luna/model-market";
+import {
+  anthropicApiKey,
+  googleApiKey,
+  openaiApiKey
+} from "@/lib/luna/env-keys";
 
 export const runtime = "nodejs";
 
@@ -11,9 +16,9 @@ const TIER_SELECT =
 
 function envConnected(): Record<string, boolean> {
   return {
-    anthropic: Boolean(process.env.hubtrendchat_claude?.trim()),
-    openai: Boolean(process.env.LUNA_OPENAI_API_KEY?.trim()),
-    gemini: Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim()),
+    anthropic: Boolean(anthropicApiKey()),
+    openai: Boolean(openaiApiKey()),
+    gemini: Boolean(googleApiKey()),
     tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
     notion: Boolean(process.env.NOTION_TOKEN?.trim()),
     artificial_analysis: Boolean(artificialAnalysisApiKey())

@@ -7,6 +7,7 @@ import {
   readUsage,
   resolveAnthropicModel
 } from "@/lib/luna/engine";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
 
 const TITLE_SYSTEM = `대화 내용을 보고 짧은 제목을 만드세요.
 15자 이내. 명사형으로 끝냅니다.
@@ -15,7 +16,7 @@ const TITLE_SYSTEM = `대화 내용을 보고 짧은 제목을 만드세요.
 예시: 인스파이어 시즌3 착수보고 / 해운대 명소화 검토 / 미디어파사드 레퍼런스`;
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }

@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { artificialAnalysisApiKeyFromEnv } from "@/lib/luna/env-keys";
 
 export type MarketModelRow = {
   model_slug: string;
@@ -21,11 +22,7 @@ export type MarketModelRow = {
 const AA_BASE = "https://artificialanalysis.ai/api/v2";
 
 export function artificialAnalysisApiKey(): string {
-  return (
-    process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim() ||
-    process.env.ARTIFICIAL_ANALYSIS_API_KEY?.trim() ||
-    ""
-  );
+  return artificialAnalysisApiKeyFromEnv();
 }
 
 const MARKET_SELECT =
@@ -332,11 +329,13 @@ export async function fetchAndCacheMarketModels(
 ): Promise<{ ok: boolean; count: number; message: string }> {
   const apiKey = artificialAnalysisApiKey();
   if (!apiKey) {
+    const message =
+      "LUNA_ARTIFICIAL_ANALYSIS_API_KEY / ARTIFICIAL_ANALYSIS_API_KEY 를 찾을 수 없어 옛 스냅샷으로 비교합니다";
+    console.error("[luna/market]", message);
     return {
       ok: false,
       count: 0,
-      message:
-        "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY / ARTIFICIAL_ANALYSIS_API_KEY 없음"
+      message: `Artificial Analysis 조회 실패 — ${message}`
     };
   }
 

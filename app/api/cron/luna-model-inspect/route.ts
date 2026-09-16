@@ -12,6 +12,7 @@ import {
 } from "@/lib/luna/model-inspect-schedule";
 import { kstIsoDate } from "@/lib/fx/dates";
 import { getRateForDateOrFallback } from "@/lib/fx/get-rate-for-date";
+import { logMissingEnvGroups } from "@/lib/luna/env-keys";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    logMissingEnvGroups("luna-model-inspect");
     const { data: settingsRow } = await admin
       .from("luna_settings")
       .select("value")

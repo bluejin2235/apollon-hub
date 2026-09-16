@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
 import {
   collectMorningSummaryParts,
   isKstMonday
@@ -62,7 +63,7 @@ export type SelfReportLast = {
 };
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }

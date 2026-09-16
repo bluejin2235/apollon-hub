@@ -1,3 +1,4 @@
+import { anthropicApiKey, googleApiKey, openaiApiKey } from "@/lib/luna/env-keys";
 import {
   INSPECT_SCHEDULE_DEFAULT,
   normalizeInspectSchedule,
@@ -311,8 +312,8 @@ export function providerConnectedFlags(): {
   google: boolean;
 } {
   return {
-    anthropic: Boolean(process.env.hubtrendchat_claude?.trim()),
-    openai: Boolean(process.env.LUNA_OPENAI_API_KEY?.trim()),
-    google: Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim())
+    anthropic: Boolean(anthropicApiKey()),
+    openai: Boolean(openaiApiKey()),
+    google: Boolean(googleApiKey())
   };
 }

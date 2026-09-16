@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { openaiApiKey } from "@/lib/luna/env-keys";
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 export const EMBEDDING_DIMS = 1536;
@@ -20,7 +21,7 @@ export function embeddingToSql(vector: number[]): string {
 }
 
 function openaiKey(): string | null {
-  return process.env.LUNA_OPENAI_API_KEY?.trim() || null;
+  return openaiApiKey() || null;
 }
 
 /** OpenAI text-embedding-3-small. 실패 시 null (검색은 키워드로 폴백). */

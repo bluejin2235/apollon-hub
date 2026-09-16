@@ -4,6 +4,7 @@ import {
   EMBEDDING_DIMS,
   EMBEDDING_MODEL
 } from "@/lib/luna/embedding";
+import { openaiApiKey } from "@/lib/luna/env-keys";
 import { extractWorkserverPathsFromText } from "@/lib/luna/notion";
 
 export const NOTION_INDEX_RATE_MS = 350;
@@ -574,8 +575,13 @@ export function firstNasPath(texts: string[]): string | null {
 export async function createEmbeddingsBatch(
   texts: string[]
 ): Promise<{ vectors: (number[] | null)[]; tokens: number }> {
-  const key = process.env.LUNA_OPENAI_API_KEY?.trim();
+  const key = openaiApiKey();
   if (!key || texts.length === 0) {
+    if (!key && texts.length > 0) {
+      console.error(
+        "[luna/notion-index] LUNA_OPENAI_API_KEY / OPENAI_API_KEY 를 찾을 수 없어 임베딩을 건너뜁니다"
+      );
+    }
     return { vectors: texts.map(() => null), tokens: 0 };
   }
   const input = texts.map((t) => t.replace(/\s+/g, " ").trim().slice(0, 8000));

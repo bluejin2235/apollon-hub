@@ -20,6 +20,11 @@ import {
   shouldApplyPromptCache,
   wrapSystemForCache
 } from "@/lib/luna/prompt-cache";
+import {
+  anthropicApiKey,
+  googleApiKey,
+  openaiApiKey
+} from "@/lib/luna/env-keys";
 
 /** C등급 GPT 실패 시 즉시 대체 */
 const C_TIER_FALLBACK: ResolvedProviderModel = {
@@ -53,7 +58,7 @@ export type LlmCompleteResult = {
 };
 
 function anthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude?.trim();
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({
     apiKey,
@@ -64,11 +69,11 @@ function anthropicClient(): Anthropic | null {
 }
 
 function openaiKey(): string | null {
-  return process.env.LUNA_OPENAI_API_KEY?.trim() || null;
+  return openaiApiKey() || null;
 }
 
 function googleKey(): string | null {
-  return process.env.LUNA_GOOGLE_API_KEY?.trim() || null;
+  return googleApiKey() || null;
 }
 
 async function completeAnthropic(opts: {
@@ -80,7 +85,11 @@ async function completeAnthropic(opts: {
   useCaching?: boolean;
 }): Promise<LlmCompleteResult> {
   const client = anthropicClient();
-  if (!client) throw new Error("Claude API key is not configured");
+  if (!client) {
+      throw new Error(
+        "hubtrendchat_claude / ANTHROPIC_API_KEY 를 찾을 수 없습니다"
+      );
+    }
 
   let system: string | Anthropic.TextBlockParam[] | undefined;
   if (Array.isArray(opts.system)) {
@@ -653,7 +662,11 @@ export async function* llmStreamText(opts: {
 
   if (opts.provider === "anthropic") {
     const client = anthropicClient();
-    if (!client) throw new Error("Claude API key is not configured");
+    if (!client) {
+      throw new Error(
+        "hubtrendchat_claude / ANTHROPIC_API_KEY 를 찾을 수 없습니다"
+      );
+    }
     const wrapped = Array.isArray(opts.system)
       ? opts.system
       : wrapSystemForCache(systemText, {

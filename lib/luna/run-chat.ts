@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
 import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
@@ -169,7 +170,7 @@ function toNasCard(row: NasDirectoryRow): LunaCard {
 }
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }

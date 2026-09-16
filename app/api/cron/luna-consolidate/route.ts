@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
 import { runConsolidation } from "@/lib/luna/consolidate";
+import { logMissingEnvGroups } from "@/lib/luna/env-keys";
 import { backfillMissingEmbeddings } from "@/lib/luna/embedding-store";
 
 export const runtime = "nodejs";
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    logMissingEnvGroups("luna-consolidate");
     const result = await runConsolidation(admin, { force: false });
     const embeddings = await backfillMissingEmbeddings(admin, {
       limitPerKind: 120

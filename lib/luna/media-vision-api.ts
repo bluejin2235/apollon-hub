@@ -3,6 +3,7 @@
  * scripts/vision-model-compare.ts · lib/luna/media-vision.ts 가 공유한다.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { anthropicApiKey, openaiApiKey } from "@/lib/luna/env-keys";
 
 export type VisionApiResult = {
   text: string;
@@ -12,19 +13,11 @@ export type VisionApiResult = {
 
 /** LUNA 답변과 동일 — lib/luna/llm/client.ts */
 export function lunaAnthropicApiKey(): string | null {
-  return (
-    process.env.hubtrendchat_claude?.trim() ||
-    process.env.ANTHROPIC_API_KEY?.trim() ||
-    null
-  );
+  return anthropicApiKey() || null;
 }
 
 export function lunaOpenAiApiKey(): string | null {
-  return (
-    process.env.LUNA_OPENAI_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim() ||
-    null
-  );
+  return openaiApiKey() || null;
 }
 
 function openAiMaxTokensField(
@@ -108,7 +101,9 @@ export async function callOpenAiVision(opts: {
 }): Promise<VisionApiResult> {
   const key = lunaOpenAiApiKey();
   if (!key) {
-    throw new Error("openai key missing (LUNA_OPENAI_API_KEY)");
+    throw new Error(
+      "openai key missing (LUNA_OPENAI_API_KEY or OPENAI_API_KEY)"
+    );
   }
 
   const maxTokens = opts.maxTokens ?? 700;

@@ -11,6 +11,7 @@ import {
   type ScopeSuggestion
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
 import {
   collectExistingTermKeys,
   parseCaptureKind,
@@ -120,7 +121,7 @@ type ConversationReflectRow = {
 };
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }
