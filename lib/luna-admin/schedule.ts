@@ -1,6 +1,7 @@
 /**
  * LUNA 관리자 야간 순서 (KST).
- * 03:00 Work · 03:20 노션 · 04:00 이미지(외부) · 04:30 2차 · 05:00 자습 · 05:30 신호 · 07:00 아침 메일
+ * 01:00 이미지(외부) · 03:00 Work · 03:20 노션 · 04:30 2차 · 05:00 자습 · 05:30 신호 · 07:00 아침 메일
+ * 이미지 적체 시 01:00 시작 → 아침 리포트(07:00) 전 완료. 04:00은 2차·자습과 겹침.
  */
 export const ADMIN_WORK_INDEX_HOUR = 3;
 export const ADMIN_WORK_INDEX_MINUTE = 0;
@@ -8,7 +9,7 @@ export const ADMIN_WORK_INDEX_MINUTE = 0;
 export const ADMIN_NOTION_INDEX_HOUR = 3;
 export const ADMIN_NOTION_INDEX_MINUTE = 20;
 
-export const ADMIN_IMAGE_INDEX_HOUR = 4;
+export const ADMIN_IMAGE_INDEX_HOUR = 1;
 export const ADMIN_IMAGE_INDEX_MINUTE = 0;
 
 export const ADMIN_LINKS_HOUR = 4;

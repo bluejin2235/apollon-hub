@@ -49,7 +49,7 @@ export function LunaAdminPrimary({ source, onOpen, onBack }: Props) {
         {source === "glossary" ? <LunaKnowledgeGlossary /> : null}
         {source === "image" ? (
           <p className="empty">
-            이미지 전체 색인은 이번에 하지 않습니다. 증분 색인만 야간 04:00 에 둘 자리입니다.
+            이미지 전체 색인은 이번에 하지 않습니다. 증분 색인만 야간 01:00 에 둘 자리입니다.
             {data?.image ? ` 현재 ${data.image.size_label} · 마지막 ${data.image.last_label}` : ""}
           </p>
         ) : null}
