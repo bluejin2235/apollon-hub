@@ -1,0 +1,284 @@
+/**
+ * luna_checks — 약속한 정기 작업이 기한 안에 돌았는지 검사하고 스냅샷을 저장한다.
+ */
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { kstParts } from "@/lib/luna/eval-schedule";
+import {
+  kstCalendarDaysAgo,
+  lightFromThresholds,
+  type TrafficLight
+} from "@/lib/luna-admin/traffic";
+import { IMAGE_CORPUS_TOTAL } from "@/lib/luna-admin/primary";
+
+export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown";
+
+export type LunaCheckRow = {
+  id: string;
+  label: string;
+  promise_label: string;
+  yellow_days: number;
+  red_days: number;
+  meaning_when_stale: string;
+  href: string;
+  btn_label: string;
+  sort_order: number;
+  enabled: boolean;
+  last_ok_at: string | null;
+  last_checked_at: string | null;
+  status: LunaCheckStatus;
+  days_stale: number | null;
+  detail: string | null;
+};
+
+export type LunaCheckResult = LunaCheckRow & {
+  light: TrafficLight;
+  last_label: string;
+};
+
+function formatWhen(iso: string | null): string {
+  if (!iso) return "기록 없음";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "기록 없음";
+  const p = kstParts(d);
+  return `${String(p.month).padStart(2, "0")}.${String(p.day).padStart(2, "0")} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+}
+
+function statusFromLight(light: TrafficLight): LunaCheckStatus {
+  if (light === "green") return "ok";
+  if (light === "yellow") return "warn";
+  return "bad";
+}
+
+async function latestIso(
+  admin: SupabaseClient,
+  table: string,
+  column: string
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from(table)
+    .select(column)
+    .order(column, { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`[luna/checks] ${table}.${column}`, error);
+    return null;
+  }
+  const v = data ? (data as unknown as Record<string, unknown>)[column] : null;
+  return typeof v === "string" && v ? v : null;
+}
+
+async function resolveLastOkAt(
+  admin: SupabaseClient,
+  id: string
+): Promise<{ lastOkAt: string | null; extraDetail?: string }> {
+  switch (id) {
+    case "model_market":
+      return { lastOkAt: await latestIso(admin, "luna_model_market", "fetched_at") };
+    case "work_index": {
+      const { data } = await admin
+        .from("nas_scan_settings")
+        .select("last_run_at")
+        .eq("id", 1)
+        .maybeSingle();
+      return {
+        lastOkAt:
+          typeof data?.last_run_at === "string" ? data.last_run_at : null
+      };
+    }
+    case "notion_index":
+      return {
+        lastOkAt: await latestIso(admin, "luna_notion_index_runs", "finished_at")
+      };
+    case "image_index": {
+      const [{ data: latest }, { count }] = await Promise.all([
+        admin
+          .from("luna_media_index")
+          .select("indexed_at")
+          .order("indexed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("luna_media_index")
+          .select("path", { count: "exact", head: true })
+      ]);
+      const indexed = count ?? 0;
+      return {
+        lastOkAt:
+          typeof latest?.indexed_at === "string" ? latest.indexed_at : null,
+        extraDetail: `${indexed.toLocaleString("ko-KR")} / ${IMAGE_CORPUS_TOTAL.toLocaleString("ko-KR")}장`
+      };
+    }
+    case "links":
+      return { lastOkAt: await latestIso(admin, "luna_links", "created_at") };
+    case "selfstudy": {
+      const study = await latestIso(admin, "luna_study_runs", "started_at");
+      if (study) return { lastOkAt: study };
+      const { data } = await admin
+        .from("luna_settings")
+        .select("value")
+        .eq("key", "selfstudy_last_run")
+        .maybeSingle();
+      const value = data?.value as { finished_at?: unknown } | null;
+      return {
+        lastOkAt:
+          typeof value?.finished_at === "string" ? value.finished_at : null
+      };
+    }
+    case "signals":
+      return { lastOkAt: await latestIso(admin, "luna_signals", "created_at") };
+    case "admin_report": {
+      const { data } = await admin
+        .from("luna_settings")
+        .select("value")
+        .eq("key", "luna_admin_report_last")
+        .maybeSingle();
+      const value = data?.value as { sent_at?: unknown } | null;
+      return {
+        lastOkAt: typeof value?.sent_at === "string" ? value.sent_at : null
+      };
+    }
+    case "eval_light": {
+      const { data, error } = await admin
+        .from("luna_eval_runs")
+        .select("finished_at")
+        .eq("tier", "light")
+        .eq("status", "done")
+        .order("finished_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[luna/checks] eval_light", error);
+        return { lastOkAt: null };
+      }
+      return {
+        lastOkAt:
+          typeof data?.finished_at === "string" ? data.finished_at : null
+      };
+    }
+    case "consolidate": {
+      const { data, error } = await admin
+        .from("luna_consolidation_runs")
+        .select("finished_at")
+        .eq("status", "done")
+        .order("finished_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[luna/checks] consolidate", error);
+        return { lastOkAt: null };
+      }
+      return {
+        lastOkAt:
+          typeof data?.finished_at === "string" ? data.finished_at : null
+      };
+    }
+    case "fx_rates": {
+      const { data, error } = await admin
+        .from("fx_daily_rates")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[luna/checks] fx_rates", error);
+        return { lastOkAt: null };
+      }
+      const date = typeof data?.date === "string" ? data.date : null;
+      return { lastOkAt: date ? `${date}T00:00:00+09:00` : null };
+    }
+    case "disk":
+      return { lastOkAt: new Date().toISOString() };
+    default:
+      return { lastOkAt: null };
+  }
+}
+
+export async function evaluateLunaChecks(
+  admin: SupabaseClient,
+  now = new Date()
+): Promise<LunaCheckResult[]> {
+  const { data, error } = await admin
+    .from("luna_checks")
+    .select("*")
+    .eq("enabled", true)
+    .order("sort_order", { ascending: true });
+  if (error) {
+    console.error("[luna/checks] list", error);
+    return [];
+  }
+  const rows = (data ?? []) as LunaCheckRow[];
+  const checkedAt = now.toISOString();
+  const results: LunaCheckResult[] = [];
+
+  for (const row of rows) {
+    const resolved = await resolveLastOkAt(admin, row.id);
+    const days = kstCalendarDaysAgo(resolved.lastOkAt, now);
+    const light =
+      row.id === "disk"
+        ? ("green" as const)
+        : lightFromThresholds(days, row.yellow_days, row.red_days);
+    const status = statusFromLight(light);
+    const lastLabel = formatWhen(resolved.lastOkAt);
+    let detail: string;
+    if (status === "ok") {
+      detail = `${row.promise_label} · 마지막 ${lastLabel}`;
+    } else {
+      const idle =
+        days == null ? "기록 없음" : `${days}일째 멈춤`;
+      detail =
+        `${row.promise_label} · ${idle} · 마지막 ${lastLabel}` +
+        (resolved.extraDetail ? ` · ${resolved.extraDetail}` : "");
+    }
+
+    const patch = {
+      last_ok_at: resolved.lastOkAt,
+      last_checked_at: checkedAt,
+      status,
+      days_stale: days,
+      detail,
+      updated_at: checkedAt
+    };
+    const { error: upErr } = await admin
+      .from("luna_checks")
+      .update(patch)
+      .eq("id", row.id);
+    if (upErr) console.error("[luna/checks] update", row.id, upErr);
+
+    results.push({
+      ...row,
+      ...patch,
+      light,
+      last_label: lastLabel
+    });
+  }
+
+  return results;
+}
+
+export async function markAdminReportSent(
+  admin: SupabaseClient,
+  sentAt = new Date()
+): Promise<void> {
+  const iso = sentAt.toISOString();
+  await admin.from("luna_settings").upsert(
+    {
+      key: "luna_admin_report_last",
+      value: { sent_at: iso },
+      updated_at: iso
+    },
+    { onConflict: "key" }
+  );
+  await admin
+    .from("luna_checks")
+    .update({
+      last_ok_at: iso,
+      last_checked_at: iso,
+      status: "ok",
+      days_stale: 0,
+      detail: `매일 07:00 약속 · 마지막 ${formatWhen(iso)}`,
+      updated_at: iso
+    })
+    .eq("id", "admin_report");
+}
