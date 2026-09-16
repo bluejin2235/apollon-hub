@@ -1,6 +1,6 @@
 /** LUNA 야간 작업 시각 (KST). 숫자 상수만 — 다른 import 없음 */
 
-export const CRON_SELFSTUDY_HOUR = 3;
+export const CRON_SELFSTUDY_HOUR = 5;
 export const CRON_SELFSTUDY_MINUTE = 0;
 
 export const CRON_CONSOLIDATE_HOUR = 3;

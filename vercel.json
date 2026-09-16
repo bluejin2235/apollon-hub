@@ -42,7 +42,7 @@
     },
     {
       "path": "/api/cron/luna-selfstudy",
-      "schedule": "0 18 * * *"
+      "schedule": "0 20 * * *"
     },
     {
       "path": "/api/cron/luna-consolidate",
@@ -82,7 +82,7 @@
     },
     {
       "path": "/api/cron/luna-signals",
-      "schedule": "0 20 * * *"
+      "schedule": "30 20 * * *"
     }
   ]
 }
