@@ -15,7 +15,7 @@ import { listQuestions } from "@/lib/luna-admin/questions";
 import { loadTonightState } from "@/lib/luna-admin/tonight";
 import { lightEmoji, type TrafficLight } from "@/lib/luna-admin/traffic";
 import {
-  ADMIN_REPORT_TO,
+  getAdminReportRecipients,
   HUB_PUBLIC_ORIGIN
 } from "@/lib/luna-admin/schedule";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
@@ -303,9 +303,14 @@ export async function sendAdminMorningReport(
 ): Promise<AdminReportResult> {
   const resendKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL;
+  const recipients = getAdminReportRecipients();
   if (!resendKey || !fromEmail) {
     return { ok: false, error: "RESEND_API_KEY or RESEND_FROM_EMAIL missing" };
   }
+  if (recipients.length === 0) {
+    return { ok: false, error: "LUNA_ADMIN_REPORT_TO is not configured" };
+  }
+  const toLabel = recipients.join(", ");
 
   const { data: superRow } = await admin
     .from("profiles")
@@ -319,7 +324,7 @@ export async function sendAdminMorningReport(
   const resend = new Resend(resendKey);
   const { data, error } = await resend.emails.send({
     from: fromEmail,
-    to: [ADMIN_REPORT_TO],
+    to: recipients,
     subject,
     html,
     text: textPreview
@@ -328,14 +333,14 @@ export async function sendAdminMorningReport(
     return {
       ok: false,
       error: error.message,
-      to: ADMIN_REPORT_TO,
+      to: toLabel,
       subject,
       textPreview
     };
   }
   return {
     ok: true,
-    to: ADMIN_REPORT_TO,
+    to: toLabel,
     subject,
     messageId: data?.id,
     textPreview

@@ -8,7 +8,7 @@ export const maxDuration = 60;
 /**
  * GET /api/cron/luna-admin-report
  * 매일 07:00 KST (UTC 22:00) — 아침 리포트 메일.
- * 수신 hub@apollonworks.com · Resend.
+ * 수신 LUNA_ADMIN_REPORT_TO · Resend.
  * 아무 일 없어도 한 줄로 보낸다.
  */
 export async function GET(request: NextRequest) {

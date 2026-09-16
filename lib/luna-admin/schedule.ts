@@ -23,5 +23,21 @@ export const ADMIN_SIGNALS_MINUTE = 30;
 export const ADMIN_REPORT_HOUR = 7;
 export const ADMIN_REPORT_MINUTE = 0;
 
-export const ADMIN_REPORT_TO = "hub@apollonworks.com";
+/**
+ * 아침 리포트 수신자. LUNA_ADMIN_REPORT_TO (쉼표 구분).
+ * 예: tjlee@apollonworks.com 또는 a@x.com,b@y.com
+ */
+export function getAdminReportRecipients(): string[] {
+  const raw = process.env.LUNA_ADMIN_REPORT_TO?.trim() ?? "";
+  if (!raw) return [];
+  return [
+    ...new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.includes("@"))
+    )
+  ];
+}
+
 export const HUB_PUBLIC_ORIGIN = "https://hub.apollonworks.com";
