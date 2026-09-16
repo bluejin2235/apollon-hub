@@ -254,7 +254,7 @@ export async function buildAdminReportHtml(
       goodLight,
       "⑥ 잘 되고 있는 것",
       goodLine,
-      hubHref(buildLunaAdminUrl("dashboard")),
+      hubHref("/settings?menu=dashboard"),
       "대시보드"
     ),
     section(
