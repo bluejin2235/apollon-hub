@@ -15,6 +15,7 @@ import {
 } from "@/lib/luna/brain-models";
 import { runModelInspect, valuePerCost } from "@/lib/luna/model-auto-swap";
 import {
+  artificialAnalysisApiKey,
   loadLatestMarketSnapshot,
   loadMarketHistory,
   type MarketModelRow
@@ -106,9 +107,7 @@ export async function GET(request: NextRequest) {
         : 7;
 
   const connected = providerConnectedFlags();
-  const aaKey = Boolean(
-    process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim()
-  );
+  const aaKey = Boolean(artificialAnalysisApiKey());
 
   const { data: tiers } = await admin
     .from("luna_engine_tiers")
@@ -569,7 +568,7 @@ export async function GET(request: NextRequest) {
           ? null
           : settings.last_market_error ??
             (!aaKey
-              ? "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY 없음"
+              ? "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY / ARTIFICIAL_ANALYSIS_API_KEY 없음"
               : "Artificial Analysis 조회 결과가 없습니다. [지금 점검]으로 다시 받아 보세요."),
       rows: ranked.map((r) => ({
         model_slug: r.model_slug,

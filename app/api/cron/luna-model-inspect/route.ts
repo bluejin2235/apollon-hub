@@ -14,7 +14,7 @@ import { kstIsoDate } from "@/lib/fx/dates";
 import { getRateForDateOrFallback } from "@/lib/fx/get-rate-for-date";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /** 10분마다 호출. inspect_schedule 시각 ±10분에만 실행 */
 export async function GET(request: NextRequest) {

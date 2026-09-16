@@ -20,6 +20,14 @@ export type MarketModelRow = {
 
 const AA_BASE = "https://artificialanalysis.ai/api/v2";
 
+export function artificialAnalysisApiKey(): string {
+  return (
+    process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim() ||
+    process.env.ARTIFICIAL_ANALYSIS_API_KEY?.trim() ||
+    ""
+  );
+}
+
 const MARKET_SELECT =
   "model_slug, creator, provider, intelligence_index, multilingual_index, agentic_index, price_input, price_output, price_blended, price_cache_read, median_output_tokens_per_second, median_time_to_first_token_seconds, is_reasoning, fetched_at";
 
@@ -322,13 +330,13 @@ export function isPreferredProvider(
 export async function fetchAndCacheMarketModels(
   admin: SupabaseClient
 ): Promise<{ ok: boolean; count: number; message: string }> {
-  const apiKey = process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim();
+  const apiKey = artificialAnalysisApiKey();
   if (!apiKey) {
     return {
       ok: false,
       count: 0,
       message:
-        "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY 없음"
+        "Artificial Analysis 조회 실패 — LUNA_ARTIFICIAL_ANALYSIS_API_KEY / ARTIFICIAL_ANALYSIS_API_KEY 없음"
     };
   }
 

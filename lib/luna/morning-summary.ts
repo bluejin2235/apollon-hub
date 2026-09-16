@@ -7,6 +7,8 @@ import { collectWikiMorningLine } from "@/lib/wiki/notify";
 import { countFailuresSince } from "@/lib/luna/failures";
 import { kstIsoDate } from "@/lib/fx/dates";
 import { getRateForDateOrFallback } from "@/lib/fx/get-rate-for-date";
+import { evaluateLunaChecks } from "@/lib/luna/checks";
+import { formatStaleIdleLine } from "@/lib/luna-admin/traffic";
 
 export type MorningSummaryResult = {
   ok: boolean;
@@ -91,6 +93,16 @@ export async function collectMorningSummaryParts(
 ): Promise<{ parts: string[]; dateLabel: string; startIso: string; endIso: string }> {
   const { startIso, endIso, dateLabel } = morningWindow(now);
   const parts: string[] = [];
+
+  const checks = await evaluateLunaChecks(admin, now);
+  for (const job of checks) {
+    if (job.id === "disk") continue;
+    if (job.status !== "warn" && job.status !== "bad") continue;
+    const lamp = job.status === "bad" ? "🔴" : "🟡";
+    parts.push(
+      withLink(`${lamp} ${formatStaleIdleLine(job.label, job.days_stale)}`, job.href)
+    );
+  }
 
   // 1) light 회귀 시험
   const { data: lightRuns, error: lightErr } = await admin

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import { cacheHitRate } from "@/lib/luna/model-pricing";
+import { artificialAnalysisApiKey } from "@/lib/luna/model-market";
 
 export const runtime = "nodejs";
 
@@ -15,9 +16,7 @@ function envConnected(): Record<string, boolean> {
     gemini: Boolean(process.env.LUNA_GOOGLE_API_KEY?.trim()),
     tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
     notion: Boolean(process.env.NOTION_TOKEN?.trim()),
-    artificial_analysis: Boolean(
-      process.env.LUNA_ARTIFICIAL_ANALYSIS_API_KEY?.trim()
-    )
+    artificial_analysis: Boolean(artificialAnalysisApiKey())
   };
 }
 

@@ -22,9 +22,26 @@ export function kstCalendarDaysAgo(iso: string | null | undefined, now = new Dat
 
 /** 오늘·어제 = 초록, 2일 = 노랑, 3일 이상·없음 = 빨강 */
 export function lightFromIdleDays(days: number | null): TrafficLight {
-  if (days == null || days >= 3) return "red";
-  if (days <= 1) return "green";
-  return "yellow";
+  return lightFromThresholds(days, 2, 3);
+}
+
+/** days >= yellowAt → 노랑, days >= redAt 또는 기록 없음 → 빨강 */
+export function lightFromThresholds(
+  days: number | null,
+  yellowAt: number,
+  redAt: number
+): TrafficLight {
+  if (days == null || days >= redAt) return "red";
+  if (days >= yellowAt) return "yellow";
+  return "green";
+}
+
+export function formatStaleIdleLine(
+  label: string,
+  days: number | null
+): string {
+  if (days == null) return `${label} 실행 기록이 없습니다`;
+  return `${label} ${days}일째 멈춤`;
 }
 
 export function worstLight(...lights: TrafficLight[]): TrafficLight {
