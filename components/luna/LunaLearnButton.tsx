@@ -11,6 +11,11 @@ import {
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { LunaInlineQuestionCard } from "@/components/luna/LunaInlineQuestionCard";
+import {
+  notifyLunaQuestionsChanged,
+  type LunaPendingQuestion
+} from "@/components/luna/use-luna-pending-question";
 import { supabase } from "@/lib/supabase/client";
 
 type PanelPhase =
@@ -19,7 +24,8 @@ type PanelPhase =
   | "confirm"
   | "done"
   | "question"
-  | "question_thanks";
+  | "question_thanks"
+  | "ask";
 
 type LearnStatus = "ok" | "duplicate" | "conflict";
 
@@ -94,6 +100,9 @@ export function LunaLearnButton() {
   const [thanksMessage, setThanksMessage] = useState(
     "후보함에 넣었어요. 맞으면 확정해 주세요."
   );
+  const [askQuestions, setAskQuestions] = useState<LunaPendingQuestion[]>([]);
+  const [askCount, setAskCount] = useState(0);
+  const [askError, setAskError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const fabWrapRef = useRef<HTMLDivElement>(null);
 
@@ -135,6 +144,27 @@ export function LunaLearnButton() {
     };
   }, []);
 
+  const loadAskQuestions = useCallback(async (): Promise<LunaPendingQuestion[]> => {
+    const token = await getAccessToken();
+    if (!token) return [];
+    try {
+      const res = await fetch("/api/luna/questions?list=1", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as {
+        questions?: LunaPendingQuestion[];
+        count?: number;
+      };
+      const rows = Array.isArray(data.questions) ? data.questions : [];
+      setAskQuestions(rows);
+      setAskCount(typeof data.count === "number" ? data.count : rows.length);
+      return rows;
+    } catch {
+      return [];
+    }
+  }, []);
+
   const loadPending = useCallback(async () => {
     const token = await getAccessToken();
     if (!token) return;
@@ -163,9 +193,22 @@ export function LunaLearnButton() {
   useEffect(() => {
     if (!authed) return;
     void loadPending();
-    const t = window.setInterval(() => void loadPending(), 60_000);
+    void loadAskQuestions();
+    const t = window.setInterval(() => {
+      void loadPending();
+      void loadAskQuestions();
+    }, 60_000);
     return () => window.clearInterval(t);
-  }, [authed, loadPending]);
+  }, [authed, loadPending, loadAskQuestions]);
+
+  useEffect(() => {
+    if (!authed) return;
+    const onChange = () => {
+      void loadAskQuestions();
+    };
+    window.addEventListener("luna-questions-changed", onChange);
+    return () => window.removeEventListener("luna-questions-changed", onChange);
+  }, [authed, loadAskQuestions]);
 
   useEffect(() => {
     if (!open) return;
@@ -217,9 +260,13 @@ export function LunaLearnButton() {
 
   const openMenu = () => {
     setError(null);
-    setPhase("menu");
+    setAskError(null);
     setOpen(true);
+    setPhase("menu");
     void loadPending();
+    void loadAskQuestions().then((rows) => {
+      if (rows.length > 0) setPhase("ask");
+    });
   };
 
   const submitLearn = async (
@@ -320,6 +367,46 @@ export function LunaLearnButton() {
     }
   };
 
+  const submitAsk = async (answer: string | "later") => {
+    const current = askQuestions[0];
+    if (!current || busy) return;
+    const token = await getAccessToken();
+    if (!token) {
+      setAskError("로그인이 필요합니다");
+      return;
+    }
+    setBusy(true);
+    setAskError(null);
+    try {
+      const res = await fetch("/api/luna/questions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(
+          answer === "later"
+            ? { question_id: current.id, action: "later" }
+            : { question_id: current.id, answer }
+        )
+      });
+      if (!res.ok) {
+        setAskError((await res.text()) || "저장에 실패했습니다");
+        return;
+      }
+      notifyLunaQuestionsChanged();
+      const rows = await loadAskQuestions();
+      if (rows.length === 0) {
+        setPhase("menu");
+      }
+    } catch (err) {
+      console.error("[luna/questions] fab", err);
+      setAskError("저장에 실패했습니다");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onSendInput = () => {
     const t = text.trim();
     if (!t || busy) return;
@@ -382,10 +469,11 @@ export function LunaLearnButton() {
   if (!mounted || !authed) return null;
 
   const hasPending = Boolean(pendingQuestion);
+  const hasAsk = askQuestions.length > 0;
   const headerTitle =
     phase === "menu"
       ? "루나"
-      : phase === "question" || phase === "question_thanks"
+      : phase === "ask" || phase === "question" || phase === "question_thanks"
         ? "루나의 질문"
         : "루나에게 알려주기";
   const fabSize = isNarrow ? 44 : 56;
@@ -489,12 +577,46 @@ export function LunaLearnButton() {
               </p>
             ) : null}
 
+            {phase === "ask" && askQuestions[0] ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {askError ? (
+                  <p className="mb-2 rounded bg-red-50 px-2 py-1.5 text-[11px] text-red-700">
+                    {askError}
+                  </p>
+                ) : null}
+                <LunaInlineQuestionCard
+                  question={askQuestions[0]}
+                  answeredMessage={null}
+                  answeredContent={null}
+                  busy={busy}
+                  error={null}
+                  variant="bubble"
+                  count={Math.max(askCount, askQuestions.length)}
+                  onAnswer={(answer) => void submitAsk(answer)}
+                  onDismiss={() => void submitAsk("later")}
+                  onCloseAnswered={() => undefined}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPhase("menu")}
+                  className="mt-2 text-left text-[11px] text-[#534AB7]"
+                >
+                  다른 메뉴
+                </button>
+              </div>
+            ) : null}
+
             {phase === "menu" ? (
               <div className="flex flex-col gap-1.5">
                 <button
                   type="button"
-                  disabled={!hasPending}
+                  disabled={!hasPending && !hasAsk}
                   onClick={() => {
+                    if (askQuestions[0]) {
+                      setAskError(null);
+                      setPhase("ask");
+                      return;
+                    }
                     if (!pendingQuestion) return;
                     setError(null);
                     setQuestionAnswerDraft("");
@@ -503,7 +625,14 @@ export function LunaLearnButton() {
                   className="flex w-full items-center justify-between rounded-[10px] border border-[#D3D1C7] px-3 py-2.5 text-left text-[13px] text-slate-800 transition hover:border-[#534AB7] hover:bg-[#EEEDFE] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <span>루나의 질문 보기</span>
-                  {hasPending ? (
+                  {hasAsk ? (
+                    <span
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white"
+                      style={{ background: "#E24B4A" }}
+                    >
+                      {Math.max(askCount, askQuestions.length)}
+                    </span>
+                  ) : hasPending ? (
                     <span
                       className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white"
                       style={{ background: "#E24B4A" }}
@@ -904,7 +1033,13 @@ export function LunaLearnButton() {
           id={fabId}
           type="button"
           title="루나"
-          aria-label={hasPending ? "루나 (질문 1건)" : "루나"}
+          aria-label={
+            hasAsk
+              ? `루나 (질문 ${Math.max(askCount, askQuestions.length)}건)`
+              : hasPending
+                ? "루나 (질문 1건)"
+                : "루나"
+          }
           aria-expanded={open}
           onClick={toggleOpen}
           className="luna-learn-fab relative rounded-full transition-transform duration-150 hover:scale-[1.06] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#534AB7] focus-visible:ring-offset-2 focus-visible:ring-offset-white"
@@ -959,16 +1094,16 @@ export function LunaLearnButton() {
               }}
             />
           </span>
-          {hasPending ? (
+          {hasAsk || hasPending ? (
             <span
               aria-hidden
               style={{
                 position: "absolute",
                 top: -2,
                 right: -2,
-                minWidth: 18,
-                height: 18,
-                padding: "0 5px",
+                minWidth: hasAsk ? 18 : 10,
+                height: hasAsk ? 18 : 10,
+                padding: hasAsk ? "0 5px" : 0,
                 borderRadius: 9999,
                 background: "#E24B4A",
                 border: "2px solid white",
@@ -981,7 +1116,7 @@ export function LunaLearnButton() {
                 overflow: "visible"
               }}
             >
-              1
+              {hasAsk ? Math.max(askCount, askQuestions.length) : ""}
             </span>
           ) : null}
         </button>

@@ -9,6 +9,8 @@ type Props = {
   answeredContent: string | null;
   busy?: boolean;
   error?: string | null;
+  variant?: "chat" | "bubble";
+  count?: number;
   onAnswer: (answer: string) => void | Promise<void>;
   onDismiss: () => void;
   onCloseAnswered: () => void;
@@ -20,6 +22,8 @@ export function LunaInlineQuestionCard({
   answeredContent,
   busy,
   error,
+  variant = "chat",
+  count,
   onAnswer,
   onDismiss,
   onCloseAnswered
@@ -30,7 +34,7 @@ export function LunaInlineQuestionCard({
   if (answeredMessage && answeredContent) {
     return (
       <div
-        className="mx-3 mb-3 rounded-[14px] border border-[#BA7517] px-3.5 py-3 md:hidden"
+        className="mx-3 mb-3 rounded-[14px] border border-[#BA7517] px-3.5 py-3"
         style={{ background: "#FAEEDA" }}
       >
         <p className="text-[14px] font-medium text-[#412402]">{answeredMessage}</p>
@@ -53,20 +57,63 @@ export function LunaInlineQuestionCard({
   if (!question) return null;
 
   const options = question.options?.filter((o) => o.trim()) ?? [];
+  const showSame = question.kind !== "other";
+  const bubble = variant === "bubble";
 
   return (
     <div
-      className="mx-3 mb-3 rounded-[14px] border border-[#BA7517] px-3.5 py-3 md:hidden"
-      style={{ background: "#FAEEDA" }}
+      className={
+        bubble
+          ? "flex min-h-0 flex-1 flex-col gap-2.5"
+          : "mx-3 mb-3 rounded-[14px] border border-[#BA7517] px-3.5 py-3"
+      }
+      style={bubble ? undefined : { background: "#FAEEDA" }}
     >
+      {bubble ? (
+        <p className="text-[13px] font-medium text-slate-900">
+          🌙 질문이 {Math.max(1, count ?? 1)}개 있어요
+        </p>
+      ) : (
+        <p className="text-[13px] font-medium text-[#412402]">
+          🌙 그런데 하나 여쭤봐도 될까요?
+        </p>
+      )}
       <p className="text-[14px] font-medium leading-snug text-[#1C1C1A]">
         {question.question}
       </p>
-      {question.context?.trim() ? (
+      {question.context?.trim() && !bubble ? (
         <p className="mt-1 text-[12px] text-[#6B6A64]">{question.context}</p>
       ) : null}
 
-      {options.length > 0 ? (
+      {showSame ? (
+        <div className={bubble ? "mt-1 flex flex-col gap-1.5" : "mt-3 flex flex-wrap gap-2"}>
+          {(["같아요", "달라요"] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              disabled={busy}
+              onClick={() => void onAnswer(opt)}
+              className={
+                bubble
+                  ? "w-full rounded-[9px] border border-[#D3D1C7] bg-white py-2 text-[12px] text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                  : "chip-sm h-9 rounded-[10px] border border-[#D3D1C7] bg-white px-3 text-[13px] text-[#1C1C1A] transition hover:border-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
+              }
+            >
+              {opt}
+            </button>
+          ))}
+          {bubble ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAnswer("모르겠어요")}
+              className="w-full rounded-[9px] border border-[#D3D1C7] bg-white py-2 text-[12px] text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            >
+              모르겠어요
+            </button>
+          ) : null}
+        </div>
+      ) : options.length > 0 ? (
         <div className="mt-3 flex flex-col gap-2">
           {options.map((opt) => (
             <button
@@ -82,7 +129,7 @@ export function LunaInlineQuestionCard({
         </div>
       ) : null}
 
-      {options.length === 0 || freeText ? (
+      {!showSame && (options.length === 0 || freeText) ? (
         <div className="mt-3 space-y-2">
           <textarea
             value={draft}
@@ -101,7 +148,7 @@ export function LunaInlineQuestionCard({
             보내기
           </button>
         </div>
-      ) : (
+      ) : !showSame ? (
         <button
           type="button"
           disabled={busy}
@@ -110,20 +157,27 @@ export function LunaInlineQuestionCard({
         >
           직접 쓸게요
         </button>
-      )}
+      ) : null}
 
       {error ? <p className="mt-2 text-[12px] text-red-600">{error}</p> : null}
 
-      <div className="mt-3 flex justify-end">
+      <div className={bubble ? "mt-1" : "mt-3 flex justify-end"}>
         <button
           type="button"
           disabled={busy}
           onClick={onDismiss}
-          className="chip-sm text-[12px] text-[#6B6A64]"
+          className={
+            bubble
+              ? "w-full py-1.5 text-[12px] text-gray-500 disabled:opacity-50"
+              : "chip-sm text-[12px] text-[#6B6A64]"
+          }
         >
           나중에
         </button>
       </div>
+      {bubble ? (
+        <p className="text-[11px] text-gray-500">바쁘면 무시해도 됩니다.</p>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,14 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { hasLunaAccess } from "@/lib/luna/beta-access";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompt } from "@/lib/luna/prompts";
+import {
+  conversationHaystack,
+  isConfirmSameAnswer,
+  isRejectSameAnswer,
+  listAskQuestions,
+  resolveLunaQuestionAnswer,
+  snoozeQuestionForUser
+} from "@/lib/luna/question-ask";
 
 export const runtime = "nodejs";
 
@@ -41,17 +49,6 @@ const CATEGORY_ALIASES: Record<string, string> = {
   project: "workflow"
 };
 
-type QuestionRow = {
-  id: string;
-  question: string;
-  context: string | null;
-  options: unknown;
-  category: string | null;
-  source: string | null;
-  status: string;
-  created_at: string;
-};
-
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
   const tryParse = (raw: string) => {
@@ -84,14 +81,6 @@ function normalizeCategory(raw: unknown): string {
   return CATEGORY_ALIASES[key] ?? CATEGORY_ALIASES[key.toLowerCase()] ?? "term";
 }
 
-function parseOptions(raw: unknown): string[] | null {
-  if (!Array.isArray(raw)) return null;
-  const opts = raw
-    .filter((o): o is string => typeof o === "string" && o.trim().length > 0)
-    .map((o) => o.trim());
-  return opts.length > 0 ? opts : null;
-}
-
 export async function GET(request: NextRequest) {
   const user = await getApiUser(request);
   if (!user) {
@@ -105,37 +94,47 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data, error } = await admin
-    .from("luna_questions")
-    .select(
-      "id, question, context, options, category, source, status, created_at"
-    )
-    .eq("status", "pending")
-    .or(`target_user_id.eq.${user.id},target_user_id.is.null`)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const list = request.nextUrl.searchParams.get("list") === "1";
+  const conversationId =
+    request.nextUrl.searchParams.get("conversation_id")?.trim() || "";
+  const topic = request.nextUrl.searchParams.get("topic")?.trim() || "";
 
-  if (error) {
-    console.error("[luna/questions] GET", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (conversationId || topic) {
+    const haystack =
+      topic ||
+      (conversationId
+        ? await conversationHaystack(admin, conversationId, user.id)
+        : "");
+    const result = await listAskQuestions(admin, user.id, {
+      limit: 1,
+      haystack,
+      retarget: false
+    });
+    return NextResponse.json({
+      question: result.questions[0] ?? null,
+      count: result.count,
+      muted: result.muted,
+      daily_left: result.daily_left
+    });
   }
 
-  if (!data) {
-    return NextResponse.json({ question: null });
+  const result = await listAskQuestions(admin, user.id, {
+    limit: 1,
+    retarget: list
+  });
+  if (list) {
+    return NextResponse.json({
+      questions: result.questions,
+      count: result.count,
+      muted: result.muted,
+      daily_left: result.daily_left
+    });
   }
-
-  const row = data as QuestionRow;
   return NextResponse.json({
-    question: {
-      id: row.id,
-      question: row.question,
-      context: row.context,
-      options: parseOptions(row.options),
-      category: row.category,
-      source: row.source,
-      created_at: row.created_at
-    }
+    question: result.questions[0] ?? null,
+    count: result.count,
+    muted: result.muted,
+    daily_left: result.daily_left
   });
 }
 
@@ -152,61 +151,97 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { question_id?: string; answer?: string };
+  let body: { question_id?: string; answer?: string; action?: string };
   try {
-    body = (await request.json()) as { question_id?: string; answer?: string };
+    body = (await request.json()) as {
+      question_id?: string;
+      answer?: string;
+      action?: string;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const questionId =
     typeof body.question_id === "string" ? body.question_id.trim() : "";
+  const action = typeof body.action === "string" ? body.action.trim() : "";
   const answer = typeof body.answer === "string" ? body.answer.trim() : "";
-  if (!questionId || !answer) {
+  if (!questionId) {
+    return NextResponse.json({ error: "question_id is required" }, { status: 400 });
+  }
+
+  if (action === "later") {
+    const later = await snoozeQuestionForUser(admin, questionId, user.id);
+    if (!later.ok) {
+      const status =
+        later.error === "Not found"
+          ? 404
+          : later.error === "Forbidden"
+            ? 403
+            : 400;
+      return NextResponse.json({ error: later.error }, { status });
+    }
+    return NextResponse.json({ ok: true, action: "later" });
+  }
+
+  if (!answer) {
     return NextResponse.json(
       { error: "question_id and answer are required" },
       { status: 400 }
     );
   }
 
-  const { data: qRow, error: qErr } = await admin
+  const resolved = await resolveLunaQuestionAnswer({
+    admin,
+    questionId,
+    userId: user.id,
+    answer
+  });
+  if (!resolved.ok || !resolved.row) {
+    return NextResponse.json(
+      { error: resolved.error ?? "update failed" },
+      { status: resolved.status ?? 500 }
+    );
+  }
+
+  const judgment =
+    isConfirmSameAnswer(answer) ||
+    isRejectSameAnswer(answer) ||
+    answer === "모르겠어요";
+  if (judgment) {
+    const message = isConfirmSameAnswer(answer)
+      ? "같은 것으로 기억할게요."
+      : isRejectSameAnswer(answer)
+        ? "다른 것으로 기억할게요."
+        : "표시해 두었어요.";
+    return NextResponse.json({
+      ok: true,
+      message,
+      content: resolved.row.question
+    });
+  }
+
+  const { data: qRow } = await admin
     .from("luna_questions")
-    .select(
-      "id, question, context, category, status, target_user_id"
-    )
+    .select("id, question, context, category")
     .eq("id", questionId)
     .maybeSingle();
-
-  if (qErr) {
-    console.error("[luna/questions] fetch", qErr);
-    return NextResponse.json({ error: qErr.message }, { status: 500 });
-  }
-  if (!qRow) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  if (qRow.status !== "pending") {
-    return NextResponse.json({ error: "Question is not pending" }, { status: 400 });
-  }
-  if (
-    qRow.target_user_id &&
-    qRow.target_user_id !== user.id
-  ) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const systemPrompt =
     (await getPrompt(admin, "knowledge.direct")).trim() || DIRECT_FALLBACK;
 
   const userPayload = [
-    `루나 질문:\n${qRow.question}`,
-    qRow.context ? `맥락:\n${qRow.context}` : null,
+    `루나 질문:\n${resolved.row.question}`,
+    Object.keys(resolved.row.context).length > 0
+      ? `맥락:\n${JSON.stringify(resolved.row.context)}`
+      : null,
     `사용자 답변:\n${answer}`
   ]
     .filter(Boolean)
     .join("\n\n");
 
   let content = answer;
-  let category = normalizeCategory(qRow.category);
+  let category = normalizeCategory(qRow?.category);
   let message = "고맙습니다. 이제 이렇게 찾을게요.";
 
   try {
@@ -225,7 +260,7 @@ export async function POST(request: NextRequest) {
       if (typeof parsed.message === "string" && parsed.message.trim()) {
         message = parsed.message.trim();
       }
-      category = normalizeCategory(parsed.category ?? qRow.category);
+      category = normalizeCategory(parsed.category ?? qRow?.category);
     }
   } catch (err) {
     console.error("[luna/questions] model", err);
@@ -254,18 +289,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  const answeredAt = new Date().toISOString();
   const { error: updateErr } = await admin
     .from("luna_questions")
-    .update({
-      status: "answered",
-      answer,
-      answered_by: user.id,
-      answered_at: answeredAt,
-      learning_id: learning.id
-    })
-    .eq("id", questionId)
-    .eq("status", "pending");
+    .update({ learning_id: learning.id })
+    .eq("id", questionId);
 
   if (updateErr) {
     console.error("[luna/questions] update", updateErr);

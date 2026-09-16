@@ -668,7 +668,6 @@ export function LunaChat({
   const { settings: nasPathSettings } = useNasPathSettings();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [showQuestionCard, setShowQuestionCard] = useState(false);
   const [focusTick, setFocusTick] = useState(0);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
@@ -705,10 +704,49 @@ export function LunaChat({
     answeredContent,
     answeredMessage,
     submitAnswer,
-    clearAnswered
-  } = useLunaPendingQuestion(Boolean(showMobileHeader));
+    dismissLater,
+    clearAnswered,
+    loadRelated
+  } = useLunaPendingQuestion(true);
+  const wasSendingRef = useRef(false);
+
+  useEffect(() => {
+    if (!sending) return;
+    wasSendingRef.current = true;
+    void loadRelated(null);
+    clearAnswered();
+  }, [sending, loadRelated, clearAnswered]);
+
+  useEffect(() => {
+    if (sending) return;
+    if (!wasSendingRef.current) return;
+    wasSendingRef.current = false;
+    const last = [...messages]
+      .reverse()
+      .find(
+        (m) =>
+          !(m.isThinking === true || m.metadata?.isThinking === true) &&
+          m.content.trim()
+      );
+    if (!last || last.role !== "assistant") return;
+    const topic = messages
+      .filter(
+        (m) =>
+          !(m.isThinking === true || m.metadata?.isThinking === true) &&
+          m.content.trim()
+      )
+      .slice(-6)
+      .map((m) => m.content)
+      .join("\n");
+    void loadRelated(conversation?.id ?? null, topic);
+  }, [sending, conversation?.id, loadRelated, messages]);
+
+  useEffect(() => {
+    void loadRelated(null);
+    clearAnswered();
+  }, [conversation?.id, loadRelated, clearAnswered]);
+
   const title = conversation?.title ?? "새 대화";
-  const hasPendingQuestion = Boolean(pendingQuestion);
 
   const activeClarify = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -1007,23 +1045,6 @@ export function LunaChat({
         </div>
       }
     >
-      {showQuestionCard ? (
-        <LunaInlineQuestionCard
-          question={pendingQuestion}
-          answeredMessage={answeredMessage}
-          answeredContent={answeredContent}
-          busy={questionBusy}
-          error={questionError}
-          onAnswer={async (answer) => {
-            await submitAnswer(answer);
-          }}
-          onDismiss={() => setShowQuestionCard(false)}
-          onCloseAnswered={() => {
-            clearAnswered();
-            setShowQuestionCard(false);
-          }}
-        />
-      ) : null}
       {isEmpty ? (
         <div className="flex h-full flex-col items-center justify-center px-6 text-center">
           <img
@@ -1078,9 +1099,25 @@ export function LunaChat({
             const prevUser = [...messages.slice(0, index)]
               .reverse()
               .find((x) => x.role === "user");
+            const isLastCompleteAssistant =
+              !isThinking &&
+              m.role === "assistant" &&
+              Boolean(m.content.trim()) &&
+              !messages
+                .slice(index + 1)
+                .some(
+                  (x) =>
+                    x.role === "assistant" &&
+                    !(x.isThinking === true || x.metadata?.isThinking === true) &&
+                    Boolean(x.content.trim())
+                );
+            const showFollowUp =
+              isLastCompleteAssistant &&
+              !sending &&
+              Boolean(pendingQuestion || (answeredMessage && answeredContent));
             return (
+              <div key={m.id}>
               <LunaMessage
-                key={m.id}
                 id={m.id}
                 role={m.role}
                 content={m.content}
@@ -1131,6 +1168,25 @@ export function LunaChat({
                 }
                 onClarifySelect={undefined}
               />
+              {showFollowUp ? (
+                <LunaInlineQuestionCard
+                  question={pendingQuestion}
+                  answeredMessage={answeredMessage}
+                  answeredContent={answeredContent}
+                  busy={questionBusy}
+                  error={questionError}
+                  onAnswer={async (answer) => {
+                    await submitAnswer(answer);
+                  }}
+                  onDismiss={() => {
+                    void dismissLater();
+                  }}
+                  onCloseAnswered={() => {
+                    clearAnswered();
+                  }}
+                />
+              ) : null}
+              </div>
             );
           })}
         </div>
