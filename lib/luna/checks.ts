@@ -10,6 +10,7 @@ import {
   type TrafficLight
 } from "@/lib/luna-admin/traffic";
 import { IMAGE_CORPUS_TOTAL } from "@/lib/luna-admin/primary";
+import { LUNA_CHECK_PROMISES } from "@/lib/luna/check-promises";
 
 export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown";
 
@@ -92,21 +93,42 @@ async function resolveLastOkAt(
         lastOkAt: await latestIso(admin, "luna_notion_index_runs", "finished_at")
       };
     case "image_index": {
-      const [{ data: latest }, { count }] = await Promise.all([
-        admin
-          .from("luna_media_index")
-          .select("indexed_at")
-          .order("indexed_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        admin
-          .from("luna_media_index")
-          .select("path", { count: "exact", head: true })
-      ]);
+      const [{ data: latestRun }, { data: latestRow }, { count }] =
+        await Promise.all([
+          admin
+            .from("luna_media_index_runs")
+            .select("finished_at, started_at, status")
+            .in("status", ["done", "interrupted"])
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          admin
+            .from("luna_media_index")
+            .select("indexed_at")
+            .order("indexed_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          admin
+            .from("luna_media_index")
+            .select("path", { count: "exact", head: true })
+        ]);
       const indexed = count ?? 0;
+      const runAt =
+        typeof latestRun?.finished_at === "string"
+          ? latestRun.finished_at
+          : typeof latestRun?.started_at === "string"
+            ? latestRun.started_at
+            : null;
+      const rowAt =
+        typeof latestRow?.indexed_at === "string" ? latestRow.indexed_at : null;
+      const lastOkAt =
+        runAt && rowAt
+          ? new Date(runAt) >= new Date(rowAt)
+            ? runAt
+            : rowAt
+          : (runAt ?? rowAt);
       return {
-        lastOkAt:
-          typeof latest?.indexed_at === "string" ? latest.indexed_at : null,
+        lastOkAt,
         extraDetail: `${indexed.toLocaleString("ko-KR")} / ${IMAGE_CORPUS_TOTAL.toLocaleString("ko-KR")}장`
       };
     }
@@ -221,18 +243,20 @@ export async function evaluateLunaChecks(
         : lightFromThresholds(days, row.yellow_days, row.red_days);
     const status = statusFromLight(light);
     const lastLabel = formatWhen(resolved.lastOkAt);
+    const expectedPromise = LUNA_CHECK_PROMISES[row.id]?.promise_label;
+    const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
     if (status === "ok") {
-      detail = `${row.promise_label} · 마지막 ${lastLabel}`;
+      detail = `${promiseLabel} · 마지막 ${lastLabel}`;
     } else {
       const idle =
         days == null ? "기록 없음" : `${days}일째 멈춤`;
       detail =
-        `${row.promise_label} · ${idle} · 마지막 ${lastLabel}` +
+        `${promiseLabel} · ${idle} · 마지막 ${lastLabel}` +
         (resolved.extraDetail ? ` · ${resolved.extraDetail}` : "");
     }
 
-    const patch = {
+    const patch: Record<string, unknown> = {
       last_ok_at: resolved.lastOkAt,
       last_checked_at: checkedAt,
       status,
@@ -240,6 +264,9 @@ export async function evaluateLunaChecks(
       detail,
       updated_at: checkedAt
     };
+    if (expectedPromise && expectedPromise !== row.promise_label) {
+      patch.promise_label = expectedPromise;
+    }
     const { error: upErr } = await admin
       .from("luna_checks")
       .update(patch)
@@ -248,7 +275,12 @@ export async function evaluateLunaChecks(
 
     results.push({
       ...row,
-      ...patch,
+      last_ok_at: resolved.lastOkAt,
+      last_checked_at: checkedAt,
+      status,
+      days_stale: days,
+      detail,
+      promise_label: promiseLabel,
       light,
       last_label: lastLabel
     });

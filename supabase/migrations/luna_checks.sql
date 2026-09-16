@@ -56,7 +56,7 @@ insert into public.luna_checks (
   (
     'notion_index',
     '노션 색인',
-    '하루 2회 약속',
+    '매일 03:20·13:30 약속',
     1,
     2,
     '노션 본문 검색이 최신이 아닙니다. 최근 페이지를 못 찾을 수 있습니다.',
@@ -122,10 +122,7 @@ insert into public.luna_checks (
   (
     'eval_light',
     '매일 점검',
-    '매일 약속',
-    2,
-    3,
-    '점검이 멈추면 모델·프롬프트 품질 변화를 모릅니다.',
+    '매일 03:40 약속',
     '/settings?menu=brain&sub=eval',
     '두뇌 →',
     90
@@ -133,7 +130,7 @@ insert into public.luna_checks (
   (
     'consolidate',
     '후보 정리',
-    '매일 약속',
+    '매일 03:30 약속',
     2,
     3,
     '정리가 멈추면 지식후보가 쌓이기만 합니다.',
@@ -144,7 +141,7 @@ insert into public.luna_checks (
   (
     'fx_rates',
     '환율',
-    '매일 약속',
+    '매일 09:15 약속',
     2,
     3,
     '환율이 오래되면 모델 비용 비교가 어긋납니다.',

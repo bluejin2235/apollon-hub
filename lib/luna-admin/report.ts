@@ -30,6 +30,7 @@ import {
   buildStudyMorningReport,
   collectStudyRuns
 } from "@/lib/luna/study-report";
+import { iGa, withObjectParticle } from "@/lib/korean/particles";
 
 export type AdminReportResult = {
   ok: boolean;
@@ -180,7 +181,9 @@ function buildTldr(
   const names = top
     .map((c) => {
       const days = c.days_stale != null ? `${c.days_stale}일째` : "";
-      return days ? `${c.label}이 ${days} 멈췄` : `${c.label}이 멈췄`;
+      return days
+        ? `${c.label}${iGa(c.label)} ${days} 멈췄`
+        : `${c.label}${iGa(c.label)} 멈췄`;
     })
     .join("고, ");
   const blocked = stages.find((s) => s.light === "red");
@@ -330,7 +333,7 @@ export async function buildAdminReportHtml(
   const todos: TodoItem[] = [];
   for (const c of badChecks) {
     todos.push({
-      title: `${c.label}을 고쳐 주세요`,
+      title: withObjectParticle(c.label, " 고쳐 주세요"),
       detail:
         c.days_stale != null
           ? `${c.days_stale}일째 멈춰 있습니다. ${c.meaning_when_stale}`
