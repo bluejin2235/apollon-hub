@@ -30,7 +30,12 @@ function hhmm(h: number, m: number): string {
 /** id → 약속 한 줄 · 근거 */
 export const LUNA_CHECK_PROMISES: Record<
   string,
-  { promise_label: string; source: string }
+  {
+    promise_label: string;
+    source: string;
+    yellow_days?: number;
+    red_days?: number;
+  }
 > = {
   model_market: {
     promise_label: "주 1회 약속",
@@ -69,8 +74,10 @@ export const LUNA_CHECK_PROMISES: Record<
     source: "cron-times CRON_EVAL_LIGHT (vercel luna-eval */10이 창에서 실행)"
   },
   consolidate: {
-    promise_label: `매일 ${hhmm(CRON_CONSOLIDATE_HOUR, CRON_CONSOLIDATE_MINUTE)} 약속`,
-    source: "vercel luna-consolidate 30 18 * * * → KST 03:30"
+    promise_label: `매일 ${hhmm(CRON_CONSOLIDATE_HOUR, CRON_CONSOLIDATE_MINUTE)} 확인 · 14일 또는 30건`,
+    source: "vercel luna-consolidate 30 18 * * * → KST 03:30, volume/backstop",
+    yellow_days: 14,
+    red_days: 16
   },
   fx_rates: {
     promise_label: "매일 09:15 약속",
@@ -79,6 +86,12 @@ export const LUNA_CHECK_PROMISES: Record<
   disk: {
     promise_label: "상시",
     source: "별도 cron 없음 — 항상 정상으로 접음"
+  },
+  env_keys: {
+    promise_label: "배포 환경변수",
+    source: "lib/luna/env-keys.ts 별칭 목록 vs process.env",
+    yellow_days: 1,
+    red_days: 1
   }
 };
 

@@ -10,6 +10,7 @@ import {
   type TrafficLight
 } from "@/lib/luna-admin/traffic";
 import { IMAGE_CORPUS_TOTAL } from "@/lib/luna-admin/primary";
+import { missingEnvGroups, logMissingEnvGroups } from "@/lib/luna/env-keys";
 import { LUNA_CHECK_PROMISES } from "@/lib/luna/check-promises";
 
 export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown";
@@ -75,8 +76,23 @@ async function resolveLastOkAt(
   id: string
 ): Promise<{ lastOkAt: string | null; extraDetail?: string }> {
   switch (id) {
-    case "model_market":
-      return { lastOkAt: await latestIso(admin, "luna_model_market", "fetched_at") };
+    case "model_market": {
+      const lastOkAt = await latestIso(admin, "luna_model_market", "fetched_at");
+      const { data } = await admin
+        .from("luna_settings")
+        .select("value")
+        .eq("key", "model_cost_settings")
+        .maybeSingle();
+      const err =
+        data?.value && typeof data.value === "object"
+          ? (data.value as { last_market_error?: unknown }).last_market_error
+          : null;
+      return {
+        lastOkAt,
+        extraDetail:
+          typeof err === "string" && err.trim() ? err.trim() : undefined
+      };
+    }
     case "work_index": {
       const { data } = await admin
         .from("nas_scan_settings")
@@ -162,38 +178,69 @@ async function resolveLastOkAt(
       };
     }
     case "eval_light": {
-      const { data, error } = await admin
-        .from("luna_eval_runs")
-        .select("finished_at")
-        .eq("tier", "light")
-        .eq("status", "done")
-        .order("finished_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [{ data, error }, { data: latest }] = await Promise.all([
+        admin
+          .from("luna_eval_runs")
+          .select("finished_at")
+          .eq("tier", "light")
+          .eq("status", "done")
+          .order("finished_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("luna_eval_runs")
+          .select("status, started_at")
+          .eq("tier", "light")
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ]);
       if (error) {
         console.error("[luna/checks] eval_light", error);
         return { lastOkAt: null };
       }
+      const stuck =
+        latest &&
+        latest.status !== "done" &&
+        typeof latest.status === "string"
+          ? `마지막 실행이 ${latest.status}에서 멈춤`
+          : undefined;
       return {
         lastOkAt:
-          typeof data?.finished_at === "string" ? data.finished_at : null
+          typeof data?.finished_at === "string" ? data.finished_at : null,
+        extraDetail: stuck
       };
     }
     case "consolidate": {
-      const { data, error } = await admin
-        .from("luna_consolidation_runs")
-        .select("finished_at")
-        .eq("status", "done")
-        .order("finished_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [{ data, error }, { data: cron }] = await Promise.all([
+        admin
+          .from("luna_consolidation_runs")
+          .select("finished_at")
+          .eq("status", "done")
+          .order("finished_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("luna_settings")
+          .select("value")
+          .eq("key", "consolidation_last_cron")
+          .maybeSingle()
+      ]);
       if (error) {
         console.error("[luna/checks] consolidate", error);
         return { lastOkAt: null };
       }
+      const skip =
+        cron?.value &&
+        typeof cron.value === "object" &&
+        (cron.value as { skipped?: unknown }).skipped === true
+          ? (cron.value as { reason?: unknown }).reason
+          : null;
       return {
         lastOkAt:
-          typeof data?.finished_at === "string" ? data.finished_at : null
+          typeof data?.finished_at === "string" ? data.finished_at : null,
+        extraDetail:
+          typeof skip === "string" && skip.trim() ? skip.trim() : undefined
       };
     }
     case "fx_rates": {
@@ -212,6 +259,16 @@ async function resolveLastOkAt(
     }
     case "disk":
       return { lastOkAt: new Date().toISOString() };
+    case "env_keys": {
+      const missing = missingEnvGroups();
+      if (missing.length === 0) {
+        return { lastOkAt: new Date().toISOString() };
+      }
+      return {
+        lastOkAt: null,
+        extraDetail: missing.map((m) => m.message).join(" · ")
+      };
+    }
     default:
       return { lastOkAt: null };
   }
@@ -230,6 +287,7 @@ export async function evaluateLunaChecks(
     console.error("[luna/checks] list", error);
     return [];
   }
+  logMissingEnvGroups("luna_checks");
   const rows = (data ?? []) as LunaCheckRow[];
   const checkedAt = now.toISOString();
   const results: LunaCheckResult[] = [];
@@ -237,13 +295,16 @@ export async function evaluateLunaChecks(
   for (const row of rows) {
     const resolved = await resolveLastOkAt(admin, row.id);
     const days = kstCalendarDaysAgo(resolved.lastOkAt, now);
+    const expectedMeta = LUNA_CHECK_PROMISES[row.id];
+    const yellowDays = expectedMeta?.yellow_days ?? row.yellow_days;
+    const redDays = expectedMeta?.red_days ?? row.red_days;
     const light =
       row.id === "disk"
         ? ("green" as const)
-        : lightFromThresholds(days, row.yellow_days, row.red_days);
+        : lightFromThresholds(days, yellowDays, redDays);
     const status = statusFromLight(light);
     const lastLabel = formatWhen(resolved.lastOkAt);
-    const expectedPromise = LUNA_CHECK_PROMISES[row.id]?.promise_label;
+    const expectedPromise = expectedMeta?.promise_label;
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
     if (status === "ok") {
@@ -266,6 +327,12 @@ export async function evaluateLunaChecks(
     };
     if (expectedPromise && expectedPromise !== row.promise_label) {
       patch.promise_label = expectedPromise;
+    }
+    if (expectedMeta?.yellow_days != null && expectedMeta.yellow_days !== row.yellow_days) {
+      patch.yellow_days = expectedMeta.yellow_days;
+    }
+    if (expectedMeta?.red_days != null && expectedMeta.red_days !== row.red_days) {
+      patch.red_days = expectedMeta.red_days;
     }
     const { error: upErr } = await admin
       .from("luna_checks")

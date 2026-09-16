@@ -6,6 +6,8 @@ import { triggerAutoExam } from "@/lib/luna/eval-exam";
 import { LUNA_MODEL } from "@/lib/luna/run-chat";
 import { lunaNotify } from "@/lib/luna/notify";
 import { splitDefinitionFromKnowledge } from "@/lib/luna/consolidate-terms";
+import { anthropicApiKey } from "@/lib/luna/env-keys";
+import { kstCalendarDaysAgo } from "@/lib/luna-admin/traffic";
 
 export type ConsolidationTrigger = "volume" | "backstop" | "manual";
 
@@ -154,14 +156,12 @@ function asIdList(raw: unknown): string[] {
     .map((id) => id.trim());
 }
 
-function daysBetween(fromIso: string, to = Date.now()): number {
-  const t = new Date(fromIso).getTime();
-  if (Number.isNaN(t)) return 0;
-  return Math.floor((to - t) / (24 * 60 * 60 * 1000));
+function daysBetween(fromIso: string, to = new Date()): number {
+  return kstCalendarDaysAgo(fromIso, to) ?? 0;
 }
 
 function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
+  const apiKey = anthropicApiKey();
   if (!apiKey) return null;
   return new Anthropic({ apiKey });
 }
@@ -373,10 +373,27 @@ export async function runConsolidation(
   const termSplit = await splitDefinitionFromKnowledge(admin);
   const trigger = await decideConsolidationTrigger(admin, Boolean(opts.force));
   if (!trigger) {
+    const status = await getConsolidationStatus(admin);
+    const reason =
+      `thresholds not met — 신규 ${status.new_active_since_last}건 < ${status.settings.volume_threshold}, ` +
+      `마지막 정리 ${status.days_since_last ?? "없음"}일 < ${status.settings.backstop_days}일`;
+    console.warn("[luna/consolidate] skip", reason);
+    await admin.from("luna_settings").upsert(
+      {
+        key: "consolidation_last_cron",
+        value: {
+          at: new Date().toISOString(),
+          skipped: true,
+          reason
+        },
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "key" }
+    );
     return {
       skipped: true,
       trigger: null,
-      reason: "thresholds not met",
+      reason,
       term_split: {
         new_terms: termSplit.new_terms,
         auto: termSplit.auto,
@@ -679,7 +696,26 @@ export async function runConsolidation(
       );
     }
 
-    await triggerAutoExam(admin, "consolidation");
+    if (opts.force) {
+      await triggerAutoExam(admin, "consolidation");
+    } else {
+      console.info(
+        "[luna/consolidate] skip auto exam — 매일 점검 cron이 곧 이어서 돕니다"
+      );
+    }
+
+    await admin.from("luna_settings").upsert(
+      {
+        key: "consolidation_last_cron",
+        value: {
+          at: new Date().toISOString(),
+          skipped: false,
+          trigger
+        },
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "key" }
+    );
 
     return {
       skipped: false,
