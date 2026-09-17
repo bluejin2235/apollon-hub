@@ -109,16 +109,27 @@ async function resolveLastOkAt(
       };
     }
     case "work_text": {
-      const { data } = await admin
-        .from("nas_file_text")
-        .select("extracted_at")
-        .not("extracted_at", "is", null)
-        .order("extracted_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [{ data }, doneRes, totalRes] = await Promise.all([
+        admin
+          .from("nas_file_text")
+          .select("extracted_at")
+          .not("extracted_at", "is", null)
+          .order("extracted_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        admin
+          .from("nas_file_text")
+          .select("path", { count: "exact", head: true })
+          .not("extracted_at", "is", null),
+        admin.from("nas_file_text").select("path", { count: "exact", head: true })
+      ]);
+      const done = doneRes.count ?? 0;
+      const total = totalRes.count ?? 0;
       return {
         lastOkAt:
-          typeof data?.extracted_at === "string" ? data.extracted_at : null
+          typeof data?.extracted_at === "string" ? data.extracted_at : null,
+        extraDetail:
+          total > 0 ? `${done.toLocaleString("ko-KR")} / ${total.toLocaleString("ko-KR")}건` : undefined
       };
     }
     case "notion_index":
@@ -324,7 +335,9 @@ export async function evaluateLunaChecks(
 
   for (const row of rows) {
     const resolved = await resolveLastOkAt(admin, row.id);
-    const days = kstCalendarDaysAgo(resolved.lastOkAt, now);
+    // 타임아웃·조회 실패로 null 이 오면 이전 last_ok_at 을 지우지 않는다
+    const lastOkAt = resolved.lastOkAt ?? row.last_ok_at;
+    const days = kstCalendarDaysAgo(lastOkAt, now);
     const expectedMeta = LUNA_CHECK_PROMISES[row.id];
     const yellowDays = expectedMeta?.yellow_days ?? row.yellow_days;
     const redDays = expectedMeta?.red_days ?? row.red_days;
@@ -334,7 +347,7 @@ export async function evaluateLunaChecks(
         ? ("green" as const)
         : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
-    const lastLabel = formatWhen(resolved.lastOkAt);
+    const lastLabel = formatWhen(lastOkAt);
     const expectedPromise = expectedMeta?.promise_label;
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
@@ -344,7 +357,9 @@ export async function evaluateLunaChecks(
     ) {
       detail = `${promiseLabel} · ${resolved.extraDetail}`;
     } else if (status === "ok") {
-      detail = `${promiseLabel} · 마지막 ${lastLabel}`;
+      detail =
+        `${promiseLabel} · 마지막 ${lastLabel}` +
+        (resolved.extraDetail ? ` · ${resolved.extraDetail}` : "");
     } else {
       const idle =
         days == null ? "기록 없음" : `${days}일째 멈춤`;
@@ -354,7 +369,7 @@ export async function evaluateLunaChecks(
     }
 
     const patch: Record<string, unknown> = {
-      last_ok_at: resolved.lastOkAt,
+      last_ok_at: lastOkAt,
       last_checked_at: checkedAt,
       status,
       days_stale: days,
@@ -378,7 +393,7 @@ export async function evaluateLunaChecks(
 
     results.push({
       ...row,
-      last_ok_at: resolved.lastOkAt,
+      last_ok_at: lastOkAt,
       last_checked_at: checkedAt,
       status,
       days_stale: days,

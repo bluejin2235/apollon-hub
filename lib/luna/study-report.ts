@@ -62,6 +62,17 @@ export function isIndexRunnerStudyRun(run: StudyRunRow): boolean {
   if (typeof result.index_run_id === "string" && result.index_run_id) return true;
   if (scope.source === "luna_index_queue") return true;
   if (run.agenda.includes("대기열 갱신")) return true;
+  // 중첩 drain 만 있고 자습 본문이 없으면 색인 러너
+  const drain = result.last_drain;
+  if (
+    drain &&
+    typeof drain === "object" &&
+    typeof (drain as { index_run_id?: string }).index_run_id === "string" &&
+    !result.queued &&
+    !result.listed
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -70,11 +81,11 @@ export function isCronStudyRun(run: StudyRunRow): boolean {
   if (isIndexRunnerStudyRun(run)) return false;
   const scope = scopeOf(run);
   const result = resultOf(run);
-  if (scope.trigger === "cron") return true;
-  if (result.trigger === "cron") return true;
   if (scope.trigger === "manual" || result.trigger === "manual") return false;
   if (result.queued_by === "manual") return false;
-  return false;
+  if (scope.trigger === "cron" || result.trigger === "cron") return true;
+  // 과거 실행은 trigger 필드가 비어 있음 — 색인 러너·수동이 아니면 자습으로 본다
+  return true;
 }
 
 function formatDid(result: Record<string, unknown>, expected: string): string {
@@ -213,9 +224,19 @@ function durationRange(runs: StudyRunRow[]): {
 export function buildStudyMorningReport(runs: StudyRunRow[]): StudyMorningReport {
   const cronRuns = runs.filter(isCronStudyRun);
   const indexRuns = runs.filter(isIndexRunnerStudyRun);
-  const cards = cronRuns.map(toStudyCard);
+  // 같은 아젠다는 마지막 실행만 (중복 카드 방지)
+  const latestByAgenda = new Map<string, StudyRunRow>();
+  for (const run of cronRuns) {
+    latestByAgenda.set(run.agenda.trim(), run);
+  }
+  const dedupedCron = [...latestByAgenda.values()].sort(
+    (a, b) =>
+      new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+  );
+  const cards = dedupedCron.map(toStudyCard);
   const indexCards = indexRuns.map(toIndexCard);
-  const { durationLabel, rangeLabel } = durationRange(cronRuns);
+  // 소요 시간은 자습 카드만 (색인 drain 수백 분 제외)
+  const { durationLabel, rangeLabel } = durationRange(dedupedCron);
 
   return {
     cards,

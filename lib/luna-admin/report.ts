@@ -98,14 +98,14 @@ async function countCreatedBefore(
   table: string,
   beforeIso: string,
   column = "created_at"
-): Promise<number> {
+): Promise<number | null> {
   const { count, error } = await admin
     .from(table)
     .select("id", { count: "exact", head: true })
     .lt(column, beforeIso);
   if (error) {
     console.error(`[luna-admin/report] before ${table}`, error);
-    return 0;
+    return null;
   }
   return count ?? 0;
 }
@@ -182,6 +182,12 @@ function buildTldr(
   const top = badChecks.slice(0, 2);
   const names = top
     .map((c) => {
+      if (c.id === "response_time") {
+        return `${c.label}이 느림`;
+      }
+      if (c.id === "disk") {
+        return `${c.label}이 임계치 초과`;
+      }
       const days = c.days_stale != null ? `${c.days_stale}일째` : "";
       return days
         ? `${c.label}${iGa(c.label)} ${days} 멈췄`
@@ -193,10 +199,15 @@ function buildTldr(
     blocked != null
       ? `바퀴는 돌았지만 「${blocked.label}」 단계가 막혀 있습니다.`
       : "바퀴는 돌았지만 약속과 다른 작업이 있습니다.";
+  const detailLead = top.some(
+    (c) => c.id === "response_time" || c.id === "disk"
+  )
+    ? `${names}.`
+    : `${names}습니다.`;
   return {
     ok: false,
     title: `약속과 다르게 도는 것이 ${badChecks.length}건 있습니다`,
-    detail: `${names}습니다.\n${wheel}`
+    detail: `${detailLead}\n${wheel}`
   };
 }
 
@@ -282,8 +293,8 @@ export async function buildAdminReportHtml(
       .is("verdict", null)
       .lt("created_at", startIso),
     admin
-      .from("luna_notion_chunks")
-      .select("id", { count: "exact", head: true })
+      .from("luna_notion_pages")
+      .select("page_id", { count: "exact", head: true })
       .lt("indexed_at", startIso),
     admin
       .from("luna_media_index")
@@ -297,29 +308,29 @@ export async function buildAdminReportHtml(
   const failuresYesterday = failuresOpenYesterdayRes.count ?? openFailures;
   const notionBefore = notionBeforeRes.count ?? primary.notion.count;
   const imageBefore = imageBeforeRes.count ?? primary.image.count;
+  // 1차 = 노션·이미지·위키·용어 (Work 경로 10만 건은 증감표를 삼킴 — 제외)
   const primaryToday =
-    primary.work.count +
     primary.notion.count +
     primary.image.count +
     primary.wiki.count +
     primary.glossary.count;
+  // 어제 카운트 조회 실패(타임아웃)면 오늘 값으로 맞춰 가짜 +N만 원을 만들지 않는다
+  const glossY = glossaryYesterday ?? glossaryToday;
+  const linksY = linksYesterday ?? linksToday;
+  const lensY = lensYesterday ?? lensToday;
   const primaryYesterday =
-    primary.work.count +
-    notionBefore +
-    imageBefore +
-    primary.wiki.count +
-    glossaryYesterday;
+    notionBefore + imageBefore + primary.wiki.count + glossY;
 
   const growth: GrowthRow[] = [
     { label: "1차 데이터", yesterday: primaryYesterday, today: primaryToday },
-    { label: "2차 데이터", yesterday: linksYesterday, today: linksToday },
+    { label: "2차 데이터", yesterday: linksY, today: linksToday },
     {
       label: "아폴론 지식",
       yesterday: learningsYesterday,
       today: learningsToday
     },
-    { label: "용어사전", yesterday: glossaryYesterday, today: glossaryToday },
-    { label: "관점", yesterday: lensYesterday, today: lensToday },
+    { label: "용어사전", yesterday: glossY, today: glossaryToday },
+    { label: "관점", yesterday: lensY, today: lensToday },
     {
       label: "미해결 실패",
       yesterday: failuresYesterday,
@@ -339,12 +350,15 @@ export async function buildAdminReportHtml(
 
   const todos: TodoItem[] = [];
   for (const c of badChecks) {
+    const staleLine =
+      c.id === "response_time" || c.id === "disk"
+        ? c.detail ?? c.meaning_when_stale
+        : c.days_stale != null
+          ? `${c.days_stale}일째 멈춰 있습니다. ${c.meaning_when_stale}`
+          : c.meaning_when_stale;
     todos.push({
       title: withObjectParticle(c.label, " 고쳐 주세요"),
-      detail:
-        c.days_stale != null
-          ? `${c.days_stale}일째 멈춰 있습니다. ${c.meaning_when_stale}`
-          : c.meaning_when_stale,
+      detail: staleLine,
       href: hubHref(c.href),
       btn: c.btn_label,
       tone: c.status === "bad" ? "r" : "y",

@@ -289,11 +289,19 @@ export async function latestLinkAt(admin: SupabaseClient): Promise<string | null
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) {
-    if (!isMissingTableError(error)) console.error("[luna-admin/links] latest", error);
-    return null;
+  if (!error && typeof data?.created_at === "string" && data.created_at) {
+    return data.created_at;
   }
-  return typeof data?.created_at === "string" ? data.created_at : null;
+  if (error && !isMissingTableError(error)) {
+    console.error("[luna-admin/links] latest", error);
+  }
+  // 대용량 테이블 타임아웃 시 luna_checks 스탬프를 써서 학습 단계를 가짜 🟡로 만들지 않는다
+  const { data: check } = await admin
+    .from("luna_checks")
+    .select("last_ok_at")
+    .eq("id", "links")
+    .maybeSingle();
+  return typeof check?.last_ok_at === "string" ? check.last_ok_at : null;
 }
 
 export async function listPerspectives(

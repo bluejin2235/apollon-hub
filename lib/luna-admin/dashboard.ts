@@ -130,9 +130,12 @@ export async function buildAdminDashboard(
   const selfDays = kstCalendarDaysAgo(selfstudy.last_run?.finished_at ?? null);
   const linkDays = kstCalendarDaysAgo(latestLink);
   const selfLight = lightFromIdleDays(selfDays);
+  // 링크 최신 시각 조회 실패인데 연결 건수가 있으면 가짜 🟡를 피한다
   const linkLight: TrafficLight = latestLink
     ? lightFromIdleDays(linkDays)
-    : "yellow";
+    : linkCounts.all > 0
+      ? "green"
+      : "yellow";
   const learnLight = worstLight(selfLight, linkLight);
   const pending = (pendingCandidates.count ?? 0) + pendingQuestions;
   const studyRanRecently = selfLight === "green" || selfLight === "yellow";
