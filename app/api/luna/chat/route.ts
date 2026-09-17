@@ -32,6 +32,8 @@ import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
 import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
+import { estimateUsageKrw } from "@/lib/luna/model-pricing";
+import { USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
 import { recordAnswerFlagsAsync } from "@/lib/luna/answer-flags";
 import {
   hasImageSearchIntent,
@@ -156,6 +158,22 @@ import {
   widenSearchScope,
   type SearchScope
 } from "@/lib/luna/search-scope";
+import {
+  ensureUiProgressZeros,
+  pushUiGlossaryStep,
+  pushUiImageStep,
+  pushUiLinkStep,
+  pushUiNotionStep,
+  pushUiReadStep,
+  pushUiWebStep,
+  pushUiWikiStep,
+  pushUiWorkStep,
+  queryHintFromQuestion,
+  refreshConnectorUiSteps,
+  uiChannelsForKind,
+  uiProgressCountsFromState
+} from "@/lib/luna/chat-progress-ui";
+import { progressQueryHint } from "@/lib/luna/progress-display";
 import { resolveDepartmentLens } from "@/lib/luna/department-lens";
 import {
   isKnowledgeDumpRequest,
@@ -263,6 +281,7 @@ type StepRecord = {
   label: string;
   status: StepStatus;
   ms?: number;
+  right?: string;
 };
 type ModelStep = {
   label: string;
@@ -419,17 +438,17 @@ function buildSourceReasonUserMessage(
     return null;
   }
 
-  const parts = [`질문:\n${question}`];
+  const parts = [`질문:\r\n${question}`];
   if (notionTitles.length > 0) {
-    parts.push(`노션:\n${notionTitles.map((t) => `- ${t}`).join("\n")}`);
+    parts.push(`노션:\r\n${notionTitles.map((t) => `- ${t}`).join("\r\n")}`);
   }
   if (nasLines.length > 0) {
-    parts.push(`Work서버:\n${nasLines.join("\n")}`);
+    parts.push(`Work서버:\r\n${nasLines.join("\r\n")}`);
   }
   if (webTitles.length > 0) {
-    parts.push(`웹:\n${webTitles.map((t) => `- ${t}`).join("\n")}`);
+    parts.push(`웹:\r\n${webTitles.map((t) => `- ${t}`).join("\r\n")}`);
   }
-  return parts.join("\n\n");
+  return parts.join("\r\n\r\n");
 }
 
 function formatCardLineForEval(card: LunaCard): string {
@@ -487,7 +506,7 @@ function buildL3PromptBlock(opts: {
   ]
     .map((s) => s?.trim() ?? "")
     .filter(Boolean)
-    .join("\n\n");
+    .join("\r\n\r\n");
 }
 
 function buildAnswerSystem(
@@ -522,18 +541,18 @@ function buildAnswerSystem(
   const identity = opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
   const structure =
     opts.workserverStructure?.trim() || WORKSERVER_STRUCTURE_FALLBACK;
-  const block1 = [identity, structure].filter(Boolean).join("\n\n");
+  const block1 = [identity, structure].filter(Boolean).join("\r\n\r\n");
   const block2 = [opts.skillPrompt?.trim() ?? "", opts.l3Prompt?.trim() ?? ""]
     .filter(Boolean)
-    .join("\n\n");
+    .join("\r\n\r\n");
   const block3 = [
     opts.glossaryBlock?.trim() ?? "",
     opts.wikiSectionsBlock?.trim() ?? "",
     opts.learningsBlock?.trim() ?? "",
-    `[답변 안전]\n${KNOWLEDGE_LIST_HARD_RULE}`
+    `[답변 안전]\r\n${KNOWLEDGE_LIST_HARD_RULE}`
   ]
     .filter(Boolean)
-    .join("\n\n");
+    .join("\r\n\r\n");
   const volatile = buildVolatileSystemText({
     ...opts,
     clarifyFollowup: opts.clarifyFollowup,
@@ -607,14 +626,14 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.reportContent?.trim()) {
-    parts.push(`[이미 정리해둔 자료]\n${opts.reportContent.trim()}`);
+    parts.push(`[이미 정리해둔 자료]\r\n${opts.reportContent.trim()}`);
   }
 
   parts.push(WORK_STAGE_ANSWER_RULE);
 
   if (opts.webAugmented) {
     parts.push(
-      "[웹 검색 보강]\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."
+      "[웹 검색 보강]\r\n웹 검색 도구가 있다. '기능이 없다'거나 '접근할 수 없다'고 말하지 않는다.\r\n확정 지식·용어가 있으면 그것을 우선하고, 웹은 일반 정보 보완에만 쓴다."
     );
   }
 
@@ -629,7 +648,7 @@ function buildVolatileSystemText(opts: {
         ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라. 각 항목에 페이지 제목을 근거로 단다.)`
         : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
-      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
+      `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm)}\r\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
@@ -646,8 +665,8 @@ function buildVolatileSystemText(opts: {
       .map((c) =>
         c.url ? `- [${c.type}] ${c.title}: ${c.url}` : `- [${c.type}] ${c.title}: ${c.description}`
       )
-      .join("\n");
-    parts.push(`[검색 레퍼런스]\n${cardBlock}`);
+      .join("\r\n");
+    parts.push(`[검색 레퍼런스]\r\n${cardBlock}`);
   }
 
   const nasResults = (opts.nasResults ?? []).slice(0, inject.nas);
@@ -659,19 +678,19 @@ function buildVolatileSystemText(opts: {
         const drive = (row.drive ?? "T").trim().toUpperCase() || "T";
         return `- ${name} → ${drive}:\\${row.path.replace(/\//g, "\\")}`;
       })
-      .join("\n");
+      .join("\r\n");
     parts.push(
-      "[Work서버 파일 위치]\n" +
+      "[Work서버 파일 위치]\r\n" +
         (notionPaths.length > 0
-          ? "아래는 Work서버 인덱스 검색 결과다. 노션에 기록된 경로가 있으면 그것을 우선한다.\n"
-          : "아래 경로는 Work서버 인덱스에서 확인된 경로다. 목록에 없는 경로는 추측하지 않는다.\n") +
+          ? "아래는 Work서버 인덱스 검색 결과다. 노션에 기록된 경로가 있으면 그것을 우선한다.\r\n"
+          : "아래 경로는 Work서버 인덱스에서 확인된 경로다. 목록에 없는 경로는 추측하지 않는다.\r\n") +
         nasBlock
     );
   } else if (opts.nasSearchAttempted) {
     parts.push(
       notionPaths.length > 0
-        ? "[Work서버 파일 위치]\n(인덱스 검색 0건 — 노션에 기록된 경로를 우선 사용한다. 찾지 못했다고 단정하지 말 것)"
-        : "[Work서버 파일 위치]\n(검색 결과 없음 — 노션 페이지가 있으면 그 링크는 제시하고, 경로는 추측하지 말 것)"
+        ? "[Work서버 파일 위치]\r\n(인덱스 검색 0건 — 노션에 기록된 경로를 우선 사용한다. 찾지 못했다고 단정하지 말 것)"
+        : "[Work서버 파일 위치]\r\n(검색 결과 없음 — 노션 페이지가 있으면 그 링크는 제시하고, 경로는 추측하지 말 것)"
     );
   }
 
@@ -691,9 +710,9 @@ function buildVolatileSystemText(opts: {
   closing.push(
     "- 답변은 아폴론의 과거 프로젝트 맥락과 연결해서 구체적으로 쓰세요."
   );
-  parts.push(closing.join("\n"));
+  parts.push(closing.join("\r\n"));
 
-  return parts.join("\n\n");
+  return parts.join("\r\n\r\n");
 }
 
 function pushModelStep(
@@ -731,7 +750,7 @@ function emit(
   encoder: TextEncoder,
   event: Record<string, unknown>
 ) {
-  controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+  controller.enqueue(encoder.encode(JSON.stringify(event) + "\r\n"));
 }
 
 export async function POST(request: NextRequest) {
@@ -993,7 +1012,7 @@ export async function POST(request: NextRequest) {
   const talkAnswer = answerPick.text;
   const clarifyPrompt = [understandPick.text, guardPick.text]
     .filter(Boolean)
-    .join("\n\n");
+    .join("\r\n\r\n");
   const webSearchHint = "";
 
   const typePromptByKey: Record<
@@ -1102,7 +1121,7 @@ export async function POST(request: NextRequest) {
     for (const id of perspectiveIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "perspective") continue;
-      blocks.push(`[관점 · ${row.title}]\n${row.content}`);
+      blocks.push(`[관점 · ${row.title}]\r\n${row.content}`);
       l2SkillRows.push({
         title: row.title,
         level: "L2",
@@ -1114,7 +1133,7 @@ export async function POST(request: NextRequest) {
     for (const id of roleIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "role") continue;
-      blocks.push(`[역할 · ${row.title}]\n${row.content}`);
+      blocks.push(`[역할 · ${row.title}]\r\n${row.content}`);
       l2SkillRows.push({
         title: row.title,
         level: "L2",
@@ -1126,7 +1145,7 @@ export async function POST(request: NextRequest) {
     for (const id of taskIds) {
       const row = byId.get(id);
       if (!row || row.kind !== "task") continue;
-      blocks.push(`[작업 · ${row.title}]\n${row.content}`);
+      blocks.push(`[작업 · ${row.title}]\r\n${row.content}`);
       l2SkillRows.push({
         title: row.title,
         level: "L2",
@@ -1135,7 +1154,7 @@ export async function POST(request: NextRequest) {
         prompt_key: row.prompt_key
       });
     }
-    skillPrompt = blocks.length > 0 ? blocks.join("\n\n") : null;
+    skillPrompt = blocks.length > 0 ? blocks.join("\r\n\r\n") : null;
   }
 
   let attachments: AttachmentRow[] = [];
@@ -1186,7 +1205,7 @@ export async function POST(request: NextRequest) {
   const clarifyFollowupQuery = lastHadClarify
     ? combineClarifyFollowup(clarifyRootUser, userText, clarifyOptions) ??
       (clarifyRootUser
-        ? `${clarifyRootUser}\n조건: ${userText.trim()}`
+        ? `${clarifyRootUser}\r\n조건: ${userText.trim()}`
         : null)
     : null;
   const searchIntentText = clarifyFollowupQuery || userText;
@@ -1243,7 +1262,7 @@ export async function POST(request: NextRequest) {
         key: string,
         status: StepStatus,
         label: string,
-        opts?: { silent?: boolean }
+        opts?: { silent?: boolean; right?: string }
       ) => {
         const now = Date.now();
         if (status === "running") stepStartedAt.set(key, now);
@@ -1255,7 +1274,8 @@ export async function POST(request: NextRequest) {
           key,
           status,
           label,
-          ...(typeof ms === "number" ? { ms } : {})
+          ...(typeof ms === "number" ? { ms } : {}),
+          ...(opts?.right ? { right: opts.right } : {})
         };
         if (idx >= 0) steps[idx] = rec;
         else steps.push(rec);
@@ -1265,7 +1285,8 @@ export async function POST(request: NextRequest) {
           key,
           status,
           label,
-          ...(typeof ms === "number" ? { ms } : {})
+          ...(typeof ms === "number" ? { ms } : {}),
+          ...(opts?.right ? { right: opts.right } : {})
         });
       };
 
@@ -1363,6 +1384,7 @@ export async function POST(request: NextRequest) {
         // ——— 단계 0: 유형 판정 (임베딩은 범위 확정 후 — 용어·규정은 생략) ———
         let classification = emptyClassification();
         let classifiedTypeRows: QuestionTypeRow[] = [];
+        let classifySource: "rule" | "llm" = "llm";
         pushStep("classify", "running", "유형 판정 중");
 
         let knowledgeEmbPromise: Promise<
@@ -1386,6 +1408,7 @@ export async function POST(request: NextRequest) {
 
         const ruleInfer = inferRuleClassification(searchIntentText);
         if (ruleInfer) {
+          classifySource = "rule";
           classification = {
             types: ruleInfer.types,
             reason: ruleInfer.reason,
@@ -1404,7 +1427,7 @@ export async function POST(request: NextRequest) {
             const classifyRes = await lunaLlmComplete(admin, {
               tier: "C",
               feature: "understand",
-              system: `${classifyPick.text}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
+              system: `${classifyPick.text}\r\n\r\n[유형 목록]\r\n${formatTypeCatalog(questionTypes)}`,
               user: searchIntentText,
               maxTokens: 256
             });
@@ -1530,6 +1553,8 @@ export async function POST(request: NextRequest) {
           flags: searchScope.flags,
           types: classification.types
         });
+        const uiQueryHint = queryHintFromQuestion(searchIntentText);
+        pushUiReadStep(pushStep, searchScope.label);
 
         if (
           forceSimpleDepthForScope(searchScope.kind) &&
@@ -1957,6 +1982,15 @@ export async function POST(request: NextRequest) {
         const injectedTerms = matchedTerms
           .map((t) => (t.term_ko ?? "").trim())
           .filter(Boolean);
+        {
+          const uiCh = uiChannelsForKind(searchScope.kind);
+          if (uiCh.glossary) {
+            pushUiGlossaryStep(pushStep, matchedTerms.length);
+          }
+          if (uiCh.wiki) {
+            pushUiWikiStep(pushStep, publicWikiSources.length);
+          }
+        }
 
         let webAugmented = false;
         const listingWikiSufficient =
@@ -2090,6 +2124,32 @@ export async function POST(request: NextRequest) {
         let notionSearchOutcome: NotionSearchOutcome | null = null;
         let cards: LunaCard[] = [];
         let nasResults: NasDirectoryRow[] = [];
+        let nasTextHitCount = 0;
+        let nasTextSearched = false;
+        const flushUiProgress = () => {
+          const counts = uiProgressCountsFromState({
+            glossary: matchedTerms.length,
+            wiki: publicWikiSources.length,
+            notionSources,
+            linkAdded: notionSearchOutcome?.secondary?.link_added ?? 0,
+            nasResults,
+            nasTextHits: nasTextSearched ? nasTextHitCount : -1,
+            cards
+          });
+          refreshConnectorUiSteps({
+            push: pushStep,
+            kind: searchScope.kind,
+            hint: uiQueryHint,
+            counts
+          });
+          ensureUiProgressZeros({
+            push: pushStep,
+            kind: searchScope.kind,
+            hint: uiQueryHint,
+            existingKeys: new Set(steps.map((s) => s.key)),
+            counts
+          });
+        };
         let usedReportId: string | null = null;
         let usedReportContent: string | null = null;
         const previousKeywords: string[] = [];
@@ -2128,10 +2188,10 @@ export async function POST(request: NextRequest) {
             runNas &&
             !listingQuestion &&
             (searchScope.kind === "find_wide" || searchScope.kind === "wide");
-          const [notionOutcome, webRes, youtubeRes, nasRes, mediaRes] =
-            await Promise.all([
-            runNotionIndex
-              ? reuseNotion
+          const uiChRun = uiChannelsForKind(searchScope.kind);
+          const hintRun = progressQueryHint(kw || searchIntentText) || uiQueryHint;
+          const notionPromise = runNotionIndex
+              ? (reuseNotion
                 ? Promise.resolve(speculativeNotion)
                 : searchNotionForLuna(
                     admin,
@@ -2143,7 +2203,27 @@ export async function POST(request: NextRequest) {
                       listing: listingQuestion
                     }
                   )
-              : Promise.resolve(skippedNotionOutcome()),
+              ).then((outcome) => {
+                try {
+                  if (uiChRun.notion) {
+                    const primary =
+                      outcome.timings?.candidates_found ??
+                      outcome.sources.filter((s) => !s.link_expanded).length;
+                    pushUiNotionStep(pushStep, primary, hintRun);
+                    const added = outcome.secondary?.link_added ?? 0;
+                    if (uiChRun.link && (added > 0 || primary > 0)) {
+                      pushUiLinkStep(pushStep, added);
+                    }
+                  }
+                } catch (err) {
+                  console.error("[luna/chat] ui notion step", err);
+                }
+                return outcome;
+              })
+              : Promise.resolve(skippedNotionOutcome());
+          const [notionOutcome, webRes, youtubeRes, nasRes, mediaRes] =
+            await Promise.all([
+            notionPromise,
             webEnabled && searchScope.flags.web
               ? (() => {
                   const q = kw || searchIntentText;
@@ -2236,6 +2316,21 @@ export async function POST(request: NextRequest) {
               : Promise.resolve([] as LunaCard[])
           ]);
 
+          try {
+            const uiChAfter = uiChannelsForKind(searchScope.kind);
+            const hintAfter = progressQueryHint(kw || searchIntentText) || uiQueryHint;
+            if (uiChAfter.work && runNas) {
+              pushUiWorkStep(pushStep, nasRes.length, hintAfter);
+            }
+            if (uiChAfter.image && runMedia) {
+              pushUiImageStep(pushStep, mediaRes.length);
+            }
+            if (uiChAfter.web && webEnabled && searchScope.flags.web) {
+              pushUiWebStep(pushStep, webRes.length);
+            }
+          } catch (err) {
+            console.error("[luna/chat] ui connector steps", err);
+          }
           const notionRes = notionOutcome.sources;
           const notionCards: LunaCard[] = notionRes.map((s) => ({
             type: "notion" as const,
@@ -2323,6 +2418,7 @@ export async function POST(request: NextRequest) {
 
           // Work 본문: 플랜 A 키워드(trigram+순위) 우선 · 임베딩은 있을 때만
           if (nasEnabled || listingQuestion) {
+            nasTextSearched = true;
             try {
               const kwHits = await searchNasTextKeyword(
                 admin,
@@ -2330,6 +2426,7 @@ export async function POST(request: NextRequest) {
                 { limit: 12 }
               );
               if (kwHits.length > 0) {
+                nasTextHitCount = Math.max(nasTextHitCount, kwHits.length);
                 const seen = new Set(
                   nasResults.map((r) =>
                     r.path.replace(/\\/g, "/").toLowerCase()
@@ -2368,6 +2465,10 @@ export async function POST(request: NextRequest) {
                   { limit: 12 }
                 );
                 if (nasChunkHits.length > 0) {
+                  nasTextHitCount = Math.max(
+                    nasTextHitCount,
+                    nasChunkHits.length
+                  );
                   const seen = new Set(
                     nasResults.map((r) =>
                       r.path.replace(/\\/g, "/").toLowerCase()
@@ -2504,6 +2605,7 @@ export async function POST(request: NextRequest) {
             });
           };
           emitSearchSnapshot();
+          flushUiProgress();
 
           // 자체 평가 + 재검색 (임베딩·하이브리드 합산 중 큰 값이 임계 이상이면 건너뜀)
           let sufficient = true;
@@ -2538,8 +2640,8 @@ export async function POST(request: NextRequest) {
                   tier: "B",
                   feature: "eval_grade",
                   system: selfEvalPrompt,
-                  user: `질문:\n${searchIntentText}\n\n찾은 자료:\n${materialLines.join(
-                    "\n"
+                  user: `질문:\r\n${searchIntentText}\r\n\r\n찾은 자료:\r\n${materialLines.join(
+                    "\r\n"
                   )}`,
                   maxTokens: 256
                 });
@@ -2595,9 +2697,9 @@ export async function POST(request: NextRequest) {
                 tier: "B",
                 feature: "search_terms",
                 system: requeryPrompt,
-                user: `원 질문:\n${searchIntentText}\n\n이전 검색어:\n${previousKeywords.join(
+                user: `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
-                )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`,
+                )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
                 maxTokens: 64
               });
               recordPromptUse(usageLog, {
@@ -2679,6 +2781,8 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        flushUiProgress();
+
         // ——— 단계 6: 소스별 이유 + 답변 ———
         let sourceReasons: SourceReasons | null = null;
         const reasonUser = buildSourceReasonUserMessage(
@@ -2739,7 +2843,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        pushStep("answer", "running", "정리하는 중");
+        pushStep("answer", "running", "정리하는 중…");
 
         const historyMessages: Anthropic.MessageParam[] = recent
           .filter((m) => m.role === "user" || m.role === "assistant")
@@ -2793,8 +2897,8 @@ export async function POST(request: NextRequest) {
         const typeBlocks: string[] = [];
         for (const row of classifiedTypeRows) {
           if (!row.prompt_key) {
-            const extra = [row.criteria, row.answer_form].filter(Boolean).join("\n");
-            if (extra) typeBlocks.push(`[유형 ${row.label}]\n${extra}`);
+            const extra = [row.criteria, row.answer_form].filter(Boolean).join("\r\n");
+            if (extra) typeBlocks.push(`[유형 ${row.label}]\r\n${extra}`);
             continue;
           }
           const pick = typePromptByKey[row.prompt_key];
@@ -2820,7 +2924,7 @@ export async function POST(request: NextRequest) {
               formatListingNotionChecklist(notionForLlm)
             ]
               .filter(Boolean)
-              .join("\n\n")
+              .join("\r\n\r\n")
           : undefined;
 
         const depthRule =
@@ -3028,11 +3132,11 @@ export async function POST(request: NextRequest) {
                     }
                     return "";
                   })
-                  .join("\n");
+                  .join("\r\n");
               }
               return `${role}: ${content}`;
             })
-            .join("\n\n");
+            .join("\r\n\r\n");
           for await (const chunk of llmStreamText({
             provider: tierAResolved.provider,
             model_id: tierA.model_id,
@@ -3080,7 +3184,7 @@ export async function POST(request: NextRequest) {
         }
         const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
         if (webCardsUsed && !assistantText.includes("웹 검색으로 보강함")) {
-          const note = "\n\n웹 검색으로 보강함";
+          const note = "\r\n\r\n웹 검색으로 보강함";
           assistantText = `${assistantText.trim()}${note}`;
           controller.enqueue(encoder.encode(note));
         }
@@ -3141,6 +3245,16 @@ export async function POST(request: NextRequest) {
         const timingCandidatesAdded =
           notionSearchOutcome?.secondary?.link_added ?? 0;
         const timingCandidatesUsed = notionForLlm.length;
+        const costKrw = estimateUsageKrw(
+          tierA.model_id,
+          {
+            inputTokens: answerUsage.input_tokens,
+            outputTokens: answerUsage.output_tokens,
+            cacheWriteTokens: answerUsage.cache_creation_input_tokens,
+            cacheReadTokens: answerUsage.cache_read_input_tokens
+          },
+          USD_KRW_FALLBACK
+        ).krw;
         const responseTimings = {
           embed_ms: timingEmbedMs,
           search_ms: timingSearchMs,
@@ -3152,12 +3266,16 @@ export async function POST(request: NextRequest) {
           candidates_used: timingCandidatesUsed,
           prompt_tokens: answerUsage.input_tokens,
           completion_tokens: answerUsage.output_tokens,
-          model: tierA.model_id
+          model: tierA.model_id,
+          cost_krw: costKrw > 0 ? costKrw : null
         };
         const assistantMeta: Record<string, unknown> = {
           model_label: tierA.model_label,
           duration_ms: durationMs,
           timings: responseTimings,
+          classify_source: classifySource,
+          classification_label: searchScope.label,
+          progress_keywords: keywords.slice(0, 120),
           model_steps: modelSteps,
           steps,
           search_rounds: searchRounds,
@@ -3394,7 +3512,7 @@ export async function POST(request: NextRequest) {
         console.error("[luna/chat] stream", err);
         const msg = err instanceof Error ? err.message : "Stream failed";
         try {
-          controller.enqueue(encoder.encode(`\n\n[오류] ${msg}`));
+          controller.enqueue(encoder.encode(`\r\n\r\n[오류] ${msg}`));
         } catch {
           /* already closed */
         }

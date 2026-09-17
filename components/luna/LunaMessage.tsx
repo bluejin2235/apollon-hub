@@ -28,6 +28,10 @@ import {
   type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
 import { countDocMaterials } from "@/lib/luna/luna-answer-ui";
+import {
+  buildDetailTimingRows,
+  formatDetailSummaryLine
+} from "@/lib/luna/progress-display";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
   clipFeedbackNote,
@@ -50,6 +54,8 @@ export type LunaProgressStep = {
   label: string;
   status: "running" | "done" | "skip";
   ms?: number;
+  /** 오른쪽 고정폭 — "12건" · "+18건" 등 */
+  right?: string;
 };
 
 export type LunaClarifyData = {
@@ -80,11 +86,29 @@ export type LunaConnectorRoutingMeta = {
   reasonLabel: string;
 };
 
+export type LunaResponseTimings = {
+  embed_ms?: number | null;
+  search_ms?: number | null;
+  link_ms?: number | null;
+  llm_ms?: number | null;
+  total_ms?: number | null;
+  candidates_found?: number | null;
+  candidates_added?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  model?: string | null;
+  cost_krw?: number | null;
+};
+
 export type LunaDetailMeta = {
   modelSteps?: LunaModelStep[] | null;
   steps?: LunaProgressStep[] | null;
   wsSearches?: unknown[] | null;
   connectorRouting?: LunaConnectorRoutingMeta | null;
+  timings?: LunaResponseTimings | null;
+  classificationLabel?: string | null;
+  classifySource?: "rule" | "llm" | null;
+  keywords?: string | null;
 };
 
 type LunaMessageProps = {
@@ -799,6 +823,7 @@ function formatDuration(ms: number): string {
 
 function DetailMetaFooter({
   modelLabel,
+  durationMs,
   detailMeta
 }: {
   modelLabel: string;
@@ -810,7 +835,26 @@ function DetailMetaFooter({
   const steps = detailMeta?.steps ?? [];
   const wsSearches = detailMeta?.wsSearches ?? [];
   const connectorRouting = detailMeta?.connectorRouting ?? null;
+  const timingRows = buildDetailTimingRows({
+    steps: steps.map((s) => ({
+      key: s.key,
+      label: s.label,
+      status: s.status,
+      ms: s.ms,
+      right: s.right
+    })),
+    timings: detailMeta?.timings ?? null,
+    classificationLabel: detailMeta?.classificationLabel ?? null,
+    classifySource: detailMeta?.classifySource ?? null,
+    keywords: detailMeta?.keywords ?? null
+  });
+  const summaryLine = formatDetailSummaryLine({
+    modelLabel,
+    timings: detailMeta?.timings ?? null,
+    durationMs
+  });
   const hasDetail =
+    timingRows.length > 0 ||
     modelSteps.length > 0 ||
     steps.length > 0 ||
     wsSearches.length > 0 ||
@@ -819,7 +863,7 @@ function DetailMetaFooter({
   return (
     <>
       <div className="mt-0.5 text-[10.5px] text-[#9aa0a8]">
-        {modelLabel}
+        {summaryLine || modelLabel}
         {hasDetail ? (
           <>
             {" · "}
@@ -835,13 +879,29 @@ function DetailMetaFooter({
       </div>
       {open && hasDetail ? (
         <div className="mt-1.5 rounded-lg border border-[#E3E0F5] bg-white px-[11px] py-[9px]">
+          {timingRows.length > 0 ? (
+            <div className="mb-2 space-y-1">
+              <p className="text-[10px] font-medium text-[#6b6f76]">단계별 시간</p>
+              {timingRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="flex gap-2 text-[10.5px] text-[#6b6f76]"
+                >
+                  <span className="min-w-0 flex-1">{row.label}</span>
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-[#9aa0a8]">
+                    {row.right}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {connectorRouting?.summary ? (
             <div className="mb-2 space-y-0.5">
               <p className="text-[10px] font-medium text-[#6b6f76]">커넥터</p>
               <p className="text-[10.5px] text-[#6b6f76]">{connectorRouting.summary}</p>
             </div>
           ) : null}
-          {steps.length > 0 ? (
+          {steps.length > 0 && timingRows.length === 0 ? (
             <div className="mb-2 space-y-1">
               <p className="text-[10px] font-medium text-[#6b6f76]">진행 단계</p>
               {steps
@@ -1231,7 +1291,11 @@ export function LunaMessage({
     modelSteps: detailMeta?.modelSteps ?? modelSteps,
     steps: detailMeta?.steps ?? steps,
     wsSearches: detailMeta?.wsSearches ?? null,
-    connectorRouting: detailMeta?.connectorRouting ?? null
+    connectorRouting: detailMeta?.connectorRouting ?? null,
+    timings: detailMeta?.timings ?? null,
+    classificationLabel: detailMeta?.classificationLabel ?? null,
+    classifySource: detailMeta?.classifySource ?? null,
+    keywords: detailMeta?.keywords ?? null
   };
 
   function copyContent() {

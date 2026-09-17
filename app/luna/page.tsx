@@ -12,6 +12,7 @@ import {
   normalizeConnectorRouting,
   normalizeNotionSources,
   normalizeProgressSteps,
+  normalizeResponseTimings,
   normalizeSourceReasons,
   type LunaAnalysisTeam,
   type LunaChatMessage
@@ -278,6 +279,19 @@ export default function LunaPage() {
           wsToolCalls,
           connectorRouting: normalizeConnectorRouting(meta?.connector_routing),
           classification: normalizeClassification(meta?.classification),
+          responseTimings: normalizeResponseTimings(meta?.timings),
+          classificationLabel:
+            typeof meta?.classification_label === "string"
+              ? meta.classification_label
+              : null,
+          classifySource:
+            meta?.classify_source === "rule" || meta?.classify_source === "llm"
+              ? meta.classify_source
+              : null,
+          progressKeywords:
+            typeof meta?.progress_keywords === "string"
+              ? meta.progress_keywords
+              : null,
           intentScore,
           confidenceScore,
           selfNote,

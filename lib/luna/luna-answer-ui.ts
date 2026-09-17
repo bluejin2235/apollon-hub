@@ -13,12 +13,14 @@ import {
   hasImageSearchIntent
 } from "@/lib/luna/media-index-search";
 import type { LunaClassificationMeta } from "@/lib/luna/chat-response";
+import { buildProgressDisplayRows } from "@/lib/luna/progress-display";
 
 export type LunaProgressStepLite = {
   key: string;
   label: string;
   status: "running" | "done" | "skip";
   ms?: number;
+  right?: string;
 };
 
 export type LunaAnswerTab = "all" | "docs" | "images" | "video";
@@ -115,6 +117,7 @@ export type LunaProgressRow = {
   state: "done" | "now" | "wait";
   label: string;
   sub?: string;
+  right?: string;
   ms?: number;
 };
 
@@ -124,42 +127,49 @@ export function buildProgressRows(opts: {
   counts: LunaSearchCounts;
   isComplete: boolean;
 }): LunaProgressRow[] {
-  const { steps, classification, counts, isComplete } = opts;
+  const { steps, isComplete } = opts;
+  // 범위별 SSE ui_* 단계가 있으면 그걸 그대로 쓴다 (가짜 4줄 템플릿 금지)
+  const display = buildProgressDisplayRows({ steps, isComplete });
+  if (display.length > 0) {
+    return display.map((r) => ({
+      key: r.key,
+      state: r.state,
+      label: r.label,
+      right: r.right,
+      ms: r.ms
+    }));
+  }
+
+  // 구형 스트림 호환: ui_* 없으면 기존 요약 행
   const byKey = new Map(steps.map((s) => [s.key, s]));
   const classify = byKey.get("classify");
   const search = byKey.get("search");
-  const evalStep = byKey.get("eval");
   const answer = byKey.get("answer");
-
   const typeLabel =
-    classification?.labels?.filter(Boolean).join(" · ") ||
-    classification?.types?.join(" · ") ||
+    opts.classification?.labels?.filter(Boolean).join(" · ") ||
+    opts.classification?.types?.join(" · ") ||
     classify?.label ||
     "";
-
   const rows: LunaProgressRow[] = [];
-
   rows.push({
     key: "understand",
     state: classify?.status === "done" ? "done" : classify ? "now" : "wait",
-    label: "질문을 이해했어요",
+    label: "질문을 읽었습니다",
     sub: typeLabel || undefined,
     ms: classify?.ms
   });
-
+  const { counts } = opts;
   const foundParts: string[] = [];
   if (counts.wiki != null) foundParts.push(`위키 ${counts.wiki}`);
   if (counts.notion != null) foundParts.push(`노션 ${counts.notion}`);
   if (counts.work != null) foundParts.push(`Work ${counts.work}`);
   if (counts.image != null) foundParts.push(`이미지 ${counts.image}`);
-
   const foundReady =
     search?.status === "done" ||
     counts.wiki != null ||
     counts.notion != null ||
     counts.work != null ||
     counts.image != null;
-
   rows.push({
     key: "found",
     state: foundReady ? "done" : search?.status === "running" ? "now" : "wait",
@@ -170,40 +180,6 @@ export function buildProgressRows(opts: {
       : "자료 검색 중",
     ms: search?.ms
   });
-
-  const docTotal = Math.max(
-    1,
-    (counts.notion ?? 0) +
-      (counts.work ?? 0) +
-      Math.min(counts.image ?? 0, 6)
-  );
-  let readCurrent = 0;
-  let readState: LunaProgressRow["state"] = "wait";
-  if (evalStep?.status === "running") {
-    readState = "now";
-    readCurrent = Math.max(1, Math.ceil(docTotal / 2));
-  } else if (evalStep?.status === "done" && answer?.status === "running") {
-    readState = "now";
-    readCurrent = Math.max(1, docTotal - 1);
-  } else if (answer?.status === "done" || isComplete) {
-    readState = "done";
-    readCurrent = docTotal;
-  } else if (evalStep?.status === "done") {
-    readState = "done";
-    readCurrent = docTotal;
-  }
-
-  rows.push({
-    key: "reading",
-    state: readState,
-    label: "자료를 읽는 중",
-    sub:
-      readState === "wait"
-        ? undefined
-        : `${docTotal}건 중 ${readCurrent}건째`,
-    ms: evalStep?.ms
-  });
-
   rows.push({
     key: "answer",
     state:
@@ -212,10 +188,9 @@ export function buildProgressRows(opts: {
         : answer?.status === "running"
           ? "now"
           : "wait",
-    label: "답변 정리",
+    label: answer?.status === "running" ? "정리하는 중…" : "답변 정리",
     ms: answer?.ms
   });
-
   return rows;
 }
 

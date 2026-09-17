@@ -16,7 +16,8 @@ import {
   type LunaModelStep,
   type LunaProgressStep,
   type LunaSourceReasons,
-  type LunaDetailMeta
+  type LunaDetailMeta,
+  type LunaResponseTimings
 } from "@/components/luna/LunaMessage";
 import { useNasPathSettings } from "@/lib/luna/use-nas-path-settings";
 import type { LunaConversation } from "@/components/luna/LunaSidebar";
@@ -134,6 +135,10 @@ export type LunaChatMessage = {
   confidenceScore?: number | null;
   selfNote?: string | null;
   showAnswerScores?: boolean;
+  responseTimings?: LunaResponseTimings | null;
+  classificationLabel?: string | null;
+  classifySource?: "rule" | "llm" | null;
+  progressKeywords?: string | null;
 };
 
 export type { LunaSourceReasons };
@@ -338,14 +343,44 @@ export function normalizeProgressSteps(raw: unknown): LunaProgressStep[] | null 
     )
     .map((s) => {
       const ms = (s as { ms?: unknown }).ms;
+      const right = (s as { right?: unknown }).right;
       return {
         key: s.key,
         label: s.label,
         status: s.status,
-        ...(typeof ms === "number" && Number.isFinite(ms) ? { ms } : {})
+        ...(typeof ms === "number" && Number.isFinite(ms) ? { ms } : {}),
+        ...(typeof right === "string" && right.trim()
+          ? { right: right.trim() }
+          : {})
       };
     });
   return steps.length > 0 ? steps : null;
+}
+
+export function normalizeResponseTimings(
+  raw: unknown
+): LunaResponseTimings | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
+  const out: LunaResponseTimings = {
+    embed_ms: num(row.embed_ms),
+    search_ms: num(row.search_ms),
+    link_ms: num(row.link_ms),
+    llm_ms: num(row.llm_ms),
+    total_ms: num(row.total_ms),
+    candidates_found: num(row.candidates_found),
+    candidates_added: num(row.candidates_added),
+    prompt_tokens: num(row.prompt_tokens),
+    completion_tokens: num(row.completion_tokens),
+    model: str(row.model),
+    cost_krw: num(row.cost_krw)
+  };
+  const hasAny = Object.values(out).some((v) => v != null);
+  return hasAny ? out : null;
 }
 
 export function normalizeClarify(raw: unknown): LunaClarifyData | null {
@@ -495,6 +530,7 @@ export function consumeLunaStreamEvents(
         (status === "running" || status === "done" || status === "skip")
       ) {
         const msRaw = parsed.ms;
+        const rightRaw = parsed.right;
         return {
           kind: "step",
           buffer: rest,
@@ -504,6 +540,9 @@ export function consumeLunaStreamEvents(
             status,
             ...(typeof msRaw === "number" && Number.isFinite(msRaw)
               ? { ms: Math.round(msRaw) }
+              : {}),
+            ...(typeof rightRaw === "string" && rightRaw.trim()
+              ? { right: rightRaw.trim() }
               : {})
           }
         };
@@ -1094,7 +1133,11 @@ export function LunaChat({
               modelSteps: m.modelSteps,
               steps: m.steps,
               wsSearches: m.wsToolCalls,
-              connectorRouting: m.connectorRouting
+              connectorRouting: m.connectorRouting,
+              timings: m.responseTimings,
+              classificationLabel: m.classificationLabel,
+              classifySource: m.classifySource,
+              keywords: m.progressKeywords
             };
             const prevUser = [...messages.slice(0, index)]
               .reverse()
