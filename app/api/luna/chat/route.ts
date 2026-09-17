@@ -30,6 +30,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
+import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { recordAnswerFlagsAsync } from "@/lib/luna/answer-flags";
 import {
@@ -145,9 +146,11 @@ import {
 } from "@/lib/luna/connector-routing";
 import {
   applyScopeToConnectorFlags,
+  inferRuleClassification,
   resolveSearchScope,
   scopeHitsInsufficient,
   scopeReasonLabel,
+  scopeSkipsQueryEmbedding,
   widenSearchScope,
   type SearchScope
 } from "@/lib/luna/search-scope";
@@ -1356,15 +1359,20 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        // ——— 단계 0: 유형 판정 (+ 임베딩 병렬; 노션·NAS는 범위 확정 후) ———
+        // ——— 단계 0: 유형 판정 (임베딩은 범위 확정 후 — 용어·규정은 생략) ———
         let classification = emptyClassification();
         let classifiedTypeRows: QuestionTypeRow[] = [];
         pushStep("classify", "running", "유형 판정 중");
 
-        const knowledgeEmbPromise = retrieveKnowledgeEmbeddings(
-          admin,
-          searchIntentText
-        );
+        let knowledgeEmbPromise: Promise<
+          Awaited<ReturnType<typeof retrieveKnowledgeEmbeddings>>
+        > = Promise.resolve({
+          queryEmbedding: null,
+          wiki: [],
+          glossary: [],
+          learning: [],
+          embed_ms: 0
+        });
         let speculativeNotionPromise: Promise<NotionSearchOutcome> =
           Promise.resolve({
             status: "skipped",
@@ -1375,47 +1383,64 @@ export async function POST(request: NextRequest) {
         let speculativeNasPromise: Promise<WorkserverExploreRow[]> =
           Promise.resolve([]);
 
-        try {
-          const classifyRes = await lunaLlmComplete(admin, {
-            tier: "C",
-            feature: "understand",
-            system: `${classifyPick.text}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
-            user: searchIntentText,
-            maxTokens: 256
-          });
-          recordPromptUse(usageLog, {
-            key: LUNA_PROMPT_KEYS.classify,
-            step: "유형 판정",
-            title: "유형 판정",
-            row: classifyPick.row
-          });
-          logPromptInject({
-            key: LUNA_PROMPT_KEYS.classify,
-            step: "유형 판정",
-            source: classifyPick.source,
-            text: classifyPick.text
-          });
-          pushModelStep(modelSteps, admin, {
-            label: "유형 판정",
-            model: classifyRes.model_label,
-            tier: "C",
-            model_id: classifyRes.model_id,
-            usage: classifyRes.usage
-          });
-          const parsed = parseClassificationJson(classifyRes.text);
-          classification = resolveClassification(parsed, questionTypes, {
-            forceSearch: hasManualConnectors(manualConnectorFlags)
-          });
-          console.log("[luna/classify]", {
+        const ruleInfer = inferRuleClassification(searchIntentText);
+        if (ruleInfer) {
+          classification = {
+            types: ruleInfer.types,
+            reason: ruleInfer.reason,
+            confidence: 0.95,
+            switched: false,
+            switch_reason: null
+          };
+          console.log("[luna/classify] rule-skip", {
             types: classification.types,
             reason: classification.reason,
-            confidence: classification.confidence,
-            switched: classification.switched,
-            clarify_followup: Boolean(clarifyFollowupQuery)
+            kind: ruleInfer.kind
           });
-        } catch (err) {
-          console.error("[luna/chat] classify", err);
-          classification = emptyClassification();
+          pushStep("classify", "done", ruleInfer.reason);
+        } else {
+          try {
+            const classifyRes = await lunaLlmComplete(admin, {
+              tier: "C",
+              feature: "understand",
+              system: `${classifyPick.text}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
+              user: searchIntentText,
+              maxTokens: 256
+            });
+            recordPromptUse(usageLog, {
+              key: LUNA_PROMPT_KEYS.classify,
+              step: "유형 판정",
+              title: "유형 판정",
+              row: classifyPick.row
+            });
+            logPromptInject({
+              key: LUNA_PROMPT_KEYS.classify,
+              step: "유형 판정",
+              source: classifyPick.source,
+              text: classifyPick.text
+            });
+            pushModelStep(modelSteps, admin, {
+              label: "유형 판정",
+              model: classifyRes.model_label,
+              tier: "C",
+              model_id: classifyRes.model_id,
+              usage: classifyRes.usage
+            });
+            const parsed = parseClassificationJson(classifyRes.text);
+            classification = resolveClassification(parsed, questionTypes, {
+              forceSearch: hasManualConnectors(manualConnectorFlags)
+            });
+            console.log("[luna/classify]", {
+              types: classification.types,
+              reason: classification.reason,
+              confidence: classification.confidence,
+              switched: classification.switched,
+              clarify_followup: Boolean(clarifyFollowupQuery)
+            });
+          } catch (err) {
+            console.error("[luna/chat] classify", err);
+            classification = emptyClassification();
+          }
         }
         if (lastHadClarify && clarifyRootUser) {
           const forced = ensureClarifyFollowupTypes(
@@ -1504,6 +1529,14 @@ export async function POST(request: NextRequest) {
           flags: searchScope.flags,
           types: classification.types
         });
+
+        // 용어·규정은 키워드만 — 질문 임베딩·RPC 생략
+        if (!scopeSkipsQueryEmbedding(searchScope.kind)) {
+          knowledgeEmbPromise = retrieveKnowledgeEmbeddings(
+            admin,
+            searchIntentText
+          );
+        }
 
         // 범위가 허용할 때만 색인 선조회 (용어·규정은 스킵)
         if (searchScope.flags.notion) {
@@ -2269,34 +2302,33 @@ export async function POST(request: NextRequest) {
           nasResults = batch.nasResults;
           cards = batch.cards;
 
-          // Work 본문 청크 임베딩 (노션과 별도 인덱스) — 경로·요약 보강
-          if (
-            (nasEnabled || listingQuestion) &&
-            knowledgeEmb.queryEmbedding?.length
-          ) {
+          // Work 본문: 플랜 A 키워드(trigram+순위) 우선 · 임베딩은 있을 때만
+          if (nasEnabled || listingQuestion) {
             try {
-              const nasChunkHits = await matchNasChunkEmbeddings(
+              const kwHits = await searchNasTextKeyword(
                 admin,
-                knowledgeEmb.queryEmbedding,
+                searchIntentText,
                 { limit: 12 }
               );
-              if (nasChunkHits.length > 0) {
+              if (kwHits.length > 0) {
                 const seen = new Set(
-                  nasResults.map((r) => r.path.replace(/\\/g, "/").toLowerCase())
+                  nasResults.map((r) =>
+                    r.path.replace(/\\/g, "/").toLowerCase()
+                  )
                 );
                 const extra: WorkserverExploreRow[] = [];
-                for (const hit of nasChunkHits) {
+                for (const hit of kwHits) {
                   const key = hit.path.replace(/\\/g, "/").toLowerCase();
                   if (seen.has(key)) continue;
                   seen.add(key);
                   extra.push({
-                    drive: null,
+                    drive: hit.drive,
                     path: hit.path,
                     type: "file",
                     size_bytes: null,
-                    modified_at: null,
-                    file_summary: hit.content?.slice(0, 200) ?? null,
-                    importance: hit.similarity
+                    modified_at: hit.modified_at,
+                    file_summary: hit.snippet,
+                    importance: hit.score
                   });
                 }
                 if (extra.length > 0) {
@@ -2307,7 +2339,46 @@ export async function POST(request: NextRequest) {
                 }
               }
             } catch (err) {
-              console.error("[luna/chat] nas chunk match", err);
+              console.error("[luna/chat] nas text keyword", err);
+            }
+            if (knowledgeEmb.queryEmbedding?.length) {
+              try {
+                const nasChunkHits = await matchNasChunkEmbeddings(
+                  admin,
+                  knowledgeEmb.queryEmbedding,
+                  { limit: 12 }
+                );
+                if (nasChunkHits.length > 0) {
+                  const seen = new Set(
+                    nasResults.map((r) =>
+                      r.path.replace(/\\/g, "/").toLowerCase()
+                    )
+                  );
+                  const extra: WorkserverExploreRow[] = [];
+                  for (const hit of nasChunkHits) {
+                    const key = hit.path.replace(/\\/g, "/").toLowerCase();
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    extra.push({
+                      drive: null,
+                      path: hit.path,
+                      type: "file",
+                      size_bytes: null,
+                      modified_at: null,
+                      file_summary: hit.content?.slice(0, 200) ?? null,
+                      importance: hit.similarity
+                    });
+                  }
+                  if (extra.length > 0) {
+                    nasResults = finalizeNasDirectoryRows([
+                      ...nasResults,
+                      ...extra
+                    ]);
+                  }
+                }
+              } catch (err) {
+                console.error("[luna/chat] nas chunk match", err);
+              }
             }
           }
 

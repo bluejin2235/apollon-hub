@@ -1,8 +1,10 @@
 /**
  * LUNA 관리자 야간 순서 (KST).
- * 01:00 이미지 · 03:00 Work 스캔 · 03:10 본문 추출 · 03:20 노션 · 03:25 본문 임베딩
+ * 01:00 이미지 · 03:00 Work 스캔 · 03:10 본문 추출 · 03:20 노션
  * · 04:30 2차 · 05:00 자습 · 05:30 신호 · 07:00 아침 메일
- * 이미지 적체 시 01:00 시작 → 아침 리포트(07:00) 전 완료. 04:00은 2차·자습과 겹침.
+ *
+ * Work 본문: 플랜 A = 추출+trigram (임베딩 안 함).
+ * 의미 검색 실패가 쌓이면 플랜 B(2024~ 임베딩)로 올린다. 전량(C)은 보류.
  */
 export const ADMIN_WORK_INDEX_HOUR = 3;
 export const ADMIN_WORK_INDEX_MINUTE = 0;
@@ -11,9 +13,14 @@ export const ADMIN_WORK_INDEX_MINUTE = 0;
 export const ADMIN_WORK_TEXT_HOUR = 3;
 export const ADMIN_WORK_TEXT_MINUTE = 10;
 
-/** Work 본문 청크 임베딩 */
+/**
+ * Work 본문 청크 임베딩 — 플랜 A 동안 스케줄 비활성.
+ * 플랜 B 전환 시에만 켠다.
+ */
 export const ADMIN_WORK_TEXT_EMBED_HOUR = 3;
 export const ADMIN_WORK_TEXT_EMBED_MINUTE = 25;
+/** false = 플랜 A (임베딩 cron 돌리지 않음) */
+export const ADMIN_WORK_TEXT_EMBED_ENABLED = false;
 
 export const ADMIN_NOTION_INDEX_HOUR = 3;
 export const ADMIN_NOTION_INDEX_MINUTE = 20;
