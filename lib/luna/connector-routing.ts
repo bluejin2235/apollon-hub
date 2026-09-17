@@ -20,7 +20,8 @@ export type ConnectorRoutingReason =
   | "type_no_search"
   | "type_needs_search"
   | "web_augment"
-  | "wiki_covers_know";
+  | "wiki_covers_know"
+  | "search_scope";
 
 export type ConnectorRoutingResult = {
   connectors: ConnectorFlags;

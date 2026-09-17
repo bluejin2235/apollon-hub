@@ -29,7 +29,9 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
+import { recordAnswerFlagsAsync } from "@/lib/luna/answer-flags";
 import {
   hasImageSearchIntent,
   orderCardsWithImagePriority,
@@ -141,6 +143,14 @@ import {
   type ConnectorFlags,
   type ConnectorRoutingResult
 } from "@/lib/luna/connector-routing";
+import {
+  applyScopeToConnectorFlags,
+  resolveSearchScope,
+  scopeHitsInsufficient,
+  scopeReasonLabel,
+  widenSearchScope,
+  type SearchScope
+} from "@/lib/luna/search-scope";
 import { resolveDepartmentLens } from "@/lib/luna/department-lens";
 import {
   isKnowledgeDumpRequest,
@@ -1346,7 +1356,7 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        // ——— 단계 0: 유형 판정 (+ 임베딩·노션 색인 병렬) ———
+        // ——— 단계 0: 유형 판정 (+ 임베딩 병렬; 노션·NAS는 범위 확정 후) ———
         let classification = emptyClassification();
         let classifiedTypeRows: QuestionTypeRow[] = [];
         pushStep("classify", "running", "유형 판정 중");
@@ -1355,26 +1365,15 @@ export async function POST(request: NextRequest) {
           admin,
           searchIntentText
         );
-        const speculativeNotionPromise = knowledgeEmbPromise.then((emb) =>
-          searchNotionForLuna(
-            admin,
-            searchIntentText.slice(0, 80),
-            searchIntentText,
-            {
-              queryEmbedding: emb.queryEmbedding,
-              skipLive: listingQuestion,
-              listing: listingQuestion
-            }
-          )
-        );
-        const speculativeNasPromise = exploreWorkserverFallback(
-          admin,
-          searchIntentText.slice(0, 80),
-          searchIntentText
-        ).catch((err) => {
-          console.error("[luna/search] speculative nas", err);
-          return [] as WorkserverExploreRow[];
-        });
+        let speculativeNotionPromise: Promise<NotionSearchOutcome> =
+          Promise.resolve({
+            status: "skipped",
+            sources: [],
+            queries: [],
+            rounds: 0
+          });
+        let speculativeNasPromise: Promise<WorkserverExploreRow[]> =
+          Promise.resolve([]);
 
         try {
           const classifyRes = await lunaLlmComplete(admin, {
@@ -1474,8 +1473,73 @@ export async function POST(request: NextRequest) {
           webEnabled = connectorRouting.connectors.web;
           nasEnabled = connectorRouting.connectors.nas;
         }
-        if (listingQuestion && !hasManualConnectors(manualConnectorFlags)) {
-          // 목록형: 웹·실시간 커넥터만 끈다. 노션 색인·nas_directory 는 DB 조회라 유지.
+
+        let searchScope: SearchScope = resolveSearchScope({
+          types: classification.types,
+          question: searchIntentText,
+          classifyConfidence: classification.confidence
+        });
+        if (!hasManualConnectors(manualConnectorFlags)) {
+          const scoped = applyScopeToConnectorFlags(
+            searchScope.flags,
+            { notion: notionEnabled, web: webEnabled, nas: nasEnabled },
+            false
+          );
+          notionEnabled = scoped.notion;
+          webEnabled = scoped.web;
+          nasEnabled = scoped.nas;
+          connectorRouting = {
+            connectors: {
+              nas: nasEnabled,
+              notion: notionEnabled,
+              web: webEnabled
+            },
+            reason: "search_scope",
+            reasonLabel: scopeReasonLabel(searchScope)
+          };
+        }
+        console.log("[luna/search-scope]", {
+          kind: searchScope.kind,
+          tier: searchScope.tier,
+          flags: searchScope.flags,
+          types: classification.types
+        });
+
+        // 범위가 허용할 때만 색인 선조회 (용어·규정은 스킵)
+        if (searchScope.flags.notion) {
+          speculativeNotionPromise = knowledgeEmbPromise.then((emb) =>
+            searchNotionForLuna(
+              admin,
+              searchIntentText.slice(0, 80),
+              searchIntentText,
+              {
+                queryEmbedding: emb.queryEmbedding,
+                skipLive: listingQuestion,
+                listing: listingQuestion
+              }
+            )
+          );
+        }
+        if (searchScope.flags.nas) {
+          speculativeNasPromise = exploreWorkserverFallback(
+            admin,
+            searchIntentText.slice(0, 80),
+            searchIntentText
+          ).catch((err) => {
+            console.error("[luna/search] speculative nas", err);
+            return [] as WorkserverExploreRow[];
+          });
+        }
+
+        if (
+          listingQuestion &&
+          !hasManualConnectors(manualConnectorFlags) &&
+          (searchScope.kind === "wide" ||
+            searchScope.kind === "project" ||
+            searchScope.kind === "find_wide" ||
+            searchScope.kind === "reference")
+        ) {
+          // 목록형: 웹만 끈다. 범위가 허용한 색인·Work는 유지.
           webEnabled = false;
           connectorRouting = {
             connectors: {
@@ -1496,7 +1560,7 @@ export async function POST(request: NextRequest) {
           rounds: 0
         };
         let speculativeNas: WorkserverExploreRow[] = [];
-        // 색인(DB)은 needsSearch·목록형과 무관하게 항상 받는다
+        // 범위가 허용한 색인만 선조회 (용어·규정·인사면 skipped)
         {
           const [notionSpec, nasSpec] = await Promise.all([
             speculativeNotionPromise,
@@ -1508,10 +1572,12 @@ export async function POST(request: NextRequest) {
             status: speculativeNotion.status,
             count: speculativeNotion.sources.length,
             maxSim: maxNotionSimilarity(speculativeNotion.sources),
-            listing: listingQuestion
+            listing: listingQuestion,
+            scope: searchScope.kind
           });
           console.log("[luna/search] speculative nas", {
-            count: speculativeNas.length
+            count: speculativeNas.length,
+            scope: searchScope.kind
           });
         }
 
@@ -1523,7 +1589,8 @@ export async function POST(request: NextRequest) {
             )
           : [];
 
-        const imageIntent = hasImageSearchIntent(searchIntentText);
+        const imageIntent =
+          searchScope.flags.media && hasImageSearchIntent(searchIntentText);
         let preMediaProbe = { hits: [] as Awaited<ReturnType<typeof searchMediaForLuna>>["hits"], cards: [] as LunaCard[] };
         if (imageIntent && knowledgeEmb.queryEmbedding?.length) {
           preMediaProbe = await searchMediaForLuna(
@@ -1785,13 +1852,17 @@ export async function POST(request: NextRequest) {
             matchedMax: llmInject.learnings
           }
         );
-        const matchedTerms = pickGlossaryForQuestion(
-          glossaryRows,
-          injectKeywords,
-          knowledgeEmb.glossary
-        );
+        const matchedTerms = searchScope.flags.glossary
+          ? pickGlossaryForQuestion(
+              glossaryRows,
+              injectKeywords,
+              knowledgeEmb.glossary
+            )
+          : [];
         const wikiSources: WikiSourceRef[] =
-          typesNeedWikiLookup(classification.types) || Boolean(clarifyFollowupQuery)
+          searchScope.flags.wiki &&
+          (typesNeedWikiLookup(classification.types) ||
+            Boolean(clarifyFollowupQuery))
             ? matchWikiSections(
                 wikiDocs,
                 injectKeywords,
@@ -1808,7 +1879,7 @@ export async function POST(request: NextRequest) {
           }) &&
           !hasManualConnectors(manualConnectorFlags)
         ) {
-          // 실시간 노션 API·Work서버 도구 루프만 스킵. 색인·nas_directory 는 아래 anySearch 에서 유지.
+          // 실시간 노션 API·Work서버 도구 루프만 스킵. 범위 플래그는 유지.
           if (!webAugmentEnabled) webEnabled = false;
           connectorRouting = {
             connectors: {
@@ -1818,27 +1889,11 @@ export async function POST(request: NextRequest) {
             },
             reason: "wiki_covers_know",
             reasonLabel: listingQuestion
-              ? "목록형: 위키로 충분 · 색인은 유지"
-              : "알기: 위키로 충분 · 색인은 유지"
+              ? "목록형: 위키로 충분 · 색인은 범위 따름"
+              : "알기: 위키로 충분 · 색인은 범위 따름"
           };
         }
-        // KNOW: 위키를 본 뒤·웹 보강 전에 노션 색인도 본다 (색인은 빠름)
-        if (
-          classification.types.includes("know") &&
-          !hasManualConnectors(manualConnectorFlags) &&
-          wikiSources.length > 0
-        ) {
-          notionEnabled = true;
-          if (connectorRouting) {
-            connectorRouting = {
-              ...connectorRouting,
-              connectors: {
-                ...connectorRouting.connectors,
-                notion: true
-              }
-            };
-          }
-        }
+        // 용어·규정 등 좁은 범위에서는 위키가 있어도 노션을 강제로 켜지 않는다.
         const { public: publicWikiSources, private: privateWikiRefs } =
           splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
@@ -1858,8 +1913,17 @@ export async function POST(request: NextRequest) {
         let webAugmented = false;
         const listingWikiSufficient =
           listingQuestion && wikiCoversKnowIntent(wikiSources, true);
+        const knowledgeCoveredForScope =
+          !scopeHitsInsufficient(searchScope.kind, {
+            glossary: matchedTerms.length,
+            wiki: wikiSources.length,
+            notion: 0,
+            nas: 0,
+            media: 0
+          });
         if (
           !listingWikiSufficient &&
+          !knowledgeCoveredForScope &&
           shouldWebAugmentKnow({
             enabled: webAugmentEnabled,
             typeSlugs: classification.types,
@@ -1870,10 +1934,20 @@ export async function POST(request: NextRequest) {
           })
         ) {
           webEnabled = true;
-          notionEnabled = true;
+          // 웹 보강 시에도 좁은 범위(term/policy)는 노션을 바로 열지 않고 2차에서 연다
+          if (
+            searchScope.kind !== "term" &&
+            searchScope.kind !== "policy"
+          ) {
+            notionEnabled = true;
+          }
           webAugmented = true;
           connectorRouting = {
-            connectors: { nas: nasEnabled, notion: true, web: true },
+            connectors: {
+              nas: nasEnabled,
+              notion: notionEnabled,
+              web: true
+            },
             reason: "web_augment",
             reasonLabel: "알기: 지식 부족 · 웹 보강"
           };
@@ -1881,15 +1955,21 @@ export async function POST(request: NextRequest) {
 
         if (
           listingQuestion &&
-          !hasManualConnectors(manualConnectorFlags)
+          !hasManualConnectors(manualConnectorFlags) &&
+          (searchScope.kind === "wide" ||
+            searchScope.kind === "project" ||
+            searchScope.kind === "find_wide" ||
+            searchScope.kind === "reference")
         ) {
-          // 목록형: 웹만 끈다. 노션 색인·Work서버 DB 조회는 유지.
+          // 목록형: 웹만 끈다. 범위가 켠 색인·Work만 유지.
           webEnabled = false;
           webAugmented = false;
-          notionEnabled = true;
-          nasEnabled = true;
           connectorRouting = {
-            connectors: { nas: true, notion: true, web: false },
+            connectors: {
+              nas: nasEnabled,
+              notion: notionEnabled,
+              web: false
+            },
             reason: "wiki_covers_know",
             reasonLabel: "목록형: 색인·위키로 답"
           };
@@ -1901,12 +1981,62 @@ export async function POST(request: NextRequest) {
           (isSearchRequestMessage(userText) ||
             (Boolean(clarifyRootUser) &&
               isSearchRequestMessage(clarifyRootUser!)));
-        // 노션 색인·nas_directory 는 DB 조회 — 목록형·needsSearch 와 무관하게 돈다
-        const anySearch =
-          Boolean((keywords || searchIntentText).trim()) ||
-          (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
-          (webAugmented && (webEnabled || notionEnabled)) ||
-          (notionEnabled && classification.types.includes("know"));
+        const scopeWantsConnectorSearch =
+          searchScope.flags.notion ||
+          searchScope.flags.nas ||
+          searchScope.flags.media ||
+          searchScope.flags.web ||
+          searchScope.flags.youtube;
+        let anySearch =
+          scopeWantsConnectorSearch &&
+          (Boolean((keywords || searchIntentText).trim()) ||
+            (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
+            (webAugmented && (webEnabled || notionEnabled)));
+
+        // 1차(위키·용어사전)만으로 부족하면 검색 전에 한 단계 넓힌다
+        if (
+          !hasManualConnectors(manualConnectorFlags) &&
+          scopeHitsInsufficient(searchScope.kind, {
+            glossary: matchedTerms.length,
+            wiki: wikiSources.length,
+            notion: 0,
+            nas: 0,
+            media: 0
+          })
+        ) {
+          const widened = widenSearchScope(searchScope);
+          if (widened) {
+            searchScope = widened;
+            const scoped = applyScopeToConnectorFlags(
+              searchScope.flags,
+              { notion: notionEnabled, web: webEnabled, nas: nasEnabled },
+              false
+            );
+            notionEnabled = scoped.notion;
+            webEnabled = scoped.web;
+            nasEnabled = scoped.nas;
+            connectorRouting = {
+              connectors: {
+                nas: nasEnabled,
+                notion: notionEnabled,
+                web: webEnabled
+              },
+              reason: "search_scope",
+              reasonLabel: `${scopeReasonLabel(searchScope)} · 결과 부족 확대`
+            };
+            anySearch =
+              (searchScope.flags.notion ||
+                searchScope.flags.nas ||
+                searchScope.flags.media ||
+                searchScope.flags.web) &&
+              Boolean((keywords || searchIntentText).trim());
+            console.log("[luna/search-scope] widen-before-search", {
+              kind: searchScope.kind,
+              tier: searchScope.tier,
+              flags: searchScope.flags
+            });
+          }
+        }
 
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
@@ -1928,8 +2058,14 @@ export async function POST(request: NextRequest) {
           kw: string,
           opts?: { reuseSpeculative?: boolean }
         ) => {
-          // 색인·nas_directory 는 커넥터 플래그와 무관하게 항상 (목록형은 실시간 API만 생략)
-          const runNotionIndex = Boolean(kw || searchIntentText);
+          // 검색 범위 플래그로 색인·커넥터를 켠다 (처음부터 전부 뒤지지 않음)
+          const runNotionIndex =
+            searchScope.flags.notion && Boolean(kw || searchIntentText);
+          const runNas =
+            searchScope.flags.nas && Boolean(kw || searchIntentText);
+          const runMedia = searchScope.flags.media;
+          const runYoutube =
+            searchScope.flags.youtube && isSearchRequest && Boolean(kw);
           const skipNotionLive = listingQuestion;
           const reuseNotion =
             opts?.reuseSpeculative === true &&
@@ -1937,8 +2073,9 @@ export async function POST(request: NextRequest) {
             speculativeNotion.sources.length > 0;
           const reuseNas =
             opts?.reuseSpeculative === true &&
+            runNas &&
             speculativeNas.length > 0;
-          const useNasTools = nasEnabled && !listingQuestion;
+          const useNasTools = nasEnabled && runNas && !listingQuestion;
           const [notionOutcome, webRes, youtubeRes, nasRes, mediaRes] =
             await Promise.all([
             runNotionIndex
@@ -1955,23 +2092,26 @@ export async function POST(request: NextRequest) {
                     }
                   )
               : Promise.resolve(skippedNotionOutcome()),
-            webEnabled
+            webEnabled && searchScope.flags.web
               ? (() => {
                   const q = kw || searchIntentText;
                   console.log("[luna/search] keywords", q, "→ tavily");
                   return searchTavily(q, webSearchHint);
                 })()
               : Promise.resolve([] as LunaCard[]),
-            isSearchRequest && kw
+            runYoutube
               ? searchYoutube(kw)
               : Promise.resolve([] as LunaCard[]),
             (async () => {
+              if (!runNas) {
+                return [] as WorkserverExploreRow[];
+              }
               if (reuseNas) {
                 pushStep("ws", "done", "Work서버 탐색");
                 return speculativeNas;
               }
               if (!useNasTools) {
-                // 목록형·커넥터 오프: nas_directory DB 조회만
+                // 목록형·도구 오프: nas_directory DB 조회만
                 pushStep("ws", "done", "Work서버 색인");
                 return exploreWorkserverFallback(
                   admin,
@@ -2033,13 +2173,15 @@ export async function POST(request: NextRequest) {
                 );
               }
             })(),
-            imageIntent && knowledgeEmb.queryEmbedding?.length
-              ? Promise.resolve(preMediaProbe.cards)
-              : searchMediaForLuna(
-                  admin,
-                  knowledgeEmb.queryEmbedding,
-                  searchIntentText
-                ).then((r) => r.cards)
+            runMedia && knowledgeEmb.queryEmbedding?.length
+              ? imageIntent && preMediaProbe.cards.length > 0
+                ? Promise.resolve(preMediaProbe.cards)
+                : searchMediaForLuna(
+                    admin,
+                    knowledgeEmb.queryEmbedding,
+                    searchIntentText
+                  ).then((r) => r.cards)
+              : Promise.resolve([] as LunaCard[])
           ]);
 
           const notionRes = notionOutcome.sources;
@@ -2073,10 +2215,15 @@ export async function POST(request: NextRequest) {
         };
 
         if (anySearch) {
-          const searchParts: string[] = ["노션"];
-          if (nasEnabled || listingQuestion) searchParts.push("Work서버");
-          if (webEnabled) searchParts.push("웹");
-          const searchRunningLabel = `${searchParts.join(" · ")} 검색 중`;
+          const searchParts: string[] = [];
+          if (searchScope.flags.notion) searchParts.push("노션");
+          if (searchScope.flags.nas) searchParts.push("Work서버");
+          if (searchScope.flags.web && webEnabled) searchParts.push("웹");
+          if (searchScope.flags.media) searchParts.push("이미지");
+          const searchRunningLabel =
+            searchParts.length > 0
+              ? `${searchParts.join(" · ")} 검색 중`
+              : "검색 중";
 
           pushStep("search", "running", searchRunningLabel);
 
@@ -2121,6 +2268,96 @@ export async function POST(request: NextRequest) {
           notionSearchOutcome = batch.notionOutcome;
           nasResults = batch.nasResults;
           cards = batch.cards;
+
+          // Work 본문 청크 임베딩 (노션과 별도 인덱스) — 경로·요약 보강
+          if (
+            (nasEnabled || listingQuestion) &&
+            knowledgeEmb.queryEmbedding?.length
+          ) {
+            try {
+              const nasChunkHits = await matchNasChunkEmbeddings(
+                admin,
+                knowledgeEmb.queryEmbedding,
+                { limit: 12 }
+              );
+              if (nasChunkHits.length > 0) {
+                const seen = new Set(
+                  nasResults.map((r) => r.path.replace(/\\/g, "/").toLowerCase())
+                );
+                const extra: WorkserverExploreRow[] = [];
+                for (const hit of nasChunkHits) {
+                  const key = hit.path.replace(/\\/g, "/").toLowerCase();
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  extra.push({
+                    drive: null,
+                    path: hit.path,
+                    type: "file",
+                    size_bytes: null,
+                    modified_at: null,
+                    file_summary: hit.content?.slice(0, 200) ?? null,
+                    importance: hit.similarity
+                  });
+                }
+                if (extra.length > 0) {
+                  nasResults = finalizeNasDirectoryRows([
+                    ...nasResults,
+                    ...extra
+                  ]);
+                }
+              }
+            } catch (err) {
+              console.error("[luna/chat] nas chunk match", err);
+            }
+          }
+
+          // 2차: 좁은 범위 결과가 부족하면 한 단계 더 넓혀 재검색
+          if (
+            !hasManualConnectors(manualConnectorFlags) &&
+            scopeHitsInsufficient(searchScope.kind, {
+              glossary: matchedTerms.length,
+              wiki: wikiSources.length,
+              notion: notionSources.length,
+              nas: nasResults.length,
+              media: cards.filter((c) => c.type === "image").length
+            })
+          ) {
+            const widened = widenSearchScope(searchScope);
+            if (widened) {
+              searchScope = widened;
+              const scoped = applyScopeToConnectorFlags(
+                searchScope.flags,
+                { notion: notionEnabled, web: webEnabled, nas: nasEnabled },
+                false
+              );
+              notionEnabled = scoped.notion;
+              webEnabled = scoped.web;
+              nasEnabled = scoped.nas;
+              connectorRouting = {
+                connectors: {
+                  nas: nasEnabled,
+                  notion: notionEnabled,
+                  web: webEnabled
+                },
+                reason: "search_scope",
+                reasonLabel: `${scopeReasonLabel(searchScope)} · 결과 부족 확대`
+              };
+              console.log("[luna/search-scope] widen-after-search", {
+                kind: searchScope.kind,
+                tier: searchScope.tier,
+                flags: searchScope.flags
+              });
+              pushStep("search", "running", "범위 확대 재검색");
+              batch = await runConnectorSearch(keywords, {
+                reuseSpeculative: false
+              });
+              notionSources = batch.notionSources;
+              notionSearchOutcome = batch.notionOutcome;
+              nasResults = batch.nasResults;
+              cards = batch.cards;
+              searchRounds += 1;
+            }
+          }
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
@@ -2927,6 +3164,12 @@ export async function POST(request: NextRequest) {
           classification,
           questionTypes
         );
+        assistantMeta.search_scope = {
+          kind: searchScope.kind,
+          label: searchScope.label,
+          tier: searchScope.tier,
+          flags: searchScope.flags
+        };
         if (connectorRouting) {
           assistantMeta.connector_routing = {
             nas: nasEnabled,
@@ -2994,6 +3237,25 @@ export async function POST(request: NextRequest) {
             conversation_id: conversationId,
             user_id: user.id,
             ...responseTimings
+          });
+          recordAnswerFlagsAsync(admin, {
+            message_id: assistantMessageId,
+            question: searchIntentText || userText,
+            intent_score: selfScore?.intent_score ?? null,
+            confidence_score: selfScore?.confidence_score ?? null,
+            duration_ms: durationMs,
+            search_ms: responseTimings.search_ms,
+            embed_ms: responseTimings.embed_ms,
+            link_ms: responseTimings.link_ms,
+            llm_ms: responseTimings.llm_ms,
+            candidates_found: responseTimings.candidates_found,
+            candidates_used: responseTimings.candidates_used,
+            notion_n: notionSources.length,
+            wiki_n: publicWikiSources.length,
+            nas_n: 0,
+            glossary_n: glossaryRows.length,
+            memory_n: learnings.length,
+            source: "chat"
           });
           void recordAutoFailuresFromAnswer(admin, {
             messageId: assistantMessageId,

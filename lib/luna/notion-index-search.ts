@@ -36,14 +36,9 @@ export const NOTION_LISTING_TOP_CHUNKS = 20;
 export const NOTION_LISTING_MAX_PER_PAGE = 1;
 const MATCH_OVERFETCH = 36;
 const LISTING_MATCH_OVERFETCH = 60;
+/** 색인 페이지가 이보다 적으면 실시간 Notion API 보강 */
 const LIVE_IF_PAGES_BELOW = 3;
 const RECENT_EDIT_MS = 2 * 60 * 60 * 1000;
-
-export type NotionBlockMatchHit = {
-  block_id: string;
-  page_id: string;
-  similarity: number;
-};
 
 export type NotionChunkMatchHit = {
   chunk_id: string;
@@ -63,14 +58,6 @@ type IndexedPageRow = {
   nas_path: string | null;
   url: string | null;
   last_edited_time: string | null;
-};
-
-type IndexedBlockRow = {
-  block_id: string;
-  page_id: string;
-  block_type: string;
-  text: string;
-  position: number;
 };
 
 type IndexedChunkRow = {
@@ -104,54 +91,6 @@ function isRecentEdit(iso: string | null | undefined, now = Date.now()): boolean
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return false;
   return now - t <= RECENT_EDIT_MS;
-}
-
-/** 유사도 순 유지, 페이지당 최대 3블록, 상위 12블록 */
-export function selectNotionBlockHits(
-  hits: NotionBlockMatchHit[],
-  opts?: { top?: number; perPage?: number }
-): NotionBlockMatchHit[] {
-  const top = opts?.top ?? NOTION_INDEX_TOP_BLOCKS;
-  const perPage = opts?.perPage ?? NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
-  const sorted = [...hits].sort((a, b) => b.similarity - a.similarity);
-  const perPageCount = new Map<string, number>();
-  const out: NotionBlockMatchHit[] = [];
-  for (const hit of sorted) {
-    const n = perPageCount.get(hit.page_id) ?? 0;
-    if (n >= perPage) continue;
-    perPageCount.set(hit.page_id, n + 1);
-    out.push(hit);
-    if (out.length >= top) break;
-  }
-  return out;
-}
-
-export async function matchNotionBlockEmbeddings(
-  admin: SupabaseClient,
-  queryEmbedding: number[],
-  opts?: { threshold?: number; limit?: number }
-): Promise<NotionBlockMatchHit[] | null> {
-  const { data, error } = await admin.rpc("luna_match_notion_blocks", {
-    query_embedding: embeddingToSql(queryEmbedding),
-    match_threshold: opts?.threshold ?? NOTION_INDEX_MATCH_THRESHOLD,
-    match_count: opts?.limit ?? MATCH_OVERFETCH
-  });
-  if (error) {
-    if (!isMissingRpc(error)) {
-      console.error("[luna/notion-index] match rpc", error);
-    }
-    return null;
-  }
-  return (data ?? [])
-    .map((row: Record<string, unknown>) => ({
-      block_id: String(row.block_id ?? ""),
-      page_id: String(row.page_id ?? ""),
-      similarity: Number(row.similarity) || 0
-    }))
-    .filter(
-      (r: NotionBlockMatchHit) =>
-        r.block_id && r.page_id && r.similarity >= NOTION_INDEX_MATCH_THRESHOLD
-    );
 }
 
 export async function matchNotionChunkEmbeddings(
@@ -275,65 +214,6 @@ function formatHierarchy(opts: {
     lines.push(`경로: ${path.join(" › ")}`);
   }
   return lines.join("\n");
-}
-
-function sectionLabel(blocks: IndexedBlockRow[]): string {
-  const heading = blocks.find((b) =>
-    /heading|title/i.test(b.block_type)
-  );
-  const pick = heading ?? blocks[0];
-  if (!pick) return "";
-  return pick.text.replace(/\s+/g, " ").trim().slice(0, 80);
-}
-
-function pageBlocksToSource(
-  page: IndexedPageRow,
-  blocks: IndexedBlockRow[],
-  siblings: IndexedPageRow[],
-  similarity: number,
-  queryText?: string
-): NotionSource {
-  const body = blocks
-    .slice()
-    .sort((a, b) => a.position - b.position)
-    .map((b) => b.text.trim())
-    .filter(Boolean)
-    .join("\n");
-  const hierarchy = formatHierarchy({ page, siblings, queryText });
-  const section = sectionLabel(blocks);
-  const hay = `${page.title}\n${body}\n${hierarchy}`;
-  const paths = [
-    ...(page.nas_path ? [page.nas_path] : []),
-    ...extractWorkserverPathsFromText(hay)
-  ];
-  const pathSeen = new Set<string>();
-  const uniquePaths = paths.filter((p) => {
-    const key = p.replace(/\s+/g, " ").trim().toLowerCase();
-    if (!key || pathSeen.has(key)) return false;
-    pathSeen.add(key);
-    return true;
-  });
-  const dates = extractDatesFromText(hay);
-  const entities = matchNamedEntities(hay, NAMED_ENTITY_SEED)
-    .filter((e) => e.kind !== "brand_group")
-    .map((e) => e.canonical);
-
-  return {
-    title: page.title || "(제목 없음)",
-    url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
-    id: page.page_id,
-    last_edited_time: page.last_edited_time,
-    excerpt: body.replace(/\s+/g, " ").trim().slice(0, 280) || null,
-    paths: uniquePaths,
-    dates,
-    entities,
-    section: section || null,
-    hierarchy,
-    nas_path: page.nas_path,
-    similarity,
-    parent_id: page.parent_id,
-    path_titles: asPathTitles(page.path_titles)
-  };
 }
 
 function pageChunksToSource(
@@ -547,138 +427,10 @@ async function buildIndexedSourcesFromChunks(
   };
 }
 
-async function buildIndexedSources(
-  admin: SupabaseClient,
-  hits: NotionBlockMatchHit[],
-  queryText?: string,
-  pickOpts?: { top?: number; perPage?: number }
-): Promise<{
-  sources: NotionSource[];
-  pages: IndexedPageRow[];
-  selectedHits: NotionBlockMatchHit[];
-}> {
-  const selectedHits = selectNotionBlockHits(hits, pickOpts);
-  if (selectedHits.length === 0) {
-    return { sources: [], pages: [], selectedHits: [] };
-  }
-
-  const blockIds = selectedHits.map((h) => h.block_id);
-  const pageIds = [...new Set(selectedHits.map((h) => h.page_id))];
-
-  const [{ data: blockRows, error: blockErr }, { data: pageRows, error: pageErr }] =
-    await Promise.all([
-      admin
-        .from("luna_notion_blocks")
-        .select("block_id, page_id, block_type, text, position")
-        .in("block_id", blockIds),
-      admin
-        .from("luna_notion_pages")
-        .select(
-          "page_id, title, parent_id, path_titles, nas_path, url, last_edited_time"
-        )
-        .in("page_id", pageIds)
-    ]);
-
-  if (blockErr) console.error("[luna/notion-index] blocks", blockErr);
-  if (pageErr) console.error("[luna/notion-index] pages", pageErr);
-
-  const blocks = (blockRows ?? []) as IndexedBlockRow[];
-  const pages = (pageRows ?? []).map((p) => ({
-    ...(p as IndexedPageRow),
-    path_titles: asPathTitles((p as IndexedPageRow).path_titles)
-  }));
-
-  const parentIds = [
-    ...new Set(pages.map((p) => p.parent_id).filter((id): id is string => Boolean(id)))
-  ];
-  // 형제는 parent당 최대 40개 — 프롬프트용 추려내기는 formatHierarchy에서
-  let siblings: IndexedPageRow[] = [];
-  if (parentIds.length > 0) {
-    const { data: sibRows, error: sibErr } = await admin
-      .from("luna_notion_pages")
-      .select(
-        "page_id, title, parent_id, path_titles, nas_path, url, last_edited_time"
-      )
-      .in("parent_id", parentIds)
-      .eq("archived", false)
-      .limit(120);
-    if (sibErr) console.error("[luna/notion-index] siblings", sibErr);
-    siblings = ((sibRows ?? []) as IndexedPageRow[]).map((p) => ({
-      ...p,
-      path_titles: asPathTitles(p.path_titles)
-    }));
-  }
-
-  const pageById = new Map(pages.map((p) => [p.page_id, p]));
-  const blocksByPage = new Map<string, IndexedBlockRow[]>();
-  const simByPage = new Map<string, number>();
-  const hitOrder = new Map(selectedHits.map((h, i) => [h.block_id, i]));
-
-  for (const b of blocks) {
-    const list = blocksByPage.get(b.page_id) ?? [];
-    list.push(b);
-    blocksByPage.set(b.page_id, list);
-  }
-  for (const h of selectedHits) {
-    const prev = simByPage.get(h.page_id) ?? 0;
-    if (h.similarity > prev) simByPage.set(h.page_id, h.similarity);
-  }
-
-  for (const [, list] of blocksByPage) {
-    list.sort(
-      (a, b) => (hitOrder.get(a.block_id) ?? 999) - (hitOrder.get(b.block_id) ?? 999)
-    );
-  }
-
-  const sources: NotionSource[] = [];
-  for (const pageId of pageIds) {
-    const page = pageById.get(pageId);
-    const pageBlocks = blocksByPage.get(pageId) ?? [];
-    if (!page || pageBlocks.length === 0) continue;
-    const sibs = siblings.filter(
-      (s) => s.parent_id && s.parent_id === page.parent_id
-    );
-    sources.push(
-      pageBlocksToSource(
-        page,
-        pageBlocks,
-        sibs.length > 0 ? sibs : [page],
-        simByPage.get(pageId) ?? 0,
-        queryText
-      )
-    );
-  }
-
-  sources.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
-  // 백업 복제본 등 동일 제목은 최고 유사도·경로 있는 것만
-  const byTitle = new Map<string, NotionSource>();
-  for (const s of sources) {
-    const key = s.title.toLowerCase().replace(/\s+/g, " ").trim();
-    const prev = byTitle.get(key);
-    if (!prev) {
-      byTitle.set(key, s);
-      continue;
-    }
-    const prevScore =
-      (prev.similarity ?? 0) * 10 +
-      (prev.nas_path || (prev.paths?.length ?? 0) > 0 ? 1 : 0);
-    const nextScore =
-      (s.similarity ?? 0) * 10 +
-      (s.nas_path || (s.paths?.length ?? 0) > 0 ? 1 : 0);
-    if (nextScore > prevScore) byTitle.set(key, s);
-  }
-  return {
-    sources: capNotionDisplaySources([...byTitle.values()], INDEX_DISPLAY_LIMIT),
-    pages,
-    selectedHits
-  };
-}
-
 /**
  * 색인 우선 노션 검색.
  * - 임베딩 → luna_match_notion_chunks → 청크 본문·계층
- * - 청크 히트 3건 미만이면 luna_match_notion_blocks 폴백
- * - 페이지 3건 미만이면 실시간 검색 보강
+ * - 페이지 3건 미만이면 실시간 Notion API 보강
  * - 최근 2시간 수정 페이지만 실시간 본문 재조회
  */
 export async function searchNotionForLuna(
@@ -716,37 +468,27 @@ export async function searchNotionForLuna(
   let selectedHits: NotionChunkMatchHit[] = [];
   let pages: IndexedPageRow[] = [];
   let rpcFailed = false;
-  let usedBlockFallback = false;
   let keywordHitCount = 0;
 
   const searchStarted = Date.now();
   const searchKws = notionSearchKeywords(keywords, queryText);
 
-  // 벡터 먼저 — 키워드와 동시 실행하면 HNSW 캐시를 ILIKE 가 밀어낸다
-  let chunkHits: Awaited<ReturnType<typeof matchNotionChunkEmbeddings>> = null;
-  if (embedding) {
-    chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
-      threshold: NOTION_INDEX_MATCH_THRESHOLD,
-      limit: overfetch
-    });
-  }
+  const [chunkHits, keywordHits] = await Promise.all([
+    embedding
+      ? matchNotionChunkEmbeddings(admin, embedding, {
+          threshold: NOTION_INDEX_MATCH_THRESHOLD,
+          limit: overfetch
+        })
+      : Promise.resolve(null as Awaited<
+          ReturnType<typeof matchNotionChunkEmbeddings>
+        > | null),
+    matchNotionChunksByKeyword(admin, searchKws, { limit: overfetch })
+  ]);
+  keywordHitCount = keywordHits.length;
+
   if (chunkHits === null && embedding) {
     rpcFailed = true;
   }
-
-  const chunkPageCount = new Set((chunkHits ?? []).map((h) => h.page_id)).size;
-  const needKeyword =
-    !embedding ||
-    chunkHits === null ||
-    chunkPageCount < LIVE_IF_PAGES_BELOW;
-
-  let keywordHits: Awaited<ReturnType<typeof matchNotionChunksByKeyword>> = [];
-  if (needKeyword) {
-    keywordHits = await matchNotionChunksByKeyword(admin, searchKws, {
-      limit: overfetch
-    });
-  }
-  keywordHitCount = keywordHits.length;
 
   const hybridHits = mergeNotionHybridChunkHits(chunkHits ?? [], keywordHits);
   const hybridChunkHits = hybridToChunkHits(hybridHits);
@@ -763,65 +505,9 @@ export async function searchNotionForLuna(
     pages = built.pages;
   }
 
-  // 하이브리드 결과가 너무 적으면 블록 임베딩 폴백 (임베딩이 있을 때만)
-  if (embedding && indexSources.length < LIVE_IF_PAGES_BELOW) {
-    const rawHits = await matchNotionBlockEmbeddings(admin, embedding, {
-      threshold: NOTION_INDEX_MATCH_THRESHOLD,
-      limit: overfetch
-    });
-    if (rawHits === null && chunkHits === null) {
-      rpcFailed = true;
-    } else if (rawHits && rawHits.length > 0) {
-      usedBlockFallback = true;
-      const built = await buildIndexedSources(admin, rawHits, queryText, {
-        top: topN,
-        perPage
-      });
-      const byTitle = new Map(
-        indexSources.map((s) => [
-          s.title.toLowerCase().replace(/\s+/g, " ").trim(),
-          s
-        ])
-      );
-      for (const s of built.sources) {
-        const key = s.title.toLowerCase().replace(/\s+/g, " ").trim();
-        const prev = byTitle.get(key);
-        if (
-          !prev ||
-          (s.match_score ?? s.similarity ?? 0) >
-            (prev.match_score ?? prev.similarity ?? 0)
-        ) {
-          byTitle.set(key, s);
-        }
-      }
-      indexSources = capNotionDisplaySources(
-        [...byTitle.values()].sort(
-          (a, b) =>
-            (b.match_score ?? b.similarity ?? 0) -
-            (a.match_score ?? a.similarity ?? 0)
-        ),
-        INDEX_DISPLAY_LIMIT
-      );
-      selectedHits = [
-        ...selectedHits,
-        ...built.selectedHits
-          .filter((h) => !selectedHits.some((x) => x.page_id === h.page_id))
-          .map((h) => ({
-            chunk_id: h.block_id,
-            page_id: h.page_id,
-            similarity: h.similarity
-          }))
-      ];
-      const pageById = new Map(pages.map((p) => [p.page_id, p]));
-      for (const p of built.pages) {
-        if (!pageById.has(p.page_id)) pages.push(p);
-      }
-    }
-  }
-
   const pageCount = indexSources.length;
   const recentPages = pages.filter((p) => isRecentEdit(p.last_edited_time));
-  // 하이브리드(임베딩+키워드) 결과가 적으면 실시간 보강
+  // 색인 결과가 적으면 실시간 Notion API 보강
   const needSparseLive =
     !opts?.skipLive && pageCount < LIVE_IF_PAGES_BELOW;
 
@@ -886,7 +572,6 @@ export async function searchNotionForLuna(
     pages: pageCount,
     listing,
     skipLive: Boolean(opts?.skipLive),
-    blockFallback: usedBlockFallback,
     rpcFailed,
     hybrid: selectedHits.slice(0, 8).map((h) => ({
       page_id: h.page_id.slice(0, 8),

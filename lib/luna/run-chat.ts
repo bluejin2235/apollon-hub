@@ -14,6 +14,12 @@ import {
   resolveConnectorsAuto,
   type ConnectorFlags
 } from "@/lib/luna/connector-routing";
+import {
+  applyScopeToConnectorFlags,
+  resolveSearchScope,
+  scopeHitsInsufficient,
+  widenSearchScope
+} from "@/lib/luna/search-scope";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
   CLARIFY_CONCEPT_GUARD,
@@ -463,6 +469,7 @@ export async function runLunaTurn(
   ]);
   const wikiDocs = wikiLoaded.items;
   let classifiedSlugs: string[] = [];
+  let classifyConfidence = 1;
   try {
     const classifyRes = await lunaLlmComplete(admin, {
       tier: "C",
@@ -480,6 +487,7 @@ export async function runLunaTurn(
       })
     });
     classifiedSlugs = classification.types;
+    classifyConfidence = classification.confidence;
     console.log("[luna/classify]", classification);
   } catch (err) {
     console.error("[luna/run-chat] classify", err);
@@ -508,7 +516,35 @@ export async function runLunaTurn(
   const _notionEnabled = routed.connectors.notion;
   void _notionEnabled;
   let webEnabled = routed.connectors.web;
-  const nasEnabled = routed.connectors.nas;
+  let nasEnabled = routed.connectors.nas;
+
+  let searchScope = resolveSearchScope({
+    types: classifiedSlugs,
+    question: userText,
+    classifyConfidence
+  });
+  {
+    const scoped = applyScopeToConnectorFlags(
+      searchScope.flags,
+      {
+        notion: routed.connectors.notion,
+        web: webEnabled,
+        nas: nasEnabled
+      },
+      hasManualConnectors({
+        notion: connectors.notion === true,
+        web: connectors.web === true,
+        nas: connectors.nas === true
+      })
+    );
+    webEnabled = scoped.web;
+    nasEnabled = scoped.nas;
+  }
+  console.log("[luna/run-chat] search-scope", {
+    kind: searchScope.kind,
+    tier: searchScope.tier,
+    flags: searchScope.flags
+  });
 
   const typePromptByKey: Record<string, string> = {
     [LUNA_PROMPT_KEYS.find]: talkFind,
@@ -584,13 +620,16 @@ export async function runLunaTurn(
       matchedMax: llmInject.learnings
     }
   );
-  const matchedTerms = pickGlossaryForQuestion(
-    glossaryRows,
-    injectKeywords,
-    emb.glossary
-  );
+  const matchedTerms = searchScope.flags.glossary
+    ? pickGlossaryForQuestion(
+        glossaryRows,
+        injectKeywords,
+        emb.glossary
+      )
+    : [];
   const wikiSources =
-    classifiedSlugs.includes("know") || classifiedSlugs.includes("find")
+    searchScope.flags.wiki &&
+    (classifiedSlugs.includes("know") || classifiedSlugs.includes("find"))
       ? matchWikiSections(
           wikiDocs,
           injectKeywords,
@@ -617,6 +656,13 @@ export async function runLunaTurn(
 
   let webAugmented = false;
   if (
+    scopeHitsInsufficient(searchScope.kind, {
+      glossary: matchedTerms.length,
+      wiki: wikiSources.length,
+      notion: 0,
+      nas: 0,
+      media: 0
+    }) &&
     shouldWebAugmentKnow({
       enabled: webAugmentEnabled,
       typeSlugs: classifiedSlugs,
@@ -630,6 +676,33 @@ export async function runLunaTurn(
     webAugmented = true;
   }
 
+  // 위키·용어사전만으로 부족하면 넓힘
+  if (
+    scopeHitsInsufficient(searchScope.kind, {
+      glossary: matchedTerms.length,
+      wiki: wikiSources.length,
+      notion: 0,
+      nas: 0,
+      media: 0
+    })
+  ) {
+    const widened = widenSearchScope(searchScope);
+    if (widened) {
+      searchScope = widened;
+      const scoped = applyScopeToConnectorFlags(
+        searchScope.flags,
+        {
+          notion: searchScope.flags.notion,
+          web: webEnabled,
+          nas: nasEnabled
+        },
+        false
+      );
+      webEnabled = scoped.web;
+      nasEnabled = scoped.nas;
+    }
+  }
+
   const isSearchRequest = isSearchRequestMessage(userText);
 
   let notionSources: NotionSource[] = [];
@@ -639,25 +712,36 @@ export async function runLunaTurn(
   let nasSearchAttempted = false;
 
   let mediaCards: LunaCard[] = [];
-  if (keywords || userText) {
+  const runNotion = searchScope.flags.notion && Boolean(keywords || userText);
+  const runMedia = searchScope.flags.media;
+  if (runNotion || runMedia) {
     const [notionOutcome, mediaRes] = await Promise.all([
-      searchNotionForLuna(admin, keywords || userText, userText, {
-        queryEmbedding: emb.queryEmbedding,
-        skipLive: false,
-        listing: false
-      }),
-      searchMediaForLuna(admin, emb.queryEmbedding, userText)
+      runNotion
+        ? searchNotionForLuna(admin, keywords || userText, userText, {
+            queryEmbedding: emb.queryEmbedding,
+            skipLive: false,
+            listing: false
+          })
+        : Promise.resolve({
+            status: "skipped" as const,
+            sources: [] as NotionSource[],
+            queries: [] as string[],
+            rounds: 0
+          }),
+      runMedia
+        ? searchMediaForLuna(admin, emb.queryEmbedding, userText)
+        : Promise.resolve({ cards: [] as LunaCard[], hits: [] })
     ]);
     notionSources = notionOutcome.sources;
     mediaCards = mediaRes.cards;
   }
-  if (webEnabled) {
+  if (webEnabled && searchScope.flags.web) {
     webCards = await searchTavily(keywords || userText);
   }
-  if (needsSearch && isSearchRequest && keywords) {
+  if (needsSearch && isSearchRequest && keywords && searchScope.flags.youtube) {
     youtubeCards = await searchYoutube(keywords);
   }
-  if (nasEnabled) {
+  if (nasEnabled && searchScope.flags.nas) {
     nasSearchAttempted = true;
     const kw = keywords || userText;
     try {
@@ -681,6 +765,33 @@ export async function runLunaTurn(
       );
       nasResults = await exploreWorkserverFallback(admin, kw, userText);
       console.log("[luna/ws] eval fallback →", nasResults.length);
+    }
+  }
+
+  // 검색 후에도 부족하면 한 단계 더
+  if (
+    scopeHitsInsufficient(searchScope.kind, {
+      glossary: matchedTerms.length,
+      wiki: wikiSources.length,
+      notion: notionSources.length,
+      nas: nasResults.length,
+      media: mediaCards.length
+    })
+  ) {
+    const widened = widenSearchScope(searchScope);
+    if (widened && widened.flags.notion && notionSources.length === 0) {
+      searchScope = widened;
+      const notionOutcome = await searchNotionForLuna(
+        admin,
+        keywords || userText,
+        userText,
+        {
+          queryEmbedding: emb.queryEmbedding,
+          skipLive: false,
+          listing: false
+        }
+      );
+      notionSources = notionOutcome.sources;
     }
   }
 

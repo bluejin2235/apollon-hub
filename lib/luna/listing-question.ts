@@ -47,7 +47,7 @@ export function wikiCoversKnowIntent(
 
 /**
  * know+find 복합일 때 위키가 충분하면 find 커넥터(실시간 API·도구 루프)를 건너뛴다.
- * 노션 색인·nas_directory DB 조회는 여기와 무관하게 항상 돌린다.
+ * 노션 색인·nas_directory 는 search-scope 플래그를 따른다.
  */
 export function shouldSkipFindConnectors(opts: {
   types: string[];
