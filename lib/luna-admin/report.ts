@@ -32,6 +32,13 @@ import {
   buildStudyMorningReport,
   collectStudyRuns
 } from "@/lib/luna/study-report";
+import {
+  buildCheckPrompt,
+  buildStudyBlockedPrompt,
+  loadOpenDevnoteBlockers,
+  PROMPT_ROOM_LABEL,
+  type TodoPrompt
+} from "@/lib/luna-admin/report-prompts";
 import { iGa, withObjectParticle } from "@/lib/korean/particles";
 
 export type AdminReportResult = {
@@ -61,7 +68,9 @@ const C = {
   yLine: "#EFDCB8",
   r: "#B03A34",
   rBg: "#FBEAE9",
-  rLine: "#F0C9C6"
+  rLine: "#F0C9C6",
+  codeBg: "#F7F7F9",
+  codeBar: "#EFEFF2"
 };
 
 function hubHref(path: string): string {
@@ -164,10 +173,6 @@ function outlineBtn(href: string, label: string): string {
   return `<a href="${escapeHtml(href)}" style="display:inline-block;font-size:10.5px;padding:4px 11px;border-radius:7px;text-decoration:none;white-space:nowrap;border:1px solid ${C.line};color:#3a3d43;background:#fff;font-weight:600;">${escapeHtml(label)}</a>`;
 }
 
-function solidBtn(href: string, label: string): string {
-  return `<a href="${escapeHtml(href)}" style="display:inline-block;font-size:10.5px;padding:4px 11px;border-radius:7px;text-decoration:none;white-space:nowrap;background:${C.luna};color:#fff;font-weight:700;border:0;">${escapeHtml(label)}</a>`;
-}
-
 function buildTldr(
   badChecks: LunaCheckResult[],
   stages: { key: string; light: TrafficLight; label: string }[]
@@ -211,13 +216,17 @@ function buildTldr(
   };
 }
 
+/**
+ * prompt 가 있으면 Claude 가 맡을 수 있는 일 — 붙여넣을 문구를 싣는다.
+ * 없으면 사람이 화면에서 눌러야 하는 일 — href 링크만 남긴다.
+ */
 type TodoItem = {
   title: string;
   detail: string;
   href: string;
   btn: string;
   tone: "r" | "y" | "p";
-  outline?: boolean;
+  prompt?: TodoPrompt;
 };
 
 export async function buildAdminReportHtml(
@@ -253,7 +262,8 @@ export async function buildAdminReportHtml(
     failuresOpenedRes,
     failuresOpenYesterdayRes,
     notionBeforeRes,
-    imageBeforeRes
+    imageBeforeRes,
+    devnoteBlockers
   ] = await Promise.all([
     evaluateLunaChecks(admin, now),
     buildPrimarySources(admin),
@@ -299,7 +309,8 @@ export async function buildAdminReportHtml(
     admin
       .from("luna_media_index")
       .select("path", { count: "exact", head: true })
-      .lt("indexed_at", startIso)
+      .lt("indexed_at", startIso),
+    loadOpenDevnoteBlockers(admin)
   ]);
 
   const learningsToday = learningsTodayRes.count ?? 0;
@@ -362,7 +373,7 @@ export async function buildAdminReportHtml(
       href: hubHref(c.href),
       btn: c.btn_label,
       tone: c.status === "bad" ? "r" : "y",
-      outline: c.id === "image_index"
+      prompt: buildCheckPrompt(c, devnoteBlockers)
     });
   }
   for (const card of study.cards) {
@@ -373,7 +384,7 @@ export async function buildAdminReportHtml(
         href: hubHref(buildLunaAdminUrl("selfstudy", "history")),
         btn: "자세히",
         tone: "p",
-        outline: true
+        prompt: buildStudyBlockedPrompt(card, devnoteBlockers)
       });
     }
   }
@@ -402,8 +413,7 @@ export async function buildAdminReportHtml(
         `${flagLabels || "모순"}`,
       href: hubHref(buildLunaAdminUrl("selfstudy", "review")),
       btn: "답 점검 →",
-      tone: "p",
-      outline: true
+      tone: "p"
     });
   }
   for (const q of questions.slice(0, 3)) {
@@ -534,19 +544,34 @@ export async function buildAdminReportHtml(
           .map((t, i) => {
             const icBg =
               t.tone === "r" ? C.rBg : t.tone === "y" ? C.yBg : C.lunaSoft;
-            const btn = t.outline
-              ? outlineBtn(t.href, t.btn)
-              : solidBtn(t.href, t.btn);
-            return `<table style="width:100%;border-collapse:collapse;"><tr>
-              <td style="padding:11px 0;border-bottom:1px solid ${C.line2};vertical-align:top;width:30px;">
-                <div style="width:22px;height:22px;border-radius:7px;background:${icBg};font-size:11px;line-height:22px;text-align:center;font-weight:700;">${i + 1}</div>
+            const icColor =
+              t.tone === "r" ? C.r : t.tone === "y" ? C.y : C.luna;
+            const head = `<table style="width:100%;border-collapse:collapse;"><tr>
+              <td style="vertical-align:top;width:33px;">
+                <div style="width:22px;height:22px;border-radius:7px;background:${icBg};color:${icColor};font-size:11px;line-height:22px;text-align:center;font-weight:800;">${i + 1}</div>
               </td>
-              <td style="padding:11px 8px;border-bottom:1px solid ${C.line2};vertical-align:top;">
+              <td style="vertical-align:top;">
                 <div style="font-size:12.5px;font-weight:700;margin-bottom:3px;">${escapeHtml(t.title)}</div>
                 <div style="font-size:11.5px;color:${C.sub};line-height:1.75;">${escapeHtml(t.detail)}</div>
               </td>
-              <td style="padding:11px 0;border-bottom:1px solid ${C.line2};vertical-align:top;text-align:right;white-space:nowrap;">${btn}</td>
             </tr></table>`;
+            // 메일에서는 JavaScript 가 돌지 않는다 — 복사 버튼 대신 한 번에 집히는 pre 블록
+            const action = t.prompt
+              ? `<table style="width:100%;border-collapse:collapse;margin-top:10px;"><tr>
+              <td style="width:33px;"></td>
+              <td>
+                <div style="background:${C.codeBg};border:1px solid ${C.line};border-radius:9px;">
+                  <div style="padding:7px 11px;background:${C.codeBar};border-bottom:1px solid ${C.line};font-size:10.5px;font-weight:700;color:${C.sub};">Claude 에 붙여넣기 · 길게 눌러 전체 선택</div>
+                  <pre style="margin:0;padding:11px 13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.8;color:#2b2d32;white-space:pre-wrap;word-break:break-word;-webkit-user-select:all;user-select:all;">${escapeHtml(t.prompt.text)}</pre>
+                </div>
+                <div style="margin-top:7px;font-size:11px;color:${C.faint};"><b style="color:${C.sub};font-weight:700;">${escapeHtml(PROMPT_ROOM_LABEL[t.prompt.room])}</b> 방에 붙여넣으세요</div>
+              </td>
+            </tr></table>`
+              : `<table style="width:100%;border-collapse:collapse;margin-top:7px;"><tr>
+              <td style="width:33px;"></td>
+              <td style="font-size:11px;color:${C.faint};">화면에서 버튼을 눌러야 합니다 — <a href="${escapeHtml(t.href)}" style="color:${C.luna};font-weight:700;text-decoration:none;">${escapeHtml(t.btn)}</a></td>
+            </tr></table>`;
+            return `<div style="padding:14px 0;border-bottom:1px solid ${C.line2};">${head}${action}</div>`;
           })
           .join("");
 
@@ -730,7 +755,18 @@ export async function buildAdminReportHtml(
     textParts.push("지금 사람이 손댈 일은 없습니다.");
   } else {
     todos.forEach((t, i) => {
-      textParts.push(`${i + 1}. ${t.title}`, `   ${t.detail}`, `   ${t.btn} ${t.href}`);
+      textParts.push(`${i + 1}. ${t.title}`, `   ${t.detail}`);
+      if (t.prompt) {
+        // 프롬프트는 들여쓰지 않는다 — 그대로 긁어서 붙일 수 있어야 한다
+        textParts.push(
+          `   ↓ ${PROMPT_ROOM_LABEL[t.prompt.room]} 방에 붙여넣기`,
+          "",
+          t.prompt.text,
+          ""
+        );
+      } else {
+        textParts.push(`   화면에서 버튼을 눌러야 합니다 — ${t.btn} ${t.href}`);
+      }
     });
   }
   textParts.push("", "■ 오늘 밤 하려는 것", `${hh}:${mm} · 예상 ${tonightMinutes || "—"}분`);
