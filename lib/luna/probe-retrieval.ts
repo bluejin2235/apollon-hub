@@ -9,6 +9,7 @@ import { llmComplete } from "@/lib/luna/llm/client";
 import { resolveOfficialPrice } from "@/lib/luna/model-pricing";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import type { NotionSource } from "@/lib/luna/notion";
+import { recordAnswerFlagsAsync } from "@/lib/luna/answer-flags";
 
 export type ProbeHitBucket = "hit@1" | "hit@5" | "hit@10" | "miss";
 
@@ -342,6 +343,16 @@ export async function runProbeAnswerKey(
         cause_guess: cause?.label ?? null,
         cause_kind: cause?.kind ?? null
       });
+
+      if (bucket !== "miss") {
+        recordAnswerFlagsAsync(admin, {
+          question,
+          mode_a_rank: rank,
+          mode_a_top_n: top.length,
+          notion_n: top.length,
+          source: "mode_a"
+        });
+      }
     }
   }
 

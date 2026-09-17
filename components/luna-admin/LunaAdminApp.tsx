@@ -23,6 +23,7 @@ import { LunaSelfstudyHistory } from "@/components/luna/selfstudy/LunaSelfstudyH
 import { LunaStudyRunHistory } from "@/components/luna-admin/LunaStudyRunHistory";
 import { LunaSelfstudySettings } from "@/components/luna/selfstudy/LunaSelfstudySettings";
 import { LunaSelfstudyLearned } from "@/components/luna/selfstudy/LunaSelfstudyLearned";
+import { LunaAdminAnswerFlags } from "@/components/luna-admin/LunaAdminAnswerFlags";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
@@ -175,6 +176,7 @@ function renderBody(
         </>
       );
     }
+    if (sub === "review") return <LunaAdminAnswerFlags />;
     if (sub === "links") return <LunaAdminLinkProgress onGo={go} />;
     if (sub === "learned") return <LunaSelfstudyLearned />;
     if (sub === "settings") return <LunaSelfstudySettings />;

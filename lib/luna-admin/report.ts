@@ -21,6 +21,8 @@ import {
 } from "@/lib/luna-admin/schedule";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
 import { listCandidateRuleQuestions } from "@/lib/luna/rules";
+import { listPendingAnswerFlagsForHuman } from "@/lib/luna/answer-flags";
+import { ANSWER_FLAG_THRESHOLDS } from "@/lib/luna/answer-flags-shared";
 import {
   evaluateLunaChecks,
   markAdminReportSent,
@@ -228,6 +230,7 @@ export async function buildAdminReportHtml(
     tonight,
     openFailures,
     ruleQuestions,
+    answerFlags,
     linksToday,
     linksYesterday,
     learningsTodayRes,
@@ -249,6 +252,10 @@ export async function buildAdminReportHtml(
     loadTonightState(admin),
     countOpenFailures(admin),
     listCandidateRuleQuestions(admin),
+    listPendingAnswerFlagsForHuman(admin, {
+      sinceIso: startIso,
+      limit: Math.min(12, ANSWER_FLAG_THRESHOLDS.max_human_per_day)
+    }),
     countLinks(admin),
     countCreatedBefore(admin, "luna_links", startIso),
     admin
@@ -363,9 +370,26 @@ export async function buildAdminReportHtml(
       detail: ruleQuestions[0]
         ? `${ruleQuestions[0].title} — 정하시면 관련 신호가 정리됩니다.`
         : "규칙 후보가 대기 중입니다.",
-      href: hubHref(buildLunaAdminUrl("candidates", "pending")),
+      href: hubHref(buildLunaAdminUrl("dashboard")),
       btn: "확인 →",
       tone: "y"
+    });
+  }
+  if (answerFlags.length > 0) {
+    const n = answerFlags.length;
+    const first = answerFlags[0]!;
+    const flagLabels = first.flags.map((f) => f.label).join(" · ");
+    const m = first.metrics;
+    todos.push({
+      title: `🌙 답을 봐주세요 · ${n}건`,
+      detail:
+        `어젯밤 지표가 어긋난 답입니다. 옳고 그름은 제가 판단할 수 없어 여쭙습니다. ` +
+        `예: “${first.question.slice(0, 40)}” · 문서 ${m.total_docs ?? "—"} · 자신감 ${m.confidence_score ?? "—"} · ` +
+        `${flagLabels || "모순"}`,
+      href: hubHref(buildLunaAdminUrl("selfstudy", "review")),
+      btn: "답 점검 →",
+      tone: "p",
+      outline: true
     });
   }
   for (const q of questions.slice(0, 3)) {

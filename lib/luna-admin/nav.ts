@@ -9,7 +9,13 @@ export type LunaAdminMenu =
 
 export type LunaAdminKnowledgeSub = "primary" | "secondary";
 export type LunaAdminTalkSub = "history" | "sources" | "metrics";
-export type LunaAdminSelfstudySub = "tonight" | "history" | "links" | "learned" | "settings";
+export type LunaAdminSelfstudySub =
+  | "tonight"
+  | "history"
+  | "review"
+  | "links"
+  | "learned"
+  | "settings";
 export type LunaAdminFailuresSub = "causes" | "analysis" | "sent";
 export type LunaAdminCandidatesSub = "pending" | "mine" | "conflict" | "history";
 export type LunaAdminBrainSub =
@@ -72,6 +78,7 @@ export const LUNA_ADMIN_MENUS: LunaAdminMenuDef[] = [
     subs: [
       { slug: "tonight", label: "오늘 밤 할 일" },
       { slug: "history", label: "자습 이력" },
+      { slug: "review", label: "답 점검" },
       { slug: "links", label: "2차 데이터 만들기" },
       { slug: "learned", label: "배운 것" },
       { slug: "settings", label: "자습 설정" }
