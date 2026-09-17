@@ -9,6 +9,8 @@ import {
   type LunaSkillsSelection
 } from "@/components/luna/LunaInput";
 import { LunaInlineQuestionCard } from "@/components/luna/LunaInlineQuestionCard";
+import { AnswerBlock } from "@/components/luna/chat/AnswerBlock";
+import { USE_LUNA_CHAT_V2 } from "@/lib/luna/chat-ui-flag";
 import {
   LunaMessage,
   type LunaAnalysisTeam,
@@ -1158,9 +1160,11 @@ export function LunaChat({
               isLastCompleteAssistant &&
               !sending &&
               Boolean(pendingQuestion || (answeredMessage && answeredContent));
+            const MessageView =
+              USE_LUNA_CHAT_V2 && m.role === "assistant" ? AnswerBlock : LunaMessage;
             return (
               <div key={m.id}>
-              <LunaMessage
+              <MessageView
                 id={m.id}
                 role={m.role}
                 content={m.content}

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>루나 채팅 — redesign v2</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --line:#e7e8ec; --line2:#eef0f3;
+    --ink:#1c1d21; --sub:#6b6f76; --faint:#9aa0a8; --chip:#f1f2f5;
+    --luna:#534AB7; --luna-bub:#F7F6FC; --luna-bub-line:#E8E5F4; --luna-soft:#EEEDFE;
+    --term-bg:#F0EEFA; --amber-bg:#FAEEDA; --amber-ink:#633806;
+    --notion:#6b6f76; --notion-bg:#EFEFED;
+    --work:#1D9E75; --work-bg:#E6F5EF;
+    --wiki:#C97B3F; --wiki-bg:#FBF0E6;
+    --image:#378ADD; --image-bg:#E8F0FA;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;padding:28px 24px 80px;
+    line-height:1.6;font-size:13px}
+  .wrap{max-width:780px;margin:0 auto}
+  .sec-label{margin:32px 0 12px;font-size:11.5px;font-weight:800;color:var(--luna);letter-spacing:.6px}
+  .sec-label:first-child{margin-top:0}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:8px}
+
+  .me-row{display:flex;justify-content:flex-end;margin-bottom:18px}
+  .me{background:var(--luna);color:#fff;border-radius:16px 16px 5px 16px;padding:10px 14px;font-size:14px;max-width:78%}
+  .luna-row{display:flex;gap:10px}
+  .av{width:28px;height:28px;border-radius:50%;background:var(--luna);color:var(--luna-soft);
+    font-size:12px;font-weight:700;display:grid;place-items:center;flex-shrink:0}
+  .col{flex:1;min-width:0}
+  .bub{background:var(--luna-bub);border:1px solid var(--luna-bub-line);border-radius:6px 18px 18px 18px;
+    padding:16px 18px;font-size:14.5px;line-height:1.75}
+
+  /* progress */
+  .prog{border:1px solid var(--line);border-radius:11px;background:#FCFCFD;margin-bottom:14px;overflow:hidden}
+  .prog.collapsed{display:flex;align-items:center;gap:7px;padding:8px 14px;font-size:11px;color:var(--faint)}
+  .prog.collapsed .sp{flex:1}
+  .prog-inner{border-left:3px solid var(--line);margin:0;padding:4px 0 4px 2px}
+  .prow{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px}
+  .prow.done{color:#8B8F96}
+  .prow.now{font-weight:600;color:var(--ink)}
+  .prow .lab{flex:1;min-width:0}
+  .prow .cnt{width:4.5rem;text-align:right;font-family:var(--mono);font-size:10.5px;color:var(--faint);flex-shrink:0}
+  .spin{width:12px;height:12px;border:1.5px solid #c8cad0;border-top-color:var(--luna);border-radius:50%;
+    animation:sp .7s linear infinite;flex-shrink:0}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .chk{width:14px;text-align:center;color:#8B8F96;flex-shrink:0;font-size:11px}
+
+  /* term */
+  .term{display:inline;background:var(--term-bg);border-bottom:1px dotted #9B8FD4;padding:0 2px}
+  .assume{background:var(--amber-bg);color:var(--amber-ink);border-radius:8px;padding:9px 11px;font-size:13px;margin-top:12px;line-height:1.6}
+  .wiki-card{margin-top:12px;border:1px solid #F0E4D8;background:#FFFBF7;border-radius:10px;padding:10px 12px;
+    display:flex;gap:10px;align-items:flex-start}
+  .wiki-card .t{font-size:12.5px;font-weight:700}
+  .wiki-card .s{font-size:11px;color:var(--faint);margin-top:2px}
+  .tag{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;flex-shrink:0}
+  .tag-wiki{background:var(--wiki-bg);color:#9A4E12}
+
+  /* project */
+  .proj-card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px;background:#fff}
+  .proj-card .pt{font-size:11px;color:var(--faint);margin-bottom:4px}
+  .proj-card .pn{font-size:14px;font-weight:800}
+  .timeline{margin-top:10px;border-left:2px solid var(--line2);padding-left:12px}
+  .tl-item{font-size:12px;color:var(--sub);padding:4px 0}
+  .tl-item b{color:var(--ink)}
+
+  .sg{margin-top:16px}
+  .sg-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .sg-h i{width:6px;height:6px;border-radius:50%}
+  .sg-h span{font-size:13px;font-weight:700}
+  .sg-h em{font-style:normal;font-size:11px;background:var(--chip);padding:1px 7px;border-radius:6px;color:var(--sub)}
+  .src-row{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;margin-bottom:8px;background:#fff}
+  .src-row .body{flex:1;min-width:0}
+  .src-row .title{font-size:12.5px;font-weight:700}
+  .src-row .path{margin-top:6px;font-family:var(--mono);font-size:10.5px;color:var(--sub);white-space:pre-wrap;word-break:break-all;line-height:1.55}
+  .tag-n{background:var(--notion-bg);color:#37352F}
+  .tag-k{background:#EDEFF2;color:#5B6472}
+
+  /* images */
+  .igrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .icell{aspect-ratio:4/3;background:#eceef1;border-radius:8px;overflow:hidden}
+  .icell img{width:100%;height:100%;object-fit:cover}
+  .folder-note{margin-top:14px;padding-top:12px;border-top:1px solid var(--line2);font-size:11px;color:var(--faint)}
+  .folder-note b{color:var(--sub)}
+
+  /* footer */
+  .foot{margin-top:12px;display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:10.5px;color:var(--sub)}
+  .chip{background:var(--chip);border:1px solid var(--line);padding:2px 8px;border-radius:10px}
+  .foot .icn{font-size:15px;color:var(--faint);cursor:pointer}
+  .judge{width:100%;margin-top:6px;font-size:10.5px;color:var(--faint);line-height:1.55}
+  .meta{width:100%;font-size:10.5px;color:var(--faint)}
+  .meta a{color:var(--luna);text-decoration:none;font-weight:600}
+  .docs-tab{margin-left:auto;color:var(--luna);font-weight:700;font-size:10.5px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="sec-label">01 — WAITING / PROGRESS (열린 상태)</div>
+<div class="stage">
+  <div class="me-row"><div class="me">더후 글로벌 론칭 진행 어때?</div></div>
+  <div class="luna-row">
+    <div class="av">L</div>
+    <div class="col">
+      <div class="bub">
+        <div class="prog">
+          <div class="prog-inner">
+            <div class="prow done"><span class="chk">✓</span><span class="lab">질문을 읽었습니다 — 프로젝트 현황</span><span class="cnt">0.4초</span></div>
+            <div class="prow done"><span class="chk">✓</span><span class="lab">위키에서 「더후」 검색</span><span class="cnt">12건</span></div>
+            <div class="prow done"><span class="chk">✓</span><span class="lab">노션 프로젝트 DB</span><span class="cnt">+18건</span></div>
+            <div class="prow now"><span class="spin"></span><span class="lab">Work서버 폴더 검색</span><span class="cnt">…</span></div>
+            <div class="prow"><span class="chk">◌</span><span class="lab">답변 정리</span><span class="cnt"></span></div>
+          </div>
+        </div>
+        <p style="color:var(--sub);font-size:14px">프로젝트 폴더 기준으로<span style="display:inline-block;width:6px;height:14px;background:var(--ink);margin-left:2px;vertical-align:text-bottom"></span></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec-label">02 — TERM ANSWER</div>
+<div class="stage">
+  <div class="me-row"><div class="me">POP이 뭐야?</div></div>
+  <div class="luna-row">
+    <div class="av">L</div>
+    <div class="col">
+      <div class="bub">
+        <div class="prog collapsed"><span>▸</span><span>찾는 과정</span><span class="sp"></span><span>위키 1 · 용어 1</span></div>
+        <p><span class="term">POP</span>은 Point of Purchase의 줄임말로, 매장·행사장 등 <span class="term">구매 결정 지점</span>에서 고객이 제품을 접하는 모든 접점을 말해요.</p>
+        <p>Apollon에서는 주로 행사 부스·진열·데모존 같은 <span class="term">체험형 POP</span>을 기획할 때 씁니다.</p>
+        <div class="assume">확인할게요 — 마케팅 용어(POP) 기준으로 설명했어요. POS·PDP와 헷갈리면 알려주세요.</div>
+        <div class="wiki-card">
+          <div style="flex:1"><div class="t">POP · Point of Purchase</div><div class="s">Apollon Wiki · 용어</div></div>
+          <span class="tag tag-wiki">위키</span>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="chip">자료 0</span><span class="chip">위키 1</span><span class="chip">기억 2</span>
+        <span class="chip">의도 <b style="color:#0F6E56">8</b>/10</span>
+        <span class="chip">자신감 <b style="color:#0F6E56">9</b>/10</span>
+        <span class="icn">⧉</span><span class="icn">👍</span><span class="icn">👎</span>
+      </div>
+      <div class="judge">사용한 판단 · L3-01 질문 이해 · L3-04 답변 원칙 · L2-01 공간기획 관점</div>
+      <div class="meta">Sonnet 4.6 · 3.1초 · <a href="#">자세히</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="sec-label">03 — PROJECT ANSWER</div>
+<div class="stage">
+  <div class="me-row"><div class="me">더후 글로벌 론칭 진행 어때?</div></div>
+  <div class="luna-row">
+    <div class="av">L</div>
+    <div class="col">
+      <div class="bub">
+        <div class="prog collapsed"><span>▸</span><span>찾는 과정</span><span class="sp"></span><span>위키 3 · 노션 5 · Work 4</span></div>
+        <p>260713 더후 글로벌 론칭은 <b>견적·일정 확정</b> 단계이고, KV 시안 2안까지 공유된 상태예요.</p>
+        <div class="proj-card">
+          <div class="pt">프로젝트 요약</div>
+          <div class="pn">260713 더후 글로벌 론칭</div>
+          <div class="timeline">
+            <div class="tl-item"><b>3/12</b> 킥오프 · 범위 확정</div>
+            <div class="tl-item"><b>3/28</b> 견적 FIN · 일정 고정</div>
+            <div class="tl-item"><b>4/02</b> KV 시안 v2 공유</div>
+          </div>
+        </div>
+        <div class="sg">
+          <div class="sg-h"><i style="background:var(--notion)"></i><span>Notion</span><em>2</em></div>
+          <div class="src-row"><div class="body"><div class="title">더후 글로벌 론칭 — 프로젝트 페이지</div></div><span class="tag tag-n">노션</span></div>
+          <div class="src-row"><div class="body"><div class="title">주간 회의록 260401</div></div><span class="tag tag-n">노션</span></div>
+        </div>
+        <div class="sg">
+          <div class="sg-h"><i style="background:var(--work)"></i><span>Work</span><em>2</em></div>
+          <div class="src-row"><div class="body"><div class="title">견적서 FIN</div>
+            <div class="path">T:\02 Project\2026\260713 더후 글로벌 론칭\00 Management\01 견적\260708 견적서\K2_Apollon_더후이벤트영상제작_견적서_260708_FIN.pdf</div></div>
+            <span class="tag tag-k">워크</span></div>
+        </div>
+        <div class="sg">
+          <div class="sg-h"><i style="background:var(--wiki)"></i><span>Wiki</span><em>1</em></div>
+          <div class="src-row"><div class="body"><div class="title">더후 · 브랜드 가이드</div></div><span class="tag tag-wiki">위키</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="chip">자료 5</span><span class="chip">위키 3</span><span class="chip">기억 4</span>
+        <span class="icn">⧉</span><span class="icn">👍</span><span class="icn">👎</span>
+        <span class="docs-tab">문서 탭 →</span>
+      </div>
+      <div class="judge">사용한 판단 · L3-01 · L3-03 · L3-04</div>
+      <div class="meta">Sonnet 4.6 · 8.2초 · <a href="#">자세히</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="sec-label">04 — REFERENCE / IMAGE ANSWER</div>
+<div class="stage">
+  <div class="me-row"><div class="me">뷰티 팝업 레퍼런스 보여줘</div></div>
+  <div class="luna-row">
+    <div class="av">L</div>
+    <div class="col">
+      <div class="bub">
+        <div class="prog collapsed"><span>▸</span><span>찾는 과정</span><span class="sp"></span><span>이미지 6 · 위키 2</span></div>
+        <p>최근 뷰티 팝업·행사 <b>레퍼런스</b> 위주로 골랐어요. Apollon 수행 사례와 경쟁사 리서치가 섞여 있습니다.</p>
+        <div class="sg">
+          <div class="sg-h"><i style="background:var(--image)"></i><span>Image</span><em>6</em></div>
+          <div class="igrid">
+            <div class="icell"></div><div class="icell"></div><div class="icell"></div>
+            <div class="icell"></div><div class="icell"></div><div class="icell"></div>
+          </div>
+        </div>
+        <div class="sg">
+          <div class="sg-h"><i style="background:var(--wiki)"></i><span>Wiki</span><em>2</em></div>
+          <div class="src-row"><div class="body"><div class="title">팝업 부스 · 체크리스트</div></div><span class="tag tag-wiki">위키</span></div>
+        </div>
+        <div class="folder-note">🔎 이미지는 <b>레퍼런스·아이데이션·KV·소스</b> 폴더에서만 찾아요 ▾ · <span style="color:var(--luna);font-weight:700">폴더 추가 요청</span></div>
+      </div>
+      <div class="foot">
+        <span class="chip">자료 2</span><span class="chip">위키 2</span>
+        <span class="icn">⧉</span><span class="icn">👍</span><span class="icn">👎</span>
+      </div>
+      <div class="judge">사용한 판단 · L3-03 · L2-02 비주얼 관점</div>
+      <div class="meta">Sonnet 4.6 · 5.4초 · <a href="#">자세히</a></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
