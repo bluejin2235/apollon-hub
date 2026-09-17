@@ -401,6 +401,14 @@ export async function lunaLlmComplete(
     });
     return result;
   } catch (err) {
+    const { recordLlmFailure } = await import("@/lib/luna/llm-failures");
+    await recordLlmFailure(admin, {
+      feature: opts.feature,
+      tier: opts.tier,
+      provider: resolved.provider,
+      model_id: resolved.model_id,
+      error: err
+    });
     if (opts.tier !== "C" || !isRetryableLlmFailure(err)) {
       throw err;
     }

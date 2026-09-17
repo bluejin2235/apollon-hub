@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
   let merge_draft = null;
   if (body.with_merge_draft !== false) {
     merge_draft = await buildGlossaryMergeDraft(
+      admin,
       toFieldValues(result.existing),
       incoming
     );

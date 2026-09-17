@@ -1,8 +1,7 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
+import { getTierModel, resolveProviderModel } from "@/lib/luna/engine";
 import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
@@ -179,12 +178,6 @@ function toNasCard(row: NasDirectoryRow): LunaCard {
     raw_path: row.path,
     is_file: isNasFileRow(row)
   };
-}
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -370,20 +363,20 @@ function buildSystemPrompt(opts: {
 }
 
 async function maybeClarify(
-  client: Anthropic,
+  admin: SupabaseClient,
   userText: string,
   clarifyPrompt: string
 ): Promise<string | null> {
   if (shouldSkipProjectClarify(userText)) return null;
   try {
-    const clarifyRes = await client.messages.create({
-      model: LUNA_MODEL,
-      max_tokens: 512,
+    const clarifyRes = await lunaLlmComplete(admin, {
+      tier: "B",
+      feature: "understand",
       system: clarifyPrompt.trim() || CLARIFY_FALLBACK,
-      messages: [{ role: "user", content: userText }]
+      user: userText,
+      maxTokens: 512
     });
-    const raw =
-      clarifyRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    const raw = clarifyRes.text.trim();
     const parsed = parseJsonObject(raw);
     if (parsed) {
       const needs = parsed.needs_clarify === true;
@@ -434,11 +427,6 @@ export async function runLunaTurn(
       stageMs[key] = (stageMs[key] ?? 0) + (Date.now() - t0);
     }
   };
-  const client = getAnthropicClient();
-  if (!client) {
-    throw new Error("Claude API key is not configured");
-  }
-
   const userText = message.trim();
   if (!userText) {
     throw new Error("message is required");
@@ -597,7 +585,7 @@ export async function runLunaTurn(
     !forceSimpleDepthForScope(searchScope.kind) &&
     searchScope.kind !== "reference"
   ) {
-    const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
+    const clarifyAnswer = await maybeClarify(admin, userText, clarifyPrompt);
     if (clarifyAnswer) {
       return {
         answer: clarifyAnswer,
@@ -827,10 +815,12 @@ export async function runLunaTurn(
     await mark("nas_explore", async () => {
       try {
         if (useNasTools) {
-          const explored = await exploreWorkserverWithTools(admin, client, {
+          const tierB = resolveProviderModel(await getTierModel(admin, "B"));
+          const explored = await exploreWorkserverWithTools(admin, null, {
             keywords: kw,
             queryText: userText,
-            model: LUNA_MODEL,
+            model: tierB.model_id,
+            provider: tierB.provider,
             exploreSystem: talkFind
           });
           nasResults = explored.rows;
@@ -943,37 +933,16 @@ export async function runLunaTurn(
       ? 512
       : answerMaxTokensForDepth(questionDepth, false);
 
-  const useFastAnswer =
-    searchScope.kind === "term" ||
-    searchScope.kind === "policy" ||
-    searchScope.kind === "project" ||
-    searchScope.kind === "person";
-
-  // 용어·규정·프로젝트·사람: 짧은 맥락은 빠른 티어 (sonnet 풀 경로 10초대 방지)
-  let rawAnswer = "";
-  if (useFastAnswer) {
-    const fast = await mark("answer_llm", () =>
-      lunaLlmComplete(admin, {
-        tier: "A",
-        feature: "chat_answer",
-        system: systemPrompt,
-        user: userText,
-        maxTokens: answerMaxTokens
-      })
-    );
-    rawAnswer = fast.text.trim();
-  } else {
-    const response = await mark("answer_llm", () =>
-      client.messages.create({
-        model: LUNA_MODEL,
-        max_tokens: answerMaxTokens,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userText }]
-      })
-    );
-    rawAnswer =
-      response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-  }
+  const answerRes = await mark("answer_llm", () =>
+    lunaLlmComplete(admin, {
+      tier: "A",
+      feature: "chat_answer",
+      system: systemPrompt,
+      user: userText,
+      maxTokens: answerMaxTokens
+    })
+  );
+  const rawAnswer = answerRes.text.trim();
   let answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
   const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
@@ -1015,7 +984,7 @@ export async function runLunaTurn(
     wikiSources: publicWikiSources,
     privateWikiRefs: privateWikiRefs.length > 0 ? privateWikiRefs : undefined,
     durationMs: Date.now() - startedAt,
-    modelLabel: LUNA_MODEL_LABEL,
+    modelLabel: answerRes.model_label || LUNA_MODEL_LABEL,
     injected_knowledge_ids: knowledgeInject.ids,
     injected_terms: injectedTerms,
     web_augmented: webAugmented,

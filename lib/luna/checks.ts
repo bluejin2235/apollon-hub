@@ -300,6 +300,12 @@ async function resolveLastOkAt(
       );
       return resolveResponseTimeCheck(admin);
     }
+    case "llm_failures": {
+      const { resolveLlmFailureCheck } = await import(
+        "@/lib/luna/llm-failures"
+      );
+      return resolveLlmFailureCheck(admin);
+    }
     case "env_keys": {
       const missing = missingEnvGroups();
       if (missing.length === 0) {
@@ -343,7 +349,9 @@ export async function evaluateLunaChecks(
     const redDays = expectedMeta?.red_days ?? row.red_days;
     const light =
       resolved.light ??
-      (row.id === "disk" || row.id === "response_time"
+      (row.id === "disk" ||
+      row.id === "response_time" ||
+      row.id === "llm_failures"
         ? ("green" as const)
         : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
@@ -352,7 +360,9 @@ export async function evaluateLunaChecks(
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
     if (
-      (row.id === "disk" || row.id === "response_time") &&
+      (row.id === "disk" ||
+        row.id === "response_time" ||
+        row.id === "llm_failures") &&
       resolved.extraDetail
     ) {
       detail = `${promiseLabel} · ${resolved.extraDetail}`;

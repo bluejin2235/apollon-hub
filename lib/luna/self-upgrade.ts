@@ -1,12 +1,9 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   normalizeThread,
   parseJsonObject
 } from "@/lib/luna/candidates";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
 import {
   listConsecutiveEvalFailures,
   runEvalExam
@@ -18,6 +15,7 @@ import {
   LUNA_PROMPT_KEYS
 } from "@/lib/luna/prompts";
 import { hasRejectMeta, rejectActionLabel } from "@/lib/luna/reject-note";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 
 const SETTINGS_LAST = "self_upgrade_last_run";
 const SETTINGS_REVERT = "self_upgrade_revert_suggestion";
@@ -77,12 +75,6 @@ type PromptRow = {
   version: number;
   is_active: boolean;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function daysAgoIso(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -347,9 +339,6 @@ async function proposeUpgrade(
   new_content?: string;
   prediction?: string;
 } | null> {
-  const client = getAnthropicClient();
-  if (!client) return null;
-
   const { data: prompts, error } = await admin
     .from("luna_prompts")
     .select(
@@ -368,7 +357,6 @@ async function proposeUpgrade(
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.upgrade)).trim() ||
     UPGRADE_FALLBACK;
-  const tierS = resolveAnthropicModel(await getTierModel(admin, "S"));
 
   const promptCatalog = (prompts as PromptRow[])
     .map(
@@ -414,18 +402,14 @@ async function proposeUpgrade(
 
   let raw = "";
   try {
-    const res = await client.messages.create({
-      model: tierS.model_id,
-      max_tokens: 4096,
+    const res = await lunaLlmComplete(admin, {
+      tier: "S",
+      feature: "self_upgrade",
       system,
-      messages: [
-        {
-          role: "user",
-          content: `근거와 수정 가능 프롬프트를 보고, 한 건만 개선안을 JSON으로 주세요.\n\n${evidence}\n\n[수정 가능 프롬프트]\n${promptCatalog}`
-        }
-      ]
+      user: `근거와 수정 가능 프롬프트를 보고, 한 건만 개선안을 JSON으로 주세요.\n\n${evidence}\n\n[수정 가능 프롬프트]\n${promptCatalog}`,
+      maxTokens: 4096
     });
-    raw = res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    raw = res.text.trim();
   } catch (err) {
     console.error("[luna/self-upgrade] propose", err);
     return null;

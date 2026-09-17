@@ -418,6 +418,7 @@ export async function POST(request: NextRequest) {
   const dup = await checkGlossaryDuplicate(admin, incomingFields, termId);
   if (dup.conflicts && dup.primary && dup.existing) {
     const merge_draft = await buildGlossaryMergeDraft(
+      admin,
       toFieldValues(dup.existing),
       incomingFields
     );

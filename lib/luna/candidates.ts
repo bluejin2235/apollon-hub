@@ -1,14 +1,12 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   CandidateSource,
   ScopeSuggestion,
   ThreadTurn
 } from "@/lib/luna/candidate-types";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 
 export type {
   CandidateSource,
@@ -59,12 +57,6 @@ const DIALOGUE_FALLBACK = `후보함에서 사람과 대화할 때의 원칙:
 5. 원문을 글자 그대로 복사하지 않는다. 핵심만 재진술한다.
 
 사람의 시간은 비싸다. 문답은 짧게, 한 번에 하나만.`;
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 export function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
@@ -311,13 +303,9 @@ export async function runDialogueTurn(
     evidence?: string | null;
   }
 ): Promise<string | null> {
-  const client = getAnthropicClient();
-  if (!client) return null;
-
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.dialogue)).trim() ||
     DIALOGUE_FALLBACK;
-  const tierA = resolveAnthropicModel(await getTierModel(admin, "A"));
 
   const thread = normalizeThread(opts.thread ?? []);
   const threadBlock =
@@ -348,14 +336,14 @@ JSON만: { "text": "재진술한 지식 한 문장" }`;
     .join("\n\n");
 
   try {
-    const res = await client.messages.create({
-      model: tierA.model_id,
-      max_tokens: 512,
+    const res = await lunaLlmComplete(admin, {
+      tier: "A",
+      feature: "candidate_dialogue",
       system,
-      messages: [{ role: "user", content: userPayload }]
+      user: userPayload,
+      maxTokens: 512
     });
-    const raw =
-      res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    const raw = res.text.trim();
     const parsed = parseJsonObject(raw);
     const text =
       typeof parsed?.text === "string" ? parsed.text.trim() : "";

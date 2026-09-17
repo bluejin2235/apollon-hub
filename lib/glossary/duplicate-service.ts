@@ -1,5 +1,4 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeCategories } from "@/lib/glossary/categories";
 import {
@@ -11,7 +10,7 @@ import {
 } from "@/lib/glossary/duplicate";
 import { normalizeSynonyms } from "@/lib/glossary/synonyms";
 import type { GlossaryFieldValues } from "@/lib/glossary/types";
-import { LUNA_MODEL } from "@/lib/luna/run-chat";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 
 const TERM_SELECT =
   "id, term_ko, term_en, term_zh, categories, synonyms, definition, version, updated_at, updated_by";
@@ -91,12 +90,6 @@ export function normalizeIncomingFields(raw: {
   };
 }
 
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = process.env.hubtrendchat_claude;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
-
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
   const tryParse = (raw: string) => {
@@ -123,19 +116,18 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   return null;
 }
 
-/** 두 정의를 합친 병합 초안 — 루나(Claude). 실패 시 규칙 기반 폴백. */
+/** 두 정의를 합친 병합 초안 — 루나. 실패 시 규칙 기반 폴백. */
 export async function buildGlossaryMergeDraft(
+  admin: SupabaseClient,
   existing: GlossaryFieldValues,
   incoming: GlossaryFieldValues
 ): Promise<GlossaryFieldValues> {
   const fallback = fallbackMergeDraft(existing, incoming);
-  const client = getAnthropicClient();
-  if (!client) return fallback;
 
   try {
-    const res = await client.messages.create({
-      model: LUNA_MODEL,
-      max_tokens: 2048,
+    const res = await lunaLlmComplete(admin, {
+      tier: "A",
+      feature: "glossary_polish",
       system: `당신은 용어사전 편집자입니다. 기존 용어와 새로 올린 용어를 하나로 합칩니다.
 의미를 깎지 말고, 서로 다른 정보는 모두 남기세요.
 아래 JSON만 출력하세요:
@@ -147,19 +139,10 @@ export async function buildGlossaryMergeDraft(
   "categories": ["공통"],
   "synonyms": ["동의어"]
 }`,
-      messages: [
-        {
-          role: "user",
-          content: JSON.stringify(
-            { existing, incoming, hint: fallback },
-            null,
-            2
-          )
-        }
-      ]
+      user: JSON.stringify({ existing, incoming, hint: fallback }, null, 2),
+      maxTokens: 2048
     });
-    const raw =
-      res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+    const raw = res.text.trim();
     const parsed = parseJsonObject(raw);
     if (!parsed) return fallback;
     return normalizeIncomingFields({

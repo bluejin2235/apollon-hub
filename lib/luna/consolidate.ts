@@ -1,12 +1,10 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { triggerAutoExam } from "@/lib/luna/eval-exam";
-import { LUNA_MODEL } from "@/lib/luna/run-chat";
 import { lunaNotify } from "@/lib/luna/notify";
 import { splitDefinitionFromKnowledge } from "@/lib/luna/consolidate-terms";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { kstCalendarDaysAgo } from "@/lib/luna-admin/traffic";
 
 export type ConsolidationTrigger = "volume" | "backstop" | "manual";
@@ -158,12 +156,6 @@ function asIdList(raw: unknown): string[] {
 
 function daysBetween(fromIso: string, to = new Date()): number {
   return kstCalendarDaysAgo(fromIso, to) ?? 0;
-}
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
 }
 
 export async function loadConsolidationSettings(
@@ -445,29 +437,6 @@ export async function runConsolidation(
       })
       .map((r) => r.id);
 
-    const client = getAnthropicClient();
-    if (!client) {
-      await finishRun(admin, runId, {
-        status: "failed",
-        scanned,
-        error: "Claude API key is not configured"
-      });
-      await lunaNotify(
-        admin,
-        "consolidation",
-        "정리 실패",
-        "Claude API key is not configured",
-        { level: "error" }
-      );
-      return {
-        skipped: false,
-        trigger,
-        run_id: runId,
-        scanned,
-        error: "Claude API key is not configured"
-      };
-    }
-
     const inputList = rows.map((r) => ({
       id: r.id,
       category: r.category,
@@ -475,20 +444,40 @@ export async function runConsolidation(
       use_count: r.use_count ?? 0
     }));
 
-    const response = await client.messages.create({
-      model: LUNA_MODEL,
-      max_tokens: 8192,
-      system: CONSOLIDATE_SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: `다음 active 학습을 분류하세요.\n\n${JSON.stringify(inputList, null, 2)}`
-        }
-      ]
-    });
+    let rawText = "";
+    try {
+      const response = await lunaLlmComplete(admin, {
+        tier: "A",
+        feature: "consolidate",
+        system: CONSOLIDATE_SYSTEM,
+        user: `다음 active 학습을 분류하세요.\n\n${JSON.stringify(inputList, null, 2)}`,
+        maxTokens: 8192
+      });
+      rawText = response.text.trim();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[luna/consolidate] llm", err);
+      await finishRun(admin, runId, {
+        status: "failed",
+        scanned,
+        error: msg
+      });
+      await lunaNotify(
+        admin,
+        "consolidation",
+        "정리 실패",
+        msg,
+        { level: "error" }
+      );
+      return {
+        skipped: false,
+        trigger,
+        run_id: runId,
+        scanned,
+        error: msg
+      };
+    }
 
-    const rawText =
-      response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
     const parsed = parseJsonObject(rawText);
     if (!parsed) {
       await finishRun(admin, runId, {

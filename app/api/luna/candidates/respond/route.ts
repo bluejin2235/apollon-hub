@@ -600,6 +600,7 @@ export async function POST(request: NextRequest) {
       dup.existing
     ) {
       const merge_draft = await buildGlossaryMergeDraft(
+        admin,
         toFieldValues(dup.existing),
         incoming
       );
@@ -669,6 +670,7 @@ export async function POST(request: NextRequest) {
       glossaryResult.conflict.existing
     ) {
       const merge_draft = await buildGlossaryMergeDraft(
+        admin,
         toFieldValues(glossaryResult.conflict.existing),
         glossaryResult.conflict.incoming
       );

@@ -750,9 +750,8 @@ export async function POST(request: NextRequest) {
   }
 
   const client = getAnthropicClient();
-  if (!client) {
-    return NextResponse.json({ error: "Claude API key is not configured" }, { status: 500 });
-  }
+  // Anthropic 키는 A등급이 anthropic 이거나 멀티모달 스트림이 필요할 때만 필수.
+  // B등급 전처리(lunaLlmComplete)는 OpenAI 등 다른 공급사로도 동작한다.
 
   let body: ChatRequestBody;
   try {
@@ -1297,7 +1296,6 @@ export async function POST(request: NextRequest) {
           await runAnalysisPipeline({
             controller,
             encoder,
-            client,
             admin,
             startedAt,
             conversationId,
@@ -1309,6 +1307,7 @@ export async function POST(request: NextRequest) {
             selfEvalPrompt,
             requeryPrompt,
             tierA,
+            tierAProvider: tierAResolved.provider,
             tierB,
             perspectiveIds,
             roleIds,
@@ -1742,11 +1741,12 @@ export async function POST(request: NextRequest) {
           let clarifyQuestion = "";
           let clarifyOptions: string[] = [];
           try {
-            const clarifyRes = await client.messages.create({
-              model: tierB.model_id,
-              max_tokens: 512,
+            const clarifyRes = await lunaLlmComplete(admin, {
+              tier: "B",
+              feature: "understand",
               system: clarifyPrompt,
-              messages: [{ role: "user", content: userText }]
+              user: userText,
+              maxTokens: 512
             });
             recordPromptUse(usageLog, {
               key: LUNA_PROMPT_KEYS.understand,
@@ -1774,13 +1774,12 @@ export async function POST(request: NextRequest) {
             });
             pushModelStep(modelSteps, admin, {
               label: "되묻기 판단",
-              model: tierB.model_label,
+              model: clarifyRes.model_label,
               tier: "B",
-              model_id: tierB.model_id,
-              usage: readUsage(clarifyRes.usage)
+              model_id: clarifyRes.model_id,
+              usage: clarifyRes.usage
             });
-            const raw =
-              clarifyRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+            const raw = clarifyRes.text.trim();
             const parsed = parseJsonObject(raw);
             if (parsed) {
               needsClarify = parsed?.needs_clarify === true;
@@ -2535,18 +2534,14 @@ export async function POST(request: NextRequest) {
                   .slice(0, 40)
                   .map(formatCardLineForEval)
                   .filter(Boolean);
-                const evalRes = await client.messages.create({
-                  model: tierB.model_id,
-                  max_tokens: 256,
+                const evalRes = await lunaLlmComplete(admin, {
+                  tier: "B",
+                  feature: "eval_grade",
                   system: selfEvalPrompt,
-                  messages: [
-                    {
-                      role: "user",
-                      content: `질문:\n${searchIntentText}\n\n찾은 자료:\n${materialLines.join(
-                        "\n"
-                      )}`
-                    }
-                  ]
+                  user: `질문:\n${searchIntentText}\n\n찾은 자료:\n${materialLines.join(
+                    "\n"
+                  )}`,
+                  maxTokens: 256
                 });
                 recordPromptUse(usageLog, {
                   key: LUNA_PROMPT_KEYS.selfEval,
@@ -2562,13 +2557,12 @@ export async function POST(request: NextRequest) {
                 });
                 pushModelStep(modelSteps, admin, {
                   label: "자체 평가",
-                  model: tierB.model_label,
+                  model: evalRes.model_label,
                   tier: "B",
-                  model_id: tierB.model_id,
-                  usage: readUsage(evalRes.usage)
+                  model_id: evalRes.model_id,
+                  usage: evalRes.usage
                 });
-                const evalRaw =
-                  evalRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+                const evalRaw = evalRes.text.trim();
                 const evalParsed = parseJsonObject(evalRaw);
                 if (
                   !evalParsed ||
@@ -2597,18 +2591,14 @@ export async function POST(request: NextRequest) {
 
             let newKeywords = "";
             try {
-              const reqRes = await client.messages.create({
-                model: tierB.model_id,
-                max_tokens: 64,
+              const reqRes = await lunaLlmComplete(admin, {
+                tier: "B",
+                feature: "search_terms",
                 system: requeryPrompt,
-                messages: [
-                  {
-                    role: "user",
-                    content: `원 질문:\n${searchIntentText}\n\n이전 검색어:\n${previousKeywords.join(
-                      ", "
-                    )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`
-                  }
-                ]
+                user: `원 질문:\n${searchIntentText}\n\n이전 검색어:\n${previousKeywords.join(
+                  ", "
+                )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`,
+                maxTokens: 64
               });
               recordPromptUse(usageLog, {
                 key: LUNA_PROMPT_KEYS.requery,
@@ -2624,13 +2614,12 @@ export async function POST(request: NextRequest) {
               });
               pushModelStep(modelSteps, admin, {
                 label: "재검색어 생성",
-                model: tierB.model_label,
+                model: reqRes.model_label,
                 tier: "B",
-                model_id: tierB.model_id,
-                usage: readUsage(reqRes.usage)
+                model_id: reqRes.model_id,
+                usage: reqRes.usage
               });
-              const reqText =
-                reqRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+              const reqText = reqRes.text.trim();
               newKeywords = reqText.replace(/^["']|["']$/g, "").trim();
             } catch (err) {
               console.error("[luna/chat] requery", err);
@@ -2701,11 +2690,12 @@ export async function POST(request: NextRequest) {
           maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
         if (reasonUser && !skipSourceReasons) {
           try {
-            const reasonRes = await client.messages.create({
-              model: tierB.model_id,
-              max_tokens: 256,
+            const reasonRes = await lunaLlmComplete(admin, {
+              tier: "B",
+              feature: "chat_answer",
               system: synthesisReason,
-              messages: [{ role: "user", content: reasonUser }]
+              user: reasonUser,
+              maxTokens: 256
             });
             recordPromptUse(usageLog, {
               key: LUNA_PROMPT_KEYS.synthesis,
@@ -2721,14 +2711,12 @@ export async function POST(request: NextRequest) {
             });
             pushModelStep(modelSteps, admin, {
               label: "소스 이유",
-              model: tierB.model_label,
+              model: reasonRes.model_label,
               tier: "B",
-              model_id: tierB.model_id,
-              usage: readUsage(reasonRes.usage)
+              model_id: reasonRes.model_id,
+              usage: reasonRes.usage
             });
-            const reasonRaw =
-              reasonRes.content.find((p) => p.type === "text")?.text?.trim() ??
-              "";
+            const reasonRaw = reasonRes.text.trim();
             const parsedReason = parseJsonObject(reasonRaw);
             if (parsedReason) {
               const next: SourceReasons = {};
@@ -3003,6 +2991,9 @@ export async function POST(request: NextRequest) {
         });
 
         if (tierAResolved.provider === "anthropic") {
+          if (!client) {
+            throw new Error("Claude API key is not configured");
+          }
           const anthropicStream = client.messages.stream({
             model: tierA.model_id,
             max_tokens: maxTokens,

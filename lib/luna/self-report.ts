@@ -1,8 +1,5 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getTierModel, resolveAnthropicModel } from "@/lib/luna/engine";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
 import {
   collectMorningSummaryParts,
   isKstMonday
@@ -10,6 +7,7 @@ import {
 import { LUNA_LINKS } from "@/lib/luna/notify";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
 import { parseJsonObject } from "@/lib/luna/candidates";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import { kstDayBounds, CORRECTION_RE } from "@/lib/luna/selfstudy";
 import {
   ensureLunaGoal,
@@ -61,12 +59,6 @@ export type SelfReportLast = {
   notification_id: string | null;
   stats: Record<string, unknown>;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 /** 이번 주(월~일 KST) UTC 구간 */
 export function kstWeekBounds(now = new Date()): {
@@ -373,43 +365,34 @@ export async function runWeeklySelfReport(
     generated_at: today.startIso
   };
 
-  const client = getAnthropicClient();
   const system =
     (await getPrompt(admin, LUNA_PROMPT_KEYS.report)).trim() || REPORT_FALLBACK;
 
   let bodyText = "";
   let parsedGoals = parseGoalDrafts([]);
-  if (client) {
-    const tierA = resolveAnthropicModel(await getTierModel(admin, "A"));
-    try {
-      const res = await client.messages.create({
-        model: tierA.model_id,
-        max_tokens: 2000,
-        system,
-        messages: [
-          {
-            role: "user",
-            content: `아래 주간 집계로 성장 루프 JSON 을 작성하세요. ① 지난주 검증 본문은 넣지 마세요.\n\n${JSON.stringify(stats, null, 2)}`
-          }
-        ]
-      });
-      const raw =
-        res.content.find((p) => p.type === "text")?.text?.trim() ?? "";
-      const parsed = parseJsonObject(raw);
-      if (parsed) {
-        bodyText =
-          typeof parsed.body === "string"
-            ? parsed.body.trim()
-            : typeof parsed.report === "string"
-              ? parsed.report.trim()
-              : "";
-        parsedGoals = parseGoalDrafts(parsed.goals);
-      } else if (raw) {
-        bodyText = raw;
-      }
-    } catch (err) {
-      console.error("[luna/self-report] claude", err);
+  try {
+    const res = await lunaLlmComplete(admin, {
+      tier: "A",
+      feature: "weekly_report",
+      system,
+      user: `아래 주간 집계로 성장 루프 JSON 을 작성하세요. ① 지난주 검증 본문은 넣지 마세요.\n\n${JSON.stringify(stats, null, 2)}`,
+      maxTokens: 2000
+    });
+    const raw = res.text.trim();
+    const parsed = parseJsonObject(raw);
+    if (parsed) {
+      bodyText =
+        typeof parsed.body === "string"
+          ? parsed.body.trim()
+          : typeof parsed.report === "string"
+            ? parsed.report.trim()
+            : "";
+      parsedGoals = parseGoalDrafts(parsed.goals);
+    } else if (raw) {
+      bodyText = raw;
     }
+  } catch (err) {
+    console.error("[luna/self-report] llm", err);
   }
 
   if (!bodyText) {

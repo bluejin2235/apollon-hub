@@ -108,6 +108,15 @@ export async function collectMorningSummaryParts(
       );
       continue;
     }
+    if (job.id === "llm_failures") {
+      parts.push(
+        withLink(
+          `${lamp} LLM 실패 · ${job.detail ?? "오늘 호출 실패가 많습니다"}`,
+          job.href
+        )
+      );
+      continue;
+    }
     parts.push(
       withLink(`${lamp} ${formatStaleIdleLine(job.label, job.days_stale)}`, job.href)
     );

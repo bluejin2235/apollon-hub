@@ -1,5 +1,4 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
 import {
@@ -9,8 +8,9 @@ import {
 } from "@/lib/luna/prompt-fallbacks";
 import {
   bumpUsageDaily,
-  readUsage,
-  type LunaUsageTokens
+  emptyUsage,
+  type LunaUsageTokens,
+  type ResolvedProviderModel
 } from "@/lib/luna/engine";
 import { capNotionDisplaySources, formatNotionSourcesForPrompt, type NotionSource } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/luna/media-index-search";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
+import { llmStreamText, lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { searchYoutube } from "@/lib/luna/youtube";
@@ -206,7 +207,6 @@ function formatMaterialsList(cards: LunaCard[], notionSources: NotionSource[]): 
 export type RunAnalysisParams = {
   controller: ReadableStreamDefaultController<Uint8Array>;
   encoder: TextEncoder;
-  client: Anthropic;
   admin: SupabaseClient;
   startedAt: number;
   conversationId: string;
@@ -218,6 +218,7 @@ export type RunAnalysisParams = {
   selfEvalPrompt: string;
   requeryPrompt: string;
   tierA: { model_id: string; model_label: string };
+  tierAProvider: ResolvedProviderModel["provider"];
   tierB: { model_id: string; model_label: string };
   perspectiveIds: string[];
   roleIds: string[];
@@ -236,7 +237,6 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   const {
     controller,
     encoder,
-    client,
     admin,
     startedAt,
     conversationId,
@@ -248,7 +248,7 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
     selfEvalPrompt,
     requeryPrompt,
     tierA,
-    tierB,
+    tierAProvider,
     perspectiveIds,
     roleIds,
     taskIds,
@@ -434,21 +434,21 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       const previousKeywords: string[] = [];
 
       try {
-        const kwRes = await client.messages.create({
-          model: tierB.model_id,
-          max_tokens: 64,
+        const kwRes = await lunaLlmComplete(admin, {
+          tier: "B",
+          feature: "search_terms",
           system: keywordExtractPrompt || KEYWORD_EXTRACT_FALLBACK,
-          messages: [{ role: "user", content: userText || "문서" }]
+          user: userText || "문서",
+          maxTokens: 64
         });
         pushModelStep(modelSteps, admin, {
           label: "검색어 추출",
-          model: tierB.model_label,
+          model: kwRes.model_label,
           tier: "B",
-          model_id: tierB.model_id,
-          usage: readUsage(kwRes.usage)
+          model_id: kwRes.model_id,
+          usage: kwRes.usage
         });
-        const kwText =
-          kwRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+        const kwText = kwRes.text.trim();
         keywords =
           kwText.replace(/^["']|["']$/g, "").trim() || userText.slice(0, 80);
       } catch (err) {
@@ -470,30 +470,25 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
 
         try {
           const titles = cards.map((c) => c.title).filter(Boolean).slice(0, 40);
-          const evalRes = await client.messages.create({
-            model: tierB.model_id,
-            max_tokens: 256,
+          const evalRes = await lunaLlmComplete(admin, {
+            tier: "B",
+            feature: "eval_grade",
             system: selfEvalPrompt || SELF_EVAL_FALLBACK,
-            messages: [
-              {
-                role: "user",
-                content: `질문:\n${userText}\n\n찾은 자료 제목:\n${
-                  titles.length > 0
-                    ? titles.map((t) => `- ${t}`).join("\n")
-                    : "(없음)"
-                }`
-              }
-            ]
+            user: `질문:\n${userText}\n\n찾은 자료 제목:\n${
+              titles.length > 0
+                ? titles.map((t) => `- ${t}`).join("\n")
+                : "(없음)"
+            }`,
+            maxTokens: 256
           });
           pushModelStep(modelSteps, admin, {
             label: "자체 평가",
-            model: tierB.model_label,
+            model: evalRes.model_label,
             tier: "B",
-            model_id: tierB.model_id,
-            usage: readUsage(evalRes.usage)
+            model_id: evalRes.model_id,
+            usage: evalRes.usage
           });
-          const evalRaw =
-            evalRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+          const evalRaw = evalRes.text.trim();
           const evalParsed = parseJsonObject(evalRaw);
           sufficient = evalParsed?.sufficient !== false;
           missing =
@@ -511,28 +506,23 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
 
         let newKeywords = "";
         try {
-          const reqRes = await client.messages.create({
-            model: tierB.model_id,
-            max_tokens: 64,
+          const reqRes = await lunaLlmComplete(admin, {
+            tier: "B",
+            feature: "search_terms",
             system: requeryPrompt || REQUERY_FALLBACK,
-            messages: [
-              {
-                role: "user",
-                content: `원 질문:\n${userText}\n\n이전 검색어:\n${previousKeywords.join(
-                  ", "
-                )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`
-              }
-            ]
+            user: `원 질문:\n${userText}\n\n이전 검색어:\n${previousKeywords.join(
+              ", "
+            )}\n\n부족한 점:\n${missing || "관련 자료가 부족함"}`,
+            maxTokens: 64
           });
           pushModelStep(modelSteps, admin, {
             label: "재검색어 생성",
-            model: tierB.model_label,
+            model: reqRes.model_label,
             tier: "B",
-            model_id: tierB.model_id,
-            usage: readUsage(reqRes.usage)
+            model_id: reqRes.model_id,
+            usage: reqRes.usage
           });
-          const reqText =
-            reqRes.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+          const reqText = reqRes.text.trim();
           newKeywords = reqText.replace(/^["']|["']$/g, "").trim();
         } catch (err) {
           console.error("[luna/analysis] requery", err);
@@ -588,44 +578,13 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   }
 
   // ——— 단계 2: 팀별 병렬 분석 ———
-  let attachmentBlocks: Anthropic.ContentBlockParam[] | null = null;
-  if (hasAttachments) {
-    attachmentBlocks = [];
-    for (const att of attachments) {
-      const { data: fileData, error: downloadError } = await admin.storage
-        .from("luna-files")
-        .download(att.storage_path);
-      if (downloadError || !fileData) {
-        console.error("[luna/analysis] download", att.id, downloadError);
-        continue;
-      }
-      const bytes = Buffer.from(await fileData.arrayBuffer());
-      const base64 = bytes.toString("base64");
-      if (att.mime_type === "application/pdf") {
-        attachmentBlocks.push({
-          type: "document",
-          source: {
-            type: "base64",
-            media_type: "application/pdf",
-            data: base64
-          }
-        } as Anthropic.ContentBlockParam);
-      } else {
-        attachmentBlocks.push({
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: att.mime_type as
-              | "image/png"
-              | "image/jpeg"
-              | "image/gif"
-              | "image/webp",
-            data: base64
-          }
-        });
-      }
-    }
-  }
+  // 첨부는 공통 경로(lunaLlmComplete)가 멀티모달이 아니므로 파일명만 넘긴다.
+  const attachmentNote =
+    hasAttachments && attachmentMeta.length > 0
+      ? `\n\n[첨부 파일]\n${attachmentMeta
+          .map((a) => `- ${a.file_name} (${a.mime_type})`)
+          .join("\n")}`
+      : "";
 
   const teamResults: AnalysisTeamResult[] = branches.map((p) => ({
     id: p.id,
@@ -680,24 +639,18 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       .filter(Boolean)
       .join("\n\n");
 
-    const userContent: string | Anthropic.ContentBlockParam[] =
-      attachmentBlocks && attachmentBlocks.length > 0
-        ? [...attachmentBlocks, { type: "text", text: userText }]
-        : userText;
-
     try {
-      const res = await client.messages.create({
-        model: tierA.model_id,
-        max_tokens: 1024,
+      const res = await lunaLlmComplete(admin, {
+        tier: "A",
+        feature: "chat_answer",
         system: systemPrompt,
-        messages: [{ role: "user", content: userContent }]
+        user: `${userText}${attachmentNote}`,
+        maxTokens: 1024
       });
 
       if (analysisTimedOut) return;
 
-      const text =
-        res.content.find((part) => part.type === "text")?.text?.trim() ||
-        "분석 실패";
+      const text = res.text.trim() || "분석 실패";
       teamResults[index] = {
         id: p.id,
         title: p.title,
@@ -707,10 +660,10 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
       teamDone[index] = true;
       pushModelStep(modelSteps, admin, {
         label: `${p.title} 분석`,
-        model: tierA.model_label,
+        model: res.model_label || tierA.model_label,
         tier: "A",
-        model_id: tierA.model_id,
-        usage: readUsage(res.usage)
+        model_id: res.model_id || tierA.model_id,
+        usage: res.usage
       });
       emit({
         type: "team",
@@ -811,20 +764,27 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
   });
 
   let assistantText = "";
-  const anthropicStream = client.messages.stream({
-    model: tierA.model_id,
-    max_tokens: 4096,
-    system: supervisorSystem,
-    messages: [{ role: "user", content: supervisorUser }]
-  });
-
-  anthropicStream.on("text", (textDelta) => {
-    assistantText += textDelta;
-    controller.enqueue(encoder.encode(textDelta));
-  });
-
-  const finalMsg = await anthropicStream.finalMessage();
-  const answerUsage = readUsage(finalMsg.usage);
+  let answerUsage = emptyUsage();
+  try {
+    for await (const chunk of llmStreamText({
+      provider: tierAProvider,
+      model_id: tierA.model_id,
+      system: supervisorSystem,
+      user: supervisorUser,
+      maxTokens: 4096
+    })) {
+      if (chunk.delta) {
+        assistantText += chunk.delta;
+        controller.enqueue(encoder.encode(chunk.delta));
+      }
+      if (chunk.usage) answerUsage = chunk.usage;
+    }
+  } catch (err) {
+    console.error("[luna/analysis] supervisor", err);
+    const fallback = "통합 리포트 작성에 실패했습니다.";
+    assistantText = fallback;
+    controller.enqueue(encoder.encode(fallback));
+  }
   pushModelStep(modelSteps, admin, {
     label: "슈퍼바이저 통합",
     model: tierA.model_label,

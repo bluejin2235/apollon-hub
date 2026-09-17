@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { hasLunaAccess } from "@/lib/luna/beta-access";
@@ -11,7 +10,7 @@ import {
   type ScopeSuggestion
 } from "@/lib/luna/candidates";
 import { getPrompt, LUNA_PROMPT_KEYS } from "@/lib/luna/prompts";
-import { anthropicApiKey } from "@/lib/luna/env-keys";
+import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import {
   collectExistingTermKeys,
   parseCaptureKind,
@@ -33,7 +32,6 @@ import {
 
 export const runtime = "nodejs";
 
-const CLAUDE_MODEL = "claude-sonnet-4-6";
 const REFLECT_LOCK_MS = 120_000;
 
 const REFLECT_SYSTEM_PROMPT_FALLBACK = `방금 대화에서 배울 것이 있었는지 판정하고, 있으면 지식 후보를 만든다.
@@ -119,12 +117,6 @@ type ConversationReflectRow = {
   last_reflected_message_count: number | null;
   reflect_lock_until: string | null;
 };
-
-function getAnthropicClient(): Anthropic | null {
-  const apiKey = anthropicApiKey();
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
-}
 
 function normalizeCaptureItems(raw: unknown[] | null): CaptureItem[] {
   if (!raw) return [];
@@ -280,11 +272,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const client = getAnthropicClient();
-  if (!client) {
-    return NextResponse.json({ error: "Claude API key is not configured" }, { status: 500 });
-  }
-
   let body: ReflectBody;
   try {
     body = (await request.json()) as ReflectBody;
@@ -420,24 +407,19 @@ export async function POST(request: NextRequest) {
 
     let rawText = "";
     try {
-      const response = await client.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: 1024,
+      const response = await lunaLlmComplete(admin, {
+        tier: "A",
+        feature: "learn_capture",
         system: reflectPrompt,
-        messages: [
-          {
-            role: "user",
-            content: `다음 대화를 분석하세요.\n\n${transcript}${priorNote}${CAPTURE_USER_SUFFIX}`
-          }
-        ]
+        user: `다음 대화를 분석하세요.\n\n${transcript}${priorNote}${CAPTURE_USER_SUFFIX}`,
+        maxTokens: 1024
       });
-      rawText =
-        response.content.find((part) => part.type === "text")?.text?.trim() ?? "";
+      rawText = response.text.trim();
     } catch (err) {
-      console.error("[luna/reflect] claude", err);
+      console.error("[luna/reflect] llm", err);
       await clearReflectLock(admin, conversationId, user.id);
       return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Claude request failed" },
+        { error: err instanceof Error ? err.message : "LLM request failed" },
         { status: 500 }
       );
     }

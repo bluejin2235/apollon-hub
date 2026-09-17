@@ -2,7 +2,6 @@
  * 2차 데이터 생성 — 규칙 중심. LLM 은 same 의 0.45~0.6 만.
  * 스크립트에서도 import 하므로 server-only 를 쓰지 않는다.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LINK_ASK_MIN, LINK_AUTO_SAVE } from "@/lib/luna-admin/confidence";
 import {
@@ -11,7 +10,6 @@ import {
   firstSubfolderLabel,
   fullNasPath,
   haikuUsd,
-  HAIKU_MODEL,
   HUMAN_SAME_PAIRS,
   LLM_MAX_CALLS,
   parseWorkFolder,
@@ -387,57 +385,59 @@ async function resolveSuperAdminId(admin: SupabaseClient): Promise<string | null
   return String(hub?.id ?? rows[0]?.id ?? "") || null;
 }
 
-async function askHaiku(opts: {
-  left: string;
-  right: string;
-  extra?: string;
-}): Promise<{
+async function askHaiku(
+  admin: SupabaseClient,
+  opts: {
+    left: string;
+    right: string;
+    extra?: string;
+  }
+): Promise<{
   same: boolean;
   confidence: number;
   reason: string;
   input: number;
   output: number;
 } | null> {
-  const apiKey = process.env.hubtrendchat_claude?.trim();
-  if (!apiKey) return null;
-  const client = new Anthropic({ apiKey });
-  const res = await client.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 120,
-    system:
-      "두 이름이 아폴론의 같은 사업/프로젝트인지 판정한다. 날짜코드(YYMMDD)는 달라도 된다. 인스파이어는 시즌이 다르면 다른 건이다. JSON만 답한다: {\"same\":true|false,\"confidence\":0.0-1.0,\"reason\":\"한줄\"}",
-    messages: [
-      {
-        role: "user",
-        content: `A: ${opts.left}\nB: ${opts.right}${opts.extra ? `\n${opts.extra}` : ""}`
+  try {
+    const { lunaLlmComplete } = await import("@/lib/luna/llm/client");
+    const res = await lunaLlmComplete(admin, {
+      tier: "C",
+      feature: "eval_grade",
+      system:
+        "두 이름이 아폴론의 같은 사업/프로젝트인지 판정한다. 날짜코드(YYMMDD)는 달라도 된다. 인스파이어는 시즌이 다르면 다른 건이다. JSON만 답한다: {\"same\":true|false,\"confidence\":0.0-1.0,\"reason\":\"한줄\"}",
+      user: `A: ${opts.left}\nB: ${opts.right}${opts.extra ? `\n${opts.extra}` : ""}`,
+      maxTokens: 120
+    });
+    const text = res.text.trim();
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    let parsed: { same?: unknown; confidence?: unknown; reason?: unknown } = {};
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      try {
+        parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as typeof parsed;
+      } catch {
+        parsed = {};
       }
-    ]
-  });
-  const text = res.content
-    .map((b) => (b.type === "text" ? b.text : ""))
-    .join("")
-    .trim();
-  const jsonStart = text.indexOf("{");
-  const jsonEnd = text.lastIndexOf("}");
-  let parsed: { same?: unknown; confidence?: unknown; reason?: unknown } = {};
-  if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    try {
-      parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as typeof parsed;
-    } catch {
-      parsed = {};
     }
+    const same = parsed.same === true;
+    const confidence =
+      typeof parsed.confidence === "number"
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : 0.5;
+    const reason =
+      typeof parsed.reason === "string" ? parsed.reason.slice(0, 200) : "";
+    return {
+      same,
+      confidence,
+      reason,
+      input: res.usage.input_tokens,
+      output: res.usage.output_tokens
+    };
+  } catch (err) {
+    console.error("[build-links] askHaiku", err);
+    return null;
   }
-  const input = res.usage?.input_tokens ?? 0;
-  const output = res.usage?.output_tokens ?? 0;
-  const same = parsed.same === true;
-  const confidence =
-    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
-      ? Math.min(1, Math.max(0, parsed.confidence))
-      : same
-        ? 0.55
-        : 0.2;
-  const reason = typeof parsed.reason === "string" ? parsed.reason : "";
-  return { same, confidence, reason, input, output };
 }
 
 export async function buildLinks(
@@ -1258,7 +1258,7 @@ export async function buildLinks(
       }
       const llm = dryRun
         ? null
-        : await askHaiku({
+        : await askHaiku(admin, {
             left: pair.left.title,
             right: pair.right.title,
             extra: `경로A: ${pair.left.path}\n경로B: ${pair.right.path}\n유사도: ${pair.sim.toFixed(2)}`
