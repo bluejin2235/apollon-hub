@@ -64,7 +64,8 @@ export const LLM_INJECT_BY_DEPTH: Record<QuestionDepth, LlmInjectLimits> = {
 export const SYNTHESIS_ANSWER_RULE = `[종합형 질문 — 깊이 있게]
 - talk.answer 의 "3~6줄·사례 2~3개·미리 다 설명하지 않는다·목록 재나열 금지" 규칙은 이번 턴에 적용하지 않는다.
 - 길이 제한 없음. 짧게 줄이지 마라.
-- 주어진 위키·노션·기억 사례를 빠짐없이 다룬다. 2~3개로 줄이지 마라.
+- 주어진 위키·노션·기억 중 질문과 맞는 사례를 다룬다. 2~3개로 줄이지 마라.
+- 맞지 않는 자료는 언급하지 마라. 「조건과 맞지 않음」 나열은 금지다.
 - 각 항목에 근거 문서를 「」로 밝힌다. 마크다운 볼드(**)로 감싸지 마라.
 - 반드시 이 구조로 쓴다:
   한 줄 요약
@@ -74,8 +75,9 @@ export const SYNTHESIS_ANSWER_RULE = `[종합형 질문 — 깊이 있게]
   마지막에 판단이나 한계
 - 사람이 더 물어보게 남겨 두지 말고, 주어진 자료로 답할 수 있는 것은 이번 답에 다 쓴다.`;
 
-/** 사례·레퍼런스 + 이미지 의도 — 글(노션) 주입을 짧게. 목업: 이미지가 먼저 */
+/** 사례·레퍼런스 + 이미지 의도 — 글 주입을 짧게. 목업: 이미지가 먼저 */
 export const REFERENCE_IMAGE_NOTION_CAP = 4;
+export const REFERENCE_IMAGE_WIKI_CAP = 2;
 
 export function llmInjectLimitsForQuestion(
   text: string,
@@ -96,14 +98,18 @@ export function llmInjectLimitsForQuestion(
       notion: Math.min(base.notion, REFERENCE_IMAGE_NOTION_CAP),
       cards: Math.min(base.cards, REFERENCE_IMAGE_NOTION_CAP),
       nas: Math.min(base.nas, 3),
-      wikiSections: Math.min(base.wikiSections, 4),
-      learnings: Math.min(base.learnings, 4)
+      wikiSections: Math.min(base.wikiSections, REFERENCE_IMAGE_WIKI_CAP),
+      wikiPerDoc: 1,
+      learnings: Math.min(base.learnings, 3)
     }
   };
 }
 
-export function wikiLimitsForDepth(depth: QuestionDepth): WikiPickLimits {
-  const lim = LLM_INJECT_BY_DEPTH[depth];
+export function wikiLimitsForDepth(
+  depth: QuestionDepth,
+  limits?: LlmInjectLimits
+): WikiPickLimits {
+  const lim = limits ?? LLM_INJECT_BY_DEPTH[depth];
   return {
     sectionMax: lim.wikiSections,
     sectionsPerDocMax: lim.wikiPerDoc

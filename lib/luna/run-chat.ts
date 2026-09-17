@@ -685,7 +685,7 @@ export async function runLunaTurn(
           injectKeywords,
           userText,
           emb.wiki,
-          wikiLimitsForDepth(questionDepth)
+          wikiLimitsForDepth(questionDepth, llmInject)
         )
       : [];
   const { public: publicWikiSources, private: privateWikiRefs } =

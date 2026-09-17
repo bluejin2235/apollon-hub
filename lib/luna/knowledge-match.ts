@@ -43,7 +43,14 @@ const STOPWORDS = new Set([
   "하는가",
   "인가요",
   "해요",
-  "해줘"
+  "해줘",
+  "보여줘",
+  "보여",
+  "우리가",
+  "우리는",
+  "우리의",
+  "저희는",
+  "저희의"
 ]);
 
 /** 긴 조사부터. 2글자 이하로 줄어드는 절단은 하지 않는다. */
@@ -147,18 +154,32 @@ export function splitKeywordQuery(
   );
 }
 
+function isStopToken(token: string): boolean {
+  if (STOPWORDS.has(token)) return true;
+  // 「우리가」→「우리」처럼 조사만 남은 대명사도 버린다 (길이 2 절단 예외)
+  const stripped = token.replace(PARTICLE_RE, "");
+  if (
+    stripped !== token &&
+    stripped.length >= 2 &&
+    STOPWORDS.has(stripped)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function tokenizeKeywords(raw: string, protectedTokens: Set<string>): string[] {
   const text = raw.replace(/^["']|["']$/g, "").trim();
   if (!text) return [];
   const parts = text
     .split(/[\s,./|·•]+/)
     .map((p) => stripParticles(p.trim(), protectedTokens))
-    .filter((p) => p.length >= 2 && !STOPWORDS.has(p));
+    .filter((p) => p.length >= 2 && !isStopToken(p));
   const extra = text.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [];
   const merged = [...parts];
   for (const e of extra) {
     const t = stripParticles(e, protectedTokens);
-    if (t.length >= 2 && !STOPWORDS.has(t)) merged.push(t);
+    if (t.length >= 2 && !isStopToken(t)) merged.push(t);
   }
   const seen = new Set<string>();
   const out: string[] = [];

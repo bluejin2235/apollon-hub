@@ -1951,7 +1951,7 @@ export async function POST(request: NextRequest) {
                 injectKeywords,
                 listingQuestion ? listingSourceText : searchIntentText,
                 knowledgeEmb.wiki,
-                wikiLimitsForDepth(questionDepth)
+                wikiLimitsForDepth(questionDepth, llmInject)
               )
             : [];
         if (
