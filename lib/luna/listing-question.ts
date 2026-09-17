@@ -5,7 +5,7 @@ import type { WikiSourceRef } from "@/lib/luna/wiki-match";
  * 코드 패턴이 LLM 유형 판정보다 우선한다 (applyListingTypeOverride).
  */
 export const LISTING_QUESTION_RE =
-  /(?:어떤\s*게|어떤게)\s*있|뭐\s*가?\s*있|무엇이?\s*있|목록|모아\s*줘|전부|몇\s*가지|어떤\s*것들?|사례(?:가|는)?\s*(?:있|뭐)|건\s*(?:들\s*)?(?:중\s*)?(?:뭐|무엇)/;
+  /(?:어떤\s*게|어떤게)\s*있|뭐\s*가?\s*있|무엇이?\s*있|목록|모아\s*줘|전부|몇\s*가지|어떤\s*것들?|사례(?:가|는)?\s*(?:있|뭐)|사례\s*(?:를\s*)?(?:보여|알려)|레퍼런스\s*(?:를\s*)?(?:보여|알려)|건\s*(?:들\s*)?(?:중\s*)?(?:뭐|무엇)/;
 
 export function isListingQuestion(text: string): boolean {
   const t = text.replace(/\s+/g, " ").trim();

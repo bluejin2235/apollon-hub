@@ -15,27 +15,30 @@ const GROUP_STYLES = {
     dot: "#6b6f76",
     badgeBg: "#EFEFED",
     badgeInk: "#37352F",
-    label: "Notion"
+    label: "노션"
   },
   work: {
     dot: "#1D9E75",
     badgeBg: "#E6F5EF",
     badgeInk: "#0F6E56",
-    label: "Work"
+    label: "Work서버"
   },
   wiki: {
     dot: "#C97B3F",
     badgeBg: "#FBF0E6",
     badgeInk: "#9A4E12",
-    label: "Wiki"
+    label: "위키"
   },
   image: {
     dot: "#378ADD",
     badgeBg: "#E8F0FA",
     badgeInk: "#2563A8",
-    label: "Image"
+    label: "이미지"
   }
 } as const;
+
+/** 답 버블에 기본으로 보이는 출처 행 수. 나머지는 「문서 탭 →」 */
+export const SOURCE_PREVIEW_LIMIT = 4;
 
 function GroupHeader({
   kind,
@@ -79,13 +82,33 @@ function MaterialTag({
   );
 }
 
+function formatEditedDate(iso?: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}.${m}.${day}`;
+}
+
 function NotionRow({ src }: { src: NotionSource }) {
+  const dbOrPath =
+    (src.path_titles && src.path_titles.length > 0
+      ? src.path_titles.slice(0, 2).join(" › ")
+      : null) ||
+    src.section ||
+    null;
+  const edited = formatEditedDate(src.last_edited_time);
+  const metaBits = [dbOrPath, edited].filter(Boolean);
   const inner = (
     <>
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-semibold text-[#1c1d21]">{src.title}</div>
-        {src.section ? (
-          <div className="mt-0.5 text-[11px] text-[#9aa0a8]">{src.section}</div>
+        {metaBits.length > 0 ? (
+          <div className="mt-0.5 text-[11px] text-[#9aa0a8]">
+            {metaBits.join(" · ")}
+          </div>
         ) : null}
       </div>
       <MaterialTag label="노션" bg="#EFEFED" ink="#37352F" />
@@ -170,6 +193,8 @@ export function SourceGroupSections({
   showWiki,
   showImage,
   imageLimit,
+  previewLimit,
+  emptyImageHint,
   onImageCellClick,
   favoritePaths
 }: {
@@ -181,9 +206,19 @@ export function SourceGroupSections({
   showWiki: boolean;
   showImage: boolean;
   imageLimit?: number;
+  /** 지정 시 헤더는 전체 건수, 행만 잘라 보여 줌 */
+  previewLimit?: number;
+  /** 이미지 0건일 때 (사례 모드) */
+  emptyImageHint?: string | null;
   onImageCellClick?: (index: number) => void;
   favoritePaths?: Set<string>;
 }) {
+  const lim = previewLimit;
+  const notionRows =
+    lim != null ? sources.notion.slice(0, lim) : sources.notion;
+  const workRows = lim != null ? sources.work.slice(0, lim) : sources.work;
+  const wikiRows = lim != null ? sources.wiki.slice(0, lim) : sources.wiki;
+
   return (
     <div className="mt-4 space-y-4">
       {showImage && sources.image.length > 0 ? (
@@ -199,10 +234,15 @@ export function SourceGroupSections({
           />
         </section>
       ) : null}
+      {showImage && sources.image.length === 0 && emptyImageHint ? (
+        <p className="text-[11.5px] leading-relaxed text-[#9aa0a8]">
+          {emptyImageHint}
+        </p>
+      ) : null}
       {showNotion && sources.notion.length > 0 ? (
         <section>
           <GroupHeader kind="notion" count={sources.notion.length} />
-          {sources.notion.map((s) => (
+          {notionRows.map((s) => (
             <NotionRow key={s.url || s.id || s.title} src={s} />
           ))}
         </section>
@@ -210,7 +250,7 @@ export function SourceGroupSections({
       {showWork && sources.work.length > 0 ? (
         <section>
           <GroupHeader kind="work" count={sources.work.length} />
-          {sources.work.map((c, i) => (
+          {workRows.map((c, i) => (
             <WorkRow
               key={`${c.title}-${c.raw_path ?? i}`}
               card={c}
@@ -222,7 +262,7 @@ export function SourceGroupSections({
       {showWiki && sources.wiki.length > 0 ? (
         <section>
           <GroupHeader kind="wiki" count={sources.wiki.length} />
-          {sources.wiki.map((s) => (
+          {wikiRows.map((s) => (
             <WikiRow key={`${s.slug}:${s.section_id}`} src={s} />
           ))}
         </section>

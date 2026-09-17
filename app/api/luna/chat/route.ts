@@ -152,6 +152,7 @@ import {
   forceSimpleDepthForScope,
   inferRuleClassification,
   resolveSearchScope,
+  resolveSearchScopeKind,
   scopeHitsInsufficient,
   scopeReasonLabel,
   scopeSkipsQueryEmbedding,
@@ -1213,10 +1214,19 @@ export async function POST(request: NextRequest) {
   const listingQuestion = listingCtx.listing;
   const listingSourceText = listingCtx.rootText;
   const depthText = listingSourceText || searchIntentText;
-  let { depth: questionDepth, limits: llmInject } =
-    llmInjectLimitsForQuestion(depthText);
+  const imagePrimary =
+    hasImageSearchIntent(depthText) ||
+    resolveSearchScopeKind({
+      types: [],
+      question: depthText
+    }) === "reference";
+  let { depth: questionDepth, limits: llmInject } = llmInjectLimitsForQuestion(
+    depthText,
+    { imagePrimary }
+  );
   console.log("[luna/inject]", {
     depth: questionDepth,
+    imagePrimary,
     notion: llmInject.notion,
     wiki: llmInject.wikiSections,
     learnings: llmInject.learnings

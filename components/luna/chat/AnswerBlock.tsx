@@ -18,7 +18,8 @@ import { ProgressSteps } from "@/components/luna/chat/ProgressSteps";
 import { AnswerMeta } from "@/components/luna/chat/AnswerMeta";
 import {
   SourceGroupSections,
-  WikiCompactCard
+  WikiCompactCard,
+  SOURCE_PREVIEW_LIMIT
 } from "@/components/luna/chat/SourceGroup";
 import {
   isAnswerComplete,
@@ -338,12 +339,15 @@ function AssistantAnswerBlock({
   const canFeedback =
     Boolean(id) && !id.startsWith("temp-") && !isThinking;
 
-  const docMaterialCount =
-    split.notion.length + split.work.length + split.wiki.length;
   const showDocsTab =
     !isThinking &&
-    docMaterialCount > 3 &&
-    (answerMode === "project" || answerMode === "default" || answerMode === "reference");
+    (answerMode === "project" ||
+      answerMode === "default" ||
+      answerMode === "reference") &&
+    (split.notion.length > SOURCE_PREVIEW_LIMIT ||
+      split.work.length > SOURCE_PREVIEW_LIMIT ||
+      split.wiki.length > SOURCE_PREVIEW_LIMIT ||
+      (imageChrome && split.image.length > 8));
 
   useEffect(() => {
     setPathTab(modalPathTabFromSettings(nasPathSettings));
@@ -499,34 +503,27 @@ function AssistantAnswerBlock({
               sources={split}
               nasPathSettings={nasPathSettings}
               onCopyToast={setCopyToast}
-              showNotion={false}
-              showWork={false}
-              showWiki={false}
+              showNotion={split.notion.length > 0}
+              showWork={split.work.length > 0}
+              showWiki={split.wiki.length > 0}
               showImage
               imageLimit={docsExpanded ? undefined : 8}
+              previewLimit={docsExpanded ? undefined : SOURCE_PREVIEW_LIMIT}
+              emptyImageHint={
+                split.image.length === 0
+                  ? "관련 이미지는 아직 색인이 적어 못 찾았어요. 문서 위주로 골랐습니다."
+                  : null
+              }
               onImageCellClick={setModalIndex}
               favoritePaths={favoritePaths}
             />
-            {(docsExpanded || split.notion.length + split.work.length <= 3) &&
-            (split.notion.length > 0 || split.work.length > 0 || split.wiki.length > 0) ? (
-              <SourceGroupSections
-                sources={split}
-                nasPathSettings={nasPathSettings}
-                onCopyToast={setCopyToast}
-                showNotion
-                showWork
-                showWiki
-                showImage={false}
-              />
-            ) : null}
             {imageChrome ? (
               <LunaImageScopeNotice onCopyToast={setCopyToast} />
             ) : null}
           </>
         ) : null}
         {(answerMode === "project" || answerMode === "default") &&
-        (docsExpanded ||
-          split.notion.length > 0 ||
+        (split.notion.length > 0 ||
           split.work.length > 0 ||
           split.wiki.length > 0 ||
           (imageChrome && split.image.length > 0)) ? (
@@ -534,10 +531,11 @@ function AssistantAnswerBlock({
             sources={split}
             nasPathSettings={nasPathSettings}
             onCopyToast={setCopyToast}
-            showNotion={docsExpanded || split.notion.length <= 6}
-            showWork={docsExpanded || split.work.length <= 6}
-            showWiki={docsExpanded || split.wiki.length <= 6}
+            showNotion={split.notion.length > 0}
+            showWork={split.work.length > 0}
+            showWiki={split.wiki.length > 0}
             showImage={imageChrome && split.image.length > 0}
+            previewLimit={docsExpanded ? undefined : SOURCE_PREVIEW_LIMIT}
             onImageCellClick={setModalIndex}
             favoritePaths={favoritePaths}
           />

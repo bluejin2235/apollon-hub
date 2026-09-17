@@ -74,12 +74,32 @@ export const SYNTHESIS_ANSWER_RULE = `[종합형 질문 — 깊이 있게]
   마지막에 판단이나 한계
 - 사람이 더 물어보게 남겨 두지 말고, 주어진 자료로 답할 수 있는 것은 이번 답에 다 쓴다.`;
 
-export function llmInjectLimitsForQuestion(text: string): {
+/** 사례·레퍼런스 + 이미지 의도 — 글(노션) 주입을 짧게. 목업: 이미지가 먼저 */
+export const REFERENCE_IMAGE_NOTION_CAP = 4;
+
+export function llmInjectLimitsForQuestion(
+  text: string,
+  opts?: { imagePrimary?: boolean }
+): {
   depth: QuestionDepth;
   limits: LlmInjectLimits;
 } {
   const depth = classifyQuestionDepth(text);
-  return { depth, limits: LLM_INJECT_BY_DEPTH[depth] };
+  const base = LLM_INJECT_BY_DEPTH[depth];
+  if (!opts?.imagePrimary) {
+    return { depth, limits: base };
+  }
+  return {
+    depth,
+    limits: {
+      ...base,
+      notion: Math.min(base.notion, REFERENCE_IMAGE_NOTION_CAP),
+      cards: Math.min(base.cards, REFERENCE_IMAGE_NOTION_CAP),
+      nas: Math.min(base.nas, 3),
+      wikiSections: Math.min(base.wikiSections, 4),
+      learnings: Math.min(base.learnings, 4)
+    }
+  };
 }
 
 export function wikiLimitsForDepth(depth: QuestionDepth): WikiPickLimits {
