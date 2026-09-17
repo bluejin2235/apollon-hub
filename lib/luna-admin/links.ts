@@ -302,8 +302,7 @@ export async function listPerspectives(
   const { data, error } = await admin
     .from("luna_perspectives")
     .select("*")
-    .order("hit_count", { ascending: false })
-    .limit(100);
+    .order("hit_count", { ascending: false });
   if (error) {
     if (!isMissingTableError(error)) {
       console.error("[luna-admin/perspectives]", error);
@@ -311,6 +310,24 @@ export async function listPerspectives(
     return [];
   }
   return (data ?? []) as LunaPerspectiveRow[];
+}
+
+export async function countPerspectives(
+  admin: SupabaseClient,
+  status?: "active" | "dormant"
+): Promise<number> {
+  let q = admin
+    .from("luna_perspectives")
+    .select("id", { count: "exact", head: true });
+  if (status) q = q.eq("status", status);
+  const { count, error } = await q;
+  if (error) {
+    if (!isMissingTableError(error)) {
+      console.error("[luna-admin/perspectives] count", error);
+    }
+    return 0;
+  }
+  return count ?? 0;
 }
 
 export async function linkKindCounts(admin: SupabaseClient) {

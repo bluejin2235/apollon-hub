@@ -40,7 +40,10 @@ export async function GET(request: NextRequest) {
     const { selected } = await selectTonightAgenda(admin, {
       excludedIds: new Set(state.items.filter((i) => i.excluded).map((i) => i.id))
     });
-    const study = await runSelectedTonight(admin, selected, { limitPerItem: 40 });
+    const study = await runSelectedTonight(admin, selected, {
+      limitPerItem: 40,
+      trigger: "cron"
+    });
     const stuck = await runDailySelfstudy(admin, { notify: true });
     console.log("[luna-selfstudy] cron", { study, stuck });
     return NextResponse.json({ study, stuck });

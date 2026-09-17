@@ -54,6 +54,8 @@ type Payload = {
   same_counts?: SameCounts;
   links: LinkView[];
   perspectives: Perspective[];
+  perspectives_total?: number;
+  perspectives_active?: number;
 };
 
 type UndoSnap = { id: string; status: "active" | "pending" | "rejected"; source: string };
@@ -195,7 +197,17 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
   if (chip === "criteria") {
     return (
       <>
-        <ChipBar chip={chip} setChip={setChip} counts={data?.counts} persp={data?.perspectives.length ?? 0} />
+        <ChipBar
+          chip={chip}
+          setChip={setChip}
+          counts={data?.counts}
+          persp={
+            data?.perspectives_active ??
+            data?.perspectives_total ??
+            data?.perspectives.length ??
+            0
+          }
+        />
         <LunaKnowledgeTab />
       </>
     );
@@ -235,7 +247,11 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
           if (c === "same") setSameFilter("need");
         }}
         counts={data.counts}
-        persp={data.perspectives.length}
+        persp={
+          data.perspectives_active ??
+          data.perspectives_total ??
+          data.perspectives.length
+        }
       />
 
       {chip === "same" ? (
@@ -267,7 +283,11 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
         <>
           <div className="sech">
             <span className="t">관점</span>
-            <span className="n">{data.perspectives.length}</span>
+            <span className="n">
+              {data.perspectives_active ??
+                data.perspectives_total ??
+                data.perspectives.length}
+            </span>
           </div>
           {data.perspectives.length === 0 ? (
             <p className="empty">아직 관점이 없습니다.</p>

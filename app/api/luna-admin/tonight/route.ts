@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
         excludedIds: new Set(state.items.filter((i) => i.excluded).map((i) => i.id))
       });
       const study = await runSelectedTonight(gate.admin, selected, {
-        limitPerItem: 40
+        limitPerItem: 40,
+        trigger: "manual"
       });
       // 기존 stuck 문답 자습도 이어서 (후보함)
       let stuck: unknown = null;

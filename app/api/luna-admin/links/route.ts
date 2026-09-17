@@ -7,6 +7,7 @@ import {
   linkKindCounts,
   listLinks,
   listPerspectives,
+  countPerspectives,
   reviewSameLinks,
   sameReviewCounts,
   typeLabel,
@@ -23,16 +24,21 @@ export async function GET(request: NextRequest) {
     kindParam === "same" || kindParam === "belongs" || kindParam === "follows"
       ? kindParam
       : null;
-  const [counts, sameCounts, links, perspectives] = await Promise.all([
-    linkKindCounts(gate.admin),
-    sameReviewCounts(gate.admin),
-    listLinks(gate.admin, kind, { includeRejected: kind === "same" }),
-    listPerspectives(gate.admin)
-  ]);
+  const [counts, sameCounts, links, perspectives, perspectivesTotal, perspectivesActive] =
+    await Promise.all([
+      linkKindCounts(gate.admin),
+      sameReviewCounts(gate.admin),
+      listLinks(gate.admin, kind, { includeRejected: kind === "same" }),
+      listPerspectives(gate.admin),
+      countPerspectives(gate.admin),
+      countPerspectives(gate.admin, "active")
+    ]);
   return NextResponse.json({
     counts,
     same_counts: sameCounts,
     perspectives,
+    perspectives_total: perspectivesTotal,
+    perspectives_active: perspectivesActive,
     links: links.map((row) => ({
       ...row,
       from_label: evidenceTitle(row, "from"),

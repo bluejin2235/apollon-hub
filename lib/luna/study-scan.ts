@@ -182,50 +182,30 @@ async function scanTalkSearchQuality(
 async function scanPrimaryNotion(
   admin: SupabaseClient
 ): Promise<StudyGap[]> {
-  const staleBefore = daysAgoIso(14);
   const { count: total } = await admin
     .from("luna_notion_pages")
     .select("page_id", { count: "exact", head: true });
-  const { count: stale } = await admin
-    .from("luna_notion_pages")
-    .select("page_id", { count: "exact", head: true })
-    .lt("indexed_at", staleBefore);
   const { count: nullProps } = await admin
     .from("luna_notion_pages")
     .select("page_id", { count: "exact", head: true })
     .is("properties", null);
 
   const gaps: StudyGap[] = [];
-  if ((stale ?? 0) > 0) {
-    gaps.push({
-      id: gapId("luna_notion_pages", "primary_notion", "stale"),
-      table: "luna_notion_pages",
-      capability: "primary_notion",
-      signal: `노션 색인 14일 이상 된 페이지 ${stale}건 / 전체 ${total ?? 0}`,
-      count: stale ?? 0,
-      sample: [],
-      verifiable: true,
-      method: "refresh_stale",
-      impact: Math.min(stale ?? 0, 200),
-      human_failure: false,
-      stale_days: 14,
-      scope: { older_than_days: 14, total: total ?? 0 }
-    });
-  }
+  // 14일 stale 은 대기열 조건에서 제외. properties null · 관계/스키마 변경만.
   if ((nullProps ?? 0) > 0) {
     gaps.push({
       id: gapId("luna_notion_pages", "primary_notion", "null_props"),
       table: "luna_notion_pages",
       capability: "primary_notion",
-      signal: `노션 properties 비어 있는 페이지 ${nullProps}건`,
+      signal: `노션 properties 비어 있는 페이지 ${nullProps}건 / 전체 ${total ?? 0}`,
       count: nullProps ?? 0,
       sample: [],
-      verifiable: false,
+      verifiable: true,
       method: "refresh_stale",
-      impact: nullProps ?? 0,
+      impact: Math.min(nullProps ?? 0, 200),
       human_failure: false,
       stale_days: null,
-      scope: { null_properties: true }
+      scope: { null_properties: true, total: total ?? 0 }
     });
   }
   return gaps;

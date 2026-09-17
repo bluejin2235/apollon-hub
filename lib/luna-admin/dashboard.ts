@@ -100,8 +100,9 @@ export async function buildAdminDashboard(
     : "yellow";
   const learnLight = worstLight(selfLight, linkLight);
   const pending = (pendingCandidates.count ?? 0) + pendingQuestions;
+  const studyRanRecently = selfLight === "green" || selfLight === "yellow";
   const confirmLight: TrafficLight =
-    pending > 0 ? "green" : learnLight === "red" ? "yellow" : "yellow";
+    pending > 0 ? "green" : studyRanRecently ? "green" : "yellow";
   const applyLight: TrafficLight =
     (promptActive.count ?? 0) > 0 ? "green" : "red";
 
@@ -117,7 +118,9 @@ export async function buildAdminDashboard(
   const confirmDetail =
     pending > 0
       ? `대기 ${pending}건 · 충돌 ${conflictCount.count ?? 0}`
-      : "대기 0건\n학습이 멈춰 올라오는 게 없음";
+      : studyRanRecently
+        ? "대기 0건\n확정할 것 없음"
+        : "대기 0건\n학습이 멈춰 재료가 없음";
 
   const applyDetail = `프롬프트 ${promptActive.count ?? 0}개`;
 
@@ -155,7 +158,7 @@ export async function buildAdminDashboard(
       key: "confirm",
       label: "확정",
       light: confirmLight,
-      title: pending > 0 ? "재료 있음" : "재료 없음",
+      title: pending > 0 ? "재료 있음" : studyRanRecently ? "확정할 것 없음" : "재료 없음",
       detail: confirmDetail
     },
     {

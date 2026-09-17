@@ -163,24 +163,24 @@ async function runRefreshStale(
       : null;
   return {
     result: {
-      did: `오래된 색인 ${queued.inserted}건을 대기열에 넣었습니다`,
+      did: `properties 공백 ${queued.inserted}건을 대기열에 넣었습니다`,
       result_line: lastLine
         ? `${lastLine} · 대기열 pending ${counts.pending}`
         : `대기열에 ${queued.inserted}건 추가 · pending ${counts.pending} · 이미 있음 ${queued.skipped}`,
       listed: queued.inserted,
       queued: queued.inserted,
       skipped_already: queued.skipped,
-      stale_found: queued.staleFound,
+      stale_found: 0,
       null_props_found: queued.nullPropsFound,
       pending: counts.pending,
       running: counts.running,
       last_drain: lastDrain,
       sample,
       learned:
-        "대기열(luna_index_queue)에 넣었습니다. 색인 러너가 last_edited_time 과 무관하게 강제 재색인합니다",
+        "properties null 페이지만 대기열에 넣습니다. 14일 stale 은 넣지 않습니다",
       next:
         counts.pending > 0
-          ? "다음 색인 실행이 대기열부터 최대 200건 처리합니다. 나머지는 그다음 실행으로"
+          ? "다음 색인 실행이 대기열부터 최대 200건 처리합니다"
           : "대기열이 비었습니다",
       note: "한 실행 상한 200건 — 한꺼번에 돌리지 않음"
     },
@@ -230,20 +230,23 @@ async function runMaterializeSecondary(
 export async function executeStudyAgenda(
   admin: SupabaseClient,
   candidate: AgendaCandidate,
-  opts?: { limit?: number }
+  opts?: { limit?: number; trigger?: "cron" | "manual" }
 ): Promise<StudyRunResult> {
+  const trigger = opts?.trigger ?? "manual";
   const spent = await todayCostUsd(admin);
+  const scope = { ...candidate.scope, trigger };
   if (spent >= STUDY_DAILY_COST_USD) {
     const run = await insertRun(admin, {
       agenda: candidate.agenda,
       why: candidate.why,
       expected: candidate.expected,
       kind: candidate.kind,
-      scope: candidate.scope,
+      scope,
       started_at: new Date().toISOString(),
       finished_at: new Date().toISOString(),
       result: {
         stopped: true,
+        trigger,
         reason: `하루 비용 상한 $${STUDY_DAILY_COST_USD} 도달 (이미 $${spent.toFixed(4)})`
       },
       outcome: "failed",
@@ -259,7 +262,7 @@ export async function executeStudyAgenda(
     why: candidate.why,
     expected: candidate.expected,
     kind: candidate.kind,
-    scope: candidate.scope,
+    scope,
     started_at: started
   });
 
@@ -288,7 +291,7 @@ export async function executeStudyAgenda(
     }
 
     const run = await finishRun(admin, draft.id, {
-      result: out.result,
+      result: { ...out.result, trigger },
       outcome: out.outcome,
       cost_usd: out.cost_usd,
       llm_calls: out.llm_calls
@@ -297,7 +300,7 @@ export async function executeStudyAgenda(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const run = await finishRun(admin, draft.id, {
-      result: { error: message },
+      result: { error: message, trigger },
       outcome: "failed",
       cost_usd: 0,
       llm_calls: 0
@@ -309,7 +312,7 @@ export async function executeStudyAgenda(
 export async function runSelectedTonight(
   admin: SupabaseClient,
   items: SelectedAgenda[],
-  opts?: { limitPerItem?: number }
+  opts?: { limitPerItem?: number; trigger?: "cron" | "manual" }
 ): Promise<{ runs: StudyRunRow[]; stopped_for_cost: boolean }> {
   const runs: StudyRunRow[] = [];
   let stopped = false;
@@ -317,7 +320,8 @@ export async function runSelectedTonight(
     if (item.excluded || item.when !== "tonight") continue;
     if (!item.verifiable) continue;
     const res = await executeStudyAgenda(admin, item, {
-      limit: opts?.limitPerItem ?? 40
+      limit: opts?.limitPerItem ?? 40,
+      trigger: opts?.trigger ?? "manual"
     });
     runs.push(res.run);
     if (res.stopped_for_cost) {

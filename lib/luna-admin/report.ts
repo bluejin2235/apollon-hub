@@ -262,8 +262,8 @@ export async function buildAdminReportHtml(
       .lt("created_at", startIso),
     countAll(admin, "glossary_terms"),
     countCreatedBefore(admin, "glossary_terms", startIso),
-    countAll(admin, "luna_department_lens"),
-    countCreatedBefore(admin, "luna_department_lens", startIso),
+    countAll(admin, "luna_perspectives"),
+    countCreatedBefore(admin, "luna_perspectives", startIso),
     admin
       .from("luna_failures")
       .select("id", { count: "exact", head: true })
@@ -347,7 +347,7 @@ export async function buildAdminReportHtml(
   for (const card of study.cards) {
     if (card.blocked) {
       todos.push({
-        title: "색인 대기열 연결이 필요합니다",
+        title: "자습에서 사람이 확인할 일이 있습니다",
         detail: card.blocked,
         href: hubHref(buildLunaAdminUrl("selfstudy", "history")),
         btn: "자세히",
@@ -475,6 +475,20 @@ export async function buildAdminReportHtml(
       ? `<div style="font-size:11px;color:${C.faint};margin-top:9px;">LLM ${study.totalCalls}회 · $${study.totalCost.toFixed(3)}${study.durationLabel ? ` · ${study.durationLabel}` : ""}</div>`
       : "";
 
+  const indexCardsHtml =
+    study.indexCards.length === 0
+      ? ""
+      : `<div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.line2};">
+        <div style="font-size:12px;font-weight:800;color:${C.sub};margin-bottom:8px;">색인</div>
+        ${study.indexCards
+          .map(
+            (card) => `<div style="font-size:11.5px;color:#2b2d32;line-height:1.85;margin-bottom:6px;">
+            · ${escapeHtml(card.did)} — ${escapeHtml(card.result)}
+          </div>`
+          )
+          .join("")}
+      </div>`;
+
   const todoHtml =
     todos.length === 0
       ? `<div style="font-size:12.5px;color:${C.sub};">지금 사람이 손댈 일은 없습니다.</div>`
@@ -593,6 +607,7 @@ export async function buildAdminReportHtml(
       <td style="text-align:right;"><a href="${escapeHtml(hubHref(buildLunaAdminUrl("selfstudy", "history")))}" style="font-size:11px;color:${C.luna};font-weight:700;text-decoration:none;">자습 이력 →</a></td>
     </tr></table>
     ${studyCardsHtml}
+    ${indexCardsHtml}
     ${studyMeta}
   </div>
 

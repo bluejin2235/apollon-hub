@@ -1,14 +1,21 @@
 /**
  * 1차 색인 강제 갱신 대기열.
- * last_edited_time 이 그대로여도(권한·properties null) 다시 읽어야 한다.
+ * 자동 enqueue 조건: properties null · 관계 변경 · 스키마 변경 · 색인 실패 · 수동.
+ * 「14일 이상 안 갱신」은 넣지 않는다.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const INDEX_QUEUE_DRAIN_MAX = 200;
-export const INDEX_QUEUE_STALE_DAYS = 14;
 
 export type IndexQueueSource = "notion" | "nas" | "image";
-export type IndexQueueReason = "stale" | "properties_null" | "relation_changed";
+/** stale 은 옛 행용. 새로 넣지 않는다. */
+export type IndexQueueReason =
+  | "stale"
+  | "properties_null"
+  | "relation_changed"
+  | "schema_changed"
+  | "index_failed"
+  | "manual";
 export type IndexQueueStatus = "pending" | "running" | "done" | "failed";
 export type IndexQueueQueuedBy = "selfstudy" | "manual" | "cron";
 
@@ -36,6 +43,7 @@ export type IndexQueueCounts = {
 export type EnqueueNotionResult = {
   inserted: number;
   skipped: number;
+  /** @deprecated always 0 — stale 자동 enqueue 폐지 */
   staleFound: number;
   nullPropsFound: number;
   sample: Array<{ page_id: string; title: string; reason: IndexQueueReason }>;
@@ -61,9 +69,12 @@ export type IndexQueueDrainStats = {
 };
 
 const PRIORITY: Record<IndexQueueReason, number> = {
+  index_failed: 90,
   properties_null: 80,
+  schema_changed: 75,
   relation_changed: 70,
-  stale: 40
+  manual: 60,
+  stale: 10
 };
 
 const PAGE = 1000;
@@ -141,19 +152,12 @@ async function listActiveNotionTargets(
 
 async function listNotionPages(
   admin: SupabaseClient,
-  filter: { staleBefore?: string; propertiesNull?: boolean }
+  filter: { propertiesNull?: boolean }
 ): Promise<Array<{ page_id: string; title: string }>> {
   const out: Array<{ page_id: string; title: string }> = [];
   let from = 0;
   while (true) {
-    let q = admin.from("luna_notion_pages").select("page_id, title");
-    if (filter.staleBefore) {
-      q = q.lt("indexed_at", filter.staleBefore).order("indexed_at", {
-        ascending: true
-      });
-    } else {
-      q = q.order("page_id");
-    }
+    let q = admin.from("luna_notion_pages").select("page_id, title").order("page_id");
     if (filter.propertiesNull) {
       q = q.is("properties", null);
     }
@@ -214,15 +218,11 @@ async function insertQueueRows(
 export async function enqueueNotionRefresh(opts: {
   admin: SupabaseClient;
   queuedBy: IndexQueueQueuedBy;
-  staleDays?: number;
 }): Promise<EnqueueNotionResult> {
   const admin = opts.admin;
-  const staleDays = opts.staleDays ?? INDEX_QUEUE_STALE_DAYS;
-  const staleBefore = new Date(Date.now() - staleDays * 86400000).toISOString();
   const active = await listActiveNotionTargets(admin);
 
   const nullPages = await listNotionPages(admin, { propertiesNull: true });
-  const stalePages = await listNotionPages(admin, { staleBefore });
 
   const toInsert: Array<{
     source: IndexQueueSource;
@@ -249,13 +249,12 @@ export async function enqueueNotionRefresh(opts: {
   };
 
   for (const p of nullPages) add(p.page_id, p.title, "properties_null");
-  for (const p of stalePages) add(p.page_id, p.title, "stale");
 
   const inserted = await insertQueueRows(admin, toInsert);
   return {
     inserted,
-    skipped: nullPages.length + stalePages.length - toInsert.length,
-    staleFound: stalePages.length,
+    skipped: nullPages.length - toInsert.length,
+    staleFound: 0,
     nullPropsFound: nullPages.length,
     sample
   };

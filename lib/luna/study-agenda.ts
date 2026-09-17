@@ -42,7 +42,7 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
       : gap.method === "materialize_secondary"
         ? `2차 데이터가 얇은 범위를 다시 묶기`
         : gap.method === "refresh_stale"
-          ? `오래된 1차 색인 범위를 갱신`
+          ? `1차 색인 공백(properties·관계)을 대기열에 넣기`
           : `${gap.table} 부족함을 수치로 정리`;
 
   const expected =
@@ -51,13 +51,12 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
       : gap.method === "materialize_secondary"
         ? "연결 건수·애매 건수가 늘어나는지 확인"
         : gap.method === "refresh_stale"
-          ? "색인 시각·속성 공백이 줄어드는지 확인"
+          ? "properties null·관계 변경 페이지가 대기열에 들어가는지 확인"
           : "부족함 규모와 다음 액션이 문장으로 남음";
 
   let score = gap.impact;
   if (gap.human_failure) score += 1000;
   if (gap.verifiable) score += 400;
-  if (gap.stale_days && gap.stale_days >= 14) score += 80;
 
   return {
     id: gap.id,
@@ -96,7 +95,31 @@ function demoteKey(c: AgendaCandidate): string {
   return `${c.kind}::${c.gap_id}`;
 }
 
+function kstDayKey(iso: string, now = new Date()): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const kst = new Date(t + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function todayKstKey(now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+/** 같은 agenda 를 그날(KST) 이미 실행했으면 건너뛴다 */
+function alreadyRanToday(c: AgendaCandidate, runs: RunHist[]): boolean {
+  const today = todayKstKey();
+  return runs.some(
+    (r) =>
+      r.agenda === c.agenda &&
+      kstDayKey(r.started_at) === today &&
+      r.outcome != null
+  );
+}
+
 function shouldDemote(c: AgendaCandidate, runs: RunHist[]): boolean {
+  if (alreadyRanToday(c, runs)) return true;
   const key = demoteKey(c);
   const related = runs.filter(
     (r) => `${r.kind}::${c.gap_id}` === key || r.agenda === c.agenda
