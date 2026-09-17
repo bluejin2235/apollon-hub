@@ -297,7 +297,9 @@ export function SourcePackList({
   nasPathSettings,
   onCopyToast,
   queryHint,
-  stageQuestion
+  stageQuestion,
+  /** true면 노션·Work를 헤더별로 나눈다 (채팅 재설계 2단계) */
+  splitBySource = true
 }: {
   notionSources?: NotionSource[] | null;
   cards?: LunaCard[] | null;
@@ -307,46 +309,130 @@ export function SourcePackList({
   queryHint?: string | null;
   /** 제안/수행 가중치용 원문 질문 (없으면 queryHint) */
   stageQuestion?: string | null;
+  splitBySource?: boolean;
 }) {
-  const tiers = useMemo(() => {
-    const views = buildSourcePacks(
-      notionSources,
-      cards,
-      stageQuestion || queryHint
-    );
-    return tierSourcePacks(views);
-  }, [notionSources, cards, queryHint, stageQuestion]);
-
-  if (
-    !tiers.recommended &&
-    tiers.mid.length === 0 &&
-    tiers.weak.length === 0
-  ) {
-    return null;
-  }
-
+  const question = stageQuestion || queryHint;
   const hintTerm = (queryHint || "").trim().slice(0, 24);
 
+  const workCards = useMemo(
+    () => (cards ?? []).filter((c) => c.type === "nas"),
+    [cards]
+  );
+
+  const mergedTiers = useMemo(() => {
+    if (splitBySource) return null;
+    const views = buildSourcePacks(notionSources, cards, question);
+    return tierSourcePacks(views);
+  }, [splitBySource, notionSources, cards, question]);
+
+  const notionTiers = useMemo(() => {
+    if (!splitBySource) return null;
+    return tierSourcePacks(buildSourcePacks(notionSources, [], question));
+  }, [splitBySource, notionSources, question]);
+
+  const workTiers = useMemo(() => {
+    if (!splitBySource) return null;
+    return tierSourcePacks(buildSourcePacks([], workCards, question));
+  }, [splitBySource, workCards, question]);
+
+  if (!splitBySource) {
+    const tiers = mergedTiers!;
+    if (
+      !tiers.recommended &&
+      tiers.mid.length === 0 &&
+      tiers.weak.length === 0
+    ) {
+      return null;
+    }
+    return (
+      <div>
+        {tiers.lowConfidence ? (
+          <p className="mb-3 text-[13.5px] leading-[1.85] text-[#2a2c31]">
+            {hintTerm
+              ? `「${hintTerm}」로는 확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요.`
+              : "확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요."}
+          </p>
+        ) : null}
+        {tiers.recommended ? (
+          <RecommendedCard
+            item={tiers.recommended}
+            nasPathSettings={nasPathSettings}
+            onCopyToast={onCopyToast}
+          />
+        ) : null}
+        {tiers.mid.map((item) => (
+          <MidCard key={item.id} item={item} />
+        ))}
+        <WeakFold items={tiers.weak} />
+      </div>
+    );
+  }
+
+  const notionItems = [
+    ...(notionTiers?.recommended ? [notionTiers.recommended] : []),
+    ...(notionTiers?.mid ?? []),
+    ...(notionTiers?.weak ?? [])
+  ];
+  const workItems = [
+    ...(workTiers?.recommended ? [workTiers.recommended] : []),
+    ...(workTiers?.mid ?? []),
+    ...(workTiers?.weak ?? [])
+  ];
+
+  if (notionItems.length === 0 && workItems.length === 0) return null;
+
   return (
-    <div>
-      {tiers.lowConfidence ? (
-        <p className="mb-3 text-[13.5px] leading-[1.85] text-[#2a2c31]">
-          {hintTerm
-            ? `「${hintTerm}」로는 확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요.`
-            : "확실한 자료를 못 찾았어요. 비슷한 것들을 모아봤는데 맞는지 봐주세요."}
-        </p>
+    <div className="space-y-4">
+      {notionItems.length > 0 ? (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded bg-[#37352F] text-[9px] font-bold text-white">
+              N
+            </span>
+            <span className="text-[12px] font-bold text-[#1c1d21]">노션</span>
+            <span className="text-[11px] text-[#9aa0a8]">
+              {notionItems.length}건
+            </span>
+          </div>
+          {notionTiers?.recommended ? (
+            <RecommendedCard
+              item={notionTiers.recommended}
+              nasPathSettings={nasPathSettings}
+              onCopyToast={onCopyToast}
+            />
+          ) : null}
+          {(notionTiers?.mid ?? []).map((item) => (
+            <MidCard key={item.id} item={item} />
+          ))}
+          <WeakFold items={notionTiers?.weak ?? []} />
+        </div>
       ) : null}
-      {tiers.recommended ? (
-        <RecommendedCard
-          item={tiers.recommended}
-          nasPathSettings={nasPathSettings}
-          onCopyToast={onCopyToast}
-        />
+      {workItems.length > 0 ? (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded bg-[#5B6472] text-[9px] font-bold text-white">
+              W
+            </span>
+            <span className="text-[12px] font-bold text-[#1c1d21]">
+              Work서버
+            </span>
+            <span className="text-[11px] text-[#9aa0a8]">
+              {workItems.length}건
+            </span>
+          </div>
+          {workTiers?.recommended ? (
+            <RecommendedCard
+              item={workTiers.recommended}
+              nasPathSettings={nasPathSettings}
+              onCopyToast={onCopyToast}
+            />
+          ) : null}
+          {(workTiers?.mid ?? []).map((item) => (
+            <MidCard key={item.id} item={item} />
+          ))}
+          <WeakFold items={workTiers?.weak ?? []} />
+        </div>
       ) : null}
-      {tiers.mid.map((item) => (
-        <MidCard key={item.id} item={item} />
-      ))}
-      <WeakFold items={tiers.weak} />
     </div>
   );
 }

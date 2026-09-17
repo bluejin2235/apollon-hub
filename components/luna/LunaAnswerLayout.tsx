@@ -283,6 +283,7 @@ export function LunaAnswerLayout({
             onCopyToast={onCopyToast}
             queryHint={queryHint}
             stageQuestion={questionText}
+            splitBySource
           />
         ) : (
           docSection()

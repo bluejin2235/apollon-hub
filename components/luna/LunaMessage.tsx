@@ -28,7 +28,6 @@ import {
   type LunaClassificationMeta
 } from "@/lib/luna/chat-response";
 import { countDocMaterials } from "@/lib/luna/luna-answer-ui";
-import { countSourcePackMaterialsFromMeta } from "@/lib/luna/source-pack";
 import { summarizeUsedPrompts } from "@/lib/luna/used-prompts";
 import {
   clipFeedbackNote,
@@ -255,8 +254,12 @@ function SourceSections({
     () => cards.filter((c) => c.type === "web" || c.type === "youtube"),
     [cards]
   );
-  const materials = countSourcePackMaterialsFromMeta(notionSources, cards);
-  const hasPacks = materials > 0;
+  const notionCount = notionSources?.length ?? 0;
+  const workCount = useMemo(
+    () => cards.filter((c) => c.type === "nas").length,
+    [cards]
+  );
+  const hasPacks = notionCount > 0 || workCount > 0;
 
   if (!hasPacks && webYoutube.length === 0) return null;
 
@@ -264,17 +267,6 @@ function SourceSections({
     <div className="mt-3 space-y-4">
       {hasPacks ? (
         <section>
-          <div className="mb-1.5 flex items-center gap-2">
-            <span
-              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ backgroundColor: "#534AB7" }}
-              aria-hidden
-            />
-            <span className="text-[13px] font-medium text-slate-800">자료</span>
-            <span className="rounded-lg bg-slate-100 px-[7px] py-px text-[11px] text-slate-500">
-              {materials}
-            </span>
-          </div>
           {(sourceReasons?.notion || sourceReasons?.nas) && (
             <p className="mb-1.5 text-[11px] text-gray-500">
               {[sourceReasons.notion, sourceReasons.nas]
@@ -289,6 +281,7 @@ function SourceSections({
             onCopyToast={onCopyToast}
             queryHint={queryHint}
             stageQuestion={questionText}
+            splitBySource
           />
         </section>
       ) : null}
