@@ -379,16 +379,9 @@ export async function buildStorageDashboard(
   );
   const platform = await fetchPlatformUsage();
 
-  // 한도까지 대략 연수 — 월 50MB 증분 가정 (표시용)
-  const monthly = forecast.find((f) => f.monthly)?.estimated_bytes ?? 50 * 1024 * 1024;
-  const years =
-    monthly > 0 ? free_bytes / monthly / 12 : null;
-  const years_to_limit_label =
-    years == null || !Number.isFinite(years)
-      ? "—"
-      : years >= 10
-        ? "10년+"
-        : `약 ${Math.max(1, Math.round(years))}년`;
+  // 한도까지 — 월 50MB만 보면 낙관적(Work·이미지 계획분 무시).
+  // 스냅샷 증분 추정이 생기기 전에는 계획 작업 반영 사용률만 표시.
+  const years_to_limit_label = `계획된 작업 반영 시 ${Math.round(forecast_pct)}%`;
 
   return {
     region_label: "Tokyo",

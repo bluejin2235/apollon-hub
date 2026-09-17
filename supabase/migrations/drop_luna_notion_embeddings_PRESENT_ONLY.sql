@@ -3,9 +3,8 @@
 -- 전제: 검색이 luna_notion_chunk_embeddings 만 쓰고
 --       matchNotionBlockEmbeddings 폴백을 코드에서 제거한 뒤.
 --
--- 현재(2026-08-22) 코드는 청크 결과가 3페이지 미만일 때
--- luna_match_notion_blocks → luna_notion_embeddings 폴백을 호출한다.
--- 그 경로를 끄기 전에는 DROP 하지 말 것.
+-- 2026-09-17: 코드 폴백 제거 완료. 며칠 지켜본 뒤 이 SQL 을 실행한다.
+-- DROP 하면 대시보드 경고(legacy_embeddings)도 사라진다.
 
 begin;
 

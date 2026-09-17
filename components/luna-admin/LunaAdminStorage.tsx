@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { StorageDashboardView } from "@/lib/luna-admin/types";
 
 function formatBytes(bytes: number): string {
@@ -45,7 +45,6 @@ type Props = {
 };
 
 export function LunaAdminStorage({ data }: Props) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const usedGb = data.used_bytes / (1024 * 1024 * 1024);
   const usedLabel =
     usedGb >= 1 ? usedGb.toFixed(2) : (data.used_bytes / (1024 * 1024)).toFixed(0);
@@ -256,35 +255,13 @@ export function LunaAdminStorage({ data }: Props) {
           <div className="c">
             <b>
               {data.legacy_embeddings.table_name}{" "}
-              {formatBytes(data.legacy_embeddings.bytes)} 는 안 쓰는 것으로 보입니다.
+              {formatBytes(data.legacy_embeddings.bytes)} · 확인 완료 · 코드 제거 후
+              삭제 예정
             </b>{" "}
             8월에 청킹으로 넘어오며 폴백용으로 남겨둔 옛 블록 임베딩입니다. 지우면{" "}
             {formatBytes(data.used_bytes)} →{" "}
             {formatBytes(data.legacy_embeddings.after_delete_bytes)} 로 줄어듭니다.
           </div>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setConfirmOpen(true)}
-          >
-            확인하기
-          </button>
-        </div>
-      ) : null}
-
-      {confirmOpen ? (
-        <div className="confirm">
-          <div className="c">
-            <b>실제로 참조되는지 확인</b>
-            <p>
-              지금은 지우지 않습니다. 코드·검색 RPC·폴백 경로가{" "}
-              <code>luna_notion_embeddings</code> 를 쓰는지 별도 작업으로 확인한 뒤
-              삭제하세요.
-            </p>
-          </div>
-          <button type="button" className="btn" onClick={() => setConfirmOpen(false)}>
-            닫기
-          </button>
         </div>
       ) : null}
     </div>
