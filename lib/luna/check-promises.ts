@@ -84,8 +84,10 @@ export const LUNA_CHECK_PROMISES: Record<
     source: "vercel fx-rates 15 0 * * * → KST 09:15"
   },
   disk: {
-    promise_label: "상시",
-    source: "별도 cron 없음 — 항상 정상으로 접음"
+    promise_label: "디스크 70% 미만",
+    source: "luna_storage_usage RPC · LUNA_DB_DISK_LIMIT_GB (대시보드 저장 공간)",
+    yellow_days: 0,
+    red_days: 0
   },
   env_keys: {
     promise_label: "배포 환경변수",

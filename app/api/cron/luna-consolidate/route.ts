@@ -42,8 +42,19 @@ export async function GET(request: NextRequest) {
     const embeddings = await backfillMissingEmbeddings(admin, {
       limitPerKind: 120
     });
-    console.log("[luna-consolidate] cron", { ...result, embeddings });
-    return NextResponse.json({ ...result, embeddings });
+    let storage_snapshot: { groups: number; tables: number } | null = null;
+    try {
+      const { takeStorageSnapshot } = await import("@/lib/luna/storage");
+      storage_snapshot = await takeStorageSnapshot(admin);
+    } catch (snapErr) {
+      console.error("[luna-consolidate] storage snapshot", snapErr);
+    }
+    console.log("[luna-consolidate] cron", {
+      ...result,
+      embeddings,
+      storage_snapshot
+    });
+    return NextResponse.json({ ...result, embeddings, storage_snapshot });
   } catch (err) {
     console.error("[luna-consolidate]", err);
     return NextResponse.json(

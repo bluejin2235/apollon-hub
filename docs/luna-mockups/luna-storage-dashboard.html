@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>저장 공간 — 대시보드 카드</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --line:#e5e7eb; --line2:#f1f2f4;
+    --ink:#111827; --sub:#6b7280; --faint:#9ca3af;
+    --luna:#534AB7; --luna-soft:#EEEDFE;
+    --g:#15803d; --g-bg:#E8F5EE;
+    --y:#a16207; --y-bg:#FDF6E3;
+    --r:#b91c1c; --r-bg:#FCECEC;
+    --c1:#534AB7; --c2:#2E8B7A; --c3:#C97B3F; --c4:#4A7FB5;
+    --c5:#8E6BA8; --c6:#5B8C5A; --c7:#B5654A; --c8:#b0b5bd;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+    padding:0 0 60px;line-height:1.6;font-size:13px}
+
+  /* 헤더 흉내 */
+  .top{background:#fff;border-bottom:1px solid var(--line);padding:14px 22px;
+    display:flex;align-items:center;gap:14px}
+  .top .logo{width:22px;height:22px;border-radius:50%;border:2px solid var(--ink)}
+  .top .nm{font-size:14px;font-weight:800;letter-spacing:.3px}
+  .top .dev{font-size:12px;color:var(--sub)}
+  .top .sp{flex:1}
+  .top .me{font-size:12px;color:var(--sub)}
+
+  .page{padding:22px 22px 0}
+  h1{font-size:21px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px}
+
+  /* 대시보드 카드 틀 */
+  .shell{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tabs{display:flex;gap:2px;padding:10px 18px 0;border-bottom:1px solid var(--line)}
+  .tabs span{font-size:12.5px;padding:8px 14px;color:var(--sub);cursor:pointer;
+    border-bottom:2px solid transparent}
+  .tabs span.on{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
+  .body{padding:18px}
+
+  /* 기존 요소 축약 */
+  .mini{border:1px solid var(--line);border-radius:10px;padding:12px 15px;
+    margin-bottom:12px;color:var(--faint);font-size:11.5px}
+
+  /* ── 저장 공간 ── */
+  .sec{margin-top:18px;padding-top:18px;border-top:1px solid var(--line2)}
+  .sh{display:flex;align-items:baseline;gap:9px;margin-bottom:13px}
+  .sh .t{font-size:13.5px;font-weight:800}
+  .sh .n{font-size:11px;color:var(--faint)}
+  .sh .sp{flex:1}
+  .sh .a{font-size:11px;color:var(--luna);font-weight:700;cursor:pointer}
+
+  /* 게이지 줄 */
+  .gauge{display:flex;align-items:center;gap:18px;margin-bottom:13px}
+  .gauge .num{flex-shrink:0}
+  .gauge .num .v{font-size:26px;font-weight:800;letter-spacing:-.8px;line-height:1.1}
+  .gauge .num .v span{font-size:13px;color:var(--faint);font-weight:600;margin-left:3px}
+  .gauge .num .d{font-size:11px;color:var(--sub);margin-top:2px}
+  .gauge .barwrap{flex:1}
+  .stack{height:24px;border-radius:6px;overflow:hidden;display:flex;background:var(--line2)}
+  .stack i{display:block;height:100%}
+  .stack i.free{background:repeating-linear-gradient(45deg,#f3f4f6,#f3f4f6 5px,#eaecef 5px,#eaecef 10px)}
+  .gauge .right{flex-shrink:0;text-align:right}
+  .gauge .right .v{font-size:13px;font-weight:700;color:var(--sub)}
+  .gauge .right .d{font-size:10.5px;color:var(--faint)}
+
+  /* 범례 가로 */
+  .legend{display:flex;flex-wrap:wrap;gap:0 22px}
+  .lg{display:flex;align-items:center;gap:7px;padding:6px 0;font-size:11.5px}
+  .lg .dot{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+  .lg .nm{color:var(--sub)}
+  .lg .sz{font-family:var(--mono);font-size:11px;font-weight:600}
+
+  /* 3단 그리드 */
+  .g3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;margin-top:14px}
+  .box{border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .box .bt{font-size:11.5px;font-weight:800;margin-bottom:9px;color:var(--sub)}
+
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{text-align:left;padding:5px 7px;color:var(--faint);font-weight:600;
+    font-size:10px;border-bottom:1px solid var(--line2)}
+  td{padding:6px 7px;border-bottom:1px solid var(--line2);line-height:1.6}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono);font-size:10.5px}
+  td .up{color:var(--r);font-weight:600} td .dn{color:var(--g);font-weight:600}
+  td .mut{color:var(--faint)}
+
+  .fc{display:flex;justify-content:space-between;align-items:baseline;
+    padding:7px 0;border-bottom:1px solid var(--line2);font-size:11.5px}
+  .fc:last-child{border-bottom:0}
+  .fc .l{color:var(--sub)}
+  .fc .v{font-weight:700;font-family:var(--mono);font-size:11.5px}
+
+  .warn{background:var(--y-bg);border-radius:8px;padding:10px 13px;margin-top:12px;
+    font-size:11.5px;color:var(--y);line-height:1.75;display:flex;gap:10px;align-items:flex-start}
+  .warn .c{flex:1}
+  .warn b{font-weight:800}
+  .warn .btn{font-size:10.5px;padding:4px 11px;border-radius:7px;
+    border:1px solid #E6D3A8;background:#fff;color:var(--y);font-weight:700;white-space:nowrap}
+
+  .tag{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:5px;display:inline-block}
+  .tag.g{background:var(--g-bg);color:var(--g)}
+  .tag.y{background:var(--y-bg);color:var(--y)}
+
+  .note{max-width:1100px;margin:16px auto 0;padding:0 22px;
+    font-size:11.5px;color:var(--sub);line-height:1.8}
+  .note .in{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 15px}
+  .note b{color:var(--ink)}
+
+  @media (max-width:900px){
+    .g3{grid-template-columns:1fr}
+    .gauge{flex-wrap:wrap}
+    .gauge .barwrap{order:3;flex-basis:100%}
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="logo"></span>
+  <span class="nm">APOLLON HUB</span>
+  <span class="dev">개발노트</span>
+  <span class="sp"></span>
+  <span class="me">이택진 / 공간파트 / 슈퍼관리자</span>
+</div>
+
+<div class="page">
+  <h1>LUNA 관리자</h1>
+
+  <div class="shell">
+    <div class="tabs">
+      <span class="on">대시보드</span><span>지식</span><span>대화</span>
+      <span>자습</span><span>실패 수집</span><span>지식후보</span><span>두뇌</span>
+    </div>
+
+    <div class="body">
+
+      <div class="mini">🌙 루나가 규칙을 물어봅니다 · 4건 &nbsp;&nbsp;— 기존 요소</div>
+      <div class="mini">🟢 수집 → 🟢 학습 → 🟢 확정 → 🟢 적용 &nbsp;&nbsp;— 기존 요소</div>
+      <div class="mini">1차 데이터 107,723 · 2차 데이터 34,811 · 이번 주 대화 1 · 내가 답할 것 0 &nbsp;&nbsp;— 기존 요소</div>
+      <div class="mini">오늘 밤 할 일 &nbsp;&nbsp;— 기존 요소</div>
+
+      <!-- ══ 저장 공간 ══ -->
+      <div class="sec">
+        <div class="sh">
+          <span class="t">저장 공간</span>
+          <span class="n">Supabase · Tokyo · Pro</span>
+          <span class="sp"></span>
+          <span class="a">Supabase 열기 →</span>
+        </div>
+
+        <div class="gauge">
+          <div class="num">
+            <div class="v">1.04<span>GB</span></div>
+            <div class="d">/ 8 GB · 13%</div>
+          </div>
+          <div class="barwrap">
+            <div class="stack">
+              <i style="background:var(--c1);width:9.15%"></i>
+              <i style="background:var(--c2);width:1.92%"></i>
+              <i style="background:var(--c3);width:0.71%"></i>
+              <i style="background:var(--c4);width:0.29%"></i>
+              <i style="background:var(--c5);width:0.19%"></i>
+              <i style="background:var(--c6);width:0.13%"></i>
+              <i style="background:var(--c7);width:0.07%"></i>
+              <i style="background:var(--c8);width:0.05%"></i>
+              <i class="free" style="width:87.49%"></i>
+            </div>
+          </div>
+          <div class="right">
+            <div class="v">6.96 GB</div>
+            <div class="d">남음</div>
+          </div>
+        </div>
+
+        <div class="legend">
+          <div class="lg"><span class="dot" style="background:var(--c1)"></span>
+            <span class="nm">노션</span><span class="sz">763 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c2)"></span>
+            <span class="nm">Work서버</span><span class="sz">160 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c3)"></span>
+            <span class="nm">2차 데이터</span><span class="sz">59 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c4)"></span>
+            <span class="nm">이미지</span><span class="sz">24 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c5)"></span>
+            <span class="nm">위키·용어</span><span class="sz">16 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c6)"></span>
+            <span class="nm">LUNA 기타</span><span class="sz">11 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c7)"></span>
+            <span class="nm">트렌드</span><span class="sz">5.9 MB</span></div>
+          <div class="lg"><span class="dot" style="background:var(--c8)"></span>
+            <span class="nm">그 밖</span><span class="sz">4.3 MB</span></div>
+        </div>
+
+        <div class="g3">
+          <div class="box">
+            <div class="bt">무엇이 차지하나</div>
+            <table>
+              <tr><th>테이블</th><th class="num">크기</th><th class="num">어제</th></tr>
+              <tr><td>luna_notion_embeddings <span class="mut">옛 블록</span></td>
+                  <td class="num">408 MB</td><td class="num mut">—</td></tr>
+              <tr><td>luna_notion_chunk_embeddings</td>
+                  <td class="num">278 MB</td><td class="num"><span class="up">+2</span></td></tr>
+              <tr><td>nas_directory</td>
+                  <td class="num">170 MB</td><td class="num"><span class="up">+1</span></td></tr>
+              <tr><td>luna_links</td>
+                  <td class="num">56 MB</td><td class="num"><span class="up">+3</span></td></tr>
+              <tr><td>luna_notion_blocks</td>
+                  <td class="num">41 MB</td><td class="num mut">—</td></tr>
+              <tr><td>luna_media_index</td>
+                  <td class="num">7.6 MB</td><td class="num"><span class="up">+4</span></td></tr>
+            </table>
+          </div>
+
+          <div class="box">
+            <div class="bt">앞으로 늘어날 것</div>
+            <table>
+              <tr><th>무엇</th><th class="num">예상</th><th></th></tr>
+              <tr><td>Work 본문 <span class="mut">19,515건</span></td>
+                  <td class="num">+1.8 GB</td><td><span class="tag y">대기</span></td></tr>
+              <tr><td>이미지 전체 <span class="mut">77,065장</span></td>
+                  <td class="num">+0.4 GB</td><td><span class="tag y">대기</span></td></tr>
+              <tr><td>2차 데이터 <span class="mut">2024 이전</span></td>
+                  <td class="num">+0.2 GB</td><td><span class="tag g">진행</span></td></tr>
+              <tr><td>증분 <span class="mut">노션·Work</span></td>
+                  <td class="num">+50 MB/월</td><td><span class="tag g">진행</span></td></tr>
+            </table>
+            <div class="fc" style="margin-top:8px;border-top:1px solid var(--line2);padding-top:9px">
+              <span class="l">다 하면</span><span class="v">3.5 GB · 44%</span>
+            </div>
+          </div>
+
+          <div class="box">
+            <div class="bt">그 밖에 쓰는 것</div>
+            <div class="fc"><span class="l">Storage <span class="mut">썸네일·확대본</span></span>
+              <span class="v">104 MB / 100 GB</span></div>
+            <div class="fc"><span class="l">Egress <span class="mut">이번 달</span></span>
+              <span class="v">2.1 GB / 250 GB</span></div>
+            <div class="fc"><span class="l">Edge Function</span>
+              <span class="v">— / 2M</span></div>
+            <div class="fc"><span class="l">디스크 확장</span>
+              <span class="v">8/16 2GB→8GB</span></div>
+            <div class="fc"><span class="l">초과 요금</span>
+              <span class="v">GB당 월 $0.125</span></div>
+            <div class="fc"><span class="l">한도까지</span>
+              <span class="v">약 2년</span></div>
+          </div>
+        </div>
+
+        <div class="warn">
+          <div class="c">
+            <b>luna_notion_embeddings 408 MB 는 안 쓰는 것으로 보입니다.</b>
+            8월에 청킹으로 넘어오며 폴백용으로 남겨둔 옛 블록 임베딩입니다.
+            지우면 1.04 GB → 0.63 GB 로 줄어듭니다.
+          </div>
+          <span class="btn">확인하기</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <div class="in">
+    <b>기존 대시보드 아래에 붙였습니다.</b> 카드를 따로 만들지 않고 구분선으로 나눴습니다.
+    저장 공간은 매일 볼 것이 아니라 아래쪽이 맞아 보입니다.<br><br>
+    <b>가로 전체를 씁니다.</b> 게이지 한 줄 + 범례 한 줄 + 3단 상자.
+    900px 아래에서는 3단이 세로로 쌓입니다.<br><br>
+    <b>경고</b> — 70% 🟡 · 85% 🔴 로 약속 체크리스트에 넣으면 아침 리포트에도 뜹니다.
+  </div>
+</div>
+
+</body>
+</html>

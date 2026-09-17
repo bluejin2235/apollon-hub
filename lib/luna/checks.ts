@@ -74,7 +74,11 @@ async function latestIso(
 async function resolveLastOkAt(
   admin: SupabaseClient,
   id: string
-): Promise<{ lastOkAt: string | null; extraDetail?: string }> {
+): Promise<{
+  lastOkAt: string | null;
+  extraDetail?: string;
+  light?: TrafficLight;
+}> {
   switch (id) {
     case "model_market": {
       const lastOkAt = await latestIso(admin, "luna_model_market", "fetched_at");
@@ -257,8 +261,15 @@ async function resolveLastOkAt(
       const date = typeof data?.date === "string" ? data.date : null;
       return { lastOkAt: date ? `${date}T00:00:00+09:00` : null };
     }
-    case "disk":
-      return { lastOkAt: new Date().toISOString() };
+    case "disk": {
+      const { resolveStorageCheck } = await import("@/lib/luna/storage");
+      const storage = await resolveStorageCheck(admin);
+      return {
+        lastOkAt: storage.lastOkAt,
+        extraDetail: storage.extraDetail,
+        light: storage.light
+      };
+    }
     case "env_keys": {
       const missing = missingEnvGroups();
       if (missing.length === 0) {
@@ -299,15 +310,21 @@ export async function evaluateLunaChecks(
     const yellowDays = expectedMeta?.yellow_days ?? row.yellow_days;
     const redDays = expectedMeta?.red_days ?? row.red_days;
     const light =
-      row.id === "disk"
+      resolved.light ??
+      (row.id === "disk"
         ? ("green" as const)
-        : lightFromThresholds(days, yellowDays, redDays);
+        : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
     const lastLabel = formatWhen(resolved.lastOkAt);
     const expectedPromise = expectedMeta?.promise_label;
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
-    if (status === "ok") {
+    if (row.id === "disk" && resolved.extraDetail) {
+      detail =
+        status === "ok"
+          ? `${promiseLabel} · ${resolved.extraDetail}`
+          : `${promiseLabel} · ${resolved.extraDetail}`;
+    } else if (status === "ok") {
       detail = `${promiseLabel} · 마지막 ${lastLabel}`;
     } else {
       const idle =

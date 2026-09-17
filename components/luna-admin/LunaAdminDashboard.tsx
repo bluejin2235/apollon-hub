@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
+import { LunaAdminStorage } from "@/components/luna-admin/LunaAdminStorage";
 import type { AdminDashboard } from "@/lib/luna-admin/types";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
@@ -183,6 +184,8 @@ export function LunaAdminDashboard({ onGo }: Props) {
           </div>
         ))
       )}
+
+      {data.storage ? <LunaAdminStorage data={data.storage} /> : null}
     </>
   );
 }

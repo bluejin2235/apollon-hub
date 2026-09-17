@@ -68,11 +68,68 @@ export type AdminDashboard = {
   };
   tonight: TonightItem[];
   tonight_label: string;
+  storage: StorageDashboardView | null;
   badges: {
     failures: number;
     candidates: number;
     selfstudy_dot: boolean;
   };
+};
+
+export type StorageDashboardView = {
+  region_label: string;
+  plan_label: string;
+  supabase_url: string | null;
+  used_bytes: number;
+  limit_bytes: number;
+  limit_gb: number;
+  used_pct: number;
+  free_bytes: number;
+  warn_level: "ok" | "warn" | "bad";
+  groups: Array<{
+    grp: string;
+    bytes: number;
+    color: string;
+    pct_of_limit: number;
+  }>;
+  tables: Array<{
+    table_name: string;
+    bytes: number;
+    yesterday_delta_bytes: number | null;
+    legacy?: boolean;
+  }>;
+  forecast: Array<{
+    id: string;
+    label: string;
+    note: string;
+    estimated_bytes: number;
+    status: "pending" | "running" | "done";
+    monthly?: boolean;
+  }>;
+  forecast_total_bytes: number;
+  forecast_pct: number;
+  platform: {
+    storage_bytes: number | null;
+    storage_limit_bytes: number | null;
+    egress_bytes: number | null;
+    egress_limit_bytes: number | null;
+    edge_invocations: number | null;
+    edge_limit: number | null;
+    source: "unavailable" | "management_api";
+    note: string;
+  };
+  disk_expansions_used: number | null;
+  disk_expansions_max: number | null;
+  overage_usd_per_gb: number;
+  years_to_limit_label: string;
+  legacy_embeddings: {
+    table_name: string;
+    bytes: number;
+    after_delete_bytes: number;
+  } | null;
+  rpc_ms: number;
+  rpc_cached: boolean;
+  has_yesterday: boolean;
 };
 
 export type PrimarySourceRow = {

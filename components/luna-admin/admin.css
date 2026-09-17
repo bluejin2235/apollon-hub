@@ -466,6 +466,227 @@
 
 .luna-admin .admin-head a:hover { color: var(--luna-ink); }
 
+/* 저장 공간 — 대시보드 맨 아래, 가로 전체 */
+.luna-admin .stor {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line2);
+}
+.luna-admin .stor .sh {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 13px;
+}
+.luna-admin .stor .sh .t { font-size: 13.5px; font-weight: 800; }
+.luna-admin .stor .sh .n { font-size: 11px; color: var(--faint); }
+.luna-admin .stor .sh .sp { flex: 1; }
+.luna-admin .stor .sh .a {
+  font-size: 11px;
+  color: var(--luna);
+  font-weight: 700;
+  text-decoration: none;
+}
+.luna-admin .stor .gauge {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 13px;
+}
+.luna-admin .stor .gauge .num { flex-shrink: 0; }
+.luna-admin .stor .gauge .num .v {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  line-height: 1.1;
+}
+.luna-admin .stor .gauge .num .v span {
+  font-size: 13px;
+  color: var(--faint);
+  font-weight: 600;
+  margin-left: 3px;
+}
+.luna-admin .stor .gauge .num .d { font-size: 11px; color: var(--sub); margin-top: 2px; }
+.luna-admin .stor .gauge .barwrap { flex: 1; }
+.luna-admin .stor .stack {
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  background: var(--line2);
+}
+.luna-admin .stor .stack i { display: block; height: 100%; }
+.luna-admin .stor .stack i.free {
+  background: repeating-linear-gradient(
+    45deg,
+    #f3f4f6,
+    #f3f4f6 5px,
+    #eaecef 5px,
+    #eaecef 10px
+  );
+}
+.luna-admin .stor .gauge .right { flex-shrink: 0; text-align: right; }
+.luna-admin .stor .gauge .right .v { font-size: 13px; font-weight: 700; color: var(--sub); }
+.luna-admin .stor .gauge .right .d { font-size: 10.5px; color: var(--faint); }
+.luna-admin .stor .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 22px;
+}
+.luna-admin .stor .lg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 0;
+  font-size: 11.5px;
+}
+.luna-admin .stor .lg .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.luna-admin .stor .lg .nm { color: var(--sub); }
+.luna-admin .stor .lg .sz {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.luna-admin .stor .g3 {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.luna-admin .stor .box {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 13px 15px;
+}
+.luna-admin .stor .box .bt {
+  font-size: 11.5px;
+  font-weight: 800;
+  margin-bottom: 9px;
+  color: var(--sub);
+}
+.luna-admin .stor table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.luna-admin .stor th {
+  text-align: left;
+  padding: 5px 7px;
+  color: var(--faint);
+  font-weight: 600;
+  font-size: 10px;
+  border-bottom: 1px solid var(--line2);
+}
+.luna-admin .stor th.num,
+.luna-admin .stor td.num { text-align: right; }
+.luna-admin .stor td {
+  padding: 6px 7px;
+  border-bottom: 1px solid var(--line2);
+  line-height: 1.6;
+}
+.luna-admin .stor tr:last-child td { border-bottom: 0; }
+.luna-admin .stor td.num {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.luna-admin .stor td .up { color: var(--r); font-weight: 600; }
+.luna-admin .stor td .dn { color: var(--g); font-weight: 600; }
+.luna-admin .stor td .mut,
+.luna-admin .stor .mut { color: var(--faint); }
+.luna-admin .stor .fc {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line2);
+  font-size: 11.5px;
+}
+.luna-admin .stor .fc:last-child { border-bottom: 0; }
+.luna-admin .stor .fc.tot {
+  margin-top: 8px;
+  border-top: 1px solid var(--line2);
+  padding-top: 9px;
+  border-bottom: 0;
+}
+.luna-admin .stor .fc .l { color: var(--sub); }
+.luna-admin .stor .fc .v {
+  font-weight: 700;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.luna-admin .stor .fc .v a {
+  color: var(--luna);
+  font-weight: 700;
+  text-decoration: none;
+}
+.luna-admin .stor .tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 5px;
+  display: inline-block;
+}
+.luna-admin .stor .tag.g { background: var(--g-bg); color: var(--g); }
+.luna-admin .stor .tag.y { background: var(--y-bg); color: var(--y); }
+.luna-admin .stor .warn {
+  background: var(--y-bg);
+  border-radius: 8px;
+  padding: 10px 13px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--y);
+  line-height: 1.75;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.luna-admin .stor .warn .c { flex: 1; }
+.luna-admin .stor .warn b { font-weight: 800; }
+.luna-admin .stor .warn .btn,
+.luna-admin .stor .confirm .btn {
+  font-size: 10.5px;
+  padding: 4px 11px;
+  border-radius: 7px;
+  border: 1px solid #E6D3A8;
+  background: #fff;
+  color: var(--y);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.luna-admin .stor .confirm {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+.luna-admin .stor .confirm .c { flex: 1; }
+.luna-admin .stor .confirm p { margin: 6px 0 0; color: var(--sub); line-height: 1.7; }
+.luna-admin .stor .confirm code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--chip);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.luna-admin .stor.warn .gauge .num .v { color: var(--y); }
+.luna-admin .stor.bad .gauge .num .v { color: var(--r); }
+
+@media (max-width: 900px) {
+  .luna-admin .stor .g3 { grid-template-columns: 1fr; }
+  .luna-admin .stor .gauge { flex-wrap: wrap; }
+  .luna-admin .stor .gauge .barwrap { order: 3; flex-basis: 100%; }
+}
+
 @media (max-width: 800px) {
   .luna-admin .cards { grid-template-columns: repeat(2, 1fr); }
   .luna-admin .flow { flex-direction: column; }

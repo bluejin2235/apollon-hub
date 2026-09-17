@@ -91,6 +91,16 @@ export async function buildAdminDashboard(
     listCandidateRuleQuestions(admin)
   ]);
 
+  let storage = null as Awaited<
+    ReturnType<typeof import("@/lib/luna/storage").buildStorageDashboard>
+  > | null;
+  try {
+    const { buildStorageDashboard } = await import("@/lib/luna/storage");
+    storage = await buildStorageDashboard(admin);
+  } catch (err) {
+    console.error("[luna-admin/dashboard] storage", err);
+  }
+
   const collectLight = worstLight(primary.work.status, primary.notion.status, primary.image.status);
   const selfDays = kstCalendarDaysAgo(selfstudy.last_run?.finished_at ?? null);
   const linkDays = kstCalendarDaysAgo(latestLink);
@@ -232,6 +242,7 @@ export async function buildAdminDashboard(
     },
     tonight: tonight.items.filter((i) => !i.excluded && i.when === "tonight"),
     tonight_label: `오늘 밤 ${hh}:${mm} 예정`,
+    storage,
     badges: {
       failures: openFailures,
       candidates: pending,
