@@ -20,6 +20,7 @@ export type MissCauseKind =
   | "bad_chunk"
   | "no_chunks"
   | "no_results"
+  | "wrong_label"
   | "other";
 
 export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
@@ -28,6 +29,7 @@ export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
   bad_chunk: "청크가 잘못 잘림",
   no_chunks: "청크가 없음",
   no_results: "검색 0건",
+  wrong_label: "정답 레이블이 틀림",
   other: "기타"
 };
 
@@ -40,6 +42,8 @@ export type ProbeModeAItem = {
   top: Array<{ page_id: string; title: string }>;
   cause_guess: string | null;
   cause_kind?: MissCauseKind | null;
+  /** glossary | image | knowledge | wiki | notion | work */
+  source?: string;
 };
 
 export type ProbeModeBItem = {
@@ -213,7 +217,7 @@ async function loadPageBody(
   return { text, chunkCount: count ?? (data ?? []).length };
 }
 
-async function generateQuestionsForPage(opts: {
+export async function generateQuestionsForPage(opts: {
   title: string;
   body: string;
 }): Promise<{ questions: string[]; cost_usd: number; llm_calls: number }> {
@@ -492,6 +496,48 @@ export async function runProbeRetrievalExam(
     typeof scope.page_limit === "number" && scope.page_limit > 0
       ? Math.min(200, Math.floor(scope.page_limit))
       : MODE_A_PAGE_LIMIT;
+
+  const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_SOURCE_BUDGET } =
+    await import("@/lib/luna/probe-mode-a-sources");
+
+  if (isMultiSourceModeAEnabled() && scope.multi_source !== false) {
+    const notionLimit =
+      typeof scope.notion_limit === "number"
+        ? scope.notion_limit
+        : MODE_A_SOURCE_BUDGET.notion.daily_items;
+    const multi = await runModeAMultiSource(admin, {
+      limits: {
+        glossary:
+          typeof scope.glossary_limit === "number"
+            ? scope.glossary_limit
+            : undefined,
+        image:
+          typeof scope.image_limit === "number" ? scope.image_limit : undefined,
+        knowledge:
+          typeof scope.knowledge_limit === "number"
+            ? scope.knowledge_limit
+            : undefined,
+        wiki: typeof scope.wiki_limit === "number" ? scope.wiki_limit : undefined,
+        work: typeof scope.work_limit === "number" ? scope.work_limit : undefined,
+        notion: notionLimit
+      },
+      generateQuestions: (title, body) =>
+        generateQuestionsForPage({ title, body }),
+      runNotion: async (pl) => runProbeAnswerKey(admin, {
+        pageLimit: pl,
+        questionsPerPage: MODE_A_QUESTIONS_PER_PAGE
+      })
+    });
+    const miss = multi.result.miss;
+    const probed = multi.result.probed;
+    return {
+      result: multi.result,
+      cost_usd: multi.cost_usd,
+      llm_calls: multi.llm_calls,
+      outcome:
+        probed === 0 ? "failed" : miss > 0 ? "improved" : "no_change"
+    };
+  }
 
   const out = await runProbeAnswerKey(admin, {
     pageLimit,

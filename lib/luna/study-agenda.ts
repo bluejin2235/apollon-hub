@@ -11,6 +11,11 @@ import {
   MISS_CAUSE_LABEL,
   type MissCauseKind
 } from "@/lib/luna/probe-retrieval";
+import {
+  isMultiSourceModeAEnabled,
+  MODE_A_MULTI_MINUTES,
+  MODE_A_SOURCE_BUDGET
+} from "@/lib/luna/probe-mode-a-sources";
 
 export type AgendaCandidate = {
   id: string;
@@ -96,18 +101,30 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
 
 /** 매일 1순위 — 정답 기반 검색 검증 */
 export function buildForcedModeACandidate(): AgendaCandidate {
+  const multi = isMultiSourceModeAEnabled();
   return {
     id: "forced:probe_answer_key",
     agenda: MODE_A_AGENDA,
-    why: "매일 정답 문서 기준으로 검색을 채점한다. 자동으로 배울 수 있는 유일한 슬롯이다.",
-    expected: `문서 ${MODE_A_PAGE_LIMIT}건 · 문서당 질문 3 · hit@1·5·10·miss 분류`,
+    why: multi
+      ? "1차 여섯 원천(용어·이미지·지식·위키·Work·노션)을 하루 예산으로 채점한다."
+      : "매일 정답 문서 기준으로 검색을 채점한다. 자동으로 배울 수 있는 유일한 슬롯이다.",
+    expected: multi
+      ? `용어${MODE_A_SOURCE_BUDGET.glossary.daily_items} · 이미지${MODE_A_SOURCE_BUDGET.image.daily_items} · 지식${MODE_A_SOURCE_BUDGET.knowledge.daily_items} · 위키${MODE_A_SOURCE_BUDGET.wiki.daily_items} · Work${MODE_A_SOURCE_BUDGET.work.daily_items} · 노션${MODE_A_SOURCE_BUDGET.notion.daily_items}`
+      : `문서 ${MODE_A_PAGE_LIMIT}건 · 문서당 질문 3 · hit@1·5·10·miss 분류`,
     kind: "probe_retrieval",
-    scope: {
-      mode: "answer_key",
-      page_limit: MODE_A_PAGE_LIMIT,
-      forced: true
-    },
-    minutes: MODE_A_MINUTES,
+    scope: multi
+      ? {
+          mode: "answer_key",
+          multi_source: true,
+          forced: true
+        }
+      : {
+          mode: "answer_key",
+          page_limit: MODE_A_PAGE_LIMIT,
+          multi_source: false,
+          forced: true
+        },
+    minutes: multi ? MODE_A_MULTI_MINUTES : MODE_A_MINUTES,
     verifiable: true,
     score: 1_000_000,
     gap_id: "forced:probe_answer_key",
@@ -202,17 +219,50 @@ function candidatesFromMissTaxonomy(runs: RunHist[]): AgendaCandidate[] {
     if (!count || count < 1) continue;
     const label =
       MISS_CAUSE_LABEL[kind as MissCauseKind] ?? kind;
+    const followKind =
+      kind === "proper_noun_body_only"
+        ? ("refresh_stale" as const)
+        : kind === "weak_embedding"
+          ? ("refresh_stale" as const)
+          : ("inspect_gap" as const);
     out.push({
       id: `miss_followup:${kind}`,
-      agenda: `검색 miss — ${label}`,
+      agenda:
+        kind === "proper_noun_body_only"
+          ? "고유명사 추출 → 용어·지식 후보"
+          : kind === "weak_embedding"
+            ? "검색 miss — 재색인 대기열"
+            : `검색 miss — ${label}`,
       why: `직전 모드 A 에서 ${label} ${count}건`,
-      expected: "원인별 색인·청크·임베딩 보강 후보",
-      kind: "inspect_gap",
+      expected:
+        kind === "proper_noun_body_only"
+          ? "본문 고유명사 → 용어 후보 → 지식후보"
+          : kind === "wrong_label"
+            ? "시험 대상에서 제외"
+            : "원인별 색인·청크·임베딩 보강 후보",
+      kind: followKind,
       scope: { miss_cause: kind, count, from_run: recent.started_at },
       minutes: 15,
-      verifiable: false,
+      verifiable: kind === "weak_embedding" || kind === "proper_noun_body_only",
       score: 200 + count * 5,
       gap_id: `miss_followup:${kind}`,
+      human_failure: kind === "other" || kind === "wrong_label",
+      tier: 2
+    });
+  }
+  const workMiss = (recent.result as { work_miss?: number }).work_miss;
+  if (typeof workMiss === "number" && workMiss >= 3) {
+    out.push({
+      id: "miss_followup:work_trigram",
+      agenda: "Work miss 누적 — 임베딩 전환 근거",
+      why: `직전 모드 A Work miss ${workMiss}건 (trigram 한계)`,
+      expected: "임베딩 on/off 결정 자료",
+      kind: "inspect_gap",
+      scope: { work_miss: workMiss, from_run: recent.started_at },
+      minutes: 10,
+      verifiable: false,
+      score: 250 + workMiss,
+      gap_id: "miss_followup:work_trigram",
       human_failure: true,
       tier: 2
     });
