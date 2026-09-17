@@ -255,13 +255,14 @@ export function LunaAdminStorage({ data }: Props) {
           <div className="c">
             <b>
               {data.legacy_embeddings.table_name}{" "}
-              {formatBytes(data.legacy_embeddings.bytes)} 는 폴백으로 쓰이고
-              있습니다.
+              {formatBytes(data.legacy_embeddings.bytes)} · 코드 폴백 제거됨 ·
+              삭제 가능
             </b>{" "}
-            청크 검색이 실패·부족할 때 블록 임베딩 RPC 가 이 테이블을 봅니다.
-            지우면 폴백이 사라지고 {formatBytes(data.used_bytes)} →{" "}
+            청크 검색 타임아웃이 사라져 블록 폴백을 타지 않습니다. 지우면{" "}
+            {formatBytes(data.used_bytes)} →{" "}
             {formatBytes(data.legacy_embeddings.after_delete_bytes)} 로
-            줄어듭니다.
+            줄어듭니다. (
+            <code>drop_luna_notion_embeddings_PRESENT_ONLY.sql</code>)
           </div>
         </div>
       ) : null}

@@ -59,13 +59,12 @@ comment on table public.nas_file_chunks is
 create index if not exists nas_file_chunks_path_idx
   on public.nas_file_chunks (path);
 
--- ivfflat 은 임베딩이 쌓인 뒤 생성한다 (빈 테이블 lists=200 실패 가능).
--- 임베딩 1회 후:
---   create index if not exists nas_file_chunks_embedding_ivfflat
+-- ivfflat 대신 HNSW (노션과 동일). 임베딩이 쌓인 뒤 concurrently 생성:
+--   create index concurrently if not exists nas_file_chunks_embedding_hnsw
 --     on public.nas_file_chunks
---     using ivfflat (embedding vector_cosine_ops)
---     with (lists = 200)
+--     using hnsw (embedding vector_cosine_ops)
 --     where embedding is not null;
+-- 검색 RPC: luna_match_nas_chunks (nas_file_chunks_hnsw.sql)
 
 create table if not exists public.nas_text_runs (
   id uuid primary key default gen_random_uuid(),

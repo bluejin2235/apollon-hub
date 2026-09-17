@@ -27,16 +27,16 @@ import {
   type NotionHybridChunkHit
 } from "@/lib/luna/notion-keyword";
 
-/** 사용자 지정 — 청크 분포에 맞춤 (블록 시절 0.35) */
+/** ì¬ì©ì ì§ì  â ì²­í¬ ë¶í¬ì ë§ì¶¤ (ë¸ë¡ ìì  0.35) */
 export const NOTION_INDEX_MATCH_THRESHOLD = 0.3;
 export const NOTION_INDEX_TOP_BLOCKS = 12;
 export const NOTION_INDEX_MAX_BLOCKS_PER_PAGE = 3;
-/** 목록형: 여러 프로젝트가 골고루 들어가도록 페이지당 1 · 상위 20 */
+/** ëª©ë¡í: ì¬ë¬ íë¡ì í¸ê° ê³¨ê³ ë£¨ ë¤ì´ê°ëë¡ íì´ì§ë¹ 1 Â· ìì 20 */
 export const NOTION_LISTING_TOP_CHUNKS = 20;
 export const NOTION_LISTING_MAX_PER_PAGE = 1;
 const MATCH_OVERFETCH = 36;
 const LISTING_MATCH_OVERFETCH = 60;
-/** 색인 페이지가 이보다 적으면 실시간 Notion API 보강 */
+/** ìì¸ íì´ì§ê° ì´ë³´ë¤ ì ì¼ë©´ ì¤ìê° Notion API ë³´ê° */
 const LIVE_IF_PAGES_BELOW = 3;
 const RECENT_EDIT_MS = 2 * 60 * 60 * 1000;
 
@@ -121,8 +121,8 @@ export async function matchNotionChunkEmbeddings(
     );
 }
 
-/** 합산 점수 순 유지, 페이지당 최대 3청크, 상위 12.
- * 제목 키워드 강히트(≥ TITLE)는 임베딩만 있는 후보보다 먼저 넣는다.
+/** í©ì° ì ì ì ì ì§, íì´ì§ë¹ ìµë 3ì²­í¬, ìì 12.
+ * ì ëª© í¤ìë ê°íí¸(â¥ TITLE)ë ìë² ë©ë§ ìë íë³´ë³´ë¤ ë¨¼ì  ë£ëë¤.
  */
 export function selectNotionChunkHits(
   hits: NotionChunkMatchHit[],
@@ -171,7 +171,7 @@ function formatHierarchy(opts: {
   const parentTitle =
     path.length >= 2 ? path[path.length - 2]! : path[0] ?? opts.page.title;
   const selfTitle = opts.page.title.trim();
-  const lines = [`계층: ${parentTitle}`];
+  const lines = [`ê³ì¸µ: ${parentTitle}`];
 
   const terms = (opts.queryText ?? "")
     .toLowerCase()
@@ -189,7 +189,7 @@ function formatHierarchy(opts: {
       for (const t of terms) {
         if (lower.includes(t)) score += 10;
       }
-      if (/ideation|아이데이션|제안|concept|컨셉/i.test(title)) score += 2;
+      if (/ideation|ìì´ë°ì´ì|ì ì|concept|ì»¨ì/i.test(title)) score += 2;
       return { title, page_id: s.page_id, score };
     })
     .filter((x): x is { title: string; page_id: string; score: number } => Boolean(x))
@@ -207,11 +207,11 @@ function formatHierarchy(opts: {
   if (unique.length === 0 && selfTitle) unique.push(selfTitle);
 
   unique.forEach((t, i) => {
-    const branch = i === unique.length - 1 ? "└" : "├";
+    const branch = i === unique.length - 1 ? "â" : "â";
     lines.push(`  ${branch} ${t}`);
   });
   if (path.length > 0) {
-    lines.push(`경로: ${path.join(" › ")}`);
+    lines.push(`ê²½ë¡: ${path.join(" âº ")}`);
   }
   return lines.join("\n");
 }
@@ -257,7 +257,7 @@ function pageChunksToSource(
     .map((e) => e.canonical);
 
   return {
-    title: page.title || "(제목 없음)",
+    title: page.title || "(ì ëª© ìì)",
     url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
     id: page.page_id,
     last_edited_time: page.last_edited_time,
@@ -428,10 +428,10 @@ async function buildIndexedSourcesFromChunks(
 }
 
 /**
- * 색인 우선 노션 검색.
- * - 임베딩 → luna_match_notion_chunks → 청크 본문·계층
- * - 페이지 3건 미만이면 실시간 Notion API 보강
- * - 최근 2시간 수정 페이지만 실시간 본문 재조회
+ * ìì¸ ì°ì  ë¸ì ê²ì.
+ * - ìë² ë© â luna_match_notion_chunks â ì²­í¬ ë³¸ë¬¸Â·ê³ì¸µ
+ * - íì´ì§ 3ê±´ ë¯¸ë§ì´ë©´ ì¤ìê° Notion API ë³´ê°
+ * - ìµê·¼ 2ìê° ìì  íì´ì§ë§ ì¤ìê° ë³¸ë¬¸ ì¬ì¡°í
  */
 export async function searchNotionForLuna(
   admin: SupabaseClient,
@@ -439,11 +439,11 @@ export async function searchNotionForLuna(
   queryContext?: string,
   opts?: {
     queryEmbedding?: number[] | null;
-    /** 목록형 등 — 실시간 Notion API 는 끄고 색인만 */
+    /** ëª©ë¡í ë± â ì¤ìê° Notion API ë ëê³  ìì¸ë§ */
     skipLive?: boolean;
-    /** 목록형: 상위 20청크 · 페이지당 1 */
+    /** ëª©ë¡í: ìì 20ì²­í¬ Â· íì´ì§ë¹ 1 */
     listing?: boolean;
-    /** 2차 링크·관점 확장 (기본 true) */
+    /** 2ì°¨ ë§í¬Â·ê´ì  íì¥ (ê¸°ë³¸ true) */
     useSecondary?: boolean;
   }
 ): Promise<NotionSearchOutcome> {
@@ -458,7 +458,7 @@ export async function searchNotionForLuna(
   let embedding = opts?.queryEmbedding ?? null;
   let embedMs = 0;
   if (!embedding && queryText) {
-    // 색인 전용 경로 — 질문 임베딩이 없으면 여유 있게 한 번 생성
+    // ìì¸ ì ì© ê²½ë¡ â ì§ë¬¸ ìë² ë©ì´ ìì¼ë©´ ì¬ì  ìê² í ë² ìì±
     const embStarted = Date.now();
     embedding = await createQueryEmbedding(queryText, { timeoutMs: 8_000 });
     embedMs = Date.now() - embStarted;
@@ -473,22 +473,31 @@ export async function searchNotionForLuna(
   const searchStarted = Date.now();
   const searchKws = notionSearchKeywords(keywords, queryText);
 
-  const [chunkHits, keywordHits] = await Promise.all([
-    embedding
-      ? matchNotionChunkEmbeddings(admin, embedding, {
-          threshold: NOTION_INDEX_MATCH_THRESHOLD,
-          limit: overfetch
-        })
-      : Promise.resolve(null as Awaited<
-          ReturnType<typeof matchNotionChunkEmbeddings>
-        > | null),
-    matchNotionChunksByKeyword(admin, searchKws, { limit: overfetch })
-  ]);
-  keywordHitCount = keywordHits.length;
-
+  // 벡터 먼저 — 키워드와 동시 실행하면 HNSW 캐시를 ILIKE 가 밀어낸다
+  let chunkHits: Awaited<ReturnType<typeof matchNotionChunkEmbeddings>> = null;
+  if (embedding) {
+    chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
+      threshold: NOTION_INDEX_MATCH_THRESHOLD,
+      limit: overfetch
+    });
+  }
   if (chunkHits === null && embedding) {
     rpcFailed = true;
   }
+
+  const chunkPageCount = new Set((chunkHits ?? []).map((h) => h.page_id)).size;
+  const needKeyword =
+    !embedding ||
+    chunkHits === null ||
+    chunkPageCount < LIVE_IF_PAGES_BELOW;
+
+  let keywordHits: Awaited<ReturnType<typeof matchNotionChunksByKeyword>> = [];
+  if (needKeyword) {
+    keywordHits = await matchNotionChunksByKeyword(admin, searchKws, {
+      limit: overfetch
+    });
+  }
+  keywordHitCount = keywordHits.length;
 
   const hybridHits = mergeNotionHybridChunkHits(chunkHits ?? [], keywordHits);
   const hybridChunkHits = hybridToChunkHits(hybridHits);
@@ -507,7 +516,7 @@ export async function searchNotionForLuna(
 
   const pageCount = indexSources.length;
   const recentPages = pages.filter((p) => isRecentEdit(p.last_edited_time));
-  // 색인 결과가 적으면 실시간 Notion API 보강
+  // ìì¸ ê²°ê³¼ê° ì ì¼ë©´ ì¤ìê° Notion API ë³´ê°
   const needSparseLive =
     !opts?.skipLive && pageCount < LIVE_IF_PAGES_BELOW;
 
@@ -535,7 +544,7 @@ export async function searchNotionForLuna(
       queries: ["index-recent-refresh"],
       rounds: 1
     };
-    // 색인 결과를 최신 본문으로 교체
+    // ìì¸ ê²°ê³¼ë¥¼ ìµì  ë³¸ë¬¸ì¼ë¡ êµì²´
     const byId = new Map(refreshed.map((s) => [s.id, s]));
     indexSources = indexSources.map((s) => {
       const live = byId.get(s.id);
