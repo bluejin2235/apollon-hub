@@ -12,6 +12,24 @@ import type { NotionSource } from "@/lib/luna/notion";
 
 export type ProbeHitBucket = "hit@1" | "hit@5" | "hit@10" | "miss";
 
+/** miss 분류 — 다음날 아젠다 입력 */
+export type MissCauseKind =
+  | "proper_noun_body_only"
+  | "weak_embedding"
+  | "bad_chunk"
+  | "no_chunks"
+  | "no_results"
+  | "other";
+
+export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
+  proper_noun_body_only: "본문에만 있는 고유명사",
+  weak_embedding: "임베딩이 약함",
+  bad_chunk: "청크가 잘못 잘림",
+  no_chunks: "청크가 없음",
+  no_results: "검색 0건",
+  other: "기타"
+};
+
 export type ProbeModeAItem = {
   page_id: string;
   title: string;
@@ -20,6 +38,7 @@ export type ProbeModeAItem = {
   bucket: ProbeHitBucket;
   top: Array<{ page_id: string; title: string }>;
   cause_guess: string | null;
+  cause_kind?: MissCauseKind | null;
 };
 
 export type ProbeModeBItem = {
@@ -37,6 +56,7 @@ export type ProbeRetrievalResult = {
   hit_at_10?: number;
   miss?: number;
   miss_rate?: number;
+  miss_by_cause?: Record<string, number>;
   items?: ProbeModeAItem[];
   misses?: ProbeModeAItem[];
   reviews?: ProbeModeBItem[];
@@ -47,8 +67,12 @@ export type ProbeRetrievalResult = {
   llm_model?: string;
 };
 
+export const MODE_A_PAGE_LIMIT = 200;
+export const MODE_A_QUESTIONS_PER_PAGE = 3;
+export const MODE_A_MINUTES = 30;
+
 const HAIKU = "claude-haiku-4-5-20251001";
-const QUESTIONS_PER_PAGE = 3;
+const QUESTIONS_PER_PAGE = MODE_A_QUESTIONS_PER_PAGE;
 const BODY_CHARS = 2800;
 
 function usageCostUsd(modelId: string, usage: {
@@ -98,33 +122,43 @@ function bucketForRank(rank: number | null): ProbeHitBucket {
   return "miss";
 }
 
-function guessMissCause(opts: {
+function classifyMissCause(opts: {
   pageId: string;
   title: string;
   question: string;
   rank: number | null;
   chunkCount: number;
   top: Array<{ page_id: string; title: string }>;
-}): string {
+}): { kind: MissCauseKind; label: string } {
   if (opts.chunkCount <= 0) {
-    return "청크가 없음 — 본문 색인 공백 가능";
-  }
-  if (opts.rank != null && opts.rank >= 10) {
-    return `정답이 ${opts.rank + 1}위 — 임베딩·랭킹이 약함`;
-  }
-  const titleTokens = opts.title
-    .toLowerCase()
-    .match(/[가-힣a-z0-9]{2,}/g)
-    ?.filter((t) => !/^(콘텐츠|제안서|프로젝트|미디어|완료)$/.test(t)) ?? [];
-  const q = opts.question.toLowerCase();
-  const titleInQ = titleTokens.some((t) => t.length >= 3 && q.includes(t));
-  if (!titleInQ && titleTokens.length > 0) {
-    return "본문·고유명사 질문인데 제목 단서가 약함 — 본문 색인/청크 분할 점검";
+    return { kind: "no_chunks", label: MISS_CAUSE_LABEL.no_chunks };
   }
   if (opts.top.length === 0) {
-    return "검색 0건 — 키워드·임베딩 모두 미매칭";
+    return { kind: "no_results", label: MISS_CAUSE_LABEL.no_results };
   }
-  return "정답이 상위 10 밖 — 임베딩 약함 또는 청크 절단 의심";
+  const titleTokens =
+    opts.title
+      .toLowerCase()
+      .match(/[가-힣a-z0-9]{2,}/g)
+      ?.filter((t) => !/^(콘텐츠|제안서|프로젝트|미디어|완료)$/.test(t)) ?? [];
+  const q = opts.question.toLowerCase();
+  const titleInQ = titleTokens.some((t) => t.length >= 3 && q.includes(t));
+  // 질문에 제목 단서가 거의 없고 본문 고유명사성 질문이면
+  if (!titleInQ && titleTokens.length > 0) {
+    return {
+      kind: "proper_noun_body_only",
+      label: MISS_CAUSE_LABEL.proper_noun_body_only
+    };
+  }
+  // 정답이 멀리 있으면 임베딩 약함
+  if (opts.rank != null && opts.rank >= 10) {
+    return { kind: "weak_embedding", label: MISS_CAUSE_LABEL.weak_embedding };
+  }
+  // 상위에는 다른 문서만 — 청크 절단·분할 의심
+  if (opts.rank == null && opts.top.length > 0) {
+    return { kind: "bad_chunk", label: MISS_CAUSE_LABEL.bad_chunk };
+  }
+  return { kind: "other", label: MISS_CAUSE_LABEL.other };
 }
 
 function parseQuestionsJson(raw: string): string[] {
@@ -289,7 +323,7 @@ export async function runProbeAnswerKey(
       const bucket = bucketForRank(rank);
       const cause =
         bucket === "miss"
-          ? guessMissCause({
+          ? classifyMissCause({
               pageId: page.page_id,
               title: page.title,
               question,
@@ -305,7 +339,8 @@ export async function runProbeAnswerKey(
         rank,
         bucket,
         top,
-        cause_guess: cause
+        cause_guess: cause?.label ?? null,
+        cause_kind: cause?.kind ?? null
       });
     }
   }
@@ -316,15 +351,23 @@ export async function runProbeAnswerKey(
   const miss = items.filter((i) => i.bucket === "miss").length;
   const probed = items.length;
   const misses = items.filter((i) => i.bucket === "miss").slice(0, 30);
+  const miss_by_cause: Record<string, number> = {};
+  for (const m of items) {
+    if (m.bucket !== "miss" || !m.cause_kind) continue;
+    miss_by_cause[m.cause_kind] = (miss_by_cause[m.cause_kind] ?? 0) + 1;
+  }
 
   const learned =
     probed === 0
       ? "채점할 문항이 없습니다"
       : `정답 문서 기준 hit@1 ${hit_at_1} · hit@5 ${hit_at_5} · hit@10 ${hit_at_10} · miss ${miss} / ${probed}`;
+  const topMissCause = Object.entries(miss_by_cause).sort((a, b) => b[1] - a[1])[0];
   const next =
-    miss > 0
-      ? "miss 문항이 다음 자습 주제 — 본문 고유명사·임베딩·청크 분할을 점검"
-      : "표본을 늘리거나 실패 기록(모드 B) 사람 확인으로 이동";
+    miss > 0 && topMissCause
+      ? `miss 주원인: ${MISS_CAUSE_LABEL[topMissCause[0] as MissCauseKind] ?? topMissCause[0]} (${topMissCause[1]}건) — 다음날 아젠다 입력`
+      : miss > 0
+        ? "miss 문항이 다음 자습 주제"
+        : "표본을 늘리거나 실패 기록(모드 B) 사람 확인으로 이동";
 
   return {
     result: {
@@ -335,6 +378,7 @@ export async function runProbeAnswerKey(
       hit_at_10,
       miss,
       miss_rate: probed ? Number((miss / probed).toFixed(3)) : 0,
+      miss_by_cause,
       items: items.slice(0, 80),
       misses,
       learned,
@@ -435,10 +479,13 @@ export async function runProbeRetrievalExam(
 
   const pageLimit =
     typeof scope.page_limit === "number" && scope.page_limit > 0
-      ? Math.min(80, Math.floor(scope.page_limit))
-      : Math.min(40, Math.max(5, limit));
+      ? Math.min(200, Math.floor(scope.page_limit))
+      : MODE_A_PAGE_LIMIT;
 
-  const out = await runProbeAnswerKey(admin, { pageLimit });
+  const out = await runProbeAnswerKey(admin, {
+    pageLimit,
+    questionsPerPage: MODE_A_QUESTIONS_PER_PAGE
+  });
   const miss = out.result.miss ?? 0;
   const probed = out.result.probed;
   return {
