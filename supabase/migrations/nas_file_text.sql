@@ -59,12 +59,13 @@ comment on table public.nas_file_chunks is
 create index if not exists nas_file_chunks_path_idx
   on public.nas_file_chunks (path);
 
--- ivfflat 대신 HNSW (노션과 동일). 임베딩이 쌓인 뒤 concurrently 생성:
---   create index concurrently if not exists nas_file_chunks_embedding_hnsw
---     on public.nas_file_chunks
---     using hnsw (embedding vector_cosine_ops)
---     where embedding is not null;
--- 검색 RPC: luna_match_nas_chunks (nas_file_chunks_hnsw.sql)
+-- 키워드 검색 (임베딩 없이). concurrently 는 트랜잭션 밖에서 실행.
+--   create extension if not exists pg_trgm;
+--   create index concurrently if not exists nas_file_chunks_content_trgm
+--     on public.nas_file_chunks using gin (content gin_trgm_ops);
+-- 노션 text_trgm 13MB / 1.4만 청크 → Work 20만 청크 시 ~190MB 예상.
+
+-- ivfflat/HNSW 는 임베딩을 켤 때만. 지금은 생성하지 않음.
 
 create table if not exists public.nas_text_runs (
   id uuid primary key default gen_random_uuid(),
