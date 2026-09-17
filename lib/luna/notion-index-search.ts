@@ -704,9 +704,12 @@ export async function searchNotionForLuna(
     : NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
   const overfetch = listing ? LISTING_MATCH_OVERFETCH : MATCH_OVERFETCH;
   let embedding = opts?.queryEmbedding ?? null;
+  let embedMs = 0;
   if (!embedding && queryText) {
     // 색인 전용 경로 — 질문 임베딩이 없으면 여유 있게 한 번 생성
+    const embStarted = Date.now();
     embedding = await createQueryEmbedding(queryText, { timeoutMs: 8_000 });
+    embedMs = Date.now() - embStarted;
   }
 
   let indexSources: NotionSource[] = [];
@@ -716,6 +719,7 @@ export async function searchNotionForLuna(
   let usedBlockFallback = false;
   let keywordHitCount = 0;
 
+  const searchStarted = Date.now();
   const searchKws = notionSearchKeywords(keywords, queryText);
 
   const [chunkHits, keywordHits] = await Promise.all([
@@ -890,6 +894,8 @@ export async function searchNotionForLuna(
     ms: Date.now() - started
   });
 
+  const searchMs = Date.now() - searchStarted;
+
   const stagedSources = queryText
     ? annotateNotionSourcesWithWorkStage(merged.sources, queryText)
     : merged.sources;
@@ -904,6 +910,7 @@ export async function searchNotionForLuna(
     perspective_ms: 0,
     project_groups: []
   };
+  const candidatesFound = stagedSources.length;
 
   if (useSecondary && finalSources.length > 0) {
     try {
@@ -957,6 +964,11 @@ export async function searchNotionForLuna(
     ...merged,
     sources: finalSources,
     queries: [...new Set([...merged.queries, "index"])],
-    secondary: secondaryMeta
+    secondary: secondaryMeta,
+    timings: {
+      embed_ms: embedMs,
+      search_ms: searchMs,
+      candidates_found: candidatesFound
+    }
   };
 }

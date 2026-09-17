@@ -66,6 +66,14 @@ export type NotionSearchSecondaryMeta = {
   }>;
 };
 
+export type NotionSearchTimings = {
+  /** 색인 안에서 임베딩을 새로 만든 경우만 (외부 주입 시 0) */
+  embed_ms: number;
+  /** 임베딩·키워드 검색 + 소스 조립 (연결 제외) */
+  search_ms: number;
+  candidates_found: number;
+};
+
 export type NotionSearchOutcome = {
   status: NotionSearchStatus;
   sources: NotionSource[];
@@ -74,6 +82,7 @@ export type NotionSearchOutcome = {
   error?: string;
   httpStatus?: number;
   secondary?: NotionSearchSecondaryMeta;
+  timings?: NotionSearchTimings;
 };
 
 type NotionSearchResult = {

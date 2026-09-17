@@ -270,6 +270,12 @@ async function resolveLastOkAt(
         light: storage.light
       };
     }
+    case "response_time": {
+      const { resolveResponseTimeCheck } = await import(
+        "@/lib/luna/response-timings"
+      );
+      return resolveResponseTimeCheck(admin);
+    }
     case "env_keys": {
       const missing = missingEnvGroups();
       if (missing.length === 0) {
@@ -311,7 +317,7 @@ export async function evaluateLunaChecks(
     const redDays = expectedMeta?.red_days ?? row.red_days;
     const light =
       resolved.light ??
-      (row.id === "disk"
+      (row.id === "disk" || row.id === "response_time"
         ? ("green" as const)
         : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
@@ -319,11 +325,11 @@ export async function evaluateLunaChecks(
     const expectedPromise = expectedMeta?.promise_label;
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
-    if (row.id === "disk" && resolved.extraDetail) {
-      detail =
-        status === "ok"
-          ? `${promiseLabel} · ${resolved.extraDetail}`
-          : `${promiseLabel} · ${resolved.extraDetail}`;
+    if (
+      (row.id === "disk" || row.id === "response_time") &&
+      resolved.extraDetail
+    ) {
+      detail = `${promiseLabel} · ${resolved.extraDetail}`;
     } else if (status === "ok") {
       detail = `${promiseLabel} · 마지막 ${lastLabel}`;
     } else {

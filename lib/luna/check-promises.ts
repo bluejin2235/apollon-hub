@@ -89,6 +89,12 @@ export const LUNA_CHECK_PROMISES: Record<
     yellow_days: 0,
     red_days: 0
   },
+  response_time: {
+    promise_label: "매일",
+    source: "luna_response_timings 7일 평균 · 25초 🟡 · 35초 🔴",
+    yellow_days: 0,
+    red_days: 0
+  },
   env_keys: {
     promise_label: "배포 환경변수",
     source: "lib/luna/env-keys.ts 별칭 목록 vs process.env",

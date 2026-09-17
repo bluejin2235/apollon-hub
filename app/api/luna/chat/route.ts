@@ -29,6 +29,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { recordResponseTiming } from "@/lib/luna/response-timings";
 import {
   hasImageSearchIntent,
   orderCardsWithImagePriority,
@@ -2666,6 +2667,7 @@ export async function POST(request: NextRequest) {
           hasAttachments
         );
         let answerUsage = emptyUsage();
+        const llmStartedAt = Date.now();
         console.log("[luna/answer]", {
           depth: questionDepth,
           maxTokens,
@@ -2749,6 +2751,7 @@ export async function POST(request: NextRequest) {
 
         pushStep("answer", "done", "정리 완료");
 
+        const llmMs = Date.now() - llmStartedAt;
         const durationMs = Date.now() - startedAt;
         const safeAssistantText = scrubLunaAnswerText(
           sanitizeKnowledgeListAnswer(assistantText, learnings)
@@ -2804,9 +2807,38 @@ export async function POST(request: NextRequest) {
           ).catch((err) => console.error("[luna/chat] bump wiki use_count", err));
         }
         const userMeta: Record<string, unknown> = {};
+        const timingEmbedMs =
+          (knowledgeEmb.embed_ms ?? 0) +
+          (notionSearchOutcome?.timings?.embed_ms ?? 0);
+        const timingSearchMs = notionSearchOutcome?.timings?.search_ms ?? 0;
+        const timingLinkMs = notionSearchOutcome?.secondary?.link_ms ?? 0;
+        const timingCandidatesFound =
+          notionSearchOutcome?.timings?.candidates_found ??
+          Math.max(
+            0,
+            notionSources.length -
+              (notionSearchOutcome?.secondary?.link_added ?? 0)
+          );
+        const timingCandidatesAdded =
+          notionSearchOutcome?.secondary?.link_added ?? 0;
+        const timingCandidatesUsed = notionForLlm.length;
+        const responseTimings = {
+          embed_ms: timingEmbedMs,
+          search_ms: timingSearchMs,
+          link_ms: timingLinkMs,
+          llm_ms: llmMs,
+          total_ms: durationMs,
+          candidates_found: timingCandidatesFound,
+          candidates_added: timingCandidatesAdded,
+          candidates_used: timingCandidatesUsed,
+          prompt_tokens: answerUsage.input_tokens,
+          completion_tokens: answerUsage.output_tokens,
+          model: tierA.model_id
+        };
         const assistantMeta: Record<string, unknown> = {
           model_label: tierA.model_label,
           duration_ms: durationMs,
+          timings: responseTimings,
           model_steps: modelSteps,
           steps,
           search_rounds: searchRounds,
@@ -2957,6 +2989,12 @@ export async function POST(request: NextRequest) {
         if (insertError) {
           console.error("[luna/chat] insert messages", insertError);
         } else {
+          recordResponseTiming(admin, {
+            message_id: assistantMessageId,
+            conversation_id: conversationId,
+            user_id: user.id,
+            ...responseTimings
+          });
           void recordAutoFailuresFromAnswer(admin, {
             messageId: assistantMessageId,
             conversationId,

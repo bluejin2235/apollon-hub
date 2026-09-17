@@ -681,6 +681,57 @@
 .luna-admin .stor.warn .gauge .num .v { color: var(--y); }
 .luna-admin .stor.bad .gauge .num .v { color: var(--r); }
 
+.luna-admin .rtim {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.luna-admin .rtim .sh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.luna-admin .rtim .sh .t { font-size: 13.5px; font-weight: 800; }
+.luna-admin .rtim .sh .n { font-size: 11px; color: var(--faint); }
+.luna-admin .rtim .sh .sp { flex: 1; }
+.luna-admin .rtim .body .big {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.luna-admin .rtim .body .stages {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.luna-admin .rtim .body .spark {
+  margin-top: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.luna-admin .rtim .body .spark .bars {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--luna, #5b6cff);
+}
+.luna-admin .rtim .body .spark .lab {
+  font-size: 11px;
+  color: var(--faint);
+}
+.luna-admin .rtim .empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+.luna-admin .rtim.warn .body .big { color: var(--y); }
+.luna-admin .rtim.bad .body .big { color: var(--r); }
+
 @media (max-width: 900px) {
   .luna-admin .stor .g3 { grid-template-columns: 1fr; }
   .luna-admin .stor .gauge { flex-wrap: wrap; }

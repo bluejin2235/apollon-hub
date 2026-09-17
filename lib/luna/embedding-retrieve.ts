@@ -13,6 +13,8 @@ export type KnowledgeEmbeddingBundle = {
   wiki: WikiEmbeddingHit[];
   glossary: IdEmbeddingHit[];
   learning: IdEmbeddingHit[];
+  /** 질문 → 벡터만 (위키/용어 매칭 제외) */
+  embed_ms: number;
 };
 
 /** 질문 임베딩 1회 + 위키/용어/지식 유사도. 실패 시 빈 결과(키워드 폴백). */
@@ -25,19 +27,22 @@ export async function retrieveKnowledgeEmbeddings(
     queryEmbedding: null,
     wiki: [],
     glossary: [],
-    learning: []
+    learning: [],
+    embed_ms: 0
   };
   try {
+    const embedStarted = Date.now();
     const queryEmbedding = await createQueryEmbedding(question, {
       timeoutMs: opts?.timeoutMs
     });
-    if (!queryEmbedding) return empty;
+    const embed_ms = Date.now() - embedStarted;
+    if (!queryEmbedding) return { ...empty, embed_ms };
     const [wiki, glossary, learning] = await Promise.all([
       matchWikiEmbeddings(admin, queryEmbedding),
       matchGlossaryEmbeddings(admin, queryEmbedding),
       matchLearningEmbeddings(admin, queryEmbedding)
     ]);
-    return { queryEmbedding, wiki, glossary, learning };
+    return { queryEmbedding, wiki, glossary, learning, embed_ms };
   } catch (err) {
     console.error("[luna/embedding-retrieve]", err);
     return empty;

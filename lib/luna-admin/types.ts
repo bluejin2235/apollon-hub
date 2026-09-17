@@ -69,6 +69,7 @@ export type AdminDashboard = {
   tonight: TonightItem[];
   tonight_label: string;
   storage: StorageDashboardView | null;
+  response_timing: ResponseTimingDashboardView | null;
   badges: {
     failures: number;
     candidates: number;
@@ -130,6 +131,21 @@ export type StorageDashboardView = {
   rpc_ms: number;
   rpc_cached: boolean;
   has_yesterday: boolean;
+};
+
+export type ResponseTimingDashboardView = {
+  avg_total_ms: number;
+  avg_search_ms: number;
+  avg_link_ms: number;
+  avg_llm_ms: number;
+  avg_embed_ms: number;
+  sample_count: number;
+  warn_level: "ok" | "warn" | "bad";
+  sparkline: Array<{
+    date: string;
+    avg_total_ms: number;
+    count: number;
+  }>;
 };
 
 export type PrimarySourceRow = {

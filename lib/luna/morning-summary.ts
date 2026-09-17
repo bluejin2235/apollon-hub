@@ -99,9 +99,30 @@ export async function collectMorningSummaryParts(
     if (job.id === "disk") continue;
     if (job.status !== "warn" && job.status !== "bad") continue;
     const lamp = job.status === "bad" ? "🔴" : "🟡";
+    if (job.id === "response_time") {
+      parts.push(
+        withLink(
+          `${lamp} 응답 시간 · ${job.detail ?? "7일 평균이 느립니다"}`,
+          job.href
+        )
+      );
+      continue;
+    }
     parts.push(
       withLink(`${lamp} ${formatStaleIdleLine(job.label, job.days_stale)}`, job.href)
     );
+  }
+
+  try {
+    const { formatResponseTimeMorningLine } = await import(
+      "@/lib/luna/response-timings"
+    );
+    const timingLine = await formatResponseTimeMorningLine(admin, now);
+    if (timingLine) {
+      parts.push(withLink(timingLine, LUNA_LINKS.dashboard));
+    }
+  } catch (err) {
+    console.error("[luna/morning] response time", err);
   }
 
   // 1) light 회귀 시험

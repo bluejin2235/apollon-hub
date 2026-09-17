@@ -101,6 +101,31 @@ export async function buildAdminDashboard(
     console.error("[luna-admin/dashboard] storage", err);
   }
 
+  let responseTiming = null as import("@/lib/luna-admin/types").ResponseTimingDashboardView | null;
+  try {
+    const { buildResponseTimingDashboard } = await import(
+      "@/lib/luna/response-timings"
+    );
+    const rt = await buildResponseTimingDashboard(admin);
+    responseTiming = {
+      avg_total_ms: rt.avg7.total_ms,
+      avg_search_ms: rt.avg7.search_ms,
+      avg_link_ms: rt.avg7.link_ms,
+      avg_llm_ms: rt.avg7.llm_ms,
+      avg_embed_ms: rt.avg7.embed_ms,
+      sample_count: rt.sample_count,
+      warn_level:
+        rt.warn_level === "red"
+          ? "bad"
+          : rt.warn_level === "yellow"
+            ? "warn"
+            : "ok",
+      sparkline: rt.sparkline
+    };
+  } catch (err) {
+    console.error("[luna-admin/dashboard] response timing", err);
+  }
+
   const collectLight = worstLight(primary.work.status, primary.notion.status, primary.image.status);
   const selfDays = kstCalendarDaysAgo(selfstudy.last_run?.finished_at ?? null);
   const linkDays = kstCalendarDaysAgo(latestLink);
@@ -243,6 +268,7 @@ export async function buildAdminDashboard(
     tonight: tonight.items.filter((i) => !i.excluded && i.when === "tonight"),
     tonight_label: `오늘 밤 ${hh}:${mm} 예정`,
     storage,
+    response_timing: responseTiming,
     badges: {
       failures: openFailures,
       candidates: pending,
