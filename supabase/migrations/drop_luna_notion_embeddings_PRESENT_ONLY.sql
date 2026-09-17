@@ -3,8 +3,8 @@
 -- 전제: 검색이 luna_notion_chunk_embeddings 만 쓰고
 --       matchNotionBlockEmbeddings 폴백을 코드에서 제거한 뒤.
 --
--- 2026-09-17: 코드 폴백 제거 완료. 며칠 지켜본 뒤 이 SQL 을 실행한다.
--- DROP 하면 대시보드 경고(legacy_embeddings)도 사라진다.
+-- 2026-09-17: 폴백을 다시 유지한다. 청크 RPC 실패·부족 시 블록 임베딩을 쓴다.
+-- 이 SQL 은 폴백 사용이 사실상 사라진 뒤에야 실행한다.
 
 begin;
 
