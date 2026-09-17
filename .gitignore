@@ -40,6 +40,7 @@ media-index.log
 # 로컬 검증 · 임시 산출물
 tmp/
 .tmp-*
+tmp-*
 scripts/out-*/
 *.log
 run-media-dryrun.bat

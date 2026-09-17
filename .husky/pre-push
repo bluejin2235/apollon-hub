@@ -17,6 +17,12 @@ cleanup() {
   code=$?
   cd "$ROOT" 2>/dev/null || true
   if [ -n "${WT:-}" ] && [ -d "$WT" ]; then
+    # junction 을 먼저 끊는다 — 남겨 두면 worktree remove 가 실패해 찌꺼기가 쌓인다.
+    # (링크만 지운다. rm -rf 는 junction 을 따라가지 않으므로 메인 node_modules 는 안전하다)
+    if [ -e "$WT/node_modules" ]; then
+      cmd.exe //c "rmdir \"$(cygpath -w "$WT/node_modules")\"" >/dev/null 2>&1 ||
+        rm -rf "$WT/node_modules"
+    fi
     git -C "$ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"
   fi
   git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
@@ -78,15 +84,26 @@ fi
 cd "$WT" || exit 1
 rm -rf .next
 
+# --no-install 필수 — 빠진 바이너리를 npx 가 레지스트리에서 끌어오면
+# 프로젝트 것이 아닌 남의 패키지로 검사한 꼴이 된다 (tsc 는 동명의 다른 패키지가 있다).
+for bin in tsc next; do
+  if [ ! -e "node_modules/.bin/$bin" ]; then
+    echo "" >&2
+    echo "[pre-push] ❌ node_modules/.bin/$bin 이 없습니다 — 설치가 깨졌습니다." >&2
+    echo "[pre-push]    npm install 로 잠금 파일과 맞춘 뒤 다시 push 하세요." >&2
+    exit 1
+  fi
+done
+
 echo "[pre-push] ▶ npx tsc --noEmit"
-if ! npx tsc --noEmit; then
+if ! npx --no-install tsc --noEmit; then
   echo "" >&2
   echo "[pre-push] ❌ tsc 실패 — push 중단. WIP 는 손대지 않았습니다 (worktree)." >&2
   exit 1
 fi
 
 echo "[pre-push] ▶ npx next build"
-if ! npx next build; then
+if ! npx --no-install next build; then
   echo "" >&2
   echo "[pre-push] ❌ next build 실패 — push 중단. WIP 는 손대지 않았습니다 (worktree)." >&2
   echo "[pre-push] (오늘처럼 커밋에 빠진 import/모듈이 있는지 확인하세요)" >&2
