@@ -89,12 +89,43 @@ export type DevnoteTodoRow = {
   sort_order: number;
 };
 
+export type DevnoteIdeaStage = "next" | "someday" | "seed";
+
+export type DevnoteIdeaRow = {
+  id: string;
+  service_id: string | null;
+  service_name: string;
+  service_slug: string | null;
+  title: string;
+  body: string;
+  stage: DevnoteIdeaStage;
+  sort_order: number;
+};
+
+export type DevnoteDecisionListRow = DevnoteDecisionRow & {
+  service_name: string;
+  service_slug: string | null;
+};
+
 export const STATUS_LABEL: Record<DevnoteStatus, string> = {
   live: "운영 중",
   wip: "개발 중",
   stuck: "막힘",
   doc: "문서만"
 };
+
+export const DEVNOTE_IDEA_STAGES: Array<{
+  key: DevnoteIdeaStage;
+  label: string;
+}> = [
+  { key: "next", label: "다음에" },
+  { key: "someday", label: "언젠가" },
+  { key: "seed", label: "씨앗" }
+];
+
+export function isDevnoteIdeaStage(value: string): value is DevnoteIdeaStage {
+  return value === "next" || value === "someday" || value === "seed";
+}
 
 export function parseDevnoteServiceTab(
   raw: string | null | undefined
