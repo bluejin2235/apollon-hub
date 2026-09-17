@@ -16,8 +16,11 @@ import {
 } from "@/lib/luna/connector-routing";
 import {
   applyScopeToConnectorFlags,
+  forceSimpleDepthForScope,
+  inferRuleClassification,
   resolveSearchScope,
   scopeHitsInsufficient,
+  scopeSkipsQueryEmbedding,
   widenSearchScope
 } from "@/lib/luna/search-scope";
 import { LUNA_DEFAULT_IDENTITY_PROMPT } from "@/lib/luna/constants";
@@ -72,6 +75,7 @@ import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import {
   answerMaxTokensForDepth,
+  LLM_INJECT_BY_DEPTH,
   llmInjectLimitsForQuestion,
   SYNTHESIS_ANSWER_RULE,
   wikiLimitsForDepth,
@@ -134,6 +138,8 @@ export type LunaRunResult = {
   injected_knowledge_ids?: string[];
   injected_terms?: string[];
   web_augmented?: boolean;
+  /** 단계별 ms — 프로브·디버그용 */
+  stageMs?: Record<string, number>;
 };
 
 type NasDirectoryRow = WorkserverExploreRow;
@@ -419,6 +425,15 @@ export async function runLunaTurn(
   connectors: LunaConnectors = {}
 ): Promise<LunaRunResult> {
   const startedAt = Date.now();
+  const stageMs: Record<string, number> = {};
+  const mark = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const t0 = Date.now();
+    try {
+      return await fn();
+    } finally {
+      stageMs[key] = (stageMs[key] ?? 0) + (Date.now() - t0);
+    }
+  };
   const client = getAnthropicClient();
   if (!client) {
     throw new Error("Claude API key is not configured");
@@ -435,11 +450,14 @@ export async function runLunaTurn(
       sources: [],
       notionSources: [],
       durationMs: Date.now() - startedAt,
-      modelLabel: LUNA_MODEL_LABEL
+      modelLabel: LUNA_MODEL_LABEL,
+      stageMs
     };
   }
 
-  const loadedPrompts = await getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
+  const loadedPrompts = await mark("load_prompts", () =>
+    getPrompts(admin, [...LUNA_RUNTIME_PROMPT_KEYS])
+  );
 
   const identity =
     loadedPrompts[LUNA_PROMPT_KEYS.identity]?.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
@@ -461,36 +479,50 @@ export async function runLunaTurn(
     [talkAnswer, talkAssume].filter(Boolean).join("\n\n") ||
     SYNTHESIS_OPINION_FALLBACK;
 
-  const [{ types: questionTypes }, wikiLoaded] = await Promise.all([
-    loadQuestionTypes(admin, {
-      activeOnly: true
-    }),
-    loadWikiDocs(admin, { activeOnly: true })
-  ]);
+  const [{ types: questionTypes }, wikiLoaded] = await mark(
+    "load_types_wiki",
+    () =>
+      Promise.all([
+        loadQuestionTypes(admin, {
+          activeOnly: true
+        }),
+        loadWikiDocs(admin, { activeOnly: true })
+      ])
+  );
   const wikiDocs = wikiLoaded.items;
   let classifiedSlugs: string[] = [];
   let classifyConfidence = 1;
-  try {
-    const classifyRes = await lunaLlmComplete(admin, {
-      tier: "C",
-      feature: "understand",
-      system: `${classifyPrompt}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
-      user: userText,
-      maxTokens: 256
-    });
-    const parsed = parseClassificationJson(classifyRes.text);
-    const classification = resolveClassification(parsed, questionTypes, {
-      forceSearch: hasManualConnectors({
-        notion: connectors.notion === true,
-        web: connectors.web === true,
-        nas: connectors.nas === true
-      })
-    });
-    classifiedSlugs = classification.types;
-    classifyConfidence = classification.confidence;
-    console.log("[luna/classify]", classification);
-  } catch (err) {
-    console.error("[luna/run-chat] classify", err);
+  const ruleInfer = inferRuleClassification(userText);
+  if (ruleInfer) {
+    classifiedSlugs = ruleInfer.types;
+    classifyConfidence = 0.95;
+    stageMs.classify = 0;
+    console.log("[luna/classify] rule-skip", ruleInfer);
+  } else {
+    try {
+      await mark("classify", async () => {
+        const classifyRes = await lunaLlmComplete(admin, {
+          tier: "C",
+          feature: "understand",
+          system: `${classifyPrompt}\n\n[유형 목록]\n${formatTypeCatalog(questionTypes)}`,
+          user: userText,
+          maxTokens: 256
+        });
+        const parsed = parseClassificationJson(classifyRes.text);
+        const classification = resolveClassification(parsed, questionTypes, {
+          forceSearch: hasManualConnectors({
+            notion: connectors.notion === true,
+            web: connectors.web === true,
+            nas: connectors.nas === true
+          })
+        });
+        classifiedSlugs = classification.types;
+        classifyConfidence = classification.confidence;
+        console.log("[luna/classify]", classification);
+      });
+    } catch (err) {
+      console.error("[luna/run-chat] classify", err);
+    }
   }
   const classifiedTypeRows = classifiedRows(questionTypes, classifiedSlugs);
   const needsSearch = typesNeedSearch(classifiedTypeRows);
@@ -560,7 +592,11 @@ export async function runLunaTurn(
     if (text) connectorPrompts.push(text);
   }
 
-  if (!typesSkipClarify(classifiedTypeRows)) {
+  if (
+    !typesSkipClarify(classifiedTypeRows) &&
+    !forceSimpleDepthForScope(searchScope.kind) &&
+    searchScope.kind !== "reference"
+  ) {
     const clarifyAnswer = await maybeClarify(client, userText, clarifyPrompt);
     if (clarifyAnswer) {
       return {
@@ -568,23 +604,28 @@ export async function runLunaTurn(
         sources: [],
         notionSources: [],
         durationMs: Date.now() - startedAt,
-        modelLabel: LUNA_MODEL_LABEL
+        modelLabel: LUNA_MODEL_LABEL,
+        stageMs
       };
     }
   }
 
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
-  const { data: learningsData } = await admin
-    .from("luna_learnings")
-    .select("id, content, category, importance, use_count, created_at")
-    .eq("status", "active")
-    .neq("category", "identity")
-    .order("importance", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(200);
+  let learningsData: LearningMatchRow[] | null = null;
+  await mark("load_learnings", async () => {
+    const res = await admin
+      .from("luna_learnings")
+      .select("id, content, category, importance, use_count, created_at")
+      .eq("status", "active")
+      .neq("category", "identity")
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(200);
+    learningsData = (res.data ?? null) as LearningMatchRow[] | null;
+  });
 
   let glossaryRows: GlossaryMatchRow[] = [];
-  {
+  await mark("load_glossary", async () => {
     let gq = await admin
       .from("glossary_terms")
       .select("id, term_ko, term_en, synonyms, definition")
@@ -595,7 +636,7 @@ export async function runLunaTurn(
         .select("id, term_ko, term_en, synonyms, definition");
     }
     if (!gq.error) glossaryRows = (gq.data ?? []) as GlossaryMatchRow[];
-  }
+  });
 
   const { data: webAugmentRow } = await admin
     .from("luna_settings")
@@ -607,17 +648,38 @@ export async function runLunaTurn(
   // 검색·매칭은 질문 원문 고정 (LLM 키워드 추출은 재현성을 해침)
   const keywords = userText.slice(0, 120);
   const injectKeywords = splitKeywordQuery(keywords, userText, glossaryRows);
-  const emb = await retrieveKnowledgeEmbeddings(admin, userText);
-  const { depth: questionDepth, limits: llmInject } =
-    llmInjectLimitsForQuestion(userText);
+  const emb = scopeSkipsQueryEmbedding(searchScope.kind)
+    ? {
+        queryEmbedding: null as number[] | null,
+        wiki: [],
+        glossary: [],
+        learning: [],
+        embed_ms: 0
+      }
+    : await mark("embed_and_match", () =>
+        retrieveKnowledgeEmbeddings(admin, userText)
+      );
+  if (scopeSkipsQueryEmbedding(searchScope.kind)) stageMs.embed_and_match = 0;
+  const rawDepth = llmInjectLimitsForQuestion(userText);
+  const questionDepth: QuestionDepth = forceSimpleDepthForScope(searchScope.kind)
+    ? "simple"
+    : rawDepth.depth;
+  const llmInject =
+    questionDepth === "simple" ? LLM_INJECT_BY_DEPTH.simple : rawDepth.limits;
   const listingQuestion = isListingQuestion(userText);
   const knowledgeInject = pickLearningsForQuestion(
     (learningsData ?? []) as LearningMatchRow[],
     injectKeywords,
     {
       embeddingHits: emb.learning,
-      max: llmInject.learnings,
-      matchedMax: llmInject.learnings
+      max:
+        searchScope.kind === "term" || searchScope.kind === "policy"
+          ? Math.min(1, llmInject.learnings)
+          : llmInject.learnings,
+      matchedMax:
+        searchScope.kind === "term" || searchScope.kind === "policy"
+          ? 1
+          : llmInject.learnings
     }
   );
   const matchedTerms = searchScope.flags.glossary
@@ -647,10 +709,16 @@ export async function runLunaTurn(
     content: l.content,
     category: l.category
   }));
-  const learningsBlock = formatMatchedLearningsBlock({
-    matched: knowledgeInject.matched,
-    other: knowledgeInject.other
-  });
+  const learningsBlock =
+    searchScope.kind === "term" || searchScope.kind === "policy"
+      ? formatMatchedLearningsBlock({
+          matched: knowledgeInject.matched.slice(0, 1),
+          other: []
+        })
+      : formatMatchedLearningsBlock({
+          matched: knowledgeInject.matched,
+          other: knowledgeInject.other
+        });
   const glossaryBlock = formatGlossaryBlock(matchedTerms);
   const wikiSectionsBlock = formatWikiSectionsBlock(wikiSources);
 
@@ -715,25 +783,29 @@ export async function runLunaTurn(
   const runNotion = searchScope.flags.notion && Boolean(keywords || userText);
   const runMedia = searchScope.flags.media;
   if (runNotion || runMedia) {
-    const [notionOutcome, mediaRes] = await Promise.all([
-      runNotion
-        ? searchNotionForLuna(admin, keywords || userText, userText, {
-            queryEmbedding: emb.queryEmbedding,
-            skipLive: false,
-            listing: false
-          })
-        : Promise.resolve({
-            status: "skipped" as const,
-            sources: [] as NotionSource[],
-            queries: [] as string[],
-            rounds: 0
-          }),
-      runMedia
-        ? searchMediaForLuna(admin, emb.queryEmbedding, userText)
-        : Promise.resolve({ cards: [] as LunaCard[], hits: [] })
-    ]);
-    notionSources = notionOutcome.sources;
-    mediaCards = mediaRes.cards;
+    await mark("connector_search", async () => {
+      const [notionOutcome, mediaRes] = await Promise.all([
+        runNotion
+          ? searchNotionForLuna(admin, keywords || userText, userText, {
+              queryEmbedding: emb.queryEmbedding,
+              skipLive: true,
+              listing: false
+            })
+          : Promise.resolve({
+              status: "skipped" as const,
+              sources: [] as NotionSource[],
+              queries: [] as string[],
+              rounds: 0
+            }),
+        runMedia
+          ? searchMediaForLuna(admin, emb.queryEmbedding, userText)
+          : Promise.resolve({ cards: [] as LunaCard[], hits: [] })
+      ]);
+      notionSources = notionOutcome.sources;
+      mediaCards = mediaRes.cards;
+    });
+  } else {
+    stageMs.connector_search = 0;
   }
   if (webEnabled && searchScope.flags.web) {
     webCards = await searchTavily(keywords || userText);
@@ -741,31 +813,48 @@ export async function runLunaTurn(
   if (needsSearch && isSearchRequest && keywords && searchScope.flags.youtube) {
     youtubeCards = await searchYoutube(keywords);
   }
-  if (nasEnabled && searchScope.flags.nas) {
+  // 프로젝트: 노션이 충분하면 Work 색인은 생략 (도구 루프는 이미 꺼 둠)
+  const runNasIndex =
+    nasEnabled &&
+    searchScope.flags.nas &&
+    !(searchScope.kind === "project" && notionSources.length >= 3);
+
+  if (runNasIndex) {
     nasSearchAttempted = true;
     const kw = keywords || userText;
-    try {
-      const explored = await exploreWorkserverWithTools(admin, client, {
-        keywords: kw,
-        queryText: userText,
-        model: LUNA_MODEL,
-        exploreSystem: talkFind
-      });
-      nasResults = explored.rows;
-      console.log(
-        "[luna/ws] eval explore done",
-        { kw, toolCalls: explored.toolCalls.length },
-        "→",
-        nasResults.length
-      );
-    } catch (err) {
-      console.error(
-        "[luna/ws] tool loop failed, fallback to legacy",
-        err
-      );
-      nasResults = await exploreWorkserverFallback(admin, kw, userText);
-      console.log("[luna/ws] eval fallback →", nasResults.length);
-    }
+    const useNasTools =
+      searchScope.kind === "find_wide" || searchScope.kind === "wide";
+    await mark("nas_explore", async () => {
+      try {
+        if (useNasTools) {
+          const explored = await exploreWorkserverWithTools(admin, client, {
+            keywords: kw,
+            queryText: userText,
+            model: LUNA_MODEL,
+            exploreSystem: talkFind
+          });
+          nasResults = explored.rows;
+          console.log(
+            "[luna/ws] eval explore done",
+            { kw, toolCalls: explored.toolCalls.length },
+            "→",
+            nasResults.length
+          );
+        } else {
+          nasResults = await exploreWorkserverFallback(admin, kw, userText);
+          console.log("[luna/ws] eval index-only →", nasResults.length);
+        }
+      } catch (err) {
+        console.error(
+          "[luna/ws] tool loop failed, fallback to legacy",
+          err
+        );
+        nasResults = await exploreWorkserverFallback(admin, kw, userText);
+        console.log("[luna/ws] eval fallback →", nasResults.length);
+      }
+    });
+  } else {
+    stageMs.nas_explore = 0;
   }
 
   // 검색 후에도 부족하면 한 단계 더
@@ -846,15 +935,45 @@ export async function runLunaTurn(
     llmNasTopN: llmInject.nas
   });
 
-  const response = await client.messages.create({
-    model: LUNA_MODEL,
-    max_tokens: answerMaxTokensForDepth(questionDepth, false),
-    system: systemPrompt,
-    messages: [{ role: "user", content: userText }]
-  });
+  const answerMaxTokens =
+    searchScope.kind === "term" ||
+    searchScope.kind === "policy" ||
+    searchScope.kind === "project" ||
+    searchScope.kind === "person"
+      ? 512
+      : answerMaxTokensForDepth(questionDepth, false);
 
-  const rawAnswer =
-    response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  const useFastAnswer =
+    searchScope.kind === "term" ||
+    searchScope.kind === "policy" ||
+    searchScope.kind === "project" ||
+    searchScope.kind === "person";
+
+  // 용어·규정·프로젝트·사람: 짧은 맥락은 빠른 티어 (sonnet 풀 경로 10초대 방지)
+  let rawAnswer = "";
+  if (useFastAnswer) {
+    const fast = await mark("answer_llm", () =>
+      lunaLlmComplete(admin, {
+        tier: "A",
+        feature: "chat_answer",
+        system: systemPrompt,
+        user: userText,
+        maxTokens: answerMaxTokens
+      })
+    );
+    rawAnswer = fast.text.trim();
+  } else {
+    const response = await mark("answer_llm", () =>
+      client.messages.create({
+        model: LUNA_MODEL,
+        max_tokens: answerMaxTokens,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userText }]
+      })
+    );
+    rawAnswer =
+      response.content.find((p) => p.type === "text")?.text?.trim() ?? "";
+  }
   let answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
   const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
@@ -899,6 +1018,7 @@ export async function runLunaTurn(
     modelLabel: LUNA_MODEL_LABEL,
     injected_knowledge_ids: knowledgeInject.ids,
     injected_terms: injectedTerms,
-    web_augmented: webAugmented
+    web_augmented: webAugmented,
+    stageMs
   };
 }

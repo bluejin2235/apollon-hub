@@ -169,6 +169,57 @@ function flagsForKind(kind: SearchScopeKind, tier: 1 | 2 | 3): SearchScopeFlags 
 }
 
 /**
+ * 규칙만으로 유형·범위를 확정할 수 있으면 LLM classify 를 생략한다.
+ * 애매하면 null → 기존 classify LLM.
+ */
+export function inferRuleClassification(question: string): {
+  kind: SearchScopeKind;
+  types: string[];
+  reason: string;
+} | null {
+  const t = question.replace(/\s+/g, " ").trim();
+  if (!t) return null;
+
+  if (/^(안녕|고마워|감사|ㅎㅎ|ㅋㅋ|네$|응$|ok$|okay$)/i.test(t)) {
+    return { kind: "none", types: ["smalltalk"], reason: "규칙: 인사" };
+  }
+  if (POLICY_RE.test(t)) {
+    return { kind: "policy", types: ["know"], reason: "규칙: 규정·제도" };
+  }
+  if (PERSON_SPEECH_RE.test(t)) {
+    return { kind: "person", types: ["find"], reason: "규칙: 사람·발언" };
+  }
+  if (REFERENCE_RE.test(t)) {
+    return { kind: "reference", types: ["find"], reason: "규칙: 사례·레퍼런스" };
+  }
+  if (PROJECT_STATUS_RE.test(t)) {
+    return { kind: "project", types: ["find"], reason: "규칙: 프로젝트 현황" };
+  }
+  if (TERM_DEF_RE.test(t)) {
+    return { kind: "term", types: ["know"], reason: "규칙: 용어·정의" };
+  }
+  return null;
+}
+
+/** 용어·규정은 키워드 매칭만으로 충분 — 질문 임베딩 RPC 생략 */
+export function scopeSkipsQueryEmbedding(kind: SearchScopeKind): boolean {
+  return kind === "term" || kind === "policy" || kind === "none";
+}
+
+/**
+ * 「어떻게」가 들어가도 프로젝트·용어는 종합 에세이가 아님.
+ * 주입량·답변 토큰을 simple 로 고정한다.
+ */
+export function forceSimpleDepthForScope(kind: SearchScopeKind): boolean {
+  return (
+    kind === "term" ||
+    kind === "policy" ||
+    kind === "project" ||
+    kind === "person"
+  );
+}
+
+/**
  * 기존 유형 + 규칙 서브타입 → 검색 종류.
  * 애매·저신뢰면 wide. LLM 추가 호출 없음.
  */

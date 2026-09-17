@@ -7,6 +7,8 @@ import {
   resolveSearchScope,
   widenSearchScope,
   scopeHitsInsufficient,
+  inferRuleClassification,
+  scopeSkipsQueryEmbedding,
   TERM_DEF_RE,
   POLICY_RE,
   PERSON_SPEECH_RE,
@@ -116,6 +118,26 @@ check(
     question: "상지원 상무가 얘기한 내용",
     classifyConfidence: 0.35
   }) === "person"
+);
+check(
+  "inferRule term",
+  inferRuleClassification("볼팍견적이 뭐야?")?.kind === "term"
+);
+check(
+  "inferRule policy",
+  inferRuleClassification("병가 며칠 쓸 수 있어?")?.kind === "policy"
+);
+check(
+  "inferRule project",
+  inferRuleClassification("인스파이어 시즌4 어떻게 돼가?")?.kind === "project"
+);
+check(
+  "scopeSkipsQueryEmbedding term",
+  scopeSkipsQueryEmbedding("term")
+);
+check(
+  "scopeSkipsQueryEmbedding project false",
+  !scopeSkipsQueryEmbedding("project")
 );
 
 if (failed > 0) {

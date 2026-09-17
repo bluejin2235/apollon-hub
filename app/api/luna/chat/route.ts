@@ -116,6 +116,7 @@ import {
 } from "@/lib/luna/listing-question";
 import {
   answerMaxTokensForDepth,
+  LLM_INJECT_BY_DEPTH,
   llmInjectLimitsForQuestion,
   shouldOmitTalkAnswer,
   SYNTHESIS_ANSWER_RULE,
@@ -146,6 +147,7 @@ import {
 } from "@/lib/luna/connector-routing";
 import {
   applyScopeToConnectorFlags,
+  forceSimpleDepthForScope,
   inferRuleClassification,
   resolveSearchScope,
   scopeHitsInsufficient,
@@ -1193,7 +1195,7 @@ export async function POST(request: NextRequest) {
   const listingQuestion = listingCtx.listing;
   const listingSourceText = listingCtx.rootText;
   const depthText = listingSourceText || searchIntentText;
-  const { depth: questionDepth, limits: llmInject } =
+  let { depth: questionDepth, limits: llmInject } =
     llmInjectLimitsForQuestion(depthText);
   console.log("[luna/inject]", {
     depth: questionDepth,
@@ -1530,6 +1532,18 @@ export async function POST(request: NextRequest) {
           types: classification.types
         });
 
+        if (
+          forceSimpleDepthForScope(searchScope.kind) &&
+          questionDepth !== "simple"
+        ) {
+          questionDepth = "simple";
+          llmInject = LLM_INJECT_BY_DEPTH.simple;
+          console.log("[luna/inject] scope-force-simple", {
+            kind: searchScope.kind,
+            notion: llmInject.notion
+          });
+        }
+
         // 용어·규정은 키워드만 — 질문 임베딩·RPC 생략
         if (!scopeSkipsQueryEmbedding(searchScope.kind)) {
           knowledgeEmbPromise = retrieveKnowledgeEmbeddings(
@@ -1656,6 +1670,8 @@ export async function POST(request: NextRequest) {
           hasManualSkills(manualSkillIds) ||
           shouldSkipProjectClarify(userText) ||
           typesSkipClarify(classifiedTypeRows) ||
+          forceSimpleDepthForScope(searchScope.kind) ||
+          searchScope.kind === "reference" ||
           clearFindIntent ||
           clearImageFindIntent ||
           (imageIntent && preMediaProbe.hits.length > 0);
@@ -2108,7 +2124,11 @@ export async function POST(request: NextRequest) {
             opts?.reuseSpeculative === true &&
             runNas &&
             speculativeNas.length > 0;
-          const useNasTools = nasEnabled && runNas && !listingQuestion;
+          const useNasTools =
+            nasEnabled &&
+            runNas &&
+            !listingQuestion &&
+            (searchScope.kind === "find_wide" || searchScope.kind === "wide");
           const [notionOutcome, webRes, youtubeRes, nasRes, mediaRes] =
             await Promise.all([
             runNotionIndex

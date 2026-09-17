@@ -1,5 +1,5 @@
 /**
- * 질문 종류별 검색 범위 재측정.
+ * 범위+규칙 classify 생략 후 5문항 재측정 (self-score 제외 — 순수 응답 경로).
  *   npx tsx --require ./scripts/stub-server-only.cjs scripts/probe-search-scope.ts
  */
 import { config } from "dotenv";
@@ -8,8 +8,7 @@ config({ path: resolve(process.cwd(), ".env.local") });
 
 import { createClient } from "@supabase/supabase-js";
 import { runLunaTurn } from "../lib/luna/run-chat";
-import { scoreAnswerSelf } from "../lib/luna/answer-self-score";
-import { resolveSearchScope } from "../lib/luna/search-scope";
+import { inferRuleClassification } from "../lib/luna/search-scope";
 import { formatSeconds } from "../lib/luna/response-timings";
 
 const QUESTIONS = [
@@ -35,35 +34,24 @@ async function main() {
 
   for (const q of QUESTIONS) {
     console.log(`\n=== ${q} ===`);
+    const rule = inferRuleClassification(q);
     const t0 = Date.now();
     const turn = await runLunaTurn(admin, q, {});
     const total_ms = Date.now() - t0;
-    const score = await scoreAnswerSelf(admin, {
-      question: q,
-      answer: turn.answer
-    });
-    const scope = resolveSearchScope({
-      types: [], // display only — actual scope logged in run-chat
-      question: q
-    });
-    const notionN = turn.notionSources?.length ?? 0;
-    const wikiN = turn.wikiSources?.length ?? 0;
-    const cardN = turn.sources?.length ?? 0;
     const row = {
       question: q,
-      scope_guess: scope.kind,
+      rule: rule?.kind ?? null,
       total_ms,
       total: formatSeconds(total_ms),
+      durationMs: turn.durationMs,
+      stages: turn.stageMs ?? {},
       docs: {
-        wiki: wikiN,
-        notion: notionN,
-        cards: cardN,
+        wiki: turn.wikiSources?.length ?? 0,
+        notion: turn.notionSources?.length ?? 0,
+        cards: turn.sources?.length ?? 0,
         terms: turn.injected_terms?.length ?? 0
       },
-      confidence: score?.confidence_score ?? null,
-      intent: score?.intent_score ?? null,
-      self_note: score?.self_note ?? null,
-      answer: turn.answer.replace(/\s+/g, " ").slice(0, 160)
+      answer: turn.answer.replace(/\s+/g, " ").slice(0, 120)
     };
     rows.push(row);
     console.log(JSON.stringify(row, null, 2));
@@ -71,8 +59,12 @@ async function main() {
 
   console.log("\n=== summary ===");
   for (const r of rows) {
+    const s = r.stages as Record<string, number>;
     console.log(
-      `${r.question}\n  ${r.total} · wiki ${r.docs.wiki} · notion ${r.docs.notion} · cards ${r.docs.cards} · 자신감 ${r.confidence ?? "?"}/10 · scope~${r.scope_guess}`
+      `${r.question}\n  ${r.total} · wiki ${r.docs.wiki} · notion ${r.docs.notion} · cards ${r.docs.cards} · rule=${r.rule}`
+    );
+    console.log(
+      `  classify ${formatSeconds(s.classify ?? 0)} · embed ${formatSeconds(s.embed_and_match ?? 0)} · search ${formatSeconds(s.connector_search ?? 0)} · nas ${formatSeconds(s.nas_explore ?? 0)} · answer_llm ${formatSeconds(s.answer_llm ?? 0)} · load ${formatSeconds((s.load_prompts ?? 0) + (s.load_types_wiki ?? 0) + (s.load_learnings ?? 0) + (s.load_glossary ?? 0))}`
     );
   }
 }
