@@ -98,9 +98,10 @@ export function evaluateAnswerFlags(
   const memory = Math.max(0, Math.round(input.memory_n ?? 0));
   const modeTop = num(input.mode_a_top_n);
 
+  const searchDocs = notion + wiki + nas + glossary;
   const totalDocs =
-    notion + wiki + nas + glossary + memory > 0
-      ? notion + wiki + nas + glossary + memory
+    searchDocs > 0
+      ? searchDocs
       : modeTop != null
         ? Math.max(0, Math.round(modeTop))
         : found != null
@@ -127,7 +128,7 @@ export function evaluateAnswerFlags(
 
   const flags: AnswerFlagHit[] = [];
 
-  // 범위 과다 — 짧은 질문 + 문서 많음 (모드 A top_n 포함)
+  // 범위 과다 — 짧은 질문 + 검색 자료 많음 (지식 주입은 제외)
   if (qLen > 0 && qLen < T.short_question_chars && totalDocs >= T.scope_docs_min) {
     flags.push(hit("scope_excess"));
   }
