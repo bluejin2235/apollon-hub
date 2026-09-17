@@ -14,7 +14,9 @@ import {
   ADMIN_SIGNALS_HOUR,
   ADMIN_SIGNALS_MINUTE,
   ADMIN_WORK_INDEX_HOUR,
-  ADMIN_WORK_INDEX_MINUTE
+  ADMIN_WORK_INDEX_MINUTE,
+  ADMIN_WORK_TEXT_HOUR,
+  ADMIN_WORK_TEXT_MINUTE
 } from "@/lib/luna-admin/schedule";
 import {
   CRON_CONSOLIDATE_HOUR,
@@ -44,6 +46,12 @@ export const LUNA_CHECK_PROMISES: Record<
   work_index: {
     promise_label: `매일 ${hhmm(ADMIN_WORK_INDEX_HOUR, ADMIN_WORK_INDEX_MINUTE)} 약속`,
     source: "작업 스케줄러 LUNA NAS Scan + schedule.ts"
+  },
+  work_text: {
+    promise_label: `매일 ${hhmm(ADMIN_WORK_TEXT_HOUR, ADMIN_WORK_TEXT_MINUTE)} 약속`,
+    source: "작업 스케줄러 LUNA Work Text Extract + schedule.ts",
+    yellow_days: 2,
+    red_days: 3
   },
   notion_index: {
     promise_label: "매일 03:20·13:30 약속",

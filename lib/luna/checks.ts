@@ -108,6 +108,19 @@ async function resolveLastOkAt(
           typeof data?.last_run_at === "string" ? data.last_run_at : null
       };
     }
+    case "work_text": {
+      const { data } = await admin
+        .from("nas_file_text")
+        .select("extracted_at")
+        .not("extracted_at", "is", null)
+        .order("extracted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return {
+        lastOkAt:
+          typeof data?.extracted_at === "string" ? data.extracted_at : null
+      };
+    }
     case "notion_index":
       return {
         lastOkAt: await latestIso(admin, "luna_notion_index_runs", "finished_at")

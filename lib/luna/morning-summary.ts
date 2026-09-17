@@ -320,6 +320,16 @@ export async function collectMorningSummaryParts(
     );
   }
 
+  const { collectNasTextMorningLine } = await import(
+    "@/lib/luna/nas-text-runs"
+  );
+  const nasTextLine = await collectNasTextMorningLine(admin, startIso, endIso);
+  if (nasTextLine) {
+    parts.push(
+      withLink(nasTextLine, "/settings?menu=knowledge&sub=primary")
+    );
+  }
+
   return { parts, dateLabel, startIso, endIso };
 }
 

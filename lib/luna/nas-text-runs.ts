@@ -1,0 +1,177 @@
+/**
+ * nas_text_runs — Work 본문 추출·임베딩 실행 기록.
+ */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export type NasTextRunKind = "full" | "incremental";
+export type NasTextRunStatus =
+  | "running"
+  | "done"
+  | "failed"
+  | "interrupted";
+
+export type NasTextRunProgress = {
+  targetCount?: number;
+  ok: number;
+  empty: number;
+  failed: number;
+  skipped: number;
+  chunksCreated: number;
+  embeddingsCreated: number;
+  costUsd?: number;
+  lastPath?: string | null;
+};
+
+export async function interruptStaleNasTextRuns(
+  admin: SupabaseClient
+): Promise<number> {
+  const { data, error } = await admin
+    .from("nas_text_runs")
+    .update({
+      status: "interrupted",
+      finished_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      error: "stale running → interrupted (next run resumes)"
+    })
+    .eq("status", "running")
+    .select("id");
+  if (error) {
+    console.warn("[nas-text-runs] interrupt stale", error.message);
+    return 0;
+  }
+  return data?.length ?? 0;
+}
+
+export async function startNasTextRun(
+  admin: SupabaseClient,
+  kind: NasTextRunKind,
+  targetCount: number
+): Promise<string | null> {
+  await interruptStaleNasTextRuns(admin);
+  const now = new Date().toISOString();
+  const { data, error } = await admin
+    .from("nas_text_runs")
+    .insert({
+      kind,
+      status: "running",
+      started_at: now,
+      updated_at: now,
+      target_count: targetCount
+    })
+    .select("id")
+    .single();
+  if (error) {
+    console.warn("[nas-text-runs] start", error.message);
+    return null;
+  }
+  return typeof data?.id === "string" ? data.id : null;
+}
+
+function progressRow(progress: NasTextRunProgress) {
+  return {
+    target_count: progress.targetCount,
+    ok: progress.ok,
+    empty: progress.empty,
+    failed: progress.failed,
+    skipped: progress.skipped,
+    chunks_created: progress.chunksCreated,
+    embeddings_created: progress.embeddingsCreated,
+    cost_usd: progress.costUsd ?? 0,
+    last_path: progress.lastPath ?? null,
+    updated_at: new Date().toISOString()
+  };
+}
+
+export async function updateNasTextRunProgress(
+  admin: SupabaseClient,
+  runId: string,
+  progress: NasTextRunProgress
+): Promise<void> {
+  const row = progressRow(progress);
+  if (progress.targetCount === undefined) {
+    delete (row as { target_count?: number }).target_count;
+  }
+  const { error } = await admin
+    .from("nas_text_runs")
+    .update(row)
+    .eq("id", runId);
+  if (error) console.warn("[nas-text-runs] progress", error.message);
+}
+
+export async function finishNasTextRun(
+  admin: SupabaseClient,
+  runId: string,
+  status: Exclude<NasTextRunStatus, "running">,
+  progress: NasTextRunProgress,
+  errorMsg?: string | null
+): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    ...progressRow(progress),
+    status,
+    finished_at: now,
+    error: errorMsg ?? null
+  };
+  if (progress.targetCount === undefined) {
+    delete (row as { target_count?: number }).target_count;
+  }
+  const { error } = await admin
+    .from("nas_text_runs")
+    .update(row)
+    .eq("id", runId);
+  if (error) console.warn("[nas-text-runs] finish", error.message);
+}
+
+/** 아침 리포트 — 「어젯밤 본문 N건 추출 · 청크 N개」 */
+export async function collectNasTextMorningLine(
+  admin: SupabaseClient,
+  startIso: string,
+  endIso: string
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("nas_text_runs")
+    .select(
+      "ok, empty, failed, skipped, chunks_created, embeddings_created, status, kind"
+    )
+    .gte("started_at", startIso)
+    .lt("started_at", endIso)
+    .in("status", ["done", "interrupted", "failed"]);
+  if (error) {
+    console.error("[nas-text-runs] morning", error);
+    return null;
+  }
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+
+  let ok = 0;
+  let chunks = 0;
+  let embeds = 0;
+  let anyDone = false;
+  let anyInterrupted = false;
+  for (const r of rows) {
+    ok += Number(r.ok) || 0;
+    chunks += Number(r.chunks_created) || 0;
+    embeds += Number(r.embeddings_created) || 0;
+    if (r.status === "done") anyDone = true;
+    if (r.status === "interrupted" || r.status === "failed") {
+      anyInterrupted = true;
+    }
+  }
+
+  const bits: string[] = [];
+  if (ok > 0 || chunks > 0) {
+    bits.push(
+      `어젯밤 본문 ${ok.toLocaleString("ko-KR")}건 추출 · 청크 ${chunks.toLocaleString("ko-KR")}개`
+    );
+  } else if (anyDone) {
+    bits.push("어젯밤 본문 추출 — 신규 없음");
+  } else if (anyInterrupted) {
+    bits.push("어젯밤 본문 추출 중단됨 — 다음 실행에서 이어받음");
+  }
+  if (embeds > 0) {
+    bits.push(`임베딩 ${embeds.toLocaleString("ko-KR")}개`);
+  }
+  if (bits.length === 0) return null;
+  const suffix = anyInterrupted && !anyDone ? " (중단·이어받기)" : "";
+  return bits.join(" · ") + suffix;
+}
