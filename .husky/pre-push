@@ -1,0 +1,97 @@
+#!/usr/bin/env sh
+# pre-push: HEAD 스냅샷 worktree에서 tsc · next build (WIP·.next 와 격리)
+#
+# 급하면 git push --no-verify 로 건너뛸 수 있습니다. 다만 오늘 두 번 깨졌습니다.
+
+echo ""
+echo "[pre-push] 깨끗한 HEAD worktree에서 tsc · next build 검사합니다."
+echo "[pre-push] 급하면 git push --no-verify 로 건너뛸 수 있습니다. 다만 오늘 두 번 깨졌습니다."
+echo ""
+
+ROOT="$(git rev-parse --show-toplevel)"
+# repo 밖 /tmp — WIP·메인 .next 와 격리. Windows TEMP 는 경로가 깨질 수 있어 고정.
+WT="/tmp/apollon-hub-pre-push-$$"
+START_TS="$(date +%s)"
+
+cleanup() {
+  code=$?
+  cd "$ROOT" 2>/dev/null || true
+  if [ -n "${WT:-}" ] && [ -d "$WT" ]; then
+    git -C "$ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || rm -rf "$WT"
+  fi
+  git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
+  end_ts="$(date +%s)"
+  echo "[pre-push] 경과 $((end_ts - START_TS))초 (종료 코드 $code)"
+  exit "$code"
+}
+trap cleanup EXIT INT TERM HUP
+
+if ! git worktree add --detach "$WT" HEAD; then
+  echo "[pre-push] worktree 생성 실패" >&2
+  exit 1
+fi
+
+link_node_modules() {
+  if [ ! -d "$ROOT/node_modules" ]; then
+    echo "[pre-push] 메인 repo 에 node_modules 가 없습니다. npm install 후 다시 push 하세요." >&2
+    return 1
+  fi
+  if [ -e "$WT/node_modules" ]; then
+    return 0
+  fi
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      wt_win="$(cygpath -w "$WT/node_modules")"
+      root_win="$(cygpath -w "$ROOT/node_modules")"
+      if cmd.exe //c "mklink /J \"$wt_win\" \"$root_win\"" >/dev/null 2>&1; then
+        echo "[pre-push] node_modules → junction"
+      elif ln -sfn "$ROOT/node_modules" "$WT/node_modules" 2>/dev/null; then
+        echo "[pre-push] node_modules → symlink"
+      else
+        echo "[pre-push] node_modules 연결 실패" >&2
+        return 1
+      fi
+      ;;
+    *)
+      ln -sfn "$ROOT/node_modules" "$WT/node_modules" || return 1
+      ;;
+  esac
+}
+
+# .env 는 gitignore — page data 수집용으로 메인에서 복사 (비밀은 worktree 삭제 시 함께 제거)
+link_env_files() {
+  for f in .env .env.local .env.development.local .env.production.local; do
+    if [ -f "$ROOT/$f" ] && [ ! -e "$WT/$f" ]; then
+      cp "$ROOT/$f" "$WT/$f" || return 1
+    fi
+  done
+}
+
+if ! link_node_modules; then
+  exit 1
+fi
+if ! link_env_files; then
+  echo "[pre-push] .env 복사 실패" >&2
+  exit 1
+fi
+
+cd "$WT" || exit 1
+rm -rf .next
+
+echo "[pre-push] ▶ npx tsc --noEmit"
+if ! npx tsc --noEmit; then
+  echo "" >&2
+  echo "[pre-push] ❌ tsc 실패 — push 중단. WIP 는 손대지 않았습니다 (worktree)." >&2
+  exit 1
+fi
+
+echo "[pre-push] ▶ npx next build"
+if ! npx next build; then
+  echo "" >&2
+  echo "[pre-push] ❌ next build 실패 — push 중단. WIP 는 손대지 않았습니다 (worktree)." >&2
+  echo "[pre-push] (오늘처럼 커밋에 빠진 import/모듈이 있는지 확인하세요)" >&2
+  exit 1
+fi
+
+echo ""
+echo "[pre-push] ✅ tsc · next build 통과 — push 진행"

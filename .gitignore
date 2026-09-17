@@ -4,6 +4,7 @@
 # next.js
 /.next
 /out
+.pre-push-worktrees/
 
 # production
 /build
