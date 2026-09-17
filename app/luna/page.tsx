@@ -812,7 +812,7 @@ export default function LunaPage() {
         streamGuardConvRef.current = null;
         await loadMessages(conversationId);
         try {
-          await fetch("/api/luna/conversations/title", {
+          const titleRes = await fetch("/api/luna/conversations/title", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -820,6 +820,20 @@ export default function LunaPage() {
             },
             body: JSON.stringify({ conversation_id: conversationId })
           });
+          if (titleRes.ok) {
+            const titleJson = (await titleRes.json()) as {
+              title?: string | null;
+            };
+            const nextTitle =
+              typeof titleJson.title === "string" ? titleJson.title.trim() : "";
+            if (nextTitle) {
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === conversationId ? { ...c, title: nextTitle } : c
+                )
+              );
+            }
+          }
         } catch (titleErr) {
           console.error("[luna] title", titleErr);
         }

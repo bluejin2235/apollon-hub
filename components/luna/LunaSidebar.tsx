@@ -57,6 +57,53 @@ type LunaSidebarProps = {
 
 const RECENT_LIMIT = 8;
 
+type DateGroupId = "today" | "yesterday" | "week" | "older";
+
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function groupConversationsByDate(
+  items: LunaConversation[]
+): { id: DateGroupId; label: string; items: LunaConversation[] }[] {
+  const now = new Date();
+  const today0 = startOfLocalDay(now);
+  const yesterday0 = new Date(today0);
+  yesterday0.setDate(yesterday0.getDate() - 1);
+  const week0 = new Date(today0);
+  week0.setDate(week0.getDate() - 7);
+
+  const buckets: Record<DateGroupId, LunaConversation[]> = {
+    today: [],
+    yesterday: [],
+    week: [],
+    older: []
+  };
+
+  for (const c of items) {
+    const raw = c.updated_at || c.created_at;
+    const t = new Date(raw);
+    if (Number.isNaN(t.getTime())) {
+      buckets.older.push(c);
+      continue;
+    }
+    if (t >= today0) buckets.today.push(c);
+    else if (t >= yesterday0) buckets.yesterday.push(c);
+    else if (t >= week0) buckets.week.push(c);
+    else buckets.older.push(c);
+  }
+
+  const order: { id: DateGroupId; label: string }[] = [
+    { id: "today", label: "오늘" },
+    { id: "yesterday", label: "어제" },
+    { id: "week", label: "지난 7일" },
+    { id: "older", label: "이전" }
+  ];
+  return order
+    .map((o) => ({ ...o, items: buckets[o.id] }))
+    .filter((g) => g.items.length > 0);
+}
+
 async function getAccessToken(): Promise<string | null> {
   const {
     data: { session }
@@ -163,6 +210,11 @@ export function LunaSidebar({
   const recentItems = showAllRecent
     ? filteredConversations
     : filteredConversations.slice(0, RECENT_LIMIT);
+
+  const dateGroups = useMemo(
+    () => groupConversationsByDate(recentItems),
+    [recentItems]
+  );
 
   const selectConversation = useCallback(
     (id: string) => {
@@ -339,8 +391,14 @@ export function LunaSidebar({
         {recentItems.length === 0 ? (
           <p className="px-2 py-3 text-[12px] text-slate-400">대화가 없습니다</p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
-            {recentItems.map((c) => {
+          <div className="flex flex-col gap-2">
+            {dateGroups.map((group) => (
+              <div key={group.id}>
+                <div className="px-1.5 pb-1 text-[10.5px] font-extrabold tracking-wide text-slate-400">
+                  {group.label}
+                </div>
+                <ul className="flex flex-col gap-0.5">
+                  {group.items.map((c) => {
               const selected = c.id === selectedId;
               const editing = editingId === c.id;
               const menuOpen = menuId === c.id;
@@ -415,8 +473,11 @@ export function LunaSidebar({
                   ) : null}
                 </li>
               );
-            })}
-          </ul>
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
 
         {!showAllRecent && filteredConversations.length > RECENT_LIMIT ? (
