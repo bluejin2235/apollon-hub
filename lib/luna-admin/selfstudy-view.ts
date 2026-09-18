@@ -90,8 +90,20 @@ function emptyReason(opts: {
     return {
       code: "already_ran",
       title: "오늘 밤은 건너뜁니다",
-      detail: `${already.detail}\n내일 05:00 에 청크 방식으로 다시 돌아갑니다.`,
+      detail: `${already.detail}\n내일 05:00 에 다시 고릅니다.`,
       action_label: already.outcome === "failed" ? "실패 기록 보기" : "어젯밤 보기",
+      action_href: "/settings?menu=selfstudy&sub=history"
+    };
+  }
+  const gaveUp = opts.demoted.find(
+    (d) => d.reason === "same_fail_streak" || d.reason === "fail_cap"
+  );
+  if (gaveUp) {
+    return {
+      code: "gave_up",
+      title: "오늘은 이 일을 그만둡니다",
+      detail: gaveUp.detail,
+      action_label: "실패 기록 보기",
       action_href: "/settings?menu=selfstudy&sub=history"
     };
   }
@@ -138,7 +150,6 @@ async function notionPageCount(admin: SupabaseClient): Promise<number> {
 }
 
 function modeAProgress(runs: StudyRunRow[], notionTotal: number): TonightLongJob | null {
-  const today = todayKstKey();
   let done = 0;
   for (const r of runs) {
     if (r.kind !== "probe_retrieval") continue;

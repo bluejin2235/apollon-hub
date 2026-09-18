@@ -4,7 +4,7 @@ import { ADMIN_SELFSTUDY_HOUR, ADMIN_SELFSTUDY_MINUTE } from "@/lib/luna-admin/s
 
 const STUDY_BUDGET_MINUTES = 60;
 const STUDY_DAILY_COST_USD = 1;
-const MODE_A_MULTI_FROM = "2026-09-19";
+const MODE_A_MULTI_FROM = "2026-09-20";
 
 const SOURCE_ROWS: Array<{
   key: string;
@@ -87,8 +87,10 @@ export function LunaAdminSelfstudySettings() {
       </div>
       <div className="setrow">
         <div className="c">
-          <div className="t">같은 아젠다를 하루에 두 번 고르지 않는다</div>
-          <div className="d">같은 것을 여러 번 골라 헛도는 일을 막습니다.</div>
+          <div className="t">성공한 아젠다는 하루에 한 번</div>
+          <div className="d">
+            나아짐·변화 없음이면 그날 다시 안 고릅니다. 실패는 같은 날 3회까지 다시 고르고, 같은 이유로 연속 실패하면 그날은 포기합니다.
+          </div>
         </div>
         <span className="tog" aria-hidden />
       </div>

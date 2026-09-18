@@ -12,6 +12,7 @@ import { buildAdminDashboard } from "@/lib/luna-admin/dashboard";
 import { countLinks } from "@/lib/luna-admin/links";
 import { listQuestions } from "@/lib/luna-admin/questions";
 import { loadTonightState } from "@/lib/luna-admin/tonight";
+import { selectTonightAgenda } from "@/lib/luna/study-agenda";
 import { lightEmoji, type TrafficLight } from "@/lib/luna-admin/traffic";
 import {
   getAdminReportRecipients,
@@ -248,6 +249,7 @@ export async function buildAdminReportHtml(
     studyRuns,
     questions,
     tonight,
+    agenda,
     openFailures,
     ruleQuestions,
     answerFlags,
@@ -271,6 +273,7 @@ export async function buildAdminReportHtml(
     collectStudyRuns(admin, startIso, endIso),
     listQuestions(admin, { status: "pending" }),
     loadTonightState(admin),
+    selectTonightAgenda(admin),
     countOpenFailures(admin),
     listCandidateRuleQuestions(admin),
     listPendingAnswerFlagsForHuman(admin, {
@@ -389,6 +392,16 @@ export async function buildAdminReportHtml(
         prompt: buildStudyBlockedPrompt(card, devnoteBlockers)
       });
     }
+  }
+  for (const d of agenda.demoted) {
+    if (d.reason !== "same_fail_streak" && d.reason !== "fail_cap") continue;
+    todos.push({
+      title: `자습을 오늘은 포기했습니다 · ${d.agenda}`,
+      detail: d.detail,
+      href: hubHref(buildLunaAdminUrl("selfstudy", "history")),
+      btn: "실패 기록",
+      tone: "r"
+    });
   }
   if (ruleQuestions.length > 0) {
     const n = ruleQuestions.length;

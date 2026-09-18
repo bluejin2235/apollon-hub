@@ -154,8 +154,8 @@ export async function buildLinkProgress(
       : 0;
     let status: YearProgressRow["status"] = "wait";
     if (!hasWork) status = "wait";
-    else if (progress_pct >= 100 && (year !== "2026" || ask === 0)) status = "done";
-    else if (progress_pct > 0 || index === 0) status = "tonight";
+    else if (bundles > 0) status = "done";
+    else status = "wait";
     return {
       year,
       projects,
@@ -163,8 +163,7 @@ export async function buildLinkProgress(
       images,
       progress_pct,
       status,
-      status_label:
-        status === "done" ? "완료" : status === "tonight" ? "오늘 밤" : "대기"
+      status_label: status === "done" ? "완료" : "대기"
     };
   });
 

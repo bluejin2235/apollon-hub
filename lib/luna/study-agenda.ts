@@ -42,12 +42,19 @@ export type SelectedAgenda = AgendaCandidate & {
 export type AgendaDemote = {
   id: string;
   agenda: string;
-  reason: "already_ran" | "recent_fail" | "no_change_streak";
+  reason:
+    | "already_ran"
+    | "no_change_streak"
+    | "fail_cap"
+    | "same_fail_streak";
   detail: string;
   started_at?: string;
   outcome?: string | null;
   error?: string | null;
 };
+
+/** 같은 날 실패 재시도 상한 */
+export const STUDY_FAIL_RETRY_MAX = 3;
 
 export const STUDY_BUDGET_MINUTES = 60;
 export const STUDY_DAILY_COST_USD = 1;
@@ -180,18 +187,6 @@ export function todayKstKey(now = new Date()): string {
   return kst.toISOString().slice(0, 10);
 }
 
-function alreadyRanToday(c: AgendaCandidate, runs: RunHist[]): RunHist | null {
-  const today = todayKstKey();
-  return (
-    runs.find(
-      (r) =>
-        r.agenda === c.agenda &&
-        kstDayKey(r.started_at) === today &&
-        r.outcome != null
-    ) ?? null
-  );
-}
-
 function kstClock(iso: string): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "";
@@ -204,48 +199,101 @@ function runError(r: RunHist): string | null {
   return typeof err === "string" && err.trim() ? err.trim() : null;
 }
 
+function alreadySucceededToday(c: AgendaCandidate, runs: RunHist[]): RunHist | null {
+  const today = todayKstKey();
+  return (
+    runs.find(
+      (r) =>
+        r.agenda === c.agenda &&
+        kstDayKey(r.started_at) === today &&
+        (r.outcome === "improved" || r.outcome === "no_change")
+    ) ?? null
+  );
+}
+
+function todayFinished(c: AgendaCandidate, runs: RunHist[]): RunHist[] {
+  const today = todayKstKey();
+  return runs
+    .filter(
+      (r) =>
+        r.agenda === c.agenda &&
+        kstDayKey(r.started_at) === today &&
+        r.outcome != null
+    )
+    .slice()
+    .sort(
+      (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+    );
+}
+
+function failReasonKey(r: RunHist): string {
+  const err = runError(r) ?? "";
+  if (/timeout|타임아웃/i.test(err)) return "timeout";
+  if (err) return err.slice(0, 80);
+  return "failed";
+}
+
+function failReasonLabel(key: string): string {
+  if (key === "timeout") return "타임아웃";
+  if (key === "failed") return "실패";
+  return key;
+}
+
 function describeDemote(c: AgendaCandidate, runs: RunHist[]): AgendaDemote | null {
-  const todayHit = alreadyRanToday(c, runs);
-  if (todayHit) {
-    const clock = kstClock(todayHit.started_at);
-    const err = runError(todayHit);
-    const failBit =
-      todayHit.outcome === "failed"
-        ? err
-          ? ` (${err.includes("Timeout") || err.includes("타임아웃") ? "300초 타임아웃으로 실패" : err})`
-          : " (실패)"
-        : "";
+  const success = alreadySucceededToday(c, runs);
+  if (success) {
+    const clock = kstClock(success.started_at);
     const label = c.kind === "probe_retrieval" ? "모드 A" : c.agenda;
     return {
       id: c.id,
       agenda: c.agenda,
       reason: "already_ran",
-      detail: `오늘 ${clock || "05:00"} 에 ${label} 가 이미 한 번 돌았습니다${failBit}. 같은 날 같은 아젠다를 두 번 고르지 않습니다.`,
-      started_at: todayHit.started_at,
-      outcome: todayHit.outcome,
-      error: err
+      detail: `오늘 ${clock || "05:00"} 에 ${label} 가 이미 돌아갔습니다. 성공한 아젠다는 같은 날 다시 고르지 않습니다.`,
+      started_at: success.started_at,
+      outcome: success.outcome
     };
   }
+
+  const todayRuns = todayFinished(c, runs);
+  const fails = todayRuns.filter((r) => r.outcome === "failed");
+  const lastTwo = todayRuns.slice(-2);
+  if (
+    lastTwo.length === 2 &&
+    lastTwo[0]!.outcome === "failed" &&
+    lastTwo[1]!.outcome === "failed" &&
+    failReasonKey(lastTwo[0]!) === failReasonKey(lastTwo[1]!)
+  ) {
+    const last = lastTwo[1]!;
+    const why = failReasonLabel(failReasonKey(last));
+    const label = c.kind === "probe_retrieval" ? "모드 A" : c.agenda;
+    return {
+      id: c.id,
+      agenda: c.agenda,
+      reason: "same_fail_streak",
+      detail: `${label} 가 같은 이유(${why})로 연속 실패해 오늘은 포기합니다. 아침 리포트에 적습니다.`,
+      started_at: last.started_at,
+      outcome: "failed",
+      error: runError(last)
+    };
+  }
+  if (fails.length >= STUDY_FAIL_RETRY_MAX) {
+    const last = fails[fails.length - 1]!;
+    const label = c.kind === "probe_retrieval" ? "모드 A" : c.agenda;
+    return {
+      id: c.id,
+      agenda: c.agenda,
+      reason: "fail_cap",
+      detail: `오늘 ${label} 실패 ${fails.length}회 — ${STUDY_FAIL_RETRY_MAX}회까지라 오늘은 포기합니다. 아침 리포트에 적습니다.`,
+      started_at: last.started_at,
+      outcome: "failed",
+      error: runError(last)
+    };
+  }
+
   const key = demoteKey(c);
   const related = runs.filter(
     (r) => `${r.kind}::${c.gap_id}` === key || r.agenda === c.agenda
   );
-  const failed = related.find((r) => r.outcome === "failed");
-  if (failed) {
-    const t = new Date(failed.started_at).getTime();
-    if (Date.now() - t < 14 * 86400000) {
-      const err = runError(failed);
-      return {
-        id: c.id,
-        agenda: c.agenda,
-        reason: "recent_fail",
-        detail: `최근 실패로 14일 동안 다시 고르지 않습니다${err ? ` · ${err}` : ""}.`,
-        started_at: failed.started_at,
-        outcome: failed.outcome,
-        error: err
-      };
-    }
-  }
   const recent = related.filter((r) => r.outcome === "no_change").slice(0, 3);
   if (recent.length >= 3) {
     const days = new Set(
@@ -384,11 +432,21 @@ export async function selectTonightAgenda(
       demoted.push(demote);
       continue;
     }
+    // 2차 데이터는 cron(/api/cron/luna-links)이 이미 20~26년을 돌렸다. 오늘 밤에서 뺀다.
+    if (c.kind === "materialize_secondary") continue;
     if (!c.verifiable) {
       selected.push({ ...c, excluded: false, when: "tomorrow" });
       continue;
     }
-    // 모드 A 는 예산과 무관하게 하루 하나 확보 (이미 오늘 돌았으면 demote)
+    // 강제 모드 A 와 같은 일(정답 검색 시험)은 하루 하나
+    if (
+      modeAPlaced &&
+      c.kind === "probe_retrieval" &&
+      c.scope?.mode === "answer_key"
+    ) {
+      continue;
+    }
+    // 모드 A 는 예산과 무관하게 하루 하나 확보 (성공한 날만 demote)
     if (c.tier === 1 && !modeAPlaced) {
       selected.push({ ...c, excluded: false, when: "tonight" });
       used += c.minutes;

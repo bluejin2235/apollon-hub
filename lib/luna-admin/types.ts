@@ -36,7 +36,13 @@ export type TonightItem = {
 };
 
 export type TonightEmptyReason = {
-  code: "already_ran" | "no_gaps" | "all_excluded" | "budget" | "human_only";
+  code:
+    | "already_ran"
+    | "gave_up"
+    | "no_gaps"
+    | "all_excluded"
+    | "budget"
+    | "human_only";
   title: string;
   detail: string;
   action_label?: string;

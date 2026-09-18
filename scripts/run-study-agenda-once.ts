@@ -1,6 +1,7 @@
 /**
  * 자율 자습 아젠다 — DB 스캔 · 후보 · 10건 시험 실행
- * npx tsx scripts/run-study-agenda-once.ts
+ * npx tsx --require ./scripts/stub-server-only.cjs scripts/run-study-agenda-once.ts
+ * npx tsx --require ./scripts/stub-server-only.cjs scripts/run-study-agenda-once.ts --select-only
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -34,6 +35,7 @@ function adminClient() {
 }
 
 async function main() {
+  const selectOnly = process.argv.includes("--select-only");
   const admin = adminClient();
   const { sources, gaps } = await scanStudyGaps(admin);
   const { candidates, selected, demoted } = await selectTonightAgenda(admin);
@@ -65,6 +67,9 @@ async function main() {
       demoted.map((d) => `${d.agenda} (${d.reason})`).join(" | ")
     );
   }
+
+  console.log(`\n=== 오늘 밤 ${tonight.length}건 ===`);
+  if (selectOnly) return;
 
   const first = tonight[0] ?? candidates.find((c) => c.verifiable);
   if (!first) {

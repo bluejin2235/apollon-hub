@@ -241,37 +241,6 @@ async function scanSecondaryCoverage(
       scope: { kind: "same", need_review: true }
     });
   }
-  // 연도별 프로젝트 묶음 밀도 — nas 경로 샘플로 빈 연도 추정
-  const { data: nasSample } = await admin
-    .from("luna_links")
-    .select("from_id, kind, created_at")
-    .eq("kind", "belongs")
-    .limit(500);
-  const years = new Map<string, number>();
-  for (const row of (nasSample ?? []) as Array<{ from_id?: string }>) {
-    const m = String(row.from_id ?? "").match(/\\(20\d{2})\\/);
-    if (m?.[1]) years.set(m[1], (years.get(m[1]) ?? 0) + 1);
-  }
-  if (years.size > 0) {
-    const sorted = [...years.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-    const thin = sorted.filter(([, n]) => n < 20);
-    if (thin.length) {
-      gaps.push({
-        id: gapId("luna_links", "secondary_coverage", "thin_year"),
-        table: "luna_links",
-        capability: "secondary_coverage",
-        signal: `2차 묶음이 얇은 연도: ${thin.map(([y, n]) => `${y}(${n})`).join(", ")}`,
-        count: thin.reduce((s, [, n]) => s + n, 0),
-        sample: thin.map(([year, count]) => ({ year, count })),
-        verifiable: false,
-        method: "materialize_secondary",
-        impact: thin.length * 50,
-        human_failure: false,
-        stale_days: null,
-        scope: { thin_years: thin.map(([y]) => y) }
-      });
-    }
-  }
   return gaps;
 }
 

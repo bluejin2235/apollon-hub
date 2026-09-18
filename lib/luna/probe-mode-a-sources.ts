@@ -2,7 +2,7 @@
  * 모드 A — 1차 원천별 검색 검증
  *
  * 용어·이미지·지식은 LLM 없이, 위키·노션·Work 는 질문 생성(LLM).
- * 2026-09-19(KST) 부터 다중 원천. 그 전은 노션만(기존).
+ * 2026-09-20(KST) 부터 다중 원천. 그 전은 노션만(기존).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { iGa } from "@/lib/korean/particles";
@@ -31,8 +31,8 @@ export type ModeASourceKind =
   | "notion"
   | "work";
 
-/** KST 이 날짜부터 다중 원천 (오늘 밤=9/18 노션만 유지) */
-export const MODE_A_MULTI_SOURCE_FROM_KST = "2026-09-19";
+/** KST 이 날짜부터 다중 원천. 9/18 앞당기지 않고 9/20으로 하루 미룸 — 청크 모드 A 재시도를 먼저 확인. */
+export const MODE_A_MULTI_SOURCE_FROM_KST = "2026-09-20";
 
 export const MODE_A_SOURCE_BUDGET: Record<
   ModeASourceKind,
