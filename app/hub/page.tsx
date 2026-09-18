@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { NotebookPen } from "lucide-react";
 import { PortalAuthChecking } from "@/components/portal/portal-auth-checking";
 import { PortalHeader } from "@/components/portal/portal-header";
 import { HubBoardDetailModal } from "@/components/hub/hub-board-detail-modal";
@@ -547,10 +548,10 @@ export default function ServiceHubPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pb-5 md:grid-cols-4 xl:grid-cols-8">
+            <div className="grid grid-cols-2 gap-2 pb-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               <Link
                 href={lunaRoomHref}
-                className="col-span-2 flex flex-col rounded-xl px-3 py-3.5 md:col-span-1 md:px-3.5 md:py-3"
+                className="col-span-2 flex flex-col rounded-xl px-3 py-3.5 sm:col-span-1 md:px-3.5 md:py-3"
                 style={{
                   background: "rgba(83,74,183,0.28)",
                   border: "0.5px solid rgba(83,74,183,0.5)",
@@ -586,6 +587,25 @@ export default function ServiceHubPage() {
                   </div>
                 </Link>
               ))}
+              {profile?.role === "슈퍼관리자" ? (
+                <Link
+                  href="/devnote"
+                  className="flex flex-col rounded-xl px-3 py-3.5 md:px-3.5 md:py-3"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "0.5px solid rgba(255,255,255,0.09)",
+                    textDecoration: "none"
+                  }}
+                >
+                  <NotebookPen className="h-5 w-5 text-[#A78BFA]" strokeWidth={1.75} aria-hidden />
+                  <div className="mt-2 text-[12px] font-medium text-[#e0e0e8] md:text-xs">
+                    개발노트
+                  </div>
+                  <div className="mt-1 text-[10px] text-[#555570] md:text-xs">
+                    DevNote
+                  </div>
+                </Link>
+              ) : null}
             </div>
           </div>
 
