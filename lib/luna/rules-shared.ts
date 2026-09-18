@@ -379,6 +379,9 @@ export function ruleQuestionText(rule: {
 /** 하루에 사람에게 물을 상한 */
 export const QA_DAILY_LIMIT = 20;
 
+/** 문답 목록 선정 기준. 필터·근거·한도 바뀌면 올린다. 열린 세션은 이 값이 다르면 다시 만든다. */
+export const QA_LIST_VERSION = 2;
+
 export function answerFlagIdFromRule(patternValue: string): string | null {
   const m = /^answer_flag:(.+)$/.exec(patternValue);
   return m?.[1] ?? null;

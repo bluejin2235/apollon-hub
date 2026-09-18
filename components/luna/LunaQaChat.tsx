@@ -82,18 +82,19 @@ function OptionList({
 
 function Evidence({ item }: { item: QaItem }) {
   const hasPairs = Boolean(item.pairs?.length);
-  const stats = (item.stats ?? []).filter(Boolean);
+  const stats = (item.stats ?? []).filter((s) => s.trim().length > 0);
   const why =
     item.why && item.why.trim() && item.why.trim() !== item.question.trim()
       ? item.why
       : null;
-  if (!hasPairs && stats.length === 0 && !item.metrics && !why) return null;
+  const title = item.evidence_title?.trim() || "";
+  if (!hasPairs && stats.length === 0 && !item.metrics && !why && !title) return null;
   return (
     <div className="mt-2 rounded-[9px] border border-[#e7e8ec] bg-[#FAFAFB] px-3 py-2.5 text-[11.5px] leading-relaxed">
       {hasPairs ? (
         <>
           <div className="mb-1.5 text-[10px] font-extrabold text-[#9aa0a8]">
-            {item.evidence_title ?? "이렇게 잘못 연결한 것이 있었어요"}
+            {title || "이렇게 잘못 연결한 것이 있었어요"}
           </div>
           {item.pairs!.map((p, i) => (
             <div key={i} className="flex items-center gap-2 py-1">
@@ -117,21 +118,16 @@ function Evidence({ item }: { item: QaItem }) {
             </div>
           ))}
         </>
+      ) : title ? (
+        <div className="mb-1.5 text-[10px] font-extrabold text-[#9aa0a8]">{title}</div>
       ) : null}
-      {stats.length > 0 ? (
-        <>
-          {item.evidence_title ? (
-            <div className="mb-1.5 text-[10px] font-extrabold text-[#9aa0a8]">
-              {item.evidence_title}
-            </div>
-          ) : null}
-          {stats.map((line) => (
+      {stats.length > 0
+        ? stats.map((line) => (
             <div key={line} className="text-[11.5px] text-[#1c1d21]">
               {line}
             </div>
-          ))}
-        </>
-      ) : null}
+          ))
+        : null}
       {item.metrics ? (
         <div className="mt-1 text-[11px] text-[#6b6f76]">{item.metrics}</div>
       ) : null}
@@ -255,6 +251,20 @@ export function LunaQaChat() {
   const at = session ? Math.min(session.cursor + (session.finished_at ? 0 : 1), total) : 0;
   const pct = total > 0 ? Math.round((session!.cursor / total) * 100) : 0;
 
+  async function restart() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setError("");
+      const row = await qaFetch({ action: "restart" });
+      setSession(row);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "다시 시작 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function pick(optionId: string, transcript?: string) {
     if (!session || busy) return;
     if (optionId === "other") {
@@ -308,6 +318,16 @@ export function LunaQaChat() {
         <span className="font-mono text-[11px] text-[#9aa0a8]">
           {Math.min(at, total)} / {total}
         </span>
+        {!session.finished_at ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void restart()}
+            className="text-[11px] font-semibold text-[#9aa0a8] disabled:opacity-50"
+          >
+            다시 시작
+          </button>
+        ) : null}
         <Link href="/settings?menu=selfstudy&sub=ask" className="text-[15px] text-[#9aa0a8]">
           ✕
         </Link>

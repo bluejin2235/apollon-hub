@@ -17,6 +17,7 @@ import {
 import { confirmRule, listRules } from "@/lib/luna/rules";
 import {
   QA_DAILY_LIMIT,
+  QA_LIST_VERSION,
   answerFlagIdFromRule,
   isAskableRuleCandidate,
   qaRuleQuestion
@@ -83,8 +84,39 @@ function formatMetrics(m: Record<string, unknown>, extra?: string): string {
   return [docs, ms, extra].filter(Boolean).join(" · ");
 }
 
+function flagMetricScore(row: AnswerFlagRow): number {
+  const m = row.metrics ?? {};
+  let n = 0;
+  if (typeof m.duration_ms === "number") n += 4;
+  if (typeof m.search_ms === "number") n += 2;
+  if (typeof m.total_docs === "number") n += 1;
+  if (typeof m.notion_n === "number" || typeof m.nas_n === "number") n += 1;
+  return n;
+}
+
 function pickFlag(rows: AnswerFlagRow[], flagId: string): AnswerFlagRow | undefined {
-  return rows.find((r) => r.flags.some((f) => f.id === flagId));
+  const hits = rows.filter((r) => r.flags.some((f) => f.id === flagId));
+  if (hits.length === 0) return undefined;
+  return [...hits].sort((a, b) => flagMetricScore(b) - flagMetricScore(a))[0]!;
+}
+
+function sessionListVersion(session: QaSessionRow): number {
+  const v = session.items[0]?.list_version;
+  return typeof v === "number" ? v : 0;
+}
+
+function stampItems(items: QaItem[]): QaItem[] {
+  return items.map((item) => ({ ...item, list_version: QA_LIST_VERSION }));
+}
+
+async function closeOpenSession(
+  admin: SupabaseClient,
+  sessionId: string
+): Promise<void> {
+  await admin
+    .from("luna_qa_sessions")
+    .update({ finished_at: new Date().toISOString(), pending: null })
+    .eq("id", sessionId);
 }
 
 function flagStats(flagId: string, row: AnswerFlagRow | undefined): {
@@ -111,28 +143,32 @@ function flagStats(flagId: string, row: AnswerFlagRow | undefined): {
       stats: [
         `이 답은 노션에서만 ${notion || docs}건을 가져왔습니다`,
         `Work서버 ${nas} · 위키 ${wiki}${share != null ? ` · 노션 ${share}%` : ""}`
-      ]
+      ].filter((s) => s.trim().length > 0)
     };
   }
   if (flagId === "slow") {
+    const line = [
+      dur ? `${dur}초` : null,
+      search != null ? `검색 ${search}ms` : null,
+      docs ? `문서 ${docs}건` : null
+    ]
+      .filter(Boolean)
+      .join(" · ");
     return {
       title: "이렇게 오래 걸렸습니다",
-      stats: [
-        [dur ? `${dur}초` : null, search != null ? `검색 ${search}ms` : null, docs ? `문서 ${docs}건` : null]
-          .filter(Boolean)
-          .join(" · ")
-      ]
+      stats: line ? [line] : []
     };
   }
   if (flagId === "scope_excess") {
     return {
       title: "이렇게 넓게 찾았습니다",
-      stats: [`짧은 질문인데 문서 ${docs}건을 가져왔습니다`]
+      stats: docs ? [`짧은 질문인데 문서 ${docs}건을 가져왔습니다`] : []
     };
   }
+  const extra = formatMetrics(m as Record<string, unknown>);
   return {
     title: "이렇게 나왔습니다",
-    stats: [formatMetrics(m as Record<string, unknown>)].filter(Boolean)
+    stats: extra ? [extra] : []
   };
 }
 
@@ -157,6 +193,7 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
     const pairs = fromLinks.length > 0 ? fromLinks.slice(0, 2) : fromExamples;
     const stats = flagId ? flagStats(flagId, pickFlag(flags, flagId)) : null;
     const isPairRule = !flagId && pairs.length > 0;
+    const flagStatsLines = (stats?.stats ?? []).filter((s) => s.trim().length > 0);
     ruleItems.push({
       kind: "rule",
       ref_id: row.id,
@@ -173,11 +210,15 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
       }),
       pairs: isPairRule ? pairs : undefined,
       evidence_title: flagId
-        ? stats?.title
+        ? stats?.title ?? "이렇게 나왔습니다"
         : isPairRule
           ? "이렇게 잘못 연결한 것이 있었어요"
           : undefined,
-      stats: flagId ? stats?.stats.filter(Boolean) : undefined
+      stats: flagId
+        ? flagStatsLines.length > 0
+          ? flagStatsLines
+          : [`이 모순이 ${n}번 있었습니다`]
+        : undefined
     });
   }
 
@@ -232,7 +273,7 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
     if (out.length >= QA_DAILY_LIMIT) break;
     out.push(item);
   }
-  return out;
+  return stampItems(out);
 }
 
 function asSession(row: Record<string, unknown>): QaSessionRow {
@@ -299,17 +340,26 @@ export async function getOpenQaSession(
   return data ? asSession(data as Record<string, unknown>) : null;
 }
 
+export async function restartQaSession(
+  admin: SupabaseClient,
+  userId: string
+): Promise<QaSessionRow> {
+  const open = await getOpenQaSession(admin, userId);
+  if (open) await closeOpenSession(admin, open.id);
+  return startQaSession(admin, userId);
+}
+
 export async function startQaSession(
   admin: SupabaseClient,
   userId: string
 ): Promise<QaSessionRow> {
   const open = await getOpenQaSession(admin, userId);
   if (open) {
-    if (open.items.length === 0) {
-      await admin
-        .from("luna_qa_sessions")
-        .update({ finished_at: new Date().toISOString() })
-        .eq("id", open.id);
+    const stale = sessionListVersion(open) !== QA_LIST_VERSION;
+    if (stale) {
+      await closeOpenSession(admin, open.id);
+    } else if (open.items.length === 0) {
+      await closeOpenSession(admin, open.id);
     } else if (open.cursor >= open.items.length) {
       return finishIfDone(admin, open);
     } else if (open.cursor === 0 && open.answers.length === 0) {

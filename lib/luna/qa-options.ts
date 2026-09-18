@@ -26,6 +26,8 @@ export type QaItem = {
   evidence_title?: string;
   stats?: string[];
   pattern_value?: string;
+  /** buildQaItems 선정 기준. 바뀌면 열린 세션을 버리고 다시 만든다. */
+  list_version?: number;
 };
 
 export function ruleOptions(item: {

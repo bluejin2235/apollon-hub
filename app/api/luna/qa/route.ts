@@ -3,6 +3,7 @@ import { requireLunaAdmin } from "@/lib/luna-admin/auth";
 import {
   answerQaChoice,
   getOpenQaSession,
+  restartQaSession,
   startQaSession
 } from "@/lib/luna/qa-session";
 
@@ -33,6 +34,10 @@ export async function POST(request: NextRequest) {
   try {
     if (body.action === "start" || !body.action) {
       const session = await startQaSession(gate.admin, gate.user.id);
+      return NextResponse.json({ session });
+    }
+    if (body.action === "restart") {
+      const session = await restartQaSession(gate.admin, gate.user.id);
       return NextResponse.json({ session });
     }
     if (body.action === "answer") {
