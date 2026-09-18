@@ -15,13 +15,19 @@ import {
   type QaSummary
 } from "@/lib/luna/qa-options";
 import { confirmRule, listRules } from "@/lib/luna/rules";
-import { ruleQuestionText } from "@/lib/luna/rules-shared";
+import {
+  QA_DAILY_LIMIT,
+  answerFlagIdFromRule,
+  isAskableRuleCandidate,
+  qaRuleQuestion
+} from "@/lib/luna/rules-shared";
 import {
   excludeTonightItem,
   loadTonightState
 } from "@/lib/luna-admin/tonight";
 import { evidencePath, evidenceTitle } from "@/lib/luna-admin/links";
 import { typeLabel } from "@/lib/luna-admin/pair-view";
+import type { AnswerFlagRow } from "@/lib/luna/answer-flags";
 
 export type QaSessionRow = QaSessionView;
 
@@ -77,55 +83,133 @@ function formatMetrics(m: Record<string, unknown>, extra?: string): string {
   return [docs, ms, extra].filter(Boolean).join(" · ");
 }
 
+function pickFlag(rows: AnswerFlagRow[], flagId: string): AnswerFlagRow | undefined {
+  return rows.find((r) => r.flags.some((f) => f.id === flagId));
+}
+
+function flagStats(flagId: string, row: AnswerFlagRow | undefined): {
+  title: string;
+  stats: string[];
+} {
+  const m = row?.metrics ?? {};
+  const notion = typeof m.notion_n === "number" ? m.notion_n : 0;
+  const nas = typeof m.nas_n === "number" ? m.nas_n : 0;
+  const wiki = typeof m.wiki_n === "number" ? m.wiki_n : 0;
+  const docs = typeof m.total_docs === "number" ? m.total_docs : 0;
+  const share =
+    typeof m.dominant_share === "number"
+      ? Math.round(m.dominant_share * 100)
+      : null;
+  const dur =
+    typeof m.duration_ms === "number" ? (m.duration_ms / 1000).toFixed(1) : null;
+  const search =
+    typeof m.search_ms === "number" ? Math.round(m.search_ms) : null;
+
+  if (flagId === "source_skew") {
+    return {
+      title: "이렇게 찾았습니다",
+      stats: [
+        `이 답은 노션에서만 ${notion || docs}건을 가져왔습니다`,
+        `Work서버 ${nas} · 위키 ${wiki}${share != null ? ` · 노션 ${share}%` : ""}`
+      ]
+    };
+  }
+  if (flagId === "slow") {
+    return {
+      title: "이렇게 오래 걸렸습니다",
+      stats: [
+        [dur ? `${dur}초` : null, search != null ? `검색 ${search}ms` : null, docs ? `문서 ${docs}건` : null]
+          .filter(Boolean)
+          .join(" · ")
+      ]
+    };
+  }
+  if (flagId === "scope_excess") {
+    return {
+      title: "이렇게 넓게 찾았습니다",
+      stats: [`짧은 질문인데 문서 ${docs}건을 가져왔습니다`]
+    };
+  }
+  return {
+    title: "이렇게 나왔습니다",
+    stats: [formatMetrics(m as Record<string, unknown>)].filter(Boolean)
+  };
+}
+
 export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
   const [rules, flags, tonight] = await Promise.all([
     listRules(admin, { status: "candidate" }),
-    listAnswerFlags(admin, { status: "pending", limit: 80 }),
+    listAnswerFlags(admin, { status: "pending", limit: 200 }),
     loadTonightState(admin)
   ]);
-  const sortedRules = [...rules].sort(
-    (a, b) => (b.signal_count ?? 0) - (a.signal_count ?? 0)
-  );
+  const sortedRules = [...rules]
+    .filter(isAskableRuleCandidate)
+    .sort((a, b) => (b.signal_count ?? 0) - (a.signal_count ?? 0));
+
+  const coveredFlags = new Set<string>();
   const ruleItems: QaItem[] = [];
   for (const row of sortedRules) {
     const n = row.signal_count ?? 0;
-    const impact =
-      typeof row.evidence?.impact === "number" ? row.evidence.impact : n;
+    const flagId = answerFlagIdFromRule(row.pattern_value);
+    if (flagId) coveredFlags.add(flagId);
     const fromExamples = parseExamples(row.evidence?.examples);
     const fromLinks = await pairsFromLinks(admin, row.evidence?.link_ids);
     const pairs = fromLinks.length > 0 ? fromLinks.slice(0, 2) : fromExamples;
+    const stats = flagId ? flagStats(flagId, pickFlag(flags, flagId)) : null;
+    const isPairRule = !flagId && pairs.length > 0;
     ruleItems.push({
       kind: "rule",
       ref_id: row.id,
-      question: ruleQuestionText(row),
-      why:
-        typeof row.evidence?.sample === "string"
-          ? row.evidence.sample
-          : undefined,
-      impact,
+      pattern_value: row.pattern_value,
+      question: qaRuleQuestion(row),
+      why: flagId
+        ? `${n}번 있었습니다. 규칙을 정하면 하나씩은 안 묻습니다.`
+        : undefined,
+      impact: n,
       options: ruleOptions({
         pattern_type: row.pattern_type,
         pattern_value: row.pattern_value,
         n
       }),
-      pairs
+      pairs: isPairRule ? pairs : undefined,
+      evidence_title: flagId
+        ? stats?.title
+        : isPairRule
+          ? "이렇게 잘못 연결한 것이 있었어요"
+          : undefined,
+      stats: flagId ? stats?.stats.filter(Boolean) : undefined
     });
   }
 
-  const grouped = groupAnswerFlagsByQuestion(flags);
+  const grouped = groupAnswerFlagsByQuestion(
+    flags.filter((f) => !f.flags.some((hit) => coveredFlags.has(hit.id)))
+  );
   const answerItems: QaItem[] = grouped.map((g) => {
     const m = (g.latest.metrics ?? {}) as Record<string, unknown>;
-    const flagText = g.latest.flags.map((f) => f.label).join(" · ");
+    const flagIds = g.latest.flags.map((f) => f.id);
+    const slow = flagIds.includes("slow");
+    const skew = flagIds.includes("source_skew");
+    const stats = slow
+      ? flagStats("slow", g.latest).stats
+      : skew
+        ? flagStats("source_skew", g.latest).stats
+        : undefined;
     return {
       kind: "answer",
       ref_id: g.latest.id,
       ref_ids: g.items.map((x) => x.id),
       question: `“${g.question}” 이 답이 맞았나요?`,
-      why: flagText || undefined,
       options: answerOptions(),
       samples: [g.question],
       flags: g.latest.flags.map((f) => f.label),
-      metrics: formatMetrics(m, g.count > 1 ? `같은 질문 ${g.count}번` : "")
+      metrics: stats?.length ? undefined : formatMetrics(m, g.count > 1 ? `같은 질문 ${g.count}번` : ""),
+      evidence_title: slow
+        ? "이렇게 오래 걸렸습니다"
+        : skew
+          ? "이렇게 찾았습니다"
+          : undefined,
+      stats,
+      impact: g.count
     };
   });
 
@@ -143,7 +227,12 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
     })
   }));
 
-  return [...ruleItems, ...answerItems, ...skipItems];
+  const out: QaItem[] = [];
+  for (const item of [...ruleItems, ...answerItems, ...skipItems]) {
+    if (out.length >= QA_DAILY_LIMIT) break;
+    out.push(item);
+  }
+  return out;
 }
 
 function asSession(row: Record<string, unknown>): QaSessionRow {
@@ -223,6 +312,16 @@ export async function startQaSession(
         .eq("id", open.id);
     } else if (open.cursor >= open.items.length) {
       return finishIfDone(admin, open);
+    } else if (open.cursor === 0 && open.answers.length === 0) {
+      const items = await buildQaItems(admin);
+      if (items.length === 0) {
+        return saveRow(admin, open.id, {
+          items: [],
+          finished_at: new Date().toISOString(),
+          pending: null
+        });
+      }
+      return saveRow(admin, open.id, { items, pending: null, summary: null });
     } else {
       return open;
     }

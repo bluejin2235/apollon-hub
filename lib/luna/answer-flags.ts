@@ -348,6 +348,48 @@ export async function listAnswerFlags(
   return rows;
 }
 
+/** 규칙으로 받은 모순은 하나씩 안 묻도록 대기에서 내린다 */
+export async function ignorePendingAnswerFlagsByFlag(
+  admin: SupabaseClient,
+  flagId: string,
+  userId: string
+): Promise<number> {
+  const { data, error } = await admin
+    .from("luna_answer_flags")
+    .select("id, flags")
+    .eq("status", "pending")
+    .limit(400);
+  if (error) {
+    if (!isMissingTable(error)) {
+      console.error("[luna/answer-flags] ignore select", error);
+    }
+    return 0;
+  }
+  const ids = (data ?? [])
+    .filter((row) => {
+      const flags = Array.isArray(row.flags) ? row.flags : [];
+      return flags.some((f) => String((f as { id?: string })?.id ?? "") === flagId);
+    })
+    .map((row) => row.id as string);
+  if (ids.length === 0) return 0;
+  const now = new Date().toISOString();
+  const { error: updErr } = await admin
+    .from("luna_answer_flags")
+    .update({
+      status: "ignored",
+      human_verdict: "unclear",
+      reviewed_at: now,
+      reviewed_by: userId
+    })
+    .in("id", ids)
+    .eq("status", "pending");
+  if (updErr) {
+    console.error("[luna/answer-flags] ignore update", updErr);
+    return 0;
+  }
+  return ids.length;
+}
+
 export async function countPendingAnswerFlags(
   admin: SupabaseClient
 ): Promise<number> {
@@ -498,7 +540,7 @@ export async function promoteAnswerFlagRules(
   for (const [flagId, info] of counts) {
     if (info.n < T.rule_promote_min) continue;
     const pattern_value = `answer_flag:${flagId}`;
-    const questionText = promoteQuestionText(flagId, info.n, info.samples);
+    const questionText = promoteQuestionText(flagId, info.n);
     const { data: existing } = await admin
       .from("luna_rules")
       .select("id, status, signal_count")
@@ -544,36 +586,24 @@ export async function promoteAnswerFlagRules(
   return created;
 }
 
-function promoteQuestionText(
-  flagId: AnswerFlagId,
-  n: number,
-  samples: string[]
-): string {
-  const label = ANSWER_FLAG_LABELS[flagId];
-  if (flagId === "scope_excess") {
-    return (
-      `정의·짧은 질문에서 범위 과다가 ${n}건 나왔습니다. ` +
-      `용어 질문은 위키·용어사전만 보게 할까요?` +
-      (samples[0] ? ` (예: ${samples[0]})` : "")
-    );
+function promoteQuestionText(flagId: AnswerFlagId, n: number): string {
+  if (flagId === "source_skew") {
+    return "답의 대부분이 노션에서만 나왔습니다. Work서버 자료를 더 봐야 할까요?";
   }
   if (flagId === "slow") {
-    return (
-      `응답이 30초 넘는 모순이 ${n}건입니다. ` +
-      `검색 타임아웃·폴백을 먼저 고칠까요?`
-    );
+    return "답이 너무 오래 걸렸습니다. 검색을 먼저 줄일까요?";
+  }
+  if (flagId === "scope_excess") {
+    return "짧은 질문에도 자료를 너무 많이 찾았습니다. 용어 질문은 위키·용어사전만 보게 할까요?";
+  }
+  if (flagId === "unused_sources") {
+    return "찾아 놓고 안 쓴 자료가 많았습니다. 검색 범위를 줄일까요?";
   }
   if (flagId === "low_confidence") {
-    return (
-      `자신감 ≤7 모순이 ${n}건입니다. ` +
-      `쉬운 정의형에서는 검색 범위를 줄이도록 할까요?`
-    );
+    return "쉬운 질문인데 확신이 낮았습니다. 검색 범위를 줄일까요?";
   }
-  return (
-    `${label} 모순이 ${n}건 쌓였습니다. ` +
-    `검색·답변 규칙을 손볼까요?` +
-    (samples[0] ? ` (예: ${samples[0]})` : "")
-  );
+  const label = ANSWER_FLAG_LABELS[flagId];
+  return `${label}이 ${n}건 있었습니다. 검색·답변 규칙을 손볼까요?`;
 }
 
 /** 메타·타이밍에서 판정 입력 조립 */

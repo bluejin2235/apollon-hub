@@ -375,3 +375,79 @@ export function ruleQuestionText(rule: {
   if (sample) return sample;
   return `규칙 「${rule.pattern_value}」을 적용해도 될까요? (근거 ${n}건)`;
 }
+
+/** 하루에 사람에게 물을 상한 */
+export const QA_DAILY_LIMIT = 20;
+
+export function answerFlagIdFromRule(patternValue: string): string | null {
+  const m = /^answer_flag:(.+)$/.exec(patternValue);
+  return m?.[1] ?? null;
+}
+
+/**
+ * 물어볼 만한 규칙 후보.
+ * 링크 후보는 「규칙 후보 정제」(겹친 토큰 3건+, 쓰레기·시즌·고유명사 제외)와 같고,
+ * 답 모순은 종류당 하나(개별 질문 80건을 그대로 물지 않음).
+ */
+export function isAskableRuleCandidate(rule: {
+  pattern_type: string;
+  pattern_value: string;
+  signal_count?: number;
+  evidence?: Record<string, unknown>;
+}): boolean {
+  if (isGarbageRuleCandidate(rule)) return false;
+  const n = rule.signal_count ?? 0;
+  if (n < 3) return false;
+  if (answerFlagIdFromRule(rule.pattern_value)) return true;
+  if (rule.pattern_type === "stopword") {
+    const classify =
+      typeof rule.evidence?.classify === "string" ? rule.evidence.classify : "";
+    if (classify === "project") return false;
+    return true;
+  }
+  if (rule.pattern_type === "rule") {
+    const v = rule.pattern_value.replace(/^reason:/, "");
+    if (humanRuleFromRejectReason(v) || REJECT_REASON_RULE_TEXT[v]) return true;
+    if (
+      v === "same_client_diff_target" ||
+      v === "same_client_diff_job" ||
+      v === "same_date_done_marker"
+    ) {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** 사람이 읽고 고를 수 있는 문장. 엉뚱한 질문 예시는 붙이지 않는다. */
+export function qaRuleQuestion(rule: {
+  pattern_type: string;
+  pattern_value: string;
+  signal_count?: number;
+  evidence?: Record<string, unknown>;
+}): string {
+  const flag = answerFlagIdFromRule(rule.pattern_value);
+  if (flag === "source_skew") {
+    return "답의 대부분이 노션에서만 나왔습니다. Work서버 자료를 더 봐야 할까요?";
+  }
+  if (flag === "slow") {
+    return "답이 너무 오래 걸렸습니다. 검색을 먼저 줄일까요?";
+  }
+  if (flag === "scope_excess") {
+    return "짧은 질문에도 자료를 너무 많이 찾았습니다. 용어 질문은 위키·용어사전만 보게 할까요?";
+  }
+  if (flag === "unused_sources") {
+    return "찾아 놓고 안 쓴 자료가 많았습니다. 검색 범위를 줄일까요?";
+  }
+  if (flag === "low_confidence") {
+    return "쉬운 질문인데 확신이 낮았습니다. 검색 범위를 줄일까요?";
+  }
+  if (flag === "intent_conf_gap") {
+    return "질문은 알아들었는데 답을 못 한 적이 있습니다. 되묻기를 손볼까요?";
+  }
+  return ruleQuestionText({
+    ...rule,
+    evidence: { ...(rule.evidence ?? {}), sample: undefined }
+  });
+}

@@ -23,6 +23,9 @@ export type QaItem = {
   samples?: string[];
   flags?: string[];
   metrics?: string;
+  evidence_title?: string;
+  stats?: string[];
+  pattern_value?: string;
 };
 
 export function ruleOptions(item: {
@@ -33,7 +36,11 @@ export function ruleOptions(item: {
   const n = item.n > 0 ? item.n : 0;
   const inspect: QaOption = {
     id: "inspect",
-    label: n ? `${n}건을 먼저 볼게요` : "근거를 먼저 볼게요",
+    label: item.pattern_value?.startsWith("answer_flag:")
+      ? "근거만 더 볼게요"
+      : n
+        ? `${n}건을 먼저 볼게요`
+        : "근거를 먼저 볼게요",
     sub: "보고 나서 정할게요"
   };
   const other: QaOption = {
@@ -64,6 +71,42 @@ export function ruleOptions(item: {
         label: "같은 건일 수도 있어요",
         sub: "지금처럼 하나씩 물어볼게요"
       },
+      inspect,
+      other
+    ];
+  }
+  if (item.pattern_value === "answer_flag:source_skew") {
+    return [
+      { id: "accept", label: "더 볼게요", sub: "Work서버를 같이 보게 할게요" },
+      { id: "reject", label: "노션만으로도 됐어요", sub: "지금은 그대로 둘게요" },
+      inspect,
+      other
+    ];
+  }
+  if (item.pattern_value === "answer_flag:slow") {
+    return [
+      { id: "accept", label: "빨리 하게 해 주세요", sub: "검색을 줄이겠습니다" },
+      { id: "reject", label: "지금은 괜찮아요", sub: "규칙을 만들지 않아요" },
+      inspect,
+      other
+    ];
+  }
+  if (item.pattern_value === "answer_flag:scope_excess") {
+    return [
+      { id: "accept", label: "줄여 주세요", sub: "용어는 위키·용어사전만" },
+      { id: "reject", label: "지금은 그대로", sub: "규칙을 만들지 않아요" },
+      inspect,
+      other
+    ];
+  }
+  if (item.pattern_value === "answer_flag:unused_sources") {
+    return [
+      {
+        id: "accept",
+        label: "범위를 줄여 주세요",
+        sub: "찾아 놓고 안 쓰는 일이 줄어들게"
+      },
+      { id: "reject", label: "지금은 그대로", sub: "규칙을 만들지 않아요" },
       inspect,
       other
     ];

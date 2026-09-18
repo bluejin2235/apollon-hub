@@ -11,10 +11,13 @@ import {
   overlappingTokens,
   projectNameTokens,
   rejectReasonKey,
-  ruleQuestionText,
+  qaRuleQuestion,
+  answerFlagIdFromRule,
+  isAskableRuleCandidate,
   type LunaRuleRow,
   type LunaRuleStatus
 } from "@/lib/luna/rules-shared";
+import { ignorePendingAnswerFlagsByFlag } from "@/lib/luna/answer-flags";
 import { evidenceTitle } from "@/lib/luna-admin/links";
 
 function isMissingTable(error: unknown): boolean {
@@ -558,10 +561,7 @@ async function applyActiveRule(
   userId: string
 ): Promise<void> {
   // 검색·답변에도 쓰이도록 판단 기준 저장
-  const content =
-    typeof rule.evidence?.sample === "string" && rule.evidence.sample
-      ? String(rule.evidence.sample)
-      : ruleQuestionText(rule);
+  const content = qaRuleQuestion(rule);
   await admin.from("luna_learnings").insert({
     category: "criterion",
     content: content.slice(0, 800),
@@ -579,6 +579,12 @@ async function applyActiveRule(
     confidence: 4,
     importance: 4
   });
+
+  const flagId = answerFlagIdFromRule(rule.pattern_value);
+  if (flagId) {
+    await ignorePendingAnswerFlagsByFlag(admin, flagId, userId);
+    return;
+  }
 
   if (rule.scope !== "link") return;
 
@@ -608,11 +614,13 @@ export async function listCandidateRuleQuestions(
     pattern_value: string;
   }>
 > {
-  const rows = await listRules(admin, { status: "candidate" });
+  const rows = (await listRules(admin, { status: "candidate" })).filter(
+    isAskableRuleCandidate
+  );
   return rows.map((r) => ({
     id: r.id,
     title: "🌙 루나가 규칙을 물어봅니다",
-    body: ruleQuestionText(r),
+    body: qaRuleQuestion(r),
     signal_count: r.signal_count,
     pattern_type: r.pattern_type,
     pattern_value: r.pattern_value

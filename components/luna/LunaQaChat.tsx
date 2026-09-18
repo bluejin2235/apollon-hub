@@ -81,15 +81,21 @@ function OptionList({
 }
 
 function Evidence({ item }: { item: QaItem }) {
-  if (!item.pairs?.length && !item.why && !item.metrics) return null;
+  const hasPairs = Boolean(item.pairs?.length);
+  const stats = (item.stats ?? []).filter(Boolean);
+  const why =
+    item.why && item.why.trim() && item.why.trim() !== item.question.trim()
+      ? item.why
+      : null;
+  if (!hasPairs && stats.length === 0 && !item.metrics && !why) return null;
   return (
     <div className="mt-2 rounded-[9px] border border-[#e7e8ec] bg-[#FAFAFB] px-3 py-2.5 text-[11.5px] leading-relaxed">
-      {item.pairs && item.pairs.length > 0 ? (
+      {hasPairs ? (
         <>
           <div className="mb-1.5 text-[10px] font-extrabold text-[#9aa0a8]">
-            이렇게 잘못 연결한 것이 있었어요
+            {item.evidence_title ?? "이렇게 잘못 연결한 것이 있었어요"}
           </div>
-          {item.pairs.map((p, i) => (
+          {item.pairs!.map((p, i) => (
             <div key={i} className="flex items-center gap-2 py-1">
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">{p.left.name}</div>
@@ -112,18 +118,26 @@ function Evidence({ item }: { item: QaItem }) {
           ))}
         </>
       ) : null}
+      {stats.length > 0 ? (
+        <>
+          {item.evidence_title ? (
+            <div className="mb-1.5 text-[10px] font-extrabold text-[#9aa0a8]">
+              {item.evidence_title}
+            </div>
+          ) : null}
+          {stats.map((line) => (
+            <div key={line} className="text-[11.5px] text-[#1c1d21]">
+              {line}
+            </div>
+          ))}
+        </>
+      ) : null}
       {item.metrics ? (
         <div className="mt-1 text-[11px] text-[#6b6f76]">{item.metrics}</div>
       ) : null}
-      {item.why ? (
+      {why ? (
         <div className="mt-2 border-l-2 border-[#e7e8ec] pl-2.5 text-[11px] leading-relaxed text-[#9aa0a8]">
-          {item.why}
-          {item.impact ? (
-            <>
-              {" "}
-              정하시면 <b className="text-[#1c1d21]">{item.impact}건</b>이 정리됩니다.
-            </>
-          ) : null}
+          {why}
         </div>
       ) : null}
     </div>

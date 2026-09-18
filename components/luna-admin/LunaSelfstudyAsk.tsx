@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { groupAnswerFlagsByQuestion } from "@/lib/luna/answer-flags-shared";
-import { ruleQuestionText } from "@/lib/luna/rules-shared";
+import {
+  QA_DAILY_LIMIT,
+  answerFlagIdFromRule,
+  isAskableRuleCandidate,
+  qaRuleQuestion
+} from "@/lib/luna/rules-shared";
 import type { TonightItem } from "@/lib/luna-admin/types";
 
 type RuleRow = {
@@ -80,39 +85,54 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
   }, [load]);
 
   const grouped = useMemo(() => groupAnswerFlagsByQuestion(flags), [flags]);
+  const askableRules = useMemo(
+    () =>
+      [...rules]
+        .filter(isAskableRuleCandidate)
+        .sort((a, b) => (b.signal_count ?? 0) - (a.signal_count ?? 0)),
+    [rules]
+  );
+  const coveredFlags = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of askableRules) {
+      const id = answerFlagIdFromRule(row.pattern_value);
+      if (id) set.add(id);
+    }
+    return set;
+  }, [askableRules]);
   const rows = useMemo<ListRow[]>(() => {
-    const ruleRows: ListRow[] = [...rules]
-      .sort((a, b) => (b.signal_count ?? 0) - (a.signal_count ?? 0))
-      .map((row) => {
-        const impact =
-          typeof row.evidence?.impact === "number"
-            ? row.evidence.impact
-            : row.signal_count;
-        return {
-          key: `r-${row.id}`,
-          kind: "rule",
-          title: ruleQuestionText(row),
-          detail: `${row.signal_count}건 근거${impact ? ` · 정하면 ${impact}건 정리` : ""}`,
-          badge: "규칙"
-        };
-      });
-    const ansRows: ListRow[] = grouped.map((g) => {
-      const m = g.latest.metrics ?? {};
-      const docs = typeof m.total_docs === "number" ? `문서 ${m.total_docs}` : "";
-      const ms =
-        typeof m.duration_ms === "number"
-          ? `${(m.duration_ms / 1000).toFixed(1)}초`
-          : "";
-      const flagsText = g.latest.flags.map((f) => f.label).join(" · ");
-      const repeat = g.count > 1 ? `같은 질문 ${g.count}번` : "";
+    const ruleRows: ListRow[] = askableRules.map((row) => {
+      const n = row.signal_count;
+      const flag = answerFlagIdFromRule(row.pattern_value);
       return {
-        key: `a-${g.latest.id}`,
-        kind: "answer",
-        title: `“${g.question}”`,
-        detail: [docs, ms, flagsText, repeat].filter(Boolean).join(" · "),
-        badge: "답"
+        key: `r-${row.id}`,
+        kind: "rule",
+        title: qaRuleQuestion(row),
+        detail: flag
+          ? `${n}번 있었습니다 · 정하면 하나씩 안 묻습니다`
+          : `${n}건 근거`,
+        badge: "규칙"
       };
     });
+    const ansRows: ListRow[] = grouped
+      .filter((g) => !g.latest.flags.some((f) => coveredFlags.has(f.id)))
+      .map((g) => {
+        const m = g.latest.metrics ?? {};
+        const docs = typeof m.total_docs === "number" ? `문서 ${m.total_docs}` : "";
+        const ms =
+          typeof m.duration_ms === "number"
+            ? `${(m.duration_ms / 1000).toFixed(1)}초`
+            : "";
+        const flagsText = g.latest.flags.map((f) => f.label).join(" · ");
+        const repeat = g.count > 1 ? `같은 질문 ${g.count}번` : "";
+        return {
+          key: `a-${g.latest.id}`,
+          kind: "answer",
+          title: `“${g.question}”`,
+          detail: [docs, ms, flagsText, repeat].filter(Boolean).join(" · "),
+          badge: "답"
+        };
+      });
     const skipRows: ListRow[] = skips.map((item) => ({
       key: `s-${item.id}`,
       kind: "skip",
@@ -120,14 +140,17 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
       detail: item.skip_reason ?? item.why,
       badge: "정답 없음"
     }));
-    return [...ruleRows, ...ansRows, ...skipRows];
-  }, [rules, grouped, skips]);
+    return [...ruleRows, ...ansRows, ...skipRows].slice(0, QA_DAILY_LIMIT);
+  }, [askableRules, grouped, skips, coveredFlags]);
 
   const filtered = filter === "all" ? rows : rows.filter((r) => r.kind === filter);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, pages);
   const slice = filtered.slice((safePage - 1) * PAGE, safePage * PAGE);
-  const total = rules.length + grouped.length + skips.length;
+  const total = rows.length;
+  const ruleN = rows.filter((r) => r.kind === "rule").length;
+  const answerN = rows.filter((r) => r.kind === "answer").length;
+  const skipN = rows.filter((r) => r.kind === "skip").length;
 
   useEffect(() => {
     setPage(1);
@@ -157,13 +180,8 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
             루나와 대화하기
           </button>
         )}
-        {rules.length > 0 ? (
-          <div className="sub">
-            규칙 {rules.length}건을 먼저 물어봅니다
-            {typeof rules[0]?.evidence?.impact === "number"
-              ? ` · 하나 정하면 ${String(rules[0].evidence.impact)}건이 정리돼요`
-              : ""}
-          </div>
+        {ruleN > 0 ? (
+          <div className="sub">규칙 {ruleN}건을 먼저 물어봅니다</div>
         ) : null}
       </div>
 
@@ -174,7 +192,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           onClick={() => setFilter((f) => (f === "rule" ? "all" : "rule"))}
         >
           <div className="t">🌙 규칙</div>
-          <div className="v">{rules.length}</div>
+          <div className="v">{ruleN}</div>
           <div className="d">하나로 여러 건 정리</div>
         </button>
         <button
@@ -183,10 +201,8 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           onClick={() => setFilter((f) => (f === "answer" ? "all" : "answer"))}
         >
           <div className="t">답 점검</div>
-          <div className="v">{grouped.length}</div>
-          <div className="d">
-            {flags.length > grouped.length ? `${flags.length}건을 묶음` : "지표가 어긋난 답"}
-          </div>
+          <div className="v">{answerN}</div>
+          <div className="d">지표가 어긋난 답</div>
         </button>
         <button
           type="button"
@@ -194,7 +210,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           onClick={() => setFilter((f) => (f === "skip" ? "all" : "skip"))}
         >
           <div className="t">정답 없어 못 함</div>
-          <div className="v">{skips.length}</div>
+          <div className="v">{skipN}</div>
           <div className="d">사람이 봐야 함</div>
         </button>
       </div>
