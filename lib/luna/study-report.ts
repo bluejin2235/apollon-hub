@@ -209,7 +209,10 @@ function durationRange(runs: StudyRunRow[]): {
     .filter((n) => !Number.isNaN(n));
   if (!starts.length) return { durationLabel: null, rangeLabel: null };
   const minStart = Math.min(...starts);
-  const maxEnd = ends.length ? Math.max(...ends) : Math.max(...starts);
+  // 미완 런은 지금까지 흐른 시간으로 표시 (finished_at 없으면 1분으로 찌그러지지 않게)
+  const maxEnd = ends.length
+    ? Math.max(...ends)
+    : Math.max(Date.now(), ...starts);
   const mins = Math.max(1, Math.round((maxEnd - minStart) / 60000));
   const fmt = (ms: number) => {
     const d = new Date(ms + 9 * 60 * 60 * 1000);

@@ -72,9 +72,14 @@ export type ProbeRetrievalResult = {
   llm_model?: string;
 };
 
+/** 하루 목표 문서 수 (여러 청크로 나눔) */
 export const MODE_A_PAGE_LIMIT = 200;
+/** Vercel 한 호출에서 돌릴 문서 수 — 300~800초 예산에 맞춤 */
+export const MODE_A_BATCH_SIZE = 20;
 export const MODE_A_QUESTIONS_PER_PAGE = 3;
 export const MODE_A_MINUTES = 30;
+/** 한 청크 예산(ms). maxDuration 여유를 남기고 finishRun 으로 저장 */
+export const MODE_A_CHUNK_BUDGET_MS = 240_000;
 
 const HAIKU = "claude-haiku-4-5-20251001";
 const QUESTIONS_PER_PAGE = MODE_A_QUESTIONS_PER_PAGE;
@@ -258,17 +263,18 @@ async function samplePagesWithChunks(
   admin: SupabaseClient,
   limit: number
 ): Promise<Array<{ page_id: string; title: string }>> {
-  // 최근 색인 페이지 후보를 넉넉히 가져온 뒤 청크 있는 것만
+  // 최근 색인 후보를 가져온 뒤, 청크 존재 여부를 한 번에 조회 (N+1 금지)
+  const candidateLimit = Math.max(limit * 5, 80);
   const { data, error } = await admin
     .from("luna_notion_pages")
     .select("page_id, title")
     .eq("archived", false)
     .not("title", "is", null)
     .order("indexed_at", { ascending: false })
-    .limit(Math.max(limit * 8, 120));
+    .limit(candidateLimit);
   if (error) throw new Error(error.message);
 
-  const out: Array<{ page_id: string; title: string }> = [];
+  const candidates: Array<{ page_id: string; title: string }> = [];
   for (const row of data ?? []) {
     const page_id = String(row.page_id ?? "");
     const title = String(row.title ?? "").trim();
@@ -276,12 +282,28 @@ async function samplePagesWithChunks(
     // 연도·루트 폴더성 제목은 정답이 자식 문서로 가는 경향 → 시험 표본에서 제외
     if (/^(19|20)\d{2}$/.test(title)) continue;
     if (/^(untitled|제목 없음)$/i.test(title)) continue;
-    const { count } = await admin
+    candidates.push({ page_id, title });
+  }
+  if (candidates.length === 0) return [];
+
+  const ids = candidates.map((c) => c.page_id);
+  const withChunks = new Set<string>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const { data: chunkRows, error: chunkErr } = await admin
       .from("luna_notion_chunks")
-      .select("chunk_id", { count: "exact", head: true })
-      .eq("page_id", page_id);
-    if (!count) continue;
-    out.push({ page_id, title });
+      .select("page_id")
+      .in("page_id", slice);
+    if (chunkErr) throw new Error(chunkErr.message);
+    for (const row of chunkRows ?? []) {
+      if (row.page_id) withChunks.add(String(row.page_id));
+    }
+  }
+
+  const out: Array<{ page_id: string; title: string }> = [];
+  for (const c of candidates) {
+    if (!withChunks.has(c.page_id)) continue;
+    out.push(c);
     if (out.length >= limit) break;
   }
   return out;
@@ -290,21 +312,34 @@ async function samplePagesWithChunks(
 /** 모드 A — 문서→질문→정답 page_id 채점 */
 export async function runProbeAnswerKey(
   admin: SupabaseClient,
-  opts?: { pageLimit?: number; questionsPerPage?: number }
+  opts?: {
+    pageLimit?: number;
+    questionsPerPage?: number;
+    budgetMs?: number;
+  }
 ): Promise<{
   result: ProbeRetrievalResult;
   cost_usd: number;
   llm_calls: number;
 }> {
-  const pageLimit = opts?.pageLimit ?? 20;
+  const pageLimit = opts?.pageLimit ?? MODE_A_BATCH_SIZE;
   const qPerPage = opts?.questionsPerPage ?? QUESTIONS_PER_PAGE;
+  const budgetMs = opts?.budgetMs ?? MODE_A_CHUNK_BUDGET_MS;
+  const started = Date.now();
   const pages = await samplePagesWithChunks(admin, pageLimit);
 
   let cost = 0;
   let llmCalls = 0;
   const items: ProbeModeAItem[] = [];
+  let timedOut = false;
+  let pagesAttempted = 0;
 
   for (const page of pages) {
+    if (Date.now() - started > budgetMs) {
+      timedOut = true;
+      break;
+    }
+    pagesAttempted += 1;
     const body = await loadPageBody(admin, page.page_id);
     let questions: string[] = [];
     try {
@@ -322,6 +357,10 @@ export async function runProbeAnswerKey(
     if (questions.length === 0) continue;
 
     for (const question of questions) {
+      if (Date.now() - started > budgetMs) {
+        timedOut = true;
+        break;
+      }
       const top = await searchRankedPages(admin, question);
       const rankIdx = top.findIndex((t) => t.page_id === page.page_id);
       const rank = rankIdx >= 0 ? rankIdx : null;
@@ -358,6 +397,7 @@ export async function runProbeAnswerKey(
         });
       }
     }
+    if (timedOut) break;
   }
 
   const hit_at_1 = items.filter((i) => i.rank === 0).length;
@@ -396,12 +436,23 @@ export async function runProbeAnswerKey(
       miss_by_cause,
       items: items.slice(0, 80),
       misses,
-      learned,
-      next,
-      pages_sampled: pages.length,
+      learned: timedOut
+        ? `${learned} · 시간 예산으로 ${pagesAttempted}/${pages.length}문서에서 중단(부분 저장)`
+        : learned,
+      next: timedOut
+        ? `다음 청크 이어가기 (하루 목표 ${MODE_A_PAGE_LIMIT}문서)`
+        : next,
+      pages_sampled: pagesAttempted,
       questions_per_page: qPerPage,
-      llm_model: HAIKU
-    },
+      llm_model: HAIKU,
+      ...(timedOut
+        ? {
+            partial: true,
+            budget_ms: budgetMs,
+            pages_target: pages.length
+          }
+        : {})
+    } as ProbeRetrievalResult & Record<string, unknown>,
     cost_usd: Number(cost.toFixed(6)),
     llm_calls: llmCalls
   };
@@ -492,10 +543,13 @@ export async function runProbeRetrievalExam(
     };
   }
 
+  // scope.page_limit 이 과거 값(200)으로 남아 있어도 한 호출당 BATCH_SIZE 로 클램프
   const pageLimit =
     typeof scope.page_limit === "number" && scope.page_limit > 0
-      ? Math.min(200, Math.floor(scope.page_limit))
-      : MODE_A_PAGE_LIMIT;
+      ? Math.min(MODE_A_BATCH_SIZE, Math.floor(scope.page_limit))
+      : typeof limit === "number" && limit > 0
+        ? Math.min(MODE_A_BATCH_SIZE, limit)
+        : MODE_A_BATCH_SIZE;
 
   const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_SOURCE_BUDGET } =
     await import("@/lib/luna/probe-mode-a-sources");
@@ -541,7 +595,8 @@ export async function runProbeRetrievalExam(
 
   const out = await runProbeAnswerKey(admin, {
     pageLimit,
-    questionsPerPage: MODE_A_QUESTIONS_PER_PAGE
+    questionsPerPage: MODE_A_QUESTIONS_PER_PAGE,
+    budgetMs: MODE_A_CHUNK_BUDGET_MS
   });
   const miss = out.result.miss ?? 0;
   const probed = out.result.probed;

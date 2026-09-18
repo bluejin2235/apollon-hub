@@ -319,8 +319,9 @@ export async function buildAdminReportHtml(
   const failuresYesterday = failuresOpenYesterdayRes.count ?? openFailures;
   const notionBefore = notionBeforeRes.count ?? primary.notion.count;
   const imageBefore = imageBeforeRes.count ?? primary.image.count;
-  // 1차 = 노션·이미지·위키·용어 (Work 경로 10만 건은 증감표를 삼킴 — 제외)
+  // 1차 = 대시보드와 동일: Work + 노션 + 이미지 + 위키 + 용어
   const primaryToday =
+    primary.work.count +
     primary.notion.count +
     primary.image.count +
     primary.wiki.count +
@@ -329,8 +330,9 @@ export async function buildAdminReportHtml(
   const glossY = glossaryYesterday ?? glossaryToday;
   const linksY = linksYesterday ?? linksToday;
   const lensY = lensYesterday ?? lensToday;
+  const workBefore = primary.work.count; // Work 어제 스냅샷 없음 — 증감은 노션·이미지 중심
   const primaryYesterday =
-    notionBefore + imageBefore + primary.wiki.count + glossY;
+    workBefore + notionBefore + imageBefore + primary.wiki.count + glossY;
 
   const growth: GrowthRow[] = [
     { label: "1차 데이터", yesterday: primaryYesterday, today: primaryToday },

@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StudyGap, StudyMethod } from "@/lib/luna/study-health-meta";
 import { scanStudyGaps } from "@/lib/luna/study-scan";
 import {
+  MODE_A_BATCH_SIZE,
   MODE_A_MINUTES,
   MODE_A_PAGE_LIMIT,
   MISS_CAUSE_LABEL,
@@ -68,7 +69,7 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
           : `${gap.table} 부족함을 수치로 정리`;
 
   const expected = isModeA
-    ? `문서 ${MODE_A_PAGE_LIMIT}건 · 문서당 질문 3 · hit@1·5·10·miss 분류`
+    ? `문서 ${MODE_A_BATCH_SIZE}건/청크 · 하루 목표 ${MODE_A_PAGE_LIMIT} · 문서당 질문 3`
     : gap.method === "probe_retrieval"
       ? "실패 질문은 사람 확인(모드 B) — 자동 채점 없음"
       : gap.method === "materialize_secondary"
@@ -110,7 +111,7 @@ export function buildForcedModeACandidate(): AgendaCandidate {
       : "매일 정답 문서 기준으로 검색을 채점한다. 자동으로 배울 수 있는 유일한 슬롯이다.",
     expected: multi
       ? `용어${MODE_A_SOURCE_BUDGET.glossary.daily_items} · 이미지${MODE_A_SOURCE_BUDGET.image.daily_items} · 지식${MODE_A_SOURCE_BUDGET.knowledge.daily_items} · 위키${MODE_A_SOURCE_BUDGET.wiki.daily_items} · Work${MODE_A_SOURCE_BUDGET.work.daily_items} · 노션${MODE_A_SOURCE_BUDGET.notion.daily_items}`
-      : `문서 ${MODE_A_PAGE_LIMIT}건 · 문서당 질문 3 · hit@1·5·10·miss 분류`,
+      : `문서 ${MODE_A_BATCH_SIZE}건/청크 · 하루 목표 ${MODE_A_PAGE_LIMIT} · 문서당 질문 3`,
     kind: "probe_retrieval",
     scope: multi
       ? {
@@ -120,7 +121,8 @@ export function buildForcedModeACandidate(): AgendaCandidate {
         }
       : {
           mode: "answer_key",
-          page_limit: MODE_A_PAGE_LIMIT,
+          page_limit: MODE_A_BATCH_SIZE,
+          daily_target: MODE_A_PAGE_LIMIT,
           multi_source: false,
           forced: true
         },
