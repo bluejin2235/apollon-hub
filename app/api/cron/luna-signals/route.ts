@@ -4,6 +4,7 @@ import {
   ensureBuiltinLinkRules,
   mineRuleCandidatesFromSignals
 } from "@/lib/luna/rules";
+import { SIGNALS_LAST_CRON_KEY, stampCronRan } from "@/lib/luna/checks";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
   try {
     await ensureBuiltinLinkRules(admin);
     const mined = await mineRuleCandidatesFromSignals(admin);
+    await stampCronRan(admin, SIGNALS_LAST_CRON_KEY, mined);
     console.log("[luna-signals] cron", mined);
     return NextResponse.json({ ok: true, ...mined });
   } catch (err) {

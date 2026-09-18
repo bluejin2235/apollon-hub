@@ -196,10 +196,11 @@ function checkSpec(
       return {
         ask: `환율 수집이 ${idle}. 원인 찾아서 고쳐줘.`,
         state: [
-          `fx_daily_rates 마지막 갱신이 ${last} 야.`,
+          `fx_daily_rates 마지막 created_at 이 ${last} 야${extra ? ` · ${extra}` : ""}.`,
           "cron 은 /api/cron/fx-rates 15 0 * * * (KST 09:15) 로 걸려 있어."
         ],
         clue: [
+          "판정은 수집 시각(created_at)이다. date(환율 영업일)로 보지 마. 리포트는 07:00 이라 어제 09:15 수집이면 정상이야.",
           "호출이 아예 안 온 건지, 돌았는데 행이 안 쌓인 건지부터 갈라 줘."
         ]
       };
@@ -230,7 +231,7 @@ function checkSpec(
       return {
         ask: `Work 본문 추출이 ${idle}. 왜 안 도는지 봐줘.`,
         state: [
-          `nas_file_text.extracted_at 마지막이 ${last} 야${extra ? ` · ${extra}` : ""}.`,
+          `nas_text_runs 마지막 실행이 ${last} 야${extra ? ` · ${extra}` : ""}.`,
           "사무실 PC 작업 스케줄러 「LUNA Work Text Extract」(매일 03:10)가 돌려."
         ],
         clue: [
@@ -252,7 +253,7 @@ function checkSpec(
       return {
         ask: `이미지 색인이 ${idle}. 왜 안 도는지 봐줘.`,
         state: [
-          `luna_media_index ${extra ?? "진행률 확인 필요"} · 마지막 ${last}.`,
+          `luna_media_index_runs 마지막 실행 ${last} · ${extra ?? "진행률 확인 필요"}.`,
           "사무실 PC 작업 스케줄러 「LUNA Media Index」(매일 01:00)가 돌려. Vercel cron 이 아니야."
         ],
         clue: [
@@ -263,11 +264,11 @@ function checkSpec(
       return {
         ask: `2차 데이터 만들기가 ${idle}. 원인 찾아서 고쳐줘.`,
         state: [
-          `luna_links 마지막 created_at 이 ${last} 야.`,
+          `luna_settings.luna_links_last_cron 이 ${last} 야.`,
           "cron 은 /api/cron/luna-links 30 19 * * * (KST 04:30)."
         ],
         clue: [
-          "만들 후보가 0이라 조용히 끝난 건지 호출 자체가 안 온 건지 갈라 줘."
+          "링크가 0건이어도 크론이 돌았으면 정상이다. 호출 자체가 안 온 건지부터 갈라 줘."
         ]
       };
     case "selfstudy":
@@ -285,11 +286,11 @@ function checkSpec(
       return {
         ask: `신호 분석이 ${idle}. 원인 찾아서 고쳐줘.`,
         state: [
-          `luna_signals 마지막 created_at 이 ${last} 야.`,
+          `luna_settings.luna_signals_last_cron 이 ${last} 야.`,
           "cron 은 /api/cron/luna-signals 30 20 * * * (KST 05:30)."
         ],
         clue: [
-          "신호가 안 모이면 규칙 후보와 실패 패턴을 놓쳐. 넣을 신호가 0이라 끝난 건지부터 봐줘."
+          "05:30 잡은 신호를 새로 넣는 게 아니라 규칙 후보를 만든다. 마지막 luna_signals 행으로 판단하지 마."
         ]
       };
     case "admin_report":

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
 import { buildLinks } from "@/lib/luna-admin/build-links";
+import { LINKS_LAST_CRON_KEY, stampCronRan } from "@/lib/luna/checks";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,6 +29,11 @@ export async function GET(request: NextRequest) {
   try {
     const report = await buildLinks(admin, {
       log: (msg) => console.log(msg)
+    });
+    await stampCronRan(admin, LINKS_LAST_CRON_KEY, {
+      belongs: report.belongs.inserted,
+      follows: report.follows.inserted,
+      same: report.same.inserted
     });
     return NextResponse.json({
       ok: true,

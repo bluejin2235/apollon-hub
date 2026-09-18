@@ -71,6 +71,68 @@ async function latestIso(
   return typeof v === "string" && v ? v : null;
 }
 
+/** 실행 기록 표 — 데이터 행 시각이 아니라 잡이 돈 시각 */
+async function latestRunIso(
+  admin: SupabaseClient,
+  table: string,
+  statuses: string[]
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from(table)
+    .select("finished_at, started_at")
+    .in("status", statuses)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`[luna/checks] ${table} run`, error);
+    return null;
+  }
+  if (typeof data?.finished_at === "string" && data.finished_at) {
+    return data.finished_at;
+  }
+  if (typeof data?.started_at === "string" && data.started_at) {
+    return data.started_at;
+  }
+  return null;
+}
+
+async function settingsIso(
+  admin: SupabaseClient,
+  key: string,
+  field: string
+): Promise<string | null> {
+  const { data } = await admin
+    .from("luna_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+  const value = data?.value;
+  if (!value || typeof value !== "object") return null;
+  const v = (value as Record<string, unknown>)[field];
+  return typeof v === "string" && v ? v : null;
+}
+
+export const LINKS_LAST_CRON_KEY = "luna_links_last_cron";
+export const SIGNALS_LAST_CRON_KEY = "luna_signals_last_cron";
+
+export async function stampCronRan(
+  admin: SupabaseClient,
+  key: string,
+  extra?: Record<string, unknown>
+): Promise<void> {
+  const iso = new Date().toISOString();
+  const { error } = await admin.from("luna_settings").upsert(
+    {
+      key,
+      value: { ...extra, ran_at: iso },
+      updated_at: iso
+    },
+    { onConflict: "key" }
+  );
+  if (error) console.error("[luna/checks] stampCronRan", key, error);
+}
+
 async function resolveLastOkAt(
   admin: SupabaseClient,
   id: string
@@ -109,7 +171,8 @@ async function resolveLastOkAt(
       };
     }
     case "work_text": {
-      const [{ data }, doneRes, totalRes] = await Promise.all([
+      const [runAt, { data: latestRow }, doneRes, totalRes] = await Promise.all([
+        latestRunIso(admin, "nas_text_runs", ["done", "interrupted"]),
         admin
           .from("nas_file_text")
           .select("extracted_at")
@@ -125,9 +188,12 @@ async function resolveLastOkAt(
       ]);
       const done = doneRes.count ?? 0;
       const total = totalRes.count ?? 0;
+      const rowAt =
+        typeof latestRow?.extracted_at === "string"
+          ? latestRow.extracted_at
+          : null;
       return {
-        lastOkAt:
-          typeof data?.extracted_at === "string" ? data.extracted_at : null,
+        lastOkAt: runAt ?? rowAt,
         extraDetail:
           total > 0 ? `${done.toLocaleString("ko-KR")} / ${total.toLocaleString("ko-KR")}건` : undefined
       };
@@ -137,47 +203,30 @@ async function resolveLastOkAt(
         lastOkAt: await latestIso(admin, "luna_notion_index_runs", "finished_at")
       };
     case "image_index": {
-      const [{ data: latestRun }, { data: latestRow }, { count }] =
-        await Promise.all([
-          admin
-            .from("luna_media_index_runs")
-            .select("finished_at, started_at, status")
-            .in("status", ["done", "interrupted"])
-            .order("started_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          admin
-            .from("luna_media_index")
-            .select("indexed_at")
-            .order("indexed_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          admin
-            .from("luna_media_index")
-            .select("path", { count: "exact", head: true })
-        ]);
+      const [runAt, { data: latestRow }, { count }] = await Promise.all([
+        latestRunIso(admin, "luna_media_index_runs", ["done", "interrupted"]),
+        admin
+          .from("luna_media_index")
+          .select("indexed_at")
+          .order("indexed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        admin.from("luna_media_index").select("path", { count: "exact", head: true })
+      ]);
       const indexed = count ?? 0;
-      const runAt =
-        typeof latestRun?.finished_at === "string"
-          ? latestRun.finished_at
-          : typeof latestRun?.started_at === "string"
-            ? latestRun.started_at
-            : null;
       const rowAt =
         typeof latestRow?.indexed_at === "string" ? latestRow.indexed_at : null;
-      const lastOkAt =
-        runAt && rowAt
-          ? new Date(runAt) >= new Date(rowAt)
-            ? runAt
-            : rowAt
-          : (runAt ?? rowAt);
       return {
-        lastOkAt,
+        lastOkAt: runAt ?? rowAt,
         extraDetail: `${indexed.toLocaleString("ko-KR")} / ${IMAGE_CORPUS_TOTAL.toLocaleString("ko-KR")}장`
       };
     }
-    case "links":
-      return { lastOkAt: await latestIso(admin, "luna_links", "created_at") };
+    case "links": {
+      const ranAt = await settingsIso(admin, LINKS_LAST_CRON_KEY, "ran_at");
+      return {
+        lastOkAt: ranAt ?? (await latestIso(admin, "luna_links", "created_at"))
+      };
+    }
     case "selfstudy": {
       const study = await latestIso(admin, "luna_study_runs", "started_at");
       if (study) return { lastOkAt: study };
@@ -192,8 +241,12 @@ async function resolveLastOkAt(
           typeof value?.finished_at === "string" ? value.finished_at : null
       };
     }
-    case "signals":
-      return { lastOkAt: await latestIso(admin, "luna_signals", "created_at") };
+    case "signals": {
+      const ranAt = await settingsIso(admin, SIGNALS_LAST_CRON_KEY, "ran_at");
+      return {
+        lastOkAt: ranAt ?? (await latestIso(admin, "luna_signals", "created_at"))
+      };
+    }
     case "admin_report": {
       const { data } = await admin
         .from("luna_settings")
@@ -274,16 +327,21 @@ async function resolveLastOkAt(
     case "fx_rates": {
       const { data, error } = await admin
         .from("fx_daily_rates")
-        .select("date")
-        .order("date", { ascending: false })
+        .select("date, created_at")
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) {
         console.error("[luna/checks] fx_rates", error);
         return { lastOkAt: null };
       }
+      const createdAt =
+        typeof data?.created_at === "string" ? data.created_at : null;
       const date = typeof data?.date === "string" ? data.date : null;
-      return { lastOkAt: date ? `${date}T00:00:00+09:00` : null };
+      return {
+        lastOkAt: createdAt,
+        extraDetail: date ? `데이터 ${date}` : undefined
+      };
     }
     case "disk": {
       const { resolveStorageCheck } = await import("@/lib/luna/storage");

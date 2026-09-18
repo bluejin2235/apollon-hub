@@ -89,7 +89,8 @@ export const LUNA_CHECK_PROMISES: Record<
   },
   fx_rates: {
     promise_label: "매일 09:15 약속",
-    source: "vercel fx-rates 15 0 * * * → KST 09:15"
+    source:
+      "vercel fx-rates 15 0 * * * → KST 09:15 · 판정은 created_at (리포트 07:00 이라 어제 수집이면 정상)"
   },
   disk: {
     promise_label: "디스크 70% 미만",

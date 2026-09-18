@@ -105,7 +105,7 @@ async function main() {
   };
 
   const fx = byId.get("fx_rates");
-  if (fx) push("검사 · 환율(2일 멈춤 흉내)", buildCheckPrompt(stalled(fx, 2, "09.15 00:00"), blockers));
+  if (fx) push("검사 · 환율(2일 멈춤 흉내)", buildCheckPrompt(stalled(fx, 2, "09.16 09:15"), blockers));
 
   const media = byId.get("image_index");
   if (media)

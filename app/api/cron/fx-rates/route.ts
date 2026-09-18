@@ -8,6 +8,8 @@ export const maxDuration = 60;
 /**
  * GET /api/cron/fx-rates
  * 매일 09:15 KST (UTC 00:15) — 어제 확정 USD/KRW 1건 수집.
+ * 06:00 으로 앞당겨도 당일 ECB 환율은 없고(16:00 CET ≈ 23:00~00:00 KST),
+ * 리포트(07:00)는 created_at 기준 어제 09:15 를 정상으로 본다.
  */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;

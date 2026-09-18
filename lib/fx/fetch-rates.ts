@@ -174,11 +174,13 @@ export async function upsertFxRates(
   rows: FxFetchRow[]
 ): Promise<number> {
   if (rows.length === 0) return 0;
+  const now = new Date().toISOString();
   const payload = rows.map((r) => ({
     date: r.date,
     usd_krw: r.usd_krw,
     eur_krw: r.eur_krw,
-    source: r.source
+    source: r.source,
+    created_at: now
   }));
   const { error } = await supabase.from("fx_daily_rates").upsert(payload, { onConflict: "date" });
   if (error) throw new Error(`fx_daily_rates upsert: ${error.message}`);
