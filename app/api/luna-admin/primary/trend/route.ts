@@ -3,6 +3,7 @@ import { requireLunaAdmin } from "@/lib/luna-admin/auth";
 import { buildPrimaryTrend } from "@/lib/luna-admin/primary-trend";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const gate = await requireLunaAdmin(request);

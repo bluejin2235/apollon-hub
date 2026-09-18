@@ -42,16 +42,36 @@ export type LunaAdminPrimarySource =
   | "wiki"
   | "glossary";
 
+export type LunaAdminWorkKind = "folders" | "files" | "docs" | "images" | "unread";
+
+export type LunaAdminSecondaryChip =
+  | "all"
+  | "same"
+  | "belongs"
+  | "follows"
+  | "perspective"
+  | "criteria";
+
 export const PRIMARY_SOURCE_TABS: Array<{
-  slug: LunaAdminPrimarySource;
+  slug: Exclude<LunaAdminPrimarySource, "image">;
   label: string;
-  tone: "work" | "notion" | "img" | "wiki" | "term";
+  tone: "work" | "notion" | "wiki" | "term";
 }> = [
   { slug: "workserver", label: "Work서버", tone: "work" },
   { slug: "notion", label: "노션", tone: "notion" },
-  { slug: "image", label: "이미지", tone: "img" },
   { slug: "wiki", label: "위키", tone: "wiki" },
   { slug: "glossary", label: "용어사전", tone: "term" }
+];
+
+export const SECONDARY_CHIPS: Array<{
+  slug: Exclude<LunaAdminSecondaryChip, "criteria">;
+  label: string;
+}> = [
+  { slug: "all", label: "전체" },
+  { slug: "same", label: "같은 것" },
+  { slug: "belongs", label: "속한 것" },
+  { slug: "follows", label: "이어진 것" },
+  { slug: "perspective", label: "관점" }
 ];
 
 export type LunaAdminSubDef = {
@@ -199,6 +219,38 @@ export function isPrimarySource(value: string | null): value is LunaAdminPrimary
     value === "image" ||
     value === "wiki" ||
     value === "glossary"
+  );
+}
+
+/** 옛 이미지 메뉴는 Work서버 이미지 칩으로. */
+export function canonicalPrimarySource(
+  value: string | null
+): Exclude<LunaAdminPrimarySource, "image"> | null {
+  if (value === "image") return "workserver";
+  if (value === "workserver" || value === "notion" || value === "wiki" || value === "glossary") {
+    return value;
+  }
+  return null;
+}
+
+export function isWorkKind(value: string | null): value is LunaAdminWorkKind {
+  return (
+    value === "folders" ||
+    value === "files" ||
+    value === "docs" ||
+    value === "images" ||
+    value === "unread"
+  );
+}
+
+export function isSecondaryChip(value: string | null): value is LunaAdminSecondaryChip {
+  return (
+    value === "all" ||
+    value === "same" ||
+    value === "belongs" ||
+    value === "follows" ||
+    value === "perspective" ||
+    value === "criteria"
   );
 }
 

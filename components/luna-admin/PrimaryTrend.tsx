@@ -15,12 +15,19 @@ const RANGE_LABEL: Record<PrimaryTrendPayload["range"], string> = {
 export function PrimaryTrend() {
   const [range, setRange] = useState<PrimaryTrendPayload["range"]>("30");
   const [data, setData] = useState<PrimaryTrendPayload | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(true);
 
   const load = useCallback(async (next: PrimaryTrendPayload["range"]) => {
+    setBusy(true);
+    setError("");
     try {
       setData(await adminFetch<PrimaryTrendPayload>(`/api/luna-admin/primary/trend?range=${next}`));
-    } catch {
+    } catch (err) {
       setData(null);
+      setError(err instanceof Error ? err.message : "불러오지 못했습니다");
+    } finally {
+      setBusy(false);
     }
   }, []);
 
@@ -50,11 +57,12 @@ export function PrimaryTrend() {
           ))}
         </div>
       </div>
-      {!data ? <p className="empty">불러오는 중…</p> : null}
-      {data && data.bars.length === 0 ? (
+      {busy ? <p className="empty">불러오는 중…</p> : null}
+      {!busy && error ? <p className="empty">{error}</p> : null}
+      {!busy && !error && data && data.bars.length === 0 ? (
         <p className="empty">지난 기록이 없어 오늘부터 쌓입니다.</p>
       ) : null}
-      {data && data.bars.length > 0 ? (
+      {!busy && data && data.bars.length > 0 ? (
         <>
           <div className="bars">
             {data.bars.map((b) => (

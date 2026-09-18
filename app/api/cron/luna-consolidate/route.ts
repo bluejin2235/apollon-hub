@@ -43,18 +43,26 @@ export async function GET(request: NextRequest) {
       limitPerKind: 120
     });
     let storage_snapshot: { groups: number; tables: number } | null = null;
+    let source_stats: { day: string; query_ms: number; sources: number } | null = null;
     try {
       const { takeStorageSnapshot } = await import("@/lib/luna/storage");
       storage_snapshot = await takeStorageSnapshot(admin);
     } catch (snapErr) {
       console.error("[luna-consolidate] storage snapshot", snapErr);
     }
+    try {
+      const { computeAndStoreSourceStats } = await import("@/lib/luna-admin/source-stats");
+      source_stats = await computeAndStoreSourceStats(admin);
+    } catch (statsErr) {
+      console.error("[luna-consolidate] source stats", statsErr);
+    }
     console.log("[luna-consolidate] cron", {
       ...result,
       embeddings,
-      storage_snapshot
+      storage_snapshot,
+      source_stats
     });
-    return NextResponse.json({ ...result, embeddings, storage_snapshot });
+    return NextResponse.json({ ...result, embeddings, storage_snapshot, source_stats });
   } catch (err) {
     console.error("[luna-consolidate]", err);
     return NextResponse.json(

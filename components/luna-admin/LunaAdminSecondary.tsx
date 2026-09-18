@@ -197,37 +197,27 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
   if (chip === "criteria") {
     return (
       <>
-        <ChipBar
-          chip={chip}
-          setChip={setChip}
-          counts={data?.counts}
-          persp={
-            data?.perspectives_active ??
-            data?.perspectives_total ??
-            data?.perspectives.length ??
-            0
-          }
-        />
+        <p className="sech">
+          <span className="t">판단 기준</span>
+          <span className="sp" />
+          <button
+            type="button"
+            className="a"
+            onClick={() => onGo(buildLunaAdminUrl("knowledge", "secondary"))}
+          >
+            2차 데이터로
+          </button>
+        </p>
         <LunaKnowledgeTab />
       </>
     );
   }
 
   if (error && !data) {
-    return (
-      <>
-        <ChipBar chip={chip} setChip={setChip} counts={undefined} persp={0} />
-        <p className="empty">{error}</p>
-      </>
-    );
+    return <p className="empty">{error}</p>;
   }
   if (!data) {
-    return (
-      <>
-        <ChipBar chip={chip} setChip={setChip} counts={undefined} persp={0} />
-        <p className="empty">불러오는 중…</p>
-      </>
-    );
+    return <p className="empty">불러오는 중…</p>;
   }
 
   const belongs = data.links.filter((l) => l.kind === "belongs");
@@ -239,20 +229,18 @@ export function LunaAdminSecondary({ onGo, initialChip = "all" }: Props) {
 
   return (
     <>
-      <ChipBar
-        chip={chip}
-        setChip={(c) => {
-          setChip(c);
-          setSelected(new Set());
-          if (c === "same") setSameFilter("need");
-        }}
-        counts={data.counts}
-        persp={
-          data.perspectives_active ??
-          data.perspectives_total ??
-          data.perspectives.length
-        }
-      />
+      {(chip === "all" || chip === "same") && (
+        <p className="sech">
+          <span className="sp" />
+          <button
+            type="button"
+            className="a"
+            onClick={() => onGo(buildLunaAdminUrl("knowledge", "secondary", { chip: "criteria" }))}
+          >
+            판단 기준 →
+          </button>
+        </p>
+      )}
 
       {chip === "same" ? (
         <div className="chips subchips">
@@ -546,40 +534,5 @@ function SameCard({
         )
       }
     />
-  );
-}
-
-function ChipBar({
-  chip,
-  setChip,
-  counts,
-  persp
-}: {
-  chip: Chip;
-  setChip: (c: Chip) => void;
-  counts?: Payload["counts"];
-  persp: number;
-}) {
-  const items: { key: Chip; label: string }[] = [
-    { key: "all", label: `전체 ${counts?.all ?? 0}` },
-    { key: "same", label: `같은 것 ${counts?.same ?? 0}` },
-    { key: "belongs", label: `속한 것 ${counts?.belongs ?? 0}` },
-    { key: "follows", label: `이어진 것 ${counts?.follows ?? 0}` },
-    { key: "criteria", label: "판단 기준" },
-    { key: "perspective", label: `관점 ${persp}` }
-  ];
-  return (
-    <div className="chips">
-      {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          className={chip === item.key ? "on" : ""}
-          onClick={() => setChip(item.key)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
   );
 }

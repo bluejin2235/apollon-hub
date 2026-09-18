@@ -1,22 +1,18 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { applyPeriod, resolvePeriod } from "@/lib/luna-admin/period";
 import { kstParts } from "@/lib/luna/eval-schedule";
 import type {
   PrimaryWorkChip,
   PrimaryWorkChunk,
   PrimaryWorkFileRow,
+  PrimaryWorkKind,
   PrimaryWorkListPayload,
-  PrimaryWorkPreviewPayload
+  PrimaryWorkPreviewPayload,
+  PrimaryWorkSort
 } from "@/lib/luna-admin/types";
 
-export const WORK_PAGE_SIZE = 50;
-
-const CHIP_EXTS: Record<Exclude<PrimaryWorkChip, "all" | "unread">, string> = {
-  pdf: "pdf",
-  pptx: "pptx",
-  xlsx: "xlsx",
-  docx: "docx"
-};
+export const WORK_PAGE_SIZE = 15;
 
 type TextRow = {
   path: string;
@@ -32,8 +28,45 @@ type TextRow = {
   extracted_at: string | null;
 };
 
+type DirRow = {
+  path: string;
+  drive: string;
+  type: string;
+  size_bytes: number | null;
+  modified_at: string | null;
+};
+
 const TEXT_COLS =
   "path, drive, ext, size_bytes, modified_at, text_length, chunk_count, status, skip_reason, error, extracted_at";
+
+const SORT_COL: Record<PrimaryWorkSort, string> = {
+  file: "path",
+  path: "path",
+  chunks: "chunk_count",
+  chars: "text_length",
+  size: "size_bytes",
+  modified: "modified_at",
+  indexed: "extracted_at",
+  status: "status"
+};
+
+const DIR_SORT: Record<string, string> = {
+  file: "path",
+  path: "path",
+  size: "size_bytes",
+  modified: "modified_at",
+  indexed: "modified_at"
+};
+
+function isWorkKind(value: string | null): value is PrimaryWorkKind {
+  return (
+    value === "folders" ||
+    value === "files" ||
+    value === "docs" ||
+    value === "images" ||
+    value === "unread"
+  );
+}
 
 function isWorkChip(value: string | null): value is PrimaryWorkChip {
   return (
@@ -43,6 +76,19 @@ function isWorkChip(value: string | null): value is PrimaryWorkChip {
     value === "xlsx" ||
     value === "docx" ||
     value === "unread"
+  );
+}
+
+function isSort(value: string | null): value is PrimaryWorkSort {
+  return (
+    value === "file" ||
+    value === "path" ||
+    value === "chunks" ||
+    value === "chars" ||
+    value === "size" ||
+    value === "modified" ||
+    value === "indexed" ||
+    value === "status"
   );
 }
 
@@ -125,90 +171,137 @@ function mapFile(row: TextRow): PrimaryWorkFileRow {
   };
 }
 
-function applyStatus<T>(
-  q: T,
-  chip: PrimaryWorkChip
-): T {
-  const query = q as {
-    eq: (c: string, v: string) => T;
-    in: (c: string, v: string[]) => T;
+function mapDir(row: DirRow): PrimaryWorkFileRow {
+  return {
+    path: row.path,
+    drive: row.drive,
+    file_name: fileNameOf(row.path) || row.path,
+    folder: folderOf(row.drive, row.path),
+    full_path: fullPathOf(row.drive, row.path),
+    ext: "",
+    chunk_count: null,
+    text_length: null,
+    status: row.type,
+    tag: row.type === "folder" ? "경로" : "파일",
+    tag_kind: "gray",
+    action_label: "",
+    size_label: formatSize(row.size_bytes),
+    modified_label: formatWhen(row.modified_at),
+    extracted_label: formatWhen(row.modified_at)
   };
-  if (chip === "unread") return query.in("status", ["empty", "failed", "skipped"]);
-  if (chip === "all") return query.eq("status", "ok");
-  return (query.eq("status", "ok") as typeof query).eq("ext", CHIP_EXTS[chip]);
-}
-
-async function countChip(
-  admin: SupabaseClient,
-  chip: PrimaryWorkChip
-): Promise<number> {
-  let q = admin.from("nas_file_text").select("path", { count: "exact", head: true });
-  q = applyStatus(q, chip);
-  const { count, error } = await q;
-  if (error) return 0;
-  return count ?? 0;
-}
-
-const CHIP_CACHE_MS = 5 * 60 * 1000;
-let chipCache: { at: number; counts: Record<PrimaryWorkChip, number>; failed_opaque: number } | null =
-  null;
-
-async function chipCounts(admin: SupabaseClient): Promise<{
-  counts: Record<PrimaryWorkChip, number>;
-  failed_opaque: number;
-}> {
-  if (chipCache && Date.now() - chipCache.at < CHIP_CACHE_MS) {
-    return { counts: chipCache.counts, failed_opaque: chipCache.failed_opaque };
-  }
-  const [all, pdf, pptx, xlsx, docx, unread, failedRes] = await Promise.all([
-    countChip(admin, "all"),
-    countChip(admin, "pdf"),
-    countChip(admin, "pptx"),
-    countChip(admin, "xlsx"),
-    countChip(admin, "docx"),
-    countChip(admin, "unread"),
-    admin
-      .from("nas_file_text")
-      .select("path", { count: "exact", head: true })
-      .eq("status", "failed")
-  ]);
-  const counts = { all, pdf, pptx, xlsx, docx, unread };
-  const failed_opaque = failedRes.error ? 0 : (failedRes.count ?? 0);
-  chipCache = { at: Date.now(), counts, failed_opaque };
-  return { counts, failed_opaque };
 }
 
 export async function listPrimaryWorkFiles(
   admin: SupabaseClient,
-  rawChip: string | null,
-  rawPage: string | null
+  params: {
+    kind: string | null;
+    chip: string | null;
+    page: string | null;
+    period: string | null;
+    from: string | null;
+    to: string | null;
+    sort: string | null;
+    dir: string | null;
+  }
 ): Promise<PrimaryWorkListPayload> {
   const t0 = Date.now();
-  const chip: PrimaryWorkChip = isWorkChip(rawChip) ? rawChip : "all";
-  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const kind: PrimaryWorkKind = isWorkKind(params.kind) ? params.kind : "docs";
+  const chip: PrimaryWorkChip = isWorkChip(params.chip) ? params.chip : "all";
+  const sort: PrimaryWorkSort = isSort(params.sort) ? params.sort : "indexed";
+  const dir = params.dir === "asc" ? "asc" : "desc";
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const period = resolvePeriod(params.period, params.from, params.to);
   const from = (page - 1) * WORK_PAGE_SIZE;
   const to = from + WORK_PAGE_SIZE - 1;
+  const emptyChips = { all: 0, pdf: 0, pptx: 0, xlsx: 0, docx: 0, unread: 0 };
 
+  if (kind === "images") {
+    return {
+      kind,
+      chip,
+      period: period.key,
+      sort,
+      dir,
+      page,
+      page_size: WORK_PAGE_SIZE,
+      total: 0,
+      chip_counts: emptyChips,
+      rows: [],
+      failed_opaque: 0,
+      from_label: period.from_label,
+      to_label: period.to_label,
+      query_ms: Date.now() - t0
+    };
+  }
+
+  if (kind === "folders" || kind === "files") {
+    const col = DIR_SORT[sort] ?? "modified_at";
+    let q = admin
+      .from("nas_directory")
+      .select("path, drive, type, size_bytes, modified_at", { count: "exact" })
+      .eq("type", kind === "folders" ? "folder" : "file")
+      .order(col, { ascending: dir === "asc", nullsFirst: false })
+      .range(from, to);
+    q = applyPeriod(q, "modified_at", period);
+    const { data, error, count } = await q;
+    if (error) throw new Error(error.message);
+    return {
+      kind,
+      chip,
+      period: period.key,
+      sort,
+      dir,
+      page,
+      page_size: WORK_PAGE_SIZE,
+      total: count ?? 0,
+      chip_counts: emptyChips,
+      rows: ((data ?? []) as DirRow[]).map(mapDir),
+      failed_opaque: 0,
+      from_label: period.from_label,
+      to_label: period.to_label,
+      query_ms: Date.now() - t0
+    };
+  }
+
+  const col = SORT_COL[sort] ?? "extracted_at";
   let q = admin
     .from("nas_file_text")
     .select(TEXT_COLS, { count: "exact" })
-    .order("extracted_at", { ascending: false })
+    .order(col, { ascending: dir === "asc", nullsFirst: false })
     .range(from, to);
-  q = applyStatus(q, chip);
-
-  const [listRes, chips] = await Promise.all([q, chipCounts(admin)]);
-  if (listRes.error) {
-    throw new Error(listRes.error.message);
+  if (kind === "unread") {
+    q = q.in("status", ["empty", "failed", "skipped"]);
+  } else {
+    q = q.eq("status", "ok");
+    if (chip !== "all" && chip !== "unread") q = q.eq("ext", chip);
   }
-  const rows = ((listRes.data ?? []) as TextRow[]).map(mapFile);
+  q = applyPeriod(q, "extracted_at", period);
+  const { data, error, count } = await q;
+  if (error) throw new Error(error.message);
+
+  let failed_opaque = 0;
+  if (kind === "unread") {
+    const failed = await admin
+      .from("nas_file_text")
+      .select("path", { count: "exact", head: true })
+      .eq("status", "failed");
+    failed_opaque = failed.error ? 0 : (failed.count ?? 0);
+  }
+
   return {
+    kind,
     chip,
+    period: period.key,
+    sort,
+    dir,
     page,
     page_size: WORK_PAGE_SIZE,
-    total: listRes.count ?? 0,
-    chip_counts: chips.counts,
-    rows,
-    failed_opaque: chips.failed_opaque,
+    total: count ?? 0,
+    chip_counts: emptyChips,
+    rows: ((data ?? []) as TextRow[]).map(mapFile),
+    failed_opaque,
+    from_label: period.from_label,
+    to_label: period.to_label,
     query_ms: Date.now() - t0
   };
 }

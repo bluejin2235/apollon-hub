@@ -1346,6 +1346,127 @@
   margin-top: 8px;
 }
 
+.luna-admin .srcgrid.c4 { grid-template-columns: repeat(4, 1fr); }
+
+.luna-admin .nav3 {
+  display: flex;
+  gap: 5px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line2);
+  background: #FAFAFB;
+  overflow-x: auto;
+}
+.luna-admin .nav3 button {
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--sub);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.luna-admin .nav3 button.on { font-weight: 700; }
+.luna-admin .nav3 button.on.work { border-color: var(--work); background: var(--work-bg); color: var(--work); }
+.luna-admin .nav3 button.on.notion { border-color: var(--notion); background: var(--notion-bg); color: var(--notion); }
+.luna-admin .nav3 button.on.wiki { border-color: var(--wiki); background: var(--wiki-bg); color: var(--wiki); }
+.luna-admin .nav3 button.on.term { border-color: var(--term); background: var(--term-bg); color: var(--term); }
+.luna-admin .nav3 b { font-size: 10px; font-weight: 700; opacity: 0.7; }
+
+.luna-admin .speed {
+  background: var(--g-bg);
+  border: 1px solid #BEE0D3;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 11.5px;
+  color: var(--g);
+  line-height: 1.75;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.luna-admin .speed.live { background: var(--y-bg); border-color: #EFDCB8; color: var(--y); }
+.luna-admin .speed .c { flex: 1; }
+.luna-admin .speed b { font-weight: 800; }
+.luna-admin .speed .when { display: block; font-size: 10.5px; opacity: 0.8; margin-top: 2px; }
+.luna-admin .speed .t { font-size: 10px; font-family: var(--mono); opacity: 0.75; white-space: nowrap; }
+
+.luna-admin .glo-closed {
+  font-size: 11px;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  margin-bottom: 12px;
+  padding: 0;
+}
+.luna-admin .glo {
+  background: #FAFAFB;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 15px;
+  margin-bottom: 14px;
+}
+.luna-admin .glo .gt {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--faint);
+  margin-bottom: 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.luna-admin .glo .gt .x {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.luna-admin .glo .row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 11.5px;
+  line-height: 1.75;
+  align-items: flex-start;
+}
+.luna-admin .glo .row.on { background: var(--luna-soft); margin: 0 -8px; padding: 6px 8px; border-radius: 6px; }
+.luna-admin .glo .row .w {
+  width: 64px;
+  flex-shrink: 0;
+  font-weight: 800;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--luna);
+}
+.luna-admin .glo .row .dd { flex: 1; color: var(--sub); }
+
+.luna-admin .period {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.luna-admin .period .l { font-size: 12px; font-weight: 700; color: var(--sub); }
+.luna-admin .period .date {
+  font-size: 11.5px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--mono);
+  color: var(--sub);
+  background: #fff;
+}
+.luna-admin .period .sp { flex: 1; }
+.luna-admin .period .cnt { font-size: 11.5px; color: var(--faint); }
+.luna-admin .period .cnt b { color: var(--ink); font-weight: 700; }
+
 .luna-admin .pager {
   display: flex;
   align-items: center;
@@ -1372,6 +1493,69 @@
 }
 .luna-admin .pager .pg button.on { background: var(--luna); color: #fff; border-color: var(--luna); font-weight: 700; }
 .luna-admin .pager .pg button.off { color: var(--faint); cursor: default; border-color: var(--line2); }
+.luna-admin .pager .per { font-size: 11px; color: var(--faint); }
+
+.luna-admin .kcards {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.luna-admin .kcards.c4 { grid-template-columns: repeat(4, 1fr); }
+.luna-admin .kcards.c5 { grid-template-columns: repeat(5, 1fr); }
+.luna-admin .kcard {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 13px 15px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.luna-admin .kcard:hover { border-color: var(--luna-line); }
+.luna-admin .kcard.on { border-color: var(--work); background: #FCFEFD; }
+.luna-admin .kcard .bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.luna-admin .kcard .bar.fold { background: #B5654A; }
+.luna-admin .kcard .bar.work { background: var(--work); }
+.luna-admin .kcard .bar.notion { background: var(--notion); }
+.luna-admin .kcard .bar.img { background: var(--img); }
+.luna-admin .kcard .bar.wiki { background: var(--wiki); }
+.luna-admin .kcard .bar.term { background: var(--term); }
+.luna-admin .kcard .bar.faint { background: #D1D5DB; }
+.luna-admin .kcard .hd { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.luna-admin .kcard .ic {
+  width: 20px; height: 20px; border-radius: 6px;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 800;
+}
+.luna-admin .kcard .ic.fold { background: #FBEFEA; color: #B5654A; }
+.luna-admin .kcard .ic.work { background: var(--work-bg); color: var(--work); }
+.luna-admin .kcard .ic.notion { background: var(--notion-bg); color: var(--notion); }
+.luna-admin .kcard .ic.img { background: var(--img-bg); color: var(--img); }
+.luna-admin .kcard .ic.wiki { background: var(--wiki-bg); color: var(--wiki); }
+.luna-admin .kcard .ic.term { background: var(--term-bg); color: var(--term); }
+.luna-admin .kcard .ic.faint { background: #F3F4F6; color: var(--faint); }
+.luna-admin .kcard .nm { font-size: 12px; font-weight: 700; }
+.luna-admin .kcard .q {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--faint);
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: grid; place-items: center;
+}
+.luna-admin .kcard .v { font-size: 21px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.1; }
+.luna-admin .kcard .d { font-size: 10.5px; color: var(--faint); margin-top: 4px; line-height: 1.6; }
+.luna-admin .kcard .delta { font-size: 11px; font-weight: 700; margin-top: 6px; }
+.luna-admin .kcard .delta.up { color: var(--g); }
+.luna-admin .kcard .delta.flat { color: var(--faint); }
 
 .luna-admin .start {
   background: linear-gradient(135deg, #5B52C4, #7B6FD9);
@@ -1451,6 +1635,19 @@
 .luna-admin .askli .badge.answer { background: var(--y-bg); color: var(--y); }
 .luna-admin .askli .badge.skip { background: #F3F4F6; color: var(--faint); }
 
+.luna-admin .tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.luna-admin th { cursor: pointer; user-select: none; }
+.luna-admin th .ar { color: var(--luna); margin-left: 3px; font-size: 9px; }
+.luna-admin .st .t .q,
+.luna-admin .flow .q {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid var(--line);
+  display: inline-grid; place-items: center;
+  font-size: 8px; cursor: pointer;
+  background: #fff; color: var(--faint);
+  margin-left: 4px; padding: 0;
+}
+
 @media (max-width: 900px) {
   .luna-admin .stor .g3 { grid-template-columns: 1fr; }
   .luna-admin .stor .gauge { flex-wrap: wrap; }
@@ -1458,7 +1655,10 @@
 }
 
 @media (max-width: 1000px) {
-  .luna-admin .srcgrid { grid-template-columns: repeat(2, 1fr); }
+  .luna-admin .srcgrid,
+  .luna-admin .srcgrid.c4,
+  .luna-admin .kcards.c4,
+  .luna-admin .kcards.c5 { grid-template-columns: repeat(2, 1fr); }
   .luna-admin .g2 { grid-template-columns: 1fr; }
   .luna-admin .imgpeek { flex-direction: column; }
   .luna-admin .imgpeek .th { width: 100%; }

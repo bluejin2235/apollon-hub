@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 import { kstParts } from "@/lib/luna/eval-schedule";
+import { kstDateBounds } from "@/lib/luna-admin/period";
 import type { PrimaryTrendBar, PrimaryTrendPayload } from "@/lib/luna-admin/types";
 
 function kstDate(iso: string): string {
@@ -13,39 +14,6 @@ function labelOf(ymd: string, todayYmd: string): string {
   if (ymd === todayYmd) return "오늘";
   const [, m, d] = ymd.split("-");
   return `${Number(m)}/${d}`;
-}
-
-async function timestamps(
-  admin: SupabaseClient,
-  table: string,
-  column: string,
-  startIso: string | null
-): Promise<string[]> {
-  const out: string[] = [];
-  let from = 0;
-  for (;;) {
-    let q = admin.from(table).select(column).order(column, { ascending: true }).range(from, from + 999);
-    if (startIso) q = q.gte(column, startIso);
-    const { data, error } = await q;
-    if (error) break;
-    const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    for (const row of rows) {
-      const v = row[column];
-      if (typeof v === "string" && v) out.push(v);
-    }
-    if (rows.length < 1000) break;
-    from += 1000;
-  }
-  return out;
-}
-
-function bucket(isos: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const iso of isos) {
-    const k = kstDate(iso);
-    m.set(k, (m.get(k) ?? 0) + 1);
-  }
-  return m;
 }
 
 function addYmd(ymd: string, days: number): string {
@@ -86,6 +54,53 @@ function captionFor(bars: PrimaryTrendBar[]): string {
   return line;
 }
 
+async function trendViaRpc(
+  admin: SupabaseClient,
+  startIso: string
+): Promise<Array<{ day: string; work: number; notion: number; image: number }> | null> {
+  const { data, error } = await admin.rpc("luna_primary_trend_days", { p_start: startIso });
+  if (error || !Array.isArray(data)) return null;
+  return (data as Array<{ day: string; work: number; notion: number; image: number }>).map((row) => ({
+    day: String(row.day).slice(0, 10),
+    work: Number(row.work) || 0,
+    notion: Number(row.notion) || 0,
+    image: Number(row.image) || 0
+  }));
+}
+
+async function countDay(
+  admin: SupabaseClient,
+  table: string,
+  column: string,
+  ymd: string
+): Promise<number> {
+  const b = kstDateBounds(ymd);
+  const { count, error } = await admin
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .gte(column, b.startIso)
+    .lt(column, b.endIso);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+async function trendViaCounts(
+  admin: SupabaseClient,
+  days: string[]
+): Promise<Array<{ day: string; work: number; notion: number; image: number }>> {
+  const rows = await Promise.all(
+    days.map(async (day) => {
+      const [work, notion, image] = await Promise.all([
+        countDay(admin, "nas_file_text", "extracted_at", day),
+        countDay(admin, "luna_notion_pages", "indexed_at", day),
+        countDay(admin, "luna_media_index", "indexed_at", day)
+      ]);
+      return { day, work, notion, image };
+    })
+  );
+  return rows;
+}
+
 let trendCache: { key: string; at: number; payload: PrimaryTrendPayload } | null = null;
 
 export async function buildPrimaryTrend(
@@ -94,39 +109,31 @@ export async function buildPrimaryTrend(
 ): Promise<PrimaryTrendPayload> {
   const range: PrimaryTrendPayload["range"] =
     raw === "7" || raw === "90" || raw === "all" ? raw : "30";
-  const cacheKey = range;
-  if (trendCache && trendCache.key === cacheKey && Date.now() - trendCache.at < 5 * 60 * 1000) {
+  if (trendCache && trendCache.key === range && Date.now() - trendCache.at < 5 * 60 * 1000) {
     return trendCache.payload;
   }
   const t0 = Date.now();
   const today = kstDayBounds();
   const todayYmd = kstDate(today.startIso);
-  const days = range === "7" ? 7 : range === "90" ? 90 : range === "all" ? 400 : 30;
-  const start =
-    range === "all"
-      ? null
-      : kstDayBounds(new Date(Date.now() - (days - 1) * 86_400_000)).startIso;
+  const dayCount = range === "7" ? 7 : range === "90" ? 90 : range === "all" ? 400 : 30;
+  const start = kstDayBounds(new Date(Date.now() - (dayCount - 1) * 86_400_000)).startIso;
+  const fromYmd = kstDate(start);
+  const days = eachYmd(fromYmd, todayYmd);
 
-  const [workIso, notionIso, imageIso] = await Promise.all([
-    timestamps(admin, "nas_file_text", "created_at", start),
-    timestamps(admin, "luna_notion_pages", "indexed_at", start),
-    timestamps(admin, "luna_media_index", "indexed_at", start)
-  ]);
-  const workB = bucket(workIso);
-  const notionB = bucket(notionIso);
-  const imageB = bucket(imageIso);
+  const rpc = await trendViaRpc(admin, start);
+  const grouped = rpc ?? (await trendViaCounts(admin, days));
+  const byDay = new Map(grouped.map((r) => [r.day, r]));
 
-  const keys = [...workB.keys(), ...notionB.keys(), ...imageB.keys()].sort();
-  const fromYmd =
-    range === "all" ? (keys[0] ?? todayYmd) : start ? kstDate(start) : todayYmd;
-  const sliced = eachYmd(fromYmd, todayYmd);
-  const bars: PrimaryTrendBar[] = sliced.map((date) => ({
-    date,
-    label: labelOf(date, todayYmd),
-    work: workB.get(date) ?? 0,
-    notion: notionB.get(date) ?? 0,
-    image: imageB.get(date) ?? 0
-  }));
+  const bars: PrimaryTrendBar[] = days.map((date) => {
+    const row = byDay.get(date);
+    return {
+      date,
+      label: labelOf(date, todayYmd),
+      work: row?.work ?? 0,
+      notion: row?.notion ?? 0,
+      image: row?.image ?? 0
+    };
+  });
 
   const payload: PrimaryTrendPayload = {
     range,
@@ -134,6 +141,6 @@ export async function buildPrimaryTrend(
     caption: captionFor(bars),
     query_ms: Date.now() - t0
   };
-  trendCache = { key: cacheKey, at: Date.now(), payload };
+  trendCache = { key: range, at: Date.now(), payload };
   return payload;
 }

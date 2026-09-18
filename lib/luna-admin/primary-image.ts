@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { applyPeriod, resolvePeriod } from "@/lib/luna-admin/period";
 import { kstParts } from "@/lib/luna/eval-schedule";
 import { countGlossaryTermsInText } from "@/lib/luna/media-model-compare";
 import type { MediaGlossaryTerm } from "@/lib/luna/media-vision-prompt";
@@ -9,7 +10,7 @@ import type {
   PrimaryImageRow
 } from "@/lib/luna-admin/types";
 
-export const IMAGE_PAGE_SIZE = 50;
+export const IMAGE_PAGE_SIZE = 15;
 const COLS =
   "path, drive, file_name, project, folder_category, description, thumbnail_url, file_size, width, height, indexed_at, description_model";
 
@@ -176,29 +177,37 @@ function mapRow(
   };
 }
 
-const listCache = new Map<string, { at: number; payload: PrimaryImageListPayload }>();
-
 export async function listPrimaryImages(
   admin: SupabaseClient,
   rawChip: string | null,
   rawPage: string | null,
-  mismatchOnly: boolean
+  mismatchOnly: boolean,
+  periodRaw: string | null = null,
+  fromYmd: string | null = null,
+  toYmd: string | null = null,
+  sortRaw: string | null = null,
+  dirRaw: string | null = null
 ): Promise<PrimaryImageListPayload> {
   const t0 = Date.now();
   const chip: PrimaryImageChip = isChip(rawChip) ? rawChip : "all";
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
-  const cacheKey = `${chip}:${page}:${mismatchOnly ? 1 : 0}`;
-  const hit = listCache.get(cacheKey);
-  if (hit && Date.now() - hit.at < 5 * 60 * 1000) {
-    return { ...hit.payload, query_ms: Date.now() - t0 };
-  }
+  const period = resolvePeriod(periodRaw, fromYmd, toYmd);
+  const dir = dirRaw === "asc" ? "asc" : "desc";
+  const sortCol =
+    sortRaw === "file"
+      ? "file_name"
+      : sortRaw === "project"
+        ? "project"
+        : sortRaw === "size"
+          ? "file_size"
+          : "indexed_at";
   const from = (page - 1) * IMAGE_PAGE_SIZE;
   const to = from + IMAGE_PAGE_SIZE - 1;
   const termsDict = await glossary(admin);
-  const mismatch = await mismatchSummary(admin);
 
   let listRes: { data: ImageRow[] | null; error: { message: string } | null; count: number | null };
   if (mismatchOnly) {
+    const mismatch = await mismatchSummary(admin);
     const slice = mismatch.paths.slice(from, to + 1);
     const res = await admin
       .from("luna_media_index")
@@ -209,9 +218,10 @@ export async function listPrimaryImages(
     let q = admin
       .from("luna_media_index")
       .select(COLS, { count: "exact" })
-      .order("indexed_at", { ascending: false })
+      .order(sortCol, { ascending: dir === "asc", nullsFirst: false })
       .range(from, to);
     q = applyChip(q, chip);
+    q = applyPeriod(q, "indexed_at", period);
     const res = await q;
     listRes = { data: (res.data ?? []) as ImageRow[], error: res.error, count: res.count };
   }
@@ -225,17 +235,20 @@ export async function listPrimaryImages(
     return mapRow(row, terms, mismatchRow);
   });
 
-  const payload: PrimaryImageListPayload = {
+  return {
     chip,
+    period: period.key,
+    sort: sortRaw || "indexed",
+    dir,
     page,
     page_size: IMAGE_PAGE_SIZE,
     total: listRes.count ?? 0,
     chip_counts: counts,
     rows,
-    mismatch_count: mismatch.count,
-    mismatch_sample: mismatch.sample,
+    mismatch_count: 0,
+    mismatch_sample: "",
+    from_label: period.from_label,
+    to_label: period.to_label,
     query_ms: Date.now() - t0
   };
-  listCache.set(cacheKey, { at: Date.now(), payload });
-  return payload;
 }

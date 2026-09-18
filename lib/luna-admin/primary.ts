@@ -1,17 +1,26 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatDurationSec } from "@/lib/luna/knowledge-format";
-import { kstOvernightJobBounds, kstParts } from "@/lib/luna/eval-schedule";
+import { kstParts } from "@/lib/luna/eval-schedule";
 import { getNotionIndexSchedule } from "@/lib/luna/notion-index-settings";
-import { kstDayBounds } from "@/lib/luna/selfstudy";
 import { formatStorageBytes } from "@/lib/luna/storage";
 import {
-  ADMIN_REPORT_HOUR,
-  ADMIN_REPORT_MINUTE
-} from "@/lib/luna-admin/schedule";
+  IMAGE_AFTER_EXCLUDE,
+  IMAGE_CORPUS_TOTAL,
+  IMAGE_SCAN_TOTAL,
+  IMAGE_UNREAD
+} from "@/lib/luna-admin/primary-constants";
+import {
+  deltaNum,
+  kindNum,
+  loadOrComputeSourceStats,
+  type SourceStatsRow
+} from "@/lib/luna-admin/source-stats";
 import type {
   PrimaryCheckRow,
   PrimaryFlowStep,
+  PrimaryKindCard,
+  PrimaryNotionDbRow,
   PrimaryPayload,
   PrimarySourceRow,
   PrimaryStorageRow
@@ -24,13 +33,12 @@ import {
 } from "@/lib/luna-admin/traffic";
 
 export type { PrimaryPayload, PrimarySourceRow };
-
-/** scripts/index-media.ts 의 전체 이미지 규모 상수와 같음 */
-export const IMAGE_CORPUS_TOTAL = 77_065;
-/** 이미지 색인 파이프라인 — 회사 PC 전수 스캔 규모 (nas_directory 가 아님) */
-export const IMAGE_SCAN_TOTAL = 2_436_857;
-export const IMAGE_AFTER_EXCLUDE = 198_302;
-export const IMAGE_UNREAD = 235;
+export {
+  IMAGE_AFTER_EXCLUDE,
+  IMAGE_CORPUS_TOTAL,
+  IMAGE_SCAN_TOTAL,
+  IMAGE_UNREAD
+} from "@/lib/luna-admin/primary-constants";
 
 const CHECK_IDS = ["work_index", "work_text", "notion_index", "image_index"] as const;
 const CHECK_NAMES: Record<(typeof CHECK_IDS)[number], string> = {
@@ -118,7 +126,6 @@ function signedCount(n: number): string {
   return n > 0 ? `+${n.toLocaleString("ko-KR")}` : n.toLocaleString("ko-KR");
 }
 
-/** 0은 숨기고, 값이 있는 쪽만 「파일 +12 · 본문 +8 어제」 */
 function pairDeltaLabel(
   parts: Array<{ key: string; n: number | null }>
 ): { delta: number | null; label: string } {
@@ -137,44 +144,42 @@ function num(n: number): string {
   return n.toLocaleString("ko-KR");
 }
 
-async function countHead(
-  admin: SupabaseClient,
-  table: string,
-  filter?: { eq?: [string, string | boolean]; contains?: [string, string[]] }
-): Promise<number> {
-  const base = admin.from(table).select("*", { count: "exact", head: true });
-  const filtered = filter?.contains
-    ? base.contains(filter.contains[0], filter.contains[1])
-    : filter?.eq
-      ? base.eq(filter.eq[0], filter.eq[1])
-      : base;
-  const { count, error } = await filtered;
-  if (error) return 0;
-  return count ?? 0;
-}
-
-async function countYesterday(
-  admin: SupabaseClient,
-  table: string,
-  column: string,
-  startIso: string,
-  endIso: string,
-  filter?: { eq: [string, string] }
-): Promise<number | null> {
-  let q = admin
-    .from(table)
-    .select("*", { count: "exact", head: true })
-    .gte(column, startIso)
-    .lt(column, endIso);
-  if (filter?.eq) q = q.eq(filter.eq[0], filter.eq[1]);
-  const { count, error } = await q;
-  if (error) return null;
-  return count ?? 0;
-}
-
 function scheduleFromPromise(promiseLabel: string | null | undefined): string {
   if (!promiseLabel) return "—";
   return promiseLabel.replace(/\s*약속$/, "");
+}
+
+function kindCard(
+  id: string,
+  label: string,
+  count: number,
+  note: string,
+  delta: number | null,
+  extra: string | null,
+  tone: string,
+  ic: string
+): PrimaryKindCard {
+  const base = deltaLabel(delta);
+  return {
+    id,
+    label,
+    count,
+    note,
+    delta,
+    delta_label: extra ? (delta && delta !== 0 ? extra : base) : base,
+    tone,
+    ic
+  };
+}
+
+function notionDbsFromStats(row: SourceStatsRow): PrimaryNotionDbRow[] {
+  const raw = row.by_kind.db_rows;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is PrimaryNotionDbRow => {
+    if (!x || typeof x !== "object") return false;
+    const o = x as Record<string, unknown>;
+    return typeof o.database_id === "string";
+  });
 }
 
 export async function buildPrimarySources(
@@ -190,60 +195,18 @@ export async function buildPrimarySources(
   }
 
   const t0 = Date.now();
-  const yesterday = kstDayBounds(new Date(Date.now() - 86_400_000));
-  const overnight = kstOvernightJobBounds(
-    new Date(),
-    ADMIN_REPORT_HOUR,
-    ADMIN_REPORT_MINUTE
-  );
-
   const [
+    stats,
     settingsRes,
-    nasAll,
-    nasFiles,
-    textAll,
-    textOk,
-    textEmpty,
-    textSkipped,
-    textFailed,
-    chunkCount,
-    notionPages,
-    notionBlocks,
-    notionChunks,
-    notionRels,
     notionRunRes,
     notionSchedule,
-    wikiCount,
-    wikiMenus,
-    glossaryCount,
-    glossCommon,
-    glossSpace,
-    imageCount,
     imageLatestRes,
     imageRunRes,
     checksRes,
-    storageRes,
-    yWorkFiles,
-    yWorkText,
-    yNotion,
-    yNotionChunks,
-    yImage,
-    yWiki,
-    yGloss
+    storageSnap
   ] = await Promise.all([
+    loadOrComputeSourceStats(admin),
     admin.from("nas_scan_settings").select("*").eq("id", 1).maybeSingle(),
-    countHead(admin, "nas_directory"),
-    countHead(admin, "nas_directory", { eq: ["type", "file"] }),
-    countHead(admin, "nas_file_text"),
-    countHead(admin, "nas_file_text", { eq: ["status", "ok"] }),
-    countHead(admin, "nas_file_text", { eq: ["status", "empty"] }),
-    countHead(admin, "nas_file_text", { eq: ["status", "skipped"] }),
-    countHead(admin, "nas_file_text", { eq: ["status", "failed"] }),
-    countHead(admin, "nas_file_chunks"),
-    countHead(admin, "luna_notion_pages"),
-    countHead(admin, "luna_notion_blocks"),
-    countHead(admin, "luna_notion_chunks"),
-    countHead(admin, "luna_notion_relations"),
     admin
       .from("luna_notion_index_runs")
       .select("finished_at, started_at, duration_ms")
@@ -252,12 +215,6 @@ export async function buildPrimarySources(
       .limit(1)
       .maybeSingle(),
     getNotionIndexSchedule(admin),
-    countHead(admin, "luna_library"),
-    countHead(admin, "luna_wiki_menus", { eq: ["is_active", true] }),
-    countHead(admin, "glossary_terms"),
-    countHead(admin, "glossary_terms", { contains: ["categories", ["공통"]] }),
-    countHead(admin, "glossary_terms", { contains: ["categories", ["공간"]] }),
-    countHead(admin, "luna_media_index"),
     admin
       .from("luna_media_index")
       .select("indexed_at")
@@ -275,58 +232,49 @@ export async function buildPrimarySources(
       .from("luna_checks")
       .select("id, label, promise_label, status, last_ok_at, days_stale")
       .in("id", [...CHECK_IDS]),
-    admin.rpc("luna_storage_top_tables", { limit_n: 30 }),
-    countYesterday(
-      admin,
-      "nas_directory",
-      "modified_at",
-      overnight.startIso,
-      overnight.endIso,
-      { eq: ["type", "file"] }
-    ),
-    countYesterday(
-      admin,
-      "nas_file_text",
-      "extracted_at",
-      overnight.startIso,
-      overnight.endIso
-    ),
-    countYesterday(
-      admin,
-      "luna_notion_pages",
-      "indexed_at",
-      overnight.startIso,
-      overnight.endIso
-    ),
-    countYesterday(
-      admin,
-      "luna_notion_chunk_embeddings",
-      "updated_at",
-      overnight.startIso,
-      overnight.endIso
-    ),
-    countYesterday(
-      admin,
-      "luna_media_index",
-      "indexed_at",
-      overnight.startIso,
-      overnight.endIso
-    ),
-    countYesterday(
-      admin,
-      "luna_library",
-      "created_at",
-      yesterday.startIso,
-      yesterday.endIso
-    ),
-    countYesterday(
-      admin,
-      "glossary_terms",
-      "created_at",
-      yesterday.startIso,
-      yesterday.endIso
-    )
+    admin
+      .from("luna_storage_snapshots")
+      .select("table_name, bytes")
+      .eq("taken_on", statsDayOrToday())
+      .neq("table_name", "")
   ]);
+
+  const workStats = stats.work;
+  const notionStats = stats.notion;
+  const wikiStats = stats.wiki;
+  const glossStats = stats.glossary;
+
+  const nasAll = workStats.total;
+  const nasFolders = kindNum(workStats, "folders");
+  const nasFiles = kindNum(workStats, "files");
+  const textOk = kindNum(workStats, "docs");
+  const textAll = kindNum(workStats, "text_all");
+  const textEmpty = kindNum(workStats, "text_empty");
+  const textSkipped = kindNum(workStats, "text_skipped");
+  const textFailed = kindNum(workStats, "text_failed");
+  const chunkCount = kindNum(workStats, "chunks");
+  const unread = kindNum(workStats, "unread");
+  const imageCount = kindNum(workStats, "images");
+  const imageCorpus = kindNum(workStats, "image_corpus") || IMAGE_CORPUS_TOTAL;
+  const imageScan = kindNum(workStats, "image_scan") || IMAGE_SCAN_TOTAL;
+  const imageAfter = kindNum(workStats, "image_after_exclude") || IMAGE_AFTER_EXCLUDE;
+  const imageUnread = kindNum(workStats, "image_unread") || IMAGE_UNREAD;
+
+  const notionPages = kindNum(notionStats, "pages") || notionStats.total;
+  const notionBlocks = kindNum(notionStats, "blocks");
+  const notionChunks = kindNum(notionStats, "chunks");
+  const notionEmbeds = kindNum(notionStats, "embeddings") || notionChunks;
+  const notionRels = kindNum(notionStats, "relations");
+  const notionDbs = kindNum(notionStats, "databases");
+
+  const wikiCount = kindNum(wikiStats, "docs") || wikiStats.total;
+  const wikiSections = kindNum(wikiStats, "sections");
+  const wikiMenuCount = kindNum(wikiStats, "menus") || 7;
+
+  const glossaryCount = kindNum(glossStats, "terms") || glossStats.total;
+  const glossCommon = kindNum(glossStats, "cat_common");
+  const glossSpace = kindNum(glossStats, "cat_space");
+  const glossSyn = kindNum(glossStats, "synonyms");
 
   const checkById = new Map(
     ((checksRes.data ?? []) as Array<Record<string, unknown>>).map((row) => [
@@ -351,11 +299,16 @@ export async function buildPrimarySources(
   const scanHour = typeof settings?.scan_hour === "number" ? settings.scan_hour : 3;
   const scanMinute = typeof settings?.scan_minute === "number" ? settings.scan_minute : 0;
 
-  const unread = textSkipped + textEmpty + textFailed;
-  const extractPct =
-    textAll > 0 ? Math.round((textOk / textAll) * 100) : 0;
-  const avgChunks =
-    textOk > 0 ? Math.round((chunkCount / textOk) * 10) / 10 : 0;
+  const extractPct = textAll > 0 ? Math.round((textOk / textAll) * 100) : 0;
+  const avgChunks = textOk > 0 ? Math.round((chunkCount / textOk) * 10) / 10 : 0;
+
+  const yWorkFiles = deltaNum(workStats, "files");
+  const yWorkText = deltaNum(workStats, "docs");
+  const yImage = deltaNum(workStats, "images");
+  const yNotion = deltaNum(notionStats, "pages");
+  const yNotionChunks = deltaNum(notionStats, "chunks");
+  const yWiki = deltaNum(wikiStats, "docs");
+  const yGloss = deltaNum(glossStats, "terms");
 
   const workDelta = pairDeltaLabel([
     { key: "파일", n: yWorkFiles },
@@ -399,9 +352,7 @@ export async function buildPrimarySources(
       ? formatDurationSec(Math.round(notionRun.duration_ms / 1000))
       : "—";
   const notionDelta =
-    yNotion != null &&
-    yNotionChunks != null &&
-    yNotionChunks !== yNotion
+    yNotion != null && yNotionChunks != null && yNotionChunks !== yNotion
       ? pairDeltaLabel([
           { key: "페이지", n: yNotion },
           { key: "청크", n: yNotionChunks }
@@ -440,8 +391,8 @@ export async function buildPrimarySources(
   const imageDays = kstCalendarDaysAgo(imageLast);
   let imageLight = lightFromIdleDays(imageDays);
   const imagePct =
-    IMAGE_CORPUS_TOTAL > 0
-      ? Math.max(0, Math.round((imageCount / IMAGE_CORPUS_TOTAL) * 1000) / 10)
+    imageCorpus > 0
+      ? Math.max(0, Math.round((imageCount / imageCorpus) * 1000) / 10)
       : 0;
   if (imageLight === "green" && imagePct < 50) imageLight = "yellow";
 
@@ -449,20 +400,19 @@ export async function buildPrimarySources(
     source: "image",
     label: "이미지",
     count: imageCount,
-    extra_count: IMAGE_CORPUS_TOTAL,
-    size_label: `${num(imageCount)} / ${num(IMAGE_CORPUS_TOTAL)}`,
+    extra_count: imageCorpus,
+    size_label: `${num(imageCount)} / ${num(imageCorpus)}`,
     schedule_label: "01:00 (증분)",
     last_iso: imageLast,
     last_label: formatWhen(imageLast),
     duration_label: "—",
     status: imageLight,
     status_label: statusLabel(imageLight, imageDays),
-    note: `${num(IMAGE_CORPUS_TOTAL)} 중 ${imagePct}%`,
+    note: `${num(imageCorpus)} 중 ${imagePct}%`,
     delta: yImage,
     delta_label: deltaLabel(yImage)
   };
 
-  const wikiMenuCount = wikiMenus || 7;
   const wiki: PrimarySourceRow = {
     source: "wiki",
     label: "위키",
@@ -497,50 +447,59 @@ export async function buildPrimarySources(
   };
 
   const work_flow: PrimaryFlowStep[] = [
-    { t: "파일", v: nasFiles, d: "전체" },
-    { t: "읽을 수 있는 문서", v: textAll, d: "pdf·pptx·xlsx·docx" },
-    { t: "본문 추출", v: textOk, d: `${extractPct}%` },
-    { t: "청크", v: chunkCount, d: `평균 ${avgChunks}개` },
+    { t: "파일", v: nasFiles, d: "전체", q: "file" },
+    { t: "읽을 수 있는 문서", v: textAll, d: "pdf·pptx·xlsx·docx", q: "doc" },
+    { t: "본문 추출", v: textOk, d: `${extractPct}%`, q: "doc" },
+    { t: "청크", v: chunkCount, d: `평균 ${avgChunks}개`, q: "chunk" },
     {
       t: "못 읽음",
       v: unread,
       d: `skip ${num(textSkipped)} · 빈손 ${num(textEmpty)} · 실패 ${num(textFailed)}`,
-      loss: true
+      loss: true,
+      q: "unread"
     }
   ];
 
-  const imagePctFlow =
-    IMAGE_CORPUS_TOTAL > 0
-      ? Math.max(0, Math.round((imageCount / IMAGE_CORPUS_TOTAL) * 1000) / 10)
-      : 0;
-  const notionAvg =
-    notionPages > 0 ? Math.round((notionChunks / notionPages) * 10) / 10 : 0;
-
+  const left = Math.max(0, imageCorpus - imageCount);
   const image_flow: PrimaryFlowStep[] = [
-    { t: "전체 이미지", v: IMAGE_SCAN_TOTAL },
-    { t: "제외 후", v: IMAGE_AFTER_EXCLUDE, d: "휴지통·캐시·중복 제외" },
-    { t: "색인 대상", v: IMAGE_CORPUS_TOTAL },
-    { t: "색인됨", v: imageCount, d: `${imagePctFlow}%` },
-    { t: "읽지 못함", v: IMAGE_UNREAD, d: "psd·ai", loss: true }
+    { t: "전체 이미지", v: imageScan },
+    { t: "제외 후", v: imageAfter, d: "휴지통·캐시·중복 제외" },
+    { t: "색인 대상", v: imageCorpus },
+    { t: "색인됨", v: imageCount, d: `${imagePct}% · ${num(left)} 남음` },
+    { t: "읽지 못함", v: imageUnread, d: "psd·ai", loss: true }
   ];
 
+  const notionAvg =
+    notionPages > 0 ? Math.round((notionChunks / notionPages) * 10) / 10 : 0;
+  const blockAvg =
+    notionPages > 0 ? Math.round((notionBlocks / notionPages) * 10) / 10 : 0;
+  const embedPct =
+    notionChunks > 0
+      ? Math.max(0, Math.round((notionEmbeds / notionChunks) * 1000) / 10)
+      : 0;
+
   const notion_flow: PrimaryFlowStep[] = [
-    { t: "페이지", v: notionPages },
-    { t: "블록", v: notionBlocks },
-    { t: "청크", v: notionChunks, d: `평균 ${notionAvg}개` },
-    { t: "임베딩", v: notionChunks, d: "HNSW" },
-    { t: "관계", v: notionRels, d: "2차 데이터로" }
+    { t: "페이지", v: notionPages, q: "page" },
+    { t: "블록", v: notionBlocks, d: `평균 ${blockAvg}개`, q: "block" },
+    { t: "청크", v: notionChunks, d: `평균 ${notionAvg}개`, q: "chunk" },
+    { t: "임베딩", v: notionEmbeds, d: `HNSW · ${embedPct}%`, q: "embed" },
+    { t: "관계", v: notionRels, d: "2차 데이터로", q: "rel" }
   ];
 
   const wiki_flow: PrimaryFlowStep[] = [
-    { t: "문서", v: wikiCount },
-    { t: "분류", v: wikiMenuCount, d: "사람이 씀" }
+    { t: "문서", v: wikiCount, q: "doc" },
+    { t: "섹션", v: wikiSections || wikiMenuCount, d: "사람이 씀", q: "section" }
   ];
 
   const glossary_flow: PrimaryFlowStep[] = [
-    { t: "용어", v: glossaryCount },
-    { t: "공통", v: glossCommon },
-    { t: "공간", v: glossSpace }
+    { t: "용어", v: glossaryCount, q: "term" },
+    { t: "동의어", v: glossSyn, q: "syn" },
+    {
+      t: "분류",
+      v: glossCommon + glossSpace,
+      d: `공통 ${num(glossCommon)} · 공간 ${num(glossSpace)}`,
+      q: "cat"
+    }
   ];
 
   const checks: PrimaryCheckRow[] = CHECK_IDS.map((id) => {
@@ -563,12 +522,16 @@ export async function buildPrimarySources(
   });
 
   const tableBytes = new Map<string, number>();
-  if (!storageRes.error && Array.isArray(storageRes.data)) {
-    for (const row of storageRes.data as Array<{
-      table_name?: string;
-      bytes?: number;
-    }>) {
+  if (!storageSnap.error && Array.isArray(storageSnap.data) && storageSnap.data.length > 0) {
+    for (const row of storageSnap.data as Array<{ table_name?: string; bytes?: number }>) {
       tableBytes.set(String(row.table_name ?? ""), Number(row.bytes ?? 0));
+    }
+  } else {
+    const live = await admin.rpc("luna_storage_top_tables", { limit_n: 30 });
+    if (!live.error && Array.isArray(live.data)) {
+      for (const row of live.data as Array<{ table_name?: string; bytes?: number }>) {
+        tableBytes.set(String(row.table_name ?? ""), Number(row.bytes ?? 0));
+      }
     }
   }
   const storageBuilt: PrimaryStorageRow[] = STORAGE_ROWS.map((spec) => {
@@ -587,6 +550,140 @@ export async function buildPrimarySources(
     bar_pct: Math.max(3, Math.round((r.bytes / maxBytes) * 100))
   }));
 
+  const foldersT = kindNum(workStats, "folders_t");
+  const foldersP = kindNum(workStats, "folders_p");
+  const filesT = kindNum(workStats, "files_t");
+  const filesP = kindNum(workStats, "files_p");
+  const unreadHwp = kindNum(workStats, "unread_hwp");
+  const unreadDrawing = kindNum(workStats, "unread_drawing");
+
+  const work_kinds: PrimaryKindCard[] = [
+    kindCard(
+      "folders",
+      "경로",
+      nasFolders,
+      `T: ${num(foldersT)} · P: ${num(foldersP)}`,
+      0,
+      null,
+      "fold",
+      "📁"
+    ),
+    kindCard(
+      "files",
+      "파일",
+      nasFiles,
+      `T: ${num(filesT)} · P: ${num(filesP)}`,
+      yWorkFiles,
+      null,
+      "work",
+      "📄"
+    ),
+    kindCard(
+      "docs",
+      "문서 본문",
+      textOk,
+      `청크 ${num(chunkCount)}`,
+      yWorkText,
+      yWorkText
+        ? `+${yWorkText.toLocaleString("ko-KR")} 청크`
+        : null,
+      "notion",
+      "본"
+    ),
+    kindCard(
+      "images",
+      "이미지",
+      imageCount,
+      `${num(imageCorpus)} 중 ${imagePct}%`,
+      yImage,
+      null,
+      "img",
+      "📷"
+    ),
+    kindCard(
+      "unread",
+      "못 읽음",
+      unread,
+      `hwp ${num(unreadHwp)} · 도면 ${num(unreadDrawing)}`,
+      0,
+      null,
+      "faint",
+      "—"
+    )
+  ];
+
+  const notion_kinds: PrimaryKindCard[] = [
+    kindCard(
+      "page",
+      "페이지",
+      notionPages,
+      `DB ${num(notionDbs)}개 · 아카이브 제외`,
+      yNotion,
+      null,
+      "notion",
+      "P"
+    ),
+    kindCard(
+      "block",
+      "블록",
+      notionBlocks,
+      `페이지당 평균 ${blockAvg}개`,
+      deltaNum(notionStats, "blocks"),
+      null,
+      "notion",
+      "B"
+    ),
+    kindCard(
+      "chunk",
+      "청크",
+      notionChunks,
+      `페이지당 평균 ${notionAvg}개`,
+      yNotionChunks,
+      null,
+      "notion",
+      "C"
+    ),
+    kindCard(
+      "rel",
+      "관계",
+      notionRels,
+      "2차 데이터로 쓰임",
+      deltaNum(notionStats, "relations"),
+      null,
+      "notion",
+      "R"
+    )
+  ];
+
+  const wiki_kinds: PrimaryKindCard[] = [
+    kindCard("doc", "문서", wikiCount, "사람이 씀", yWiki, null, "wiki", "위"),
+    kindCard(
+      "section",
+      "섹션",
+      wikiSections || wikiMenuCount,
+      `${wikiMenuCount}분류`,
+      null,
+      null,
+      "wiki",
+      "§"
+    )
+  ];
+
+  const glossary_kinds: PrimaryKindCard[] = [
+    kindCard("term", "용어", glossaryCount, "검색·이미지에 씀", yGloss, null, "term", "용"),
+    kindCard("syn", "동의어", glossSyn, "같은 뜻의 다른 말", null, null, "term", "同"),
+    kindCard(
+      "cat",
+      "분류",
+      glossCommon + glossSpace,
+      `공통 ${num(glossCommon)} · 공간 ${num(glossSpace)}`,
+      null,
+      null,
+      "term",
+      "분"
+    )
+  ];
+
   const query_ms = Date.now() - t0;
   const payload: PrimaryPayload = {
     work,
@@ -594,17 +691,38 @@ export async function buildPrimarySources(
     image,
     wiki,
     glossary,
-    rows: [work, notion, image, wiki, glossary],
+    rows: [work, notion, wiki, glossary],
     work_flow,
     notion_flow,
     image_flow,
     wiki_flow,
     glossary_flow,
+    work_kinds,
+    notion_kinds,
+    wiki_kinds,
+    glossary_kinds,
+    notion_dbs: notionDbsFromStats(notionStats),
     checks,
     storage,
+    nav_counts: {
+      work: nasAll,
+      notion: notionPages,
+      wiki: wikiCount,
+      glossary: glossaryCount
+    },
+    stats: {
+      day: stats.day,
+      computed_at: stats.computed_at,
+      from_snapshot: stats.from_snapshot
+    },
     query_ms
   };
 
   payloadCache = { at: Date.now(), payload };
   return payload;
+}
+
+function statsDayOrToday(): string {
+  const p = kstParts(new Date());
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 }

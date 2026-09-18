@@ -103,6 +103,20 @@ export type AdminDashboard = {
     selfstudy_dot: boolean;
     selfstudy_ask: number;
   };
+  nav_counts: {
+    primary: {
+      work: number;
+      notion: number;
+      wiki: number;
+      glossary: number;
+    };
+    secondary: {
+      same: number;
+      belongs: number;
+      follows: number;
+      perspective: number;
+    };
+  };
 };
 
 export type StorageDashboardView = {
@@ -199,6 +213,24 @@ export type PrimaryFlowStep = {
   v: number;
   d?: string;
   loss?: boolean;
+  q?: string;
+};
+
+export type PrimaryKindCard = {
+  id: string;
+  label: string;
+  count: number;
+  note: string;
+  delta: number | null;
+  delta_label: string;
+  tone: string;
+  ic: string;
+};
+
+export type PrimaryStatsMeta = {
+  day: string;
+  computed_at: string;
+  from_snapshot: boolean;
 };
 
 export type PrimaryCheckRow = {
@@ -230,12 +262,34 @@ export type PrimaryPayload = {
   image_flow: PrimaryFlowStep[];
   wiki_flow: PrimaryFlowStep[];
   glossary_flow: PrimaryFlowStep[];
+  work_kinds: PrimaryKindCard[];
+  notion_kinds: PrimaryKindCard[];
+  wiki_kinds: PrimaryKindCard[];
+  glossary_kinds: PrimaryKindCard[];
+  notion_dbs: PrimaryNotionDbRow[];
   checks: PrimaryCheckRow[];
   storage: PrimaryStorageRow[];
+  nav_counts: {
+    work: number;
+    notion: number;
+    wiki: number;
+    glossary: number;
+  };
+  stats: PrimaryStatsMeta;
   query_ms: number;
 };
 
+export type PrimaryWorkKind = "folders" | "files" | "docs" | "images" | "unread";
 export type PrimaryWorkChip = "all" | "pdf" | "pptx" | "xlsx" | "docx" | "unread";
+export type PrimaryWorkSort =
+  | "file"
+  | "path"
+  | "chunks"
+  | "chars"
+  | "size"
+  | "modified"
+  | "indexed"
+  | "status";
 
 export type PrimaryWorkFileRow = {
   path: string;
@@ -256,13 +310,19 @@ export type PrimaryWorkFileRow = {
 };
 
 export type PrimaryWorkListPayload = {
+  kind: PrimaryWorkKind;
   chip: PrimaryWorkChip;
+  period: string;
+  sort: PrimaryWorkSort;
+  dir: "asc" | "desc";
   page: number;
   page_size: number;
   total: number;
   chip_counts: Record<PrimaryWorkChip, number>;
   rows: PrimaryWorkFileRow[];
   failed_opaque: number;
+  from_label: string;
+  to_label: string;
   query_ms: number;
 };
 
@@ -303,6 +363,9 @@ export type PrimaryImageRow = {
 
 export type PrimaryImageListPayload = {
   chip: PrimaryImageChip;
+  period: string;
+  sort: string;
+  dir: "asc" | "desc";
   page: number;
   page_size: number;
   total: number;
@@ -310,6 +373,8 @@ export type PrimaryImageListPayload = {
   rows: PrimaryImageRow[];
   mismatch_count: number;
   mismatch_sample: string;
+  from_label: string;
+  to_label: string;
   query_ms: number;
 };
 
@@ -327,7 +392,12 @@ export type PrimaryNotionPageRow = {
   page_id: string;
   title: string;
   path_label: string;
+  db_name: string;
   last_label: string;
+  edited_label: string;
+  block_count: number;
+  chunk_count: number;
+  rel_count: number;
 };
 
 export type PrimaryNotionChunk = {
@@ -336,7 +406,27 @@ export type PrimaryNotionChunk = {
   content: string;
 };
 
+export type PrimaryNotionRel = {
+  page_id: string;
+  title: string;
+  property_name: string;
+};
+
+export type PrimaryNotionView = "pages" | "dbs";
+export type PrimaryNotionSort =
+  | "title"
+  | "db"
+  | "blocks"
+  | "chunks"
+  | "rels"
+  | "edited"
+  | "indexed";
+
 export type PrimaryNotionPayload = {
+  view: PrimaryNotionView;
+  period: string;
+  sort: PrimaryNotionSort;
+  dir: "asc" | "desc";
   dbs: PrimaryNotionDbRow[];
   db_count: number;
   pages: PrimaryNotionPageRow[];
@@ -346,6 +436,9 @@ export type PrimaryNotionPayload = {
   selected_db: string | null;
   chunks: PrimaryNotionChunk[];
   chunk_total: number;
+  relations: PrimaryNotionRel[];
+  from_label: string;
+  to_label: string;
   query_ms: number;
 };
 

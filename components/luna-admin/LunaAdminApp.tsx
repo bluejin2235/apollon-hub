@@ -30,15 +30,18 @@ import { LunaBrainReport } from "@/components/luna/brain/LunaBrainReport";
 import { LunaBrainUpgrade } from "@/components/luna/brain/LunaBrainUpgrade";
 import {
   buildLunaAdminUrl,
-  isPrimarySource,
+  canonicalPrimarySource,
+  isSecondaryChip,
+  isWorkKind,
   resolveAdminRoute,
   defaultSubForAdminMenu,
   type LunaAdminMenu,
-  type LunaAdminSub
+  type LunaAdminSecondaryChip,
+  type LunaAdminSub,
+  type LunaAdminWorkKind
 } from "@/lib/luna-admin/nav";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import type { AdminDashboard } from "@/lib/luna-admin/types";
-import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
 
 type Props = {
   userInfoLine: string;
@@ -59,17 +62,15 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
   const searchParams = useSearchParams();
   const route = resolveAdminRoute(searchParams.get("menu"), searchParams.get("sub"));
   const sourceRaw = searchParams.get("source");
-  const source = isPrimarySource(sourceRaw) ? sourceRaw : null;
+  const source = canonicalPrimarySource(sourceRaw);
+  const kindRaw = searchParams.get("kind");
+  const workKind: LunaAdminWorkKind | null =
+    sourceRaw === "image" ? "images" : isWorkKind(kindRaw) ? kindRaw : null;
   const chipParam = searchParams.get("chip");
-  const secondaryChip =
-    chipParam === "same" ||
-    chipParam === "belongs" ||
-    chipParam === "follows" ||
-    chipParam === "criteria" ||
-    chipParam === "perspective" ||
-    chipParam === "all"
-      ? chipParam
-      : "all";
+  const secondaryChip: LunaAdminSecondaryChip = isSecondaryChip(chipParam)
+    ? chipParam
+    : "all";
+  const [dash, setDash] = useState<AdminDashboard | null>(null);
   const [badges, setBadges] = useState({
     failures: 0,
     candidates: 0,
@@ -80,8 +81,9 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
   useEffect(() => {
     void (async () => {
       try {
-        const dash = await adminFetch<AdminDashboard>("/api/luna-admin/dashboard");
-        setBadges(dash.badges);
+        const json = await adminFetch<AdminDashboard>("/api/luna-admin/dashboard");
+        setDash(json);
+        setBadges(json.badges);
       } catch {
         /* ignore */
       }
@@ -127,16 +129,24 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
             menu={route.menu}
             sub={route.sub}
             source={route.menu === "knowledge" && route.sub === "primary" ? source : null}
+            secondaryChip={
+              route.menu === "knowledge" && route.sub === "secondary" ? secondaryChip : "all"
+            }
             badges={badges}
+            counts={dash?.nav_counts}
             onMenu={onMenu}
             onSub={onSub}
             onPrimarySource={(next) => {
               if (!next) go(buildLunaAdminUrl("knowledge", "primary"));
               else go(buildLunaAdminUrl("knowledge", "primary", { source: next }));
             }}
+            onSecondaryChip={(chip) => {
+              const extra = chip === "all" ? undefined : { chip };
+              go(buildLunaAdminUrl("knowledge", "secondary", extra));
+            }}
           />
           <div className="body">
-            {renderBody(route.menu, route.sub, source, go, secondaryChip)}
+            {renderBody(route.menu, route.sub, source, workKind, go, secondaryChip)}
           </div>
         </div>
       </div>
@@ -147,9 +157,10 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
 function renderBody(
   menu: LunaAdminMenu,
   sub: LunaAdminSub | null,
-  source: LunaAdminPrimarySource | null,
+  source: Exclude<import("@/lib/luna-admin/nav").LunaAdminPrimarySource, "image"> | null,
+  workKind: LunaAdminWorkKind | null,
   go: (href: string) => void,
-  secondaryChip: "all" | "same" | "belongs" | "follows" | "criteria" | "perspective"
+  secondaryChip: LunaAdminSecondaryChip
 ) {
   if (menu === "dashboard") {
     return <LunaAdminDashboard onGo={go} />;
@@ -161,8 +172,20 @@ function renderBody(
     return (
       <LunaAdminPrimary
         source={source}
-        onOpen={(next) => go(buildLunaAdminUrl("knowledge", "primary", { source: next }))}
+        workKind={workKind}
+        onOpen={(next, kind) =>
+          go(
+            buildLunaAdminUrl(
+              "knowledge",
+              "primary",
+              kind ? { source: next, kind } : { source: next }
+            )
+          )
+        }
         onBack={() => go(buildLunaAdminUrl("knowledge", "primary"))}
+        onKind={(kind) =>
+          go(buildLunaAdminUrl("knowledge", "primary", { source: "workserver", kind }))
+        }
       />
     );
   }

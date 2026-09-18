@@ -4,6 +4,7 @@ import { kstDayBounds, getSelfstudyStatus } from "@/lib/luna/selfstudy";
 import { countOpenFailures } from "@/lib/luna/failures";
 import { buildPrimarySources } from "@/lib/luna-admin/primary";
 import {
+  countPerspectives,
   latestLinkAt,
   linkKindCounts
 } from "@/lib/luna-admin/links";
@@ -57,7 +58,8 @@ export async function buildAdminDashboard(
     weekUsers,
     tonight,
     ruleQuestions,
-    pendingFlags
+    pendingFlags,
+    perspectivesActive
   ] = await Promise.all([
     buildPrimarySources(admin),
     getSelfstudyStatus(admin),
@@ -92,7 +94,8 @@ export async function buildAdminDashboard(
       .limit(2000),
     loadTonightState(admin),
     listCandidateRuleQuestions(admin),
-    listAnswerFlags(admin, { status: "pending", limit: 200 })
+    listAnswerFlags(admin, { status: "pending", limit: 200 }),
+    countPerspectives(admin, "active")
   ]);
 
   let storage = null as Awaited<
@@ -217,9 +220,9 @@ export async function buildAdminDashboard(
     if (stage.light !== "red") continue;
     if (stage.key === "collect") {
       const worst = [
-        { label: "Work서버", days: kstCalendarDaysAgo(primary.work.last_iso), href: "/settings?menu=knowledge&sub=primary" },
-        { label: "노션", days: kstCalendarDaysAgo(primary.notion.last_iso), href: "/settings?menu=knowledge&sub=primary" },
-        { label: "이미지", days: kstCalendarDaysAgo(primary.image.last_iso), href: "/settings?menu=knowledge&sub=primary" }
+        { label: "Work서버", days: kstCalendarDaysAgo(primary.work.last_iso), href: "/settings?menu=knowledge&sub=primary&source=workserver" },
+        { label: "노션", days: kstCalendarDaysAgo(primary.notion.last_iso), href: "/settings?menu=knowledge&sub=primary&source=notion" },
+        { label: "이미지", days: kstCalendarDaysAgo(primary.image.last_iso), href: "/settings?menu=knowledge&sub=primary&source=workserver&kind=images" }
       ].sort((a, b) => (b.days ?? 99) - (a.days ?? 99))[0];
       alerts.push({
         title: `⚠ ${worst.label} 색인이 ${worst.days ?? "?"}일째 돌지 않고 있습니다`,
@@ -258,7 +261,7 @@ export async function buildAdminDashboard(
       signal_count: q.signal_count
     })),
     cards: {
-      primary: primary.work.count + primary.notion.count + primary.image.count + primary.wiki.count + primary.glossary.count,
+      primary: primary.work.count + primary.notion.count + primary.wiki.count + primary.glossary.count,
       primary_delta_label: `Work ${primary.work.count.toLocaleString("ko-KR")} · 노션 ${primary.notion.count.toLocaleString("ko-KR")}`,
       secondary: linkCounts.all,
       secondary_note:
@@ -284,6 +287,15 @@ export async function buildAdminDashboard(
         ruleQuestions.length +
         groupAnswerFlagsByQuestion(pendingFlags).length +
         tonight.items.filter((i) => !i.verifiable && !i.excluded).length
+    },
+    nav_counts: {
+      primary: primary.nav_counts,
+      secondary: {
+        same: linkCounts.same,
+        belongs: linkCounts.belongs,
+        follows: linkCounts.follows,
+        perspective: perspectivesActive
+      }
     }
   };
 }
