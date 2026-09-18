@@ -127,9 +127,14 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
           <LunaAdminNav
             menu={route.menu}
             sub={route.sub}
+            source={route.menu === "knowledge" && route.sub === "primary" ? source : null}
             badges={badges}
             onMenu={onMenu}
             onSub={onSub}
+            onPrimarySource={(next) => {
+              if (!next) go(buildLunaAdminUrl("knowledge", "primary"));
+              else go(buildLunaAdminUrl("knowledge", "primary", { source: next }));
+            }}
           />
           <div className="body">
             {renderBody(route.menu, route.sub, source, go, secondaryChip)}

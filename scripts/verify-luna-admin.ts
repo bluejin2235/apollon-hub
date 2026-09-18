@@ -149,11 +149,12 @@ async function main() {
     await page.screenshot({ path: resolve(OUT, "01-super-dashboard.png"), fullPage: true });
 
     await page.getByRole("button", { name: "지식", exact: true }).click();
-    await page.getByText("원천별 상세").waitFor({ timeout: 30_000 });
+    await page.getByText("문서가 검색에 닿는 과정").waitFor({ timeout: 30_000 });
     const kText = await page.locator("body").innerText();
     check("지식 › 1차 데이터", kText.includes("1차 데이터"), failed);
     check("지식 › 2차 데이터", kText.includes("2차 데이터"), failed);
-    check("1차 원천 표", kText.includes("Work서버") && kText.includes("노션"), failed);
+    check("1차 원천 카드", kText.includes("Work서버") && kText.includes("노션"), failed);
+    check("1차 흐름도", kText.includes("읽을 수 있는 문서") && kText.includes("못 읽음"), failed);
     await page.screenshot({ path: resolve(OUT, "02-super-knowledge.png"), fullPage: true });
 
     await page.getByRole("button", { name: "2차 데이터", exact: true }).click();

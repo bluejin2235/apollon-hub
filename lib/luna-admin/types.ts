@@ -154,6 +154,7 @@ export type PrimarySourceRow = {
   size_label: string;
   count: number;
   extra_count?: number;
+  unit?: string;
   schedule_label: string;
   last_iso: string | null;
   last_label: string;
@@ -161,6 +162,32 @@ export type PrimarySourceRow = {
   status: TrafficLight;
   status_label: string;
   note: string;
+  delta: number | null;
+  delta_label: string;
+};
+
+export type PrimaryFlowStep = {
+  t: string;
+  v: number;
+  d?: string;
+  loss?: boolean;
+};
+
+export type PrimaryCheckRow = {
+  id: string;
+  name: string;
+  schedule_label: string;
+  last_label: string;
+  status: TrafficLight;
+  status_label: string;
+};
+
+export type PrimaryStorageRow = {
+  name: string;
+  bytes: number;
+  bytes_label: string;
+  color: string;
+  bar_pct: number;
 };
 
 export type PrimaryPayload = {
@@ -170,6 +197,10 @@ export type PrimaryPayload = {
   wiki: PrimarySourceRow;
   glossary: PrimarySourceRow;
   rows: PrimarySourceRow[];
+  work_flow: PrimaryFlowStep[];
+  checks: PrimaryCheckRow[];
+  storage: PrimaryStorageRow[];
+  query_ms: number;
 };
 
 export type AnalysisAction = {

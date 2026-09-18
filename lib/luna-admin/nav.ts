@@ -41,6 +41,18 @@ export type LunaAdminPrimarySource =
   | "wiki"
   | "glossary";
 
+export const PRIMARY_SOURCE_TABS: Array<{
+  slug: LunaAdminPrimarySource;
+  label: string;
+  tone: "work" | "notion" | "img" | "wiki" | "term";
+}> = [
+  { slug: "workserver", label: "Work서버", tone: "work" },
+  { slug: "notion", label: "노션", tone: "notion" },
+  { slug: "image", label: "이미지", tone: "img" },
+  { slug: "wiki", label: "위키", tone: "wiki" },
+  { slug: "glossary", label: "용어사전", tone: "term" }
+];
+
 export type LunaAdminSubDef = {
   slug: LunaAdminSub;
   label: string;

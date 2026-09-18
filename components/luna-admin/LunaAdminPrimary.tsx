@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
+import { PrimaryFlow } from "@/components/luna-admin/PrimaryFlow";
 import type { PrimaryPayload, PrimarySourceRow } from "@/lib/luna-admin/types";
 import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
+import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
 import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
@@ -15,12 +17,55 @@ type Props = {
   onBack: () => void;
 };
 
-function Tag({ row }: { row: PrimarySourceRow }) {
-  const cls = row.status === "green" ? "g" : row.status === "yellow" ? "y" : "r";
-  return <span className={`tag ${cls}`}>{row.status_label}</span>;
+const CARD_TONE: Record<LunaAdminPrimarySource, string> = {
+  workserver: "work",
+  notion: "notion",
+  image: "img",
+  wiki: "wiki",
+  glossary: "term"
+};
+
+const CARD_IC: Record<LunaAdminPrimarySource, string> = {
+  workserver: "W",
+  notion: "N",
+  image: "📷",
+  wiki: "위",
+  glossary: "용"
+};
+
+function SourceCard({
+  row,
+  onOpen
+}: {
+  row: PrimarySourceRow;
+  onOpen: (source: LunaAdminPrimarySource) => void;
+}) {
+  const tone = CARD_TONE[row.source];
+  const deltaCls =
+    row.delta != null && row.delta > 0 ? "up" : "flat";
+  return (
+    <button
+      type="button"
+      className={`src ${tone}`}
+      onClick={() => onOpen(row.source)}
+    >
+      <span className={`bar ${tone}`} />
+      <div className="hd">
+        <span className={`ic ${tone}`}>{CARD_IC[row.source]}</span>
+        <span className="nm">{row.label}</span>
+        <span className="lamp">{lightEmoji(row.status)}</span>
+      </div>
+      <div className="v">
+        {row.count.toLocaleString("ko-KR")}
+        {row.unit ? <span className="u">{row.unit}</span> : null}
+      </div>
+      <div className="d">{row.note}</div>
+      <div className={`delta ${deltaCls}`}>{row.delta_label}</div>
+    </button>
+  );
 }
 
-export function LunaAdminPrimary({ source, onOpen, onBack }: Props) {
+export function LunaAdminPrimary({ source, onOpen }: Props) {
   const [data, setData] = useState<PrimaryPayload | null>(null);
   const [error, setError] = useState("");
 
@@ -40,10 +85,12 @@ export function LunaAdminPrimary({ source, onOpen, onBack }: Props) {
   if (source) {
     return (
       <div>
-        <button type="button" className="btn sm" onClick={onBack} style={{ marginBottom: 12 }}>
-          ← 원천별 상세
-        </button>
-        {source === "workserver" ? <LunaKnowledgeWorkserver /> : null}
+        {source === "workserver" ? (
+          <>
+            {data?.work_flow ? <PrimaryFlow steps={data.work_flow} /> : null}
+            <LunaKnowledgeWorkserver />
+          </>
+        ) : null}
         {source === "notion" ? <LunaKnowledgeNotion /> : null}
         {source === "wiki" ? <LunaKnowledgeWiki /> : null}
         {source === "glossary" ? <LunaKnowledgeGlossary /> : null}
@@ -60,56 +107,46 @@ export function LunaAdminPrimary({ source, onOpen, onBack }: Props) {
   if (error && !data) return <p className="empty">{error}</p>;
   if (!data) return <p className="empty">불러오는 중…</p>;
 
-  const cards = [data.work, data.notion, data.image, data.wiki];
+  const cards = [data.work, data.notion, data.image, data.wiki, data.glossary];
 
   return (
     <>
-      <div className="cards">
+      <div className="srcgrid">
         {cards.map((row) => (
-          <div key={row.source} className={`card ${row.status === "yellow" ? "y" : ""}`}>
-            <div className="l">{row.label}</div>
-            <div className="v">
-              {row.count.toLocaleString("ko-KR")}
-              {row.source === "wiki" && data.glossary.count ? (
-                <span className="u">· {data.glossary.count}</span>
-              ) : null}
-            </div>
-            <div className="m">{row.note}</div>
-          </div>
+          <SourceCard key={row.source} row={row} onOpen={onOpen} />
         ))}
       </div>
 
-      <div className="sech">
-        <span className="t">원천별 상세</span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>원천</th>
-            <th>규모</th>
-            <th>색인 주기</th>
-            <th>마지막</th>
-            <th>상태</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row) => (
-            <tr
-              key={row.source}
-              className="clickable"
-              onClick={() => onOpen(row.source)}
-            >
-              <td>{row.label}</td>
-              <td>{row.size_label}</td>
-              <td>{row.schedule_label}</td>
-              <td>{row.last_label}</td>
-              <td>
-                <Tag row={row} />
-              </td>
-            </tr>
+      <PrimaryFlow steps={data.work_flow} caption="문서가 검색에 닿는 과정" />
+
+      <div className="g2">
+        <div>
+          <div className="bt2">약속대로 도나</div>
+          {data.checks.map((row) => (
+            <div className="sr" key={row.id}>
+              <span className="nm">
+                {row.name} <span className="mut">{row.schedule_label}</span>
+              </span>
+              <span className="v">{row.last_label}</span>
+              <span className={`tag ${row.status === "green" ? "g" : row.status === "yellow" ? "y" : "r"}`}>
+                {row.status_label}
+              </span>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+        <div>
+          <div className="bt2">차지하는 용량</div>
+          {data.storage.map((row) => (
+            <div className="sr" key={row.name}>
+              <span className="nm">{row.name}</span>
+              <span className="mini">
+                <i style={{ background: row.color, width: `${row.bar_pct}%` }} />
+              </span>
+              <span className="v">{row.bytes_label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
