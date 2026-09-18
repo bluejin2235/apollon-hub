@@ -8,7 +8,7 @@ import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { LunaAdminPrimaryWork } from "@/components/luna-admin/LunaAdminPrimaryWork";
 import { LunaAdminPrimaryImage } from "@/components/luna-admin/LunaAdminPrimaryImage";
-import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
+import { LunaAdminPrimaryNotion } from "@/components/luna-admin/LunaAdminPrimaryNotion";
 import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
 
@@ -88,9 +88,19 @@ export function LunaAdminPrimary({ source, onOpen }: Props) {
       <div>
         {source === "workserver" ? <LunaAdminPrimaryWork flow={data?.work_flow} /> : null}
         {source === "image" ? <LunaAdminPrimaryImage flow={data?.image_flow} /> : null}
-        {source === "notion" ? <LunaKnowledgeNotion /> : null}
-        {source === "wiki" ? <LunaKnowledgeWiki /> : null}
-        {source === "glossary" ? <LunaKnowledgeGlossary /> : null}
+        {source === "notion" ? <LunaAdminPrimaryNotion flow={data?.notion_flow} /> : null}
+        {source === "wiki" ? (
+          <>
+            {data?.wiki_flow ? <PrimaryFlow steps={data.wiki_flow} /> : null}
+            <LunaKnowledgeWiki />
+          </>
+        ) : null}
+        {source === "glossary" ? (
+          <>
+            {data?.glossary_flow ? <PrimaryFlow steps={data.glossary_flow} /> : null}
+            <LunaKnowledgeGlossary />
+          </>
+        ) : null}
       </div>
     );
   }

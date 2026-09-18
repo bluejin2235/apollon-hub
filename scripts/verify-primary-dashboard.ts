@@ -145,7 +145,7 @@ async function main() {
   await page.screenshot({ path: resolve(OUT, "01-primary-dashboard.png"), fullPage: true });
 
   await page.locator("button.src.work").click();
-  await page.waitForURL(/source=workserver/, { timeout: 15_000 });
+  await page.waitForURL(/source=workserver/, { timeout: 30_000 });
   await page.getByText("본문이 색인된 파일").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: resolve(OUT, "02-work-source.png"), fullPage: true });
 
@@ -191,9 +191,64 @@ async function main() {
   console.log(`image_list_ms=${imageMs ?? "?"}`);
   await page.screenshot({ path: resolve(OUT, "04-image-preview.png"), fullPage: true });
 
+  let notionMs: number | null = null;
+  page.on("response", (res) => {
+    void res.json().then((json: { query_ms?: number }) => {
+      if (typeof json.query_ms !== "number") return;
+      if (res.url().includes("/primary/notion")) notionMs = json.query_ms;
+    }).catch(() => undefined);
+  });
+
+  await page.locator("nav.sub2 button", { hasText: "노션" }).click();
+  await page.waitForURL(/source=notion/, { timeout: 15_000 });
+  await page.getByText("DB별").waitFor({ timeout: 40_000 });
+  await page.locator("table tbody tr").first().waitFor({ timeout: 60_000 });
+  const notionText = await page.locator("body").innerText();
+  const notionChecks = [
+    ["노션 흐름", /페이지/.test(notionText) && /임베딩/.test(notionText) && /관계/.test(notionText)],
+    ["Relink", notionText.includes("하위 업무") && notionText.includes("방법 보기")]
+  ] as const;
+  for (const [name, ok] of notionChecks) {
+    console.log(ok ? `✓ ${name}` : `✗ ${name}`);
+  }
+  console.log(`notion_ms=${notionMs ?? "?"}`);
+  await page.screenshot({ path: resolve(OUT, "05-notion.png"), fullPage: true });
+
+  await page.locator("table tbody tr").first().click();
+  await page.locator("table").nth(1).locator("tbody tr").first().waitFor({ timeout: 20_000 });
+  const chunkWait = page.waitForResponse(
+    (res) => res.url().includes("/primary/notion") && res.url().includes("page_id=") && res.ok(),
+    { timeout: 20_000 }
+  );
+  await page.locator("table").nth(1).locator("tbody tr").first().click();
+  await chunkWait;
+  await page.locator(".peek").waitFor({ timeout: 10_000 });
+  await page.screenshot({ path: resolve(OUT, "06-notion-peek.png"), fullPage: true });
+  console.log(
+    (await page.locator(".peek .chunk").count()) > 0 ? "✓ 노션 청크 미리보기" : "✗ 노션 청크 미리보기"
+  );
+
+  await page.locator("nav.sub2 button", { hasText: "위키" }).click();
+  await page.waitForURL(/source=wiki/, { timeout: 15_000 });
+  await page.locator(".luna-admin .flow .st .t", { hasText: "문서" }).waitFor({ timeout: 20_000 });
+  await page.screenshot({ path: resolve(OUT, "07-wiki-flow.png"), fullPage: true });
+  console.log("✓ 위키 흐름도");
+
+  await page.locator("nav.sub2 button", { hasText: "용어사전" }).click();
+  await page.waitForURL(/source=glossary/, { timeout: 15_000 });
+  await page.locator(".luna-admin .flow .st .t", { hasText: "용어" }).waitFor({ timeout: 20_000 });
+  await page.screenshot({ path: resolve(OUT, "08-glossary-flow.png"), fullPage: true });
+  console.log("✓ 용어사전 흐름도");
+
   await context.close();
   await browser.close();
-  if (checks.some(([, ok]) => !ok) || imageChecks.some(([, ok]) => !ok)) process.exit(1);
+  if (
+    checks.some(([, ok]) => !ok) ||
+    imageChecks.some(([, ok]) => !ok) ||
+    notionChecks.some(([, ok]) => !ok)
+  ) {
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {
