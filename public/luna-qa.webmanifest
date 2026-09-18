@@ -1,0 +1,25 @@
+{
+  "name": "루나 문답",
+  "short_name": "문답",
+  "description": "루나에게 짧게 답하기",
+  "start_url": "/q",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#534AB7",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/luna/luna-face.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/luna/luna-face.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

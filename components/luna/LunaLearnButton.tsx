@@ -465,7 +465,8 @@ export function LunaLearnButton() {
     pathname === "/" ||
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/auth");
-  if (isLogin) return null;
+  const isQa = pathname === "/q" || pathname === "/qa" || pathname?.startsWith("/q/");
+  if (isLogin || isQa) return null;
   if (!mounted || !authed) return null;
 
   const hasPending = Boolean(pendingQuestion);

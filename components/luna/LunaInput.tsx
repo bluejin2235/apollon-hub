@@ -10,6 +10,7 @@ import {
 } from "react";
 import { ArrowUp, Link2, Mic, Paperclip, Plus } from "lucide-react";
 import type { LunaPromptRow } from "@/lib/luna/prompts";
+import { useLunaVoice } from "@/components/luna/use-luna-voice";
 import { supabase } from "@/lib/supabase/client";
 
 export type LunaConnectorsState = {
@@ -56,6 +57,9 @@ type LunaInputProps = {
   onEnsureConversation: () => Promise<string | null>;
   focusTick?: number;
   initialDraft?: string;
+  /** 값이 바뀌면 마이크를 켠다 (문답 「기타」) */
+  listenTick?: number;
+  placeholder?: string;
 };
 
 const EMPTY_CONNECTORS: LunaConnectorsState = {
@@ -101,7 +105,9 @@ export function LunaInput({
   conversationId,
   onEnsureConversation,
   focusTick = 0,
-  initialDraft = ""
+  initialDraft = "",
+  listenTick = 0,
+  placeholder = "루나에게 물어보기"
 }: LunaInputProps) {
   const [value, setValue] = useState(initialDraft);
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
@@ -116,6 +122,25 @@ export function LunaInput({
   const [manualActive, setManualActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastListenTick = useRef(0);
+
+  const voice = useLunaVoice({
+    disabled: disabled || uploading,
+    onText: (text) => {
+      setValue((prev) => {
+        const joined = prev.trim() ? `${prev.trim()} ${text}` : text;
+        return joined;
+      });
+      requestAnimationFrame(resizeTextarea);
+      textareaRef.current?.focus();
+    }
+  });
+
+  useEffect(() => {
+    if (!listenTick || listenTick === lastListenTick.current) return;
+    lastListenTick.current = listenTick;
+    voice.start();
+  }, [listenTick, voice]);
 
   useEffect(() => {
     void (async () => {
@@ -383,7 +408,7 @@ export function LunaInput({
           onKeyDown={onKeyDown}
           rows={1}
           disabled={disabled || uploading}
-          placeholder="루나에게 물어보기"
+          placeholder={voice.listening ? "듣고 있어요…" : placeholder}
           className="mb-2 w-full min-w-0 resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-[#1c1d21] outline-none placeholder:text-[#9aa0a8] disabled:opacity-50 max-md:text-[14px]"
         />
 
@@ -419,8 +444,12 @@ export function LunaInput({
 
           <button
             type="button"
-            aria-label="음성 입력"
-            className="flex shrink-0 items-center justify-center text-[#6b6f76]"
+            aria-label={voice.listening ? "음성 입력 멈추기" : "음성 입력"}
+            disabled={disabled || uploading}
+            onClick={() => (voice.listening ? voice.stop() : voice.start())}
+            className={`flex shrink-0 items-center justify-center disabled:opacity-40 ${
+              voice.listening ? "text-[#B3403A]" : "text-[#6b6f76]"
+            }`}
           >
             <Mic className="h-4 w-4" strokeWidth={1.75} aria-hidden />
           </button>
@@ -435,6 +464,26 @@ export function LunaInput({
           </button>
         </div>
       </div>
+
+      {voice.listening ? (
+        <div className="mt-2 flex items-center gap-2.5 rounded-[11px] border border-[#F5C2C0] bg-[#FBECEB] px-3.5 py-2.5">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-[#B3403A]" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-semibold text-[#B3403A]">듣고 있어요</div>
+            <div className="text-[11px] text-[#B3403A]/80">말이 끝나면 멈추기를 누르세요</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => voice.stop()}
+            className="rounded-lg border border-[#F5C2C0] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#B3403A]"
+          >
+            멈추기
+          </button>
+        </div>
+      ) : null}
+      {voice.error ? (
+        <p className="mt-2 text-center text-[12px] text-[#B3403A]">{voice.error}</p>
+      ) : null}
 
       <p className="mt-2 text-center text-[11px] leading-snug text-[#9AA0A8]">
         루나는 아직 배우는 중이라 틀릴 수 있어요. 중요한 내용은 확인해 주세요.
