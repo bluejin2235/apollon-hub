@@ -59,7 +59,11 @@ async function trendViaRpc(
   startIso: string
 ): Promise<Array<{ day: string; work: number; notion: number; image: number }> | null> {
   const { data, error } = await admin.rpc("luna_primary_trend_days", { p_start: startIso });
-  if (error || !Array.isArray(data)) return null;
+  if (error) {
+    console.error("[primary-trend] rpc", error.message);
+    return null;
+  }
+  if (!Array.isArray(data)) return null;
   return (data as Array<{ day: string; work: number; notion: number; image: number }>).map((row) => ({
     day: String(row.day).slice(0, 10),
     work: Number(row.work) || 0,

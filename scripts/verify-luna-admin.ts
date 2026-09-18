@@ -155,6 +155,22 @@ async function main() {
     check("지식 › 2차 데이터", kText.includes("2차 데이터"), failed);
     check("1차 원천 카드", kText.includes("Work서버") && kText.includes("노션"), failed);
     check("1차 흐름도", kText.includes("읽을 수 있는 문서") && kText.includes("못 읽음"), failed);
+    const srcN = await page.locator(".srcgrid .src").count();
+    check("원천 카드 4개", srcN === 4, failed);
+    check(
+      "이미지 별도 카드 없음",
+      (await page.locator(".srcgrid .src .nm").allTextContents()).every((t) => t !== "이미지"),
+      failed
+    );
+    check("청크가 0이 아님", /청크[\s\S]{0,40}평균 (?!0개)/.test(kText) || !kText.includes("평균 0개"), failed);
+    await page.getByText("기간별 쌓임").waitFor({ timeout: 10_000 });
+    await page.getByText("불러오는 중…").first().waitFor({ state: "hidden", timeout: 25_000 }).catch(() => null);
+    const trendText = await page.locator(".chartbox").innerText();
+    check(
+      "기간별 쌓임 그래프",
+      !trendText.includes("불러오는 중…") && (trendText.includes("Work") || trendText.includes("오늘부터 쌓입니다")),
+      failed
+    );
     await page.screenshot({ path: resolve(OUT, "02-super-knowledge.png"), fullPage: true });
 
     await page.getByRole("button", { name: "2차 데이터", exact: true }).click();

@@ -22,10 +22,18 @@ export function PrimaryTrend() {
     setBusy(true);
     setError("");
     try {
-      setData(await adminFetch<PrimaryTrendPayload>(`/api/luna-admin/primary/trend?range=${next}`));
+      setData(
+        await adminFetch<PrimaryTrendPayload>(
+          `/api/luna-admin/primary/trend?range=${next}`,
+          { signal: AbortSignal.timeout(20_000) }
+        )
+      );
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? err.message : "불러오지 못했습니다");
+      const aborted =
+        err instanceof DOMException && err.name === "TimeoutError" ||
+        (err instanceof Error && /aborted|timeout/i.test(err.message));
+      setError(aborted ? "그래프를 시간 안에 못 그렸습니다" : err instanceof Error ? err.message : "불러오지 못했습니다");
     } finally {
       setBusy(false);
     }
