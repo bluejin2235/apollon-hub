@@ -173,6 +173,30 @@ export function kstParts(now = new Date()): {
   };
 }
 
+/**
+ * 직전 야간 배치 구간 (KST).
+ * 아침 리포트 시각 이후: 그날 00:00 ~ 리포트 시각.
+ * 리포트 전이면 이미 끝난 01:00~05:30 잡을 포함하려고 00:00 ~ 지금.
+ * 달력 어제(00:00~24:00)를 쓰면 03:10 증분이 「오늘」로 빠진다.
+ */
+export function kstOvernightJobBounds(
+  now = new Date(),
+  reportHour = 7,
+  reportMinute = 0
+): { startIso: string; endIso: string } {
+  const p = kstParts(now);
+  const ymd = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+  const startMs = Date.parse(`${ymd}T00:00:00+09:00`);
+  const reportMs = Date.parse(
+    `${ymd}T${pad2(reportHour)}:${pad2(reportMinute)}:00+09:00`
+  );
+  const endMs = now.getTime() >= reportMs ? reportMs : now.getTime();
+  return {
+    startIso: new Date(startMs).toISOString(),
+    endIso: new Date(endMs).toISOString()
+  };
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }

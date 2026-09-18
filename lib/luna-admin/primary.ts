@@ -1,10 +1,14 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatDurationSec } from "@/lib/luna/knowledge-format";
-import { kstParts } from "@/lib/luna/eval-schedule";
+import { kstOvernightJobBounds, kstParts } from "@/lib/luna/eval-schedule";
 import { getNotionIndexSchedule } from "@/lib/luna/notion-index-settings";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
 import { formatStorageBytes } from "@/lib/luna/storage";
+import {
+  ADMIN_REPORT_HOUR,
+  ADMIN_REPORT_MINUTE
+} from "@/lib/luna-admin/schedule";
 import type {
   PrimaryCheckRow,
   PrimaryFlowStep,
@@ -110,6 +114,25 @@ function deltaLabel(delta: number | null): string {
   return `${delta.toLocaleString("ko-KR")} 어제`;
 }
 
+function signedCount(n: number): string {
+  return n > 0 ? `+${n.toLocaleString("ko-KR")}` : n.toLocaleString("ko-KR");
+}
+
+/** 0은 숨기고, 값이 있는 쪽만 「파일 +12 · 본문 +8 어제」 */
+function pairDeltaLabel(
+  parts: Array<{ key: string; n: number | null }>
+): { delta: number | null; label: string } {
+  const measured = parts.filter((p) => p.n != null);
+  const shown = measured.filter((p) => p.n !== 0);
+  if (shown.length === 0) {
+    return { delta: measured.length > 0 ? 0 : null, label: "— 어제" };
+  }
+  return {
+    delta: shown.reduce((sum, p) => sum + (p.n ?? 0), 0),
+    label: `${shown.map((p) => `${p.key} ${signedCount(p.n as number)}`).join(" · ")} 어제`
+  };
+}
+
 function num(n: number): string {
   return n.toLocaleString("ko-KR");
 }
@@ -135,13 +158,16 @@ async function countYesterday(
   table: string,
   column: string,
   startIso: string,
-  endIso: string
+  endIso: string,
+  filter?: { eq: [string, string] }
 ): Promise<number | null> {
-  const { count, error } = await admin
+  let q = admin
     .from(table)
     .select("*", { count: "exact", head: true })
     .gte(column, startIso)
     .lt(column, endIso);
+  if (filter?.eq) q = q.eq(filter.eq[0], filter.eq[1]);
+  const { count, error } = await q;
   if (error) return null;
   return count ?? 0;
 }
@@ -165,6 +191,11 @@ export async function buildPrimarySources(
 
   const t0 = Date.now();
   const yesterday = kstDayBounds(new Date(Date.now() - 86_400_000));
+  const overnight = kstOvernightJobBounds(
+    new Date(),
+    ADMIN_REPORT_HOUR,
+    ADMIN_REPORT_MINUTE
+  );
 
   const [
     settingsRes,
@@ -192,8 +223,13 @@ export async function buildPrimarySources(
     imageRunRes,
     checksRes,
     storageRes,
+    yWorkFiles,
+    yWorkText,
     yNotion,
-    yImage
+    yNotionChunks,
+    yImage,
+    yWiki,
+    yGloss
   ] = await Promise.all([
     admin.from("nas_scan_settings").select("*").eq("id", 1).maybeSingle(),
     countHead(admin, "nas_directory"),
@@ -242,15 +278,51 @@ export async function buildPrimarySources(
     admin.rpc("luna_storage_top_tables", { limit_n: 30 }),
     countYesterday(
       admin,
+      "nas_directory",
+      "modified_at",
+      overnight.startIso,
+      overnight.endIso,
+      { eq: ["type", "file"] }
+    ),
+    countYesterday(
+      admin,
+      "nas_file_text",
+      "extracted_at",
+      overnight.startIso,
+      overnight.endIso
+    ),
+    countYesterday(
+      admin,
       "luna_notion_pages",
       "indexed_at",
-      yesterday.startIso,
-      yesterday.endIso
+      overnight.startIso,
+      overnight.endIso
+    ),
+    countYesterday(
+      admin,
+      "luna_notion_chunk_embeddings",
+      "updated_at",
+      overnight.startIso,
+      overnight.endIso
     ),
     countYesterday(
       admin,
       "luna_media_index",
       "indexed_at",
+      overnight.startIso,
+      overnight.endIso
+    ),
+    countYesterday(
+      admin,
+      "luna_library",
+      "created_at",
+      yesterday.startIso,
+      yesterday.endIso
+    ),
+    countYesterday(
+      admin,
+      "glossary_terms",
+      "created_at",
       yesterday.startIso,
       yesterday.endIso
     )
@@ -285,6 +357,10 @@ export async function buildPrimarySources(
   const avgChunks =
     textOk > 0 ? Math.round((chunkCount / textOk) * 10) / 10 : 0;
 
+  const workDelta = pairDeltaLabel([
+    { key: "파일", n: yWorkFiles },
+    { key: "본문", n: yWorkText }
+  ]);
   const work: PrimarySourceRow = {
     source: "workserver",
     label: "Work서버",
@@ -298,8 +374,8 @@ export async function buildPrimarySources(
     status: workLight,
     status_label: statusLabel(workLight, workDays),
     note: `파일 ${num(nasFiles)} · 본문 ${num(textOk)}`,
-    delta: null,
-    delta_label: deltaLabel(null)
+    delta: workDelta.delta,
+    delta_label: workDelta.label
   };
 
   const notionRun = !notionRunRes.error ? notionRunRes.data : null;
@@ -322,6 +398,15 @@ export async function buildPrimarySources(
     typeof notionRun?.duration_ms === "number"
       ? formatDurationSec(Math.round(notionRun.duration_ms / 1000))
       : "—";
+  const notionDelta =
+    yNotion != null &&
+    yNotionChunks != null &&
+    yNotionChunks !== yNotion
+      ? pairDeltaLabel([
+          { key: "페이지", n: yNotion },
+          { key: "청크", n: yNotionChunks }
+        ])
+      : { delta: yNotion, label: deltaLabel(yNotion) };
   const notion: PrimarySourceRow = {
     source: "notion",
     label: "노션",
@@ -336,8 +421,8 @@ export async function buildPrimarySources(
     status: notionLight,
     status_label: statusLabel(notionLight, notionDays),
     note: `청크 ${num(notionChunks)} · 관계 ${num(notionRels)}`,
-    delta: yNotion,
-    delta_label: deltaLabel(yNotion)
+    delta: notionDelta.delta,
+    delta_label: notionDelta.label
   };
 
   const imageRun = !imageRunRes.error ? imageRunRes.data : null;
@@ -391,8 +476,8 @@ export async function buildPrimarySources(
     status: "green",
     status_label: "정상",
     note: `${wikiMenuCount}분류 · 사람이 씀`,
-    delta: 0,
-    delta_label: deltaLabel(0)
+    delta: yWiki,
+    delta_label: deltaLabel(yWiki)
   };
 
   const glossary: PrimarySourceRow = {
@@ -407,8 +492,8 @@ export async function buildPrimarySources(
     status: "green",
     status_label: "정상",
     note: `공통 ${num(glossCommon)} · 공간 ${num(glossSpace)}`,
-    delta: 0,
-    delta_label: deltaLabel(0)
+    delta: yGloss,
+    delta_label: deltaLabel(yGloss)
   };
 
   const work_flow: PrimaryFlowStep[] = [
