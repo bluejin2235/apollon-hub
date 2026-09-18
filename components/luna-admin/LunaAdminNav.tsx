@@ -13,6 +13,7 @@ type Badges = {
   failures: number;
   candidates: number;
   selfstudy_dot: boolean;
+  selfstudy_ask?: number;
 };
 
 type Props = {
@@ -89,6 +90,9 @@ export function LunaAdminNav({
               onClick={() => onSub(item.slug)}
             >
               {item.label}
+              {item.slug === "ask" && (badges.selfstudy_ask ?? 0) > 0 ? (
+                <b className="ask-n">{badges.selfstudy_ask}</b>
+              ) : null}
             </button>
           ))}
         </nav>

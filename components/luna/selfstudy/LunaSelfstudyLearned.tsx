@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { ruleQuestionText } from "@/lib/luna/rules-shared";
+import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
+import type { LinkProgressPayload } from "@/lib/luna-admin/types";
 
 type RuleRow = {
   id: string;
@@ -24,6 +26,10 @@ type Payload = {
 
 type Filter = "active" | "candidate" | "dropped";
 
+type Props = {
+  onGo?: (href: string) => void;
+};
+
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -32,24 +38,37 @@ function formatWhen(iso: string | null): string {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
+    day: "2-digit"
   }).format(d);
 }
 
-export function LunaSelfstudyLearned() {
+function appliedCount(row: RuleRow): number {
+  if (typeof row.applied_count === "number") return row.applied_count;
+  if (typeof row.evidence?.applied_count === "number") {
+    return row.evidence.applied_count as number;
+  }
+  if (typeof row.evidence?.impact === "number") return row.evidence.impact as number;
+  return row.signal_count;
+}
+
+export function LunaSelfstudyLearned({ onGo }: Props) {
   const [filter, setFilter] = useState<Filter>("active");
   const [data, setData] = useState<Payload | null>(null);
+  const [progress, setProgress] = useState<LinkProgressPayload | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setError("");
-      const json = await adminFetch<Payload>("/api/luna-admin/rules");
+      const [json, prog] = await Promise.all([
+        adminFetch<Payload>("/api/luna-admin/rules"),
+        adminFetch<LinkProgressPayload>("/api/luna-admin/link-progress").catch(
+          () => null
+        )
+      ]);
       setData(json);
+      setProgress(prog);
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오기 실패");
     }
@@ -78,17 +97,18 @@ export function LunaSelfstudyLearned() {
   if (!data) return <p className="empty">불러오는 중…</p>;
 
   const rows = data.rows.filter((r) => r.status === filter);
+  const auto = progress?.auto ?? 0;
+  const ask = progress?.ask ?? 0;
+  const sameTotal = auto + ask;
+  const samePct =
+    sameTotal > 0 ? Math.min(100, Math.round((auto / sameTotal) * 100)) : 0;
 
   return (
     <>
-      <div className="sech">
-        <span className="t">배운 것</span>
-        <span className="n">루나가 무엇으로 판단하는지</span>
-      </div>
-      <div className="chips subchips">
+      <div className="chips subchips" style={{ marginBottom: 14 }}>
         {(
           [
-            ["active", `활성 규칙 ${data.counts.active}`],
+            ["active", `활성 ${data.counts.active}`],
             ["candidate", `후보 ${data.counts.candidate}`],
             ["dropped", `버린 것 ${data.counts.dropped}`]
           ] as const
@@ -113,45 +133,117 @@ export function LunaSelfstudyLearned() {
               : "버린 규칙이 없습니다."}
         </p>
       ) : (
-        rows.map((row) => (
-          <div className="row" key={row.id}>
-            <span className={`ic ${row.status === "active" ? "g" : row.status === "candidate" ? "y" : "r"}`}>
-              {row.pattern_type === "stopword" ? "어" : "규"}
-            </span>
-            <div className="c">
-              <div className="t">{ruleQuestionText(row)}</div>
-              <div className="d">
+        rows.map((row) => {
+          const n = appliedCount(row);
+          return (
+            <div className={`rule${row.status === "candidate" ? " cand" : ""}`} key={row.id}>
+              <div className="q">{ruleQuestionText(row)}</div>
+              <div className="ev">
+                {row.confirmed_at
+                  ? `${formatWhen(row.confirmed_at)} 에 확인 · `
+                  : "후보 · "}
+                근거 신호 <b>{row.signal_count}건</b>
+                <br />
+                {filter === "active" ? (
+                  <>
+                    <b>지금까지 {n}건</b>을 이 규칙으로 정리했습니다.
+                  </>
+                ) : filter === "candidate" ? (
+                  <>정하면 비슷한 건이 한 번에 정리됩니다.</>
+                ) : (
+                  <>버린 규칙입니다.</>
+                )}
+              </div>
+              <div className="meta">
                 {row.scope} · {row.pattern_type} · {row.pattern_value}
               </div>
-              <div className="m">
-                근거 신호 {row.signal_count}건
-                {row.confirmed_at ? ` · 확인 ${formatWhen(row.confirmed_at)}` : ""}
-                {!row.confirmed_at ? ` · 후보 ${formatWhen(row.created_at)}` : ""}
+              <div className="acts">
+                {filter === "candidate" ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn sm p"
+                      disabled={busy === row.id}
+                      onClick={() => void answer(row.id, true)}
+                    >
+                      맞아요
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={busy === row.id}
+                      onClick={() => void answer(row.id, false)}
+                    >
+                      아니요
+                    </button>
+                  </>
+                ) : filter === "active" ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() =>
+                        onGo?.(buildLunaAdminUrl("knowledge", "secondary"))
+                      }
+                    >
+                      적용된 {n}건 보기
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={busy === row.id}
+                      onClick={() => void answer(row.id, false)}
+                    >
+                      되돌리기
+                    </button>
+                  </>
+                ) : null}
               </div>
-              {filter === "candidate" ? (
-                <div className="btns">
-                  <button
-                    type="button"
-                    className="btn p sm"
-                    disabled={busy === row.id}
-                    onClick={() => void answer(row.id, true)}
-                  >
-                    맞아요
-                  </button>
-                  <button
-                    type="button"
-                    className="btn sm"
-                    disabled={busy === row.id}
-                    onClick={() => void answer(row.id, false)}
-                  >
-                    아니요
-                  </button>
-                </div>
-              ) : null}
+            </div>
+          );
+        })
+      )}
+
+      {filter === "active" && progress ? (
+        <>
+          <div className="sech">
+            <span className="t">이 규칙으로 무엇이 나아졌나</span>
+          </div>
+          <div className="g2">
+            <div className="prog">
+              <div className="ph">
+                <span className="t">「같은 것」 확인 필요</span>
+                <span className="v">
+                  {sameTotal} → {ask}
+                </span>
+              </div>
+              <div className="bar">
+                <i style={{ width: `${samePct}%`, background: "var(--g)" }} />
+              </div>
+              <div className="d">
+                {auto > 0
+                  ? `자동 처리 ${auto.toLocaleString("ko-KR")}건 · 남은 확인 ${ask.toLocaleString("ko-KR")}건`
+                  : `남은 확인 ${ask.toLocaleString("ko-KR")}건`}
+              </div>
+            </div>
+            <div className="prog">
+              <div className="ph">
+                <span className="t">보류</span>
+                <span className="v">{(progress.hold ?? 0).toLocaleString("ko-KR")}건</span>
+              </div>
+              <div className="bar">
+                <i
+                  style={{
+                    width: `${Math.min(100, progress.overall_pct)}%`,
+                    background: "var(--g)"
+                  }}
+                />
+              </div>
+              <div className="d">연도별 2차 데이터 진행 {progress.overall_pct}%</div>
             </div>
           </div>
-        ))
-      )}
+        </>
+      ) : null}
       {error ? <p className="empty">{error}</p> : null}
     </>
   );

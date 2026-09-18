@@ -95,6 +95,7 @@ export type AdminDashboard = {
     failures: number;
     candidates: number;
     selfstudy_dot: boolean;
+    selfstudy_ask: number;
   };
 };
 

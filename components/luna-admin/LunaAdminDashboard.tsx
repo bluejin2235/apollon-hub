@@ -96,7 +96,7 @@ export function LunaAdminDashboard({ onGo }: Props) {
               <button
                 type="button"
                 className="btn"
-                onClick={() => onGo(buildLunaAdminUrl("selfstudy", "learned"))}
+                onClick={() => onGo(buildLunaAdminUrl("selfstudy", "ask"))}
               >
                 자세히
               </button>

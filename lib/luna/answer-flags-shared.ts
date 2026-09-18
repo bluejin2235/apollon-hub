@@ -82,3 +82,35 @@ export const ANSWER_FLAG_THRESHOLDS = {
   /** 같은 모순 패턴 → 규칙 후보 */
   rule_promote_min: 3
 } as const;
+
+export function normalizeAskQuestion(question: string): string {
+  return question
+    .trim()
+    .replace(/^[“”"'\s]+|[“”"'\s]+$/g, "")
+    .replace(/[?？]+$/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+export function groupAnswerFlagsByQuestion<
+  T extends { question: string; created_at: string }
+>(rows: T[]): Array<{ question: string; count: number; latest: T; items: T[] }> {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = normalizeAskQuestion(row.question) || "(질문 없음)";
+    const list = map.get(key) ?? [];
+    list.push(row);
+    map.set(key, list);
+  }
+  return [...map.entries()]
+    .map(([question, items]) => {
+      const latest = [...items].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      )[0];
+      return { question, count: items.length, latest, items };
+    })
+    .sort(
+      (a, b) =>
+        b.count - a.count || b.latest.created_at.localeCompare(a.latest.created_at)
+    );
+}

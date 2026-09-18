@@ -6,9 +6,9 @@ import {
   includeTonightItem,
   loadTonightState
 } from "@/lib/luna-admin/tonight";
+import { buildTonightScreen } from "@/lib/luna-admin/selfstudy-view";
 import { runSelectedTonight } from "@/lib/luna/study-run";
 import { runDailySelfstudy } from "@/lib/luna/selfstudy";
-import { ADMIN_SELFSTUDY_HOUR, ADMIN_SELFSTUDY_MINUTE } from "@/lib/luna-admin/schedule";
 import { selectTonightAgenda } from "@/lib/luna/study-agenda";
 
 export const runtime = "nodejs";
@@ -17,13 +17,8 @@ export const maxDuration = 300;
 export async function GET(request: NextRequest) {
   const gate = await requireLunaAdmin(request);
   if ("error" in gate) return gate.error;
-  const state = await loadTonightState(gate.admin);
-  const hh = String(ADMIN_SELFSTUDY_HOUR).padStart(2, "0");
-  const mm = String(ADMIN_SELFSTUDY_MINUTE).padStart(2, "0");
-  return NextResponse.json({
-    ...state,
-    run_label: `오늘 밤 ${hh}:${mm}`
-  });
+  const screen = await buildTonightScreen(gate.admin);
+  return NextResponse.json(screen);
 }
 
 export async function POST(request: NextRequest) {

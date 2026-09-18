@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자습 — 화면 재설계</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --line:#e5e7eb; --line2:#f1f2f4;
+    --ink:#111827; --sub:#6b7280; --faint:#9ca3af;
+    --luna:#534AB7; --luna-soft:#F0EFFE; --luna-line:#DDD9FB;
+    --g:#15803d; --g-bg:#E8F5EE; --g-line:#BEE0D3;
+    --y:#a16207; --y-bg:#FDF6E3; --y-line:#EFDCB8;
+    --r:#b91c1c; --r-bg:#FCECEC; --r-line:#F0C9C6;
+    --work:#2E8B7A; --notion:#4A5568; --img:#4A7FB5;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+    padding:0 0 80px;line-height:1.6;font-size:13px}
+
+  .top{background:#fff;border-bottom:1px solid var(--line);padding:14px 22px;
+    display:flex;align-items:center;gap:14px}
+  .top .logo{width:22px;height:22px;border-radius:50%;border:2px solid var(--ink)}
+  .top .nm{font-size:14px;font-weight:800;letter-spacing:.3px}
+  .top .sp{flex:1}
+  .top .me{font-size:12px;color:var(--sub)}
+
+  .page{padding:22px 22px 0;max-width:1180px;margin:0 auto}
+  h1{font-size:21px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px}
+
+  .shell{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    margin-bottom:20px}
+  .tabs{display:flex;gap:2px;padding:10px 18px 0;border-bottom:1px solid var(--line);
+    overflow-x:auto}
+  .tabs span{font-size:12.5px;padding:8px 14px;color:var(--sub);cursor:pointer;
+    border-bottom:2px solid transparent;white-space:nowrap}
+  .tabs span.on{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
+  .tabs .dot{width:5px;height:5px;border-radius:50%;background:var(--r);
+    display:inline-block;margin-left:4px;vertical-align:middle}
+  .sub2{display:flex;gap:2px;padding:9px 18px 0;border-bottom:1px solid var(--line2);
+    overflow-x:auto}
+  .sub2 span{font-size:12px;padding:7px 12px;color:var(--faint);cursor:pointer;
+    border-bottom:2px solid transparent;white-space:nowrap}
+  .sub2 span.on{color:var(--luna);font-weight:700;border-bottom-color:var(--luna)}
+  .sub2 b{font-size:10.5px;background:var(--r-bg);color:var(--r);padding:1px 6px;
+    border-radius:8px;margin-left:5px;font-weight:700}
+  .body{padding:18px}
+
+  .lbl{font-size:11px;font-weight:800;color:var(--luna);letter-spacing:.4px;
+    margin:28px auto 6px;padding:18px 22px 0;border-top:2px solid var(--line);
+    max-width:1180px}
+  .lbl:first-of-type{border-top:0;padding-top:0;margin-top:0}
+  .lblsub{font-size:12px;color:var(--sub);margin:0 auto 12px;padding:0 22px;
+    line-height:1.8;max-width:1180px}
+
+  /* 안내 배너 */
+  .ban{border-radius:11px;padding:13px 16px;margin-bottom:16px;display:flex;
+    gap:12px;align-items:flex-start}
+  .ban.y{background:var(--y-bg);border:1px solid var(--y-line)}
+  .ban.g{background:var(--g-bg);border:1px solid var(--g-line)}
+  .ban.p{background:var(--luna-soft);border:1px solid var(--luna-line)}
+  .ban .c{flex:1;min-width:0}
+  .ban .t{font-size:13px;font-weight:800;margin-bottom:4px}
+  .ban .d{font-size:12px;line-height:1.75}
+  .ban.y .t,.ban.y .d{color:var(--y)}
+  .ban.g .t,.ban.g .d{color:var(--g)}
+  .ban.p .t,.ban.p .d{color:var(--luna)}
+  .ban .bt{font-size:11.5px;padding:7px 15px;border-radius:8px;font-weight:700;
+    white-space:nowrap;cursor:pointer;border:0;background:var(--luna);color:#fff}
+  .ban .bt.o{background:#fff;border:1px solid var(--line);color:#3a3d43}
+
+  .sech{display:flex;align-items:baseline;gap:8px;margin:20px 0 10px}
+  .sech .t{font-size:13.5px;font-weight:800}
+  .sech .n{font-size:11px;color:var(--faint)}
+  .sech .sp{flex:1}
+  .sech .a{font-size:11px;color:var(--luna);font-weight:700;cursor:pointer}
+
+  /* 할 일 카드 */
+  .job{border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:9px}
+  .job.on{border-color:var(--luna-line);background:#FDFDFF}
+  .job .jh{display:flex;gap:11px;align-items:flex-start;margin-bottom:9px}
+  .job .num{width:22px;height:22px;border-radius:7px;flex-shrink:0;
+    display:grid;place-items:center;font-size:11px;font-weight:800;
+    background:var(--luna-soft);color:var(--luna)}
+  .job .num.off{background:#F3F4F6;color:var(--faint)}
+  .job .jt{flex:1;min-width:0}
+  .job .jt .t{font-size:13.5px;font-weight:700;margin-bottom:3px}
+  .job .jt .src{font-size:10px;color:var(--faint);font-family:var(--mono)}
+  .job .right{text-align:right;flex-shrink:0}
+  .job .right .est{font-size:10.5px;color:var(--faint);line-height:1.6}
+  .job .kv{display:flex;gap:9px;font-size:11.5px;line-height:1.8;margin-bottom:3px}
+  .job .kv .k{width:52px;flex-shrink:0;color:var(--faint);font-weight:700}
+  .job .kv .v{flex:1;color:#2b2d32}
+  .job .acts{display:flex;gap:6px;margin-top:10px}
+  .job .acts span{font-size:10.5px;padding:4px 11px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:#3a3d43;cursor:pointer}
+  .job .acts span.p{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+
+  .badge{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:5px;
+    display:inline-block;white-space:nowrap}
+  .badge.up{background:var(--g-bg);color:var(--g)}
+  .badge.flat{background:#F3F4F6;color:var(--faint)}
+  .badge.down{background:var(--r-bg);color:var(--r)}
+  .badge.wait{background:var(--y-bg);color:var(--y)}
+  .badge.p{background:var(--luna-soft);color:var(--luna)}
+
+  /* 스킵 목록 */
+  .skip{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--line2);
+    align-items:flex-start;font-size:12px}
+  .skip:last-child{border-bottom:0}
+  .skip .ic{width:20px;flex-shrink:0;text-align:center;color:var(--faint);font-size:11px}
+  .skip .c{flex:1;min-width:0}
+  .skip .t{font-weight:600;margin-bottom:2px}
+  .skip .d{font-size:11px;color:var(--faint);line-height:1.6}
+  .skip .bt{font-size:10.5px;padding:4px 11px;border-radius:7px;border:1px solid var(--line);
+    background:#fff;color:#3a3d43;white-space:nowrap;cursor:pointer}
+
+  /* 이력 */
+  .run{border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:9px}
+  .run .rh{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
+  .run .rh .t{font-size:13px;font-weight:800;flex:1}
+  .run .rh .dt{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+  .run .why{font-size:11.5px;color:var(--sub);line-height:1.75;margin-bottom:9px}
+  .run .res{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;margin-bottom:9px}
+  .run .res div{color:var(--sub)}
+  .run .res b{color:var(--ink);font-weight:700}
+  .run .learn{background:#FAFAFB;border-radius:8px;padding:9px 12px;font-size:11.5px;
+    line-height:1.75;margin-bottom:9px}
+  .run .learn .lt{font-size:10px;font-weight:800;color:var(--faint);margin-bottom:3px}
+  .run .acts{display:flex;gap:6px;align-items:center}
+  .run .acts span{font-size:10.5px;padding:4px 11px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:#3a3d43;cursor:pointer}
+  .run .acts .sp{flex:1}
+  .run .acts .meta{font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+
+  /* 답 점검 */
+  .ans{border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:9px}
+  .ans .q{font-size:13px;font-weight:700;margin-bottom:6px}
+  .ans .m{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--sub);
+    margin-bottom:7px}
+  .ans .m b{color:var(--ink);font-weight:700}
+  .ans .flags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+  .ans .flags span{font-size:10px;padding:2px 8px;border-radius:5px;
+    background:var(--y-bg);color:var(--y);font-weight:600}
+  .ans .acts{display:flex;gap:6px;align-items:center}
+  .ans .acts span{font-size:10.5px;padding:5px 12px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:#3a3d43;cursor:pointer}
+  .ans .acts .good{background:var(--g-bg);color:var(--g);border-color:var(--g-line);font-weight:700}
+  .ans .acts .bad{background:var(--r-bg);color:var(--r);border-color:var(--r-line);font-weight:700}
+  .ans .acts .sp{flex:1}
+  .ans .rep{font-size:10.5px;color:var(--faint);margin-left:auto}
+
+  /* 규칙 */
+  .rule{border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:9px}
+  .rule.cand{border-color:var(--luna-line);background:var(--luna-soft)}
+  .rule .q{font-size:13px;font-weight:700;margin-bottom:5px}
+  .rule .ev{font-size:11.5px;color:var(--sub);line-height:1.75;margin-bottom:9px}
+  .rule .ev b{color:var(--ink);font-weight:700}
+  .rule .meta{font-size:10.5px;color:var(--faint);font-family:var(--mono);margin-bottom:9px}
+  .rule .acts{display:flex;gap:6px}
+  .rule .acts span{font-size:10.5px;padding:5px 12px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;color:#3a3d43;cursor:pointer}
+  .rule .acts .p{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:700}
+
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chips span{font-size:10.5px;padding:4px 11px;border-radius:13px;border:1px solid var(--line);
+    color:var(--sub);cursor:pointer}
+  .chips span.on{background:var(--luna);color:#fff;border-color:var(--luna);font-weight:600}
+
+  /* 설정 */
+  .setrow{display:flex;align-items:flex-start;gap:14px;padding:13px 0;
+    border-bottom:1px solid var(--line2)}
+  .setrow:last-child{border-bottom:0}
+  .setrow .c{flex:1;min-width:0}
+  .setrow .t{font-size:12.5px;font-weight:700;margin-bottom:3px}
+  .setrow .d{font-size:11.5px;color:var(--sub);line-height:1.75}
+  .setrow .v{font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap}
+  .tog{width:38px;height:21px;border-radius:11px;background:var(--luna);
+    position:relative;flex-shrink:0;cursor:pointer}
+  .tog::after{content:'';position:absolute;right:2px;top:2px;width:17px;height:17px;
+    border-radius:50%;background:#fff}
+  .tog.off{background:#D1D5DB}
+  .tog.off::after{left:2px;right:auto}
+
+  /* 진행률 */
+  .prog{border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:9px}
+  .prog .ph{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+  .prog .ph .t{font-size:12.5px;font-weight:800;flex:1}
+  .prog .ph .v{font-family:var(--mono);font-size:11.5px;color:var(--sub)}
+  .prog .bar{height:7px;background:var(--line2);border-radius:4px;overflow:hidden;
+    margin-bottom:7px}
+  .prog .bar i{display:block;height:100%;border-radius:4px}
+  .prog .d{font-size:11px;color:var(--faint);line-height:1.6}
+
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;padding:8px 10px;background:#FAFAFB;color:var(--faint);
+    font-weight:700;font-size:10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line2);line-height:1.65}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono);font-size:11px}
+  td .mut{color:var(--faint)}
+
+  .note{max-width:1180px;margin:16px auto 0;padding:0 22px;font-size:11.5px;
+    color:var(--sub);line-height:1.85}
+  .note .in{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 16px}
+  .note b{color:var(--ink)}
+
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:900px){.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="logo"></span><span class="nm">APOLLON HUB</span>
+  <span class="sp"></span><span class="me">이택진 / 공간파트 / 슈퍼관리자</span>
+</div>
+
+<div class="note" style="margin-top:20px">
+  <div class="in">
+  <b>지금 문제</b><br>
+  ① 「2차 데이터 만들기」 탭이 눌러도 안 열린다 — 화면이 없다<br>
+  ② 「할 일이 없습니다」만 뜨고 <b>왜 없는지</b>를 안 밝힌다 (오늘 이미 돌아서 건너뛴 것)<br>
+  ③ 답 점검 90건에 같은 질문이 세 번씩 — 묶여 있지 않다<br>
+  ④ 「건너뛰는 것 5건」이 매일 그대로 — 사람이 답해야 하는데 여기 방치돼 있다<br><br>
+  <b>탭을 6개에서 5개로</b> — 「2차 데이터 만들기」는 자습의 한 종류라 오늘 밤·이력에 녹인다.
+  대신 <b>내가 답할 것</b>을 하나로 모은다 (답 점검 + 건너뛴 것 + 규칙 후보).
+  </div>
+</div>
+
+
+<!-- ═══ 01 · 오늘 밤 ═══ -->
+<div class="lbl">01 · 오늘 밤</div>
+<p class="lblsub">
+무엇을 왜 할지, 얼마나 걸릴지. <b>「없습니다」라고만 하지 않고 왜 없는지를 밝힌다.</b>
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="tabs">
+    <span>대시보드</span><span>지식</span><span>대화</span>
+    <span class="on">자습<i class="dot"></i></span>
+    <span>실패 수집 116</span><span>지식후보</span><span>두뇌</span>
+  </div>
+  <div class="sub2">
+    <span class="on">오늘 밤</span><span>어젯밤</span>
+    <span>내가 답할 것<b>21</b></span><span>배운 것</span><span>설정</span>
+  </div>
+  <div class="body">
+
+    <div class="ban p">
+      <div class="c">
+        <div class="t">오늘 밤 05:00 · 할 일 2건 · 예상 38분</div>
+        <div class="d">루나가 DB 를 훑어 스스로 정했습니다. 「왜」를 보고 빼기만 하면 됩니다.</div>
+      </div>
+      <span class="bt">지금 실행</span>
+    </div>
+
+    <div class="job on">
+      <div class="jh">
+        <span class="num">1</span>
+        <div class="jt">
+          <div class="t">검색이 자기 자료를 찾는지 시험 (모드 A)</div>
+          <div class="src">probe_retrieval · 노션 200페이지 × 질문 3</div>
+        </div>
+        <div class="right">
+          <div class="est"><b>30분</b><br>LLM 200회 · $0.33</div>
+        </div>
+      </div>
+      <div class="kv"><span class="k">왜</span>
+        <span class="v">매일 정답 문서 기준으로 검색을 채점한다. <b>자동으로 배울 수 있는 유일한 슬롯</b>이다.</span></div>
+      <div class="kv"><span class="k">어떻게</span>
+        <span class="v">20문서씩 청크로 나눠 돌린다. 어제 300초 타임아웃으로 죽었다.</span></div>
+      <div class="kv"><span class="k">기대</span>
+        <span class="v">hit@1 · hit@5 · miss 를 원인별로 분류. miss 가 내일 아젠다가 된다.</span></div>
+      <div class="acts">
+        <span class="p">그대로</span><span>제외</span><span>근거 보기</span>
+      </div>
+    </div>
+
+    <div class="job">
+      <div class="jh">
+        <span class="num">2</span>
+        <div class="jt">
+          <div class="t">2024년 프로젝트 2차 데이터 만들기</div>
+          <div class="src">materialize_secondary · 2,511문서</div>
+        </div>
+        <div class="right">
+          <div class="est"><b>8분</b><br>LLM 0회 · $0</div>
+        </div>
+      </div>
+      <div class="kv"><span class="k">왜</span>
+        <span class="v">2026·2025 는 끝났고 2024 가 비어 있다.</span></div>
+      <div class="kv"><span class="k">기대</span>
+        <span class="v">belongs 약 8만 건 · 애매한 것은 질문으로</span></div>
+      <div class="acts">
+        <span class="p">그대로</span><span>제외</span>
+      </div>
+    </div>
+
+    <div class="sech"><span class="t">진행 중인 장기 작업</span>
+      <span class="sp"></span><span class="a">순서 바꾸기 →</span></div>
+
+    <div class="prog">
+      <div class="ph"><span class="t">모드 A 검색 검증</span>
+        <span class="v">노션 200 / 2,846 · 14일 남음</span></div>
+      <div class="bar"><i style="background:var(--luna);width:7%"></i></div>
+      <div class="d">하루 200페이지. 9/19 부터 용어·이미지·위키·Work 도 함께 (하루 965문항)</div>
+    </div>
+
+    <div class="prog">
+      <div class="ph"><span class="t">2차 데이터 연도별</span>
+        <span class="v">2026·2025 완료 · 2024 오늘 밤</span></div>
+      <div class="bar"><i style="background:var(--work);width:42%"></i></div>
+      <div class="d">2023 · 2022 · 2021 이전이 남았다</div>
+    </div>
+
+    <div class="sech"><span class="t">오늘 밤 안 하는 것</span><span class="n">5</span>
+      <span class="sp"></span><span class="a">왜 안 하나 →</span></div>
+
+    <p style="font-size:11.5px;color:var(--sub);margin-bottom:11px;line-height:1.8">
+    정답이 없어 루나가 스스로 채점할 수 없는 것들입니다.
+    <b>「내가 답할 것」에서 답해 주시면 그다음부터 자습이 가져갑니다.</b>
+    </p>
+
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">되묻고 답을 못 알아들음 6건</div>
+        <div class="d">정답이 없다 · 답이 맞는지 사람이 봐야 한다</div>
+      </div>
+      <span class="bt">답하기 →</span>
+    </div>
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">질문 의도를 못 잡음 4건</div>
+        <div class="d">정답이 없다</div>
+      </div>
+      <span class="bt">답하기 →</span>
+    </div>
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">분류 못 한 질문 7건</div>
+        <div class="d">유형을 사람이 정해야 한다</div>
+      </div>
+      <span class="bt">답하기 →</span>
+    </div>
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">2차 「같은 것」 확인 필요 7건</div>
+        <div class="d">전체 167건 중 확신도 0.5~0.7</div>
+      </div>
+      <span class="bt">답하기 →</span>
+    </div>
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">옛 자습 큐 6건</div>
+        <div class="d">지금 방식으로 옮기기 전 남은 것 · 버려도 된다</div>
+      </div>
+      <span class="bt">정리 →</span>
+    </div>
+
+  </div>
+</div>
+</div>
+
+
+<!-- ═══ 01-b · 할 일이 없을 때 ═══ -->
+<div class="lbl">01-b · 할 일이 없을 때</div>
+<p class="lblsub">
+지금은 「선정된 할 일이 없습니다」만 뜬다. <b>왜 없는지를 밝혀야 한다.</b>
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="body">
+    <div class="ban y">
+      <div class="c">
+        <div class="t">오늘 밤은 건너뜁니다</div>
+        <div class="d">
+        오늘 05:00 에 모드 A 가 이미 한 번 돌았습니다 (300초 타임아웃으로 실패).
+        같은 날 같은 아젠다를 두 번 고르지 않습니다.<br>
+        <b>내일 05:00 에 청크 방식으로 다시 돌아갑니다.</b>
+        </div>
+      </div>
+      <span class="bt o">실패 기록 보기</span>
+    </div>
+
+    <p style="font-size:11.5px;color:var(--sub);margin-top:4px;line-height:1.8">
+    다른 경우의 문구
+    </p>
+    <div style="border:1px solid var(--line);border-radius:9px;padding:11px 14px;
+      margin-top:8px;font-size:11.5px;line-height:1.85;color:var(--sub)">
+    · 점검할 부족함이 없습니다 — 모든 원천이 최근에 색인됐고 실패도 쌓이지 않았습니다<br>
+    · 모두 제외하셨습니다 — 빼기를 되돌리면 다시 나옵니다<br>
+    · 하루 예산 $1 을 다 썼습니다 — 내일 다시 시작합니다<br>
+    · 정답 있는 일이 없습니다 — 남은 것은 모두 사람이 답해야 합니다
+    </div>
+  </div>
+</div>
+</div>
+
+
+<!-- ═══ 02 · 어젯밤 ═══ -->
+<div class="lbl">02 · 어젯밤</div>
+<p class="lblsub">
+무엇을 왜 했고, 무엇을 알아냈고, <b>나아졌나</b>. 반응을 남기면 그게 신호가 된다.
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="sub2">
+    <span>오늘 밤</span><span class="on">어젯밤</span>
+    <span>내가 답할 것<b>21</b></span><span>배운 것</span><span>설정</span>
+  </div>
+  <div class="body">
+
+    <div class="ban g">
+      <div class="c">
+        <div class="t">어젯밤 2건 · 42분 · LLM 220회 · $0.42</div>
+        <div class="d">하나는 나아졌고 하나는 막혔습니다. 막힌 것은 사람 손이 필요합니다.</div>
+      </div>
+    </div>
+
+    <div class="run">
+      <div class="rh">
+        <span class="t">검색이 자기 자료를 찾는지 시험 (모드 A)</span>
+        <span class="badge up">나아짐</span>
+        <span class="dt">05:00 ~ 05:31</span>
+      </div>
+      <div class="why">왜 — 매일 정답 문서 기준으로 검색을 채점한다. 자동으로 배울 수 있는 유일한 슬롯이다.</div>
+      <div class="res">
+        <div>문서 <b>200</b></div><div>문항 <b>600</b></div>
+        <div>1위로 찾음 <b>168</b></div><div>5위 안 <b>402</b></div>
+        <div>못 찾음 <b>198</b></div>
+      </div>
+      <div class="learn">
+        <div class="lt">알아낸 것</div>
+        못 찾은 198건 중 <b>74건이 본문에만 있는 고유명사</b> 때문입니다.
+        「Nightwalk」 「Memory Zone」처럼 제목·용어사전에 없는 이름은 검색에 안 걸립니다.<br>
+        <b>다음</b> — 그 74건에서 고유명사를 뽑아 용어 후보로 만들겠습니다.
+      </div>
+      <div class="acts">
+        <span>잘했다</span><span>그건 왜 했니</span><span>별로</span>
+        <span class="sp"></span>
+        <span class="meta">LLM 200회 · $0.33 · 31분</span>
+      </div>
+    </div>
+
+    <div class="run">
+      <div class="rh">
+        <span class="t">2024년 2차 데이터 만들기</span>
+        <span class="badge wait">막힘</span>
+        <span class="dt">05:31 ~ 05:42</span>
+      </div>
+      <div class="why">왜 — 2026·2025 는 끝났고 2024 가 비어 있다.</div>
+      <div class="res">
+        <div>문서 <b>2,511</b></div><div>belongs <b>78,240</b></div>
+        <div>같은 것 <b>+12</b></div><div>질문으로 <b>7</b></div>
+      </div>
+      <div class="learn" style="background:var(--y-bg);color:var(--y)">
+        <div class="lt" style="color:var(--y)">막힌 것</div>
+        같은 것 7건은 확신도가 0.5~0.7 이라 스스로 정할 수 없습니다.
+        <b>「내가 답할 것」에서 확인해 주시면 다음부터 규칙으로 씁니다.</b>
+      </div>
+      <div class="acts">
+        <span>잘했다</span><span>그건 왜 했니</span><span>별로</span>
+        <span class="sp"></span>
+        <span class="meta">LLM 20회 · $0.09 · 11분</span>
+      </div>
+    </div>
+
+    <div class="sech"><span class="t">지난 이력</span><span class="n">30일</span>
+      <span class="sp"></span>
+      <div class="chips"><span class="on">전체</span><span>나아짐</span>
+        <span>변화 없음</span><span>막힘</span><span>실패</span></div>
+    </div>
+
+    <table>
+      <tr><th>날짜</th><th>무엇</th><th>결과</th><th class="num">LLM</th>
+        <th class="num">비용</th><th class="num">분</th><th>반응</th></tr>
+      <tr><td class="mut">9.18 05:00</td><td>모드 A 검색 시험</td>
+        <td><span class="badge down">실패</span></td>
+        <td class="num">0</td><td class="num">$0</td><td class="num">5</td>
+        <td class="mut">타임아웃</td></tr>
+      <tr><td class="mut">9.17 05:05</td><td>오래된 색인 갱신</td>
+        <td><span class="badge up">나아짐</span></td>
+        <td class="num">0</td><td class="num">$0</td><td class="num">0.1</td>
+        <td class="mut">—</td></tr>
+      <tr><td class="mut">9.17 05:00</td><td>실패 질문 시험 (모드 B)</td>
+        <td><span class="badge flat">변화 없음</span></td>
+        <td class="num">0</td><td class="num">$0</td><td class="num">4</td>
+        <td class="mut">—</td></tr>
+      <tr><td class="mut">9.17 04:13</td><td>대기열 갱신</td>
+        <td><span class="badge up">나아짐</span></td>
+        <td class="num">0</td><td class="num">$0</td><td class="num">39</td>
+        <td class="mut">색인 러너</td></tr>
+    </table>
+
+  </div>
+</div>
+</div>
+
+
+<!-- ═══ 03 · 내가 답할 것 ═══ -->
+<div class="lbl">03 · 내가 답할 것</div>
+<p class="lblsub">
+<b>흩어져 있던 셋을 하나로 모았다.</b> 규칙 후보 · 답 점검 · 정답 없어 못 한 것.<br>
+루나가 스스로 못 하는 것만 여기 온다.
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="sub2">
+    <span>오늘 밤</span><span>어젯밤</span>
+    <span class="on">내가 답할 것<b>21</b></span><span>배운 것</span><span>설정</span>
+  </div>
+  <div class="body">
+
+    <div class="ban p">
+      <div class="c">
+        <div class="t">21건 · 규칙 8 · 답 13</div>
+        <div class="d">
+        <b>규칙부터 보시면 좋습니다.</b> 하나 정하면 여러 건이 한 번에 정리됩니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="sech"><span class="t">🌙 규칙을 물어봅니다</span><span class="n">8</span>
+      <span class="sp"></span><span class="a">파급이 큰 순 ↓</span></div>
+
+    <div class="rule cand">
+      <div class="q">발주처 이름이 같아도 대상이 다르면 다른 건으로 볼까요?</div>
+      <div class="ev">
+        「롯데면세점」이 겹쳐서 잘못 연결된 것이 <b>8건</b> 있었습니다.<br>
+        롯데면세점(창이공항) ≠ 롯데면세점 콘텐츠 TJ · 롯데타워 전망대 ≠ 롯데타워 서울스카이
+      </div>
+      <div class="meta">link · same_client_diff_target · 정하면 22건 정리</div>
+      <div class="acts"><span class="p">맞아요</span><span>아니요</span>
+        <span>8건 보기</span><span>나중에</span></div>
+    </div>
+
+    <div class="rule cand">
+      <div class="q">「project」를 프로젝트 이름 비교에서 뺄까요?</div>
+      <div class="ev">
+        「project」가 겹쳐 잘못 연결된 것이 <b>6건</b>. Project R ≠ Project Archive ≠ K-Project
+      </div>
+      <div class="meta">link · stopword · 정하면 6건 정리</div>
+      <div class="acts"><span class="p">맞아요</span><span>아니요</span>
+        <span>6건 보기</span><span>나중에</span></div>
+    </div>
+
+    <p style="font-size:11px;color:var(--faint);margin:6px 0 0">
+    나머지 6건 · <span style="color:var(--luna);font-weight:700;cursor:pointer">더 보기</span>
+    </p>
+
+    <div class="sech"><span class="t">답을 봐주세요</span><span class="n">13 · 90건을 묶음</span>
+      <span class="sp"></span>
+      <div class="chips"><span class="on">대기 13</span><span>봤음</span><span>무시함</span>
+        <span>범위 과다</span><span>느림</span><span>자신감 미달</span></div>
+    </div>
+
+    <p style="font-size:11.5px;color:var(--sub);margin-bottom:11px;line-height:1.8">
+    지표가 어긋난 답입니다. <b>답이 맞는지는 제가 판단할 수 없어 여쭙습니다.</b>
+    같은 질문은 하나로 묶었습니다.
+    </p>
+
+    <div class="ans">
+      <div class="q">"우리가 한 미디어파사드 사례 보여줘"</div>
+      <div class="m">
+        <div>문서 <b>429</b> (노션 25 · 위키 2)</div>
+        <div>자신감 <b>8</b></div><div>의도 <b>9</b></div>
+        <div><b>31.6초</b> (검색 969ms)</div>
+        <div class="rep">같은 질문 <b>3번</b></div>
+      </div>
+      <div class="flags"><span>범위 과다</span><span>느림</span><span>자료 불일치</span></div>
+      <div class="acts">
+        <span>답 보기</span>
+        <span class="good">맞아요</span>
+        <span>찾긴 했는데 답이 틀렸다 ▾</span>
+        <span class="bad">틀려요</span>
+        <span class="sp"></span>
+        <span>무시</span>
+      </div>
+    </div>
+
+    <div class="ans">
+      <div class="q">"볼팍견적이 뭐야?"</div>
+      <div class="m">
+        <div>문서 <b>32</b> (노션 32 · 위키 1)</div>
+        <div>자신감 <b>7</b></div><div>의도 <b>8</b></div>
+        <div><b>26.3초</b></div>
+        <div class="rep">9.17 · 고쳐짐</div>
+      </div>
+      <div class="flags"><span>범위 과다</span><span>자신감 미달</span></div>
+      <div class="acts">
+        <span>답 보기</span>
+        <span class="good">맞아요</span>
+        <span>틀려요</span>
+        <span class="sp"></span>
+        <span>무시</span>
+      </div>
+    </div>
+
+    <div class="sech"><span class="t">정답이 없어 못 한 것</span><span class="n">5</span></div>
+
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">되묻고 답을 못 알아들음 6건</div>
+        <div class="d">선택지를 냈는데 「1번」이라고만 답하면 원래 질문과 이어붙이지 못합니다</div>
+      </div>
+      <span class="bt">보기 →</span>
+    </div>
+    <div class="skip">
+      <span class="ic">—</span>
+      <div class="c">
+        <div class="t">2차 「같은 것」 확인 필요 7건</div>
+        <div class="d">확신도 0.5~0.7 · 전체 167건 중</div>
+      </div>
+      <span class="bt">보기 →</span>
+    </div>
+
+  </div>
+</div>
+</div>
+
+
+<!-- ═══ 04 · 배운 것 ═══ -->
+<div class="lbl">04 · 배운 것</div>
+<p class="lblsub">
+루나가 무엇으로 판단하는지. <b>이 규칙으로 몇 건이 정리됐는지</b>를 보여준다.
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="sub2">
+    <span>오늘 밤</span><span>어젯밤</span>
+    <span>내가 답할 것<b>21</b></span><span class="on">배운 것</span><span>설정</span>
+  </div>
+  <div class="body">
+
+    <div class="chips" style="margin-bottom:14px">
+      <span class="on">활성 2</span><span>후보 8</span><span>버린 것 46</span>
+    </div>
+
+    <div class="rule">
+      <div class="q">발주처만 같고 대상이 다르면 다른 건으로 기각한다</div>
+      <div class="ev">
+        블루진이 2026.09.15 에 확인 · 근거 신호 <b>8건</b><br>
+        <b>지금까지 22건</b>을 이 규칙으로 정리했습니다. 최근 적용 9.17
+      </div>
+      <div class="meta">link · rule · same_client_diff_target</div>
+      <div class="acts"><span>적용된 22건 보기</span><span>되돌리기</span></div>
+    </div>
+
+    <div class="rule">
+      <div class="q">날짜코드가 같고 (TJ완료)·(EB완료)·(BL완료)만 다르면 같은 건으로 확정한다</div>
+      <div class="ev">
+        블루진이 2026.09.15 에 확인 · 근거 신호 <b>16건</b><br>
+        <b>지금까지 16건</b>을 자동 확정했습니다. 최근 적용 9.17
+      </div>
+      <div class="meta">link · rule · same_date_done_marker</div>
+      <div class="acts"><span>적용된 16건 보기</span><span>되돌리기</span></div>
+    </div>
+
+    <div class="sech"><span class="t">이 규칙으로 무엇이 나아졌나</span></div>
+    <div class="g2">
+      <div class="prog">
+        <div class="ph"><span class="t">「같은 것」 확인 필요</span>
+          <span class="v">32 → 7</span></div>
+        <div class="bar"><i style="background:var(--g);width:78%"></i></div>
+        <div class="d">규칙 2개로 25건이 자동 처리됐습니다</div>
+      </div>
+      <div class="prog">
+        <div class="ph"><span class="t">잘못 연결</span>
+          <span class="v">140 → 116</span></div>
+        <div class="bar"><i style="background:var(--g);width:17%"></i></div>
+        <div class="d">오탐 24건이 걸러졌습니다</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+
+<!-- ═══ 05 · 설정 ═══ -->
+<div class="lbl">05 · 설정</div>
+<p class="lblsub">
+지금 무엇이 켜져 있고 얼마를 쓰는지. <b>값을 바꾸면 무엇이 달라지는지 한 줄로.</b>
+</p>
+
+<div class="page">
+<div class="shell">
+  <div class="sub2">
+    <span>오늘 밤</span><span>어젯밤</span>
+    <span>내가 답할 것<b>21</b></span><span>배운 것</span><span class="on">설정</span>
+  </div>
+  <div class="body">
+
+    <div class="sech"><span class="t">언제 돌까</span></div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">자습 시각</div>
+        <div class="d">이미지·색인·2차 데이터가 끝난 뒤. 아침 리포트(07:00) 전에 끝나야 합니다.</div>
+      </div>
+      <span class="v">05:00</span>
+    </div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">하루 시간 상한</div>
+        <div class="d">넘으면 다음날로 넘깁니다. 청크 하나가 끝난 뒤에 멈춥니다.</div>
+      </div>
+      <span class="v">60분</span>
+    </div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">하루 비용 상한</div>
+        <div class="d">넘으면 중단하고 아침 리포트에 표시합니다. 어제는 $0.42 를 썼습니다.</div>
+      </div>
+      <span class="v">$1.00</span>
+    </div>
+
+    <div class="sech"><span class="t">무엇을 할까</span></div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">정답 없는 것은 자동으로 하지 않는다</div>
+        <div class="d">스스로 채점할 수 없으면 틀린 것을 확신하며 쌓습니다. <b>끄지 마세요.</b></div>
+      </div>
+      <span class="tog"></span>
+    </div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">모드 A 를 매일 1순위로</div>
+        <div class="d">끄면 실패 질문(모드 B)이 1순위가 되고, 그건 자동으로 배울 수 없습니다.</div>
+      </div>
+      <span class="tog"></span>
+    </div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">같은 아젠다를 하루에 두 번 고르지 않는다</div>
+        <div class="d">9.17 에 같은 것을 세 번 골라 9시간을 헛돌았습니다.</div>
+      </div>
+      <span class="tog"></span>
+    </div>
+    <div class="setrow">
+      <div class="c">
+        <div class="t">여섯 원천으로 넓히기</div>
+        <div class="d">용어·이미지·지식·위키·Work·노션. 하루 965문항 · 약 $0.5. <b>9/19 부터</b></div>
+      </div>
+      <span class="tog off"></span>
+    </div>
+
+    <div class="sech"><span class="t">원천별 하루 분량</span>
+      <span class="sp"></span><span class="a">9/19 부터 적용</span></div>
+    <table>
+      <tr><th>원천</th><th class="num">대상</th><th class="num">하루</th>
+        <th class="num">문항</th><th>LLM</th><th class="num">비용</th><th class="num">한 바퀴</th></tr>
+      <tr><td>용어사전</td><td class="num">574</td><td class="num">100</td>
+        <td class="num">100</td><td class="mut">불필요</td><td class="num">$0</td>
+        <td class="num">6일</td></tr>
+      <tr><td>이미지</td><td class="num">2,488</td><td class="num">200</td>
+        <td class="num">200</td><td class="mut">불필요</td><td class="num">$0</td>
+        <td class="num">12일</td></tr>
+      <tr><td>아폴론 지식</td><td class="num">68</td><td class="num">20</td>
+        <td class="num">20</td><td class="mut">불필요</td><td class="num">$0</td>
+        <td class="num">4일</td></tr>
+      <tr><td>위키</td><td class="num">43</td><td class="num">15</td>
+        <td class="num">45</td><td class="mut">질문 생성</td><td class="num">$0.03</td>
+        <td class="num">3일</td></tr>
+      <tr><td>노션</td><td class="num">2,846</td><td class="num">100</td>
+        <td class="num">300</td><td class="mut">질문 생성</td><td class="num">$0.23</td>
+        <td class="num">28일</td></tr>
+      <tr><td>Work 본문</td><td class="num">3,000</td><td class="num">100</td>
+        <td class="num">300</td><td class="mut">질문 생성</td><td class="num">$0.23</td>
+        <td class="num">30일</td></tr>
+    </table>
+
+  </div>
+</div>
+</div>
+
+
+<div class="note">
+  <div class="in">
+  <b>탭 6개 → 5개</b><br>
+  오늘 밤 · 어젯밤 · <b>내가 답할 것</b> · 배운 것 · 설정<br>
+  「2차 데이터 만들기」는 자습의 한 종류라 오늘 밤·어젯밤에 녹였다.<br><br>
+  <b>무엇이 달라지나</b><br>
+  ① <b>내가 답할 것을 하나로</b> — 규칙 후보 + 답 점검 + 정답 없어 못 한 것.
+     흩어져 있어서 아무도 안 보던 것들<br>
+  ② <b>규칙을 먼저</b> — 하나 정하면 22건이 정리된다. 답 13건보다 파급이 크다<br>
+  ③ <b>같은 질문은 묶는다</b> — 90건이 13건으로<br>
+  ④ <b>「없습니다」에 이유를 붙인다</b> — 「오늘 이미 돌아서 건너뜁니다」<br>
+  ⑤ <b>「안 하는 것」에 [답하기] 버튼</b> — 매일 그대로 쌓이던 5건이 움직인다<br>
+  ⑥ <b>배운 것에 효과를 보여준다</b> — 「이 규칙으로 22건 정리」<br>
+  ⑦ <b>설정에 「바꾸면 뭐가 달라지나」</b> — 끄면 안 되는 것은 그렇게 쓴다
+  </div>
+</div>
+
+</body>
+</html>

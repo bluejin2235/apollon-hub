@@ -12,10 +12,11 @@ export type LunaAdminTalkSub = "history" | "sources" | "metrics";
 export type LunaAdminSelfstudySub =
   | "tonight"
   | "history"
-  | "review"
-  | "links"
+  | "ask"
   | "learned"
-  | "settings";
+  | "settings"
+  | "review"
+  | "links";
 export type LunaAdminFailuresSub = "causes" | "analysis" | "sent";
 export type LunaAdminCandidatesSub = "pending" | "mine" | "conflict" | "history";
 export type LunaAdminBrainSub =
@@ -88,12 +89,11 @@ export const LUNA_ADMIN_MENUS: LunaAdminMenuDef[] = [
     slug: "selfstudy",
     label: "자습",
     subs: [
-      { slug: "tonight", label: "오늘 밤 할 일" },
-      { slug: "history", label: "자습 이력" },
-      { slug: "review", label: "답 점검" },
-      { slug: "links", label: "2차 데이터 만들기" },
+      { slug: "tonight", label: "오늘 밤" },
+      { slug: "history", label: "어젯밤" },
+      { slug: "ask", label: "내가 답할 것" },
       { slug: "learned", label: "배운 것" },
-      { slug: "settings", label: "자습 설정" }
+      { slug: "settings", label: "설정" }
     ]
   },
   {
@@ -136,6 +136,24 @@ const SUBS_BY_MENU: Record<LunaAdminMenu, LunaAdminSub[] | undefined> =
     LUNA_ADMIN_MENUS.map((m) => [m.slug, m.subs?.map((s) => s.slug)])
   ) as Record<LunaAdminMenu, LunaAdminSub[] | undefined>;
 
+/** 옛 자습 탭 — 답 점검·2차 데이터 만들기는 내가 답할 것·오늘 밤에 녹였다. */
+const SELFSTUDY_SUB_ALIASES: Record<string, LunaAdminSelfstudySub> = {
+  review: "ask",
+  links: "tonight"
+};
+
+export function canonicalAdminSub(
+  menu: LunaAdminMenu,
+  sub: LunaAdminSub | null | undefined
+): LunaAdminSub | null {
+  if (!sub) return sub ?? null;
+  if (menu === "selfstudy") {
+    const aliased = SELFSTUDY_SUB_ALIASES[sub];
+    if (aliased) return aliased;
+  }
+  return sub;
+}
+
 export function isLunaAdminMenu(value: string): value is LunaAdminMenu {
   return (MENU_SLUGS as string[]).includes(value);
 }
@@ -150,8 +168,12 @@ export function resolveAdminSub(
 ): LunaAdminSub | null {
   const subs = SUBS_BY_MENU[menu];
   if (!subs?.length) return null;
-  if (rawSub && (subs as string[]).includes(rawSub)) {
-    return rawSub as LunaAdminSub;
+  const mapped =
+    menu === "selfstudy" && rawSub && SELFSTUDY_SUB_ALIASES[rawSub]
+      ? SELFSTUDY_SUB_ALIASES[rawSub]
+      : rawSub;
+  if (mapped && (subs as string[]).includes(mapped)) {
+    return mapped as LunaAdminSub;
   }
   return subs[0];
 }
@@ -189,7 +211,7 @@ export function buildLunaAdminUrl(
   if (menu !== "dashboard") {
     params.set("menu", menu);
   }
-  const resolved = sub ?? defaultSubForAdminMenu(menu);
+  const resolved = canonicalAdminSub(menu, sub ?? defaultSubForAdminMenu(menu));
   if (resolved) {
     params.set("sub", resolved);
   }

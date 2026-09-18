@@ -165,11 +165,59 @@ async function main() {
     check("2차 칩 이어진 것", sText.includes("이어진 것"), failed);
 
     await page.getByRole("button", { name: "자습", exact: true }).click();
-    await page.waitForTimeout(1500);
+    await page.getByRole("button", { name: "오늘 밤", exact: true }).waitFor({ timeout: 15_000 });
     const st = await page.locator("body").innerText();
-    check("자습 › 오늘 밤 할 일", st.includes("오늘 밤 할 일"), failed);
-    check("자습 › 2차 데이터 만들기", st.includes("2차 데이터 만들기"), failed);
+    check("자습 › 오늘 밤", st.includes("오늘 밤"), failed);
+    check("자습 › 어젯밤", st.includes("어젯밤"), failed);
+    check("자습 › 내가 답할 것", st.includes("내가 답할 것"), failed);
+    check("자습 › 배운 것", st.includes("배운 것"), failed);
+    await page.getByRole("button", { name: "오늘 밤", exact: true }).click();
+    await page
+      .getByText("오늘 밤은 건너뜁니다")
+      .or(page.getByText("지금 실행"))
+      .or(page.getByText("진행 중인 장기 작업"))
+      .or(page.getByText("점검할 부족함이 없습니다"))
+      .first()
+      .waitFor({ timeout: 45_000 });
+    const tonightText = await page.locator("body").innerText();
+    check(
+      "오늘 밤 빈 상태에 이유",
+      !tonightText.includes("선정된 할 일이 없습니다") &&
+        (tonightText.includes("오늘 밤은 건너뜁니다") ||
+          tonightText.includes("점검할 부족함이 없습니다") ||
+          tonightText.includes("정답 있는 일이 없습니다") ||
+          tonightText.includes("모두 제외하셨습니다") ||
+          tonightText.includes("하루 예산을 다 썼습니다") ||
+          tonightText.includes("지금 실행") ||
+          tonightText.includes("진행 중인 장기 작업")),
+      failed
+    );
     await page.screenshot({ path: resolve(OUT, "03-super-tonight.png"), fullPage: true });
+
+    await page.getByRole("button", { name: /내가 답할 것/ }).click();
+    await page.getByText("답을 봐주세요").waitFor({ timeout: 45_000 });
+    await page.getByText("정답이 없어 못 한 것").waitFor({ timeout: 15_000 });
+    const askText = await page.locator("body").innerText();
+    check("내가 답할 것 규칙", askText.includes("규칙을 물어봅니다"), failed);
+    check("내가 답할 것 답", askText.includes("답을 봐주세요"), failed);
+    check("정답 없어 못 한 것", askText.includes("정답이 없어 못 한 것"), failed);
+    await page.screenshot({ path: resolve(OUT, "03b-super-ask.png"), fullPage: true });
+
+    await page.getByRole("button", { name: "어젯밤", exact: true }).click();
+    await page
+      .getByText(/어젯밤 \d+건|지난 이력|어젯밤 기록이 없습니다/)
+      .first()
+      .waitFor({ timeout: 30_000 });
+    check(
+      "어젯밤 화면",
+      (await page.locator("body").innerText()).includes("지난 이력") ||
+        (await page.locator("body").innerText()).includes("어젯밤"),
+      failed
+    );
+
+    await page.getByRole("button", { name: "설정", exact: true }).click();
+    await page.getByText("언제 돌까").waitFor({ timeout: 10_000 });
+    check("설정 화면", (await page.locator("body").innerText()).includes("하루 비용 상한"), failed);
 
     await page.getByRole("button", { name: /실패 수집/ }).click();
     await page.waitForTimeout(800);

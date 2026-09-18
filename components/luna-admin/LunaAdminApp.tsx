@@ -9,7 +9,8 @@ import { LunaAdminDashboard } from "@/components/luna-admin/LunaAdminDashboard";
 import { LunaAdminPrimary } from "@/components/luna-admin/LunaAdminPrimary";
 import { LunaAdminSecondary } from "@/components/luna-admin/LunaAdminSecondary";
 import { LunaAdminTonight } from "@/components/luna-admin/LunaAdminTonight";
-import { LunaAdminLinkProgress } from "@/components/luna-admin/LunaAdminLinkProgress";
+import { LunaSelfstudyAsk } from "@/components/luna-admin/LunaSelfstudyAsk";
+import { LunaAdminSelfstudySettings } from "@/components/luna-admin/LunaAdminSelfstudySettings";
 import { LunaAdminAnalysis } from "@/components/luna-admin/LunaAdminAnalysis";
 import { LunaAdminSent } from "@/components/luna-admin/LunaAdminSent";
 import { LunaAdminMine, LunaAdminPending } from "@/components/luna-admin/LunaAdminCandidates";
@@ -19,11 +20,8 @@ import { LunaTalkSources } from "@/components/luna/talk/LunaTalkSources";
 import { LunaFailures } from "@/components/luna/failures/LunaFailures";
 import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
 import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
-import { LunaSelfstudyHistory } from "@/components/luna/selfstudy/LunaSelfstudyHistory";
 import { LunaStudyRunHistory } from "@/components/luna-admin/LunaStudyRunHistory";
-import { LunaSelfstudySettings } from "@/components/luna/selfstudy/LunaSelfstudySettings";
 import { LunaSelfstudyLearned } from "@/components/luna/selfstudy/LunaSelfstudyLearned";
-import { LunaAdminAnswerFlags } from "@/components/luna-admin/LunaAdminAnswerFlags";
 import { LunaBrainEval } from "@/components/luna/brain/LunaBrainEval";
 import { LunaBrainModel } from "@/components/luna/brain/LunaBrainModel";
 import { LunaBrainPrompts } from "@/components/luna/brain/LunaBrainPrompts";
@@ -75,7 +73,8 @@ function LunaAdminAppInner({ userInfoLine, onLogout, role }: Props) {
   const [badges, setBadges] = useState({
     failures: 0,
     candidates: 0,
-    selfstudy_dot: false
+    selfstudy_dot: false,
+    selfstudy_ask: 0
   });
 
   useEffect(() => {
@@ -173,19 +172,11 @@ function renderBody(
     return <LunaTalkHistory />;
   }
   if (menu === "selfstudy") {
-    if (sub === "history") {
-      return (
-        <>
-          <LunaStudyRunHistory />
-          <LunaSelfstudyHistory />
-        </>
-      );
-    }
-    if (sub === "review") return <LunaAdminAnswerFlags />;
-    if (sub === "links") return <LunaAdminLinkProgress onGo={go} />;
-    if (sub === "learned") return <LunaSelfstudyLearned />;
-    if (sub === "settings") return <LunaSelfstudySettings />;
-    return <LunaAdminTonight />;
+    if (sub === "history") return <LunaStudyRunHistory />;
+    if (sub === "ask") return <LunaSelfstudyAsk onGo={go} />;
+    if (sub === "learned") return <LunaSelfstudyLearned onGo={go} />;
+    if (sub === "settings") return <LunaAdminSelfstudySettings />;
+    return <LunaAdminTonight onGo={go} />;
   }
   if (menu === "failures") {
     if (sub === "analysis") return <LunaAdminAnalysis onGo={go} />;

@@ -410,6 +410,16 @@
   border: 0;
 }
 
+.luna-admin button.a {
+  font-size: 11px;
+  color: var(--luna);
+  font-weight: 700;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
 .luna-admin .row {
   display: flex;
   gap: 11px;

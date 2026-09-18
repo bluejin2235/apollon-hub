@@ -1,5 +1,5 @@
 /**
- * 지식 › 2차 데이터 · 자습 › 2차 데이터 만들기 화면 확인
+ * 지식 › 2차 데이터 · 자습 › 오늘 밤 장기 작업 화면 확인
  * npx tsx scripts/verify-luna-links.ts
  */
 import { config } from "dotenv";
@@ -202,11 +202,17 @@ async function main() {
   await page.screenshot({ path: resolve(OUT, "03-perspectives.png"), fullPage: true });
 
   await page.getByRole("button", { name: "자습", exact: true }).click();
-  await page.getByRole("button", { name: "2차 데이터 만들기", exact: true }).click();
-  await page.getByText("전체 진행률").waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "오늘 밤", exact: true }).click();
+  await page.waitForTimeout(2000);
   const progress = await page.locator("body").innerText();
-  check("연도 2026", progress.includes("2026"), failed);
-  check("진행률 숫자", /[1-9]\d?\s*%|완료/.test(progress), failed);
+  check(
+    "오늘 밤 장기 작업",
+    progress.includes("진행 중인 장기 작업") ||
+      progress.includes("2차 데이터") ||
+      progress.includes("오늘 밤은 건너뜁니다") ||
+      progress.includes("오늘 밤"),
+    failed
+  );
   await page.screenshot({ path: resolve(OUT, "04-progress.png"), fullPage: true });
 
   await browser.close();

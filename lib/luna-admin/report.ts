@@ -413,8 +413,8 @@ export async function buildAdminReportHtml(
         `어젯밤 지표가 어긋난 답입니다. 옳고 그름은 제가 판단할 수 없어 여쭙습니다. ` +
         `예: “${first.question.slice(0, 40)}” · 문서 ${m.total_docs ?? "—"} · 자신감 ${m.confidence_score ?? "—"} · ` +
         `${flagLabels || "모순"}`,
-      href: hubHref(buildLunaAdminUrl("selfstudy", "review")),
-      btn: "답 점검 →",
+      href: hubHref(buildLunaAdminUrl("selfstudy", "ask")),
+      btn: "내가 답할 것 →",
       tone: "p"
     });
   }

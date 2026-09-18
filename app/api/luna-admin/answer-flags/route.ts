@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       ? (flagRaw as AnswerFlagId)
       : null;
   const [rows, pending] = await Promise.all([
-    listAnswerFlags(gate.admin, { status, flagId, limit: 80 }),
+    listAnswerFlags(gate.admin, { status, flagId, limit: 200 }),
     countPendingAnswerFlags(gate.admin)
   ]);
   return NextResponse.json({ rows, pending, flag_ids: ANSWER_FLAG_IDS });
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
   if ("error" in gate) return gate.error;
   let body: {
     id?: string;
+    ids?: string[];
     verdict?: string;
     reason?: string | null;
     note?: string | null;
@@ -52,7 +53,11 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!body.id || typeof body.id !== "string") {
+  const ids = [
+    ...(typeof body.id === "string" && body.id ? [body.id] : []),
+    ...((body.ids ?? []).filter((x) => typeof x === "string"))
+  ];
+  if (ids.length === 0) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
   const verdict = body.verdict;
@@ -64,15 +69,19 @@ export async function POST(request: NextRequest) {
   }
   const reason =
     body.reason && isThumbsReason(body.reason) ? body.reason : body.reason ?? null;
-  const row = await reviewAnswerFlag(gate.admin, {
-    id: body.id,
-    userId: gate.user.id,
-    verdict: verdict as AnswerFlagVerdict,
-    reason,
-    note: body.note ?? null
-  });
-  if (!row) {
+  const rows = [];
+  for (const id of ids) {
+    const row = await reviewAnswerFlag(gate.admin, {
+      id,
+      userId: gate.user.id,
+      verdict: verdict as AnswerFlagVerdict,
+      reason,
+      note: body.note ?? null
+    });
+    if (row) rows.push(row);
+  }
+  if (rows.length === 0) {
     return NextResponse.json({ error: "update failed" }, { status: 500 });
   }
-  return NextResponse.json({ row });
+  return NextResponse.json({ row: rows[0], rows, updated: rows.length });
 }

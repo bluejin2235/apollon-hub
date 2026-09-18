@@ -59,7 +59,12 @@ async function main() {
   for (const c of selected.filter((s) => s.when === "tomorrow")) {
     console.log(`- ${c.agenda} · ${c.why}`);
   }
-  if (demoted.length) console.log("demoted:", demoted.join(", "));
+  if (demoted.length) {
+    console.log(
+      "demoted:",
+      demoted.map((d) => `${d.agenda} (${d.reason})`).join(" | ")
+    );
+  }
 
   const first = tonight[0] ?? candidates.find((c) => c.verifiable);
   if (!first) {

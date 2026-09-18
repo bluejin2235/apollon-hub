@@ -10,6 +10,8 @@ import {
 import { countQuestions } from "@/lib/luna-admin/questions";
 import { loadTonightState } from "@/lib/luna-admin/tonight";
 import { listCandidateRuleQuestions } from "@/lib/luna/rules";
+import { listAnswerFlags } from "@/lib/luna/answer-flags";
+import { groupAnswerFlagsByQuestion } from "@/lib/luna/answer-flags-shared";
 import {
   formatIdleLabel,
   kstCalendarDaysAgo,
@@ -54,7 +56,8 @@ export async function buildAdminDashboard(
     weekTalk,
     weekUsers,
     tonight,
-    ruleQuestions
+    ruleQuestions,
+    pendingFlags
   ] = await Promise.all([
     buildPrimarySources(admin),
     getSelfstudyStatus(admin),
@@ -88,7 +91,8 @@ export async function buildAdminDashboard(
       .gte("updated_at", weekStart)
       .limit(2000),
     loadTonightState(admin),
-    listCandidateRuleQuestions(admin)
+    listCandidateRuleQuestions(admin),
+    listAnswerFlags(admin, { status: "pending", limit: 200 })
   ]);
 
   let storage = null as Awaited<
@@ -275,7 +279,11 @@ export async function buildAdminDashboard(
     badges: {
       failures: openFailures,
       candidates: pending,
-      selfstudy_dot: (selfDays ?? 99) >= 2 || tonight.items.some((i) => !i.excluded)
+      selfstudy_dot: (selfDays ?? 99) >= 2 || tonight.items.some((i) => !i.excluded),
+      selfstudy_ask:
+        ruleQuestions.length +
+        groupAnswerFlagsByQuestion(pendingFlags).length +
+        tonight.items.filter((i) => !i.verifiable && !i.excluded).length
     }
   };
 }

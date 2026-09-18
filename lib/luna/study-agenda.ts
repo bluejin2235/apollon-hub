@@ -39,6 +39,16 @@ export type SelectedAgenda = AgendaCandidate & {
   when: "tonight" | "tomorrow";
 };
 
+export type AgendaDemote = {
+  id: string;
+  agenda: string;
+  reason: "already_ran" | "recent_fail" | "no_change_streak";
+  detail: string;
+  started_at?: string;
+  outcome?: string | null;
+  error?: string | null;
+};
+
 export const STUDY_BUDGET_MINUTES = 60;
 export const STUDY_DAILY_COST_USD = 1;
 
@@ -158,31 +168,64 @@ function demoteKey(c: AgendaCandidate): string {
   return `${c.kind}::${c.gap_id}`;
 }
 
-function kstDayKey(iso: string): string {
+export function kstDayKey(iso: string): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "";
   const kst = new Date(t + 9 * 60 * 60 * 1000);
   return kst.toISOString().slice(0, 10);
 }
 
-function todayKstKey(now = new Date()): string {
+export function todayKstKey(now = new Date()): string {
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return kst.toISOString().slice(0, 10);
 }
 
-/** 같은 agenda 를 그날(KST) 이미 실행했으면 건너뛴다 */
-function alreadyRanToday(c: AgendaCandidate, runs: RunHist[]): boolean {
+function alreadyRanToday(c: AgendaCandidate, runs: RunHist[]): RunHist | null {
   const today = todayKstKey();
-  return runs.some(
-    (r) =>
-      r.agenda === c.agenda &&
-      kstDayKey(r.started_at) === today &&
-      r.outcome != null
+  return (
+    runs.find(
+      (r) =>
+        r.agenda === c.agenda &&
+        kstDayKey(r.started_at) === today &&
+        r.outcome != null
+    ) ?? null
   );
 }
 
-function shouldDemote(c: AgendaCandidate, runs: RunHist[]): boolean {
-  if (alreadyRanToday(c, runs)) return true;
+function kstClock(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const kst = new Date(t + 9 * 60 * 60 * 1000);
+  return `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function runError(r: RunHist): string | null {
+  const err = (r.result as { error?: unknown } | null)?.error;
+  return typeof err === "string" && err.trim() ? err.trim() : null;
+}
+
+function describeDemote(c: AgendaCandidate, runs: RunHist[]): AgendaDemote | null {
+  const todayHit = alreadyRanToday(c, runs);
+  if (todayHit) {
+    const clock = kstClock(todayHit.started_at);
+    const err = runError(todayHit);
+    const failBit =
+      todayHit.outcome === "failed"
+        ? err
+          ? ` (${err.includes("Timeout") || err.includes("타임아웃") ? "300초 타임아웃으로 실패" : err})`
+          : " (실패)"
+        : "";
+    const label = c.kind === "probe_retrieval" ? "모드 A" : c.agenda;
+    return {
+      id: c.id,
+      agenda: c.agenda,
+      reason: "already_ran",
+      detail: `오늘 ${clock || "05:00"} 에 ${label} 가 이미 한 번 돌았습니다${failBit}. 같은 날 같은 아젠다를 두 번 고르지 않습니다.`,
+      started_at: todayHit.started_at,
+      outcome: todayHit.outcome,
+      error: err
+    };
+  }
   const key = demoteKey(c);
   const related = runs.filter(
     (r) => `${r.kind}::${c.gap_id}` === key || r.agenda === c.agenda
@@ -190,16 +233,34 @@ function shouldDemote(c: AgendaCandidate, runs: RunHist[]): boolean {
   const failed = related.find((r) => r.outcome === "failed");
   if (failed) {
     const t = new Date(failed.started_at).getTime();
-    if (Date.now() - t < 14 * 86400000) return true;
+    if (Date.now() - t < 14 * 86400000) {
+      const err = runError(failed);
+      return {
+        id: c.id,
+        agenda: c.agenda,
+        reason: "recent_fail",
+        detail: `최근 실패로 14일 동안 다시 고르지 않습니다${err ? ` · ${err}` : ""}.`,
+        started_at: failed.started_at,
+        outcome: failed.outcome,
+        error: err
+      };
+    }
   }
-  const recent = related
-    .filter((r) => r.outcome === "no_change")
-    .slice(0, 3);
-  if (recent.length < 3) return false;
-  const days = new Set(
-    recent.map((r) => new Date(r.started_at).toISOString().slice(0, 10))
-  );
-  return days.size >= 3;
+  const recent = related.filter((r) => r.outcome === "no_change").slice(0, 3);
+  if (recent.length >= 3) {
+    const days = new Set(
+      recent.map((r) => new Date(r.started_at).toISOString().slice(0, 10))
+    );
+    if (days.size >= 3) {
+      return {
+        id: c.id,
+        agenda: c.agenda,
+        reason: "no_change_streak",
+        detail: "사흘 연속 변화가 없어 건너뜁니다."
+      };
+    }
+  }
+  return null;
 }
 
 /** 직전 모드 A miss 분류 → 다음날 아젠다 후보 */
@@ -292,13 +353,13 @@ export async function selectTonightAgenda(
   gaps: StudyGap[];
   candidates: AgendaCandidate[];
   selected: SelectedAgenda[];
-  demoted: string[];
+  demoted: AgendaDemote[];
 }> {
   const budget = opts?.budgetMinutes ?? STUDY_BUDGET_MINUTES;
   const excluded = opts?.excludedIds ?? new Set<string>();
   const { gaps, candidates } = await buildAgendaCandidates(admin);
   const runs = await loadRecentRuns(admin);
-  const demoted: string[] = [];
+  const demoted: AgendaDemote[] = [];
 
   const forced = buildForcedModeACandidate();
   const pool = [forced, ...candidates.filter((c) => c.id !== forced.id)];
@@ -318,8 +379,9 @@ export async function selectTonightAgenda(
       selected.push({ ...c, excluded: true, when: "tonight" });
       continue;
     }
-    if (shouldDemote(c, runs)) {
-      demoted.push(c.id);
+    const demote = describeDemote(c, runs);
+    if (demote) {
+      demoted.push(demote);
       continue;
     }
     if (!c.verifiable) {
