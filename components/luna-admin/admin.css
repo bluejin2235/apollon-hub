@@ -983,12 +983,18 @@
   border-bottom: 1px solid #DDD9FB;
 }
 
-.luna-admin .peek .ph .t {
-  font-size: 12.5px;
+.luna-admin .peek .ic {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
   font-weight: 800;
-  flex: 1;
-  min-width: 0;
 }
+.luna-admin .peek .ic.work { background: var(--work-bg); color: var(--work); }
+.luna-admin .peek .ic.img { background: var(--img-bg); color: var(--img); }
+.luna-admin .peek .ic.notion { background: var(--notion-bg); color: var(--notion); }
 
 .luna-admin .peek .ph .x {
   font-size: 14px;
@@ -1032,6 +1038,7 @@
   font-size: 11.5px;
   line-height: 1.75;
   color: #2b2d32;
+  white-space: pre-wrap;
 }
 .luna-admin .chunk mark {
   background: #FEF3C7;

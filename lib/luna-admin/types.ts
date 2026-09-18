@@ -203,6 +203,52 @@ export type PrimaryPayload = {
   query_ms: number;
 };
 
+export type PrimaryWorkChip = "all" | "pdf" | "pptx" | "xlsx" | "docx" | "unread";
+
+export type PrimaryWorkFileRow = {
+  path: string;
+  drive: string;
+  file_name: string;
+  folder: string;
+  full_path: string;
+  ext: string;
+  chunk_count: number | null;
+  text_length: number | null;
+  status: string;
+  tag: string;
+  tag_kind: "g" | "y" | "r" | "gray";
+  action_label: string;
+  size_label: string;
+  modified_label: string;
+  extracted_label: string;
+};
+
+export type PrimaryWorkListPayload = {
+  chip: PrimaryWorkChip;
+  page: number;
+  page_size: number;
+  total: number;
+  chip_counts: Record<PrimaryWorkChip, number>;
+  rows: PrimaryWorkFileRow[];
+  failed_opaque: number;
+  query_ms: number;
+};
+
+export type PrimaryWorkChunk = {
+  seq: number;
+  range_label: string;
+  content: string;
+};
+
+export type PrimaryWorkPreviewPayload = {
+  file: PrimaryWorkFileRow;
+  chunks: PrimaryWorkChunk[];
+  shown: number;
+  total_chunks: number;
+  all: boolean;
+  query_ms: number;
+};
+
 export type AnalysisAction = {
   id: string;
   title: string;

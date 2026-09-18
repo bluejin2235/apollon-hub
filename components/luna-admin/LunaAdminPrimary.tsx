@@ -6,7 +6,7 @@ import { PrimaryFlow } from "@/components/luna-admin/PrimaryFlow";
 import type { PrimaryPayload, PrimarySourceRow } from "@/lib/luna-admin/types";
 import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
-import { LunaKnowledgeWorkserver } from "@/components/luna/knowledge/LunaKnowledgeWorkserver";
+import { LunaAdminPrimaryWork } from "@/components/luna-admin/LunaAdminPrimaryWork";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
 import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
@@ -85,12 +85,7 @@ export function LunaAdminPrimary({ source, onOpen }: Props) {
   if (source) {
     return (
       <div>
-        {source === "workserver" ? (
-          <>
-            {data?.work_flow ? <PrimaryFlow steps={data.work_flow} /> : null}
-            <LunaKnowledgeWorkserver />
-          </>
-        ) : null}
+        {source === "workserver" ? <LunaAdminPrimaryWork flow={data?.work_flow} /> : null}
         {source === "notion" ? <LunaKnowledgeNotion /> : null}
         {source === "wiki" ? <LunaKnowledgeWiki /> : null}
         {source === "glossary" ? <LunaKnowledgeGlossary /> : null}

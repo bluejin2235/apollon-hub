@@ -146,7 +146,26 @@ async function main() {
 
   await page.locator("button.src.work").click();
   await page.waitForURL(/source=workserver/, { timeout: 15_000 });
+  await page.getByText("본문이 색인된 파일").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: resolve(OUT, "02-work-source.png"), fullPage: true });
+
+  let listMs: number | null = null;
+  let previewMs: number | null = null;
+  page.on("response", (res) => {
+    void res.json().then((json: { query_ms?: number }) => {
+      if (typeof json.query_ms !== "number") return;
+      if (res.url().includes("/primary/work/preview")) previewMs = json.query_ms;
+      else if (res.url().includes("/primary/work")) listMs = json.query_ms;
+    }).catch(() => undefined);
+  });
+
+  await page.locator("table tbody tr").first().click();
+  await page.locator(".peek").waitFor({ timeout: 20_000 });
+  await page.screenshot({ path: resolve(OUT, "03-work-preview.png"), fullPage: true });
+  console.log(`work_list_ms=${listMs ?? "?"} work_preview_ms=${previewMs ?? "?"}`);
+
+  const workText = await page.locator("body").innerText();
+  console.log(workText.includes("청크") && workText.includes("보는 중") ? "✓ 청크 미리보기" : "✗ 청크 미리보기");
 
   await context.close();
   await browser.close();
