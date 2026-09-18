@@ -167,9 +167,33 @@ async function main() {
   const workText = await page.locator("body").innerText();
   console.log(workText.includes("청크") && workText.includes("보는 중") ? "✓ 청크 미리보기" : "✗ 청크 미리보기");
 
+  let imageMs: number | null = null;
+  page.on("response", (res) => {
+    void res.json().then((json: { query_ms?: number }) => {
+      if (typeof json.query_ms !== "number") return;
+      if (res.url().includes("/primary/image")) imageMs = json.query_ms;
+    }).catch(() => undefined);
+  });
+
+  await page.locator("nav.sub2 button", { hasText: "1차 데이터" }).click();
+  await page.locator("button.src.img").click();
+  await page.waitForURL(/source=image/, { timeout: 15_000 });
+  await page.getByText("AI 가 읽은 것").waitFor({ timeout: 40_000 });
+  const imageText = await page.locator("body").innerText();
+  const imageChecks = [
+    ["이미지 흐름", /전체 이미지/.test(imageText) && /읽지 못함/.test(imageText)],
+    ["칩", /레퍼런스/.test(imageText) && /아이데이션/.test(imageText)],
+    ["AI 설명", imageText.includes("AI 가 읽은 것") && imageText.includes("뽑힌 용어")]
+  ] as const;
+  for (const [name, ok] of imageChecks) {
+    console.log(ok ? `✓ ${name}` : `✗ ${name}`);
+  }
+  console.log(`image_list_ms=${imageMs ?? "?"}`);
+  await page.screenshot({ path: resolve(OUT, "04-image-preview.png"), fullPage: true });
+
   await context.close();
   await browser.close();
-  if (checks.some(([, ok]) => !ok)) process.exit(1);
+  if (checks.some(([, ok]) => !ok) || imageChecks.some(([, ok]) => !ok)) process.exit(1);
 }
 
 main().catch((err) => {

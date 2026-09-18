@@ -7,6 +7,7 @@ import type { PrimaryPayload, PrimarySourceRow } from "@/lib/luna-admin/types";
 import type { LunaAdminPrimarySource } from "@/lib/luna-admin/nav";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { LunaAdminPrimaryWork } from "@/components/luna-admin/LunaAdminPrimaryWork";
+import { LunaAdminPrimaryImage } from "@/components/luna-admin/LunaAdminPrimaryImage";
 import { LunaKnowledgeNotion } from "@/components/luna/knowledge/LunaKnowledgeNotion";
 import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
@@ -86,15 +87,10 @@ export function LunaAdminPrimary({ source, onOpen }: Props) {
     return (
       <div>
         {source === "workserver" ? <LunaAdminPrimaryWork flow={data?.work_flow} /> : null}
+        {source === "image" ? <LunaAdminPrimaryImage flow={data?.image_flow} /> : null}
         {source === "notion" ? <LunaKnowledgeNotion /> : null}
         {source === "wiki" ? <LunaKnowledgeWiki /> : null}
         {source === "glossary" ? <LunaKnowledgeGlossary /> : null}
-        {source === "image" ? (
-          <p className="empty">
-            이미지 전체 색인은 이번에 하지 않습니다. 증분 색인만 야간 01:00 에 둘 자리입니다.
-            {data?.image ? ` 현재 ${data.image.size_label} · 마지막 ${data.image.last_label}` : ""}
-          </p>
-        ) : null}
       </div>
     );
   }

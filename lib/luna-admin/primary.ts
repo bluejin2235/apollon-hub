@@ -26,6 +26,7 @@ export const IMAGE_CORPUS_TOTAL = 77_065;
 /** 이미지 색인 파이프라인 — 회사 PC 전수 스캔 규모 (nas_directory 가 아님) */
 export const IMAGE_SCAN_TOTAL = 2_436_857;
 export const IMAGE_AFTER_EXCLUDE = 198_302;
+export const IMAGE_UNREAD = 235;
 
 const CHECK_IDS = ["work_index", "work_text", "notion_index", "image_index"] as const;
 const CHECK_NAMES: Record<(typeof CHECK_IDS)[number], string> = {
@@ -176,6 +177,7 @@ export async function buildPrimarySources(
     textFailed,
     chunkCount,
     notionPages,
+    notionBlocks,
     notionChunks,
     notionRels,
     notionRunRes,
@@ -203,6 +205,7 @@ export async function buildPrimarySources(
     countHead(admin, "nas_file_text", { eq: ["status", "failed"] }),
     countHead(admin, "nas_file_chunks"),
     countHead(admin, "luna_notion_pages"),
+    countHead(admin, "luna_notion_blocks"),
     countHead(admin, "luna_notion_chunks"),
     countHead(admin, "luna_notion_relations"),
     admin
@@ -421,6 +424,40 @@ export async function buildPrimarySources(
     }
   ];
 
+  const imagePctFlow =
+    IMAGE_CORPUS_TOTAL > 0
+      ? Math.max(0, Math.round((imageCount / IMAGE_CORPUS_TOTAL) * 1000) / 10)
+      : 0;
+  const notionAvg =
+    notionPages > 0 ? Math.round((notionChunks / notionPages) * 10) / 10 : 0;
+
+  const image_flow: PrimaryFlowStep[] = [
+    { t: "전체 이미지", v: IMAGE_SCAN_TOTAL },
+    { t: "제외 후", v: IMAGE_AFTER_EXCLUDE, d: "휴지통·캐시·중복 제외" },
+    { t: "색인 대상", v: IMAGE_CORPUS_TOTAL },
+    { t: "색인됨", v: imageCount, d: `${imagePctFlow}%` },
+    { t: "읽지 못함", v: IMAGE_UNREAD, d: "psd·ai", loss: true }
+  ];
+
+  const notion_flow: PrimaryFlowStep[] = [
+    { t: "페이지", v: notionPages },
+    { t: "블록", v: notionBlocks },
+    { t: "청크", v: notionChunks, d: `평균 ${notionAvg}개` },
+    { t: "임베딩", v: notionChunks, d: "HNSW" },
+    { t: "관계", v: notionRels, d: "2차 데이터로" }
+  ];
+
+  const wiki_flow: PrimaryFlowStep[] = [
+    { t: "문서", v: wikiCount },
+    { t: "분류", v: wikiMenuCount, d: "사람이 씀" }
+  ];
+
+  const glossary_flow: PrimaryFlowStep[] = [
+    { t: "용어", v: glossaryCount },
+    { t: "공통", v: glossCommon },
+    { t: "공간", v: glossSpace }
+  ];
+
   const checks: PrimaryCheckRow[] = CHECK_IDS.map((id) => {
     const row = checkById.get(id);
     const lastIso =
@@ -474,6 +511,10 @@ export async function buildPrimarySources(
     glossary,
     rows: [work, notion, image, wiki, glossary],
     work_flow,
+    notion_flow,
+    image_flow,
+    wiki_flow,
+    glossary_flow,
     checks,
     storage,
     query_ms

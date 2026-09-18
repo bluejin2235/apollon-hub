@@ -21,14 +21,35 @@ export type TonightItem = {
   title: string;
   what: string;
   why: string;
+  how?: string;
   effect: string;
   minutes: number;
+  llm_calls?: number;
+  cost_usd?: number;
   excluded: boolean;
   when: "tonight" | "tomorrow" | "brain";
   failure_ids: string[];
   expected?: string;
   kind?: string;
   verifiable?: boolean;
+  skip_reason?: string;
+};
+
+export type TonightEmptyReason = {
+  code: "already_ran" | "no_gaps" | "all_excluded" | "budget" | "human_only";
+  title: string;
+  detail: string;
+  action_label?: string;
+  action_href?: string;
+};
+
+export type TonightLongJob = {
+  id: string;
+  title: string;
+  value: string;
+  pct: number;
+  detail: string;
+  bar_color?: string;
 };
 
 export type TonightState = {
@@ -198,6 +219,10 @@ export type PrimaryPayload = {
   glossary: PrimarySourceRow;
   rows: PrimarySourceRow[];
   work_flow: PrimaryFlowStep[];
+  notion_flow: PrimaryFlowStep[];
+  image_flow: PrimaryFlowStep[];
+  wiki_flow: PrimaryFlowStep[];
+  glossary_flow: PrimaryFlowStep[];
   checks: PrimaryCheckRow[];
   storage: PrimaryStorageRow[];
   query_ms: number;
@@ -246,6 +271,89 @@ export type PrimaryWorkPreviewPayload = {
   shown: number;
   total_chunks: number;
   all: boolean;
+  query_ms: number;
+};
+
+export type PrimaryImageChip = "all" | "reference" | "ideation" | "kv" | "source";
+
+export type PrimaryImageRow = {
+  path: string;
+  drive: string;
+  file_name: string;
+  full_path: string;
+  project: string | null;
+  folder: string;
+  folder_category: string | null;
+  size_label: string;
+  resolution: string;
+  indexed_label: string;
+  model: string | null;
+  description: string;
+  thumbnail_url: string | null;
+  terms: string[];
+  mismatch: boolean;
+};
+
+export type PrimaryImageListPayload = {
+  chip: PrimaryImageChip;
+  page: number;
+  page_size: number;
+  total: number;
+  chip_counts: Record<PrimaryImageChip, number>;
+  rows: PrimaryImageRow[];
+  mismatch_count: number;
+  mismatch_sample: string;
+  query_ms: number;
+};
+
+export type PrimaryNotionDbRow = {
+  database_id: string;
+  name: string;
+  path_label: string;
+  pages: number;
+  relations: number;
+  last_label: string;
+  empty: boolean;
+};
+
+export type PrimaryNotionPageRow = {
+  page_id: string;
+  title: string;
+  path_label: string;
+  last_label: string;
+};
+
+export type PrimaryNotionChunk = {
+  seq: number;
+  heading: string;
+  content: string;
+};
+
+export type PrimaryNotionPayload = {
+  dbs: PrimaryNotionDbRow[];
+  db_count: number;
+  pages: PrimaryNotionPageRow[];
+  page_total: number;
+  page: number;
+  page_size: number;
+  selected_db: string | null;
+  chunks: PrimaryNotionChunk[];
+  chunk_total: number;
+  query_ms: number;
+};
+
+export type PrimaryTrendBar = {
+  date: string;
+  label: string;
+  work: number;
+  notion: number;
+  image: number;
+};
+
+export type PrimaryTrendPayload = {
+  range: "7" | "30" | "90" | "all";
+  bars: PrimaryTrendBar[];
+  caption: string;
   query_ms: number;
 };
 
