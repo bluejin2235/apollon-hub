@@ -39,6 +39,8 @@ media-index.log
 
 # 로컬 검증 · 임시 산출물
 tmp/
+scripts/probe-wiki-media-facade.ts
+scripts/run-mode-a-batch20.ts
 .tmp-*
 tmp-*
 scripts/out-*/

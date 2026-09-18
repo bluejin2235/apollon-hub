@@ -132,7 +132,11 @@ async function main() {
   await page.getByText("문서가 검색에 닿는 과정").waitFor({ timeout: 90_000 });
   const text = await page.locator("body").innerText();
   const checks = [
-    ["원천 카드 5", /Work서버/.test(text) && /노션/.test(text) && /이미지/.test(text) && /위키/.test(text) && /용어사전/.test(text)],
+    ["원천 카드 4", /Work서버/.test(text) && /노션/.test(text) && /위키/.test(text) && /용어사전/.test(text)],
+    [
+      "이미지 별도 카드 없음",
+      (await page.locator(".srcgrid .src .nm").allTextContents()).every((t) => t !== "이미지")
+    ],
     ["흐름도", /읽을 수 있는 문서/.test(text) && /못 읽음/.test(text)],
     ["약속대로 도나", text.includes("약속대로 도나")],
     ["차지하는 용량", text.includes("차지하는 용량")],
@@ -160,7 +164,7 @@ async function main() {
 
   await page.locator("button.src.work").click();
   await page.waitForURL(/source=workserver/, { timeout: 30_000 });
-  await page.getByText("본문이 색인된 파일").waitFor({ timeout: 30_000 });
+  await page.getByText("언제 색인된 것").waitFor({ timeout: 30_000 });
   await page.screenshot({ path: resolve(OUT, "02-work-source.png"), fullPage: true });
 
   let listMs: number | null = null;
@@ -189,10 +193,11 @@ async function main() {
     }).catch(() => undefined);
   });
 
-  await page.locator("nav.sub2 button", { hasText: "1차 데이터" }).click();
-  await page.locator("button.src.img").click();
-  await page.waitForURL(/source=image/, { timeout: 15_000 });
-  await page.getByText("AI 가 읽은 것").waitFor({ timeout: 40_000 });
+  await page.locator("button.kcard.img").click();
+  await page.waitForURL(/kind=images/, { timeout: 15_000 });
+  await page.locator("table tbody tr").first().waitFor({ timeout: 40_000 });
+  await page.locator("table tbody tr").first().click();
+  await page.getByText("AI 가 읽은 것").waitFor({ timeout: 15_000 });
   const imageText = await page.locator("body").innerText();
   const imageChecks = [
     ["이미지 흐름", /전체 이미지/.test(imageText) && /읽지 못함/.test(imageText)],
