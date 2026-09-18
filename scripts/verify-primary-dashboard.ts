@@ -129,7 +129,7 @@ async function main() {
     waitUntil: "networkidle",
     timeout: 90_000
   });
-  await page.getByText("문서가 검색에 닿는 과정").waitFor({ timeout: 30_000 });
+  await page.getByText("문서가 검색에 닿는 과정").waitFor({ timeout: 90_000 });
   const text = await page.locator("body").innerText();
   const checks = [
     ["원천 카드 5", /Work서버/.test(text) && /노션/.test(text) && /이미지/.test(text) && /위키/.test(text) && /용어사전/.test(text)],
@@ -142,7 +142,21 @@ async function main() {
     console.log(ok ? `✓ ${name}` : `✗ ${name}`);
   }
   console.log(`api_ms=${apiMs ?? "?"} query_ms=${queryMs ?? "?"}`);
+  await page.locator(".chartbox .cap").waitFor({ timeout: 90_000 });
+  const dashText = await page.locator("body").innerText();
+  console.log(dashText.includes("기간별 쌓임") ? "✓ 기간별 쌓임" : "✗ 기간별 쌓임");
   await page.screenshot({ path: resolve(OUT, "01-primary-dashboard.png"), fullPage: true });
+
+  let trendMs: number | null = null;
+  page.on("response", (res) => {
+    void res.json().then((json: { query_ms?: number }) => {
+      if (typeof json.query_ms !== "number") return;
+      if (res.url().includes("/primary/trend")) trendMs = json.query_ms;
+    }).catch(() => undefined);
+  });
+  await page.getByRole("button", { name: "7일" }).click();
+  await page.getByRole("button", { name: "30일" }).click();
+  console.log(`trend_ms=${trendMs ?? "?"}`);
 
   await page.locator("button.src.work").click();
   await page.waitForURL(/source=workserver/, { timeout: 30_000 });

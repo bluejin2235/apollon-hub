@@ -9,6 +9,7 @@ import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { LunaAdminPrimaryWork } from "@/components/luna-admin/LunaAdminPrimaryWork";
 import { LunaAdminPrimaryImage } from "@/components/luna-admin/LunaAdminPrimaryImage";
 import { LunaAdminPrimaryNotion } from "@/components/luna-admin/LunaAdminPrimaryNotion";
+import { PrimaryTrend } from "@/components/luna-admin/PrimaryTrend";
 import { LunaKnowledgeWiki } from "@/components/luna/knowledge/LunaKnowledgeWiki";
 import { LunaKnowledgeGlossary } from "@/components/luna/knowledge/LunaKnowledgeGlossary";
 
@@ -119,6 +120,8 @@ export function LunaAdminPrimary({ source, onOpen }: Props) {
       </div>
 
       <PrimaryFlow steps={data.work_flow} caption="문서가 검색에 닿는 과정" />
+
+      <PrimaryTrend />
 
       <div className="g2">
         <div>
