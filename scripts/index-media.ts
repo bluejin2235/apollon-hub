@@ -41,10 +41,11 @@ import {
   startMediaIndexRun,
   updateMediaIndexRunProgress
 } from "@/lib/luna/media-index-runs";
-import { THUMB_BUCKET } from "@/lib/luna/media-index-rules";
+import { THUMB_BUCKET, DEFAULT_MAX_COST_USD, DEFAULT_MAX_HOURS, MEDIA_INDEX_BUDGET_USD } from "@/lib/luna/media-index-rules";
 import {
   collectMediaCandidates,
-  DEFAULT_PILOT_ROOT,
+  DEFAULT_SCAN_ROOT,
+  DEFAULT_SCAN_ROOTS,
   mediaFileTypeFromExt,
   printMediaDryRunReport,
   sampleCandidatesByIncludeRule,
@@ -96,21 +97,30 @@ type CliOpts = {
   model: string | null;
   compare: boolean;
   rebuildLarge: boolean;
+  pilotOnly: boolean;
+  maxHours: number;
+  maxCostUsd: number;
+  budgetUsd: number;
 };
 
 function parseArgs(argv: string[]): CliOpts {
   const opts: CliOpts = {
     dryRun: false,
     limit: null,
-    root: DEFAULT_PILOT_ROOT,
+    root: DEFAULT_SCAN_ROOT,
     model: null,
     compare: false,
-    rebuildLarge: false
+    rebuildLarge: false,
+    pilotOnly: false,
+    maxHours: DEFAULT_MAX_HOURS,
+    maxCostUsd: DEFAULT_MAX_COST_USD,
+    budgetUsd: MEDIA_INDEX_BUDGET_USD
   };
   for (const a of argv) {
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--compare") opts.compare = true;
     else if (a === "--rebuild-large") opts.rebuildLarge = true;
+    else if (a === "--pilot-only") opts.pilotOnly = true;
     else if (a.startsWith("--limit=")) {
       const n = parseInt(a.slice("--limit=".length), 10);
       if (Number.isFinite(n) && n > 0) opts.limit = n;
@@ -118,6 +128,15 @@ function parseArgs(argv: string[]): CliOpts {
       opts.root = a.slice("--root=".length).replace(/^["']|["']$/g, "");
     } else if (a.startsWith("--model=")) {
       opts.model = a.slice("--model=".length).replace(/^["']|["']$/g, "");
+    } else if (a.startsWith("--max-hours=")) {
+      const n = parseFloat(a.slice("--max-hours=".length));
+      if (Number.isFinite(n) && n > 0) opts.maxHours = n;
+    } else if (a.startsWith("--max-cost=")) {
+      const n = parseFloat(a.slice("--max-cost=".length));
+      if (Number.isFinite(n) && n > 0) opts.maxCostUsd = n;
+    } else if (a.startsWith("--budget=")) {
+      const n = parseFloat(a.slice("--budget=".length));
+      if (Number.isFinite(n) && n > 0) opts.budgetUsd = n;
     }
   }
   return opts;
@@ -188,7 +207,7 @@ async function indexOne(
       visionIn: number;
       visionOut: number;
     }
-  | { status: "skipped"; reason: "mtime" }
+  | { status: "skipped"; reason: "mtime" | "design_skip" }
   | { status: "failed"; reason: string }
 > {
   const existing = await fetchIndexedMtime(admin, item.path);
@@ -225,9 +244,9 @@ async function indexOne(
   const jpegB64 = variants.visionJpegBase64;
   if (!jpegB64) {
     const ext = item.fileName.split(".").pop()?.toLowerCase() ?? "";
-    // sharp/libvips 가 psd·ai 를 못 읽는 경우가 많음 — 전체 색인 지연 없이 건너뜀
+    // psd·ai 는 후보에서 이미 제외. 혹시 들어오면 skip (failed 재시도 금지)
     if (ext === "psd" || ext === "ai") {
-      return { status: "failed", reason: `${ext}_unreadable` };
+      return { status: "skipped", reason: "design_skip" };
     }
     return { status: "failed", reason: "image_unreadable" };
   }
@@ -417,7 +436,7 @@ function printBatchReport(opts: {
   }
 }
 
-const SCALE_LARGE_CORPUS = 77065;
+const SCALE_LARGE_CORPUS = 198_302;
 
 async function walkStorageFiles(
   admin: SupabaseClient,
@@ -830,28 +849,63 @@ async function runIndex(opts: CliOpts): Promise<void> {
     await runRebuildLarge(admin);
     return;
   }
-  const root = resolveScanRoot(opts.root);
-  if (!existsSync(root)) {
-    console.error(`root not found: ${root}`);
+  const rootArg = resolveScanRoot(opts.root);
+  const useMulti =
+    !opts.pilotOnly &&
+    (opts.root === DEFAULT_SCAN_ROOT ||
+      opts.root === "T:\\" ||
+      opts.root === "T:/");
+  const roots = useMulti
+    ? DEFAULT_SCAN_ROOTS.map((r) => resolveScanRoot(r)).filter((r) =>
+        existsSync(r)
+      )
+    : [rootArg];
+  if (roots.length === 0 || !roots.some((r) => existsSync(r))) {
+    console.error(`root not found: ${opts.root}`);
     console.error(
       "회사 PC에서 T:/P: 또는 SCAN_UNC_T=\\\\aiw\\work · SCAN_UNC_P=\\\\aiw\\partners 확인"
     );
     process.exit(1);
   }
 
-  console.log(`scan root: ${root}`);
-  const stats = collectMediaCandidates(root);
+  const rootLabel = roots.join(" | ");
+  console.log(`scan root: ${rootLabel}`);
+  let importantAdmin: SupabaseClient | null = null;
+  try {
+    importantAdmin = createAdmin();
+  } catch {
+    importantAdmin = null;
+  }
+  const importantPrefixes = await loadImportantPathPrefixes(importantAdmin);
+  console.log(`important paths: ${importantPrefixes.length}`);
+  const stats = collectMediaCandidates(roots, {
+    pilotOnly: opts.pilotOnly,
+    importantPathPrefixes: importantPrefixes
+  });
 
   if (opts.dryRun) {
-    printMediaDryRunReport(stats, root);
-    const out = writeMediaDryRunJson(stats, root, join(process.cwd(), "tmp"));
+    printMediaDryRunReport(stats, rootLabel);
+    const out = writeMediaDryRunJson(stats, rootLabel, join(process.cwd(), "tmp"));
     console.log(`JSON: ${out}`);
     return;
   }
 
-  const admin = createAdmin();
+  const admin = importantAdmin ?? createAdmin();
   const glossary = await loadVisualGlossary(admin);
   console.log(`glossary: ${glossary.length} terms · model: ${mediaVisionModel()}`);
+
+  const priorSpend = await sumMediaIndexSpend(admin);
+  const budgetLeft = Math.max(0, opts.budgetUsd - priorSpend);
+  const dayCostCap = Math.min(opts.maxCostUsd, budgetLeft);
+  console.log(
+    `budget: spent=$${priorSpend.toFixed(2)} · left=$${budgetLeft.toFixed(2)} · dayCap=$${dayCostCap.toFixed(2)} · maxHours=${opts.maxHours}`
+  );
+  if (budgetLeft <= 0.5) {
+    console.error(
+      `총 예산 $${opts.budgetUsd} 거의 소진 (spent $${priorSpend.toFixed(2)}). 중단.`
+    );
+    process.exit(2);
+  }
 
   const indexedPaths = await loadAllIndexedPaths(admin);
   console.log(`already indexed paths: ${indexedPaths.size}`);
@@ -875,7 +929,17 @@ async function runIndex(opts: CliOpts): Promise<void> {
     );
   }
 
-  console.log(`indexing ${work.length} / ${stats.candidates.length} candidates`);
+  const byPri: Record<string, number> = {};
+  for (const c of work) {
+    byPri[String(c.priority)] = (byPri[String(c.priority)] ?? 0) + 1;
+  }
+  console.log(
+    `indexing ${work.length} / ${stats.candidates.length} candidates · priority ${Object.entries(
+      byPri
+    )
+      .map(([k, v]) => `p${k}=${v}`)
+      .join(" ")}`
+  );
 
   const notionCache = new Map<string, string | null>();
   let indexed = 0;
@@ -898,6 +962,7 @@ async function runIndex(opts: CliOpts): Promise<void> {
     notionMatched: boolean;
   }> = [];
   const tBatch = Date.now();
+  const maxMs = opts.maxHours * 3600 * 1000;
   const model = mediaVisionModel();
   const price = resolveOfficialPrice(model);
 
@@ -923,7 +988,7 @@ async function runIndex(opts: CliOpts): Promise<void> {
   }
 
   const runId = await startMediaIndexRun(admin, {
-    root,
+    root: rootLabel,
     model,
     limitN: opts.limit,
     candidateTotal: stats.candidates.length,
@@ -932,6 +997,7 @@ async function runIndex(opts: CliOpts): Promise<void> {
   if (runId) console.log(`run id: ${runId}`);
 
   let finishing = false;
+  let stopReason: string | null = null;
   const markInterrupted = async (why: string) => {
     if (finishing || !runId) return;
     finishing = true;
@@ -945,9 +1011,27 @@ async function runIndex(opts: CliOpts): Promise<void> {
 
   try {
     for (let i = 0; i < work.length; i++) {
+      if (Date.now() - tBatch >= maxMs) {
+        stopReason = `max_hours_${opts.maxHours}`;
+        console.log(`\n[stop] ${stopReason} — 이어받기는 다음 실행`);
+        break;
+      }
+      if (runningCostUsd() >= dayCostCap) {
+        stopReason = `day_cost_cap_$${dayCostCap.toFixed(2)}`;
+        console.log(`\n[stop] ${stopReason}`);
+        break;
+      }
+      if (priorSpend + runningCostUsd() >= opts.budgetUsd) {
+        stopReason = `total_budget_$${opts.budgetUsd}`;
+        console.log(`\n[stop] ${stopReason} — 보고 후 재개`);
+        break;
+      }
+
       const item = work[i]!;
       lastPath = item.path;
-      process.stdout.write(`[${i + 1}/${work.length}] ${item.fileName} … `);
+      process.stdout.write(
+        `[${i + 1}/${work.length} p${item.priority}] ${item.fileName} … `
+      );
       try {
         const r = await indexOne(admin, item, glossary, notionCache);
         if (r.status === "indexed") {
@@ -969,7 +1053,9 @@ async function runIndex(opts: CliOpts): Promise<void> {
           console.log("ok");
         } else if (r.status === "skipped") {
           skipped++;
-          console.log("skip (mtime)");
+          console.log(
+            r.reason === "design_skip" ? "skip (design)" : "skip (mtime)"
+          );
         } else {
           failed++;
           failReasons[r.reason] = (failReasons[r.reason] ?? 0) + 1;
@@ -1008,7 +1094,10 @@ async function runIndex(opts: CliOpts): Promise<void> {
     const elapsedMs = Date.now() - tBatch;
     const estUsd = runningCostUsd();
 
-    console.log(`\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}`);
+    console.log(
+      `\ndone: indexed=${indexed} skipped=${skipped} failed=${failed}` +
+        (stopReason ? ` · stop=${stopReason}` : "")
+    );
     if (indexed > 0 || failed > 0 || skipped > 0) {
       printBatchReport({
         indexed,
@@ -1024,9 +1113,23 @@ async function runIndex(opts: CliOpts): Promise<void> {
       });
     }
 
+    await recordMediaIndexApiUsage(admin, {
+      model,
+      visionIn,
+      visionOut,
+      costUsd: estUsd,
+      numRequests: indexed
+    });
+
     if (runId) {
       finishing = true;
-      await finishMediaIndexRun(admin, runId, "done", progressSnapshot());
+      await finishMediaIndexRun(
+        admin,
+        runId,
+        stopReason ? "interrupted" : "done",
+        progressSnapshot(),
+        stopReason
+      );
     }
 
     try {
@@ -1085,6 +1188,119 @@ async function loadAllIndexedPaths(
     from += page;
   }
   return paths;
+}
+
+async function loadImportantPathPrefixes(
+  admin: SupabaseClient | null
+): Promise<string[]> {
+  if (!admin) {
+    try {
+      admin = createAdmin();
+    } catch {
+      return [];
+    }
+  }
+  const { data, error } = await admin
+    .from("nas_important_paths")
+    .select("path")
+    .limit(2000);
+  if (error) {
+    console.warn("[index-media] important paths", error.message);
+    return [];
+  }
+  return (data ?? [])
+    .map((r) => (typeof r.path === "string" ? r.path.trim() : ""))
+    .filter(Boolean);
+}
+
+async function sumMediaIndexSpend(admin: SupabaseClient): Promise<number> {
+  const { data, error } = await admin
+    .from("luna_media_index_runs")
+    .select("cost_usd");
+  if (error) {
+    console.warn("[index-media] spend sum", error.message);
+    return 0;
+  }
+  let sum = 0;
+  for (const row of data ?? []) {
+    if (typeof row.cost_usd === "number" && Number.isFinite(row.cost_usd)) {
+      sum += row.cost_usd;
+    }
+  }
+  return sum;
+}
+
+function kstDateYmd(d = new Date()): string {
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function recordMediaIndexApiUsage(
+  admin: SupabaseClient,
+  opts: {
+    model: string;
+    visionIn: number;
+    visionOut: number;
+    costUsd: number;
+    numRequests: number;
+  }
+): Promise<void> {
+  if (opts.numRequests <= 0 && opts.costUsd <= 0) return;
+  const date = kstDateYmd();
+  const provider = opts.model.toLowerCase().includes("gpt")
+    ? "openai"
+    : "anthropic";
+  const match = {
+    provider,
+    date,
+    model: opts.model,
+    api_key_label: "luna-media-index",
+    workspace_name: "luna"
+  };
+  const { data: existing } = await admin
+    .from("api_usage")
+    .select("id, input_tokens, output_tokens, cost_usd, num_requests")
+    .match(match)
+    .maybeSingle();
+
+  const inTok = opts.visionIn;
+  const outTok = opts.visionOut;
+  if (existing?.id) {
+    const { error } = await admin
+      .from("api_usage")
+      .update({
+        input_tokens: Number(existing.input_tokens ?? 0) + inTok,
+        output_tokens: Number(existing.output_tokens ?? 0) + outTok,
+        total_tokens:
+          Number(existing.input_tokens ?? 0) +
+          Number(existing.output_tokens ?? 0) +
+          inTok +
+          outTok,
+        cost_usd: Number(existing.cost_usd ?? 0) + opts.costUsd,
+        input_cost_usd: Number(existing.cost_usd ?? 0) + opts.costUsd,
+        num_requests: (existing.num_requests ?? 0) + opts.numRequests,
+        workflow_name: "luna-media-index"
+      })
+      .eq("id", existing.id);
+    if (error) console.warn("[index-media] api_usage update", error.message);
+    return;
+  }
+
+  const { error } = await admin.from("api_usage").insert({
+    ...match,
+    input_tokens: inTok,
+    output_tokens: outTok,
+    total_tokens: inTok + outTok,
+    cost_usd: opts.costUsd,
+    input_cost_usd: opts.costUsd,
+    output_cost_usd: 0,
+    num_requests: opts.numRequests,
+    workflow_name: "luna-media-index"
+  });
+  if (error) console.warn("[index-media] api_usage insert", error.message);
 }
 
 const opts = parseArgs(process.argv.slice(2));

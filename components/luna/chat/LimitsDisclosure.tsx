@@ -10,7 +10,7 @@ export type LunaLimitsStats = {
 
 const FALLBACK: LunaLimitsStats = {
   image_indexed: 0,
-  image_total: 77_065,
+  image_total: 198_302,
   image_pct: 0
 };
 
