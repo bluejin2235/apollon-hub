@@ -23,14 +23,14 @@ export const BUILTIN_LINK_RULES = [
     pattern_type: "rule" as const,
     pattern_value: "same_date_done_marker",
     question:
-      "날짜코드가 같고 (TJ완료)·(EB완료)·(BL완료)만 다르면 같은 건으로 확정해도 될까요?",
+      "날짜만 같고 (TJ완료)·(EB완료)·(BL완료)만 다르면 같은 프로젝트로 볼게요. 맞아요?",
     auto: true
   },
   {
     pattern_type: "rule" as const,
     pattern_value: "same_client_diff_target",
     question:
-      "발주처(앞말)만 같고 뒷말(대상)이 다르면 다른 건으로 기각해도 될까요?",
+      "발주처만 같고 뒷말(장소·대상)이 다르면 다른 프로젝트로 둘게요. 맞아요?",
     auto: true
   }
 ] as const;
@@ -355,32 +355,37 @@ export function ruleQuestionText(rule: {
   const sample =
     typeof rule.evidence?.sample === "string" ? rule.evidence.sample : "";
   if (rule.pattern_type === "stopword") {
-    return `「${rule.pattern_value}」이 겹쳐 잘못 연결된 것이 ${n || "여러"}건 있었습니다. 프로젝트 비교에서 빼도 될까요?`;
+    return `「${rule.pattern_value}」이 겹쳐 다른 폴더를 같은 걸로 묶은 적이 ${n || "여러"}번 있어요. 정하시면 앞으로 이 말로 묶지 않아요. 비교에서 빼도 될까요?`;
   }
   if (rule.pattern_value === "same_date_done_marker") {
-    return "날짜코드가 같고 (TJ완료)·(EB완료)·(BL완료)만 다르면 같은 건으로 확정해도 될까요?";
+    return "날짜만 같고 (TJ완료)·(EB완료)·(BL완료)만 다르면 같은 프로젝트로 볼게요. 맞아요?";
   }
   if (
     rule.pattern_value === "same_client_diff_target" ||
     rule.pattern_value === "same_client_diff_job"
   ) {
-    return "발주처(앞말)만 같고 뒷말(대상)이 다르면 다른 건으로 기각해도 될까요?";
+    return "발주처만 같고 뒷말(장소·대상)이 다르면 다른 프로젝트로 둘게요. 맞아요?";
   }
   const mapped = humanRuleFromRejectReason(
     rule.pattern_value.replace(/^reason:/, "")
   );
   if (mapped) {
-    return `${mapped} (${n}건에서 같은 이유로 기각됐습니다. 규칙으로 쓸까요?)`;
+    return `${mapped} — ${n}번 같은 이유로 갈라 두었어요. 정하시면 앞으로 하나씩 안 여쭤봐요. 이렇게 할까요?`;
   }
   if (sample) return sample;
-  return `규칙 「${rule.pattern_value}」을 적용해도 될까요? (근거 ${n}건)`;
+  return `이 연결 방식을 앞으로 쓸까요? (비슷한 경우 ${n}건)`;
 }
 
 /** 하루에 사람에게 물을 상한 */
 export const QA_DAILY_LIMIT = 20;
 
 /** 문답 목록 선정 기준. 필터·근거·한도 바뀌면 올린다. 열린 세션은 이 값이 다르면 다시 만든다. */
-export const QA_LIST_VERSION = 2;
+export const QA_LIST_VERSION = 3;
+
+/** 블루진(슈퍼관리자)에게만 보이는 시스템·검색 규칙 */
+export function isBluejinOnlyRule(patternValue: string): boolean {
+  return patternValue.startsWith("answer_flag:");
+}
 
 export function answerFlagIdFromRule(patternValue: string): string | null {
   const m = /^answer_flag:(.+)$/.exec(patternValue);
@@ -432,22 +437,22 @@ export function qaRuleQuestion(rule: {
 }): string {
   const flag = answerFlagIdFromRule(rule.pattern_value);
   if (flag === "source_skew") {
-    return "답의 대부분이 노션에서만 나왔습니다. Work서버 자료를 더 봐야 할까요?";
+    return "노션만 보고 답한 적이 여러 번 있어요. 정하시면 앞으로 Work서버도 같이 볼게요. Work서버도 볼까요?";
   }
   if (flag === "slow") {
-    return "답이 너무 오래 걸렸습니다. 검색을 먼저 줄일까요?";
+    return "답이 너무 오래 걸린 적이 있어요. 정하시면 앞으로 덜 넓게 찾아 빨리 답할게요. 그렇게 할까요?";
   }
   if (flag === "scope_excess") {
-    return "짧은 질문에도 자료를 너무 많이 찾았습니다. 용어 질문은 위키·용어사전만 보게 할까요?";
+    return "짧은 질문에도 자료를 너무 많이 찾은 적이 있어요. 정하시면 용어 질문은 위키·용어사전만 볼게요. 그렇게 할까요?";
   }
   if (flag === "unused_sources") {
-    return "찾아 놓고 안 쓴 자료가 많았습니다. 검색 범위를 줄일까요?";
+    return "찾아 놓고 안 쓴 자료가 많았어요. 정하시면 앞으로 덜 넓게 찾을게요. 그렇게 할까요?";
   }
   if (flag === "low_confidence") {
-    return "쉬운 질문인데 확신이 낮았습니다. 검색 범위를 줄일까요?";
+    return "쉬운 질문인데 자신 없이 답한 적이 있어요. 정하시면 앞으로 덜 넓게 찾고 더 분명히 말할게요. 그렇게 할까요?";
   }
   if (flag === "intent_conf_gap") {
-    return "질문은 알아들었는데 답을 못 한 적이 있습니다. 되묻기를 손볼까요?";
+    return "질문은 알아들었는데 답을 못 한 적이 있어요. 정하시면 앞으로 그런 때 바로 되물을게요. 그렇게 할까요?";
   }
   return ruleQuestionText({
     ...rule,

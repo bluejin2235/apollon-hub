@@ -1,7 +1,11 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listAnswerFlags, reviewAnswerFlag } from "@/lib/luna/answer-flags";
-import { groupAnswerFlagsByQuestion } from "@/lib/luna/answer-flags-shared";
+import {
+  ANSWER_FLAG_LABELS,
+  groupAnswerFlagsByQuestion,
+  type AnswerFlagId
+} from "@/lib/luna/answer-flags-shared";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import {
   answerOptions,
@@ -14,12 +18,13 @@ import {
   type QaSessionView,
   type QaSummary
 } from "@/lib/luna/qa-options";
-import { confirmRule, listRules } from "@/lib/luna/rules";
+import { confirmRule, deferRule, listRules } from "@/lib/luna/rules";
 import {
   QA_DAILY_LIMIT,
   QA_LIST_VERSION,
   answerFlagIdFromRule,
   isAskableRuleCandidate,
+  isBluejinOnlyRule,
   qaRuleQuestion
 } from "@/lib/luna/rules-shared";
 import {
@@ -76,7 +81,7 @@ async function pairsFromLinks(
 }
 
 function formatMetrics(m: Record<string, unknown>, extra?: string): string {
-  const docs = typeof m.total_docs === "number" ? `문서 ${m.total_docs}` : "";
+  const docs = typeof m.total_docs === "number" ? `글 ${m.total_docs}개` : "";
   const ms =
     typeof m.duration_ms === "number"
       ? `${(m.duration_ms / 1000).toFixed(1)}초`
@@ -139,9 +144,9 @@ function flagStats(flagId: string, row: AnswerFlagRow | undefined): {
 
   if (flagId === "source_skew") {
     return {
-      title: "이렇게 찾았습니다",
+      title: "이렇게 찾았어요",
       stats: [
-        `이 답은 노션에서만 ${notion || docs}건을 가져왔습니다`,
+        `이 답은 노션만 ${notion || docs}건 봤어요`,
         `Work서버 ${nas} · 위키 ${wiki}${share != null ? ` · 노션 ${share}%` : ""}`
       ].filter((s) => s.trim().length > 0)
     };
@@ -149,37 +154,55 @@ function flagStats(flagId: string, row: AnswerFlagRow | undefined): {
   if (flagId === "slow") {
     const line = [
       dur ? `${dur}초` : null,
-      search != null ? `검색 ${search}ms` : null,
-      docs ? `문서 ${docs}건` : null
+      search != null ? `찾는 데 ${(search / 1000).toFixed(1)}초` : null,
+      docs ? `글 ${docs}개` : null
     ]
       .filter(Boolean)
       .join(" · ");
     return {
-      title: "이렇게 오래 걸렸습니다",
+      title: "이렇게 오래 걸렸어요",
       stats: line ? [line] : []
     };
   }
   if (flagId === "scope_excess") {
     return {
-      title: "이렇게 넓게 찾았습니다",
-      stats: docs ? [`짧은 질문인데 문서 ${docs}건을 가져왔습니다`] : []
+      title: "이렇게 넓게 찾았어요",
+      stats: docs ? [`짧은 질문인데 글 ${docs}개를 가져왔어요`] : []
     };
   }
   const extra = formatMetrics(m as Record<string, unknown>);
   return {
-    title: "이렇게 나왔습니다",
+    title: "이렇게 나왔어요",
     stats: extra ? [extra] : []
   };
 }
 
-export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
+/** 팀원에게는 프로젝트·도움 여부만. 검색·시스템 규칙은 블루진만. */
+export function isTeamSafeQaItem(item: QaItem): boolean {
+  if (item.kind === "skip") return false;
+  if (item.kind === "answer") return true;
+  if (item.kind === "rule") {
+    if (item.pattern_value && isBluejinOnlyRule(item.pattern_value)) return false;
+    return true;
+  }
+  return false;
+}
+
+export async function buildQaItems(
+  admin: SupabaseClient,
+  opts?: { isSuperAdmin?: boolean }
+): Promise<QaItem[]> {
   const [rules, flags, tonight] = await Promise.all([
     listRules(admin, { status: "candidate" }),
     listAnswerFlags(admin, { status: "pending", limit: 200 }),
     loadTonightState(admin)
   ]);
   const sortedRules = [...rules]
-    .filter(isAskableRuleCandidate)
+    .filter((r) => {
+      const until = r.evidence?.deferred_until;
+      if (typeof until === "string" && Date.parse(until) > Date.now()) return false;
+      return isAskableRuleCandidate(r);
+    })
     .sort((a, b) => (b.signal_count ?? 0) - (a.signal_count ?? 0));
 
   const coveredFlags = new Set<string>();
@@ -200,8 +223,10 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
       pattern_value: row.pattern_value,
       question: qaRuleQuestion(row),
       why: flagId
-        ? `${n}번 있었습니다. 규칙을 정하면 하나씩은 안 묻습니다.`
-        : undefined,
+        ? `${n}번 있었어요. 정하시면 앞으로 이런 걸 안 여쭤봐요.`
+        : isPairRule
+          ? "정하시면 앞으로 이 둘을 같은(또는 다른) 프로젝트로 볼게요."
+          : undefined,
       impact: n,
       options: ruleOptions({
         pattern_type: row.pattern_type,
@@ -210,14 +235,14 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
       }),
       pairs: isPairRule ? pairs : undefined,
       evidence_title: flagId
-        ? stats?.title ?? "이렇게 나왔습니다"
+        ? stats?.title ?? "이렇게 나왔어요"
         : isPairRule
-          ? "이렇게 잘못 연결한 것이 있었어요"
+          ? "이 둘이 같은 건가요?"
           : undefined,
       stats: flagId
         ? flagStatsLines.length > 0
           ? flagStatsLines
-          : [`이 모순이 ${n}번 있었습니다`]
+          : [`같은 일이 ${n}번 있었어요`]
         : undefined
     });
   }
@@ -239,15 +264,20 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
       kind: "answer",
       ref_id: g.latest.id,
       ref_ids: g.items.map((x) => x.id),
-      question: `“${g.question}” 이 답이 맞았나요?`,
+      question: `“${g.question}” — 이 답이 도움이 됐나요?`,
+      why: "정하시면 비슷한 답을 더 잘 고를 수 있어요.",
       options: answerOptions(),
       samples: [g.question],
-      flags: g.latest.flags.map((f) => f.label),
-      metrics: stats?.length ? undefined : formatMetrics(m, g.count > 1 ? `같은 질문 ${g.count}번` : ""),
+      flags: g.latest.flags.map(
+        (f) => ANSWER_FLAG_LABELS[f.id as AnswerFlagId] ?? f.label
+      ),
+      metrics: stats?.length
+        ? undefined
+        : formatMetrics(m, g.count > 1 ? `같은 질문 ${g.count}번` : ""),
       evidence_title: slow
-        ? "이렇게 오래 걸렸습니다"
+        ? "이렇게 오래 걸렸어요"
         : skew
-          ? "이렇게 찾았습니다"
+          ? "이렇게 찾았어요"
           : undefined,
       stats,
       impact: g.count
@@ -268,8 +298,13 @@ export async function buildQaItems(admin: SupabaseClient): Promise<QaItem[]> {
     })
   }));
 
+  const merged = [...ruleItems, ...answerItems, ...skipItems];
+  const filtered =
+    opts?.isSuperAdmin === false
+      ? merged.filter(isTeamSafeQaItem)
+      : merged;
   const out: QaItem[] = [];
-  for (const item of [...ruleItems, ...answerItems, ...skipItems]) {
+  for (const item of filtered) {
     if (out.length >= QA_DAILY_LIMIT) break;
     out.push(item);
   }
@@ -342,16 +377,18 @@ export async function getOpenQaSession(
 
 export async function restartQaSession(
   admin: SupabaseClient,
-  userId: string
+  userId: string,
+  opts?: { isSuperAdmin?: boolean }
 ): Promise<QaSessionRow> {
   const open = await getOpenQaSession(admin, userId);
   if (open) await closeOpenSession(admin, open.id);
-  return startQaSession(admin, userId);
+  return startQaSession(admin, userId, opts);
 }
 
 export async function startQaSession(
   admin: SupabaseClient,
-  userId: string
+  userId: string,
+  opts?: { isSuperAdmin?: boolean }
 ): Promise<QaSessionRow> {
   const open = await getOpenQaSession(admin, userId);
   if (open) {
@@ -363,7 +400,7 @@ export async function startQaSession(
     } else if (open.cursor >= open.items.length) {
       return finishIfDone(admin, open);
     } else if (open.cursor === 0 && open.answers.length === 0) {
-      const items = await buildQaItems(admin);
+      const items = await buildQaItems(admin, opts);
       if (items.length === 0) {
         return saveRow(admin, open.id, {
           items: [],
@@ -376,7 +413,7 @@ export async function startQaSession(
       return open;
     }
   }
-  const items = await buildQaItems(admin);
+  const items = await buildQaItems(admin, opts);
   if (items.length === 0) {
     return {
       id: "",
@@ -438,11 +475,27 @@ async function applyChoice(
       await confirmRule(admin, item.ref_id, userId, false);
       return { impact: 0 };
     }
+    if (optionId === "hold") {
+      await deferRule(admin, item.ref_id);
+      return { impact: 0 };
+    }
     return { impact: 0 };
   }
   if (item.kind === "answer") {
     const ids = item.ref_ids ?? [item.ref_id];
     if (optionId === "inspect") return { impact: 0 };
+    if (optionId === "hold") {
+      for (const id of ids) {
+        await reviewAnswerFlag(admin, {
+          id,
+          userId,
+          verdict: "unclear",
+          reason: null,
+          note: transcript ?? null
+        });
+      }
+      return { impact: 0 };
+    }
     const verdict =
       optionId === "good" ? "good" : optionId === "ack" ? "unclear" : "bad";
     const reason =
@@ -604,6 +657,35 @@ export async function answerQaChoice(opts: {
   if (session.pending) {
     if (opts.optionId === "retry") {
       return saveRow(opts.admin, session.id, { pending: null });
+    }
+    if (opts.optionId === "hold") {
+      const item = session.items[session.cursor];
+      if (!item) return finishIfDone(opts.admin, session);
+      const applied = await applyChoice(
+        opts.admin,
+        opts.userId,
+        item,
+        "hold",
+        session.pending.transcript
+      );
+      const answers = [
+        ...session.answers,
+        {
+          index: session.cursor,
+          kind: item.kind,
+          ref_id: item.ref_id,
+          option_id: "hold",
+          transcript: session.pending.transcript,
+          applied: false,
+          impact: applied.impact
+        }
+      ];
+      session = await saveRow(opts.admin, session.id, {
+        cursor: session.cursor + 1,
+        answers,
+        pending: null
+      });
+      return finishIfDone(opts.admin, session);
     }
     const pending = session.pending;
     const item = session.items[session.cursor];

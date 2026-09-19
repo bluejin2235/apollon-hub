@@ -555,6 +555,43 @@ export async function confirmRule(
   return rule;
 }
 
+/** 「모르겠어요」— 후보 유지, 하루 동안 대시보드 상단에서 가린다 */
+export async function deferRule(
+  admin: SupabaseClient,
+  ruleId: string
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("luna_rules")
+    .select("id, evidence")
+    .eq("id", ruleId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error && !isMissingTable(error)) console.error("[luna/rules] defer", error);
+    return false;
+  }
+  const evidence =
+    data.evidence && typeof data.evidence === "object" && !Array.isArray(data.evidence)
+      ? (data.evidence as Record<string, unknown>)
+      : {};
+  const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const { error: upErr } = await admin
+    .from("luna_rules")
+    .update({ evidence: { ...evidence, deferred_until: until } })
+    .eq("id", ruleId);
+  if (upErr && !isMissingTable(upErr)) {
+    console.error("[luna/rules] defer update", upErr);
+    return false;
+  }
+  return true;
+}
+
+function isRuleDeferred(evidence: Record<string, unknown> | undefined): boolean {
+  const raw = evidence?.deferred_until;
+  if (typeof raw !== "string" || !raw) return false;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) && t > Date.now();
+}
+
 async function applyActiveRule(
   admin: SupabaseClient,
   rule: LunaRuleRow,
@@ -615,11 +652,11 @@ export async function listCandidateRuleQuestions(
   }>
 > {
   const rows = (await listRules(admin, { status: "candidate" })).filter(
-    isAskableRuleCandidate
+    (r) => isAskableRuleCandidate(r) && !isRuleDeferred(r.evidence)
   );
   return rows.map((r) => ({
     id: r.id,
-    title: "🌙 루나가 규칙을 물어봅니다",
+    title: "🌙 확인이 필요해요",
     body: qaRuleQuestion(r),
     signal_count: r.signal_count,
     pattern_type: r.pattern_type,

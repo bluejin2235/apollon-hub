@@ -157,15 +157,15 @@ export function LunaAdminAnswerFlags() {
                 </span>
               </div>
               <div className="d" style={{ marginTop: 6 }}>
-                문서 {m.total_docs ?? "—"}건
+                글 {m.total_docs ?? "—"}개
                 {m.notion_n != null ? ` (노션 ${m.notion_n}` : ""}
                 {m.wiki_n != null ? ` · 위키 ${m.wiki_n})` : m.notion_n != null ? ")" : ""}
                 {" · "}
-                자신감 {m.confidence_score ?? "—"}
-                {m.intent_score != null ? ` · 의도 ${m.intent_score}` : ""}
+                자신 있음 {m.confidence_score ?? "—"}
+                {m.intent_score != null ? ` · 알아들음 ${m.intent_score}` : ""}
                 {" · "}
                 {formatMs(m.duration_ms)}
-                {m.search_ms != null ? ` (검색 ${formatMs(m.search_ms)})` : ""}
+                {m.search_ms != null ? ` (찾는 데 ${formatMs(m.search_ms)})` : ""}
               </div>
               <div className="d" style={{ marginTop: 4 }}>
                 걸린 것 —{" "}
@@ -218,7 +218,7 @@ export function LunaAdminAnswerFlags() {
                     disabled={busy === row.id}
                     onClick={() => void review(row.id, "unclear")}
                   >
-                    무시
+                    모르겠어요
                   </button>
                 </div>
               ) : (

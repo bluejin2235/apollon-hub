@@ -323,7 +323,8 @@ export async function enrichQuestionPairs(
     const right = sideView(toType, ctxStr(ctx, "to_id"), toTitle, toPath);
     const reason = link
       ? sameReasonLine(link)
-      : row.why || "이름만으로는 같은 건인지 확정하지 못해 묻습니다.";
+      : row.why ||
+        "이름만으로는 같은 프로젝트인지 확정하지 못해 묻습니다. 정하시면 앞으로 이 둘을 같은(또는 다른) 걸로 볼게요.";
     return { ...row, pair: { left, right, reason } };
   });
 }

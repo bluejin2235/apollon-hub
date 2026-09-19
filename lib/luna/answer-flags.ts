@@ -211,6 +211,7 @@ export async function recordAnswerFlagsIfAny(
   admin: SupabaseClient,
   input: RecordAnswerFlagInput
 ): Promise<AnswerFlagRow | null> {
+  if (input.source === "mode_a") return null;
   const { flags, metrics } = evaluateAnswerFlags(input);
   if (flags.length === 0) return null;
 
@@ -330,6 +331,7 @@ export async function listAnswerFlags(
   let q = admin
     .from("luna_answer_flags")
     .select("*")
+    .or("source.is.null,source.neq.mode_a")
     .order("severity", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -417,6 +419,7 @@ export async function listPendingAnswerFlagsForHuman(
     .from("luna_answer_flags")
     .select("*")
     .eq("status", "pending")
+    .or("source.is.null,source.neq.mode_a")
     .order("severity", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -513,7 +516,7 @@ export async function promoteAnswerFlagRules(
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await admin
     .from("luna_answer_flags")
-    .select("flags, metrics, question, human_verdict, status")
+    .select("flags, metrics, question, human_verdict, status, source")
     .gte("created_at", since)
     .limit(500);
   if (error) {
@@ -523,6 +526,7 @@ export async function promoteAnswerFlagRules(
 
   const counts = new Map<AnswerFlagId, { n: number; samples: string[] }>();
   for (const raw of data ?? []) {
+    if (raw.source === "mode_a") continue;
     const flags = Array.isArray(raw.flags) ? raw.flags : [];
     for (const f of flags) {
       const id = String((f as { id?: string })?.id ?? "") as AnswerFlagId;
@@ -588,22 +592,25 @@ export async function promoteAnswerFlagRules(
 
 function promoteQuestionText(flagId: AnswerFlagId, n: number): string {
   if (flagId === "source_skew") {
-    return "답의 대부분이 노션에서만 나왔습니다. Work서버 자료를 더 봐야 할까요?";
+    return `노션만 보고 답한 적이 ${n}번 있어요. 정하시면 앞으로 Work서버도 같이 볼게요. Work서버도 볼까요?`;
   }
   if (flagId === "slow") {
-    return "답이 너무 오래 걸렸습니다. 검색을 먼저 줄일까요?";
+    return `답이 너무 오래 걸린 적이 ${n}번 있어요. 정하시면 앞으로 덜 넓게 찾아 빨리 답할게요. 그렇게 할까요?`;
   }
   if (flagId === "scope_excess") {
-    return "짧은 질문에도 자료를 너무 많이 찾았습니다. 용어 질문은 위키·용어사전만 보게 할까요?";
+    return `짧은 질문에도 자료를 너무 많이 찾은 적이 ${n}번 있어요. 정하시면 용어 질문은 위키·용어사전만 볼게요. 그렇게 할까요?`;
   }
   if (flagId === "unused_sources") {
-    return "찾아 놓고 안 쓴 자료가 많았습니다. 검색 범위를 줄일까요?";
+    return `찾아 놓고 안 쓴 자료가 ${n}번 있었어요. 정하시면 앞으로 덜 넓게 찾을게요. 그렇게 할까요?`;
   }
   if (flagId === "low_confidence") {
-    return "쉬운 질문인데 확신이 낮았습니다. 검색 범위를 줄일까요?";
+    return `쉬운 질문인데 자신 없이 답한 적이 ${n}번 있어요. 정하시면 앞으로 덜 넓게 찾고 더 분명히 말할게요. 그렇게 할까요?`;
+  }
+  if (flagId === "intent_conf_gap") {
+    return `질문은 알아들었는데 답을 못 한 적이 ${n}번 있어요. 정하시면 앞으로 그런 때 바로 되물을게요. 그렇게 할까요?`;
   }
   const label = ANSWER_FLAG_LABELS[flagId];
-  return `${label}이 ${n}건 있었습니다. 검색·답변 규칙을 손볼까요?`;
+  return `${label}이 ${n}번 있었어요. 정하시면 앞으로 이런 걸 안 여쭤봐요. 손볼까요?`;
 }
 
 /** 메타·타이밍에서 판정 입력 조립 */

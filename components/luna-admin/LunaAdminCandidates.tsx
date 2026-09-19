@@ -106,10 +106,11 @@ export function LunaAdminPending({ onGo }: Props) {
               <span className="ic p">🌙</span>
               <div className="c">
                 <div className="t">{q.question}</div>
-                <div className="d">{q.why || "루나가 확인이 필요해 묻습니다."}</div>
+                <div className="d">
+                  {q.why || "정하시면 앞으로 비슷한 걸 안 여쭤봐요."}
+                </div>
                 <div className="m">
-                  확신도 {q.confidence ?? "—"}
-                  {q.assignee ? " · 배정됨" : " · 아무나"}
+                  {q.assignee ? "배정됨" : "아무나 답해도 돼요"}
                 </div>
                 <div className="btns">
                   <button
@@ -211,9 +212,16 @@ export function LunaAdminMine() {
               <button
                 type="button"
                 className="btn sm"
-                onClick={() => void answer(q.id, "아니요", "answered")}
+                onClick={() => void answer(q.id, "아니에요", "answered")}
               >
-                아니요
+                아니에요
+              </button>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => void answer(q.id, "모르겠어요", "answered")}
+              >
+                모르겠어요
               </button>
               <button
                 type="button"

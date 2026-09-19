@@ -12,21 +12,21 @@ export const ANSWER_FLAG_IDS = [
 export type AnswerFlagId = (typeof ANSWER_FLAG_IDS)[number];
 
 export const ANSWER_FLAG_LABELS: Record<AnswerFlagId, string> = {
-  scope_excess: "범위 과다",
-  low_confidence: "자신감 미달",
-  intent_conf_gap: "의도-자신감 역전",
-  slow: "느림",
-  unused_sources: "자료 불일치",
-  source_skew: "출처 편중"
+  scope_excess: "너무 넓게 찾음",
+  low_confidence: "자신 없는 답",
+  intent_conf_gap: "알아듣고도 답을 못 함",
+  slow: "너무 느림",
+  unused_sources: "찾아 놓고 안 씀",
+  source_skew: "노션만 봄"
 };
 
 export const ANSWER_FLAG_HINTS: Record<AnswerFlagId, string> = {
-  scope_excess: "단순한 질문에 검색 범위가 넓다",
-  low_confidence: "찾긴 했는데 확신이 없다",
-  intent_conf_gap: "알아들었는데 답을 못 했다",
-  slow: "응답이 지나치게 길다",
-  unused_sources: "쓸데없는 자료를 붙였다",
-  source_skew: "다른 곳을 안 봤다"
+  scope_excess: "짧은 질문인데 자료를 너무 많이 가져왔다",
+  low_confidence: "찾긴 했는데 자신 있게 말하지 못했다",
+  intent_conf_gap: "질문은 알아들었는데 답을 못 했다",
+  slow: "답이 너무 오래 걸렸다",
+  unused_sources: "찾아 놓고 답에 쓰지 않았다",
+  source_skew: "노션만 보고 Work서버는 안 봤다"
 };
 
 export type AnswerFlagStatus = "pending" | "reviewed" | "ignored";

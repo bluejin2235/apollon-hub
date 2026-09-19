@@ -47,12 +47,14 @@ export function LunaAdminDashboard({ onGo }: Props) {
     }
   }
 
-  async function answerRule(id: string, accept: boolean) {
+  async function answerRule(id: string, accept: boolean | "hold") {
     setRuleBusy(id);
     try {
       await adminFetch("/api/luna-admin/rules", {
         method: "POST",
-        body: JSON.stringify({ id, accept })
+        body: JSON.stringify(
+          accept === "hold" ? { id, hold: true } : { id, accept }
+        )
       });
       await load();
     } catch (err) {
@@ -73,7 +75,7 @@ export function LunaAdminDashboard({ onGo }: Props) {
         <div className="alert" style={{ background: "#EEEDFE", borderLeftColor: "#534AB7" }}>
           <div className="c">
             <div className="t">
-              🌙 루나가 규칙을 물어봅니다 · {ruleQuestions.length}건
+              🌙 확인이 필요해요 · {ruleQuestions.length}건
             </div>
             <div className="d">{ruleQuestions[0]!.body}</div>
             <div className="btns" style={{ marginTop: 10 }}>
@@ -91,7 +93,15 @@ export function LunaAdminDashboard({ onGo }: Props) {
                 disabled={ruleBusy === ruleQuestions[0]!.id}
                 onClick={() => void answerRule(ruleQuestions[0]!.id, false)}
               >
-                아니요
+                아니에요
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={ruleBusy === ruleQuestions[0]!.id}
+                onClick={() => void answerRule(ruleQuestions[0]!.id, "hold")}
+              >
+                모르겠어요
               </button>
               <button
                 type="button"

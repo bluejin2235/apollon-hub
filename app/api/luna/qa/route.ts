@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireLunaAdmin } from "@/lib/luna-admin/auth";
+import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
+import { hasLunaAccess } from "@/lib/luna/beta-access";
+import { isSuperAdminUser } from "@/lib/luna/auth";
 import {
   answerQaChoice,
   getOpenQaSession,
@@ -9,15 +11,33 @@ import {
 
 export const runtime = "nodejs";
 
+async function requireLunaQa(request: NextRequest) {
+  const user = await getApiUser(request);
+  if (!user) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+  const admin = getServiceSupabase();
+  if (!admin) {
+    return {
+      error: NextResponse.json({ error: "Server configuration error" }, { status: 500 })
+    };
+  }
+  if (!(await hasLunaAccess(admin, user.id))) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  const isSuperAdmin = await isSuperAdminUser(admin, user);
+  return { user, admin, isSuperAdmin };
+}
+
 export async function GET(request: NextRequest) {
-  const gate = await requireLunaAdmin(request);
+  const gate = await requireLunaQa(request);
   if ("error" in gate) return gate.error;
   const session = await getOpenQaSession(gate.admin, gate.user.id);
   return NextResponse.json({ session });
 }
 
 export async function POST(request: NextRequest) {
-  const gate = await requireLunaAdmin(request);
+  const gate = await requireLunaQa(request);
   if ("error" in gate) return gate.error;
   let body: {
     action?: string;
@@ -31,13 +51,14 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  const roleOpts = { isSuperAdmin: gate.isSuperAdmin };
   try {
     if (body.action === "start" || !body.action) {
-      const session = await startQaSession(gate.admin, gate.user.id);
+      const session = await startQaSession(gate.admin, gate.user.id, roleOpts);
       return NextResponse.json({ session });
     }
     if (body.action === "restart") {
-      const session = await restartQaSession(gate.admin, gate.user.id);
+      const session = await restartQaSession(gate.admin, gate.user.id, roleOpts);
       return NextResponse.json({ session });
     }
     if (body.action === "answer") {

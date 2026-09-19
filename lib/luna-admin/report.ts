@@ -411,10 +411,10 @@ export async function buildAdminReportHtml(
   if (ruleQuestions.length > 0) {
     const n = ruleQuestions.length;
     todos.push({
-      title: `규칙 ${n}건을 확인해 주세요`,
+      title: `확인 ${n}건을 부탁드려요`,
       detail: ruleQuestions[0]
-        ? `${ruleQuestions[0].title} — 정하시면 관련 신호가 정리됩니다.`
-        : "규칙 후보가 대기 중입니다.",
+        ? `${ruleQuestions[0].body.slice(0, 120)} — 정하시면 앞으로 이런 걸 안 여쭤봐요.`
+        : "확인할 항목이 대기 중입니다.",
       href: hubHref(buildLunaAdminUrl("dashboard")),
       btn: "확인 →",
       tone: "y"
@@ -428,9 +428,9 @@ export async function buildAdminReportHtml(
     todos.push({
       title: `🌙 답을 봐주세요 · ${n}건`,
       detail:
-        `어젯밤 지표가 어긋난 답입니다. 옳고 그름은 제가 판단할 수 없어 여쭙습니다. ` +
-        `예: “${first.question.slice(0, 40)}” · 문서 ${m.total_docs ?? "—"} · 자신감 ${m.confidence_score ?? "—"} · ` +
-        `${flagLabels || "모순"}`,
+        `어젯밤 답이 어색했던 경우입니다. 옳고 그름은 제가 판단할 수 없어 여쭙습니다. ` +
+        `예: “${first.question.slice(0, 40)}” · 글 ${m.total_docs ?? "—"}개 · 자신 있음 ${m.confidence_score ?? "—"} · ` +
+        `${flagLabels || "어긋남"}`,
       href: hubHref(buildLunaAdminUrl("selfstudy", "ask")),
       btn: "내가 답할 것 →",
       tone: "p"

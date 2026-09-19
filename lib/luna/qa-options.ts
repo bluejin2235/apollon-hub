@@ -30,6 +30,18 @@ export type QaItem = {
   list_version?: number;
 };
 
+const HOLD: QaOption = {
+  id: "hold",
+  label: "모르겠어요",
+  sub: "나중에 / 지금은 판단이 안 돼요"
+};
+
+const OTHER: QaOption = {
+  id: "other",
+  label: "기타 — 직접 말할게요",
+  sub: "눌러서 말하면 됩니다"
+};
+
 export function ruleOptions(item: {
   pattern_type?: string;
   pattern_value?: string;
@@ -45,17 +57,13 @@ export function ruleOptions(item: {
         : "근거를 먼저 볼게요",
     sub: "보고 나서 정할게요"
   };
-  const other: QaOption = {
-    id: "other",
-    label: "기타 — 직접 말할게요",
-    sub: "눌러서 말하면 됩니다"
-  };
   if (item.pattern_type === "stopword") {
     return [
-      { id: "accept", label: "빼주세요", sub: "이름 비교에서 빼겠습니다" },
-      { id: "reject", label: "그대로 두세요", sub: "지금은 규칙을 만들지 않아요" },
+      { id: "accept", label: "빼주세요", sub: "앞으로 이 말로 묶지 않아요" },
+      { id: "reject", label: "그대로 두세요", sub: "지금은 바꾸지 않아요" },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   if (
@@ -73,60 +81,67 @@ export function ruleOptions(item: {
         label: "같은 건일 수도 있어요",
         sub: "지금처럼 하나씩 물어볼게요"
       },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   if (item.pattern_value === "answer_flag:source_skew") {
     return [
       { id: "accept", label: "더 볼게요", sub: "Work서버를 같이 보게 할게요" },
       { id: "reject", label: "노션만으로도 됐어요", sub: "지금은 그대로 둘게요" },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   if (item.pattern_value === "answer_flag:slow") {
     return [
-      { id: "accept", label: "빨리 하게 해 주세요", sub: "검색을 줄이겠습니다" },
-      { id: "reject", label: "지금은 괜찮아요", sub: "규칙을 만들지 않아요" },
+      { id: "accept", label: "빨리 하게 해 주세요", sub: "덜 넓게 찾겠습니다" },
+      { id: "reject", label: "지금은 괜찮아요", sub: "바꾸지 않아요" },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   if (item.pattern_value === "answer_flag:scope_excess") {
     return [
       { id: "accept", label: "줄여 주세요", sub: "용어는 위키·용어사전만" },
-      { id: "reject", label: "지금은 그대로", sub: "규칙을 만들지 않아요" },
+      { id: "reject", label: "지금은 그대로", sub: "바꾸지 않아요" },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   if (item.pattern_value === "answer_flag:unused_sources") {
     return [
       {
         id: "accept",
-        label: "범위를 줄여 주세요",
+        label: "줄여 주세요",
         sub: "찾아 놓고 안 쓰는 일이 줄어들게"
       },
-      { id: "reject", label: "지금은 그대로", sub: "규칙을 만들지 않아요" },
+      { id: "reject", label: "지금은 그대로", sub: "바꾸지 않아요" },
+      HOLD,
       inspect,
-      other
+      OTHER
     ];
   }
   return [
-    { id: "accept", label: "맞아요", sub: "이 규칙으로 정리할게요" },
-    { id: "reject", label: "아니요", sub: "지금은 적용하지 않아요" },
+    { id: "accept", label: "맞아요", sub: "정하시면 앞으로 이런 걸 안 여쭤봐요" },
+    { id: "reject", label: "아니에요", sub: "지금은 적용하지 않아요" },
+    HOLD,
     inspect,
-    other
+    OTHER
   ];
 }
 
 export function answerOptions(): QaOption[] {
   return [
-    { id: "good", label: "맞아요" },
-    { id: "wrong_answer", label: "찾긴 했는데 답이 틀렸다" },
-    { id: "bad", label: "틀려요" },
-    { id: "other", label: "기타 — 직접 말할게요", sub: "눌러서 말하면 됩니다" }
+    { id: "good", label: "맞아요", sub: "도움이 됐어요" },
+    { id: "wrong_answer", label: "아니에요", sub: "찾긴 했는데 답이 틀렸어요" },
+    { id: "bad", label: "틀려요", sub: "아예 도움이 안 됐어요" },
+    HOLD,
+    OTHER
   ];
 }
 
@@ -139,8 +154,8 @@ export function skipOptions(item?: { skip_reason?: string; why?: string }): QaOp
       sub: why ? why.slice(0, 48) : "오늘은 넘어갈게요"
     },
     { id: "can_study", label: "자습이 해도 돼요" },
-    { id: "hold", label: "아직 모르겠어요" },
-    { id: "other", label: "기타 — 직접 말할게요" }
+    { id: "hold", label: "모르겠어요", sub: "나중에 / 지금은 판단이 안 돼요" },
+    OTHER
   ];
 }
 
@@ -185,11 +200,13 @@ export function confirmOptions(hasExtra: boolean): QaOption[] {
     return [
       { id: "both", label: "맞아요 — 둘 다 그렇게 해주세요" },
       { id: "first_only", label: "1번만 맞아요", sub: "새 규칙은 다시 말할게요" },
+      { id: "hold", label: "모르겠어요", sub: "나중에 할게요" },
       { id: "retry", label: "다시 말할게요" }
     ];
   }
   return [
     { id: "both", label: "맞아요" },
+    { id: "hold", label: "모르겠어요", sub: "나중에 할게요" },
     { id: "retry", label: "다시 말할게요" }
   ];
 }

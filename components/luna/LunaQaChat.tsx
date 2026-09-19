@@ -158,7 +158,7 @@ function PendingBubble({ pending }: { pending: QaPending }) {
       </div>
       {pending.extra ? (
         <div className="mt-2 border-l-2 border-[#e7e8ec] pl-2.5 text-[11px] text-[#9aa0a8]">
-          2번은 새 규칙이라 따로 여쭤볼게요. 맞나요?
+          2번은 새로 알려주신 거라 따로 여쭤볼게요. 맞나요?
         </div>
       ) : null}
     </div>
@@ -174,7 +174,7 @@ function DoneCard({ summary, onClose }: { summary: QaSummary; onClose: () => voi
       <div className="mb-3 text-left text-[11.5px] leading-relaxed text-[#0F6E56]">
         {summary.rules.length > 0 ? (
           <>
-            규칙 {summary.rules.length}개
+            정리한 것 {summary.rules.length}개
             <ul className="mt-1">
               {summary.rules.map((r) => (
                 <li key={r.text}>
@@ -295,7 +295,7 @@ export function LunaQaChat() {
     return (
       <div className="mx-auto max-w-md px-5 py-16 text-center">
         <p className="text-[16px] font-extrabold text-slate-900">지금은 여쭤볼 게 없어요</p>
-        <p className="mt-2 text-[13px] text-slate-500">나중에 규칙이나 답이 쌓이면 여기로 올게요.</p>
+        <p className="mt-2 text-[13px] text-slate-500">나중에 확인할 게 쌓이면 여기로 올게요.</p>
         <Link
           href="/luna"
           className="mt-6 inline-flex rounded-xl bg-[#534AB7] px-5 py-3 text-[13px] font-bold text-white"
@@ -342,8 +342,8 @@ export function LunaQaChat() {
             L
           </span>
           <p className="text-[12.5px] leading-relaxed">
-            {total}건을 물어볼게요. <b>규칙부터</b> 여쭤볼게요 — 하나 정하면 여러 건이 한 번에
-            정리돼요.
+            {total}건을 물어볼게요. <b>확인할 것부터</b> 여쭤볼게요 — 하나 정하면 여러 건이 한 번에
+            정리돼요. 모르면 「모르겠어요」를 눌러 주세요.
           </p>
         </div>
 

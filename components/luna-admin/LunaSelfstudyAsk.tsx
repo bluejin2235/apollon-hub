@@ -109,16 +109,16 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
         kind: "rule",
         title: qaRuleQuestion(row),
         detail: flag
-          ? `${n}번 있었습니다 · 정하면 하나씩 안 묻습니다`
+          ? `${n}번 있었어요 · 정하시면 앞으로 안 여쭤봐요`
           : `${n}건 근거`,
-        badge: "규칙"
+        badge: "확인"
       };
     });
     const ansRows: ListRow[] = grouped
       .filter((g) => !g.latest.flags.some((f) => coveredFlags.has(f.id)))
       .map((g) => {
         const m = g.latest.metrics ?? {};
-        const docs = typeof m.total_docs === "number" ? `문서 ${m.total_docs}` : "";
+        const docs = typeof m.total_docs === "number" ? `글 ${m.total_docs}개` : "";
         const ms =
           typeof m.duration_ms === "number"
             ? `${(m.duration_ms / 1000).toFixed(1)}초`
@@ -128,7 +128,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
         return {
           key: `a-${g.latest.id}`,
           kind: "answer",
-          title: `“${g.question}”`,
+          title: `“${g.question}” — 도움이 됐나요?`,
           detail: [docs, ms, flagsText, repeat].filter(Boolean).join(" · "),
           badge: "답"
         };
@@ -168,8 +168,8 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
         </div>
         <div className="d">
           {total > 0
-            ? "하나씩 보여드릴게요. 고르기만 하면 됩니다. 모르면 건너뛰어도 되고, 중간에 그만둬도 이어서 할 수 있어요."
-            : "규칙이나 답이 쌓이면 여기로 올게요."}
+            ? "하나씩 보여드릴게요. 고르기만 하면 됩니다. 모르면 「모르겠어요」를 눌러 주세요."
+            : "확인할 게 쌓이면 여기로 올게요."}
         </div>
         {total > 0 ? (
           <button type="button" className="bt" onClick={() => onGo?.("/q")}>
@@ -181,7 +181,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           </button>
         )}
         {ruleN > 0 ? (
-          <div className="sub">규칙 {ruleN}건을 먼저 물어봅니다</div>
+          <div className="sub">확인 {ruleN}건을 먼저 물어봅니다</div>
         ) : null}
       </div>
 
@@ -191,7 +191,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           className={filter === "rule" || filter === "all" ? "on" : ""}
           onClick={() => setFilter((f) => (f === "rule" ? "all" : "rule"))}
         >
-          <div className="t">🌙 규칙</div>
+          <div className="t">🌙 확인</div>
           <div className="v">{ruleN}</div>
           <div className="d">하나로 여러 건 정리</div>
         </button>
@@ -202,7 +202,7 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
         >
           <div className="t">답 점검</div>
           <div className="v">{answerN}</div>
-          <div className="d">지표가 어긋난 답</div>
+          <div className="d">어색했던 답</div>
         </button>
         <button
           type="button"

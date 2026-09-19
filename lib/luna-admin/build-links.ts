@@ -1567,7 +1567,7 @@ async function ensureSameQuestions(
       context: JSON.stringify({
         why:
           draft?.why ??
-          "이름만으로는 같은 건인지 확정하지 못해 묻습니다.",
+          "이름만으로는 같은 프로젝트인지 확정하지 못해 묻습니다. 정하시면 앞으로 이 둘을 같은(또는 다른) 걸로 볼게요.",
         kind: "same",
         from_type: row.from_type,
         from_id: row.from_id,
@@ -1581,7 +1581,7 @@ async function ensureSameQuestions(
         link_id: row.id
       }),
       link_id: row.id,
-      options: ["같다", "다르다"],
+      options: ["같아요", "달라요", "모르겠어요"],
       category: "판단기준",
       source: "conflict",
       target_user_id: superAdminId,
