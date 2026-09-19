@@ -9,6 +9,12 @@ export function isPersonaTestTitle(title: unknown): boolean {
   return typeof title === "string" && title.startsWith(PERSONA_TEST_PREFIX);
 }
 
+/** 개인화 점검·지연 실측 대화. 사람이 겪은 실패 집계에 넣지 않는다. */
+export function isHarnessChatTitle(title: unknown): boolean {
+  if (isPersonaTestTitle(title)) return true;
+  return typeof title === "string" && title.startsWith("[role-latency-");
+}
+
 export function parsePersonaTestRunId(title: string): string | null {
   if (!isPersonaTestTitle(title)) return null;
   const m = title.match(/^\[P9TEST:([^\]]+)\]/);

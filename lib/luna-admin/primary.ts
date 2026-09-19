@@ -389,13 +389,11 @@ export async function buildPrimarySources(
       : null;
   const imageLast = imageRunAt ?? imageRowAt;
   const imageDays = kstCalendarDaysAgo(imageLast);
-  let imageLight = lightFromIdleDays(imageDays);
+  const imageLight = lightFromIdleDays(imageDays);
   const imagePct =
     imageCorpus > 0
       ? Math.max(0, Math.round((imageCount / imageCorpus) * 1000) / 10)
       : 0;
-  if (imageLight === "green" && imagePct < 50) imageLight = "yellow";
-
   const image: PrimarySourceRow = {
     source: "image",
     label: "이미지",

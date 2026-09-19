@@ -32,7 +32,10 @@ export type { AdminDashboard, StageView, AdminAlert } from "@/lib/luna-admin/typ
 function titleFor(key: StageView["key"], light: TrafficLight, days: number | null): string {
   if (light === "green") return "정상";
   if (key === "learn" && days != null && days >= 3) return `${days}일째 멈춤`;
-  if (light === "yellow") return days != null ? `${days}일째 지연` : "지연";
+  if (light === "yellow") {
+    if (days == null || days <= 0) return "오늘 실행";
+    return `${days}일째 지연`;
+  }
   if (days == null) return "기록 없음";
   return `${days}일째 멈춤`;
 }

@@ -89,6 +89,14 @@ async function main() {
     console.log("signals", error?.message ?? "ok");
   }
 
+  if (convList.length > 0) {
+    const { error } = await admin
+      .from("luna_failures")
+      .delete()
+      .in("conversation_id", convList);
+    console.log("failures", error?.message ?? "ok");
+  }
+
   // open questions — conversation_id 없음. 런 시작 이후 생긴 open 을 지운다
   const startedAts = [
     ...new Set(

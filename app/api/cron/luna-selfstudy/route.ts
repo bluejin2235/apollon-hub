@@ -76,7 +76,11 @@ export async function GET(request: NextRequest) {
 
     if (modeA) {
       let chunks = 0;
-      const maxChunks = 10; // 20×10 = 200
+      const maxChunks = 16;
+      console.log("[luna-selfstudy] mode A chunks", {
+        agenda: modeA.agenda,
+        budget_ms: CRON_BUDGET_MS
+      });
       while (chunks < maxChunks && Date.now() - cronStarted < CRON_BUDGET_MS) {
         const piece = await runSelectedTonight(admin, [modeA], {
           limitPerItem: 20,

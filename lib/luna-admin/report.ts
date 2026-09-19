@@ -267,6 +267,7 @@ export async function buildAdminReportHtml(
     failuresOpenedRes,
     failuresOpenYesterdayRes,
     notionBeforeRes,
+    notionLiveRes,
     imageBeforeRes,
     devnoteBlockers,
     foundWeek,
@@ -318,6 +319,9 @@ export async function buildAdminReportHtml(
       .select("page_id", { count: "exact", head: true })
       .lt("indexed_at", startIso),
     admin
+      .from("luna_notion_pages")
+      .select("page_id", { count: "exact", head: true }),
+    admin
       .from("luna_media_index")
       .select("path", { count: "exact", head: true })
       .lt("indexed_at", startIso),
@@ -332,11 +336,12 @@ export async function buildAdminReportHtml(
   void failuresOpenedRes;
   const failuresYesterday = failuresOpenYesterdayRes.count ?? openFailures;
   const notionBefore = notionBeforeRes.count ?? primary.notion.count;
+  const notionLive = notionLiveRes.count ?? notionBefore;
   const imageBefore = imageBeforeRes.count ?? primary.image.count;
   // 1차 = 대시보드와 동일: Work + 노션 + 이미지 + 위키 + 용어
   const primaryToday =
     primary.work.count +
-    primary.notion.count +
+    notionLive +
     primary.image.count +
     primary.wiki.count +
     primary.glossary.count;
@@ -490,7 +495,7 @@ export async function buildAdminReportHtml(
   const confirmStage = dash.stages.find((s) => s.key === "confirm");
   const applyStage = dash.stages.find((s) => s.key === "apply");
 
-  const notionDelta = primary.notion.count - notionBefore;
+  const notionDelta = notionLive - notionBefore;
   const imageDelta = primary.image.count - imageBefore;
 
   // —— HTML ——

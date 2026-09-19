@@ -21,6 +21,7 @@ import {
 } from "@/lib/luna/failure-cause";
 import { insertLunaSignal } from "@/lib/luna/signals";
 import type { InsertLunaSignalInput } from "@/lib/luna/signals-shared";
+import { isHarnessChatTitle } from "@/lib/luna/persona-test-marker";
 
 export type { FailureKind, FailureKindFilter, FailureSignal };
 export type { FailureCauseType } from "@/lib/luna/failure-cause";
@@ -251,6 +252,15 @@ export async function recordLunaFailure(
   admin: SupabaseClient,
   input: RecordFailureInput & { signals?: FailureSignal[] }
 ): Promise<string | null> {
+  if (input.conversationId) {
+    const { data: conv } = await admin
+      .from("luna_conversations")
+      .select("title")
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    if (isHarnessChatTitle(conv?.title)) return null;
+  }
+
   const question = (input.question ?? "").trim();
   const answerExcerpt = excerpt(input.answerExcerpt ?? "");
   const incomingSignals = uniqueFailureSignals([

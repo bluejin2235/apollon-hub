@@ -94,6 +94,8 @@ export type ProbeRetrievalResult = {
   pages_sampled?: number;
   questions_per_page?: number;
   llm_model?: string;
+  /** 오늘 이미 본 대상. 다음 청크가 같은 용어·이미지를 다시 안 돌리게 */
+  page_ids?: string[];
 };
 
 /** 하루 목표 문서 수 (여러 청크로 나눔) */
@@ -821,15 +823,19 @@ export async function runProbeRetrievalExam(
         ? Math.min(MODE_A_BATCH_SIZE, limit)
         : MODE_A_BATCH_SIZE;
 
-  const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_SOURCE_BUDGET } =
+  const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_CALL_BUDGET_MS, MODE_A_LLM_DOCS_PER_CALL } =
     await import("@/lib/luna/probe-mode-a-sources");
 
   if (isMultiSourceModeAEnabled() && scope.multi_source !== false) {
+    const exclude = await loadTodayProbedPageIds(admin);
     const notionLimit =
       typeof scope.notion_limit === "number"
         ? scope.notion_limit
-        : MODE_A_SOURCE_BUDGET.notion.daily_items;
+        : undefined;
     const multi = await runModeAMultiSource(admin, {
+      budgetMs: MODE_A_CALL_BUDGET_MS,
+      llmChunk: Math.min(MODE_A_LLM_DOCS_PER_CALL, pageLimit),
+      exclude,
       limits: {
         glossary:
           typeof scope.glossary_limit === "number"
@@ -847,9 +853,10 @@ export async function runProbeRetrievalExam(
       },
       generateQuestions: (title, body) =>
         generateQuestionsForPage({ title, body }),
-      runNotion: async (pl) => runProbeAnswerKey(admin, {
+      runNotion: async (pl, budgetMs) => runProbeAnswerKey(admin, {
         pageLimit: pl,
-        questionsPerPage: MODE_A_QUESTIONS_PER_PAGE
+        questionsPerPage: MODE_A_QUESTIONS_PER_PAGE,
+        budgetMs
       })
     });
     const miss = multi.result.miss;

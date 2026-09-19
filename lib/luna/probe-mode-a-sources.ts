@@ -76,6 +76,14 @@ export const MODE_A_SOURCE_ORDER: ModeASourceKind[] = [
   "notion"
 ];
 
+/** 한 크론 청크. 455건을 한 호출에 넣으면 800초에 끊기고 finishRun 이 안 된다. */
+export const MODE_A_CALL_BUDGET_MS = 120_000;
+export const MODE_A_LLM_DOCS_PER_CALL = 8;
+
+function pastDeadline(deadlineMs?: number): boolean {
+  return deadlineMs != null && Date.now() > deadlineMs;
+}
+
 export const MODE_A_MULTI_MINUTES = MODE_A_SOURCE_ORDER.reduce(
   (s, k) => s + MODE_A_SOURCE_BUDGET[k].minutes,
   0
@@ -112,6 +120,7 @@ export type ModeACorpusResult = {
   next: string;
   pages_sampled?: number;
   llm_model?: string;
+  page_ids?: string[];
 };
 
 const HIT_STREAK_KEY = "mode_a_hit_streaks";
@@ -202,11 +211,17 @@ function updateStreak(
 /** 용어사전 — 「X가 뭐야?」 → 용어 매칭에 그 항목이 나오나 */
 export async function runProbeGlossary(
   admin: SupabaseClient,
-  opts?: { limit?: number; streaks?: Record<string, number> }
+  opts?: {
+    limit?: number;
+    streaks?: Record<string, number>;
+    exclude?: Set<string>;
+    deadlineMs?: number;
+  }
 ): Promise<ModeASourceResult> {
   const t0 = Date.now();
   const limit = opts?.limit ?? MODE_A_SOURCE_BUDGET.glossary.daily_items;
   const streaks = opts?.streaks ?? {};
+  const exclude = opts?.exclude;
   const { data, error } = await admin
     .from("glossary_terms")
     .select("id, term_ko, term_en, synonyms, definition")
@@ -220,10 +235,11 @@ export async function runProbeGlossary(
   let taken = 0;
 
   for (const row of allRows) {
-    if (taken >= limit) break;
+    if (taken >= limit || pastDeadline(opts?.deadlineMs)) break;
     const term = (row.term_ko ?? "").trim();
     const id = String(row.id ?? "");
     if (!term || term.length < 2 || !id) continue;
+    if (exclude?.has(id)) continue;
     if (shouldSkipTarget(streaks, `glossary:${id}`)) continue;
 
     const question = `${term}${iGa(term)} 뭐야?`;
@@ -272,27 +288,34 @@ export async function runProbeGlossary(
 /** 이미지 — 설명 토큰 ⊂ 경로? 규칙 채점 */
 export async function runProbeImage(
   admin: SupabaseClient,
-  opts?: { limit?: number; streaks?: Record<string, number> }
+  opts?: {
+    limit?: number;
+    streaks?: Record<string, number>;
+    exclude?: Set<string>;
+    deadlineMs?: number;
+  }
 ): Promise<ModeASourceResult> {
   const t0 = Date.now();
   const limit = opts?.limit ?? MODE_A_SOURCE_BUDGET.image.daily_items;
   const streaks = opts?.streaks ?? {};
+  const exclude = opts?.exclude;
   // 최근 적재는 DSC·원본이 많아 path 순으로 넓게 훑어 한글 라벨 경로를 모은다
   const { data, error } = await admin
     .from("luna_media_index")
     .select("path, description, file_name, project, folder_category, ai_category, purpose")
     .not("description", "is", null)
     .order("path", { ascending: true })
-    .limit(8000);
+    .limit(2500);
   if (error) throw new Error(error.message);
 
   const items: ProbeModeAItem[] = [];
   let taken = 0;
   for (const row of data ?? []) {
-    if (taken >= limit) break;
+    if (taken >= limit || pastDeadline(opts?.deadlineMs)) break;
     const path = String(row.path ?? "");
     const desc = String(row.description ?? "").trim();
     if (!path || desc.length < 4) continue;
+    if (exclude?.has(path)) continue;
     if (shouldSkipTarget(streaks, `image:${path}`)) continue;
     if (/DSC\d+|IMG_\d+|\\JPEG\\|\\RAW\\|\\원본\\|\\촬영본\\/i.test(path)) {
       continue;
@@ -367,11 +390,17 @@ export async function runProbeImage(
 /** 아폴론 지식 — 문장 그대로 물어 지식이 매칭되나 */
 export async function runProbeKnowledge(
   admin: SupabaseClient,
-  opts?: { limit?: number; streaks?: Record<string, number> }
+  opts?: {
+    limit?: number;
+    streaks?: Record<string, number>;
+    exclude?: Set<string>;
+    deadlineMs?: number;
+  }
 ): Promise<ModeASourceResult> {
   const t0 = Date.now();
   const limit = opts?.limit ?? MODE_A_SOURCE_BUDGET.knowledge.daily_items;
   const streaks = opts?.streaks ?? {};
+  const exclude = opts?.exclude;
   const { data, error } = await admin
     .from("luna_learnings")
     .select("id, content, category, importance, use_count, created_at")
@@ -385,10 +414,11 @@ export async function runProbeKnowledge(
   const items: ProbeModeAItem[] = [];
   let taken = 0;
   for (const row of rows) {
-    if (taken >= limit) break;
+    if (taken >= limit || pastDeadline(opts?.deadlineMs)) break;
     const id = String(row.id ?? "");
     const content = String(row.content ?? "").trim();
     if (!id || content.length < 8) continue;
+    if (exclude?.has(id)) continue;
     if (shouldSkipTarget(streaks, `knowledge:${id}`)) continue;
 
     const question = content.slice(0, 80);
@@ -527,19 +557,25 @@ export async function runProbeWork(
       cost_usd: number;
       llm_calls: number;
     }>;
+    exclude?: Set<string>;
+    deadlineMs?: number;
   }
 ): Promise<ModeASourceResult> {
   const t0 = Date.now();
   const limit = opts.limit ?? MODE_A_SOURCE_BUDGET.work.daily_items;
   const streaks = opts.streaks ?? {};
-  const targets = await sampleWorkProbeTargets(admin, limit * 2);
+  const targets = await sampleWorkProbeTargets(
+    admin,
+    Math.min(400, Math.max(limit * 4, limit + (opts.exclude?.size ?? 0)))
+  );
   const items: ProbeModeAItem[] = [];
   let cost = 0;
   let llmCalls = 0;
   let taken = 0;
 
   for (const target of targets) {
-    if (taken >= limit) break;
+    if (taken >= limit || pastDeadline(opts.deadlineMs)) break;
+    if (opts.exclude?.has(target.path)) continue;
     if (shouldSkipTarget(streaks, `work:${target.path}`)) continue;
 
     const { data: chunks } = await admin
@@ -621,6 +657,8 @@ export async function runProbeWiki(
       cost_usd: number;
       llm_calls: number;
     }>;
+    exclude?: Set<string>;
+    deadlineMs?: number;
   }
 ): Promise<ModeASourceResult> {
   const t0 = Date.now();
@@ -633,9 +671,11 @@ export async function runProbeWiki(
   let taken = 0;
 
   for (const doc of docs) {
-    if (taken >= limit) break;
+    if (taken >= limit || pastDeadline(opts.deadlineMs)) break;
     const slug = doc.slug;
-    if (!slug || shouldSkipTarget(streaks, `wiki:${slug}`)) continue;
+    if (!slug || opts.exclude?.has(slug) || shouldSkipTarget(streaks, `wiki:${slug}`)) {
+      continue;
+    }
     const body = `${doc.summary ?? ""}\n${doc.content ?? ""}`.slice(0, 2800);
     if (body.trim().length < 20) continue;
 
@@ -769,12 +809,19 @@ export async function runModeAMultiSource(
     limits?: Partial<Record<ModeASourceKind, number>>;
     /** 시험용: 일부 원천만 */
     only?: ModeASourceKind[];
+    budgetMs?: number;
+    /** LLM 원천(위키·Work·노션) 한 청크당 문서 수 */
+    llmChunk?: number;
+    exclude?: Set<string>;
     generateQuestions: (title: string, body: string) => Promise<{
       questions: string[];
       cost_usd: number;
       llm_calls: number;
     }>;
-    runNotion: (pageLimit: number) => Promise<{
+    runNotion: (
+      pageLimit: number,
+      budgetMs: number
+    ) => Promise<{
       result: {
         probed: number;
         hit_at_1?: number;
@@ -798,20 +845,37 @@ export async function runModeAMultiSource(
   const sources: ModeASourceResult[] = [];
   let cost = 0;
   let llmCalls = 0;
+  const started = Date.now();
+  const deadline = started + (opts.budgetMs ?? MODE_A_CALL_BUDGET_MS);
+  const llmChunk = opts.llmChunk ?? MODE_A_LLM_DOCS_PER_CALL;
+  const exclude = opts.exclude ?? new Set<string>();
+  console.log("[mode-a] chunk start", {
+    exclude: exclude.size,
+    budget_ms: deadline - started,
+    llm_chunk: llmChunk
+  });
 
   for (const kind of order) {
-    const lim =
+    if (pastDeadline(deadline)) {
+      console.log("[mode-a] budget stop before", kind);
+      break;
+    }
+    const daily =
       opts.limits?.[kind] ?? MODE_A_SOURCE_BUDGET[kind].daily_items;
+    const lim = MODE_A_SOURCE_BUDGET[kind].needs_llm
+      ? Math.min(daily, llmChunk)
+      : daily;
+    if (lim <= 0) continue;
+    const common = { limit: lim, streaks, exclude, deadlineMs: deadline };
     if (kind === "glossary") {
-      sources.push(await runProbeGlossary(admin, { limit: lim, streaks }));
+      sources.push(await runProbeGlossary(admin, common));
     } else if (kind === "image") {
-      sources.push(await runProbeImage(admin, { limit: lim, streaks }));
+      sources.push(await runProbeImage(admin, common));
     } else if (kind === "knowledge") {
-      sources.push(await runProbeKnowledge(admin, { limit: lim, streaks }));
+      sources.push(await runProbeKnowledge(admin, common));
     } else if (kind === "wiki") {
       const s = await runProbeWiki(admin, {
-        limit: lim,
-        streaks,
+        ...common,
         generateQuestions: opts.generateQuestions
       });
       sources.push(s);
@@ -819,8 +883,7 @@ export async function runModeAMultiSource(
       llmCalls += s.llm_calls;
     } else if (kind === "work") {
       const s = await runProbeWork(admin, {
-        limit: lim,
-        streaks,
+        ...common,
         generateQuestions: opts.generateQuestions
       });
       sources.push(s);
@@ -828,7 +891,10 @@ export async function runModeAMultiSource(
       llmCalls += s.llm_calls;
     } else if (kind === "notion") {
       const t0 = Date.now();
-      const out = await opts.runNotion(lim);
+      const out = await opts.runNotion(
+        lim,
+        Math.max(5_000, deadline - Date.now())
+      );
       const items = out.result.items ?? [];
       const miss_by_cause = out.result.miss_by_cause ?? {};
       sources.push({
@@ -844,6 +910,15 @@ export async function runModeAMultiSource(
       });
       cost += out.cost_usd;
       llmCalls += out.llm_calls;
+    }
+    const last = sources[sources.length - 1];
+    if (last) {
+      console.log("[mode-a] source", {
+        source: last.source,
+        probed: last.probed,
+        llm: last.llm_calls,
+        ms: last.duration_ms
+      });
     }
   }
 
@@ -891,7 +966,8 @@ export async function runModeAMultiSource(
       next:
         miss > 0
           ? "miss 원인별 후속 아젠다 · 3건↑ 규칙 후보"
-          : "연속 hit 대상은 주기 연장(3회↑)"
+          : "연속 hit 대상은 주기 연장(3회↑)",
+      page_ids: [...new Set(allItems.map((i) => i.page_id).filter(Boolean))]
     },
     cost_usd: Number(cost.toFixed(6)),
     llm_calls: llmCalls
