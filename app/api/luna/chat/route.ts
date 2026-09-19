@@ -677,7 +677,7 @@ function buildVolatileSystemText(opts: {
         : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
-        compact: listing
+        compact: listing || depth === "simple"
       })}\r\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
@@ -2482,8 +2482,15 @@ export async function POST(request: NextRequest) {
           nasResults = batch.nasResults;
           cards = batch.cards;
 
-          // Work 본문: 목록·사례 나열은 노션 카드로 충분 — NAS 본문 검색은 수 초를 추가한다
-          if ((nasEnabled || listingQuestion) && !listingQuestion) {
+          // Work 본문: 목록형은 생략. 노션이 이미 충분하면 프로젝트·찾기도 생략(수 초 절약).
+          // Work 디렉터리 색인·nas_path 조회는 그대로 두어 Work 카드는 유지한다.
+          const notionMatchEnough =
+            maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
+          if (
+            nasEnabled &&
+            !listingQuestion &&
+            !notionMatchEnough
+          ) {
             nasTextSearched = true;
             try {
               const kwHits = await searchNasTextKeyword(
@@ -2624,12 +2631,17 @@ export async function POST(request: NextRequest) {
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
-          // 노션 nas_path → 색인 직접 조회 (목록형 사례는 Work 카드를 붙이지 않음)
+          // 노션 nas_path → 색인 직접 조회 (목록형 사례는 Work 카드 생략)
+          // 전체 히트가 아니라 LLM·카드에 쓸 상위만 — path마다 직렬 조회라 27건이면 수 초가 붙는다
           if (
             notionSources.length > 0 &&
             !listingReferenceDisablesNas(searchScope.kind, listingQuestion)
           ) {
-            const recorded = notionRecordedPaths(notionSources);
+            const topForPaths = takeTopNotionSourcesForLlm(
+              notionSources,
+              Math.max(llmInject.notion, 8)
+            );
+            const recorded = notionRecordedPaths(topForPaths);
             if (recorded.length > 0) {
               try {
                 const looked = await lookupNasByRecordedPaths(admin, recorded);
@@ -2647,7 +2659,8 @@ export async function POST(request: NextRequest) {
                   ];
                   console.log("[luna/search] nas_path lookup", {
                     recorded: recorded.length,
-                    hits: looked.length
+                    hits: looked.length,
+                    notionTop: topForPaths.length
                   });
                 }
               } catch (err) {

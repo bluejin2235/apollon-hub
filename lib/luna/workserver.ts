@@ -751,7 +751,9 @@ export async function lookupNasByRecordedPaths(
   recordedPaths: string[]
 ): Promise<NasRow[]> {
   const out: NasRow[] = [];
-  const seen = new Set<string>();
+  const outSeen = new Set<string>();
+  const jobs: Array<{ drive: string; path: string }> = [];
+  const jobSeen = new Set<string>();
 
   for (const raw of recordedPaths) {
     const full = raw.trim().replace(/\//g, "\\");
@@ -760,49 +762,58 @@ export async function lookupNasByRecordedPaths(
     const drive = (m?.[1] || "T").toUpperCase();
     const path = normalizeWsPath(m ? m[2]! : full.replace(/^[A-Za-z]:\\/, ""));
     if (!path) continue;
-
     const key = `${drive}:${path}`.toLowerCase();
-    if (seen.has(key)) continue;
+    if (jobSeen.has(key)) continue;
+    jobSeen.add(key);
+    jobs.push({ drive, path });
+  }
 
-    const { data: exact, error: exactErr } = await admin
-      .from("nas_directory")
-      .select(NAS_SELECT)
-      .eq("drive", drive)
-      .eq("path", path)
-      .maybeSingle();
-    if (exactErr) {
-      console.error("[luna/ws] lookupNas exact", exactErr);
-    } else if (exact) {
-      const row = exact as NasRow;
-      const k = `${row.drive}:${row.path}`.toLowerCase();
-      if (!seen.has(k)) {
-        seen.add(k);
+  const CONCURRENCY = 6;
+  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    const chunk = jobs.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(async ({ drive, path }) => {
+        const rows: NasRow[] = [];
+        const { data: exact, error: exactErr } = await admin
+          .from("nas_directory")
+          .select(NAS_SELECT)
+          .eq("drive", drive)
+          .eq("path", path)
+          .maybeSingle();
+        if (exactErr) {
+          console.error("[luna/ws] lookupNas exact", exactErr);
+        } else if (exact) {
+          rows.push(exact as NasRow);
+        }
+        const { data: kids, error: kidsErr } = await admin
+          .from("nas_directory")
+          .select(NAS_SELECT)
+          .eq("drive", drive)
+          .gte("path", `${path}\\`)
+          .lt("path", `${path}\\\uFFFF`)
+          .order("importance", { ascending: false })
+          .limit(8);
+        if (kidsErr) {
+          console.error("[luna/ws] lookupNas kids", kidsErr);
+        } else {
+          rows.push(...((kids ?? []) as NasRow[]));
+        }
+        return rows;
+      })
+    );
+    for (const rows of results) {
+      for (const row of rows) {
+        const k = `${row.drive}:${row.path}`.toLowerCase();
+        if (outSeen.has(k)) continue;
+        outSeen.add(k);
         out.push(row);
       }
-    }
-
-    const { data: kids, error: kidsErr } = await admin
-      .from("nas_directory")
-      .select(NAS_SELECT)
-      .eq("drive", drive)
-      .gte("path", `${path}\\`)
-      .lt("path", `${path}\\\uFFFF`)
-      .order("importance", { ascending: false })
-      .limit(8);
-    if (kidsErr) {
-      console.error("[luna/ws] lookupNas kids", kidsErr);
-      continue;
-    }
-    for (const row of (kids ?? []) as NasRow[]) {
-      const k = `${row.drive}:${row.path}`.toLowerCase();
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(row);
     }
   }
 
   console.log("[luna/ws] lookupNasByRecordedPaths", {
     paths: recordedPaths.length,
+    jobs: jobs.length,
     hits: out.length
   });
   return out;
