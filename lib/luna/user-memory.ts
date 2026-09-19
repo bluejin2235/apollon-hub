@@ -2,6 +2,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 import {
+  formalTermsForMemoPrompt,
+  loadGlossaryCanon,
+  normalizeMemoAgainstGlossary,
+  promoteMemoShorthandsAsGlossaryCandidates
+} from "@/lib/luna/memo-glossary-normalize";
+import {
   ANSWER_LENGTH_IDS,
   isAnswerLength,
   USER_MEMO_MAX_CHARS,
@@ -34,7 +40,7 @@ const RECENT_CONVERSATIONS = 8;
 const MSGS_PER_CONV = 12;
 const BATCH_LIMIT = 20;
 
-const MEMO_REWRITE_SYSTEM = `당신은 아폴론 허브의 루나다. 한 사람과의 대화를 보고 「루나가 아는 나」 메모를 통째로 다시 쓴다.
+const MEMO_REWRITE_SYSTEM_BASE = `당신은 아폴론 허브의 루나다. 한 사람과의 대화를 보고 「루나가 아는 나」 메모를 통째로 다시 쓴다.
 
 규칙:
 - 덧붙이지 말고 새로 쓴다. 모순·중복을 없앤다.
@@ -48,7 +54,17 @@ const MEMO_REWRITE_SYSTEM = `당신은 아폴론 허브의 루나다. 한 사람
 - 최대 ${USER_MEMO_MAX_CHARS}자. 넘으면 오래된·덜 중요한 것을 버린다.
 - 메모 본문만 출력한다. 따옴표·설명·JSON 금지.
 - 기존 메모에 있고 새 대화에서 부정되지 않은 것은 유지한다.
-- 조직 공통 지식·팀 관점은 넣지 않는다. 이 사람만의 것.`;
+- 조직 공통 지식·팀 관점은 넣지 않는다. 이 사람만의 것.
+- 사용자가 오타·다른 표기로 말해도, 아래에 준 정식 용어 표기로만 적는다. 오타를 그대로 배우지 않는다.`;
+
+function buildMemoRewriteSystem(formalTerms: string): string {
+  const terms = formalTerms.trim();
+  if (!terms) return MEMO_REWRITE_SYSTEM_BASE;
+  return `${MEMO_REWRITE_SYSTEM_BASE}
+
+아래 용어는 정식 표기다. 사용자가 다르게 써도 이 표기로 적어라.
+${terms}`;
+}
 
 function clipMemo(raw: string): string {
   let t = raw.trim();
@@ -281,6 +297,10 @@ export async function rewriteUserMemo(
     }
 
     const prevMemo = existing?.memo?.trim() ?? "";
+    const [formalTerms, canon] = await Promise.all([
+      formalTermsForMemoPrompt(admin),
+      loadGlossaryCanon(admin)
+    ]);
     const userPrompt = [
       prevMemo
         ? `기존 메모:\n${prevMemo.slice(0, USER_MEMO_MAX_CHARS)}`
@@ -295,7 +315,7 @@ export async function rewriteUserMemo(
       const result = await lunaLlmComplete(admin, {
         tier: "B",
         feature: "user_memory",
-        system: MEMO_REWRITE_SYSTEM,
+        system: buildMemoRewriteSystem(formalTerms),
         user: userPrompt,
         maxTokens: 900
       });
@@ -307,6 +327,31 @@ export async function rewriteUserMemo(
 
     if (!memo) {
       return { ok: true, skipped: "empty_memo" };
+    }
+
+    const normalized = normalizeMemoAgainstGlossary(memo, canon);
+    memo = clipMemo(normalized.text);
+    if (normalized.fixes.length > 0) {
+      console.log("[luna/user-memory] glossary normalize", {
+        userId,
+        fixes: normalized.fixes.slice(0, 12)
+      });
+    }
+
+    try {
+      const promoted = await promoteMemoShorthandsAsGlossaryCandidates(admin, {
+        userId,
+        memo,
+        canon
+      });
+      if (promoted > 0) {
+        console.log("[luna/user-memory] shorthand candidates", {
+          userId,
+          promoted
+        });
+      }
+    } catch (err) {
+      console.error("[luna/user-memory] shorthand promote", err);
     }
 
     const sourceCount = await countConversationsForUser(admin, userId);
@@ -392,7 +437,24 @@ export async function saveUserMemoText(
   userId: string,
   memo: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const clipped = clipMemo(memo);
+  const canon = await loadGlossaryCanon(admin);
+  const normalized = normalizeMemoAgainstGlossary(memo, canon);
+  const clipped = clipMemo(normalized.text);
+  if (normalized.fixes.length > 0) {
+    console.log("[luna/user-memory] save normalize", {
+      userId,
+      fixes: normalized.fixes.slice(0, 12)
+    });
+  }
+  try {
+    await promoteMemoShorthandsAsGlossaryCandidates(admin, {
+      userId,
+      memo: clipped,
+      canon
+    });
+  } catch (err) {
+    console.error("[luna/user-memory] save shorthand", err);
+  }
   const existing = await getUserMemory(admin, userId);
   const nowIso = new Date().toISOString();
   const { error } = await admin.from("luna_user_memories").upsert(
