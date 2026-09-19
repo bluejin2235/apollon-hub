@@ -204,7 +204,9 @@ export async function buildPrimarySources(
     imageLatestRes,
     imageRunRes,
     checksRes,
-    storageSnap
+    storageSnap,
+    notionLiveRes,
+    notionPriorRes
   ] = await Promise.all([
     loadOrComputeSourceStats(admin),
     admin.from("nas_scan_settings").select("*").eq("id", 1).maybeSingle(),
@@ -237,7 +239,16 @@ export async function buildPrimarySources(
       .from("luna_storage_snapshots")
       .select("table_name, bytes")
       .eq("taken_on", statsDayOrToday())
-      .neq("table_name", "")
+      .neq("table_name", ""),
+    admin
+      .from("luna_notion_pages")
+      .select("page_id", { count: "exact", head: true }),
+    admin
+      .from("luna_source_stats")
+      .select("day, total")
+      .eq("source", "notion")
+      .order("day", { ascending: false })
+      .limit(8)
   ]);
 
   const workStats = stats.work;
@@ -261,7 +272,11 @@ export async function buildPrimarySources(
   const imageAfter = kindNum(workStats, "image_after_exclude") || IMAGE_AFTER_EXCLUDE;
   const imageUnread = kindNum(workStats, "image_unread") || IMAGE_UNREAD;
 
-  const notionPages = kindNum(notionStats, "pages") || notionStats.total;
+  const notionPagesSnapshot = kindNum(notionStats, "pages") || notionStats.total;
+  const notionPages =
+    !notionLiveRes.error && typeof notionLiveRes.count === "number"
+      ? notionLiveRes.count
+      : notionPagesSnapshot;
   const notionBlocks = kindNum(notionStats, "blocks");
   const notionChunks = kindNum(notionStats, "chunks");
   const notionEmbeds = kindNum(notionStats, "embeddings") || notionChunks;
@@ -306,7 +321,18 @@ export async function buildPrimarySources(
   const yWorkFiles = deltaNum(workStats, "files");
   const yWorkText = deltaNum(workStats, "docs");
   const yImage = deltaNum(workStats, "images");
-  const yNotion = deltaNum(notionStats, "pages");
+  const kst = kstParts(new Date());
+  const kstDay = `${kst.year}-${String(kst.month).padStart(2, "0")}-${String(kst.day).padStart(2, "0")}`;
+  const priorNotion = (
+    (notionPriorRes.error ? [] : notionPriorRes.data ?? []) as Array<{
+      day: string;
+      total: number;
+    }>
+  ).find((row) => String(row.day) < kstDay);
+  const yNotion =
+    priorNotion && typeof priorNotion.total === "number"
+      ? notionPages - priorNotion.total
+      : null;
   const yNotionChunks = deltaNum(notionStats, "chunks");
   const yWiki = deltaNum(wikiStats, "docs");
   const yGloss = deltaNum(glossStats, "terms");
@@ -352,13 +378,10 @@ export async function buildPrimarySources(
     typeof notionRun?.duration_ms === "number"
       ? formatDurationSec(Math.round(notionRun.duration_ms / 1000))
       : "—";
-  const notionDelta =
-    yNotion != null && yNotionChunks != null && yNotionChunks !== yNotion
-      ? pairDeltaLabel([
-          { key: "페이지", n: yNotion },
-          { key: "청크", n: yNotionChunks }
-        ])
-      : { delta: yNotion, label: deltaLabel(yNotion) };
+  const notionDelta = {
+    delta: yNotion,
+    label: deltaLabel(yNotion)
+  };
   const notion: PrimarySourceRow = {
     source: "notion",
     label: "노션",

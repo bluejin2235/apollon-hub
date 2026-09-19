@@ -20,6 +20,36 @@ import {
 
 const FULL_SELECT =
   "id, slug, title, kind, content, summary, menu_slug, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
+
+/** 채팅 매칭은 history(약 1.7MB)·원문 content 가 필요 없다. sections 만 있으면 된다. */
+function wikiChatSelect(opts?: {
+  includeHistory?: boolean;
+  includeContent?: boolean;
+}): string {
+  const history = opts?.includeHistory !== false;
+  const content = opts?.includeContent !== false;
+  return [
+    "id",
+    "slug",
+    "title",
+    "kind",
+    content ? "content" : null,
+    "summary",
+    "menu_slug",
+    "sections",
+    "related",
+    "use_count",
+    "version",
+    "is_active",
+    "visible_to_staff",
+    "updated_at",
+    "updated_by",
+    "updated_by_name",
+    history ? "history" : null
+  ]
+    .filter((col): col is string => Boolean(col))
+    .join(", ");
+}
 const FULL_SELECT_LEGACY =
   "id, slug, title, kind, content, summary, category, sections, related, use_count, version, is_active, visible_to_staff, updated_at, updated_by, updated_by_name, history";
 const BASE_SELECT =
@@ -147,7 +177,14 @@ export async function loadWikiTermCount(admin: SupabaseClient): Promise<number> 
 
 export async function loadWikiDocs(
   admin: SupabaseClient,
-  opts?: { menuSlug?: string; activeOnly?: boolean }
+  opts?: {
+    menuSlug?: string;
+    activeOnly?: boolean;
+    /** 기본 true. 채팅은 false — history 컬럼만 1.7MB 다. */
+    includeHistory?: boolean;
+    /** 기본 true. 채팅은 false — 절(sections)에서 본문을 다시 만든다. */
+    includeContent?: boolean;
+  }
 ): Promise<{ items: WikiDoc[]; wikiReady: boolean; tableReady: boolean }> {
   const run = async (select: string) => {
     let q = admin.from("luna_library").select(select).order("title", {
@@ -158,7 +195,7 @@ export async function loadWikiDocs(
   };
 
   let wikiReady = true;
-  let res = await run(FULL_SELECT);
+  let res = await run(wikiChatSelect(opts));
   if (res.error && isMissingWikiSchema(res.error)) {
     res = await run(FULL_SELECT_LEGACY);
   }

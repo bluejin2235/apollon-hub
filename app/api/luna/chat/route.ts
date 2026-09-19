@@ -82,6 +82,7 @@ import { searchYoutube } from "@/lib/luna/youtube";
 import { parseNumberedChoices, scrubLunaAnswerText } from "@/lib/luna/chat-response";
 import { bumpWikiUseCount } from "@/lib/wiki/store";
 import { loadWikiDocs } from "@/lib/wiki/store";
+import { PREP_TTL_MS, withPrepCache } from "@/lib/luna/prep-cache";
 import {
   classifiedRows,
   classificationPublic,
@@ -784,6 +785,13 @@ function emit(
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
+  let loadsDoneAt = startedAt;
+  const prepLoads: Array<{
+    name: string;
+    n: number;
+    ms: number;
+    hit: boolean;
+  }> = [];
   const user = await getApiUser(request);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -855,22 +863,103 @@ export async function POST(request: NextRequest) {
     nas: body.connectors?.nas === true
   };
 
-  const [
-    profileResult,
-    perspectivesResult,
-    tierACfg,
-    tierBCfg
-  ] = await Promise.all([
-    admin.from("profiles").select("department").eq("id", user.id).maybeSingle(),
-    admin
-      .from("luna_prompts")
-      .select("id, title, kind, prompt_key")
-      .eq("level", "L2")
-      .eq("kind", "perspective")
-      .eq("is_active", true),
-    getTierModel(admin, "A"),
-    getTierModel(admin, "B")
+  const wikiLoad = withPrepCache(
+    "wiki-lite",
+    PREP_TTL_MS.wiki,
+    () =>
+      loadWikiDocs(admin, {
+        activeOnly: true,
+        includeHistory: false,
+        includeContent: false
+      })
+  );
+  const glossaryLoad = withPrepCache(
+    "glossary",
+    PREP_TTL_MS.glossary,
+    async () => {
+      let gq = await admin
+        .from("glossary_terms")
+        .select("id, term_ko, term_en, synonyms, definition")
+        .is("deleted_at", null);
+      if (gq.error) {
+        gq = await admin
+          .from("glossary_terms")
+          .select("id, term_ko, term_en, synonyms, definition");
+      }
+      return {
+        data: (gq.data ?? null) as GlossaryMatchRow[] | null,
+        error: gq.error
+      };
+    },
+    (row) => !row.error
+  );
+  const learningsLoad = withPrepCache(
+    "learnings",
+    PREP_TTL_MS.learnings,
+    () =>
+      admin
+        .from("luna_learnings")
+        .select("id, content, category, importance, use_count, created_at")
+        .eq("status", "active")
+        .neq("category", "identity")
+        .order("importance", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(200),
+    (row) => !row.error
+  );
+  const typesLoad = withPrepCache("question-types", PREP_TTL_MS.types, () =>
+    loadQuestionTypes(admin, { activeOnly: true })
+  );
+  const promptRowsLoad = withPrepCache(
+    "runtime-prompts",
+    PREP_TTL_MS.prompts,
+    () => getPromptRows(admin, [...LUNA_RUNTIME_PROMPT_KEYS]),
+    (rows) => Object.keys(rows).length > 0
+  );
+
+  const [profileHit, perspectivesHit, tierAHit, tierBHit] = await Promise.all([
+    withPrepCache(
+      `profile:${user.id}`,
+      PREP_TTL_MS.profile,
+      () =>
+        admin.from("profiles").select("department").eq("id", user.id).maybeSingle(),
+      (row) => !row.error
+    ),
+    withPrepCache(
+      "l2-perspectives",
+      PREP_TTL_MS.perspectives,
+      () =>
+        admin
+          .from("luna_prompts")
+          .select("id, title, kind, prompt_key")
+          .eq("level", "L2")
+          .eq("kind", "perspective")
+          .eq("is_active", true),
+      (row) => !row.error
+    ),
+    withPrepCache("tier-A", PREP_TTL_MS.tiers, () => getTierModel(admin, "A")),
+    withPrepCache("tier-B", PREP_TTL_MS.tiers, () => getTierModel(admin, "B"))
   ]);
+  const profileResult = profileHit.value;
+  const perspectivesResult = perspectivesHit.value;
+  const tierACfg = tierAHit.value;
+  const tierBCfg = tierBHit.value;
+  prepLoads.push(
+    {
+      name: "profile",
+      n: profileResult.data ? 1 : 0,
+      ms: profileHit.ms,
+      hit: profileHit.hit
+    },
+    {
+      name: "perspectives",
+      n: perspectivesResult.data?.length ?? 0,
+      ms: perspectivesHit.ms,
+      hit: perspectivesHit.hit
+    },
+    { name: "tierA", n: 1, ms: tierAHit.ms, hit: tierAHit.hit },
+    { name: "tierB", n: 1, ms: tierBHit.ms, hit: tierBHit.hit }
+  );
 
   if (profileResult.error) {
     console.error("[luna/chat] profile", profileResult.error);
@@ -894,7 +983,18 @@ export async function POST(request: NextRequest) {
   };
 
   if (!hasManualSkills(manualSkillIds)) {
-    const resolved = await resolveDepartmentLens(admin, profile?.department);
+    const lensHit = await withPrepCache(
+      `lens:${(profile?.department ?? "").trim()}`,
+      PREP_TTL_MS.lens,
+      () => resolveDepartmentLens(admin, profile?.department)
+    );
+    const resolved = lensHit.value;
+    prepLoads.push({
+      name: "lens",
+      n: resolved.found ? 1 : 0,
+      ms: lensHit.ms,
+      hit: lensHit.hit
+    });
     if (!resolved.found) {
       console.log("[luna/lens] no mapping", {
         department: resolved.department || "(empty)",
@@ -967,7 +1067,14 @@ export async function POST(request: NextRequest) {
     model_label: tierBResolved.model_label || tierBCfg.model_label
   };
 
-  const promptRows = await getPromptRows(admin, [...LUNA_RUNTIME_PROMPT_KEYS]);
+  const promptRowsHit = await promptRowsLoad;
+  prepLoads.push({
+    name: "prompts",
+    n: Object.keys(promptRowsHit.value).length,
+    ms: promptRowsHit.ms,
+    hit: promptRowsHit.hit
+  });
+  const promptRows = promptRowsHit.value;
   const usageLog = createPromptUsageLog();
 
   const identityPick = pickLoaded(
@@ -1074,67 +1181,80 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  // wiki 1회만 — loadLibraryItems 가 내부에서 또 loadWikiDocs 하면 준비만 수 초
+  // 위키·용어·배움·유형은 위에서 이미 띄워 둠. 여기서는 사용자별 조회와 같이 기다린다.
   const [
-    { types: questionTypes },
-    wikiLoaded,
-    learningsResult,
+    typesHit,
+    wikiHit,
+    learningsHit,
     userMemory,
-    glossaryResult,
-    webAugmentRowResult,
+    glossaryHit,
+    webAugmentHit,
     skillDataResult,
     recentResult,
     attachmentsResult
   ] = await Promise.all([
-    loadQuestionTypes(admin, { activeOnly: true }),
-    loadWikiDocs(admin, { activeOnly: true }),
-    admin
-      .from("luna_learnings")
-      .select("id, content, category, importance, use_count, created_at")
-      .eq("status", "active")
-      .neq("category", "identity")
-      .order("importance", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(200),
-    getUserMemory(admin, user.id),
-    (async (): Promise<{
-      data: GlossaryMatchRow[] | null;
-      error: { message: string } | null;
-    }> => {
-      let gq = await admin
-        .from("glossary_terms")
-        .select("id, term_ko, term_en, synonyms, definition")
-        .is("deleted_at", null);
-      if (gq.error) {
-        gq = await admin
-          .from("glossary_terms")
-          .select("id, term_ko, term_en, synonyms, definition");
-      }
-      return {
-        data: (gq.data ?? null) as GlossaryMatchRow[] | null,
-        error: gq.error
-      };
+    typesLoad,
+    wikiLoad,
+    learningsLoad,
+    (async () => {
+      const t0 = Date.now();
+      const mem = await getUserMemory(admin, user.id);
+      prepLoads.push({
+        name: "memo",
+        n: mem?.memo?.length ?? 0,
+        ms: Date.now() - t0,
+        hit: false
+      });
+      return mem;
     })(),
-    admin
-      .from("luna_settings")
-      .select("value")
-      .eq("key", WEB_AUGMENT_SETTINGS_KEY)
-      .maybeSingle(),
-    skillIds.length > 0
-      ? admin
-          .from("luna_prompts")
-          .select(
-            "id, title, kind, content, is_active, sort_order, prompt_key, level"
-          )
-          .in("id", skillIds)
-          .eq("level", "L2")
-      : Promise.resolve({ data: [] as PromptSkillRow[], error: null }),
-    admin
-      .from("luna_messages")
-      .select("id, role, content, metadata")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .limit(20),
+    glossaryLoad,
+    withPrepCache(
+      "web-augment",
+      PREP_TTL_MS.web,
+      () =>
+        admin
+          .from("luna_settings")
+          .select("value")
+          .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+          .maybeSingle(),
+      (row) => !row.error
+    ),
+    (async () => {
+      const t0 = Date.now();
+      const res =
+        skillIds.length > 0
+          ? await admin
+              .from("luna_prompts")
+              .select(
+                "id, title, kind, content, is_active, sort_order, prompt_key, level"
+              )
+              .in("id", skillIds)
+              .eq("level", "L2")
+          : { data: [] as PromptSkillRow[], error: null };
+      prepLoads.push({
+        name: "skills",
+        n: res.data?.length ?? 0,
+        ms: Date.now() - t0,
+        hit: false
+      });
+      return res;
+    })(),
+    (async () => {
+      const t0 = Date.now();
+      const res = await admin
+        .from("luna_messages")
+        .select("id, role, content, metadata")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      prepLoads.push({
+        name: "recent",
+        n: res.data?.length ?? 0,
+        ms: Date.now() - t0,
+        hit: false
+      });
+      return res;
+    })(),
     hasAttachments
       ? admin
           .from("luna_attachments")
@@ -1143,6 +1263,44 @@ export async function POST(request: NextRequest) {
           .in("id", attachmentIds)
       : Promise.resolve({ data: [] as AttachmentRow[], error: null })
   ]);
+  const questionTypes = typesHit.value.types;
+  const wikiLoaded = wikiHit.value;
+  const learningsResult = learningsHit.value;
+  const glossaryResult = glossaryHit.value;
+  const webAugmentRowResult = webAugmentHit.value;
+  loadsDoneAt = Date.now();
+  prepLoads.push(
+    {
+      name: "wiki",
+      n: wikiLoaded.items.length,
+      ms: wikiHit.ms,
+      hit: wikiHit.hit
+    },
+    {
+      name: "glossary",
+      n: glossaryResult.data?.length ?? 0,
+      ms: glossaryHit.ms,
+      hit: glossaryHit.hit
+    },
+    {
+      name: "learnings",
+      n: learningsResult.data?.length ?? 0,
+      ms: learningsHit.ms,
+      hit: learningsHit.hit
+    },
+    {
+      name: "types",
+      n: questionTypes.length,
+      ms: typesHit.ms,
+      hit: typesHit.hit
+    },
+    {
+      name: "web",
+      n: webAugmentRowResult.data ? 1 : 0,
+      ms: webAugmentHit.ms,
+      hit: webAugmentHit.hit
+    }
+  );
   const wikiDocs = wikiLoaded.items;
   const libraryItems = wikiDocs
     .filter((d) => d.menu_slug !== "rules")
@@ -3420,6 +3578,8 @@ export async function POST(request: NextRequest) {
           llm_ms: llmMs,
           first_token_ms: firstTokenMs,
           prep_ms: Math.max(0, durationMs - llmMs),
+          loads_ms: Math.max(0, loadsDoneAt - startedAt),
+          prep_loads: prepLoads,
           total_ms: durationMs,
           candidates_found: timingCandidatesFound,
           candidates_added: timingCandidatesAdded,
