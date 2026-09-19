@@ -8,7 +8,7 @@ export type LunaAdminMenu =
   | "brain";
 
 export type LunaAdminKnowledgeSub = "primary" | "secondary";
-export type LunaAdminTalkSub = "history" | "sources" | "metrics";
+export type LunaAdminTalkSub = "history" | "sources" | "metrics" | "personalization";
 export type LunaAdminSelfstudySub =
   | "tonight"
   | "history"
@@ -102,7 +102,8 @@ export const LUNA_ADMIN_MENUS: LunaAdminMenuDef[] = [
     subs: [
       { slug: "history", label: "대화 이력" },
       { slug: "sources", label: "구술·문서" },
-      { slug: "metrics", label: "관측 지표" }
+      { slug: "metrics", label: "관측 지표" },
+      { slug: "personalization", label: "개인화" }
     ]
   },
   {

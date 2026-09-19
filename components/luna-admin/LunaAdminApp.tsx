@@ -17,6 +17,7 @@ import { LunaAdminMine, LunaAdminPending } from "@/components/luna-admin/LunaAdm
 import { LunaTalkHistory } from "@/components/luna/talk/LunaTalkHistory";
 import { LunaTalkMetrics } from "@/components/luna/talk/LunaTalkMetrics";
 import { LunaTalkSources } from "@/components/luna/talk/LunaTalkSources";
+import { LunaAdminPersonalization } from "@/components/luna-admin/LunaAdminPersonalization";
 import { LunaFailures } from "@/components/luna/failures/LunaFailures";
 import { LunaKnowledgeConflict } from "@/components/luna/knowledge/LunaKnowledgeConflict";
 import { LunaCandidatesHistory } from "@/components/luna/candidates/LunaCandidatesHistory";
@@ -192,6 +193,7 @@ function renderBody(
   if (menu === "talk") {
     if (sub === "sources") return <LunaTalkSources />;
     if (sub === "metrics") return <LunaTalkMetrics />;
+    if (sub === "personalization") return <LunaAdminPersonalization />;
     return <LunaTalkHistory />;
   }
   if (menu === "selfstudy") {
