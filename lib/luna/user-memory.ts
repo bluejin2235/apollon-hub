@@ -111,17 +111,21 @@ export async function getUserMemory(
   return asMemory((data ?? null) as Record<string, unknown> | null);
 }
 
-/** 답변 프롬프트용 — memo + 답 길이 */
+/** 답변 프롬프트용 — memo + 답 길이. 질문과 겹치는 줄만 남길 수 있다. */
 export function formatUserMemoryBlock(
-  memory: LunaUserMemory | null
+  memory: LunaUserMemory | null,
+  opts?: { question?: string; maxChars?: number }
 ): string | null {
   if (!memory) return null;
   const parts: string[] = [];
-  const memo = memory.memo.trim();
-  if (memo) {
-    parts.push(
-      `[이 사람에 대해 루나가 아는 것]\r\n${memo}\r\n(조직 지식·팀 관점과 어긋나면 조직 지식을 따른다. 이 사람 것만 쓴다.)`
-    );
+  const raw = memory.memo.trim();
+  if (raw) {
+    const clipped = clipMemoToQuestion(raw, opts?.question, opts?.maxChars ?? 500);
+    if (clipped) {
+      parts.push(
+        `[이 사람에 대해 루나가 아는 것]\r\n${clipped}\r\n(조직 지식·팀 관점과 어긋나면 조직 지식을 따른다. 이 사람 것만 쓴다.)`
+      );
+    }
   }
   if (memory.answer_length === "short") {
     parts.push(
@@ -133,6 +137,46 @@ export function formatUserMemoryBlock(
     );
   }
   return parts.length > 0 ? parts.join("\r\n\r\n") : null;
+}
+
+/** 질문 토큰과 겹치는 글머리만. 없으면 앞에서 maxChars. */
+export function clipMemoToQuestion(
+  memo: string,
+  question: string | undefined,
+  maxChars: number
+): string {
+  const text = memo.trim();
+  if (!text) return "";
+  if (text.length <= maxChars && !question?.trim()) return text;
+
+  const qTokens = (question ?? "")
+    .replace(/[\s\u300c\u300d\u300e\u300f"'\u201c\u201d\u2018\u2019]+/g, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2);
+
+  const lines = text.split(/\r?\n/);
+  if (qTokens.length === 0) {
+    return text.length <= maxChars ? text : `${text.slice(0, maxChars).trim()}…`;
+  }
+
+  const scored = lines
+    .map((line) => {
+      const hit = qTokens.reduce(
+        (n, tok) => (line.includes(tok) ? n + 1 : n),
+        0
+      );
+      return { line, hit };
+    })
+    .filter((x) => x.hit > 0 || /^(하는 일|답할 때|말버릇|자주 찾는 것)/.test(x.line.trim()));
+
+  let out = scored.map((x) => x.line).join("\n").trim();
+  if (!out) {
+    out = text.length <= maxChars ? text : `${text.slice(0, maxChars).trim()}…`;
+  } else if (out.length > maxChars) {
+    out = `${out.slice(0, maxChars).trim()}…`;
+  }
+  return out;
 }
 
 async function countConversationsForUser(

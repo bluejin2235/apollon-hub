@@ -90,7 +90,6 @@ import {
   formatTypeCatalog,
   formatTypeLabels,
   isLowConfidence,
-  loadLibraryItems,
   loadQuestionTypes,
   matchLibraryItems,
   parseClassificationJson,
@@ -1075,56 +1074,110 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  const [{ types: questionTypes }, libraryItems, wikiLoaded] = await Promise.all([
+  // wiki 1회만 — loadLibraryItems 가 내부에서 또 loadWikiDocs 하면 준비만 수 초
+  const [
+    { types: questionTypes },
+    wikiLoaded,
+    learningsResult,
+    userMemory,
+    glossaryResult,
+    webAugmentRowResult,
+    skillDataResult,
+    recentResult,
+    attachmentsResult
+  ] = await Promise.all([
     loadQuestionTypes(admin, { activeOnly: true }),
-    loadLibraryItems(admin),
-    loadWikiDocs(admin, { activeOnly: true })
+    loadWikiDocs(admin, { activeOnly: true }),
+    admin
+      .from("luna_learnings")
+      .select("id, content, category, importance, use_count, created_at")
+      .eq("status", "active")
+      .neq("category", "identity")
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(200),
+    getUserMemory(admin, user.id),
+    (async (): Promise<{
+      data: GlossaryMatchRow[] | null;
+      error: { message: string } | null;
+    }> => {
+      let gq = await admin
+        .from("glossary_terms")
+        .select("id, term_ko, term_en, synonyms, definition")
+        .is("deleted_at", null);
+      if (gq.error) {
+        gq = await admin
+          .from("glossary_terms")
+          .select("id, term_ko, term_en, synonyms, definition");
+      }
+      return {
+        data: (gq.data ?? null) as GlossaryMatchRow[] | null,
+        error: gq.error
+      };
+    })(),
+    admin
+      .from("luna_settings")
+      .select("value")
+      .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+      .maybeSingle(),
+    skillIds.length > 0
+      ? admin
+          .from("luna_prompts")
+          .select(
+            "id, title, kind, content, is_active, sort_order, prompt_key, level"
+          )
+          .in("id", skillIds)
+          .eq("level", "L2")
+      : Promise.resolve({ data: [] as PromptSkillRow[], error: null }),
+    admin
+      .from("luna_messages")
+      .select("id, role, content, metadata")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    hasAttachments
+      ? admin
+          .from("luna_attachments")
+          .select("id, storage_path, file_name, mime_type")
+          .eq("user_id", user.id)
+          .in("id", attachmentIds)
+      : Promise.resolve({ data: [] as AttachmentRow[], error: null })
   ]);
   const wikiDocs = wikiLoaded.items;
+  const libraryItems = wikiDocs
+    .filter((d) => d.menu_slug !== "rules")
+    .map((d) => ({
+      id: d.id ?? null,
+      slug: d.slug,
+      title: d.title,
+      kind: d.kind,
+      content: d.content
+    }));
 
-  // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
-  const { data: learningsData, error: learningsError } = await admin
-    .from("luna_learnings")
-    .select("id, content, category, importance, use_count, created_at")
-    .eq("status", "active")
-    .neq("category", "identity")
-    .order("importance", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (learningsError) {
-    console.error("[luna/chat] learnings", learningsError);
-    return NextResponse.json({ error: learningsError.message }, { status: 500 });
+  if (learningsResult.error) {
+    console.error("[luna/chat] learnings", learningsResult.error);
+    return NextResponse.json(
+      { error: learningsResult.error.message },
+      { status: 500 }
+    );
   }
-  const learningsRowsAll = (learningsData ?? []) as LearningMatchRow[];
+  const learningsRowsAll = (learningsResult.data ?? []) as LearningMatchRow[];
 
-  const userMemory: LunaUserMemory | null = await getUserMemory(admin, user.id);
-  const userMemoryBlock = formatUserMemoryBlock(userMemory);
+  const userMemoryBlock = formatUserMemoryBlock(userMemory, {
+    question: message,
+    maxChars: 500
+  });
 
   let glossaryRows: GlossaryMatchRow[] = [];
-  {
-    let gq = await admin
-      .from("glossary_terms")
-      .select("id, term_ko, term_en, synonyms, definition")
-      .is("deleted_at", null);
-    if (gq.error) {
-      gq = await admin
-        .from("glossary_terms")
-        .select("id, term_ko, term_en, synonyms, definition");
-    }
-    if (gq.error) {
-      console.error("[luna/chat] glossary", gq.error);
-    } else {
-      glossaryRows = (gq.data ?? []) as GlossaryMatchRow[];
-    }
+  if (glossaryResult.error) {
+    console.error("[luna/chat] glossary", glossaryResult.error);
+  } else {
+    glossaryRows = glossaryResult.data ?? [];
   }
 
-  const { data: webAugmentRow } = await admin
-    .from("luna_settings")
-    .select("value")
-    .eq("key", WEB_AUGMENT_SETTINGS_KEY)
-    .maybeSingle();
-  const webAugmentEnabled = parseWebAugmentEnabled(webAugmentRow?.value);
+  const webAugmentEnabled = parseWebAugmentEnabled(
+    webAugmentRowResult.data?.value
+  );
 
   let skillPrompt: string | null = null;
   const l2SkillRows: Array<{
@@ -1135,18 +1188,15 @@ export async function POST(request: NextRequest) {
     prompt_key: string | null;
   }> = [];
   if (skillIds.length > 0) {
-    const { data: skillData, error: skillError } = await admin
-      .from("luna_prompts")
-      .select("id, title, kind, content, is_active, sort_order, prompt_key, level")
-      .in("id", skillIds)
-      .eq("level", "L2");
-
-    if (skillError) {
-      console.error("[luna/chat] prompts skills", skillError);
-      return NextResponse.json({ error: skillError.message }, { status: 500 });
+    if (skillDataResult.error) {
+      console.error("[luna/chat] prompts skills", skillDataResult.error);
+      return NextResponse.json(
+        { error: skillDataResult.error.message },
+        { status: 500 }
+      );
     }
     const byId = new Map(
-      ((skillData ?? []) as PromptSkillRow[])
+      ((skillDataResult.data ?? []) as PromptSkillRow[])
         .filter((s) => s.is_active)
         .map((s) => [s.id, s])
     );
@@ -1192,34 +1242,27 @@ export async function POST(request: NextRequest) {
 
   let attachments: AttachmentRow[] = [];
   if (hasAttachments) {
-    const { data: attData, error: attError } = await admin
-      .from("luna_attachments")
-      .select("id, storage_path, file_name, mime_type")
-      .eq("user_id", user.id)
-      .in("id", attachmentIds);
-
-    if (attError) {
-      console.error("[luna/chat] attachments", attError);
-      return NextResponse.json({ error: attError.message }, { status: 500 });
+    if (attachmentsResult.error) {
+      console.error("[luna/chat] attachments", attachmentsResult.error);
+      return NextResponse.json(
+        { error: attachmentsResult.error.message },
+        { status: 500 }
+      );
     }
-    attachments = (attData ?? []) as AttachmentRow[];
+    attachments = (attachmentsResult.data ?? []) as AttachmentRow[];
     if (attachments.length === 0) {
       return NextResponse.json({ error: "Attachments not found" }, { status: 404 });
     }
   }
 
-  const { data: recentData, error: recentError } = await admin
-    .from("luna_messages")
-    .select("id, role, content, metadata")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (recentError) {
-    console.error("[luna/chat] messages", recentError);
-    return NextResponse.json({ error: recentError.message }, { status: 500 });
+  if (recentResult.error) {
+    console.error("[luna/chat] messages", recentResult.error);
+    return NextResponse.json(
+      { error: recentResult.error.message },
+      { status: 500 }
+    );
   }
-
+  const recentData = recentResult.data;
   const recent = ((recentData ?? []) as MessageRow[]).reverse();
   const lastAssistant = [...recent].reverse().find((m) => m.role === "assistant");
   const lastHadClarify = Boolean(
@@ -3019,6 +3062,11 @@ export async function POST(request: NextRequest) {
           searchScope.kind,
           listingQuestion
         );
+        /** 용어·규정·목록형은 부서 관점 전문이 답을 거의 안 바꾸고 입력만 키운다 */
+        const skipPerspectiveInject =
+          slimListingPrompt ||
+          searchScope.kind === "term" ||
+          searchScope.kind === "policy";
 
         const depthRule = listingQuestion
           ? listingRule
@@ -3048,7 +3096,7 @@ export async function POST(request: NextRequest) {
             learningsBlock: slimListingPrompt ? undefined : learningsBlock,
             glossaryBlock,
             wikiSectionsBlock,
-            skillPrompt: slimListingPrompt ? null : skillPrompt,
+            skillPrompt: skipPerspectiveInject ? null : skillPrompt,
             l3Prompt,
             workserverStructure,
             notionSources,
@@ -3066,7 +3114,7 @@ export async function POST(request: NextRequest) {
             listingRule: slimListingPrompt ? undefined : listingRule,
             listingChecklist: slimListingPrompt ? undefined : listingChecklist,
             llmInject,
-            userMemoryBlock,
+            userMemoryBlock: slimListingPrompt ? null : userMemoryBlock,
             slimListingPrompt
           },
           tierACfg.use_caching === true,
@@ -3086,6 +3134,7 @@ export async function POST(request: NextRequest) {
           row: structurePick.row
         });
         for (const skill of l2SkillRows) {
+          if (skipPerspectiveInject && skill.kind === "perspective") continue;
           recordPromptUse(usageLog, {
             key: skill.prompt_key || `l2:${skill.title}`,
             step: "답변 생성",
@@ -3370,6 +3419,7 @@ export async function POST(request: NextRequest) {
           rerank_ms: timingRerankMs,
           llm_ms: llmMs,
           first_token_ms: firstTokenMs,
+          prep_ms: Math.max(0, durationMs - llmMs),
           total_ms: durationMs,
           candidates_found: timingCandidatesFound,
           candidates_added: timingCandidatesAdded,
