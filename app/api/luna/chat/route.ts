@@ -660,12 +660,14 @@ function buildVolatileSystemText(opts: {
       inject.notion
     );
     const notionHint = listing
-      ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라. 기록된 경로·제목·URL을 근거로 쓴다.)`
+      ? `(위 ${forLlm.length}건 중 조건에 맞는 것만 번호로 나열한다. 임의로 1건만 고르지 마라. 제목·URL을 근거로 쓴다.)`
       : synthesis
         ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라. 각 항목에 페이지 제목을 근거로 단다.)`
         : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
-      `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm)}\r\n${notionHint}`
+      `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
+        compact: listing
+      })}\r\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
     if (opts.notionSearchStatus === "error") {
@@ -2445,8 +2447,8 @@ export async function POST(request: NextRequest) {
           nasResults = batch.nasResults;
           cards = batch.cards;
 
-          // Work 본문: 플랜 A 키워드(trigram+순위) 우선 · 임베딩은 있을 때만
-          if (nasEnabled || listingQuestion) {
+          // Work 본문: 목록·사례 나열은 노션 카드로 충분 — NAS 본문 검색은 수 초를 추가한다
+          if ((nasEnabled || listingQuestion) && !listingQuestion) {
             nasTextSearched = true;
             try {
               const kwHits = await searchNasTextKeyword(
@@ -3118,6 +3120,7 @@ export async function POST(request: NextRequest) {
         );
         let answerUsage = emptyUsage();
         const llmStartedAt = Date.now();
+        let firstTokenAt: number | null = null;
         console.log("[luna/answer]", {
           depth: questionDepth,
           maxTokens,
@@ -3136,6 +3139,7 @@ export async function POST(request: NextRequest) {
           });
 
           anthropicStream.on("text", (textDelta) => {
+            if (firstTokenAt == null && textDelta) firstTokenAt = Date.now();
             assistantText += textDelta;
             controller.enqueue(encoder.encode(textDelta));
           });
@@ -3176,6 +3180,7 @@ export async function POST(request: NextRequest) {
             useCaching: systemPrompt.applied
           })) {
             if (chunk.delta) {
+              if (firstTokenAt == null) firstTokenAt = Date.now();
               assistantText += chunk.delta;
               controller.enqueue(encoder.encode(chunk.delta));
             }
@@ -3205,6 +3210,8 @@ export async function POST(request: NextRequest) {
         pushStep("answer", "done", "정리 완료");
 
         const llmMs = Date.now() - llmStartedAt;
+        const firstTokenMs =
+          firstTokenAt != null ? firstTokenAt - llmStartedAt : null;
         const durationMs = Date.now() - startedAt;
         const safeAssistantText = scrubLunaAnswerText(
           sanitizeKnowledgeListAnswer(assistantText, learnings)
@@ -3292,6 +3299,7 @@ export async function POST(request: NextRequest) {
           link_ms: timingLinkMs,
           rerank_ms: timingRerankMs,
           llm_ms: llmMs,
+          first_token_ms: firstTokenMs,
           total_ms: durationMs,
           candidates_found: timingCandidatesFound,
           candidates_added: timingCandidatesAdded,

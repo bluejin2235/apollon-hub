@@ -710,7 +710,11 @@ export function mergeNotionSearchOutcomes(
   };
 }
 
-export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
+export function formatNotionSourcesForPrompt(
+  sources: NotionSource[],
+  opts?: { compact?: boolean }
+): string {
+  const compact = opts?.compact === true;
   const groups = summarizeGroupsInline(sources);
   const head = groups.length
     ? `[프로젝트 묶음]\n${groups.join("\n")}\n\n`
@@ -735,21 +739,24 @@ export function formatNotionSourcesForPrompt(sources: NotionSource[]): string {
       if (s.section) {
         lines.push(`  절: ${s.section}`);
       }
-      if (s.hierarchy) {
+      if (!compact && s.hierarchy) {
         lines.push(`  ${s.hierarchy.replace(/\n/g, "\n  ")}`);
       }
       if (s.nas_path) {
         lines.push(`  Work서버 경로: ${s.nas_path}`);
       }
-      for (const p of s.paths ?? []) {
-        if (s.nas_path && p === s.nas_path) continue;
-        lines.push(`  기록된 경로: ${p}`);
+      if (!compact) {
+        for (const p of s.paths ?? []) {
+          if (s.nas_path && p === s.nas_path) continue;
+          lines.push(`  기록된 경로: ${p}`);
+        }
       }
       if (s.dates?.length) {
         lines.push(`  날짜: ${s.dates.join(", ")}`);
       }
       if (s.excerpt) {
-        lines.push(`  본문: ${s.excerpt.slice(0, 400)}`);
+        const max = compact ? 180 : 400;
+        lines.push(`  본문: ${s.excerpt.slice(0, max)}`);
       }
       return lines.join("\n");
     })

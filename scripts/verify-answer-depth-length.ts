@@ -136,6 +136,8 @@ async function main() {
     const tok = answerMaxTokensForDepth(depth, false);
     if (depth === "simple") {
       assert(!omit && tok === 1024, "simple tokens/omit");
+    } else if (depth === "listing") {
+      assert(omit && tok === 1200, `${depth} tokens/omit`);
     } else {
       assert(omit && tok === 8192, `${depth} tokens/omit`);
     }

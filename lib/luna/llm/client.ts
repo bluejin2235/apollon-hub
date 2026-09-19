@@ -158,11 +158,9 @@ async function completeOpenAI(opts: {
     ]
   };
   // gpt-5 / o-series 등은 max_tokens 거부 → max_completion_tokens
-  if (/^gpt-5|^o[1-4]|codex/i.test(opts.model)) {
-    body.max_completion_tokens = opts.maxTokens;
-  } else {
-    body.max_tokens = opts.maxTokens;
-  }
+  applyOpenAiTokenLimit(body, opts.model, opts.maxTokens);
+  // 답변·판정 모두 reasoning 끄기 — 기본 effort 는 짧은 답에도 completion 수백 토큰을 태운다
+  applyGpt5ReasoningNone(body, opts.model);
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools.map((t) => ({
       type: "function",
@@ -172,10 +170,6 @@ async function completeOpenAI(opts: {
         parameters: t.input_schema
       }
     }));
-    // gpt-5.6-luna 등: chat/completions + tools 시 reasoning_effort 필요
-    if (/^gpt-5|^o[1-4]/i.test(opts.model)) {
-      body.reasoning_effort = "none";
-    }
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -475,6 +469,16 @@ function applyOpenAiTokenLimit(
   }
 }
 
+/** gpt-5/o 계열: 숨은 reasoning 이 TTFT·총 시간을 키운다. 채팅 답은 none. */
+function applyGpt5ReasoningNone(
+  body: Record<string, unknown>,
+  model: string
+): void {
+  if (/^gpt-5|^o[1-4]/i.test(model)) {
+    body.reasoning_effort = "none";
+  }
+}
+
 async function* streamOpenAI(opts: {
   model: string;
   system?: string;
@@ -496,6 +500,7 @@ async function* streamOpenAI(opts: {
     ]
   };
   applyOpenAiTokenLimit(body, opts.model, opts.maxTokens);
+  applyGpt5ReasoningNone(body, opts.model);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

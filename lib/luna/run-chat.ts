@@ -292,12 +292,14 @@ function buildSystemPrompt(opts: {
   if (opts.notionSources && opts.notionSources.length > 0) {
     const forLlm = takeTopNotionSourcesForLlm(opts.notionSources, notionTop);
     const notionHint = listing
-      ? `(위 ${forLlm.length}건을 빠짐없이 검토해 해당 항목을 나열한다. 임의로 1건만 고르지 마라.)`
+      ? `(위 ${forLlm.length}건 중 조건에 맞는 것만 번호로 나열한다. 임의로 1건만 고르지 마라.)`
       : synthesis
         ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라.)`
         : `(화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
     parts.push(
-      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm)}\n${notionHint}`
+      `[노션 검색 결과]\n${formatNotionSourcesForPrompt(forLlm, {
+        compact: listing
+      })}\n${notionHint}`
     );
   }
 

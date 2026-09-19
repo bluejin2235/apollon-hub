@@ -123,7 +123,8 @@ export function shouldOmitTalkAnswer(depth: QuestionDepth): boolean {
 
 /**
  * 답변 max_tokens.
- * simple 은 짧게(10초대), synthesis·listing 은 여유(25초대).
+ * simple·listing 은 짧게(체감 10초 안쪽), synthesis 만 여유.
+ * listing 8192 는 gpt-5 reasoning/장문과 겹쳐 사례 질문이 30초대로 갔다.
  */
 export function answerMaxTokensForDepth(
   depth: QuestionDepth,
@@ -131,5 +132,6 @@ export function answerMaxTokensForDepth(
 ): number {
   if (hasAttachments) return 8192;
   if (depth === "simple") return 1024;
+  if (depth === "listing") return 1200;
   return 8192;
 }
