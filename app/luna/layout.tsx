@@ -8,6 +8,7 @@ import { useRequirePortalSession } from "@/lib/auth/use-require-portal-session";
 import { useRedirectUnlessLunaAccess } from "@/lib/luna/use-has-luna-access";
 import { formatPortalHeaderUserInfo } from "@/lib/portal/profile";
 import { GlossaryHighlightProvider } from "@/components/glossary/GlossaryHighlightProvider";
+import { LunaOpenQuestionsFab } from "@/components/luna/LunaOpenQuestionsFab";
 
 export default function LunaLayout({ children }: { children: ReactNode }) {
   const { status, profile } = useRequirePortalSession();
@@ -34,6 +35,7 @@ export default function LunaLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 w-full flex-1 overflow-hidden pt-14">
         {children}
       </div>
+      {profile?.role === "슈퍼관리자" ? <LunaOpenQuestionsFab /> : null}
     </div>
     </GlossaryHighlightProvider>
   );

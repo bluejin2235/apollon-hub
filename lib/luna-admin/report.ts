@@ -41,6 +41,8 @@ import {
   PROMPT_ROOM_LABEL,
   type TodoPrompt
 } from "@/lib/luna-admin/report-prompts";
+import { openQuestionWeekDelta } from "@/lib/luna/open-questions";
+import { listRecentPerspectiveChanges } from "@/lib/luna/perspective-promote";
 import { iGa, withObjectParticle } from "@/lib/korean/particles";
 
 export type AdminReportResult = {
@@ -267,7 +269,9 @@ export async function buildAdminReportHtml(
     notionBeforeRes,
     imageBeforeRes,
     devnoteBlockers,
-    foundWeek
+    foundWeek,
+    openQWeek,
+    perspectiveChanges
   ] = await Promise.all([
     evaluateLunaChecks(admin, now),
     buildPrimarySources(admin),
@@ -318,7 +322,9 @@ export async function buildAdminReportHtml(
       .select("path", { count: "exact", head: true })
       .lt("indexed_at", startIso),
     loadOpenDevnoteBlockers(admin),
-    getFoundWeekStats(admin, now)
+    getFoundWeekStats(admin, now),
+    openQuestionWeekDelta(admin),
+    listRecentPerspectiveChanges(admin, { sinceHours: 24, limit: 10 })
   ]);
 
   const learningsToday = learningsTodayRes.count ?? 0;
@@ -442,6 +448,34 @@ export async function buildAdminReportHtml(
       detail: q.question.length > 90 ? `${q.question.slice(0, 90)}…` : q.question,
       href: hubHref(buildLunaAdminUrl("candidates", "mine")),
       btn: "답하기 →",
+      tone: "y"
+    });
+  }
+
+  if (openQWeek.open > 0) {
+    const deltaBit =
+      openQWeek.delta > 0
+        ? `지난주보다 ${openQWeek.delta}건 줄었습니다.`
+        : openQWeek.delta < 0
+          ? `지난주보다 ${Math.abs(openQWeek.delta)}건 늘었습니다.`
+          : "지난주와 비슷합니다.";
+    todos.push({
+      title: `루나가 묻고 싶은 것 · ${openQWeek.open}건`,
+      detail: deltaBit,
+      href: hubHref("/luna"),
+      btn: "보기 →",
+      tone: "p"
+    });
+  }
+
+  if (perspectiveChanges.length > 0) {
+    const n = perspectiveChanges.length;
+    const first = perspectiveChanges[0]!;
+    todos.push({
+      title: `어젯밤 관점 ${n}개가 바뀌었습니다`,
+      detail: `· ${first.prompt_title || "팀 관점"} — ${first.pattern} (${first.evidence_count}명)`,
+      href: hubHref(buildLunaAdminUrl("talk", "personalization")),
+      btn: "보기 →",
       tone: "y"
     });
   }
