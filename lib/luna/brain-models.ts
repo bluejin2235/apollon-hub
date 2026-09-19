@@ -124,7 +124,8 @@ export type LunaUsageFeature =
   | "consolidate"
   | "glossary_polish"
   | "self_upgrade"
-  | "luna_stt";
+  | "luna_stt"
+  | "user_memory";
 
 export const LUNA_FEATURE_LABEL: Record<LunaUsageFeature, string> = {
   chat_answer: "채팅 답변",
@@ -139,7 +140,8 @@ export const LUNA_FEATURE_LABEL: Record<LunaUsageFeature, string> = {
   consolidate: "기억 정리",
   glossary_polish: "용어 윤문",
   self_upgrade: "자기개선",
-  luna_stt: "음성 받아쓰기"
+  luna_stt: "음성 받아쓰기",
+  user_memory: "개인 메모 갱신"
 };
 
 export type LunaUsageAlerts = {

@@ -21,6 +21,7 @@ import {
 } from "@/lib/luna/media-index-search";
 import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
+import { scheduleUserMemoRewrite } from "@/lib/luna/user-memory";
 import { llmStreamText, lunaLlmComplete } from "@/lib/luna/llm/client";
 import { getPrompts } from "@/lib/luna/prompts";
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
@@ -869,5 +870,6 @@ export async function runAnalysisPipeline(params: RunAnalysisParams): Promise<vo
 
   await touchConversation();
   scheduleConversationTitle(admin, conversationId);
+  scheduleUserMemoRewrite(admin, userId);
   controller.close();
 }

@@ -59,6 +59,12 @@ import {
 import { searchTavily, type LunaCard } from "@/lib/luna/tavily";
 import { scheduleConversationTitle } from "@/lib/luna/conversation-title";
 import {
+  formatUserMemoryBlock,
+  getUserMemory,
+  scheduleUserMemoRewrite,
+  type LunaUserMemory
+} from "@/lib/luna/user-memory";
+import {
   bumpReportUse,
   findSimilarReport
 } from "@/lib/luna/selfstudy";
@@ -535,6 +541,8 @@ function buildAnswerSystem(
     listingRule?: string;
     listingChecklist?: string;
     llmInject?: LlmInjectLimits;
+    /** 개인 memo — 캐시하면 안 됨 (사람마다 다름) */
+    userMemoryBlock?: string | null;
   },
   useCaching: boolean,
   modelId: string
@@ -561,7 +569,8 @@ function buildAnswerSystem(
     listingQuestion: opts.listingQuestion,
     listingRule: opts.listingRule,
     listingChecklist: opts.listingChecklist,
-    llmInject: opts.llmInject
+    llmInject: opts.llmInject,
+    userMemoryBlock: opts.userMemoryBlock
   });
 
   const payload = buildCachedSystem(
@@ -599,6 +608,7 @@ function buildVolatileSystemText(opts: {
   listingRule?: string;
   listingChecklist?: string;
   llmInject?: LlmInjectLimits;
+  userMemoryBlock?: string | null;
 }): string {
   const parts: string[] = [];
   const depth: QuestionDepth = opts.questionDepth ?? "simple";
@@ -612,6 +622,11 @@ function buildVolatileSystemText(opts: {
     cards: 3,
     nas: 3
   };
+
+  // 순서: 조직 지식(캐시 block3) → 팀 관점(캐시 block2) → 개인 memo(여기)
+  if (opts.userMemoryBlock?.trim()) {
+    parts.push(opts.userMemoryBlock.trim());
+  }
 
   if (opts.clarifyFollowup) {
     parts.push(CLARIFY_FOLLOWUP_RULE);
@@ -1068,6 +1083,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: learningsError.message }, { status: 500 });
   }
   const learningsRowsAll = (learningsData ?? []) as LearningMatchRow[];
+
+  const userMemory: LunaUserMemory | null = await getUserMemory(admin, user.id);
+  const userMemoryBlock = formatUserMemoryBlock(userMemory);
 
   let glossaryRows: GlossaryMatchRow[] = [];
   {
@@ -2975,7 +2993,8 @@ export async function POST(request: NextRequest) {
             listingQuestion,
             listingRule,
             listingChecklist,
-            llmInject
+            llmInject,
+            userMemoryBlock
           },
           tierACfg.use_caching === true,
           tierA.model_id
@@ -3517,6 +3536,7 @@ export async function POST(request: NextRequest) {
 
         await touchConversation();
         scheduleConversationTitle(admin, conversationId);
+        scheduleUserMemoRewrite(admin, user.id);
         controller.close();
       } catch (err) {
         console.error("[luna/chat] stream", err);
