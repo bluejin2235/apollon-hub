@@ -1679,14 +1679,30 @@ export async function POST(request: NextRequest) {
           rounds: 0
         };
         let speculativeNas: WorkserverExploreRow[] = [];
-        // 범위가 허용한 색인만 선조회 (용어·규정·인사면 skipped)
+        let preMediaProbe = {
+          hits: [] as Awaited<ReturnType<typeof searchMediaForLuna>>["hits"],
+          cards: [] as LunaCard[]
+        };
+        const imageIntentEarly =
+          searchScope.flags.media && hasImageSearchIntent(searchIntentText);
+        // 노션 선조회와 미디어를 병렬 — 직렬이면 사례 질문에 수 초가 더 붙는다
+        const preMediaPromise =
+          imageIntentEarly && knowledgeEmb.queryEmbedding?.length
+            ? searchMediaForLuna(
+                admin,
+                knowledgeEmb.queryEmbedding,
+                searchIntentText
+              )
+            : Promise.resolve(preMediaProbe);
         {
-          const [notionSpec, nasSpec] = await Promise.all([
+          const [notionSpec, nasSpec, mediaSpec] = await Promise.all([
             speculativeNotionPromise,
-            speculativeNasPromise
+            speculativeNasPromise,
+            preMediaPromise
           ]);
           speculativeNotion = notionSpec;
           speculativeNas = nasSpec;
+          preMediaProbe = mediaSpec;
           console.log("[luna/search] speculative notion", {
             status: speculativeNotion.status,
             count: speculativeNotion.sources.length,
@@ -1698,6 +1714,13 @@ export async function POST(request: NextRequest) {
             count: speculativeNas.length,
             scope: searchScope.kind
           });
+          if (imageIntentEarly) {
+            console.log("[luna/media-index] pre-clarify", {
+              query: searchIntentText.slice(0, 80),
+              hits: preMediaProbe.hits.length,
+              topSim: preMediaProbe.hits[0]?.similarity ?? null
+            });
+          }
         }
 
         const libraryHits = typesNeedLibrary(classifiedTypeRows)
@@ -1708,21 +1731,7 @@ export async function POST(request: NextRequest) {
             )
           : [];
 
-        const imageIntent =
-          searchScope.flags.media && hasImageSearchIntent(searchIntentText);
-        let preMediaProbe = { hits: [] as Awaited<ReturnType<typeof searchMediaForLuna>>["hits"], cards: [] as LunaCard[] };
-        if (imageIntent && knowledgeEmb.queryEmbedding?.length) {
-          preMediaProbe = await searchMediaForLuna(
-            admin,
-            knowledgeEmb.queryEmbedding,
-            searchIntentText
-          );
-          console.log("[luna/media-index] pre-clarify", {
-            query: searchIntentText.slice(0, 80),
-            hits: preMediaProbe.hits.length,
-            topSim: preMediaProbe.hits[0]?.similarity ?? null
-          });
-        }
+        const imageIntent = imageIntentEarly;
 
         // ——— 단계 1: 되묻기 ———
         const clearFindIntent =
@@ -2993,33 +3002,40 @@ export async function POST(request: NextRequest) {
               .join("\r\n\r\n")
           : undefined;
 
-        const depthRule =
-          listingQuestion
-            ? listingRule
-            : questionDepth === "synthesis"
-              ? SYNTHESIS_ANSWER_RULE
-              : undefined;
-
-        const l3Prompt = buildL3PromptBlock({
-          understand: understandPick.text,
-          assume: talkAssume,
-          typeBlocks,
-          answer: shouldOmitTalkAnswer(questionDepth) ? undefined : talkAnswer,
-          depthRule
-        });
-
         const slimListingPrompt = listingReferenceDisablesNas(
           searchScope.kind,
           listingQuestion
         );
 
+        const depthRule = listingQuestion
+          ? listingRule
+          : questionDepth === "synthesis"
+            ? SYNTHESIS_ANSWER_RULE
+            : undefined;
+
+        // 목록형 사례: listing 규칙만 — understand/know/관점/learnings 는 입력만 키운다
+        const l3Prompt = slimListingPrompt
+          ? buildL3PromptBlock({
+              assume: talkAssume,
+              depthRule: listingRule
+            })
+          : buildL3PromptBlock({
+              understand: understandPick.text,
+              assume: talkAssume,
+              typeBlocks,
+              answer: shouldOmitTalkAnswer(questionDepth)
+                ? undefined
+                : talkAnswer,
+              depthRule
+            });
+
         const systemPrompt = buildAnswerSystem(
           {
             identity,
-            learningsBlock,
+            learningsBlock: slimListingPrompt ? undefined : learningsBlock,
             glossaryBlock,
             wikiSectionsBlock,
-            skillPrompt,
+            skillPrompt: slimListingPrompt ? null : skillPrompt,
             l3Prompt,
             workserverStructure,
             notionSources,
@@ -3034,8 +3050,8 @@ export async function POST(request: NextRequest) {
             clarifyFollowup: Boolean(clarifyFollowupQuery),
             questionDepth,
             listingQuestion,
-            listingRule,
-            listingChecklist,
+            listingRule: slimListingPrompt ? undefined : listingRule,
+            listingChecklist: slimListingPrompt ? undefined : listingChecklist,
             llmInject,
             userMemoryBlock,
             slimListingPrompt
