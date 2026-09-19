@@ -2,7 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
 
-const MIN_USERS = 3;
+/** 아폴론 팀 규모(부서당 2명)에 맞춤. 3명이면 영구 미발동. */
+export const MIN_USERS = 2;
 
 export type PerspectiveChangeRow = {
   id: string;
@@ -18,7 +19,7 @@ export type PerspectiveChangeRow = {
 };
 
 /**
- * 같은 패턴이 3명 이상 memo 에 있으면 팀 관점 프롬프트를 고친다.
+ * 같은 패턴이 2명 이상 memo 에 있으면 팀 관점 프롬프트를 고친다.
  * 확인받지 않는다. 되돌리기는 이력으로.
  */
 export async function promoteSharedMemoPatterns(
@@ -55,10 +56,10 @@ export async function promoteSharedMemoPatterns(
     const result = await lunaLlmComplete(admin, {
       tier: "C",
       feature: "user_memory",
-      system: `여러 사람의 개인 memo 를 보고, 3명 이상에게 같은 패턴이 있으면 팀 관점으로 올릴 후보를 JSON 으로 낸다.
+      system: `여러 사람의 개인 memo 를 보고, 2명 이상에게 같은 패턴이 있으면 팀 관점으로 올릴 후보를 JSON 으로 낸다.
 출력: {"items":[{"pattern":"동선=관람 흐름","line":"「동선」을 관람 흐름으로 읽는다","user_ids":["uuid",...],"perspective_hint":"공간기획"}]}
 없으면 {"items":[]}
-개인 취향·답 길이·말버릇은 올리지 않는다. 팀 공통 해석만.`,
+개인 취향·답 길이·말버릇은 올리지 않는다. 팀 공통 해석만. 가능하면 같은 부서(perspective_hint) 사람들끼리만.`,
       user: lines,
       maxTokens: 600
     });

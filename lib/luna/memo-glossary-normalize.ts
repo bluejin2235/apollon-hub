@@ -115,17 +115,29 @@ function bestFuzzyOfficial(
 
 /**
  * memo 본문을 용어사전 정식 표기로 고친다. 토큰 단위만.
+ *
+ * 안전 규칙 (2026-09 테스트 후):
+ * - 동의어·정식어 **정확 일치**만 치환한다.
+ * - 편집거리 퍼지는 쓰지 않는다. 「프로그램」→「홀로그램」처럼
+ *   사전 정식어로 잘못 끌어가는 오교정이 memo 에 박히기 때문이다.
+ * - 퍼지 후보는 skippedFuzzy 로만 남겨 로그·점검에 쓴다.
  */
 export function normalizeMemoAgainstGlossary(
   memo: string,
   canon: GlossaryCanon
-): { text: string; fixes: Array<{ from: string; to: string }> } {
+): {
+  text: string;
+  fixes: Array<{ from: string; to: string }>;
+  skippedFuzzy: Array<{ from: string; would: string }>;
+} {
   if (!memo.trim() || canon.officials.length === 0) {
-    return { text: memo, fixes: [] };
+    return { text: memo, fixes: [], skippedFuzzy: [] };
   }
 
   const fixes: Array<{ from: string; to: string }> = [];
+  const skippedFuzzy: Array<{ from: string; would: string }> = [];
   const seenFix = new Set<string>();
+  const seenFuzzy = new Set<string>();
 
   const record = (from: string, to: string) => {
     if (from === to) return;
@@ -141,15 +153,19 @@ export function normalizeMemoAgainstGlossary(
       record(token, exact);
       return exact;
     }
+    // 퍼지 후보는 적용하지 않고 기록만
     const fuzzy = bestFuzzyOfficial(token, canon.fuzzyOfficials);
     if (fuzzy && fuzzy !== token) {
-      record(token, fuzzy);
-      return fuzzy;
+      const fk = `${token}→${fuzzy}`;
+      if (!seenFuzzy.has(fk)) {
+        seenFuzzy.add(fk);
+        skippedFuzzy.push({ from: token, would: fuzzy });
+      }
     }
     return token;
   });
 
-  return { text, fixes };
+  return { text, fixes, skippedFuzzy };
 }
 
 /**

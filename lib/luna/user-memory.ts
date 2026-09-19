@@ -40,20 +40,20 @@ const RECENT_CONVERSATIONS = 8;
 const MSGS_PER_CONV = 12;
 const BATCH_LIMIT = 20;
 
-const MEMO_REWRITE_SYSTEM_BASE = `당신은 아폴론 허브의 루나다. 한 사람과의 대화를 보고 「루나가 아는 나」 메모를 통째로 다시 쓴다.
+const MEMO_REWRITE_SYSTEM_BASE = `당신은 아폴론 허브의 루나다. 한 사람과의 **최근 대화**만 보고 「루나가 아는 나」 메모를 통째로 새로 쓴다.
 
 규칙:
-- 덧붙이지 말고 새로 쓴다. 모순·중복을 없앤다.
-- 사람이 직접 쓰지 않은 추측은 넣지 않는다. 대화에서 드러난 것만.
+- 덧붙이지 마라. 이전 메모를 복사·이어 붙이지 마라. 최근 대화에서 드러난 것만으로 처음부터 다시 쓴다.
+- 기존 메모는 참고용이다. 최근 대화에서 다시 나타나지 않은 주제·프로젝트·관심사는 버려라. 오래되면 자연히 사라져야 한다.
+- 사람이 직접 말하지 않은 추측은 넣지 않는다.
 - 구조는 글머리로 표현한다 (항목 테이블이 아니다):
   하는 일
   답할 때
   말버릇
   자주 찾는 것
 - 해당 섹션에 쓸 게 없으면 그 섹션을 생략한다.
-- 최대 ${USER_MEMO_MAX_CHARS}자. 넘으면 오래된·덜 중요한 것을 버린다.
+- 최대 ${USER_MEMO_MAX_CHARS}자. 넘치면 덜 중요한 것을 버린다.
 - 메모 본문만 출력한다. 따옴표·설명·JSON 금지.
-- 기존 메모에 있고 새 대화에서 부정되지 않은 것은 유지한다.
 - 조직 공통 지식·팀 관점은 넣지 않는다. 이 사람만의 것.
 - 사용자가 오타·다른 표기로 말해도, 아래에 준 정식 용어 표기로만 적는다. 오타를 그대로 배우지 않는다.`;
 
@@ -301,13 +301,14 @@ export async function rewriteUserMemo(
       formalTermsForMemoPrompt(admin),
       loadGlossaryCanon(admin)
     ]);
+    // 최근 대화를 본문으로. 기존 메모는 짧은 참고만 — 「유지」 지시 금지.
     const userPrompt = [
-      prevMemo
-        ? `기존 메모:\n${prevMemo.slice(0, USER_MEMO_MAX_CHARS)}`
-        : "기존 메모: (없음)",
+      "최근 대화 (이것만으로 메모를 새로 써라):",
+      dialogue.text,
       "",
-      "최근 대화:",
-      dialogue.text
+      prevMemo
+        ? `이전 메모(참고만. 최근 대화에 없는 내용은 넣지 마라):\n${prevMemo.slice(0, 600)}`
+        : "이전 메모: (없음)"
     ].join("\n");
 
     let memo = "";
@@ -331,10 +332,11 @@ export async function rewriteUserMemo(
 
     const normalized = normalizeMemoAgainstGlossary(memo, canon);
     memo = clipMemo(normalized.text);
-    if (normalized.fixes.length > 0) {
+    if (normalized.fixes.length > 0 || normalized.skippedFuzzy.length > 0) {
       console.log("[luna/user-memory] glossary normalize", {
         userId,
-        fixes: normalized.fixes.slice(0, 12)
+        fixes: normalized.fixes.slice(0, 12),
+        skippedFuzzy: normalized.skippedFuzzy.slice(0, 12)
       });
     }
 
@@ -440,10 +442,11 @@ export async function saveUserMemoText(
   const canon = await loadGlossaryCanon(admin);
   const normalized = normalizeMemoAgainstGlossary(memo, canon);
   const clipped = clipMemo(normalized.text);
-  if (normalized.fixes.length > 0) {
+  if (normalized.fixes.length > 0 || normalized.skippedFuzzy.length > 0) {
     console.log("[luna/user-memory] save normalize", {
       userId,
-      fixes: normalized.fixes.slice(0, 12)
+      fixes: normalized.fixes.slice(0, 12),
+      skippedFuzzy: normalized.skippedFuzzy.slice(0, 12)
     });
   }
   try {

@@ -17,6 +17,7 @@ import { runLunaTurn } from "@/lib/luna/run-chat";
 import { FEEDBACK_REASON_LABELS, isFeedbackReason } from "@/lib/luna/feedback";
 import { listOpenSelfstudyGoals } from "@/lib/luna/weekly-goals";
 import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
+import { isPersonaTestTitle } from "@/lib/luna/persona-test-marker";
 
 export type {
   LunaReportRow,
@@ -430,9 +431,9 @@ export async function extractStuckMoments(
 ): Promise<StuckMoment[]> {
   const { startIso, endIso } = kstDayBounds();
 
-  const { data: convs, error: convErr } = await admin
+  const { data: convsRaw, error: convErr } = await admin
     .from("luna_conversations")
-    .select("id, user_id")
+    .select("id, user_id, title")
     .gte("updated_at", startIso)
     .lt("updated_at", endIso)
     .limit(200);
@@ -440,9 +441,11 @@ export async function extractStuckMoments(
   if (convErr) {
     console.error("[luna/selfstudy] conversations", convErr);
   }
-  const convIds = (convs ?? []).map((c) => c.id as string);
+  /** 개인화 E2E 점검 대화는 자습·막힘 추출에서 뺀다 */
+  const convs = (convsRaw ?? []).filter((c) => !isPersonaTestTitle(c.title));
+  const convIds = convs.map((c) => c.id as string);
   const userIds = Array.from(
-    new Set((convs ?? []).map((c) => c.user_id as string).filter(Boolean))
+    new Set(convs.map((c) => c.user_id as string).filter(Boolean))
   );
 
   const [{ data: profiles }, { data: messages, error: msgErr }] =
@@ -644,9 +647,10 @@ export async function extractStuckMoments(
     if (extraConvIds.length > 0) {
       const { data: extraConvs } = await admin
         .from("luna_conversations")
-        .select("id, user_id")
+        .select("id, user_id, title")
         .in("id", extraConvIds);
       for (const c of extraConvs ?? []) {
+        if (isPersonaTestTitle(c.title)) continue;
         extraUserByConv.set(c.id as string, c.user_id as string);
       }
       const extraUserIds = Array.from(
@@ -667,6 +671,7 @@ export async function extractStuckMoments(
     for (const row of downMsgs ?? []) {
       const conversation_id = row.conversation_id as string;
       if (byConv.has(conversation_id)) continue;
+      if (!extraUserByConv.has(conversation_id)) continue;
       const meta =
         row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
           ? (row.metadata as Record<string, unknown>)
