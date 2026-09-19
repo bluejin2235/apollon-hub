@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Copy, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { LunaDetailMeta } from "@/components/luna/LunaMessage";
@@ -463,15 +464,23 @@ export function AnswerMeta({
             </>
           ) : null}
         </div>
-        {docsTabLabel && onDocsTab ? (
-          <button
-            type="button"
-            onClick={onDocsTab}
-            className="ml-auto text-[10.5px] font-semibold text-[#534AB7] hover:underline"
+        <div className="ml-auto flex items-center gap-3">
+          {docsTabLabel && onDocsTab ? (
+            <button
+              type="button"
+              onClick={onDocsTab}
+              className="text-[10.5px] font-semibold text-[#534AB7] hover:underline"
+            >
+              {docsTabLabel}
+            </button>
+          ) : null}
+          <Link
+            href="/settings?tab=myluna"
+            className="text-[10.5px] font-semibold text-[#534AB7] hover:underline"
           >
-            {docsTabLabel}
-          </button>
-        ) : null}
+            나의 루나 →
+          </Link>
+        </div>
       </div>
       {showScores && (lowIntent || lowConf) && selfNote ? (
         <p className="mt-1 text-[11px] italic text-[#B0782B]">{selfNote}</p>

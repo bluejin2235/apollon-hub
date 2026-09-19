@@ -8,6 +8,7 @@ import { PortalHeader } from "@/components/portal/portal-header";
 import { LunaSettingsTab } from "@/components/settings/luna-settings-tab";
 import { LunaAdminApp } from "@/components/luna-admin/LunaAdminApp";
 import { MyLoansTab } from "@/components/settings/my-loans-tab";
+import { MyLunaTab } from "@/components/settings/my-luna-tab";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { ServiceManagementTab } from "@/components/settings/service-management-tab";
 import { ServicePermissionsTab } from "@/components/settings/service-permissions-tab";
@@ -21,6 +22,7 @@ import { supabase } from "@/lib/supabase/client";
 
 type TabKey =
   | "profile"
+  | "myluna"
   | "password"
   | "notifications"
   | "team"
@@ -36,6 +38,7 @@ const roleOptions: Role[] = ["슈퍼관리자", "중간관리자", "멤버"];
 function isSettingsTabKey(value: string): value is TabKey {
   return (
     value === "profile" ||
+    value === "myluna" ||
     value === "password" ||
     value === "notifications" ||
     value === "team" ||
@@ -134,6 +137,7 @@ function SettingsPageInner() {
   const tabs = useMemo<Array<{ key: TabKey; label: string }>>(() => {
     const base: Array<{ key: TabKey; label: string }> = [
       { key: "profile", label: "프로필" },
+      { key: "myluna", label: "나의 루나" },
       { key: "password", label: "비밀번호" },
       { key: "notifications", label: "알림" },
       { key: "loans", label: "내 대출 현황" },
@@ -516,6 +520,8 @@ function SettingsPageInner() {
             </div>
           </section>
         ) : null}
+
+        {activeTab === "myluna" ? <MyLunaTab /> : null}
 
         {activeTab === "password" ? (
           <section className="apollon-card p-6 md:p-8">
