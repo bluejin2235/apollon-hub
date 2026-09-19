@@ -689,7 +689,8 @@ export async function searchNotionForLuna(
     ? annotateNotionSourcesWithWorkStage(merged.sources, queryText)
     : merged.sources;
 
-  const useSecondary = opts?.useSecondary !== false;
+  const useSecondary =
+    opts?.useSecondary !== false && !listing;
   let finalSources = stagedSources;
   let secondaryMeta: NotionSearchOutcome["secondary"] = {
     link_added: 0,
