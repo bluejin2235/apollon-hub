@@ -436,7 +436,7 @@ function printBatchReport(opts: {
   }
 }
 
-const SCALE_LARGE_CORPUS = 198_302;
+const SCALE_LARGE_CORPUS = 104_273;
 
 async function walkStorageFiles(
   admin: SupabaseClient,
