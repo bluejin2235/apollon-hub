@@ -823,7 +823,7 @@ export async function runProbeRetrievalExam(
         ? Math.min(MODE_A_BATCH_SIZE, limit)
         : MODE_A_BATCH_SIZE;
 
-  const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_CALL_BUDGET_MS, MODE_A_LLM_DOCS_PER_CALL } =
+  const { isMultiSourceModeAEnabled, runModeAMultiSource, MODE_A_CALL_BUDGET_MS } =
     await import("@/lib/luna/probe-mode-a-sources");
 
   if (isMultiSourceModeAEnabled() && scope.multi_source !== false) {
@@ -834,7 +834,6 @@ export async function runProbeRetrievalExam(
         : undefined;
     const multi = await runModeAMultiSource(admin, {
       budgetMs: MODE_A_CALL_BUDGET_MS,
-      llmChunk: Math.min(MODE_A_LLM_DOCS_PER_CALL, pageLimit),
       exclude,
       limits: {
         glossary:

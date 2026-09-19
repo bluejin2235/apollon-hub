@@ -78,7 +78,12 @@ export const MODE_A_SOURCE_ORDER: ModeASourceKind[] = [
 
 /** 한 크론 청크. 455건을 한 호출에 넣으면 800초에 끊기고 finishRun 이 안 된다. */
 export const MODE_A_CALL_BUDGET_MS = 120_000;
-export const MODE_A_LLM_DOCS_PER_CALL = 8;
+/** LLM 원천은 한 청크에 이 문서씩만. 위키를 다 끝내기 전에 Work·노션도 돈다. */
+export const MODE_A_LLM_DOCS_PER_CALL: Partial<Record<ModeASourceKind, number>> = {
+  wiki: 3,
+  work: 2,
+  notion: 2
+};
 
 function pastDeadline(deadlineMs?: number): boolean {
   return deadlineMs != null && Date.now() > deadlineMs;
@@ -810,7 +815,7 @@ export async function runModeAMultiSource(
     /** 시험용: 일부 원천만 */
     only?: ModeASourceKind[];
     budgetMs?: number;
-    /** LLM 원천(위키·Work·노션) 한 청크당 문서 수 */
+    /** LLM 원천 한 청크당 문서 수. 없으면 원천별 기본값 */
     llmChunk?: number;
     exclude?: Set<string>;
     generateQuestions: (title: string, body: string) => Promise<{
@@ -847,12 +852,10 @@ export async function runModeAMultiSource(
   let llmCalls = 0;
   const started = Date.now();
   const deadline = started + (opts.budgetMs ?? MODE_A_CALL_BUDGET_MS);
-  const llmChunk = opts.llmChunk ?? MODE_A_LLM_DOCS_PER_CALL;
   const exclude = opts.exclude ?? new Set<string>();
   console.log("[mode-a] chunk start", {
     exclude: exclude.size,
-    budget_ms: deadline - started,
-    llm_chunk: llmChunk
+    budget_ms: deadline - started
   });
 
   for (const kind of order) {
@@ -862,8 +865,9 @@ export async function runModeAMultiSource(
     }
     const daily =
       opts.limits?.[kind] ?? MODE_A_SOURCE_BUDGET[kind].daily_items;
+    const share = MODE_A_LLM_DOCS_PER_CALL[kind] ?? 2;
     const lim = MODE_A_SOURCE_BUDGET[kind].needs_llm
-      ? Math.min(daily, llmChunk)
+      ? Math.min(daily, opts.llmChunk ?? share)
       : daily;
     if (lim <= 0) continue;
     const common = { limit: lim, streaks, exclude, deadlineMs: deadline };
