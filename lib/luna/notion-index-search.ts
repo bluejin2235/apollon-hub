@@ -26,6 +26,11 @@ import {
   notionSearchKeywords,
   type NotionHybridChunkHit
 } from "@/lib/luna/notion-keyword";
+import {
+  RERANK_CANDIDATE_N,
+  isRerankConfigured,
+  rerankPassages
+} from "@/lib/luna/rerank";
 
 /** ì¬ì©ì ì§ì  â ì²­í¬ ë¶í¬ì ë§ì¶¤ (ë¸ë¡ ìì  0.35) */
 export const NOTION_INDEX_MATCH_THRESHOLD = 0.3;
@@ -34,7 +39,7 @@ export const NOTION_INDEX_MAX_BLOCKS_PER_PAGE = 3;
 /** ëª©ë¡í: ì¬ë¬ íë¡ì í¸ê° ê³¨ê³ ë£¨ ë¤ì´ê°ëë¡ íì´ì§ë¹ 1 Â· ìì 20 */
 export const NOTION_LISTING_TOP_CHUNKS = 20;
 export const NOTION_LISTING_MAX_PER_PAGE = 1;
-const MATCH_OVERFETCH = 36;
+const MATCH_OVERFETCH = 50;
 const LISTING_MATCH_OVERFETCH = 60;
 /** ìì¸ íì´ì§ê° ì´ë³´ë¤ ì ì¼ë©´ ì¤ìê° Notion API ë³´ê° */
 const LIVE_IF_PAGES_BELOW = 3;
@@ -160,6 +165,73 @@ function hybridToChunkHits(hits: NotionHybridChunkHit[]): NotionChunkMatchHit[] 
     fused_score: h.fused_score,
     match_via: h.match_via
   }));
+}
+
+/** fused 상위 N을 BGE 리랭크로 재정렬. 설정·본문 없으면 입력 그대로. */
+async function rerankHybridChunkHits(
+  admin: SupabaseClient,
+  queryText: string,
+  hits: NotionChunkMatchHit[],
+  limit = RERANK_CANDIDATE_N
+): Promise<{ hits: NotionChunkMatchHit[]; rerank_ms: number; used: boolean }> {
+  if (!queryText.trim() || hits.length < 2 || !isRerankConfigured()) {
+    return { hits, rerank_ms: 0, used: false };
+  }
+  const rank = (h: NotionChunkMatchHit) => h.fused_score ?? h.similarity ?? 0;
+  const candidates = [...hits].sort((a, b) => rank(b) - rank(a)).slice(0, limit);
+  const rest = hits.filter((h) => !candidates.some((c) => c.chunk_id === h.chunk_id));
+  const ids = candidates.map((h) => h.chunk_id).filter(Boolean);
+  if (ids.length < 2) return { hits, rerank_ms: 0, used: false };
+
+  const { data, error } = await admin
+    .from("luna_notion_chunks")
+    .select("chunk_id, heading, text")
+    .in("chunk_id", ids);
+  if (error) {
+    console.error("[luna/notion-index] rerank chunks", error);
+    return { hits, rerank_ms: 0, used: false };
+  }
+  const textById = new Map<string, string>();
+  for (const row of data ?? []) {
+    const id = String((row as { chunk_id?: string }).chunk_id ?? "");
+    const heading = String((row as { heading?: string }).heading ?? "").trim();
+    const text = String((row as { text?: string }).text ?? "").trim();
+    if (!id) continue;
+    textById.set(id, [heading, text].filter(Boolean).join("\n").slice(0, 1200));
+  }
+  const passages = candidates
+    .map((h) => ({
+      id: h.chunk_id,
+      text: textById.get(h.chunk_id) ?? ""
+    }))
+    .filter((p) => p.text.length > 0);
+  if (passages.length < 2) return { hits, rerank_ms: 0, used: false };
+
+  const result = await rerankPassages({ query: queryText, passages });
+  if (!result.used) {
+    return { hits, rerank_ms: result.ms, used: false };
+  }
+  const byId = new Map(candidates.map((h) => [h.chunk_id, h]));
+  const maxFused = Math.max(...candidates.map((h) => rank(h)), 1);
+  const reranked: NotionChunkMatchHit[] = [];
+  for (let i = 0; i < result.orderedIds.length; i += 1) {
+    const id = result.orderedIds[i]!;
+    const hit = byId.get(id);
+    if (!hit) continue;
+    const score = result.scores[i] ?? 0;
+    // 하위 selectNotionChunkHits 가 fused 를 쓰므로 리랭크 순서를 점수에 반영
+    const fused = maxFused + (result.orderedIds.length - i);
+    reranked.push({
+      ...hit,
+      fused_score: fused,
+      similarity: Number.isFinite(score) ? score : hit.similarity
+    });
+  }
+  return {
+    hits: [...reranked, ...rest],
+    rerank_ms: result.ms,
+    used: true
+  };
 }
 
 function formatHierarchy(opts: {
@@ -500,7 +572,20 @@ export async function searchNotionForLuna(
   keywordHitCount = keywordHits.length;
 
   const hybridHits = mergeNotionHybridChunkHits(chunkHits ?? [], keywordHits);
-  const hybridChunkHits = hybridToChunkHits(hybridHits);
+  let hybridChunkHits = hybridToChunkHits(hybridHits);
+  let rerankMs = 0;
+  let rerankUsed = false;
+  if (hybridChunkHits.length > 0) {
+    const reranked = await rerankHybridChunkHits(
+      admin,
+      queryText,
+      hybridChunkHits,
+      overfetch
+    );
+    hybridChunkHits = reranked.hits;
+    rerankMs = reranked.rerank_ms;
+    rerankUsed = reranked.used;
+  }
 
   if (hybridChunkHits.length > 0) {
     const built = await buildIndexedSourcesFromChunks(
@@ -594,10 +679,11 @@ export async function searchNotionForLuna(
     recentRefresh: recentPages.length,
     liveSources: liveOutcome.sources.length,
     final: merged.sources.length,
+    rerank: rerankUsed ? rerankMs : false,
     ms: Date.now() - started
   });
 
-  const searchMs = Date.now() - searchStarted;
+  const searchMs = Math.max(0, Date.now() - searchStarted - rerankMs);
 
   const stagedSources = queryText
     ? annotateNotionSourcesWithWorkStage(merged.sources, queryText)
@@ -671,6 +757,7 @@ export async function searchNotionForLuna(
     timings: {
       embed_ms: embedMs,
       search_ms: searchMs,
+      rerank_ms: rerankMs,
       candidates_found: candidatesFound
     }
   };

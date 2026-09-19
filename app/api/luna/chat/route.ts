@@ -3264,6 +3264,7 @@ export async function POST(request: NextRequest) {
           (knowledgeEmb.embed_ms ?? 0) +
           (notionSearchOutcome?.timings?.embed_ms ?? 0);
         const timingSearchMs = notionSearchOutcome?.timings?.search_ms ?? 0;
+        const timingRerankMs = notionSearchOutcome?.timings?.rerank_ms ?? 0;
         const timingLinkMs = notionSearchOutcome?.secondary?.link_ms ?? 0;
         const timingCandidatesFound =
           notionSearchOutcome?.timings?.candidates_found ??
@@ -3289,6 +3290,7 @@ export async function POST(request: NextRequest) {
           embed_ms: timingEmbedMs,
           search_ms: timingSearchMs,
           link_ms: timingLinkMs,
+          rerank_ms: timingRerankMs,
           llm_ms: llmMs,
           total_ms: durationMs,
           candidates_found: timingCandidatesFound,

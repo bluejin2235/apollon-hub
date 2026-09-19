@@ -69,8 +69,10 @@ export type NotionSearchSecondaryMeta = {
 export type NotionSearchTimings = {
   /** 색인 안에서 임베딩을 새로 만든 경우만 (외부 주입 시 0) */
   embed_ms: number;
-  /** 임베딩·키워드 검색 + 소스 조립 (연결 제외) */
+  /** 임베딩·키워드 검색 + 소스 조립 (연결·리랭크 제외) */
   search_ms: number;
+  /** 상위 후보 재정렬 (없으면 0) */
+  rerank_ms: number;
   candidates_found: number;
 };
 

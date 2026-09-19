@@ -60,6 +60,13 @@ export const ENV_ALIAS_GROUPS: EnvAliasGroup[] = [
     ]
   },
   {
+    id: "rerank",
+    label: "리랭커 (BGE, 선택)",
+    names: ["LUNA_RERANK_URL", "HF_TOKEN", "HUGGINGFACE_API_KEY"],
+    crons: [],
+    optional: true
+  },
+  {
     id: "google",
     label: "Gemini",
     names: ["LUNA_GOOGLE_API_KEY", "hubtrendchat_geminai"],
