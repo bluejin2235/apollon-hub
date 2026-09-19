@@ -98,10 +98,11 @@ function formatWhen(iso: string | null): string {
 }
 
 function statusLabel(light: TrafficLight, days: number | null): string {
+  if (days != null && days <= 0) return "오늘 실행";
   if (light === "green") return "정상";
-  if (light === "yellow") return "지연";
+  if (light === "yellow") return days != null ? `${days}일째 지연` : "지연";
   if (days == null) return "기록 없음";
-  return "멈춤";
+  return `${days}일째 멈춤`;
 }
 
 function checkStatusLabel(light: TrafficLight): string {
@@ -394,6 +395,19 @@ export async function buildPrimarySources(
     imageCorpus > 0
       ? Math.max(0, Math.round((imageCount / imageCorpus) * 1000) / 10)
       : 0;
+  const imagePctInt =
+    imageCorpus > 0 ? Math.max(0, Math.round((imageCount / imageCorpus) * 100)) : 0;
+  const imageStatusLabel = (() => {
+    if (imageDays == null) return "기록 없음";
+    if (imageDays >= 3) return `${imageDays}일째 멈춤`;
+    if (imageDays >= 2) return `${imageDays}일째 지연`;
+    if (imageDays <= 0) {
+      if (imagePctInt < 100) return `색인 진행 중 · ${imagePctInt}%`;
+      if (!yImage) return "새 이미지 없음";
+      return "오늘 실행";
+    }
+    return "정상";
+  })();
   const image: PrimarySourceRow = {
     source: "image",
     label: "이미지",
@@ -405,7 +419,7 @@ export async function buildPrimarySources(
     last_label: formatWhen(imageLast),
     duration_label: "—",
     status: imageLight,
-    status_label: statusLabel(imageLight, imageDays),
+    status_label: imageStatusLabel,
     note: `${num(imageCorpus)} 중 ${imagePct}%`,
     delta: yImage,
     delta_label: deltaLabel(yImage)

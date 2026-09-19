@@ -30,12 +30,10 @@ import type {
 export type { AdminDashboard, StageView, AdminAlert } from "@/lib/luna-admin/types";
 
 function titleFor(key: StageView["key"], light: TrafficLight, days: number | null): string {
+  if (days != null && days <= 0) return "오늘 실행";
   if (light === "green") return "정상";
   if (key === "learn" && days != null && days >= 3) return `${days}일째 멈춤`;
-  if (light === "yellow") {
-    if (days == null || days <= 0) return "오늘 실행";
-    return `${days}일째 지연`;
-  }
+  if (light === "yellow") return days != null ? `${days}일째 지연` : "지연";
   if (days == null) return "기록 없음";
   return `${days}일째 멈춤`;
 }
@@ -188,11 +186,33 @@ export async function buildAdminDashboard(
       key: "collect",
       label: "수집",
       light: collectLight,
-      title: titleFor("collect", collectLight, Math.max(
-        primary.work.status === "red" ? (kstCalendarDaysAgo(primary.work.last_iso) ?? 99) : 0,
-        primary.notion.status === "red" ? (kstCalendarDaysAgo(primary.notion.last_iso) ?? 99) : 0,
-        primary.image.status === "red" ? (kstCalendarDaysAgo(primary.image.last_iso) ?? 99) : 0
-      ) || kstCalendarDaysAgo(primary.work.last_iso)),
+      title:
+        collectLight === "green"
+          ? primary.image.status_label
+          : titleFor(
+              "collect",
+              collectLight,
+              Math.max(
+                primary.work.status === "red"
+                  ? (kstCalendarDaysAgo(primary.work.last_iso) ?? 99)
+                  : 0,
+                primary.notion.status === "red"
+                  ? (kstCalendarDaysAgo(primary.notion.last_iso) ?? 99)
+                  : 0,
+                primary.image.status === "red"
+                  ? (kstCalendarDaysAgo(primary.image.last_iso) ?? 99)
+                  : 0,
+                primary.work.status === "yellow"
+                  ? (kstCalendarDaysAgo(primary.work.last_iso) ?? 2)
+                  : 0,
+                primary.notion.status === "yellow"
+                  ? (kstCalendarDaysAgo(primary.notion.last_iso) ?? 2)
+                  : 0,
+                primary.image.status === "yellow"
+                  ? (kstCalendarDaysAgo(primary.image.last_iso) ?? 2)
+                  : 0
+              ) || kstCalendarDaysAgo(primary.work.last_iso)
+            ),
       detail: collectDetail
     },
     {

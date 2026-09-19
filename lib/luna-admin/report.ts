@@ -266,9 +266,9 @@ export async function buildAdminReportHtml(
     lensYesterday,
     failuresOpenedRes,
     failuresOpenYesterdayRes,
-    notionBeforeRes,
     notionLiveRes,
-    imageBeforeRes,
+    imageLiveRes,
+    sourceStatsRes,
     devnoteBlockers,
     foundWeek,
     openQWeek,
@@ -316,15 +316,15 @@ export async function buildAdminReportHtml(
       .lt("created_at", startIso),
     admin
       .from("luna_notion_pages")
-      .select("page_id", { count: "exact", head: true })
-      .lt("indexed_at", startIso),
-    admin
-      .from("luna_notion_pages")
       .select("page_id", { count: "exact", head: true }),
     admin
       .from("luna_media_index")
-      .select("path", { count: "exact", head: true })
-      .lt("indexed_at", startIso),
+      .select("path", { count: "exact", head: true }),
+    admin
+      .from("luna_source_stats")
+      .select("day, source, total, by_kind")
+      .order("day", { ascending: false })
+      .limit(24),
     loadOpenDevnoteBlockers(admin),
     getFoundWeekStats(admin, now),
     openQuestionWeekDelta(admin),
@@ -335,23 +335,43 @@ export async function buildAdminReportHtml(
   const learningsYesterday = learningsYesterdayRes.count ?? 0;
   void failuresOpenedRes;
   const failuresYesterday = failuresOpenYesterdayRes.count ?? openFailures;
-  const notionBefore = notionBeforeRes.count ?? primary.notion.count;
-  const notionLive = notionLiveRes.count ?? notionBefore;
-  const imageBefore = imageBeforeRes.count ?? primary.image.count;
+  const notionLive = notionLiveRes.count ?? primary.notion.count;
+  const imageLive = imageLiveRes.count ?? primary.image.count;
+  const kstDay = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const statRows = (sourceStatsRes.data ?? []) as Array<{
+    day: string;
+    source: string;
+    total: number;
+    by_kind: Record<string, unknown> | null;
+  }>;
+  const priorStat = (source: string) =>
+    statRows.find((row) => row.source === source && String(row.day) < kstDay) ?? null;
+  const priorNotion = priorStat("notion");
+  const priorWork = priorStat("work");
+  const notionYesterday =
+    typeof priorNotion?.total === "number" ? priorNotion.total : notionLive;
+  const imageYesterdayRaw = priorWork?.by_kind?.images;
+  const imageYesterday =
+    typeof imageYesterdayRaw === "number" ? imageYesterdayRaw : imageLive;
   // 1차 = 대시보드와 동일: Work + 노션 + 이미지 + 위키 + 용어
+  // 노션·이미지는 오늘·어제 모두 「살아있는 행 수」. 색인 시각과 스냅샷을 섞지 않는다.
   const primaryToday =
     primary.work.count +
     notionLive +
-    primary.image.count +
+    imageLive +
     primary.wiki.count +
-    primary.glossary.count;
-  // 어제 카운트 조회 실패(타임아웃)면 오늘 값으로 맞춰 가짜 +N만 원을 만들지 않는다
+    glossaryToday;
   const glossY = glossaryYesterday ?? glossaryToday;
   const linksY = linksYesterday ?? linksToday;
   const lensY = lensYesterday ?? lensToday;
-  const workBefore = primary.work.count; // Work 어제 스냅샷 없음 — 증감은 노션·이미지 중심
+  const workYesterday =
+    typeof priorWork?.total === "number" ? priorWork.total : primary.work.count;
   const primaryYesterday =
-    workBefore + notionBefore + imageBefore + primary.wiki.count + glossY;
+    workYesterday +
+    notionYesterday +
+    imageYesterday +
+    primary.wiki.count +
+    glossY;
 
   const growth: GrowthRow[] = [
     { label: "1차 데이터", yesterday: primaryYesterday, today: primaryToday },
@@ -495,8 +515,8 @@ export async function buildAdminReportHtml(
   const confirmStage = dash.stages.find((s) => s.key === "confirm");
   const applyStage = dash.stages.find((s) => s.key === "apply");
 
-  const notionDelta = notionLive - notionBefore;
-  const imageDelta = primary.image.count - imageBefore;
+  const notionDelta = notionLive - notionYesterday;
+  const imageDelta = imageLive - imageYesterday;
 
   // —— HTML ——
   const checkRowsHtml = badChecks
