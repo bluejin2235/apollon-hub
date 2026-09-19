@@ -64,6 +64,7 @@ import {
   scheduleUserMemoRewrite,
   type LunaUserMemory
 } from "@/lib/luna/user-memory";
+import { maybeProposeMemoryAsk } from "@/lib/luna/memory-ask";
 import {
   bumpReportUse,
   findSimilarReport
@@ -3434,6 +3435,20 @@ export async function POST(request: NextRequest) {
           assistantMeta.intent_score = selfScore.intent_score;
           assistantMeta.confidence_score = selfScore.confidence_score;
           assistantMeta.self_note = selfScore.self_note;
+        }
+
+        try {
+          const memoryAsk = await maybeProposeMemoryAsk(admin, {
+            userId: user.id,
+            userText,
+            assistantText,
+            memo: userMemory?.memo ?? null
+          });
+          if (memoryAsk) {
+            assistantMeta.memory_ask = memoryAsk;
+          }
+        } catch (err) {
+          console.error("[luna/chat] memory ask", err);
         }
 
         const insertNow = Date.now();

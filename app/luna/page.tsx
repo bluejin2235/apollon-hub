@@ -252,6 +252,33 @@ export default function LunaPage() {
           typeof meta?.self_note === "string" ? meta.self_note.trim() : null;
         const showAnswerScores = meta?.answer_scores_visible !== false;
 
+        let memoryAsk: LunaChatMessage["memoryAsk"] = null;
+        const askRaw = meta?.memory_ask;
+        if (askRaw && typeof askRaw === "object" && !Array.isArray(askRaw)) {
+          const a = askRaw as Record<string, unknown>;
+          const q = typeof a.question === "string" ? a.question.trim() : "";
+          const opts = Array.isArray(a.options)
+            ? a.options.filter((x): x is string => typeof x === "string")
+            : [];
+          const accept =
+            typeof a.accept_line === "string" ? a.accept_line.trim() : "";
+          if (q && opts.length >= 2 && accept) {
+            memoryAsk = {
+              question: q,
+              options: [opts[0]!, opts[1]!],
+              accept_line: accept,
+              reject_as:
+                a.reject_as === "open_question" ? "open_question" : "case_by_case",
+              topic: typeof a.topic === "string" ? a.topic : q.slice(0, 40)
+            };
+          }
+        }
+        const memoryAskAnswer =
+          meta?.memory_ask_answer === "accept" ||
+          meta?.memory_ask_answer === "reject"
+            ? meta.memory_ask_answer
+            : null;
+
         return {
           id: row.id as string,
           role: row.role as "user" | "assistant",
@@ -295,7 +322,9 @@ export default function LunaPage() {
           intentScore,
           confidenceScore,
           selfNote,
-          showAnswerScores
+          showAnswerScores,
+          memoryAsk,
+          memoryAskAnswer
         };
       });
     setMessages((prev) => mergeLocalFeedback(prev, mapped));

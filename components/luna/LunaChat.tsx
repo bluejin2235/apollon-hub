@@ -142,6 +142,8 @@ export type LunaChatMessage = {
   classificationLabel?: string | null;
   classifySource?: "rule" | "llm" | null;
   progressKeywords?: string | null;
+  memoryAsk?: import("@/lib/luna/memory-ask-shared").MemoryAskPayload | null;
+  memoryAskAnswer?: "accept" | "reject" | null;
 };
 
 export type { LunaSourceReasons };
@@ -1208,6 +1210,8 @@ export function LunaChat({
                 confidenceScore={m.confidenceScore}
                 selfNote={m.selfNote}
                 showAnswerScores={m.showAnswerScores}
+                memoryAsk={m.memoryAsk}
+                memoryAskAnswer={m.memoryAskAnswer}
                 correctionCandidateIds={m.correctionCandidateIds}
                 hideInlineClarifyOptions
                 onCorrectionCancel={

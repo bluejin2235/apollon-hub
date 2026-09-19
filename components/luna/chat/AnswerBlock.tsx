@@ -22,6 +22,8 @@ import {
 } from "@/components/luna/chat/NotFoundGuide";
 import { looksPre2020 } from "@/components/luna/chat/LimitsDisclosure";
 import { AnswerMeta } from "@/components/luna/chat/AnswerMeta";
+import { MemoryAsk } from "@/components/luna/chat/MemoryAsk";
+import type { MemoryAskPayload } from "@/lib/luna/memory-ask-shared";
 import {
   SourceGroupSections,
   WikiCompactCard,
@@ -102,6 +104,8 @@ export type AnswerBlockProps = {
   confidenceScore?: number | null;
   selfNote?: string | null;
   showAnswerScores?: boolean;
+  memoryAsk?: import("@/lib/luna/memory-ask-shared").MemoryAskPayload | null;
+  memoryAskAnswer?: "accept" | "reject" | null;
 };
 
 function LunaAvatar() {
@@ -259,7 +263,9 @@ function AssistantAnswerBlock({
   selfNote = null,
   showAnswerScores = false,
   hideInlineClarifyOptions = false,
-  onClarifySelect
+  onClarifySelect,
+  memoryAsk = null,
+  memoryAskAnswer = null
 }: AnswerBlockProps) {
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [docsExpanded, setDocsExpanded] = useState(false);
@@ -588,6 +594,14 @@ function AssistantAnswerBlock({
 
         {!isThinking && !clarify && scrubbed.trim() ? (
           <FoundPrompt messageId={id} canSubmit={canFeedback} />
+        ) : null}
+
+        {!isThinking && !clarify && memoryAsk ? (
+          <MemoryAsk
+            messageId={id}
+            ask={memoryAsk as MemoryAskPayload}
+            initialAnswer={memoryAskAnswer}
+          />
         ) : null}
 
         {!isThinking && !clarify ? (
