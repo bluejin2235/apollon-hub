@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
 import { runUserMemoRewriteBatch } from "@/lib/luna/user-memory";
+import { promoteSharedMemoPatterns } from "@/lib/luna/perspective-promote";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
  * GET /api/cron/luna-user-memory
- * 매시 정각 — 대화가 memo 보다 최신인 사람의 메모를 비동기로 다시 쓴다.
- * 채팅 직후 scheduleUserMemoRewrite 가 1차, 이 cron 이 백필.
+ * 매시 정각 — memo 재작성 + (가끔) 팀 관점 3명 승격
  */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
@@ -35,8 +35,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await runUserMemoRewriteBatch(admin, { limit: 20 });
-    console.log("[luna-user-memory] cron", result);
-    return NextResponse.json(result);
+    let promote: { checked: number; applied: number } | null = null;
+    // 매시마다 돌리되, memo 가 있는 사람만 보면 됨
+    try {
+      promote = await promoteSharedMemoPatterns(admin);
+    } catch (err) {
+      console.error("[luna-user-memory] promote", err);
+    }
+    console.log("[luna-user-memory] cron", { ...result, promote });
+    return NextResponse.json({ ...result, promote });
   } catch (err) {
     console.error("[luna-user-memory]", err);
     return NextResponse.json(

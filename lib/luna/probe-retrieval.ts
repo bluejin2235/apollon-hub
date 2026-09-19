@@ -9,9 +9,11 @@ import { llmComplete } from "@/lib/luna/llm/client";
 import { resolveOfficialPrice } from "@/lib/luna/model-pricing";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import type { NotionSource } from "@/lib/luna/notion";
-import { recordAnswerFlagsAsync } from "@/lib/luna/answer-flags";
 
 export type ProbeHitBucket = "hit@1" | "hit@5" | "hit@10" | "miss";
+
+/** 맞은 이유 — exact=그 문서, same_project=같은 프로젝트의 다른 문서 */
+export type ProbeMatchKind = "exact" | "same_project";
 
 /** miss 분류 — 다음날 아젠다 입력 */
 export type MissCauseKind =
@@ -21,6 +23,7 @@ export type MissCauseKind =
   | "no_chunks"
   | "no_results"
   | "wrong_label"
+  | "bad_question"
   | "other";
 
 export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
@@ -30,7 +33,8 @@ export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
   no_chunks: "청크가 없음",
   no_results: "검색 0건",
   wrong_label: "정답 레이블이 틀림",
-  other: "기타"
+  bad_question: "질문이 나쁨",
+  other: "원인 불명"
 };
 
 export type ProbeModeAItem = {
@@ -39,6 +43,8 @@ export type ProbeModeAItem = {
   question: string;
   rank: number | null;
   bucket: ProbeHitBucket;
+  /** hit 일 때 — exact | same_project */
+  match_kind?: ProbeMatchKind | null;
   top: Array<{ page_id: string; title: string }>;
   cause_guess: string | null;
   cause_kind?: MissCauseKind | null;
@@ -61,6 +67,10 @@ export type ProbeRetrievalResult = {
   hit_at_10?: number;
   miss?: number;
   miss_rate?: number;
+  /** hit 중 정확히 그 문서 */
+  exact?: number;
+  /** hit 중 같은 프로젝트의 다른 문서 */
+  same_project?: number;
   miss_by_cause?: Record<string, number>;
   items?: ProbeModeAItem[];
   misses?: ProbeModeAItem[];
@@ -78,8 +88,10 @@ export const MODE_A_PAGE_LIMIT = 200;
 export const MODE_A_BATCH_SIZE = 20;
 export const MODE_A_QUESTIONS_PER_PAGE = 3;
 export const MODE_A_MINUTES = 30;
-/** 한 청크 예산(ms). maxDuration 여유를 남기고 finishRun 으로 저장 */
+/** 한 청크 예산(ms). 바깥 루프를 끊는 값이 아니다. 청크가 이 안에 finishRun 하게 하는 상한 */
 export const MODE_A_CHUNK_BUDGET_MS = 240_000;
+/** 문서 단위 병렬. 순차 20문서가 예산 240초를 다 써서 청크가 3번에서 멈추던 것을 줄인다 */
+export const MODE_A_PAGE_CONCURRENCY = 4;
 
 const HAIKU = "claude-haiku-4-5-20251001";
 const QUESTIONS_PER_PAGE = MODE_A_QUESTIONS_PER_PAGE;
@@ -132,6 +144,114 @@ function bucketForRank(rank: number | null): ProbeHitBucket {
   return "miss";
 }
 
+/**
+ * page_id → belongs 대상(to_id) 집합.
+ * 제목 비교는 쓰지 않는다 — 같은 제목·다른 회차가 있다.
+ */
+export async function loadBelongsProjectIds(
+  admin: SupabaseClient,
+  pageIds: string[]
+): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  const ids = [...new Set(pageIds.map((id) => id.trim()).filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const { data, error } = await admin
+      .from("luna_links")
+      .select("from_id, to_id")
+      .eq("kind", "belongs")
+      .eq("status", "active")
+      .in("from_id", slice);
+    if (error) {
+      console.error("[probe-retrieval] belongs", error);
+      continue;
+    }
+    for (const row of data ?? []) {
+      const from = String((row as { from_id?: string }).from_id ?? "").trim();
+      const to = String((row as { to_id?: string }).to_id ?? "").trim();
+      if (!from || !to) continue;
+      const set = map.get(from) ?? new Set<string>();
+      set.add(to);
+      map.set(from, set);
+    }
+  }
+  return map;
+}
+
+/** 두 페이지가 같은 프로젝트에 속하는지 (belongs to_id 교집합 또는 한쪽이 상대의 허브) */
+export function pagesShareProject(
+  answerPageId: string,
+  foundPageId: string,
+  belongsTo: Map<string, Set<string>>
+): boolean {
+  const a = answerPageId.trim();
+  const b = foundPageId.trim();
+  if (!a || !b || a === b) return false;
+  const ta = belongsTo.get(a);
+  const tb = belongsTo.get(b);
+  if (ta && tb) {
+    for (const p of ta) {
+      if (tb.has(p)) return true;
+    }
+  }
+  // found → answer(허브) 또는 answer → found(허브)
+  if (tb?.has(a)) return true;
+  if (ta?.has(b)) return true;
+  return false;
+}
+
+/**
+ * 정답 page_id 또는 같은 프로젝트 문서가 top 에 있으면 hit.
+ * belongs 가 없으면 exact 만 인정.
+ */
+export function scoreProbeAgainstTop(
+  answerPageId: string,
+  top: Array<{ page_id: string }>,
+  belongsTo: Map<string, Set<string>>
+): {
+  rank: number | null;
+  bucket: ProbeHitBucket;
+  match_kind: ProbeMatchKind | null;
+} {
+  let exactRank: number | null = null;
+  let sameRank: number | null = null;
+  for (let i = 0; i < top.length; i += 1) {
+    const id = (top[i]?.page_id ?? "").trim();
+    if (!id) continue;
+    if (id === answerPageId) {
+      if (exactRank == null) exactRank = i;
+      continue;
+    }
+    if (sameRank == null && pagesShareProject(answerPageId, id, belongsTo)) {
+      sameRank = i;
+    }
+  }
+  let rank: number | null = null;
+  let match_kind: ProbeMatchKind | null = null;
+  if (exactRank != null && (sameRank == null || exactRank <= sameRank)) {
+    rank = exactRank;
+    match_kind = "exact";
+  } else if (sameRank != null) {
+    rank = sameRank;
+    match_kind = "same_project";
+  }
+  return { rank, bucket: bucketForRank(rank), match_kind };
+}
+
+function looksLikeBadQuestion(question: string): boolean {
+  const s = question.trim();
+  if (s.length < 16) return true;
+  if (/^(이|그|해당)\s*문서/.test(s)) return true;
+  if (/문서의\s*(주제|내용|제목|요지|핵심)/.test(s)) return true;
+  if (
+    /무엇인가요\?$|무엇인가\?$|알려주세요\.?$/.test(s) &&
+    s.length < 28
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function classifyMissCause(opts: {
   pageId: string;
   title: string;
@@ -145,6 +265,9 @@ function classifyMissCause(opts: {
   }
   if (opts.top.length === 0) {
     return { kind: "no_results", label: MISS_CAUSE_LABEL.no_results };
+  }
+  if (looksLikeBadQuestion(opts.question)) {
+    return { kind: "bad_question", label: MISS_CAUSE_LABEL.bad_question };
   }
   const titleTokens =
     opts.title
@@ -259,54 +382,194 @@ async function searchRankedPages(
   return uniquePageRanks(outcome.sources ?? []);
 }
 
-async function samplePagesWithChunks(
-  admin: SupabaseClient,
-  limit: number
-): Promise<Array<{ page_id: string; title: string }>> {
-  // 최근 색인 후보를 가져온 뒤, 청크 존재 여부를 한 번에 조회 (N+1 금지)
-  const candidateLimit = Math.max(limit * 5, 80);
+function kstMidnightIso(now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const utcMidnight = Date.UTC(
+    kst.getUTCFullYear(),
+    kst.getUTCMonth(),
+    kst.getUTCDate()
+  );
+  return new Date(utcMidnight - 9 * 60 * 60 * 1000).toISOString();
+}
+
+/** 오늘(KST) 이미 시험한 문서. 청크가 같은 최근 20건을 반복하지 않게 */
+async function loadTodayProbedPageIds(admin: SupabaseClient): Promise<Set<string>> {
   const { data, error } = await admin
-    .from("luna_notion_pages")
-    .select("page_id, title")
-    .eq("archived", false)
-    .not("title", "is", null)
-    .order("indexed_at", { ascending: false })
-    .limit(candidateLimit);
+    .from("luna_study_runs")
+    .select("result")
+    .eq("kind", "probe_retrieval")
+    .gte("started_at", kstMidnightIso())
+    .order("started_at", { ascending: false })
+    .limit(40);
   if (error) throw new Error(error.message);
-
-  const candidates: Array<{ page_id: string; title: string }> = [];
+  const ids = new Set<string>();
   for (const row of data ?? []) {
-    const page_id = String(row.page_id ?? "");
-    const title = String(row.title ?? "").trim();
-    if (!page_id || title.length < 2) continue;
-    // 연도·루트 폴더성 제목은 정답이 자식 문서로 가는 경향 → 시험 표본에서 제외
-    if (/^(19|20)\d{2}$/.test(title)) continue;
-    if (/^(untitled|제목 없음)$/i.test(title)) continue;
-    candidates.push({ page_id, title });
-  }
-  if (candidates.length === 0) return [];
-
-  const ids = candidates.map((c) => c.page_id);
-  const withChunks = new Set<string>();
-  for (let i = 0; i < ids.length; i += 200) {
-    const slice = ids.slice(i, i + 200);
-    const { data: chunkRows, error: chunkErr } = await admin
-      .from("luna_notion_chunks")
-      .select("page_id")
-      .in("page_id", slice);
-    if (chunkErr) throw new Error(chunkErr.message);
-    for (const row of chunkRows ?? []) {
-      if (row.page_id) withChunks.add(String(row.page_id));
+    const result = row.result as {
+      page_ids?: unknown;
+      items?: unknown;
+    } | null;
+    if (Array.isArray(result?.page_ids)) {
+      for (const id of result.page_ids) {
+        if (typeof id === "string" && id) ids.add(id);
+      }
+    }
+    if (Array.isArray(result?.items)) {
+      for (const it of result.items) {
+        const id = (it as { page_id?: string } | null)?.page_id;
+        if (id) ids.add(id);
+      }
     }
   }
+  return ids;
+}
 
+async function samplePagesWithChunks(
+  admin: SupabaseClient,
+  limit: number,
+  exclude: Set<string>
+): Promise<Array<{ page_id: string; title: string }>> {
   const out: Array<{ page_id: string; title: string }> = [];
-  for (const c of candidates) {
-    if (!withChunks.has(c.page_id)) continue;
-    out.push(c);
-    if (out.length >= limit) break;
+  const pageSize = 200;
+  let offset = 0;
+  const maxScan = 4000;
+  while (out.length < limit && offset < maxScan) {
+    const { data, error } = await admin
+      .from("luna_notion_pages")
+      .select("page_id, title")
+      .eq("archived", false)
+      .not("title", "is", null)
+      .order("indexed_at", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    if (rows.length === 0) break;
+
+    const candidates: Array<{ page_id: string; title: string }> = [];
+    for (const row of rows) {
+      const page_id = String(row.page_id ?? "");
+      const title = String(row.title ?? "").trim();
+      if (!page_id || title.length < 2) continue;
+      if (exclude.has(page_id)) continue;
+      if (/^(19|20)\d{2}$/.test(title)) continue;
+      if (/^(untitled|제목 없음)$/i.test(title)) continue;
+      candidates.push({ page_id, title });
+    }
+
+    const withChunks = new Set<string>();
+    const ids = candidates.map((c) => c.page_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const slice = ids.slice(i, i + 200);
+      if (slice.length === 0) continue;
+      const { data: chunkRows, error: chunkErr } = await admin
+        .from("luna_notion_chunks")
+        .select("page_id")
+        .in("page_id", slice);
+      if (chunkErr) throw new Error(chunkErr.message);
+      for (const row of chunkRows ?? []) {
+        if (row.page_id) withChunks.add(String(row.page_id));
+      }
+    }
+
+    for (const c of candidates) {
+      if (!withChunks.has(c.page_id)) continue;
+      out.push(c);
+      if (out.length >= limit) break;
+    }
+    offset += rows.length;
+    if (rows.length < pageSize) break;
   }
   return out;
+}
+
+async function probeOnePage(
+  admin: SupabaseClient,
+  page: { page_id: string; title: string },
+  qPerPage: number,
+  started: number,
+  budgetMs: number
+): Promise<{
+  items: ProbeModeAItem[];
+  cost: number;
+  llm: number;
+  started: boolean;
+  timedOut: boolean;
+}> {
+  if (Date.now() - started > budgetMs) {
+    return { items: [], cost: 0, llm: 0, started: false, timedOut: true };
+  }
+  const body = await loadPageBody(admin, page.page_id);
+  let questions: string[] = [];
+  let cost = 0;
+  let llm = 0;
+  try {
+    const gen = await generateQuestionsForPage({
+      title: page.title,
+      body: body.text
+    });
+    questions = gen.questions.slice(0, qPerPage);
+    cost += gen.cost_usd;
+    llm += gen.llm_calls;
+  } catch (err) {
+    console.error("[probe-retrieval] question gen", page.page_id, err);
+    return { items: [], cost, llm, started: true, timedOut: false };
+  }
+  if (questions.length === 0) {
+    return { items: [], cost, llm, started: true, timedOut: false };
+  }
+
+  const items: ProbeModeAItem[] = [];
+  let timedOut = false;
+  const belongsTo = await loadBelongsProjectIds(admin, [page.page_id]);
+  const belongsLoaded = new Set<string>([page.page_id]);
+  for (const question of questions) {
+    if (Date.now() - started > budgetMs) {
+      timedOut = true;
+      break;
+    }
+    let top: Array<{ page_id: string; title: string }>;
+    try {
+      top = await searchRankedPages(admin, question);
+    } catch (err) {
+      console.error("[probe-retrieval] search", page.page_id, err);
+      continue;
+    }
+    const need = top
+      .map((t) => t.page_id.trim())
+      .filter((id) => id && !belongsLoaded.has(id));
+    if (need.length > 0) {
+      const extra = await loadBelongsProjectIds(admin, need);
+      for (const id of need) belongsLoaded.add(id);
+      for (const [k, v] of extra) belongsTo.set(k, v);
+    }
+    const { rank, bucket, match_kind } = scoreProbeAgainstTop(
+      page.page_id,
+      top,
+      belongsTo
+    );
+    const cause =
+      bucket === "miss"
+        ? classifyMissCause({
+            pageId: page.page_id,
+            title: page.title,
+            question,
+            rank,
+            chunkCount: body.chunkCount,
+            top
+          })
+        : null;
+    items.push({
+      page_id: page.page_id,
+      title: page.title,
+      question,
+      rank,
+      bucket,
+      match_kind,
+      top,
+      cause_guess: cause?.label ?? null,
+      cause_kind: cause?.kind ?? null
+    });
+  }
+  return { items, cost, llm, started: true, timedOut };
 }
 
 /** 모드 A — 문서→질문→정답 page_id 채점 */
@@ -326,84 +589,62 @@ export async function runProbeAnswerKey(
   const qPerPage = opts?.questionsPerPage ?? QUESTIONS_PER_PAGE;
   const budgetMs = opts?.budgetMs ?? MODE_A_CHUNK_BUDGET_MS;
   const started = Date.now();
-  const pages = await samplePagesWithChunks(admin, pageLimit);
+  const exclude = await loadTodayProbedPageIds(admin);
+  const pages = await samplePagesWithChunks(admin, pageLimit, exclude);
+
+  const outcomes: Array<Awaited<ReturnType<typeof probeOnePage>>> = new Array(pages.length);
+  let cursor = 0;
+  const workers = Math.min(MODE_A_PAGE_CONCURRENCY, pages.length);
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (cursor < pages.length) {
+        const idx = cursor;
+        cursor += 1;
+        const page = pages[idx];
+        if (!page) return;
+        try {
+          outcomes[idx] = await probeOnePage(admin, page, qPerPage, started, budgetMs);
+        } catch (err) {
+          console.error("[probe-retrieval] page", page.page_id, err);
+          outcomes[idx] = {
+            items: [],
+            cost: 0,
+            llm: 0,
+            started: true,
+            timedOut: false
+          };
+        }
+      }
+    })
+  );
 
   let cost = 0;
   let llmCalls = 0;
   const items: ProbeModeAItem[] = [];
+  const pageIds: string[] = [];
   let timedOut = false;
   let pagesAttempted = 0;
-
-  for (const page of pages) {
-    if (Date.now() - started > budgetMs) {
+  for (let i = 0; i < pages.length; i += 1) {
+    const page = pages[i]!;
+    const out = outcomes[i];
+    if (!out || !out.started) {
       timedOut = true;
-      break;
-    }
-    pagesAttempted += 1;
-    const body = await loadPageBody(admin, page.page_id);
-    let questions: string[] = [];
-    try {
-      const gen = await generateQuestionsForPage({
-        title: page.title,
-        body: body.text
-      });
-      questions = gen.questions.slice(0, qPerPage);
-      cost += gen.cost_usd;
-      llmCalls += gen.llm_calls;
-    } catch (err) {
-      console.error("[probe-retrieval] question gen", page.page_id, err);
       continue;
     }
-    if (questions.length === 0) continue;
-
-    for (const question of questions) {
-      if (Date.now() - started > budgetMs) {
-        timedOut = true;
-        break;
-      }
-      const top = await searchRankedPages(admin, question);
-      const rankIdx = top.findIndex((t) => t.page_id === page.page_id);
-      const rank = rankIdx >= 0 ? rankIdx : null;
-      const bucket = bucketForRank(rank);
-      const cause =
-        bucket === "miss"
-          ? classifyMissCause({
-              pageId: page.page_id,
-              title: page.title,
-              question,
-              rank,
-              chunkCount: body.chunkCount,
-              top
-            })
-          : null;
-      items.push({
-        page_id: page.page_id,
-        title: page.title,
-        question,
-        rank,
-        bucket,
-        top,
-        cause_guess: cause?.label ?? null,
-        cause_kind: cause?.kind ?? null
-      });
-
-      if (bucket !== "miss") {
-        recordAnswerFlagsAsync(admin, {
-          question,
-          mode_a_rank: rank,
-          mode_a_top_n: top.length,
-          notion_n: top.length,
-          source: "mode_a"
-        });
-      }
-    }
-    if (timedOut) break;
+    pagesAttempted += 1;
+    pageIds.push(page.page_id);
+    items.push(...out.items);
+    cost += out.cost;
+    llmCalls += out.llm;
+    if (out.timedOut) timedOut = true;
   }
 
   const hit_at_1 = items.filter((i) => i.rank === 0).length;
   const hit_at_5 = items.filter((i) => i.rank != null && i.rank < 5).length;
   const hit_at_10 = items.filter((i) => i.rank != null && i.rank < 10).length;
   const miss = items.filter((i) => i.bucket === "miss").length;
+  const exact = items.filter((i) => i.match_kind === "exact").length;
+  const same_project = items.filter((i) => i.match_kind === "same_project").length;
   const probed = items.length;
   const misses = items.filter((i) => i.bucket === "miss").slice(0, 30);
   const miss_by_cause: Record<string, number> = {};
@@ -415,7 +656,7 @@ export async function runProbeAnswerKey(
   const learned =
     probed === 0
       ? "채점할 문항이 없습니다"
-      : `정답 문서 기준 hit@1 ${hit_at_1} · hit@5 ${hit_at_5} · hit@10 ${hit_at_10} · miss ${miss} / ${probed}`;
+      : `hit@1 ${hit_at_1} · hit@5 ${hit_at_5} · hit@10 ${hit_at_10} · miss ${miss} / ${probed} (exact ${exact} · same_project ${same_project})`;
   const topMissCause = Object.entries(miss_by_cause).sort((a, b) => b[1] - a[1])[0];
   const next =
     miss > 0 && topMissCause
@@ -433,6 +674,8 @@ export async function runProbeAnswerKey(
       hit_at_10,
       miss,
       miss_rate: probed ? Number((miss / probed).toFixed(3)) : 0,
+      exact,
+      same_project,
       miss_by_cause,
       items: items.slice(0, 80),
       misses,
@@ -443,6 +686,7 @@ export async function runProbeAnswerKey(
         ? `다음 청크 이어가기 (하루 목표 ${MODE_A_PAGE_LIMIT}문서)`
         : next,
       pages_sampled: pagesAttempted,
+      page_ids: pageIds,
       questions_per_page: qPerPage,
       llm_model: HAIKU,
       ...(timedOut
