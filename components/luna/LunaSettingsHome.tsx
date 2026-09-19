@@ -330,10 +330,20 @@ function TalkCard({ t }: { t: LunaDashboard["talk"] }) {
         ]
           .filter(Boolean)
           .join(" · ");
+  const foundPct =
+    t.found_week_pct != null ? `${t.found_week_pct}%` : "—";
 
   return (
     <DashCard topColor={C.talk} href={buildLunaSettingsUrl("talk", "history")}>
       <CardHead title="대화" cap={CARD_CAP.talk} />
+      <div className="my-[9px] mb-0.5 rounded-[10px] border border-[#E8E5F4] bg-[#F7F6FC] px-3 py-2.5">
+        <div className="text-[22px] font-bold tracking-[-0.4px] text-[#534AB7]">
+          {foundPct}
+        </div>
+        <div className="mt-px text-[11px] font-semibold text-[#1c1d21]">
+          {t.found_week_label}
+        </div>
+      </div>
       <div className="my-[9px] mb-0.5 flex gap-5">
         <div>
           <div className="text-[26px] font-bold tracking-[-0.5px] text-[#1c1d21]">

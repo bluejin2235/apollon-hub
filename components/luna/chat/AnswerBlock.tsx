@@ -15,6 +15,7 @@ import { SupplyToast } from "@/components/supplies/toast";
 import { LunaImageModal } from "@/components/luna/LunaImageModal";
 import { LunaImageScopeNotice } from "@/components/luna/LunaImageScopeNotice";
 import { ProgressSteps } from "@/components/luna/chat/ProgressSteps";
+import { FoundPrompt } from "@/components/luna/chat/FoundPrompt";
 import { AnswerMeta } from "@/components/luna/chat/AnswerMeta";
 import {
   SourceGroupSections,
@@ -554,6 +555,10 @@ function AssistantAnswerBlock({
           ) : (
             <div className={LUNA_BUBBLE_CLASS}>{bubbleInner}</div>
           )
+        ) : null}
+
+        {!isThinking && !clarify && scrubbed.trim() ? (
+          <FoundPrompt messageId={id} canSubmit={canFeedback} />
         ) : null}
 
         {!isThinking && !clarify ? (

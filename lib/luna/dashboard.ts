@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDaysYmd, kstYmd } from "@/lib/luna/knowledge-sources";
+import { getFoundWeekStats } from "@/lib/luna/answer-found";
 import { kstWeekBounds } from "@/lib/luna/self-report";
 import { getSelfUpgradeStatus } from "@/lib/luna/self-upgrade";
 import {
@@ -633,7 +634,10 @@ export async function buildLunaDashboard(
   }
 
   const myTurn = mineRes.count ?? 0;
-  const failuresOpen = await countOpenFailures(admin);
+  const [failuresOpen, foundWeek] = await Promise.all([
+    countOpenFailures(admin),
+    getFoundWeekStats(admin)
+  ]);
 
   return {
     generated_at: new Date().toISOString(),
@@ -677,6 +681,10 @@ export async function buildLunaDashboard(
       conversations_yesterday: convYdayRes.count ?? 0,
       active_users_today: activeUsers,
       total_users: profilesRes.count ?? 0,
+      found_week_total: foundWeek.total,
+      found_week_found: foundWeek.found_count,
+      found_week_pct: foundWeek.pct,
+      found_week_label: foundWeek.label,
       thumbs_up_today: talkToday.thumbsUp,
       thumbs_down_today: talkToday.thumbsDown,
       clarify_today: talkToday.clarify,

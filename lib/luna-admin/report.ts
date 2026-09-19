@@ -6,7 +6,7 @@ import {
   KST_OFFSET_MS,
   toKstDateString
 } from "@/lib/mail/hub-email";
-import { countOpenFailures } from "@/lib/luna/failures";
+import { countOpenFailures, HUMAN_FAILURE_OR } from "@/lib/luna/failures";
 import { buildPrimarySources } from "@/lib/luna-admin/primary";
 import { buildAdminDashboard } from "@/lib/luna-admin/dashboard";
 import { countLinks } from "@/lib/luna-admin/links";
@@ -24,6 +24,7 @@ import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
 import { listCandidateRuleQuestions } from "@/lib/luna/rules";
 import { listPendingAnswerFlagsForHuman } from "@/lib/luna/answer-flags";
 import { ANSWER_FLAG_THRESHOLDS } from "@/lib/luna/answer-flags-shared";
+import { getFoundWeekStats } from "@/lib/luna/answer-found";
 import {
   evaluateLunaChecks,
   markAdminReportSent,
@@ -265,7 +266,8 @@ export async function buildAdminReportHtml(
     failuresOpenYesterdayRes,
     notionBeforeRes,
     imageBeforeRes,
-    devnoteBlockers
+    devnoteBlockers,
+    foundWeek
   ] = await Promise.all([
     evaluateLunaChecks(admin, now),
     buildPrimarySources(admin),
@@ -299,11 +301,13 @@ export async function buildAdminReportHtml(
       .from("luna_failures")
       .select("id", { count: "exact", head: true })
       .is("verdict", null)
+      .or(HUMAN_FAILURE_OR)
       .gte("created_at", startIso),
     admin
       .from("luna_failures")
       .select("id", { count: "exact", head: true })
       .is("verdict", null)
+      .or(HUMAN_FAILURE_OR)
       .lt("created_at", startIso),
     admin
       .from("luna_notion_pages")
@@ -313,7 +317,8 @@ export async function buildAdminReportHtml(
       .from("luna_media_index")
       .select("path", { count: "exact", head: true })
       .lt("indexed_at", startIso),
-    loadOpenDevnoteBlockers(admin)
+    loadOpenDevnoteBlockers(admin),
+    getFoundWeekStats(admin, now)
   ]);
 
   const learningsToday = learningsTodayRes.count ?? 0;
@@ -679,6 +684,18 @@ export async function buildAdminReportHtml(
   </div>
 
   <div style="padding:20px 26px;border-bottom:1px solid ${C.line2};">
+    <table style="width:100%;border-collapse:collapse;margin-bottom:8px;"><tr>
+      <td style="font-size:14px;font-weight:800;">찾았어요</td>
+      <td style="text-align:right;"><a href="${escapeHtml(hubHref("/settings?menu=dashboard"))}" style="font-size:11px;color:${C.luna};font-weight:700;text-decoration:none;">대시보드 →</a></td>
+    </tr></table>
+    <div style="background:${C.lunaSoft};border-radius:11px;padding:14px 16px;">
+      <div style="font-size:22px;font-weight:800;color:${C.luna};letter-spacing:-.4px;">${foundWeek.pct != null ? `${foundWeek.pct}%` : "—"}</div>
+      <div style="font-size:12.5px;color:${C.ink};margin-top:4px;font-weight:700;">${escapeHtml(foundWeek.label)}</div>
+      <div style="font-size:11px;color:${C.faint};margin-top:6px;">사람 피드백 · hit@ 보다 앞</div>
+    </div>
+  </div>
+
+  <div style="padding:20px 26px;border-bottom:1px solid ${C.line2};">
     <table style="width:100%;border-collapse:collapse;margin-bottom:12px;"><tr>
       <td style="font-size:14px;font-weight:800;">🌙 어젯밤 루나가 한 일</td>
       <td style="font-size:11px;color:${C.faint};padding-left:8px;">${study.rangeLabel ? escapeHtml(study.rangeLabel) : ""}</td>
@@ -746,6 +763,7 @@ export async function buildAdminReportHtml(
       `${r.label}  ${r.yesterday}  ${r.today}  ${deltaText(r)}`
     );
   }
+  textParts.push("", "■ 찾았어요", foundWeek.label, "");
   textParts.push("", "■ 어젯밤 루나가 한 일");
   if (study.cards.length === 0) {
     textParts.push("어젯밤 자율 자습 실행이 없습니다.");
