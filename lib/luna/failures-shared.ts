@@ -35,6 +35,14 @@ export function pickPrimarySignal(signals: FailureSignal[]): FailureSignal {
   return signals[0] ?? "unclassified";
 }
 
+const NOT_FOUND_RE =
+  /찾(?:지|을)\s*못|확인(?:되)?지\s*않|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
+
+/** 답 본문이 「못 찾음」 계열인지 — UI·실패 수집 공용 */
+export function isNotFoundAnswer(text: string): boolean {
+  return NOT_FOUND_RE.test(text);
+}
+
 export function kindForSignals(
   signals: FailureSignal[],
   fallback: FailureKind = "auto"

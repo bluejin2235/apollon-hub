@@ -7,6 +7,7 @@ import {
   kindForSignals,
   matchesKindFilter,
   mergeFailureRowsByMessage,
+  isNotFoundAnswer,
   pickPrimarySignal,
   uniqueFailureSignals,
   type FailureKind,
@@ -27,12 +28,14 @@ export {
   FAILURE_SIGNAL_PRIORITY,
   isInspectFailure,
   isLikelyClarifyPickQuestion,
+  isNotFoundAnswer,
   kindForSignals,
   matchesKindFilter,
   mergeFailureRowsByMessage,
   pickPrimarySignal,
   shouldSkipFailureForClarifyPick,
-  summarizeFailureKinds
+  summarizeFailureKinds,
+  uniqueFailureSignals
 } from "@/lib/luna/failures-shared";
 export {
   classifyFailureCause,
@@ -114,9 +117,6 @@ export type FailurePromptGroup = {
   prompts: Array<{ id: string; question: string; prompt: string }>;
 };
 
-const NOT_FOUND_RE =
-  /찾(?:지|을)\s*못|확인(?:되)?지\s*않|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
-
 function clipScore(n: unknown): number | null {
   if (typeof n !== "number" || !Number.isFinite(n)) return null;
   const v = Math.round(n);
@@ -135,10 +135,6 @@ export function failureClusterKey(question: string): string {
   if (nouns.length > 0) return nouns.join("|").toLowerCase();
   const norm = question.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 48);
   return norm || "unknown";
-}
-
-export function isNotFoundAnswer(text: string): boolean {
-  return NOT_FOUND_RE.test(text);
 }
 
 export function routeImproveNote(note: string): ImproveTarget {
@@ -773,11 +769,15 @@ export function mergeGroupPrompt(group: FailurePromptGroup): string {
   return `# ${group.title} 묶음 개선\n\n${body}`;
 }
 
+/** 시험(eval) 실패는 사람이 겪은 실패가 아니다. 미해결 집계에서 뺀다. */
+export const HUMAN_FAILURE_OR = "signal.is.null,signal.neq.eval_fail";
+
 export async function countOpenFailures(admin: SupabaseClient): Promise<number> {
   const { count, error } = await admin
     .from("luna_failures")
     .select("*", { count: "exact", head: true })
-    .is("verdict", null);
+    .is("verdict", null)
+    .or(HUMAN_FAILURE_OR);
   if (error) {
     if (isMissingTable(error)) return 0;
     throw error;

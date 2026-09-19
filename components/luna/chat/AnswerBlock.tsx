@@ -16,6 +16,11 @@ import { LunaImageModal } from "@/components/luna/LunaImageModal";
 import { LunaImageScopeNotice } from "@/components/luna/LunaImageScopeNotice";
 import { ProgressSteps } from "@/components/luna/chat/ProgressSteps";
 import { FoundPrompt } from "@/components/luna/chat/FoundPrompt";
+import {
+  NotFoundGuide,
+  shouldShowNotFoundGuide
+} from "@/components/luna/chat/NotFoundGuide";
+import { looksPre2020 } from "@/components/luna/chat/LimitsDisclosure";
 import { AnswerMeta } from "@/components/luna/chat/AnswerMeta";
 import {
   SourceGroupSections,
@@ -491,6 +496,30 @@ function AssistantAnswerBlock({
         ) : null}
         <AnswerBodyMarkdown body={body} streaming={streaming} />
         <AssumptionBoxes assumptions={assumptions} />
+        {shouldShowNotFoundGuide({
+          content: scrubbed,
+          isComplete,
+          isThinking,
+          counts
+        }) ? (
+          <NotFoundGuide
+            content={scrubbed}
+            questionText={questionText}
+            steps={stepList}
+            classification={classification}
+            counts={counts}
+            cards={cardList}
+            nasPathSettings={nasPathSettings}
+            onCopyToast={setCopyToast}
+          />
+        ) : null}
+        {!isThinking &&
+        isComplete &&
+        looksPre2020(`${questionText ?? ""}\n${scrubbed}`) ? (
+          <p className="mt-2.5 text-[12px] leading-[1.55] text-[#9aa0a8]">
+            오래된 자료라 놓친 게 있을 수 있어요
+          </p>
+        ) : null}
         {termLike ? (
           <div className="mt-3 space-y-2">
             {split.wiki.slice(0, wikiLimit).map((w) => (
