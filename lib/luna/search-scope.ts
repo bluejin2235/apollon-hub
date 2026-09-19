@@ -330,6 +330,35 @@ export function scopeHitsInsufficient(
   return total < SCOPE_WIDEN_MIN_HITS;
 }
 
+/**
+ * 목록형 사례·레퍼런스 — Work(NAS) 검색을 끈다.
+ * 노션·이미지만으로 나열하고, widen 으로 NAS 가 켜지지 않게 한다.
+ */
+export function listingReferenceDisablesNas(
+  kind: SearchScopeKind,
+  listing: boolean
+): boolean {
+  return listing && kind === "reference";
+}
+
+/** listing+reference 이면 flags.nas 를 강제로 끈다 (tier 확대 후에도). */
+export function applyListingReferenceFlags(
+  scope: SearchScope,
+  listing: boolean
+): SearchScope {
+  if (!listingReferenceDisablesNas(scope.kind, listing)) return scope;
+  if (!scope.flags.nas && !scope.flags.glossary) return scope;
+  return {
+    ...scope,
+    flags: {
+      ...scope.flags,
+      nas: false,
+      // 목록형 사례는 용어사전 확대도 프롬프트만 키운다
+      glossary: false
+    }
+  };
+}
+
 export function totalSearchHits(counts: SearchHitCounts): number {
   return (
     counts.glossary +

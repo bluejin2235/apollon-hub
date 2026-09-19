@@ -155,9 +155,11 @@ import {
   type ConnectorRoutingResult
 } from "@/lib/luna/connector-routing";
 import {
+  applyListingReferenceFlags,
   applyScopeToConnectorFlags,
   forceSimpleDepthForScope,
   inferRuleClassification,
+  listingReferenceDisablesNas,
   resolveSearchScope,
   resolveSearchScopeKind,
   scopeHitsInsufficient,
@@ -544,19 +546,23 @@ function buildAnswerSystem(
     llmInject?: LlmInjectLimits;
     /** 개인 memo — 캐시하면 안 됨 (사람마다 다름) */
     userMemoryBlock?: string | null;
+    /** 목록형 사례 — Work구조·NAS·카드 주입 생략 (입력 토큰 폭증 방지) */
+    slimListingPrompt?: boolean;
   },
   useCaching: boolean,
   modelId: string
 ): CachedSystemPayload {
   const identity = opts.identity.trim() || LUNA_DEFAULT_IDENTITY_PROMPT;
-  const structure =
-    opts.workserverStructure?.trim() || WORKSERVER_STRUCTURE_FALLBACK;
+  const slim = opts.slimListingPrompt === true;
+  const structure = slim
+    ? ""
+    : opts.workserverStructure?.trim() || WORKSERVER_STRUCTURE_FALLBACK;
   const block1 = [identity, structure].filter(Boolean).join("\r\n\r\n");
   const block2 = [opts.skillPrompt?.trim() ?? "", opts.l3Prompt?.trim() ?? ""]
     .filter(Boolean)
     .join("\r\n\r\n");
   const block3 = [
-    opts.glossaryBlock?.trim() ?? "",
+    slim ? "" : opts.glossaryBlock?.trim() ?? "",
     opts.wikiSectionsBlock?.trim() ?? "",
     opts.learningsBlock?.trim() ?? "",
     `[답변 안전]\r\n${KNOWLEDGE_LIST_HARD_RULE}`
@@ -565,6 +571,10 @@ function buildAnswerSystem(
     .join("\r\n\r\n");
   const volatile = buildVolatileSystemText({
     ...opts,
+    // 목록형 사례: UI 카드는 meta 로 보내고, LLM 에는 노션만
+    cards: slim ? [] : opts.cards,
+    nasResults: slim ? [] : opts.nasResults,
+    nasSearchAttempted: slim ? false : opts.nasSearchAttempted,
     clarifyFollowup: opts.clarifyFollowup,
     questionDepth: opts.questionDepth,
     listingQuestion: opts.listingQuestion,
@@ -586,7 +596,8 @@ function buildAnswerSystem(
   console.log("[luna/cache]", {
     useCaching,
     applied: payload.applied,
-    cacheChars: payload.cacheChars
+    cacheChars: payload.cacheChars,
+    slimListing: slim
   });
   return payload;
 }
@@ -1559,6 +1570,7 @@ export async function POST(request: NextRequest) {
           question: searchIntentText,
           classifyConfidence: classification.confidence
         });
+        searchScope = applyListingReferenceFlags(searchScope, listingQuestion);
         if (!hasManualConnectors(manualConnectorFlags)) {
           const scoped = applyScopeToConnectorFlags(
             searchScope.flags,
@@ -1568,6 +1580,9 @@ export async function POST(request: NextRequest) {
           notionEnabled = scoped.notion;
           webEnabled = scoped.web;
           nasEnabled = scoped.nas;
+          if (listingReferenceDisablesNas(searchScope.kind, listingQuestion)) {
+            nasEnabled = false;
+          }
           connectorRouting = {
             connectors: {
               nas: nasEnabled,
@@ -1582,6 +1597,8 @@ export async function POST(request: NextRequest) {
           kind: searchScope.kind,
           tier: searchScope.tier,
           flags: searchScope.flags,
+          listing: listingQuestion,
+          nasEnabled,
           types: classification.types
         });
         const uiQueryHint = queryHintFromQuestion(searchIntentText);
@@ -2106,20 +2123,21 @@ export async function POST(request: NextRequest) {
             (needsSearch && (notionEnabled || webEnabled || nasEnabled)) ||
             (webAugmented && (webEnabled || notionEnabled)));
 
-        // 1차(위키·용어사전)만으로 부족하면 검색 전에 한 단계 넓힌다
+        // 1차(위키·용어사전)만으로 부족하면 검색 전에 한 단계 넓힌다.
+        // speculative 노션·미디어가 이미 충분하면 NAS 로 확대하지 않는다.
         if (
           !hasManualConnectors(manualConnectorFlags) &&
           scopeHitsInsufficient(searchScope.kind, {
             glossary: matchedTerms.length,
             wiki: wikiSources.length,
-            notion: 0,
-            nas: 0,
-            media: 0
+            notion: speculativeNotion.sources.length,
+            nas: speculativeNas.length,
+            media: preMediaProbe.cards.length
           })
         ) {
           const widened = widenSearchScope(searchScope);
           if (widened) {
-            searchScope = widened;
+            searchScope = applyListingReferenceFlags(widened, listingQuestion);
             const scoped = applyScopeToConnectorFlags(
               searchScope.flags,
               { notion: notionEnabled, web: webEnabled, nas: nasEnabled },
@@ -2127,7 +2145,12 @@ export async function POST(request: NextRequest) {
             );
             notionEnabled = scoped.notion;
             webEnabled = scoped.web;
-            nasEnabled = scoped.nas;
+            nasEnabled = listingReferenceDisablesNas(
+              searchScope.kind,
+              listingQuestion
+            )
+              ? false
+              : scoped.nas;
             connectorRouting = {
               connectors: {
                 nas: nasEnabled,
@@ -2146,7 +2169,10 @@ export async function POST(request: NextRequest) {
             console.log("[luna/search-scope] widen-before-search", {
               kind: searchScope.kind,
               tier: searchScope.tier,
-              flags: searchScope.flags
+              flags: searchScope.flags,
+              listing: listingQuestion,
+              speculativeNotion: speculativeNotion.sources.length,
+              preMedia: preMediaProbe.cards.length
             });
           }
         }
@@ -2546,7 +2572,7 @@ export async function POST(request: NextRequest) {
           ) {
             const widened = widenSearchScope(searchScope);
             if (widened) {
-              searchScope = widened;
+              searchScope = applyListingReferenceFlags(widened, listingQuestion);
               const scoped = applyScopeToConnectorFlags(
                 searchScope.flags,
                 { notion: notionEnabled, web: webEnabled, nas: nasEnabled },
@@ -2554,7 +2580,12 @@ export async function POST(request: NextRequest) {
               );
               notionEnabled = scoped.notion;
               webEnabled = scoped.web;
-              nasEnabled = scoped.nas;
+              nasEnabled = listingReferenceDisablesNas(
+                searchScope.kind,
+                listingQuestion
+              )
+                ? false
+                : scoped.nas;
               connectorRouting = {
                 connectors: {
                   nas: nasEnabled,
@@ -2567,7 +2598,8 @@ export async function POST(request: NextRequest) {
               console.log("[luna/search-scope] widen-after-search", {
                 kind: searchScope.kind,
                 tier: searchScope.tier,
-                flags: searchScope.flags
+                flags: searchScope.flags,
+                listing: listingQuestion
               });
               pushStep("search", "running", "범위 확대 재검색");
               batch = await runConnectorSearch(keywords, {
@@ -2583,8 +2615,11 @@ export async function POST(request: NextRequest) {
 
           pushStep("search", "done", formatSearchDoneLabel(batch.counts));
 
-          // 노션 nas_path → 색인 직접 조회 (키워드 검색에 안 잡혀도 묶기)
-          if (notionSources.length > 0) {
+          // 노션 nas_path → 색인 직접 조회 (목록형 사례는 Work 카드를 붙이지 않음)
+          if (
+            notionSources.length > 0 &&
+            !listingReferenceDisablesNas(searchScope.kind, listingQuestion)
+          ) {
             const recorded = notionRecordedPaths(notionSources);
             if (recorded.length > 0) {
               try {
@@ -2973,6 +3008,11 @@ export async function POST(request: NextRequest) {
           depthRule
         });
 
+        const slimListingPrompt = listingReferenceDisablesNas(
+          searchScope.kind,
+          listingQuestion
+        );
+
         const systemPrompt = buildAnswerSystem(
           {
             identity,
@@ -2997,7 +3037,8 @@ export async function POST(request: NextRequest) {
             listingRule,
             listingChecklist,
             llmInject,
-            userMemoryBlock
+            userMemoryBlock,
+            slimListingPrompt
           },
           tierACfg.use_caching === true,
           tierA.model_id
@@ -3333,6 +3374,15 @@ export async function POST(request: NextRequest) {
         if (listingQuestion) {
           assistantMeta.listing_question = true;
         }
+        assistantMeta.slim_listing_prompt = Boolean(
+          listingReferenceDisablesNas(searchScope.kind, listingQuestion)
+        );
+        assistantMeta.search_scope = {
+          kind: searchScope.kind,
+          tier: searchScope.tier,
+          nas: searchScope.flags.nas,
+          media: searchScope.flags.media
+        };
         if (
           perspectiveIds.length > 0 ||
           roleIds.length > 0 ||

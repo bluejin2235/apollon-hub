@@ -9,6 +9,8 @@ import {
   scopeHitsInsufficient,
   inferRuleClassification,
   scopeSkipsQueryEmbedding,
+  applyListingReferenceFlags,
+  listingReferenceDisablesNas,
   TERM_DEF_RE,
   POLICY_RE,
   PERSON_SPEECH_RE,
@@ -101,7 +103,37 @@ check(
   "project has notion+nas",
   project.flags.notion && project.flags.nas
 );
-check("project no further widen", widenSearchScope(project) === null);
+check(
+  "project no further widen",
+  widenSearchScope(project) === null
+);
+
+const refListing = resolveSearchScope({
+  types: ["know"],
+  question: "우리가 한 미디어파사드 사례 보여줘"
+});
+check("case q is reference", refListing.kind === "reference");
+check(
+  "listingReferenceDisablesNas",
+  listingReferenceDisablesNas("reference", true)
+);
+const refTier2 = widenSearchScope(refListing);
+check("reference can widen", Boolean(refTier2?.flags.nas));
+const refListingGuarded = applyListingReferenceFlags(refTier2!, true);
+check(
+  "listing+reference keeps nas off after widen",
+  refListingGuarded.flags.nas === false
+);
+check(
+  "speculative notion avoids false insufficient",
+  !scopeHitsInsufficient("reference", {
+    glossary: 0,
+    wiki: 0,
+    notion: 35,
+    nas: 0,
+    media: 20
+  })
+);
 
 check(
   "low confidence → wide",
