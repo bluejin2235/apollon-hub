@@ -499,7 +499,7 @@ async function applyChoice(
     const verdict =
       optionId === "good" ? "good" : optionId === "ack" ? "unclear" : "bad";
     const reason =
-      optionId === "wrong_answer" || optionId === "bad" ? "wrong_answer" : null;
+      optionId === "wrong_answer" || optionId === "bad" ? "wrong_source" : null;
     for (const id of ids) {
       await reviewAnswerFlag(admin, {
         id,

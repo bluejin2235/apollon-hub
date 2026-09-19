@@ -23,6 +23,7 @@ import {
   FEEDBACK_NOTE_MAX,
   FEEDBACK_REASON_IDS,
   FEEDBACK_REASON_LABELS,
+  feedbackReasonLabel,
   isFeedbackReason,
   type FeedbackReason
 } from "@/lib/luna/feedback";
@@ -275,7 +276,7 @@ export function AnswerMeta({
     setFeedbackReason(initialReason ?? null);
     setFeedbackNote(note);
     setNoteDraft(note ?? "");
-    setReasonPanelCollapsed(Boolean(note));
+    setReasonPanelCollapsed(Boolean(note) || Boolean(initialReason));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- message identity only
   }, [messageId]);
 
@@ -490,10 +491,12 @@ export function AnswerMeta({
       ) : null}
       {canFeedback && feedback === "bad" ? (
         reasonPanelCollapsed ? (
-          <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">
+          <div className="mt-1.5 rounded-[10px] border border-[#e5e7eb] bg-white px-[15px] py-[13px]">
             {feedbackReason ? (
-              <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-[#534AB7]">
-                {FEEDBACK_REASON_LABELS[feedbackReason]}
+              <span className="text-[12px] font-medium text-[#534AB7]">
+                {FEEDBACK_REASON_LABELS[feedbackReason] ??
+                  feedbackReasonLabel(feedbackReason) ??
+                  feedbackReason}
               </span>
             ) : null}
             {feedbackNote ? (
@@ -503,64 +506,64 @@ export function AnswerMeta({
             ) : null}
           </div>
         ) : (
-          <div className="mt-1.5">
-            <p className="mb-1 text-[10.5px] text-[#9aa0a8]">
-              무엇이 아쉬웠나요? (건너뛸 수 있어요)
+          <div className="mt-2.5 rounded-[10px] border border-[#e5e7eb] bg-white px-[15px] py-[13px]">
+            <p className="mb-2.5 text-[12.5px] font-bold text-slate-900">
+              어떤 점이 아쉬웠나요?
             </p>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-col gap-1.5">
               {FEEDBACK_REASON_IDS.map((rid) => (
                 <button
                   key={rid}
                   type="button"
                   disabled={busy}
-                  onClick={() => void sendFeedback("bad", { reason: rid })}
-                  className={`rounded-full px-2 py-0.5 text-[11px] ${
+                  onClick={() => {
+                    if (rid === "other") {
+                      setFeedbackReason(rid);
+                      return;
+                    }
+                    void sendFeedback("bad", { reason: rid, collapse: true });
+                  }}
+                  className={`rounded-lg border px-[13px] py-2.5 text-left text-[12px] ${
                     feedbackReason === rid
-                      ? "bg-[#534AB7] text-white"
-                      : "bg-[#f3f4f6] text-[#6b6f76]"
+                      ? "border-[#534AB7] bg-[#F0EFFE] text-[#534AB7]"
+                      : "border-[#e5e7eb] bg-white text-[#3a3d43] hover:bg-[#FAFBFC]"
                   }`}
                 >
                   {FEEDBACK_REASON_LABELS[rid]}
                 </button>
               ))}
             </div>
-            <textarea
-              value={noteDraft}
-              maxLength={FEEDBACK_NOTE_MAX}
-              disabled={busy}
-              placeholder="직접 적어주세요 (선택)"
-              onChange={(e) =>
-                setNoteDraft(e.target.value.slice(0, FEEDBACK_NOTE_MAX))
-              }
-              className="mt-1.5 w-full resize-none rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-[#c4bff0]"
-              rows={2}
-            />
-            <div className="mt-1 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void sendFeedback("bad", { reason: null, note: "", collapse: true })
-                }
-                className="rounded-md px-2.5 py-1 text-[11px] text-[#6b6f76]"
-              >
-                건너뛰기
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void sendFeedback("bad", {
-                    reason: feedbackReason,
-                    note: noteDraft,
-                    collapse: true
-                  })
-                }
-                className="rounded-md bg-[#534AB7] px-2.5 py-1 text-[11px] text-white"
-              >
-                남기기
-              </button>
-            </div>
+            {feedbackReason === "other" ? (
+              <>
+                <textarea
+                  value={noteDraft}
+                  maxLength={FEEDBACK_NOTE_MAX}
+                  disabled={busy}
+                  placeholder="어떤 점이 아쉬웠는지 적어 주세요"
+                  onChange={(e) =>
+                    setNoteDraft(e.target.value.slice(0, FEEDBACK_NOTE_MAX))
+                  }
+                  className="mt-2.5 w-full resize-none rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-[#c4bff0]"
+                  rows={2}
+                />
+                <div className="mt-1.5 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={busy || !noteDraft.trim()}
+                    onClick={() =>
+                      void sendFeedback("bad", {
+                        reason: "other",
+                        note: noteDraft,
+                        collapse: true
+                      })
+                    }
+                    className="rounded-md bg-[#534AB7] px-2.5 py-1 text-[11px] text-white disabled:opacity-50"
+                  >
+                    남기기
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         )
       ) : null}

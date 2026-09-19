@@ -85,7 +85,7 @@ export function LunaAdminAnswerFlags() {
         body: JSON.stringify({
           id,
           verdict,
-          reason: verdict === "bad" ? badReason[id] || "wrong_answer" : null
+          reason: verdict === "bad" ? badReason[id] || "wrong_source" : null
         })
       });
       await load();
@@ -191,7 +191,7 @@ export function LunaAdminAnswerFlags() {
                     맞아요
                   </button>
                   <select
-                    value={badReason[row.id] ?? "wrong_answer"}
+                    value={badReason[row.id] ?? "wrong_source"}
                     onChange={(e) =>
                       setBadReason((prev) => ({
                         ...prev,

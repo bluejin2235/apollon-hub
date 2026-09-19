@@ -71,18 +71,20 @@ export function isLinkRejectReason(value: unknown): value is LinkRejectReason {
 /** 대화 👎 — 새 선택지. 예전 값은 표시용으로만 남긴다. */
 export const THUMBS_REASON_IDS = [
   "wrong_source",
-  "wrong_answer",
-  "our_way",
+  "not_wanted",
+  "length_off",
+  "too_slow",
   "other"
 ] as const;
 
 export type ThumbsReason = (typeof THUMBS_REASON_IDS)[number];
 
 export const THUMBS_REASON_LABELS: Record<ThumbsReason, string> = {
-  wrong_source: "엉뚱한 자료를 찾았다",
-  wrong_answer: "찾긴 했는데 답이 틀렸다",
-  our_way: "아폴론 기준과 다르다",
-  other: "직접 입력"
+  wrong_source: "찾아준 자료가 틀렸어요",
+  not_wanted: "맞긴 한데 제가 원한 게 아니에요",
+  length_off: "답이 너무 길거나 짧아요",
+  too_slow: "너무 느려요",
+  other: "그 밖 — 직접 말할게요"
 };
 
 /** 예전 metadata.feedback_reason 표시 */
@@ -91,6 +93,8 @@ export const LEGACY_FEEDBACK_REASON_LABELS: Record<string, string> = {
   not_found: "있는데 못 찾았다",
   too_long: "너무 길거나 장황하다",
   off_topic: "묻지 않은 걸 답했다",
+  wrong_answer: "찾긴 했는데 답이 틀렸다",
+  our_way: "아폴론 기준과 다르다",
   ...THUMBS_REASON_LABELS
 };
 
