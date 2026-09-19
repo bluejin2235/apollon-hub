@@ -10,6 +10,7 @@ import {
 } from "@/components/luna/LunaInput";
 import { LunaInlineQuestionCard } from "@/components/luna/LunaInlineQuestionCard";
 import { AnswerBlock } from "@/components/luna/chat/AnswerBlock";
+import { LimitsDisclosure } from "@/components/luna/chat/LimitsDisclosure";
 import { USE_LUNA_CHAT_V2 } from "@/lib/luna/chat-ui-flag";
 import {
   LunaMessage,
@@ -1125,6 +1126,7 @@ export function LunaChat({
               </button>
             ))}
           </div>
+          <LimitsDisclosure />
         </div>
       ) : (
         <div className="pb-2">
