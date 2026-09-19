@@ -37,6 +37,20 @@ export const MISS_CAUSE_LABEL: Record<MissCauseKind, string> = {
   other: "원인 불명"
 };
 
+export type ProbeTopHit = {
+  page_id: string;
+  title: string;
+  /** 0-based 저장 순위 */
+  rank: number;
+  /** match_score 또는 similarity 기반 */
+  score: number | null;
+  /** keyword | embedding | both | link 등 */
+  match_via?: string | null;
+};
+
+/** 모드 A — 검색 overfetch 후보 저장 건수 (리랭크 실험용) */
+export const MODE_A_TOP_STORE = 50;
+
 export type ProbeModeAItem = {
   page_id: string;
   title: string;
@@ -45,7 +59,7 @@ export type ProbeModeAItem = {
   bucket: ProbeHitBucket;
   /** hit 일 때 — exact | same_project */
   match_kind?: ProbeMatchKind | null;
-  top: Array<{ page_id: string; title: string }>;
+  top: ProbeTopHit[];
   cause_guess: string | null;
   cause_kind?: MissCauseKind | null;
   /** glossary | image | knowledge | wiki | notion | work */
@@ -55,7 +69,7 @@ export type ProbeModeAItem = {
 export type ProbeModeBItem = {
   failure_id?: string;
   question: string;
-  top: Array<{ page_id: string; title: string }>;
+  top: ProbeTopHit[];
   ask_human: string;
 };
 
@@ -120,18 +134,30 @@ function usageCostUsd(modelId: string, usage: {
   );
 }
 
-function uniquePageRanks(sources: NotionSource[]): Array<{
-  page_id: string;
-  title: string;
-}> {
-  const out: Array<{ page_id: string; title: string }> = [];
+function uniquePageRanks(
+  sources: NotionSource[],
+  limit = MODE_A_TOP_STORE
+): ProbeTopHit[] {
+  const out: ProbeTopHit[] = [];
   const seen = new Set<string>();
   for (const s of sources) {
     const id = (s.id || "").trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    out.push({ page_id: id, title: (s.title || "").slice(0, 120) });
-    if (out.length >= 10) break;
+    const score =
+      typeof s.match_score === "number" && Number.isFinite(s.match_score)
+        ? s.match_score
+        : typeof s.similarity === "number" && Number.isFinite(s.similarity)
+          ? s.similarity
+          : null;
+    out.push({
+      page_id: id,
+      title: (s.title || "").slice(0, 120),
+      rank: out.length,
+      score,
+      match_via: s.match_via ?? (s.link_expanded ? "link" : null)
+    });
+    if (out.length >= limit) break;
   }
   return out;
 }
@@ -375,11 +401,11 @@ export async function generateQuestionsForPage(opts: {
 async function searchRankedPages(
   admin: SupabaseClient,
   question: string
-): Promise<Array<{ page_id: string; title: string }>> {
+): Promise<ProbeTopHit[]> {
   const outcome = await searchNotionForLuna(admin, question, question, {
     skipLive: true
   });
-  return uniquePageRanks(outcome.sources ?? []);
+  return uniquePageRanks(outcome.sources ?? [], MODE_A_TOP_STORE);
 }
 
 function kstMidnightIso(now = new Date()): string {
@@ -526,7 +552,7 @@ async function probeOnePage(
       timedOut = true;
       break;
     }
-    let top: Array<{ page_id: string; title: string }>;
+    let top: ProbeTopHit[];
     try {
       top = await searchRankedPages(admin, question);
     } catch (err) {

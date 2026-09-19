@@ -17,11 +17,31 @@ import { loadWikiDocs } from "@/lib/wiki/store";
 import { matchWikiSections } from "@/lib/luna/wiki-match";
 import {
   MODE_A_QUESTIONS_PER_PAGE,
+  MODE_A_TOP_STORE,
   type MissCauseKind,
   type ProbeHitBucket,
   type ProbeModeAItem,
+  type ProbeTopHit,
   MISS_CAUSE_LABEL
 } from "@/lib/luna/probe-retrieval";
+
+function toTopHits(
+  rows: Array<{
+    page_id: string;
+    title: string;
+    score?: number | null;
+    match_via?: string | null;
+  }>,
+  limit = MODE_A_TOP_STORE
+): ProbeTopHit[] {
+  return rows.slice(0, limit).map((r, i) => ({
+    page_id: r.page_id,
+    title: r.title,
+    rank: i,
+    score: r.score ?? null,
+    match_via: r.match_via ?? null
+  }));
+}
 
 export type ModeASourceKind =
   | "glossary"
@@ -215,10 +235,12 @@ export async function runProbeGlossary(
     const rankIdx = matched.findIndex((m) => String(m.id) === id);
     const rank = rankIdx >= 0 ? rankIdx : null;
     const bucket = bucketForRank(rank);
-    const top = matched.slice(0, 10).map((m) => ({
-      page_id: String(m.id),
-      title: (m.term_ko ?? "").slice(0, 120)
-    }));
+    const top = toTopHits(
+      matched.map((m) => ({
+        page_id: String(m.id),
+        title: (m.term_ko ?? "").slice(0, 120)
+      }))
+    );
 
     let cause_kind: MissCauseKind | null = null;
     let cause_guess: string | null = null;
@@ -325,7 +347,9 @@ export async function runProbeImage(
       question: `설명↔경로 대조 · ${clue}`,
       rank: hit ? 0 : null,
       bucket,
-      top: hit ? [{ page_id: path, title: path.slice(0, 80) }] : [],
+      top: hit
+        ? toTopHits([{ page_id: path, title: path.slice(0, 80) }], 1)
+        : [],
       cause_guess: hit
         ? null
         : "이미지 설명과 경로·카테고리 불일치 — 재색인 후보",
@@ -387,10 +411,12 @@ export async function runProbeKnowledge(
       question,
       rank,
       bucket,
-      top: picked.all.slice(0, 10).map((r) => ({
-        page_id: String(r.id),
-        title: String(r.content ?? "").slice(0, 80)
-      })),
+      top: toTopHits(
+        picked.all.map((r) => ({
+          page_id: String(r.id),
+          title: String(r.content ?? "").slice(0, 80)
+        }))
+      ),
       cause_guess:
         bucket === "miss" ? "지식 문장이 매칭에 안 잡힘" : null,
       cause_kind: bucket === "miss" ? "other" : null,
@@ -543,7 +569,9 @@ export async function runProbeWork(
 
     let anyHit = false;
     for (const question of questions) {
-      const hits = await searchNasTextKeyword(admin, question, { limit: 10 });
+      const hits = await searchNasTextKeyword(admin, question, {
+        limit: MODE_A_TOP_STORE
+      });
       const rankIdx = hits.findIndex((h) => h.path === target.path);
       const rank = rankIdx >= 0 ? rankIdx : null;
       const bucket = bucketForRank(rank);
@@ -562,10 +590,13 @@ export async function runProbeWork(
         question,
         rank,
         bucket,
-        top: hits.slice(0, 10).map((h) => ({
-          page_id: h.path,
-          title: (h.path.split(/[/\\]/).pop() ?? h.path).slice(0, 120)
-        })),
+        top: toTopHits(
+          hits.map((h) => ({
+            page_id: h.path,
+            title: (h.path.split(/[/\\]/).pop() ?? h.path).slice(0, 120),
+            score: typeof h.score === "number" ? h.score : null
+          }))
+        ),
         cause_guess,
         cause_kind,
         source: "work"
@@ -628,7 +659,7 @@ export async function runProbeWiki(
         .filter((t) => t.length >= 2)
         .slice(0, 8);
       const matched = matchWikiSections(docs, keywords, question, [], {
-        sectionMax: 10,
+        sectionMax: MODE_A_TOP_STORE,
         sectionsPerDocMax: 2
       });
       const rankIdx = matched.findIndex((m) => m.slug === slug);
@@ -642,10 +673,12 @@ export async function runProbeWiki(
         question,
         rank,
         bucket,
-        top: matched.slice(0, 10).map((m) => ({
-          page_id: m.slug,
-          title: (m.title || m.slug).slice(0, 120)
-        })),
+        top: toTopHits(
+          matched.map((m) => ({
+            page_id: m.slug,
+            title: (m.title || m.slug).slice(0, 120)
+          }))
+        ),
         cause_guess: bucket === "miss" ? "위키 miss" : null,
         cause_kind: bucket === "miss" ? "other" : null,
         source: "wiki"
