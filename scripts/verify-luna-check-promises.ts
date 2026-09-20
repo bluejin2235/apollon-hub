@@ -31,7 +31,7 @@ async function main() {
   }
   const drifts = diffCheckPromises(data ?? []);
   if (drifts.length === 0) {
-    console.log("\nOK — 12개 약속이 코드 기준과 일치");
+    console.log(`\nOK — ${Object.keys(LUNA_CHECK_PROMISES).length}개 약속이 코드 기준과 일치`);
     return;
   }
   console.log("\nDRIFT:");

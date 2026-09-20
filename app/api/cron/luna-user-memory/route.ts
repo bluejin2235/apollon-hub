@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
+import {
+  USER_MEMORY_LAST_CRON_KEY,
+  stampCronRan
+} from "@/lib/luna/checks";
 import { runUserMemoRewriteBatch } from "@/lib/luna/user-memory";
 import { promoteSharedMemoPatterns } from "@/lib/luna/perspective-promote";
 
@@ -42,6 +46,10 @@ export async function GET(request: NextRequest) {
     } catch (err) {
       console.error("[luna-user-memory] promote", err);
     }
+    await stampCronRan(admin, USER_MEMORY_LAST_CRON_KEY, {
+      rewritten: result.rewritten,
+      promote
+    });
     console.log("[luna-user-memory] cron", { ...result, promote });
     return NextResponse.json({ ...result, promote });
   } catch (err) {

@@ -87,6 +87,30 @@ export const LUNA_CHECK_PROMISES: Record<
     yellow_days: 14,
     red_days: 16
   },
+  source_stats: {
+    promise_label: `매일 ${hhmm(CRON_CONSOLIDATE_HOUR, CRON_CONSOLIDATE_MINUTE)} 약속`,
+    source: "vercel luna-consolidate 안 computeAndStoreSourceStats (skip 밤에도)",
+    yellow_days: 1,
+    red_days: 2
+  },
+  user_memories: {
+    promise_label: "매시 정각 약속",
+    source: "vercel luna-user-memory 0 * * * *",
+    yellow_days: 1,
+    red_days: 2
+  },
+  answer_found: {
+    promise_label: "사람이 누를 때 · 이번 주 건수",
+    source: "luna_answer_found 주간 건수 (0건 정상 가능 · 빨강 없음)",
+    yellow_days: 0,
+    red_days: 0
+  },
+  open_questions: {
+    promise_label: "쌓일 때만 · 이번 주 건수",
+    source: "luna_open_questions 주간 생성 건수 (0건 정상 가능 · 빨강 없음)",
+    yellow_days: 0,
+    red_days: 0
+  },
   fx_rates: {
     promise_label: "매일 09:15 약속",
     source:

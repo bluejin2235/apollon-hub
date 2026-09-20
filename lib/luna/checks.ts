@@ -12,6 +12,7 @@ import {
 import { IMAGE_CORPUS_TOTAL } from "@/lib/luna-admin/primary";
 import { missingEnvGroups, logMissingEnvGroups } from "@/lib/luna/env-keys";
 import { LUNA_CHECK_PROMISES } from "@/lib/luna/check-promises";
+import { kstWeekBounds } from "@/lib/luna/self-report";
 
 export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown";
 
@@ -115,6 +116,7 @@ async function settingsIso(
 
 export const LINKS_LAST_CRON_KEY = "luna_links_last_cron";
 export const SIGNALS_LAST_CRON_KEY = "luna_signals_last_cron";
+export const USER_MEMORY_LAST_CRON_KEY = "luna_user_memory_last_cron";
 
 export async function stampCronRan(
   admin: SupabaseClient,
@@ -389,6 +391,65 @@ async function resolveLastOkAt(
         extraDetail: missing.map((m) => m.message).join(" · ")
       };
     }
+    case "source_stats": {
+      const { data, error } = await admin
+        .from("luna_source_stats")
+        .select("day, computed_at")
+        .order("computed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[luna/checks] source_stats", error);
+        return { lastOkAt: null };
+      }
+      const day = typeof data?.day === "string" ? data.day : null;
+      return {
+        lastOkAt:
+          typeof data?.computed_at === "string" ? data.computed_at : null,
+        extraDetail: day ? `집계일 ${day}` : undefined
+      };
+    }
+    case "user_memories": {
+      const ranAt = await settingsIso(admin, USER_MEMORY_LAST_CRON_KEY, "ran_at");
+      return {
+        lastOkAt:
+          ranAt ?? (await latestIso(admin, "luna_user_memories", "updated_at"))
+      };
+    }
+    case "answer_found": {
+      const week = kstWeekBounds();
+      const [{ count }, lastAt] = await Promise.all([
+        admin
+          .from("luna_answer_found")
+          .select("message_id", { count: "exact", head: true })
+          .gte("created_at", week.startIso)
+          .lt("created_at", week.endIso),
+        latestIso(admin, "luna_answer_found", "created_at")
+      ]);
+      const n = count ?? 0;
+      return {
+        lastOkAt: lastAt ?? new Date().toISOString(),
+        light: "green",
+        extraDetail: n === 0 ? "이번 주 0건" : `이번 주 ${n}건`
+      };
+    }
+    case "open_questions": {
+      const week = kstWeekBounds();
+      const [{ count }, lastAt] = await Promise.all([
+        admin
+          .from("luna_open_questions")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", week.startIso)
+          .lt("created_at", week.endIso),
+        latestIso(admin, "luna_open_questions", "created_at")
+      ]);
+      const n = count ?? 0;
+      return {
+        lastOkAt: lastAt ?? new Date().toISOString(),
+        light: "green",
+        extraDetail: n === 0 ? "이번 주 0건" : `이번 주 ${n}건`
+      };
+    }
     default:
       return { lastOkAt: null };
   }
@@ -424,7 +485,9 @@ export async function evaluateLunaChecks(
       resolved.light ??
       (row.id === "disk" ||
       row.id === "response_time" ||
-      row.id === "llm_failures"
+      row.id === "llm_failures" ||
+      row.id === "answer_found" ||
+      row.id === "open_questions"
         ? ("green" as const)
         : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
@@ -435,7 +498,9 @@ export async function evaluateLunaChecks(
     if (
       (row.id === "disk" ||
         row.id === "response_time" ||
-        row.id === "llm_failures") &&
+        row.id === "llm_failures" ||
+        row.id === "answer_found" ||
+        row.id === "open_questions") &&
       resolved.extraDetail
     ) {
       detail = `${promiseLabel} · ${resolved.extraDetail}`;
