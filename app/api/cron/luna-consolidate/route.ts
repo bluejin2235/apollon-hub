@@ -39,6 +39,12 @@ export async function GET(request: NextRequest) {
   try {
     logMissingEnvGroups("luna-consolidate");
     const result = await runConsolidation(admin, { force: false });
+    // skip 밤에도 임베딩·스냅샷·통계를 돌리면 300초를 넘겨 504가 난다.
+    // 조건 미충족이면 확인만 하고 끝낸다.
+    if (result.skipped) {
+      console.log("[luna-consolidate] cron", result);
+      return NextResponse.json(result);
+    }
     const embeddings = await backfillMissingEmbeddings(admin, {
       limitPerKind: 120
     });

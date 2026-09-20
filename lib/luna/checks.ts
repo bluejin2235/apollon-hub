@@ -311,17 +311,32 @@ async function resolveLastOkAt(
         console.error("[luna/checks] consolidate", error);
         return { lastOkAt: null };
       }
-      const skip =
-        cron?.value &&
-        typeof cron.value === "object" &&
-        (cron.value as { skipped?: unknown }).skipped === true
-          ? (cron.value as { reason?: unknown }).reason
+      const cronVal =
+        cron?.value && typeof cron.value === "object"
+          ? (cron.value as { skipped?: unknown; reason?: unknown; at?: unknown })
           : null;
+      const skip =
+        cronVal?.skipped === true
+          ? typeof cronVal.reason === "string"
+            ? cronVal.reason
+            : null
+          : null;
+      const cronAt = typeof cronVal?.at === "string" ? cronVal.at : null;
+      const doneAt =
+        typeof data?.finished_at === "string" ? data.finished_at : null;
+      // 매일 확인만 해도 정상. 정리 본실행과 cron 확인 중 더 최근을 쓴다.
+      const lastOkAt =
+        cronAt && doneAt
+          ? cronAt > doneAt
+            ? cronAt
+            : doneAt
+          : cronAt ?? doneAt;
       return {
-        lastOkAt:
-          typeof data?.finished_at === "string" ? data.finished_at : null,
+        lastOkAt,
         extraDetail:
-          typeof skip === "string" && skip.trim() ? skip.trim() : undefined
+          typeof skip === "string" && skip.trim()
+            ? `확인만 · ${skip.trim()}`
+            : undefined
       };
     }
     case "fx_rates": {

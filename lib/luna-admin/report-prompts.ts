@@ -254,7 +254,7 @@ function checkSpec(
         ask: `이미지 색인이 ${idle}. 왜 안 도는지 봐줘.`,
         state: [
           `luna_media_index_runs 마지막 실행 ${last} · ${extra ?? "진행률 확인 필요"}.`,
-          "사무실 PC 작업 스케줄러 「LUNA Media Index」(매일 01:00)가 돌려. Vercel cron 이 아니야."
+          "사무실 PC 작업 스케줄러 「LUNA Media Index」(매일 22:00)가 돌려. Vercel cron 이 아니야."
         ],
         clue: [
           "luna_media_index_runs 마지막 행이 interrupted 인지 보고, 내가 PC 를 봐야 하면 알려줘."

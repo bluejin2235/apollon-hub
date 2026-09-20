@@ -437,7 +437,7 @@ export async function buildPrimarySources(
     count: imageCount,
     extra_count: imageCorpus,
     size_label: `${num(imageCount)} / ${num(imageCorpus)}`,
-    schedule_label: "01:00 (증분)",
+    schedule_label: "22:00 (증분)",
     last_iso: imageLast,
     last_label: formatWhen(imageLast),
     duration_label: "—",

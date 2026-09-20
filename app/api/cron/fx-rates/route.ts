@@ -29,6 +29,23 @@ export async function GET(request: NextRequest) {
   try {
     const result = await fetchDailyFxRate(admin);
     console.log("[fx-rates] cron", result);
+    // 아침 리포트(07:00) 전에 09:15 가 돌아도 체크 스냅샷이 어제에 남는다.
+    // 수집 직후 체크 행을 갱신해 「안 돈 것처럼」 보이지 않게 한다.
+    if (result.upserted > 0 || result.skipped > 0) {
+      const now = new Date().toISOString();
+      const sampleDate = result.samples[0]?.date ?? result.end;
+      await admin
+        .from("luna_checks")
+        .update({
+          last_ok_at: now,
+          last_checked_at: now,
+          status: "ok",
+          days_stale: 0,
+          detail: `매일 09:15 약속 · 마지막 ${now.slice(0, 16)} · 데이터 ${sampleDate}`,
+          updated_at: now
+        })
+        .eq("id", "fx_rates");
+    }
     return NextResponse.json(result);
   } catch (err) {
     console.error("[fx-rates]", err);

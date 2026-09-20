@@ -21,10 +21,14 @@ export type MediaIndexRunProgress = {
   failReasons?: Record<string, number>;
 };
 
-/** 이전 실행이 죽으면 running → interrupted */
+/** 진행 중인 실행이 이 시간 이상 멈추면 running → interrupted */
+const STALE_RUNNING_MS = 45 * 60 * 1000;
+
+/** 이전 실행이 죽고 진행이 멈춘 경우만 running → interrupted */
 export async function interruptStaleMediaRuns(
   admin: SupabaseClient
 ): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
   const { data, error } = await admin
     .from("luna_media_index_runs")
     .update({
@@ -34,12 +38,37 @@ export async function interruptStaleMediaRuns(
       error: "stale running → interrupted (next run resumes via mtime skip)"
     })
     .eq("status", "running")
+    .lt("updated_at", cutoff)
     .select("id");
   if (error) {
     console.warn("[media-index-runs] interrupt stale", error.message);
     return 0;
   }
   return data?.length ?? 0;
+}
+
+/** 최근에 진행 중인 실행이 있으면 새 실행을 시작하지 않는다 */
+export async function findActiveMediaIndexRun(
+  admin: SupabaseClient
+): Promise<{ id: string; updated_at: string } | null> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+  const { data, error } = await admin
+    .from("luna_media_index_runs")
+    .select("id, updated_at")
+    .eq("status", "running")
+    .gte("updated_at", cutoff)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[media-index-runs] find active", error.message);
+    return null;
+  }
+  if (!data?.id) return null;
+  return {
+    id: String(data.id),
+    updated_at: String(data.updated_at ?? "")
+  };
 }
 
 export async function startMediaIndexRun(
@@ -53,6 +82,15 @@ export async function startMediaIndexRun(
   }
 ): Promise<string | null> {
   await interruptStaleMediaRuns(admin);
+  const active = await findActiveMediaIndexRun(admin);
+  if (active) {
+    console.warn(
+      "[media-index-runs] skip start — already running",
+      active.id,
+      active.updated_at
+    );
+    return null;
+  }
   const now = new Date().toISOString();
   const { data, error } = await admin
     .from("luna_media_index_runs")

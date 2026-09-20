@@ -994,7 +994,13 @@ async function runIndex(opts: CliOpts): Promise<void> {
     candidateTotal: stats.candidates.length,
     workTotal: work.length
   });
-  if (runId) console.log(`run id: ${runId}`);
+  if (!runId) {
+    console.log(
+      "[index-media] 이미 진행 중인 색인이 있어 이번 실행은 건너뜁니다."
+    );
+    return;
+  }
+  console.log(`run id: ${runId}`);
 
   let finishing = false;
   let stopReason: string | null = null;
