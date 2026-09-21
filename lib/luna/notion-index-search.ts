@@ -23,9 +23,14 @@ import {
 import {
   matchNotionChunksByKeyword,
   mergeNotionHybridChunkHits,
-  notionSearchKeywords,
+  pickLightKeywords,
+  planNotionSearchKeywords,
   type NotionHybridChunkHit
 } from "@/lib/luna/notion-keyword";
+import {
+  loadQueryExpandGlossary,
+  type QueryExpandGlossaryRow
+} from "@/lib/luna/query-expand";
 import {
   RERANK_CANDIDATE_N,
   isRerankConfigured,
@@ -515,13 +520,17 @@ export async function searchNotionForLuna(
     skipLive?: boolean;
     /** ëª©ë¡í: ìì 20ì²­í¬ Â· íì´ì§ë¹ 1 */
     listing?: boolean;
-    /** 2ì°¨ ë§í¬Â·ê´ì  íì¥ (ê¸°ë³¸ true) */
+    /** 2차 링크·관점 확장 (기본 true) */
     useSecondary?: boolean;
+    /** 표기 변형 질의 확장 (기본 true) */
+    queryExpand?: boolean;
+    glossary?: QueryExpandGlossaryRow[];
   }
 ): Promise<NotionSearchOutcome> {
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
   const listing = Boolean(opts?.listing);
+  const queryExpand = opts?.queryExpand !== false;
   const topN = listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
   const perPage = listing
     ? NOTION_LISTING_MAX_PER_PAGE
@@ -543,19 +552,38 @@ export async function searchNotionForLuna(
   let keywordHitCount = 0;
 
   const searchStarted = Date.now();
-  const searchKws = notionSearchKeywords(keywords, queryText);
+  const glossaryPromise =
+    queryExpand && (opts?.glossary?.length ?? 0) === 0
+      ? loadQueryExpandGlossary(admin)
+      : Promise.resolve(opts?.glossary ?? []);
 
   // 벡터 먼저 — 키워드와 동시 실행하면 HNSW 캐시를 ILIKE 가 밀어낸다
+  // 용어사전 로드는 작은 select 라 벡터와 같이 돌려도 된다
   let chunkHits: Awaited<ReturnType<typeof matchNotionChunkEmbeddings>> = null;
+  let glossary: QueryExpandGlossaryRow[] = opts?.glossary ?? [];
   if (embedding) {
-    chunkHits = await matchNotionChunkEmbeddings(admin, embedding, {
-      threshold: NOTION_INDEX_MATCH_THRESHOLD,
-      limit: overfetch
-    });
+    const [hits, gloss] = await Promise.all([
+      matchNotionChunkEmbeddings(admin, embedding, {
+        threshold: NOTION_INDEX_MATCH_THRESHOLD,
+        limit: overfetch
+      }),
+      glossaryPromise
+    ]);
+    chunkHits = hits;
+    glossary = gloss;
+  } else if (queryExpand) {
+    glossary = await glossaryPromise;
   }
   if (chunkHits === null && embedding) {
     rpcFailed = true;
   }
+
+  const plan = planNotionSearchKeywords(
+    keywords,
+    queryText,
+    queryExpand ? glossary : []
+  );
+  const searchKws = plan.keywords;
 
   const chunkPageCount = new Set((chunkHits ?? []).map((h) => h.page_id)).size;
   const needKeyword =
@@ -566,8 +594,18 @@ export async function searchNotionForLuna(
   let keywordHits: Awaited<ReturnType<typeof matchNotionChunksByKeyword>> = [];
   if (needKeyword) {
     keywordHits = await matchNotionChunksByKeyword(admin, searchKws, {
-      limit: overfetch
+      limit: overfetch,
+      extra: queryExpand ? plan.extra : []
     });
+  } else if (queryExpand) {
+    const lightKws = pickLightKeywords(plan);
+    if (lightKws.length > 0) {
+      keywordHits = await matchNotionChunksByKeyword(admin, lightKws, {
+        limit: overfetch,
+        light: true,
+        extra: plan.extra
+      });
+    }
   }
   keywordHitCount = keywordHits.length;
 
@@ -661,6 +699,7 @@ export async function searchNotionForLuna(
   console.log("[luna/notion-index] search", {
     keywords: keywords.slice(0, 60),
     searchKws: searchKws.slice(0, 12),
+    expandExtra: plan.extra.slice(0, 8),
     chunks: selectedHits.length,
     keywordHits: keywordHitCount,
     pages: pageCount,

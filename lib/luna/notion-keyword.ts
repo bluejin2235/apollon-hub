@@ -9,6 +9,10 @@ import {
 } from "@/lib/luna/embedding";
 import { splitKeywordQuery } from "@/lib/luna/knowledge-match";
 import { matchNamedEntities, NAMED_ENTITY_SEED } from "@/lib/luna/named-entities";
+import {
+  expandQueryNotations,
+  type QueryExpandGlossaryRow
+} from "@/lib/luna/query-expand";
 
 /** 위키 wiki-match 와 동일: 공백 제거·소문자 */
 export function compactKeywordText(text: string): string {
@@ -145,18 +149,35 @@ function expandKeywordVariants(keywords: string[]): string[] {
   return out;
 }
 
+export type NotionKeywordPlan = {
+  keywords: string[];
+  extra: string[];
+};
+
 /**
  * 노션 키워드 토큰.
  * 질문 원문에서 뽑는다 (LLM 추출어는 무시 — 재현성).
  * 고유명사·조사 변형은 expand + named entities 로 보강.
+ * 표기 변형(날짜·숫자·층·용어사전)은 extra 로 붙인다.
  */
-export function notionSearchKeywords(
+export function planNotionSearchKeywords(
   _extracted: string,
-  questionText?: string
-): string[] {
+  questionText?: string,
+  glossary?: QueryExpandGlossaryRow[]
+): NotionKeywordPlan {
   const q = (questionText ?? _extracted).trim();
-  if (!q) return [];
-  const base = expandKeywordVariants(splitKeywordQuery(q, q, []));
+  if (!q) return { keywords: [], extra: [] };
+  const base = expandKeywordVariants(
+    splitKeywordQuery(
+      q,
+      q,
+      (glossary ?? []).map((g) => ({
+        term_ko: g.term_ko ?? null,
+        term_en: g.term_en ?? null,
+        synonyms: g.synonyms
+      }))
+    )
+  );
   const seen = new Set(base.map((k) => compactKeywordText(k)));
   const out = [...base];
   const push = (raw: string) => {
@@ -171,7 +192,66 @@ export function notionSearchKeywords(
     push(ent.canonical);
     for (const a of ent.aliases ?? []) push(a);
   }
-  return out;
+  const extra: string[] = [];
+  const extraSeen = new Set<string>();
+  for (const v of expandQueryNotations(q, glossary ?? []).extra) {
+    const key = compactKeywordText(v);
+    if (key.length < 2 || extraSeen.has(key)) continue;
+    extraSeen.add(key);
+    extra.push(v);
+    push(v);
+  }
+  return { keywords: out, extra };
+}
+
+export function notionSearchKeywords(
+  _extracted: string,
+  questionText?: string,
+  glossary?: QueryExpandGlossaryRow[]
+): string[] {
+  return planNotionSearchKeywords(_extracted, questionText, glossary).keywords;
+}
+
+/** ilike 예산 10: 원 토큰 6 + 표기 변형 4. 변형이 원문을 밀어내지 않게. */
+export function pickIlikeKeywords(
+  keywords: string[],
+  extra: string[] = []
+): string[] {
+  const extraKeys = new Set(extra.map((k) => compactKeywordText(k)));
+  const rank = (k: string) =>
+    (/[a-z0-9]/i.test(k) ? 1000 : 0) + compactKeywordText(k).length;
+  const original = keywords.filter((k) => !extraKeys.has(compactKeywordText(k)));
+  const extras = keywords.filter((k) => extraKeys.has(compactKeywordText(k)));
+  original.sort((a, b) => rank(b) - rank(a));
+  extras.sort((a, b) => rank(b) - rank(a));
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  const push = (k: string) => {
+    const key = compactKeywordText(k);
+    if (key.length < 2 || seen.has(key)) return;
+    seen.add(key);
+    picked.push(k);
+  };
+  for (const k of original.slice(0, 6)) push(k);
+  for (const k of extras.slice(0, 4)) push(k);
+  return picked.slice(0, 10);
+}
+
+/** 임베딩이 충분해도 돌릴 가벼운 키워드 — 표기 변형을 앞에 둔다 */
+export function pickLightKeywords(plan: NotionKeywordPlan): string[] {
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  const push = (k: string) => {
+    const key = compactKeywordText(k);
+    if (key.length < 2 || seen.has(key)) return;
+    seen.add(key);
+    picked.push(k);
+  };
+  for (const k of plan.extra.slice(0, 3)) push(k);
+  for (const k of plan.keywords) {
+    if (/[a-z]{2,}/i.test(k) || /[./-]/.test(k) || /^\d{6,8}$/.test(k)) push(k);
+  }
+  return picked.slice(0, 6);
 }
 
 function keywordWeightsFromTitles(
@@ -229,11 +309,12 @@ function escapeIlike(raw: string): string {
 
 /**
  * 키워드로 청크 후보를 모은다. 제목 히트 페이지는 청크가 없어도 대표 청크를 넣는다.
+ * light: 8000페이지 전체 로드를 생략하고 ilike 만 돌린다 (표기 변형 보강용).
  */
 export async function matchNotionChunksByKeyword(
   admin: SupabaseClient,
   keywordsIn: string[],
-  opts?: { limit?: number }
+  opts?: { limit?: number; light?: boolean; extra?: string[] }
 ): Promise<NotionKeywordChunkHit[]> {
   const keywords = keywordsIn
     .map((k) => k.trim())
@@ -241,22 +322,33 @@ export async function matchNotionChunksByKeyword(
   if (keywords.length === 0) return [];
 
   const limit = opts?.limit ?? 60;
+  const light = Boolean(opts?.light);
+  const extra = opts?.extra ?? [];
 
-  const { data: pageRows, error: pageErr } = await admin
-    .from("luna_notion_pages")
-    .select("page_id, title")
-    .eq("archived", false)
-    .limit(8000);
-  if (pageErr) {
-    console.error("[luna/notion-keyword] pages", pageErr);
-    return [];
+  const titleById = new Map<string, string>();
+  const pages: PageTitleRow[] = [];
+
+  if (!light) {
+    const { data: pageRows, error: pageErr } = await admin
+      .from("luna_notion_pages")
+      .select("page_id, title")
+      .eq("archived", false)
+      .limit(8000);
+    if (pageErr) {
+      console.error("[luna/notion-keyword] pages", pageErr);
+      return [];
+    }
+    for (const row of (pageRows ?? []) as PageTitleRow[]) {
+      titleById.set(row.page_id, row.title ?? "");
+      pages.push(row);
+    }
   }
-  const pages = (pageRows ?? []) as PageTitleRow[];
-  const titleById = new Map(pages.map((p) => [p.page_id, p.title ?? ""]));
+
+  const kwForIlike = pickIlikeKeywords(keywords, extra);
 
   // 제목 ilike 보강 — 전체 스캔에 빠진 페이지·표기 차이 보완
   await Promise.all(
-    keywords.slice(0, 10).map(async (kw) => {
+    kwForIlike.map(async (kw) => {
       const pattern = `%${escapeIlike(kw)}%`;
       const { data, error } = await admin
         .from("luna_notion_pages")
@@ -278,22 +370,16 @@ export async function matchNotionChunksByKeyword(
     })
   );
 
-  const weights = keywordWeightsFromTitles(pages, keywords);
+  const weights = light
+    ? new Map(keywords.map((k) => [k, 1] as const))
+    : keywordWeightsFromTitles(pages, keywords);
   const titleHitPageIds = [...titleById.entries()]
     .filter(([, title]) =>
       keywords.some((kw) => includesKeywordCompact(title ?? "", kw))
     )
     .map(([pageId]) => pageId);
 
-  // 본문·heading ilike 후보 (긴 키워드·영문 우선)
   const chunkById = new Map<string, ChunkRow>();
-  const kwForIlike = [...keywords]
-    .sort((a, b) => {
-      const score = (k: string) =>
-        (/[a-z0-9]/i.test(k) ? 1000 : 0) + compactKeywordText(k).length;
-      return score(b) - score(a);
-    })
-    .slice(0, 10);
 
   await Promise.all(
     kwForIlike.map(async (kw) => {
