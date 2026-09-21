@@ -45,8 +45,9 @@ function modeHintFromSteps(steps: LunaProgressStep[] | null | undefined): Answer
   if (ui.includes("ui_wiki") && !ui.includes("ui_notion") && !ui.includes("ui_work") && !ui.includes("ui_image")) {
     return "policy";
   }
-  // 사례: 이미지 채널이 있으면 (노션 동반해도) reference
-  if (ui.includes("ui_image") && !ui.includes("ui_work")) {
+  // 이미지 채널이 있으면 (노션·Work 동반해도) reference.
+  // Work가 있다고 project로 보내면 「이미지 보여줘」에서 그리드가 사라진다.
+  if (ui.includes("ui_image")) {
     return "reference";
   }
   if (ui.includes("ui_work") || ui.includes("ui_notion") || ui.includes("ui_link")) {
@@ -62,6 +63,10 @@ export function resolveAnswerMode(opts: {
 }): AnswerMode {
   const question = (opts.questionText ?? "").replace(/\s+/g, " ").trim();
   const fromSteps = modeHintFromSteps(opts.steps);
+  if (fromSteps === "reference") return "reference";
+  if (question && hasImageSearchIntent(question) && fromSteps !== "term" && fromSteps !== "policy") {
+    return "reference";
+  }
   if (fromSteps) return fromSteps;
 
   const rule = question ? inferRuleClassification(question) : null;
@@ -91,7 +96,7 @@ export function shouldShowImageChrome(
   mode: AnswerMode,
   questionText?: string | null
 ): boolean {
-  if (mode === "term" || mode === "policy" || mode === "project") return false;
+  if (mode === "term" || mode === "policy") return false;
   if (mode === "reference") return true;
   return Boolean(questionText && hasImageSearchIntent(questionText));
 }

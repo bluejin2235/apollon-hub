@@ -52,4 +52,35 @@ const caseShow = resolveAnswerMode({
 assert.equal(caseShow, 'reference');
 assert.equal(shouldShowImageChrome(caseShow, '우리가 한 미디어파사드 사례 보여줘'), true);
 
-console.log('chat-v2 modes ok', { term, project, reference, caseShow });
+const kvShow = resolveAnswerMode({
+  questionText: '해운대스퀘어 KV 이미지 보여줘',
+  classification: { types: ['find'], labels: ['찾기'], confidence: 0.98 },
+  steps: [
+    { key: 'ui_read', label: '질문을 읽었습니다 — 찾기(넓음)', status: 'done' },
+    { key: 'ui_notion', label: '노션에서 찾았습니다', status: 'done', right: '22건' },
+    { key: 'ui_work', label: 'Work서버 폴더를 찾았습니다', status: 'done', right: '6건' },
+    { key: 'ui_image', label: '관련 이미지를 찾았습니다', status: 'done', right: '20건' }
+  ]
+});
+assert.equal(kvShow, 'reference');
+assert.equal(
+  shouldShowImageChrome(kvShow, '해운대스퀘어 KV 이미지 보여줘'),
+  true
+);
+
+const thewho = resolveAnswerMode({
+  questionText: '더후 글로벌 론칭 레퍼런스 찾아줘',
+  classification: { types: ['find'], labels: ['찾기'], confidence: 0.9 },
+  steps: [
+    { key: 'ui_read', label: '질문을 읽었습니다 — 사례·레퍼런스', status: 'done' },
+    { key: 'ui_notion', label: '노션에서 찾았습니다', status: 'done', right: '10건' },
+    { key: 'ui_work', label: 'Work서버 폴더를 찾았습니다', status: 'done', right: '4건' }
+  ]
+});
+assert.equal(thewho, 'reference');
+assert.equal(
+  shouldShowImageChrome(thewho, '더후 글로벌 론칭 레퍼런스 찾아줘'),
+  true
+);
+
+console.log('chat-v2 modes ok', { term, project, reference, caseShow, kvShow, thewho });
