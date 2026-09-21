@@ -2942,6 +2942,21 @@ export async function POST(request: NextRequest) {
           }
 
           if (namedProjectLock) {
+            const peekNas = [
+              ...projectPeek.natureFolders,
+              ...projectPeek.projectRoots
+            ].map((f) => ({
+              drive: f.drive,
+              path: f.path,
+              type: "folder",
+              size_bytes: null,
+              modified_at: null,
+              file_summary: null,
+              importance: 1
+            }));
+            if (peekNas.length > 0) {
+              nasResults = finalizeNasDirectoryRows([...nasResults, ...peekNas]);
+            }
             try {
               const namedNas = await searchNasFoldersByName(admin, askedWhat, 40);
               if (namedNas.length > 0) {
@@ -3347,8 +3362,15 @@ export async function POST(request: NextRequest) {
         }
         if (namedProjectLock) {
           const name = askedWhat.displayProject || askedWhat.projectPhrases[0];
+          const seen = projectPeek.natureFolders
+            .map((f) => f.path)
+            .slice(0, 8);
+          const seenBlock =
+            seen.length > 0
+              ? `\r\nDB에서 본 폴더:\r\n${seen.map((p) => `- ${p}`).join("\r\n")}\r\n이 폴더를 보고 답하라. 있는데 못 찾았다고 하지 마라.`
+              : "";
           typeBlocks.push(
-            `[지정 프로젝트]\r\n질문한 프로젝트(${name}) 자료만 답한다. 다른 프로젝트 이름·폴더를 언급하거나 제안하지 마라. 맞는 자료가 없으면 없다고만 하고, 어디 있는지 알려달라고 한다.`
+            `[지정 프로젝트]\r\n질문한 프로젝트(${name}) 자료만 답한다. 다른 프로젝트 이름·폴더를 언급하거나 제안하지 마라. 맞는 자료가 없으면 없다고만 하고, 어디 있는지 알려달라고 한다.${seenBlock}`
           );
         }
 
@@ -3659,8 +3681,7 @@ export async function POST(request: NextRequest) {
           assistantText = safeAssistantText;
         }
         {
-          const hideUnused =
-            notFoundFromAsk || isNotFoundAnswerText(assistantText);
+          const hideUnused = notFoundFromAsk;
           const kept = keepSourcesUsedInAnswer({
             cards,
             notion: notionSources,
