@@ -9,12 +9,20 @@ import { iGa } from "@/lib/korean/particles";
 import {
   pickGlossaryForQuestion,
   pickLearningsForQuestion,
+  splitKeywordQuery,
   type GlossaryMatchRow,
   type LearningMatchRow
 } from "@/lib/luna/knowledge-match";
 import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { loadWikiDocs } from "@/lib/wiki/store";
-import { matchWikiSections } from "@/lib/luna/wiki-match";
+import { matchWikiSections, isArchivedWikiTitle } from "@/lib/luna/wiki-match";
+import { retrieveKnowledgeEmbeddings } from "@/lib/luna/embedding-retrieve";
+import { sectionsPlain } from "@/lib/wiki/sections";
+import type { WikiDoc } from "@/lib/wiki/types";
+import {
+  resolveSearchScopeKind,
+  scopeSkipsQueryEmbedding
+} from "@/lib/luna/search-scope";
 import {
   MODE_A_QUESTIONS_PER_PAGE,
   MODE_A_TOP_STORE,
@@ -557,7 +565,11 @@ export async function runProbeWork(
   opts: {
     limit?: number;
     streaks?: Record<string, number>;
-    generateQuestions: (title: string, body: string) => Promise<{
+    generateQuestions: (
+      title: string,
+      body: string,
+      source?: ModeASourceKind
+    ) => Promise<{
       questions: string[];
       cost_usd: number;
       llm_calls: number;
@@ -652,12 +664,64 @@ export async function runProbeWork(
   return result;
 }
 
+/** 팀원이 물을 규정·매뉴얼을 영문 프로젝트·보관 노트보다 앞에 둔다. */
+const WIKI_PROBE_MENU_RANK: Record<string, number> = {
+  rules: 0,
+  workflow: 1,
+  identity: 2,
+  it: 3,
+  business: 4,
+  projects: 5,
+  website: 6
+};
+
+export function sortWikiDocsForProbe<T extends { title: string; menu_slug: string }>(
+  docs: T[]
+): T[] {
+  return [...docs].sort((a, b) => {
+    const aArch = isArchivedWikiTitle(a.title) ? 1 : 0;
+    const bArch = isArchivedWikiTitle(b.title) ? 1 : 0;
+    if (aArch !== bArch) return aArch - bArch;
+    const ra = WIKI_PROBE_MENU_RANK[a.menu_slug] ?? 50;
+    const rb = WIKI_PROBE_MENU_RANK[b.menu_slug] ?? 50;
+    if (ra !== rb) return ra - rb;
+    return a.title.localeCompare(b.title, "ko");
+  });
+}
+
+function wikiProbeBody(doc: WikiDoc): string {
+  const fromSections = sectionsPlain(doc.sections ?? []);
+  const raw = `${doc.summary ?? ""}\n${doc.content || fromSections}`;
+  return raw.slice(0, 2800);
+}
+
+function classifyWikiMiss(
+  goldSlug: string,
+  matched: Array<{ slug: string; title: string }>
+): { cause_kind: MissCauseKind; cause_guess: string } {
+  if (matched.length === 0) {
+    return { cause_kind: "no_results", cause_guess: "검색 0건" };
+  }
+  const top = matched[0];
+  if (top && top.slug !== goldSlug) {
+    return {
+      cause_kind: "other",
+      cause_guess: `다른 위키가 밀어냄 · ${top.title}`
+    };
+  }
+  return { cause_kind: "other", cause_guess: "위키 miss" };
+}
+
 export async function runProbeWiki(
   admin: SupabaseClient,
   opts: {
     limit?: number;
     streaks?: Record<string, number>;
-    generateQuestions: (title: string, body: string) => Promise<{
+    generateQuestions: (
+      title: string,
+      body: string,
+      source?: ModeASourceKind
+    ) => Promise<{
       questions: string[];
       cost_usd: number;
       llm_calls: number;
@@ -670,23 +734,29 @@ export async function runProbeWiki(
   const limit = opts.limit ?? MODE_A_SOURCE_BUDGET.wiki.daily_items;
   const streaks = opts.streaks ?? {};
   const { items: docs } = await loadWikiDocs(admin, { activeOnly: true });
+  const ordered = sortWikiDocsForProbe(docs);
   const items: ProbeModeAItem[] = [];
   let cost = 0;
   let llmCalls = 0;
   let taken = 0;
 
-  for (const doc of docs) {
+  for (const doc of ordered) {
     if (taken >= limit || pastDeadline(opts.deadlineMs)) break;
     const slug = doc.slug;
-    if (!slug || opts.exclude?.has(slug) || shouldSkipTarget(streaks, `wiki:${slug}`)) {
+    if (
+      !slug ||
+      isArchivedWikiTitle(doc.title) ||
+      opts.exclude?.has(slug) ||
+      shouldSkipTarget(streaks, `wiki:${slug}`)
+    ) {
       continue;
     }
-    const body = `${doc.summary ?? ""}\n${doc.content ?? ""}`.slice(0, 2800);
+    const body = wikiProbeBody(doc);
     if (body.trim().length < 20) continue;
 
     let questions: string[] = [];
     try {
-      const gen = await opts.generateQuestions(doc.title || slug, body);
+      const gen = await opts.generateQuestions(doc.title || slug, body, "wiki");
       questions = gen.questions.slice(0, MODE_A_QUESTIONS_PER_PAGE);
       cost += gen.cost_usd;
       llmCalls += gen.llm_calls;
@@ -698,12 +768,16 @@ export async function runProbeWiki(
 
     let anyHit = false;
     for (const question of questions) {
-      const keywords = question
-        .split(/[\s,/|]+/)
-        .map((t) => t.trim())
-        .filter((t) => t.length >= 2)
-        .slice(0, 8);
-      const matched = matchWikiSections(docs, keywords, question, [], {
+      const keywords = splitKeywordQuery(question, question).slice(0, 12);
+      const scopeKind = resolveSearchScopeKind({
+        types: ["know"],
+        question,
+        classifyConfidence: 1
+      });
+      const embHits = scopeSkipsQueryEmbedding(scopeKind)
+        ? []
+        : (await retrieveKnowledgeEmbeddings(admin, question)).wiki;
+      const matched = matchWikiSections(docs, keywords, question, embHits, {
         sectionMax: MODE_A_TOP_STORE,
         sectionsPerDocMax: 2
       });
@@ -711,6 +785,13 @@ export async function runProbeWiki(
       const rank = rankIdx >= 0 ? rankIdx : null;
       const bucket = bucketForRank(rank);
       if (bucket !== "miss") anyHit = true;
+      const miss =
+        bucket === "miss"
+          ? classifyWikiMiss(
+              slug,
+              matched.map((m) => ({ slug: m.slug, title: m.title || m.slug }))
+            )
+          : null;
 
       items.push({
         page_id: slug,
@@ -721,11 +802,13 @@ export async function runProbeWiki(
         top: toTopHits(
           matched.map((m) => ({
             page_id: m.slug,
-            title: (m.title || m.slug).slice(0, 120)
+            title: (m.title || m.slug).slice(0, 120),
+            score: m.score,
+            match_via: m.match_via ?? null
           }))
         ),
-        cause_guess: bucket === "miss" ? "위키 miss" : null,
-        cause_kind: bucket === "miss" ? "other" : null,
+        cause_guess: miss?.cause_guess ?? null,
+        cause_kind: miss?.cause_kind ?? null,
         source: "wiki"
       });
     }
@@ -818,7 +901,11 @@ export async function runModeAMultiSource(
     /** LLM 원천 한 청크당 문서 수. 없으면 원천별 기본값 */
     llmChunk?: number;
     exclude?: Set<string>;
-    generateQuestions: (title: string, body: string) => Promise<{
+    generateQuestions: (
+      title: string,
+      body: string,
+      source?: ModeASourceKind
+    ) => Promise<{
       questions: string[];
       cost_usd: number;
       llm_calls: number;

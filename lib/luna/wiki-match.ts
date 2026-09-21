@@ -20,6 +20,15 @@ export type WikiSourceRef = {
   embedding_score?: number;
 };
 
+export function isArchivedWikiTitle(title: string): boolean {
+  return /^\s*\[보관\]/.test(title);
+}
+
+function includeArchivedWiki(questionText?: string): boolean {
+  const q = questionText ?? "";
+  return /보관|개발노트|클래스\s*사전|캡션\s*등록/.test(q);
+}
+
 export const WIKI_SECTION_MAX = 3;
 export const WIKI_SECTIONS_PER_DOC_MAX = 2;
 export const WIKI_SECTION_BODY_MAX = 1500;
@@ -46,7 +55,12 @@ export const SYNTHESIS_WIKI_LIMITS: WikiPickLimits = {
   sectionsPerDocMax: 1
 };
 const QUESTION_ALIAS_HINTS: Array<{ pattern: RegExp; aliases: string[] }> = [
-  { pattern: /어떻게|절차|순서|프로세스|과정/, aliases: ["절차"] },
+  { pattern: /절차|순서|프로세스|과정/, aliases: ["절차"] },
+  { pattern: /출장비/, aliases: ["출장"] },
+  {
+    pattern: /work\s*서버|워크\s*서버|워크서버/i,
+    aliases: ["Work Server", "외부접속"]
+  },
   { pattern: /왜|이유|목적/, aliases: ["목적", "이유"] },
   { pattern: /근거|출처|기준/, aliases: ["근거", "규칙", "기준"] },
   { pattern: /입력|받으면|받을\s*때/, aliases: ["입력", "입력 처리"] },
@@ -347,6 +361,9 @@ export function matchWikiSections(
 
   for (const doc of docs) {
     if (!doc.is_active) continue;
+    if (isArchivedWikiTitle(doc.title) && !includeArchivedWiki(questionText)) {
+      continue;
+    }
     for (const section of doc.sections) {
       const hit = scoreSection(doc, section, enriched, weights);
       if (hit.score < 1) continue;
@@ -374,6 +391,9 @@ export function matchWikiSections(
   for (const emb of embeddingHits ?? []) {
     const doc = byLib.get(emb.library_id);
     if (!doc || !doc.is_active) continue;
+    if (isArchivedWikiTitle(doc.title) && !includeArchivedWiki(questionText)) {
+      continue;
+    }
     const section = doc.sections.find((s) => s.id === emb.section_id);
     if (!section) continue;
     const key = `${doc.id}::${section.id}`;

@@ -111,7 +111,7 @@ export const TERM_DEF_RE =
 
 /** 규정·제도 */
 export const POLICY_RE =
-  /병가|연차|반차|휴가|규정|제도|복지|근무\s*시간|출퇴근|급여|수당|복리후생|며칠\s*(?:쓸|돼|가능)|몇\s*일\s*(?:쓸|돼|가능)/i;
+  /병가|연차|반차|휴가|규정|제도|복지|근무\s*시간|출퇴근|급여|수당|복리후생|며칠\s*(?:쓸|돼|가능)|몇\s*일\s*(?:쓸|돼|가능)|법인카드|법카|출장|경비|회의실|와이파이|wifi|근태|정보보안|임금|괴롭힘|원드라이브|onedrive|복합기|취업규칙|원격업무|쏘카|식대|운동\s*지원|지원금|전자계약|워크\s*서버|work\s*server|work\s*서버|외부접속/i;
 
 /** 사람·발언 */
 export const PERSON_SPEECH_RE =
@@ -124,6 +124,10 @@ export const PROJECT_STATUS_RE =
 /** 사례·레퍼런스 */
 export const REFERENCE_RE =
   /사례|레퍼런스|참고\s*(?:사례|작|예)|비슷한\s*(?:사례|작|프로젝트)/i;
+
+/** 날짜·완료 예정 — 용어 정의가 아니라 프로젝트 문서 검색 */
+export const DATED_PROJECT_FACT_RE =
+  /\d{1,2}\s*월\s*\d{1,2}\s*일|(?<!\d)\d{6}(?!\d)|완료\s*예정|예정\s*항목/;
 
 const KIND_LABEL: Record<SearchScopeKind, string> = {
   none: "검색 없음",
@@ -195,6 +199,9 @@ export function inferRuleClassification(question: string): {
   if (PROJECT_STATUS_RE.test(t)) {
     return { kind: "project", types: ["find"], reason: "규칙: 프로젝트 현황" };
   }
+  if (DATED_PROJECT_FACT_RE.test(t)) {
+    return { kind: "project", types: ["find"], reason: "규칙: 날짜·예정 항목" };
+  }
   if (TERM_DEF_RE.test(t)) {
     return { kind: "term", types: ["know"], reason: "규칙: 용어·정의" };
   }
@@ -251,6 +258,7 @@ export function resolveSearchScopeKind(opts: {
   if (PERSON_SPEECH_RE.test(t)) return "person";
   if (REFERENCE_RE.test(t)) return "reference";
   if (PROJECT_STATUS_RE.test(t)) return "project";
+  if (DATED_PROJECT_FACT_RE.test(t)) return "project";
   if (TERM_DEF_RE.test(t)) return "term";
 
   const conf = opts.classifyConfidence;

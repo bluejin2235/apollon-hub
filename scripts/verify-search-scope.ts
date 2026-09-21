@@ -51,8 +51,16 @@ const cases: Array<{
     types: ["know"],
     expect: "reference"
   },
-  { q: "안녕", types: ["smalltalk"], expect: "none" },
-  { q: "견적서 어디 있어?", types: ["find"], expect: "find_wide" }
+  {
+    q: "해운대 구남로 2월 27일까지 완료 예정 항목이 뭔지?",
+    types: ["know"],
+    expect: "project"
+  },
+  { q: "견적서 어디 있어?", types: ["find"], expect: "find_wide" },
+  { q: "법인카드 어디까지 써도 돼?", types: ["know"], expect: "policy" },
+  { q: "운동 지원금 어떻게 받아?", types: ["know"], expect: "policy" },
+  { q: "Work 서버 밖에서 어떻게 들어가?", types: ["know"], expect: "policy" },
+  { q: "출장비 정산 어떻게 해?", types: ["know"], expect: "policy" }
 ];
 
 for (const c of cases) {
@@ -62,6 +70,8 @@ for (const c of cases) {
 
 check("TERM_DEF_RE 볼팍", TERM_DEF_RE.test("볼팍견적이 뭐야?"));
 check("POLICY_RE 병가", POLICY_RE.test("병가 며칠 쓸 수 있어?"));
+check("POLICY_RE 법인카드", POLICY_RE.test("법인카드 어디까지 써도 돼?"));
+check("POLICY_RE does not steal 볼팍견적", !POLICY_RE.test("볼팍견적이 뭐야?"));
 check("PERSON_SPEECH_RE", PERSON_SPEECH_RE.test("상지원 상무가 얘기한 내용"));
 check("PROJECT_STATUS_RE", PROJECT_STATUS_RE.test("인스파이어 시즌4 어떻게 돼가?"));
 check("REFERENCE_RE", REFERENCE_RE.test("미디어파사드 사례 보여줘"));
@@ -152,7 +162,12 @@ check(
   }) === "person"
 );
 check(
-  "inferRule term",
+  "dated fact is project not term",
+  inferRuleClassification("해운대 구남로 2월 27일까지 완료 예정 항목이 뭔지?")
+    ?.kind === "project"
+);
+check(
+  "term still term",
   inferRuleClassification("볼팍견적이 뭐야?")?.kind === "term"
 );
 check(

@@ -376,15 +376,24 @@ async function loadPageBody(
 export async function generateQuestionsForPage(opts: {
   title: string;
   body: string;
+  source?: "wiki" | "work" | "notion";
 }): Promise<{ questions: string[]; cost_usd: number; llm_calls: number }> {
-  const system =
-    "당신은 검색 평가용 질문을 만듭니다. 반드시 JSON 배열만 출력하세요. " +
-    "질문 3개는 이 문서의 내용으로만 답할 수 있어야 하고, " +
-    "다른 일반 문서에도 걸릴 법한 흔한 단어(프로그램, 제안서, 일정 등)만으로 성립하면 안 됩니다. " +
-    "고유명사·구체적 사실·수치·고유 표현을 쓰세요.";
-  const user =
-    `문서 제목: ${opts.title}\n\n본문 일부:\n${opts.body || "(본문 없음)"}\n\n` +
-    `이 문서로만 답할 수 있는 한국어 질문 3개를 JSON 배열로: ["질문1","질문2","질문3"]`;
+  const wiki = opts.source === "wiki";
+  const system = wiki
+    ? "당신은 검색 평가용 질문을 만듭니다. 반드시 JSON 배열만 출력하세요. " +
+      "이 문서는 사내 위키다. 팀원이 실제로 물을 법한 짧은 한국어 질문 3개. " +
+      "영어 프로젝트 소개를 번역·받아쓰기 퀴즈로 만들지 마라. " +
+      "숫자·절차·고유 표현을 쓰되 일상 말투로. " +
+      "다른 문서에도 걸릴 흔한 단어만으로 성립하면 안 된다."
+    : "당신은 검색 평가용 질문을 만듭니다. 반드시 JSON 배열만 출력하세요. " +
+      "질문 3개는 이 문서의 내용으로만 답할 수 있어야 하고, " +
+      "다른 일반 문서에도 걸릴 법한 흔한 단어(프로그램, 제안서, 일정 등)만으로 성립하면 안 됩니다. " +
+      "고유명사·구체적 사실·수치·고유 표현을 쓰세요.";
+  const user = wiki
+    ? `문서 제목: ${opts.title}\n\n본문 일부:\n${opts.body || "(본문 없음)"}\n\n` +
+      `팀원이 이 문서를 보고 물을 법한 한국어 질문 3개를 JSON 배열로: ["질문1","질문2","질문3"]`
+    : `문서 제목: ${opts.title}\n\n본문 일부:\n${opts.body || "(본문 없음)"}\n\n` +
+      `이 문서로만 답할 수 있는 한국어 질문 3개를 JSON 배열로: ["질문1","질문2","질문3"]`;
 
   const res = await llmComplete({
     provider: "anthropic",
