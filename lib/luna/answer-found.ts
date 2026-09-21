@@ -3,7 +3,8 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { isSuperAdminUser } from "@/lib/luna/auth";
 import { kstWeekBounds } from "@/lib/luna/self-report";
 import {
-  formatFoundWeekLabel,
+  formatFoundBucketLabel,
+  formatFoundSubLabel,
   isFoundReason,
   type FoundReason
 } from "@/lib/luna/answer-found-shared";
@@ -20,43 +21,71 @@ export type AnswerFoundRow = {
   reason: FoundReason | null;
 };
 
-export type FoundWeekStats = {
+export type FoundBucketStats = {
   total: number;
   found_count: number;
   pct: number | null;
-  label: string;
 };
+
+export type FoundWeekStats = FoundBucketStats & {
+  label: string;
+  sub_label: string;
+  week_total: number;
+  all_total: number;
+};
+
+function bucketOf(rows: Array<{ found: boolean | null }>): FoundBucketStats {
+  const total = rows.length;
+  const found_count = rows.filter((r) => r.found === true).length;
+  const pct = total > 0 ? Math.round((found_count / total) * 100) : null;
+  return { total, found_count, pct };
+}
+
+function emptyFoundStats(): FoundWeekStats {
+  const empty = { total: 0, found_count: 0, pct: null };
+  return {
+    ...empty,
+    label: formatFoundBucketLabel("7d", empty),
+    sub_label: formatFoundSubLabel(0, 0),
+    week_total: 0,
+    all_total: 0
+  };
+}
 
 export async function getFoundWeekStats(
   admin: SupabaseClient,
   now = new Date()
 ): Promise<FoundWeekStats> {
   const week = kstWeekBounds(now);
+  const last7Iso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await admin
     .from("luna_answer_found")
-    .select("found")
-    .gte("created_at", week.startIso)
-    .lt("created_at", week.endIso);
+    .select("found, created_at");
 
   if (error) {
     console.error("[luna/answer-found] week stats", error);
-    return {
-      total: 0,
-      found_count: 0,
-      pct: null,
-      label: formatFoundWeekLabel({ total: 0, found_count: 0, pct: null })
-    };
+    return emptyFoundStats();
   }
 
   const rows = data ?? [];
-  const total = rows.length;
-  const found_count = rows.filter((r) => r.found === true).length;
-  const pct = total > 0 ? Math.round((found_count / total) * 100) : null;
+  const last7 = bucketOf(
+    rows.filter((r) => typeof r.created_at === "string" && r.created_at >= last7Iso)
+  );
+  const weekBucket = bucketOf(
+    rows.filter(
+      (r) =>
+        typeof r.created_at === "string" &&
+        r.created_at >= week.startIso &&
+        r.created_at < week.endIso
+    )
+  );
+  const all = bucketOf(rows);
   return {
-    total,
-    found_count,
-    pct,
-    label: formatFoundWeekLabel({ total, found_count, pct })
+    ...last7,
+    label: formatFoundBucketLabel("7d", last7),
+    sub_label: formatFoundSubLabel(weekBucket.total, all.total),
+    week_total: weekBucket.total,
+    all_total: all.total
   };
 }
 

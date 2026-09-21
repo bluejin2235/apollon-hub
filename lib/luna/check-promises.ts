@@ -100,8 +100,8 @@ export const LUNA_CHECK_PROMISES: Record<
     red_days: 2
   },
   answer_found: {
-    promise_label: "사람이 누를 때 · 이번 주 건수",
-    source: "luna_answer_found 주간 건수 (0건 정상 가능 · 빨강 없음)",
+    promise_label: "사람이 누를 때 · 최근 7일 건수",
+    source: "luna_answer_found 최근 7일 건수 (0건 정상 가능 · 빨강 없음 · 월요일 리셋 없음)",
     yellow_days: 0,
     red_days: 0
   },

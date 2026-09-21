@@ -750,7 +750,8 @@ export async function buildAdminReportHtml(
     <div style="background:${C.lunaSoft};border-radius:11px;padding:14px 16px;">
       <div style="font-size:22px;font-weight:800;color:${C.luna};letter-spacing:-.4px;">${foundWeek.pct != null ? `${foundWeek.pct}%` : "—"}</div>
       <div style="font-size:12.5px;color:${C.ink};margin-top:4px;font-weight:700;">${escapeHtml(foundWeek.label)}</div>
-      <div style="font-size:11px;color:${C.faint};margin-top:6px;">사람 피드백 · hit@ 보다 앞</div>
+      <div style="font-size:11px;color:${C.faint};margin-top:4px;">${escapeHtml(foundWeek.sub_label)}</div>
+      <div style="font-size:11px;color:${C.faint};margin-top:6px;">사람 피드백 · 최근 7일 · 월요일에 0으로 리셋하지 않음</div>
     </div>
   </div>
 
@@ -822,7 +823,7 @@ export async function buildAdminReportHtml(
       `${r.label}  ${r.yesterday}  ${r.today}  ${deltaText(r)}`
     );
   }
-  textParts.push("", "■ 찾았어요", foundWeek.label, "");
+  textParts.push("", "■ 찾았어요", foundWeek.label, foundWeek.sub_label, "");
   textParts.push("", "■ 어젯밤 루나가 한 일");
   if (study.cards.length === 0) {
     textParts.push("어젯밤 자율 자습 실행이 없습니다.");

@@ -22,11 +22,12 @@ export type LunaDashboard = {
     conversations_yesterday: number;
     active_users_today: number;
     total_users: number;
-    /** 이번 주(월~일 KST) 「찾았어요」 집계 — hit@ 보다 앞에 */
+    /** 최근 7일 「찾았어요」 집계 — 월요일 리셋 없음. hit@ 보다 앞에 */
     found_week_total: number;
     found_week_found: number;
     found_week_pct: number | null;
     found_week_label: string;
+    found_sub_label: string;
     thumbs_up_today: number;
     thumbs_down_today: number;
     clarify_today: number;

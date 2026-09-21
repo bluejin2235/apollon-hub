@@ -13,12 +13,25 @@ export function isFoundReason(v: unknown): v is FoundReason {
   );
 }
 
+export function formatFoundBucketLabel(
+  window: "7d" | "week",
+  stats: { total: number; found_count: number; pct: number | null }
+): string {
+  const head = window === "7d" ? "최근 7일 찾음" : "이번 주 찾음";
+  if (stats.total === 0) return `${head} — (아직 없음)`;
+  const pct = stats.pct ?? 0;
+  return `${head} ${pct}% (${stats.total}건 중 ${stats.found_count}건)`;
+}
+
+/** @deprecated 아침 리포트·대시보드는 최근 7일(formatFoundBucketLabel "7d") */
 export function formatFoundWeekLabel(stats: {
   total: number;
   found_count: number;
   pct: number | null;
 }): string {
-  if (stats.total === 0) return "이번 주 찾음 — (아직 없음)";
-  const pct = stats.pct ?? 0;
-  return `이번 주 찾음 ${pct}% (${stats.total}건 중 ${stats.found_count}건)`;
+  return formatFoundBucketLabel("week", stats);
+}
+
+export function formatFoundSubLabel(weekTotal: number, allTotal: number): string {
+  return `이번 주 ${weekTotal}건 · 누적 ${allTotal}건`;
 }

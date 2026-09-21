@@ -343,6 +343,9 @@ function TalkCard({ t }: { t: LunaDashboard["talk"] }) {
         <div className="mt-px text-[11px] font-semibold text-[#1c1d21]">
           {t.found_week_label}
         </div>
+        {t.found_sub_label ? (
+          <div className="mt-0.5 text-[10.5px] text-[#9aa0a8]">{t.found_sub_label}</div>
+        ) : null}
       </div>
       <div className="my-[9px] mb-0.5 flex gap-5">
         <div>

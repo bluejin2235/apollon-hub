@@ -685,6 +685,7 @@ export async function buildLunaDashboard(
       found_week_found: foundWeek.found_count,
       found_week_pct: foundWeek.pct,
       found_week_label: foundWeek.label,
+      found_sub_label: foundWeek.sub_label,
       thumbs_up_today: talkToday.thumbsUp,
       thumbs_down_today: talkToday.thumbsDown,
       clarify_today: talkToday.clarify,

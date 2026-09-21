@@ -18,6 +18,7 @@ import { FEEDBACK_REASON_LABELS, isFeedbackReason } from "@/lib/luna/feedback";
 import { listOpenSelfstudyGoals } from "@/lib/luna/weekly-goals";
 import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
 import { isPersonaTestTitle } from "@/lib/luna/persona-test-marker";
+import { isIndexRunnerStudyRun } from "@/lib/luna/study-report";
 
 export type {
   LunaReportRow,
@@ -216,33 +217,101 @@ async function saveLastRun(
   if (error) console.error("[luna/selfstudy] saveLastRun", error);
 }
 
+function laterIso(a: string | null | undefined, b: string | null | undefined): string | null {
+  const ta = a ? Date.parse(a) : NaN;
+  const tb = b ? Date.parse(b) : NaN;
+  const aOk = !Number.isNaN(ta);
+  const bOk = !Number.isNaN(tb);
+  if (aOk && bOk) return ta >= tb ? a! : b!;
+  if (aOk) return a!;
+  if (bOk) return b!;
+  return null;
+}
+
+async function latestStudyRunAt(admin: SupabaseClient): Promise<string | null> {
+  const { data, error } = await admin
+    .from("luna_study_runs")
+    .select("agenda, started_at, finished_at, result, scope, kind, why, expected, outcome, cost_usd, llm_calls")
+    .order("started_at", { ascending: false })
+    .limit(40);
+  if (error) {
+    console.error("[luna/selfstudy] latest study run", error);
+    return null;
+  }
+  for (const raw of data ?? []) {
+    const run = {
+      id: "",
+      agenda: String(raw.agenda ?? ""),
+      why: String(raw.why ?? ""),
+      expected: String(raw.expected ?? ""),
+      kind: String(raw.kind ?? ""),
+      scope:
+        raw.scope && typeof raw.scope === "object"
+          ? (raw.scope as Record<string, unknown>)
+          : {},
+      started_at: String(raw.started_at ?? ""),
+      finished_at:
+        typeof raw.finished_at === "string" ? raw.finished_at : null,
+      result:
+        raw.result && typeof raw.result === "object"
+          ? (raw.result as Record<string, unknown>)
+          : {},
+      outcome:
+        raw.outcome === "improved" ||
+        raw.outcome === "no_change" ||
+        raw.outcome === "failed"
+          ? raw.outcome
+          : null,
+      cost_usd: typeof raw.cost_usd === "number" ? raw.cost_usd : 0,
+      llm_calls: typeof raw.llm_calls === "number" ? raw.llm_calls : 0
+    };
+    if (isIndexRunnerStudyRun(run)) continue;
+    return run.finished_at ?? run.started_at ?? null;
+  }
+  return null;
+}
+
 export async function getSelfstudyStatus(
   admin: SupabaseClient
 ): Promise<{ last_run: SelfstudyLastRun | null; today_count: number }> {
   const today_count = await countTodaySelfstudy(admin);
-  const { data, error } = await admin
-    .from("luna_settings")
-    .select("value")
-    .eq("key", SETTINGS_KEY)
-    .maybeSingle();
+  const [{ data, error }, studyAt] = await Promise.all([
+    admin.from("luna_settings").select("value").eq("key", SETTINGS_KEY).maybeSingle(),
+    latestStudyRunAt(admin)
+  ]);
   if (error) {
     console.error("[luna/selfstudy] getStatus", error);
     return { last_run: null, today_count };
   }
   const v = data?.value;
   if (!v || typeof v !== "object" || Array.isArray(v)) {
-    return { last_run: null, today_count };
+    if (!studyAt) return { last_run: null, today_count };
+    return {
+      last_run: {
+        finished_at: studyAt,
+        submitted: 0,
+        skipped: false,
+        message: "자습 실행",
+        ids: []
+      },
+      today_count
+    };
   }
   const row = v as Record<string, unknown>;
+  const settingsAt =
+    typeof row.finished_at === "string" ? row.finished_at : null;
+  const finished_at = laterIso(studyAt, settingsAt) ?? new Date().toISOString();
+  const fromStudy = Boolean(studyAt && finished_at === studyAt);
   return {
     last_run: {
-      finished_at:
-        typeof row.finished_at === "string"
-          ? row.finished_at
-          : new Date().toISOString(),
+      finished_at,
       submitted: typeof row.submitted === "number" ? row.submitted : 0,
-      skipped: row.skipped === true,
-      message: typeof row.message === "string" ? row.message : "",
+      skipped: fromStudy ? false : row.skipped === true,
+      message: fromStudy
+        ? "자습 실행"
+        : typeof row.message === "string"
+          ? row.message
+          : "",
       ids: Array.isArray(row.ids)
         ? row.ids.filter((x): x is string => typeof x === "string")
         : []

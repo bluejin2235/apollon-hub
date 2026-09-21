@@ -33,7 +33,11 @@ function titleFor(key: StageView["key"], light: TrafficLight, days: number | nul
   if (days != null && days <= 0) return "오늘 실행";
   if (light === "green") return "정상";
   if (key === "learn" && days != null && days >= 3) return `${days}일째 멈춤`;
-  if (light === "yellow") return days != null ? `${days}일째 지연` : "지연";
+  if (light === "yellow") {
+    if (days == null) return "지연";
+    if (days <= 0) return "오늘 실행";
+    return `${days}일째 지연`;
+  }
   if (days == null) return "기록 없음";
   return `${days}일째 멈춤`;
 }
@@ -173,13 +177,15 @@ export async function buildAdminDashboard(
   const learnTitle =
     selfLight === "red"
       ? titleFor("learn", "red", selfDays)
-      : linkLight === "red"
-        ? `${linkDays}일째 연결 없음`
-        : learnLight === "yellow"
-          ? linkCounts.all === 0
-            ? "2차 대기"
-            : "지연"
-          : "정상";
+      : selfLight === "yellow"
+        ? titleFor("learn", "yellow", selfDays)
+        : linkLight === "red"
+          ? `${linkDays}일째 연결 없음`
+          : linkLight === "yellow"
+            ? linkCounts.all === 0
+              ? "2차 대기"
+              : "2차 지연"
+            : "정상";
 
   const stages: StageView[] = [
     {

@@ -417,20 +417,19 @@ async function resolveLastOkAt(
       };
     }
     case "answer_found": {
-      const week = kstWeekBounds();
+      const last7Iso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const [{ count }, lastAt] = await Promise.all([
         admin
           .from("luna_answer_found")
           .select("message_id", { count: "exact", head: true })
-          .gte("created_at", week.startIso)
-          .lt("created_at", week.endIso),
+          .gte("created_at", last7Iso),
         latestIso(admin, "luna_answer_found", "created_at")
       ]);
       const n = count ?? 0;
       return {
         lastOkAt: lastAt ?? new Date().toISOString(),
         light: "green",
-        extraDetail: n === 0 ? "이번 주 0건" : `이번 주 ${n}건`
+        extraDetail: n === 0 ? "최근 7일 0건" : `최근 7일 ${n}건`
       };
     }
     case "open_questions": {
