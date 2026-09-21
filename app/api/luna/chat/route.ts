@@ -101,7 +101,20 @@ import {
   typesSkipClarify,
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
-import { scoreAnswerSelf } from "@/lib/luna/answer-self-score";
+import { parseAskedWhat } from "@/lib/luna/ask-what";
+import {
+  emptyProjectPeek,
+  peekProjectFolders,
+  searchNasFoldersByName
+} from "@/lib/luna/project-peek";
+import {
+  filterRetrievedByAsked,
+  filterWikiByAsked,
+  formatNotFoundAnswer,
+  isNotFoundAnswerText,
+  keepSourcesUsedInAnswer,
+  scoreEvidenceMatch
+} from "@/lib/luna/search-filter";
 import {
   isAnswerScoresVisible,
   recordAutoFailuresFromAnswer,
@@ -211,7 +224,6 @@ import {
   isSpuriousProjectClarify,
   shouldSkipProjectClarify
 } from "@/lib/luna/question-intent";
-import { hasSpecificNamedEntity } from "@/lib/luna/named-entities";
 import {
   createPromptUsageLog,
   recordPromptUse
@@ -1802,6 +1814,68 @@ export async function POST(request: NextRequest) {
           nasEnabled,
           types: classification.types
         });
+        const askedWhat = parseAskedWhat(searchIntentText);
+        let projectPeek = emptyProjectPeek();
+        if (askedWhat.projectPhrases.length > 0) {
+          projectPeek = await peekProjectFolders(admin, askedWhat);
+        }
+        const namedProjectLock = askedWhat.projectPhrases.length > 0;
+        let evidenceCounts = { retrieved: 0, matching: 0 };
+        let notFoundFromAsk = false;
+        if (
+          namedProjectLock &&
+          projectPeek.clarify &&
+          !lastHadClarify &&
+          !hasAttachments &&
+          !hasManualSkills(manualSkillIds)
+        ) {
+          const peekQuestion = projectPeek.clarify.question;
+          const peekOptions = projectPeek.clarify.options;
+          pushStep("clarify", "done", "폴더 확인");
+          emit(controller, encoder, {
+            type: "clarify",
+            question: peekQuestion,
+            options: peekOptions
+          });
+          const peekNow = Date.now();
+          const peekUserMeta: Record<string, unknown> = {};
+          if (attachmentMeta.length > 0) peekUserMeta.attachments = attachmentMeta;
+          await admin.from("luna_messages").insert([
+            {
+              id: userMessageId,
+              conversation_id: conversationId,
+              role: "user",
+              content: userText,
+              engine: usedEngine,
+              metadata: peekUserMeta,
+              created_at: new Date(peekNow - 1000).toISOString()
+            },
+            {
+              id: assistantMessageId,
+              conversation_id: conversationId,
+              role: "assistant",
+              content: peekQuestion,
+              engine: usedEngine,
+              metadata: {
+                clarify: { question: peekQuestion, options: peekOptions },
+                steps,
+                model_steps: modelSteps,
+                model_label: tierB.model_label,
+                duration_ms: Date.now() - startedAt,
+                used_prompts: usageLog.all(),
+                classification: classificationPublic(
+                  classification,
+                  questionTypes
+                )
+              },
+              created_at: new Date(peekNow).toISOString()
+            }
+          ]);
+          await touchConversation();
+          scheduleConversationTitle(admin, conversationId);
+          controller.close();
+          return;
+        }
         const uiQueryHint = queryHintFromQuestion(searchIntentText);
         pushUiReadStep(pushStep, searchScope.label);
 
@@ -1888,11 +1962,14 @@ export async function POST(request: NextRequest) {
           searchScope.flags.media && hasImageSearchIntent(searchIntentText);
         // 노션 선조회와 미디어를 병렬 — 직렬이면 사례 질문에 수 초가 더 붙는다
         const preMediaPromise =
-          imageIntentEarly && knowledgeEmb.queryEmbedding?.length
-            ? searchMediaForLuna(
-                admin,
-                knowledgeEmb.queryEmbedding,
-                searchIntentText
+          imageIntentEarly
+            ? knowledgeEmbPromise.then((emb) =>
+                searchMediaForLuna(
+                  admin,
+                  emb.queryEmbedding,
+                  searchIntentText,
+                  { asked: askedWhat }
+                )
               )
             : Promise.resolve(preMediaProbe);
         {
@@ -1935,16 +2012,6 @@ export async function POST(request: NextRequest) {
         const imageIntent = imageIntentEarly;
 
         // ——— 단계 1: 되묻기 ———
-        const clearFindIntent =
-          needsSearch &&
-          /찾아|어디|자료|파일|폴더|경로|수행계획|제안서|아이데이션/i.test(
-            userText
-          ) &&
-          hasSpecificNamedEntity(userText);
-        const clearImageFindIntent =
-          imageIntent &&
-          hasSpecificNamedEntity(userText) &&
-          /보여|찾|어디|자료|파일|KV/i.test(userText);
         const skipClarify =
           hasAttachments ||
           lastHadClarify ||
@@ -1953,10 +2020,8 @@ export async function POST(request: NextRequest) {
           shouldSkipProjectClarify(userText) ||
           typesSkipClarify(classifiedTypeRows) ||
           forceSimpleDepthForScope(searchScope.kind) ||
-          searchScope.kind === "reference" ||
-          clearFindIntent ||
-          clearImageFindIntent ||
-          (imageIntent && preMediaProbe.hits.length > 0);
+          (!namedProjectLock && searchScope.kind === "reference") ||
+          (namedProjectLock && !projectPeek.clarify);
 
         if (
           typesNeedLibrary(classifiedTypeRows) &&
@@ -2190,7 +2255,7 @@ export async function POST(request: NextRequest) {
               knowledgeEmb.glossary
             )
           : [];
-        const wikiSources: WikiSourceRef[] =
+        let wikiSources: WikiSourceRef[] =
           searchScope.flags.wiki &&
           (typesNeedWikiLookup(classification.types) ||
             Boolean(clarifyFollowupQuery))
@@ -2202,6 +2267,9 @@ export async function POST(request: NextRequest) {
                 wikiLimitsForDepth(questionDepth, llmInject)
               )
             : [];
+        if (namedProjectLock) {
+          wikiSources = filterWikiByAsked(wikiSources, askedWhat);
+        }
         if (
           shouldSkipFindConnectors({
             types: classification.types,
@@ -2225,7 +2293,7 @@ export async function POST(request: NextRequest) {
           };
         }
         // 용어·규정 등 좁은 범위에서는 위키가 있어도 노션을 강제로 켜지 않는다.
-        const { public: publicWikiSources, private: privateWikiRefs } =
+        let { public: publicWikiSources, private: privateWikiRefs } =
           splitWikiSourcesByVisibility(wikiSources);
         const glossaryBlock = formatGlossaryBlock(matchedTerms);
         const wikiSectionsBlock = formatWikiSectionsBlock(wikiSources);
@@ -2336,6 +2404,7 @@ export async function POST(request: NextRequest) {
         // 1차(위키·용어사전)만으로 부족하면 검색 전에 한 단계 넓힌다.
         // speculative 노션·미디어가 이미 충분하면 NAS 로 확대하지 않는다.
         if (
+          !namedProjectLock &&
           !hasManualConnectors(manualConnectorFlags) &&
           scopeHitsInsufficient(searchScope.kind, {
             glossary: matchedTerms.length,
@@ -2572,13 +2641,14 @@ export async function POST(request: NextRequest) {
                 );
               }
             })(),
-            runMedia && knowledgeEmb.queryEmbedding?.length
+            runMedia
               ? imageIntent && preMediaProbe.cards.length > 0
                 ? Promise.resolve(preMediaProbe.cards)
                 : searchMediaForLuna(
                     admin,
                     knowledgeEmb.queryEmbedding,
-                    searchIntentText
+                    searchIntentText,
+                    { asked: askedWhat }
                   ).then((r) => r.cards)
               : Promise.resolve([] as LunaCard[])
           ]);
@@ -2778,6 +2848,7 @@ export async function POST(request: NextRequest) {
 
           // 2차: 좁은 범위 결과가 부족하면 한 단계 더 넓혀 재검색
           if (
+            !namedProjectLock &&
             !hasManualConnectors(manualConnectorFlags) &&
             scopeHitsInsufficient(searchScope.kind, {
               glossary: matchedTerms.length,
@@ -2870,6 +2941,77 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          if (namedProjectLock) {
+            try {
+              const namedNas = await searchNasFoldersByName(admin, askedWhat, 40);
+              if (namedNas.length > 0) {
+                nasResults = finalizeNasDirectoryRows([
+                  ...nasResults,
+                  ...namedNas.map((r) => ({
+                    drive: r.drive,
+                    path: r.path,
+                    type: r.type,
+                    size_bytes: null,
+                    modified_at: null,
+                    file_summary: null,
+                    importance: null
+                  }))
+                ]);
+                cards = [
+                  ...cards.filter((c) => c.type !== "nas"),
+                  ...nasResults.map(toNasCard)
+                ];
+              }
+            } catch (err) {
+              console.error("[luna/search] nas-by-name", err);
+            }
+          }
+
+          {
+            const filtered = filterRetrievedByAsked(
+              {
+                cards,
+                notion: notionSources,
+                wiki: wikiSources,
+                nas: nasResults
+              },
+              askedWhat
+            );
+            evidenceCounts = {
+              retrieved: filtered.counts.retrieved,
+              matching: filtered.counts.matching
+            };
+            cards = filtered.cards;
+            notionSources = filtered.notion;
+            wikiSources = filtered.wiki;
+            nasResults = filtered.nas as NasDirectoryRow[];
+            if (askedWhat.material !== "image") {
+              cards = [
+                ...cards.filter((c) => c.type !== "nas"),
+                ...nasResults.map(toNasCard)
+              ];
+            }
+            ({ public: publicWikiSources, private: privateWikiRefs } =
+              splitWikiSourcesByVisibility(wikiSources));
+            if (namedProjectLock && filtered.counts.matching === 0) {
+              notFoundFromAsk = true;
+              cards = [];
+              notionSources = [];
+              wikiSources = [];
+              nasResults = [];
+              publicWikiSources = [];
+              privateWikiRefs = [];
+            }
+            console.log("[luna/search-filter]", {
+              project: askedWhat.displayProject,
+              material: askedWhat.material,
+              nature: askedWhat.nature,
+              retrieved: evidenceCounts.retrieved,
+              matching: evidenceCounts.matching,
+              notFound: notFoundFromAsk
+            });
+          }
+
           const emitSearchSnapshot = () => {
             if (streamMetaEmitted) return;
             const imageN = cards.filter((c) => c.type === "image").length;
@@ -2901,7 +3043,14 @@ export async function POST(request: NextRequest) {
           let missing = "";
           const firstMaxSim = maxNotionSimilarity(notionSources);
           const firstMaxMatch = maxNotionMatchStrength(notionSources);
-          if (firstMaxMatch >= PACK_SCORE_RECOMMENDED) {
+          if (namedProjectLock) {
+            sufficient = true;
+            pushStep(
+              "eval",
+              "done",
+              notFoundFromAsk ? "지정 프로젝트 · 해당 없음" : "지정 프로젝트 범위"
+            );
+          } else if (firstMaxMatch >= PACK_SCORE_RECOMMENDED) {
             pushStep(
               "eval",
               "done",
@@ -3196,6 +3345,12 @@ export async function POST(request: NextRequest) {
         if (libraryHits.length > 0) {
           typeBlocks.push(formatLibraryBlock(libraryHits));
         }
+        if (namedProjectLock) {
+          const name = askedWhat.displayProject || askedWhat.projectPhrases[0];
+          typeBlocks.push(
+            `[지정 프로젝트]\r\n질문한 프로젝트(${name}) 자료만 답한다. 다른 프로젝트 이름·폴더를 언급하거나 제안하지 마라. 맞는 자료가 없으면 없다고만 하고, 어디 있는지 알려달라고 한다.`
+          );
+        }
 
         const notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
@@ -3404,7 +3559,14 @@ export async function POST(request: NextRequest) {
           omitTalkAnswer: shouldOmitTalkAnswer(questionDepth)
         });
 
-        if (tierAResolved.provider === "anthropic") {
+        if (notFoundFromAsk) {
+          assistantText = formatNotFoundAnswer(
+            askedWhat,
+            projectPeek.seenFolderLabels
+          );
+          firstTokenAt = Date.now();
+          controller.enqueue(encoder.encode(assistantText));
+        } else if (tierAResolved.provider === "anthropic") {
           if (!client) {
             throw new Error("Claude API key is not configured");
           }
@@ -3495,6 +3657,25 @@ export async function POST(request: NextRequest) {
         );
         if (safeAssistantText !== assistantText) {
           assistantText = safeAssistantText;
+        }
+        {
+          const hideUnused =
+            notFoundFromAsk || isNotFoundAnswerText(assistantText);
+          const kept = keepSourcesUsedInAnswer({
+            cards,
+            notion: notionSources,
+            wiki: publicWikiSources,
+            answer: assistantText,
+            notFound: hideUnused
+          });
+          cards = kept.cards;
+          notionSources = kept.notion;
+          publicWikiSources = kept.wiki;
+          if (hideUnused) {
+            nasResults = [];
+            wikiSources = [];
+            privateWikiRefs = [];
+          }
         }
         const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
         if (webCardsUsed && !assistantText.includes("웹 검색으로 보강함")) {
@@ -3721,20 +3902,15 @@ export async function POST(request: NextRequest) {
 
         const showScores = await isAnswerScoresVisible(admin);
         assistantMeta.answer_scores_visible = showScores;
-        let selfScore: Awaited<ReturnType<typeof scoreAnswerSelf>> = null;
-        try {
-          selfScore = await scoreAnswerSelf(admin, {
-            question: searchIntentText,
-            answer: assistantText
-          });
-        } catch (err) {
-          console.error("[luna/chat] self score", err);
-        }
-        if (selfScore) {
-          assistantMeta.intent_score = selfScore.intent_score;
-          assistantMeta.confidence_score = selfScore.confidence_score;
-          assistantMeta.self_note = selfScore.self_note;
-        }
+        const selfScore = scoreEvidenceMatch({
+          retrieved: evidenceCounts.retrieved,
+          matching: evidenceCounts.matching,
+          askedClear: namedProjectLock,
+          notFound: notFoundFromAsk || isNotFoundAnswerText(assistantText)
+        });
+        assistantMeta.intent_score = selfScore.intent_score;
+        assistantMeta.confidence_score = selfScore.confidence_score;
+        assistantMeta.self_note = selfScore.self_note;
 
         try {
           const memoryAsk = await maybeProposeMemoryAsk(admin, {

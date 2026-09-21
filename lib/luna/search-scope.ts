@@ -5,6 +5,8 @@
  * 가벼운 규칙 서브타입만 얹어 1차 범위를 정하고, 결과가 부족하면 한 단계씩 넓힌다.
  */
 
+import { hasNamedProject } from "@/lib/luna/ask-what";
+
 export type SearchScopeKind =
   | "none"
   | "term"
@@ -193,6 +195,9 @@ export function inferRuleClassification(question: string): {
   if (PERSON_SPEECH_RE.test(t)) {
     return { kind: "person", types: ["find"], reason: "규칙: 사람·발언" };
   }
+  if (hasNamedProject(t)) {
+    return { kind: "project", types: ["find"], reason: "규칙: 지정 프로젝트" };
+  }
   if (REFERENCE_RE.test(t)) {
     return { kind: "reference", types: ["find"], reason: "규칙: 사례·레퍼런스" };
   }
@@ -256,6 +261,7 @@ export function resolveSearchScopeKind(opts: {
   // 규칙 서브타입이 분명하면 저신뢰 wide 보다 우선 (분류가 애매해도 패턴이 확실할 때)
   if (POLICY_RE.test(t)) return "policy";
   if (PERSON_SPEECH_RE.test(t)) return "person";
+  if (hasNamedProject(t)) return "project";
   if (REFERENCE_RE.test(t)) return "reference";
   if (PROJECT_STATUS_RE.test(t)) return "project";
   if (DATED_PROJECT_FACT_RE.test(t)) return "project";

@@ -1,6 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { embeddingToSql } from "@/lib/luna/embedding";
 import type { LunaCard } from "@/lib/luna/tavily";
+import type { AskedWhat } from "@/lib/luna/ask-what";
+import { naturePathTokens } from "@/lib/luna/ask-what";
+import { isGarbage3dPath } from "@/lib/luna/media-index-rules";
+import {
+  haystackMatchesAsked
+} from "@/lib/luna/search-filter";
+import { pathVariantsForTerm } from "@/lib/luna/named-entities";
 
 /** RPC 기본 필터 — 142장 실측 (verify-media-index-search.ts) */
 export const MEDIA_MATCH_THRESHOLD = 0.33;
@@ -11,7 +18,7 @@ export const MEDIA_PACK_RECOMMENDED = 0.4;
 export const MEDIA_PACK_MID = 0.33;
 
 const IMAGE_INTENT_RE =
-  /이미지|사진|비주얼|레퍼런스|시안|보여줘|어떻게\s*생겼/i;
+  /이미지|사진|비주얼|시안|보여줘|어떻게\s*생겼|\bkv\b|스토리보드/i;
 
 export type MediaIndexHit = {
   path: string;
@@ -175,6 +182,101 @@ export async function matchMediaEmbeddings(
     .filter((h: MediaIndexHit) => h.path && h.similarity >= threshold);
 }
 
+function mediaHaystack(hit: MediaIndexHit): string {
+  return [hit.path, hit.project, hit.file_name, hit.description]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function applyAskedMediaFilter(
+  hits: MediaIndexHit[],
+  asked?: AskedWhat
+): MediaIndexHit[] {
+  const next = hits.filter((h) => !isGarbage3dPath(h.path));
+  if (!asked || asked.projectPhrases.length === 0) return next;
+  return next.filter((h) => haystackMatchesAsked(mediaHaystack(h), asked));
+}
+
+const MEDIA_PATH_SELECT =
+  "path, drive, file_name, project, ai_category, description, thumbnail_url, large_url";
+
+function rowToMediaHit(
+  row: Record<string, unknown>,
+  similarity = 0.5
+): MediaIndexHit | null {
+  const path = typeof row.path === "string" ? row.path : "";
+  if (!path) return null;
+  return {
+    path,
+    drive: typeof row.drive === "string" ? row.drive : "T",
+    file_name: typeof row.file_name === "string" ? row.file_name : "",
+    similarity,
+    project: (row.project as string | null) ?? null,
+    ai_category: (row.ai_category as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
+    thumbnail_url: (row.thumbnail_url as string | null) ?? null,
+    large_url: (row.large_url as string | null) ?? null
+  };
+}
+
+/** 폴더·프로젝트명으로 이미지 색인을 찾는다. 임베딩보다 프로젝트 일치가 우선. */
+export async function searchMediaByPath(
+  admin: SupabaseClient,
+  asked: AskedWhat,
+  limit = 20
+): Promise<MediaIndexHit[]> {
+  if (asked.projectPhrases.length === 0) return [];
+  const phrase = asked.projectPhrases[0]!;
+  let query = admin
+    .from("luna_media_index")
+    .select(MEDIA_PATH_SELECT)
+    .or(`path.ilike.%${phrase}%,project.ilike.%${phrase}%`)
+    .limit(Math.max(limit * 3, 40));
+
+  const extras = [...asked.extraTokens, ...naturePathTokens(asked.nature)];
+  for (const extra of extras) {
+    const variants = pathVariantsForTerm(extra);
+    if (variants.length === 1) {
+      query = query.ilike("path", `%${variants[0]}%`);
+    } else if (variants.length > 1) {
+      query = query.or(variants.map((v) => `path.ilike.%${v}%`).join(","));
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[luna/media-index] path search", error);
+    return [];
+  }
+  const hits: MediaIndexHit[] = [];
+  for (const row of data ?? []) {
+    const hit = rowToMediaHit(row as Record<string, unknown>, 0.72);
+    if (!hit) continue;
+    if (isGarbage3dPath(hit.path)) continue;
+    if (!haystackMatchesAsked(mediaHaystack(hit), asked)) continue;
+    hits.push(hit);
+    if (hits.length >= limit) break;
+  }
+  console.log("[luna/media-index] path search", {
+    phrase,
+    extras,
+    hits: hits.length
+  });
+  return hits;
+}
+
+function mergeMediaHits(primary: MediaIndexHit[], extra: MediaIndexHit[]): MediaIndexHit[] {
+  const seen = new Set<string>();
+  const out: MediaIndexHit[] = [];
+  for (const hit of [...primary, ...extra]) {
+    const key = hit.path.replace(/\//g, "\\").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(hit);
+  }
+  return out;
+}
+
 export function hasImageSearchIntent(question: string): boolean {
   return IMAGE_INTENT_RE.test(question);
 }
@@ -204,26 +306,45 @@ export function mediaHitsToCards(hits: MediaIndexHit[]): LunaCard[] {
   return hits.map(mediaHitToCard);
 }
 
-/** 질문 임베딩으로 이미지 검색 — LLM 없음 */
+/** 질문 임베딩 + 폴더명. 프로젝트가 명시되면 그 밖은 버리지 않고 안 돌려준다. */
 export async function searchMediaForLuna(
   admin: SupabaseClient,
   queryEmbedding: number[] | null,
   question: string,
-  opts?: { threshold?: number; limit?: number }
+  opts?: { threshold?: number; limit?: number; asked?: AskedWhat }
 ): Promise<{ hits: MediaIndexHit[]; cards: LunaCard[] }> {
-  if (!queryEmbedding?.length) {
+  const asked = opts?.asked;
+  const pathHits =
+    asked && asked.projectPhrases.length > 0
+      ? await searchMediaByPath(admin, asked, opts?.limit ?? MEDIA_MATCH_OVERFETCH)
+      : [];
+
+  let embeddingHits: MediaIndexHit[] = [];
+  if (queryEmbedding?.length) {
+    embeddingHits = await matchMediaEmbeddings(admin, queryEmbedding, {
+      threshold: opts?.threshold,
+      limit: opts?.limit
+    });
+  } else if (pathHits.length === 0) {
     console.log("[luna/media-index] search skipped (no embedding)", {
       q: question.slice(0, 80)
     });
     return { hits: [], cards: [] };
   }
-  const hits = await matchMediaEmbeddings(admin, queryEmbedding, opts);
+
+  const scoped = applyAskedMediaFilter(embeddingHits, asked);
+  const hits =
+    asked && asked.projectPhrases.length > 0
+      ? mergeMediaHits(pathHits, scoped)
+      : applyAskedMediaFilter(embeddingHits, asked);
   let cards = mediaHitsToCards(hits);
   if (hasImageSearchIntent(question) || hits.length > 0) {
     console.log("[luna/media-index] search", {
       q: question.slice(0, 80),
       hits: hits.length,
-      cards: cards.length,
+      pathHits: pathHits.length,
+      embeddingHits: embeddingHits.length,
+      scoped: scoped.length,
       topSim: hits[0]?.similarity ?? null,
       topProject: hits[0]?.project ?? null
     });

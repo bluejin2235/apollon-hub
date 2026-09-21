@@ -52,6 +52,16 @@ const cases: Array<{
     expect: "reference"
   },
   {
+    q: "더후 글로벌 론칭 레퍼런스 찾아줘",
+    types: ["find"],
+    expect: "project"
+  },
+  {
+    q: "해운대스퀘어 KV 이미지 보여줘",
+    types: ["find"],
+    expect: "project"
+  },
+  {
     q: "해운대 구남로 2월 27일까지 완료 예정 항목이 뭔지?",
     types: ["know"],
     expect: "project"

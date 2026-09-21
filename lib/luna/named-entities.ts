@@ -84,14 +84,28 @@ export const NAMED_ENTITY_SEED: NamedEntity[] = [
     kind: "project",
     parentCanonical: null,
     aliases: ["해운대스퀘어", "해운대 스퀘어"],
-    searchPhrases: ["해운대"]
+    searchPhrases: ["해운대스퀘어", "해운대"]
   },
   {
     canonical: "더후",
     kind: "project",
     parentCanonical: null,
-    aliases: ["THE WHOO"],
+    aliases: ["THE WHOO", "더후 글로벌", "더후 글로벌 론칭"],
     searchPhrases: ["더후", "the whoo"]
+  },
+  {
+    canonical: "아크메르동탄",
+    kind: "project",
+    parentCanonical: null,
+    aliases: ["아크메르 동탄", "아크메르동탄 모델하우스"],
+    searchPhrases: ["아크메르동탄"]
+  },
+  {
+    canonical: "삼성디스플레이",
+    kind: "project",
+    parentCanonical: null,
+    aliases: ["삼성 디스플레이", "시어터룸", "삼성디스플레이 시어터룸"],
+    searchPhrases: ["삼성디스플레이", "시어터룸"]
   }
 ];
 
@@ -148,6 +162,22 @@ export function pathVariantsForTerm(
   const variants = new Set<string>([cleaned]);
   if (/[가-힣]{2,}서$/.test(cleaned)) {
     variants.add(cleaned.slice(0, -1));
+  }
+  if (
+    cleaned === "레퍼런스" ||
+    cleaned === "reference" ||
+    cleaned === "references" ||
+    cleaned === "referecnces"
+  ) {
+    variants.add("레퍼런스");
+    variants.add("reference");
+    variants.add("references");
+    variants.add("referecnces");
+    variants.add("referneces");
+  }
+  if (cleaned === "스토리보드" || cleaned === "storyboard") {
+    variants.add("스토리보드");
+    variants.add("storyboard");
   }
 
   const matched = entities.find((e) =>

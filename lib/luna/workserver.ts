@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isGarbage3dPath } from "@/lib/luna/media-index-rules";
 import {
   applyNamedEntitiesToTerms,
   loadNamedEntities,
@@ -206,10 +207,12 @@ export function runWorkserverResultPipeline<
     importance?: number | null;
   }
 >(rows: T[]): Array<T & { variant_hidden: number }> {
-  const raw = rows.length;
+  const without3d = rows.filter((r) => !isGarbage3dPath(r.path));
+  const raw = without3d.length;
   if (raw === 0) {
     console.log("[luna/ws] pipeline", {
       raw: 0,
+      dropped3d: rows.length,
       dedupExact: 0,
       dedupAncestor: 0,
       dedupVariant: 0,
@@ -218,7 +221,7 @@ export function runWorkserverResultPipeline<
     return [];
   }
 
-  const afterExact = dedupeExactRows(rows);
+  const afterExact = dedupeExactRows(without3d);
   const afterAncestor = dedupeAncestorFolders(afterExact);
   const afterVariant = dedupeDocumentVariants(afterAncestor);
   const final = [...afterVariant]
@@ -267,6 +270,11 @@ const SEARCH_STOP_WORDS = new Set([
   "찾아줘",
   "찾아주",
   "찾아주세요",
+  "보여줘",
+  "보여",
+  "이미지",
+  "사진",
+  "비주얼",
   "알려",
   "알려줘",
   "알려주",

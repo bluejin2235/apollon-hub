@@ -38,6 +38,16 @@ if (!gonggan.ok) {
   assert.equal(gonggan.reason, "exclude:render_layer");
 }
 
+const skpTex =
+  "T:\\01 사업개발\\2026\\260108 해운대스퀘어 공공부지사업\\06 Space\\SKP\\D5용 레이어분리\\미디어 폴 매핑용\\asset\\ModelTextures\\d46473ad.png";
+const skpFile = classifyMediaFile(skpTex, SIZE);
+assert.equal(skpFile.ok, false, "SKP·asset·ModelTextures 하드 제외");
+
+const referecncesKeep =
+  "T:\\02 Project\\2026\\260723 아크메르동탄 모델하우스\\03 Referecnces\\mood.jpg";
+const refKeep = classifyMediaFile(referecncesKeep, SIZE);
+assert.equal(refKeep.ok, true, "Referecnces 오타 폴더는 KEEP");
+
 const ver = mediaIndexRulesVersion();
 assert.match(ver, /^r2-[0-9a-f]{8}$/);
 

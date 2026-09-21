@@ -41,7 +41,7 @@ export const KEEP_PATH_PATTERNS: Array<{ id: string; re: RegExp }> = [
   { id: "field_survey", re: /현장\s*답사|(?:^|[\\/\s])답사(?:[\\/\s]|$)/i },
   {
     id: "reference",
-    re: /reference|references|\bref\b|ref\s*image|참고|레퍼런스|\\refs?\\/i
+    re: /reference|references|referecnces|referneces|\bref\b|ref\s*image|참고|레퍼런스|\\refs?\\/i
   },
   { id: "ideation", re: /ideation|아이데이션/i },
   {
@@ -64,7 +64,11 @@ export const HARD_EXCLUDE_FOLDER_IDS = new Set([
   "render",
   "capture",
   "raw_photo",
-  "temp"
+  "temp",
+  "skp",
+  "model_textures",
+  "asset_dir",
+  "d5_layer_split"
 ]);
 
 /** KEEP이어도 적용하는 파일명 제외 (하드) */
@@ -85,7 +89,7 @@ export const HARD_EXCLUDE_FILENAME_IDS = new Set([
 export const PRIORITY_FOLDER_PATTERNS: Array<{ id: string; re: RegExp }> = [
   {
     id: "reference",
-    re: /reference|references|\bref\b|ref\s*image|참고|레퍼런스/i
+    re: /reference|references|referecnces|referneces|\bref\b|ref\s*image|참고|레퍼런스/i
   },
   { id: "ideation", re: /ideation|아이데이션/i },
   { id: "research", re: /research|리서치|경쟁사\s*분석/i },
@@ -148,6 +152,10 @@ export const EXCLUDE_FOLDER_PATTERNS: Array<{ id: string; re: RegExp }> = [
   { id: "webdesign_lecture", re: /webdesign\s*psd|강의\s*자료/i },
   { id: "provided_88", re: /88\s*제공\s*받은\s*자료/i },
   { id: "temp", re: /\\temp\\|\\tmp\\|\btemp\b|\btmp\b/i },
+  { id: "skp", re: /(^|\\)SKP($|\\)/i },
+  { id: "model_textures", re: /ModelTextures/i },
+  { id: "asset_dir", re: /(^|\\)asset($|\\)/i },
+  { id: "d5_layer_split", re: /D5용\s*레이어분리/i },
   {
     id: "portrait",
     re: /증명\s*사진|얼굴|인물\s*사진|프로필/i
@@ -170,10 +178,25 @@ export function folderSegmentIs3dAsset(seg: string): boolean {
   const s = seg.trim();
   if (!s) return false;
   if (/_files$/i.test(s)) return false; // 별도 규칙
+  if (/^skp$/i.test(s)) return true;
+  if (/modeltextures/i.test(s)) return true;
+  if (/^asset$/i.test(s)) return true;
+  if (/d5용\s*레이어분리/i.test(s)) return true;
   return (
     /^(models?|textures?|maps?|materials?|재질)$/i.test(s) ||
     /[\s_\-](models?|textures?|maps?|materials?|재질)$/i.test(s)
   );
+}
+
+/** 색인·검색 공통 — SKP / ModelTextures / asset / D5용 레이어분리 */
+export function isGarbage3dPath(path: string): boolean {
+  if (!path.trim()) return false;
+  const n = path.replace(/\//g, "\\");
+  if (/(^|\\)SKP($|\\)/i.test(n)) return true;
+  if (/ModelTextures/i.test(n)) return true;
+  if (/(^|\\)asset($|\\)/i.test(n)) return true;
+  if (/D5용\s*레이어분리/i.test(n)) return true;
+  return matchAssetFolderExclude(n) != null;
 }
 
 export function folderSegmentIsWebFiles(seg: string): boolean {

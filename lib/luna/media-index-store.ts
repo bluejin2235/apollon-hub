@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isGarbage3dPath } from "@/lib/luna/media-index-rules";
 
 export type MediaIndexRow = {
   path: string;
@@ -79,4 +80,46 @@ export async function fetchMediaIndexForLargeRebuild(
     .order("indexed_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as MediaIndexLargeRebuildRow[];
+}
+
+/** 이미 색인된 SKP·asset·ModelTextures·D5용 레이어분리 행 삭제 */
+export async function deleteGarbage3dMediaRows(
+  admin: SupabaseClient,
+  opts?: { limit?: number }
+): Promise<{ deleted: number; samples: string[] }> {
+  const patterns = ["%SKP%", "%ModelTextures%", "%asset%", "%D5용%"];
+  const page = Math.min(opts?.limit ?? 2000, 2000);
+  let deleted = 0;
+  const samples: string[] = [];
+  const seen = new Set<string>();
+  for (const pattern of patterns) {
+    for (;;) {
+      const { data, error } = await admin
+        .from("luna_media_index")
+        .select("path")
+        .ilike("path", pattern)
+        .limit(page);
+      if (error) throw error;
+      const rows = (data ?? []) as Array<{ path: string }>;
+      const paths = rows
+        .map((r) => r.path)
+        .filter((p) => p && !seen.has(p) && isGarbage3dPath(p));
+      if (paths.length === 0) break;
+      for (const p of paths) seen.add(p);
+      for (let i = 0; i < paths.length; i += 200) {
+        const chunk = paths.slice(i, i + 200);
+        const { error: delErr } = await admin
+          .from("luna_media_index")
+          .delete()
+          .in("path", chunk);
+        if (delErr) throw delErr;
+        deleted += chunk.length;
+        if (samples.length < 8) {
+          samples.push(...chunk.slice(0, 8 - samples.length));
+        }
+      }
+      if (rows.length < page) break;
+    }
+  }
+  return { deleted, samples };
 }
