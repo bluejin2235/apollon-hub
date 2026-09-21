@@ -28,10 +28,10 @@ if port_3000_listening; then
   exit 1
 fi
 
-# dest 를 꺼도 next build 기본 힙(~2GB) 으로는 터질 수 있다.
+# dest 를 꺼도 next build 는 8GB 힙에서 OOM 이 났다 (워커가 ~8150MB 에서 죽음).
 case " ${NODE_OPTIONS:-} " in
   *" --max-old-space-size="*|*" --max-old-space-size "*) ;;
-  *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=8192" ;;
+  *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=16384" ;;
 esac
 echo "[pre-push] NODE_OPTIONS=${NODE_OPTIONS}"
 
