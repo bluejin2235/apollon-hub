@@ -3,6 +3,7 @@
  * 스크립트(회사 PC)와 아침 리포트·luna_checks 가 함께 쓴다.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mediaIndexRulesVersion } from "@/lib/luna/media-index-rules";
 
 export type MediaIndexRunStatus =
   | "running"
@@ -71,6 +72,55 @@ export async function findActiveMediaIndexRun(
   };
 }
 
+export type RunningMediaIndexRules = {
+  id: string;
+  indexed: number;
+  rulesVersion: string | null;
+  currentVersion: string;
+  stale: boolean;
+};
+
+export async function loadRunningMediaIndexRules(
+  admin: SupabaseClient
+): Promise<RunningMediaIndexRules | null> {
+  const currentVersion = mediaIndexRulesVersion();
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+  const { data, error } = await admin
+    .from("luna_media_index_runs")
+    .select("id, indexed, rules_version, updated_at")
+    .eq("status", "running")
+    .gte("updated_at", cutoff)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[media-index-runs] load running rules", error.message);
+    return null;
+  }
+  if (!data?.id) return null;
+  const rulesVersion =
+    typeof data.rules_version === "string" && data.rules_version.trim()
+      ? data.rules_version.trim()
+      : null;
+  return {
+    id: String(data.id),
+    indexed: Number(data.indexed) || 0,
+    rulesVersion,
+    currentVersion,
+    stale: rulesVersion !== currentVersion
+  };
+}
+
+export function formatRunningMediaIndexLine(
+  running: RunningMediaIndexRules
+): string {
+  const runVer = running.rulesVersion ?? "(기록 없음)";
+  if (running.stale) {
+    return `이미지 색인 규칙이 바뀌었는데 옛 버전(${runVer})으로 돌고 있음 — 코드는 ${running.currentVersion}`;
+  }
+  return `이미지 색인 진행 중 · ${running.indexed.toLocaleString("ko-KR")}장 · 규칙 ${runVer}`;
+}
+
 export async function startMediaIndexRun(
   admin: SupabaseClient,
   row: {
@@ -79,6 +129,7 @@ export async function startMediaIndexRun(
     limitN: number | null;
     candidateTotal: number;
     workTotal: number;
+    rulesVersion?: string | null;
   }
 ): Promise<string | null> {
   await interruptStaleMediaRuns(admin);
@@ -102,7 +153,8 @@ export async function startMediaIndexRun(
       model: row.model,
       limit_n: row.limitN,
       candidate_total: row.candidateTotal,
-      work_total: row.workTotal
+      work_total: row.workTotal,
+      rules_version: row.rulesVersion ?? mediaIndexRulesVersion()
     })
     .select("id")
     .single();

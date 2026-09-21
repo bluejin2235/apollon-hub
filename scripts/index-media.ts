@@ -41,7 +41,7 @@ import {
   startMediaIndexRun,
   updateMediaIndexRunProgress
 } from "@/lib/luna/media-index-runs";
-import { THUMB_BUCKET, DEFAULT_MAX_COST_USD, DEFAULT_MAX_HOURS, MEDIA_INDEX_BUDGET_USD } from "@/lib/luna/media-index-rules";
+import { THUMB_BUCKET, DEFAULT_MAX_COST_USD, DEFAULT_MAX_HOURS, MEDIA_INDEX_BUDGET_USD, mediaIndexRulesVersion } from "@/lib/luna/media-index-rules";
 import {
   collectMediaCandidates,
   DEFAULT_SCAN_ROOT,
@@ -987,12 +987,15 @@ async function runIndex(opts: CliOpts): Promise<void> {
     };
   }
 
+  const rulesVersion = mediaIndexRulesVersion();
+  console.log(`rules version: ${rulesVersion}`);
   const runId = await startMediaIndexRun(admin, {
     root: rootLabel,
     model,
     limitN: opts.limit,
     candidateTotal: stats.candidates.length,
-    workTotal: work.length
+    workTotal: work.length,
+    rulesVersion
   });
   if (!runId) {
     console.log(

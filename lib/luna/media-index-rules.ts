@@ -267,3 +267,32 @@ export const NEW_CHUNK_FOLDER_MIN = 200;
  */
 export const BATCH_QUIET_START_MIN = 3 * 60;
 export const BATCH_QUIET_END_MIN = 8 * 60;
+
+function djb2(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i += 1) {
+    h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function patternStamp(rows: Array<{ id: string; re: RegExp }>): string {
+  return rows.map((r) => `${r.id}:${r.re.source}`).join(";");
+}
+
+/**
+ * 색인 시작 시 luna_media_index_runs.rules_version.
+ * KEEP·제외 규칙이 바뀌면 값이 바뀐다. 도는 잡은 예전 값을 그대로 둔다.
+ */
+export function mediaIndexRulesVersion(): string {
+  const src = [
+    patternStamp(KEEP_PATH_PATTERNS),
+    patternStamp(EXCLUDE_FOLDER_PATTERNS),
+    patternStamp(EXCLUDE_FILENAME_PATTERNS),
+    [...HARD_EXCLUDE_FOLDER_IDS].join(","),
+    [...HARD_EXCLUDE_FILENAME_IDS].join(",")
+  ].join("|");
+  return `r2-${djb2(src)}`;
+}
+
+export const MEDIA_INDEX_RULES_VERSION = mediaIndexRulesVersion();

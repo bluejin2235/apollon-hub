@@ -319,13 +319,24 @@ export async function collectMorningSummaryParts(
     parts.push(withLink(wikiLine, "/wiki"));
   }
 
-  const { collectMediaIndexMorningLine } = await import(
-    "@/lib/luna/media-index-runs"
-  );
+  const {
+    collectMediaIndexMorningLine,
+    loadRunningMediaIndexRules,
+    formatRunningMediaIndexLine
+  } = await import("@/lib/luna/media-index-runs");
   const mediaLine = await collectMediaIndexMorningLine(admin, startIso, endIso);
   if (mediaLine) {
     parts.push(
       withLink(mediaLine, "/settings?menu=knowledge&sub=primary")
+    );
+  }
+  const runningMedia = await loadRunningMediaIndexRules(admin);
+  if (runningMedia) {
+    parts.push(
+      withLink(
+        formatRunningMediaIndexLine(runningMedia),
+        "/settings?menu=knowledge&sub=primary"
+      )
     );
   }
 

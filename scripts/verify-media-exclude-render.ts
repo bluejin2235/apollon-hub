@@ -3,6 +3,7 @@
  *   npx tsx scripts/verify-media-exclude-render.ts
  */
 import assert from "node:assert/strict";
+import { mediaIndexRulesVersion } from "../lib/luna/media-index-rules";
 import { classifyMediaFile } from "../lib/luna/media-scan";
 
 const SIZE = 200 * 1024;
@@ -29,4 +30,15 @@ if (!layer.ok) {
 const beauty = classifyMediaFile(kvBeauty, SIZE);
 assert.equal(beauty.ok, true, "KV 본 이미지는 남김");
 
-console.log("media exclude render ok");
+const gongganAlbedo =
+  "T:\\01 사업개발\\2025\\250616 KT광화문 West빌딩 리모델링\\04 Design\\250618 KV\\공간렌더\\아트_AI_Albedo.png";
+const gonggan = classifyMediaFile(gongganAlbedo, SIZE);
+assert.equal(gonggan.ok, false, "KV KEEP + 공간렌더 _Albedo 는 하드 제외");
+if (!gonggan.ok) {
+  assert.equal(gonggan.reason, "exclude:render_layer");
+}
+
+const ver = mediaIndexRulesVersion();
+assert.match(ver, /^r2-[0-9a-f]{8}$/);
+
+console.log("media exclude render ok", ver);

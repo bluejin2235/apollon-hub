@@ -378,6 +378,24 @@ function checkSpec(
 }
 
 /** 약속 점검에서 어긋난 항목 — 원인 조사·코드 수정·DB 확인은 Claude 몫 */
+export function buildStaleMediaRulesPrompt(running: {
+  rulesVersion: string | null;
+  currentVersion: string;
+}): TodoPrompt {
+  const runVer = running.rulesVersion ?? "(기록 없음)";
+  return composePrompt(
+    "dev",
+    "이미지 색인 규칙이 바뀌었는데 돌고 있는 잡은 옛 버전이다. 멈추고 새 코드로 다시 켜줘.",
+    [
+      `도는 잡 규칙 ${runVer} · 코드 ${running.currentVersion}.`,
+      "코드를 고치면 이미 도는 잡에는 반영이 안 된다."
+    ],
+    [
+      "luna_media_index_runs.rules_version 을 보고 사무실 PC 「LUNA Media Index」를 다시 시작해."
+    ]
+  );
+}
+
 export function buildCheckPrompt(
   check: LunaCheckResult,
   blockers: DevnoteBlockerNote[]

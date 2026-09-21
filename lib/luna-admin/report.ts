@@ -36,11 +36,16 @@ import {
 } from "@/lib/luna/study-report";
 import {
   buildCheckPrompt,
+  buildStaleMediaRulesPrompt,
   buildStudyBlockedPrompt,
   loadOpenDevnoteBlockers,
   PROMPT_ROOM_LABEL,
   type TodoPrompt
 } from "@/lib/luna-admin/report-prompts";
+import {
+  formatRunningMediaIndexLine,
+  loadRunningMediaIndexRules
+} from "@/lib/luna/media-index-runs";
 import { openQuestionWeekDelta } from "@/lib/luna/open-questions";
 import { listRecentPerspectiveChanges } from "@/lib/luna/perspective-promote";
 import { iGa, withObjectParticle } from "@/lib/korean/particles";
@@ -415,6 +420,17 @@ export async function buildAdminReportHtml(
       btn: c.btn_label,
       tone: c.status === "bad" ? "r" : "y",
       prompt: buildCheckPrompt(c, devnoteBlockers)
+    });
+  }
+  const runningMedia = await loadRunningMediaIndexRules(admin);
+  if (runningMedia?.stale) {
+    todos.push({
+      title: "이미지 색인을 새 규칙으로 다시 켜 주세요",
+      detail: formatRunningMediaIndexLine(runningMedia),
+      href: hubHref("/settings?menu=knowledge&sub=primary"),
+      btn: "1차 데이터",
+      tone: "r",
+      prompt: buildStaleMediaRulesPrompt(runningMedia)
     });
   }
   for (const card of study.cards) {
