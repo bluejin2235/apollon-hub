@@ -13,6 +13,28 @@ ROOT="$(git rev-parse --show-toplevel)"
 WT="/tmp/apollon-hub-pre-push-$$"
 START_TS="$(date +%s)"
 
+# dest(~수 GB) 가 떠 있으면 tsc·next build 와 힙을 나눠 써서 OOM 이 난다.
+# package.json dest 는 3000. 다른 서비스가 잡고 있어도 같이 빌드하지 않는다.
+port_3000_listening() {
+  netstat -ano 2>/dev/null | grep -E '[:.]3000[ ].*LISTEN' >/dev/null 2>&1
+}
+
+if port_3000_listening; then
+  echo "" >&2
+  echo "[pre-push] ❌ next dest 가 포트 3000 에서 실행 중입니다." >&2
+  echo "[pre-push]    dest 가 수 GB 를 쓰는 상태에서 훅의 tsc · next build 를 돌리면 힙이 부족합니다." >&2
+  echo "[pre-push]    dest 를 끈 뒤 다시 git push 하세요. 급하면 git push --no-verify." >&2
+  echo "" >&2
+  exit 1
+fi
+
+# dest 를 꺼도 next build 기본 힙(~2GB) 으로는 터질 수 있다.
+case " ${NODE_OPTIONS:-} " in
+  *" --max-old-space-size="*|*" --max-old-space-size "*) ;;
+  *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=8192" ;;
+esac
+echo "[pre-push] NODE_OPTIONS=${NODE_OPTIONS}"
+
 cleanup() {
   code=$?
   cd "$ROOT" 2>/dev/null || true
