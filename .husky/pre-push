@@ -9,8 +9,9 @@ echo "[pre-push] 급하면 git push --no-verify 로 건너뛸 수 있습니다. 
 echo ""
 
 ROOT="$(git rev-parse --show-toplevel)"
-# repo 밖 /tmp — WIP·메인 .next 와 격리. Windows TEMP 는 경로가 깨질 수 있어 고정.
-WT="/tmp/apollon-hub-pre-push-$$"
+# repo 옆, 같은 드라이브 — Windows 에서 /tmp(C:) ↔ repo(D:) junction 이면
+# webpack 이 './D:/.../next.js' 를 못 찾는다. WIP·메인 .next 와는 폴더가 달라 격리된다.
+WT="$(dirname "$ROOT")/apollon-hub-pre-push-$$"
 START_TS="$(date +%s)"
 
 # dest(~수 GB) 가 떠 있으면 tsc·next build 와 힙을 나눠 써서 OOM 이 난다.
