@@ -1,19 +1,28 @@
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import {
+  CAMERA_FILENAME_RE,
+  CAMERA_ORIGIN_PATH_RE,
   DEFAULT_SCAN_ROOT,
   DEFAULT_SCAN_ROOTS,
   DESIGN_SKIP_EXTENSIONS,
   DUP_FILENAME_RE,
+  EXCLUDE_FILENAME_PATTERNS,
   EXCLUDE_FOLDER_PATTERNS,
   FULL_INCLUDE_PATH_PREFIXES,
+  HARD_EXCLUDE_FILENAME_IDS,
+  HARD_EXCLUDE_FOLDER_IDS,
   IMAGE_EXTENSIONS,
+  KEEP_PATH_PATTERNS,
   MIN_FILE_BYTES,
+  NEW_CHUNK_FOLDER_MIN,
   PRIORITY_FOLDER_PATTERNS,
   RECENT_PROJECT_YEARS,
+  SEQUENCE_MIN_COUNT,
   VIDEO_CAPTURE_FILENAME_RE,
   VIDEO_CAPTURE_PREFIX_LEN,
-  VIDEO_CAPTURE_PREFIX_MIN_COUNT
+  VIDEO_CAPTURE_PREFIX_MIN_COUNT,
+  matchAssetFolderExclude
 } from "@/lib/luna/media-index-rules";
 import {
   normalizeWorkPath,
@@ -21,7 +30,7 @@ import {
 } from "@/lib/luna/media-path-parse";
 
 export type ClassifyResult =
-  | { ok: true; includeRule: string }
+  | { ok: true; includeRule: string; kept?: string }
   | { ok: false; reason: string };
 
 export type ScanCandidate = {
@@ -36,22 +45,28 @@ export type ScanCandidate = {
   projectFolder: string | null;
   /** 1=important · 2=recent year · 3=ref/kv · 4=rest */
   priority: 1 | 2 | 3 | 4;
+  keptBy?: string;
 };
 
 export type ScanStats = {
   candidates: ScanCandidate[];
   excluded: Record<string, number>;
+  kept: Record<string, number>;
   byProject: Record<string, number>;
   byIncludeRule: Record<string, number>;
   byPriority: Record<string, number>;
   totalFilesSeen: number;
+  /** 폴더당 이미지 ≥ NEW_CHUNK_FOLDER_MIN (후보 기준) */
+  bigFolders: Array<{
+    folder: string;
+    count: number;
+    samples: string[];
+  }>;
 };
 
 export type CollectMediaOpts = {
-  /** true 면 예전처럼 시범 3프로젝트만 (디버그) */
   pilotOnly?: boolean;
   pilotFolders?: readonly string[];
-  /** nas_important_paths 의 path (드라이브 없는 relative) */
   importantPathPrefixes?: string[];
 };
 
@@ -60,10 +75,24 @@ function pathForRules(fullPath: string): string {
   return normalizeWorkPath(relativePath);
 }
 
+export function matchKeepPath(relPath: string): { id: string } | null {
+  for (const row of KEEP_PATH_PATTERNS) {
+    if (row.re.test(relPath)) return { id: row.id };
+  }
+  return null;
+}
+
 function matchesExclude(relPath: string): { id: string } | null {
   for (const row of EXCLUDE_FOLDER_PATTERNS) {
     if (row.id === "capture" && /ref\s*image/i.test(relPath)) continue;
     if (row.re.test(relPath)) return { id: row.id };
+  }
+  return null;
+}
+
+function matchFilenameExclude(fileName: string): { id: string } | null {
+  for (const row of EXCLUDE_FILENAME_PATTERNS) {
+    if (row.re.test(fileName)) return { id: row.id };
   }
   return null;
 }
@@ -86,6 +115,24 @@ export function isVideoCaptureFilename(fileName: string): boolean {
 
 function folderKeyFromRelativePath(relativePath: string): string {
   return dirname(relativePath).replace(/\\/g, "/");
+}
+
+/** 연속 번호 접두사 — foo_001.jpg → foo_ */
+export function sequencePrefix(fileName: string): string | null {
+  const m = fileName.match(/^(.*?)(\d{2,})(\.[^.]+)$/);
+  if (!m) return null;
+  const prefix = (m[1] ?? "").toLowerCase();
+  if (prefix.length < 1) return null;
+  return prefix;
+}
+
+function seqKind(fileName: string): "paren" | "image_num" | "two_digit" | null {
+  if (/^.+\(\d+\)\.[^.]+$/i.test(fileName)) return "paren";
+  if (/^image[_\-]?\d+\.[^.]+$/i.test(fileName)) return "image_num";
+  if (/^\d{2}\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(fileName)) {
+    return "two_digit";
+  }
+  return null;
 }
 
 export function videoCaptureSequencePaths(
@@ -115,9 +162,57 @@ export function videoCaptureSequencePaths(
 }
 
 /**
- * 같은 폴더에서 파일명+크기 동일 → 최신 mtime 1장만 남김.
- * (중복 파일명 규칙)
+ * 폴더 내 연속 패턴 ≥ SEQUENCE_MIN_COUNT → 해당 파일 경로 집합.
+ * KEEP 된 행은 호출 전에 걸러둔다.
  */
+export function sequenceExcludePaths(
+  rows: Array<{ fullPath: string; path: string; fileName: string }>
+): Map<string, string> {
+  /** fullPath → reason id */
+  const out = new Map<string, string>();
+
+  type Group = { paths: string[]; reason: string };
+  const groups = new Map<string, Group>();
+
+  const bump = (key: string, reason: string, fullPath: string) => {
+    const g = groups.get(key) ?? { paths: [], reason };
+    g.paths.push(fullPath);
+    groups.set(key, g);
+  };
+
+  for (const row of rows) {
+    const folder = folderKeyFromRelativePath(row.path);
+
+    const kind = seqKind(row.fileName);
+    if (kind) {
+      bump(`${folder}\0kind:${kind}`, `seq_${kind}`, row.fullPath);
+    }
+
+    const pref = sequencePrefix(row.fileName);
+    if (pref) {
+      bump(`${folder}\0pref:${pref}`, "seq_prefix", row.fullPath);
+    }
+
+    if (
+      CAMERA_ORIGIN_PATH_RE.test(row.path) &&
+      CAMERA_FILENAME_RE.test(row.fileName)
+    ) {
+      const cam =
+        row.fileName.match(/^(DSC_?|_JW_|_MG_|IMG_?|DSC)/i)?.[1]?.toLowerCase() ??
+        "cam";
+      bump(`${folder}\0cam:${cam}`, "seq_camera_origin", row.fullPath);
+    }
+  }
+
+  for (const g of groups.values()) {
+    if (g.paths.length < SEQUENCE_MIN_COUNT) continue;
+    for (const p of g.paths) {
+      if (!out.has(p)) out.set(p, g.reason);
+    }
+  }
+  return out;
+}
+
 function duplicatePathSet(
   rows: Array<{
     fullPath: string;
@@ -147,6 +242,10 @@ function duplicatePathSet(
   return drop;
 }
 
+/**
+ * 단일 파일 판정 (연속 규칙은 2차 패스).
+ * KEEP 이면 soft 제외만 건너뛰고, 하드(캐시·프레임·3D폴더)는 항상 적용.
+ */
 function classifyMediaFileBase(
   fullPath: string,
   sizeBytes: number
@@ -168,10 +267,34 @@ function classifyMediaFileBase(
   }
 
   const rel = pathForRules(fullPath);
+  const keep = matchKeepPath(rel);
+
+  // 하드 경로 제외 — KEEP이어도
   const ex = matchesExclude(rel);
-  if (ex) return { ok: false, reason: `exclude:${ex.id}` };
+  if (ex) {
+    if (!keep || HARD_EXCLUDE_FOLDER_IDS.has(ex.id)) {
+      return { ok: false, reason: `exclude:${ex.id}` };
+    }
+  }
+
+  const asset = matchAssetFolderExclude(rel);
+  if (asset) return { ok: false, reason: `exclude:${asset}` };
+
+  const fn = matchFilenameExclude(fileName);
+  if (fn) {
+    if (!keep || HARD_EXCLUDE_FILENAME_IDS.has(fn.id)) {
+      return { ok: false, reason: `exclude:${fn.id}` };
+    }
+  }
+
+  if (isVideoCaptureFilename(fileName)) {
+    return { ok: false, reason: "exclude:video_capture_name" };
+  }
 
   const tag = matchPriorityFolder(rel) ?? "all";
+  if (keep) {
+    return { ok: true, includeRule: tag, kept: keep.id };
+  }
   return { ok: true, includeRule: tag };
 }
 
@@ -179,12 +302,7 @@ export function classifyMediaFile(
   fullPath: string,
   sizeBytes: number
 ): ClassifyResult {
-  const base = classifyMediaFileBase(fullPath, sizeBytes);
-  if (!base.ok) return base;
-  if (isVideoCaptureFilename(basename(fullPath))) {
-    return { ok: false, reason: "exclude:video_capture_name" };
-  }
-  return base;
+  return classifyMediaFileBase(fullPath, sizeBytes);
 }
 
 export function mediaFileTypeFromExt(fullPath: string): "image" | "design" {
@@ -219,7 +337,10 @@ function isUnderImportant(
   if (!prefixes || prefixes.length === 0) return false;
   const norm = relativePath.replace(/\//g, "\\").toLowerCase();
   for (const raw of prefixes) {
-    const p = raw.replace(/\//g, "\\").replace(/^([A-Za-z]:\\)/, "").toLowerCase();
+    const p = raw
+      .replace(/\//g, "\\")
+      .replace(/^([A-Za-z]:\\)/, "")
+      .toLowerCase();
     if (!p) continue;
     if (norm === p || norm.startsWith(p.endsWith("\\") ? p : `${p}\\`)) {
       return true;
@@ -239,18 +360,63 @@ function assignPriority(
   return 4;
 }
 
-function shouldPruneDir(fullPath: string): boolean {
+/** walk 중 디렉터리 prune 사유. null 이면 들어감. */
+function pruneReason(fullPath: string): string | null {
   const rel = pathForRules(fullPath);
-  if (!rel) return false;
-  // 디렉터리 진입 전에 제외 — 전수 walk 가 멈추지 않게
-  if (matchesExclude(rel)) return true;
+  if (!rel) return null;
+  const ex = matchesExclude(rel);
+  if (ex && HARD_EXCLUDE_FOLDER_IDS.has(ex.id)) return ex.id;
+  const asset = matchAssetFolderExclude(rel);
+  if (asset) return asset;
+  if (matchKeepPath(rel)) return null;
+  if (ex) return ex.id;
   if (/\\#recycle|\\\$recycle|_d5c|\\temp\\|\\tmp\\/i.test(fullPath)) {
-    return true;
+    return "recycle_temp";
   }
-  return false;
+  return null;
 }
 
-function walkDir(dir: string, out: string[], depth = 0): void {
+/**
+ * prune 된 트리는 후보에 안 넣되, ≥100KB 이미지는 사유별로 센다.
+ * (예전엔 continue 만 해서 excluded 가 0으로 보였다)
+ */
+function countPrunedImages(
+  dir: string,
+  reason: string,
+  excluded: Record<string, number>
+): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const key = `exclude:${reason}`;
+  for (const name of entries) {
+    const full = join(dir, name);
+    try {
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        countPrunedImages(full, reason, excluded);
+        continue;
+      }
+      if (!st.isFile()) continue;
+      const ext = extname(name).slice(1).toLowerCase();
+      if (!IMAGE_EXTENSIONS.has(ext)) continue;
+      if (st.size < MIN_FILE_BYTES) continue;
+      excluded[key] = (excluded[key] ?? 0) + 1;
+    } catch {
+      /* */
+    }
+  }
+}
+
+function walkDir(
+  dir: string,
+  out: string[],
+  excluded: Record<string, number>,
+  depth = 0
+): void {
   let entries: string[];
   try {
     entries = readdirSync(dir);
@@ -265,8 +431,12 @@ function walkDir(dir: string, out: string[], depth = 0): void {
     try {
       const st = statSync(full);
       if (st.isDirectory()) {
-        if (shouldPruneDir(full)) continue;
-        walkDir(full, out, depth + 1);
+        const reason = pruneReason(full);
+        if (reason) {
+          countPrunedImages(full, reason, excluded);
+          continue;
+        }
+        walkDir(full, out, excluded, depth + 1);
       } else if (st.isFile()) {
         out.push(full);
       }
@@ -283,31 +453,56 @@ export const PILOT_PROJECT_FOLDERS_LEGACY = [
   "260723 아크메르동탄 모델하우스"
 ] as const;
 
+function buildBigFolders(
+  candidates: ScanCandidate[]
+): ScanStats["bigFolders"] {
+  const map = new Map<string, { count: number; samples: string[] }>();
+  for (const c of candidates) {
+    const folder = dirname(c.path).replace(/\//g, "\\");
+    const row = map.get(folder) ?? { count: 0, samples: [] };
+    row.count += 1;
+    if (row.samples.length < 3) row.samples.push(c.fileName);
+    map.set(folder, row);
+  }
+  return [...map.entries()]
+    .filter(([, v]) => v.count >= NEW_CHUNK_FOLDER_MIN)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 40)
+    .map(([folder, v]) => ({
+      folder,
+      count: v.count,
+      samples: v.samples
+    }));
+}
+
 export function collectMediaCandidates(
   root: string | string[],
   opts?: CollectMediaOpts
 ): ScanStats {
   const roots = Array.isArray(root) ? root : [root];
   const allFiles: string[] = [];
+  const excluded: Record<string, number> = {};
   if (opts?.pilotOnly) {
     const folders = opts.pilotFolders ?? PILOT_PROJECT_FOLDERS_LEGACY;
     const base = roots[0] ?? DEFAULT_SCAN_ROOT;
     for (const name of folders) {
-      walkDir(join(base, name), allFiles);
+      walkDir(join(base, name), allFiles, excluded);
     }
   } else {
     for (const r of roots) {
-      walkDir(r, allFiles);
+      walkDir(r, allFiles, excluded);
     }
   }
 
   const stats: ScanStats = {
     candidates: [],
-    excluded: {},
+    excluded,
+    kept: {},
     byProject: {},
     byIncludeRule: {},
     byPriority: {},
-    totalFilesSeen: allFiles.length
+    totalFilesSeen: allFiles.length,
+    bigFolders: []
   };
 
   const preCandidates: ScanCandidate[] = [];
@@ -331,6 +526,9 @@ export function collectMediaCandidates(
     }
 
     const { drive, relativePath } = splitDrivePath(fullPath);
+    if (verdict.kept) {
+      stats.kept[verdict.kept] = (stats.kept[verdict.kept] ?? 0) + 1;
+    }
     preCandidates.push({
       fullPath,
       drive,
@@ -344,24 +542,42 @@ export function collectMediaCandidates(
         relativePath,
         verdict.includeRule,
         opts?.importantPathPrefixes
-      )
+      ),
+      keptBy: verdict.kept
     });
   }
 
-  const sequencePaths = videoCaptureSequencePaths(preCandidates);
+  const nonKept = preCandidates.filter((r) => !r.keptBy);
+  const sequencePaths = videoCaptureSequencePaths(preCandidates); // 하드 — KEEP 포함
+  const seqAll = sequenceExcludePaths(preCandidates);
+  const seqNonKept = sequenceExcludePaths(nonKept);
   const dupPaths = duplicatePathSet(preCandidates);
 
   for (const row of preCandidates) {
-    if (isVideoCaptureFilename(row.fileName)) {
-      stats.excluded["exclude:video_capture_name"] =
-        (stats.excluded["exclude:video_capture_name"] ?? 0) + 1;
-      continue;
-    }
     if (sequencePaths.has(row.fullPath)) {
       stats.excluded["exclude:video_capture_seq"] =
         (stats.excluded["exclude:video_capture_seq"] ?? 0) + 1;
       continue;
     }
+
+    const seqReason = seqAll.get(row.fullPath);
+    const softReason = seqNonKept.get(row.fullPath);
+
+    // 현장답사만 연속 규칙 전부 면제. 그 외 KEEP도 접두사·괄호·순번 연속 제외.
+    const fieldKeep = row.keptBy === "field_survey";
+
+    if (!fieldKeep && seqReason) {
+      stats.excluded[`exclude:${seqReason}`] =
+        (stats.excluded[`exclude:${seqReason}`] ?? 0) + 1;
+      continue;
+    }
+
+    if (!row.keptBy && softReason) {
+      stats.excluded[`exclude:${softReason}`] =
+        (stats.excluded[`exclude:${softReason}`] ?? 0) + 1;
+      continue;
+    }
+
     if (dupPaths.has(row.fullPath)) {
       stats.excluded["exclude:dup_same_folder"] =
         (stats.excluded["exclude:dup_same_folder"] ?? 0) + 1;
@@ -376,6 +592,8 @@ export function collectMediaCandidates(
     const pkey = String(row.priority);
     stats.byPriority[pkey] = (stats.byPriority[pkey] ?? 0) + 1;
   }
+
+  stats.bigFolders = buildBigFolders(stats.candidates);
 
   stats.candidates.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
@@ -405,6 +623,17 @@ export function printMediaDryRunReport(stats: ScanStats, root: string): void {
     console.log(`  ${labels[key]}: ${cnt.toLocaleString("ko-KR")}장`);
   }
 
+  console.log("\n--- KEEP (예외로 남김) ---");
+  for (const [k, v] of Object.entries(stats.kept).sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${k}: ${v.toLocaleString("ko-KR")}장`);
+  }
+  const anamorphic = stats.candidates.filter((c) =>
+    /아나모픽\s*콘텐츠/.test(c.path)
+  ).length;
+  console.log(
+    `\n--- 아나모픽 레퍼런스 잔류 --- ${anamorphic.toLocaleString("ko-KR")}장`
+  );
+
   console.log("\n--- 프로젝트별 (상위 20) ---");
   const projects = Object.entries(stats.byProject).sort((a, b) => b[1] - a[1]);
   for (const [proj, cnt] of projects.slice(0, 20)) {
@@ -431,13 +660,22 @@ export function printMediaDryRunReport(stats: ScanStats, root: string): void {
   }
   console.log(`  합계 제외: ${excludedTotal.toLocaleString("ko-KR")}장`);
 
+  if (stats.bigFolders.length > 0) {
+    console.log(`\n--- 폴더 ${NEW_CHUNK_FOLDER_MIN}장+ (상위) ---`);
+    for (const f of stats.bigFolders.slice(0, 10)) {
+      console.log(
+        `  ${f.count.toLocaleString("ko-KR")} · ${f.folder} · ${f.samples.join(", ")}`
+      );
+    }
+  }
+
   const visionSec = 4.6;
   const totalSec = n * visionSec;
   const hours = totalSec / 3600;
   const visionUsdPerImage = 0.0057;
   const estUsd = n * visionUsdPerImage;
 
-  console.log("\n--- 추정 (9/17 실측 환산, 참고) ---");
+  console.log("\n--- 추정 (참고) ---");
   console.log(
     `  시간: 약 ${hours.toFixed(1)}시간 (장당 ~${visionSec}초)`
   );
@@ -463,7 +701,9 @@ export function writeMediaDryRunJson(
         by_priority: stats.byPriority,
         by_project: stats.byProject,
         by_include_rule: stats.byIncludeRule,
-        excluded: stats.excluded
+        excluded: stats.excluded,
+        kept: stats.kept,
+        big_folders: stats.bigFolders
       },
       null,
       2
@@ -517,4 +757,8 @@ export function sampleCandidatesByIncludeRule(
   return out;
 }
 
-export { DEFAULT_SCAN_ROOT as DEFAULT_PILOT_ROOT, DEFAULT_SCAN_ROOT, DEFAULT_SCAN_ROOTS };
+export {
+  DEFAULT_SCAN_ROOT as DEFAULT_PILOT_ROOT,
+  DEFAULT_SCAN_ROOT,
+  DEFAULT_SCAN_ROOTS
+};
