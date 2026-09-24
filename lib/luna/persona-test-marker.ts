@@ -12,7 +12,8 @@ export function isPersonaTestTitle(title: unknown): boolean {
 /** 개인화 점검·지연 실측 대화. 사람이 겪은 실패 집계에 넣지 않는다. */
 export function isHarnessChatTitle(title: unknown): boolean {
   if (isPersonaTestTitle(title)) return true;
-  return typeof title === "string" && title.startsWith("[role-latency-");
+  return typeof title === "string" &&
+    (title.startsWith("[role-latency-") || title.startsWith("[LUNA-EVAL:"));
 }
 
 export function parsePersonaTestRunId(title: string): string | null {
