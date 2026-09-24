@@ -17,7 +17,7 @@ import { runLunaTurn } from "@/lib/luna/run-chat";
 import { FEEDBACK_REASON_LABELS, isFeedbackReason } from "@/lib/luna/feedback";
 import { listOpenSelfstudyGoals } from "@/lib/luna/weekly-goals";
 import type { LunaReportRow } from "@/lib/luna/selfstudy-types";
-import { isPersonaTestTitle } from "@/lib/luna/persona-test-marker";
+import { isProductionData } from "@/lib/luna/data-context";
 import { isIndexRunnerStudyRun } from "@/lib/luna/study-report";
 
 export type {
@@ -502,7 +502,8 @@ export async function extractStuckMoments(
 
   const { data: convsRaw, error: convErr } = await admin
     .from("luna_conversations")
-    .select("id, user_id, title")
+    .select("id, user_id, title, data_context")
+    .eq("data_context", "production")
     .gte("updated_at", startIso)
     .lt("updated_at", endIso)
     .limit(200);
@@ -511,7 +512,7 @@ export async function extractStuckMoments(
     console.error("[luna/selfstudy] conversations", convErr);
   }
   /** 개인화 E2E 점검 대화는 자습·막힘 추출에서 뺀다 */
-  const convs = (convsRaw ?? []).filter((c) => !isPersonaTestTitle(c.title));
+  const convs = (convsRaw ?? []).filter(isProductionData);
   const convIds = convs.map((c) => c.id as string);
   const userIds = Array.from(
     new Set(convs.map((c) => c.user_id as string).filter(Boolean))
@@ -716,10 +717,11 @@ export async function extractStuckMoments(
     if (extraConvIds.length > 0) {
       const { data: extraConvs } = await admin
         .from("luna_conversations")
-        .select("id, user_id, title")
+        .select("id, user_id, title, data_context")
+    .eq("data_context", "production")
         .in("id", extraConvIds);
       for (const c of extraConvs ?? []) {
-        if (isPersonaTestTitle(c.title)) continue;
+        if (!isProductionData(c)) continue;
         extraUserByConv.set(c.id as string, c.user_id as string);
       }
       const extraUserIds = Array.from(
@@ -1292,3 +1294,4 @@ export function bumpReportUse(admin: SupabaseClient, reportId: string): void {
     }
   })();
 }
+

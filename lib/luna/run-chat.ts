@@ -1,3 +1,4 @@
+import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
@@ -603,14 +604,8 @@ export async function runLunaTurn(
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   let learningsData: LearningMatchRow[] | null = null;
   await mark("load_learnings", async () => {
-    const res = await admin
-      .from("luna_learnings")
-      .select("id, content, category, importance, use_count, created_at")
-      .eq("status", "active")
-      .neq("category", "identity")
-      .order("importance", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const res = await loadRuntimeLearnings(admin);
+    if (res.error) throw new Error(`Learning isolation check failed: ${res.error.message}`);
     learningsData = (res.data ?? null) as LearningMatchRow[] | null;
   });
 
@@ -993,3 +988,4 @@ export async function runLunaTurn(
     stageMs
   };
 }
+

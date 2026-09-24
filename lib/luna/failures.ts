@@ -21,7 +21,7 @@ import {
 } from "@/lib/luna/failure-cause";
 import { insertLunaSignal } from "@/lib/luna/signals";
 import type { InsertLunaSignalInput } from "@/lib/luna/signals-shared";
-import { isHarnessChatTitle } from "@/lib/luna/persona-test-marker";
+import { isProductionData } from "@/lib/luna/data-context";
 
 export type { FailureKind, FailureKindFilter, FailureSignal };
 export type { FailureCauseType } from "@/lib/luna/failure-cause";
@@ -253,12 +253,12 @@ export async function recordLunaFailure(
   input: RecordFailureInput & { signals?: FailureSignal[] }
 ): Promise<string | null> {
   if (input.conversationId) {
-    const { data: conv } = await admin
+    const { data: conv, error } = await admin
       .from("luna_conversations")
-      .select("title")
+      .select("title, data_context")
       .eq("id", input.conversationId)
       .maybeSingle();
-    if (isHarnessChatTitle(conv?.title)) return null;
+    if (error || !isProductionData(conv)) return null;
   }
 
   const question = (input.question ?? "").trim();
@@ -1020,3 +1020,4 @@ export async function loadFailureThread(
     after: turns.slice(idx + 1, idx + 3)
   };
 }
+

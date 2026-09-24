@@ -1,3 +1,4 @@
+import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
@@ -908,15 +909,7 @@ export async function POST(request: NextRequest) {
   const learningsLoad = withPrepCache(
     "learnings",
     PREP_TTL_MS.learnings,
-    () =>
-      admin
-        .from("luna_learnings")
-        .select("id, content, category, importance, use_count, created_at")
-        .eq("status", "active")
-        .neq("category", "identity")
-        .order("importance", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(200),
+    () => loadRuntimeLearnings(admin),
     (row) => !row.error
   );
   const typesLoad = withPrepCache("question-types", PREP_TTL_MS.types, () =>
@@ -4071,3 +4064,4 @@ export async function POST(request: NextRequest) {
     }
   });
 }
+

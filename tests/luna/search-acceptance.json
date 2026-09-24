@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "baseline_sha": "66dcb3fd49301089f75ebcf2804ea4cae77bf8eb",
+  "data_context": "synthetic",
+  "scope": "find-only",
+  "status": "acceptance_contract_not_yet_end_to_end_runner",
+  "cases": [
+    {
+      "id": "haeundae-kv-typo-1",
+      "turns": ["해운대스퀀어 KV 이미지 보여줘"],
+      "source_conversation_id": "2dce5444-f4eb-432b-93d7-b36719eb3810",
+      "expected_project": "260108 해운대스퀘어 공공부지사업",
+      "required_material": "image",
+      "must": ["오타를 정상 프로젝트의 후보로 해석", "실제 KV 이미지 또는 근거 있는 범위 확인 제공"],
+      "must_not": ["오타 추가어를 필수 경로 조건으로 사용", "해운대의 다른 프로젝트만 제시하고 부재 확정"],
+      "baseline": "failed_filter_reproduced"
+    },
+    {
+      "id": "haeundae-kv-typo-2",
+      "turns": ["해운대스퀵어 KV 이미지"],
+      "expected_project": "260108 해운대스퀘어 공공부지사업",
+      "required_material": "image",
+      "must": ["같은 실제 KV 경로를 정확 표기와 동등하게 식별"],
+      "baseline": "failed_filter_reproduced"
+    },
+    {
+      "id": "haeundae-kv-exact",
+      "turns": ["해운대스퀘어 KV 이미지 보여줘"],
+      "source_conversation_id": "9c466d35-6a4f-4744-8fe6-6468d214353a",
+      "expected_project": "260108 해운대스퀘어 공공부지사업",
+      "must": ["이미지 제공 또는 자료 범위를 바꾸는 필요한 확인만 수행", "선택지 수와 설명의 수 일치"],
+      "baseline": "clarified_before_search"
+    },
+    {
+      "id": "whale-followup-all",
+      "turns": ["고래쇼 자료 찾아줘", "전부 다 보여줘"],
+      "source_conversation_id": "3ed26c03-a71c-4d8b-bb45-a975e8dbcd7a",
+      "must": ["후속 발화에 첫 질문의 범위를 유지", "찾은 자료의 근거를 보존", "완료된 자료 제공 또는 명시적 미완성 상태"],
+      "must_not": ["찾겠습니다만 출력하고 완료 처리", "출처 표시 0을 원천 검색 0으로 기록"],
+      "baseline": "answer_incomplete_and_misclassified"
+    },
+    {
+      "id": "suwon-partial-evidence",
+      "source_conversation_id": "d6ae08c1-8da5-49ca-919e-7a923b6b4b32",
+      "recorded_answer_fragment": "아직 실제 구축·수행 단계 자료는 확인되지 않았습니다",
+      "must": ["확인한 자료와 특정 단계의 근거 부족을 구분", "부분 성공을 전체 not_found로 기록하지 않음"],
+      "baseline": "partial_answer_misclassified"
+    },
+    {
+      "id": "atrium-is-attribute",
+      "turns": ["아트리움 이미지 보여줘"],
+      "must": ["공간 속성을 미확인 프로젝트명으로 강제하지 않음"],
+      "baseline": "project_lock_reproduced",
+      "expected_source_ids": null,
+      "needs_human_relevance_review": true
+    },
+    {
+      "id": "wrong-project-negative-control",
+      "turns": ["해운대스퀘어 KV 이미지 보여줘"],
+      "candidate_path": "02 Project\\2024\\해운대 그랜드조선호텔\\KV\\01.jpg",
+      "must": ["다른 해운대 프로젝트 이미지를 정답으로 표시하지 않음"],
+      "baseline": "unit_negative_control"
+    },
+    {
+      "id": "source-title-paraphrase",
+      "source_title": "고래쇼 제안서",
+      "answer": "고래 공연 기획은 이 자료를 참고하면 됩니다.",
+      "must": ["검증된 출처 ID로 연결된 자료는 제목을 바꿔 표현해도 보존"],
+      "must_not": ["검증 없이 모든 카드를 보존"],
+      "baseline": "literal_title_filter_drops_source"
+    }
+  ]
+}
