@@ -44,3 +44,31 @@ test('diagnostic misses do not claim measured improvement', async()=>{
   result={probed:0,miss:0};
   assert.equal((await runProbeRetrievalExam(db,{},10)).outcome,'failed');
 });
+
+
+const {isNotFoundAnswer} = loadTs('lib/luna/failures-shared.ts');
+const {isNotFoundAnswerText,keepSourcesUsedInAnswer} = loadTs('lib/luna/search-filter.ts');
+test('partial evidence is not classified as a wholly missing answer',()=>{
+  const answer='기획 자료는 확인했습니다. 아직 실제 구축·수행 단계 자료는 확인되지 않았습니다.';
+  assert.equal(isNotFoundAnswer(answer),false);
+  const mixed='기획 자료는 찾았습니다. 수행 단계 자료는 찾지 못했습니다.';
+  assert.equal(isNotFoundAnswerText(mixed),false);
+  const kept=keepSourcesUsedInAnswer({cards:[],wiki:[],notion:[{title:'기획 자료',url:'https://example.invalid/source'}],answer:mixed,notFound:isNotFoundAnswerText(mixed)});
+  assert.equal(kept.notion.length,1);
+});
+test('genuine missing answers still report failure',()=>{
+  for(const answer of ['요청하신 자료를 찾지 못했습니다.','자료는 확인하지 못했습니다.','관련 문서가 없어요.']) {
+    assert.equal(isNotFoundAnswer(answer),true);
+  }
+  assert.equal(isNotFoundAnswerText('요청하신 자료를 찾지 못했습니다.'),true);
+});
+test('unrelated positive remarks do not suppress missing evidence',()=>{
+  assert.equal(isNotFoundAnswer('질문은 확인했습니다. 자료를 찾지 못했습니다.'),true);
+});
+
+
+test('atrium is a space attribute unless explicitly registered as a project',()=>{
+  assert.deepEqual(parseAskedWhat('아트리움 이미지 보여줘').projectPhrases,[]);
+  const entity={canonical:'아트리움',kind:'project',aliases:[],searchPhrases:[],parentCanonical:null};
+  assert.deepEqual(parseAskedWhat('아트리움 이미지 보여줘',[entity]).projectPhrases,['아트리움']);
+});

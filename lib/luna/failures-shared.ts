@@ -36,11 +36,21 @@ export function pickPrimarySignal(signals: FailureSignal[]): FailureSignal {
 }
 
 const NOT_FOUND_RE =
-  /찾(?:지|을)\s*못|확인(?:되)?지\s*않|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
+  /찾(?:지|을)\s*못|확인(?:하|되)?지\s*(?:않|못)|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
+
+/** An explicit positive retrieval statement makes a mixed answer partial, not wholly missing.
+ * This remains a text heuristic, not proof that the cited source supports the answer.
+ */
+export function hasPositiveRetrievedEvidence(text: string): boolean {
+  return text.split(/[.!?。\n]/).some(sentence =>
+    /(?:자료|문서|파일|기록|이미지|사진|제안서|기획서)[^.!?\n]{0,32}(?:확인했습니다|확인했어요|찾았습니다|찾았어요|찾았고|확인했고)/.test(sentence) &&
+    !/못|않|없|아니/.test(sentence)
+  );
+}
 
 /** 답 본문이 「못 찾음」 계열인지 — UI·실패 수집 공용 */
 export function isNotFoundAnswer(text: string): boolean {
-  return NOT_FOUND_RE.test(text);
+  return NOT_FOUND_RE.test(text) && !hasPositiveRetrievedEvidence(text);
 }
 
 export function kindForSignals(
@@ -265,3 +275,4 @@ export function summarizeFailureKinds(
     inspect: inspect.length
   };
 }
+

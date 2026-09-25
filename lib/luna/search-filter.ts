@@ -1,3 +1,4 @@
+import { hasPositiveRetrievedEvidence } from "@/lib/luna/failures-shared";
 import type { AskedNature, AskedWhat } from "@/lib/luna/ask-what";
 import { natureLabelKo } from "@/lib/luna/ask-what";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -219,7 +220,8 @@ export function keepSourcesUsedInAnswer(opts: {
 }
 
 export function isNotFoundAnswerText(answer: string): boolean {
-  return /찾지 못했|못 찾았|안 잡혀요|기억해둘게요/.test(answer);
+  return /찾지 못했|못 찾았|안 잡혀요|기억해둘게요/.test(answer) &&
+    !hasPositiveRetrievedEvidence(answer);
 }
 
 export function formatNotFoundAnswer(
@@ -287,3 +289,4 @@ export function scoreEvidenceMatch(opts: {
     self_note: `찾은 ${denom}건 중 질문에 맞는 자료 ${opts.matching}건`
   };
 }
+
