@@ -43,3 +43,11 @@ The audit must include project folder bundles as well as files. A file-only inve
 In the same read-only investigation, all 19,558 `nas_file_text` rows matched the current directory index by drive/path and file size/modified time. Counts: ok 18,263; empty 173; failed 87; skipped 1,035. Missing index matches: 0 in every status. Metadata mismatches: 0 in every status. Therefore the 172 unmatched relationship paths do not establish missing/stale extracted text. They are a separate relationship reconciliation issue.
 
 `audit-luna-text-freshness.sql` reproduces this comparison. These are database metadata checks, not live NAS reads or a content hash verification. The known zero-embedding backlog remains a distinct issue.
+
+## Perspective usage isolation
+
+The perspective builder previously read all `luna_messages` before counting user-question terms, including synthetic conversations. It now loads user messages in stable pages and verifies each parent conversation is explicitly production and is not a harness title. Missing parents are excluded; provenance/query errors abort the perspective phase before its writes.
+
+A rebuild also resets obsolete usage counts to zero for automatically generated (`source=data`) perspectives missing from the newly computed terms. Manually owned rows are excluded from this reset, and current terms are recomputed normally. Dry runs report the proposed reset count. This fixes old counts surviving when their only inputs were test conversations. Existing stored counts have not been rebuilt in production.
+
+Tests cover synthetic/harness/orphan/assistant exclusion, lookup failure, a 501-message page boundary, and obsolete/manual count handling. This closes the conversation contribution path; it does not claim provenance validation for every existing library document or previously persisted insight. The foundation data-context migration must precede deployment of this reader.

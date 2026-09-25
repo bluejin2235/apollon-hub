@@ -27,7 +27,7 @@ function fakeDb(tables, errors = {}) {
   return {
     calls,
     from(table) {
-      const filters = []; let cap = Infinity; let countOnly = false; let one = false;
+      const filters = []; let cap = Infinity; let offset = 0; let countOnly = false; let one = false;
       let mutation = null; const order = [];
       const builder = {
         select(columns, opts = {}) { countOnly = opts.head === true; calls.push({ table, columns, filters }); return this; },
@@ -39,6 +39,7 @@ function fakeDb(tables, errors = {}) {
         gte(key, value) { filters.push([key, 'gte', value]); return this; },
         order(key, opts) { order.push([key, opts?.ascending !== false]); return this; },
         limit(n) { cap = n; return this; },
+        range(from, to) { offset = from; cap = to - from + 1; return this; },
         maybeSingle() { one = true; return this; },
         single() { one = true; return this; },
         upsert(row) { mutation = row; return this; },
@@ -59,7 +60,7 @@ function fakeDb(tables, errors = {}) {
                 if (a[key] > b[key]) return asc ? 1 : -1;
               }
               return 0;
-            }).slice(0, cap);
+            }).slice(offset, offset + cap);
             return Promise.resolve({ data: countOnly ? null : one ? rows[0] ?? null : rows, count: rows.length, error: null }).then(resolve, reject);
           } catch (error) { return Promise.reject(error).then(resolve, reject); }
         }

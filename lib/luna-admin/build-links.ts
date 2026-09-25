@@ -1,3 +1,4 @@
+import { loadProductionPerspectiveMessages, obsoletePerspectiveUsageIds } from "@/lib/luna-admin/perspective-messages";
 /**
  * 2차 데이터 생성 — 규칙 중심. LLM 은 same 의 0.45~0.6 만.
  * 스크립트에서도 import 하므로 server-only 를 쓰지 않는다.
@@ -1349,11 +1350,7 @@ export async function buildLinks(
         "title, content, summary"
       ),
       fetchAll<{ text: string | null }>(admin, "luna_notion_chunks", "text"),
-      fetchAll<{ content: string | null }>(
-        admin,
-        "luna_messages",
-        "content, role"
-      )
+      loadProductionPerspectiveMessages(admin)
     ]);
 
     const glossaryTerms = glossary
@@ -1426,12 +1423,18 @@ export async function buildLinks(
       hit_count: r.hit_count
     }));
 
-    if (!dryRun && rows.length) {
-      const existingPersp = await fetchAll<{ id: string; name: string }>(
-        admin,
-        "luna_perspectives",
-        "id, name"
-      );
+    const existingPersp = await fetchAll<{ id: string; name: string; source: string; used_count: number }>(
+      admin, "luna_perspectives", "id, name, source, used_count"
+    );
+    const resetUsageIds = obsoletePerspectiveUsageIds(existingPersp, rows.map(row => row.name));
+    report.perspectives.would += resetUsageIds.length;
+    log(`[build-links] perspectives obsolete usage reset=${resetUsageIds.length}${dryRun ? " (dry-run)" : ""}`);
+    if (!dryRun) {
+      for (let i = 0; i < resetUsageIds.length; i += 100) {
+        const { error } = await admin.from("luna_perspectives")
+          .update({ used_count: 0 }).in("id", resetUsageIds.slice(i, i + 100)).eq("source", "data");
+        if (error) throw new Error(`luna_perspectives usage reset: ${error.message}`);
+      }
       const byName = new Map(existingPersp.map((p) => [p.name, p.id]));
       const toInsert = rows.filter((r) => !byName.has(r.name));
       const toUpdate = rows.filter((r) => byName.has(r.name));
@@ -2051,3 +2054,4 @@ async function upsertFollowLinks(
   if (fresh.length) log(`  follows insert ${fresh.length}건`);
   return count;
 }
+
