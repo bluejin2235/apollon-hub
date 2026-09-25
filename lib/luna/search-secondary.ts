@@ -149,7 +149,7 @@ async function fetchLinksTouching(
         )
         .in("kind", kinds)
         .gte("confidence", minConfidence)
-        .neq("status", "rejected")
+        .eq("status", "active")
         .in("from_id", part)
         .limit(200),
       admin
@@ -159,7 +159,7 @@ async function fetchLinksTouching(
         )
         .in("kind", kinds)
         .gte("confidence", minConfidence)
-        .neq("status", "rejected")
+        .eq("status", "active")
         .in("to_id", part)
         .limit(200)
     ]);
@@ -196,7 +196,7 @@ async function fetchBelongsToProjects(
       .in("to_id", part)
       .eq("from_type", "notion_page")
       .gte("confidence", minConfidence)
-      .neq("status", "rejected")
+      .eq("status", "active")
       .limit(120);
     if (error) {
       console.error("[luna/search-secondary] project belongs", error.message);
@@ -692,3 +692,4 @@ export async function annotateSeedsWithProjectKeys(
     project_key: s.project_key ?? projectByPage.get(s.id) ?? null
   }));
 }
+
