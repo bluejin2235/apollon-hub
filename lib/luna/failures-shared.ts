@@ -319,3 +319,22 @@ export function groupOpenFailureAskItems(rows: Array<{
     return a.latest_at < b.latest_at ? 1 : -1;
   });
 }
+
+
+/** A missing count is unknown, not proof that retrieval returned nothing. */
+export function collectAutoFailureSignals(opts: {
+  answer: string;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  classifyConfidence?: number | null;
+  searchAttempted?: boolean;
+  searchResultCount?: number;
+}): FailureSignal[] {
+  const signals: FailureSignal[] = [];
+  if (typeof opts.intentScore === "number" && opts.intentScore < 5) signals.push("low_intent");
+  if (typeof opts.confidenceScore === "number" && opts.confidenceScore < 5) signals.push("low_confidence");
+  if (isNotFoundAnswer(opts.answer)) signals.push("not_found");
+  if (typeof opts.classifyConfidence === "number" && opts.classifyConfidence < 0.5) signals.push("unclassified");
+  if (opts.searchAttempted === true && opts.searchResultCount === 0) signals.push("zero_search");
+  return signals;
+}

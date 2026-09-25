@@ -1813,6 +1813,8 @@ export async function POST(request: NextRequest) {
         }
         const namedProjectLock = askedWhat.projectPhrases.length > 0;
         let evidenceCounts = { retrieved: 0, matching: 0 };
+        // Candidate-record peak before answer/citation filtering; not unique files.
+        let rawSearchResultCount: number | undefined;
         let notFoundFromAsk = false;
         if (
           namedProjectLock &&
@@ -2676,6 +2678,7 @@ export async function POST(request: NextRequest) {
             ...webRes,
             ...youtubeRes
           ];
+          rawSearchResultCount = Math.max(rawSearchResultCount ?? 0, merged.length + wikiSources.length);
           return {
             notionSources: notionRes,
             notionOutcome,
@@ -2906,6 +2909,7 @@ export async function POST(request: NextRequest) {
               },
               askedWhat
             );
+            rawSearchResultCount = Math.max(rawSearchResultCount ?? 0, filtered.counts.retrieved);
             evidenceCounts = {
               retrieved: filtered.counts.retrieved,
               matching: filtered.counts.matching
@@ -3733,6 +3737,10 @@ export async function POST(request: NextRequest) {
         assistantMeta.slim_listing_prompt = Boolean(
           listingReferenceDisablesNas(searchScope.kind, listingQuestion)
         );
+        assistantMeta.search_evidence = {
+          retrieved_candidate_peak: rawSearchResultCount ?? null,
+          displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
+        };
         assistantMeta.search_scope = {
           kind: searchScope.kind,
           tier: searchScope.tier,
@@ -3931,11 +3939,12 @@ export async function POST(request: NextRequest) {
             durationMs,
             classifyConfidence: classification.confidence,
             searchAttempted: searchRounds > 0,
-            searchResultCount:
-              cards.length + notionSources.length + publicWikiSources.length,
+            searchResultCount: rawSearchResultCount,
             sourceRef: {
               last_had_clarify: lastHadClarify,
-              clarify_followup: Boolean(clarifyFollowupQuery)
+              clarify_followup: Boolean(clarifyFollowupQuery),
+              retrieved_candidate_peak: rawSearchResultCount ?? null,
+              displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
             }
           }).catch((err) =>
             console.error("[luna/chat] auto failures", err)
