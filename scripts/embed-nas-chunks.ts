@@ -1,9 +1,11 @@
+import { parseNasEmbeddingArgs } from "@/lib/luna/nas-embedding-options";
 /**
  * nas_file_chunks 임베딩 — embedding IS NULL 만.
  * content_hash 가 같은 파일은 추출 단계에서 청크를 유지하므로 여기선 null 만 처리.
  *
  *   npx tsx --require ./scripts/stub-server-only.cjs scripts/embed-nas-chunks.ts
- *   npx tsx ... scripts/embed-nas-chunks.ts --limit=500
+ *   npx tsx ... scripts/embed-nas-chunks.ts --limit=500          # read-only
+ *   npx tsx ... scripts/embed-nas-chunks.ts --limit=500 --apply  # bounded writes
  */
 import { config } from "dotenv";
 import { resolve } from "node:path";
@@ -30,22 +32,6 @@ type ChunkRow = {
   seq: number;
   content: string;
 };
-
-function parseArgs(argv: string[]) {
-  let limit: number | null = null;
-  let batchSize = 100;
-  let kind: "full" | "incremental" = "incremental";
-  for (const a of argv) {
-    if (a.startsWith("--limit=")) {
-      const n = parseInt(a.slice("--limit=".length), 10);
-      if (Number.isFinite(n) && n > 0) limit = n;
-    } else if (a.startsWith("--batch=")) {
-      const n = parseInt(a.slice("--batch=".length), 10);
-      if (Number.isFinite(n) && n > 0) batchSize = Math.min(n, 100);
-    } else if (a === "--full") kind = "full";
-  }
-  return { limit, batchSize, kind };
-}
 
 function createAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -88,7 +74,7 @@ async function fetchNullEmbeddingChunks(
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseNasEmbeddingArgs(process.argv.slice(2));
   const admin = createAdmin();
 
   const pending = await fetchNullEmbeddingChunks(admin, args.limit);
@@ -96,6 +82,14 @@ async function main() {
 
   if (pending.length === 0) {
     console.log("nothing to embed");
+    return;
+  }
+
+  if (!args.apply) {
+    console.log(JSON.stringify({ mode: "dry_run", selected_chunks: pending.length,
+      selected_characters: pending.reduce((sum, row) => sum + row.content.length, 0),
+      limit: args.limit, batch_size: args.batchSize,
+      note: "No embedding API calls or database writes. Characters are not tokens. Use --apply for a bounded run." }));
     return;
   }
 
@@ -132,13 +126,20 @@ async function main() {
           progress.failed += 1;
           continue;
         }
-        const { error } = await admin
+        const { data: updated, error } = await admin
           .from("nas_file_chunks")
           .update({ embedding: embeddingToSql(vec) })
-          .eq("id", row.id);
+          .eq("id", row.id)
+          .eq("content", row.content)
+          .is("embedding", null)
+          .select("id");
         if (error) {
           progress.failed += 1;
           console.warn("embed update", row.id, error.message);
+          continue;
+        }
+        if (!updated?.length) {
+          progress.skipped += 1; // Changed, deleted, or embedded by another worker.
           continue;
         }
         progress.embeddingsCreated += 1;
@@ -159,7 +160,7 @@ async function main() {
         .eq("path", path)
         .is("embedding", null);
       if (error) continue;
-      if ((count ?? 0) === 0) {
+      if (count === 0) {
         await admin
           .from("nas_file_text")
           .update({
@@ -171,6 +172,7 @@ async function main() {
     }
 
     progress.ok = progress.embeddingsCreated;
+    if (progress.failed > 0) throw new Error(`${progress.failed} embedding rows failed`);
     if (runId) await finishNasTextRun(admin, runId, "done", progress);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -191,3 +193,4 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
