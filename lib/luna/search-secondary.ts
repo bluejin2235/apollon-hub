@@ -52,6 +52,7 @@ type LinkRow = {
 };
 
 type PageRow = {
+  excerpt?: string | null;
   page_id: string;
   title: string;
   parent_id: string | null;
@@ -80,7 +81,7 @@ function pageToSource(
     title: page.title || "(제목 없음)",
     url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
     last_edited_time: page.last_edited_time,
-    excerpt: null,
+    excerpt: page.excerpt ?? null,
     paths: page.nas_path ? [page.nas_path] : [],
     nas_path: page.nas_path,
     parent_id: page.parent_id,
@@ -115,6 +116,31 @@ async function loadPagesByIds(
     }
     for (const row of data ?? []) {
       out.set(String(row.page_id), row as PageRow);
+    }
+  }
+  // Read bounded indexed excerpts for accepted pages; never attach another page's body.
+  if (out.size > 0) {
+    const { data, error } = await admin.from("luna_notion_chunks")
+      .select("page_id, heading, text, position")
+      .in("page_id", [...out.keys()])
+      .order("position", { ascending: true })
+      .limit(320);
+    if (error) {
+      console.error("[luna/search-secondary] excerpts", error.message);
+    } else {
+      const pieces = new Map<string, string[]>();
+      for (const row of data ?? []) {
+        const id = String(row.page_id);
+        if (!out.has(id)) continue;
+        const list = pieces.get(id) ?? [];
+        if (list.length >= 4) continue;
+        const text = [row.heading, row.text].filter(v => typeof v === "string" && v.trim()).join("\n");
+        if (text) list.push(text.slice(0, 1200));
+        pieces.set(id, list);
+      }
+      for (const [id, list] of pieces) {
+        out.get(id)!.excerpt = list.join("\n").replace(/\s+/g, " ").trim().slice(0, 1200) || null;
+      }
     }
   }
   return out;
