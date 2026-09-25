@@ -31,3 +31,7 @@ Production chat and `run-chat.ts` evaluation now call the same `retrieveNasBodyE
 Vector results now load the stored file drive from `nas_file_text`. Missing/invalid/unreadable metadata results are excluded instead of returning a drive-less path that downstream code could display as T. P-drive coverage and metadata failure are tested. Content lookup failure also returns no vector result.
 
 This is partial convergence, not a unified chat engine: production query rewriting, live Notion calls, multi-round search, directory tool routing, and later filtering still differ. The existing `nasTextHitCount` UI metric remains max(keyword hits, vector hits), not unique files. No live quality score is claimed.
+
+## Copy behavior
+
+The existing SafeMarkdown component uses skipHtml, hiding completed internal source comments on screen. The answer copy button previously copied raw content. It now strips exact internal source-ID markers from copied text while leaving stored attribution and ordinary comments unchanged. This is code-path/unit verification, not a completed live browser acceptance test.

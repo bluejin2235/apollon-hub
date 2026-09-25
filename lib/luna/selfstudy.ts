@@ -1,3 +1,4 @@
+import { reportSourcesAreCurrent } from "@/lib/luna/report-freshness";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -1236,7 +1237,8 @@ export async function findSimilarReport(
       }
     );
     if (!rpcError && Array.isArray(rpcData) && rpcData[0]) {
-      return rpcData[0] as LunaReportRow;
+      const candidate = rpcData[0] as LunaReportRow;
+      if (candidate.status === "active" && await reportSourcesAreCurrent(admin, candidate.sources)) return candidate;
     }
   } catch {
     /* fallback */
@@ -1255,21 +1257,17 @@ export async function findSimilarReport(
     return null;
   }
 
-  let best: LunaReportRow | null = null;
-  let bestScore = 0;
-  for (const row of (data ?? []) as LunaReportRow[]) {
-    const score = Math.max(
-      trigramSimilarity(q, row.topic ?? ""),
-      trigramSimilarity(q, row.title ?? "") * 0.9
-    );
-    if (score > bestScore) {
-      bestScore = score;
-      best = row;
-    }
+  const candidates = ((data ?? []) as LunaReportRow[])
+    .map(row => ({row, score: Math.max(
+      trigramSimilarity(q, row.topic ?? ""), trigramSimilarity(q, row.title ?? "") * 0.9
+    )}))
+    .filter(item => item.score >= REPORT_SIM_THRESHOLD)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 5);
+  for (const candidate of candidates) {
+    if (await reportSourcesAreCurrent(admin, candidate.row.sources)) return candidate.row;
   }
-
-  if (!best || bestScore < REPORT_SIM_THRESHOLD) return null;
-  return best;
+  return null;
 }
 
 export function bumpReportUse(admin: SupabaseClient, reportId: string): void {

@@ -16,3 +16,8 @@ export function hasNotionCitation(answer: string, id: string): boolean {
   const marker = notionCitationMarker(id);
   return Boolean(marker) && citedNotionIds(answer).has(id.replace(/-/g, "").toLowerCase());
 }
+
+/** Internal attribution stays in stored answers, but not in copied user-facing text. */
+export function stripLunaSourceMarkers(answer: string): string {
+  return answer.replace(/<!--luna-source:notion:[a-f0-9]{32}-->/g, "");
+}

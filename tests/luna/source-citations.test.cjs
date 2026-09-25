@@ -29,3 +29,11 @@ test('the shared prompt formatter provides exact markers for supplied sources',(
  assert.ok(prompt.includes(notionCitationMarker(id)));
  assert.ok(prompt.includes('실제 사용한 자료'));
 });
+
+test('copy text removes internal source IDs while preserving answer text and ordinary comments',()=>{
+ const {stripLunaSourceMarkers,notionCitationMarker,citedNotionIds}=loadTs('lib/luna/source-citations.ts');
+ const marker=notionCitationMarker('12345678-1234-1234-1234-123456789abc');
+ const answer=`문서 요약입니다.${marker}\n<!--ordinary comment-->\nhttps://example.com`;
+ assert.equal(stripLunaSourceMarkers(answer),'문서 요약입니다.\n<!--ordinary comment-->\nhttps://example.com');
+ assert.equal(citedNotionIds(answer).size,1);
+});
