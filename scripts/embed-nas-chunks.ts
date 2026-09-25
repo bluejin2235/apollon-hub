@@ -159,15 +159,16 @@ async function main() {
         .select("id", { count: "exact", head: true })
         .eq("path", path)
         .is("embedding", null);
-      if (error) continue;
+      if (error) throw error;
       if (count === 0) {
-        await admin
+        const { error: completionError } = await admin
           .from("nas_file_text")
           .update({
             indexed_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq("path", path);
+        if (completionError) throw completionError;
       }
     }
 
@@ -193,4 +194,3 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
-
