@@ -1,3 +1,4 @@
+import { hasNotionCitation } from "@/lib/luna/source-citations";
 import { hasPositiveRetrievedEvidence } from "@/lib/luna/failures-shared";
 import type { AskedNature, AskedWhat } from "@/lib/luna/ask-what";
 import { natureLabelKo } from "@/lib/luna/ask-what";
@@ -196,6 +197,8 @@ export function keepSourcesUsedInAnswer(opts: {
   wiki: WikiSourceRef[];
   answer: string;
   notFound: boolean;
+  /** Only sources actually supplied to the answer model may use ID citations. */
+  injectedNotionIds?: string[];
 }): { cards: LunaCard[]; notion: NotionSource[]; wiki: WikiSourceRef[] } {
   if (opts.notFound) {
     return { cards: [], notion: [], wiki: [] };
@@ -211,7 +214,8 @@ export function keepSourcesUsedInAnswer(opts: {
     ...otherCards.filter((c) => cardUsedInAnswer(c, answer))
   ];
   const notion = opts.notion.filter(
-    (s) => titleUsed(answer, s.title) || Boolean(s.url && answer.includes(s.url))
+    (s) => titleUsed(answer, s.title) || Boolean(s.url && answer.includes(s.url)) ||
+      (Boolean(opts.injectedNotionIds?.includes(s.id)) && hasNotionCitation(answer, s.id))
   );
   const wiki = opts.wiki.filter(
     (h) => titleUsed(answer, h.title) || titleUsed(answer, h.section_title)

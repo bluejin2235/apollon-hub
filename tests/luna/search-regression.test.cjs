@@ -72,3 +72,15 @@ test('atrium is a space attribute unless explicitly registered as a project',()=
   const entity={canonical:'아트리움',kind:'project',aliases:[],searchPhrases:[],parentCanonical:null};
   assert.deepEqual(parseAskedWhat('아트리움 이미지 보여줘',[entity]).projectPhrases,['아트리움']);
 });
+
+test('company-PC grouping addition coexists with partial-answer classification',()=>{
+ const {groupOpenFailureAskItems,isNotFoundAnswer}=loadTs('lib/luna/failures-shared.ts');
+ const rows=groupOpenFailureAskItems([
+  {id:'1',question:' 해운대  자료 ',created_at:'2026-09-24'},
+  {id:'2',question:'해운대 자료',created_at:'2026-09-25'},
+  {id:'3',question:'시험',created_at:'2026-09-25',signal:'eval_fail'},
+  {id:'4',question:'완료',created_at:'2026-09-25',verdict:'resolved'}
+ ]);
+ assert.equal(rows.length,1);assert.equal(rows[0].count,2);assert.deepEqual(rows[0].ids,['1','2']);
+ assert.equal(isNotFoundAnswer('기획 자료는 확인했습니다. 구축 자료는 확인되지 않았습니다.'),false);
+});

@@ -276,3 +276,46 @@ export function summarizeFailureKinds(
   };
 }
 
+
+/** 사람이 겪은 못 찾음 — 기계 시험보다 먼저 보여줄 질문 힌트 */
+export const HUMAN_FIX_QUESTION_HINTS = [
+  "출장비", "휴가", "운동 지원", "미디어파사드", "해운대", "고래",
+  "인스파이어", "아크메르", "아트리움"
+] as const;
+export type FailureAskPreview = {
+  key: string; question: string; count: number; latest_at: string; ids: string[];
+};
+export function normalizeFailureQuestion(q: string): string {
+  return q.replace(/\s+/g, " ").trim();
+}
+function humanFixHintRank(q: string): number {
+  const i = HUMAN_FIX_QUESTION_HINTS.findIndex((h) => q.includes(h));
+  return i === -1 ? 100 : i;
+}
+/** 열린 실패를 같은 질문끼리 묶어, 고칠 목록 순으로 정렬 */
+export function groupOpenFailureAskItems(rows: Array<{
+  id: string; question: string; created_at: string; verdict?: string | null;
+  signal?: string; signals?: string[] | null;
+}>): FailureAskPreview[] {
+  const map = new Map<string, FailureAskPreview>();
+  for (const r of rows) {
+    if (r.verdict) continue;
+    if (isInspectFailure({ signal: r.signal ?? "", signals: r.signals })) continue;
+    const q = normalizeFailureQuestion(r.question);
+    if (!q) continue;
+    const cur = map.get(q);
+    if (!cur) {
+      map.set(q, { key: q, question: q, count: 1, latest_at: r.created_at, ids: [r.id] });
+    } else {
+      cur.count += 1;
+      cur.ids.push(r.id);
+      if (r.created_at > cur.latest_at) cur.latest_at = r.created_at;
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    const ra = humanFixHintRank(a.question), rb = humanFixHintRank(b.question);
+    if (ra !== rb) return ra - rb;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.latest_at < b.latest_at ? 1 : -1;
+  });
+}
