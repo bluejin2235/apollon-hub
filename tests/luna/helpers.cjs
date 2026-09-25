@@ -31,6 +31,7 @@ function fakeDb(tables, errors = {}) {
       let mutation = null; const order = [];
       const builder = {
         select(columns, opts = {}) { countOnly = opts.head === true; calls.push({ table, columns, filters }); return this; },
+        ilike(key, value) { filters.push([key, 'ilike', value]); return this; },
         eq(key, value) { filters.push([key, 'eq', value]); return this; },
         neq(key, value) { filters.push([key, 'neq', value]); return this; },
         is(key, value) { filters.push([key, 'eq', value]); return this; },
@@ -53,7 +54,7 @@ function fakeDb(tables, errors = {}) {
             }
             let rows = (tables[table] ?? []).filter(row => filters.every(([key, op, value]) =>
               op === 'eq' ? row[key] === value : op === 'neq' ? row[key] !== value :
-              op === 'in' ? value.includes(row[key]) : op === 'gte' ? row[key] >= value : row[key] > value));
+              op === 'in' ? value.includes(row[key]) : op === 'ilike' ? String(row[key] ?? '').toLowerCase().includes(value.slice(1,-1).replace(/\\([%_\\])/g,'$1').toLowerCase()) : op === 'gte' ? row[key] >= value : row[key] > value));
             rows = [...rows].sort((a, b) => {
               for (const [key, asc] of order) {
                 if (a[key] < b[key]) return asc ? -1 : 1;

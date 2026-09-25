@@ -680,16 +680,23 @@ export async function annotateSeedsWithProjectKeys(
   const ids = sources.map((s) => s.id).filter(Boolean);
   if (ids.length === 0) return sources;
   const links = await fetchLinksTouching(admin, ids, LINK_EXPAND_MIN_CONF);
-  const projectByPage = new Map<string, string>();
+  const projectByPage = new Map<string, Set<string>>();
   for (const link of links) {
     if (link.kind !== "belongs") continue;
     if (link.from_type === "notion_page" && link.to_type === "project") {
-      projectByPage.set(link.from_id, link.to_id);
+      const memberships = projectByPage.get(link.from_id) ?? new Set<string>();
+      memberships.add(link.to_id);
+      projectByPage.set(link.from_id, memberships);
     }
   }
-  return sources.map((s) => ({
-    ...s,
-    project_key: s.project_key ?? projectByPage.get(s.id) ?? null
-  }));
+  return sources.map((s) => {
+    const memberships = projectByPage.get(s.id);
+    if (!memberships?.size) return s;
+    // A multi-project document must not acquire whichever label arrived last.
+    const project = s.project_key && memberships.has(s.project_key)
+      ? s.project_key
+      : memberships.size === 1 ? [...memberships][0] : null;
+    return { ...s, project_key: project };
+  });
 }
 

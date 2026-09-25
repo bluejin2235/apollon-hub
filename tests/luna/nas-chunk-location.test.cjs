@@ -2,7 +2,7 @@ const test=require('node:test');const assert=require('node:assert/strict');
 const {loadTs,fakeDb}=require('./helpers.cjs');
 const {matchNasChunkEmbeddings}=loadTs('lib/luna/nas-chunk-search.ts',{'@/lib/luna/embedding':{embeddingToSql:()=> '[0]'}});
 function db(files,errors={}){
- const client=fakeDb({nas_file_chunks:[{id:'chunk',content:'body'}],nas_file_text:files},errors);
+ const client=fakeDb({nas_file_chunks:[{id:'chunk',content:'body'}],nas_file_text:files.map(f=>({status:"ok",size_bytes:10,modified_at:"2026-09-25T00:00:00Z",...f})),nas_directory:files.map(f=>({type:"file",size_bytes:10,modified_at:"2026-09-25T00:00:00Z",...f}))},errors);
  client.rpc=async()=>({data:[{id:'chunk',path:'Project/report.pdf',seq:0,similarity:0.8}],error:null});return client;
 }
 test('semantic NAS results retain the indexed P drive',async()=>{
