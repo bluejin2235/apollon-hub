@@ -87,7 +87,7 @@ begin
   -- Serializes legacy writers too, while ordinary SELECT remains available.
   lock table public.nas_directory in share row exclusive mode;
   select count(*) into previous from public.nas_directory where drive=r.drive;
-  if staged < (case when previous=0 then 100 else ceil(previous*0.5) end) then
+  if staged < (case when previous=0 then 100 else ceil(previous*0.7) end) then
     raise exception 'Snapshot below existing safety threshold';
   end if;
   -- Both statements and the receipt are one transaction: any error rolls all back.

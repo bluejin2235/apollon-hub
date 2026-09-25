@@ -76,6 +76,16 @@ test('atomic NAS snapshot protocol on PostgreSQL', async t => {
       finally {await db.exec('reset role');}
       assert.ok((await live()).some(x=>x.path==='server'));
     });
+    await t.test('PC 70 percent threshold is enforced transactionally',async()=>{
+      await db.exec("insert into nas_directory(drive,path,type) select 'Q', 'old-'||i, 'file' from generate_series(1,100) i");
+      const id=randomUUID();await begin(id,'Q');
+      await stage(id,Array.from({length:69},(_,i)=>({...row('new-'+i),drive:'Q'})));
+      const before=await live();
+      await assert.rejects(commit(id,69),/safety threshold/);
+      assert.deepEqual(await live(),before);
+      await stage(id,[{...row('new-69'),drive:'Q'}]);
+      assert.equal((await commit(id,70)).rows[0].count,70);
+    });
     await t.test('empty first index still requires the existing minimum of 100 rows',async()=>{
       const id=randomUUID();await begin(id,'Z');await stage(id,[{...row('one'),drive:'Z'}]);
       await assert.rejects(commit(id,1),/safety threshold/);
