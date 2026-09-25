@@ -166,66 +166,59 @@ export function extractPptxYauzl(fullPath: string): Promise<string> {
         }
         const slideTexts: string[] = [];
         const noteTexts: string[] = [];
-        let pending = 0;
-        let ended = false;
-        let failed: Error | null = null;
+        let settled = false;
+        let activeStream: import("node:stream").Readable | null = null;
 
-        const maybeDone = () => {
-          if (!ended || pending > 0) return;
-          if (failed) {
-            reject(failed);
-            return;
-          }
-          resolve(
-            [...slideTexts, ...noteTexts].join("\n").trim()
-          );
+        // A missing slide is an incomplete source, never a successful partial extraction.
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          activeStream?.destroy();
+          zipfile.close();
+          reject(error);
         };
 
-        zipfile.readEntry();
         zipfile.on("entry", (entry) => {
+          if (settled) return;
           const name = entry.fileName.replace(/\\/g, "/");
           if (isSlideXml(name) || isNotesXml(name)) {
-            pending += 1;
             zipfile.openReadStream(entry, (e2, stream) => {
-              if (e2 || !stream) {
-                pending -= 1;
-                zipfile.readEntry();
-                maybeDone();
+              if (settled) {
+                stream?.destroy();
                 return;
               }
+              if (e2 || !stream) {
+                fail(e2 ?? new Error("pptx_xml_stream_unavailable"));
+                return;
+              }
+              activeStream = stream;
               const chunks: Buffer[] = [];
               stream.on("data", (c) => {
+                if (settled) return;
                 chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
               });
               stream.on("end", () => {
+                if (settled) return;
+                activeStream = null;
                 const xml = Buffer.concat(chunks).toString("utf8");
                 const t = extractTextFromXml(xml);
                 if (isSlideXml(name)) slideTexts.push(t);
                 else noteTexts.push(t);
-                pending -= 1;
                 zipfile.readEntry();
-                maybeDone();
               });
-              stream.on("error", (e) => {
-                failed = e;
-                pending -= 1;
-                zipfile.readEntry();
-                maybeDone();
-              });
+              stream.on("error", fail);
             });
           } else {
             zipfile.readEntry();
           }
         });
         zipfile.on("end", () => {
-          ended = true;
-          maybeDone();
+          if (settled) return;
+          settled = true;
+          resolve([...slideTexts, ...noteTexts].join("\n").trim());
         });
-        zipfile.on("error", (e) => {
-          failed = e;
-          ended = true;
-          maybeDone();
-        });
+        zipfile.on("error", fail);
+        zipfile.readEntry();
       }
     );
   });
