@@ -174,7 +174,7 @@ export function extractPptxYauzl(fullPath: string): Promise<string> {
           if (settled) return;
           settled = true;
           activeStream?.destroy();
-          zipfile.close();
+          zipfile.close?.();
           reject(error);
         };
 
