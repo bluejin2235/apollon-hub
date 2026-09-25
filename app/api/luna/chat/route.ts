@@ -1,3 +1,4 @@
+import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
@@ -2764,17 +2765,9 @@ export async function POST(request: NextRequest) {
               );
               if (kwHits.length > 0) {
                 nasTextHitCount = Math.max(nasTextHitCount, kwHits.length);
-                const seen = new Set(
-                  nasResults.map((r) =>
-                    r.path.replace(/\\/g, "/").toLowerCase()
-                  )
-                );
-                const extra: WorkserverExploreRow[] = [];
-                for (const hit of kwHits) {
-                  const key = hit.path.replace(/\\/g, "/").toLowerCase();
-                  if (seen.has(key)) continue;
-                  seen.add(key);
-                  extra.push({
+                nasResults = finalizeNasDirectoryRows(mergeNasTextEvidence(
+                  nasResults,
+                  kwHits.map(hit => ({
                     drive: hit.drive,
                     path: hit.path,
                     type: "file",
@@ -2782,14 +2775,8 @@ export async function POST(request: NextRequest) {
                     modified_at: hit.modified_at,
                     file_summary: hit.snippet,
                     importance: hit.score
-                  });
-                }
-                if (extra.length > 0) {
-                  nasResults = finalizeNasDirectoryRows([
-                    ...nasResults,
-                    ...extra
-                  ]);
-                }
+                  }))
+                ));
               }
             } catch (err) {
               console.error("[luna/chat] nas text keyword", err);
@@ -2806,32 +2793,18 @@ export async function POST(request: NextRequest) {
                     nasTextHitCount,
                     nasChunkHits.length
                   );
-                  const seen = new Set(
-                    nasResults.map((r) =>
-                      r.path.replace(/\\/g, "/").toLowerCase()
-                    )
-                  );
-                  const extra: WorkserverExploreRow[] = [];
-                  for (const hit of nasChunkHits) {
-                    const key = hit.path.replace(/\\/g, "/").toLowerCase();
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    extra.push({
+                  nasResults = finalizeNasDirectoryRows(mergeNasTextEvidence(
+                    nasResults,
+                    nasChunkHits.map(hit => ({
                       drive: null,
                       path: hit.path,
                       type: "file",
                       size_bytes: null,
                       modified_at: null,
-                      file_summary: hit.content?.slice(0, 200) ?? null,
+                      file_summary: hit.content?.slice(0, 800) ?? null,
                       importance: hit.similarity
-                    });
-                  }
-                  if (extra.length > 0) {
-                    nasResults = finalizeNasDirectoryRows([
-                      ...nasResults,
-                      ...extra
-                    ]);
-                  }
+                    }))
+                  ));
                 }
               } catch (err) {
                 console.error("[luna/chat] nas chunk match", err);
