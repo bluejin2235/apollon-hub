@@ -37,3 +37,9 @@ Five inspected examples from the first group point to files now located in diffe
 The audit must include project folder bundles as well as files. A file-only inventory incorrectly marks 198 existing folder relations as missing. The regression fixture explicitly preserves a valid folder relation.
 
 `classify-luna-link-integrity.sql` normalizes drive case and separators, materializes the current index, and groups candidate names once. Execute within a read-only transaction with a statement timeout. The test runs the SQL against isolated PostgreSQL in a read-only transaction, checks candidate categories, and verifies that relations remain unchanged. Live file identity and scanner completeness are still required before reconciliation.
+
+## Primary text freshness cross-check
+
+In the same read-only investigation, all 19,558 `nas_file_text` rows matched the current directory index by drive/path and file size/modified time. Counts: ok 18,263; empty 173; failed 87; skipped 1,035. Missing index matches: 0 in every status. Metadata mismatches: 0 in every status. Therefore the 172 unmatched relationship paths do not establish missing/stale extracted text. They are a separate relationship reconciliation issue.
+
+`audit-luna-text-freshness.sql` reproduces this comparison. These are database metadata checks, not live NAS reads or a content hash verification. The known zero-embedding backlog remains a distinct issue.
