@@ -36,6 +36,7 @@ function fakeDb(tables, errors = {}) {
         is(key, value) { filters.push([key, 'eq', value]); return this; },
         in(key, value) { filters.push([key, 'in', value]); return this; },
         gt(key, value) { filters.push([key, 'gt', value]); return this; },
+        gte(key, value) { filters.push([key, 'gte', value]); return this; },
         order(key, opts) { order.push([key, opts?.ascending !== false]); return this; },
         limit(n) { cap = n; return this; },
         maybeSingle() { one = true; return this; },
@@ -51,7 +52,7 @@ function fakeDb(tables, errors = {}) {
             }
             let rows = (tables[table] ?? []).filter(row => filters.every(([key, op, value]) =>
               op === 'eq' ? row[key] === value : op === 'neq' ? row[key] !== value :
-              op === 'in' ? value.includes(row[key]) : row[key] > value));
+              op === 'in' ? value.includes(row[key]) : op === 'gte' ? row[key] >= value : row[key] > value));
             rows = [...rows].sort((a, b) => {
               for (const [key, asc] of order) {
                 if (a[key] < b[key]) return asc ? -1 : 1;
