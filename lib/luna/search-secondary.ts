@@ -491,7 +491,7 @@ function sourceMentionsPerspective(source: NotionSource, name: string): boolean 
 }
 
 /**
- * 질문에 관점 이름이 있으면 그 자료로 좁히고 used_count 를 올린다.
+ * 질문에 관점 이름이 있으면 관련 자료를 보탠다. 검색은 통계를 변경하지 않는다.
  */
 export async function applyPerspectivesToSources(
   admin: SupabaseClient,
@@ -513,7 +513,7 @@ export async function applyPerspectivesToSources(
 
   const { data, error } = await admin
     .from("luna_perspectives")
-    .select("id, name, used_count, status")
+    .select("id, name, status")
     .eq("status", "active")
     .order("hit_count", { ascending: false })
     .limit(200);
@@ -568,15 +568,18 @@ export async function applyPerspectivesToSources(
         "page_id, title, parent_id, path_titles, nas_path, url, last_edited_time"
       )
       .eq("archived", false)
-      .ilike("title", `%${primary}%`)
+      .ilike("title", `%${primary.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")}%`)
       .limit(12);
     const have = new Set(ranked.map((s) => s.id));
     const extra: NotionSource[] = [];
-    for (const row of pages ?? []) {
-      const id = String(row.page_id);
-      if (have.has(id)) continue;
+    const candidateIds = [...new Set((pages ?? []).map(row => String(row.page_id)))]
+      .filter(id => !have.has(id)).slice(0, 8);
+    const hydrated = await loadPagesByIds(admin, candidateIds);
+    for (const id of candidateIds) {
+      const row = hydrated.get(id);
+      if (!row) continue;
       extra.push(
-        pageToSource(row as PageRow, {
+        pageToSource(row, {
           via_link: "perspective",
           match_score: 6
         })
@@ -588,21 +591,8 @@ export async function applyPerspectivesToSources(
     next = [...extra, ...ranked];
   }
 
-  // used_count 증가 (검색에 쓰임)
-  const now = new Date().toISOString();
-  await Promise.all(
-    matched.slice(0, 5).map(async (p) => {
-      const id = String(p.id);
-      const prev = typeof p.used_count === "number" ? p.used_count : 0;
-      const { error: upErr } = await admin
-        .from("luna_perspectives")
-        .update({ used_count: prev + 1, last_used_at: now })
-        .eq("id", id);
-      if (upErr) {
-        console.error("[luna/search-secondary] used_count", upErr.message);
-      }
-    })
-  );
+  // Usage is rebuilt from production conversation provenance in build-links.
+  // Read-only search/evaluation must not inflate that statistic or last_used_at.
 
   return {
     sources: next,
@@ -725,4 +715,5 @@ export async function annotateSeedsWithProjectKeys(
     return { ...s, project_key: project };
   });
 }
+
 

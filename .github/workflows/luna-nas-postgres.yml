@@ -1,0 +1,36 @@
+name: LUNA NAS PostgreSQL integration
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260925003721_nas_atomic_snapshot.sql'
+      - 'scripts/verify-nas-postgres.py'
+      - '.github/workflows/luna-nas-postgres.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: luna_snapshot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: luna_snapshot_ci
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - run: psql --version
+      - run: python3 scripts/verify-nas-postgres.py --local-ci-fixture
