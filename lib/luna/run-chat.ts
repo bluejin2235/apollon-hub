@@ -1,3 +1,4 @@
+import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
 import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
 import { scrubLunaAnswerText } from "@/lib/luna/chat-response";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
@@ -74,7 +75,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
-import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
+import { takeTopNotionSourcesForLlm, maxNotionMatchStrength, PACK_SCORE_RECOMMENDED } from "@/lib/luna/source-pack";
 import {
   answerMaxTokensForDepth,
   LLM_INJECT_BY_DEPTH,
@@ -845,6 +846,19 @@ export async function runLunaTurn(
   } else {
     stageMs.nas_explore = 0;
   }
+
+  await mark("nas_body", async () => {
+    const bodyEvidence = await retrieveNasBodyEvidence(admin, {
+      enabled: nasEnabled && searchScope.flags.nas,
+      listing: listingQuestion,
+      notionEnough: maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED,
+      query: userText,
+      queryEmbedding: emb.queryEmbedding,
+      rows: nasResults
+    });
+    nasResults = bodyEvidence.rows;
+    nasSearchAttempted ||= bodyEvidence.searched;
+  });
 
   // 검색 후에도 부족하면 한 단계 더
   if (

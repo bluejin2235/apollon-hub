@@ -1,4 +1,4 @@
-import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
+import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
@@ -31,8 +31,6 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
-import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
-import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
@@ -2749,68 +2747,18 @@ export async function POST(request: NextRequest) {
 
           // Work 본문: 목록형은 생략. 노션이 이미 충분하면 프로젝트·찾기도 생략(수 초 절약).
           // Work 디렉터리 색인·nas_path 조회는 그대로 두어 Work 카드는 유지한다.
-          const notionMatchEnough =
-            maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
-          if (
-            nasEnabled &&
-            !listingQuestion &&
-            !notionMatchEnough
-          ) {
-            nasTextSearched = true;
-            try {
-              const kwHits = await searchNasTextKeyword(
-                admin,
-                searchIntentText,
-                { limit: 12 }
-              );
-              if (kwHits.length > 0) {
-                nasTextHitCount = Math.max(nasTextHitCount, kwHits.length);
-                nasResults = finalizeNasDirectoryRows(mergeNasTextEvidence(
-                  nasResults,
-                  kwHits.map(hit => ({
-                    drive: hit.drive,
-                    path: hit.path,
-                    type: "file",
-                    size_bytes: null,
-                    modified_at: hit.modified_at,
-                    file_summary: hit.snippet,
-                    importance: hit.score
-                  }))
-                ));
-              }
-            } catch (err) {
-              console.error("[luna/chat] nas text keyword", err);
-            }
-            if (knowledgeEmb.queryEmbedding?.length) {
-              try {
-                const nasChunkHits = await matchNasChunkEmbeddings(
-                  admin,
-                  knowledgeEmb.queryEmbedding,
-                  { limit: 12 }
-                );
-                if (nasChunkHits.length > 0) {
-                  nasTextHitCount = Math.max(
-                    nasTextHitCount,
-                    nasChunkHits.length
-                  );
-                  nasResults = finalizeNasDirectoryRows(mergeNasTextEvidence(
-                    nasResults,
-                    nasChunkHits.map(hit => ({
-                      drive: null,
-                      path: hit.path,
-                      type: "file",
-                      size_bytes: null,
-                      modified_at: null,
-                      file_summary: hit.content?.slice(0, 800) ?? null,
-                      importance: hit.similarity
-                    }))
-                  ));
-                }
-              } catch (err) {
-                console.error("[luna/chat] nas chunk match", err);
-              }
-            }
-          }
+          const bodyEvidence = await retrieveNasBodyEvidence(admin, {
+            enabled: nasEnabled,
+            listing: listingQuestion,
+            notionEnough: maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED,
+            query: searchIntentText,
+            queryEmbedding: knowledgeEmb.queryEmbedding,
+            rows: nasResults
+          });
+          nasResults = bodyEvidence.rows;
+          nasTextSearched = bodyEvidence.searched;
+          // Preserve the existing UI metric; it is not a unique-file count.
+          nasTextHitCount = Math.max(bodyEvidence.keywordHits, bodyEvidence.vectorHits);
 
           // 2차: 좁은 범위 결과가 부족하면 한 단계 더 넓혀 재검색
           if (

@@ -14,6 +14,7 @@ export type NasChunkMatchHit = {
   seq: number;
   similarity: number;
   content?: string;
+  drive?: string;
 };
 
 function isMissingRpc(error: { code?: string; message?: string }): boolean {
@@ -60,7 +61,7 @@ export async function matchNasChunkEmbeddings(
     .in("id", ids);
   if (cErr) {
     console.error("[luna/nas-chunk] content", cErr);
-    return hits;
+    return [];
   }
   const textById = new Map(
     ((rows ?? []) as { id: string; content: string }[]).map((r) => [
@@ -68,8 +69,23 @@ export async function matchNasChunkEmbeddings(
       r.content ?? ""
     ])
   );
-  return hits.map((h) => ({
+  // A relative path is not a usable file location without its indexed drive.
+  const { data: files, error: fileError } = await admin
+    .from("nas_file_text")
+    .select("path, drive")
+    .in("path", [...new Set(hits.map(h => h.path))]);
+  if (fileError) {
+    console.error("[luna/nas-chunk] file metadata", fileError);
+    return [];
+  }
+  const drives = new Map<string, string>();
+  for (const file of files ?? []) {
+    const drive = String(file.drive ?? "").replace(/:$/, "").toUpperCase();
+    if (/^[A-Z]$/.test(drive)) drives.set(String(file.path), drive);
+  }
+  return hits.filter(h => drives.has(h.path)).map((h) => ({
     ...h,
+    drive: drives.get(h.path)!,
     content: textById.get(h.id)?.slice(0, 800)
   }));
 }

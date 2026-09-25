@@ -23,3 +23,11 @@
 사용자가 제공한 회사 PC의 `failures-shared.ts` 미커밋 추가 기능(열린 실패 질문 그룹핑·정렬)을 함께 보존했다. 그 기능과 부분 자료 판정이 함께 동작하는 시험을 추가했다. 회사 PC 파일 자체를 수정하거나 나머지 미커밋 작업을 통합한 것은 아니다.
 
 평가용 `run-chat`도 실제 채팅과 같은 응답 정리·출처 필터를 사용하도록 연결했다. 검색 후보 전체를 보여준 출처로 반환하던 차이를 줄인다. 질의 분기·검색 루프·명시적 notFoundFromAsk 분기는 여전히 실제 채팅과 다르므로 전체 평가 엔진 통일 완료로 보지 않는다. 기존 평가 결과의 출처 개수와 새 결과를 같은 정의로 비교하면 안 된다.
+
+## Shared NAS body retrieval and drive identity
+
+Production chat and `run-chat.ts` evaluation now call the same `retrieveNasBodyEvidence` implementation for keyword/vector body lookup, gating, evidence merge, and result pipeline. Evaluation previously skipped this body stage entirely. The helper reuses an existing query embedding and does not generate a second embedding. A failed lookup channel does not discard evidence from the other.
+
+Vector results now load the stored file drive from `nas_file_text`. Missing/invalid/unreadable metadata results are excluded instead of returning a drive-less path that downstream code could display as T. P-drive coverage and metadata failure are tested. Content lookup failure also returns no vector result.
+
+This is partial convergence, not a unified chat engine: production query rewriting, live Notion calls, multi-round search, directory tool routing, and later filtering still differ. The existing `nasTextHitCount` UI metric remains max(keyword hits, vector hits), not unique files. No live quality score is claimed.
