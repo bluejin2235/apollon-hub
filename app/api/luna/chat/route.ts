@@ -3680,6 +3680,7 @@ export async function POST(request: NextRequest) {
             notion: notionSources,
             wiki: publicWikiSources,
             answer: assistantText,
+            injectedNotionIds: notionForLlm.map(source => source.id),
             notFound: hideUnused
           });
           cards = kept.cards;

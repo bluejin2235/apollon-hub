@@ -1,3 +1,5 @@
+import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
+import { scrubLunaAnswerText } from "@/lib/luna/chat-response";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -940,8 +942,13 @@ export async function runLunaTurn(
     })
   );
   const rawAnswer = answerRes.text.trim();
-  let answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
-  const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
+  let answer = scrubLunaAnswerText(sanitizeKnowledgeListAnswer(rawAnswer, learnings));
+  const displayedSources = keepSourcesUsedInAnswer({
+    cards, notion: notionSources, wiki: publicWikiSources, answer,
+    injectedNotionIds: notionForLlm.map(source => source.id),
+    notFound: false // This evaluator has no interactive notFoundFromAsk branch.
+  });
+  const webCardsUsed = webAugmented && displayedSources.cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
     answer = `${answer.trim()}\n\n웹 검색으로 보강함`;
   }
@@ -976,9 +983,9 @@ export async function runLunaTurn(
 
   return {
     answer,
-    sources: cards,
-    notionSources,
-    wikiSources: publicWikiSources,
+    sources: displayedSources.cards,
+    notionSources: displayedSources.notion,
+    wikiSources: displayedSources.wiki,
     privateWikiRefs: privateWikiRefs.length > 0 ? privateWikiRefs : undefined,
     durationMs: Date.now() - startedAt,
     modelLabel: answerRes.model_label || LUNA_MODEL_LABEL,
