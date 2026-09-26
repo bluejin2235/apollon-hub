@@ -14,13 +14,14 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
   const events = [];
   const extracted = [];
   const logs = [];
+  const errors = [];
   let exit = 0;
   const admin = { from(table) {
     let operation = 'read';
     let payload;
     const filters = {};
     const q = {
-      select() { return q; }, order() { return q; }, gte() { return q; }, ilike() { return q; },
+      select() { return q; }, order() { return q; }, limit() { return q; }, gte() { return q; }, ilike() { return q; },
       eq(key, value) { filters[key] = value; return q; },
       upsert(row) { operation = 'upsert'; payload = row; return q; },
       delete() { operation = 'delete'; return q; },
@@ -66,21 +67,21 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
     }).outputText;
   const context = {
     require: name => { if (!(name in dependencies)) throw Error('Unmocked dependency: ' + name); return dependencies[name]; },
-    exports: {}, console: { log: (...values) => logs.push(values.join(' ')), warn() {}, error() {} },
+    exports: {}, console: { log: (...values) => logs.push(values.join(' ')), warn() {}, error: error => errors.push(String(error)) },
     process: { argv: ['node', 'script', ...args],
       env: { NEXT_PUBLIC_SUPABASE_URL: 'https://example.invalid', SUPABASE_SECRET_KEY: 'test-placeholder' },
       cwd: () => '/unused', exit: code => { exit = code; } }
   };
   vm.runInNewContext(code, context);
   await context.completion;
-  return { exit, events, extracted, logs };
+  return { exit, events, extracted, logs, errors };
 }
 
 test('failed extraction is retried with unchanged source metadata', async () => {
   const row = file('retry');
   const result = await runCli({ rows: [row], existing: [previous(row, 'failed')] });
   assert.deepEqual(result.extracted, [row.path]);
-  assert.equal(result.exit, 0);
+  assert.equal(result.exit, 0, result.errors.join('\n'));
   const outcome = result.events.find(event => event.status);
   assert.equal(outcome.status, 'done');
   assert.equal(outcome.progress.ok, 1);
@@ -90,7 +91,7 @@ test('unchanged completed empty and skipped files remain excluded by resume', as
     const row = file(status);
     const result = await runCli({ rows: [row], existing: [previous(row, status)] });
     assert.deepEqual(result.extracted, []);
-    assert.equal(result.exit, 0);
+    assert.equal(result.exit, 0, result.errors.join('\n'));
   }
 });
 test('newer files are still processed regardless of previous status', async () => {
@@ -106,7 +107,7 @@ test('explicit no-resume still processes unchanged successful files', async () =
   const row = file('force');
   const result = await runCli({ rows: [row], existing: [previous(row, 'ok')], args: ['--no-resume'] });
   assert.deepEqual(result.extracted, [row.path]);
-  assert.equal(result.exit, 0);
+  assert.equal(result.exit, 0, result.errors.join('\n'));
 });
 test('partial extraction failure preserves successes but exits failed without a done record', async () => {
   const result = await runCli({ rows: [file('good'), file('bad')], statuses: { 'bad.pptx': 'failed' } });
@@ -126,13 +127,14 @@ test('chunk insertion failure cannot become a completed extraction run', async (
 test('dry-run includes retry candidates without extracting or writing', async () => {
   const row = file('retry');
   const result = await runCli({ rows: [row], existing: [previous(row, 'failed')], args: ['--dry-run'] });
-  assert.equal(result.exit, 0);
+  assert.equal(result.exit, 0, result.errors.join('\n'));
   assert.deepEqual(result.events, []);
   assert.ok(result.logs.some(line => line.includes('to_process=1')));
   assert.deepEqual(result.extracted, []);
 });
 test('missing run receipt still gives nonzero process exit on extraction failure', async () => {
   const result = await runCli({ runId: null, statuses: { 'sample.pptx': 'failed' } });
+  assert.deepEqual(result.extracted, ['sample.pptx']);
   assert.equal(result.exit, 1);
   assert.ok(!result.events.some(event => event.status === 'done'));
 });
