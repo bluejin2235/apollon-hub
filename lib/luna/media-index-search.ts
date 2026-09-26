@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { embeddingToSql } from "@/lib/luna/embedding";
+import { embeddingToSql, EMBEDDING_DIMS } from "@/lib/luna/embedding";
+import { postgrestTextList } from "@/lib/luna/postgrest-text-list";
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { AskedWhat } from "@/lib/luna/ask-what";
 import { naturePathTokens } from "@/lib/luna/ask-what";
@@ -46,15 +47,13 @@ function isMissingRpc(error: unknown): boolean {
 }
 
 function parseEmbedding(raw: unknown): number[] | null {
-  if (Array.isArray(raw)) {
-    const vec = raw.map(Number).filter((n) => Number.isFinite(n));
-    return vec.length > 0 ? vec : null;
+  let vec: unknown = raw;
+  if (typeof raw === "string") {
+    try { vec = JSON.parse(raw); } catch { return null; }
   }
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const inner = raw.replace(/^\[/, "").replace(/\]$/, "");
-  if (!inner.trim()) return null;
-  const vec = inner.split(",").map((s) => Number(s.trim()));
-  if (vec.some((n) => !Number.isFinite(n))) return null;
+  if (!Array.isArray(vec) || vec.length !== EMBEDDING_DIMS ||
+      !vec.every(n => typeof n === "number" && Number.isFinite(n)) ||
+      !vec.some(n => n !== 0)) return null;
   return vec;
 }
 
@@ -62,14 +61,15 @@ function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
   let na = 0;
   let nb = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
+  if (a.length !== b.length) return 0;
+  for (let i = 0; i < a.length; i++) {
     dot += a[i]! * b[i]!;
     na += a[i]! * a[i]!;
     nb += b[i]! * b[i]!;
   }
   if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  const similarity = dot / (Math.sqrt(na) * Math.sqrt(nb));
+  return Number.isFinite(similarity) ? similarity : 0;
 }
 
 async function matchMediaEmbeddingsFallback(
@@ -123,6 +123,7 @@ export async function matchMediaEmbeddings(
   queryEmbedding: number[],
   opts?: { threshold?: number; limit?: number }
 ): Promise<MediaIndexHit[]> {
+  if (!parseEmbedding(queryEmbedding)) return [];
   const threshold = opts?.threshold ?? MEDIA_MATCH_THRESHOLD;
   const limit = opts?.limit ?? MEDIA_MATCH_OVERFETCH;
   const { data, error } = await admin.rpc("luna_match_media", {
@@ -157,7 +158,7 @@ export async function matchMediaEmbeddings(
     .select(
       "path, project, ai_category, description, thumbnail_url, large_url, drive, file_name"
     )
-    .in("path", paths);
+    .filter("path", "in", postgrestTextList(paths));
   if (metaErr) console.error("[luna/media-index] meta", metaErr);
   const metaByPath = new Map(
     (metaRows ?? []).map((r: Record<string, unknown>) => [String(r.path), r])
