@@ -199,7 +199,8 @@ function needsWork(
 ): boolean {
   if (!existing) return true;
   if (!resume) return true;
-  if (!existing.status) return true;
+  // A failed attempt is not a completed extraction, even if the source is unchanged.
+  if (!existing.status || existing.status === "failed") return true;
   const fileMod = row.modified_at ? Date.parse(row.modified_at) : NaN;
   const dbMod = existing.modified_at ? Date.parse(existing.modified_at) : NaN;
   if (Number.isFinite(fileMod) && Number.isFinite(dbMod) && fileMod > dbMod) {
@@ -577,6 +578,11 @@ async function main() {
           `[${i + 1}/${workQueue.length}] ok=${progress.ok} empty=${progress.empty} skip=${progress.skipped} fail=${progress.failed} chunks=${progress.chunksCreated} ${elapsed}s`
         );
       }
+    }
+
+    // Keep successful files, but never report a partially failed run as done.
+    if (progress.failed > 0) {
+      throw new Error(`${progress.failed} file extractions failed`);
     }
 
     if (runId) {
