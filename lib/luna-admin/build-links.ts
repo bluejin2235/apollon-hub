@@ -1,5 +1,6 @@
 import { loadProductionPerspectiveMessages, obsoletePerspectiveUsageIds } from "@/lib/luna-admin/perspective-messages";
 import { insertLinkBatch, updateLinkEvidence } from "@/lib/luna-admin/link-write-receipts";
+import { fetchOrderedSourceRows as fetchAll } from "@/lib/luna-admin/ordered-source-rows";
 /**
  * 2차 데이터 생성 — 규칙 중심. LLM 은 same 의 0.45~0.6 만.
  * 스크립트에서도 import 하므로 server-only 를 쓰지 않는다.
@@ -129,28 +130,6 @@ function linkKey(row: {
 
 function emptyKind(): KindCount {
   return { scanned: 0, inserted: 0, skipped: 0, would: 0 };
-}
-
-async function fetchAll<T>(
-  admin: SupabaseClient,
-  table: string,
-  columns: string,
-  pageSize = 1000
-): Promise<T[]> {
-  const out: T[] = [];
-  let from = 0;
-  for (;;) {
-    const { data, error } = await admin
-      .from(table)
-      .select(columns)
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    const rows = (data ?? []) as T[];
-    out.push(...rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-  return out;
 }
 
 async function loadExistingKeys(admin: SupabaseClient): Promise<Set<string>> {
