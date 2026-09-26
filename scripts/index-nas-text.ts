@@ -40,6 +40,7 @@ type NasDirRow = {
 };
 
 type ExistingRow = {
+  size_bytes: number | null;
   path: string;
   drive: string;
   modified_at: string | null;
@@ -115,9 +116,12 @@ async function fetchLatestBatches(
 async function fetchCandidates(
   admin: SupabaseClient,
   opts: Args,
-  batches: Map<string, string>
-): Promise<NasDirRow[]> {
+  batches: Map<string, string>,
+  existing: Map<string, ExistingRow>
+): Promise<{ rows: NasDirRow[]; scanned: number; alreadyDone: number }> {
   const out: NasDirRow[] = [];
+  let scanned = 0;
+  let alreadyDone = 0;
   const pageSize = 1000;
   for (const drive of ["T", "P"]) {
     const batch = batches.get(drive);
@@ -142,38 +146,38 @@ async function fetchCandidates(
       if (error) throw error;
       const rows = (data ?? []) as NasDirRow[];
       for (const r of rows) {
+        scanned += 1;
         if (!r.path || isBackupPath(r.path)) continue;
         const e = extOfNasPath(r.path);
         if (!e) continue;
         if (opts.ext && e !== opts.ext) continue;
-        out.push(r);
-        if (opts.limit && out.length >= opts.limit * 3) {
-          // 여유분 — 이어받기 스킵 후 limit 맞추기
+        if (!needsWork(r, existing.get(r.path), opts.resume)) {
+          alreadyDone += 1;
+          continue;
         }
+        out.push(r);
+        // Limit actual work, never the prefix of completed candidates.
+        if (opts.limit && out.length >= opts.limit) return { rows: out, scanned, alreadyDone };
       }
       if (rows.length < pageSize) break;
       from += pageSize;
-      if (opts.limit && out.length >= opts.limit * 5) break;
     }
   }
-  return out;
+  return { rows: out, scanned, alreadyDone };
 }
 
 async function loadExistingMap(
-  admin: SupabaseClient,
-  paths: string[]
+  admin: SupabaseClient
 ): Promise<Map<string, ExistingRow>> {
   const map = new Map<string, ExistingRow>();
-  if (paths.length === 0) return map;
 
   // 경로 .in() 은 긴 한글·특수문자 URL 로 fetch 실패할 수 있음 → 전체 페이지 로드 후 필터
-  const wanted = new Set(paths);
   let from = 0;
   const page = 1000;
   while (true) {
     const { data, error } = await admin
       .from("nas_file_text")
-      .select("path, drive, modified_at, content_hash, status")
+      .select("path, drive, size_bytes, modified_at, content_hash, status")
       .order("path")
       .range(from, from + page - 1);
     if (error) {
@@ -184,7 +188,7 @@ async function loadExistingMap(
     const rows = (data ?? []) as ExistingRow[];
     if (rows.length === 0) break;
     for (const r of rows) {
-      if (wanted.has(r.path)) map.set(r.path, r);
+      map.set(r.path, r);
     }
     if (rows.length < page) break;
     from += page;
@@ -201,9 +205,11 @@ function needsWork(
   if (!resume) return true;
   // A failed attempt is not a completed extraction, even if the source is unchanged.
   if (!existing.status || existing.status === "failed") return true;
+  if (existing.drive !== row.drive || row.size_bytes == null || existing.size_bytes == null ||
+      Number(row.size_bytes) !== Number(existing.size_bytes)) return true;
   const fileMod = row.modified_at ? Date.parse(row.modified_at) : NaN;
   const dbMod = existing.modified_at ? Date.parse(existing.modified_at) : NaN;
-  if (Number.isFinite(fileMod) && Number.isFinite(dbMod) && fileMod > dbMod) {
+  if (!Number.isFinite(fileMod) || !Number.isFinite(dbMod) || fileMod !== dbMod) {
     return true;
   }
   return false;
@@ -340,30 +346,14 @@ async function main() {
     console.log(`purge-missing deleted=${n}`);
   }
 
+  // Existing metadata was already fully paginated by the old loader. Keep that
+  // bounded-page read, then walk candidates until the actual work limit is filled.
+  const existing = await loadExistingMap(admin);
   console.log("fetching candidates…");
-  const candidates = await fetchCandidates(admin, args, batches);
-  console.log(`candidates raw=${candidates.length}`);
-
-  const existing = await loadExistingMap(
-    admin,
-    (args.limit != null
-      ? candidates.slice(0, Math.max(args.limit * 2, args.limit))
-      : candidates
-    ).map((c) => c.path)
-  );
-
-  const candidateSlice =
-    args.limit != null
-      ? candidates.slice(0, Math.max(args.limit * 2, args.limit))
-      : candidates;
-
-  const work = candidateSlice.filter((c) =>
-    needsWork(c, existing.get(c.path), args.resume)
-  );
-  const workQueue =
-    args.limit != null ? work.slice(0, args.limit) : work;
+  const candidates = await fetchCandidates(admin, args, batches, existing);
+  const workQueue = candidates.rows;
   console.log(
-    `to_process=${workQueue.length} already_done=${candidateSlice.length - work.length} dryRun=${args.dryRun}`
+    `to_process=${workQueue.length} scanned=${candidates.scanned} already_done=${candidates.alreadyDone} dryRun=${args.dryRun}`
   );
 
   if (args.dryRun) {

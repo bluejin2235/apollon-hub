@@ -26,9 +26,9 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
       upsert(row) { operation = 'upsert'; payload = row; return q; },
       delete() { operation = 'delete'; return q; },
       insert(row) { operation = 'insert'; payload = row; return q; },
-      maybeSingle: async () => ({ data: filters.drive === 'T' ? { scan_batch: stamp } : null }),
-      range: async () => ({ data: table === 'nas_directory'
-        ? rows.filter(row => row.drive === filters.drive) : existing }),
+      maybeSingle: async () => ({ data: rows.some(row => row.drive === filters.drive) ? { scan_batch: stamp } : null }),
+      range: async (from, to) => ({ data: (table === 'nas_directory'
+        ? rows.filter(row => row.drive === filters.drive) : existing).slice(from, to + 1) }),
       then(resolve, reject) {
         if (operation === 'read') throw Error('Unexpected query ' + table);
         events.push({ table, operation, payload, filters: { ...filters } });
@@ -137,4 +137,31 @@ test('missing run receipt still gives nonzero process exit on extraction failure
   assert.deepEqual(result.extracted, ['sample.pptx']);
   assert.equal(result.exit, 1);
   assert.ok(!result.events.some(event => event.status === 'done'));
+});
+
+
+test('limit applies after resume skipping, even beyond a full completed page', async () => {
+  const completed = Array.from({length:1000}, (_, i) => file(`done-${i}`));
+  const retry = file('later-retry');
+  const result = await runCli({ rows: [...completed, retry],
+    existing: [...completed.map(row => previous(row, 'ok')), previous(retry, 'failed')], args: ['--limit=1'] });
+  assert.equal(result.exit, 0, result.errors.join('\n'));
+  assert.deepEqual(result.extracted, [retry.path]);
+  assert.equal(result.events.find(event => event.start).count, 1);
+});
+test('completed T drive does not hide pending P drive and overall work remains bounded', async () => {
+  const completed = Array.from({length:12}, (_, i) => file(`done-${i}`));
+  const pending = [{...file('partner-one'),drive:'P'}, {...file('partner-two'),drive:'P'}];
+  const result = await runCli({ rows: [...completed, ...pending],
+    existing: completed.map(row => previous(row, 'ok')), args: ['--limit=1'] });
+  assert.equal(result.exit, 0, result.errors.join('\n'));
+  assert.deepEqual(result.extracted, [pending[0].path]);
+});
+test('restored timestamps, size-only changes and changed drives are retry candidates', async () => {
+  const row = file('changed');
+  for (const patch of [{modified_at:'2026-09-26T00:00:00Z'}, {size_bytes:101}, {size_bytes:null}, {drive:'P'}, {modified_at:null}]) {
+    const result = await runCli({ rows:[row], existing:[{...previous(row,'ok'),...patch}] });
+    assert.equal(result.exit,0,result.errors.join('\n'));
+    assert.deepEqual(result.extracted,[row.path]);
+  }
 });
