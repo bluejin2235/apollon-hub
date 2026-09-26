@@ -22,3 +22,8 @@ The earlier worker selected every null-vector chunk. A read-only audit on 2026-0
 Apply both text-publication and validated-embedding migrations before switching workers. Stop legacy direct writers first. Current missing-RPC behavior is failure; there is no legacy destructive fallback. Existing production-equivalent Supabase API, physical source, local dirty-source integration and employee relevance gates remain outstanding. Production migration/deployment and bulk embedding remain on hold.
 
 There is still no cross-process claim before the external provider call: two simultaneous paid workers may each pay for a chunk despite only one storing it. Keep one embedding worker until a claim/lease protocol is implemented. Source checks concern indexed metadata and extracted text, not live NAS content hashes. Oversized model inputs are rejected by the existing budget client rather than silently truncated. No threshold or semantic relevance claim changed.
+
+## Retrieval follows current drive snapshots too
+The shared currentNasBodyFiles guard used by NAS keyword/vector retrieval and sample selection now reads the latest scan generation for every involved drive. It rejects a surviving old path row that is absent from that generation and rejects a relative path currently ambiguous across drives. Old disagreeing generations no longer disqualify a matching current generation. Missing/failed snapshot lookups fail closed.
+
+This adds one latest-generation read per involved drive per helper call (cached within that call). The real Supabase-client transport fixture verifies the extra request together with Windows-path escaping. These remain indexed snapshot checks, not physical NAS hash checks or an atomic snapshot held through answer generation.

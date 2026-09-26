@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs,fakeDb}=require('./helpers.cjs');
 const {searchNasTextKeyword}=loadTs('lib/luna/nas-text-keyword.ts');
 const file={path:'Project/report.pdf',drive:'P',modified_at:'2026-09-25T00:00:00Z',size_bytes:100,status:'ok'};
-const dir={...file,type:'file',importance:0};
+const dir={...file,type:'file',importance:0,scan_batch:'2026-09-25T01:00:00Z'};
 function db(dirs=[dir],text=file){return fakeDb({nas_directory:dirs,nas_file_text:[text],nas_file_chunks:[{path:file.path,seq:0,content:'고래 제안 본문'}],nas_important_paths:[]});}
 test('keyword search uses current body evidence',async()=>{
  const hits=await searchNasTextKeyword(db(),'고래');assert.equal(hits.length,1);assert.equal(hits[0].drive,'P');assert.ok(hits[0].reasons.includes('본문'));

@@ -20,3 +20,17 @@ test('ambiguous extraction and disagreeing live generations fail closed',async()
 test('provenance lookup error cannot mark a body current',async()=>{
  assert.equal((await check([file],[dir],{nas_directory:{message:'offline'}})).size,0);
 });
+
+test('surviving row from an older snapshot cannot make a deleted source current',async()=>{
+ const newer={...dir,path:'Project/other.pdf',scan_batch:'2026-09-26T01:00:00Z'};
+ assert.equal((await check([file],[dir,newer])).size,0);
+});
+test('same relative path current on two drives is ambiguous even when one body matches',async()=>{
+ assert.equal((await check([file],[dir,{...dir,drive:'T'}])).size,0);
+});
+test('old disagreeing rows do not disqualify a matching current snapshot',async()=>{
+ assert.equal((await check([file],[dir,{...dir,size_bytes:999,scan_batch:'2026-09-24T01:00:00Z'}])).size,1);
+});
+test('missing scan generation cannot establish current source membership',async()=>{
+ assert.equal((await check([file],[{...dir,scan_batch:null}])).size,0);
+});

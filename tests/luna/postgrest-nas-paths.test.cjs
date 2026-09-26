@@ -38,17 +38,18 @@ test('installed client reproduces quoted Windows path loss with .in(); raw escap
  assert.deepEqual(decodeList(captured[1]),paths);
 });
 test('freshness uses the actual client transport and preserves all path variants',async()=>{
- const files=paths.map(path=>({path,drive:'T',status:'ok',modified_at:'2026-09-26T00:00:00Z',size_bytes:100,type:'file'}));
+ const files=paths.map(path=>({path,drive:'T',status:'ok',modified_at:'2026-09-26T00:00:00Z',size_bytes:100,type:'file',scan_batch:'2026-09-26T01:00:00Z'}));
  let requests=0;
  const db=createClient('https://example.invalid','placeholder',{
   auth:{persistSession:false,autoRefreshToken:false},
   global:{fetch:async input=>{
    requests++;const url=new URL(String(input));
+   if (!url.searchParams.has('path')) return new Response(JSON.stringify({scan_batch:'2026-09-26T01:00:00Z'}),{status:200,headers:{'Content-Type':'application/json'}});
    const wanted=decodeList(url.searchParams.get('path'));
    const rows=files.filter(row=>wanted.includes(row.path));
    return new Response(JSON.stringify(rows),{status:200,headers:{'Content-Type':'application/json'}});
   }}
  });
  const current=await currentNasBodyFiles(db,paths);
- assert.equal(requests,2);assert.deepEqual([...current.keys()],paths);
+ assert.equal(requests,3);assert.deepEqual([...current.keys()],paths);
 });
