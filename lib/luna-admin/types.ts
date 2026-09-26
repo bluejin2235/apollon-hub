@@ -14,6 +14,7 @@ export type AdminAlert = {
   title: string;
   detail: string;
   href: string;
+  action?: "run_selfstudy";
 };
 
 export type TonightItem = {

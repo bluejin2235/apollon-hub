@@ -18,17 +18,17 @@ Scope remains indexing → relationships/groups → evidence-backed derived info
 
 Primary consistency, source identity, concurrency and API verification were added after investigation found concrete failure modes. These repairs took precedence over derived insights, delaying a directly usable preview. The next priority is now the first interactive review environment, before completing the entire grouping/insight subsystem. Production integration remains a later decision.
 
-## Review 1: search improvements visible to the user
+## Review 1: search improvements visible in the actual Hub
 
 Target: 2026-09-27 KST; estimate, not a confirmed appointment. Allow roughly 4–8 active working hours for isolated environment, representative data and application validation, assuming required access and resource setup work. Escalate an access or provisioning delay explicitly; do not silently move the date or replace the review with another unit-test summary.
 
-Prepare two labeled application URLs: current baseline and changed preview. Use the same scoped source snapshot and question set where possible; disclose any differences. The user directly asks 8–10 questions covering misspellings, exact project names, document/image retrieval, cited sources, file paths and a follow-up narrowing question. Include unrelated-project and genuinely unavailable-data controls. Display answer, source cards, openable paths and unresolved failures together. A synthetic UI mock is not acceptance.
+Use the actual hub.apollonworks.com LUNA and its administrator view for the user review. Preview is an engineering preflight; a green preview build does not mean changed behavior is live. Record baseline answers before a controlled application, then compare the same questions on the actual Hub after verified integration. The user directly asks 8–10 questions covering misspellings, exact project names, document/image retrieval, cited sources, file paths and a follow-up narrowing question. Include unrelated-project and genuinely unavailable-data controls. In the administrator view, identify the source and relationship that fed each answer and the specific failure when a question fails. Do not claim operational improvement until production code, database migrations and selected source jobs have been applied and the real application was checked. A synthetic UI mock is not acceptance.
 
 ## Review 2: relationships and derived outputs
 
 Target: 2026-09-29 to 2026-09-30 KST, after the first review; roughly 1–2 additional active working days subject to review findings and data readiness. User questions should cover a project bundle across documents/images/meeting notes, separation of similarly named projects or versions, comparison of two projects with citations, and supported conclusions versus unresolved inference.
 
-Proceed toward beta only after the user can see useful answers with correct sources, no unrelated-project mixing, honest missing/conflicting evidence and working follow-up narrowing. Fix failed cases before calling the stage complete. No final completion date or percentage substitutes for these gates.
+Proceed toward beta only after the user can see useful answers with correct sources, no unrelated-project mixing, honest missing/conflicting evidence and working follow-up narrowing. Make the administrator dashboard explain the difference between raw indexed items, searchable content, relationship links, derived insight and answer evidence. The existing navigation can remain during the first review, but misleading actions and status labels must be corrected before it. Simplify the full process after observing real administrator use, so the interface reflects verified processing rather than speculative totals. Fix failed cases before calling the stage complete. No final completion date or percentage substitutes for these gates.
 
 ## Reporting and user decisions
 
