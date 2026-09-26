@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { LunaAdminStorage } from "@/components/luna-admin/LunaAdminStorage";
 import { LunaAdminResponseTiming } from "@/components/luna-admin/LunaAdminResponseTiming";
+import { LunaAdminTextCoverage } from "@/components/luna-admin/LunaAdminTextCoverage";
 import type { AdminDashboard } from "@/lib/luna-admin/types";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
@@ -170,6 +171,8 @@ export function LunaAdminDashboard({ onGo }: Props) {
           <div className="m">{data.cards.my_turn_note}</div>
         </div>
       </div>
+
+      <LunaAdminTextCoverage />
 
       <div className="sech">
         <span className="t">오늘 밤 할 일</span>
