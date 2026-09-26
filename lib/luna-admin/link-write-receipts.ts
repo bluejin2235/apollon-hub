@@ -7,6 +7,10 @@ type LinkWrite = LinkIdentity & {
 };
 const fields = ["from_type", "from_id", "to_type", "to_id", "kind"] as const;
 const key = (row: LinkIdentity) => JSON.stringify(fields.map(field => row[field]));
+function isLinkIdentity(value: unknown): value is LinkIdentity {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) &&
+    fields.every(field => typeof (value as Record<string, unknown>)[field] === "string");
+}
 
 /** Conflicting inserts are skipped by PostgreSQL, not counted as new relations. */
 export async function insertLinkBatch(admin: SupabaseClient, rows: LinkWrite[]): Promise<number> {
@@ -17,13 +21,14 @@ export async function insertLinkBatch(admin: SupabaseClient, rows: LinkWrite[]):
     ...row, confirmed_by: row.confirmed_by ?? null, confirmed_at: row.confirmed_at ?? null
   })), { onConflict: fields.join(","), ignoreDuplicates: true }).select(fields.join(","));
   if (error) throw new Error(`luna_links insert: ${error.message}`);
-  if (!Array.isArray(data)) throw new Error("Link insert receipt missing; inspect before retrying");
+  const receipts: unknown = data;
+  if (!Array.isArray(receipts)) throw new Error("Link insert receipt missing; inspect before retrying");
   const acknowledged = new Set<string>();
-  for (const row of data) {
-    if (!row || fields.some(field => typeof row[field] !== "string")) {
+  for (const row of receipts) {
+    if (!isLinkIdentity(row)) {
       throw new Error("Invalid link insert receipt");
     }
-    const identity = key(row as LinkIdentity);
+    const identity = key(row);
     if (!expected.has(identity) || acknowledged.has(identity)) throw new Error("Unexpected link insert receipt");
     acknowledged.add(identity);
   }
