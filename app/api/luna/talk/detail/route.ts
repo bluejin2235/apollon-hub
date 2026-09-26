@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     messages: (data ?? []).slice(0, MAX_MESSAGES).map((row) => {
       const meta = record(row.metadata);
       const evidence = record(meta.search_evidence);
+      const scope = record(meta.search_scope);
       return {
         id: row.id,
         role: row.role,
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
             Object.hasOwn(meta, "cards") || Object.hasOwn(meta, "notion_sources") ||
             Object.hasOwn(meta, "wiki_sources"),
           rounds: count(meta.search_rounds),
-          scope: text(record(meta.search_scope).label, 150),
+          scope: [text(scope.kind, 80), text(scope.tier, 80)].filter(Boolean).join(" · "),
           retrieved_candidate_peak: count(evidence.retrieved_candidate_peak),
           displayed_source_count: count(evidence.displayed_source_count),
           cards: sources(meta.cards, "자료"),
