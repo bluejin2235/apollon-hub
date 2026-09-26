@@ -552,6 +552,7 @@ export function LunaTalkHistory() {
           ) : null}
 
           <Hint>각 대화의 버튼을 눌러 저장된 질문·답변·출처를 확인할 수 있습니다.</Hint>
+          <Hint>검색 0건은 검색 실행과 후보 0건이 모두 기록된 경우입니다. 출처 카드가 없거나 과거 검색 기록이 없다는 이유로 집계하지 않습니다.</Hint>
         </>
       ) : null}
     </KnowledgeShell>
