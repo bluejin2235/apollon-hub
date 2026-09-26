@@ -36,6 +36,10 @@ function fakeDb(tables, errors = {}) {
         neq(key, value) { filters.push([key, 'neq', value]); return this; },
         is(key, value) { filters.push([key, 'eq', value]); return this; },
         in(key, value) { filters.push([key, 'in', value]); return this; },
+        filter(key, operator, value) {
+          if (operator !== 'in') throw Error('Unmocked filter ' + operator);
+          filters.push([key, 'in', JSON.parse('[' + value.slice(1, -1) + ']')]); return this;
+        },
         gt(key, value) { filters.push([key, 'gt', value]); return this; },
         gte(key, value) { filters.push([key, 'gte', value]); return this; },
         order(key, opts) { order.push([key, opts?.ascending !== false]); return this; },

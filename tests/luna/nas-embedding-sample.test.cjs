@@ -48,3 +48,13 @@ test('sample CLI rejects accidental write flags and invalid parameters',()=>{
  assert.equal(parseNasSampleArgs(['--term=해운대','--query=KV 이미지']).execute,false);
  for(const argv of [[],['--apply'],['--term=해운대','--query=🌙'.repeat(2000)]]) assert.throws(()=>parseNasSampleArgs(argv));
 });
+
+
+test('page-number-only chunks are excluded before paid requests and selection diagnostics are explicit',async()=>{
+ const h=harness();h.rows[0].content='-- 1 of 1 --';
+ const result=await h.methods.runNasEmbeddingSample(h.db,{term:'project',query:'find source',execute:false});
+ assert.equal(result.selected_chunks,17);
+ assert.equal(result.marker_only_or_empty_chunks_excluded,1);
+ assert.equal(result.metadata_matched_files,6);assert.equal(result.metadata_excluded_files,0);
+ assert.equal(h.calls(),0);
+});

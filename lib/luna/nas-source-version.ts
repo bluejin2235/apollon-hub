@@ -1,3 +1,4 @@
+import { postgrestTextBatches, postgrestTextList } from "@/lib/luna/postgrest-text-list";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type FileVersion = { path: string; drive: string; modified_at: string; size_bytes: number; status?: string };
@@ -7,12 +8,10 @@ const driveOf = (v: unknown) => typeof v === "string" && /^[A-Z]$/.test(v) ? v :
 /** Indexed metadata check, not a live NAS read or chunk-content hash guarantee. */
 export async function currentNasBodyFiles(admin: SupabaseClient, paths: string[]): Promise<Map<string, FileVersion>> {
   const current = new Map<string, FileVersion>();
-  const unique = [...new Set(paths)].filter(Boolean);
-  for (let start = 0; start < unique.length; start += 80) {
-    const batch = unique.slice(start, start + 80);
+  for (const batch of postgrestTextBatches(paths)) {
     const [texts, directory] = await Promise.all([
-      admin.from("nas_file_text").select("path, drive, modified_at, size_bytes, status").in("path", batch).limit(1000),
-      admin.from("nas_directory").select("path, drive, modified_at, size_bytes, scan_batch").in("path", batch)
+      admin.from("nas_file_text").select("path, drive, modified_at, size_bytes, status").filter("path", "in", postgrestTextList(batch)).limit(1000),
+      admin.from("nas_directory").select("path, drive, modified_at, size_bytes, scan_batch").filter("path", "in", postgrestTextList(batch))
         .eq("type", "file").order("scan_batch", { ascending: false }).limit(1000)
     ]);
     // Truncated/failed provenance cannot establish freshness.

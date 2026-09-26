@@ -31,16 +31,20 @@ export async function runNasEmbeddingSample(
   // Revalidate options for callers other than the CLI.
   parseNasSampleArgs([`--term=${options.term}`, `--query=${options.query}`]);
   const fetched = await admin.from("nas_file_text").select("path")
-    .eq("status", "ok").ilike("path", `%${literalLike(options.term)}%`).order("path").limit(20);
+    .eq("status", "ok").ilike("path", `%${literalLike(options.term)}%`)
+    .order("modified_at", { ascending: false }).order("path").limit(20);
   if (fetched.error) throw new Error("NAS sample candidate read failed");
   const candidates = (fetched.data ?? []) as Array<{ path: string }>;
   const versions = await currentNasBodyFiles(admin, candidates.map(row => row.path));
-  const paths = [...new Set(candidates.map(row => row.path))].filter(path => versions.has(path)).slice(0, 6);
+  const freshPaths = [...new Set(candidates.map(row => row.path))].filter(path => versions.has(path));
+  const paths = freshPaths.slice(0, 6);
   // Use the existing (path, seq) index instead of scanning/sorting the chunk corpus.
   const parts = await Promise.all(paths.map(path => admin.from("nas_file_chunks")
     .select("id, path, seq, content").eq("path", path).order("seq").limit(3)));
   if (parts.some(part => part.error)) throw new Error("NAS sample chunk read failed");
-  const selected = parts.flatMap(part => (part.data ?? []) as Row[]).filter(row => row.content.trim());
+  const sampledRows = parts.flatMap(part => (part.data ?? []) as Row[]);
+  // pdf-parse page delimiters alone are not source evidence. Keep real text intact.
+  const selected = sampledRows.filter(row => row.content.replace(/^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gm, "").trim());
   if (!selected.length) throw new Error("No fresh extracted chunks in this bounded path sample");
   // At most 18 source chunks + 1 query, USD 0.01 per invocation.
   const plan = planEmbeddingRequests([options.query, ...selected.map(row => row.content)], 0.01, 100);
@@ -48,6 +52,10 @@ export async function runNasEmbeddingSample(
     mode: options.execute ? "memory_only" : "dry_run",
     database_writes: 0,
     candidate_rows: candidates.length,
+    selection_order: "modified_at descending, then path",
+    metadata_matched_files: freshPaths.length,
+    metadata_excluded_files: candidates.length - freshPaths.length,
+    marker_only_or_empty_chunks_excluded: sampledRows.length - selected.length,
     candidate_window_full: candidates.length === 20,
     selected_files: new Set(selected.map(row => row.path)).size,
     selected_chunks: selected.length,

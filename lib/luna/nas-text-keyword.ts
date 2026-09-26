@@ -1,3 +1,4 @@
+import { postgrestTextBatches, postgrestTextList } from "@/lib/luna/postgrest-text-list";
 /**
  * Work 본문 키워드 검색 (플랜 A) — 임베딩 없이 trigram + 순위
  *
@@ -140,10 +141,11 @@ export async function searchNasTextKeyword(
 
   const [{ data: dirRows }, { data: impRows }, currentBodies] =
     await Promise.all([
-      admin
+      Promise.all(postgrestTextBatches(pathList).map(batch => admin
         .from("nas_directory")
         .select("path, drive, modified_at, importance")
-        .in("path", pathList),
+        .filter("path", "in", postgrestTextList(batch)).limit(1000)))
+        .then(results => ({ data: results.flatMap(result => result.error ? [] : result.data ?? []) })),
       admin.from("nas_important_paths").select("path").limit(2000),
       currentNasBodyFiles(admin, pathList)
     ]);
