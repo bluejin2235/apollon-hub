@@ -4,6 +4,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotionSource } from "@/lib/luna/notion";
+import { postgrestTextList } from "@/lib/luna/postgrest-text-list";
 
 export const LINK_EXPAND_TOP_N = 8;
 export const LINK_EXPAND_MAX_ADD = 20;
@@ -176,7 +177,7 @@ async function fetchLinksTouching(
         .in("kind", kinds)
         .gte("confidence", minConfidence)
         .eq("status", "active")
-        .in("from_id", part)
+        .filter("from_id", "in", postgrestTextList(part))
         .limit(200),
       admin
         .from("luna_links")
@@ -186,7 +187,7 @@ async function fetchLinksTouching(
         .in("kind", kinds)
         .gte("confidence", minConfidence)
         .eq("status", "active")
-        .in("to_id", part)
+        .filter("to_id", "in", postgrestTextList(part))
         .limit(200)
     ]);
     if (fromRes.error) {
@@ -219,7 +220,7 @@ async function fetchBelongsToProjects(
       )
       .eq("kind", "belongs")
       .eq("to_type", "project")
-      .in("to_id", part)
+      .filter("to_id", "in", postgrestTextList(part))
       .eq("from_type", "notion_page")
       .gte("confidence", minConfidence)
       .eq("status", "active")
@@ -715,5 +716,4 @@ export async function annotateSeedsWithProjectKeys(
     return { ...s, project_key: project };
   });
 }
-
 
