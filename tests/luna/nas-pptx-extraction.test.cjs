@@ -7,9 +7,9 @@ const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const { loadTs } = require('./helpers.cjs');
 
-function load(yauzl) {
+function load(yauzl, fakeFs = fs) {
   return loadTs('lib/luna/nas-text.ts', {
-    'node:fs': fs, 'node:path': path,
+    'node:fs': fakeFs, 'node:path': path,
     yauzl: { default: yauzl },
     '@/lib/luna/embedding': { contentHash: () => 'unused' }
   });
@@ -54,7 +54,7 @@ function fixture(mode) {
 for (const mode of ['open-error', 'missing-stream', 'stream-error', 'zip-error']) {
   test(`PPTX ${mode} never accepts previously extracted partial text`, { timeout: 1500 }, async () => {
     const fake = fixture(mode);
-    const result = await load(fake.yauzl).extractNasFileText('sample.pptx', 'pptx');
+    const result = await load(fake.yauzl, {...fs, statSync:()=>({size:100})}).extractNasFileText('sample.pptx', 'pptx');
     assert.equal(result.status, 'failed');
     assert.equal(result.text, '');
     assert.equal(fake.closed, true);

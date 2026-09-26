@@ -1,3 +1,4 @@
+import { describeNasError } from "@/lib/luna/nas-error";
 /**
  * Work서버 문서 본문 추출 → nas_file_text / nas_file_chunks
  * 임베딩은 scripts/embed-nas-chunks.ts 에서 분리.
@@ -536,10 +537,7 @@ async function main() {
       } catch (fileErr) {
         progress.failed += 1;
         bump(ext, "failed");
-        const msg =
-          fileErr instanceof Error
-            ? fileErr.message.slice(0, 400)
-            : String(fileErr).slice(0, 400);
+        const msg = describeNasError(fileErr, 400);
         console.warn(`fail ${row.path}: ${msg}`);
         try {
           await upsertTextMeta(admin, {
@@ -579,7 +577,7 @@ async function main() {
       await finishNasTextRun(admin, runId, "done", progress);
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = describeNasError(e);
     if (runId) await finishNasTextRun(admin, runId, "failed", progress, msg);
     throw e;
   }

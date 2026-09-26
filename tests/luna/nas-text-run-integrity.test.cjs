@@ -39,6 +39,7 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
     return q;
   } };
   const dependencies = {
+    '@/lib/luna/nas-error': require('./helpers.cjs').loadTs('lib/luna/nas-error.ts'),
     dotenv: { config() {} },
     'node:path': { resolve: () => '/unused' },
     'node:fs': { existsSync: () => true, statSync: () => ({ size: 100, mtime: new Date(stamp) }) },
