@@ -10,7 +10,7 @@ const file = name => ({ drive: 'T', path: name + '.pptx', size_bytes: 100, modif
 const previous = (row, status) => ({ ...row, status, content_hash: 'same-text', updated_at: stamp });
 
 async function runCli({ rows = [file('sample')], existing = [], statuses = {},
-  args = [], insertError = false, runId = 'run', sourceChanges = false, statFails = false } = {}) {
+  args = [], insertError = false, runId = 'run', incompletePaths = [], sourceChanges = false, statFails = false } = {}) {
   const events = [];
   const extracted = [];
   const logs = [];
@@ -19,6 +19,7 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
   let stats = 0;
   const admin = {
     async rpc(name, params) {
+      if (name === 'nas_text_incomplete_paths') return {data:incompletePaths,error:null};
       assert.equal(name, 'nas_text_publish');
       events.push({ operation: 'rpc', payload: params });
       return insertError ? { error: {message: 'simulated atomic publication failure'} } : {
@@ -203,4 +204,12 @@ test('failed or skipped extraction plus storage failure counts each file only on
     assert.equal(progress.skipped+progress.empty+progress.ok,0);
     assert.equal(result.events.filter(event => event.operation==='rpc').length,1);
   }
+});
+
+test('unchanged ok metadata with missing chunks is selected for repair', async () => {
+  const row=file('repair');
+  const result=await runCli({rows:[row],existing:[previous(row,'ok')],incompletePaths:[row.path]});
+  assert.equal(result.exit,0,result.errors.join('\n'));
+  assert.deepEqual(result.extracted,[row.path]);
+  assert.equal(result.events.find(event=>event.status==='done').progress.ok,1);
 });

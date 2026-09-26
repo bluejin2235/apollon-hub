@@ -24,3 +24,8 @@ The CLI checks physical size/mtime before and after extraction. A different dire
 - PostgreSQL 16 CI adds simultaneous publications: a stale writer waits, then fails after the winner commits; readers see no partial publication. An injected chunk failure rolls back metadata and chunks together.
 - Fixture embedding columns are text placeholders used to verify preservation, not pgvector search tests. Existing 1536-dimensional embedding selection is unchanged.
 - Historical bad rows are not repaired globally. Run-log ownership, purge-missing behavior and robust drive/path primary keys remain separate work.
+
+## Read-only production integrity audit, 2026-09-26
+The count audit found 3 ok sources with no chunks (three PDFs expecting 1, 1 and 10 chunks, with text lengths 12, 159 and 7,414). It also found 15 failed sources retaining 1,300 old chunks. No sequence gaps were found. This identifies inconsistent stored state, not its exact historical cause. No source text, filenames, credentials or operational records were changed.
+
+The worker now calls the read-only service-only nas_text_incomplete_paths RPC while building its queue. Ok files with absent, mismatched or discontinuous chunks are retried even when their indexed size/mtime is unchanged. Its array result avoids PostgREST set-returning row caps. Failed files were already retry candidates. Actual repair still requires the approved deployment and a worker run; no historical rows have been repaired by this development work.

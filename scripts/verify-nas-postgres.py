@@ -176,5 +176,9 @@ assert sql('select to_jsonb(t)::text from nas_file_text t;')==before
 assert sql('select jsonb_agg(to_jsonb(c) order by seq)::text from nas_file_chunks c;')==chunks_before
 report['checks'].append('real PostgreSQL mid-chunk failure rolls back metadata/chunk IDs together')
 
+assert sql('select cardinality(nas_text_incomplete_paths());')=='0'
+assert sql('begin; delete from nas_file_chunks where seq=1; select cardinality(nas_text_incomplete_paths()); rollback;')=='1'
+assert sql('select cardinality(nas_text_incomplete_paths());')=='0'
+report['checks'].append('read-only repair RPC finds incomplete ok sources and excludes intact publications')
 report['ok']=True
 print(json.dumps(report,indent=2))

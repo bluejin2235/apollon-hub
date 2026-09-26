@@ -49,6 +49,7 @@ type ExistingRow = {
   content_hash: string | null;
   status: string;
   updated_at: string;
+  requires_repair?: boolean;
 };
 
 type Args = {
@@ -196,6 +197,15 @@ async function loadExistingMap(
     if (rows.length < page) break;
     from += page;
   }
+  const { data: incomplete, error: integrityError } = await admin.rpc("nas_text_incomplete_paths");
+  if (integrityError) throw integrityError;
+  if (!Array.isArray(incomplete) || incomplete.some(path => typeof path !== "string")) {
+    throw new Error("Invalid NAS integrity audit result");
+  }
+  for (const path of incomplete) {
+    const row = map.get(path);
+    if (row) row.requires_repair = true;
+  }
   return map;
 }
 
@@ -205,7 +215,7 @@ function needsWork(
   resume: boolean
 ): boolean {
   if (!existing) return true;
-  if (!resume) return true;
+  if (!resume || existing.requires_repair) return true;
   // A failed attempt is not a completed extraction, even if the source is unchanged.
   if (!existing.status || existing.status === "failed") return true;
   if (existing.drive !== row.drive || row.size_bytes == null || existing.size_bytes == null ||

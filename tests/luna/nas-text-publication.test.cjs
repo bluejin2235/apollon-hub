@@ -95,10 +95,25 @@ test('atomic NAS text publication on disposable PostgreSQL engine', async t => {
       }
       assert.deepEqual(await state(),[]);
     });
+    await t.test('repair audit finds missing and discontinuous chunks without labeling intact files',async()=>{
+      await reset(); await publish();
+      const audit=async()=> (await db.query('select public.nas_text_incomplete_paths() as paths')).rows[0].paths;
+      assert.deepEqual(await audit(),[]);
+      await db.exec('delete from public.nas_file_chunks where seq=1');
+      assert.deepEqual(await audit(),[meta().path]);
+      await db.exec('update public.nas_file_text set chunk_count=1; update public.nas_file_chunks set seq=2');
+      assert.deepEqual(await audit(),[meta().path]);
+      await db.exec('delete from public.nas_file_chunks; update public.nas_file_text set chunk_count=0');
+      assert.deepEqual(await audit(),[meta().path]);
+      await db.exec("update public.nas_file_text set status='empty'");
+      assert.deepEqual(await audit(),[]);
+    });
     await t.test('only service role can execute; function remains security invoker',async()=>{
       for(const role of ['anon','authenticated']) {
         await db.exec('set role '+role);
-        try { await assert.rejects(db.query("select public.nas_text_publish('{}','{}',null)"),e=>e.code==='42501'); }
+        try {
+          await assert.rejects(db.query("select public.nas_text_incomplete_paths()"),e=>e.code==='42501');
+          await assert.rejects(db.query("select public.nas_text_publish('{}','{}',null)"),e=>e.code==='42501'); }
         finally { await db.exec('reset role'); }
       }
       await db.exec(migration);

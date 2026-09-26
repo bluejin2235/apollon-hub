@@ -77,4 +77,17 @@ end;
 $$;
 revoke all on function public.nas_text_publish(jsonb,text[],timestamptz) from public,anon,authenticated;
 grant execute on function public.nas_text_publish(jsonb,text[],timestamptz) to service_role;
+-- Return an array so PostgREST row limits cannot silently truncate repair IDs.
+create or replace function public.nas_text_incomplete_paths()
+returns text[] language sql stable security invoker set search_path='' as $$
+  select coalesce(array_agg(t.path order by t.path),array[]::text[])
+  from public.nas_file_text t left join (
+    select path,count(*) n,min(seq) first_seq,max(seq) last_seq
+    from public.nas_file_chunks group by path
+  ) c on c.path=t.path
+  where t.status='ok' and (t.chunk_count<>coalesce(c.n,0) or coalesce(c.n,0)=0
+    or c.first_seq<>0 or c.last_seq<>c.n-1);
+$$;
+revoke all on function public.nas_text_incomplete_paths() from public,anon,authenticated;
+grant execute on function public.nas_text_incomplete_paths() to service_role;
 commit;
