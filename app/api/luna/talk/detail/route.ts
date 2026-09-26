@@ -83,6 +83,11 @@ export async function GET(request: NextRequest) {
         content_truncated: typeof row.content === "string" && row.content.length > 12000,
         created_at: row.created_at,
         search: {
+          recorded: Object.hasOwn(meta, "search_evidence") ||
+            Object.hasOwn(meta, "cards") || Object.hasOwn(meta, "notion_sources") ||
+            Object.hasOwn(meta, "wiki_sources"),
+          rounds: count(meta.search_rounds),
+          scope: text(record(meta.search_scope).label, 150),
           retrieved_candidate_peak: count(evidence.retrieved_candidate_peak),
           displayed_source_count: count(evidence.displayed_source_count),
           cards: sources(meta.cards, "자료"),

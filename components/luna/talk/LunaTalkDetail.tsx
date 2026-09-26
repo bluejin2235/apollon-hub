@@ -18,6 +18,9 @@ type Message = {
   content_truncated: boolean;
   created_at: string;
   search: {
+    recorded: boolean;
+    rounds: number | null;
+    scope: string;
     retrieved_candidate_peak: number | null;
     displayed_source_count: number | null;
     cards: Source[];
@@ -79,8 +82,9 @@ export function LunaTalkDetail({ conversationId }: { conversationId: string }) {
               {message.content}
             </p>
             {message.content_truncated ? <p className="mt-1 text-amber-700">본문 일부만 표시합니다.</p> : null}
-            {message.role === "assistant" && hasSearch ? (
+            {message.role === "assistant" && message.search.recorded && (hasSearch || message.search.rounds !== null) ? (
               <div className="mt-3 border-t border-slate-100 pt-2 text-slate-600">
+                <p>검색 실행 {message.search.rounds ?? "미기록"}회{message.search.scope ? ` · 범위: ${message.search.scope}` : ""}</p>
                 <p>검색 중 확인된 후보 최대 {message.search.retrieved_candidate_peak ?? "미기록"}건 · 저장된 출처 카드 수 {message.search.displayed_source_count ?? "미기록"}건</p>
                 <p>두 수치는 검색 단계와 카드 저장 단계를 각각 센 값이며, 인용된 출처 수를 뜻하지 않습니다.</p>
               </div>
@@ -98,7 +102,11 @@ export function LunaTalkDetail({ conversationId }: { conversationId: string }) {
                 ))}
               </div>
             ) : message.role === "assistant" ? (
-              <p className="mt-2 text-slate-500">이 답변에 저장된 출처 목록이 없습니다.</p>
+              <p className="mt-2 text-slate-500">
+                {message.search.recorded
+                  ? "이 답변에 저장된 출처 목록이 없습니다."
+                  : "당시 검색 단계·출처 기록이 저장되지 않았습니다. 자료가 없었다는 뜻은 아닙니다."}
+              </p>
             ) : null}
           </div>
         );
