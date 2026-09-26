@@ -1,7 +1,7 @@
 # Production backup, recovery and retention gate
 
 Decision date: 2026-09-26. This policy supplements actual-hub-review-gate.md.
-The user authorized preparing code/database backups and removing temporary backups after acceptance and stabilization. This is NOT authorization to merge, migrate, promote or restore production.
+The user authorized production integration conditional on verified code/database backups and recovery checks, and authorized removing temporary backups after acceptance and stabilization. Do not repeat the integration approval request; complete the gates before applying it. Full destructive restoration remains a separate recovery decision.
 
 ## Release prerequisites
 
@@ -31,7 +31,7 @@ The user authorized preparing code/database backups and removing temporary backu
 - Keep Git history/pre-release references and the small release/restore manifest. Do not rewrite Git history to save backup space.
 - Do not disable or delete the platform's routine backup policy as part of manual-export cleanup.
 - A cleanup schedule is not enabled by this document. Schedule cleanup only once acceptance/stabilization dates and exact artifact identifiers exist. Do not delete merely because an estimated date arrived.
-- Notify the user before any task expected to incur USD 50 or more.
+- Before any new additional cost, regardless of amount, disclose the estimated charge and whether it is one-time or recurring, and obtain approval. The temporary restore project already approved at USD 10.18/month is covered by the existing approval; do not approve other paid resources by analogy.
 
 ## Evidence manifest (private operational record)
 
@@ -41,8 +41,7 @@ scope_and_exclusions; checksum_if_exported; restore_test_environment; restore_re
 user_acceptance_at; stability_start; unresolved_incidents; replacement_backup_id;
 cleanup_eligible_at; deleted_artifacts_and_receipts.
 
-Status at policy creation: policy prepared; production backup capture and restore rehearsal
-not yet verified. Production integration remains pending a separate decision.
+Status at 2026-09-26: pre-release code reference is preserved. A scheduled physical backup was restored into the approved isolated project and the five migrations were rehearsed there. This proves that backup is recoverable, but is not a deployment-time backup. A current consistent backup and its validation still gate production integration.
 
 References:
 - https://supabase.com/docs/guides/platform/backups

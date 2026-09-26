@@ -8,7 +8,7 @@ The user review takes place on the real Hub LUNA and its administrator view. A s
 2. Review the original Hub worktree's pending edits, especially any administrator dashboard overlap, before replacing or incorporating them. Preserve both independently authored behaviors.
 3. Record a read-only baseline in the real Hub for typo/exact project names, source cards, a follow-up, an unrelated project and genuinely absent data. Keep the source snapshot and question wording for comparison. Historical answers lacking saved metadata must be labeled unrecorded, not zero-search.
 4. Review the five pending migrations in their version order. They add source-context security, a staged NAS snapshot path, atomic text/chunk publication, bounded embedding RPCs and a worker gate. The context migration marks narrowly identified test conversations and learnings; inspect the affected rows before applying it. Snapshot commit can replace a drive's directory rows atomically when the new scanner calls it; do not run that job as part of a UI release.
-5. Decide whether the full code and migration series, or a smaller administrator-only release, is the review scope. Do not merge the draft PR simply because its build is green.
+5. The user authorized the integration subject to the backup/recovery gates in backup-recovery-retention.md. Complete those gates and review the exact release contents; build success alone is insufficient.
 
 ## Controlled application and verification
 
@@ -18,4 +18,4 @@ If a check fails, stop further source jobs and restore the prior production appl
 
 ## Current hold
 
-The draft PR is not merged, the new migrations are not applied to production, and an isolated development database is not provisioned. Consequently the planned actual-Hub review time is conditional on a separate operational integration decision and cannot be promised from Preview readiness alone.
+The draft PR is not merged and the five new migrations are not applied to production. The approved isolated restore database is provisioned and the migration rehearsal has run there. Production integration is already authorized conditional on backup verification. A deployment-time consistent backup remains required; do not equate an older scheduled backup with that release recovery point. Actual-Hub review follows a verified production deployment.

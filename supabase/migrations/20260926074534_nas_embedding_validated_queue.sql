@@ -1,4 +1,7 @@
 begin;
+-- Exact cross-drive lookup must not use the broad text-search GIN index.
+create index if not exists nas_directory_path_drive_batch_idx
+  on public.nas_directory(path,drive,scan_batch);
 -- A bounded, keyset-paginated queue. No source is selected merely because its
 -- old chunk still has a null vector. UUID order is traversal order, not relevance.
 create or replace function public.nas_embedding_candidates(
