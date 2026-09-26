@@ -1,4 +1,5 @@
 import { loadProductionPerspectiveMessages, obsoletePerspectiveUsageIds } from "@/lib/luna-admin/perspective-messages";
+import { insertLinkBatch, updateLinkEvidence } from "@/lib/luna-admin/link-write-receipts";
 /**
  * 2차 데이터 생성 — 규칙 중심. LLM 은 same 의 0.45~0.6 만.
  * 스크립트에서도 import 하므로 server-only 를 쓰지 않는다.
@@ -206,28 +207,10 @@ async function insertLinks(
   const batchSize = 200;
   for (let i = 0; i < fresh.length; i += batchSize) {
     const batch = fresh.slice(i, i + batchSize);
-    const { error } = await admin.from("luna_links").upsert(
-      batch.map((row) => ({
-        from_type: row.from_type,
-        from_id: row.from_id,
-        to_type: row.to_type,
-        to_id: row.to_id,
-        kind: row.kind,
-        confidence: row.confidence,
-        evidence: row.evidence,
-        source: row.source,
-        status: row.status,
-        confirmed_by: row.confirmed_by ?? null,
-        confirmed_at: row.confirmed_at ?? null
-      })),
-      {
-        onConflict: "from_type,from_id,to_type,to_id,kind",
-        ignoreDuplicates: true
-      }
-    );
-    if (error) throw new Error(`luna_links insert: ${error.message}`);
+    const acknowledged = await insertLinkBatch(admin, batch);
     for (const row of batch) existing.add(linkKey(row));
-    count.inserted += batch.length;
+    count.inserted += acknowledged;
+    count.skipped += batch.length - acknowledged;
     if (fresh.length > batchSize) {
       log(`  insert ${Math.min(i + batch.length, fresh.length)}/${fresh.length}`);
     }
@@ -1997,18 +1980,12 @@ async function upsertFollowLinks(
           ? 1
           : Math.max(target.confidence, row.confidence);
       if (!dryRun) {
-        await admin
-          .from("luna_links")
-          .update({
-            confidence,
-            evidence: {
-              ...target.evidence,
-              ...row.evidence,
-              sources: nextSources,
-              merge_key: rowMerge
-            }
-          })
-          .eq("id", target.id);
+        await updateLinkEvidence(admin, target.id, confidence, {
+          ...target.evidence,
+          ...row.evidence,
+          sources: nextSources,
+          merge_key: rowMerge
+        });
       }
       count.skipped += 1;
       existing.add(k);
@@ -2028,30 +2005,11 @@ async function upsertFollowLinks(
   const batchSize = 200;
   for (let i = 0; i < fresh.length; i += batchSize) {
     const batch = fresh.slice(i, i + batchSize);
-    const { error } = await admin.from("luna_links").upsert(
-      batch.map((row) => ({
-        from_type: row.from_type,
-        from_id: row.from_id,
-        to_type: row.to_type,
-        to_id: row.to_id,
-        kind: row.kind,
-        confidence: row.confidence,
-        evidence: row.evidence,
-        source: row.source,
-        status: row.status,
-        confirmed_by: row.confirmed_by ?? null,
-        confirmed_at: row.confirmed_at ?? null
-      })),
-      {
-        onConflict: "from_type,from_id,to_type,to_id,kind",
-        ignoreDuplicates: true
-      }
-    );
-    if (error) throw new Error(`luna_links follows insert: ${error.message}`);
+    const acknowledged = await insertLinkBatch(admin, batch);
     for (const row of batch) existing.add(linkKey(row));
-    count.inserted += batch.length;
+    count.inserted += acknowledged;
+    count.skipped += batch.length - acknowledged;
   }
-  if (fresh.length) log(`  follows insert ${fresh.length}건`);
+  if (fresh.length) log(`  follows insert ${count.inserted}건 (candidate ${fresh.length})`);
   return count;
 }
-

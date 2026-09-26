@@ -71,8 +71,35 @@ async function main(){
  sql(`insert into nas_directory values('T','New snapshot','file',100,'${stamp}','2026-09-27T00:00:00Z')`);
  assert.equal((await currentNasBodyFiles(admin,paths)).size,0);
  assert.equal(await reportSourcesAreCurrent(admin,[{type:'nas',ref:paths[0],drive:'T',size_bytes:100,modified_at:stamp}]),false);
+
+ // Concurrent relationship builders must report only their own inserted rows.
+ sql(`create table luna_links(id uuid primary key default gen_random_uuid(),
+  from_type text,from_id text,to_type text,to_id text,kind text,
+  confidence double precision check(confidence between 0 and 1),evidence jsonb,source text,status text,
+  confirmed_by uuid,confirmed_at timestamptz,unique(from_type,from_id,to_type,to_id,kind));
+  alter table luna_links enable row level security;
+  grant all on luna_links to service_role;notify pgrst,'reload schema';`);
+ let linkReady=false;
+ for(let i=0;i<40;i++){
+  const reply=await admin.from('luna_links').select('id').limit(1);
+  if(!reply.error){linkReady=true;break;}
+  await new Promise(resolve=>setTimeout(resolve,250));
+ }
+ assert.ok(linkReady,'relationship fixture schema not ready');
+ const {insertLinkBatch,updateLinkEvidence}=loadTs('lib/luna-admin/link-write-receipts.ts');
+ const relation={from_type:'notion_page',from_id:'fixture-page',to_type:'project',to_id:'fixture-project',kind:'belongs',
+  confidence:.9,evidence:{fixture:true},source:'rule',status:'active'};
+ const counts=await Promise.all([insertLinkBatch(admin,[relation]),insertLinkBatch(admin,[relation])]);
+ assert.deepEqual(counts.sort(),[0,1]);
+ assert.equal(await insertLinkBatch(admin,[{...relation,confidence:.5}]),0);
+ const {data:stored,error:storedError}=await admin.from('luna_links').select('id,confidence').single();
+ assert.equal(storedError,null);assert.equal(stored.confidence,.9);
+ await updateLinkEvidence(admin,stored.id,1,{fixture:'updated'});
+ await assert.rejects(updateLinkEvidence(admin,owner,1,{}),/update/);
+ await assert.rejects(insertLinkBatch(admin,[{...relation,from_id:'invalid',confidence:2}]),/insert/);
  console.log(JSON.stringify({ok:true,transport:'real PostgREST HTTP + installed supabase-js',paid_requests:0,
   checks:['escaped Windows path identity','current source and report membership','validated vector RPC roundtrip and completion',
-   'durable worker claims','anonymous and authenticated denial','old snapshot exclusion']},null,2));
+   'durable worker claims','anonymous and authenticated denial','old snapshot exclusion',
+   'concurrent relation insert receipts','evidence update acknowledgement and constraint failures']},null,2));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

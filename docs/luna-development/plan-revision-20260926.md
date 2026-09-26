@@ -1,0 +1,35 @@
+# Revised implementation and hands-on reviews — 2026-09-26
+
+Scope remains indexing → relationships/groups → evidence-backed derived information → business search → employee beta. Make remains deferred. Percentages below are manual estimates against implementation plus acceptance conditions, not measured search accuracy, test pass percentages or deployed feature percentages. Added work nested within a stage is not counted again in a total.
+
+| Stage | Origin | Estimated completion | Remaining acceptance |
+|---|---|---:|---|
+| 1. Baseline, test isolation and permissions | Original | 80% | Operational impact and deployment validation |
+| 2. Primary indexing | Original, expanded | 70% | Full real-file flow and bounded application |
+| 2A. Atomic publication, source freshness and paid-worker coordination | Added inside stage 2 | 80% | Updated worker integration and real-source acceptance |
+| 3. Grouping and relationships | Original, expanded | 30% | Stable project identity, stale-link reconciliation and relationship correctness |
+| 4. Search-oriented summaries, comparisons and insights | Original | 10% | Implement and verify evidence-backed derived outputs; source reuse guards alone do not complete this stage |
+| 5. Business search | Original | 50% | Compound conditions, follow-up narrowing and real business-question success |
+| 6. Shared-path evaluation | Original, expanded | 40% | Employee UI comparison; automated/native SQL/HTTP tests are supporting evidence only |
+| 6A. Isolated interactive review environment | Added, moved to next priority | 20% | Isolated DB, representative data, auth and application smoke test |
+| 7. Employee beta | Original | 0% | Hands-on reviews, operational integration and limited release |
+
+## Sequence change
+
+Primary consistency, source identity, concurrency and API verification were added after investigation found concrete failure modes. These repairs took precedence over derived insights, delaying a directly usable preview. The next priority is now the first interactive review environment, before completing the entire grouping/insight subsystem. Production integration remains a later decision.
+
+## Review 1: search improvements visible to the user
+
+Target: 2026-09-27 KST; estimate, not a confirmed appointment. Allow roughly 4–8 active working hours for isolated environment, representative data and application validation, assuming required access and resource setup work. Escalate an access or provisioning delay explicitly; do not silently move the date or replace the review with another unit-test summary.
+
+Prepare two labeled application URLs: current baseline and changed preview. Use the same scoped source snapshot and question set where possible; disclose any differences. The user directly asks 8–10 questions covering misspellings, exact project names, document/image retrieval, cited sources, file paths and a follow-up narrowing question. Include unrelated-project and genuinely unavailable-data controls. Display answer, source cards, openable paths and unresolved failures together. A synthetic UI mock is not acceptance.
+
+## Review 2: relationships and derived outputs
+
+Target: 2026-09-29 to 2026-09-30 KST, after the first review; roughly 1–2 additional active working days subject to review findings and data readiness. User questions should cover a project bundle across documents/images/meeting notes, separation of similarly named projects or versions, comparison of two projects with citations, and supported conclusions versus unresolved inference.
+
+Proceed toward beta only after the user can see useful answers with correct sources, no unrelated-project mixing, honest missing/conflicting evidence and working follow-up narrowing. Fix failed cases before calling the stage complete. No final completion date or percentage substitutes for these gates.
+
+## Reporting and user decisions
+
+Record completed units and verified results in the internal Hub development note. The two reviews are hands-on checkpoints; coding continues between them. Ask the user for substantive product decisions, production integration and costs expected to reach USD 50 or more. Request Cursor only for access unavailable to the agent. Do not send more ZIP handoffs or ask the user to repeat completed checks.
