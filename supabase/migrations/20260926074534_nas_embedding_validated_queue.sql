@@ -9,6 +9,9 @@ begin
   if p_limit is null or p_limit<1 or p_limit>500 or cardinality(p_ids)>100 then
     raise exception 'Invalid embedding queue bounds';
   end if;
+  -- Scalar EXISTS keeps source validation per candidate instead of a global
+  -- semi/anti join and sort before LIMIT on the restored production corpus.
+  -- All eligibility predicates remain before LIMIT; no candidate window is cut.
   return query
     select c.id,c.path,c.seq,c.content,t.updated_at
     from public.nas_file_chunks c join public.nas_file_text t on t.path=c.path
@@ -17,11 +20,11 @@ begin
       and (p_after_id is null or c.id>p_after_id) and (p_ids is null or c.id=any(p_ids))
       and btrim(regexp_replace(c.content,
         '^[[:space:]]*--[[:space:]]*[0-9]+[[:space:]]+of[[:space:]]+[0-9]+[[:space:]]*--[[:space:]]*$', '', 'gn'), E' \t\r\n')<>''
-      and exists(select 1 from public.nas_directory d where d.drive=t.drive and d.path=t.path and d.type='file'
+      and (select exists(select 1 from public.nas_directory d where d.drive=t.drive and d.path=t.path and d.type='file'
         and d.size_bytes=t.size_bytes and d.modified_at=t.modified_at
-        and d.scan_batch=(select max(d2.scan_batch) from public.nas_directory d2 where d2.drive=t.drive))
-      and not exists(select 1 from public.nas_directory d where d.path=t.path and d.drive<>t.drive
-        and d.scan_batch=(select max(d2.scan_batch) from public.nas_directory d2 where d2.drive=d.drive))
+        and d.scan_batch=(select max(d2.scan_batch) from public.nas_directory d2 where d2.drive=t.drive)))
+      and not (select exists(select 1 from public.nas_directory d where d.path=t.path and d.drive<>t.drive
+        and d.scan_batch=(select max(d2.scan_batch) from public.nas_directory d2 where d2.drive=d.drive)))
       and (select count(*)=t.chunk_count and min(k.seq)=0 and max(k.seq)=t.chunk_count-1
         from public.nas_file_chunks k where k.path=t.path)
     order by c.id limit p_limit;
