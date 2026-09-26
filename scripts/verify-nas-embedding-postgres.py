@@ -44,8 +44,27 @@ create table nas_file_chunks(id uuid primary key default gen_random_uuid(),path 
 alter table nas_file_text enable row level security;alter table nas_file_chunks enable row level security;alter table nas_directory enable row level security;
 grant all on all tables in schema public to service_role;
 insert into nas_directory values('T','fixture.pdf','file',100,'2026-09-26T00:00:00Z','2026-09-26T00:00:00Z');""")
-for name in ['20260926063021_nas_text_atomic_publish.sql','20260926074534_nas_embedding_validated_queue.sql']:
+for name in ['20260926063021_nas_text_atomic_publish.sql','20260926074534_nas_embedding_validated_queue.sql',
+             '20260926081424_nas_embedding_worker_gate.sql']:
     sql((ROOT/'supabase/migrations'/name).read_text())
+
+# The durable claim must serialize separate transactions before any paid call.
+owner_a='00000000-0000-4000-8000-000000000001'
+owner_b='00000000-0000-4000-8000-000000000002'
+first=session(f"begin;set local role service_role;select nas_embedding_acquire_worker('{owner_a}');select pg_sleep(3);commit",'embedding-gate-winner')
+second=None
+try:
+    wait_for(lambda:sql("select exists(select 1 from pg_stat_activity where application_name='embedding-gate-winner' and wait_event='PgSleep')")=='t')
+    second=session(f"set role service_role;select nas_embedding_acquire_worker('{owner_b}')",'embedding-gate-loser')
+    wait_for(lambda:sql("select exists(select 1 from pg_stat_activity where application_name='embedding-gate-loser' and wait_event_type='Lock')")=='t')
+    assert finish(first).strip()=='t'
+    assert finish(second)=='f'
+    assert sql(f"set role service_role;select nas_embedding_release_worker('{owner_b}')")=='f'
+    assert sql(f"set role service_role;select nas_embedding_acquire_worker('{owner_b}')")=='f'
+    assert sql(f"set role service_role;select nas_embedding_release_worker('{owner_a}')")=='t'
+    assert sql(f"set role service_role;select nas_embedding_acquire_worker('{owner_b}')")=='t'
+    assert sql(f"set role service_role;select nas_embedding_release_worker('{owner_b}')")=='t'
+finally:cleanup(first,second)
 meta=dict(path='fixture.pdf',drive='T',ext='pdf',size_bytes=100,modified_at='2026-09-26T00:00:00Z',content_hash='first',
  text_length=6,chunk_count=2,status='ok',skip_reason=None,error=None,extracted_at='2026-09-26T00:00:00Z')
 sql(f"set role service_role;select nas_text_publish({literal(meta)},array['one','two'],null)")
@@ -78,6 +97,7 @@ try:
 finally:cleanup(first,second)
 assert queued()==[]
 print(json.dumps({'ok':True,'engine':'PostgreSQL 16 + pgvector, synthetic source/vector fixtures',
- 'checks':['text publication and embedding store serialize; old paid response cannot populate new source',
+ 'checks':['concurrent workers acquire one durable gate; unrelated owner cannot release it',
+ 'text publication and embedding store serialize; old paid response cannot populate new source',
  'concurrent vector stores acknowledge each chunk once; completion and vectors become visible together',
  'service-only RPCs execute against real 1536-dimensional vector columns']},indent=2))

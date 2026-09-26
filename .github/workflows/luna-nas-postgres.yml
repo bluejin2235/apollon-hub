@@ -5,6 +5,7 @@ on:
       - 'supabase/migrations/20260925003721_nas_atomic_snapshot.sql'
       - 'supabase/migrations/20260926063021_nas_text_atomic_publish.sql'
       - 'supabase/migrations/20260926074534_nas_embedding_validated_queue.sql'
+      - 'supabase/migrations/20260926081424_nas_embedding_worker_gate.sql'
       - 'scripts/verify-nas-embedding-postgres.py'
       - 'scripts/verify-nas-postgres.py'
       - '.github/workflows/luna-nas-postgres.yml'

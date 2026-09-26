@@ -14,6 +14,7 @@ config();
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describeNasError } from "@/lib/luna/nas-error";
+import { withNasEmbeddingGate } from "@/lib/luna/nas-embedding-gate";
 import { selectNasEmbeddingQueue, revalidateNasEmbeddingBatch, storeNasEmbeddingBatch } from "@/lib/luna/nas-embedding-queue";
 import {
   planEmbeddingRequests,
@@ -64,76 +65,81 @@ async function main() {
     return;
   }
 
-  const runId = await startNasTextRun(admin, args.kind, pending.length);
-  const progress: NasTextRunProgress = {
-    targetCount: pending.length,
-    ok: 0,
-    empty: 0,
-    failed: 0,
-    skipped: 0,
-    chunksCreated: 0,
-    embeddingsCreated: 0,
-    costUsd: 0,
-    lastPath: null
-  };
+  const summary = await withNasEmbeddingGate(admin, async (payment) => {
+    const runId = await startNasTextRun(admin, args.kind, pending.length);
+    const progress: NasTextRunProgress = {
+      targetCount: pending.length,
+      ok: 0,
+      empty: 0,
+      failed: 0,
+      skipped: 0,
+      chunksCreated: 0,
+      embeddingsCreated: 0,
+      costUsd: 0,
+      lastPath: null
+    };
 
-  let tokens = 0;
-  const t0 = Date.now();
+    let tokens = 0;
+    const t0 = Date.now();
 
-  try {
-    for (const batch of plan.batches) {
-      const selected = pending.slice(batch.start, batch.start + batch.input.length);
-      const part = await revalidateNasEmbeddingBatch(admin, selected);
-      progress.skipped += selected.length - part.length;
-      if (part.length) {
-        let requestStarted = false;
-        let tokensReceived = false;
-        try {
-          requestStarted = true;
-          const result = await createBoundedEmbeddingsBatch(part.map(row => row.content));
-          tokens += result.tokens;
-          tokensReceived = true;
-          progress.costUsd = embeddingCostUsd(tokens);
-          const stored = await storeNasEmbeddingBatch(admin, part, result.vectors);
-          progress.embeddingsCreated += stored;
-          progress.ok = progress.embeddingsCreated;
-          progress.skipped += part.length - stored;
-          progress.lastPath = part[part.length - 1]!.path;
-        } catch (error) {
-          progress.failed += part.length;
-          // A timeout or invalid response may still have been billed. Do not
-          // claim zero cost or silently retry a request whose usage is unknown.
-          if (requestStarted && !tokensReceived) {
-            const note = "Embedding request usage unknown; may be billed; no automatic retry";
-            console.warn(note);
-            throw new Error(`${note}: ${describeNasError(error)}`);
+    try {
+      for (const batch of plan.batches) {
+        const selected = pending.slice(batch.start, batch.start + batch.input.length);
+        const part = await revalidateNasEmbeddingBatch(admin, selected);
+        progress.skipped += selected.length - part.length;
+        if (part.length) {
+          let requestStarted = false;
+          let tokensReceived = false;
+          try {
+            requestStarted = true;
+            payment.pending();
+            const result = await createBoundedEmbeddingsBatch(part.map(row => row.content));
+            tokens += result.tokens;
+            tokensReceived = true;
+            progress.costUsd = embeddingCostUsd(tokens);
+            const stored = await storeNasEmbeddingBatch(admin, part, result.vectors);
+            payment.settled();
+            progress.embeddingsCreated += stored;
+            progress.ok = progress.embeddingsCreated;
+            progress.skipped += part.length - stored;
+            progress.lastPath = part[part.length - 1]!.path;
+          } catch (error) {
+            progress.failed += part.length;
+            // A timeout or invalid response may still have been billed. Do not
+            // claim zero cost or silently retry a request whose usage is unknown.
+            if (requestStarted && !tokensReceived) {
+              const note = "Embedding request usage unknown; may be billed; no automatic retry";
+              console.warn(note);
+              throw new Error(`${note}: ${describeNasError(error)}`);
+            }
+            throw error;
           }
-          throw error;
         }
+
+        if (runId) await updateNasTextRunProgress(admin, runId, progress);
+        console.log(
+          `embedded=${progress.embeddingsCreated}/${pending.length} fail=${progress.failed} $${progress.costUsd.toFixed(4)}`
+        );
       }
 
-      if (runId) await updateNasTextRunProgress(admin, runId, progress);
-      console.log(
-        `embedded=${progress.embeddingsCreated}/${pending.length} fail=${progress.failed} $${progress.costUsd.toFixed(4)}`
-      );
+      progress.ok = progress.embeddingsCreated;
+      if (progress.failed > 0) throw new Error(`${progress.failed} embedding rows failed`);
+      if (runId) await finishNasTextRun(admin, runId, "done", progress);
+    } catch (e) {
+      const msg = describeNasError(e);
+      if (runId) await finishNasTextRun(admin, runId, "failed", progress, msg);
+      throw e;
     }
 
-    progress.ok = progress.embeddingsCreated;
-    if (progress.failed > 0) throw new Error(`${progress.failed} embedding rows failed`);
-    if (runId) await finishNasTextRun(admin, runId, "done", progress);
-  } catch (e) {
-    const msg = describeNasError(e);
-    if (runId) await finishNasTextRun(admin, runId, "failed", progress, msg);
-    throw e;
-  }
-
-  console.log("=== embed done ===", {
-    embeddings: progress.embeddingsCreated,
-    failed: progress.failed,
-    tokens,
-    cost_usd: progress.costUsd,
-    elapsed_sec: +((Date.now() - t0) / 1000).toFixed(1)
+    return {
+      embeddings: progress.embeddingsCreated,
+      failed: progress.failed,
+      tokens,
+      cost_usd: progress.costUsd,
+      elapsed_sec: +((Date.now() - t0) / 1000).toFixed(1)
+    };
   });
+  console.log("=== embed done ===", summary);
 }
 
 main().catch((e) => {
