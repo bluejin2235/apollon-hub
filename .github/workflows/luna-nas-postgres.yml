@@ -4,6 +4,8 @@ on:
     paths:
       - 'supabase/migrations/20260925003721_nas_atomic_snapshot.sql'
       - 'supabase/migrations/20260926063021_nas_text_atomic_publish.sql'
+      - 'supabase/migrations/20260926074534_nas_embedding_validated_queue.sql'
+      - 'scripts/verify-nas-embedding-postgres.py'
       - 'scripts/verify-nas-postgres.py'
       - '.github/workflows/luna-nas-postgres.yml'
 permissions:
@@ -35,3 +37,29 @@ jobs:
       - uses: actions/checkout@v4
       - run: psql --version
       - run: python3 scripts/verify-nas-postgres.py --local-ci-fixture
+
+  embedding-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: luna_embedding_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: luna_embedding_ci
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/verify-nas-embedding-postgres.py --local-ci-fixture
