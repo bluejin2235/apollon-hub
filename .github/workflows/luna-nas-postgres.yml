@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/20260925003721_nas_atomic_snapshot.sql'
+      - 'supabase/migrations/20260926063021_nas_text_atomic_publish.sql'
       - 'scripts/verify-nas-postgres.py'
       - '.github/workflows/luna-nas-postgres.yml'
 permissions:

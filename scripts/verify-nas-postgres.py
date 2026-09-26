@@ -132,5 +132,49 @@ b=start_session(f"select nas_snapshot_commit('{run}',11337);",'snapshot-retry-b'
 assert finish(a)=='11337' and finish(b)=='11337'
 assert sql('select count(*) from nas_snapshot_stage;')=='0'
 report['checks'].append('concurrent receipt retries do not duplicate live rows')
+# Text publication uses a separate per-path lock and one transaction for
+# metadata/chunks. Exercise real concurrent connections, not mocked RPC calls.
+sql("""create table nas_file_text(path text primary key,drive text not null,ext text not null,
+ size_bytes bigint,modified_at timestamptz,content_hash text,text_length integer not null default 0,
+ chunk_count integer not null default 0,status text not null default 'ok',skip_reason text,error text,
+ extracted_at timestamptz,indexed_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+create table nas_file_chunks(id uuid primary key default gen_random_uuid(),path text not null references nas_file_text(path) on delete cascade,
+ seq integer not null,content text not null,embedding text,created_at timestamptz not null default now(),unique(path,seq));
+grant all on nas_directory,nas_file_text,nas_file_chunks to service_role;
+insert into nas_directory(drive,path,type,size_bytes,modified_at,scan_batch)
+ select 'T','atomic-text-fixture.pptx','file',100,'2026-09-25T00:00:00Z',max(scan_batch) from nas_directory where drive='T';""")
+sql((ROOT/'supabase/migrations/20260926063021_nas_text_atomic_publish.sql').read_text())
+text_meta=json.dumps(dict(path='atomic-text-fixture.pptx',drive='T',ext='pptx',size_bytes=100,
+ modified_at='2026-09-25T00:00:00Z',content_hash='fixture',text_length=6,chunk_count=2,
+ status='ok',skip_reason=None,error=None,extracted_at='2026-09-25T00:00:00Z'))
+publication=f"select nas_text_publish($payload${text_meta}$payload$::jsonb,array['one','two'],null);"
+first=start_session('begin; set local role service_role; '+publication+' select pg_sleep(3); commit;','text-first-writer')
+second=None
+try:
+    wait_for(lambda:sql("select exists(select 1 from pg_stat_activity where application_name='text-first-writer' and wait_event='PgSleep');")=='t')
+    assert sql("set statement_timeout='1500ms';select count(*) from nas_file_text;")=='0','Partial text publication leaked'
+    second=start_session('set role service_role; '+publication,'text-stale-writer')
+    wait_for(lambda:sql("select exists(select 1 from pg_stat_activity where application_name='text-stale-writer' and wait_event_type='Lock');")=='t')
+    finish(first)
+    assert second.wait(timeout=10)!=0
+    assert 'Publication version changed' in second.stderr.read()
+    assert sql('select count(*) from nas_file_chunks;')=='2'
+finally:
+    for proc in [first,second]:
+        if proc and proc.poll() is None:proc.kill();proc.wait()
+report['checks'].append('atomic text is invisible until commit; concurrent stale writer waits then is rejected')
+
+version=sql('select updated_at from nas_file_text;')
+before=sql('select to_jsonb(t)::text from nas_file_text t;')
+chunks_before=sql('select jsonb_agg(to_jsonb(c) order by seq)::text from nas_file_chunks c;')
+sql("""create function reject_text_fixture() returns trigger language plpgsql as $$begin
+ if new.content='reject-fixture' then raise exception 'injected text failure';end if;return new;end$$;
+ create trigger reject_text_fixture before insert on nas_file_chunks for each row execute function reject_text_fixture();""")
+bad=publication.replace("array['one','two'],null",f"array['one','reject-fixture'],'{version}'")
+expect_failure(lambda:sql(bad),'injected text failure')
+assert sql('select to_jsonb(t)::text from nas_file_text t;')==before
+assert sql('select jsonb_agg(to_jsonb(c) order by seq)::text from nas_file_chunks c;')==chunks_before
+report['checks'].append('real PostgreSQL mid-chunk failure rolls back metadata/chunk IDs together')
+
 report['ok']=True
 print(json.dumps(report,indent=2))

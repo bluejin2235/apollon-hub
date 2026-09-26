@@ -1,3 +1,4 @@
+import { publishNasText, type NasTextPublication } from "@/lib/luna/nas-text-store";
 import { describeNasError } from "@/lib/luna/nas-error";
 /**
  * Work서버 문서 본문 추출 → nas_file_text / nas_file_chunks
@@ -47,6 +48,7 @@ type ExistingRow = {
   modified_at: string | null;
   content_hash: string | null;
   status: string;
+  updated_at: string;
 };
 
 type Args = {
@@ -178,7 +180,7 @@ async function loadExistingMap(
   while (true) {
     const { data, error } = await admin
       .from("nas_file_text")
-      .select("path, drive, size_bytes, modified_at, content_hash, status")
+      .select("path, drive, size_bytes, modified_at, content_hash, status, updated_at")
       .order("path")
       .range(from, from + page - 1);
     if (error) {
@@ -214,60 +216,6 @@ function needsWork(
     return true;
   }
   return false;
-}
-
-async function deleteChunks(admin: SupabaseClient, path: string): Promise<void> {
-  const { error } = await admin.from("nas_file_chunks").delete().eq("path", path);
-  if (error) throw error;
-}
-
-async function upsertTextMeta(
-  admin: SupabaseClient,
-  row: {
-    path: string;
-    drive: string;
-    ext: string;
-    size_bytes: number | null;
-    modified_at: string | null;
-    content_hash: string | null;
-    text_length: number;
-    chunk_count: number;
-    status: string;
-    skip_reason: string | null;
-    error: string | null;
-    extracted_at: string;
-  }
-): Promise<void> {
-  const { error } = await admin.from("nas_file_text").upsert(
-    {
-      ...row,
-      updated_at: new Date().toISOString()
-    },
-    { onConflict: "path" }
-  );
-  if (error) throw error;
-}
-
-async function insertChunks(
-  admin: SupabaseClient,
-  path: string,
-  chunks: string[]
-): Promise<number> {
-  if (chunks.length === 0) return 0;
-  const rows = chunks.map((content, i) => ({
-    path,
-    seq: i,
-    content: content.replace(/\u0000/g, "")
-  }));
-  const batch = 50;
-  let n = 0;
-  for (let i = 0; i < rows.length; i += batch) {
-    const part = rows.slice(i, i + batch);
-    const { error } = await admin.from("nas_file_chunks").insert(part);
-    if (error) throw error;
-    n += part.length;
-  }
-  return n;
 }
 
 async function purgeMissingFiles(
@@ -401,162 +349,64 @@ async function main() {
       const nowIso = new Date().toISOString();
 
       try {
-      const full = resolveNasFullPath(row.drive, row.path);
-
-      if (!full) {
-        progress.failed += 1;
-        bump(ext, "failed");
-        await upsertTextMeta(admin, {
-          path: row.path,
-          drive: row.drive,
-          ext,
-          size_bytes: row.size_bytes,
-          modified_at: row.modified_at,
-          content_hash: null,
-          text_length: 0,
-          chunk_count: 0,
-          status: "failed",
-          skip_reason: null,
-          error: "file_not_found",
-          extracted_at: nowIso
-        });
-      } else {
-        let sizeBytes = row.size_bytes;
-        let modifiedAt = row.modified_at;
-        try {
-          const st = statSync(full);
-          sizeBytes = st.size;
-          modifiedAt = st.mtime.toISOString();
-        } catch {
-          /* keep nas row */
-        }
-
-        const extracted = await extractNasFileText(full, ext);
         const prev = existing.get(row.path);
-
-        if (extracted.status === "skipped") {
-          progress.skipped += 1;
-          bump(ext, "skipped");
-          if (extracted.skipReason === "drawing_pdf") drawingSkipped += 1;
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "skipped",
-            skip_reason: extracted.skipReason ?? null,
-            error: extracted.error ?? null,
-            extracted_at: nowIso
-          });
-        } else if (extracted.status === "empty") {
-          progress.empty += 1;
-          bump(ext, "empty");
-          if (prev) await deleteChunks(admin, row.path);
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "empty",
-            skip_reason: null,
-            error: null,
-            extracted_at: nowIso
-          });
-        } else if (extracted.status === "failed") {
-          progress.failed += 1;
-          bump(ext, "failed");
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "failed",
-            skip_reason: null,
-            error: extracted.error ?? "extract_failed",
-            extracted_at: nowIso
-          });
-        } else {
-          const cleanText = sanitizeNasText(extracted.text);
-          const hash = hashNasText(cleanText);
-          const { chunks, truncated } = chunkNasText(cleanText);
-
-          if (prev?.content_hash === hash && prev.status === "ok") {
-            // 본문 동일 — 청크·임베딩 유지, 메타만 갱신
-            progress.ok += 1;
-            bump(ext, "ok");
-            await upsertTextMeta(admin, {
-              path: row.path,
-              drive: row.drive,
-              ext,
-              size_bytes: sizeBytes,
-              modified_at: modifiedAt,
-              content_hash: hash,
-              text_length: cleanText.length,
-              chunk_count: chunks.length,
-              status: "ok",
-              skip_reason: truncated ? "truncated_200_chunks" : null,
-              error: null,
-              extracted_at: nowIso
-            });
-          } else {
-            await deleteChunks(admin, row.path);
-            await upsertTextMeta(admin, {
-              path: row.path,
-              drive: row.drive,
-              ext,
-              size_bytes: sizeBytes,
-              modified_at: modifiedAt,
-              content_hash: hash,
-              text_length: cleanText.length,
-              chunk_count: chunks.length,
-              status: "ok",
-              skip_reason: truncated ? "truncated_200_chunks" : null,
-              error: null,
-              extracted_at: nowIso
-            });
-            const n = await insertChunks(admin, row.path, chunks);
-            progress.chunksCreated += n;
-            bump(ext, "chunks", n);
-            progress.ok += 1;
-            bump(ext, "ok");
+        if (prev && !prev.updated_at) throw new Error("Missing publication version");
+        const meta: NasTextPublication = {
+          path: row.path, drive: row.drive, ext,
+          size_bytes: row.size_bytes, modified_at: row.modified_at,
+          content_hash: null, text_length: 0, chunk_count: 0,
+          status: "failed", skip_reason: null, error: "file_not_found", extracted_at: nowIso
+        };
+        let chunks: string[] = [];
+        const full = resolveNasFullPath(row.drive, row.path);
+        if (full) {
+          const before = statSync(full);
+          // Do not publish text for a physical version newer/older than the
+          // directory snapshot. It must be scanned before it can be indexed.
+          if (row.size_bytes !== before.size || !row.modified_at ||
+              Date.parse(row.modified_at) !== before.mtime.getTime()) {
+            throw new Error("Physical source differs from directory snapshot");
+          }
+          let extracted;
+          try {
+            extracted = await extractNasFileText(full, ext);
+          } catch (error) {
+            extracted = { status: "failed" as const, text: "", error: describeNasError(error, 400) };
+          }
+          const after = statSync(full);
+          if (before.size !== after.size || before.mtime.getTime() !== after.mtime.getTime()) {
+            throw new Error("Physical source changed during extraction");
+          }
+          meta.status = extracted.status;
+          meta.error = extracted.status === "failed" ? (extracted.error ?? "extract_failed") : null;
+          meta.skip_reason = extracted.status === "skipped" ? (extracted.skipReason ?? null) : null;
+          if (extracted.status === "ok") {
+            const cleanText = sanitizeNasText(extracted.text);
+            const split = chunkNasText(cleanText);
+            chunks = split.chunks;
+            if (chunks.length === 0) {
+              meta.status = "empty";
+            } else {
+              meta.content_hash = hashNasText(cleanText);
+              meta.text_length = cleanText.length;
+              meta.chunk_count = chunks.length;
+              meta.skip_reason = split.truncated ? "truncated_200_chunks" : null;
+            }
           }
         }
-      }
+        const created = await publishNasText(admin, meta, chunks, prev?.updated_at ?? null);
+        // Count each file once, only after the entire publication is acknowledged.
+        progress[meta.status] += 1;
+        bump(ext, meta.status);
+        progress.chunksCreated += created;
+        bump(ext, "chunks", created);
+        if (meta.skip_reason === "drawing_pdf") drawingSkipped += 1;
       } catch (fileErr) {
         progress.failed += 1;
         bump(ext, "failed");
-        const msg = describeNasError(fileErr, 400);
-        console.warn(`fail ${row.path}: ${msg}`);
-        try {
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: row.size_bytes,
-            modified_at: row.modified_at,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "failed",
-            skip_reason: null,
-            error: msg,
-            extracted_at: nowIso
-          });
-        } catch {
-          /* meta 실패는 무시하고 다음 파일 */
-        }
+        console.warn(`fail ${row.path}: ${describeNasError(fileErr, 400)}`);
+        // Never overwrite metadata after a failed/uncertain RPC. Its transaction
+        // either preserved the previous file or committed a complete replacement.
       }
 
       if ((i + 1) % 25 === 0 || i + 1 === workQueue.length) {

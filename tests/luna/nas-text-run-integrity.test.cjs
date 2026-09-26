@@ -7,16 +7,25 @@ const ts = require('typescript');
 
 const stamp = '2026-09-25T00:00:00Z';
 const file = name => ({ drive: 'T', path: name + '.pptx', size_bytes: 100, modified_at: stamp });
-const previous = (row, status) => ({ ...row, status, content_hash: 'same-text' });
+const previous = (row, status) => ({ ...row, status, content_hash: 'same-text', updated_at: stamp });
 
 async function runCli({ rows = [file('sample')], existing = [], statuses = {},
-  args = [], insertError = false, runId = 'run' } = {}) {
+  args = [], insertError = false, runId = 'run', sourceChanges = false, statFails = false } = {}) {
   const events = [];
   const extracted = [];
   const logs = [];
   const errors = [];
   let exit = 0;
-  const admin = { from(table) {
+  let stats = 0;
+  const admin = {
+    async rpc(name, params) {
+      assert.equal(name, 'nas_text_publish');
+      events.push({ operation: 'rpc', payload: params });
+      return insertError ? { error: {message: 'simulated atomic publication failure'} } : {
+        data: { updated_at: stamp, chunks_created: params.p_chunks.length }, error: null
+      };
+    },
+    from(table) {
     let operation = 'read';
     let payload;
     const filters = {};
@@ -39,10 +48,14 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
     return q;
   } };
   const dependencies = {
+    '@/lib/luna/nas-text-store': require('./helpers.cjs').loadTs('lib/luna/nas-text-store.ts'),
     '@/lib/luna/nas-error': require('./helpers.cjs').loadTs('lib/luna/nas-error.ts'),
     dotenv: { config() {} },
     'node:path': { resolve: () => '/unused' },
-    'node:fs': { existsSync: () => true, statSync: () => ({ size: 100, mtime: new Date(stamp) }) },
+    'node:fs': { existsSync: () => true, statSync: () => {
+      if (statFails) throw new Error('EACCES');
+      stats++; return { size: sourceChanges && stats > 1 ? 101 : 100, mtime: new Date(stamp) };
+    } },
     '@supabase/supabase-js': { createClient: () => admin },
     '@/lib/luna/nas-text': {
       extOfNasPath: () => 'pptx', isBackupPath: () => false, resolveNasFullPath: (_drive, name) => name,
@@ -119,8 +132,10 @@ test('partial extraction failure preserves successes but exits failed without a 
   assert.equal(outcome.progress.failed, 1);
   assert.equal(outcome.progress.chunksCreated, 1);
 });
-test('chunk insertion failure cannot become a completed extraction run', async () => {
+test('publication failure cannot become completion or trigger fallback writes', async () => {
   const result = await runCli({ insertError: true });
+  assert.ok(!result.events.some(event => ['upsert','delete','insert'].includes(event.operation)));
+  assert.equal(result.events.filter(event => event.operation === 'rpc').length, 1);
   assert.equal(result.exit, 1);
   assert.ok(!result.events.some(event => event.status === 'done'));
   assert.equal(result.events.find(event => event.status === 'failed').progress.failed, 1);
@@ -164,5 +179,28 @@ test('restored timestamps, size-only changes and changed drives are retry candid
     const result = await runCli({ rows:[row], existing:[{...previous(row,'ok'),...patch}] });
     assert.equal(result.exit,0,result.errors.join('\n'));
     assert.deepEqual(result.extracted,[row.path]);
+  }
+});
+
+
+test('physical source changes during extraction cannot publish or overwrite old metadata', async () => {
+  const result = await runCli({sourceChanges:true});
+  assert.equal(result.exit,1);
+  assert.equal(result.events.filter(event => event.operation).length,0);
+  assert.equal(result.events.find(event => event.status==='failed').progress.failed,1);
+});
+test('unreadable physical metadata is not silently replaced with directory metadata', async () => {
+  const result = await runCli({statFails:true});
+  assert.equal(result.exit,1);
+  assert.deepEqual(result.extracted,[]);
+  assert.equal(result.events.filter(event => event.operation).length,0);
+});
+test('failed or skipped extraction plus storage failure counts each file only once', async () => {
+  for (const status of ['failed','skipped','empty']) {
+    const result = await runCli({statuses:{'sample.pptx':status},insertError:true});
+    const progress = result.events.find(event => event.status==='failed').progress;
+    assert.equal(progress.failed,1);
+    assert.equal(progress.skipped+progress.empty+progress.ok,0);
+    assert.equal(result.events.filter(event => event.operation==='rpc').length,1);
   }
 });
