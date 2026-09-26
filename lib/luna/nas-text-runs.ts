@@ -148,14 +148,16 @@ export async function collectNasTextMorningLine(
   let embeds = 0;
   let anyDone = false;
   let anyInterrupted = false;
+  let anyFailed = false;
+  let failed = 0;
   for (const r of rows) {
     ok += Number(r.ok) || 0;
     chunks += Number(r.chunks_created) || 0;
     embeds += Number(r.embeddings_created) || 0;
     if (r.status === "done") anyDone = true;
-    if (r.status === "interrupted" || r.status === "failed") {
-      anyInterrupted = true;
-    }
+    failed += Number(r.failed) || 0;
+    if (r.status === "failed") anyFailed = true;
+    if (r.status === "interrupted") anyInterrupted = true;
   }
 
   const bits: string[] = [];
@@ -163,15 +165,19 @@ export async function collectNasTextMorningLine(
     bits.push(
       `어젯밤 본문 ${ok.toLocaleString("ko-KR")}건 추출 · 청크 ${chunks.toLocaleString("ko-KR")}개`
     );
-  } else if (anyDone) {
+  } else if (anyDone && !anyFailed && !anyInterrupted && failed === 0) {
     bits.push("어젯밤 본문 추출 — 신규 없음");
-  } else if (anyInterrupted) {
-    bits.push("어젯밤 본문 추출 중단됨 — 다음 실행에서 이어받음");
+  } else if (anyFailed || anyInterrupted || failed > 0) {
+    bits.push("어젯밤 본문 추출 — 완료되지 않은 작업 있음");
   }
   if (embeds > 0) {
     bits.push(`임베딩 ${embeds.toLocaleString("ko-KR")}개`);
   }
   if (bits.length === 0) return null;
-  const suffix = anyInterrupted && !anyDone ? " (중단·이어받기)" : "";
-  return bits.join(" · ") + suffix;
+  // A successful run must not hide a different run's failures or interruption.
+  // Do not promise automatic recovery: scheduling and retry policy are separate.
+  if (failed > 0) bits.push(`실패 ${failed.toLocaleString("ko-KR")}건`);
+  if (anyFailed) bits.push("실패한 실행 있음");
+  if (anyInterrupted) bits.push("중단된 실행 있음");
+  return bits.join(" · ");
 }
