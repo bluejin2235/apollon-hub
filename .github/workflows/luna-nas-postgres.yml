@@ -1,0 +1,89 @@
+name: LUNA NAS PostgreSQL integration
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260925003721_nas_atomic_snapshot.sql'
+      - 'supabase/migrations/20260926063021_nas_text_atomic_publish.sql'
+      - 'supabase/migrations/20260926074534_nas_embedding_validated_queue.sql'
+      - 'supabase/migrations/20260926081424_nas_embedding_worker_gate.sql'
+      - 'scripts/verify-nas-embedding-postgres.py'
+      - 'scripts/verify-nas-postgrest.cjs'
+      - 'scripts/verify-nas-postgres.py'
+      - '.github/workflows/luna-nas-postgres.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: luna_snapshot_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: luna_snapshot_ci
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - run: psql --version
+      - run: python3 scripts/verify-nas-postgres.py --local-ci-fixture
+
+  embedding-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: luna_embedding_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: luna_embedding_ci
+      PGUSER: postgres
+      PGPASSWORD: local-ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/verify-nas-embedding-postgres.py --local-ci-fixture
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Start isolated PostgREST
+        run: |
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          create role authenticator login noinherit password 'local-api-only';
+          grant anon, authenticated, service_role to authenticator;
+          SQL
+          docker run -d --name luna-postgrest-ci --network host \
+            -e PGRST_DB_URI=postgres://authenticator:local-api-only@127.0.0.1:5432/luna_embedding_ci \
+            -e PGRST_DB_SCHEMAS=public \
+            -e PGRST_DB_ANON_ROLE=anon \
+            -e PGRST_SERVER_PORT=3101 \
+            -e PGRST_JWT_SECRET=local-ci-postgrest-signing-secret-only-0000 \
+            postgrest/postgrest:v14.15
+      - run: node scripts/verify-nas-postgrest.cjs --local-ci-fixture
+      - name: Remove isolated PostgREST
+        if: always()
+        run: docker rm -f luna-postgrest-ci || true

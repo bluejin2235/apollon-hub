@@ -1,3 +1,4 @@
+import { notionCitationMarker } from "@/lib/luna/source-citations";
 import {
   matchNamedEntities,
   NAMED_ENTITY_SEED
@@ -733,6 +734,8 @@ export function formatNotionSourcesForPrompt(
         ? ` · 연결(${s.via_link ?? "link"})`
         : "";
       const lines = [`- ${stage ? `${stage} ` : ""}${title}${via} — ${s.url}`];
+      const marker = notionCitationMarker(s.id);
+      if (marker) lines.push(`  출처 식별자: ${marker}`);
       if (s.project_key) {
         lines.push(`  프로젝트: ${s.project_key}`);
       }
@@ -761,7 +764,10 @@ export function formatNotionSourcesForPrompt(
       return lines.join("\n");
     })
     .join("\n");
-  return head + body;
+  const citationRule = sources.some(s => notionCitationMarker(s.id))
+    ? "[출처 기록 규칙] 실제 사용한 자료의 출처 식별자를 해당 설명 뒤에 HTML 주석 그대로 붙인다. 제목을 바꿔 설명해도 식별자는 바꾸지 않는다. 사용하지 않은 자료의 식별자는 붙이지 않는다. 식별자는 내부 연결용이며 독자에게는 자료 제목과 URL로 출처를 안내한다.\n"
+    : "";
+  return citationRule + head + body;
 }
 
 function summarizeGroupsInline(sources: NotionSource[]): string[] {
@@ -1024,3 +1030,4 @@ export async function searchNotionPages(
   }
   return { status: "empty", sources: [], queries, rounds };
 }
+

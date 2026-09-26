@@ -36,11 +36,21 @@ export function pickPrimarySignal(signals: FailureSignal[]): FailureSignal {
 }
 
 const NOT_FOUND_RE =
-  /찾(?:지|을)\s*못|확인(?:되)?지\s*않|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
+  /찾(?:지|을)\s*못|확인(?:하|되)?지\s*(?:않|못)|없(?:습니다|어요|음)|못\s*찾|결과(?:가)?\s*0|검색(?:했(?:지만|으나)|(?:을|를)\s*돌렸(?:지만|으나))[^.\n]{0,24}0\s*건/;
+
+/** An explicit positive retrieval statement makes a mixed answer partial, not wholly missing.
+ * This remains a text heuristic, not proof that the cited source supports the answer.
+ */
+export function hasPositiveRetrievedEvidence(text: string): boolean {
+  return text.split(/[.!?。\n]/).some(sentence =>
+    /(?:자료|문서|파일|기록|이미지|사진|제안서|기획서)[^.!?\n]{0,32}(?:확인했습니다|확인했어요|찾았습니다|찾았어요|찾았고|확인했고)/.test(sentence) &&
+    !/못|않|없|아니/.test(sentence)
+  );
+}
 
 /** 답 본문이 「못 찾음」 계열인지 — UI·실패 수집 공용 */
 export function isNotFoundAnswer(text: string): boolean {
-  return NOT_FOUND_RE.test(text);
+  return NOT_FOUND_RE.test(text) && !hasPositiveRetrievedEvidence(text);
 }
 
 export function kindForSignals(
@@ -264,4 +274,67 @@ export function summarizeFailureKinds(
     auto: rest.filter((r) => r.kind === "auto").length,
     inspect: inspect.length
   };
+}
+
+
+/** 사람이 겪은 못 찾음 — 기계 시험보다 먼저 보여줄 질문 힌트 */
+export const HUMAN_FIX_QUESTION_HINTS = [
+  "출장비", "휴가", "운동 지원", "미디어파사드", "해운대", "고래",
+  "인스파이어", "아크메르", "아트리움"
+] as const;
+export type FailureAskPreview = {
+  key: string; question: string; count: number; latest_at: string; ids: string[];
+};
+export function normalizeFailureQuestion(q: string): string {
+  return q.replace(/\s+/g, " ").trim();
+}
+function humanFixHintRank(q: string): number {
+  const i = HUMAN_FIX_QUESTION_HINTS.findIndex((h) => q.includes(h));
+  return i === -1 ? 100 : i;
+}
+/** 열린 실패를 같은 질문끼리 묶어, 고칠 목록 순으로 정렬 */
+export function groupOpenFailureAskItems(rows: Array<{
+  id: string; question: string; created_at: string; verdict?: string | null;
+  signal?: string; signals?: string[] | null;
+}>): FailureAskPreview[] {
+  const map = new Map<string, FailureAskPreview>();
+  for (const r of rows) {
+    if (r.verdict) continue;
+    if (isInspectFailure({ signal: r.signal ?? "", signals: r.signals })) continue;
+    const q = normalizeFailureQuestion(r.question);
+    if (!q) continue;
+    const cur = map.get(q);
+    if (!cur) {
+      map.set(q, { key: q, question: q, count: 1, latest_at: r.created_at, ids: [r.id] });
+    } else {
+      cur.count += 1;
+      cur.ids.push(r.id);
+      if (r.created_at > cur.latest_at) cur.latest_at = r.created_at;
+    }
+  }
+  return [...map.values()].sort((a, b) => {
+    const ra = humanFixHintRank(a.question), rb = humanFixHintRank(b.question);
+    if (ra !== rb) return ra - rb;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.latest_at < b.latest_at ? 1 : -1;
+  });
+}
+
+
+/** A missing count is unknown, not proof that retrieval returned nothing. */
+export function collectAutoFailureSignals(opts: {
+  answer: string;
+  intentScore?: number | null;
+  confidenceScore?: number | null;
+  classifyConfidence?: number | null;
+  searchAttempted?: boolean;
+  searchResultCount?: number;
+}): FailureSignal[] {
+  const signals: FailureSignal[] = [];
+  if (typeof opts.intentScore === "number" && opts.intentScore < 5) signals.push("low_intent");
+  if (typeof opts.confidenceScore === "number" && opts.confidenceScore < 5) signals.push("low_confidence");
+  if (isNotFoundAnswer(opts.answer)) signals.push("not_found");
+  if (typeof opts.classifyConfidence === "number" && opts.classifyConfidence < 0.5) signals.push("unclassified");
+  if (opts.searchAttempted === true && opts.searchResultCount === 0) signals.push("zero_search");
+  return signals;
 }

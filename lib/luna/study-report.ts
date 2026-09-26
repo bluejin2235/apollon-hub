@@ -4,6 +4,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StudyRunRow } from "@/lib/luna/study-run";
+import { studyOutcomeLabel as outcomeLabel } from "@/lib/luna/study-status";
 
 export type StudyRunReportCard = {
   agenda: string;
@@ -39,13 +40,6 @@ export type StudyMorningReport = {
   durationLabel: string | null;
   rangeLabel: string | null;
 };
-
-function outcomeLabel(o: StudyRunRow["outcome"]): string {
-  if (o === "improved") return "나아짐";
-  if (o === "no_change") return "변화 없음";
-  if (o === "failed") return "나빠짐";
-  return "미완";
-}
 
 function scopeOf(run: StudyRunRow): Record<string, unknown> {
   return run.scope && typeof run.scope === "object" ? run.scope : {};

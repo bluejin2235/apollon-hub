@@ -1,3 +1,5 @@
+import { hasNotionCitation } from "@/lib/luna/source-citations";
+import { hasPositiveRetrievedEvidence } from "@/lib/luna/failures-shared";
 import type { AskedNature, AskedWhat } from "@/lib/luna/ask-what";
 import { natureLabelKo } from "@/lib/luna/ask-what";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -195,6 +197,8 @@ export function keepSourcesUsedInAnswer(opts: {
   wiki: WikiSourceRef[];
   answer: string;
   notFound: boolean;
+  /** Only sources actually supplied to the answer model may use ID citations. */
+  injectedNotionIds?: string[];
 }): { cards: LunaCard[]; notion: NotionSource[]; wiki: WikiSourceRef[] } {
   if (opts.notFound) {
     return { cards: [], notion: [], wiki: [] };
@@ -210,7 +214,8 @@ export function keepSourcesUsedInAnswer(opts: {
     ...otherCards.filter((c) => cardUsedInAnswer(c, answer))
   ];
   const notion = opts.notion.filter(
-    (s) => titleUsed(answer, s.title) || Boolean(s.url && answer.includes(s.url))
+    (s) => titleUsed(answer, s.title) || Boolean(s.url && answer.includes(s.url)) ||
+      (Boolean(opts.injectedNotionIds?.includes(s.id)) && hasNotionCitation(answer, s.id))
   );
   const wiki = opts.wiki.filter(
     (h) => titleUsed(answer, h.title) || titleUsed(answer, h.section_title)
@@ -219,7 +224,8 @@ export function keepSourcesUsedInAnswer(opts: {
 }
 
 export function isNotFoundAnswerText(answer: string): boolean {
-  return /찾지 못했|못 찾았|안 잡혀요|기억해둘게요/.test(answer);
+  return /찾지 못했|못 찾았|안 잡혀요|기억해둘게요/.test(answer) &&
+    !hasPositiveRetrievedEvidence(answer);
 }
 
 export function formatNotFoundAnswer(
@@ -287,3 +293,4 @@ export function scoreEvidenceMatch(opts: {
     self_note: `찾은 ${denom}건 중 질문에 맞는 자료 ${opts.matching}건`
   };
 }
+

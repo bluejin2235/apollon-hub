@@ -1,3 +1,5 @@
+import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
+import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
@@ -29,8 +31,6 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
-import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
-import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
@@ -908,15 +908,7 @@ export async function POST(request: NextRequest) {
   const learningsLoad = withPrepCache(
     "learnings",
     PREP_TTL_MS.learnings,
-    () =>
-      admin
-        .from("luna_learnings")
-        .select("id, content, category, importance, use_count, created_at")
-        .eq("status", "active")
-        .neq("category", "identity")
-        .order("importance", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(200),
+    () => loadRuntimeLearnings(admin),
     (row) => !row.error
   );
   const typesLoad = withPrepCache("question-types", PREP_TTL_MS.types, () =>
@@ -1821,6 +1813,8 @@ export async function POST(request: NextRequest) {
         }
         const namedProjectLock = askedWhat.projectPhrases.length > 0;
         let evidenceCounts = { retrieved: 0, matching: 0 };
+        // Candidate-record peak before answer/citation filtering; not unique files.
+        let rawSearchResultCount: number | undefined;
         let notFoundFromAsk = false;
         if (
           namedProjectLock &&
@@ -2684,6 +2678,7 @@ export async function POST(request: NextRequest) {
             ...webRes,
             ...youtubeRes
           ];
+          rawSearchResultCount = Math.max(rawSearchResultCount ?? 0, merged.length + wikiSources.length);
           return {
             notionSources: notionRes,
             notionOutcome,
@@ -2755,96 +2750,18 @@ export async function POST(request: NextRequest) {
 
           // Work 본문: 목록형은 생략. 노션이 이미 충분하면 프로젝트·찾기도 생략(수 초 절약).
           // Work 디렉터리 색인·nas_path 조회는 그대로 두어 Work 카드는 유지한다.
-          const notionMatchEnough =
-            maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
-          if (
-            nasEnabled &&
-            !listingQuestion &&
-            !notionMatchEnough
-          ) {
-            nasTextSearched = true;
-            try {
-              const kwHits = await searchNasTextKeyword(
-                admin,
-                searchIntentText,
-                { limit: 12 }
-              );
-              if (kwHits.length > 0) {
-                nasTextHitCount = Math.max(nasTextHitCount, kwHits.length);
-                const seen = new Set(
-                  nasResults.map((r) =>
-                    r.path.replace(/\\/g, "/").toLowerCase()
-                  )
-                );
-                const extra: WorkserverExploreRow[] = [];
-                for (const hit of kwHits) {
-                  const key = hit.path.replace(/\\/g, "/").toLowerCase();
-                  if (seen.has(key)) continue;
-                  seen.add(key);
-                  extra.push({
-                    drive: hit.drive,
-                    path: hit.path,
-                    type: "file",
-                    size_bytes: null,
-                    modified_at: hit.modified_at,
-                    file_summary: hit.snippet,
-                    importance: hit.score
-                  });
-                }
-                if (extra.length > 0) {
-                  nasResults = finalizeNasDirectoryRows([
-                    ...nasResults,
-                    ...extra
-                  ]);
-                }
-              }
-            } catch (err) {
-              console.error("[luna/chat] nas text keyword", err);
-            }
-            if (knowledgeEmb.queryEmbedding?.length) {
-              try {
-                const nasChunkHits = await matchNasChunkEmbeddings(
-                  admin,
-                  knowledgeEmb.queryEmbedding,
-                  { limit: 12 }
-                );
-                if (nasChunkHits.length > 0) {
-                  nasTextHitCount = Math.max(
-                    nasTextHitCount,
-                    nasChunkHits.length
-                  );
-                  const seen = new Set(
-                    nasResults.map((r) =>
-                      r.path.replace(/\\/g, "/").toLowerCase()
-                    )
-                  );
-                  const extra: WorkserverExploreRow[] = [];
-                  for (const hit of nasChunkHits) {
-                    const key = hit.path.replace(/\\/g, "/").toLowerCase();
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    extra.push({
-                      drive: null,
-                      path: hit.path,
-                      type: "file",
-                      size_bytes: null,
-                      modified_at: null,
-                      file_summary: hit.content?.slice(0, 200) ?? null,
-                      importance: hit.similarity
-                    });
-                  }
-                  if (extra.length > 0) {
-                    nasResults = finalizeNasDirectoryRows([
-                      ...nasResults,
-                      ...extra
-                    ]);
-                  }
-                }
-              } catch (err) {
-                console.error("[luna/chat] nas chunk match", err);
-              }
-            }
-          }
+          const bodyEvidence = await retrieveNasBodyEvidence(admin, {
+            enabled: nasEnabled,
+            listing: listingQuestion,
+            notionEnough: maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED,
+            query: searchIntentText,
+            queryEmbedding: knowledgeEmb.queryEmbedding,
+            rows: nasResults
+          });
+          nasResults = bodyEvidence.rows;
+          nasTextSearched = bodyEvidence.searched;
+          // Preserve the existing UI metric; it is not a unique-file count.
+          nasTextHitCount = Math.max(bodyEvidence.keywordHits, bodyEvidence.vectorHits);
 
           // 2차: 좁은 범위 결과가 부족하면 한 단계 더 넓혀 재검색
           if (
@@ -2992,6 +2909,7 @@ export async function POST(request: NextRequest) {
               },
               askedWhat
             );
+            rawSearchResultCount = Math.max(rawSearchResultCount ?? 0, filtered.counts.retrieved);
             evidenceCounts = {
               retrieved: filtered.counts.retrieved,
               matching: filtered.counts.matching
@@ -3687,6 +3605,7 @@ export async function POST(request: NextRequest) {
             notion: notionSources,
             wiki: publicWikiSources,
             answer: assistantText,
+            injectedNotionIds: notionForLlm.map(source => source.id),
             notFound: hideUnused
           });
           cards = kept.cards;
@@ -3818,6 +3737,10 @@ export async function POST(request: NextRequest) {
         assistantMeta.slim_listing_prompt = Boolean(
           listingReferenceDisablesNas(searchScope.kind, listingQuestion)
         );
+        assistantMeta.search_evidence = {
+          retrieved_candidate_peak: rawSearchResultCount ?? null,
+          displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
+        };
         assistantMeta.search_scope = {
           kind: searchScope.kind,
           tier: searchScope.tier,
@@ -4016,11 +3939,12 @@ export async function POST(request: NextRequest) {
             durationMs,
             classifyConfidence: classification.confidence,
             searchAttempted: searchRounds > 0,
-            searchResultCount:
-              cards.length + notionSources.length + publicWikiSources.length,
+            searchResultCount: rawSearchResultCount,
             sourceRef: {
               last_had_clarify: lastHadClarify,
-              clarify_followup: Boolean(clarifyFollowupQuery)
+              clarify_followup: Boolean(clarifyFollowupQuery),
+              retrieved_candidate_peak: rawSearchResultCount ?? null,
+              displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
             }
           }).catch((err) =>
             console.error("[luna/chat] auto failures", err)
@@ -4071,3 +3995,4 @@ export async function POST(request: NextRequest) {
     }
   });
 }
+

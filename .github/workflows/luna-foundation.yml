@@ -1,0 +1,26 @@
+name: LUNA search foundation
+on:
+  pull_request:
+    paths:
+      - 'lib/luna/**'
+      - 'app/api/luna/**'
+      - 'tests/luna/**'
+      - 'scripts/*nas*.ts'
+      - 'supabase/migrations/**'
+      - 'package*.json'
+      - '.github/workflows/luna-foundation.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run test:luna-foundation
+      - run: npx tsc --noEmit

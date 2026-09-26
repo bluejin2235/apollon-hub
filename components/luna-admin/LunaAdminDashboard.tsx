@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { LunaAdminStorage } from "@/components/luna-admin/LunaAdminStorage";
 import { LunaAdminResponseTiming } from "@/components/luna-admin/LunaAdminResponseTiming";
+import { LunaAdminTextCoverage } from "@/components/luna-admin/LunaAdminTextCoverage";
 import type { AdminDashboard } from "@/lib/luna-admin/types";
 import { lightEmoji } from "@/lib/luna-admin/traffic";
 import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
@@ -121,9 +122,11 @@ export function LunaAdminDashboard({ onGo }: Props) {
             <div className="t">{alert.title}</div>
             <div className="d">{alert.detail}</div>
           </div>
-          <button type="button" className="btn p" onClick={() => void runNow()} disabled={running}>
-            {running ? "실행 중…" : "지금 실행"}
-          </button>
+          {alert.action === "run_selfstudy" ? (
+            <button type="button" className="btn p" onClick={() => void runNow()} disabled={running}>
+              {running ? "실행 중…" : "자습 실행"}
+            </button>
+          ) : null}
           <button type="button" className="btn" onClick={() => onGo(alert.href)}>
             원인 보기
           </button>
@@ -150,7 +153,7 @@ export function LunaAdminDashboard({ onGo }: Props) {
           <div className="m">{data.cards.primary_delta_label}</div>
         </div>
         <div className={`card ${data.cards.secondary === 0 ? "r" : ""}`}>
-          <div className="l">2차 데이터</div>
+          <div className="l">관계 링크</div>
           <div className="v">{data.cards.secondary.toLocaleString("ko-KR")}</div>
           <div className="m">{data.cards.secondary_note}</div>
         </div>
@@ -168,6 +171,8 @@ export function LunaAdminDashboard({ onGo }: Props) {
           <div className="m">{data.cards.my_turn_note}</div>
         </div>
       </div>
+
+      <LunaAdminTextCoverage />
 
       <div className="sech">
         <span className="t">오늘 밤 할 일</span>

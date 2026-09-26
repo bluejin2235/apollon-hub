@@ -138,14 +138,14 @@ export function LunaAdminTonight({ onGo }: Props) {
                 <span className="t">{job.title}</span>
                 <span className="v">{job.value}</span>
               </div>
-              <div className="bar">
+              {job.pct !== null ? <div className="bar">
                 <i
                   style={{
                     width: `${Math.max(0, Math.min(100, job.pct))}%`,
                     background: job.bar_color || "var(--luna)"
                   }}
                 />
-              </div>
+              </div> : null}
               <div className="d">{job.detail}</div>
             </div>
           ))}

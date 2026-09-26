@@ -1,3 +1,7 @@
+import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
+import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
+import { scrubLunaAnswerText } from "@/lib/luna/chat-response";
+import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseNumberedChoices } from "@/lib/luna/chat-response";
@@ -71,7 +75,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { WORK_STAGE_ANSWER_RULE } from "@/lib/luna/project-stage";
-import { takeTopNotionSourcesForLlm } from "@/lib/luna/source-pack";
+import { takeTopNotionSourcesForLlm, maxNotionMatchStrength, PACK_SCORE_RECOMMENDED } from "@/lib/luna/source-pack";
 import {
   answerMaxTokensForDepth,
   LLM_INJECT_BY_DEPTH,
@@ -603,14 +607,8 @@ export async function runLunaTurn(
   // 주입 안전: status='active' 만. candidate 는 절대 주입하지 않음.
   let learningsData: LearningMatchRow[] | null = null;
   await mark("load_learnings", async () => {
-    const res = await admin
-      .from("luna_learnings")
-      .select("id, content, category, importance, use_count, created_at")
-      .eq("status", "active")
-      .neq("category", "identity")
-      .order("importance", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const res = await loadRuntimeLearnings(admin);
+    if (res.error) throw new Error(`Learning isolation check failed: ${res.error.message}`);
     learningsData = (res.data ?? null) as LearningMatchRow[] | null;
   });
 
@@ -849,6 +847,19 @@ export async function runLunaTurn(
     stageMs.nas_explore = 0;
   }
 
+  await mark("nas_body", async () => {
+    const bodyEvidence = await retrieveNasBodyEvidence(admin, {
+      enabled: nasEnabled && searchScope.flags.nas,
+      listing: listingQuestion,
+      notionEnough: maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED,
+      query: userText,
+      queryEmbedding: emb.queryEmbedding,
+      rows: nasResults
+    });
+    nasResults = bodyEvidence.rows;
+    nasSearchAttempted ||= bodyEvidence.searched;
+  });
+
   // 검색 후에도 부족하면 한 단계 더
   if (
     scopeHitsInsufficient(searchScope.kind, {
@@ -945,8 +956,13 @@ export async function runLunaTurn(
     })
   );
   const rawAnswer = answerRes.text.trim();
-  let answer = sanitizeKnowledgeListAnswer(rawAnswer, learnings);
-  const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
+  let answer = scrubLunaAnswerText(sanitizeKnowledgeListAnswer(rawAnswer, learnings));
+  const displayedSources = keepSourcesUsedInAnswer({
+    cards, notion: notionSources, wiki: publicWikiSources, answer,
+    injectedNotionIds: notionForLlm.map(source => source.id),
+    notFound: false // This evaluator has no interactive notFoundFromAsk branch.
+  });
+  const webCardsUsed = webAugmented && displayedSources.cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
     answer = `${answer.trim()}\n\n웹 검색으로 보강함`;
   }
@@ -981,9 +997,9 @@ export async function runLunaTurn(
 
   return {
     answer,
-    sources: cards,
-    notionSources,
-    wikiSources: publicWikiSources,
+    sources: displayedSources.cards,
+    notionSources: displayedSources.notion,
+    wikiSources: displayedSources.wiki,
     privateWikiRefs: privateWikiRefs.length > 0 ? privateWikiRefs : undefined,
     durationMs: Date.now() - startedAt,
     modelLabel: answerRes.model_label || LUNA_MODEL_LABEL,
@@ -993,3 +1009,4 @@ export async function runLunaTurn(
     stageMs
   };
 }
+

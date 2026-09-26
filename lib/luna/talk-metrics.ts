@@ -34,7 +34,11 @@ export function analyzeAssistantMessage(
   if (meta.feedback === "good") out.thumbsUp = 1;
   if (meta.feedback === "bad") out.thumbsDown = 1;
   if (meta.clarify) out.clarify = 1;
-  if ("cards" in meta && Array.isArray(meta.cards) && meta.cards.length === 0) {
+  const searchEvidence = asMessageMeta(meta.search_evidence);
+  // An empty card list is a rendering result, not proof that retrieval found zero.
+  // Legacy messages without candidate evidence remain unclassified.
+  if (typeof meta.search_rounds === "number" && Number.isFinite(meta.search_rounds) &&
+      meta.search_rounds > 0 && searchEvidence.retrieved_candidate_peak === 0) {
     out.searchZero = 1;
   }
   if (typeof meta.search_rounds === "number" && meta.search_rounds >= 2) {
@@ -158,7 +162,7 @@ export function formatRelativeWhen(iso: string): string {
   const mm = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul",
     minute: "2-digit"
-  }).format(d);
+  }).format(d).padStart(2, "0");
   if (that === today) return `오늘 ${hh}:${mm}`;
   if (that === yesterday) return `어제 ${hh}:${mm}`;
   return `${that.slice(5).replace("-", ".")} ${hh}:${mm}`;
@@ -234,3 +238,4 @@ export function requeryRate(signals: AssistantSignals, searchTurns: number): num
   if (searchTurns <= 0) return null;
   return Math.round((signals.requery / searchTurns) * 100);
 }
+

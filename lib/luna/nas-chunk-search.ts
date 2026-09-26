@@ -2,6 +2,7 @@
  * Work 본문 청크 임베딩 검색 — nas_file_chunks (노션과 분리)
  */
 import "server-only";
+import { currentNasBodyFiles } from "@/lib/luna/nas-source-version";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { embeddingToSql } from "@/lib/luna/embedding";
 
@@ -14,6 +15,7 @@ export type NasChunkMatchHit = {
   seq: number;
   similarity: number;
   content?: string;
+  drive?: string;
 };
 
 function isMissingRpc(error: { code?: string; message?: string }): boolean {
@@ -60,7 +62,7 @@ export async function matchNasChunkEmbeddings(
     .in("id", ids);
   if (cErr) {
     console.error("[luna/nas-chunk] content", cErr);
-    return hits;
+    return [];
   }
   const textById = new Map(
     ((rows ?? []) as { id: string; content: string }[]).map((r) => [
@@ -68,8 +70,10 @@ export async function matchNasChunkEmbeddings(
       r.content ?? ""
     ])
   );
-  return hits.map((h) => ({
+  const files = await currentNasBodyFiles(admin, hits.map(h => h.path));
+  return hits.filter(h => files.has(h.path) && textById.get(h.id)?.trim()).map((h) => ({
     ...h,
-    content: textById.get(h.id)?.slice(0, 800)
+    drive: files.get(h.path)!.drive,
+    content: textById.get(h.id)!.slice(0, 800)
   }));
 }

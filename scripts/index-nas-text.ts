@@ -1,3 +1,5 @@
+import { publishNasText, type NasTextPublication } from "@/lib/luna/nas-text-store";
+import { describeNasError } from "@/lib/luna/nas-error";
 /**
  * Work서버 문서 본문 추출 → nas_file_text / nas_file_chunks
  * 임베딩은 scripts/embed-nas-chunks.ts 에서 분리.
@@ -40,11 +42,14 @@ type NasDirRow = {
 };
 
 type ExistingRow = {
+  size_bytes: number | null;
   path: string;
   drive: string;
   modified_at: string | null;
   content_hash: string | null;
   status: string;
+  updated_at: string;
+  requires_repair?: boolean;
 };
 
 type Args = {
@@ -115,9 +120,12 @@ async function fetchLatestBatches(
 async function fetchCandidates(
   admin: SupabaseClient,
   opts: Args,
-  batches: Map<string, string>
-): Promise<NasDirRow[]> {
+  batches: Map<string, string>,
+  existing: Map<string, ExistingRow>
+): Promise<{ rows: NasDirRow[]; scanned: number; alreadyDone: number }> {
   const out: NasDirRow[] = [];
+  let scanned = 0;
+  let alreadyDone = 0;
   const pageSize = 1000;
   for (const drive of ["T", "P"]) {
     const batch = batches.get(drive);
@@ -142,38 +150,38 @@ async function fetchCandidates(
       if (error) throw error;
       const rows = (data ?? []) as NasDirRow[];
       for (const r of rows) {
+        scanned += 1;
         if (!r.path || isBackupPath(r.path)) continue;
         const e = extOfNasPath(r.path);
         if (!e) continue;
         if (opts.ext && e !== opts.ext) continue;
-        out.push(r);
-        if (opts.limit && out.length >= opts.limit * 3) {
-          // 여유분 — 이어받기 스킵 후 limit 맞추기
+        if (!needsWork(r, existing.get(r.path), opts.resume)) {
+          alreadyDone += 1;
+          continue;
         }
+        out.push(r);
+        // Limit actual work, never the prefix of completed candidates.
+        if (opts.limit && out.length >= opts.limit) return { rows: out, scanned, alreadyDone };
       }
       if (rows.length < pageSize) break;
       from += pageSize;
-      if (opts.limit && out.length >= opts.limit * 5) break;
     }
   }
-  return out;
+  return { rows: out, scanned, alreadyDone };
 }
 
 async function loadExistingMap(
-  admin: SupabaseClient,
-  paths: string[]
+  admin: SupabaseClient
 ): Promise<Map<string, ExistingRow>> {
   const map = new Map<string, ExistingRow>();
-  if (paths.length === 0) return map;
 
   // 경로 .in() 은 긴 한글·특수문자 URL 로 fetch 실패할 수 있음 → 전체 페이지 로드 후 필터
-  const wanted = new Set(paths);
   let from = 0;
   const page = 1000;
   while (true) {
     const { data, error } = await admin
       .from("nas_file_text")
-      .select("path, drive, modified_at, content_hash, status")
+      .select("path, drive, size_bytes, modified_at, content_hash, status, updated_at")
       .order("path")
       .range(from, from + page - 1);
     if (error) {
@@ -184,10 +192,19 @@ async function loadExistingMap(
     const rows = (data ?? []) as ExistingRow[];
     if (rows.length === 0) break;
     for (const r of rows) {
-      if (wanted.has(r.path)) map.set(r.path, r);
+      map.set(r.path, r);
     }
     if (rows.length < page) break;
     from += page;
+  }
+  const { data: incomplete, error: integrityError } = await admin.rpc("nas_text_incomplete_paths");
+  if (integrityError) throw integrityError;
+  if (!Array.isArray(incomplete) || incomplete.some(path => typeof path !== "string")) {
+    throw new Error("Invalid NAS integrity audit result");
+  }
+  for (const path of incomplete) {
+    const row = map.get(path);
+    if (row) row.requires_repair = true;
   }
   return map;
 }
@@ -198,68 +215,17 @@ function needsWork(
   resume: boolean
 ): boolean {
   if (!existing) return true;
-  if (!resume) return true;
-  if (!existing.status) return true;
+  if (!resume || existing.requires_repair) return true;
+  // A failed attempt is not a completed extraction, even if the source is unchanged.
+  if (!existing.status || existing.status === "failed") return true;
+  if (existing.drive !== row.drive || row.size_bytes == null || existing.size_bytes == null ||
+      Number(row.size_bytes) !== Number(existing.size_bytes)) return true;
   const fileMod = row.modified_at ? Date.parse(row.modified_at) : NaN;
   const dbMod = existing.modified_at ? Date.parse(existing.modified_at) : NaN;
-  if (Number.isFinite(fileMod) && Number.isFinite(dbMod) && fileMod > dbMod) {
+  if (!Number.isFinite(fileMod) || !Number.isFinite(dbMod) || fileMod !== dbMod) {
     return true;
   }
   return false;
-}
-
-async function deleteChunks(admin: SupabaseClient, path: string): Promise<void> {
-  const { error } = await admin.from("nas_file_chunks").delete().eq("path", path);
-  if (error) throw error;
-}
-
-async function upsertTextMeta(
-  admin: SupabaseClient,
-  row: {
-    path: string;
-    drive: string;
-    ext: string;
-    size_bytes: number | null;
-    modified_at: string | null;
-    content_hash: string | null;
-    text_length: number;
-    chunk_count: number;
-    status: string;
-    skip_reason: string | null;
-    error: string | null;
-    extracted_at: string;
-  }
-): Promise<void> {
-  const { error } = await admin.from("nas_file_text").upsert(
-    {
-      ...row,
-      updated_at: new Date().toISOString()
-    },
-    { onConflict: "path" }
-  );
-  if (error) throw error;
-}
-
-async function insertChunks(
-  admin: SupabaseClient,
-  path: string,
-  chunks: string[]
-): Promise<number> {
-  if (chunks.length === 0) return 0;
-  const rows = chunks.map((content, i) => ({
-    path,
-    seq: i,
-    content: content.replace(/\u0000/g, "")
-  }));
-  const batch = 50;
-  let n = 0;
-  for (let i = 0; i < rows.length; i += batch) {
-    const part = rows.slice(i, i + batch);
-    const { error } = await admin.from("nas_file_chunks").insert(part);
-    if (error) throw error;
-    n += part.length;
-  }
-  return n;
 }
 
 async function purgeMissingFiles(
@@ -339,30 +305,14 @@ async function main() {
     console.log(`purge-missing deleted=${n}`);
   }
 
+  // Existing metadata was already fully paginated by the old loader. Keep that
+  // bounded-page read, then walk candidates until the actual work limit is filled.
+  const existing = await loadExistingMap(admin);
   console.log("fetching candidates…");
-  const candidates = await fetchCandidates(admin, args, batches);
-  console.log(`candidates raw=${candidates.length}`);
-
-  const existing = await loadExistingMap(
-    admin,
-    (args.limit != null
-      ? candidates.slice(0, Math.max(args.limit * 2, args.limit))
-      : candidates
-    ).map((c) => c.path)
-  );
-
-  const candidateSlice =
-    args.limit != null
-      ? candidates.slice(0, Math.max(args.limit * 2, args.limit))
-      : candidates;
-
-  const work = candidateSlice.filter((c) =>
-    needsWork(c, existing.get(c.path), args.resume)
-  );
-  const workQueue =
-    args.limit != null ? work.slice(0, args.limit) : work;
+  const candidates = await fetchCandidates(admin, args, batches, existing);
+  const workQueue = candidates.rows;
   console.log(
-    `to_process=${workQueue.length} already_done=${candidateSlice.length - work.length} dryRun=${args.dryRun}`
+    `to_process=${workQueue.length} scanned=${candidates.scanned} already_done=${candidates.alreadyDone} dryRun=${args.dryRun}`
   );
 
   if (args.dryRun) {
@@ -409,165 +359,64 @@ async function main() {
       const nowIso = new Date().toISOString();
 
       try {
-      const full = resolveNasFullPath(row.drive, row.path);
-
-      if (!full) {
-        progress.failed += 1;
-        bump(ext, "failed");
-        await upsertTextMeta(admin, {
-          path: row.path,
-          drive: row.drive,
-          ext,
-          size_bytes: row.size_bytes,
-          modified_at: row.modified_at,
-          content_hash: null,
-          text_length: 0,
-          chunk_count: 0,
-          status: "failed",
-          skip_reason: null,
-          error: "file_not_found",
-          extracted_at: nowIso
-        });
-      } else {
-        let sizeBytes = row.size_bytes;
-        let modifiedAt = row.modified_at;
-        try {
-          const st = statSync(full);
-          sizeBytes = st.size;
-          modifiedAt = st.mtime.toISOString();
-        } catch {
-          /* keep nas row */
-        }
-
-        const extracted = await extractNasFileText(full, ext);
         const prev = existing.get(row.path);
-
-        if (extracted.status === "skipped") {
-          progress.skipped += 1;
-          bump(ext, "skipped");
-          if (extracted.skipReason === "drawing_pdf") drawingSkipped += 1;
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "skipped",
-            skip_reason: extracted.skipReason ?? null,
-            error: extracted.error ?? null,
-            extracted_at: nowIso
-          });
-        } else if (extracted.status === "empty") {
-          progress.empty += 1;
-          bump(ext, "empty");
-          if (prev) await deleteChunks(admin, row.path);
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "empty",
-            skip_reason: null,
-            error: null,
-            extracted_at: nowIso
-          });
-        } else if (extracted.status === "failed") {
-          progress.failed += 1;
-          bump(ext, "failed");
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: sizeBytes,
-            modified_at: modifiedAt,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "failed",
-            skip_reason: null,
-            error: extracted.error ?? "extract_failed",
-            extracted_at: nowIso
-          });
-        } else {
-          const cleanText = sanitizeNasText(extracted.text);
-          const hash = hashNasText(cleanText);
-          const { chunks, truncated } = chunkNasText(cleanText);
-
-          if (prev?.content_hash === hash && prev.status === "ok") {
-            // 본문 동일 — 청크·임베딩 유지, 메타만 갱신
-            progress.ok += 1;
-            bump(ext, "ok");
-            await upsertTextMeta(admin, {
-              path: row.path,
-              drive: row.drive,
-              ext,
-              size_bytes: sizeBytes,
-              modified_at: modifiedAt,
-              content_hash: hash,
-              text_length: cleanText.length,
-              chunk_count: chunks.length,
-              status: "ok",
-              skip_reason: truncated ? "truncated_200_chunks" : null,
-              error: null,
-              extracted_at: nowIso
-            });
-          } else {
-            await deleteChunks(admin, row.path);
-            await upsertTextMeta(admin, {
-              path: row.path,
-              drive: row.drive,
-              ext,
-              size_bytes: sizeBytes,
-              modified_at: modifiedAt,
-              content_hash: hash,
-              text_length: cleanText.length,
-              chunk_count: chunks.length,
-              status: "ok",
-              skip_reason: truncated ? "truncated_200_chunks" : null,
-              error: null,
-              extracted_at: nowIso
-            });
-            const n = await insertChunks(admin, row.path, chunks);
-            progress.chunksCreated += n;
-            bump(ext, "chunks", n);
-            progress.ok += 1;
-            bump(ext, "ok");
+        if (prev && !prev.updated_at) throw new Error("Missing publication version");
+        const meta: NasTextPublication = {
+          path: row.path, drive: row.drive, ext,
+          size_bytes: row.size_bytes, modified_at: row.modified_at,
+          content_hash: null, text_length: 0, chunk_count: 0,
+          status: "failed", skip_reason: null, error: "file_not_found", extracted_at: nowIso
+        };
+        let chunks: string[] = [];
+        const full = resolveNasFullPath(row.drive, row.path);
+        if (full) {
+          const before = statSync(full);
+          // Do not publish text for a physical version newer/older than the
+          // directory snapshot. It must be scanned before it can be indexed.
+          if (row.size_bytes !== before.size || !row.modified_at ||
+              Date.parse(row.modified_at) !== before.mtime.getTime()) {
+            throw new Error("Physical source differs from directory snapshot");
+          }
+          let extracted;
+          try {
+            extracted = await extractNasFileText(full, ext);
+          } catch (error) {
+            extracted = { status: "failed" as const, text: "", error: describeNasError(error, 400) };
+          }
+          const after = statSync(full);
+          if (before.size !== after.size || before.mtime.getTime() !== after.mtime.getTime()) {
+            throw new Error("Physical source changed during extraction");
+          }
+          meta.status = extracted.status;
+          meta.error = extracted.status === "failed" ? (extracted.error ?? "extract_failed") : null;
+          meta.skip_reason = extracted.status === "skipped" ? (extracted.skipReason ?? null) : null;
+          if (extracted.status === "ok") {
+            const cleanText = sanitizeNasText(extracted.text);
+            const split = chunkNasText(cleanText);
+            chunks = split.chunks;
+            if (chunks.length === 0) {
+              meta.status = "empty";
+            } else {
+              meta.content_hash = hashNasText(cleanText);
+              meta.text_length = cleanText.length;
+              meta.chunk_count = chunks.length;
+              meta.skip_reason = split.truncated ? "truncated_200_chunks" : null;
+            }
           }
         }
-      }
+        const created = await publishNasText(admin, meta, chunks, prev?.updated_at ?? null);
+        // Count each file once, only after the entire publication is acknowledged.
+        progress[meta.status] += 1;
+        bump(ext, meta.status);
+        progress.chunksCreated += created;
+        bump(ext, "chunks", created);
+        if (meta.skip_reason === "drawing_pdf") drawingSkipped += 1;
       } catch (fileErr) {
         progress.failed += 1;
         bump(ext, "failed");
-        const msg =
-          fileErr instanceof Error
-            ? fileErr.message.slice(0, 400)
-            : String(fileErr).slice(0, 400);
-        console.warn(`fail ${row.path}: ${msg}`);
-        try {
-          await upsertTextMeta(admin, {
-            path: row.path,
-            drive: row.drive,
-            ext,
-            size_bytes: row.size_bytes,
-            modified_at: row.modified_at,
-            content_hash: null,
-            text_length: 0,
-            chunk_count: 0,
-            status: "failed",
-            skip_reason: null,
-            error: msg,
-            extracted_at: nowIso
-          });
-        } catch {
-          /* meta 실패는 무시하고 다음 파일 */
-        }
+        console.warn(`fail ${row.path}: ${describeNasError(fileErr, 400)}`);
+        // Never overwrite metadata after a failed/uncertain RPC. Its transaction
+        // either preserved the previous file or committed a complete replacement.
       }
 
       if ((i + 1) % 25 === 0 || i + 1 === workQueue.length) {
@@ -579,11 +428,16 @@ async function main() {
       }
     }
 
+    // Keep successful files, but never report a partially failed run as done.
+    if (progress.failed > 0) {
+      throw new Error(`${progress.failed} file extractions failed`);
+    }
+
     if (runId) {
       await finishNasTextRun(admin, runId, "done", progress);
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = describeNasError(e);
     if (runId) await finishNasTextRun(admin, runId, "failed", progress, msg);
     throw e;
   }
