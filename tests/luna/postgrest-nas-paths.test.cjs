@@ -53,3 +53,14 @@ test('freshness uses the actual client transport and preserves all path variants
  const current=await currentNasBodyFiles(db,paths);
  assert.equal(requests,3);assert.deepEqual([...current.keys()],paths);
 });
+
+test('derived report validation preserves quoted Windows paths through the real client transport',async()=>{
+ const {reportSourcesAreCurrent}=loadTs('lib/luna/report-freshness.ts');
+ const stamp='2026-09-26T00:00:00Z';
+ const db=createClient('https://example.invalid','placeholder',{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:async input=>{
+  const url=new URL(String(input));
+  const rows=url.searchParams.has('path')?decodeList(url.searchParams.get('path')).map(path=>({path,drive:'T',modified_at:stamp,size_bytes:100,type:'file',scan_batch:stamp})):{scan_batch:stamp};
+  return new Response(JSON.stringify(rows),{status:200,headers:{'Content-Type':'application/json'}});
+ }}});
+ assert.equal(await reportSourcesAreCurrent(db,paths.map(ref=>({type:'nas',ref,drive:'T',modified_at:stamp,size_bytes:100}))),true);
+});

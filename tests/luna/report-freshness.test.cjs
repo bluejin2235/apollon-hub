@@ -23,3 +23,18 @@ test('drive mismatch and lookup failure do not permit stale report reuse',async(
  const wrong=tables();wrong.nas_directory[0].drive='T';assert.equal(await reportSourcesAreCurrent(fakeDb(wrong),[nas]),false);
  assert.equal(await reportSourcesAreCurrent(fakeDb({}, {luna_notion_pages:{message:'unavailable'}}),[notion]),false);
 });
+
+test('report whose file survives only in an old snapshot is not reused',async()=>{
+ const data=tables();data.nas_directory.push({...data.nas_directory[0],path:'Project/new.pdf',scan_batch:'2026-09-26T00:00:00Z'});
+ assert.equal(await reportSourcesAreCurrent(fakeDb(data),[nas]),false);
+});
+test('ambiguous current paths and missing file size invalidate derived report reuse',async()=>{
+ const data=tables();data.nas_directory.push({...data.nas_directory[0],drive:'T'});
+ assert.equal(await reportSourcesAreCurrent(fakeDb(data),[nas]),false);
+ const missing=tables();missing.nas_directory[0].size_bytes=null;
+ assert.equal(await reportSourcesAreCurrent(fakeDb(missing),[{...nas,size_bytes:0}]),false);
+});
+test('image references need current indexed membership but not extracted document text',async()=>{
+ const image={...nas,ref:'Project/image.png'};const data=tables();data.nas_directory[0].path=image.ref;
+ assert.equal(await reportSourcesAreCurrent(fakeDb(data),[image]),true);
+});

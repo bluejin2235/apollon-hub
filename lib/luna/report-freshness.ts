@@ -1,3 +1,4 @@
+import { currentNasDirectoryFiles } from "@/lib/luna/nas-directory-version";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SourceVersion =
@@ -33,12 +34,10 @@ export async function reportSourcesAreCurrent(admin: SupabaseClient, sources: un
   }
   const nas = versions.filter((s): s is Extract<SourceVersion, {type:"nas"}> => s.type === "nas");
   if (nas.length) {
-    const result = await admin.from("nas_directory").select("drive, path, modified_at, size_bytes")
-      .in("path", nas.map(s => s.ref)).eq("type", "file").order("scan_batch", {ascending:false}).limit(1000);
-    if (result.error) return false;
+    const files = await currentNasDirectoryFiles(admin, nas.map(s => s.ref));
     for (const source of nas) {
-      const file = (result.data ?? []).find(row => row.drive === source.drive && row.path === source.ref);
-      if (!file || instant(file.modified_at) !== instant(source.modified_at) || Number(file.size_bytes) !== source.size_bytes) return false;
+      const file = files.get(source.ref);
+      if (!file || file.drive !== source.drive || instant(file.modified_at) !== instant(source.modified_at) || Number(file.size_bytes) !== source.size_bytes) return false;
     }
   }
   return true;
