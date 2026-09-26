@@ -1,16 +1,17 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {parseNasEmbeddingArgs}=loadTs('lib/luna/nas-embedding-options.ts');
+const {planEmbeddingRequests,embeddingCostUsd}=loadTs('lib/luna/bounded-embeddings.ts',{'@/lib/luna/embedding':{},'@/lib/luna/env-keys':{}});
 test('default and full runs are bounded and read-only',()=>{
- assert.deepEqual(parseNasEmbeddingArgs([]),{limit:500,batchSize:100,kind:'incremental',apply:false});
+ assert.deepEqual(parseNasEmbeddingArgs([]),{limit:500,batchSize:100,kind:'incremental',apply:false,maxCostUsd:1});
  assert.equal(parseNasEmbeddingArgs(['--full']).apply,false);
  assert.equal(parseNasEmbeddingArgs(['--full']).limit,500);
 });
 test('paid execution requires an explicit switch with bounded limits',()=>{
- assert.deepEqual(parseNasEmbeddingArgs(['--limit=20','--batch=10','--apply']),{limit:20,batchSize:10,kind:'incremental',apply:true});
+ assert.deepEqual(parseNasEmbeddingArgs(['--limit=20','--batch=10','--apply']),{limit:20,batchSize:10,kind:'incremental',apply:true,maxCostUsd:1});
 });
 test('bad flags cannot silently start an unlimited run',()=>{
- for(const flag of ['--limit=0','--limit=-1','--limit=999999','--limit=abc','--batch=101','--apply=yes','--limt=5']) {
+ for(const flag of ['--limit=0','--limit=-1','--limit=999999','--limit=abc','--batch=101','--apply=yes','--limt=5','--max-cost-usd=0','--max-cost-usd=50','--max-cost-usd=Infinity']) {
   assert.throws(()=>parseNasEmbeddingArgs([flag]));
  }
 });
@@ -24,7 +25,7 @@ test('actual CLI default performs reads only and never starts a run or calls emb
   dotenv:{config(){}},'node:path':{resolve:()=>'/unused'},
   '@supabase/supabase-js':{createClient:()=>({from:()=>query})},
   '@/lib/luna/embedding':{embeddingToSql:()=>''},
-  '@/lib/luna/notion-index':{chunk:()=>[],createEmbeddingsBatch:async()=>{calls++;throw Error('unexpected API');},estimateEmbeddingCostUsd:()=>0},
+  '@/lib/luna/bounded-embeddings':{planEmbeddingRequests,embeddingCostUsd,createBoundedEmbeddingsBatch:async()=>{calls++;throw Error('unexpected API');},estimateEmbeddingCostUsd:()=>0},
   '@/lib/luna/nas-text-runs':{startNasTextRun:async()=>{writes++;throw Error('unexpected write');}}
  };
  const source=fs.readFileSync(path.join(__dirname,'../../scripts/embed-nas-chunks.ts'),'utf8');
@@ -60,7 +61,7 @@ async function runAppliedCli({ updateResult, completionError = null }) {
  const dependencies={
   '@/lib/luna/nas-embedding-options':{parseNasEmbeddingArgs},dotenv:{config(){}},'node:path':{resolve:()=>'/unused'},
   '@supabase/supabase-js':{createClient:()=>admin},'@/lib/luna/embedding':{embeddingToSql:()=> '[0]'},
-  '@/lib/luna/notion-index':{chunk:rows=>[rows],createEmbeddingsBatch:async()=>({vectors:[[0]],tokens:1}),estimateEmbeddingCostUsd:()=>0.01},
+  '@/lib/luna/bounded-embeddings':{planEmbeddingRequests,embeddingCostUsd,createBoundedEmbeddingsBatch:async()=>({vectors:[[0]],tokens:1}),estimateEmbeddingCostUsd:()=>0.01},
   '@/lib/luna/nas-text-runs':{
    startNasTextRun:async()=>'run',updateNasTextRunProgress:async()=>{},
    finishNasTextRun:async(_admin,_id,status,progress)=>{events.push({status,progress:{...progress}})}

@@ -15,10 +15,10 @@ config();
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { embeddingToSql } from "@/lib/luna/embedding";
 import {
-  chunk,
-  createEmbeddingsBatch,
-  estimateEmbeddingCostUsd
-} from "@/lib/luna/notion-index";
+  planEmbeddingRequests,
+  createBoundedEmbeddingsBatch,
+  embeddingCostUsd
+} from "@/lib/luna/bounded-embeddings";
 import {
   finishNasTextRun,
   startNasTextRun,
@@ -85,10 +85,14 @@ async function main() {
     return;
   }
 
+  const plan = planEmbeddingRequests(pending.map(row => row.content), args.maxCostUsd, args.batchSize);
+
   if (!args.apply) {
     console.log(JSON.stringify({ mode: "dry_run", selected_chunks: pending.length,
       selected_characters: pending.reduce((sum, row) => sum + row.content.length, 0),
       limit: args.limit, batch_size: args.batchSize,
+      tokens_upper_bound: plan.tokensUpperBound, cost_upper_bound_usd: plan.costUpperBoundUsd,
+      budget_usd: plan.maxCostUsd, requests: plan.batches.length,
       note: "No embedding API calls or database writes. Characters are not tokens. Use --apply for a bounded run." }));
     return;
   }
@@ -111,12 +115,11 @@ async function main() {
   const pathsTouched = new Set<string>();
 
   try {
-    for (const part of chunk(pending, args.batchSize)) {
-      const { vectors, tokens: batchTokens } = await createEmbeddingsBatch(
-        part.map((c) => c.content)
-      );
+    for (const batch of plan.batches) {
+      const part = pending.slice(batch.start, batch.start + batch.input.length);
+      const { vectors, tokens: batchTokens } = await createBoundedEmbeddingsBatch(batch.input);
       tokens += batchTokens;
-      progress.costUsd = estimateEmbeddingCostUsd(tokens);
+      progress.costUsd = embeddingCostUsd(tokens);
 
       for (let i = 0; i < part.length; i++) {
         const row = part[i]!;

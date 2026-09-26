@@ -5,6 +5,7 @@ on:
       - 'lib/luna/**'
       - 'app/api/luna/**'
       - 'tests/luna/**'
+      - 'scripts/*nas*.ts'
       - 'supabase/migrations/**'
       - 'package*.json'
       - '.github/workflows/luna-foundation.yml'
