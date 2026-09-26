@@ -54,7 +54,7 @@ export type TonightLongJob = {
   id: string;
   title: string;
   value: string;
-  pct: number;
+  pct: number | null;
   detail: string;
   bar_color?: string;
 };
@@ -530,4 +530,3 @@ export type LunaQuestionRow = {
 export function isSameLinkQuestion(row: Pick<LunaQuestionRow, "context" | "link_id">): boolean {
   return row.context?.kind === "same" || Boolean(row.link_id);
 }
-

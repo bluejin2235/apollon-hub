@@ -4,10 +4,7 @@ import {
   MODE_A_PAGE_LIMIT,
   MODE_A_QUESTIONS_PER_PAGE
 } from "@/lib/luna/probe-retrieval";
-import {
-  isMultiSourceModeAEnabled,
-  MODE_A_MULTI_SOURCE_FROM_KST
-} from "@/lib/luna/probe-mode-a-sources";
+import { studyActivitySummary } from "@/lib/luna/study-status";
 import { listStudyRuns, type StudyRunRow } from "@/lib/luna/study-run";
 import {
   STUDY_DAILY_COST_USD,
@@ -137,45 +134,23 @@ function emptyReason(opts: {
   };
 }
 
-async function notionPageCount(admin: SupabaseClient): Promise<number> {
+async function notionPageCount(admin: SupabaseClient): Promise<number | null> {
   const { count, error } = await admin
     .from("luna_notion_pages")
     .select("page_id", { count: "exact", head: true })
     .eq("archived", false);
   if (error) {
     console.error("[selfstudy-view] notion count", error);
-    return 0;
+    return null;
   }
-  return count ?? 0;
+  return count;
 }
 
-function modeAProgress(runs: StudyRunRow[], notionTotal: number): TonightLongJob | null {
-  let done = 0;
-  for (const r of runs) {
-    if (r.kind !== "probe_retrieval") continue;
-    const sampled = Number(
-      (r.result as { pages_sampled?: number; probed?: number }).pages_sampled ??
-        (r.result as { probed?: number }).probed ??
-        0
-    );
-    if (Number.isFinite(sampled) && sampled > 0) done += sampled;
-  }
-  if (notionTotal <= 0 && done <= 0) return null;
-  const total = Math.max(notionTotal, MODE_A_PAGE_LIMIT);
-  const pct = Math.min(100, Math.round((done / total) * 100));
-  const remain = Math.max(0, total - done);
-  const daysLeft = remain <= 0 ? 0 : Math.ceil(remain / MODE_A_PAGE_LIMIT);
-  const multi = isMultiSourceModeAEnabled();
+function modeAProgress(runs: StudyRunRow[], notionTotal: number | null): TonightLongJob {
   return {
     id: "mode_a",
     title: "모드 A 검색 검증",
-    value: `노션 ${done.toLocaleString("ko-KR")} / ${total.toLocaleString("ko-KR")} · ${
-      daysLeft === 0 ? "완료" : `${daysLeft}일 남음`
-    }`,
-    pct,
-    detail: multi
-      ? `하루 ${MODE_A_PAGE_LIMIT}페이지. 용어·이미지·위키·Work 도 함께`
-      : `하루 ${MODE_A_PAGE_LIMIT}페이지. ${MODE_A_MULTI_SOURCE_FROM_KST.slice(5).replace("-", "/")} 부터 용어·이미지·위키·Work 도 함께`,
+    ...studyActivitySummary(runs, notionTotal),
     bar_color: "var(--luna)"
   };
 }
@@ -191,14 +166,14 @@ function secondaryProgress(
     years.reduce((s, y) => s + (y.progress_pct || 0), 0) / Math.max(1, years.length);
   return {
     id: "secondary",
-    title: "2차 데이터 연도별",
+    title: "연도별 연결 생성 현황",
     value: tonight
-      ? `${done.join("·") || "완료 없음"} 완료 · ${tonight.year} 오늘 밤`
+      ? `${done.join("·") || "해당 연도 없음"} 연결 있음 · ${tonight.year} 오늘 밤`
       : done.length
-        ? `${done.join("·")} 완료`
+        ? `${done.join("·")} 연결 있음`
         : "아직 시작 전",
     pct: Math.round(avg),
-    detail: wait.length ? `${wait.join(" · ")} 이 남았다` : "연도 범위가 비어 있지 않습니다",
+    detail: `${wait.length ? `${wait.join(" · ")} 생성 대기. ` : ""}연결 행 분포이며 정확도나 인사이트 완성률을 뜻하지 않습니다.`,
     bar_color: "var(--work)"
   };
 }
