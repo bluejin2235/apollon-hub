@@ -160,7 +160,7 @@ export async function buildAdminDashboard(
   ].join("\n");
 
   const learnDetail =
-    `자습 마지막 실행 ${formatIdleLabel(selfDays)} · 저장된 관계 링크 ${linkCounts.all}건 (인사이트 건수 아님)`;
+    `자습 마지막 실행 ${formatIdleLabel(selfDays)} · 활성 관계 링크 ${linkCounts.all}건 (인사이트 건수 아님)`;
 
   const confirmDetail =
     pending > 0
@@ -256,7 +256,7 @@ export async function buildAdminDashboard(
     } else if (stage.key === "learn" && selfLight === "red") {
       alerts.push({
         title: `⚠ 자습이 ${selfDays ?? "?"}일째 돌지 않고 있습니다`,
-        detail: `자습 마지막 실행 ${formatIdleLabel(selfDays)} · 현재 저장된 관계 링크 ${linkCounts.all}건 (자습 성과 아님)`,
+        detail: `자습 마지막 실행 ${formatIdleLabel(selfDays)} · 현재 활성 관계 링크 ${linkCounts.all}건 (자습 성과 아님)`,
         href: "/settings?menu=selfstudy&sub=tonight",
         action: "run_selfstudy"
       });
@@ -291,12 +291,12 @@ export async function buildAdminDashboard(
       secondary: linkCounts.all,
       secondary_note:
         latestLink && (linkDays ?? 0) >= 3
-          ? `저장된 관계 링크 · ${linkDays}일째 새 연결 없음 · 인사이트 제외`
+          ? `활성 관계 링크 · ${linkDays}일째 새 연결 없음 · 인사이트 제외`
           : linkCounts.all === 0
-            ? "저장된 관계 링크 없음 · 인사이트 제외"
+            ? "활성 관계 링크 없음 · 인사이트 제외"
             : latestLink
-              ? "저장된 관계 링크 · 인사이트 제외"
-              : "저장된 관계 링크 · 최근 연결 시각 미확인 · 인사이트 제외",
+              ? "활성 관계 링크 · 인사이트 제외"
+              : "활성 관계 링크 · 최근 연결 시각 미확인 · 인사이트 제외",
       talk_week: weekTalk.count ?? 0,
       talk_users: userIds.size,
       my_turn: (myAssigned.count ?? 0) + pendingQuestions,

@@ -11,16 +11,16 @@ Scope remains indexing → relationships/groups → evidence-backed derived info
 | 4. Search-oriented summaries, comparisons and insights | Original | 10% | Implement and verify evidence-backed derived outputs; source reuse guards alone do not complete this stage |
 | 5. Business search | Original | 50% | Compound conditions, follow-up narrowing and real business-question success |
 | 6. Shared-path evaluation | Original, expanded | 40% | Employee UI comparison; automated/native SQL/HTTP tests are supporting evidence only |
-| 6A. Isolated interactive review environment | Added, moved to next priority | 20% | Isolated DB, representative data, auth and application smoke test |
+| 6A. Actual-Hub hands-on review readiness | Added, moved to next priority | 20% | Representative baseline questions, administrator trace, integration checks, auth and application smoke test |
 | 7. Employee beta | Original | 0% | Hands-on reviews, operational integration and limited release |
 
 ## Sequence change
 
-Primary consistency, source identity, concurrency and API verification were added after investigation found concrete failure modes. These repairs took precedence over derived insights, delaying a directly usable preview. The next priority is now the first interactive review environment, before completing the entire grouping/insight subsystem. Production integration remains a later decision.
+Primary consistency, source identity, concurrency and API verification were added after investigation found concrete failure modes. These repairs took precedence over derived insights. The next priority is now the first real-Hub review path, before completing the entire grouping/insight subsystem. Applying the draft branch to production is a separate integration decision after migration and source-job review.
 
 ## Review 1: search improvements visible in the actual Hub
 
-Target: 2026-09-27 KST; estimate, not a confirmed appointment. Allow roughly 4–8 active working hours for isolated environment, representative data and application validation, assuming required access and resource setup work. Escalate an access or provisioning delay explicitly; do not silently move the date or replace the review with another unit-test summary.
+Target: afternoon of 2026-09-27 KST; estimate, not a confirmed appointment. Actual-Hub review depends on reviewed production integration, database changes, source-job readiness and application validation. The previous 4–8 hour estimate covered a preview, not these operational gates. Check readiness by 11:00 KST on the review day and disclose a delay immediately; do not silently move the date or replace the review with another unit-test summary.
 
 Use the actual hub.apollonworks.com LUNA and its administrator view for the user review. Preview is an engineering preflight; a green preview build does not mean changed behavior is live. Record baseline answers before a controlled application, then compare the same questions on the actual Hub after verified integration. The user directly asks 8–10 questions covering misspellings, exact project names, document/image retrieval, cited sources, file paths and a follow-up narrowing question. Include unrelated-project and genuinely unavailable-data controls. In the administrator view, identify the source and relationship that fed each answer and the specific failure when a question fails. Do not claim operational improvement until production code, database migrations and selected source jobs have been applied and the real application was checked. A synthetic UI mock is not acceptance.
 
