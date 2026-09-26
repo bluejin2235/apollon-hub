@@ -59,13 +59,13 @@ begin
   end if;
   stamp := greatest(clock_timestamp(),coalesce(old.updated_at, '-infinity'::timestamptz)+interval '1 microsecond');
   insert into public.nas_file_text(path,drive,ext,size_bytes,modified_at,content_hash,text_length,
-    chunk_count,status,skip_reason,error,extracted_at,updated_at)
+    chunk_count,status,skip_reason,error,extracted_at,indexed_at,updated_at)
   values(m.path,m.drive,m.ext,m.size_bytes,m.modified_at,m.content_hash,m.text_length,n,
-    m.status,m.skip_reason,m.error,m.extracted_at,stamp)
+    m.status,m.skip_reason,m.error,m.extracted_at,case when keep_chunks then old.indexed_at else null end,stamp)
   on conflict(path) do update set drive=excluded.drive,ext=excluded.ext,size_bytes=excluded.size_bytes,
     modified_at=excluded.modified_at,content_hash=excluded.content_hash,text_length=excluded.text_length,
     chunk_count=excluded.chunk_count,status=excluded.status,skip_reason=excluded.skip_reason,
-    error=excluded.error,extracted_at=excluded.extracted_at,updated_at=excluded.updated_at;
+    error=excluded.error,extracted_at=excluded.extracted_at,indexed_at=excluded.indexed_at,updated_at=excluded.updated_at;
   if not keep_chunks then
     delete from public.nas_file_chunks where path=m.path;
     insert into public.nas_file_chunks(path,seq,content)

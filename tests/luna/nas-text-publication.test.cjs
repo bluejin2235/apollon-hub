@@ -57,14 +57,18 @@ test('atomic NAS text publication on disposable PostgreSQL engine', async t => {
     await t.test('exact chunk equality preserves IDs/vectors; missing chunks are repaired despite equal hash',async()=>{
       await reset(); const first=await publish();
       await db.exec("update public.nas_file_chunks set embedding='retained-vector'");
+      await db.exec("update public.nas_file_text set indexed_at='2026-09-25T01:00:00Z'");
+      const indexedBefore=(await state())[0].metadata.indexed_at;
       const before=(await state())[0].chunks;
       const second=await publish(meta(),['one','two'],first.updated_at);
       assert.equal(second.chunks_created,0); assert.equal(second.chunks_preserved,true);
       assert.deepEqual((await state())[0].chunks,before);
+      assert.equal((await state())[0].metadata.indexed_at,indexedBefore);
       await db.exec('delete from public.nas_file_chunks where seq=1');
       const repaired=await publish(meta(),['one','two'],second.updated_at);
       assert.equal(repaired.chunks_created,2);
       assert.equal((await state())[0].chunks.length,2);
+      assert.equal((await state())[0].metadata.indexed_at,null);
     });
     await t.test('competing stale writer and ambiguous retry cannot overwrite newer publication',async()=>{
       await reset(); const first=await publish();
