@@ -38,7 +38,7 @@ test('actual CLI default performs reads only and never starts a run or calls emb
  assert.equal(writes,0);assert.equal(calls,0);assert.ok(logs.some(l=>l.includes('dry_run')));
 });
 
-async function runAppliedCli({ updateResult, completionError = null }) {
+async function runAppliedCli({ updateResult, completionError = null, args = [] }) {
  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
  const events=[]; let finish;
  const finished=new Promise(resolve=>{finish=resolve});
@@ -63,14 +63,14 @@ async function runAppliedCli({ updateResult, completionError = null }) {
   '@supabase/supabase-js':{createClient:()=>admin},'@/lib/luna/embedding':{embeddingToSql:()=> '[0]'},
   '@/lib/luna/bounded-embeddings':{planEmbeddingRequests,embeddingCostUsd,createBoundedEmbeddingsBatch:async()=>({vectors:[[0]],tokens:1}),estimateEmbeddingCostUsd:()=>0.01},
   '@/lib/luna/nas-text-runs':{
-   startNasTextRun:async()=>'run',updateNasTextRunProgress:async()=>{},
+   startNasTextRun:async()=>{events.push({start:true});return 'run'},updateNasTextRunProgress:async()=>{},
    finishNasTextRun:async(_admin,_id,status,progress)=>{events.push({status,progress:{...progress}})}
   }
  };
  const source=fs.readFileSync(path.join(__dirname,'../../scripts/embed-nas-chunks.ts'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  vm.runInNewContext(code,{require:n=>{if(!(n in dependencies))throw Error(n);return dependencies[n]},exports:{},
-  process:{argv:['node','script','--apply','--limit=1'],env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.invalid',SUPABASE_SECRET_KEY:'test-placeholder'},cwd:()=>'/unused',exit:code=>finish(code)},
+  process:{argv:['node','script','--apply','--limit=1',...args],env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.invalid',SUPABASE_SECRET_KEY:'test-placeholder'},cwd:()=>'/unused',exit:code=>finish(code)},
   console:{log:(message)=>{if(message==='=== embed done ===')finish(0)},warn(){},error(){}}
  });
  const exit=await finished;return {events,exit};
@@ -94,4 +94,11 @@ test('failed chunk writes produce failed job and nonzero exit',async()=>{
 test('file completion write failures cannot be recorded as successful jobs',async()=>{
  const {events,exit}=await runAppliedCli({updateResult:{data:[{id:'one'}],error:null},completionError:{message:'completion failed'}});
  assert.equal(exit,1);assert.equal(events.find(e=>e.status).status,'failed');
+});
+
+
+test('actual apply CLI refuses an over-budget run before any database writes',async()=>{
+ const {events,exit}=await runAppliedCli({updateResult:{data:[{id:'one'}],error:null},args:['--max-cost-usd=0.000000001']});
+ assert.equal(exit,1);
+ assert.deepEqual(events,[]);
 });

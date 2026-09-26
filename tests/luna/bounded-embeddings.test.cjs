@@ -73,3 +73,18 @@ test('missing key, HTTP errors and abort do not retry or log provider bodies', a
     assert.equal(calls,2);
   } finally {key='test-placeholder';global.fetch=original;}
 });
+
+
+test('deadline actually aborts a stalled paid request and never retries it',async()=>{
+ const originalFetch=global.fetch,originalTimer=global.setTimeout;
+ let calls=0,deadline=0;
+ global.setTimeout=(fn,ms)=>{deadline=ms;return originalTimer(fn,0)};
+ global.fetch=async(_url,request)=>{
+  calls++;
+  return new Promise((_resolve,reject)=>request.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));
+ };
+ try{
+  await assert.rejects(createBoundedEmbeddingsBatch(['source']),{name:'AbortError'});
+  assert.equal(deadline,60000);assert.equal(calls,1);
+ }finally{global.fetch=originalFetch;global.setTimeout=originalTimer;}
+});
