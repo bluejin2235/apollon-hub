@@ -29,3 +29,8 @@ The CLI checks physical size/mtime before and after extraction. A different dire
 The count audit found 3 ok sources with no chunks (three PDFs expecting 1, 1 and 10 chunks, with text lengths 12, 159 and 7,414). It also found 15 failed sources retaining 1,300 old chunks. No sequence gaps were found. This identifies inconsistent stored state, not its exact historical cause. No source text, filenames, credentials or operational records were changed.
 
 The worker now calls the read-only service-only nas_text_incomplete_paths RPC while building its queue. Ok files with absent, mismatched or discontinuous chunks are retried even when their indexed size/mtime is unchanged. Its array result avoids PostgREST set-returning row caps. Failed files were already retry candidates. Actual repair still requires the approved deployment and a worker run; no historical rows have been repaired by this development work.
+
+## Run receipt reliability
+Starting a run no longer marks every other running record interrupted. Extraction and embedding may be live concurrently; starting one is not evidence that the other stopped. Progress and completion writes require the matching run ID to remain running and must return that row. Database errors, missing start receipts and completion failures propagate to the worker instead of being logged as warnings followed by a successful exit.
+
+This is receipt integrity, not a scheduler lease. Abandoned running records still need explicit diagnosis/recovery; elapsed time or a newly started process alone does not prove interruption. The legacy interrupt helper remains available for compatibility but is not called by startNasTextRun. Existing records were not changed.

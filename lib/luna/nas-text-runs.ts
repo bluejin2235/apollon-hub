@@ -2,6 +2,7 @@
  * nas_text_runs — Work 본문 추출·임베딩 실행 기록.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { describeNasError } from "@/lib/luna/nas-error";
 
 export type NasTextRunKind = "full" | "incremental";
 export type NasTextRunStatus =
@@ -46,8 +47,9 @@ export async function startNasTextRun(
   admin: SupabaseClient,
   kind: NasTextRunKind,
   targetCount: number
-): Promise<string | null> {
-  await interruptStaleNasTextRuns(admin);
+): Promise<string> {
+  // Another running record may be a live parallel extractor/embedding worker.
+  // Starting this run is not evidence that another process was interrupted.
   const now = new Date().toISOString();
   const { data, error } = await admin
     .from("nas_text_runs")
@@ -60,11 +62,9 @@ export async function startNasTextRun(
     })
     .select("id")
     .single();
-  if (error) {
-    console.warn("[nas-text-runs] start", error.message);
-    return null;
-  }
-  return typeof data?.id === "string" ? data.id : null;
+  if (error) throw new Error(`NAS run start failed: ${describeNasError(error)}`);
+  if (typeof data?.id !== "string" || !data.id) throw new Error("NAS run start returned no receipt");
+  return data.id;
 }
 
 function progressRow(progress: NasTextRunProgress) {
@@ -91,11 +91,15 @@ export async function updateNasTextRunProgress(
   if (progress.targetCount === undefined) {
     delete (row as { target_count?: number }).target_count;
   }
-  const { error } = await admin
+  const { data, error } = await admin
     .from("nas_text_runs")
     .update(row)
-    .eq("id", runId);
-  if (error) console.warn("[nas-text-runs] progress", error.message);
+    .eq("id", runId)
+    .eq("status", "running")
+    .select("id")
+    .single();
+  if (error) throw new Error(`NAS run progress failed: ${describeNasError(error)}`);
+  if (data?.id !== runId) throw new Error("NAS run progress receipt mismatch");
 }
 
 export async function finishNasTextRun(
@@ -115,11 +119,15 @@ export async function finishNasTextRun(
   if (progress.targetCount === undefined) {
     delete (row as { target_count?: number }).target_count;
   }
-  const { error } = await admin
+  const { data, error } = await admin
     .from("nas_text_runs")
     .update(row)
-    .eq("id", runId);
-  if (error) console.warn("[nas-text-runs] finish", error.message);
+    .eq("id", runId)
+    .eq("status", "running")
+    .select("id")
+    .single();
+  if (error) throw new Error(`NAS run finish failed: ${describeNasError(error)}`);
+  if (data?.id !== runId) throw new Error("NAS run finish receipt mismatch");
 }
 
 /** 아침 리포트 — 「어젯밤 본문 N건 추출 · 청크 N개」 */
