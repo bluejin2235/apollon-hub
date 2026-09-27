@@ -43,7 +43,10 @@ const NOT_FOUND_RE =
  */
 export function hasPositiveRetrievedEvidence(text: string): boolean {
   const material = "(?:자료|문서|파일|기록|이미지|사진|제안서|기획서)";
-  return text.replace(/[*_`]/g, "").split(/[.!?。\n,，]|(?:지만|으며|으나)\s*/).some(clause => {
+  return text.replace(/[*_`]/g, "").split(/[.!?。\n]/).some(clause => {
+    // A concessive mention followed by "cannot substantiate" is not positive evidence.
+    if (/(?:으나|지만).*(?:근거가 없|근거.*부족|판단할.*없|확인할 수 없)/.test(clause)) return false;
+    clause = clause.split(/[,，]|(?:지만|으며|으나)\s*/)[0];
     if (/못|않|없|아니|무관|관련\s*없는/.test(clause)) return false;
     return new RegExp(`${material}[^.!?\\n]{0,32}(?:확인했습니다|확인했어요|찾았습니다|찾았어요|찾았고|확인했고|찾았$|있습니다|있어요|있$)`).test(clause) ||
       new RegExp(`확인된[^.!?\\n]{0,32}${material}`).test(clause);

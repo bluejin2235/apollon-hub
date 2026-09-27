@@ -1,5 +1,5 @@
 import { hasNotionCitation } from "@/lib/luna/source-citations";
-import { hasPositiveRetrievedEvidence } from "@/lib/luna/failures-shared";
+import { hasPositiveRetrievedEvidence, isNotFoundAnswer } from "@/lib/luna/failures-shared";
 import type { AskedNature, AskedWhat } from "@/lib/luna/ask-what";
 import { natureLabelKo } from "@/lib/luna/ask-what";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -200,7 +200,7 @@ export function keepSourcesUsedInAnswer(opts: {
   /** Only sources actually supplied to the answer model may use ID citations. */
   injectedNotionIds?: string[];
 }): { cards: LunaCard[]; notion: NotionSource[]; wiki: WikiSourceRef[] } {
-  if (opts.notFound) {
+  if (opts.notFound || isNotFoundAnswer(opts.answer)) {
     return { cards: [], notion: [], wiki: [] };
   }
   const answer = opts.answer.trim();
@@ -257,7 +257,7 @@ export function scoreEvidenceMatch(opts: {
   notFound: boolean;
 }): {
   intent_score: number;
-  confidence_score: number;
+  confidence_score: number | null;
   self_note: string;
 } {
   const intent = opts.askedClear ? 9 : 6;
@@ -271,7 +271,7 @@ export function scoreEvidenceMatch(opts: {
   if (opts.retrieved === 0) {
     return {
       intent_score: opts.askedClear ? 9 : 7,
-      confidence_score: opts.askedClear ? 2 : 7,
+      confidence_score: opts.askedClear ? 2 : null,
       self_note: opts.askedClear
         ? "질문에 맞는 자료를 찾지 못함"
         : "자료 검색 없이 답함"
@@ -285,12 +285,11 @@ export function scoreEvidenceMatch(opts: {
     };
   }
   const denom = Math.max(opts.retrieved, opts.matching);
-  const ratio = opts.matching / denom;
-  const confidence = Math.max(1, Math.min(10, Math.round(ratio * 10)));
+
   return {
     intent_score: intent,
-    confidence_score: confidence,
-    self_note: `찾은 ${denom}건 중 질문에 맞는 자료 ${opts.matching}건`
+    confidence_score: null,
+    self_note: `검색 후보 ${denom}건 · 조건 필터 통과 ${opts.matching}건. 답변 정확도는 별도 검증이 필요합니다.`
   };
 }
 

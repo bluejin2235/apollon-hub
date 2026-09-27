@@ -688,7 +688,7 @@ function buildVolatileSystemText(opts: {
       ? `(위 ${forLlm.length}건 중 조건에 맞는 것만 번호로 나열한다. 임의로 1건만 고르지 마라. 제목·URL을 근거로 쓴다.)`
       : synthesis
         ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라. 각 항목에 페이지 제목을 근거로 단다.)`
-        : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 화면에는 더 많은 자료가 카드로 보이니 목록을 다시 나열하지 마라.)`;
+        : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 본문에 근거가 있는 자료를 먼저 설명한다. 경로·폴더 위치만으로 자사 제작물이라고 단정하지 말고 제작물·제안·외부 참고자료·미확인을 구분한다.)`;
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
         compact: listing || depth === "simple"
@@ -3301,6 +3301,12 @@ export async function POST(request: NextRequest) {
           notionSources,
           llmInject.notion
         );
+        const answerEvidenceTrace = {
+          version: 1,
+          selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
+          injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))
+        };
+        console.log("[luna/answer-evidence]", answerEvidenceTrace);
         const listingRule = listingQuestion
           ? listingAnswerRuleWithWikiCount(
               new Set(wikiSources.map((s) => s.slug)).size,
@@ -3604,7 +3610,7 @@ export async function POST(request: NextRequest) {
           assistantText = safeAssistantText;
         }
         {
-          const hideUnused = notFoundFromAsk;
+          const hideUnused = notFoundFromAsk || isNotFoundAnswerText(assistantText);
           const kept = keepSourcesUsedInAnswer({
             cards,
             notion: notionSources,
@@ -3746,6 +3752,7 @@ export async function POST(request: NextRequest) {
         assistantMeta.slim_listing_prompt = Boolean(
           listingReferenceDisablesNas(searchScope.kind, listingQuestion)
         );
+        assistantMeta.answer_evidence_trace = answerEvidenceTrace;
         assistantMeta.search_evidence = {
           retrieved_candidate_peak: rawSearchResultCount ?? null,
           displayed_source_count: cards.length + notionSources.length + publicWikiSources.length,

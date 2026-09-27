@@ -336,7 +336,11 @@ export function prepareSearchTerms(
 ): string[] {
   const kwTerms = splitKeywords(keywords).filter(isSearchableToken);
   const ctxTerms = splitKeywords(queryContext ?? "").filter(isSearchableToken);
-  const merged = [...new Set([...kwTerms, ...ctxTerms])];
+  const merged = [...new Set([...kwTerms, ...ctxTerms.filter((term) => {
+    const stem = term.match(/^([가-힣]{2,})쇼$/)?.[1];
+    const registered = entities.some((entity) => [entity.canonical, ...entity.aliases, ...entity.searchPhrases].includes(term));
+    return !stem || registered || !kwTerms.includes(stem);
+  })])];
   const restricted = applyNamedEntitiesToTerms(merged, queryContext ?? keywords, entities);
   return restricted.filter(isSearchableToken).slice(0, 8);
 }
@@ -616,6 +620,14 @@ async function progressiveAndSearch(
     }
   }
 
+  // Bounded fallback for compound show names; retain every other project/date constraint.
+  const stems = terms.map((term) => {
+    const registered = entities.some((entity) => [entity.canonical, ...entity.aliases, ...entity.searchPhrases].includes(term));
+    return registered ? term : term.match(/^([가-힣]{2,})쇼$/)?.[1] ?? term;
+  });
+  if (stems.some((term, index) => term !== terms[index])) {
+    stages.push({ name: "and-show-stem", terms: [...new Set(stems)] });
+  }
   const project = pickProjectName(terms);
   if (project && !(terms.length === 1 && terms[0] === project)) {
     stages.push({ name: "and-project", terms: [project] });

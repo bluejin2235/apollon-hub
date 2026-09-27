@@ -1,3 +1,4 @@
+import { queryExcerpt } from "@/lib/luna/evidence-selection";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
 import {
@@ -147,7 +148,9 @@ export function selectNotionChunkHits(
     (h) => (h.keyword_score ?? 0) >= 4
   );
   const rest = sorted.filter((h) => (h.keyword_score ?? 0) < 4);
-  const ordered = [...titleStrong, ...rest];
+  const lexical = rest.filter((h) => (h.keyword_score ?? 0) > 0).slice(0, Math.ceil(top / 2));
+  const selectedLexical = new Set(lexical);
+  const ordered = [...titleStrong, ...lexical, ...rest.filter((h) => !selectedLexical.has(h))];
   const perPageCount = new Map<string, number>();
   const out: NotionChunkMatchHit[] = [];
   for (const hit of ordered) {
@@ -338,7 +341,7 @@ function pageChunksToSource(
     url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
     id: page.page_id,
     last_edited_time: page.last_edited_time,
-    excerpt: body.replace(/\s+/g, " ").trim().slice(0, 280) || null,
+    excerpt: queryExcerpt(body, planNotionSearchKeywords(queryText ?? "", queryText).keywords) || null,
     paths: uniquePaths,
     dates,
     entities,
@@ -355,7 +358,7 @@ function pageChunksToSource(
   };
 }
 
-async function buildIndexedSourcesFromChunks(
+export async function buildIndexedSourcesFromChunks(
   admin: SupabaseClient,
   hits: NotionChunkMatchHit[],
   queryText?: string,

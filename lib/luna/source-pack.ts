@@ -1,3 +1,4 @@
+import { selectEvidence } from "@/lib/luna/evidence-selection";
 import type { NotionSource } from "@/lib/luna/notion";
 import {
   formatNasFolderPath,
@@ -917,8 +918,7 @@ export function takeTopNotionSourcesForLlm(
     typeof s.match_score === "number"
       ? s.match_score
       : (s.similarity ?? 0) * 10;
-  list.sort((a, b) => rank(b) - rank(a));
-  return list.slice(0, n);
+  return selectEvidence(list, n, rank, (source) => source.keyword_score ?? 0);
 }
 
 export function maxNotionSimilarity(
