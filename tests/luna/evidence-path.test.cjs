@@ -44,3 +44,9 @@ test('NAS search falls back from compound show to stem after the strict search m
  assert.equal(result.length,1);
  assert.match(result[0].path,/고래 연출안/);
 });
+
+test('positive evidence after a missing-material clause remains a partial answer',()=>{
+ const {isNotFoundAnswer}=loadTs('lib/luna/failures-shared.ts');
+ assert.equal(isNotFoundAnswer('문서는 찾지 못했지만, 관련 이미지는 확인했습니다.'),false);
+ assert.equal(isNotFoundAnswer('제안 자료가 있으나, 관련 자료라고 판단할 근거가 없습니다.'),true);
+});
