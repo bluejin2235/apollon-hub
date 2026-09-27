@@ -189,6 +189,24 @@ function mediaHaystack(hit: MediaIndexHit): string {
     .join("\n");
 }
 
+/** Low-confidence semantic matches need metadata support for a simple subject query.
+ * Complex visual descriptions and named-project searches retain their own retrieval rules.
+ */
+export function filterWeakSubjectMedia(
+  hits: MediaIndexHit[], question: string, asked?: AskedWhat
+): MediaIndexHit[] {
+  if (asked?.projectPhrases.length) return hits;
+  const match = question.trim().match(/^([가-힣A-Za-z0-9]{2,30})(?:\s+(?:자료|이미지|사진|레퍼런스|관련))*\s*(?:찾아\s*줘|보여\s*줘|찾아\s*주세요|보여\s*주세요)[.!?]*$/i);
+  if (!match) return hits;
+  const subject = match[1]!;
+  if (/^(자료|이미지|사진|레퍼런스|전부|모두|전체)$/.test(subject)) return hits;
+  // A show is a presentation format, not a different visual subject.
+  const stem = subject.replace(/쇼$/, "");
+  const terms = [...new Set([subject, ...(stem.length >= 2 ? [stem] : [])])];
+  return hits.filter(hit => hit.similarity >= MEDIA_PACK_RECOMMENDED ||
+    terms.some(term => mediaHaystack(hit).toLowerCase().includes(term.toLowerCase())));
+}
+
 function applyAskedMediaFilter(
   hits: MediaIndexHit[],
   asked?: AskedWhat
@@ -333,11 +351,11 @@ export async function searchMediaForLuna(
     return { hits: [], cards: [] };
   }
 
-  const scoped = applyAskedMediaFilter(embeddingHits, asked);
+  const scoped = filterWeakSubjectMedia(applyAskedMediaFilter(embeddingHits, asked), question, asked);
   const hits =
     asked && asked.projectPhrases.length > 0
       ? mergeMediaHits(pathHits, scoped)
-      : applyAskedMediaFilter(embeddingHits, asked);
+      : scoped;
   let cards = mediaHitsToCards(hits);
   if (hasImageSearchIntent(question) || hits.length > 0) {
     console.log("[luna/media-index] search", {

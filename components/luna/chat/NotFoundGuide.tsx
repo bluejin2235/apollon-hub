@@ -79,13 +79,9 @@ export function shouldShowNotFoundGuide(opts: {
   if (opts.isThinking || !opts.isComplete) return false;
   const text = opts.content.trim();
   if (!text) return false;
-  if (isNotFoundAnswer(text)) return true;
-  const zeros =
-    (opts.counts.work ?? 1) === 0 &&
-    (opts.counts.notion ?? 1) === 0 &&
-    (opts.counts.wiki ?? 1) === 0 &&
-    (opts.counts.image ?? 1) === 0;
-  return zeros;
+  // Card counts can be zero for explanations, clarification and filtered sources.
+  // Only an explicit missing-material answer warrants the failure guide.
+  return isNotFoundAnswer(text);
 }
 
 export function NotFoundGuide({
