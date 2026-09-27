@@ -71,7 +71,12 @@ const NOTION_QUERY_NOISE = new Set([
   "차이",
   "흐름",
   "이름",
-  "프로그램"
+  "프로그램",
+  "자료",
+  "이미지",
+  "사진",
+  "찾아줘",
+  "보여줘"
 ]);
 
 const TRAILING_PARTICLE_RE =
@@ -237,7 +242,7 @@ export function pickIlikeKeywords(
   return picked.slice(0, 10);
 }
 
-/** 임베딩이 충분해도 돌릴 가벼운 키워드 — 표기 변형을 앞에 둔다 */
+/** 임베딩이 충분해도 한국어 원문을 보강한다. 전체 ILIKE 키워드 예산은 6개. */
 export function pickLightKeywords(plan: NotionKeywordPlan): string[] {
   const picked: string[] = [];
   const seen = new Set<string>();
@@ -248,6 +253,8 @@ export function pickLightKeywords(plan: NotionKeywordPlan): string[] {
     picked.push(k);
   };
   for (const k of plan.extra.slice(0, 3)) push(k);
+  // 한국어만 있는 질문도 정확한 제목·본문 일치를 임베딩 후보와 합친다.
+  for (const k of plan.keywords.filter((word) => /^[가-힣]{2,}$/.test(word) && !NOTION_QUERY_NOISE.has(word)).slice(0, 2)) push(k);
   for (const k of plan.keywords) {
     if (/[a-z]{2,}/i.test(k) || /[./-]/.test(k) || /^\d{6,8}$/.test(k)) push(k);
   }
