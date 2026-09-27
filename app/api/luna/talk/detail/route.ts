@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireLunaAdmin } from "@/lib/luna-admin/auth";
 
+import { uniqueSourceRecords } from "@/lib/luna/source-records";
+
 export const runtime = "nodejs";
 
 const MAX_MESSAGES = 100;
@@ -77,6 +79,7 @@ export async function GET(request: NextRequest) {
       const meta = record(row.metadata);
       const evidence = record(meta.search_evidence);
       const scope = record(meta.search_scope);
+      const unique = uniqueSourceRecords(meta.cards, meta.notion_sources, meta.wiki_sources);
       return {
         id: row.id,
         role: row.role,
@@ -91,9 +94,11 @@ export async function GET(request: NextRequest) {
           scope: [text(scope.kind, 80), text(scope.tier, 80)].filter(Boolean).join(" · "),
           retrieved_candidate_peak: count(evidence.retrieved_candidate_peak),
           displayed_source_count: count(evidence.displayed_source_count),
-          cards: sources(meta.cards, "자료"),
-          notion: sources(meta.notion_sources, "노션"),
-          wiki: sources(meta.wiki_sources, "위키")
+          unique_source_count: unique.count,
+          sources_truncated: [unique.cards, unique.notion, unique.wiki].some((items) => items.length > 20),
+          cards: sources(unique.cards, "자료"),
+          notion: sources(unique.notion, "노션"),
+          wiki: sources(unique.wiki, "위키")
         }
       };
     })

@@ -23,6 +23,8 @@ type Message = {
     scope: string;
     retrieved_candidate_peak: number | null;
     displayed_source_count: number | null;
+    unique_source_count: number;
+    sources_truncated: boolean;
     cards: Source[];
     notion: Source[];
     wiki: Source[];
@@ -85,13 +87,14 @@ export function LunaTalkDetail({ conversationId }: { conversationId: string }) {
             {message.role === "assistant" && message.search.recorded && (hasSearch || message.search.rounds !== null) ? (
               <div className="mt-3 border-t border-slate-100 pt-2 text-slate-600">
                 <p>검색 실행 {message.search.rounds ?? "미기록"}회{message.search.scope ? ` · 범위: ${message.search.scope}` : ""}</p>
-                <p>검색 중 확인된 후보 최대 {message.search.retrieved_candidate_peak ?? "미기록"}건 · 저장된 출처 카드 수 {message.search.displayed_source_count ?? "미기록"}건</p>
+                <p>검색 중 확인된 후보 최대 {message.search.retrieved_candidate_peak ?? "미기록"}건 · 당시 저장된 카드 기록 {message.search.displayed_source_count ?? "미기록"}건</p>
                 <p>두 수치는 검색 단계와 카드 저장 단계를 각각 센 값이며, 인용된 출처 수를 뜻하지 않습니다.</p>
               </div>
             ) : null}
             {src.length > 0 ? (
               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                <p className="font-semibold">답변과 함께 저장된 자료</p>
+                <p className="font-semibold">답변과 함께 저장된 자료 · 중복 제외 {message.search.unique_source_count}건</p>
+                {message.search.sources_truncated ? <p>종류별 최초 20개만 표시합니다.</p> : null}
                 {src.map((source, i) => (
                   <p key={`${message.id}-${i}`} className="break-all">
                     {source.kind} · {source.title || "제목 없음"}

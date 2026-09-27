@@ -1,3 +1,4 @@
+import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
@@ -3747,7 +3748,8 @@ export async function POST(request: NextRequest) {
         );
         assistantMeta.search_evidence = {
           retrieved_candidate_peak: rawSearchResultCount ?? null,
-          displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
+          displayed_source_count: cards.length + notionSources.length + publicWikiSources.length,
+          unique_source_count: uniqueSourceRecords(cards, notionSources, publicWikiSources).count
         };
         assistantMeta.search_scope = {
           kind: searchScope.kind,
@@ -3952,7 +3954,8 @@ export async function POST(request: NextRequest) {
               last_had_clarify: lastHadClarify,
               clarify_followup: Boolean(clarifyFollowupQuery),
               retrieved_candidate_peak: rawSearchResultCount ?? null,
-              displayed_source_count: cards.length + notionSources.length + publicWikiSources.length
+              displayed_source_count: cards.length + notionSources.length + publicWikiSources.length,
+          unique_source_count: uniqueSourceRecords(cards, notionSources, publicWikiSources).count
             }
           }).catch((err) =>
             console.error("[luna/chat] auto failures", err)
