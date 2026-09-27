@@ -32,7 +32,6 @@ export type DevnoteBlockerNote = {
 
 /** 모바일에서 길게 눌러 한 번에 집을 수 있는 길이 */
 const MAX_PROMPT_LINES = 8;
-const MAX_CLUE_CHARS = 84;
 
 export async function loadOpenDevnoteBlockers(
   admin: SupabaseClient
@@ -135,17 +134,20 @@ function idlePhrase(check: LunaCheckResult): string {
     : `${check.days_stale}일째 멈췄어`;
 }
 
-function firstSentence(body: string): string | null {
-  const text = body.replace(/\s+/g, " ").trim();
-  if (!text) return null;
-  const cut = text.search(/[.!?。]\s/);
-  const head = cut > 0 ? text.slice(0, cut + 1) : text;
-  return head.length > MAX_CLUE_CHARS
-    ? `${head.slice(0, MAX_CLUE_CHARS - 1)}…`
-    : head;
+/** 개발노트 본문 숫자는 며칠 전일 수 있다. 제목만 맥락으로 쓰고 숫자는 검사 실시간 값을 쓴다. */
+function blockerLines(
+  blocker: DevnoteBlockerNote | null,
+  liveExtra?: string | null
+): string[] {
+  if (!blocker || !blocker.title) return [];
+  const head = `개발노트 ${blocker.service} 막힌 것에 「${blocker.title}」${iGa(blocker.title)} 있어.`;
+  const live = (liveExtra ?? "").trim();
+  const numbers =
+    live.length > 0
+      ? `숫자는 위 실시간 값(${live})만 써라. 개발노트 본문 숫자는 쓰지 마라.`
+      : "숫자는 이 프롬프트의 실시간 값만 써라. 개발노트 본문 숫자는 쓰지 마라.";
+  return [head, numbers];
 }
-
-/** 검사 id → 개발노트 「막힌 것」을 찾을 낱말 */
 const CHECK_BLOCKER_KEYS: Record<string, string[]> = {
   model_market: ["모델 시세", "공급사"],
   work_index: ["NAS", "재시도", "파일 본문"],
@@ -170,13 +172,6 @@ function matchBlocker(
     if (hit) return hit;
   }
   return null;
-}
-
-function blockerLines(blocker: DevnoteBlockerNote | null): string[] {
-  if (!blocker || !blocker.title) return [];
-  const head = `개발노트 ${blocker.service} 막힌 것에 「${blocker.title}」${iGa(blocker.title)} 있어.`;
-  const gist = firstSentence(blocker.body);
-  return gist ? [head, gist] : [head];
 }
 
 type CheckPromptSpec = {
@@ -251,13 +246,13 @@ function checkSpec(
       };
     case "image_index":
       return {
-        ask: `이미지 색인이 ${idle}. 왜 안 도는지 봐줘.`,
+        ask: `이미지 색인은 블루진이 멈춘 상태다. 검색을 고치기 전에 다시 켜지 마라.`,
         state: [
           `luna_media_index_runs 마지막 실행 ${last} · ${extra ?? "진행률 확인 필요"}.`,
-          "사무실 PC 작업 스케줄러 「LUNA Media Index」(매일 22:00)가 돌려. Vercel cron 이 아니야."
+          "media-index.STOP 이 있다. 작업 스케줄러 「LUNA Media Index」를 켜거나 잡을 재시작하면 안 된다."
         ],
         clue: [
-          "luna_media_index_runs 마지막 행이 interrupted 인지 보고, 내가 PC 를 봐야 하면 알려줘."
+          "검색이 색인을 제대로 못 써서 멈췄다. 새 디렉션 없이 색인을 재개하지 마라."
         ]
       };
     case "links":
@@ -276,7 +271,7 @@ function checkSpec(
         ask: `자습이 ${idle}. 원인 찾아서 고쳐줘.`,
         state: [
           `luna_study_runs 마지막 started_at 이 ${last} 야.`,
-          "cron 은 /api/cron/luna-selfstudy 0 20 * * * (KST 05:00)."
+          "PC 작업 스케줄러 「Apollon Luna Mode A」 매일 04:00."
         ],
         clue: [
           "아젠다를 못 고른 건지 돌다가 죽은 건지, 마지막 행 status·result 로 갈라 줘."
@@ -385,13 +380,13 @@ export function buildStaleMediaRulesPrompt(running: {
   const runVer = running.rulesVersion ?? "(기록 없음)";
   return composePrompt(
     "dev",
-    "이미지 색인 규칙이 바뀌었는데 돌고 있는 잡은 옛 버전이다. 멈추고 새 코드로 다시 켜줘.",
+    "이미지 색인 규칙이 바뀌었더라도 지금은 블루진이 색인을 멈춘 상태다. 다시 켜지 마라.",
     [
       `도는 잡 규칙 ${runVer} · 코드 ${running.currentVersion}.`,
-      "코드를 고치면 이미 도는 잡에는 반영이 안 된다."
+      "media-index.STOP 이 있으면 스케줄러를 켜지 말고 검색부터 고친다."
     ],
     [
-      "luna_media_index_runs.rules_version 을 보고 사무실 PC 「LUNA Media Index」를 다시 시작해."
+      "새 디렉션 없이 「LUNA Media Index」를 다시 시작하지 마라."
     ]
   );
 }
@@ -400,14 +395,15 @@ export function buildCheckPrompt(
   check: LunaCheckResult,
   blockers: DevnoteBlockerNote[]
 ): TodoPrompt {
+  const extra = checkExtra(check);
   const spec = checkSpec(
     check,
     idlePhrase(check),
     check.last_label,
-    checkExtra(check)
+    extra
   );
   const blocker = matchBlocker(CHECK_BLOCKER_KEYS[check.id] ?? [], blockers);
-  const clue = [...blockerLines(blocker), ...spec.clue];
+  const clue = [...blockerLines(blocker, extra), ...spec.clue];
   return composePrompt("dev", spec.ask, spec.state, clue);
 }
 

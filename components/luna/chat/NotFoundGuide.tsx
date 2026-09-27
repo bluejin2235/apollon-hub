@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { useMemo } from "react";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
 import type { LunaClassificationMeta } from "@/lib/luna/chat-response";
 import { isNotFoundAnswer } from "@/lib/luna/failures-shared";
@@ -10,7 +10,8 @@ import {
   type LunaSearchCounts
 } from "@/lib/luna/luna-answer-ui";
 import {
-  formatNasFolderPath,
+  nasExplorerFolderPair,
+  type NasExplorerPathPair,
   type NasPathSettings
 } from "@/lib/luna/nas-path";
 import { progressQueryHint } from "@/lib/luna/progress-display";
@@ -49,20 +50,21 @@ function extractDetail(content: string, why: string): string | null {
   return rest.length > 200 ? `${rest.slice(0, 199)}…` : rest;
 }
 
-function uniqueFolderPaths(
-  cards: LunaCard[],
-  settings: NasPathSettings
-): string[] {
+function uniqueFolderPairs(cards: LunaCard[]): NasExplorerPathPair[] {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: NasExplorerPathPair[] = [];
   for (const c of cards) {
     if (c.type !== "nas") continue;
     const raw = (c.raw_path ?? "").trim();
     if (!raw) continue;
-    const folder = formatNasFolderPath(c.drive, raw, settings, true);
-    if (!folder || seen.has(folder)) continue;
-    seen.add(folder);
-    out.push(folder);
+    const last = raw.replace(/\//g, "\\").split("\\").pop() || "";
+    const isFile =
+      c.is_file === true ||
+      (c.is_file !== false && /\.[a-z0-9]{1,8}$/i.test(last));
+    const pair = nasExplorerFolderPair(c.drive, raw, isFile);
+    if (!pair.office || seen.has(pair.office)) continue;
+    seen.add(pair.office);
+    out.push(pair);
     if (out.length >= 3) break;
   }
   return out;
@@ -93,7 +95,6 @@ export function NotFoundGuide({
   classification,
   counts,
   cards,
-  nasPathSettings,
   onCopyToast
 }: {
   content: string;
@@ -102,17 +103,13 @@ export function NotFoundGuide({
   classification?: LunaClassificationMeta | null;
   counts: LunaSearchCounts;
   cards: LunaCard[];
-  nasPathSettings: NasPathSettings;
+  nasPathSettings?: NasPathSettings;
   onCopyToast?: (msg: string) => void;
 }) {
-  const [copied, setCopied] = useState<string | null>(null);
   const hint = progressQueryHint(questionText ?? "");
   const why = extractWhy(content);
   const detail = extractDetail(content, why);
-  const folders = useMemo(
-    () => uniqueFolderPaths(cards, nasPathSettings),
-    [cards, nasPathSettings]
-  );
+  const folders = useMemo(() => uniqueFolderPairs(cards), [cards]);
 
   const searchRows = useMemo(() => {
     const rows = buildProgressRows({
@@ -156,17 +153,6 @@ export function NotFoundGuide({
     return fallback;
   }, [steps, classification, counts, hint]);
 
-  async function copyPath(path: string) {
-    try {
-      await navigator.clipboard.writeText(path);
-      setCopied(path);
-      onCopyToast?.("경로를 복사했어요 — 탐색기에 붙여넣기");
-      window.setTimeout(() => setCopied(null), 1800);
-    } catch {
-      onCopyToast?.("복사에 실패했어요");
-    }
-  }
-
   return (
     <div className="mt-3.5 rounded-[12px] border border-[#e7e8ec] bg-[#FCFCFD] px-3.5 py-3.5">
       {searchRows.length > 0 ? (
@@ -199,22 +185,15 @@ export function NotFoundGuide({
         </p>
         <ul className="space-y-2.5">
           {folders.length > 0 ? (
-            folders.map((path) => (
-              <li key={path} className="text-[13px] leading-[1.55] text-[#1c1d21]">
-                <span className="text-[#6b6f76]">· 폴더를 직접 열어보기 — </span>
-                <button
-                  type="button"
-                  onClick={() => void copyPath(path)}
-                  className="inline-flex max-w-full items-start gap-1.5 rounded-md border border-[#e7e8ec] bg-white px-2 py-1 text-left font-mono text-[11px] text-[#534AB7] hover:border-[#534AB7]/40"
-                  title="클릭하면 복사"
-                >
-                  <span className="min-w-0 break-all">{path}</span>
-                  {copied === path ? (
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  ) : (
-                    <Copy className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  )}
-                </button>
+            folders.map((pair) => (
+              <li
+                key={pair.office}
+                className="text-[13px] leading-[1.55] text-[#1c1d21]"
+              >
+                <p className="mb-1 text-[#6b6f76]">· 폴더를 직접 열어보기</p>
+                <div className="rounded-md border border-[#e7e8ec] bg-white px-2.5 py-2">
+                  <NasPathDualCopy pair={pair} onCopyToast={onCopyToast} />
+                </div>
               </li>
             ))
           ) : (

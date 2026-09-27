@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { PeriodBar } from "@/components/luna-admin/PeriodBar";
 import { PrimaryFlow } from "@/components/luna-admin/PrimaryFlow";
@@ -11,6 +12,8 @@ import type {
   PrimaryImageListPayload,
   PrimaryImageRow
 } from "@/lib/luna-admin/types";
+
+import { nasExplorerPairFromOfficePath } from "@/lib/luna/nas-path";
 
 type Props = { flow: PrimaryFlowStep[] | undefined };
 
@@ -124,7 +127,9 @@ export function LunaAdminPrimaryImage({ flow }: Props) {
                     </td>
                     <td className="mut">{row.project ?? "—"}</td>
                     <td>
-                      <span className="pa">{row.folder}</span>
+                      <NasPathDualCopy
+                        pair={nasExplorerPairFromOfficePath(row.full_path)}
+                      />
                     </td>
                     <td className="num">{row.resolution}</td>
                     <td className="num">{row.size_label}</td>
@@ -200,7 +205,11 @@ export function LunaAdminPrimaryImage({ flow }: Props) {
                 ) : (
                   <div className="box" />
                 )}
-                <div className="cap">{selected.full_path}</div>
+                <div className="cap">
+                  <NasPathDualCopy
+                    pair={nasExplorerPairFromOfficePath(selected.full_path)}
+                  />
+                </div>
               </div>
               <div className="desc">
                 <div className="dt">AI 가 읽은 것</div>

@@ -1,7 +1,8 @@
 "use client";
 
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import {
-  formatNasFolderPath,
+  nasExplorerFolderPair,
   type NasPathSettings
 } from "@/lib/luna/nas-path";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -128,35 +129,47 @@ function NotionRow({ src }: { src: NotionSource }) {
 
 function WorkRow({
   card,
-  nasPathSettings
+  onCopyToast
 }: {
   card: LunaCard;
-  nasPathSettings: NasPathSettings;
+  nasPathSettings?: NasPathSettings;
+  onCopyToast?: (msg: string) => void;
 }) {
-  const fullPath = card.raw_path
-    ? formatNasFolderPath(card.drive, card.raw_path, nasPathSettings, false)
-    : card.title;
+  const last = (card.raw_path ?? "").replace(/\//g, "\\").split("\\").pop() || "";
+  const isFile =
+    card.is_file === true ||
+    (card.is_file !== false && /\.[a-z0-9]{1,8}$/i.test(last));
+  const pair = card.raw_path
+    ? nasExplorerFolderPair(card.drive, card.raw_path, isFile)
+    : null;
   const href = card.url;
   const inner = (
     <>
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-semibold text-[#1c1d21]">{card.title}</div>
-        <div className="mt-1 whitespace-pre-wrap break-all font-mono text-[10.5px] leading-[1.55] text-[#6b6f76]">
-          {fullPath}
+        <div className="break-all text-[12.5px] font-semibold text-[#1c1d21]">
+          {href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              {card.title}
+            </a>
+          ) : card.title}
         </div>
+        {pair ? (
+          <NasPathDualCopy
+            pair={pair}
+            onCopyToast={onCopyToast}
+            className="mt-1"
+          />
+        ) : (
+          <div className="mt-1 break-all font-mono text-[10.5px] leading-[1.55] text-[#6b6f76]">
+            {card.title}
+          </div>
+        )}
       </div>
       <MaterialTag label="워크" bg="#EDEFF2" ink="#5B6472" />
     </>
   );
   const className =
     "mb-1.5 flex items-start gap-2.5 rounded-[10px] border border-[#e7e8ec] bg-white px-3 py-2.5 hover:bg-[#F7FBF9]";
-  if (href) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
-        {inner}
-      </a>
-    );
-  }
   return <div className={className}>{inner}</div>;
 }
 
@@ -254,7 +267,7 @@ export function SourceGroupSections({
             <WorkRow
               key={`${c.title}-${c.raw_path ?? i}`}
               card={c}
-              nasPathSettings={nasPathSettings}
+              onCopyToast={onCopyToast}
             />
           ))}
         </section>

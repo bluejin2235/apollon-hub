@@ -202,7 +202,7 @@ export function LunaAdminPrimary({ source, workKind, onOpen, onKind }: Props) {
                 {row.name} <span className="mut">{row.schedule_label}</span>
               </span>
               <span className="v">{row.last_label}</span>
-              <span className={`tag ${row.status === "green" ? "g" : row.status === "yellow" ? "y" : "r"}`}>
+              <span className={`tag ${row.status === "green" ? "g" : row.status === "yellow" ? "y" : row.status === "gray" ? "gray" : "r"}`}>
                 {row.status_label}
               </span>
             </div>

@@ -26,7 +26,7 @@ export type AskedWhat = {
 };
 
 const GENERIC_TOPIC_RE =
-  /^(미디어파사드|미디어아트|미디어폴|파사드|레퍼런스|스토리보드|아이데이션|시안|견적|사례|키비주얼|시뮬레이션|이미지|사진|콘티|자료|폴더|파일|프로젝트|모델하우스|시어터룸|글로벌|론칭|공공부지|공공부지사업)$/i;
+  /^(미디어파사드|미디어아트|미디어폴|파사드|레퍼런스|스토리보드|아이데이션|시안|견적|사례|키비주얼|시뮬레이션|이미지|사진|콘티|자료|폴더|파일|프로젝트|모델하우스|시어터룸|글로벌|론칭|공공부지|공공부지사업|아트리움)$/i;
 
 const ASK_STOP = new Set([
   "이미지",
@@ -160,11 +160,35 @@ export function hasNamedProject(
   return parseAskedWhat(text, entities).projectPhrases.length > 0;
 }
 
+/** Correct only one-edit, unambiguous long Hangul names from the supplied registry. */
+export function correctRegisteredProjectTypos(text: string, entities: NamedEntity[]): string {
+  const phrases = [...new Set(entities.filter(e => e.kind === "project" || e.kind === "client")
+    .flatMap(phrasesOf).filter(p => /^[가-힣]{4,}$/.test(p)))];
+  const oneEdit = (a: string, b: string): boolean => {
+    if (Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length >= b.length) i++;
+      if (b.length >= a.length) j++;
+    }
+    return edits + (a.length - i) + (b.length - j) === 1;
+  };
+  return text.replace(/[가-힣A-Za-z0-9]+/g, token => {
+    if (!/^[가-힣]{4,}$/.test(token) || phrases.includes(token)) return token;
+    // Keep exact registered names with particles/suffixes; no speculative rewrite.
+    if (phrases.some(p => token.includes(p))) return token;
+    const candidates = phrases.filter(p => p.slice(0, 2) === token.slice(0, 2) && oneEdit(token, p));
+    return candidates.length === 1 ? candidates[0]! : token;
+  });
+}
+
 export function parseAskedWhat(
   text: string,
   entities: NamedEntity[] = NAMED_ENTITY_SEED
 ): AskedWhat {
-  const t = text.replace(/\s+/g, " ").trim();
+  const t = correctRegisteredProjectTypos(text, entities).replace(/\s+/g, " ").trim();
   const nature = detectNature(t);
   const material = detectMaterial(t);
   const matched = matchNamedEntities(t, entities).filter(
@@ -225,3 +249,4 @@ export function parseAskedWhat(
     summary: bits.join(" ")
   };
 }
+

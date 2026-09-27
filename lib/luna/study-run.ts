@@ -184,12 +184,8 @@ async function runRefreshStale(
           : "대기열이 비었습니다",
       note: "한 실행 상한 200건 — 한꺼번에 돌리지 않음"
     },
-    outcome:
-      queued.inserted > 0 ||
-      counts.pending > 0 ||
-      (typeof lastDrain?.processed === "number" && lastDrain.processed > 0)
-        ? "improved"
-        : "no_change",
+    // Queue preparation does not measure an improvement in retrieval quality.
+    outcome: "no_change",
     cost_usd: 0,
     llm_calls: 0
   };
@@ -221,7 +217,8 @@ async function runMaterializeSecondary(
       next: "자습 › 2차 데이터 만들기 또는 build-links 범위 실행",
       note: "대량 build-links 는 별도 상한 작업 — 여기선 진단만"
     },
-    outcome: (sameNeed ?? 0) > 0 || years.length > 0 ? "improved" : "no_change",
+    // Identifying missing relations is diagnostic, not a before/after improvement.
+    outcome: "no_change",
     cost_usd: 0,
     llm_calls: 0
   };

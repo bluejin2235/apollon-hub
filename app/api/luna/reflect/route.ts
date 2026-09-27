@@ -1,3 +1,4 @@
+import { isProductionData } from "@/lib/luna/data-context";
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { hasLunaAccess } from "@/lib/luna/beta-access";
@@ -113,6 +114,8 @@ type CaptureQuestion = {
 
 type ConversationReflectRow = {
   id: string;
+  title: string | null;
+  data_context: string;
   last_reflected_at: string | null;
   last_reflected_message_count: number | null;
   reflect_lock_until: string | null;
@@ -297,7 +300,7 @@ export async function POST(request: NextRequest) {
     .eq("user_id", user.id)
     .or(`reflect_lock_until.is.null,reflect_lock_until.lt."${nowIso}"`)
     .select(
-      "id, last_reflected_at, last_reflected_message_count, reflect_lock_until"
+      "id, title, data_context, last_reflected_at, last_reflected_message_count, reflect_lock_until"
     )
     .maybeSingle();
 
@@ -319,6 +322,10 @@ export async function POST(request: NextRequest) {
   }
 
   const conv = locked as ConversationReflectRow;
+  if (!isProductionData(conv)) {
+    await clearReflectLock(admin, conversationId, user.id);
+    return NextResponse.json({ saved: 0, skipped: "synthetic_conversation" });
+  }
 
   try {
     const { data: messagesData, error: messagesError } = await admin
@@ -523,3 +530,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

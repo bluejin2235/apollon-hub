@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowUpRight, Check, Copy, Folder } from "lucide-react";
+import { ArrowUpRight, Folder } from "lucide-react";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import type { NotionSource } from "@/lib/luna/notion";
 import type {
   FileExtBadgeKind,
@@ -10,9 +10,8 @@ import type {
 } from "@/lib/luna/nas-path";
 import {
   fileExtBadgeKind,
-  formatNasFolderBreadcrumb,
-  formatNasFolderPath,
   inferFileTag,
+  nasExplorerFolderPair,
   stripFileExtension
 } from "@/lib/luna/nas-path";
 
@@ -40,97 +39,30 @@ function FileExtBadge({ fileName }: { fileName: string }) {
   );
 }
 
-function CopyButton({
-  text,
-  onCopyToast,
-  ariaLabel
-}: {
-  text: string;
-  onCopyToast?: (message: string) => void;
-  ariaLabel: string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(t);
-  }, [copied]);
-
-  const copy = () => {
-    if (!text) return;
-    void navigator.clipboard.writeText(text).then(
-      () => {
-        setCopied(true);
-        onCopyToast?.("복사했어요");
-      },
-      () => {
-        /* ignore */
-      }
-    );
-  };
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        copy();
-      }}
-      className="shrink-0 text-[#9aa0a8] hover:text-[#6b6f76]"
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5" strokeWidth={2} style={{ color: "#0F6E56" }} />
-      ) : (
-        <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
-      )}
-    </button>
-  );
-}
-
 type WorkserverPathCardProps = {
   group: WorkserverPathGroup;
-  nasPathSettings: NasPathSettings;
+  nasPathSettings?: NasPathSettings;
   onCopyToast?: (message: string) => void;
 };
 
 export function WorkserverPathCard({
   group,
-  nasPathSettings,
   onCopyToast
 }: WorkserverPathCardProps) {
-  const folderPath = formatNasFolderPath(
-    group.drive,
-    group.folderRawPath,
-    nasPathSettings,
-    false
-  );
-  const crumb = formatNasFolderBreadcrumb(
-    group.drive,
-    group.folderRawPath,
-    nasPathSettings
-  );
+  const pair = nasExplorerFolderPair(group.drive, group.folderRawPath, false);
 
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex items-start gap-2">
         <Folder
-          className="h-[15px] w-[15px] shrink-0 text-[#9aa0a8]"
+          className="mt-0.5 h-[15px] w-[15px] shrink-0 text-[#9aa0a8]"
           strokeWidth={1.75}
           aria-hidden
         />
-        <span
-          className="min-w-0 flex-1 truncate text-[11.5px] text-[#6b6f76]"
-          title={folderPath}
-        >
-          {crumb || folderPath}
-        </span>
-        <CopyButton
-          text={folderPath}
+        <NasPathDualCopy
+          pair={pair}
           onCopyToast={onCopyToast}
-          ariaLabel="폴더 경로 복사"
+          className="min-w-0 flex-1"
         />
       </div>
 
@@ -153,12 +85,11 @@ export function WorkserverPathCard({
               >
                 <FileExtBadge fileName={fileName} />
                 <span
-                  className="min-w-0 flex-1 truncate text-[13px]"
+                  className="min-w-0 flex-1 break-all text-[13px]"
                   style={{
                     color: isFinal ? "#1c1d21" : "#6b6f76",
                     fontWeight: isFinal ? 600 : 400
                   }}
-                  title={fileName}
                 >
                   {stripFileExtension(fileName)}
                 </span>

@@ -1,5 +1,7 @@
 "use client";
 
+import { stripLunaSourceMarkers } from "@/lib/luna/source-citations";
+
 import {
   useEffect,
   useMemo,
@@ -1300,7 +1302,7 @@ export function LunaMessage({
 
   function copyContent() {
     if (!content) return;
-    void navigator.clipboard.writeText(content).then(
+    void navigator.clipboard.writeText(stripLunaSourceMarkers(content)).then(
       () => setCopied(true),
       () => {
         /* ignore */
@@ -1761,3 +1763,4 @@ export function LunaMessage({
     </div>
   );
 }
+

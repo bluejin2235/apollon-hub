@@ -4,6 +4,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StudyRunRow } from "@/lib/luna/study-run";
+import { studyOutcomeLabel as outcomeLabel } from "@/lib/luna/study-status";
 
 export type StudyRunReportCard = {
   agenda: string;
@@ -40,11 +41,111 @@ export type StudyMorningReport = {
   rangeLabel: string | null;
 };
 
-function outcomeLabel(o: StudyRunRow["outcome"]): string {
-  if (o === "improved") return "나아짐";
-  if (o === "no_change") return "변화 없음";
-  if (o === "failed") return "나빠짐";
-  return "미완";
+const MODE_A_SOURCE_LABEL: Record<string, string> = {
+  glossary: "용어",
+  image: "이미지",
+  knowledge: "지식",
+  wiki: "위키",
+  work: "Work",
+  notion: "노션"
+};
+
+const MODE_A_SOURCE_ORDER = [
+  "glossary",
+  "image",
+  "knowledge",
+  "wiki",
+  "work",
+  "notion"
+] as const;
+
+/** 하루 전량 모드 A 질문 수 — 아직 안 돈 원천은 —/N 으로 보여 준다. */
+const MODE_A_EXPECTED_Q: Record<string, number> = {
+  glossary: 100,
+  image: 200,
+  knowledge: 20,
+  wiki: 45,
+  work: 300,
+  notion: 300
+};
+
+export type ModeAStageSnapshot = {
+  source: string;
+  probed: number;
+  miss: number;
+  hit_at_1: number | null;
+  llm_calls: number;
+};
+
+export function parseModeAStages(
+  result: Record<string, unknown>
+): ModeAStageSnapshot[] {
+  const raw = result.stages;
+  if (!Array.isArray(raw)) return [];
+  const out: ModeAStageSnapshot[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const s = row as Record<string, unknown>;
+    const source = typeof s.source === "string" ? s.source : "";
+    if (!source) continue;
+    const probed = typeof s.probed === "number" ? s.probed : 0;
+    const miss = typeof s.miss === "number" ? s.miss : 0;
+    // A non-miss may be a lower-ranked hit; it does not establish rank one.
+    const hit_at_1 =
+      typeof s.hit_at_1 === "number" && Number.isSafeInteger(s.hit_at_1) && s.hit_at_1 >= 0
+        ? s.hit_at_1
+        : null;
+    const llm_calls = typeof s.llm_calls === "number" ? s.llm_calls : 0;
+    out.push({ source, probed, miss, hit_at_1, llm_calls });
+  }
+  return out;
+}
+
+export function sumModeAStages(stages: ModeAStageSnapshot[]): {
+  probed: number;
+  miss: number;
+  hit_at_1: number | null;
+  llm_calls: number;
+  breakdown: string;
+} {
+  const probed = stages.reduce((n, s) => n + s.probed, 0);
+  const miss = stages.reduce((n, s) => n + s.miss, 0);
+  const hit_at_1 = stages.some((s) => s.hit_at_1 === null)
+    ? null
+    : stages.reduce((n, s) => n + (s.hit_at_1 ?? 0), 0);
+  const llm_calls = stages.reduce((n, s) => n + s.llm_calls, 0);
+  const bySource = new Map(stages.map((s) => [s.source, s]));
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const key of MODE_A_SOURCE_ORDER) {
+    seen.add(key);
+    const stage = bySource.get(key);
+    const label = MODE_A_SOURCE_LABEL[key] ?? key;
+    if (stage) {
+      parts.push(`${label} ${stage.hit_at_1 ?? "—"}/${stage.probed}`);
+    } else {
+      const expected = MODE_A_EXPECTED_Q[key];
+      parts.push(
+        typeof expected === "number" ? `${label} —/${expected}` : `${label} —`
+      );
+    }
+  }
+  for (const stage of stages) {
+    if (seen.has(stage.source)) continue;
+    const label = MODE_A_SOURCE_LABEL[stage.source] ?? stage.source;
+    parts.push(`${label} ${stage.hit_at_1 ?? "—"}/${stage.probed}`);
+  }
+  return { probed, miss, hit_at_1, llm_calls, breakdown: parts.join(" · ") };
+}
+
+/** 원천별 한 줄. 합계(hit_at_5)만 있으면 쓰지 않는다. */
+export function formatModeAResultLine(
+  result: Record<string, unknown>
+): string | null {
+  const stages = parseModeAStages(result);
+  if (stages.length === 0 || result.mode === "failure_review") return null;
+  const totals = sumModeAStages(stages);
+  return `${totals.probed}건 · 못 찾음 ${totals.miss} · ${totals.breakdown}`;
 }
 
 function scopeOf(run: StudyRunRow): Record<string, unknown> {
@@ -91,11 +192,18 @@ export function isCronStudyRun(run: StudyRunRow): boolean {
 function formatDid(result: Record<string, unknown>, expected: string): string {
   if (typeof result.did === "string" && result.did.trim()) return result.did.trim();
   if (typeof result.action === "string" && result.action.trim()) return result.action.trim();
-  if (typeof result.probed === "number") {
+  const stages = parseModeAStages(result);
+  const probed =
+    stages.length > 0
+      ? sumModeAStages(stages).probed
+      : typeof result.probed === "number"
+        ? result.probed
+        : null;
+  if (typeof probed === "number") {
     if (result.mode === "failure_review") {
-      return `실패 표본 ${result.probed}건을 다시 살펴봤습니다`;
+      return `실패 표본 ${probed}건을 다시 살펴봤습니다`;
     }
-    return `질문 ${result.probed}개를 만들어 검색에 던졌습니다`;
+    return `질문 ${probed}개를 만들어 검색에 던졌습니다`;
   }
   if (typeof result.queued === "number") {
     return `대기열에 ${result.queued}건을 넣었습니다`;
@@ -110,6 +218,8 @@ function formatResultLine(
   result: Record<string, unknown>,
   outcome: StudyRunRow["outcome"]
 ): string {
+  const fromStages = formatModeAResultLine(result);
+  if (fromStages) return fromStages;
   if (typeof result.result_line === "string" && result.result_line.trim()) {
     return result.result_line.trim();
   }
@@ -126,10 +236,10 @@ function formatResultLine(
     return `대기열 +${result.queued} · pending ${result.pending ?? "—"}`;
   }
   if (typeof result.listed === "number") {
-    return `${result.listed}건 목록 (${outcomeLabel(outcome)})`;
+    return `${result.listed}건 목록 (${outcomeLabel(outcome, result)})`;
   }
   if (typeof result.error === "string") return result.error;
-  return outcomeLabel(outcome);
+  return outcomeLabel(outcome, result);
 }
 
 function formatBlocked(result: Record<string, unknown>): string | null {
@@ -146,6 +256,9 @@ function formatBlocked(result: Record<string, unknown>): string | null {
 
 function toStudyCard(run: StudyRunRow): StudyRunReportCard {
   const result = resultOf(run);
+  const stages = parseModeAStages(result);
+  const llmFromStages =
+    stages.length > 0 ? sumModeAStages(stages).llm_calls : 0;
   return {
     agenda: run.agenda,
     why: run.why,
@@ -161,9 +274,9 @@ function toStudyCard(run: StudyRunRow): StudyRunReportCard {
         : null,
     blocked: formatBlocked(result),
     outcome: run.outcome,
-    outcomeLabel: outcomeLabel(run.outcome),
+    outcomeLabel: outcomeLabel(run.outcome, result),
     cost_usd: run.cost_usd || 0,
-    llm_calls: run.llm_calls || 0,
+    llm_calls: Math.max(run.llm_calls || 0, llmFromStages),
     started_at: run.started_at,
     finished_at: run.finished_at
   };
@@ -188,7 +301,7 @@ function toIndexCard(run: StudyRunRow): IndexRunReportCard {
     result:
       typeof result.result_line === "string" && result.result_line.trim()
         ? result.result_line.trim()
-        : outcomeLabel(run.outcome),
+        : outcomeLabel(run.outcome, result),
     processed,
     remaining,
     started_at: run.started_at,

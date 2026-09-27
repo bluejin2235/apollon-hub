@@ -1,6 +1,6 @@
 /**
  * Gap → 할 일 후보 → 하루 예산 안에서 고르기.
- * 1순위 모드 A 검색 검증 · 2순위 실패 · 3순위 나머지.
+ * 1순위 사람이 겪은 실패 · 2순위 모드 A · 3순위 나머지.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StudyGap, StudyMethod } from "@/lib/luna/study-health-meta";
@@ -17,6 +17,7 @@ import {
   MODE_A_MULTI_MINUTES,
   MODE_A_SOURCE_BUDGET
 } from "@/lib/luna/probe-mode-a-sources";
+import { ADMIN_MODE_A_HOUR, ADMIN_MODE_A_MINUTE } from "@/lib/luna-admin/schedule";
 
 export type AgendaCandidate = {
   id: string;
@@ -30,7 +31,7 @@ export type AgendaCandidate = {
   score: number;
   gap_id: string;
   human_failure: boolean;
-  /** 선정 티어: 1=모드A 강제 · 2=실패 · 3=나머지 */
+  /** 선정 티어: 1=사람 실패 · 2=모드A · 3=나머지 */
   tier: 1 | 2 | 3;
 };
 
@@ -77,7 +78,9 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
     gap.method === "probe_retrieval" && gap.scope?.mode === "answer_key";
   const agenda = isModeA
     ? MODE_A_AGENDA
-    : gap.method === "probe_retrieval"
+    : gap.table === "luna_failures"
+      ? `사람이 겪은 못 찾음 ${gap.count}건`
+      : gap.method === "probe_retrieval"
       ? `${gap.table} 기준으로 검색이 자기 자료를 찾는지 시험`
       : gap.method === "materialize_secondary"
         ? `2차 데이터가 얇은 범위를 다시 묶기`
@@ -87,7 +90,9 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
 
   const expected = isModeA
     ? `문서 ${MODE_A_BATCH_SIZE}건/청크 · 하루 목표 ${MODE_A_PAGE_LIMIT} · 문서당 질문 3`
-    : gap.method === "probe_retrieval"
+    : gap.table === "luna_failures"
+      ? "사람이 겪은 못 찾음 — 기계 시험보다 먼저 본다"
+      : gap.method === "probe_retrieval"
       ? "실패 질문은 사람 확인(모드 B) — 자동 채점 없음"
       : gap.method === "materialize_secondary"
         ? "연결 건수·애매 건수가 늘어나는지 확인"
@@ -99,7 +104,8 @@ function agendaFromGap(gap: StudyGap): AgendaCandidate {
   if (gap.human_failure) score += 1000;
   if (gap.verifiable) score += 400;
 
-  const tier: 1 | 2 | 3 = isModeA ? 1 : gap.human_failure ? 2 : 3;
+  const tier: 1 | 2 | 3 =
+    gap.table === "luna_failures" ? 1 : isModeA ? 2 : 3;
 
   return {
     id: gap.id,
@@ -148,7 +154,7 @@ export function buildForcedModeACandidate(): AgendaCandidate {
     score: 1_000_000,
     gap_id: "forced:probe_answer_key",
     human_failure: false,
-    tier: 1
+    tier: 2
   };
 }
 
@@ -248,7 +254,7 @@ function describeDemote(c: AgendaCandidate, runs: RunHist[]): AgendaDemote | nul
       id: c.id,
       agenda: c.agenda,
       reason: "already_ran",
-      detail: `오늘 ${clock || "05:00"} 에 ${label} 가 이미 돌아갔습니다. 성공한 아젠다는 같은 날 다시 고르지 않습니다.`,
+      detail: `오늘 ${clock || `${String(ADMIN_MODE_A_HOUR).padStart(2, "0")}:${String(ADMIN_MODE_A_MINUTE).padStart(2, "0")}`} 에 ${label} 가 이미 돌아갔습니다. 성공한 아젠다는 같은 날 다시 고르지 않습니다.`,
       started_at: success.started_at,
       outcome: success.outcome
     };
@@ -294,18 +300,20 @@ function describeDemote(c: AgendaCandidate, runs: RunHist[]): AgendaDemote | nul
   const related = runs.filter(
     (r) => `${r.kind}::${c.gap_id}` === key || r.agenda === c.agenda
   );
-  const recent = related.filter((r) => r.outcome === "no_change").slice(0, 3);
-  if (recent.length >= 3) {
-    const days = new Set(
-      recent.map((r) => new Date(r.started_at).toISOString().slice(0, 10))
-    );
-    if (days.size >= 3) {
-      return {
-        id: c.id,
-        agenda: c.agenda,
-        reason: "no_change_streak",
-        detail: "사흘 연속 변화가 없어 건너뜁니다."
-      };
+  if (!c.human_failure) {
+    const recent = related.filter((r) => r.outcome === "no_change").slice(0, 3);
+    if (recent.length >= 3) {
+      const days = new Set(
+        recent.map((r) => new Date(r.started_at).toISOString().slice(0, 10))
+      );
+      if (days.size >= 3) {
+        return {
+          id: c.id,
+          agenda: c.agenda,
+          reason: "no_change_streak",
+          detail: "사흘 연속 변화가 없어 건너뜁니다."
+        };
+      }
     }
   }
   return null;
@@ -439,15 +447,13 @@ export async function selectTonightAgenda(
       continue;
     }
     // 강제 모드 A 와 같은 일(정답 검색 시험)은 하루 하나
-    if (
-      modeAPlaced &&
-      c.kind === "probe_retrieval" &&
-      c.scope?.mode === "answer_key"
-    ) {
+    const forcedModeA =
+      c.id === "forced:probe_answer_key" || c.scope?.forced === true;
+    if (modeAPlaced && forcedModeA) {
       continue;
     }
     // 모드 A 는 예산과 무관하게 하루 하나 확보 (성공한 날만 demote)
-    if (c.tier === 1 && !modeAPlaced) {
+    if (forcedModeA && !modeAPlaced) {
       selected.push({ ...c, excluded: false, when: "tonight" });
       used += c.minutes;
       modeAPlaced = true;

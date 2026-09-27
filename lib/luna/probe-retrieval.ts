@@ -867,14 +867,14 @@ export async function runProbeRetrievalExam(
         budgetMs
       })
     });
-    const miss = multi.result.miss;
+    // Finding misses is a diagnostic result, not measured performance improvement.
     const probed = multi.result.probed;
     return {
       result: multi.result,
       cost_usd: multi.cost_usd,
       llm_calls: multi.llm_calls,
       outcome:
-        probed === 0 ? "failed" : miss > 0 ? "improved" : "no_change"
+        probed === 0 ? "failed" : "no_change"
     };
   }
 
@@ -883,11 +883,11 @@ export async function runProbeRetrievalExam(
     questionsPerPage: MODE_A_QUESTIONS_PER_PAGE,
     budgetMs: MODE_A_CHUNK_BUDGET_MS
   });
-  const miss = out.result.miss ?? 0;
   const probed = out.result.probed;
   return {
     ...out,
     outcome:
-      probed === 0 ? "failed" : miss > 0 ? "improved" : "no_change"
+      probed === 0 ? "failed" : "no_change"
   };
 }
+

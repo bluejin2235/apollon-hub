@@ -1,9 +1,11 @@
+import { postgrestTextBatches, postgrestTextList } from "@/lib/luna/postgrest-text-list";
 /**
  * Work 본문 키워드 검색 (플랜 A) — 임베딩 없이 trigram + 순위
  *
  * 순위: 파일명·경로 일치 · 본문 일치 · 중요 경로 · 최근 수정 · 프로젝트 소속(링크)
  */
 import "server-only";
+import { currentNasBodyFiles } from "@/lib/luna/nas-source-version";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type NasTextKeywordHit = {
@@ -137,17 +139,15 @@ export async function searchNasTextKeyword(
 
   const pathList = [...allPaths].slice(0, 200);
 
-  const [{ data: dirRows }, { data: impRows }, { data: textRows }] =
+  const [{ data: dirRows }, { data: impRows }, currentBodies] =
     await Promise.all([
-      admin
+      Promise.all(postgrestTextBatches(pathList).map(batch => admin
         .from("nas_directory")
         .select("path, drive, modified_at, importance")
-        .in("path", pathList),
+        .filter("path", "in", postgrestTextList(batch)).limit(1000)))
+        .then(results => ({ data: results.flatMap(result => result.error ? [] : result.data ?? []) })),
       admin.from("nas_important_paths").select("path").limit(2000),
-      admin
-        .from("nas_file_text")
-        .select("path, drive, modified_at")
-        .in("path", pathList)
+      currentNasBodyFiles(admin, pathList)
     ]);
 
   const dirByPath = new Map(
@@ -158,14 +158,6 @@ export async function searchNasTextKeyword(
       importance: number | null;
     }[]).map((r) => [r.path, r])
   );
-  const textByPath = new Map(
-    ((textRows ?? []) as {
-      path: string;
-      drive: string | null;
-      modified_at: string | null;
-    }[]).map((r) => [r.path, r])
-  );
-
   const important = new Set<string>();
   for (const row of (impRows ?? []) as { path: string }[]) {
     const p = (row.path ?? "").replace(/\//g, "\\").toLowerCase();
@@ -177,9 +169,12 @@ export async function searchNasTextKeyword(
   const hits: NasTextKeywordHit[] = [];
 
   for (const path of pathList) {
-    const chunk = chunkByPath.get(path);
+    const chunk = currentBodies.has(path) ? chunkByPath.get(path) : undefined;
     const dir = dirByPath.get(path);
-    const meta = textByPath.get(path) ?? pathHits.get(path);
+    const meta = currentBodies.get(path);
+    if (!dir && !meta) continue;
+    // A body belongs to the extracted file's drive, never an arbitrary same-path row.
+    if (chunk && meta && dir && dir.drive !== meta.drive) continue;
     const drive = dir?.drive ?? meta?.drive ?? null;
     const modified_at = dir?.modified_at ?? meta?.modified_at ?? null;
     const base = pathBasename(path);
@@ -230,7 +225,7 @@ export async function searchNasTextKeyword(
       reasons.push("프로젝트");
     }
 
-    if (score <= 0) continue;
+    if ((!chunk && !nameHit && !pathHit) || score <= 0) continue;
 
     const snippet = (chunk?.content ?? base).replace(/\s+/g, " ").slice(0, 160);
     hits.push({
@@ -248,3 +243,4 @@ export async function searchNasTextKeyword(
   hits.sort((a, b) => b.score - a.score || (b.modified_at ?? "").localeCompare(a.modified_at ?? ""));
   return hits.slice(0, limit);
 }
+

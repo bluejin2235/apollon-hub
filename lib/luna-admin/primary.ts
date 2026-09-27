@@ -31,6 +31,7 @@ import {
   worstLight,
   type TrafficLight
 } from "@/lib/luna-admin/traffic";
+import { IMAGE_INDEX_CHECK_ID, loadJobHolds } from "@/lib/luna/job-holds";
 
 export type { PrimaryPayload, PrimarySourceRow };
 export {
@@ -98,6 +99,7 @@ function formatWhen(iso: string | null): string {
 }
 
 function statusLabel(light: TrafficLight, days: number | null): string {
+  if (light === "gray") return "멈춰 둠 (사람이 멈춤)";
   if (days != null && days <= 0) return "오늘 실행";
   if (light === "green") return "정상";
   if (light === "yellow") return days != null ? `${days}일째 지연` : "지연";
@@ -108,12 +110,14 @@ function statusLabel(light: TrafficLight, days: number | null): string {
 function checkStatusLabel(light: TrafficLight): string {
   if (light === "green") return "정상";
   if (light === "yellow") return "지연";
+  if (light === "gray") return "멈춰 둠 (사람이 멈춤)";
   return "멈춤";
 }
 
 function lightFromCheckStatus(status: string | null | undefined): TrafficLight {
   if (status === "ok") return "green";
   if (status === "warn") return "yellow";
+  if (status === "held") return "gray";
   return "red";
 }
 
@@ -298,15 +302,18 @@ export async function buildPrimarySources(
       row
     ])
   );
+  const jobHolds = await loadJobHolds(admin);
 
   const settings = settingsRes.data;
   const workLast = (settings?.last_run_at as string | null) ?? null;
   const workDays = kstCalendarDaysAgo(workLast);
   const workScanLight = lightFromIdleDays(workDays);
   const workTextRow = checkById.get("work_text");
-  const workTextLight = lightFromCheckStatus(
-    typeof workTextRow?.status === "string" ? workTextRow.status : null
-  );
+  const workTextLight = jobHolds.work_text
+    ? "gray"
+    : lightFromCheckStatus(
+        typeof workTextRow?.status === "string" ? workTextRow.status : null
+      );
   const workLight = worstLight(workScanLight, workTextLight);
   const workDuration =
     typeof settings?.last_duration_sec === "number"
@@ -413,7 +420,8 @@ export async function buildPrimarySources(
       : null;
   const imageLast = imageRunAt ?? imageRowAt;
   const imageDays = kstCalendarDaysAgo(imageLast);
-  const imageLight = lightFromIdleDays(imageDays);
+  const imageHeld = Boolean(jobHolds[IMAGE_INDEX_CHECK_ID]);
+  const imageLight: TrafficLight = imageHeld ? "gray" : lightFromIdleDays(imageDays);
   const imagePct =
     imageCorpus > 0
       ? Math.max(0, Math.round((imageCount / imageCorpus) * 1000) / 10)
@@ -421,6 +429,7 @@ export async function buildPrimarySources(
   const imagePctInt =
     imageCorpus > 0 ? Math.max(0, Math.round((imageCount / imageCorpus) * 100)) : 0;
   const imageStatusLabel = (() => {
+    if (imageHeld) return "멈춰 둠 (사람이 멈춤)";
     if (imageDays == null) return "기록 없음";
     if (imageDays >= 3) return `${imageDays}일째 멈춤`;
     if (imageDays >= 2) return `${imageDays}일째 지연`;
@@ -541,9 +550,11 @@ export async function buildPrimarySources(
     const row = checkById.get(id);
     const lastIso =
       typeof row?.last_ok_at === "string" ? row.last_ok_at : null;
-    const light = lightFromCheckStatus(
-      typeof row?.status === "string" ? row.status : null
-    );
+    const light = jobHolds[id]
+      ? "gray"
+      : lightFromCheckStatus(
+          typeof row?.status === "string" ? row.status : null
+        );
     return {
       id,
       name: CHECK_NAMES[id],

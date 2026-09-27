@@ -67,7 +67,7 @@ export const LUNA_CHECK_PROMISES: Record<
   },
   selfstudy: {
     promise_label: `매일 ${hhmm(ADMIN_SELFSTUDY_HOUR, ADMIN_SELFSTUDY_MINUTE)} 약속`,
-    source: "vercel luna-selfstudy 0 20 * * * → KST 05:00"
+    source: "PC schtasks 「Apollon Luna Mode A」 → KST 04:00"
   },
   signals: {
     promise_label: `매일 ${hhmm(ADMIN_SIGNALS_HOUR, ADMIN_SIGNALS_MINUTE)} 약속`,

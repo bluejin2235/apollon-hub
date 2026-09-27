@@ -16,6 +16,7 @@ import {
 } from "@/components/luna/knowledge/ui";
 import { K } from "@/lib/luna/knowledge-format";
 import { supabase } from "@/lib/supabase/client";
+import { LunaTalkDetail } from "@/components/luna/talk/LunaTalkDetail";
 
 type PeriodKey = "7" | "30" | "90" | "custom";
 
@@ -206,6 +207,7 @@ export function LunaTalkHistory() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<HistoryPayload | null>(null);
   const [teaching, setTeaching] = useState<string | null>(null);
+  const [openConversationId, setOpenConversationId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = await getAccessToken();
@@ -505,6 +507,15 @@ export function LunaTalkHistory() {
                         {teaching === item.id ? "처리 중…" : "이 건으로 가르치기"}
                       </Btn>
                     ) : null}
+                    <Btn
+                      className="mt-2"
+                      onClick={() => setOpenConversationId((current) => current === item.id ? null : item.id)}
+                    >
+                      {openConversationId === item.id ? "원문 닫기" : "질문·답변·출처 보기"}
+                    </Btn>
+                    {openConversationId === item.id ? (
+                      <LunaTalkDetail conversationId={item.id} />
+                    ) : null}
                   </ListItem>
                 );
               })
@@ -540,9 +551,8 @@ export function LunaTalkHistory() {
             </div>
           ) : null}
 
-          <Hint>
-            행 클릭 시 대화 원문 — 되묻기·가정·출처·반응이 그대로 표시
-          </Hint>
+          <Hint>각 대화의 버튼을 눌러 저장된 질문·답변·출처를 확인할 수 있습니다.</Hint>
+          <Hint>검색 0건은 검색 실행과 후보 0건이 모두 기록된 경우입니다. 출처 카드가 없거나 과거 검색 기록이 없다는 이유로 집계하지 않습니다.</Hint>
         </>
       ) : null}
     </KnowledgeShell>

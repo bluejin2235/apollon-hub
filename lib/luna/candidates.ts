@@ -1,3 +1,4 @@
+import { isProductionData, isSyntheticMetadata } from "@/lib/luna/data-context";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
@@ -175,6 +176,12 @@ export async function createCandidate(
 ): Promise<{ id: string; content: string; thread: ThreadTurn[] } | null> {
   const content = input.content.trim();
   if (!content) return null;
+  if (isSyntheticMetadata(input.meta)) return null;
+  if (input.source_conversation_id) {
+    const { data: conversation, error } = await admin.from("luna_conversations")
+      .select("id, title, data_context").eq("id", input.source_conversation_id).maybeSingle();
+    if (error || !isProductionData(conversation)) return null;
+  }
 
   const thread = normalizeThread(input.thread ?? []);
   let category = (input.category?.trim() || "general").slice(0, 64);
@@ -356,3 +363,4 @@ JSON만: { "text": "재진술한 지식 한 문장" }`;
     return null;
   }
 }
+

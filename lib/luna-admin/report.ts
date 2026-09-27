@@ -79,7 +79,10 @@ const C = {
   rBg: "#FBEAE9",
   rLine: "#F0C9C6",
   codeBg: "#F7F7F9",
-  codeBar: "#EFEFF2"
+  codeBar: "#EFEFF2",
+  gray: "#6B7280",
+  grayBg: "#F3F4F6",
+  grayLine: "#E5E7EB"
 };
 
 function hubHref(path: string): string {
@@ -168,8 +171,22 @@ function stageBox(
   title: string,
   detailLines: string[]
 ): string {
-  const bg = light === "green" ? C.gBg : light === "yellow" ? C.yBg : C.rBg;
-  const color = light === "green" ? C.g : light === "yellow" ? C.y : C.r;
+  const bg =
+    light === "green"
+      ? C.gBg
+      : light === "yellow"
+        ? C.yBg
+        : light === "gray"
+          ? C.grayBg
+          : C.rBg;
+  const color =
+    light === "green"
+      ? C.g
+      : light === "yellow"
+        ? C.y
+        : light === "gray"
+          ? C.gray
+          : C.r;
   const emoji = lightEmoji(light);
   return `<td style="width:25%;border:1px solid ${C.line};padding:11px 12px;background:${bg};vertical-align:top;">
     <div style="font-size:9.5px;font-weight:800;letter-spacing:.4px;color:${color};margin-bottom:4px;">${emoji} ${escapeHtml(label)}</div>
@@ -397,6 +414,7 @@ export async function buildAdminReportHtml(
   ];
 
   const badChecks = checks.filter((c) => c.status === "bad" || c.status === "warn");
+  const heldChecks = checks.filter((c) => c.status === "held");
   const okChecks = checks.filter((c) => c.status === "ok");
   const tldr = buildTldr(
     badChecks,
@@ -423,7 +441,8 @@ export async function buildAdminReportHtml(
     });
   }
   const runningMedia = await loadRunningMediaIndexRules(admin);
-  if (runningMedia?.stale) {
+  const imageHeld = heldChecks.some((c) => c.id === "image_index");
+  if (runningMedia?.stale && !imageHeld) {
     todos.push({
       title: "이미지 색인을 새 규칙으로 다시 켜 주세요",
       detail: formatRunningMediaIndexLine(runningMedia),
@@ -431,6 +450,16 @@ export async function buildAdminReportHtml(
       btn: "1차 데이터",
       tone: "r",
       prompt: buildStaleMediaRulesPrompt(runningMedia)
+    });
+  }
+  if (openFailures > 0) {
+    todos.push({
+      title: `사람이 겪은 못 찾음 · ${openFailures}건`,
+      detail:
+        "기계가 만든 시험보다 먼저입니다. 위키·이미지·프로젝트에서 실제로 못 찾은 질문입니다.",
+      href: hubHref(buildLunaAdminUrl("failures", "causes")),
+      btn: "실패 수집 →",
+      tone: "r"
     });
   }
   for (const card of study.cards) {
@@ -535,8 +564,8 @@ export async function buildAdminReportHtml(
   const imageDelta = imageLive - imageYesterday;
 
   // —— HTML ——
-  const checkRowsHtml = badChecks
-    .map((c) => {
+  const checkRowsHtml = [
+    ...badChecks.map((c) => {
       const nmColor = c.status === "bad" ? C.r : C.y;
       const lamp = c.status === "bad" ? "🔴" : "🟡";
       const meaning = escapeHtml(c.meaning_when_stale);
@@ -549,8 +578,19 @@ export async function buildAdminReportHtml(
         </td>
         <td style="padding:9px 0;border-bottom:1px solid ${C.line2};vertical-align:top;text-align:right;white-space:nowrap;">${outlineBtn(hubHref(c.href), c.btn_label)}</td>
       </tr>`;
+    }),
+    ...heldChecks.map((c) => {
+      const ds = escapeHtml(c.detail ?? "");
+      return `<tr>
+        <td style="padding:9px 0;border-bottom:1px solid ${C.line2};vertical-align:top;width:22px;font-size:11px;">⚪</td>
+        <td style="padding:9px 8px;border-bottom:1px solid ${C.line2};vertical-align:top;">
+          <div style="font-weight:700;color:${C.gray};margin-bottom:2px;font-size:12.5px;">${escapeHtml(c.label)}</div>
+          <div style="font-size:11.5px;color:${C.sub};line-height:1.7;">${ds}</div>
+        </td>
+        <td style="padding:9px 0;border-bottom:1px solid ${C.line2};vertical-align:top;text-align:right;white-space:nowrap;">${outlineBtn(hubHref(c.href), c.btn_label)}</td>
+      </tr>`;
     })
-    .join("");
+  ].join("");
 
   const okLine =
     okChecks.length > 0
@@ -574,17 +614,17 @@ export async function buildAdminReportHtml(
       : study.cards
           .map((card, idx) => {
             const badgeBg =
-              card.outcome === "improved"
-                ? C.gBg
-                : card.outcome === "failed"
-                  ? C.rBg
-                  : "#f0f1f4";
+              card.outcome === "failed"
+                ? C.rBg
+                : card.outcomeLabel === "진행 중"
+                  ? C.yBg
+                  : C.grayBg;
             const badgeColor =
-              card.outcome === "improved"
-                ? C.g
-                : card.outcome === "failed"
-                  ? C.r
-                  : C.faint;
+              card.outcome === "failed"
+                ? C.r
+                : card.outcomeLabel === "진행 중"
+                  ? C.y
+                  : C.gray;
             const kvs = [
               ["왜", card.why],
               ["한 것", card.did],
@@ -706,7 +746,7 @@ export async function buildAdminReportHtml(
       <td style="font-size:11px;color:${C.faint};padding-left:8px;">${checks.length}개 중 ${badChecks.length}개 이상</td>
       <td style="text-align:right;"><a href="${escapeHtml(hubHref("/settings?menu=dashboard"))}" style="font-size:11px;color:${C.luna};font-weight:700;text-decoration:none;">전체 보기 →</a></td>
     </tr></table>
-    ${badChecks.length ? `<table style="width:100%;border-collapse:collapse;">${checkRowsHtml}</table>` : `<div style="font-size:12.5px;color:${C.g};">어긋난 약속이 없습니다.</div>`}
+    ${badChecks.length || heldChecks.length ? `<table style="width:100%;border-collapse:collapse;">${checkRowsHtml}</table>` : `<div style="font-size:12.5px;color:${C.g};">어긋난 약속이 없습니다.</div>`}
     ${okLine}
   </div>
 
@@ -821,6 +861,13 @@ export async function buildAdminReportHtml(
       `${c.status === "bad" ? "🔴" : "🟡"} ${c.label}`,
       `  ${c.detail ?? ""}`,
       `  ${c.meaning_when_stale}`,
+      `  ${c.btn_label} ${hubHref(c.href)}`
+    );
+  }
+  for (const c of heldChecks) {
+    textParts.push(
+      `⚪ ${c.label}`,
+      `  ${c.detail ?? ""}`,
       `  ${c.btn_label} ${hubHref(c.href)}`
     );
   }

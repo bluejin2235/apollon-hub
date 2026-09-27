@@ -1,3 +1,4 @@
+import { isProductionData, safeProductionMemo } from "@/lib/luna/data-context";
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lunaLlmComplete } from "@/lib/luna/llm/client";
@@ -82,7 +83,7 @@ function asMemory(row: Record<string, unknown> | null): LunaUserMemory | null {
     : "normal";
   return {
     user_id: row.user_id,
-    memo: typeof row.memo === "string" ? row.memo : "",
+    memo: safeProductionMemo(row.memo),
     answer_length: length,
     source_count:
       typeof row.source_count === "number" && Number.isFinite(row.source_count)
@@ -186,6 +187,7 @@ async function countConversationsForUser(
   const { count, error } = await admin
     .from("luna_conversations")
     .select("id", { count: "exact", head: true })
+    .eq("data_context", "production")
     .eq("user_id", userId);
   if (error) {
     console.error("[luna/user-memory] count conv", error);
@@ -201,14 +203,15 @@ async function countUserMessagesSince(
 ): Promise<number> {
   const { data: convs, error: convErr } = await admin
     .from("luna_conversations")
-    .select("id")
+    .select("id, title, data_context")
+    .eq("data_context", "production")
     .eq("user_id", userId)
     .limit(200);
   if (convErr) {
     console.error("[luna/user-memory] count msgs convs", convErr);
     return 0;
   }
-  const ids = (convs ?? []).map((c) => c.id as string).filter(Boolean);
+  const ids = (convs ?? []).filter(isProductionData).map((c) => c.id as string).filter(Boolean);
   if (ids.length === 0) return 0;
 
   let q = admin
@@ -233,7 +236,8 @@ async function loadRecentDialogue(
 ): Promise<{ text: string; conversationCount: number }> {
   const { data: convs, error: convErr } = await admin
     .from("luna_conversations")
-    .select("id, title, updated_at")
+    .select("id, title, updated_at, data_context")
+    .eq("data_context", "production")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(RECENT_CONVERSATIONS);
@@ -244,7 +248,7 @@ async function loadRecentDialogue(
   }
 
   const blocks: string[] = [];
-  for (const c of convs) {
+  for (const c of convs.filter(isProductionData)) {
     const { data: msgs } = await admin
       .from("luna_messages")
       .select("role, content, created_at")
@@ -270,7 +274,7 @@ async function loadRecentDialogue(
 
   return {
     text: blocks.join("\r\n\r\n").slice(0, 12_000),
-    conversationCount: convs.length
+    conversationCount: convs.filter(isProductionData).length
   };
 }
 
@@ -549,7 +553,8 @@ export async function runUserMemoRewriteBatch(
   const limit = opts?.limit ?? BATCH_LIMIT;
   const { data: recentConvs, error } = await admin
     .from("luna_conversations")
-    .select("user_id, updated_at")
+    .select("user_id, updated_at, title, data_context")
+    .eq("data_context", "production")
     .order("updated_at", { ascending: false })
     .limit(200);
 
@@ -559,7 +564,7 @@ export async function runUserMemoRewriteBatch(
   }
 
   const latestByUser = new Map<string, string>();
-  for (const row of recentConvs ?? []) {
+  for (const row of (recentConvs ?? []).filter(isProductionData)) {
     if (typeof row.user_id !== "string") continue;
     if (!latestByUser.has(row.user_id)) {
       latestByUser.set(row.user_id, row.updated_at as string);
@@ -593,3 +598,4 @@ export async function runUserMemoRewriteBatch(
 
   return { checked, rewritten, skipped, errors };
 }
+

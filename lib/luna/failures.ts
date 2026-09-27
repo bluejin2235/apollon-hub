@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractKeyNouns } from "@/lib/luna/reflect-guard";
 import { createCandidate } from "@/lib/luna/candidates";
 import {
+  collectAutoFailureSignals,
   isInspectFailure,
   kindForSignals,
   matchesKindFilter,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/luna/failure-cause";
 import { insertLunaSignal } from "@/lib/luna/signals";
 import type { InsertLunaSignalInput } from "@/lib/luna/signals-shared";
-import { isHarnessChatTitle } from "@/lib/luna/persona-test-marker";
+import { isProductionData } from "@/lib/luna/data-context";
 
 export type { FailureKind, FailureKindFilter, FailureSignal };
 export type { FailureCauseType } from "@/lib/luna/failure-cause";
@@ -253,12 +254,12 @@ export async function recordLunaFailure(
   input: RecordFailureInput & { signals?: FailureSignal[] }
 ): Promise<string | null> {
   if (input.conversationId) {
-    const { data: conv } = await admin
+    const { data: conv, error } = await admin
       .from("luna_conversations")
-      .select("title")
+      .select("title, data_context")
       .eq("id", input.conversationId)
       .maybeSingle();
-    if (isHarnessChatTitle(conv?.title)) return null;
+    if (error || !isProductionData(conv)) return null;
   }
 
   const question = (input.question ?? "").trim();
@@ -476,25 +477,7 @@ export async function recordAutoFailuresFromAnswer(
     sourceRef?: Record<string, unknown>;
   }
 ): Promise<void> {
-  const signals: FailureSignal[] = [];
-  if (typeof opts.intentScore === "number" && opts.intentScore < 5) {
-    signals.push("low_intent");
-  }
-  if (typeof opts.confidenceScore === "number" && opts.confidenceScore < 5) {
-    signals.push("low_confidence");
-  }
-  if (isNotFoundAnswer(opts.answer)) {
-    signals.push("not_found");
-  }
-  if (
-    typeof opts.classifyConfidence === "number" &&
-    opts.classifyConfidence < 0.5
-  ) {
-    signals.push("unclassified");
-  }
-  if (opts.searchAttempted && (opts.searchResultCount ?? 0) === 0) {
-    signals.push("zero_search");
-  }
+  const signals = collectAutoFailureSignals(opts);
   if (signals.length === 0) return;
 
   const primary = pickPrimarySignal(signals);
@@ -1020,3 +1003,4 @@ export async function loadFailureThread(
     after: turns.slice(idx + 1, idx + 3)
   };
 }
+

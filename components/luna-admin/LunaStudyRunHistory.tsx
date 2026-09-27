@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
+import { studyOutcomeLabel as outcomeLabel } from "@/lib/luna/study-status";
+import { formatModeAResultLine } from "@/lib/luna/study-report";
 
 type RunRow = {
   id: string;
@@ -19,18 +21,9 @@ type RunRow = {
 
 type Filter = "all" | "improved" | "no_change" | "stuck" | "failed";
 
-function outcomeLabel(o: RunRow["outcome"], result: Record<string, unknown>): string {
-  if (o === "improved") return "나아짐";
-  if (o === "no_change") return "변화 없음";
-  if (o === "failed") return "실패";
-  if (result.timed_out || result.ask_human) return "막힘";
-  return "미완";
-}
-
 function outcomeClass(o: RunRow["outcome"], result: Record<string, unknown>): string {
-  if (o === "improved") return "g";
   if (o === "failed") return "r";
-  if (result.timed_out || result.ask_human) return "y";
+  if (result.running === true || result.timed_out || result.ask_human) return "y";
   return "gray";
 }
 
@@ -150,7 +143,7 @@ export function LunaStudyRunHistory() {
 
   return (
     <>
-      <div className="alert g">
+      <div className={`alert ${blocked ? "y" : "gray"}`}>
         <div className="c">
           <div className="t">
             어젯밤 {lastNight.length}건
@@ -162,18 +155,19 @@ export function LunaStudyRunHistory() {
             {lastNight.length === 0
               ? "어젯밤 기록이 없습니다."
               : blocked && improved
-                ? "하나는 나아졌고 하나는 막혔습니다. 막힌 것은 사람 손이 필요합니다."
+                ? "작업 기록과 미완료 작업이 함께 있습니다. 검색 품질 향상은 아직 검증되지 않았습니다."
                 : blocked
-                  ? "막힌 것은 사람 손이 필요합니다."
+                  ? "미완료 작업이 있습니다. 실패 원인과 다음 조치를 확인하세요."
                   : improved
-                    ? "나아진 것이 있습니다."
-                    : "변화는 크지 않았습니다."}
+                    ? "작업 기록이 있습니다. 검색 품질 향상은 아직 검증되지 않았습니다."
+                    : "실행 기록을 확인하세요. 이 결과만으로 검색 품질 변화를 판단할 수 없습니다."}
           </div>
         </div>
       </div>
       {error ? <p className="empty">{error}</p> : null}
 
       {lastNight.map((r) => {
+        const modeALine = formatModeAResultLine(r.result);
         const probed = num(r.result.probed);
         const hit1 = num(r.result.hit_at_1);
         const hit5 = num(r.result.hit_at_5);
@@ -192,31 +186,37 @@ export function LunaStudyRunHistory() {
             </div>
             <div className="why">왜 — {r.why}</div>
             <div className="res">
-              {probed != null ? (
-                <div>
-                  문항 <b>{probed}</b>
-                </div>
-              ) : null}
-              {hit1 != null ? (
-                <div>
-                  1위로 찾음 <b>{hit1}</b>
-                </div>
-              ) : null}
-              {hit5 != null ? (
-                <div>
-                  5위 안 <b>{hit5}</b>
-                </div>
-              ) : null}
-              {miss != null ? (
-                <div>
-                  못 찾음 <b>{miss}</b>
-                </div>
-              ) : null}
-              {typeof r.result.pages_sampled === "number" ? (
-                <div>
-                  문서 <b>{r.result.pages_sampled}</b>
-                </div>
-              ) : null}
+              {modeALine ? (
+                <div>{modeALine}</div>
+              ) : (
+                <>
+                  {probed != null ? (
+                    <div>
+                      문항 <b>{probed}</b>
+                    </div>
+                  ) : null}
+                  {hit1 != null ? (
+                    <div>
+                      1위로 찾음 <b>{hit1}</b>
+                    </div>
+                  ) : null}
+                  {hit5 != null ? (
+                    <div>
+                      5위 안 <b>{hit5}</b>
+                    </div>
+                  ) : null}
+                  {miss != null ? (
+                    <div>
+                      못 찾음 <b>{miss}</b>
+                    </div>
+                  ) : null}
+                  {typeof r.result.pages_sampled === "number" ? (
+                    <div>
+                      문서 <b>{r.result.pages_sampled}</b>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
             {learned || next || stuck ? (
               <div className={`learn${stuck ? " y" : ""}`}>
@@ -273,7 +273,7 @@ export function LunaStudyRunHistory() {
           {(
             [
               ["all", "전체"],
-              ["improved", "나아짐"],
+              ["improved", "효과 미검증"],
               ["no_change", "변화 없음"],
               ["stuck", "막힘"],
               ["failed", "실패"]

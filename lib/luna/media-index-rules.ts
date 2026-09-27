@@ -188,6 +188,19 @@ export function folderSegmentIs3dAsset(seg: string): boolean {
   );
 }
 
+export type Garbage3dKind = "SKP" | "ModelTextures" | "asset" | "D5용" | "other";
+
+/** 삭제 보고용. 한 경로는 한 종류만 — SKP → ModelTextures → D5용 → asset 순. */
+export function classifyGarbage3dKind(path: string): Garbage3dKind {
+  const n = path.replace(/\//g, "\\");
+  if (/(^|\\)SKP($|\\)/i.test(n)) return "SKP";
+  if (/ModelTextures/i.test(n)) return "ModelTextures";
+  if (/D5용\s*레이어분리/i.test(n)) return "D5용";
+  if (/(^|\\)asset($|\\)/i.test(n)) return "asset";
+  if (matchAssetFolderExclude(n) === "asset_folder") return "asset";
+  return "other";
+}
+
 /** 색인·검색 공통 — SKP / ModelTextures / asset / D5용 레이어분리 */
 export function isGarbage3dPath(path: string): boolean {
   if (!path.trim()) return false;
@@ -286,7 +299,7 @@ export const NEW_CHUNK_FOLDER_MIN = 200;
 
 /**
  * 03:00~08:00 KST.
- * 03:00~05:30 다른 배치, 05:00 모드 A(약 1시간 40분~실측 07:48)와 겹치지 않음.
+ * 03:00~05:30 다른 배치, 04:00 모드 A(약 2시간, 07:00 메일 전 종료)와 겹치지 않음.
  */
 export const BATCH_QUIET_START_MIN = 3 * 60;
 export const BATCH_QUIET_END_MIN = 8 * 60;

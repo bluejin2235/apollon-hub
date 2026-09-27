@@ -752,7 +752,9 @@ export async function searchNotionForLuna(
         queryText || keywords,
         withProjects
       );
-      const expanded = await expandSourcesViaLinks(admin, persp.sources);
+      const expanded = await expandSourcesViaLinks(admin, persp.sources, {
+        query: queryText || keywords
+      });
       finalSources = mergeExpandedSources(persp.sources, expanded.sources);
       if (queryText) {
         finalSources = annotateNotionSourcesWithWorkStage(

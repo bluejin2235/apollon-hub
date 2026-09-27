@@ -1,7 +1,7 @@
 /**
  * LUNA 관리자 야간 순서 (KST).
  * 22:00 이미지 · 03:00 Work 스캔 · 03:10 본문 추출 · 03:20 노션
- * · 04:30 2차 · 05:00 자습(PC) · 05:30 신호 · 07:00 아침 메일
+ * · 04:00 모드 A(PC) · 04:30 2차(Vercel) · 05:30 신호 · 07:00 아침 메일
  *
  * Work 본문: 플랜 A = 추출+trigram (임베딩 안 함).
  * 의미 검색 실패가 쌓이면 플랜 B(2024~ 임베딩)로 올린다. 전량(C)은 보류.
@@ -31,8 +31,13 @@ export const ADMIN_IMAGE_INDEX_MINUTE = 0;
 export const ADMIN_LINKS_HOUR = 4;
 export const ADMIN_LINKS_MINUTE = 30;
 
-export const ADMIN_SELFSTUDY_HOUR = 5;
-export const ADMIN_SELFSTUDY_MINUTE = 0;
+/** PC 작업 스케줄러 「Apollon Luna Mode A」 — 07:00 메일 전에 끝나게 04:00 */
+export const ADMIN_MODE_A_HOUR = 4;
+export const ADMIN_MODE_A_MINUTE = 0;
+
+/** 자습 표시 시각 = 모드 A PC. Vercel luna-selfstudy 는 쓰지 않는다. */
+export const ADMIN_SELFSTUDY_HOUR = ADMIN_MODE_A_HOUR;
+export const ADMIN_SELFSTUDY_MINUTE = ADMIN_MODE_A_MINUTE;
 
 export const ADMIN_SIGNALS_HOUR = 5;
 export const ADMIN_SIGNALS_MINUTE = 30;

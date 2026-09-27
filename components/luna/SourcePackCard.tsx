@@ -6,8 +6,11 @@ import {
   tierSourcePacks,
   type SourcePackItem
 } from "@/lib/luna/source-pack";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import {
-  formatNasFolderPath,
+  nasExplorerFilePair,
+  nasExplorerFolderPair,
+  nasExplorerPairFromOfficePath,
   type NasPathSettings
 } from "@/lib/luna/nas-path";
 import type { NotionSource } from "@/lib/luna/notion";
@@ -48,67 +51,57 @@ function SourceTags({ item }: { item: SourcePackItem }) {
 
 function WorkLinkRows({
   item,
-  nasPathSettings,
   onCopyToast
 }: {
   item: SourcePackItem;
-  nasPathSettings: NasPathSettings;
+  nasPathSettings?: NasPathSettings;
   onCopyToast?: (message: string) => void;
 }) {
-  const folderPath = item.folder
-    ? formatNasFolderPath(
-        item.folder.drive,
-        item.folder.rawPath,
-        nasPathSettings,
-        false
-      ).replace(/\\+$/, "")
-    : null;
   const files = item.files.length > 0 ? item.files : [];
+  const folderPair = item.folder
+    ? nasExplorerFolderPair(item.folder.drive, item.folder.rawPath, false)
+    : null;
 
-  if (files.length === 0 && !folderPath) return null;
+  if (files.length === 0 && !folderPair) return null;
 
   const rows =
     files.length > 0
       ? files.map((f) => ({
-          path: folderPath || f.fullPath.replace(/\\[^\\]+$/, ""),
+          key: `${f.drive}:${f.rawPath}:${f.name}`,
           name: f.name,
-          copy: f.fullPath
+          pair:
+            nasExplorerPairFromOfficePath(f.fullPath) ??
+            nasExplorerFilePair(f.drive, f.rawPath, f.name)
         }))
-      : folderPath
-        ? [{ path: folderPath, name: null as string | null, copy: folderPath }]
+      : folderPair
+        ? [
+            {
+              key: `${item.folder?.drive}:${item.folder?.rawPath}:folder`,
+              name: null as string | null,
+              pair: folderPair
+            }
+          ]
         : [];
 
   return (
     <>
       {rows.map((row) => (
-        <button
-          key={`${row.path}-${row.name ?? "folder"}`}
-          type="button"
-          className="flex w-full cursor-pointer items-start gap-[9px] border-b border-[#eef0f3] px-[15px] py-[9px] text-left last:border-b-0 hover:bg-[#FBFAFF]"
-          onClick={() => {
-            void navigator.clipboard.writeText(row.copy).then(() => {
-              onCopyToast?.("경로 복사됨");
-            });
-          }}
+        <div
+          key={row.key}
+          className="flex items-start gap-[9px] border-b border-[#eef0f3] px-[15px] py-[9px] last:border-b-0"
         >
           <span className="mt-0.5 shrink-0 rounded-md bg-[#EDEFF2] px-[7px] py-0.5 text-[9px] font-bold text-[#5B6472]">
             워크
           </span>
           <div className="min-w-0 flex-1">
-            <div
-              className="truncate font-mono text-[10px] text-[#9aa0a8]"
-              title={row.path}
-            >
-              {row.path}
-            </div>
             {row.name ? (
-              <div className="mt-0.5 truncate text-[11.5px] text-[#1c1d21]">
+              <div className="mb-1 break-all text-[11.5px] text-[#1c1d21]">
                 {row.name}
               </div>
             ) : null}
+            <NasPathDualCopy pair={row.pair} onCopyToast={onCopyToast} />
           </div>
-          <span className="shrink-0 text-[11px] text-[#9aa0a8]">↗</span>
-        </button>
+        </div>
       ))}
       {item.filesMore > 0 ? (
         <div className="px-[15px] py-2 text-[11px] text-[#9aa0a8]">

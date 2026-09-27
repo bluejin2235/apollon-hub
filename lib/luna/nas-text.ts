@@ -2,14 +2,19 @@
  * Work 문서 본문 추출 · 청킹 · 도면 PDF 판별.
  * 파일 읽기만. 경로 수정·이동 없음.
  */
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname } from "node:path";
 import yauzl from "yauzl";
+import { describeNasError, NasExtractionLimitError } from "@/lib/luna/nas-error";
 import { contentHash } from "@/lib/luna/embedding";
 
 export const NAS_TEXT_CHUNK_CHARS = 1000;
 export const NAS_TEXT_CHUNK_OVERLAP = 200;
 export const NAS_TEXT_MAX_CHUNKS = 200;
+export const NAS_BUFFER_MAX_BYTES = 64 * 1024 * 1024;
+export const NAS_PPTX_MAX_FILE_BYTES = 1024 * 1024 * 1024;
+export const NAS_PPTX_MAX_XML_BYTES = 8 * 1024 * 1024;
+export const NAS_PPTX_MAX_TOTAL_XML_BYTES = 32 * 1024 * 1024;
 
 export const NAS_TEXT_EXTS = [
   "pdf",
@@ -156,6 +161,10 @@ function isNotesXml(name: string): boolean {
 /** PPTX — yauzl 로 slides/notes XML 만. media 미접근. */
 export function extractPptxYauzl(fullPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (statSync(fullPath).size > NAS_PPTX_MAX_FILE_BYTES) {
+      reject(new NasExtractionLimitError("pptx_file_exceeds_1GiB"));
+      return;
+    }
     yauzl.open(
       fullPath,
       { lazyEntries: true, autoClose: true },
@@ -166,66 +175,76 @@ export function extractPptxYauzl(fullPath: string): Promise<string> {
         }
         const slideTexts: string[] = [];
         const noteTexts: string[] = [];
-        let pending = 0;
-        let ended = false;
-        let failed: Error | null = null;
+        let settled = false;
+        let totalXmlBytes = 0;
+        let entryCount = 0;
+        let activeStream: import("node:stream").Readable | null = null;
 
-        const maybeDone = () => {
-          if (!ended || pending > 0) return;
-          if (failed) {
-            reject(failed);
-            return;
-          }
-          resolve(
-            [...slideTexts, ...noteTexts].join("\n").trim()
-          );
+        // A missing slide is an incomplete source, never a successful partial extraction.
+        const fail = (error: unknown) => {
+          if (settled) return;
+          settled = true;
+          activeStream?.destroy();
+          zipfile.close?.();
+          reject(error);
         };
 
-        zipfile.readEntry();
         zipfile.on("entry", (entry) => {
+          if (settled) return;
+          entryCount += 1;
+          if (entryCount > 50000) { fail(new NasExtractionLimitError("pptx_entry_count_exceeds_50000")); return; }
           const name = entry.fileName.replace(/\\/g, "/");
           if (isSlideXml(name) || isNotesXml(name)) {
-            pending += 1;
+            // Entry metadata is advisory; streamed bytes below enforce the same cap.
+            const declaredBytes = (entry as { uncompressedSize?: number }).uncompressedSize;
+            if (declaredBytes != null && (declaredBytes > NAS_PPTX_MAX_XML_BYTES ||
+                totalXmlBytes + declaredBytes > NAS_PPTX_MAX_TOTAL_XML_BYTES)) {
+              fail(new NasExtractionLimitError("pptx_xml_declared_size_exceeds_limit")); return;
+            }
             zipfile.openReadStream(entry, (e2, stream) => {
-              if (e2 || !stream) {
-                pending -= 1;
-                zipfile.readEntry();
-                maybeDone();
+              if (settled) {
+                stream?.destroy();
                 return;
               }
+              if (e2 || !stream) {
+                fail(e2 ?? new Error("pptx_xml_stream_unavailable"));
+                return;
+              }
+              activeStream = stream;
               const chunks: Buffer[] = [];
+              let entryBytes = 0;
               stream.on("data", (c) => {
-                chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+                if (settled) return;
+                const bytes = Buffer.isBuffer(c) ? c : Buffer.from(c);
+                entryBytes += bytes.length;
+                totalXmlBytes += bytes.length;
+                if (entryBytes > NAS_PPTX_MAX_XML_BYTES || totalXmlBytes > NAS_PPTX_MAX_TOTAL_XML_BYTES) {
+                  fail(new NasExtractionLimitError("pptx_xml_stream_exceeds_limit")); return;
+                }
+                chunks.push(bytes);
               });
               stream.on("end", () => {
+                if (settled) return;
+                activeStream = null;
                 const xml = Buffer.concat(chunks).toString("utf8");
                 const t = extractTextFromXml(xml);
                 if (isSlideXml(name)) slideTexts.push(t);
                 else noteTexts.push(t);
-                pending -= 1;
                 zipfile.readEntry();
-                maybeDone();
               });
-              stream.on("error", (e) => {
-                failed = e;
-                pending -= 1;
-                zipfile.readEntry();
-                maybeDone();
-              });
+              stream.on("error", fail);
             });
           } else {
             zipfile.readEntry();
           }
         });
         zipfile.on("end", () => {
-          ended = true;
-          maybeDone();
+          if (settled) return;
+          settled = true;
+          resolve([...slideTexts, ...noteTexts].join("\n").trim());
         });
-        zipfile.on("error", (e) => {
-          failed = e;
-          ended = true;
-          maybeDone();
-        });
+        zipfile.on("error", fail);
+        zipfile.readEntry();
       }
     );
   });
@@ -264,22 +283,26 @@ async function extractDocx(buf: Buffer): Promise<string> {
   return (res.value ?? "").trim();
 }
 
-function readFileBuffer(fullPath: string): Buffer {
-  return readFileSync(fullPath);
-}
-
 function readFileStreamToBuffer(fullPath: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let settled = false;
     const rs = createReadStream(fullPath);
     rs.on("data", (c) => {
+      if (settled) return;
       const b = Buffer.isBuffer(c) ? c : Buffer.from(c);
-      chunks.push(b);
       total += b.length;
+      if (total > NAS_BUFFER_MAX_BYTES) {
+        settled = true;
+        rs.destroy();
+        reject(new NasExtractionLimitError("buffer_stream_exceeds_64MiB"));
+        return;
+      }
+      chunks.push(b);
     });
-    rs.on("error", reject);
-    rs.on("end", () => resolve(Buffer.concat(chunks, total)));
+    rs.on("error", error => { if (!settled) { settled = true; reject(error); } });
+    rs.on("end", () => { if (!settled) { settled = true; resolve(Buffer.concat(chunks, total)); } });
   });
 }
 
@@ -321,11 +344,9 @@ export async function extractNasFileText(
     }
 
     const st = statSync(fullPath);
-    // 매우 큰 PDF/XLSX 등은 스트림으로
-    const buf =
-      st.size > 64 * 1024 * 1024
-        ? await readFileStreamToBuffer(fullPath)
-        : readFileBuffer(fullPath);
+    if (st.size > NAS_BUFFER_MAX_BYTES) throw new NasExtractionLimitError("buffer_file_exceeds_64MiB");
+    // Streaming to a final Buffer is NOT streaming parsing. Bound both stat and read.
+    const buf = await readFileStreamToBuffer(fullPath);
 
     let text = "";
     if (ext === "pdf") {
@@ -349,7 +370,7 @@ export async function extractNasFileText(
             status: "skipped",
             text: "",
             skipReason: "legacy_unsupported",
-            error: e instanceof Error ? e.message.slice(0, 200) : String(e)
+            error: describeNasError(e, 200)
           };
         }
         throw e;
@@ -369,7 +390,10 @@ export async function extractNasFileText(
     if (!text) return { status: "empty", text: "" };
     return { status: "ok", text };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = describeNasError(e);
+    if (e instanceof NasExtractionLimitError) {
+      return { status: "skipped", text: "", skipReason: "too_large", error: msg };
+    }
     const lower = msg.toLowerCase();
     if (/password|encrypt|encrypted/i.test(lower)) {
       return {
@@ -379,7 +403,8 @@ export async function extractNasFileText(
         error: msg.slice(0, 300)
       };
     }
-    if (/corrupt|invalid|end of central|bad zip|not a zip/i.test(lower)) {
+    if ((ext === "docx" && /could not find main document part/i.test(lower)) ||
+        /corrupt|invalid|end of central|bad zip|not a zip/i.test(lower)) {
       return {
         status: "skipped",
         text: "",
