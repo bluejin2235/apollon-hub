@@ -32,3 +32,15 @@ test('folder count agrees with the choices shown',()=>{
   assert.match(result.question,/3개/);
   assert.equal(result.options.length,3);
 });
+
+test('all after clarification preserves the topic without treating alternatives as constraints',()=>{
+  const choices=['해양 연출·미디어아트 사례 자료','공연·이벤트 기획 자료','특정 프로젝트의 해양쇼 자료','전부 다 보여줘','기타 — 직접 입력'];
+  for (const answer of ['전부 다 보여줘','모두','4']) {
+    const query=combineClarifyFollowup('해양쇼 자료 찾아줘',answer,choices);
+    assert.equal(query,'해양쇼 자료 찾아줘');
+    assert.equal(parseAskedWhat(query).projectCanonical,null);
+    assert.equal(parseAskedWhat(query).nature,'any');
+  }
+  assert.equal(parseAskedWhat('특정 프로젝트의 해양쇼 자료').projectCanonical,null);
+  assert.match(combineClarifyFollowup('해운대스퀀어 KV 이미지 보여줘','1',options),/260204 KV/);
+});

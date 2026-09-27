@@ -146,7 +146,8 @@ function extractExtraTokens(text: string, used: Set<string>): string[] {
 }
 
 function isGenericTopicToken(token: string): boolean {
-  return GENERIC_TOPIC_RE.test(token.trim());
+  return GENERIC_TOPIC_RE.test(token.trim()) ||
+    GENERIC_TOPIC_RE.test(token.trim().replace(/(?:에서|으로|에는|의|에|은|는|이|가|을|를|도)$/, ""));
 }
 
 /**
@@ -249,4 +250,3 @@ export function parseAskedWhat(
     summary: bits.join(" ")
   };
 }
-
