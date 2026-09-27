@@ -10,6 +10,7 @@ test('atomic NAS snapshot protocol on PostgreSQL', async t => {
   try {
     await db.exec(`
       create role anon; create role authenticated; create role service_role bypassrls;
+      alter default privileges in schema public grant all on sequences to anon, authenticated;
       grant usage on schema public to service_role;
       create table nas_directory(id bigserial primary key,drive text not null,path text not null,
         type text not null check(type in ('file','folder')),size_bytes bigint,modified_at timestamptz,
@@ -26,6 +27,19 @@ test('atomic NAS snapshot protocol on PostgreSQL', async t => {
     const live = async () => (await db.query('select id::text,drive,path from nas_directory order by id')).rows;
     const row = p => ({drive:'T',path:p,type:'file',size_bytes:20});
     let run = randomUUID();
+    await t.test('Supabase default grants cannot expose the snapshot generation sequence',async()=>{
+      for(const role of ['anon','authenticated']) {
+        for(const privilege of ['SELECT','USAGE','UPDATE']) {
+          const result=await db.query("select has_sequence_privilege($1,'public.nas_snapshot_runs_generation_seq',$2) allowed",[role,privilege]);
+          assert.equal(result.rows[0].allowed,false,`${role} retains ${privilege}`);
+        }
+        await db.exec(`set role ${role}`);
+        try {
+          await assert.rejects(db.query("select nextval('public.nas_snapshot_runs_generation_seq')"),/permission denied/);
+          await assert.rejects(db.query("select setval('public.nas_snapshot_runs_generation_seq',1000000)"),/permission denied/);
+        } finally {await db.exec('reset role');}
+      }
+    });
     await t.test('staging and idempotent upload leave live rows untouched',async()=>{
       const before=await live();await begin(run);await begin(run);
       await stage(run,[row('new')]);await stage(run,[row('new')]);

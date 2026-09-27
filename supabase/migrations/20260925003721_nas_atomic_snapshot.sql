@@ -21,6 +21,8 @@ alter table public.nas_snapshot_runs enable row level security;
 alter table public.nas_snapshot_stage enable row level security;
 revoke all on public.nas_snapshot_runs, public.nas_snapshot_stage from public,anon,authenticated;
 grant all on public.nas_snapshot_runs, public.nas_snapshot_stage to service_role;
+-- Supabase default ACLs also grant sequence access; table RLS does not cover it.
+revoke all on sequence public.nas_snapshot_runs_generation_seq from public,anon,authenticated;
 grant usage,select on sequence public.nas_snapshot_runs_generation_seq to service_role;
 
 -- Called BEFORE collection, with a client-generated id retained across retries.

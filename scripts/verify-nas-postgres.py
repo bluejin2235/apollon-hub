@@ -76,6 +76,7 @@ def finish(proc):
 assert sql("select count(*) from pg_tables where schemaname not in ('pg_catalog','information_schema');")=='0','Fixture DB is not empty'
 report={'engine':'PostgreSQL service, synthetic data, psql transport','rows':102280,'checks':[],'timings_ms':{}}
 sql("""create role anon;create role authenticated;create role service_role bypassrls;
+alter default privileges in schema public grant all on sequences to anon, authenticated;
 create table nas_directory(id bigserial primary key,drive text not null,path text not null,
  type text not null check(type in ('folder','file')),size_bytes bigint,modified_at timestamptz,
  file_summary text,importance smallint not null default 0,marked_reason text,
@@ -83,6 +84,12 @@ create table nas_directory(id bigserial primary key,drive text not null,path tex
 insert into nas_directory(drive,path,type,size_bytes) select 'T','old/'||i,'file',i from generate_series(1,90943)i;
 insert into nas_directory(drive,path,type,size_bytes) select 'P','old/'||i,'file',i from generate_series(1,11337)i;""")
 sql((ROOT/'supabase/migrations/20260925003721_nas_atomic_snapshot.sql').read_text())
+for role in ['anon','authenticated']:
+    for privilege in ['SELECT','USAGE','UPDATE']:
+        assert sql(f"select has_sequence_privilege('{role}','public.nas_snapshot_runs_generation_seq','{privilege}');")=='f'
+    expect_failure(lambda:sql(f"set role {role};select nextval('public.nas_snapshot_runs_generation_seq');"),'permission denied')
+    expect_failure(lambda:sql(f"set role {role};select setval('public.nas_snapshot_runs_generation_seq',1000000);"),'permission denied')
+report['checks'].append('Supabase default sequence grants revoked from anon and authenticated')
 for drive,n in [('T',90943),('P',11337)]:
     before_other=digest('P' if drive=='T' else 'T')
     run=begin(drive);start=time.monotonic();stage(run,drive,n,'new')
