@@ -151,6 +151,7 @@ import { captureTermMeaningQuestion } from "@/lib/luna/capture-term-question";
 import {
   CLARIFY_FOLLOWUP_RULE,
   combineClarifyFollowup,
+  combineScopeFollowup,
   conversationHadClarify,
   ensureClarifyFollowupTypes,
   findClarifyRootUser,
@@ -1446,7 +1447,10 @@ export async function POST(request: NextRequest) {
         ? `${clarifyRootUser}\r\n조건: ${userText.trim()}`
         : null)
     : null;
-  const searchIntentText = clarifyFollowupQuery || userText;
+  const scopeFollowupQuery = !lastHadClarify
+    ? combineScopeFollowup(recent, userText)
+    : null;
+  const searchIntentText = clarifyFollowupQuery || scopeFollowupQuery || userText;
   const listingCtx = resolveListingQuestion(recent, searchIntentText);
   const listingQuestion = listingCtx.listing;
   const listingSourceText = listingCtx.rootText;
@@ -3731,6 +3735,10 @@ export async function POST(request: NextRequest) {
           assistantMeta.clarify_followup = true;
           assistantMeta.search_intent = searchIntentText;
         }
+        if (scopeFollowupQuery) {
+          assistantMeta.scope_followup = true;
+          assistantMeta.search_intent = searchIntentText;
+        }
         if (listingQuestion) {
           assistantMeta.listing_question = true;
         }
@@ -3995,4 +4003,3 @@ export async function POST(request: NextRequest) {
     }
   });
 }
-

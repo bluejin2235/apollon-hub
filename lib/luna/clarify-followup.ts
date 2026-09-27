@@ -33,7 +33,8 @@ export function resolveClarifyAnswer(
 
   const numbered = options.map((opt, i) => ({
     n: i + 1,
-    text: opt.replace(/^\d+[\.\)\s·]+/, "").trim() || opt
+    // Only strip a real list ordinal, never a date-prefixed folder name.
+    text: opt.replace(/^\d{1,2}[\.\)·]\s*/, "").trim() || opt
   }));
 
   const picked = new Set<string>();
@@ -71,6 +72,24 @@ export function combineClarifyFollowup(
   const resolved = resolveClarifyAnswer(answer, options);
   if (!original || !resolved) return null;
   return `${original}\n조건: ${resolved}`;
+}
+
+/** An elliptical request reuses the latest user topic, not the word “all”. */
+export function combineScopeFollowup(
+  recent: Array<{ role: string; content?: string; metadata?: unknown }>,
+  answer: string
+): string | null {
+  const isScopeOnly = (text: string) =>
+    /^(?:전부|모두|다|전체)(?:\s*다)?(?:\s*(?:자료|목록))?\s*(?:보여\s*줘|보여\s*주세요|찾아\s*줘|찾아\s*주세요|알려\s*줘|알려\s*주세요)?[.!?]*$/.test(text.trim());
+  if (!isScopeOnly(answer)) return null;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const row = recent[i]!;
+    if (row.role !== "user") continue;
+    const topic = row.content?.trim();
+    if (!topic || isScopeOnly(topic)) continue;
+    return topic;
+  }
+  return null;
 }
 
 /** 대화에서 첫 되묻기 직전 user — 연속 되묻기에도 최초 질문을 유지한다. */

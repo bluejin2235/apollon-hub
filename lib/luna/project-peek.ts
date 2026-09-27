@@ -89,7 +89,7 @@ export function buildPeekClarify(opts: {
     const listed = options.join(" · ");
     const kind = opts.natureLabel || "자료";
     return {
-      question: `${name}에 ${kind} 폴더가 둘 있어요. ${listed}. 어느 쪽이요?`,
+      question: `${name}에 ${kind} 폴더가 ${opts.natureFolders.length}개 있어요. ${listed}. 어느 쪽이요?`,
       options
     };
   }
