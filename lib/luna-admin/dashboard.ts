@@ -30,6 +30,7 @@ import type {
 export type { AdminDashboard, StageView, AdminAlert } from "@/lib/luna-admin/types";
 
 function titleFor(key: StageView["key"], light: TrafficLight, days: number | null): string {
+  if (light === "gray") return "멈춰 둠";
   if (days != null && days <= 0) return "오늘 실행";
   if (light === "green") return "정상";
   if (key === "learn" && days != null && days >= 3) return `${days}일째 멈춤`;
@@ -189,7 +190,9 @@ export async function buildAdminDashboard(
       light: collectLight,
       title:
         collectLight === "green"
-          ? primary.image.status_label
+          ? primary.image.status === "gray"
+            ? "정상"
+            : primary.image.status_label
           : titleFor(
               "collect",
               collectLight,

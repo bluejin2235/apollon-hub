@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { ModalPathTab, NasPathSettings } from "@/lib/luna/nas-path-settings";
-import { MODAL_PATH_TABS, modalFilePath } from "@/lib/luna/image-modal-path";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
+import { nasExplorerFilePair } from "@/lib/luna/nas-path";
+import { modalFilePath } from "@/lib/luna/image-modal-path";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -22,9 +24,7 @@ export function LunaImageModal({
   nasPathSettings,
   onCopyToast,
   favoritePaths,
-  onFavoriteToggle,
-  pathTab,
-  onPathTabChange
+  onFavoriteToggle
 }: {
   cards: LunaCard[];
   index: number;
@@ -58,9 +58,21 @@ export function LunaImageModal({
     displayCard?.description?.split(" · ")[0]?.trim() ||
     "";
 
-  const filePath = useMemo(
-    () => (displayCard ? modalFilePath(displayCard, pathTab, nasPathSettings) : ""),
-    [displayCard, pathTab, nasPathSettings]
+  const filePair = useMemo(() => {
+    if (!displayCard?.raw_path) return null;
+    const name =
+      displayCard.title ||
+      displayCard.raw_path.split(/[/\\]/).pop() ||
+      displayCard.raw_path;
+    return nasExplorerFilePair(displayCard.drive, displayCard.raw_path, name);
+  }, [displayCard]);
+
+  const uncPath = useMemo(
+    () =>
+      displayCard
+        ? modalFilePath(displayCard, "unc", nasPathSettings)
+        : "",
+    [displayCard, nasPathSettings]
   );
 
   const loadRelated = useCallback(async (path: string) => {
@@ -229,43 +241,18 @@ export function LunaImageModal({
             </div>
           ) : null}
 
-          <div className="mb-2.5 overflow-hidden rounded-[9px] border border-[#e7e8ec]">
-            <div className="flex border-b border-[#eef0f3] bg-[#FAFAFB]">
-              {MODAL_PATH_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={`border-r border-[#eef0f3] px-[11px] py-1.5 text-[10.5px] ${
-                    pathTab === tab.id
-                      ? "bg-white font-bold text-[#3C3489]"
-                      : "text-[#9aa0a8]"
-                  }`}
-                  onClick={() => onPathTabChange(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-start gap-2 px-[11px] py-2">
-              <span
-                className="min-w-0 flex-1 break-all font-mono text-[10px] leading-[1.55] text-[#6b6f76]"
-              >
-                {filePath || "—"}
+          <div className="mb-2.5 overflow-hidden rounded-[9px] border border-[#e7e8ec] px-[11px] py-2">
+            {filePair ? (
+              <NasPathDualCopy
+                pair={filePair}
+                unc={uncPath}
+                onCopyToast={onCopyToast}
+              />
+            ) : (
+              <span className="break-all font-mono text-[10px] text-[#6b6f76]">
+                —
               </span>
-              {filePath ? (
-                <button
-                  type="button"
-                  className="shrink-0 rounded-md bg-[#EEEDFE] px-2.5 py-1 text-[10.5px] font-semibold text-[#534AB7]"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(filePath).then(() => {
-                      onCopyToast?.("경로 복사됨");
-                    });
-                  }}
-                >
-                  복사
-                </button>
-              ) : null}
-            </div>
+            )}
           </div>
 
           {chips.length > 0 ? (

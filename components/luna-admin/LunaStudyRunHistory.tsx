@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { studyOutcomeLabel as outcomeLabel } from "@/lib/luna/study-status";
+import { formatModeAResultLine } from "@/lib/luna/study-report";
 
 type RunRow = {
   id: string;
@@ -21,9 +22,8 @@ type RunRow = {
 type Filter = "all" | "improved" | "no_change" | "stuck" | "failed";
 
 function outcomeClass(o: RunRow["outcome"], result: Record<string, unknown>): string {
-  if (o === "improved") return "gray";
   if (o === "failed") return "r";
-  if (result.timed_out || result.ask_human) return "y";
+  if (result.running === true || result.timed_out || result.ask_human) return "y";
   return "gray";
 }
 
@@ -167,6 +167,7 @@ export function LunaStudyRunHistory() {
       {error ? <p className="empty">{error}</p> : null}
 
       {lastNight.map((r) => {
+        const modeALine = formatModeAResultLine(r.result);
         const probed = num(r.result.probed);
         const hit1 = num(r.result.hit_at_1);
         const hit5 = num(r.result.hit_at_5);
@@ -185,31 +186,37 @@ export function LunaStudyRunHistory() {
             </div>
             <div className="why">왜 — {r.why}</div>
             <div className="res">
-              {probed != null ? (
-                <div>
-                  문항 <b>{probed}</b>
-                </div>
-              ) : null}
-              {hit1 != null ? (
-                <div>
-                  1위로 찾음 <b>{hit1}</b>
-                </div>
-              ) : null}
-              {hit5 != null ? (
-                <div>
-                  5위 안 <b>{hit5}</b>
-                </div>
-              ) : null}
-              {miss != null ? (
-                <div>
-                  못 찾음 <b>{miss}</b>
-                </div>
-              ) : null}
-              {typeof r.result.pages_sampled === "number" ? (
-                <div>
-                  문서 <b>{r.result.pages_sampled}</b>
-                </div>
-              ) : null}
+              {modeALine ? (
+                <div>{modeALine}</div>
+              ) : (
+                <>
+                  {probed != null ? (
+                    <div>
+                      문항 <b>{probed}</b>
+                    </div>
+                  ) : null}
+                  {hit1 != null ? (
+                    <div>
+                      1위로 찾음 <b>{hit1}</b>
+                    </div>
+                  ) : null}
+                  {hit5 != null ? (
+                    <div>
+                      5위 안 <b>{hit5}</b>
+                    </div>
+                  ) : null}
+                  {miss != null ? (
+                    <div>
+                      못 찾음 <b>{miss}</b>
+                    </div>
+                  ) : null}
+                  {typeof r.result.pages_sampled === "number" ? (
+                    <div>
+                      문서 <b>{r.result.pages_sampled}</b>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
             {learned || next || stuck ? (
               <div className={`learn${stuck ? " y" : ""}`}>

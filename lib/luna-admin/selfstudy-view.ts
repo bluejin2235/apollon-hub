@@ -18,6 +18,8 @@ import { ADMIN_SELFSTUDY_HOUR, ADMIN_SELFSTUDY_MINUTE } from "@/lib/luna-admin/s
 import { listCandidateRuleQuestions } from "@/lib/luna/rules";
 import { listAnswerFlags } from "@/lib/luna/answer-flags";
 import { groupAnswerFlagsByQuestion } from "@/lib/luna/answer-flags-shared";
+import { listLunaFailures } from "@/lib/luna/failures";
+import { groupOpenFailureAskItems } from "@/lib/luna/failures-shared";
 import type {
   TonightEmptyReason,
   TonightItem,
@@ -87,7 +89,7 @@ function emptyReason(opts: {
     return {
       code: "already_ran",
       title: "오늘 밤은 건너뜁니다",
-      detail: `${already.detail}\n내일 05:00 에 다시 고릅니다.`,
+      detail: `${already.detail}\n내일 ${String(ADMIN_SELFSTUDY_HOUR).padStart(2, "0")}:${String(ADMIN_SELFSTUDY_MINUTE).padStart(2, "0")} 에 다시 고릅니다.`,
       action_label: already.outcome === "failed" ? "실패 기록 보기" : "어젯밤 보기",
       action_href: "/settings?menu=selfstudy&sub=history"
     };
@@ -243,12 +245,19 @@ export async function buildTonightScreen(admin: SupabaseClient): Promise<Tonight
 }
 
 export async function countAskInbox(admin: SupabaseClient): Promise<number> {
-  const [rules, flags, state] = await Promise.all([
+  const [rules, flags, state, failRows] = await Promise.all([
     listCandidateRuleQuestions(admin),
     listAnswerFlags(admin, { status: "pending", limit: 200 }),
-    loadTonightState(admin)
+    loadTonightState(admin),
+    listLunaFailures(admin, { verdict: "open" })
   ]);
   const grouped = groupAnswerFlagsByQuestion(flags).length;
-  const skips = state.items.filter((i) => !i.verifiable && !i.excluded).length;
-  return rules.length + grouped + skips;
+  const skips = state.items.filter(
+    (i) =>
+      !i.verifiable &&
+      !i.excluded &&
+      !String(i.id).startsWith("luna_failures:")
+  ).length;
+  const fails = groupOpenFailureAskItems(failRows).length;
+  return fails + rules.length + grouped + skips;
 }

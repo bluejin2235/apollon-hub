@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isGarbage3dPath } from "@/lib/luna/media-index-rules";
+import {
+  classifyGarbage3dKind,
+  isGarbage3dPath,
+  type Garbage3dKind
+} from "@/lib/luna/media-index-rules";
 
 export type MediaIndexRow = {
   path: string;
@@ -82,14 +86,27 @@ export async function fetchMediaIndexForLargeRebuild(
   return (data ?? []) as MediaIndexLargeRebuildRow[];
 }
 
+const EMPTY_GARBAGE_KIND: Record<Garbage3dKind, number> = {
+  SKP: 0,
+  ModelTextures: 0,
+  asset: 0,
+  D5용: 0,
+  other: 0
+};
+
 /** 이미 색인된 SKP·asset·ModelTextures·D5용 레이어분리 행 삭제 */
 export async function deleteGarbage3dMediaRows(
   admin: SupabaseClient,
   opts?: { limit?: number }
-): Promise<{ deleted: number; samples: string[] }> {
+): Promise<{
+  deleted: number;
+  by_kind: Record<Garbage3dKind, number>;
+  samples: string[];
+}> {
   const patterns = ["%SKP%", "%ModelTextures%", "%asset%", "%D5용%"];
   const page = Math.min(opts?.limit ?? 2000, 2000);
   let deleted = 0;
+  const by_kind: Record<Garbage3dKind, number> = { ...EMPTY_GARBAGE_KIND };
   const samples: string[] = [];
   const seen = new Set<string>();
   for (const pattern of patterns) {
@@ -114,6 +131,9 @@ export async function deleteGarbage3dMediaRows(
           .in("path", chunk);
         if (delErr) throw delErr;
         deleted += chunk.length;
+        for (const p of chunk) {
+          by_kind[classifyGarbage3dKind(p)] += 1;
+        }
         if (samples.length < 8) {
           samples.push(...chunk.slice(0, 8 - samples.length));
         }
@@ -121,5 +141,5 @@ export async function deleteGarbage3dMediaRows(
       if (rows.length < page) break;
     }
   }
-  return { deleted, samples };
+  return { deleted, by_kind, samples };
 }

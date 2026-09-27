@@ -1,6 +1,8 @@
 import type { LunaCard } from "@/lib/luna/tavily";
 import {
   DEFAULT_NAS_PATH_SETTINGS,
+  DEFAULT_RAIDRIVE_PREFIX_P,
+  DEFAULT_RAIDRIVE_PREFIX_T,
   joinNasPrefix,
   OFFICE_PREFIX_P,
   OFFICE_PREFIX_T,
@@ -148,6 +150,82 @@ export function formatNasFilePath(
   const folder = formatNasFolderPath(drive, rawPath, settings, false);
   const base = folder.endsWith("\\") ? folder : folder ? `${folder}\\` : "";
   return `${base}${fileName}`;
+}
+
+/** 회사 PC — 항상 T:\ · P:\ (설정 모드와 무관) */
+export const OFFICE_EXPLORER_SETTINGS: NasPathSettings = {
+  mode: "office",
+  prefixT: "",
+  prefixP: ""
+};
+
+/** 블루진 노트북 — 항상 Z:\Work\ · Z:\Partners\ */
+export const LAPTOP_EXPLORER_SETTINGS: NasPathSettings = {
+  mode: "custom",
+  prefixT: DEFAULT_RAIDRIVE_PREFIX_T,
+  prefixP: DEFAULT_RAIDRIVE_PREFIX_P
+};
+
+export type NasExplorerPathPair = {
+  officeLabel: string;
+  laptopLabel: string;
+  office: string;
+  laptop: string;
+};
+
+function explorerLabels(drive?: string): Pick<
+  NasExplorerPathPair,
+  "officeLabel" | "laptopLabel"
+> {
+  const letter = normalizeNasDriveLetter(drive) || "T";
+  return {
+    officeLabel: `${letter}:`,
+    laptopLabel: "Z:"
+  };
+}
+
+/** 탐색기에 붙여넣는 폴더 경로 — T:\(또는 P:\) 와 Z:\Work\(또는 Z:\Partners\) */
+export function nasExplorerFolderPair(
+  drive: string | undefined,
+  rawPath: string,
+  isFile = false
+): NasExplorerPathPair {
+  const letter = normalizeNasDriveLetter(drive) || "T";
+  return {
+    ...explorerLabels(letter),
+    office: formatNasFolderPath(letter, rawPath, OFFICE_EXPLORER_SETTINGS, isFile),
+    laptop: formatNasFolderPath(letter, rawPath, LAPTOP_EXPLORER_SETTINGS, isFile)
+  };
+}
+
+/** 탐색기에 붙여넣는 파일 경로 — 회사 PC / 노트북 둘 다 */
+export function nasExplorerFilePair(
+  drive: string | undefined,
+  rawPath: string,
+  fileName: string
+): NasExplorerPathPair {
+  const letter = normalizeNasDriveLetter(drive) || "T";
+  return {
+    ...explorerLabels(letter),
+    office: formatNasFilePath(letter, rawPath, OFFICE_EXPLORER_SETTINGS, fileName),
+    laptop: formatNasFilePath(letter, rawPath, LAPTOP_EXPLORER_SETTINGS, fileName)
+  };
+}
+
+/** 이미 T:\ · P:\ 로 만든 절대 경로에서 노트북 Z: 짝을 만든다 */
+export function nasExplorerPairFromOfficePath(
+  absolute: string
+): NasExplorerPathPair | null {
+  const parsed = parseOfficePath(absolute);
+  if (!parsed) return null;
+  if (parsed.isFile && parsed.fileName) {
+    return nasExplorerFilePair(
+      parsed.drive,
+      parsed.folderRawPath,
+      parsed.fileName
+    );
+  }
+  return nasExplorerFolderPair(parsed.drive, parsed.rawPath, false);
 }
 
 export type ParsedOfficePath = {

@@ -195,6 +195,8 @@
 .luna-admin .stage.y .s { color: var(--y); }
 .luna-admin .stage.r { background: var(--r-bg); }
 .luna-admin .stage.r .s { color: var(--r); }
+.luna-admin .stage.gray { background: #F3F4F6; }
+.luna-admin .stage.gray .s { color: #6B7280; }
 
 .luna-admin .stage .arrow {
   position: absolute;
@@ -1582,7 +1584,7 @@
 
 .luna-admin .sum3 {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 9px;
   margin-bottom: 14px;
 }
@@ -1633,6 +1635,7 @@
 }
 .luna-admin .askli .badge.rule { background: var(--luna-soft); color: var(--luna); }
 .luna-admin .askli .badge.answer { background: var(--y-bg); color: var(--y); }
+.luna-admin .askli .badge.fail { background: var(--r-bg); color: var(--r); }
 .luna-admin .askli .badge.skip { background: #F3F4F6; color: var(--faint); }
 
 .luna-admin .tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }

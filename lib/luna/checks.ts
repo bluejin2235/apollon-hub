@@ -13,8 +13,14 @@ import { IMAGE_CORPUS_TOTAL } from "@/lib/luna-admin/primary";
 import { missingEnvGroups, logMissingEnvGroups } from "@/lib/luna/env-keys";
 import { LUNA_CHECK_PROMISES } from "@/lib/luna/check-promises";
 import { kstWeekBounds } from "@/lib/luna/self-report";
+import {
+  formatHeldDetail,
+  loadJobHolds,
+  syncImageIndexHoldFromStopFile,
+  type JobHold
+} from "@/lib/luna/job-holds";
 
-export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown";
+export type LunaCheckStatus = "ok" | "warn" | "bad" | "unknown" | "held";
 
 export type LunaCheckRow = {
   id: string;
@@ -50,6 +56,7 @@ function formatWhen(iso: string | null): string {
 function statusFromLight(light: TrafficLight): LunaCheckStatus {
   if (light === "green") return "ok";
   if (light === "yellow") return "warn";
+  if (light === "gray") return "held";
   return "bad";
 }
 
@@ -471,6 +478,8 @@ export async function evaluateLunaChecks(
   const rows = (data ?? []) as LunaCheckRow[];
   const checkedAt = now.toISOString();
   const results: LunaCheckResult[] = [];
+  await syncImageIndexHoldFromStopFile(admin);
+  const holds = await loadJobHolds(admin);
 
   for (const row of rows) {
     const resolved = await resolveLastOkAt(admin, row.id);
@@ -480,21 +489,25 @@ export async function evaluateLunaChecks(
     const expectedMeta = LUNA_CHECK_PROMISES[row.id];
     const yellowDays = expectedMeta?.yellow_days ?? row.yellow_days;
     const redDays = expectedMeta?.red_days ?? row.red_days;
-    const light =
-      resolved.light ??
-      (row.id === "disk" ||
-      row.id === "response_time" ||
-      row.id === "llm_failures" ||
-      row.id === "answer_found" ||
-      row.id === "open_questions"
-        ? ("green" as const)
-        : lightFromThresholds(days, yellowDays, redDays));
+    const hold: JobHold | undefined = holds[row.id];
+    const light: TrafficLight = hold
+      ? "gray"
+      : resolved.light ??
+        (row.id === "disk" ||
+        row.id === "response_time" ||
+        row.id === "llm_failures" ||
+        row.id === "answer_found" ||
+        row.id === "open_questions"
+          ? ("green" as const)
+          : lightFromThresholds(days, yellowDays, redDays));
     const status = statusFromLight(light);
     const lastLabel = formatWhen(lastOkAt);
     const expectedPromise = expectedMeta?.promise_label;
     const promiseLabel = expectedPromise ?? row.promise_label;
     let detail: string;
-    if (
+    if (hold) {
+      detail = formatHeldDetail(hold, lastLabel, resolved.extraDetail);
+    } else if (
       (row.id === "disk" ||
         row.id === "response_time" ||
         row.id === "llm_failures" ||

@@ -23,6 +23,8 @@ import {
   K
 } from "@/lib/luna/knowledge-format";
 import { LunaNasPathSettingsPanel } from "@/components/luna/knowledge/LunaNasPathSettingsPanel";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
+import { nasExplorerFolderPair } from "@/lib/luna/nas-path";
 import { supabase } from "@/lib/supabase/client";
 
 type PathRow = {
@@ -281,7 +283,6 @@ export function LunaKnowledgeWorkserver() {
                 className="flex gap-2.5 px-4 py-2 text-[11.5px]"
                 style={{ background: "#fafbfc", color: K.sub, borderBottom: `1px solid ${K.line2}` }}
               >
-                <span className="w-[30px] shrink-0">드라이브</span>
                 <span className="min-w-0 flex-1">경로</span>
                 <span className="w-14 shrink-0 text-right">파일</span>
                 <span className="w-[74px] shrink-0 text-right">최근 수정</span>
@@ -295,23 +296,20 @@ export function LunaKnowledgeWorkserver() {
                 paths.map((row) => (
                   <div
                     key={row.id}
-                    className="flex items-center gap-2.5 border-b px-4 py-2 last:border-b-0"
+                    className="flex items-start gap-2.5 border-b px-4 py-2 last:border-b-0"
                     style={{ borderColor: K.line2 }}
                   >
-                    <span className="w-[30px] shrink-0" style={{ color: K.faint }}>
-                      {row.drive}
-                    </span>
-                    <span
-                      className="min-w-0 flex-1 truncate"
-                      title={row.path}
-                    >
-                      {row.path}
-                    </span>
-                    <span className="w-14 shrink-0 text-right">
+                    <div className="min-w-0 flex-1">
+                      <NasPathDualCopy
+                        pair={nasExplorerFolderPair(row.drive, row.path, false)}
+                        onCopyToast={setToast}
+                      />
+                    </div>
+                    <span className="mt-0.5 w-14 shrink-0 text-right">
                       {row.file_count > 0 ? row.file_count : "—"}
                     </span>
                     <span
-                      className="w-[74px] shrink-0 text-right"
+                      className="mt-0.5 w-[74px] shrink-0 text-right"
                       style={{ color: K.faint }}
                     >
                       {row.latest_modified
@@ -320,7 +318,7 @@ export function LunaKnowledgeWorkserver() {
                     </span>
                     <button
                       type="button"
-                      className="w-[26px] shrink-0 text-right"
+                      className="mt-0.5 w-[26px] shrink-0 text-right"
                       style={{ color: K.faint }}
                       disabled={busyId === row.id}
                       onClick={() => void removePath(row.id)}

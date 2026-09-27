@@ -1,4 +1,4 @@
-export type TrafficLight = "green" | "yellow" | "red";
+export type TrafficLight = "green" | "yellow" | "red" | "gray";
 
 function kstYmd(now: Date): { year: number; month: number; day: number } {
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -47,12 +47,15 @@ export function formatStaleIdleLine(
 export function worstLight(...lights: TrafficLight[]): TrafficLight {
   if (lights.includes("red")) return "red";
   if (lights.includes("yellow")) return "yellow";
+  if (lights.includes("green")) return "green";
+  if (lights.includes("gray")) return "gray";
   return "green";
 }
 
 export function lightEmoji(light: TrafficLight): string {
   if (light === "green") return "🟢";
   if (light === "yellow") return "🟡";
+  if (light === "gray") return "⚪";
   return "🔴";
 }
 

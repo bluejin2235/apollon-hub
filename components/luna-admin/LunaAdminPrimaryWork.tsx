@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { PeriodBar } from "@/components/luna-admin/PeriodBar";
 import { PrimaryFlow } from "@/components/luna-admin/PrimaryFlow";
@@ -13,6 +14,8 @@ import type {
   PrimaryWorkPreviewPayload,
   PrimaryWorkSort
 } from "@/lib/luna-admin/types";
+
+import { nasExplorerPairFromOfficePath } from "@/lib/luna/nas-path";
 
 type Props = {
   flow?: PrimaryFlowStep[];
@@ -183,7 +186,9 @@ export function LunaAdminPrimaryWork({ flow, kind, onAsk }: Props) {
                       <b>{row.file_name}</b>
                     </td>
                     <td>
-                      <span className="pa">{row.folder}</span>
+                      <NasPathDualCopy
+                        pair={nasExplorerPairFromOfficePath(row.full_path)}
+                      />
                     </td>
                     {dirKind ? (
                       <>
@@ -267,7 +272,12 @@ export function LunaAdminPrimaryWork({ flow, kind, onAsk }: Props) {
           </div>
           <div className="meta">
             <div>
-              경로 <b>{selected.folder}</b>
+              경로
+              <div className="mt-1" style={{ flexBasis: "100%", width: "100%" }}>
+                <NasPathDualCopy
+                  pair={nasExplorerPairFromOfficePath(selected.full_path)}
+                />
+              </div>
             </div>
             <div>
               크기 <b>{selected.size_label}</b>

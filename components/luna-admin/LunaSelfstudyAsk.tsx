@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminFetch } from "@/components/luna-admin/fetch";
 import { groupAnswerFlagsByQuestion } from "@/lib/luna/answer-flags-shared";
+import { groupOpenFailureAskItems } from "@/lib/luna/failures-shared";
+import { buildLunaAdminUrl } from "@/lib/luna-admin/nav";
 import {
   QA_DAILY_LIMIT,
   answerFlagIdFromRule,
@@ -38,21 +40,32 @@ type Props = {
   onGo?: (href: string) => void;
 };
 
-type Filter = "all" | "rule" | "answer" | "skip";
+type Filter = "all" | "fail" | "rule" | "answer" | "skip";
 const PAGE = 15;
 
 type ListRow = {
   key: string;
-  kind: "rule" | "answer" | "skip";
+  kind: "fail" | "rule" | "answer" | "skip";
   title: string;
   detail: string;
   badge: string;
+  href?: string;
 };
 
 export function LunaSelfstudyAsk({ onGo }: Props) {
   const [rules, setRules] = useState<RuleRow[]>([]);
   const [flags, setFlags] = useState<FlagRow[]>([]);
   const [skips, setSkips] = useState<TonightItem[]>([]);
+  const [failures, setFailures] = useState<
+    Array<{
+      id: string;
+      question: string;
+      created_at: string;
+      verdict?: string | null;
+      signal?: string;
+      signals?: string[] | null;
+    }>
+  >([]);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
@@ -61,18 +74,30 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
   const load = useCallback(async () => {
     try {
       setError("");
-      const [ruleJson, flagJson, tonight] = await Promise.all([
+      const [ruleJson, flagJson, tonight, failJson] = await Promise.all([
         adminFetch<{ rows: RuleRow[] }>("/api/luna-admin/rules"),
         adminFetch<{ rows: FlagRow[] }>("/api/luna-admin/answer-flags?status=pending"),
-        adminFetch<{ items: TonightItem[] }>("/api/luna-admin/tonight")
+        adminFetch<{ items: TonightItem[] }>("/api/luna-admin/tonight"),
+        adminFetch<{ items: Array<{
+          id: string;
+          question: string;
+          created_at: string;
+          verdict?: string | null;
+          signal?: string;
+          signals?: string[] | null;
+        }> }>("/api/luna/failures?verdict=open")
       ]);
       setRules((ruleJson.rows ?? []).filter((r) => r.status === "candidate"));
       setFlags(flagJson.rows ?? []);
       setSkips(
         (tonight.items ?? []).filter(
-          (i) => !i.excluded && (i.when === "tomorrow" || i.verifiable === false)
+          (i) =>
+            !i.excluded &&
+            (i.when === "tomorrow" || i.verifiable === false) &&
+            !i.id.startsWith("luna_failures:")
         )
       );
+      setFailures(failJson.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "불러오기 실패");
     } finally {
@@ -133,6 +158,17 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           badge: "답"
         };
       });
+    const failRows: ListRow[] = groupOpenFailureAskItems(failures).map((g) => ({
+      key: `f-${g.ids[0]}`,
+      kind: "fail",
+      title: g.question.length > 90 ? `${g.question.slice(0, 90)}…` : g.question,
+      detail:
+        g.count > 1
+          ? `같은 질문 ${g.count}번 · 사람이 겪은 못 찾음`
+          : "사람이 겪은 못 찾음",
+      badge: "못 찾음",
+      href: buildLunaAdminUrl("failures", "causes")
+    }));
     const skipRows: ListRow[] = skips.map((item) => ({
       key: `s-${item.id}`,
       kind: "skip",
@@ -140,17 +176,21 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
       detail: item.skip_reason ?? item.why,
       badge: "정답 없음"
     }));
-    return [...ruleRows, ...ansRows, ...skipRows].slice(0, QA_DAILY_LIMIT);
-  }, [askableRules, grouped, skips, coveredFlags]);
+    const rest = [...ruleRows, ...ansRows, ...skipRows].slice(0, QA_DAILY_LIMIT);
+    return [...failRows, ...rest];
+  }, [askableRules, grouped, skips, coveredFlags, failures]);
 
   const filtered = filter === "all" ? rows : rows.filter((r) => r.kind === filter);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, pages);
   const slice = filtered.slice((safePage - 1) * PAGE, safePage * PAGE);
   const total = rows.length;
+  const failN = rows.filter((r) => r.kind === "fail").length;
   const ruleN = rows.filter((r) => r.kind === "rule").length;
   const answerN = rows.filter((r) => r.kind === "answer").length;
   const skipN = rows.filter((r) => r.kind === "skip").length;
+  const failHref = buildLunaAdminUrl("failures", "causes");
+  const startHref = failN > 0 ? failHref : "/q";
 
   useEffect(() => {
     setPage(1);
@@ -167,20 +207,24 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
           {total > 0 ? `🌙 ${total}건을 물어볼게요` : "지금은 여쭤볼 게 없어요"}
         </div>
         <div className="d">
-          {total > 0
-            ? "하나씩 보여드릴게요. 고르기만 하면 됩니다. 모르면 「모르겠어요」를 눌러 주세요."
-            : "확인할 게 쌓이면 여기로 올게요."}
+          {failN > 0
+            ? "사람이 겪은 못 찾음이 기계 시험보다 먼저입니다. 실패 수집에서 고칩니다."
+            : total > 0
+              ? "하나씩 보여드릴게요. 고르기만 하면 됩니다. 모르면 「모르겠어요」를 눌러 주세요."
+              : "확인할 게 쌓이면 여기로 올게요."}
         </div>
         {total > 0 ? (
-          <button type="button" className="bt" onClick={() => onGo?.("/q")}>
-            답하기 시작 →
+          <button type="button" className="bt" onClick={() => onGo?.(startHref)}>
+            {failN > 0 ? "못 찾음부터 보기 →" : "답하기 시작 →"}
           </button>
         ) : (
           <button type="button" className="bt" onClick={() => onGo?.("/luna")}>
             루나와 대화하기
           </button>
         )}
-        {ruleN > 0 ? (
+        {failN > 0 ? (
+          <div className="sub">사람이 겪은 못 찾음 {failN}건을 먼저 봅니다</div>
+        ) : ruleN > 0 ? (
           <div className="sub">확인 {ruleN}건을 먼저 물어봅니다</div>
         ) : null}
       </div>
@@ -188,7 +232,16 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
       <div className="sum3">
         <button
           type="button"
-          className={filter === "rule" || filter === "all" ? "on" : ""}
+          className={filter === "fail" || filter === "all" ? "on" : ""}
+          onClick={() => setFilter((f) => (f === "fail" ? "all" : "fail"))}
+        >
+          <div className="t">못 찾음</div>
+          <div className="v">{failN}</div>
+          <div className="d">사람이 겪은 실패</div>
+        </button>
+        <button
+          type="button"
+          className={filter === "rule" ? "on" : ""}
           onClick={() => setFilter((f) => (f === "rule" ? "all" : "rule"))}
         >
           <div className="t">🌙 확인</div>
@@ -222,8 +275,8 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
         <span className="n">{filtered.length}</span>
         <span className="sp" />
         {total > 0 ? (
-          <button type="button" className="a" onClick={() => onGo?.("/q")}>
-            전부 답하기 →
+          <button type="button" className="a" onClick={() => onGo?.(startHref)}>
+            {failN > 0 ? "못 찾음부터 →" : "전부 답하기 →"}
           </button>
         ) : null}
       </div>
@@ -236,10 +289,16 @@ export function LunaSelfstudyAsk({ onGo }: Props) {
             type="button"
             className="askli"
             key={row.key}
-            onClick={() => onGo?.("/q")}
+            onClick={() => onGo?.(row.href ?? "/q")}
           >
             <span className="ic">
-              {row.kind === "rule" ? "🌙" : row.kind === "answer" ? "💬" : "—"}
+              {row.kind === "fail"
+                ? "🔍"
+                : row.kind === "rule"
+                  ? "🌙"
+                  : row.kind === "answer"
+                    ? "💬"
+                    : "—"}
             </span>
             <span className="c">
               <span className="t">{row.title}</span>

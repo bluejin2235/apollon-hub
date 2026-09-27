@@ -135,7 +135,7 @@ export function LunaAdminDashboard({ onGo }: Props) {
 
       <div className="flow">
         {data.stages.map((stage, i) => (
-          <div key={stage.key} className={`stage ${stage.light === "green" ? "g" : stage.light === "yellow" ? "y" : "r"}`}>
+          <div key={stage.key} className={`stage ${stage.light === "green" ? "g" : stage.light === "yellow" ? "y" : stage.light === "gray" ? "gray" : "r"}`}>
             <div className="s">
               {lightEmoji(stage.light)} {stage.label}
             </div>

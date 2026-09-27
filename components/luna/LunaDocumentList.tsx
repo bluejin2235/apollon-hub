@@ -1,7 +1,8 @@
 "use client";
 
+import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import {
-  formatNasFolderPath,
+  nasExplorerFolderPair,
   type NasPathSettings
 } from "@/lib/luna/nas-path";
 import type { SourcePackItem } from "@/lib/luna/source-pack";
@@ -33,85 +34,57 @@ function DocBadges({ item }: { item: SourcePackItem }) {
   );
 }
 
-function folderPathOf(
-  item: SourcePackItem,
-  nasPathSettings: NasPathSettings
-): string {
+function folderPairOf(item: SourcePackItem) {
   if (item.folder) {
-    return formatNasFolderPath(
-      item.folder.drive,
-      item.folder.rawPath,
-      nasPathSettings,
-      false
-    ).replace(/\\+$/, "");
+    return nasExplorerFolderPair(item.folder.drive, item.folder.rawPath, false);
   }
   const f = item.files[0];
   if (f) {
-    return formatNasFolderPath(f.drive, f.rawPath, nasPathSettings, false)
-      .replace(/\\[^\\]+$/, "")
-      .replace(/\\+$/, "");
+    return nasExplorerFolderPair(f.drive, f.rawPath, true);
   }
-  return item.subtitle;
+  return null;
 }
 
 export function LunaDocumentRow({
   item,
-  nasPathSettings,
   onCopyToast
 }: {
   item: SourcePackItem;
-  nasPathSettings: NasPathSettings;
+  nasPathSettings?: NasPathSettings;
   onCopyToast?: (msg: string) => void;
 }) {
-  const path = folderPathOf(item, nasPathSettings);
+  const pair = folderPairOf(item);
   const href = item.notion?.url;
   const inner = (
     <>
       <span className="text-[13px] opacity-60">📄</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[12.5px] font-semibold text-[#1c1d21]">
-          {item.title}
+        <div className="break-all text-[12.5px] font-semibold text-[#1c1d21]">
+          {href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              {item.title}
+            </a>
+          ) : item.title}
         </div>
-        <div
-          className="mt-0.5 truncate font-mono text-[10.5px] text-[#9aa0a8]"
-          title={path}
-        >
-          {path}
-        </div>
+        {pair ? (
+          <NasPathDualCopy
+            pair={pair}
+            onCopyToast={onCopyToast}
+            className="mt-1"
+          />
+        ) : (
+          <div className="mt-0.5 break-all font-mono text-[10.5px] text-[#9aa0a8]">
+            {item.subtitle}
+          </div>
+        )}
       </div>
       <DocBadges item={item} />
     </>
   );
   const className =
-    "mb-1.5 flex cursor-pointer items-center gap-2.5 rounded-[10px] border border-[#e7e8ec] px-3 py-2.5 hover:bg-[#FBFAFF]";
+    "mb-1.5 flex items-start gap-2.5 rounded-[10px] border border-[#e7e8ec] px-3 py-2.5 hover:bg-[#FBFAFF]";
 
-  if (href) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-      >
-        {inner}
-      </a>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      className={`${className} w-full text-left`}
-      onClick={() => {
-        if (!path) return;
-        void navigator.clipboard.writeText(path).then(() => {
-          onCopyToast?.("경로 복사됨");
-        });
-      }}
-    >
-      {inner}
-    </button>
-  );
+  return <div className={`${className} w-full text-left`}>{inner}</div>;
 }
 
 export function LunaDocumentList({

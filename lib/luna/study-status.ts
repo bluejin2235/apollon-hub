@@ -6,6 +6,7 @@ export function studyOutcomeLabel(
   result: Record<string, unknown> = {}
 ): string {
   if (outcome === "failed") return "실행 실패";
+  if (result.running === true) return "진행 중";
   if (result.timed_out || result.ask_human) return "확인 필요";
   if (outcome === "improved") return "효과 미검증";
   if (outcome === "no_change") return "변경 없음";
