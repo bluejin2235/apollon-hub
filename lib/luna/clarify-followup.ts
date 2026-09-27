@@ -69,6 +69,14 @@ export function combineClarifyFollowup(
   options: string[] = []
 ): string | null {
   const original = originalQuestion?.trim() ?? "";
+  // Choosing the entire scope adds no constraint. Alternatives are an OR,
+  // not keywords or project names to concatenate into an AND search.
+  const choice = answer.trim();
+  const ordinal = /^\d{1,2}$/.test(choice) ? Number(choice) : 0;
+  const selected = ordinal > 0 ? options[ordinal - 1] ?? choice : choice;
+  if (original && /^(?:전부|모두|다|전체)(?:\s*다)?(?:\s*(?:자료|목록))?\s*(?:보여\s*줘|보여\s*주세요|찾아\s*줘|찾아\s*주세요|알려\s*줘|알려\s*주세요)?[.!?]*$/.test(selected)) {
+    return original;
+  }
   const resolved = resolveClarifyAnswer(answer, options);
   if (!original || !resolved) return null;
   return `${original}\n조건: ${resolved}`;
