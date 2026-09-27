@@ -1,3 +1,4 @@
+import { selectEvidence } from "@/lib/luna/evidence-selection";
 import { notionCitationMarker } from "@/lib/luna/source-citations";
 import {
   matchNamedEntities,
@@ -635,13 +636,7 @@ export function capNotionDisplaySources(
     typeof s.match_score === "number"
       ? s.match_score
       : (s.similarity ?? 0) * 10;
-  return [...byKey.values()]
-    .sort((x, y) => {
-      const ds = rank(y) - rank(x);
-      if (Math.abs(ds) > 1e-9) return ds;
-      return (y.paths?.length ?? 0) - (x.paths?.length ?? 0);
-    })
-    .slice(0, limit);
+  return selectEvidence([...byKey.values()], limit, rank, (source) => source.keyword_score ?? 0);
 }
 
 async function searchNotionOnce(
@@ -758,7 +753,7 @@ export function formatNotionSourcesForPrompt(
         lines.push(`  날짜: ${s.dates.join(", ")}`);
       }
       if (s.excerpt) {
-        const max = compact ? 180 : 400;
+        const max = compact ? 1200 : 1600;
         lines.push(`  본문: ${s.excerpt.slice(0, max)}`);
       }
       return lines.join("\n");
