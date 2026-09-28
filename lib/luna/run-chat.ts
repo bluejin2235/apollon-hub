@@ -1,4 +1,6 @@
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
+import { scopeMediaToEvidence } from "@/lib/luna/media-evidence-scope";
+import { parseAskedWhat } from "@/lib/luna/ask-what";
 import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
 import { scrubLunaAnswerText } from "@/lib/luna/chat-response";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
@@ -786,7 +788,7 @@ export async function runLunaTurn(
               rounds: 0
             }),
         runMedia
-          ? searchMediaForLuna(admin, emb.queryEmbedding, userText)
+          ? searchMediaForLuna(admin, emb.queryEmbedding, userText, {asked: parseAskedWhat(userText)})
           : Promise.resolve({ cards: [] as LunaCard[], hits: [] })
       ]);
       notionSources = notionOutcome.sources;
@@ -895,7 +897,7 @@ export async function runLunaTurn(
     description: ""
   }));
   const cards = orderCardsWithImagePriority(
-    [...notionCards, ...nasResults.map(toNasCard), ...mediaCards, ...webCards, ...youtubeCards],
+    scopeMediaToEvidence([...notionCards, ...nasResults.map(toNasCard), ...mediaCards, ...webCards, ...youtubeCards], userText, notionSources, parseAskedWhat(userText)),
     userText
   );
   const notionForLlm = takeTopNotionSourcesForLlm(
@@ -1009,4 +1011,3 @@ export async function runLunaTurn(
     stageMs
   };
 }
-
