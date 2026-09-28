@@ -1,4 +1,5 @@
 import { queryExcerpt } from "@/lib/luna/evidence-selection";
+import { resolveGroundedTargets } from "@/lib/luna/grounded-target";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
 import {
@@ -612,7 +613,14 @@ export async function searchNotionForLuna(
   }
   keywordHitCount = keywordHits.length;
 
-  const hybridHits = mergeNotionHybridChunkHits(chunkHits ?? [], keywordHits);
+  const grounded = await resolveGroundedTargets(admin, searchKws, keywordHits.map(h => h.chunk_id));
+  const allKeywords = [...keywordHits];
+  for (const h of grounded.hits) {
+    const existing = allKeywords.find(x => x.chunk_id === h.chunk_id);
+    if (existing) existing.keyword_score = Math.max(existing.keyword_score, h.keyword_score);
+    else allKeywords.push(h);
+  }
+  const hybridHits = mergeNotionHybridChunkHits(chunkHits ?? [], allKeywords);
   let hybridChunkHits = hybridToChunkHits(hybridHits);
   let rerankMs = 0;
   let rerankUsed = false;
@@ -632,10 +640,10 @@ export async function searchNotionForLuna(
     const built = await buildIndexedSourcesFromChunks(
       admin,
       hybridChunkHits,
-      queryText,
+      grounded.targets.length ? grounded.targets.map(t => t.name).join(' ') : queryText,
       { top: topN, perPage }
     );
-    indexSources = built.sources;
+    indexSources = built.sources.map(s => ({...s, grounded_targets: grounded.targets.length ? grounded.targets : undefined}));
     selectedHits = built.selectedHits;
     pages = built.pages;
   }

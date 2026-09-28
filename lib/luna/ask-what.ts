@@ -211,10 +211,11 @@ export function parseAskedWhat(
   }
 
   if (projectPhrases.length === 0 && !/뭐야|무엇입니까|무슨\s*뜻|의미(?:가|는|야)?/.test(t)) {
-    for (const raw of t.split(/\s+/)) {
+    // Unregistered names require explicit naming context, never word length.
+    const explicit = [...t.matchAll(/([가-힣A-Za-z0-9_-]{2,})\s+(?:프로젝트|사업)(?:의|에서|를|은|는|\s|$)/g)].map(m => m[1]!);
+    for (const raw of explicit) {
       const token = raw.replace(/[?!.]/g, "").trim();
-      if (token.length < 4) continue;
-      if (!/^[가-힣]{4,}$/.test(token)) continue;
+      if (token.length < 2 || /^(?:특정|어떤|모든|우리|해당|관련|이번|전체)$/.test(token)) continue;
       if (isGenericTopicToken(token) || NATURE_WORDS.has(token.toLowerCase())) {
         continue;
       }

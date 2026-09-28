@@ -2012,6 +2012,7 @@ export async function POST(request: NextRequest) {
 
         // ——— 단계 1: 되묻기 ———
         const skipClarify =
+          (new Set(speculativeNotion.sources.flatMap(s => (s.grounded_targets ?? []).map(t => t.name))).size === 1) ||
           hasAttachments ||
           lastHadClarify ||
           conversationHadClarify(recent) ||
@@ -3297,12 +3298,21 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        const groundedTargets = [...new Map(notionSources.flatMap(s => s.grounded_targets ?? []).map(t => [t.name, t])).values()];
+        if (groundedTargets.length) {
+          typeBlocks.push(`[원문으로 확인된 명칭 관계]\n${groundedTargets.map(t => `${t.alias} = ${t.name}. 근거 페이지 ${t.page_id}: ${t.quote}`).join('\n')}\n이 관계에 연결된 작품의 직접 자료를 우선 답한다. 다른 작품에서 단어만 언급한 것은 관련 참고로만 구분한다. 여러 대상이 확인되면 하나라고 단정하지 않는다.`);
+          // Images without evidence for the resolved work must not imply coverage.
+          const compact = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+          cards = cards.filter(c => c.type !== 'image' || groundedTargets.some(t => compact([c.title,c.description,c.raw_path,c.image_description].filter(Boolean).join(' ')).includes(compact(t.name))));
+        }
+        typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
         const notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
           llmInject.notion
         );
         const answerEvidenceTrace = {
           version: 1,
+          grounded_targets: groundedTargets,
           selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
           injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))
         };

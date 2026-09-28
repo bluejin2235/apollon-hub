@@ -13,6 +13,7 @@ import {
 import { prepareSearchTerms } from "@/lib/luna/workserver";
 
 export type NotionSource = {
+  grounded_targets?: import('./grounded-target').GroundedTarget[];
   title: string;
   url: string;
   id: string;
@@ -1025,4 +1026,3 @@ export async function searchNotionPages(
   }
   return { status: "empty", sources: [], queries, rounds };
 }
-
