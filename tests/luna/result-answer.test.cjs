@@ -20,3 +20,14 @@ test('missing paths do not invent a source location; scope is explicitly bounded
   assert.match(scopeResultNote(2,3,0),/노션 2건/);
   assert.match(scopeResultNote(2,3,0),/빠짐없이 확인한 목록은 아닙니다/);
 });
+
+const {formatNasFilePath,nasExplorerFilePair}=loadTs('lib/luna/nas-path.ts');
+const {modalFilePath}=loadTs('lib/luna/image-modal-path.ts');
+test('image modal accepts a file path without duplicating its filename',()=>{
+ const settings={mode:'office',prefixT:'',prefixP:''};
+ const raw='Project\\KV\\scene.jpg';
+ assert.equal(formatNasFilePath('T',raw,settings,'scene.jpg'),'T:\\'+raw);
+ assert.equal(formatNasFilePath('T','Project\\KV',settings,'scene.jpg'),'T:\\'+raw);
+ assert.equal(modalFilePath({type:'image',title:'scene.jpg',raw_path:raw,drive:'T'},'unc',settings).split('scene.jpg').length,2);
+ assert.equal(JSON.stringify(nasExplorerFilePair('T',raw,'scene.jpg')).includes('scene.jpg\\\\scene.jpg'),false);
+});

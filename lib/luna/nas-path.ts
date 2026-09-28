@@ -147,7 +147,9 @@ export function formatNasFilePath(
   settings: NasPathSettings,
   fileName: string
 ): string {
-  const folder = formatNasFolderPath(drive, rawPath, settings, false);
+  const raw = normalizeRawNasPath(rawPath);
+  const alreadyFile = raw.split("\\").pop()?.toLowerCase() === fileName.toLowerCase();
+  const folder = formatNasFolderPath(drive, raw, settings, alreadyFile);
   const base = folder.endsWith("\\") ? folder : folder ? `${folder}\\` : "";
   return `${base}${fileName}`;
 }

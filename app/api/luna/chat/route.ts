@@ -3644,7 +3644,7 @@ export async function POST(request: NextRequest) {
           }
         }
         if (scopeFollowupQuery && !notFoundFromAsk && !isNotFoundAnswerText(assistantText)) {
-          const scopeNote = scopeResultNote(notionSources.length, cards.length, publicWikiSources.length);
+          const scopeNote = scopeResultNote(notionSources.length, cards.filter(c => c.type !== "notion").length, publicWikiSources.length);
           assistantText += scopeNote;
           controller.enqueue(encoder.encode(scopeNote));
         }
