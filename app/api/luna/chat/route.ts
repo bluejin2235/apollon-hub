@@ -2800,7 +2800,7 @@ export async function POST(request: NextRequest) {
           retrievalTiming.nas_body_wait_ms = Date.now() - bodyWaitStarted;
           if (!pendingBody) retrievalTiming.nas_body_ms = retrievalTiming.nas_body_wait_ms;
           retrievalTiming.nas_body_parallel = pendingBody ? 1 : 0;
-          nasResults = pendingBody ? mergeNasTextEvidence(nasResults, bodyEvidence.rows) : bodyEvidence.rows;
+          nasResults = pendingBody ? finalizeNasDirectoryRows(mergeNasTextEvidence(nasResults, bodyEvidence.rows)) : bodyEvidence.rows;
           nasTextSearched = bodyEvidence.searched;
           // Preserve the existing UI metric; it is not a unique-file count.
           nasTextHitCount = Math.max(bodyEvidence.keywordHits, bodyEvidence.vectorHits);
