@@ -353,29 +353,60 @@ export async function matchNotionChunksByKeyword(
 
   const kwForIlike = pickIlikeKeywords(keywords, extra);
 
-  // 제목 ilike 보강 — 전체 스캔에 빠진 페이지·표기 차이 보완
-  await Promise.all(
-    kwForIlike.map(async (kw) => {
-      const pattern = `%${escapeIlike(kw)}%`;
-      const { data, error } = await admin
-        .from("luna_notion_pages")
-        .select("page_id, title")
-        .eq("archived", false)
-        .ilike("title", pattern)
-        .limit(40);
-      if (error) {
-        console.error("[luna/notion-keyword] title ilike", kw, error);
-        return;
-      }
-      for (const row of (data ?? []) as PageTitleRow[]) {
-        if (!row.page_id) continue;
-        titleById.set(row.page_id, row.title ?? "");
-        if (!pages.some((p) => p.page_id === row.page_id)) {
-          pages.push(row);
-        }
-      }
-    })
-  );
+  const chunkById = new Map<string, ChunkRow>();
+  // Title and body candidates are independent. Join both before weighting or
+  // selecting title-only representatives so the candidate/score rules stay intact.
+  await Promise.all([
+    (async () => {
+      // 제목 ilike 보강 — 전체 스캔에 빠진 페이지·표기 차이 보완
+      await Promise.all(
+        kwForIlike.map(async (kw) => {
+          const pattern = `%${escapeIlike(kw)}%`;
+          const { data, error } = await admin
+            .from("luna_notion_pages")
+            .select("page_id, title")
+            .eq("archived", false)
+            .ilike("title", pattern)
+            .limit(40);
+          if (error) {
+            console.error("[luna/notion-keyword] title ilike", kw, error);
+            return;
+          }
+          for (const row of (data ?? []) as PageTitleRow[]) {
+            if (!row.page_id) continue;
+            titleById.set(row.page_id, row.title ?? "");
+            if (!pages.some((p) => p.page_id === row.page_id)) {
+              pages.push(row);
+            }
+          }
+        })
+      );
+    })(),
+    (async () => {
+      await Promise.all(
+        kwForIlike.map(async (kw) => {
+          const pattern = `%${escapeIlike(kw)}%`;
+          const [h, t] = await Promise.all([
+            admin
+              .from("luna_notion_chunks")
+              .select("chunk_id, page_id, heading, text, position")
+              .ilike("heading", pattern)
+              .limit(80),
+            admin
+              .from("luna_notion_chunks")
+              .select("chunk_id, page_id, heading, text, position")
+              .ilike("text", pattern)
+              .limit(80)
+          ]);
+          if (h.error) console.error("[luna/notion-keyword] heading", h.error);
+          if (t.error) console.error("[luna/notion-keyword] text", t.error);
+          for (const row of [...(h.data ?? []), ...(t.data ?? [])] as ChunkRow[]) {
+            if (row.chunk_id) chunkById.set(row.chunk_id, row);
+          }
+        })
+      );
+    })()
+  ]);
 
   const weights = light
     ? new Map(keywords.map((k) => [k, 1] as const))
@@ -385,31 +416,6 @@ export async function matchNotionChunksByKeyword(
       keywords.some((kw) => includesKeywordCompact(title ?? "", kw))
     )
     .map(([pageId]) => pageId);
-
-  const chunkById = new Map<string, ChunkRow>();
-
-  await Promise.all(
-    kwForIlike.map(async (kw) => {
-      const pattern = `%${escapeIlike(kw)}%`;
-      const [h, t] = await Promise.all([
-        admin
-          .from("luna_notion_chunks")
-          .select("chunk_id, page_id, heading, text, position")
-          .ilike("heading", pattern)
-          .limit(80),
-        admin
-          .from("luna_notion_chunks")
-          .select("chunk_id, page_id, heading, text, position")
-          .ilike("text", pattern)
-          .limit(80)
-      ]);
-      if (h.error) console.error("[luna/notion-keyword] heading", h.error);
-      if (t.error) console.error("[luna/notion-keyword] text", t.error);
-      for (const row of [...(h.data ?? []), ...(t.data ?? [])] as ChunkRow[]) {
-        if (row.chunk_id) chunkById.set(row.chunk_id, row);
-      }
-    })
-  );
 
   // 제목만 맞은 페이지 → 대표 청크(position 최소)
   const missingTitlePages = titleHitPageIds.filter((pid) => {
