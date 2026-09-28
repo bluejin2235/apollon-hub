@@ -937,6 +937,54 @@ export async function POST(request: NextRequest) {
     (rows) => Object.keys(rows).length > 0
   );
 
+  // Ownership/access checks above are complete. These reads do not depend on
+  // profile, department lens, or prompt selection, so start them together.
+  const memoryLoad = (async () => {
+    const t0 = Date.now();
+    const mem = await getUserMemory(admin, user.id);
+    prepLoads.push({
+      name: "memo",
+      n: mem?.memo?.length ?? 0,
+      ms: Date.now() - t0,
+      hit: false
+    });
+    return mem;
+  })();
+  const recentLoad = (async () => {
+    const t0 = Date.now();
+    const res = await admin
+      .from("luna_messages")
+      .select("id, role, content, metadata")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    prepLoads.push({
+      name: "recent",
+      n: res.data?.length ?? 0,
+      ms: Date.now() - t0,
+      hit: false
+    });
+    return res;
+  })();
+  const attachmentsLoad = Promise.resolve(hasAttachments
+    ? admin
+        .from("luna_attachments")
+        .select("id, storage_path, file_name, mime_type")
+        .eq("user_id", user.id)
+        .in("id", attachmentIds)
+    : { data: [] as AttachmentRow[], error: null });
+  const webAugmentLoad = withPrepCache(
+    "web-augment",
+    PREP_TTL_MS.web,
+    () =>
+      admin
+        .from("luna_settings")
+        .select("value")
+        .eq("key", WEB_AUGMENT_SETTINGS_KEY)
+        .maybeSingle(),
+    (row) => !row.error
+  );
+
   const [profileHit, perspectivesHit, tierAHit, tierBHit] = await Promise.all([
     withPrepCache(
       `profile:${user.id}`,
@@ -1216,29 +1264,9 @@ export async function POST(request: NextRequest) {
     typesLoad,
     wikiLoad,
     learningsLoad,
-    (async () => {
-      const t0 = Date.now();
-      const mem = await getUserMemory(admin, user.id);
-      prepLoads.push({
-        name: "memo",
-        n: mem?.memo?.length ?? 0,
-        ms: Date.now() - t0,
-        hit: false
-      });
-      return mem;
-    })(),
+    memoryLoad,
     glossaryLoad,
-    withPrepCache(
-      "web-augment",
-      PREP_TTL_MS.web,
-      () =>
-        admin
-          .from("luna_settings")
-          .select("value")
-          .eq("key", WEB_AUGMENT_SETTINGS_KEY)
-          .maybeSingle(),
-      (row) => !row.error
-    ),
+    webAugmentLoad,
     (async () => {
       const t0 = Date.now();
       const res =
@@ -1259,29 +1287,8 @@ export async function POST(request: NextRequest) {
       });
       return res;
     })(),
-    (async () => {
-      const t0 = Date.now();
-      const res = await admin
-        .from("luna_messages")
-        .select("id, role, content, metadata")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      prepLoads.push({
-        name: "recent",
-        n: res.data?.length ?? 0,
-        ms: Date.now() - t0,
-        hit: false
-      });
-      return res;
-    })(),
-    hasAttachments
-      ? admin
-          .from("luna_attachments")
-          .select("id, storage_path, file_name, mime_type")
-          .eq("user_id", user.id)
-          .in("id", attachmentIds)
-      : Promise.resolve({ data: [] as AttachmentRow[], error: null })
+    recentLoad,
+    attachmentsLoad
   ]);
   const questionTypes = typesHit.value.types;
   const wikiLoaded = wikiHit.value;
