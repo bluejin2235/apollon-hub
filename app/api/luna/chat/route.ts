@@ -1,5 +1,8 @@
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
+import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
+import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
+import { scopeMediaToEvidence } from "@/lib/luna/media-evidence-scope";
 import { loadRuntimeLearnings } from "@/lib/luna/runtime-learnings";
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
@@ -2478,6 +2481,7 @@ export async function POST(request: NextRequest) {
         let nasResults: NasDirectoryRow[] = [];
         let nasTextHitCount = 0;
         let nasTextSearched = false;
+        const retrievalTiming: Record<string, number> = {};
         const flushUiProgress = () => {
           const counts = uiProgressCountsFromState({
             glossary: matchedTerms.length,
@@ -2716,6 +2720,15 @@ export async function POST(request: NextRequest) {
         };
 
         if (anySearch) {
+          // Explicit body coverage is independent of Notion sufficiency and directory results.
+          const broadBody = Boolean(scopeFollowupQuery) || requestsNasBodyCoverage(searchIntentText);
+          const bodyStarted = Date.now();
+          const pendingBody = broadBody && nasEnabled
+            ? retrieveNasBodyEvidence(admin, {
+                enabled: true, listing: listingQuestion, notionEnough: false, allSources: true,
+                query: searchIntentText, queryEmbedding: knowledgeEmb.queryEmbedding, rows: []
+              }).then(result => { retrievalTiming.nas_body_ms = Date.now() - bodyStarted; return result; })
+            : null;
           const searchParts: string[] = [];
           if (searchScope.flags.notion) searchParts.push("노션");
           if (searchScope.flags.nas) searchParts.push("Work서버");
@@ -2762,9 +2775,11 @@ export async function POST(request: NextRequest) {
 
           previousKeywords.push(keywords);
           searchRounds = 1;
+          const connectorsStarted = Date.now();
           let batch = await runConnectorSearch(keywords, {
             reuseSpeculative: true
           });
+          retrievalTiming.connectors_ms = Date.now() - connectorsStarted;
           notionSources = batch.notionSources;
           notionSearchOutcome = batch.notionOutcome;
           nasResults = batch.nasResults;
@@ -2772,7 +2787,8 @@ export async function POST(request: NextRequest) {
 
           // Work 본문: 명시적 전체·본문 요청은 목록형/노션 충분성 생략 조건보다 우선한다.
           // Work 디렉터리 색인·nas_path 조회는 그대로 두어 Work 카드는 유지한다.
-          const bodyEvidence = await retrieveNasBodyEvidence(admin, {
+          const bodyWaitStarted = Date.now();
+          const bodyEvidence = await (pendingBody ?? retrieveNasBodyEvidence(admin, {
             enabled: nasEnabled,
             listing: listingQuestion,
             notionEnough: maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED,
@@ -2780,8 +2796,11 @@ export async function POST(request: NextRequest) {
             query: searchIntentText,
             queryEmbedding: knowledgeEmb.queryEmbedding,
             rows: nasResults
-          });
-          nasResults = bodyEvidence.rows;
+          }));
+          retrievalTiming.nas_body_wait_ms = Date.now() - bodyWaitStarted;
+          if (!pendingBody) retrievalTiming.nas_body_ms = retrievalTiming.nas_body_wait_ms;
+          retrievalTiming.nas_body_parallel = pendingBody ? 1 : 0;
+          nasResults = pendingBody ? mergeNasTextEvidence(nasResults, bodyEvidence.rows) : bodyEvidence.rows;
           nasTextSearched = bodyEvidence.searched;
           // Preserve the existing UI metric; it is not a unique-file count.
           nasTextHitCount = Math.max(bodyEvidence.keywordHits, bodyEvidence.vectorHits);
@@ -3316,6 +3335,7 @@ export async function POST(request: NextRequest) {
         }
 
         const groundedTargets = [...new Map(notionSources.flatMap(s => s.grounded_targets ?? []).map(t => [t.name, t])).values()];
+        cards = scopeMediaToEvidence(cards, searchIntentText, notionSources, askedWhat);
         if (evidenceOnlyQuestion) cards = cards.filter(c => c.type !== 'image');
         if (groundedTargets.length) {
           typeBlocks.push(`[원문으로 확인된 명칭 관계]\n${groundedTargets.map(t => `${t.alias} = ${t.name}. 근거 페이지 ${t.page_id}: ${t.quote}`).join('\n')}\n이 관계에 연결된 작품의 직접 자료를 우선 답한다. 다른 작품에서 단어만 언급한 것은 관련 참고로만 구분한다. 여러 대상이 확인되면 하나라고 단정하지 않는다.`);
@@ -3799,6 +3819,7 @@ export async function POST(request: NextRequest) {
           listingReferenceDisablesNas(searchScope.kind, listingQuestion)
         );
         assistantMeta.answer_evidence_trace = answerEvidenceTrace;
+        assistantMeta.retrieval_timings = retrievalTiming;
         assistantMeta.search_evidence = {
           retrieved_candidate_peak: rawSearchResultCount ?? null,
           displayed_source_count: cards.length + notionSources.length + publicWikiSources.length,

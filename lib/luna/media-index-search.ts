@@ -333,18 +333,16 @@ export async function searchMediaForLuna(
   opts?: { threshold?: number; limit?: number; asked?: AskedWhat }
 ): Promise<{ hits: MediaIndexHit[]; cards: LunaCard[] }> {
   const asked = opts?.asked;
-  const pathHits =
+  const [pathHits, embeddingHits] = await Promise.all([
     asked && asked.projectPhrases.length > 0
-      ? await searchMediaByPath(admin, asked, opts?.limit ?? MEDIA_MATCH_OVERFETCH)
-      : [];
-
-  let embeddingHits: MediaIndexHit[] = [];
-  if (queryEmbedding?.length) {
-    embeddingHits = await matchMediaEmbeddings(admin, queryEmbedding, {
+      ? searchMediaByPath(admin, asked, opts?.limit ?? MEDIA_MATCH_OVERFETCH)
+      : Promise.resolve([] as MediaIndexHit[]),
+    queryEmbedding?.length ? matchMediaEmbeddings(admin, queryEmbedding, {
       threshold: opts?.threshold,
       limit: opts?.limit
-    });
-  } else if (pathHits.length === 0) {
+    }) : Promise.resolve([] as MediaIndexHit[])
+  ]);
+  if (!queryEmbedding?.length && pathHits.length === 0) {
     console.log("[luna/media-index] search skipped (no embedding)", {
       q: question.slice(0, 80)
     });
