@@ -1,6 +1,6 @@
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { broadProjectSubject } from "@/lib/luna/nas-priority";
-import { retrieveImportantProjectMaterials, type ImportantProjectMaterials } from "@/lib/luna/important-project-materials";
+import { importantMaterialsAnswer, retrieveImportantProjectMaterials, type ImportantProjectMaterials } from "@/lib/luna/important-project-materials";
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
 import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
 import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
@@ -2815,6 +2815,13 @@ export async function POST(request: NextRequest) {
           // Preserve the existing UI metric; it is not a unique-file count.
           nasTextHitCount = Math.max(bodyEvidence.keywordHits, bodyEvidence.vectorHits);
 
+          // Reuse the verified inventory before spending time on path lookups it replaces.
+          if (pendingImportant) {
+            const waitStarted = Date.now();
+            importantMaterials = await pendingImportant;
+            retrievalTiming.important_materials_wait_ms = Date.now() - waitStarted;
+          }
+
           // 2차: 좁은 범위 결과가 부족하면 한 단계 더 넓혀 재검색
           if (
             !namedProjectLock &&
@@ -2876,6 +2883,7 @@ export async function POST(request: NextRequest) {
           // 전체 히트가 아니라 LLM·카드에 쓸 상위만 — path마다 직렬 조회라 27건이면 수 초가 붙는다
           if (
             notionSources.length > 0 &&
+            !(!hasAttachments && importantMaterialsAnswer(searchIntentText, importantMaterials)) &&
             !listingReferenceDisablesNas(searchScope.kind, listingQuestion)
           ) {
             const topForPaths = takeTopNotionSourcesForLlm(
@@ -2885,7 +2893,9 @@ export async function POST(request: NextRequest) {
             const recorded = notionRecordedPaths(topForPaths);
             if (recorded.length > 0) {
               try {
+                const pathLookupStarted = Date.now();
                 const looked = await lookupNasByRecordedPaths(admin, recorded);
+                retrievalTiming.recorded_paths_ms = Date.now() - pathLookupStarted;
                 if (looked.length > 0) {
                   nasResults = finalizeNasDirectoryRows([
                     ...nasResults,
@@ -3206,13 +3216,24 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        importantMaterials = pendingImportant ? await pendingImportant : null;
+        importantMaterials ??= pendingImportant ? await pendingImportant : null;
         if (importantMaterials?.prompt && !notFoundFromAsk) {
           nasResults = importantMaterials.rows;
           const originalSources = new Map(notionSources.map(s => [s.id, s]));
           notionSources = importantMaterials.sources.map(s => originalSources.get(s.id) ?? s);
           cards = [...importantMaterials.cards, ...cards.filter(c => c.type !== 'nas' && c.type !== 'notion')];
           llmInject = { ...llmInject, notion: 12, nas: 8, cards: 12 };
+        }
+        const inventoryAnswer = !hasAttachments && !notFoundFromAsk
+          ? importantMaterialsAnswer(searchIntentText, importantMaterials) : null;
+        if (inventoryAnswer) {
+          retrievalTiming.first_useful_result_ms = Date.now() - startedAt;
+          emit(controller, encoder, {
+            type: "search_snapshot", cards: importantMaterials!.cards,
+            notion_sources: notionSources, wiki_count: 0,
+            classification: classificationPublic(classification, questionTypes),
+            counts: { wiki: 0, notion: notionSources.length, work: importantMaterials!.cards.length, image: 0 }
+          });
         }
         flushUiProgress();
 
@@ -3224,7 +3245,7 @@ export async function POST(request: NextRequest) {
           nasResults
         );
         const skipSourceReasons =
-          maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
+          Boolean(inventoryAnswer) || maxNotionMatchStrength(notionSources) >= PACK_SCORE_RECOMMENDED;
         if (reasonUser && !skipSourceReasons) {
           try {
             const reasonRes = await lunaLlmComplete(admin, {
@@ -3590,6 +3611,11 @@ export async function POST(request: NextRequest) {
           );
           firstTokenAt = Date.now();
           controller.enqueue(encoder.encode(assistantText));
+        } else if (inventoryAnswer) {
+          answerEvidenceTrace.answer_mode = 'verified_project_inventory';
+          assistantText = inventoryAnswer;
+          firstTokenAt = Date.now();
+          controller.enqueue(encoder.encode(assistantText));
         } else if (provenanceAnswer) {
           answerEvidenceTrace.answer_mode = 'verified_relation_quotes';
           assistantText = provenanceAnswer;
@@ -3707,6 +3733,7 @@ export async function POST(request: NextRequest) {
           // The requested inventory is not restricted to files the summary happened to cite.
           if (importantMaterials?.prompt && !notFoundFromAsk) {
             cards = mergeCards(importantMaterials.cards, cards);
+            if (inventoryAnswer) notionSources = importantMaterials.sources;
           }
           if (hideUnused) {
             nasResults = [];

@@ -1,7 +1,7 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {nasPriority,rankNasPriority,buildPriorityProfile,diversePriorityFiles,broadProjectSubject,documentRole}=loadTs('lib/luna/nas-priority.ts');
-const {groundedProjectRoots,retrieveImportantProjectMaterials}=loadTs('lib/luna/important-project-materials.ts');
+const {groundedProjectRoots,retrieveImportantProjectMaterials,importantMaterialsAnswer}=loadTs('lib/luna/important-project-materials.ts');
 const base='02 Project\\2021\\05 샘플센터';
 const marks=[{drive:'T',path:base+'\\02 Document'},{drive:'T',path:base+'\\09 운영'}];
 const row=(path,patch={})=>({drive:'T',path,importance:0,modified_at:'2026-01-01T00:00:00Z',...patch});
@@ -64,4 +64,22 @@ test('project inventory follows exact Notion parent to proposal phase and preser
  assert.equal(result.trace.linked_roots.length,1);
  assert.match(result.prompt,/본문을 읽었다고/);
  assert.ok(calls.find(c=>c.table==='luna_notion_pages').filters.some(([k,,v])=>k==='parent_id'&&v==='project-parent'));
+});
+test('inventory answer keeps the verified order and marks without inventing body content or dropping sources',()=>{
+ const cards=[{title:'제안서_final.pptx',raw_path:base+'/제안/제안서_final.pptx',description:'중요 유형과 유사'},
+ {title:'디자인_[시안].pdf',raw_path:base+'/Design/디자인_[시안].pdf',description:'★ 등록 중요 폴더 하위'}];
+ const materials={cards,sources:Array.from({length:13},(_,i)=>({id:String(i)})),rows:[],prompt:'verified',trace:{truncated:true}};
+ const before=JSON.stringify(materials);
+ const answer=importantMaterialsAnswer('샘플센터 전체 자료 찾아줘',materials);
+ assert.ok(answer.indexOf('제안서')<answer.indexOf('디자인'));
+ assert.match(answer,/디자인·설계\*\* — ★/);
+ assert.ok(!answer.includes('★ 제안서'));
+ assert.match(answer,/노션 문서 13개/);
+ assert.match(answer,/조회 한도/);
+ assert.match(answer,/본문·최종 승인 여부는 별도 확인/);
+ assert.ok(answer.includes('디자인\\_\\[시안\\].pdf'));
+ assert.equal(JSON.stringify(materials),before);
+ assert.equal(importantMaterialsAnswer('샘플센터 제안서 내용을 비교 분석해줘',materials),null);
+ assert.equal(importantMaterialsAnswer('샘플센터 전체 자료 찾아줘',{...materials,cards:[]}),null);
+ assert.equal(importantMaterialsAnswer('샘플센터 전체 자료 찾아줘',null),null);
 });
