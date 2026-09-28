@@ -32,6 +32,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
 import { USD_KRW_FALLBACK } from "@/lib/fx/get-rate-for-date";
@@ -1753,6 +1754,12 @@ export async function POST(request: NextRequest) {
               classification.switch_reason || "목록형 질문: 알기 우선"
           };
         }
+        const evidenceTypes = provenanceSearchTypes(classification.types, searchIntentText);
+        if (evidenceTypes !== classification.types) {
+          classification = {...classification, types: evidenceTypes, switched: true,
+            switch_reason: '기존 자료의 제작 주체 확인은 근거 검색'};
+        }
+        const evidenceOnlyQuestion = asksForProvenance(searchIntentText) && !hasImageSearchIntent(searchIntentText);
         classifiedTypeRows = classifiedRows(questionTypes, classification.types);
         if (isLowConfidence(classification)) {
           void recordUnclassifiedQuestion(admin, {
@@ -2017,6 +2024,7 @@ export async function POST(request: NextRequest) {
 
         // ——— 단계 1: 되묻기 ———
         const skipClarify =
+          (evidenceOnlyQuestion && speculativeNotion.sources.length > 0) ||
           (new Set(speculativeNotion.sources.flatMap(s => (s.grounded_targets ?? []).map(t => t.name))).size === 1) ||
           hasAttachments ||
           lastHadClarify ||
@@ -2512,7 +2520,7 @@ export async function POST(request: NextRequest) {
             searchScope.flags.notion && Boolean(kw || searchIntentText);
           const runNas =
             searchScope.flags.nas && Boolean(kw || searchIntentText);
-          const runMedia = searchScope.flags.media;
+          const runMedia = searchScope.flags.media && !evidenceOnlyQuestion;
           const runYoutube =
             searchScope.flags.youtube && isSearchRequest && Boolean(kw);
           const skipNotionLive = listingQuestion;
@@ -3304,6 +3312,7 @@ export async function POST(request: NextRequest) {
         }
 
         const groundedTargets = [...new Map(notionSources.flatMap(s => s.grounded_targets ?? []).map(t => [t.name, t])).values()];
+        if (evidenceOnlyQuestion) cards = cards.filter(c => c.type !== 'image');
         if (groundedTargets.length) {
           typeBlocks.push(`[원문으로 확인된 명칭 관계]\n${groundedTargets.map(t => `${t.alias} = ${t.name}. 근거 페이지 ${t.page_id}: ${t.quote}`).join('\n')}\n이 관계에 연결된 작품의 직접 자료를 우선 답한다. 다른 작품에서 단어만 언급한 것은 관련 참고로만 구분한다. 여러 대상이 확인되면 하나라고 단정하지 않는다.`);
           // Images without evidence for the resolved work must not imply coverage.

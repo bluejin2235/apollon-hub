@@ -1,9 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {loadTs} = require('./helpers.cjs');
-const {selectQuestionEvidence, queryExcerpt} = loadTs('lib/luna/evidence-selection.ts');
+const {selectQuestionEvidence, queryExcerpt, provenanceSearchTypes} = loadTs('lib/luna/evidence-selection.ts');
 const query = '정원을 활용한 자료 중 우리가 제작한 것과 외부 참고자료를 나눠줘';
 const choose = (items, q=query, n=3) => selectQuestionEvidence(items,n,q,x=>x.text,x=>x.score,x=>x.keyword);
+test('classifying existing works searches evidence without triggering an authoring template',()=>{
+  assert.deepEqual(provenanceSearchTypes(['make'],query),['find']);
+  assert.deepEqual(provenanceSearchTypes(['know'],'이 정원 작품은 누가 제작했어?'),['find']);
+  assert.deepEqual(provenanceSearchTypes(['make'],'자사 프로젝트 보고서를 작성해줘'),['make']);
+  assert.deepEqual(provenanceSearchTypes(['make'],'제안서 초안을 만들어줘'),['make']);
+});
 test('production evidence survives high-ranked references without increasing the prompt budget',()=>{
   const items = [
     {id:'reference',text:'정원 벤치마킹 자료',score:10,keyword:4},
