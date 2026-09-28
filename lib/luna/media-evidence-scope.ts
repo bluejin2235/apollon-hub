@@ -1,3 +1,5 @@
+import { conflictsWithSeason, groundedSeasonSources, matchesSeasonSubject, requestedSeason } from '@/lib/luna/season-scope';
+import { broadProjectSubject, underNasPath, projectPathRoot, sameDrive } from '@/lib/luna/nas-priority';
 import type { LunaCard } from "@/lib/luna/tavily";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { AskedWhat } from "@/lib/luna/ask-what";
@@ -16,6 +18,19 @@ function projectRoot(path: string): string | null {
  * Source titles, not incidental mentions inside reference text, can establish roots.
  */
 export function scopeMediaToEvidence(cards: LunaCard[], question: string, sources: NotionSource[], asked?: AskedWhat): LunaCard[] {
+  const season = requestedSeason(question);
+  if (season !== null) {
+    const subject = broadProjectSubject(question) ?? question.replace(/(?:전체|자료|문서|파일|이미지|사진|찾아\s*줘|보여\s*줘)[.!?]*/g, '').trim();
+    const roots = groundedSeasonSources(subject, sources).flatMap(s => [...(s.paths ?? []), ...(s.nas_path ? [s.nas_path] : [])])
+      .map(path => ({ root: projectPathRoot(path), drive: path.match(/^([a-z]):/i)?.[1] }));
+    return cards.filter(card => {
+      if (card.type !== 'image') return true;
+      const identity = [card.title, card.raw_path, card.project].filter(Boolean).join(' ');
+      if (conflictsWithSeason(identity, season)) return false;
+      return matchesSeasonSubject(identity, subject) || Boolean(card.raw_path && roots.some(r => r.root &&
+        sameDrive(card.drive ?? card.raw_path?.match(/^([a-z]):/i)?.[1], r.drive) && underNasPath(card.raw_path!, r.root)));
+    });
+  }
   if (asked?.projectPhrases.length) return cards;
   // The internal clarification suffix adds constraints without erasing the subject.
   const rootQuestion = question.trim().split(/\r?\n조건:/, 1)[0]!;

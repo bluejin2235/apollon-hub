@@ -1,3 +1,4 @@
+import { conflictsWithSeason, requestedSeason } from '@/lib/luna/season-scope';
 import { hasNotionCitation } from "@/lib/luna/source-citations";
 import { hasPositiveRetrievedEvidence, isNotFoundAnswer } from "@/lib/luna/failures-shared";
 import type { AskedNature, AskedWhat } from "@/lib/luna/ask-what";
@@ -65,13 +66,17 @@ function extraTokenMatches(haystack: string, token: string): boolean {
 }
 
 /** 질문의 프로젝트·추가어·성격이 경로/제목에 있는지. 프로젝트명이 있으면 필수. */
-export function haystackMatchesAsked(haystack: string, asked: AskedWhat): boolean {
+export function haystackMatchesAsked(haystack: string, asked: AskedWhat, identity = haystack): boolean {
   if (!haystack.trim()) return false;
   if (isGarbage3dPath(haystack)) return false;
   if (asked.projectPhrases.length > 0) {
     const hit = asked.projectPhrases.some((p) => pathContainsPhrase(haystack, p));
     if (!hit) return false;
   }
+  // Season is an explicit constraint even for broad document requests.
+  // Unlabelled files can still be resolved through grounded project relationships.
+  const season = requestedSeason(asked.extraTokens.join(' '));
+  if (season !== null && conflictsWithSeason(identity, season)) return false;
   const requireExtra =
     asked.nature !== "any" || asked.material === "image";
   if (requireExtra) {
@@ -117,9 +122,10 @@ function wikiHaystack(hit: WikiSourceRef): string {
 }
 
 export function filterCardsByAsked(cards: LunaCard[], asked: AskedWhat): LunaCard[] {
-  let next = cards.filter((c) => !isGarbage3dPath(cardHaystack(c)));
+  const season = requestedSeason(asked.extraTokens.join(' '));
+  let next = cards.filter(c => !isGarbage3dPath(cardHaystack(c)) && (season === null || !conflictsWithSeason([c.title, c.raw_path, c.project].filter(Boolean).join(' '), season)));
   if (asked.projectPhrases.length > 0) {
-    next = next.filter((c) => haystackMatchesAsked(cardHaystack(c), asked));
+    next = next.filter((c) => haystackMatchesAsked(cardHaystack(c), asked, [c.title, c.raw_path, c.project].filter(Boolean).join(' ')));
   } else {
     next = next.filter((c) => !isGarbage3dPath(c.raw_path || c.title || ""));
   }
@@ -136,8 +142,10 @@ export function filterNotionByAsked(
   asked: AskedWhat
 ): NotionSource[] {
   if (asked.material === "image") return [];
+  const season = requestedSeason(asked.extraTokens.join(' '));
+  sources = sources.filter(s => season === null || !conflictsWithSeason([s.title, s.nas_path, ...(s.paths ?? [])].filter(Boolean).join(' '), season));
   if (asked.projectPhrases.length === 0) return sources;
-  return sources.filter((s) => haystackMatchesAsked(notionHaystack(s), asked));
+  return sources.filter((s) => haystackMatchesAsked(notionHaystack(s), asked, [s.title, s.nas_path, ...(s.paths ?? [])].filter(Boolean).join(' ')));
 }
 
 export function filterWikiByAsked(
@@ -153,7 +161,8 @@ export function filterNasByAsked<T extends { path: string }>(
   rows: T[],
   asked: AskedWhat
 ): T[] {
-  const next = rows.filter((r) => !isGarbage3dPath(r.path));
+  const season = requestedSeason(asked.extraTokens.join(' '));
+  const next = rows.filter(r => !isGarbage3dPath(r.path) && (season === null || !conflictsWithSeason(r.path, season)));
   if (asked.material === "image") return [];
   if (asked.projectPhrases.length === 0) return next;
   return next.filter((r) => haystackMatchesAsked(r.path, asked));
