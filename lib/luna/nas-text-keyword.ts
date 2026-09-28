@@ -1,4 +1,5 @@
 import { postgrestTextBatches, postgrestTextList } from "@/lib/luna/postgrest-text-list";
+import { nasBodyQueryTerms } from "@/lib/luna/nas-query-intent";
 /**
  * Work 본문 키워드 검색 (플랜 A) — 임베딩 없이 trigram + 순위
  *
@@ -36,14 +37,6 @@ function projectPrefix(path: string): string | null {
   return parts[0] ?? null;
 }
 
-function tokenizeQuery(q: string): string[] {
-  return q
-    .split(/[\s,/|]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2)
-    .slice(0, 8);
-}
-
 function recentBoost(iso: string | null, now = Date.now()): number {
   if (!iso) return 0;
   const t = Date.parse(iso);
@@ -65,7 +58,7 @@ export async function searchNasTextKeyword(
   opts?: { limit?: number }
 ): Promise<NasTextKeywordHit[]> {
   const limit = opts?.limit ?? 24;
-  const terms = tokenizeQuery(query);
+  const terms = nasBodyQueryTerms(query);
   if (terms.length === 0) return [];
 
   // 본문 trigram — 가장 긴 토큰 우선
@@ -243,4 +236,3 @@ export async function searchNasTextKeyword(
   hits.sort((a, b) => b.score - a.score || (b.modified_at ?? "").localeCompare(a.modified_at ?? ""));
   return hits.slice(0, limit);
 }
-

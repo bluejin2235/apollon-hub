@@ -34,3 +34,32 @@ test('one failed retrieval channel does not discard the other channel evidence',
  const result=await run({},options);assert.equal(result.keywordHits,0);assert.equal(result.vectorHits,1);
  assert.equal(result.rows[0].file_summary,vectorHit.content);
 });
+test('explicit broad body coverage overrides listing and Notion shortcuts',async()=>{
+ for(const query of ['예시 프로젝트 전체 자료 찾아줘','예시 자료 전부 다 보여줘','예시 NAS 본문 검색해줘']){
+  const {run,calls}=setup(async()=>[keywordHit],async()=>[]);
+  const result=await run({}, {...options,query,listing:true,notionEnough:true});
+  assert.equal(result.searched,true,query);assert.deepEqual(calls,['keyword','vector']);
+ }
+});
+test('broad coverage never enables a disabled NAS connector',async()=>{
+ const {run,calls}=setup(async()=>{throw Error('unexpected')},async()=>{throw Error('unexpected')});
+ const result=await run({}, {...options,query:'전체 자료 찾아줘',enabled:false});
+ assert.equal(result.searched,false);assert.deepEqual(calls,[]);
+});
+test('body terms exclude broad request words without dropping project/date subjects',()=>{
+ const {nasBodyQueryTerms,requestsNasBodyCoverage}=loadTs('lib/luna/nas-query-intent.ts');
+ assert.deepEqual(nasBodyQueryTerms('예시센터의 260204 전체 자료를 찾아주세요'),['예시센터','260204']);
+ assert.deepEqual(nasBodyQueryTerms('전체 자료 보여줘'),[]);
+ assert.equal(requestsNasBodyCoverage('예시 프로젝트 자료 찾아줘'),false);
+});
+test('follow-up all-sources intent survives reuse of a narrower subject query',async()=>{
+ const {run,calls}=setup(async()=>[],async()=>[]);
+ const result=await run({}, {...options,allSources:true,listing:true,notionEnough:true});
+ assert.equal(result.searched,true);assert.equal(calls.length,2);
+ const {resolveSearchScope,applyListingReferenceFlags}=loadTs('lib/luna/search-scope.ts');
+ const scope=resolveSearchScope({types:['know'],question:'예시 레퍼런스 자료',allSources:true});
+ assert.equal(applyListingReferenceFlags(scope,true).flags.nas,true);
+ const direct=resolveSearchScope({types:['know'],question:'예시 레퍼런스 전체 자료 찾아줘'});
+ assert.equal(applyListingReferenceFlags(direct,true).flags.nas,true);
+ assert.equal(resolveSearchScope({types:['know'],question:'휴가 규정 알려줘'}).flags.nas,false);
+});

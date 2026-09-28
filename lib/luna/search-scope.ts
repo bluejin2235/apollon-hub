@@ -6,6 +6,7 @@
  */
 
 import { hasNamedProject } from "@/lib/luna/ask-what";
+import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
 
 export type SearchScopeKind =
   | "none"
@@ -239,6 +240,7 @@ export function resolveSearchScopeKind(opts: {
   types: string[];
   question: string;
   classifyConfidence?: number;
+  allSources?: boolean;
 }): SearchScopeKind {
   const types = opts.types;
   const t = opts.question.replace(/\s+/g, " ").trim();
@@ -257,6 +259,8 @@ export function resolveSearchScopeKind(opts: {
   if (types.includes("make") && !types.includes("find") && !types.includes("know")) {
     return "none";
   }
+
+  if (opts.allSources || requestsNasBodyCoverage(t)) return "find_wide";
 
   // 규칙 서브타입이 분명하면 저신뢰 wide 보다 우선 (분류가 애매해도 패턴이 확실할 때)
   if (POLICY_RE.test(t)) return "policy";
@@ -282,6 +286,7 @@ export function resolveSearchScope(opts: {
   question: string;
   classifyConfidence?: number;
   tier?: 1 | 2 | 3;
+  allSources?: boolean;
 }): SearchScope {
   const kind = resolveSearchScopeKind(opts);
   const tier = opts.tier ?? 1;
