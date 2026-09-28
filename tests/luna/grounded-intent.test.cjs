@@ -18,6 +18,15 @@ test('aliases require explicit evidence and generalize across names',()=>{
 test('conflicting explicit aliases stay distinct instead of silently choosing one',()=>{
  assert.equal(discoverGroundedTargets([row('Red World(일명 붉은별쇼)'),row('Red Journey(일명 붉은별쇼)')],['붉은별쇼']).length,2);
 });
+test('provenance can discover explicit aliases related to a broad topic without inventing equivalence',()=>{
+ const rows=[row('Journey to Mars(일명 붉은별쇼)'),row('Red Journey(일명 붉은별축제)')];
+ assert.equal(discoverGroundedTargets(rows,['붉은별']).length,0);
+ const related=discoverGroundedTargets(rows,['붉은별'],true);
+ assert.equal(related.length,2);
+ assert.equal(related[0].alias,'붉은별쇼');
+ assert.equal(related[0].name,'Journey to Mars');
+ assert.equal(discoverGroundedTargets([row('붉은별은 Journey to Mars의 참고 이미지')],['붉은별'],true).length,0);
+});
 test('date constraints select the leaf revision not a matching ancestor',()=>{
  const a=parseAskedWhat('해운대스퀘어 260204 KV 이미지 보여줘');
  assert.equal(haystackMatchesAsked('해운대스퀘어\\260204 KV\\PSD\\scene.jpg',a),true);
