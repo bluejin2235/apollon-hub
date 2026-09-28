@@ -1,4 +1,6 @@
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
+import { broadProjectSubject } from "@/lib/luna/nas-priority";
+import { retrieveImportantProjectMaterials, type ImportantProjectMaterials } from "@/lib/luna/important-project-materials";
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
 import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
 import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
@@ -2478,6 +2480,8 @@ export async function POST(request: NextRequest) {
         let notionSources: NotionSource[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
         let cards: LunaCard[] = [];
+        let pendingImportant: Promise<ImportantProjectMaterials | null> | null = null;
+        let importantMaterials: ImportantProjectMaterials | null = null;
         let nasResults: NasDirectoryRow[] = [];
         let nasTextHitCount = 0;
         let nasTextSearched = false;
@@ -2781,6 +2785,12 @@ export async function POST(request: NextRequest) {
           });
           retrievalTiming.connectors_ms = Date.now() - connectorsStarted;
           notionSources = batch.notionSources;
+          if (nasEnabled && broadProjectSubject(searchIntentText)) {
+            const importantStarted = Date.now();
+            pendingImportant = retrieveImportantProjectMaterials(admin, searchIntentText, notionSources)
+              .then(result => { retrievalTiming.important_materials_ms = Date.now() - importantStarted; return result; })
+              .catch(error => { console.error('[luna/important-materials]', error); return null; });
+          }
           notionSearchOutcome = batch.notionOutcome;
           nasResults = batch.nasResults;
           cards = batch.cards;
@@ -2989,6 +2999,8 @@ export async function POST(request: NextRequest) {
 
           const emitSearchSnapshot = () => {
             if (streamMetaEmitted) return;
+            // Broad project requests show the verified priority set, never raw candidates.
+            if (broadProjectSubject(searchIntentText)) return;
             const imageN = cards.filter((c) => c.type === "image").length;
             console.log("[luna/media-index] snapshot", {
               query: searchIntentText.slice(0, 80),
@@ -3194,6 +3206,14 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        importantMaterials = pendingImportant ? await pendingImportant : null;
+        if (importantMaterials?.prompt && !notFoundFromAsk) {
+          nasResults = importantMaterials.rows;
+          const originalSources = new Map(notionSources.map(s => [s.id, s]));
+          notionSources = importantMaterials.sources.map(s => originalSources.get(s.id) ?? s);
+          cards = [...importantMaterials.cards, ...cards.filter(c => c.type !== 'nas' && c.type !== 'notion')];
+          llmInject = { ...llmInject, notion: 12, nas: 8, cards: 12 };
+        }
         flushUiProgress();
 
         // ——— 단계 6: 소스별 이유 + 답변 ———
@@ -3308,6 +3328,7 @@ export async function POST(request: NextRequest) {
         }
 
         const typeBlocks: string[] = [];
+        if (importantMaterials?.prompt) typeBlocks.push(importantMaterials.prompt);
         for (const row of classifiedTypeRows) {
           if (!row.prompt_key) {
             const extra = [row.criteria, row.answer_form].filter(Boolean).join("\r\n");
@@ -3683,6 +3704,10 @@ export async function POST(request: NextRequest) {
           cards = kept.cards;
           notionSources = kept.notion;
           publicWikiSources = kept.wiki;
+          // The requested inventory is not restricted to files the summary happened to cite.
+          if (importantMaterials?.prompt && !notFoundFromAsk) {
+            cards = mergeCards(importantMaterials.cards, cards);
+          }
           if (hideUnused) {
             nasResults = [];
             wikiSources = [];
@@ -3820,6 +3845,7 @@ export async function POST(request: NextRequest) {
         );
         assistantMeta.answer_evidence_trace = answerEvidenceTrace;
         assistantMeta.retrieval_timings = retrievalTiming;
+        if (importantMaterials?.prompt) assistantMeta.important_materials = importantMaterials.trace;
         assistantMeta.search_evidence = {
           retrieved_candidate_peak: rawSearchResultCount ?? null,
           displayed_source_count: cards.length + notionSources.length + publicWikiSources.length,

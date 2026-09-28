@@ -1,5 +1,7 @@
 import { publishNasText, type NasTextPublication } from "@/lib/luna/nas-text-store";
 import { describeNasError } from "@/lib/luna/nas-error";
+import { rankNasPriority, buildPriorityProfile } from "@/lib/luna/nas-priority";
+import { loadNasPriorityMarks } from "@/lib/luna/important-project-materials";
 /**
  * Work서버 문서 본문 추출 → nas_file_text / nas_file_chunks
  * 임베딩은 scripts/embed-nas-chunks.ts 에서 분리.
@@ -39,6 +41,7 @@ type NasDirRow = {
   path: string;
   size_bytes: number | null;
   modified_at: string | null;
+  importance?: number | null;
 };
 
 type ExistingRow = {
@@ -123,7 +126,9 @@ async function fetchCandidates(
   batches: Map<string, string>,
   existing: Map<string, ExistingRow>
 ): Promise<{ rows: NasDirRow[]; scanned: number; alreadyDone: number }> {
-  const out: NasDirRow[] = [];
+  let out: NasDirRow[] = [];
+  const marks = await loadNasPriorityMarks(admin);
+  console.log('nas-priority-profile', buildPriorityProfile(marks));
   let scanned = 0;
   let alreadyDone = 0;
   const pageSize = 1000;
@@ -134,7 +139,7 @@ async function fetchCandidates(
     while (true) {
       let q = admin
         .from("nas_directory")
-        .select("drive, path, size_bytes, modified_at")
+        .select("drive, path, size_bytes, modified_at, importance")
         .eq("type", "file")
         .eq("drive", drive)
         .eq("scan_batch", batch)
@@ -160,9 +165,11 @@ async function fetchCandidates(
           continue;
         }
         out.push(r);
-        // Limit actual work, never the prefix of completed candidates.
-        if (opts.limit && out.length >= opts.limit) return { rows: out, scanned, alreadyDone };
       }
+      // Read only metadata across the snapshot before applying the work limit.
+      // Otherwise an early alphabetical page hides later marked/newly added folders.
+      const ranked = rankNasPriority(out, marks, opts.limit ?? out.length);
+      out = ranked;
       if (rows.length < pageSize) break;
       from += pageSize;
     }
