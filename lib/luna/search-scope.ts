@@ -6,6 +6,7 @@
  */
 
 import { hasNamedProject } from "@/lib/luna/ask-what";
+import { broadProjectSubject } from "@/lib/luna/nas-priority";
 import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
 
 export type SearchScopeKind =
@@ -186,6 +187,10 @@ export function inferRuleClassification(question: string): {
 } | null {
   const t = question.replace(/\s+/g, " ").trim();
   if (!t) return null;
+
+  if (broadProjectSubject(question)) {
+    return { kind: "find_wide", types: ["find"], reason: "규칙: 프로젝트 전체 자료" };
+  }
 
   if (/^(안녕|고마워|감사|ㅎㅎ|ㅋㅋ|네$|응$|ok$|okay$)/i.test(t)) {
     return { kind: "none", types: ["smalltalk"], reason: "규칙: 인사" };
