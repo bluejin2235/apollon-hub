@@ -1,4 +1,4 @@
-import { queryExcerpt } from "@/lib/luna/evidence-selection";
+import { asksForProvenance, queryExcerpt } from "@/lib/luna/evidence-selection";
 import { resolveGroundedTargets } from "@/lib/luna/grounded-target";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
@@ -613,7 +613,7 @@ export async function searchNotionForLuna(
   }
   keywordHitCount = keywordHits.length;
 
-  const grounded = await resolveGroundedTargets(admin, searchKws, keywordHits.map(h => h.chunk_id));
+  const grounded = await resolveGroundedTargets(admin, searchKws, keywordHits.map(h => h.chunk_id), asksForProvenance(queryText));
   const allKeywords = [...keywordHits];
   for (const h of grounded.hits) {
     const existing = allKeywords.find(x => x.chunk_id === h.chunk_id);
