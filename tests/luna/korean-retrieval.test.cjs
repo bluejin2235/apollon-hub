@@ -34,3 +34,18 @@ test('exact Korean body evidence enters hybrid results even when vectors miss it
   assert.ok(merged.some(h => h.chunk_id === 'exact' && h.match_via === 'keyword'));
   assert.equal(merged.length, 4);
 });
+test('rare project body evidence outranks many generic topic headings within the same cap',async()=>{
+ const others=Array.from({length:30},(_,i)=>({page_id:`other${i}`,title:'공개공지 제안',archived:false}));
+ const chunks=others.flatMap(p=>Array.from({length:3},(_,i)=>({chunk_id:`${p.page_id}-${i}`,page_id:p.page_id,heading:'공개공지',text:'공개공지 설계 제안',position:i})));
+ const db=fakeDb({luna_notion_pages:[...others,{page_id:'target',title:'Design report',archived:false}],luna_notion_chunks:[...chunks,{chunk_id:'target-body',page_id:'target',heading:'Overview',text:'샘플문화센터 공개공지의 기획 및 설계를 수행했습니다.',position:0}]});
+ const hits=await m.matchNotionChunksByKeyword(db,['샘플문화센터','공개공지'],{light:true,limit:3});
+ assert.equal(hits[0].chunk_id,'target-body');
+ assert.equal(hits.length,3);
+ const index=loadTs('lib/luna/notion-index-search.ts',{'@/lib/luna/embedding':{EMBEDDING_SCORE_WEIGHT:10}});
+ const pack=loadTs('lib/luna/source-pack.ts',{'@/lib/luna/embedding':{EMBEDDING_SCORE_WEIGHT:10}});
+ const hybrid=m.mergeNotionHybridChunkHits([],hits);
+ const built=await index.buildIndexedSourcesFromChunks(db,hybrid.map(h=>({...h,similarity:h.similarity??0})),'샘플문화센터 공개공지는 누가 제작했어?',{top:3,perPage:1});
+ const injected=pack.takeTopNotionSourcesForLlm(built.sources,1,'샘플문화센터 공개공지는 누가 제작했어?');
+ assert.equal(injected[0].id,'target');
+ assert.match(injected[0].excerpt,/샘플문화센터/);
+});
