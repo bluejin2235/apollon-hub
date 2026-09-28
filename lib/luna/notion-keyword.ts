@@ -437,6 +437,25 @@ export async function matchNotionChunksByKeyword(
   // 제목 히트 페이지의 모든 청크에도 +4 가 가도록, 이미 있는 페이지는 추가 청크 불필요
   // (점수 계산 시 title 기준으로 부여)
 
+  // Use unique candidate pages, not chunk count: a generic topic repeated in
+  // many long documents must not drown out a rare project name in body text.
+  // This is bounded candidate-local rarity, not a corpus-wide frequency claim.
+  if (keywords.length > 1) {
+    const candidateText = new Map<string, string>();
+    for (const chunk of chunkById.values()) {
+      candidateText.set(chunk.page_id, `${candidateText.get(chunk.page_id) ?? titleById.get(chunk.page_id) ?? ""}\n${chunk.heading ?? ""}\n${chunk.text ?? ""}`);
+    }
+    const docs = [...candidateText.values()];
+    if (docs.length > 1) {
+      for (const keyword of keywords) {
+        const matched = docs.filter(text => includesKeywordCompact(text, keyword)).length;
+        if (!matched) continue;
+        const rarity = Math.min(4, Math.max(0.25, Math.log(1 + (docs.length - matched + 0.5) / (matched + 0.5))));
+        weights.set(keyword, (weights.get(keyword) ?? 1) * rarity);
+      }
+    }
+  }
+
   const scored: NotionKeywordChunkHit[] = [];
   for (const chunk of chunkById.values()) {
     const title = titleById.get(chunk.page_id) ?? "";

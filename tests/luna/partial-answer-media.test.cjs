@@ -58,3 +58,8 @@ test('a partial factual answer retains its supplied citation, not unrelated sour
   const kept=keepSourcesUsedInAnswer({cards:[],wiki:[],notion:[source,{id:'other',title:'다른 기록'}],answer,notFound:false,injectedNotionIds:[id]});
   assert.deepEqual(kept.notion,[source]);
 });
+
+test('confirmed completed responsibilities survive an unknown subcontractor clause',()=>{
+ assert.equal(isNotFoundAnswer('확인된 내용은 예시회사가 공간 디자인과 콘텐츠 제작을 맡았다는 점입니다. 외부 시공사명은 확인되지 않습니다.'),false);
+ assert.equal(isNotFoundAnswer('확인된 내용은 예시회사가 맡았다는 점이 아닙니다. 실제 담당자는 확인되지 않습니다.'),true);
+});
