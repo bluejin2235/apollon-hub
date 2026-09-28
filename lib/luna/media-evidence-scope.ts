@@ -17,7 +17,9 @@ function projectRoot(path: string): string | null {
  */
 export function scopeMediaToEvidence(cards: LunaCard[], question: string, sources: NotionSource[], asked?: AskedWhat): LunaCard[] {
   if (asked?.projectPhrases.length) return cards;
-  const match = question.trim().match(/^([가-힣A-Za-z0-9]{2,30})(?:\s+(?:전체|모든|전부|자료|문서|파일|이미지|사진|관련))*\s*(?:찾아\s*줘|보여\s*줘|찾아\s*주세요|보여\s*주세요)[.!?]*$/i);
+  // The internal clarification suffix adds constraints without erasing the subject.
+  const rootQuestion = question.trim().split(/\r?\n조건:/, 1)[0]!;
+  const match = rootQuestion.match(/^([가-힣A-Za-z0-9]{2,30})(?:\s+(?:전체|모든|전부|자료|문서|파일|이미지|사진|관련))*\s*(?:찾아\s*줘|보여\s*줘|찾아\s*주세요|보여\s*주세요)[.!?]*$/i);
   const subject = match?.[1];
   if (!subject || /^(?:전체|전부|모두|자료|문서|파일|이미지|사진)$/.test(subject)) return cards;
   const roots = sources.filter(s => compact(s.title).includes(compact(subject)))

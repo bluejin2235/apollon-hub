@@ -22,6 +22,9 @@ export function shouldSkipProjectClarify(
 ): boolean {
   const t = text.trim();
   if (!t) return false;
+  // A subject plus an explicit all-sources request already supplies its scope.
+  // Folder disambiguation runs separately; this only skips the generic LLM question.
+  if (/^.{2,80}?\s+(?:관련\s+)?(?:전체|모든)\s*(?:자료|문서|파일|소스|출처)\s*(?:찾아\s*줘|찾아\s*주세요|보여\s*줘|보여\s*주세요|검색해\s*줘)[.!?]*$/.test(t)) return true;
   if (hasSpecificNamedEntity(t, entities)) return false;
   return isConceptProcessQuestion(t);
 }
@@ -36,4 +39,3 @@ export function isSpuriousProjectClarify(
   const joined = options.join(" ");
   return PROJECT_PICKER_RE.test(joined);
 }
-
