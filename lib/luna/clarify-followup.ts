@@ -1,4 +1,6 @@
 import { isListingQuestion } from "@/lib/luna/listing-question";
+import { broadProjectSubject } from "@/lib/luna/nas-priority";
+import { isProjectDetailFollowup } from "@/lib/luna/project-navigation";
 
 /** 되묻기 직후 턴: 짧은 답을 원래 질문과 합쳐 다시 판정·검색한다. */
 
@@ -87,6 +89,19 @@ export function combineScopeFollowup(
   recent: Array<{ role: string; content?: string; metadata?: unknown }>,
   answer: string
 ): string | null {
+  // Continue only an elliptical detail request. A newly named topic must not inherit
+  // the previous project, and a topic switch must stop traversal of older history.
+  const detail = isProjectDetailFollowup(answer);
+  if (detail) {
+    const latest = [...recent].reverse().find(row => row.role === 'user' && row.content?.trim());
+    const priorAssistant = [...recent].reverse().find(row => row.role === 'assistant');
+    const meta = priorAssistant?.metadata as { important_materials?: { query?: string } } | undefined;
+    const previous = latest?.content ?? '';
+    const savedQuery = meta?.important_materials?.query;
+    const topic = broadProjectSubject(previous) ? previous :
+      isProjectDetailFollowup(previous) && typeof savedQuery === 'string' ? savedQuery : '';
+    return broadProjectSubject(topic) ? `${topic.split(/\r?\n조건:/)[0]}\n조건: ${answer.trim()}` : null;
+  }
   const isScopeOnly = (text: string) =>
     /^(?:전부|모두|다|전체)(?:\s*다)?(?:\s*(?:자료|목록))?\s*(?:보여\s*줘|보여\s*주세요|찾아\s*줘|찾아\s*주세요|알려\s*줘|알려\s*주세요)?[.!?]*$/.test(text.trim());
   if (!isScopeOnly(answer)) return null;

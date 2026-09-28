@@ -1,5 +1,5 @@
 /** Shared classification policy. Results are metadata inferences, not body verification. */
-export const DOCUMENT_ROLE_RULE_VERSION = 'document-role/3';
+export const DOCUMENT_ROLE_RULE_VERSION = 'document-role/4';
 export type DocumentRole = 'proposal' | 'concept' | 'design' | 'report' | 'planning' | 'operations' | 'review' | 'reference' | 'other';
 export type RoleEvidence = {
   role: DocumentRole;
@@ -10,7 +10,7 @@ export type RoleEvidence = {
   purpose: 'administrative' | 'publicity' | null;
 };
 function nonCorePurpose(text: string): RoleEvidence['purpose'] {
-  if (/영수증|receipt|invoice|견적서|계약서|세금계산서|발주서|발주내역|정산서|청구서|사업자등록증|통장사본|purchase[ _-]*order/i.test(text)) return 'administrative';
+  if (/영수증|receipt|invoice|견적서|견적비교|산출내역|cost[ _-]*breakdown|계약서|세금계산서|발주서|발주내역|정산서|청구서|사업자등록증|통장사본|purchase[ _-]*order/i.test(text)) return 'administrative';
   if (/인터뷰|interview|보도자료|press[ _-]*release|애드버토리얼|기사(?:[\s_.]|샘플|$)/i.test(text)) return 'publicity';
   return null;
 }
@@ -35,10 +35,11 @@ export function classifyDocumentRole(relativePath: string): RoleEvidence {
   if (/참고|레퍼런스|benchmark|(?:^|[/ _])ref(?:erence)?(?:[/ _]|$)/i.test([...parts, leaf].join('/'))) {
     return { role: 'reference', basis: 'reference-context', evidence: relativePath, folder_role: folderRole, conflict: false, purpose: nonCorePurpose(leaf) };
   }
+  const folderPurpose = nonCorePurpose(folder) ?? (/견적|계약|선금|정산|발주|보증보험/i.test(folder) ? 'administrative' : null);
   const filenameRole = roleHint(leaf);
-  const purpose = nonCorePurpose(leaf);
+  const purpose = nonCorePurpose(leaf) ?? folderPurpose;
   if (filenameRole !== 'other' || purpose) {
-    return { role: filenameRole, basis: 'filename', evidence: leaf, folder_role: folderRole,
+    return { role: purpose ? 'other' : filenameRole, basis: nonCorePurpose(leaf) ? 'filename' : folderPurpose ? 'folder' : 'filename', evidence: folderPurpose ? folder : leaf, folder_role: folderRole,
       conflict: folderRole !== 'other' && folderRole !== filenameRole, purpose };
   }
   return { role: folderRole, basis: folderRole === 'other' ? 'unknown' : 'folder', evidence: folder,
