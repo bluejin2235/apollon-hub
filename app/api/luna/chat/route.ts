@@ -104,6 +104,7 @@ import {
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
 import { imageResultAnswer, scopeResultNote } from "@/lib/luna/result-answer";
+import { provenanceResultAnswer } from "@/lib/luna/provenance-answer";
 import { parseAskedWhat } from "@/lib/luna/ask-what";
 import {
   emptyProjectPeek,
@@ -3327,6 +3328,7 @@ export async function POST(request: NextRequest) {
         );
         const answerEvidenceTrace = {
           version: 1,
+          answer_mode: 'model',
           grounded_targets: groundedTargets,
           selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
           injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))
@@ -3536,11 +3538,17 @@ export async function POST(request: NextRequest) {
           omitTalkAnswer: shouldOmitTalkAnswer(questionDepth)
         });
 
+        const provenanceAnswer = evidenceOnlyQuestion ? provenanceResultAnswer(notionForLlm, groundedTargets) : null;
         if (notFoundFromAsk) {
           assistantText = formatNotFoundAnswer(
             askedWhat,
             projectPeek.seenFolderLabels
           );
+          firstTokenAt = Date.now();
+          controller.enqueue(encoder.encode(assistantText));
+        } else if (provenanceAnswer) {
+          answerEvidenceTrace.answer_mode = 'verified_relation_quotes';
+          assistantText = provenanceAnswer;
           firstTokenAt = Date.now();
           controller.enqueue(encoder.encode(assistantText));
         } else if (askedWhat.material === "image" && cards.some(c => c.type === "image")) {
