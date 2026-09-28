@@ -39,3 +39,22 @@ test('search integration excludes unsupported weak hits from both prompt hits an
   assert.equal(result.cards.length,1);
   assert.equal(result.cards[0].raw_path,rows[0].path);
 });
+test('confirmed factual roles remain partial while fabrication remains unknown',()=>{
+  const answer='실제 시공사는 확인할 수 없습니다. 확인되는 것은 예시회사가 설치 위치와 연출 계획을 정리했다는 점이며, 이것만으로 시공사를 단정할 수는 없습니다.';
+  assert.equal(isNotFoundAnswer(answer),false);
+  for (const text of [
+    '확인된 내용은 없습니다. 제작사를 확인할 수 없습니다.',
+    '확인된 내용은 회사가 제작했다는 점이 아닙니다. 제작사는 알 수 없습니다.',
+    '회사에서 제작했다는 점을 확인할 수 없습니다.',
+    '질문은 확인했습니다. 관련 자료는 없습니다.'
+  ]) assert.equal(isNotFoundAnswer(text),true,text);
+});
+test('a partial factual answer retains its supplied citation, not unrelated sources',()=>{
+  const {keepSourcesUsedInAnswer}=loadTs('lib/luna/search-filter.ts');
+  const {notionCitationMarker}=loadTs('lib/luna/source-citations.ts');
+  const id='11111111-1111-1111-1111-111111111111';
+  const source={id,title:'역할 확인 기록',url:'https://example.invalid/role'};
+  const answer=`확인된 내용은 예시회사가 기획했다는 점입니다. ${notionCitationMarker(id)} 시공사는 확인할 수 없습니다.`;
+  const kept=keepSourcesUsedInAnswer({cards:[],wiki:[],notion:[source,{id:'other',title:'다른 기록'}],answer,notFound:false,injectedNotionIds:[id]});
+  assert.deepEqual(kept.notion,[source]);
+});

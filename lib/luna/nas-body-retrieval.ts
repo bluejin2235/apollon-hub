@@ -4,6 +4,7 @@ import { searchNasTextKeyword } from "@/lib/luna/nas-text-keyword";
 import { matchNasChunkEmbeddings } from "@/lib/luna/nas-chunk-search";
 import { mergeNasTextEvidence } from "@/lib/luna/nas-evidence";
 import { runWorkserverResultPipeline } from "@/lib/luna/workserver";
+import { requestsNasBodyCoverage } from "@/lib/luna/nas-query-intent";
 
 /** Shared production/evaluation body retrieval. Reuses an existing query embedding. */
 export async function retrieveNasBodyEvidence(
@@ -12,12 +13,15 @@ export async function retrieveNasBodyEvidence(
     enabled: boolean;
     listing: boolean;
     notionEnough: boolean;
+    /** Follow-up expansion may be separate from the retained subject query. */
+    allSources?: boolean;
     query: string;
     queryEmbedding: number[] | null;
     rows: WorkserverExploreRow[];
   }
 ) {
-  if (!opts.enabled || opts.listing || opts.notionEnough) {
+  const explicitCoverage = opts.allSources || requestsNasBodyCoverage(opts.query);
+  if (!opts.enabled || (!explicitCoverage && (opts.listing || opts.notionEnough))) {
     return { rows: opts.rows, searched: false, keywordHits: 0, vectorHits: 0 };
   }
   const [keyword, vector] = await Promise.allSettled([
