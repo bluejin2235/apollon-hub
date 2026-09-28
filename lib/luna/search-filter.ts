@@ -46,6 +46,13 @@ export function pathContainsPhrase(haystack: string, phrase: string): boolean {
 function extraTokenMatches(haystack: string, token: string): boolean {
   const t = token.replace(/\s+/g, " ").trim();
   if (!t) return true;
+  if (/^\d{6}$/.test(t)) {
+    // A newer dated child is a different revision, even under the requested folder.
+    const pathLine = haystack.split('\n').find(line => /[\\/]/.test(line) && line.includes(t));
+    const segments = (pathLine ?? haystack).split(/[\\/\n]/);
+    const dates = segments.flatMap(s => [...s.matchAll(/(?:^|[^0-9])(\d{6})(?=[^0-9]|$)/g)].map(m => m[1]!));
+    return dates.includes(t) && dates[dates.length - 1] === t;
+  }
   if (/^시즌\s*\d+$/i.test(t) || /^season\s*\d+$/i.test(t)) {
     const n = t.match(/\d+/)?.[0];
     if (!n) return true;
@@ -292,4 +299,3 @@ export function scoreEvidenceMatch(opts: {
     self_note: `검색 후보 ${denom}건 · 조건 필터 통과 ${opts.matching}건. 답변 정확도는 별도 검증이 필요합니다.`
   };
 }
-
