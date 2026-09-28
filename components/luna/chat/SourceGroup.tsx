@@ -258,6 +258,14 @@ export function SourceGroupSections({
           {notionRows.map((s) => (
             <NotionRow key={s.url || s.id || s.title} src={s} />
           ))}
+          {lim != null && sources.notion.length > lim ? (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-[#6b6f76]">나머지 노션 문서 {sources.notion.length - lim}개 보기</summary>
+              <div className="mt-2">{sources.notion.slice(lim).map(s => (
+                <NotionRow key={s.url || s.id || s.title} src={s} />
+              ))}</div>
+            </details>
+          ) : null}
         </section>
       ) : null}
       {showWork && sources.work.length > 0 ? (
@@ -270,6 +278,14 @@ export function SourceGroupSections({
               onCopyToast={onCopyToast}
             />
           ))}
+          {lim != null && sources.work.length > lim ? (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-[#6b6f76]">나머지 Work서버 자료 {sources.work.length - lim}개 보기</summary>
+              <div className="mt-2">{sources.work.slice(lim).map((c, i) => (
+                <WorkRow key={`${c.title}-${c.raw_path ?? i}`} card={c} onCopyToast={onCopyToast} />
+              ))}</div>
+            </details>
+          ) : null}
         </section>
       ) : null}
       {showWiki && sources.wiki.length > 0 ? (

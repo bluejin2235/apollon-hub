@@ -35,6 +35,22 @@ export function groundedProjectRoots(query: string, sources: NotionSource[], mar
 }
 type FileRow = PriorityRow & { type: string; size_bytes: number | null; file_summary: string | null; modified_at: string | null; drive: string };
 export type ImportantProjectMaterials = { cards: LunaCard[]; sources: NotionSource[]; rows: FileRow[]; prompt: string; trace: Record<string, unknown> };
+/** A file-finding request needs a grounded inventory, not another generated essay. */
+export function importantMaterialsAnswer(query: string, materials: ImportantProjectMaterials | null): string | null {
+  const subject = broadProjectSubject(query);
+  if (!subject || !materials?.cards.length || !materials.prompt) return null;
+  const escapeText = (text: string) => text.replace(/[\\`*_{}\[\]<>]/g, '\\$&').replace(/[\r\n]+/g, ' ');
+  const lines = materials.cards.map(card => {
+    const role = documentRole(card.raw_path ?? card.title);
+    const marked = card.description?.startsWith('★') ? '★ ' : '';
+    return `- **${ROLE_LABELS[role]}** — ${marked}${escapeText(card.title)}`;
+  });
+  return `${escapeText(subject)}의 우선 자료 **${materials.cards.length}개**를 찾았습니다. 중요 표시와 자료 유형을 기준으로 골랐습니다.\n\n` +
+    lines.join('\n') +
+    `\n\n아래 **Work서버 카드에서 폴더 경로를 복사**할 수 있습니다. 관련 노션 문서 ${materials.sources.length}개도 함께 제공합니다. 접힌 자료는 ‘나머지 보기’로 펼칠 수 있습니다.\n\n` +
+    `★ 중요 표시가 있는 폴더·파일입니다. 파일명과 경로 기준으로 분류했으며, 본문·최종 승인 여부는 별도 확인이 필요합니다. 전체 전수 목록이 아닌 우선 자료입니다.` +
+    (materials.trace.truncated ? ' 조회 한도에 도달해 추가 자료가 남아 있을 수 있습니다.' : '');
+}
 export async function retrieveImportantProjectMaterials(admin: SupabaseClient, query: string, sources: NotionSource[]): Promise<ImportantProjectMaterials> {
   const empty = { cards: [], sources: [], rows: [], prompt: '', trace: {} };
   if (!broadProjectSubject(query)) return empty;

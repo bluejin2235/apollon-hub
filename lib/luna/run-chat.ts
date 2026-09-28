@@ -1,5 +1,5 @@
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
-import { retrieveImportantProjectMaterials } from "@/lib/luna/important-project-materials";
+import { importantMaterialsAnswer, retrieveImportantProjectMaterials } from "@/lib/luna/important-project-materials";
 import { scopeMediaToEvidence } from "@/lib/luna/media-evidence-scope";
 import { parseAskedWhat } from "@/lib/luna/ask-what";
 import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
@@ -958,7 +958,8 @@ export async function runLunaTurn(
       ? 512
       : answerMaxTokensForDepth(questionDepth, false);
 
-  const answerRes = await mark("answer_llm", () =>
+  const inventoryAnswer = importantMaterialsAnswer(userText, importantMaterials);
+  const answerRes = inventoryAnswer ? { text: inventoryAnswer, model_label: '확인된 자료 목록' } : await mark("answer_llm", () =>
     lunaLlmComplete(admin, {
       tier: "A",
       feature: "chat_answer",
@@ -976,6 +977,7 @@ export async function runLunaTurn(
   });
   if (importantMaterials?.prompt) {
     displayedSources.cards = [...importantMaterials.cards, ...displayedSources.cards.filter(c => c.type !== 'nas')];
+    if (inventoryAnswer) displayedSources.notion = importantMaterials.sources;
   }
   const webCardsUsed = webAugmented && displayedSources.cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
