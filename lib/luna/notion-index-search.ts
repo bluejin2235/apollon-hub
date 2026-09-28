@@ -342,7 +342,7 @@ function pageChunksToSource(
     url: page.url || `https://notion.so/${page.page_id.replace(/-/g, "")}`,
     id: page.page_id,
     last_edited_time: page.last_edited_time,
-    excerpt: queryExcerpt(body, planNotionSearchKeywords(queryText ?? "", queryText).keywords) || null,
+    excerpt: queryExcerpt(body, planNotionSearchKeywords(queryText ?? "", queryText).keywords, 1200, queryText) || null,
     paths: uniquePaths,
     dates,
     entities,
@@ -640,7 +640,7 @@ export async function searchNotionForLuna(
     const built = await buildIndexedSourcesFromChunks(
       admin,
       hybridChunkHits,
-      grounded.targets.length ? grounded.targets.map(t => t.name).join(' ') : queryText,
+      [queryText, ...grounded.targets.map(t => t.name)].join(' '),
       { top: topN, perPage }
     );
     indexSources = built.sources.map(s => ({...s, grounded_targets: grounded.targets.length ? grounded.targets : undefined}));

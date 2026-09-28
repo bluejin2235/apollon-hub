@@ -545,6 +545,7 @@ function buildAnswerSystem(
     workserverStructure?: string;
     synthesisOpinion?: string;
     notionSources?: NotionSource[];
+    evidenceQuery?: string;
     cards?: LunaCard[];
     nasResults?: NasDirectoryRow[];
     nasSearchAttempted?: boolean;
@@ -620,6 +621,7 @@ function buildAnswerSystem(
 function buildVolatileSystemText(opts: {
   synthesisOpinion?: string;
   notionSources?: NotionSource[];
+  evidenceQuery?: string;
   cards?: LunaCard[];
   nasResults?: NasDirectoryRow[];
   /** Work서버 검색을 실제로 돌렸는지 (0건 명시 주입 구분용) */
@@ -683,13 +685,15 @@ function buildVolatileSystemText(opts: {
   if (opts.notionSources && opts.notionSources.length > 0) {
     const forLlm = takeTopNotionSourcesForLlm(
       opts.notionSources,
-      inject.notion
+      inject.notion,
+      opts.evidenceQuery
     );
     const notionHint = listing
       ? `(위 ${forLlm.length}건 중 조건에 맞는 것만 번호로 나열한다. 임의로 1건만 고르지 마라. 제목·URL을 근거로 쓴다.)`
       : synthesis
         ? `(위 ${forLlm.length}건을 사례로 빠짐없이 다룬다. 2~3개로 줄이지 마라. 각 항목에 페이지 제목을 근거로 단다.)`
         : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 본문에 근거가 있는 자료를 먼저 설명한다. 경로·폴더 위치만으로 자사 제작물이라고 단정하지 말고 제작물·제안·외부 참고자료·미확인을 구분한다.)`;
+    parts.push('[제작 주체와 문서 용도] 벤치마킹·참고 문서에 등장한다는 사실은 외부 제작의 증거가 아니다. 제작 주체는 본문에 명시된 회사·역할과 연결해 판단한다. 주체 근거가 없으면 미확인으로 표시한다. 자사 작품도 다른 문서에서는 참고 사례로 쓰일 수 있다.');
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
         compact: listing || depth === "simple"
@@ -3309,7 +3313,8 @@ export async function POST(request: NextRequest) {
         typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
         const notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
-          llmInject.notion
+          llmInject.notion,
+          searchIntentText
         );
         const answerEvidenceTrace = {
           version: 1,
@@ -3375,6 +3380,7 @@ export async function POST(request: NextRequest) {
             l3Prompt,
             workserverStructure,
             notionSources,
+            evidenceQuery: searchIntentText,
             cards,
             nasResults,
             nasSearchAttempted: nasEnabled && anySearch,
