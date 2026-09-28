@@ -2,7 +2,7 @@ import { classifyDocumentRole, type DocumentRole } from '@/lib/luna/document-rol
 export type { DocumentRole } from '@/lib/luna/document-role';
 /** Explicit marks remain separate from patterns inferred from marked folders. */
 export type NasMark = { drive: string; path: string; note?: string | null };
-export type PriorityRow = { drive?: string | null; path: string; importance?: number | null; modified_at?: string | null };
+export type PriorityRow = { id?: string | number; scan_batch?: string | null; drive?: string | null; path: string; importance?: number | null; modified_at?: string | null };
 export const ROLE_LABELS: Record<DocumentRole, string> = {
   proposal: '제안', concept: '컨셉·기획', design: '디자인·설계', report: '주요 보고',
   planning: '수행계획', operations: '운영', review: '심의·기술자료', reference: '참고', other: '기타 자료'
@@ -71,7 +71,7 @@ export function diversePriorityFiles<T extends PriorityRow>(rows: T[], marks: Na
 }
 export function broadProjectSubject(query: string): string | null {
   const q = query.trim().split(/\r?\n조건:/, 1)[0]!;
-  const match = q.match(/^(.{2,60}?)\s+(?:관련\s+)?(?:전체|모든)\s*(?:자료|문서|파일)\s*(?:찾아\s*줘|찾아\s*주세요|보여\s*줘|보여\s*주세요|검색해\s*줘)[.!?]*$/);
+  const match = q.match(/^(.{2,60}?)\s+(?:관련\s+)?(?:전체|모든|주요|핵심)\s*(?:자료|문서|파일)\s*(?:찾아\s*줘|찾아\s*주세요|보여\s*줘|보여\s*주세요|검색해\s*줘)[.!?]*$/);
   const subject = match?.[1]?.replace(/\s*관련$/, '').trim();
   return subject && !/^(?:전체|모든|나스|NAS|워크서버|우리|회사)$/i.test(subject) ? subject : null;
 }

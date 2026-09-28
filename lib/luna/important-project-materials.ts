@@ -1,9 +1,10 @@
+import { buildProjectNavigation, wantsProjectDetail } from '@/lib/luna/project-navigation';
 import { conflictsWithSeason, groundedSeasonSources, matchesSeasonSubject, requestedSeason } from '@/lib/luna/season-scope';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NotionSource } from '@/lib/luna/notion';
 import type { LunaCard } from '@/lib/luna/tavily';
 import { dedupeDocumentVariants } from '@/lib/luna/workserver';
-import { broadProjectSubject, buildPriorityProfile, diversePriorityFiles, documentRole, nasPriority, normalizeNasPath, projectPathRoot, ROLE_LABELS, sameDrive, underNasPath, type NasMark, type PriorityRow } from '@/lib/luna/nas-priority';
+import { broadProjectSubject, buildPriorityProfile, documentRole, nasPriority, normalizeNasPath, projectPathRoot, ROLE_LABELS, sameDrive, underNasPath, type NasMark, type PriorityRow } from '@/lib/luna/nas-priority';
 
 const compact = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, c => '\\' + c);
@@ -37,7 +38,7 @@ export function groundedProjectRoots(query: string, sources: NotionSource[], mar
   })).values()].slice(0, 3);
 }
 type FileRow = PriorityRow & { type: string; size_bytes: number | null; file_summary: string | null; modified_at: string | null; drive: string };
-export type ImportantProjectMaterials = { cards: LunaCard[]; sources: NotionSource[]; rows: FileRow[]; prompt: string; trace: Record<string, unknown> };
+export type ImportantProjectMaterials = { cards: LunaCard[]; sources: NotionSource[]; rows: FileRow[]; prompt: string; trace: Record<string, unknown>; navigation?: ReturnType<typeof buildProjectNavigation>['trace'] };
 /** A file-finding request needs a grounded inventory, not another generated essay. */
 export function importantMaterialsAnswer(query: string, materials: ImportantProjectMaterials | null): string | null {
   const subject = broadProjectSubject(query);
@@ -48,11 +49,20 @@ export function importantMaterialsAnswer(query: string, materials: ImportantProj
     const marked = card.description?.startsWith('★') ? '★ ' : '';
     return `- **${ROLE_LABELS[role]}** — ${marked}${escapeText(card.title)}`;
   });
-  return `${escapeText(subject)}의 우선 자료 **${materials.cards.length}개**를 찾았습니다. 중요 표시와 자료 유형을 기준으로 골랐습니다.\n\n` +
+  const detail = wantsProjectDetail(query);
+  const roots = [...((materials.trace.roots ?? []) as Array<{drive:string;path:string}>), ...((materials.trace.linked_roots ?? []) as Array<{drive:string;path:string}>)];
+  const places = roots.map(r => `- ${/사업개발/.test(r.path) ? '사업개발' : '프로젝트'}: ${escapeText(r.drive + ':\\' + r.path)}`).join('\n');
+  const steps = materials.navigation?.steps ?? [];
+  const journey = steps.map(s => `- ${s.date}: ${escapeText(s.label)} — ${escapeText(s.representative_path.split(/[/\\]+/).pop() ?? '')}`).join('\n');
+  const intro = `${escapeText(subject)}의 ${detail ? '세부 과정 자료' : '우선 자료'} **${materials.cards.length}개**를 찾았습니다. 중요 표시와 자료 유형을 기준으로 골랐습니다.`;
+  return intro + (places ? `\n\n**자료 위치**\n${places}\n관련 Notion 문서는 아래 출처에서 확인할 수 있습니다.` : '') +
+    (journey ? `\n\n**${detail ? '기획·검토 과정의 자료' : '보고·검토 시점의 자료'}**\n${journey}\n폴더·파일명에 표시된 날짜 기준입니다. 문서 사이의 결정·승인 관계는 본문 확인이 필요합니다.` +
+      (detail && materials.navigation?.omitted_steps ? ` 같은 단계에서 이번 목록에 표시하지 않은 자료 묶음이 ${materials.navigation.omitted_steps}개 더 있습니다.` : '') : '') + '\n\n**먼저 볼 파일**\n' +
     lines.join('\n') +
     `\n\n아래 **Work서버 카드에서 폴더 경로를 복사**할 수 있습니다. 관련 노션 문서 ${materials.sources.length}개도 함께 제공합니다. 접힌 자료는 ‘나머지 보기’로 펼칠 수 있습니다.\n\n` +
     `★ 중요 표시가 있는 폴더·파일입니다. 파일명과 경로 기준으로 분류했으며, 본문·최종 승인 여부는 별도 확인이 필요합니다. 전체 전수 목록이 아닌 우선 자료입니다.` +
-    (materials.trace.truncated ? ' 조회 한도에 도달해 추가 자료가 남아 있을 수 있습니다.' : '');
+    (materials.trace.truncated ? ' 조회 한도에 도달해 추가 자료가 남아 있을 수 있습니다.' : '') +
+    (!detail && steps.length ? '\n\n“더 자세히 보여줘”라고 하면 같은 프로젝트의 아이데이션·미팅·수정 자료를 날짜 흐름에 따라 찾아갑니다.' : '');
 }
 export async function retrieveImportantProjectMaterials(admin: SupabaseClient, query: string, sources: NotionSource[]): Promise<ImportantProjectMaterials> {
   const empty = { cards: [], sources: [], rows: [], prompt: '', trace: {} };
@@ -70,21 +80,24 @@ export async function retrieveImportantProjectMaterials(admin: SupabaseClient, q
       .some(path => sameDrive(path.match(/^([a-z]):/i)?.[1], root.drive) && underNasPath(path, root.path)));
     const seasonAnchor = season === null ? undefined : sources.find(s => matchesSeasonSubject(s.title, subject) &&
       [...(s.paths ?? []), ...(s.nas_path ? [s.nas_path] : [])].some(path => sameDrive(path.match(/^([a-z]):/i)?.[1], root.drive) && underNasPath(path, root.path)));
-    const parentId = seasonAnchor?.id ?? rootSource?.parent_id;
+    const projectAnchor = sources.find(s => compact(s.title.replace(/^\d+\s*/, '')) === compact(subject));
+    const parentId = seasonAnchor?.id ?? projectAnchor?.id ?? rootSource?.parent_id;
     let pageQuery = admin.from('luna_notion_pages').select('page_id,title,url,nas_path,last_edited_time,parent_id')
       .eq('archived', false);
     pageQuery = parentId ? pageQuery.eq('parent_id', parentId)
       : pageQuery.ilike('title', '%' + escapeLike(label) + '%');
-    const [files, pages] = await Promise.all([
-      admin.from('nas_directory').select('drive,path,type,size_bytes,modified_at,file_summary,importance')
+    const [files, pages, folders] = await Promise.all([
+      admin.from('nas_directory').select('id,scan_batch,drive,path,type,size_bytes,modified_at,file_summary,importance')
         .eq('drive', root.drive).eq('type', 'file').gte('path', root.path).lt('path', root.path + '\uffff')
         .or(DOCUMENT_FILTER)
         .order('importance', { ascending: false }).order('path').limit(1001),
-      pageQuery.limit(31)
+      pageQuery.limit(31),
+      admin.from('nas_directory').select('drive,path,type').eq('drive',root.drive).eq('type','folder')
+        .gte('path',root.path).lt('path',root.path+'\uffff').order('path').limit(201)
     ]);
     if (files.error) throw files.error;
     if (pages.error) throw pages.error;
-    return { root, files: (files.data ?? []) as FileRow[], groundedParent: Boolean(parentId),
+    return { root, folderReadFailed: Boolean(folders.error), folders: folders.error ? [] : (folders.data ?? []).filter(f => underNasPath(f.path,root.path)), files: (files.data ?? []) as FileRow[], groundedParent: Boolean(parentId),
       pages: (pages.data ?? []).filter(p => (season === null || !conflictsWithSeason([p.title, p.nas_path].filter(Boolean).join(' '), season)) &&
         (parentId || !p.nas_path || (sameDrive(String(p.nas_path).match(/^([a-z]):/i)?.[1], root.drive) && underNasPath(p.nas_path, root.path)))) };
   }));
@@ -96,7 +109,7 @@ export async function retrieveImportantProjectMaterials(admin: SupabaseClient, q
     return path && drive && (season === null || !conflictsWithSeason(path, season)) ? [[drive + ':' + normalizeNasPath(path), { drive, path }] as const] : [];
   })).values()].filter(linked => !roots.some(root => sameDrive(root.drive, linked.drive) && normalizeNasPath(root.path) === normalizeNasPath(linked.path))).slice(0, 3);
   const linkedFiles = await Promise.all(linkedRoots.map(async root => {
-    const {data,error} = await admin.from('nas_directory').select('drive,path,type,size_bytes,modified_at,file_summary,importance')
+    const {data,error} = await admin.from('nas_directory').select('id,scan_batch,drive,path,type,size_bytes,modified_at,file_summary,importance')
       .eq('drive',root.drive).eq('type','file').gte('path',root.path).lt('path',root.path+'\uffff')
       .or(DOCUMENT_FILTER)
       .order('importance',{ascending:false}).order('path').limit(1001);
@@ -105,9 +118,10 @@ export async function retrieveImportantProjectMaterials(admin: SupabaseClient, q
   }));
   const allFileResults = [...results, ...linkedFiles];
   const files = allFileResults.flatMap(r => r.files.slice(0, 1000).filter(f => underNasPath(f.path, r.root.path)))
-    .filter(f => /\.(?:pptx?|pdf|docx?|hwp|hwpx)$/i.test(f.path) && !/(?:^|[/\\])(?:backup|백업|old|temp)(?:[/\\]|$)/i.test(f.path));
+    .filter(f => /\.(?:pptx?|pdf|docx?|hwp|hwpx)$/i.test(f.path) && !/(?:^|[/\\])(?:\d+[ ._-]*)?(?:backup|백업|old|temp)(?:[/\\]|$)/i.test(f.path));
   const seasonFiles = season === null ? files : files.filter(f => !conflictsWithSeason(f.path, season));
-  const selected = diversePriorityFiles(dedupeDocumentVariants(seasonFiles), marks, 8);
+  const navigation = buildProjectNavigation(dedupeDocumentVariants(seasonFiles), marks, query);
+  const selected = navigation.selected;
   const cards: LunaCard[] = selected.map(f => {
     const priority = nasPriority(f, marks, profile);
     return { type: 'nas', title: f.path.split(/[/\\]+/).pop()!, url: null, thumbnail: null,
@@ -135,7 +149,7 @@ export async function retrieveImportantProjectMaterials(admin: SupabaseClient, q
     `파일명·경로/링크는 검증된 목록이다. 본문을 읽었다고 하거나 내용·최종 승인을 추정하지 않는다. 날짜/최종이라는 파일명은 승인 증거가 아니다. 범위를 넓힐지 다시 묻지 않는다. 전체 목록 완주가 아닌 우선 자료 ${cards.length}개와 문서 링크 ${projectSources.length}개임을 밝힌다.\n` +
     cards.map(c => `- ${c.description}: ${c.title} — ${c.drive}:\\${c.raw_path}`).join('\n') + '\n' +
     projectSources.map(s => `- [${ROLE_LABELS[documentRole(s.title)]}] ${s.title} — ${s.url}`).join('\n');
-  return { cards, sources: projectSources, rows: selected, prompt, trace: { profile, roots, linked_roots: linkedRoots, candidate_files: files.length,
+  return { cards, sources: projectSources, rows: selected, prompt, navigation: navigation.trace, trace: { query, navigation: navigation.trace, profile, roots, linked_roots: linkedRoots, candidate_files: files.length,
     selected_files: selected.map(f => ({ path: f.path, drive: f.drive, ...nasPriority(f, marks, profile) })),
-    truncated: allFileResults.some(r => r.files.length >= 1000) || results.some(r => r.pages.length > 30), metadata_only: true } };
+    truncated: allFileResults.some(r => r.files.length >= 1000) || results.some(r => r.pages.length > 30), folder_structure: results.map(r => ({root:r.root, available: !r.folderReadFailed, folders:r.folders.filter(f => normalizeNasPath(f.path).slice(normalizeNasPath(r.root.path).length).split('/').filter(Boolean).length <= 2).map(f => f.path), truncated:r.folders.length>=201})), metadata_only: true } };
 }
