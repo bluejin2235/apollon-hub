@@ -1,4 +1,5 @@
 import { retrieveNasBodyEvidence } from "@/lib/luna/nas-body-retrieval";
+import { retrieveImportantProjectMaterials } from "@/lib/luna/important-project-materials";
 import { scopeMediaToEvidence } from "@/lib/luna/media-evidence-scope";
 import { parseAskedWhat } from "@/lib/luna/ask-what";
 import { keepSourcesUsedInAnswer } from "@/lib/luna/search-filter";
@@ -889,6 +890,15 @@ export async function runLunaTurn(
     }
   }
 
+  const importantMaterials = nasEnabled && searchScope.flags.nas
+    ? await retrieveImportantProjectMaterials(admin, userText, notionSources).catch(error => {
+      console.error('[luna/important-materials]', error); return null;
+    }) : null;
+  if (importantMaterials?.prompt) {
+    nasResults = importantMaterials.rows;
+    const originals = new Map(notionSources.map(s => [s.id, s]));
+    notionSources = importantMaterials.sources.map(s => originals.get(s.id) ?? s);
+  }
   const notionCards: LunaCard[] = notionSources.map((s) => ({
     type: "notion" as const,
     title: s.title,
@@ -919,7 +929,7 @@ export async function runLunaTurn(
         .join("\n\n")
     : undefined;
 
-  const systemPrompt = buildSystemPrompt({
+  const systemPrompt = (importantMaterials?.prompt ? importantMaterials.prompt + '\n\n' : '') + buildSystemPrompt({
     identity,
     learningsBlock,
     glossaryBlock,
@@ -964,6 +974,9 @@ export async function runLunaTurn(
     injectedNotionIds: notionForLlm.map(source => source.id),
     notFound: false // This evaluator has no interactive notFoundFromAsk branch.
   });
+  if (importantMaterials?.prompt) {
+    displayedSources.cards = [...importantMaterials.cards, ...displayedSources.cards.filter(c => c.type !== 'nas')];
+  }
   const webCardsUsed = webAugmented && displayedSources.cards.some((c) => c.type === "web");
   if (webCardsUsed && !answer.includes("웹 검색으로 보강함")) {
     answer = `${answer.trim()}\n\n웹 검색으로 보강함`;

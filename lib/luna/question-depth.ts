@@ -3,6 +3,7 @@
  * 검색 건수는 건드리지 않는다. 코드 패턴만 쓰고 LLM 유형에 의존하지 않는다.
  */
 import { isListingQuestion } from "@/lib/luna/listing-question";
+import { broadProjectSubject } from "@/lib/luna/nas-priority";
 import type { WikiPickLimits } from "@/lib/luna/wiki-match";
 
 export type QuestionDepth = "simple" | "synthesis" | "listing";
@@ -18,6 +19,7 @@ export function isSynthesisQuestion(text: string): boolean {
 }
 
 export function classifyQuestionDepth(text: string): QuestionDepth {
+  if (broadProjectSubject(text)) return "synthesis";
   if (isListingQuestion(text)) return "listing";
   if (isSynthesisQuestion(text)) return "synthesis";
   return "simple";

@@ -10,7 +10,7 @@ const file = name => ({ drive: 'T', path: name + '.pptx', size_bytes: 100, modif
 const previous = (row, status) => ({ ...row, status, content_hash: 'same-text', updated_at: stamp });
 
 async function runCli({ rows = [file('sample')], existing = [], statuses = {},
-  args = [], insertError = false, runId = 'run', incompletePaths = [], sourceChanges = false, statFails = false } = {}) {
+  args = [], insertError = false, runId = 'run', incompletePaths = [], sourceChanges = false, statFails = false, marks = [] } = {}) {
   const events = [];
   const extracted = [];
   const logs = [];
@@ -40,6 +40,7 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
       range: async (from, to) => ({ data: (table === 'nas_directory'
         ? rows.filter(row => row.drive === filters.drive) : existing).slice(from, to + 1) }),
       then(resolve, reject) {
+        if (operation === 'read' && table === 'nas_important_paths') return Promise.resolve({data:marks,error:null}).then(resolve,reject);
         if (operation === 'read') throw Error('Unexpected query ' + table);
         events.push({ table, operation, payload, filters: { ...filters } });
         return Promise.resolve({ error: insertError && table === 'nas_file_chunks' &&
@@ -49,6 +50,8 @@ async function runCli({ rows = [file('sample')], existing = [], statuses = {},
     return q;
   } };
   const dependencies = {
+    '@/lib/luna/nas-priority': require('./helpers.cjs').loadTs('lib/luna/nas-priority.ts'),
+    '@/lib/luna/important-project-materials': require('./helpers.cjs').loadTs('lib/luna/important-project-materials.ts'),
     '@/lib/luna/nas-text-store': require('./helpers.cjs').loadTs('lib/luna/nas-text-store.ts'),
     '@/lib/luna/nas-error': require('./helpers.cjs').loadTs('lib/luna/nas-error.ts'),
     dotenv: { config() {} },
@@ -212,4 +215,11 @@ test('unchanged ok metadata with missing chunks is selected for repair', async (
   assert.equal(result.exit,0,result.errors.join('\n'));
   assert.deepEqual(result.extracted,[row.path]);
   assert.equal(result.events.find(event=>event.status==='done').progress.ok,1);
+});
+test('a newly indexed marked folder after the first metadata page wins the bounded extraction slot',async()=>{
+  const rows=Array.from({length:1002},(_,i)=>file('02 Project/2026/A/general/'+String(i).padStart(4,'0')));
+  const marked=file('02 Project/2026/Z/제안서/new');rows.push(marked);
+  const result=await runCli({rows,args:['--limit=1'],marks:[{drive:'T',path:'02 Project/2026/Z/제안서'}]});
+  assert.equal(result.exit,0,result.errors.join('\n'));
+  assert.deepEqual(result.extracted,[marked.path]);
 });
