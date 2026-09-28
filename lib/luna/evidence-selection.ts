@@ -12,6 +12,12 @@ export function asksForProvenance(query: string): boolean {
   return /우리.*제작|자사|외부.*참고|제작.*(?:주체|회사)|제작사|누가.*(?:제작|만들)/i.test(query);
 }
 
+/** Categorising existing sources is retrieval; only explicit authoring needs a template. */
+export function provenanceSearchTypes(types: string[], query: string): string[] {
+  if (!asksForProvenance(query) || /(?:초안|양식|템플릿|보고서|제안서|체크리스트).*(?:작성|만들)/.test(query)) return types;
+  return ['find'];
+}
+
 const provenanceCue = /(?:기획|연출|제작|개발|설계)(?:했|하였|한\s|을\s*(?:담당|총괄))|만들었|(?:produced|created|directed|designed)\s+by/i;
 const referenceCue = /벤치마킹|레퍼런스|참고|reference|benchmark/i;
 const topicNoise = /^(?:우리|우리가|저희|자사|외부|내부|참고자료|자료|제작|제작한|활용한|것|것과|중|나눠줘|구분|구분해줘|알려줘|찾아줘|보여줘|프로젝트|이미지|문서|누가|제작사|회사|주체)$/;
