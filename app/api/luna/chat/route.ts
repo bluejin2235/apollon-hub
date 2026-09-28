@@ -1,3 +1,4 @@
+import { prefetchInventory } from "@/lib/luna/inventory-prefetch";
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { broadProjectSubject } from "@/lib/luna/nas-priority";
 import { importantMaterialsAnswer, retrieveImportantProjectMaterials, type ImportantProjectMaterials } from "@/lib/luna/important-project-materials";
@@ -1650,6 +1651,8 @@ export async function POST(request: NextRequest) {
         let classification = emptyClassification();
         let classifiedTypeRows: QuestionTypeRow[] = [];
         let classifySource: "rule" | "llm" = "llm";
+        const retrievalTiming: Record<string, number> = {};
+        const classificationStarted = Date.now();
         pushStep("classify", "running", "유형 판정 중");
 
         let knowledgeEmbPromise: Promise<
@@ -1781,6 +1784,8 @@ export async function POST(request: NextRequest) {
           formatTypeLabels(classifiedTypeRows) || "유형 미정"
         );
 
+        retrievalTiming.classification_ms = Date.now() - classificationStarted;
+        const scopeStarted = Date.now();
         const needsSearch = typesNeedSearch(classifiedTypeRows);
         if (!hasManualConnectors(manualConnectorFlags)) {
           connectorRouting = applyTypeSearchOverride(connectorRouting, {
@@ -1895,6 +1900,8 @@ export async function POST(request: NextRequest) {
           controller.close();
           return;
         }
+        retrievalTiming.scope_ms = Date.now() - scopeStarted;
+        const speculativeStarted = Date.now();
         const uiQueryHint = queryHintFromQuestion(searchIntentText);
         pushUiReadStep(pushStep, searchScope.label);
 
@@ -1944,6 +1951,36 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        const inventoryRequest = Boolean(broadProjectSubject(searchIntentText));
+        const inventoryPrefetch = prefetchInventory({
+          enabled: inventoryRequest && nasEnabled && searchScope.flags.nas && searchScope.flags.notion,
+          embedding: knowledgeEmbPromise,
+          notion: speculativeNotionPromise,
+          body: async (emb) => {
+            const start = Date.now();
+            const result = await retrieveNasBodyEvidence(admin, { enabled: true, listing: listingQuestion,
+              notionEnough: false, allSources: true, query: searchIntentText,
+              queryEmbedding: emb.queryEmbedding, rows: [] });
+            retrievalTiming.nas_body_ms = Date.now() - start;
+            return result;
+          },
+          media: async (emb) => {
+            const start = Date.now();
+            const result = searchScope.flags.media && !evidenceOnlyQuestion
+              ? await searchMediaForLuna(admin, emb.queryEmbedding, searchIntentText, { asked: askedWhat })
+              : { hits: [], cards: [] };
+            retrievalTiming.media_ms = Date.now() - start;
+            return result;
+          },
+          materials: async (notion) => {
+            if (!notion.sources.length) return null;
+            const start = Date.now();
+            try { return await retrieveImportantProjectMaterials(admin, searchIntentText, notion.sources); }
+            catch (error) { console.error('[luna/important-materials]', error); return null; }
+            finally { retrievalTiming.important_materials_ms = Date.now() - start; }
+          }
+        });
+
         if (
           listingQuestion &&
           !hasManualConnectors(manualConnectorFlags) &&
@@ -1965,7 +2002,9 @@ export async function POST(request: NextRequest) {
           };
         }
 
+        const embedWaitStarted = Date.now();
         const knowledgeEmb = await knowledgeEmbPromise;
+        retrievalTiming.embedding_wait_ms = Date.now() - embedWaitStarted;
         let speculativeNotion: NotionSearchOutcome = {
           status: "skipped",
           sources: [],
@@ -1980,7 +2019,7 @@ export async function POST(request: NextRequest) {
         const imageIntentEarly =
           searchScope.flags.media && hasImageSearchIntent(searchIntentText);
         // 노션 선조회와 미디어를 병렬 — 직렬이면 사례 질문에 수 초가 더 붙는다
-        const preMediaPromise =
+        const preMediaPromise = inventoryPrefetch?.media ?? (
           imageIntentEarly
             ? knowledgeEmbPromise.then((emb) =>
                 searchMediaForLuna(
@@ -1990,7 +2029,7 @@ export async function POST(request: NextRequest) {
                   { asked: askedWhat }
                 )
               )
-            : Promise.resolve(preMediaProbe);
+            : Promise.resolve(preMediaProbe));
         {
           const [notionSpec, nasSpec, mediaSpec] = await Promise.all([
             speculativeNotionPromise,
@@ -2000,6 +2039,7 @@ export async function POST(request: NextRequest) {
           speculativeNotion = notionSpec;
           speculativeNas = nasSpec;
           preMediaProbe = mediaSpec;
+          retrievalTiming.speculative_ms = Date.now() - speculativeStarted;
           console.log("[luna/search] speculative notion", {
             status: speculativeNotion.status,
             count: speculativeNotion.sources.length,
@@ -2334,7 +2374,7 @@ export async function POST(request: NextRequest) {
           if (uiCh.glossary) {
             pushUiGlossaryStep(pushStep, matchedTerms.length);
           }
-          if (uiCh.wiki) {
+          if (uiCh.wiki && !inventoryRequest) {
             pushUiWikiStep(pushStep, publicWikiSources.length);
           }
         }
@@ -2485,8 +2525,9 @@ export async function POST(request: NextRequest) {
         let nasResults: NasDirectoryRow[] = [];
         let nasTextHitCount = 0;
         let nasTextSearched = false;
-        const retrievalTiming: Record<string, number> = {};
+        let inventoryDisplayReady = false;
         const flushUiProgress = () => {
+          if (inventoryRequest && !inventoryDisplayReady) return;
           const counts = uiProgressCountsFromState({
             glossary: matchedTerms.length,
             wiki: publicWikiSources.length,
@@ -2666,7 +2707,7 @@ export async function POST(request: NextRequest) {
               }
             })(),
             runMedia
-              ? imageIntent && preMediaProbe.cards.length > 0
+              ? (opts?.reuseSpeculative && inventoryPrefetch) || (imageIntent && preMediaProbe.cards.length > 0)
                 ? Promise.resolve(preMediaProbe.cards)
                 : searchMediaForLuna(
                     admin,
@@ -2683,7 +2724,7 @@ export async function POST(request: NextRequest) {
             if (uiChAfter.work && runNas) {
               pushUiWorkStep(pushStep, nasRes.length, hintAfter);
             }
-            if (uiChAfter.image && runMedia) {
+            if (uiChAfter.image && runMedia && !inventoryRequest) {
               pushUiImageStep(pushStep, mediaRes.length);
             }
             if (uiChAfter.web && webEnabled && searchScope.flags.web) {
@@ -2727,12 +2768,12 @@ export async function POST(request: NextRequest) {
           // Explicit body coverage is independent of Notion sufficiency and directory results.
           const broadBody = Boolean(scopeFollowupQuery) || requestsNasBodyCoverage(searchIntentText);
           const bodyStarted = Date.now();
-          const pendingBody = broadBody && nasEnabled
+          const pendingBody = inventoryPrefetch?.body ?? (broadBody && nasEnabled
             ? retrieveNasBodyEvidence(admin, {
                 enabled: true, listing: listingQuestion, notionEnough: false, allSources: true,
                 query: searchIntentText, queryEmbedding: knowledgeEmb.queryEmbedding, rows: []
               }).then(result => { retrievalTiming.nas_body_ms = Date.now() - bodyStarted; return result; })
-            : null;
+            : null);
           const searchParts: string[] = [];
           if (searchScope.flags.notion) searchParts.push("노션");
           if (searchScope.flags.nas) searchParts.push("Work서버");
@@ -2787,7 +2828,9 @@ export async function POST(request: NextRequest) {
           notionSources = batch.notionSources;
           if (nasEnabled && broadProjectSubject(searchIntentText)) {
             const importantStarted = Date.now();
-            pendingImportant = retrieveImportantProjectMaterials(admin, searchIntentText, notionSources)
+            pendingImportant = inventoryPrefetch && speculativeNotion.sources.length > 0
+              ? inventoryPrefetch.materials
+              : retrieveImportantProjectMaterials(admin, searchIntentText, notionSources)
               .then(result => { retrievalTiming.important_materials_ms = Date.now() - importantStarted; return result; })
               .catch(error => { console.error('[luna/important-materials]', error); return null; });
           }
@@ -3227,12 +3270,19 @@ export async function POST(request: NextRequest) {
         const inventoryAnswer = !hasAttachments && !notFoundFromAsk
           ? importantMaterialsAnswer(searchIntentText, importantMaterials) : null;
         if (inventoryAnswer) {
+          cards = scopeMediaToEvidence(cards, searchIntentText, notionSources, askedWhat);
+          const visible = keepSourcesUsedInAnswer({ cards, notion: notionSources, wiki: publicWikiSources,
+            answer: inventoryAnswer, notFound: false });
+          cards = mergeCards(importantMaterials!.cards, visible.cards);
+          publicWikiSources = visible.wiki;
+          inventoryDisplayReady = true;
           retrievalTiming.first_useful_result_ms = Date.now() - startedAt;
           emit(controller, encoder, {
-            type: "search_snapshot", cards: importantMaterials!.cards,
-            notion_sources: notionSources, wiki_count: 0,
+            type: "search_snapshot", cards,
+            notion_sources: notionSources, wiki_count: publicWikiSources.length,
             classification: classificationPublic(classification, questionTypes),
-            counts: { wiki: 0, notion: notionSources.length, work: importantMaterials!.cards.length, image: 0 }
+            counts: { wiki: publicWikiSources.length, notion: notionSources.length,
+              work: nasResults.length, image: cards.filter(c => c.type === 'image').length }
           });
         }
         flushUiProgress();
@@ -3379,6 +3429,10 @@ export async function POST(request: NextRequest) {
         const groundedTargets = [...new Map(notionSources.flatMap(s => s.grounded_targets ?? []).map(t => [t.name, t])).values()];
         cards = scopeMediaToEvidence(cards, searchIntentText, notionSources, askedWhat);
         if (evidenceOnlyQuestion) cards = cards.filter(c => c.type !== 'image');
+        if (inventoryRequest && !inventoryDisplayReady) {
+          inventoryDisplayReady = true;
+          flushUiProgress();
+        }
         if (groundedTargets.length) {
           typeBlocks.push(`[원문으로 확인된 명칭 관계]\n${groundedTargets.map(t => `${t.alias} = ${t.name}. 근거 페이지 ${t.page_id}: ${t.quote}`).join('\n')}\n이 관계에 연결된 작품의 직접 자료를 우선 답한다. 다른 작품에서 단어만 언급한 것은 관련 참고로만 구분한다. 여러 대상이 확인되면 하나라고 단정하지 않는다.`);
           // Images without evidence for the resolved work must not imply coverage.
