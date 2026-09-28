@@ -102,6 +102,7 @@ import {
   typesSkipClarify,
   type QuestionTypeRow
 } from "@/lib/luna/question-types";
+import { imageResultAnswer, scopeResultNote } from "@/lib/luna/result-answer";
 import { parseAskedWhat } from "@/lib/luna/ask-what";
 import {
   emptyProjectPeek,
@@ -3268,7 +3269,7 @@ export async function POST(request: NextRequest) {
           contentBlocks.push({ type: "text", text: searchIntentText });
           historyMessages.push({ role: "user", content: contentBlocks });
         } else {
-          historyMessages.push({ role: "user", content: searchIntentText });
+          historyMessages.push({ role: "user", content: scopeFollowupQuery ? `${searchIntentText}\n현재 요청: ${userText}` : searchIntentText });
         }
 
         const typeBlocks: string[] = [];
@@ -3286,7 +3287,7 @@ export async function POST(request: NextRequest) {
         }
         if (namedProjectLock) {
           const name = askedWhat.displayProject || askedWhat.projectPhrases[0];
-          const seen = projectPeek.natureFolders
+          const seen = (askedWhat.material === "image" ? [] : projectPeek.natureFolders)
             .map((f) => f.path)
             .slice(0, 8);
           const seenBlock =
@@ -3527,6 +3528,10 @@ export async function POST(request: NextRequest) {
           );
           firstTokenAt = Date.now();
           controller.enqueue(encoder.encode(assistantText));
+        } else if (askedWhat.material === "image" && cards.some(c => c.type === "image")) {
+          assistantText = imageResultAnswer(cards);
+          firstTokenAt = Date.now();
+          controller.enqueue(encoder.encode(assistantText));
         } else if (tierAResolved.provider === "anthropic") {
           if (!client) {
             throw new Error("Claude API key is not configured");
@@ -3637,6 +3642,11 @@ export async function POST(request: NextRequest) {
             wikiSources = [];
             privateWikiRefs = [];
           }
+        }
+        if (scopeFollowupQuery && !notFoundFromAsk && !isNotFoundAnswerText(assistantText)) {
+          const scopeNote = scopeResultNote(notionSources.length, cards.length, publicWikiSources.length);
+          assistantText += scopeNote;
+          controller.enqueue(encoder.encode(scopeNote));
         }
         const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
         if (webCardsUsed && !assistantText.includes("웹 검색으로 보강함")) {

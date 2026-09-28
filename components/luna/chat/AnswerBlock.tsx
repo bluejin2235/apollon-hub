@@ -547,7 +547,7 @@ function AssistantAnswerBlock({
               previewLimit={docsExpanded ? undefined : SOURCE_PREVIEW_LIMIT}
               emptyImageHint={
                 split.image.length === 0
-                  ? "관련 이미지는 아직 색인이 적어 못 찾았어요. 문서 위주로 골랐습니다."
+                  ? "이번 검색에서 조건에 맞는 이미지는 확인하지 못했습니다."
                   : null
               }
               onImageCellClick={setModalIndex}
