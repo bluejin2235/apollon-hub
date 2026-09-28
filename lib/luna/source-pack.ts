@@ -1,4 +1,4 @@
-import { selectEvidence } from "@/lib/luna/evidence-selection";
+import { selectQuestionEvidence } from "@/lib/luna/evidence-selection";
 import type { NotionSource } from "@/lib/luna/notion";
 import {
   formatNasFolderPath,
@@ -911,14 +911,17 @@ export function tierSourcePacks(views: SourcePackView[]): SourcePackTiers {
 /** LLM 프롬프트용 — 하이브리드 합산(없으면 유사도) 상위 N건 */
 export function takeTopNotionSourcesForLlm(
   sources: NotionSource[] | null | undefined,
-  n = PACK_LLM_TOP_N
+  n = PACK_LLM_TOP_N,
+  query = ''
 ): NotionSource[] {
   const list = [...(sources ?? [])];
   const rank = (s: NotionSource) =>
     typeof s.match_score === "number"
       ? s.match_score
       : (s.similarity ?? 0) * 10;
-  return selectEvidence(list, n, rank, (source) => source.keyword_score ?? 0);
+  return selectQuestionEvidence(list, n, query,
+    source => [source.title, source.excerpt].filter(Boolean).join('\n'),
+    rank, source => source.keyword_score ?? 0);
 }
 
 export function maxNotionSimilarity(
