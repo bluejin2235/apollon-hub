@@ -15,6 +15,13 @@ test('shared policy separates interview and receipt purpose from design folder c
  assert.equal(documentRole(root + '/Design/manual.pdf'), 'operations');
  assert.equal(documentRole(root + '/Reference/디자인.pdf'), 'reference');
 });
+test('administrative and publicity purpose survives design words in company/publication names', () => {
+ for (const leaf of ['디자인매거진_광고발주서.pdf','디자인회사_사업자등록증.pdf','통장사본_디자인회사.pdf','디자인매거진_기사 샘플.pdf','design_purchase_order.pdf','디자인비 정산서.pdf']) {
+  assert.equal(documentRole(root+'/Design/'+leaf),'other',leaf);
+ }
+ assert.equal(documentRole(root+'/Design/진행상황체크.pptx'),'report');
+ assert.equal(documentRole(root+'/Ideation/화면설계.pptx'),'design');
+});
 test('layer 2 preserves versioned primary evidence and conflict without changing legacy edge or claiming verification', () => {
  const before = JSON.stringify({source, link, mark}); const p = build(link, source, [mark], commit, at);
  assert.equal(p.layer, 2); assert.equal(p.review_state, 'candidate'); assert.equal(p.verified_at, null);
