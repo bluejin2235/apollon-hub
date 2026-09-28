@@ -16,6 +16,12 @@ test('without grounded roots a strong semantic score cannot bypass subject evide
  const other=image('projects/unrelated/photo.jpg');
  assert.deepEqual(scopeMediaToEvidence([correct,other],'샘플센터 전체 자료 찾아줘',[]),[correct]);
 });
+test('clarification followup retains the original subject and source-backed project root',()=>{
+ const correct=image('02 Project/2021/05 샘플역삼/06 Design/photo.jpg');
+ const wrong=image('02 Project/2026/Other/photo.jpg');
+ const query='샘플미디어센터 전체 자료 찾아줘\n조건: 샘플미디어센터 관련 전체 자료(기획·운영·결과 포함)';
+ assert.deepEqual(scopeMediaToEvidence([correct,wrong],query,[source]),[correct]);
+});
 test('incidental reference mentions never establish the referenced project root',()=>{
  const incidental={...source,title:'다른 프로젝트 제안',excerpt:'샘플미디어센터 참고',paths:['T:/02 Project/2026/Other/ref.pdf']};
  const other=image('02 Project/2026/Other/photo.jpg');
