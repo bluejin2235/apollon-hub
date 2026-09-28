@@ -50,7 +50,7 @@ export function hasPositiveRetrievedEvidence(text: string): boolean {
     if (/못|않|없|아니|아닙|무관|관련\s*없는/.test(part)) return false;
     // A confirmed role/status is useful even when a different role is unknown.
     // Require an affirmative factual clause, not just a heading or a question acknowledgement.
-    if (/(?:확인되는 것은|확인된 (?:내용|사실)은)[^.!?\n]{4,240}(?:했다는|하였다는|한다는|이라는|였다는|됐다는|되었다는)\s*(?:점|것|사실)/.test(part)) return true;
+    if (/(?:확인되는 것은|확인된 (?:내용|사실)은)[^.!?\n]{4,240}(?:[가-힣]*(?:했|하였|았|었|였|됐|되었)다는|한다는|이라는)\s*(?:점|것|사실)/.test(part)) return true;
     return new RegExp(`${material}[^.!?\\n]{0,32}(?:확인했습니다|확인했어요|찾았습니다|찾았어요|찾았고|확인했고|찾았$|있습니다|있어요|있$)`).test(part) ||
       new RegExp(`확인된[^.!?\\n]{0,32}${material}`).test(part);
     });
