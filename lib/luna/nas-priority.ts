@@ -1,7 +1,8 @@
+import { classifyDocumentRole, type DocumentRole } from '@/lib/luna/document-role';
+export type { DocumentRole } from '@/lib/luna/document-role';
 /** Explicit marks remain separate from patterns inferred from marked folders. */
 export type NasMark = { drive: string; path: string; note?: string | null };
 export type PriorityRow = { drive?: string | null; path: string; importance?: number | null; modified_at?: string | null };
-export type DocumentRole = 'proposal' | 'concept' | 'design' | 'report' | 'planning' | 'operations' | 'review' | 'reference' | 'other';
 export const ROLE_LABELS: Record<DocumentRole, string> = {
   proposal: '제안', concept: '컨셉·기획', design: '디자인·설계', report: '주요 보고',
   planning: '수행계획', operations: '운영', review: '심의·기술자료', reference: '참고', other: '기타 자료'
@@ -20,15 +21,7 @@ export function projectPathRoot(path: string): string | null {
 export function documentRole(path: string): DocumentRole {
   const root = projectPathRoot(path);
   const text = (root ? path.replace(/^[a-z]:[/\\]+/i, '').slice(root.length) : path).toLowerCase();
-  if (/참고|레퍼런스|benchmark|(?:^|[/\\ _])ref(?:erence)?(?:[/\\ _]|$)/i.test(text)) return 'reference';
-  if (/매뉴얼|메뉴얼|manual|cms|운영/.test(text)) return 'operations';
-  if (/제안|proposal|(?:initial|inital)\s*report|pt본/.test(text)) return 'proposal';
-  if (/컨셉|콘셉|concept|기획안|기획연출|ideation/.test(text)) return 'concept';
-  if (/심의|빛관리|의결|조치사항|스팩|스펙|시방/.test(text)) return 'review';
-  if (/디자인|design|설계|시안/.test(text)) return 'design';
-  if (/수행계획|착수|kick.?off|requirement/.test(text)) return 'planning';
-  if (/보고|report|고객사|송부|제출|review|미팅/.test(text)) return 'report';
-  return 'other';
+  return classifyDocumentRole(text).role;
 }
 export function buildPriorityProfile(marks: NasMark[]) {
   const counts = Object.fromEntries(Object.keys(ROLE_LABELS).map(k => [k, 0])) as Record<DocumentRole, number>;
