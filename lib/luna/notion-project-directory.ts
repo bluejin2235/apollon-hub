@@ -49,6 +49,25 @@ export function selectDirectoryProjects(directory: NotionDirectoryProject[], cho
     .slice(0, 6).map(i => directory[i]);
 }
 
+/** Ground navigation in actual document titles, not just a project-name guess. */
+export async function describeNotionProjectDirectory(admin: SupabaseClient, directory: NotionDirectoryProject[]): Promise<string> {
+  const ids = [...new Set(directory.flatMap(p => p.pageIds))];
+  const titles = new Map<string, string>();
+  for (let start = 0; start < ids.length; start += 200) {
+    const {data, error} = await admin.from('luna_notion_pages').select('page_id,title')
+      .in('page_id', ids.slice(start, start + 200)).eq('archived', false);
+    if (error) continue;
+    for (const page of data ?? []) titles.set(page.page_id, page.title);
+  }
+  return directory.map((p,i) => {
+    const docs = [...new Set(p.pageIds.flatMap(id => titles.has(id) ? [titles.get(id)!] : []))];
+    const selected: string[] = [], roles = new Set<string>();
+    for (const title of docs) { const role = documentRole(title); if (!roles.has(role)) { roles.add(role); selected.push(title); } }
+    for (const title of docs) if (!selected.includes(title)) selected.push(title);
+    return `[${i}] ${p.key} (${p.pageIds.length}개 문서) — ${selected.slice(0, 6).join(' / ')}`;
+  }).join('\n');
+}
+
 function documentRole(title: string): string {
   if (/테스트|test|빔테스트/i.test(title)) return 'test';
   if (/준공|최종|final/i.test(title)) return 'final';

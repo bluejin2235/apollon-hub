@@ -3,9 +3,15 @@ const {loadTs,fakeDb}=require('./helpers.cjs');
 let loadedIds=[];
 const page=(id,title)=>({page_id:id,title,url:'https://notion.so/'+id,path_titles:[],parent_id:null,nas_path:null,last_edited_time:null,excerpt:'주제와 연결된 원문'});
 let pageRows=[];
-const {loadNotionProjectDirectory,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
+const {loadNotionProjectDirectory,describeNotionProjectDirectory,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
  './search-secondary':{loadPagesByIds:async (_db,ids)=>{loadedIds=ids;return new Map(pageRows.filter(p=>ids.includes(p.page_id)).map(p=>[p.page_id,p]));}},
  './keyword-token':{isSearchToken:t=>t.length>1}
+});
+test('directory descriptions use only active member titles and preserve test and design stages',async()=>{
+ const rows=[...Array.from({length:8},(_,i)=>({page_id:'i'+i,title:'아이데이션 '+i,archived:false})),{page_id:'t',title:'현장 조명 테스트',archived:false},{page_id:'d',title:'공간 설계',archived:false},{page_id:'old',title:'삭제된 문서',archived:true},{page_id:'outside',title:'다른 프로젝트 문서',archived:false}];
+ const description=await describeNotionProjectDirectory(fakeDb({luna_notion_pages:rows}),[{key:'샘플 산책로',pageIds:rows.filter(r=>r.page_id!=='outside').map(r=>r.page_id)}]);
+ assert.match(description,/현장 조명 테스트/); assert.match(description,/공간 설계/);
+ assert.doesNotMatch(description,/삭제된 문서|다른 프로젝트 문서/);
 });
 test('exact directory names scope named requests but not topic or comparable-example requests',()=>{
  const directory=[{key:'230101 샘플 오피스 라운지',pageIds:['a']},{key:'240101 다른 오피스 라운지',pageIds:['b']},{key:'2023',pageIds:['c']}];

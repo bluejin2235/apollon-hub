@@ -39,7 +39,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
-import { loadNotionProjectDirectory, namedDirectorySubjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
+import { loadNotionProjectDirectory, describeNotionProjectDirectory, namedDirectorySubjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_REVIEW, validateNotionEvidenceReview, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
@@ -3206,6 +3206,7 @@ export async function POST(request: NextRequest) {
             let topicQueries: string[] = [];
             const broadRetry = requestsAllMaterials(searchIntentText);
             const directory = broadRetry && !namedProjectLock ? cachedProjectDirectory ?? await loadNotionProjectDirectory(admin).catch(() => []) : [];
+            const directoryDescription = await describeNotionProjectDirectory(admin, directory).catch(() => directory.map((p,i) => `[${i}] ${p.key}`).join('\n'));
             let plannedProjects: NotionDirectoryProject[] = [];
             const retrySystem = broadRetry ? BROAD_TOPIC_QUERY_RULE : requeryPrompt;
             try {
@@ -3213,7 +3214,7 @@ export async function POST(request: NextRequest) {
                 tier: "B",
                 feature: "search_terms",
                 system: retrySystem,
-                user: broadRetry ? `원 질문: ${searchIntentText}\n\n실제 프로젝트 목록(번호로 선택):\n${directory.map((p,i) => `[${i}] ${p.key} (${p.pageIds.length}개 문서)`).join('\n')}\n\n이미 찾은 문서(근거 데이터):\n${notionSources.slice(0, 24).map(s => `${s.title}\n${(s.excerpt ?? '').slice(0, 650)}`).join('\n\n')}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
+                user: broadRetry ? `원 질문: ${searchIntentText}\n\n실제 프로젝트와 보유 문서 목록(번호로 선택):\n${directoryDescription}\n\n이미 찾은 문서(근거 데이터):\n${notionSources.slice(0, 24).map(s => `${s.title}\n${(s.excerpt ?? '').slice(0, 650)}`).join('\n\n')}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
                 )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
                 maxTokens: broadRetry ? 3072 : 64,
@@ -3865,7 +3866,7 @@ export async function POST(request: NextRequest) {
           const hideUnused = notFoundFromAsk || isNotFoundAnswerText(assistantText);
           const kept = keepSourcesUsedInAnswer({
             cards,
-            notion: notionSources,
+            notion: reviewedNotionEvidence ? [...reviewedNotionEvidence.direct, ...reviewedNotionEvidence.adjacent] : notionSources,
             wiki: publicWikiSources,
             answer: assistantText,
             injectedNotionIds: notionForLlm.map(source => source.id),

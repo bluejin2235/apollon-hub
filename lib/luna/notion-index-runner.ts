@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resumeNotionCheckpoint, hydrateNotionCheckpointPage } from '@/lib/luna/notion-index-resume';
 import { contentHash, embeddingToSql } from "@/lib/luna/embedding";
 import { openaiApiKey } from "@/lib/luna/env-keys";
 import { kstDayBounds } from "@/lib/luna/selfstudy";
@@ -1125,35 +1126,9 @@ export async function runNotionIndexChunk(
         checkpoint: slimCheckpoint(cp)
       });
       cp = { ...run.checkpoint, page_meta: pageMetaMemory.get(run.id) ?? run.checkpoint.page_meta };
-    } else if (!pageMetaMemory.has(run.id)) {
-      const sampleId = cp.page_ids[0];
-      const hasProps =
-        sampleId != null &&
-        cp.page_meta?.[sampleId] != null &&
-        "properties" in (cp.page_meta[sampleId] ?? {});
-      if (!hasProps) {
-        const fresh = await initCheckpoint(admin);
-        if (fresh.page_meta) pageMetaMemory.set(run.id, fresh.page_meta);
-        cp = {
-          ...cp,
-          page_ids: fresh.page_ids ?? cp.page_ids,
-          page_meta: fresh.page_meta,
-          scan_batch: cp.scan_batch ?? fresh.scan_batch,
-          properties_written: cp.properties_written
-        };
-        run = await updateRun(admin, run.id, {
-          pages_total: cp.page_ids?.length ?? 0,
-          checkpoint: slimCheckpoint(cp)
-        });
-        cp = {
-          ...run.checkpoint,
-          page_meta: pageMetaMemory.get(run.id) ?? run.checkpoint.page_meta
-        };
-      } else if (cp.page_meta) {
-        pageMetaMemory.set(run.id, cp.page_meta);
-      }
     } else {
-      cp = { ...cp, page_meta: pageMetaMemory.get(run.id) ?? cp.page_meta };
+      cp = await resumeNotionCheckpoint(cp, pageMetaMemory.get(run.id), () => initCheckpoint(admin));
+      if (cp.page_meta) pageMetaMemory.set(run.id, cp.page_meta);
     }
 
     if (run.abort_requested) {
@@ -1179,8 +1154,10 @@ export async function runNotionIndexChunk(
     if (!notionToken) throw new Error("NOTION_TOKEN 이 없습니다");
     const client = new NotionIndexClient(notionToken);
     const existingPages = await loadExistingPages(admin);
-    const existingBlockCounts = await countByPage(admin, "luna_notion_blocks");
-    const needTableRows = await pagesNeedingTableRows(admin);
+    // Full runs reread every body; unchanged-page counts/backfill scans are only
+    // needed by incremental runs and otherwise consume the worker time budget.
+    const existingBlockCounts = run.mode === 'full' ? new Map<string, number>() : await countByPage(admin, "luna_notion_blocks");
+    const needTableRows = run.mode === 'full' ? new Set<string>() : await pagesNeedingTableRows(admin);
 
     const pageIds = cp.page_ids ?? [];
     const pageMeta = cp.page_meta ?? {};
@@ -1248,8 +1225,21 @@ export async function runNotionIndexChunk(
       }
 
       const pageId = pageIds[cursor]!;
-      const meta = pageMeta[pageId];
+      let meta = pageMeta[pageId];
       if (!meta) {
+        cp.failed_pages ??= [];
+        cp.failed_pages.push({ page_id: pageId, error: 'checkpoint page metadata missing' });
+        cursor += 1;
+        pagesProcessed += 1;
+        continue;
+      }
+
+      try {
+        meta = await hydrateNotionCheckpointPage(pageId, meta, id => client.fetchMeta(id));
+        pageMeta[pageId] = meta;
+      } catch (error) {
+        cp.failed_pages ??= [];
+        cp.failed_pages.push({ page_id: pageId, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
         cursor += 1;
         pagesProcessed += 1;
         continue;

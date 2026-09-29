@@ -274,3 +274,23 @@ prerequisite for repairing the corpus. Its deployment is not a search-quality pa
   project filters before retrieval. Comparable-example requests remain broad.
 - Index-only PR #38 was merged and its production deployment reached READY.
   Full reindex is the next step; no completed bulk repair is claimed here.
+
+## Operational repair and remaining search gate
+
+- Index repair PR #38 and explicit full-body action PR #39 are in production.
+  A full run started at 20:23 KST. At the first continuation check it had processed
+  ten pages with zero edit-time skips and no recorded page failures; it had not
+  completed. The accidental incremental start was stopped before body processing.
+- Cold workers mistook intentionally omitted checkpoint properties for absent
+  discovery and rescanned the entire workspace, potentially replacing the page
+  order while retaining the cursor. The continuation repair preserves the saved
+  worklist and hydrates only the current page before writes. Full runs also skip
+  irrelevant incremental block-count/backfill scans. This is isolated in PR #40.
+- The named-project test now keeps the correct project image and excludes unrelated
+  images. The forest answer still varies in family coverage, so the search release
+  gate remains open. Planning now sees actual member-document titles and stages;
+  result cards cannot reintroduce documents rejected by a validated body review.
+- 337 foundation tests and TypeScript passed, including cold-resume preservation,
+  inaccessible metadata handling, project scope and catalog stage diversity.
+  No claim of full corpus repair, native parity, or comprehensive daily body
+  analysis is made. The full run and newest exploration change still need checking.
