@@ -39,6 +39,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -706,7 +707,8 @@ function buildVolatileSystemText(opts: {
     parts.push('[제작 주체와 문서 용도] 벤치마킹·참고 문서에 등장한다는 사실은 외부 제작의 증거가 아니다. 외부 제작물로 분류하려면 원문에 외부 제작 주체가 명시되어야 한다. 그 근거가 없으면 "참고 문서에 등장 — 제작 주체 미확인"으로 별도 표시하고 외부 제작물 항목에 넣지 않는다. 자사 작품도 다른 문서에서는 참고 사례로 쓰일 수 있다. 같은 작품의 별칭은 통합하고 서로 다른 제작 주체로 중복 분류하지 않는다.');
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
-        compact: listing || depth === "simple"
+        compact: listing || depth === "simple",
+        excerptLimit: requestsAllMaterials(opts.evidenceQuery ?? '') ? 2400 : undefined
       })}\r\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
@@ -3451,11 +3453,17 @@ export async function POST(request: NextRequest) {
           cards = cards.filter(c => c.type !== 'image' || groundedTargets.some(t => compact([c.title,c.description,c.raw_path,c.image_description].filter(Boolean).join(' ')).includes(compact(t.name))));
         }
         typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
-        const notionForLlm = takeTopNotionSourcesForLlm(
+        let notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
           llmInject.notion,
           searchIntentText
         );
+        if (requestsAllMaterials(searchIntentText)) {
+          notionForLlm = await readIndexedNotionEvidence(admin, notionForLlm, searchIntentText);
+          const readById = new Map(notionForLlm.map(source => [source.id, source]));
+          notionSources = notionSources.map(source => readById.get(source.id) ?? source);
+          typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리하고, 관련성이 낮은 실내 콘텐츠를 첫 항목으로 삼지 않는다.');
+        }
         const answerEvidenceTrace = {
           version: 1,
           answer_mode: 'model',

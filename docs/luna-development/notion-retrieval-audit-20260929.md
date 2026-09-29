@@ -142,3 +142,24 @@ forest query and independent work questions, including citations and latency.
   Explicit all-material requests skip unnecessary project clarification. Retry
   hints prefer generated search keywords over prose descriptions of missing facts.
 - 316 tests passed. Live answer quality must be checked again before promotion.
+
+## Browser validation — preserved candidates and page reading
+
+- Retry preservation restored the current park, nightwalk and nature theme park
+  materials with citations. The exact question completed in 54.3 seconds with
+  48 candidates and 24 injected sources. It still failed the native answer gate:
+  insufficient linked-document coverage, sparse excerpts and adjacent material
+  ahead of directly relevant projects.
+- The independent year-qualified lighting-test/final-proposal question returned
+  the project record, test pages and final proposal path in 15.2 seconds. The
+  earlier unqualified question still required a year clarification.
+- Evidence tracing revealed only 83 and 206 characters were passed for two core
+  pages, despite their longer indexed bodies. Broad queries now reread up to 80
+  indexed sections per selected page, with independent page budgets, concurrency
+  six and a 2,400-character excerpt. Small pages retain full text; long pages
+  retain matching sections and adjacent constraints. Failed reads keep old evidence.
+- Broad relation traversal is enabled for listing queries and can follow verified
+  project membership from body evidence, not only project names in the question.
+  Prompt capacity is 32 pages; retries reserve three original results per new result.
+- 319 tests and TypeScript passed before the additional broad-relation assertion.
+  Application promotion and bulk reindex remain pending the live quality gate.

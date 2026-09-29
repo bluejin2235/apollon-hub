@@ -745,7 +745,7 @@ export async function searchNotionForLuna(
     : merged.sources;
 
   const useSecondary =
-    opts?.useSecondary !== false && !listing;
+    opts?.useSecondary !== false && (!listing || broad);
   let finalSources = stagedSources;
   let secondaryMeta: NotionSearchOutcome["secondary"] = {
     link_added: 0,
@@ -769,7 +769,8 @@ export async function searchNotionForLuna(
         withProjects
       );
       const expanded = await expandSourcesViaLinks(admin, persp.sources, {
-        query: queryText || keywords
+        query: queryText || keywords,
+        ...(broad ? { topN: 24, maxAdd: 24 } : {})
       });
       finalSources = mergeExpandedSources(persp.sources, expanded.sources);
       if (queryText) {

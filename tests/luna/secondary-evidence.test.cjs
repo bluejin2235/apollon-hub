@@ -32,3 +32,12 @@ test('production index search passes the question into relation expansion',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../../lib/luna/notion-index-search.ts'),'utf8');
  assert.match(source,/expandSourcesViaLinks\(admin, persp\.sources,\s*\{\s*query: queryText \|\| keywords/);
 });
+test('broad subject search follows a verified project from body evidence without its name in the question',async()=>{
+ const client=fakeDb({luna_links:[link('seed','Sample Night Park','belongs','project'),link('sibling','Sample Night Park','belongs','project')],
+ luna_notion_pages:[page('sibling')],luna_notion_chunks:[{page_id:'sibling',position:0,text:'최종보고와 현장 조명 테스트'}]});
+ const seed={id:'seed',title:'Nightwalk Ideation',excerpt:'숲과 자연을 활용하는 야간 산책 공간'};
+ const result=await expandSourcesViaLinks(client,[seed],{query:'숲 자료 모두 찾아줘'});
+ assert.equal(result.sources.length,1);
+ assert.equal(result.sources[0].project_key,'Sample Night Park');
+ assert.match(result.sources[0].excerpt,/현장 조명 테스트/);
+});

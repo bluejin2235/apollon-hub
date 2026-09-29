@@ -5,6 +5,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotionSource } from "@/lib/luna/notion";
 import { postgrestTextList } from "@/lib/luna/postgrest-text-list";
+import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { isSearchToken } from "@/lib/luna/keyword-token";
 
 export const LINK_EXPAND_TOP_N = 8;
 export const LINK_EXPAND_MAX_ADD = 20;
@@ -252,11 +254,13 @@ export async function expandSourcesViaLinks(
   let maxAdd = opts?.maxAdd ?? LINK_EXPAND_MAX_ADD;
   const minConfidence = opts?.minConfidence ?? LINK_EXPAND_MIN_CONF;
   const query = (opts?.query ?? "").trim();
+  const broad = requestsAllMaterials(query);
 
   const seedSources = seeds.slice(0, topN);
   const relevantSeeds = seedSources.filter(
     (s) =>
       !query ||
+      (broad && bodyOverlapsQuery(s.excerpt ?? '', query)) ||
       titleOverlapsQuery(s.title, query) ||
       titleOverlapsQuery(s.project_key ?? "", query)
   );
@@ -321,6 +325,7 @@ export async function expandSourcesViaLinks(
           seeds.find((s) => s.id === link.from_id)?.title ?? "";
         if (
           !query ||
+          (broad && expandPageIds.has(link.from_id)) ||
           titleOverlapsQuery(link.to_id, query) ||
           titleOverlapsQuery(seedTitle, query)
         ) {
@@ -441,6 +446,7 @@ export async function expandSourcesViaLinks(
 }
 
 const QUERY_STOP = new Set([
+  "모두", "전부", "전체", "모든", "찾아줘", "검색",
   "자료",
   "관련",
   "보여줘",
@@ -457,6 +463,13 @@ const QUERY_STOP = new Set([
   "요약",
   "알려줘"
 ]);
+
+function bodyOverlapsQuery(body: string, query: string): boolean {
+  const text = body.toLowerCase();
+  return (query.toLowerCase().match(/[가-힣a-z0-9]+/g) ?? [])
+    .filter(token => isSearchToken(token) && !QUERY_STOP.has(token))
+    .some(token => text.includes(token));
+}
 
 function titleOverlapsQuery(title: string, query: string): boolean {
   if (!title || !query) return false;
@@ -716,4 +729,3 @@ export async function annotateSeedsWithProjectKeys(
     return { ...s, project_key: project };
   });
 }
-

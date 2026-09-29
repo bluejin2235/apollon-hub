@@ -691,7 +691,7 @@ export function mergeNotionSearchOutcomes(
   const limit = opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
   let combinedSources = capNotionDisplaySources([...a.sources, ...b.sources], limit);
   if (opts?.preserveRounds) {
-    // Scores from different queries are not comparable. Reserve two original
+    // Scores from different queries are not comparable. Reserve three original
     // results for each retry result, rather than replacing evidence with a
     // longer query's inflated keyword scores. Keep each round's own ordering.
     const merged = new Map(combinedSources.map(s => [notionSourceKey(s), s]));
@@ -708,7 +708,7 @@ export function mergeNotionSearchOutcomes(
       seen.add(key); ordered.push(merged.get(key)!);
     };
     for (let i = 0; i < Math.max(a.sources.length, b.sources.length); i++) {
-      append(a.sources[i * 2]); append(a.sources[i * 2 + 1]); append(b.sources[i]);
+      append(a.sources[i * 3]); append(a.sources[i * 3 + 1]); append(a.sources[i * 3 + 2]); append(b.sources[i]);
     }
     // match_score is a sorting score, not embedding similarity or confidence.
     combinedSources = ordered.slice(0, limit).map((s, i) => ({ ...s, match_score: 10 * (limit - i) / limit }));
@@ -734,7 +734,7 @@ export function mergeNotionSearchOutcomes(
 
 export function formatNotionSourcesForPrompt(
   sources: NotionSource[],
-  opts?: { compact?: boolean }
+  opts?: { compact?: boolean; excerptLimit?: number }
 ): string {
   const compact = opts?.compact === true;
   const groups = summarizeGroupsInline(sources);
@@ -779,7 +779,7 @@ export function formatNotionSourcesForPrompt(
         lines.push(`  날짜: ${s.dates.join(", ")}`);
       }
       if (s.excerpt) {
-        const max = compact ? 1200 : 1600;
+        const max = opts?.excerptLimit ?? (compact ? 1200 : 1600);
         lines.push(`  본문: ${s.excerpt.slice(0, max)}`);
       }
       return lines.join("\n");

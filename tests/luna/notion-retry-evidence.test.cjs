@@ -13,6 +13,8 @@ test('retry keeps original evidence and adds new evidence despite incomparable s
  assert.ok(prompt.some(x=>x.id==='retry-0'));
  assert.ok(prompt.every(x=>x.excerpt));
  assert.equal(new Set(merged.sources.map(x=>x.id)).size,48);
+ const expandedPrompt=merged.sources.slice(0,32);
+ assert.equal(expandedPrompt.filter(x=>x.id.startsWith('original-')).length,24);
 });
 test('merging indexed results never silently applies the five-page live-search display limit',()=>{
  const a=Array.from({length:24},(_,i)=>source('page-'+i,30-i));

@@ -92,7 +92,7 @@ export function llmInjectLimitsForQuestion(
 } {
   const depth = classifyQuestionDepth(text);
   const base = requestsAllMaterials(text)
-    ? { ...LLM_INJECT_BY_DEPTH[depth], notion: 24, cards: 24, nas: 16 }
+    ? { ...LLM_INJECT_BY_DEPTH[depth], notion: 32, cards: 24, nas: 16 }
     : LLM_INJECT_BY_DEPTH[depth];
   if (!opts?.imagePrimary) {
     return { depth, limits: base };
