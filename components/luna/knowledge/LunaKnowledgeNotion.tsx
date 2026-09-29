@@ -155,6 +155,9 @@ export function LunaKnowledgeNotion() {
   const [saving, setSaving] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [excludeDraft, setExcludeDraft] = useState("");
+  const [repairPage, setRepairPage] = useState("");
+  const [repairNote, setRepairNote] = useState("");
+  const [repairing, setRepairing] = useState(false);
 
   const load = useCallback(async () => {
     const token = await getAccessToken();
@@ -345,6 +348,24 @@ export function LunaKnowledgeNotion() {
     });
   }
 
+  async function repairOnePage() {
+    setRepairing(true);
+    setRepairNote("");
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("로그인이 필요합니다");
+      const res = await fetch("/api/luna/notion/index", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "repair", page_id: repairPage.trim() })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "재색인 실패");
+      setRepairNote(`완료 · 본문 블록 ${result.blocks}개 · 새 임베딩 ${result.embeddings}개`);
+      await load();
+    } catch (err) { setRepairNote(err instanceof Error ? err.message : "재색인 실패"); }
+    finally { setRepairing(false); }
+  }
+
   const schedule = data?.schedule;
   const running = data?.running;
   const failure = data?.failure;
@@ -459,6 +480,13 @@ export function LunaKnowledgeNotion() {
             </div>
           )}
 
+          <div className="mb-4 rounded-xl border p-4">
+            <label htmlFor="notion-repair-page" className="block text-sm font-semibold">특정 페이지 다시 읽기</label>
+            <p className="my-2 text-xs">본문이 누락된 페이지 한 개를 다시 수집합니다. 다른 페이지는 변경하지 않습니다.</p>
+            <input id="notion-repair-page" value={repairPage} onChange={e => setRepairPage(e.target.value)} placeholder="노션 페이지 ID (하이픈 포함)" className="mr-2 rounded border p-2 text-xs" />
+            <Btn disabled={repairing || Boolean(running) || !repairPage.trim()} onClick={() => void repairOnePage()}>{repairing ? "다시 읽는 중…" : "페이지 다시 읽기"}</Btn>
+            {repairNote ? <p role="status" className="mt-2 text-xs">{repairNote}</p> : null}
+          </div>
           <StatGrid>
             <StatCard
               label="색인된 페이지"

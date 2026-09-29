@@ -746,6 +746,12 @@ async function forceReindexPage(
   }
   const meta = await buildMetaGraph(client, [live]);
   const indexedPage = pageToIndexed(live, meta);
+  const exclude = await getNotionIndexExclude(admin);
+  if (pathIsExcluded(indexedPage.path_titles, indexedPage.title, exclude.exclude_paths)) {
+    throw new Error("색인 제외 대상으로 설정된 페이지입니다");
+  }
+  // Read the whole body before replacing any stored page data.
+  const rawBlocks = await client.fetchPageBlocks(pageId);
   const page: PageRow = {
     ...indexedPage,
     scan_batch: opts.scanBatch,
@@ -757,7 +763,6 @@ async function forceReindexPage(
     pageId,
     extractNotionRelations(pageId, page.properties)
   );
-  const rawBlocks = await client.fetchPageBlocks(pageId);
   const indexed = blocksToIndexed(pageId, rawBlocks);
   const bodyText = indexed.map((b) => b.text).join("\n");
   const nas = firstNasPath([bodyText, page.title]);
@@ -785,6 +790,16 @@ async function forceReindexPage(
     throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
   }
   return { blocks: indexed.length, embeddings: chunked.embeddings };
+}
+
+/** Admin-only caller: bounded repair, without discovering or deleting other pages. */
+export async function reindexSingleNotionPage(admin: SupabaseClient, pageId: string) {
+  const token = process.env.NOTION_TOKEN?.trim();
+  if (!token) throw new Error("NOTION_TOKEN 이 없습니다");
+  const settings = await getNotionIndexExclude(admin);
+  return forceReindexPage(admin, new NotionIndexClient(token), pageId, {
+    minChars: settings.min_block_length, scanBatch: newScanBatch()
+  });
 }
 
 function emptyDrainStats(durationMs: number): IndexQueueDrainStats {

@@ -5,6 +5,7 @@ import { scheduleNotionIndexContinue } from "@/lib/luna/notion-index-continue";
 import {
   getRunningNotionIndex,
   requestAbortNotionIndex,
+  reindexSingleNotionPage,
   runNotionIndexChunk
 } from "@/lib/luna/notion-index-runner";
 import type { NotionIndexMode } from "@/lib/luna/notion-index-settings";
@@ -45,7 +46,23 @@ export async function POST(request: NextRequest) {
     body = {};
   }
 
-  const action = body.action === "abort" ? "abort" : "start";
+  const action = body.action === "abort" ? "abort" : body.action === "repair" ? "repair" : "start";
+
+  if (action === "repair") {
+    const pageId = typeof body.page_id === "string" ? body.page_id.trim() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pageId)) {
+      return NextResponse.json({ error: "올바른 페이지 ID가 필요합니다" }, { status: 400 });
+    }
+    if (await getRunningNotionIndex(admin)) {
+      return NextResponse.json({ error: "전체 색인이 진행 중입니다" }, { status: 409 });
+    }
+    try {
+      const result = await reindexSingleNotionPage(admin, pageId);
+      return NextResponse.json({ ok: true, page_id: pageId, ...result });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "페이지 재색인 실패" }, { status: 500 });
+    }
+  }
 
   if (action === "abort") {
     try {

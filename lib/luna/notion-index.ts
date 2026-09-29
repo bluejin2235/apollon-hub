@@ -313,6 +313,9 @@ export class NotionIndexClient {
         await this.wait();
         return (await res.json()) as NotionSearchObject;
       }
+      if (res.status !== 404 && res.status !== 400) {
+        throw new Error(`notion ${ep} ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      }
     }
     return null;
   }

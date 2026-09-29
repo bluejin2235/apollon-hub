@@ -105,3 +105,22 @@ forest query and independent work questions, including citations and latency.
   through the connector. No app credentials are available in this workspace.
 - Production integration access, bounded reindex and final answers still require
   an authorized app session. No application promotion or bulk reindex performed.
+
+## Browser validation — first preview
+
+- Authenticated as the existing superadmin and ran the exact forest question.
+  Retrieval reached 27 Notion sources and 20 images; 24 Notion sources were injected.
+- This live answer failed the release gate: it classified indoor forest-themed
+  content as an outdoor installation, and omitted the current Yeongtong project.
+- Runtime logs exposed an additional cause: glossary aliases and generated bigrams
+  were independently scored (미디어아트, Media Art, 야외미디어아트). Canonical concept
+  deduplication now prevents that score inflation and is covered by SQL regression.
+- Removed the contradictory instruction to describe every injected candidate.
+  The answer must verify location/use from the body, group project sources, and
+  distinguish directly relevant documents from adjacent references.
+- Added authenticated superadmin-only single-page repair UI/API, with identity
+  validation, full-run conflict checks and exclusion rules. It reads the complete
+  remote body before modifying stored metadata. Non-404/400 metadata HTTP errors
+  are surfaced rather than disguised as absent pages.
+- 313 tests and TypeScript passed; an additional focused metadata-rate-limit test
+  also passed. A new preview is required for the answer and bounded-repair checks.
