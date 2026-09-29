@@ -1245,14 +1245,15 @@ export async function runNotionIndexChunk(
         return { run, continued: false, done: true };
       }
 
-      const pageId = pageIds[cursor]!;
+      const wave=pageIds.slice(cursor,cursor+3);
+      const settled=await Promise.allSettled(wave.map(async pageId=> {
+
       let meta = pageMeta[pageId];
       if (!meta) {
         cp.failed_pages ??= [];
         cp.failed_pages.push({ page_id: pageId, error: 'checkpoint page metadata missing' });
-        cursor += 1;
         pagesProcessed += 1;
-        continue;
+        return;
       }
 
       try {
@@ -1262,9 +1263,8 @@ export async function runNotionIndexChunk(
         cp.failed_pages ??= [];
         cp.failed_pages.push({ page_id: pageId, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
         await markNotionBodyFailure(admin, pageId, error instanceof Error ? error.message : String(error));
-        cursor += 1;
         pagesProcessed += 1;
-        continue;
+        return;
       }
 
       const page: PageRow = {
@@ -1343,8 +1343,7 @@ export async function runNotionIndexChunk(
         pagesSkipped += 1;
         pagesProcessed += 1;
         blocks += existingBlockCounts.get(pageId) ?? 0;
-        cursor += 1;
-        continue;
+        return;
       }
 
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
@@ -1401,9 +1400,13 @@ export async function runNotionIndexChunk(
       }
 
       pagesProcessed += 1;
-      cursor += 1;
 
-      if (cursor % 10 === 0) {
+      }));
+      const failed=settled.find(result=>result.status==='rejected');
+      if(failed?.status==='rejected') throw failed.reason;
+      cursor += wave.length;
+
+      { // Persist every completed wave so a cold worker does not repeat pages.
         const midCp: NotionIndexCheckpoint = {
           ...cp,
           cursor,
