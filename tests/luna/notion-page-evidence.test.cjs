@@ -25,5 +25,12 @@ test('failed page reads preserve original evidence and page budgets are independ
  const sources=Array.from({length:40},(_,i)=>({id:String(i),title:'문서',excerpt:'원래 근거'}));
  const db=fakeDb({}, {luna_notion_chunks:{message:'unavailable'}});
  assert.deepEqual(await readIndexedNotionEvidence(db,sources,'자료 모두 찾아줘'),sources);
- assert.equal(db.calls.length,32);
+ assert.equal(db.calls.length,40);
+});
+test('a relevant page beyond the former first-32 cutoff is read',async()=>{
+ const sources=Array.from({length:48},(_,i)=>({id:String(i),title:'후보 문서',excerpt:'짧은 검색 구절'}));
+ const db=fakeDb({luna_notion_chunks:[{page_id:'47',position:0,text:'수목 사이 조명 설치에 필요한 전기 배관 도면과 현장 시험 결과'}]});
+ const read=await readIndexedNotionEvidence(db,sources,'숲 조성 자료 모두 찾아줘');
+ assert.match(read[47].excerpt,/전기 배관 도면/);
+ assert.equal(db.calls.length,48);
 });

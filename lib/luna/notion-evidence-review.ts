@@ -17,7 +17,6 @@ export function validateNotionEvidenceReview(sources: NotionSource[], review: Re
   const all = [...direct, ...adjacent, ...unrelated];
   if (all.length !== sources.length || new Set(all).size !== sources.length ||
       all.some(i => typeof i !== 'number' || !Number.isInteger(i) || i < 0 || i >= sources.length)) return null;
-  if (!direct.length) return null;
   const positive = [...direct, ...adjacent];
   const supported = new Set<number>();
   const basis: NonNullable<ReviewedNotionEvidence['basis']> = {};
@@ -32,11 +31,42 @@ export function validateNotionEvidenceReview(sources: NotionSource[], review: Re
       supported.add(index);
       basis[sources[index]!.id] = { quote: exact, reason: normalized(reason).slice(0, 240) };
     }
-    // Failed review is not permission to publish an unsupported inventory.
-    if (!supported.size) return null;
+    // A structurally valid review may correctly find no supported matches.
   }
   const grounded = (items: unknown[]) => items.filter(i => !requireBodyEvidence || supported.has(i as number)).map(i => sources[i as number]);
   return { direct: grounded(direct), adjacent: grounded(adjacent), basis };
+}
+
+/** Review every retrieved candidate in bounded batches. A malformed batch is
+ * retried once; unresolved candidates remain explicitly unverified, never promoted.
+ * The batch size limits one model call, not the number of relevant results.
+ */
+export async function reviewAllNotionEvidence(
+  sources: NotionSource[],
+  reviewBatch: (batch: NotionSource[]) => Promise<Record<string, unknown> | null>
+): Promise<ReviewedNotionEvidence & { reviewedIds: string[]; unverifiedIds: string[] }> {
+  const unique = [...new Map(sources.map(source => [source.id, source])).values()];
+  const batches: NotionSource[][] = [];
+  for (let i = 0; i < unique.length; i += 16) batches.push(unique.slice(i, i + 16));
+  const results: Array<{ batch: NotionSource[]; review: ReviewedNotionEvidence | null }> = [];
+  for (let start = 0; start < batches.length; start += 3) {
+    const wave = await Promise.all(batches.slice(start, start + 3).map(async batch => {
+      let review: ReviewedNotionEvidence | null = null;
+      for (let attempt = 0; attempt < 2 && !review; attempt++) {
+        try { review = validateNotionEvidenceReview(batch, await reviewBatch(batch), true); }
+        catch { /* One retry, then report incomplete validation. */ }
+      }
+      return { batch, review };
+    }));
+    results.push(...wave);
+  }
+  return {
+    direct: results.flatMap(r => r.review?.direct ?? []),
+    adjacent: results.flatMap(r => r.review?.adjacent ?? []),
+    basis: Object.assign({}, ...results.map(r => r.review?.basis ?? {})),
+    reviewedIds: results.flatMap(r => r.review ? r.batch.map(s => s.id) : []),
+    unverifiedIds: results.flatMap(r => r.review ? [] : r.batch.map(s => s.id))
+  };
 }
 
 export function applyNotionEvidenceReview(sources: NotionSource[], review: Record<string, unknown> | null): NotionSource[] {

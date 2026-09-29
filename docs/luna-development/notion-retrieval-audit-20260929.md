@@ -294,3 +294,23 @@ prerequisite for repairing the corpus. Its deployment is not a search-quality pa
   inaccessible metadata handling, project scope and catalog stage diversity.
   No claim of full corpus repair, native parity, or comprehensive daily body
   analysis is made. The full run and newest exploration change still need checking.
+
+## Candidate review coverage
+
+- PR #40 reached production READY. The existing full run advanced to 100 pages
+  without edit-time skips or recorded failures; the corpus repair is still running.
+- The catalog-enriched live query recovered the outdoor-walk document family, but
+  final relevance review still used only a preselected subset of retrieved pages.
+  This is a separate omission path after retrieval, not evidence of missing DB rows.
+- Broad requests now read every retrieved candidate and review them in batches of
+  sixteen, with three concurrent calls. Batch size is a call budget, not a result
+  count target or a cutoff for high-relevance documents. Full body excerpts are
+  supplied to review instead of truncating them again to 1,400 characters.
+- Valid all-unrelated/adjacent-only judgments are respected. Malformed batches
+  retry once; unresolved batches are recorded as unverified and are not published
+  as relevant. Review coverage is recorded separately from positive results.
+- Answer generation receives the direct/adjacent classification explicitly and
+  does not ask the user to narrow an already actionable all-materials request.
+- 341 foundation tests and TypeScript passed. Tests include a relevant candidate
+  beyond the old cutoff and persistent review failures. Live verification of this
+  change remains required; search PR #37 is still a draft.

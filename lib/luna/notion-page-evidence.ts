@@ -35,8 +35,8 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
 /** Page-scoped reads prevent a large page from exhausting another page's row budget. */
 export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: NotionSource[], query: string): Promise<NotionSource[]> {
   const output = [...sources];
-  for (let start = 0; start < Math.min(sources.length, 32); start += 6) {
-    await Promise.all(sources.slice(start, Math.min(start + 6, 32)).map(async (source, offset) => {
+  for (let start = 0; start < sources.length; start += 6) {
+    await Promise.all(sources.slice(start, start + 6).map(async (source, offset) => {
       if (!source.id) return;
       try {
         const { data, error } = await admin.from('luna_notion_chunks')
