@@ -103,12 +103,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const connected = Boolean(process.env.NOTION_TOKEN?.trim());
-    const [schedule, exclude, stats, running, history] = await Promise.all([
+    const [schedule, exclude, stats, running, history, health] = await Promise.all([
       getNotionIndexSchedule(admin),
       getNotionIndexExclude(admin),
       getNotionIndexStats(admin),
       getRunningNotionIndex(admin),
-      listNotionIndexRuns(admin, 10)
+      listNotionIndexRuns(admin, 10),
+      admin.rpc('luna_notion_readiness')
     ]);
 
     const lastSuccess = stats.last_success;
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       connected,
+      readiness: health.error ? null : health.data,
       connection: {
         connected,
         teamspaces: stats.teamspaces,

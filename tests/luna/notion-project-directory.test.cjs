@@ -3,9 +3,17 @@ const {loadTs,fakeDb}=require('./helpers.cjs');
 let loadedIds=[];
 const page=(id,title)=>({page_id:id,title,url:'https://notion.so/'+id,path_titles:[],parent_id:null,nas_path:null,last_edited_time:null,excerpt:'주제와 연결된 원문'});
 let pageRows=[];
-const {loadNotionProjectDirectory,describeNotionProjectDirectory,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
+const {loadNotionProjectDirectory,describeNotionProjectDirectory,bareDirectoryLookup,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
  './search-secondary':{loadPagesByIds:async (_db,ids)=>{loadedIds=ids;return new Map(pageRows.filter(p=>ids.includes(p.page_id)).map(p=>[p.page_id,p]));}},
  './keyword-token':{isSearchToken:t=>t.length>1}
+});
+test('bare actual project prefixes retrieve all matching projects without a forced choice',()=>{
+ const directory=[{key:'230101 샘플 달빛산책',pageIds:['a']},{key:'230201 샘플 문화거리',pageIds:['b']}];
+ assert.equal(bareDirectoryLookup(directory,'샘플'),'샘플 관련 자료 모두 찾아줘');
+ assert.equal(bareDirectoryLookup(directory,'없는곳'),null);
+ assert.equal(bareDirectoryLookup(directory,'샘플 뜻이 뭐야'),null);
+ assert.equal(bareDirectoryLookup(directory,'샘플 비슷한 사례'),null);
+ assert.equal(bareDirectoryLookup(directory,'네'),null);
 });
 test('directory descriptions use only active member titles and preserve test and design stages',async()=>{
  const rows=[...Array.from({length:8},(_,i)=>({page_id:'i'+i,title:'아이데이션 '+i,archived:false})),{page_id:'t',title:'현장 조명 테스트',archived:false},{page_id:'d',title:'공간 설계',archived:false},{page_id:'old',title:'삭제된 문서',archived:true},{page_id:'outside',title:'다른 프로젝트 문서',archived:false}];
@@ -30,7 +38,7 @@ test('directory follows only active accepted Notion project membership, with pag
  rows.push(link('inactive','bad',{status:'candidate'}),link('weak','bad',{confidence:0.4}),link('external','bad',{from_type:'nas'}));
  const db=fakeDb({luna_links:rows}); const directory=await loadNotionProjectDirectory(db);
  assert.equal(directory.length,1); assert.equal(directory[0].pageIds.length,1001);
- assert.equal(db.calls.length,2);
+ assert.equal(db.calls.filter(c=>c.table==='luna_links').length,2);
  assert.deepEqual(selectDirectoryProjects(directory,[-1,0,0,99,'0']),[directory[0]]);
 });
 test('navigation preserves distinct document stages and project coverage without reading other memberships',async()=>{
@@ -39,6 +47,6 @@ test('navigation preserves distinct document stages and project coverage without
  const sources=await readDirectoryMaterials({},projects,'조성 자료 모두 찾아줘');
  assert.equal(sources[1].id,'b');
  for(const id of ['at','af','ad']) assert.ok(sources.some(s=>s.id===id));
- assert.ok(!loadedIds.includes('secret')); assert.ok(sources.length<=16);
+ assert.ok(!loadedIds.includes('secret')); assert.equal(sources.length,14);
  assert.ok(sources.every(s=>s.via_link==='project_directory'&&s.url.includes(s.id)));
 });

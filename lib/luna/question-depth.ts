@@ -3,7 +3,7 @@
  * 검색 건수는 건드리지 않는다. 코드 패턴만 쓰고 LLM 유형에 의존하지 않는다.
  */
 import { isListingQuestion } from "@/lib/luna/listing-question";
-import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { isMaterialSearch } from "@/lib/luna/all-materials";
 import { broadProjectSubject } from "@/lib/luna/nas-priority";
 import type { WikiPickLimits } from "@/lib/luna/wiki-match";
 
@@ -20,7 +20,7 @@ export function isSynthesisQuestion(text: string): boolean {
 }
 
 export function classifyQuestionDepth(text: string): QuestionDepth {
-  if (requestsAllMaterials(text)) return "synthesis";
+  if (isMaterialSearch(text)) return "synthesis";
   if (broadProjectSubject(text)) return "synthesis";
   if (isListingQuestion(text)) return "listing";
   if (isSynthesisQuestion(text)) return "synthesis";
@@ -91,7 +91,7 @@ export function llmInjectLimitsForQuestion(
   limits: LlmInjectLimits;
 } {
   const depth = classifyQuestionDepth(text);
-  const base = requestsAllMaterials(text)
+  const base = isMaterialSearch(text)
     ? { ...LLM_INJECT_BY_DEPTH[depth], notion: 32, cards: 24, nas: 16 }
     : LLM_INJECT_BY_DEPTH[depth];
   if (!opts?.imagePrimary) {

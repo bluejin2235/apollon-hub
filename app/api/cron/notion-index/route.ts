@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
 import { scheduleNotionIndexContinue } from "@/lib/luna/notion-index-continue";
 import {
@@ -47,7 +47,10 @@ export async function GET(request: NextRequest) {
 
   const continueId = request.nextUrl.searchParams.get("continue");
   if (continueId) {
-    try {
+    if (!/^[0-9a-f-]{36}$/i.test(continueId)) return NextResponse.json({ error: 'Invalid run ID' }, { status: 400 });
+    // Acknowledge the handoff promptly; the caller awaits this acknowledgement.
+    // The database lease prevents overlap with the scheduled cron worker.
+    after(async () => { try {
       const result = await runNotionIndexChunk(admin, {
         mode: "full",
         triggeredBy: "cron",
@@ -56,18 +59,10 @@ export async function GET(request: NextRequest) {
       if (result.continued) {
         scheduleNotionIndexContinue(request, result.run.id);
       }
-      return NextResponse.json({
-        continued: true,
-        done: result.done,
-        run: result.run
-      });
     } catch (err) {
       console.error("[notion-index] continue", err);
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Continue failed" },
-        { status: 500 }
-      );
-    }
+    } });
+    return NextResponse.json({ accepted: true, run_id: continueId }, { status: 202 });
   }
 
   const modeParam = request.nextUrl.searchParams.get("mode");

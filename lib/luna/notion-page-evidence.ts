@@ -33,18 +33,31 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
 }
 
 /** Page-scoped reads prevent a large page from exhausting another page's row budget. */
-export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: NotionSource[], query: string): Promise<NotionSource[]> {
-  const output = [...sources];
+export type ReadNotionEvidence = NotionSource & { evidence_passages?: string[] };
+export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: NotionSource[], query: string, allPassages = false): Promise<ReadNotionEvidence[]> {
+  const output: ReadNotionEvidence[] = [...sources];
   for (let start = 0; start < sources.length; start += 6) {
     await Promise.all(sources.slice(start, start + 6).map(async (source, offset) => {
       if (!source.id) return;
       try {
-        const { data, error } = await admin.from('luna_notion_chunks')
-          .select('text, heading, position').eq('page_id', source.id)
-          .order('position', { ascending: true }).limit(80);
-        if (error || !data?.length) return;
-        const excerpt = composePageEvidence(data, query);
-        if (excerpt) output[start + offset] = { ...source, excerpt };
+        const rows: Passage[] = [];
+        for (let offset=0;;offset+=1000) {
+          const {data,error}=await admin.from('luna_notion_chunks')
+            .select('text, heading, position').eq('page_id', source.id)
+            .order('position',{ascending:true}).range(offset,offset+999);
+          if (error) throw new Error(error.message);
+          rows.push(...(data ?? []));
+          if (!data || data.length<1000) break;
+        }
+        if (!rows.length) return;
+        const excerpt = composePageEvidence(rows, query);
+        // All passages participate in relevance review, including late sections
+        // that use different words from the question. Windows overlap for context.
+        const full=rows.map(r=>r.text.trim()).filter(Boolean).join('\n\n');
+        const passages: string[]=[];
+        if (allPassages) for (let pos=0;pos<full.length;pos+=5600) passages.push(full.slice(pos,pos+6000));
+        if (excerpt) output[start + offset] = { ...source, excerpt, ...(allPassages ? {evidence_passages:passages} : {}) };
+
       } catch { /* Retain verified search passages if the supplementary read fails. */ }
     }));
   }

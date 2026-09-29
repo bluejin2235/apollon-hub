@@ -1,3 +1,4 @@
+import { assessSearchQuality, type SearchExpectations } from "@/lib/luna/search-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel } from "@/lib/luna/engine";
 import { llmComplete, lunaLlmComplete } from "@/lib/luna/llm/client";
@@ -207,6 +208,7 @@ export async function autoGradeAnswer(
     mustPass?: string | null;
     quality?: string | null;
     admin?: SupabaseClient;
+    sourceEvidence?: unknown;
   }
 ): Promise<EvalGrade> {
   const mustPass =
@@ -222,6 +224,7 @@ export async function autoGradeAnswer(
       question,
       must_pass: mustPass,
       quality,
+      source_evidence: opts?.sourceEvidence,
       answer
     },
     null,
@@ -668,7 +671,7 @@ export async function executeEvalCase(
   const { data: evalCase, error: caseError } = await admin
     .from("luna_eval_cases")
     .select(
-      "id, question, expectation, must_pass, quality, connectors, is_active"
+      "id, question, expectation, must_pass, quality, connectors, is_active, search_expectations"
     )
     .eq("id", caseId)
     .maybeSingle();
@@ -736,17 +739,34 @@ export async function executeEvalCase(
     };
   }
 
-  const grade = await autoGradeAnswer(
+  let grade = await autoGradeAnswer(
     evalCase.question as string,
     (evalCase.expectation as string | null) ?? null,
     result.answer,
     {
       admin,
       mustPass: (evalCase.must_pass as string | null) ?? null,
-      quality: (evalCase.quality as string | null) ?? null
+      quality: (evalCase.quality as string | null) ?? null,
+      sourceEvidence: {notion:result.notionSources.map(s=>({id:s.id,title:s.title,excerpt:s.excerpt})),
+        review:result.metadata.answer_evidence_trace}
+
     }
   );
 
+  const trace = result.metadata.answer_evidence_trace as {
+    reviewed_notion?: {direct?:string[];adjacent?:string[]};
+    review_coverage?: {unverified?:string[]};
+  } | undefined;
+  const searchQuality = assessSearchQuality({
+    expected: (evalCase.search_expectations as SearchExpectations | null) ?? null,
+    finalIds: result.notionSources.map(s=>s.id), reviewed:trace?.reviewed_notion,
+    unverifiedIds:trace?.review_coverage?.unverified,
+    disappearedIds:result.streamAudit.disappearedIds
+  });
+  if (!searchQuality.pass) {
+    grade = {...grade, score:0, pass:false, must_pass_ok:false, fail_kind:"must_pass",
+      reason:`자료 검증 실패: 누락 ${searchQuality.missing.length}, 금지 자료 ${searchQuality.forbidden.length}, 검토 후 누락 ${searchQuality.omittedApproved.length}, 근거 없는 표시 ${searchQuality.unapproved.length}, 화면에서 사라짐 ${searchQuality.disappeared.length}, 미검증 ${searchQuality.incompleteReview.length}${searchQuality.unexpectedNonempty ? ", 빈 결과 조건 위반" : ""}`};
+  }
   if (grade.score < 1) {
     void recordLunaFailure(admin, {
       question: evalCase.question as string,
@@ -777,6 +797,8 @@ export async function executeEvalCase(
         case_id: caseId,
         answer: result.answer,
         sources: result.sources,
+        search_quality: searchQuality,
+        execution_trace: {engine:"production", stream:result.streamAudit, evidence:result.metadata.answer_evidence_trace},
         verdict,
         memo: null,
         auto_pass: grade.score >= 1,

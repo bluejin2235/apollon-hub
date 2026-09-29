@@ -1,5 +1,5 @@
 import { asksForProvenance, queryExcerpt } from "@/lib/luna/evidence-selection";
-import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { isMaterialSearch } from "@/lib/luna/all-materials";
 import { resolveGroundedTargets } from "@/lib/luna/grounded-target";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
@@ -568,7 +568,7 @@ export async function searchNotionForLuna(
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
   const listing = Boolean(opts?.listing);
-  const broad = opts?.broad === true || requestsAllMaterials(queryText);
+  const broad = opts?.broad === true || isMaterialSearch(queryText);
   const queryExpand = opts?.queryExpand !== false;
   const topN = broad ? 60 : listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
   const perPage = broad ? 2 : listing

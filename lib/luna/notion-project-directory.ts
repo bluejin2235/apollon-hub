@@ -5,6 +5,16 @@ import { isSearchToken } from './keyword-token';
 
 export type NotionDirectoryProject = { key: string; pageIds: string[] };
 
+/** A bare name that starts an actual project name is an internal lookup.
+ * Keep all matching projects; do not guess which one the user meant.
+ */
+export function bareDirectoryLookup(directory: NotionDirectoryProject[], query: string): string | null {
+  const term = query.trim();
+  if (!/^[가-힣a-zA-Z0-9]{2,30}$/.test(term)) return null;
+  const matches = directory.some(p => p.key.replace(/^(?:\s*\d{2,6}\s+)+/, '').trim().toLowerCase().startsWith(term.toLowerCase()));
+  return matches ? `${term} 관련 자료 모두 찾아줘` : null;
+}
+
 /** Exact names in the accepted directory can scope a named request even when
  * the generic parser does not know that project. Similar-example requests stay broad.
  */
@@ -16,7 +26,7 @@ export function namedDirectorySubjects(directory: NotionDirectoryProject[], quer
   const subjects = directory.flatMap(p => {
     const date = p.key.match(/^\s*(\d{6})\s+/)?.[1];
     if (dates.length && date && !dates.includes(date)) return [];
-    const name = p.key.replace(/^\s*\d{6}\s+/, '').trim();
+    const name = p.key.replace(/^(?:\s*\d{2,6}\s+)+/, '').trim();
     if (compact(name).length < 6 || !/[가-힣a-z]/i.test(name) || !asked.includes(compact(name))) return [];
     return [name];
   });
@@ -26,12 +36,12 @@ export function namedDirectorySubjects(directory: NotionDirectoryProject[], quer
 /** Navigate existing accepted relationships; this does not infer or write membership. */
 export async function loadNotionProjectDirectory(admin: SupabaseClient): Promise<NotionDirectoryProject[]> {
   const projects = new Map<string, Set<string>>();
-  for (let start = 0; start < 4000; start += 1000) {
+  for (let start = 0; true; start += 1000) {
     const { data, error } = await admin.from('luna_links').select('from_id,to_id')
       .eq('kind', 'belongs').eq('from_type', 'notion_page').eq('to_type', 'project')
       .eq('status', 'active').gte('confidence', 0.7)
       .order('to_id', { ascending: true }).order('from_id', { ascending: true }).range(start, start + 999);
-    if (error) return [];
+    if (error) break;
     for (const row of data ?? []) {
       if (!row.from_id || !row.to_id) continue;
       const ids = projects.get(row.to_id) ?? new Set<string>();
@@ -39,14 +49,41 @@ export async function loadNotionProjectDirectory(admin: SupabaseClient): Promise
     }
     if (!data || data.length < 1000) break;
   }
-  return [...projects].slice(0, 240).map(([key, ids]) => ({ key, pageIds: [...ids] }));
+  // Imported archives already have explicit parent-page relationships. They must
+  // remain navigable even when derived NAS/project links have not been built.
+  type Page = { page_id: string; title: string; parent_id: string | null; path_titles: string[] };
+  const pages = new Map<string, Page>();
+  for (let start=0;;start+=1000) {
+    const {data,error}=await admin.from('luna_notion_pages').select('page_id,title,parent_id,path_titles')
+      .eq('archived',false).order('page_id').range(start,start+999);
+    if(error) break;
+    for(const page of data ?? []) pages.set(page.page_id,page as Page);
+    if(!data || data.length<1000) break;
+  }
+  const roots = new Map<string,string>();
+  for(const page of pages.values()) {
+    const parent=page.parent_id ? pages.get(page.parent_id) : undefined;
+    if(parent && /^\d{4}(?:\s|\(|$)/.test(parent.title) && /^\d{2,6}\s+\S/.test(page.title)) {
+      roots.set(page.page_id,`${parent.title.slice(0,4)} ${page.title}`);
+    }
+  }
+  for(const page of pages.values()) {
+    let current: Page | undefined=page;const visited=new Set<string>();
+    while(current && !visited.has(current.page_id)) {
+      visited.add(current.page_id);
+      const key=roots.get(current.page_id);
+      if(key) { const ids=projects.get(key) ?? new Set<string>();ids.add(page.page_id);projects.set(key,ids);break; }
+      current=current.parent_id ? pages.get(current.parent_id) : undefined;
+    }
+  }
+  return [...projects].map(([key, ids]) => ({ key, pageIds: [...ids] }));
 }
 
 export function selectDirectoryProjects(directory: NotionDirectoryProject[], choices: unknown): NotionDirectoryProject[] {
   if (!Array.isArray(choices)) return [];
   return [...new Set(choices)].filter((i): i is number =>
     typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < directory.length)
-    .slice(0, 6).map(i => directory[i]);
+    .map(i => directory[i]);
 }
 
 /** Ground navigation in actual document titles, not just a project-name guess. */
@@ -80,7 +117,7 @@ function documentRole(title: string): string {
 
 /** Preserve document stages within each project and interleave projects fairly. */
 export async function readDirectoryMaterials(admin: SupabaseClient, projects: NotionDirectoryProject[], query: string): Promise<NotionSource[]> {
-  const ids = [...new Set(projects.flatMap(p => p.pageIds.slice(0, 80)))];
+  const ids = [...new Set(projects.flatMap(p => p.pageIds))];
   const pages = await loadPagesByIds(admin, ids);
   const terms = [...new Set((query.toLowerCase().match(/[가-힣a-z0-9]+/g) ?? [])
     .filter(isSearchToken).filter(t => !/^(자료|관련|모두|전부|전체|찾아줘)$/.test(t)))];
@@ -97,7 +134,7 @@ export async function readDirectoryMaterials(admin: SupabaseClient, projects: No
       roles.add(role); selected.push(p);
     }
     for (const p of ranked) if (!selected.includes(p)) selected.push(p);
-    return selected.slice(0,8).map((p): NotionSource => ({
+    return selected.map((p): NotionSource => ({
       id:p.page_id, title:p.title, url:p.url || `https://notion.so/${p.page_id.replace(/-/g,'')}`,
       excerpt:p.excerpt, parent_id:p.parent_id, path_titles:p.path_titles ?? [],
       nas_path:p.nas_path, last_edited_time:p.last_edited_time,
@@ -105,9 +142,9 @@ export async function readDirectoryMaterials(admin: SupabaseClient, projects: No
     }));
   });
   const result: NotionSource[] = [], seen = new Set<string>();
-  for (let i=0;i<8;i++) for (const group of groups) {
+  for (let i=0;i<Math.max(0,...groups.map(g=>g.length));i++) for (const group of groups) {
     const source=group[i];
     if (source && !seen.has(source.id)) { seen.add(source.id); result.push(source); }
   }
-  return result.slice(0,48);
+  return result;
 }

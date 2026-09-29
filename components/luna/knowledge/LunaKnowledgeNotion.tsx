@@ -43,6 +43,7 @@ type RunView = {
   error_message: string | null;
   elapsed_label: string | null;
   progress_pct: number;
+  abort_requested: boolean;
 };
 
 type Overview = {
@@ -53,6 +54,7 @@ type Overview = {
     accessible_pages: number;
     subtitle: string;
   };
+  readiness?: {total:number;ready:number;empty:number;failed:number;building:number;unverified:number} | null;
   stats: {
     pages: number;
     blocks: number;
@@ -115,7 +117,8 @@ function KindBadge({ mode }: { mode: NotionIndexMode }) {
   );
 }
 
-function StatusBadge({ status }: { status: RunView["status"] }) {
+function StatusBadge({ status, aborted }: { status: RunView["status"]; aborted?:boolean }) {
+  if(aborted) return <span className="rounded-full px-2 py-0.5 text-[9.5px] font-bold">중단</span>;
   if (status === "success") {
     return (
       <span
@@ -487,9 +490,16 @@ export function LunaKnowledgeNotion() {
             <Btn disabled={repairing || Boolean(running) || !repairPage.trim()} onClick={() => void repairOnePage()}>{repairing ? "다시 읽는 중…" : "페이지 다시 읽기"}</Btn>
             {repairNote ? <p role="status" className="mt-2 text-xs">{repairNote}</p> : null}
           </div>
+          {data.readiness ? (
+            <div className="mb-4 rounded-xl border p-4" role="status">
+              <p className="text-sm font-semibold">본문 검색 준비 상태</p>
+              <p className="mt-2 text-xs">검색 가능 {data.readiness.ready.toLocaleString()} · 실제 빈 본문 {data.readiness.empty.toLocaleString()} · 수집 중 {data.readiness.building.toLocaleString()} · 실패 {data.readiness.failed.toLocaleString()} · 미검증 {data.readiness.unverified.toLocaleString()}</p>
+              <p className="mt-1 text-xs">페이지 발견 수와 본문 검색 준비 완료 수는 다릅니다. 미검증·실패 자료는 완료로 계산하지 않습니다.</p>
+            </div>
+          ) : null}
           <StatGrid>
             <StatCard
-              label="색인된 페이지"
+              label="발견된 페이지"
               value={data.stats.pages.toLocaleString()}
               sub={
                 data.stats.as_of_label ? (
@@ -706,7 +716,7 @@ export function LunaKnowledgeNotion() {
                           className="px-[15px] py-2.5"
                           style={{ borderBottom: `1px solid ${K.line2}` }}
                         >
-                          <StatusBadge status={row.status} />
+                          <StatusBadge status={row.status} aborted={row.abort_requested} />
                           {row.status === "failed" && row.error_message ? (
                             <div
                               className="mt-1 text-[10.5px]"
