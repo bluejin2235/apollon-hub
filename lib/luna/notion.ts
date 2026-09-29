@@ -728,7 +728,15 @@ export function mergeNotionSearchOutcomes(
     queries: [...new Set([...a.queries, ...b.queries])],
     rounds: a.rounds + b.rounds,
     error: b.error ?? a.error,
-    httpStatus: b.httpStatus ?? a.httpStatus
+    httpStatus: b.httpStatus ?? a.httpStatus,
+    secondary: a.secondary || b.secondary ? {
+      link_added: combinedSources.filter(s => s.link_expanded).length,
+      links_followed: (a.secondary?.links_followed ?? 0) + (b.secondary?.links_followed ?? 0),
+      link_ms: (a.secondary?.link_ms ?? 0) + (b.secondary?.link_ms ?? 0),
+      perspective_ms: (a.secondary?.perspective_ms ?? 0) + (b.secondary?.perspective_ms ?? 0),
+      perspectives: [...new Set([...(a.secondary?.perspectives ?? []), ...(b.secondary?.perspectives ?? [])])],
+      project_groups: [...new Map([...(a.secondary?.project_groups ?? []), ...(b.secondary?.project_groups ?? [])].map(g => [g.title, g])).values()]
+    } : undefined
   };
 }
 

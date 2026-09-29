@@ -3462,7 +3462,7 @@ export async function POST(request: NextRequest) {
           notionForLlm = await readIndexedNotionEvidence(admin, notionForLlm, searchIntentText);
           const readById = new Map(notionForLlm.map(source => [source.id, source]));
           notionSources = notionSources.map(source => readById.get(source.id) ?? source);
-          typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리하고, 관련성이 낮은 실내 콘텐츠를 첫 항목으로 삼지 않는다.');
+          typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리한다. 사용자가 조성 관련 자료를 요청했다고 조성 완료 사례만 요청한 것으로 바꾸지 마라. 제안·회의·테스트·준공 기록은 각각의 단계로 포함하고, 사용자가 요구하지 않은 완료 여부를 답변의 결론으로 삼지 마라.');
         }
         const answerEvidenceTrace = {
           version: 1,

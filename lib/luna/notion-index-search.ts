@@ -139,13 +139,44 @@ export async function matchNotionChunkEmbeddings(
  */
 export function selectNotionChunkHits(
   hits: NotionChunkMatchHit[],
-  opts?: { top?: number; perPage?: number }
+  opts?: { top?: number; perPage?: number; balanced?: boolean }
 ): NotionChunkMatchHit[] {
   const top = opts?.top ?? NOTION_INDEX_TOP_BLOCKS;
   const perPage = opts?.perPage ?? NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
   const rank = (h: NotionChunkMatchHit) =>
     h.fused_score ?? h.similarity ?? 0;
   const sorted = [...hits].sort((a, b) => rank(b) - rank(a));
+  if (opts?.balanced) {
+    // Raw lexical counts and cosine similarities use different scales. Keep
+    // both retrieval channels, and visit distinct pages before second snippets.
+    const uniquePages = (rows: NotionChunkMatchHit[]) => {
+      const unique = new Map<string, NotionChunkMatchHit>();
+      for (const row of rows) if (!unique.has(row.page_id)) unique.set(row.page_id, row);
+      return [...unique.values()];
+    };
+    const lexicalPages = uniquePages([...hits].filter(h => (h.keyword_score ?? 0) > 0)
+      .sort((a, b) => (b.keyword_score ?? 0) - (a.keyword_score ?? 0)));
+    const semanticPages = uniquePages([...hits].filter(h => h.similarity > 0)
+      .sort((a, b) => b.similarity - a.similarity));
+    const pages: NotionChunkMatchHit[] = [];
+    const seen = new Set<string>();
+    const add = (hit: NotionChunkMatchHit | undefined) => {
+      if (!hit || seen.has(hit.page_id)) return;
+      seen.add(hit.page_id); pages.push(hit);
+    };
+    for (let i = 0; i < Math.max(lexicalPages.length, semanticPages.length); i++) {
+      add(lexicalPages[i * 3]); add(lexicalPages[i * 3 + 1]); add(lexicalPages[i * 3 + 2]); add(semanticPages[i]);
+    }
+    const selected = pages.slice(0, top).map((h, i) => ({ ...h, fused_score: 10 * (top - i) / top }));
+    const ids = new Set(selected.map(h => h.chunk_id));
+    for (const primary of [...selected]) {
+      for (const other of sorted.filter(h => h.page_id === primary.page_id && !ids.has(h.chunk_id)).slice(0, Math.max(0, perPage - 1))) {
+        if (selected.length >= top) break;
+        selected.push({ ...other, fused_score: primary.fused_score }); ids.add(other.chunk_id);
+      }
+    }
+    return selected;
+  }
   const titleStrong = sorted.filter(
     (h) => (h.keyword_score ?? 0) >= 4
   );
@@ -364,7 +395,7 @@ export async function buildIndexedSourcesFromChunks(
   admin: SupabaseClient,
   hits: NotionChunkMatchHit[],
   queryText?: string,
-  pickOpts?: { top?: number; perPage?: number }
+  pickOpts?: { top?: number; perPage?: number; balanced?: boolean }
 ): Promise<{
   sources: NotionSource[];
   pages: IndexedPageRow[];
@@ -646,7 +677,7 @@ export async function searchNotionForLuna(
       admin,
       hybridChunkHits,
       [queryText, ...grounded.targets.map(t => t.name)].join(' '),
-      { top: topN, perPage }
+      { top: topN, perPage, balanced: broad }
     );
     indexSources = built.sources.map(s => ({...s, grounded_targets: grounded.targets.length ? grounded.targets : undefined}));
     selectedHits = built.selectedHits;

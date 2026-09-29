@@ -163,3 +163,20 @@ forest query and independent work questions, including citations and latency.
   Prompt capacity is 32 pages; retries reserve three original results per new result.
 - 319 tests and TypeScript passed before the additional broad-relation assertion.
   Application promotion and bulk reindex remain pending the live quality gate.
+
+## Browser validation — full excerpts and channel balance
+
+- The next exact-question run read 32 page excerpts and finished in 68.7 seconds.
+  It described the nightwalk design in more detail and found an additional mountain
+  forest proposal. It still omitted the stream-side installation family and added
+  an unrequested completed-installation-only conclusion. The gate remains failed.
+- Inspection found broad chunk selection could be entirely filled by lexical
+  scores, starving semantic matches on their smaller score scale. Broad retrieval
+  now interleaves three lexical pages per semantic page, visits distinct pages
+  before second snippets, and preserves raw scores separately from ordering.
+- Final broad evidence selection reserves a quarter of its budget for linked
+  documents with excerpts. Retry merging retains relation statistics instead of
+  showing zero after actual traversal. Instructions preserve the user's scope
+  rather than interpreting all related material as completed installations only.
+- 322 regression tests and TypeScript passed before the relation-statistics
+  display correction. No production application promotion or full reindex yet.
