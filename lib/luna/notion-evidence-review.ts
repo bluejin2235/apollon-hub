@@ -13,5 +13,5 @@ export function applyNotionEvidenceReview(sources: NotionSource[], review: Recor
   if (all.length !== sources.length || new Set(all).size !== sources.length ||
       all.some(i => typeof i !== 'number' || !Number.isInteger(i) || i < 0 || i >= sources.length)) return sources;
   if (!direct.length) return sources;
-  return [...direct, ...adjacent.slice(0, 4)].map(i => sources[i as number]);
+  return [...direct, ...adjacent].map(i => sources[i as number]);
 }

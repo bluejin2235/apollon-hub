@@ -198,3 +198,20 @@ forest query and independent work questions, including citations and latency.
   positive output falls back to the original evidence. No new sources are created.
 - 322 existing tests plus two focused evidence-review tests passed; TypeScript
   passed. These changes still require live validation before production promotion.
+
+## Browser validation — preserve the requested scope
+
+- The next broad-topic run restored the current park but still omitted useful
+  nature theme park material and the stream-side installation family. The native
+  answer gate remains failed. An independent office-lounge query returned its
+  project record and both proposal versions with correct source links.
+- Generated alternate searches inherited missing-evidence prose and added generic
+  planning/analysis/operation terms. Broad planning now uses only the original
+  question and a dedicated two-query instruction, without the narrow retry prompt.
+- Final synthesis also inherited instructions for named-project lookup and
+  provenance questions. Broad material requests now use a dedicated scope rule,
+  without department, learning or named-project lookup instructions. Provenance
+  instructions apply only when provenance is asked for. All relevant adjacent
+  results survive review instead of being arbitrarily capped at four.
+- All 324 foundation tests and TypeScript passed. Production application promotion
+  and bulk reindex remain pending an acceptable live answer, not just passing tests.

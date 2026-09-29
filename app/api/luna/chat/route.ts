@@ -38,7 +38,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
-import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { requestsAllMaterials, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_REVIEW, applyNotionEvidenceReview } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
@@ -674,7 +674,9 @@ function buildVolatileSystemText(opts: {
     parts.push(CLARIFY_FOLLOWUP_RULE);
   }
 
-  if (listing && opts.listingRule?.trim()) {
+  if (requestsAllMaterials(opts.evidenceQuery ?? '')) {
+    parts.push(BROAD_MATERIAL_ANSWER_RULE);
+  } else if (listing && opts.listingRule?.trim()) {
     parts.push(opts.listingRule.trim());
   } else if (synthesis) {
     parts.push(SYNTHESIS_ANSWER_RULE);
@@ -706,8 +708,10 @@ function buildVolatileSystemText(opts: {
       : synthesis
         ? `(위 ${forLlm.length}건은 검색 후보이며 모두 적합한 사례라는 뜻이 아니다. 질문의 장소·용도 조건을 본문으로 확인한 자료만 프로젝트별로 묶어 답한다. 각 항목에 페이지 제목과 URL을 단다. 제목이나 영상 주제만으로 실제 설치 장소를 추정하지 마라. 실내 자연 영상은 야외 숲 설치 사례가 아니다. 직접 자료와 인접 참고자료를 구분하고, 같은 문서·작품의 복제본은 반복하지 않는다. 후보 개수는 전수 검색의 증거가 아니다.)`
         : `(기록된 경로가 있으면 그 경로를 답의 근거로 쓴다. 페이지 제목과 URL도 함께 단다. 본문에 근거가 있는 자료를 먼저 설명한다. 경로·폴더 위치만으로 자사 제작물이라고 단정하지 말고 제작물·제안·외부 참고자료·미확인을 구분한다.)`;
+    if (asksForProvenance(opts.evidenceQuery ?? '')) {
     parts.push('[역할별 부분 확인] "누가 제작했어"를 시공·제조만으로 좁히지 않는다. 원문이 확인하는 기획·연출·콘텐츠 제작·설계·시공을 각각 구별한다. 확인된 역할부터 구체적으로 설명하고 바로 해당 페이지 제목·URL·출처 마커를 단다. 확인되지 않은 다른 역할은 별도 문장으로 남긴다. 일부 역할만 미확인이면 전체 자료가 없다고 답하지 않는다. 사실 요약은 "확인된 내용은 …했다는 점입니다"처럼 무엇을 확인했는지 명시하며, 문서 작성·제안을 실제 수행으로 바꾸지 않는다.');
     parts.push('[제작 주체와 문서 용도] 벤치마킹·참고 문서에 등장한다는 사실은 외부 제작의 증거가 아니다. 외부 제작물로 분류하려면 원문에 외부 제작 주체가 명시되어야 한다. 그 근거가 없으면 "참고 문서에 등장 — 제작 주체 미확인"으로 별도 표시하고 외부 제작물 항목에 넣지 않는다. 자사 작품도 다른 문서에서는 참고 사례로 쓰일 수 있다. 같은 작품의 별칭은 통합하고 서로 다른 제작 주체로 중복 분류하지 않는다.');
+    }
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
         compact: listing || depth === "simple",
@@ -3188,15 +3192,13 @@ export async function POST(request: NextRequest) {
             let newKeywords = "";
             let topicQueries: string[] = [];
             const broadRetry = requestsAllMaterials(searchIntentText);
-            const retrySystem = broadRetry
-              ? `${requeryPrompt}\n[넓은 주제의 보완 탐색]\n원 질문과 뜻이 연결되는 다른 공간·활동·연출 명칭으로 두 개의 독립 검색을 계획한다. 각각 2~4개의 핵심 단어만 사용한다. 같은 원문 단어를 모두 반복하거나 문서 종류·견적·시공 같은 일반 단어를 길게 나열하지 마라. 알려지지 않은 프로젝트명·업체명은 만들지 마라. 출력은 JSON {"queries":["검색어 1","검색어 2"]}만 쓴다.`
-              : requeryPrompt;
+            const retrySystem = broadRetry ? BROAD_TOPIC_QUERY_RULE : requeryPrompt;
             try {
               const reqRes = await lunaLlmComplete(admin, {
                 tier: "B",
                 feature: "search_terms",
                 system: retrySystem,
-                user: `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
+                user: broadRetry ? `원 질문: ${searchIntentText}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
                 )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
                 maxTokens: broadRetry ? 160 : 64
@@ -3517,7 +3519,8 @@ export async function POST(request: NextRequest) {
               .join("\r\n\r\n")
           : undefined;
 
-        const slimListingPrompt = listingReferenceDisablesNas(
+        const broadMaterialSearch = requestsAllMaterials(searchIntentText);
+        const slimListingPrompt = broadMaterialSearch || listingReferenceDisablesNas(
           searchScope.kind,
           listingQuestion
         );
@@ -3534,7 +3537,7 @@ export async function POST(request: NextRequest) {
             : undefined;
 
         // 목록형 사례: listing 규칙만 — understand/know/관점/learnings 는 입력만 키운다
-        const l3Prompt = slimListingPrompt
+        const l3Prompt = broadMaterialSearch ? BROAD_MATERIAL_ANSWER_RULE : slimListingPrompt
           ? buildL3PromptBlock({
               assume: talkAssume,
               depthRule: listingRule
