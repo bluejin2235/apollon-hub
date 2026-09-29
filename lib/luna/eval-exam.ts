@@ -755,12 +755,13 @@ export async function executeEvalCase(
 
   const trace = result.metadata.answer_evidence_trace as {
     reviewed_notion?: {direct?:string[];adjacent?:string[]};
-    review_coverage?: {unverified?:string[]};
+    review_coverage?: {unverified?:string[];aliases?:Record<string,string>;navigation_complete?:boolean};
   } | undefined;
   const searchQuality = assessSearchQuality({
     expected: (evalCase.search_expectations as SearchExpectations | null) ?? null,
     finalIds: result.notionSources.map(s=>s.id), reviewed:trace?.reviewed_notion,
     unverifiedIds:trace?.review_coverage?.unverified,
+    aliases:trace?.review_coverage?.aliases,navigationComplete:trace?.review_coverage?.navigation_complete,
     disappearedIds:result.streamAudit.disappearedIds
   });
   if (!searchQuality.pass) {

@@ -41,7 +41,7 @@ import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { isMaterialSearch, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
 import { loadNotionProjectDirectory, describeNotionProjectDirectory, bareDirectoryLookup, namedDirectorySubjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
-import { NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
+import { NOTION_EVIDENCE_VERIFY, NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { buildDocumentInventory } from '@/lib/luna/document-inventory';
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
@@ -3315,28 +3315,12 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         if (importantMaterials?.prompt && !notFoundFromAsk) {
           nasResults = importantMaterials.rows;
           const originalSources = new Map(notionSources.map(s => [s.id, s]));
-          notionSources = importantMaterials.sources.map(s => originalSources.get(s.id) ?? s);
+          notionSources = [...new Map([...notionSources, ...importantMaterials.sources.map(s => originalSources.get(s.id) ?? s)].map(s=>[s.id,s])).values()];
           cards = [...importantMaterials.cards, ...cards.filter(c => c.type !== 'nas' && c.type !== 'notion')];
           llmInject = { ...llmInject, notion: 12, nas: 8, cards: 12 };
         }
-        const inventoryAnswer = !hasAttachments && !notFoundFromAsk
+        let inventoryAnswer = !hasAttachments && !notFoundFromAsk
           ? importantMaterialsAnswer(searchIntentText, importantMaterials) : null;
-        if (inventoryAnswer) {
-          cards = scopeMediaToEvidence(cards, searchIntentText, notionSources, askedWhat);
-          const visible = keepSourcesUsedInAnswer({ cards, notion: notionSources, wiki: publicWikiSources,
-            answer: inventoryAnswer, notFound: false });
-          cards = mergeCards(importantMaterials!.cards, visible.cards);
-          publicWikiSources = visible.wiki;
-          inventoryDisplayReady = true;
-          retrievalTiming.first_useful_result_ms = Date.now() - startedAt;
-          emit(controller, encoder, {
-            type: "search_snapshot", cards,
-            notion_sources: notionSources, wiki_count: publicWikiSources.length,
-            classification: classificationPublic(classification, questionTypes),
-            counts: { wiki: publicWikiSources.length, notion: notionSources.length,
-              work: nasResults.length, image: cards.filter(c => c.type === 'image').length }
-          });
-        }
         flushUiProgress();
 
         // ——— 단계 6: 소스별 이유 + 답변 ———
@@ -3493,32 +3477,47 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         }
         typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
         let reviewedNotionEvidence: ReviewedNotionEvidence | null = null;
-        let reviewCoverage: { reviewed: string[]; unverified: string[] } | null = null;
+        let reviewCoverage: { reviewed: string[]; unverified: string[]; aliases: Record<string,string>; navigation_complete: boolean; unavailable: string[] } | null = null;
         let notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
           llmInject.notion,
           searchIntentText
         );
         if (isMaterialSearch(searchIntentText)) {
+          pushStep('review', 'running', '후보 자료의 본문을 확인하는 중…');
           cachedProjectDirectory ??= await loadNotionProjectDirectory(admin).catch(() => []);
-          const reviewed = await buildDocumentInventory(admin, { query: searchIntentText, sources: notionSources,
-            directory: cachedProjectDirectory, review: async batch => {
-            const review = await lunaLlmComplete(admin, {
-              tier: 'B', feature: 'eval_grade', system: NOTION_EVIDENCE_REVIEW,
-              user: `질문: ${searchIntentText}\n\n${batch.map((s, i) => `[${i}] ${s.title}\n확인된 소속: ${s.project_key ?? (s.path_titles ?? []).join(' / ')}\n본문: ${s.excerpt ?? ''}`).join('\n\n')}`,
-              maxTokens: 8192, reasoningEffort: "low"
+          const reviewBatch = async (batch: NotionSource[], verify=false) => {
+            const review=await lunaLlmComplete(admin, {
+              tier:'B',feature:'eval_grade',system:verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW,
+              user:`질문: ${searchIntentText}\n\n${batch.map((s,i)=>`[${i}] ${s.title}\n확인된 소속: ${s.project_key ?? (s.path_titles ?? []).join(' / ')}\n본문: ${s.excerpt ?? ''}`).join('\n\n')}`,
+              maxTokens:8192,reasoningEffort:"low"
             });
-            pushModelStep(modelSteps, admin, { label: '본문 관련성 확인', tier: 'B', model: review.model_label, model_id: review.model_id, usage: review.usage });
+            pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
             return parseJsonObject(review.text);
-          } });
+          };
+          const reviewed=await buildDocumentInventory(admin,{query:searchIntentText,sources:notionSources,
+            directory:cachedProjectDirectory,review:batch=>reviewBatch(batch),verify:batch=>reviewBatch(batch,true)});
+          pushStep('review', 'done', '본문 관련성 확인', { right: `${reviewed.reviewedIds.length}개 확인${reviewed.unverifiedIds.length ? ` · ${reviewed.unverifiedIds.length}개 미완료` : ''}` });
           notionSources = reviewed.inspected;
           exploredProjectKeys.push(...reviewed.reachedProjects);
           reviewedNotionEvidence = reviewed;
-          reviewCoverage = { reviewed: reviewed.reviewedIds, unverified: reviewed.unverifiedIds };
-          notionForLlm = [...reviewed.direct, ...reviewed.adjacent].map(source=>({
-            ...source, excerpt:[reviewed.basis[source.id]?.quote, reviewed.basis[source.id]?.reason].filter(Boolean).join('\n')
+          reviewCoverage = { reviewed: reviewed.reviewedIds, unverified: reviewed.unverifiedIds,
+            aliases:reviewed.aliases,navigation_complete:reviewed.navigationComplete,unavailable:reviewed.unavailableIds };
+          const verifiedDocuments = [...reviewed.direct, ...reviewed.adjacent];
+          const perDocumentBudget = Math.max(400, Math.min(2400, Math.floor(60000 / Math.max(1, verifiedDocuments.length))));
+          notionForLlm = verifiedDocuments.map(source=>({
+            ...source, excerpt:[reviewed.basis[source.id]?.quote, source.excerpt?.slice(0,perDocumentBudget), reviewed.basis[source.id]?.reason].filter(Boolean).join('\n')
           }));
           typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리한다. 사용자가 조성 관련 자료를 요청했다고 조성 완료 사례만 요청한 것으로 바꾸지 마라. 제안·회의·테스트·준공 기록은 각각의 단계로 포함하고, 사용자가 요구하지 않은 완료 여부를 답변의 결론으로 삼지 마라.');
+        }
+        if (inventoryAnswer && importantMaterials && reviewedNotionEvidence) {
+          const verified=[...reviewedNotionEvidence.direct,...reviewedNotionEvidence.adjacent];
+          importantMaterials={...importantMaterials,sources:verified};
+          inventoryAnswer=importantMaterialsAnswer(searchIntentText,importantMaterials);
+          notionSources=verified;
+          cards=scopeMediaToEvidence(cards,searchIntentText,verified,askedWhat);
+          inventoryDisplayReady=true;
+          retrievalTiming.first_useful_result_ms=Date.now()-startedAt;
         }
         const answerEvidenceTrace = {
           version: 1,

@@ -29,3 +29,40 @@ test('a failed body review is visible as incomplete, never accepted without proo
  const result=await buildDocumentInventory(db,{query:'자료',sources:[page('a')],directory:[],review:async()=>null});
  assert.deepEqual(result.unverifiedIds,['a']); assert.deepEqual(result.direct,[]);
 });
+test('follows an empty calendar to its meeting and stops at unrelated bodies',async()=>{
+ const ids=['seed','calendar','meeting','noise','hidden'];
+ const db=fakeDb({
+  luna_notion_pages:ids.map(id=>({page_id:id,title:id,archived:false,index_health:{state:id==='calendar'?'empty':'ready'}})),
+  luna_notion_chunks:[{page_id:'seed',position:0,text:relevant},{page_id:'meeting',position:0,text:relevant},{page_id:'noise',position:0,text:'주간 식당 메뉴'}, {page_id:'hidden',position:0,text:relevant}],
+  luna_notion_relations:[['seed','calendar'],['calendar','meeting'],['meeting','seed'],['seed','noise'],['noise','hidden']].map(([from_page_id,to_page_id])=>({from_page_id,to_page_id,property_name:'연결'}))
+ });
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('seed')],directory:[],review:reviewer});
+ assert.deepEqual(result.direct.map(s=>s.id),['seed','meeting']);
+ assert.ok(result.reviewedIds.includes('calendar'));
+ assert.ok(!result.inspected.some(s=>s.id==='hidden'));
+ assert.deepEqual(result.unverifiedIds,[]);
+});
+test('missing body can connect records but is never passed off as reviewed evidence',async()=>{
+ const db=fakeDb({luna_notion_pages:[{page_id:'connector',title:'일정',archived:false}],
+  luna_notion_chunks:[{page_id:'seed',position:0,text:relevant}],
+  luna_notion_relations:[{from_page_id:'seed',to_page_id:'connector',property_name:'일정'}]});
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('seed')],directory:[],review:reviewer});
+ assert.deepEqual(result.unverifiedIds,['connector']);
+ assert.deepEqual(result.direct.map(s=>s.id),['seed']);
+});
+test('deduplicates only identical complete bodies, retains changed versions and preferred source',async()=>{
+ const sources=[{...page('backup'),title:'설계 검토',path_titles:['백업']},{...page('current'),title:'설계 검토',path_titles:['사업개발']},{...page('revision'),title:'설계 검토'}];
+ let reviewedWindows=0;
+ const db=fakeDb({luna_notion_chunks:sources.map((s,i)=>({page_id:s.id,position:0,text:relevant.repeat(4)+(i===2?' 변경된 설계':'' )}))});
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources,directory:[],review:async rows=>{reviewedWindows+=rows.length;return reviewer(rows);}});
+ assert.equal(reviewedWindows,2);
+ assert.deepEqual(result.direct.map(s=>s.id),['current','revision']);
+ assert.deepEqual(result.aliases,{backup:'current'});
+ assert.ok(result.basis.current);
+});
+test('a verifier can reject a loosely related first-pass candidate',async()=>{
+ const db=fakeDb({luna_notion_chunks:[{page_id:'a',position:0,text:relevant}]});
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('a')],directory:[],review:reviewer,
+  verify:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
+ assert.deepEqual(result.direct,[]);assert.deepEqual(result.reviewedIds,['a']);
+});

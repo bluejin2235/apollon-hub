@@ -33,7 +33,10 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
 }
 
 /** Page-scoped reads prevent a large page from exhausting another page's row budget. */
-export type ReadNotionEvidence = NotionSource & { evidence_passages?: string[] };
+export type ReadNotionEvidence = NotionSource & {
+  evidence_passages?: string[];
+  evidence_state?: 'complete' | 'empty' | 'missing' | 'failed';
+};
 export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: NotionSource[], query: string, allPassages = false): Promise<ReadNotionEvidence[]> {
   const output: ReadNotionEvidence[] = [...sources];
   for (let start = 0; start < sources.length; start += 6) {
@@ -49,16 +52,26 @@ export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: 
           rows.push(...(data ?? []));
           if (!data || data.length<1000) break;
         }
-        if (!rows.length) return;
+        if (!rows.length) {
+          if (allPassages) {
+            const {data,error}=await admin.from('luna_notion_pages').select('index_health')
+              .eq('page_id',source.id).maybeSingle();
+            output[start+offset]={...source,excerpt:'',evidence_passages:[],
+              evidence_state:!error && data?.index_health?.state==='empty' ? 'empty' : 'missing'};
+          }
+          return;
+        }
         const excerpt = composePageEvidence(rows, query);
         // All passages participate in relevance review, including late sections
         // that use different words from the question. Windows overlap for context.
         const full=rows.map(r=>r.text.trim()).filter(Boolean).join('\n\n');
         const passages: string[]=[];
         if (allPassages) for (let pos=0;pos<full.length;pos+=5600) passages.push(full.slice(pos,pos+6000));
-        if (excerpt) output[start + offset] = { ...source, excerpt, ...(allPassages ? {evidence_passages:passages} : {}) };
+        if (excerpt) output[start + offset] = { ...source, excerpt, ...(allPassages ? {evidence_passages:passages,evidence_state:'complete' as const} : {}) };
 
-      } catch { /* Retain verified search passages if the supplementary read fails. */ }
+      } catch {
+        if (allPassages) output[start+offset]={...source,evidence_state:'failed'};
+      }
     }));
   }
   return output;

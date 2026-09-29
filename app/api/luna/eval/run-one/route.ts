@@ -4,7 +4,7 @@ import { isSuperAdminUser } from "@/lib/luna/auth";
 import { executeEvalCase } from "@/lib/luna/eval-exam";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);

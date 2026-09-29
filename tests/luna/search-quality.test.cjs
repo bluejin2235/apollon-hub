@@ -19,3 +19,8 @@ test('empty negative cases and unfinished validation fail closed',()=>{
  assert.equal(assessSearchQuality({expected:{expect_empty:true},finalIds:[]}).pass,true);
  assert.equal(assessSearchQuality({expected:null,finalIds:[],unverifiedIds:['pending']}).pass,false);
 });
+test('exact duplicate aliases satisfy required coverage and cannot hide forbidden evidence',()=>{
+ assert.equal(assessSearchQuality({expected:{required_notion_ids:['backup']},finalIds:['current'],aliases:{backup:'current'}}).pass,true);
+ assert.equal(assessSearchQuality({expected:{forbidden_notion_ids:['backup']},finalIds:['current'],aliases:{backup:'current'}}).pass,false);
+ assert.equal(assessSearchQuality({expected:null,finalIds:[],navigationComplete:false}).pass,false);
+});

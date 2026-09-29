@@ -3,7 +3,7 @@ import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { executeLunaChat } from "@/lib/luna/chat-handler";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   const user = await getApiUser(request);
