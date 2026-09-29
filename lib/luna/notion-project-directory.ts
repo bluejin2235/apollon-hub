@@ -5,6 +5,24 @@ import { isSearchToken } from './keyword-token';
 
 export type NotionDirectoryProject = { key: string; pageIds: string[] };
 
+/** Exact names in the accepted directory can scope a named request even when
+ * the generic parser does not know that project. Similar-example requests stay broad.
+ */
+export function namedDirectorySubjects(directory: NotionDirectoryProject[], query: string): string[] {
+  if (/유사|비슷|다른\s*프로젝트|비교|참고\s*사례/.test(query)) return [];
+  const compact = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '');
+  const asked = compact(query);
+  const dates: string[] = query.match(/(?<!\d)\d{6}(?!\d)/g) ?? [];
+  const subjects = directory.flatMap(p => {
+    const date = p.key.match(/^\s*(\d{6})\s+/)?.[1];
+    if (dates.length && date && !dates.includes(date)) return [];
+    const name = p.key.replace(/^\s*\d{6}\s+/, '').trim();
+    if (compact(name).length < 6 || !/[가-힣a-z]/i.test(name) || !asked.includes(compact(name))) return [];
+    return [name];
+  });
+  return [...new Set(subjects)].filter(s => !subjects.some(other => other !== s && compact(other).includes(compact(s))));
+}
+
 /** Navigate existing accepted relationships; this does not infer or write membership. */
 export async function loadNotionProjectDirectory(admin: SupabaseClient): Promise<NotionDirectoryProject[]> {
   const projects = new Map<string, Set<string>>();

@@ -8,10 +8,11 @@ test('validated review orders direct evidence first without dropping related mat
  assert.equal(result[0],sources[3]);
 });
 test('all-material inventory retains reviewed omissions with links and classification, without unrelated sources',()=>{
- const docs=Array.from({length:4},(_,i)=>({id:'abcdef00-0000-0000-0000-'+String(i).padStart(12,'0'),title:['이미 인용한 문서','빠진 회의록','인접 참고','무관한 문서'][i],url:'https://notion.so/doc'+i}));
+ const docs=Array.from({length:4},(_,i)=>({id:'abcdef00-0000-0000-0000-'+String(i).padStart(12,'0'),title:['이미 인용한 문서','빠진 회의록','인접 참고','무관한 문서'][i],url:i===1?'https://app.notion.com/p/doc1':'https://notion.so/doc'+i}));
  const review=validateNotionEvidenceReview(docs,{direct:[0,1],adjacent:[2],unrelated:[3]});
  const supplement=reviewedNotionInventorySupplement('요약 [이미 인용한 문서](https://notion.so/doc0)',review);
  assert.match(supplement,/추가 관련 문서/); assert.match(supplement,/빠진 회의록/);
+ assert.ok(supplement.includes('https://app.notion.com/p/doc1'));
  assert.match(supplement,/추가 인접 참고 문서/); assert.match(supplement,/https:\/\/notion.so\/doc2/);
  assert.doesNotMatch(supplement,/doc0|doc3|무관한 문서/);
  const {keepSourcesUsedInAnswer}=loadTs('lib/luna/search-filter.ts');

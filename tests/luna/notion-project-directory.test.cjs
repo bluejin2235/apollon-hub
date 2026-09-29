@@ -3,9 +3,20 @@ const {loadTs,fakeDb}=require('./helpers.cjs');
 let loadedIds=[];
 const page=(id,title)=>({page_id:id,title,url:'https://notion.so/'+id,path_titles:[],parent_id:null,nas_path:null,last_edited_time:null,excerpt:'주제와 연결된 원문'});
 let pageRows=[];
-const {loadNotionProjectDirectory,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
+const {loadNotionProjectDirectory,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
  './search-secondary':{loadPagesByIds:async (_db,ids)=>{loadedIds=ids;return new Map(pageRows.filter(p=>ids.includes(p.page_id)).map(p=>[p.page_id,p]));}},
  './keyword-token':{isSearchToken:t=>t.length>1}
+});
+test('exact directory names scope named requests but not topic or comparable-example requests',()=>{
+ const directory=[{key:'230101 샘플 오피스 라운지',pageIds:['a']},{key:'240101 다른 오피스 라운지',pageIds:['b']},{key:'2023',pageIds:['c']}];
+ assert.deepEqual(namedDirectorySubjects(directory,'샘플 오피스 라운지 미디어아트 제안 관련 자료 모두 찾아줘'),['샘플 오피스 라운지']);
+ assert.deepEqual(namedDirectorySubjects(directory,'야외 숲 미디어아트 조성관련 자료 모두 찾아줘'),[]);
+ assert.deepEqual(namedDirectorySubjects(directory,'샘플 오피스 라운지와 비슷한 사례 모두 찾아줘'),[]);
+ assert.deepEqual(namedDirectorySubjects(directory,'240101 샘플 오피스 라운지 자료 모두 찾아줘'),[]);
+ const {filterCardsByAsked}=loadTs('lib/luna/search-filter.ts');
+ const asked={projectPhrases:namedDirectorySubjects(directory,'샘플 오피스 라운지 자료 모두 찾아줘'),extraTokens:[],nature:'any',material:'any'};
+ const images=[{type:'image',title:'설치 이미지',raw_path:'T:/230101 샘플 오피스 라운지/Design/a.jpg'},{type:'image',title:'설치 이미지',raw_path:'T:/240101 다른 오피스 라운지/Design/a.jpg'}];
+ assert.deepEqual(filterCardsByAsked(images,asked),[images[0]]);
 });
 test('directory follows only active accepted Notion project membership, with pagination',async()=>{
  const link=(from_id,to_id,extra={})=>({from_id,to_id,kind:'belongs',from_type:'notion_page',to_type:'project',status:'active',confidence:0.8,...extra});

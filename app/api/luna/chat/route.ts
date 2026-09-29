@@ -39,7 +39,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
-import { loadNotionProjectDirectory, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
+import { loadNotionProjectDirectory, namedDirectorySubjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_REVIEW, validateNotionEvidenceReview, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
@@ -1856,6 +1856,16 @@ export async function POST(request: NextRequest) {
           types: classification.types
         });
         const askedWhat = parseAskedWhat(searchIntentText);
+        let cachedProjectDirectory: NotionDirectoryProject[] | null = null;
+        if (requestsAllMaterials(searchIntentText) && !askedWhat.projectPhrases.length) {
+          cachedProjectDirectory = await loadNotionProjectDirectory(admin).catch(() => []);
+          const subjects = namedDirectorySubjects(cachedProjectDirectory, searchIntentText);
+          if (subjects.length) {
+            askedWhat.projectPhrases = subjects;
+            askedWhat.displayProject = subjects.join(' · ');
+            askedWhat.projectCanonical = subjects.length === 1 ? subjects[0]! : null;
+          }
+        }
         let projectPeek = emptyProjectPeek();
         if (askedWhat.projectPhrases.length > 0) {
           projectPeek = await peekProjectFolders(admin, askedWhat);
@@ -3195,7 +3205,7 @@ export async function POST(request: NextRequest) {
             let newKeywords = "";
             let topicQueries: string[] = [];
             const broadRetry = requestsAllMaterials(searchIntentText);
-            const directory = broadRetry && !namedProjectLock ? await loadNotionProjectDirectory(admin).catch(() => []) : [];
+            const directory = broadRetry && !namedProjectLock ? cachedProjectDirectory ?? await loadNotionProjectDirectory(admin).catch(() => []) : [];
             let plannedProjects: NotionDirectoryProject[] = [];
             const retrySystem = broadRetry ? BROAD_TOPIC_QUERY_RULE : requeryPrompt;
             try {
@@ -3517,7 +3527,7 @@ export async function POST(request: NextRequest) {
           version: 1,
           answer_mode: 'model',
           explored_project_keys: [...new Set(exploredProjectKeys)],
-          reviewed_notion: reviewedNotionEvidence ? { direct: reviewedNotionEvidence.direct.map(s => s.id), adjacent: reviewedNotionEvidence.adjacent.map(s => s.id) } : null,
+          reviewed_notion: reviewedNotionEvidence ? { direct: reviewedNotionEvidence.direct.map(s => s.id), adjacent: reviewedNotionEvidence.adjacent.map(s => s.id), basis: reviewedNotionEvidence.basis } : null,
           grounded_targets: groundedTargets,
           selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
           injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))

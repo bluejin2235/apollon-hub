@@ -2,9 +2,11 @@
 
 ## Release gate
 
-Not approved for production promotion. Unit tests are not a search-quality pass.
+Search-answer changes are not approved for production promotion. Unit tests are not a search-quality pass.
 The user's gate is equal or better results than native Notion search across the
 forest query and independent work questions, including citations and latency.
+The bounded-verified index repair was isolated in PR #38 and deployed first as a
+prerequisite for repairing the corpus. Its deployment is not a search-quality pass.
 
 ## Observed production facts
 
@@ -263,3 +265,12 @@ forest query and independent work questions, including citations and latency.
   does not prove relevance. The goal is relevant coverage, not result count.
 - 332 foundation tests passed, including citation-filter integration and grounded
   review rejection. Deployment and live answer verification remain pending.
+- Live review retained four relevant families and rejected the indoor forest
+  attraction, but source links use `app.notion.com`; the inventory URL validator
+  initially omitted this legitimate domain. It now accepts the observed canonical
+  domain and preserves the source URL unchanged. Relevance reasons are retained.
+- An independent named-project query still displayed unrelated project images.
+  Exact project names from accepted directory relationships now feed the existing
+  project filters before retrieval. Comparable-example requests remain broad.
+- Index-only PR #38 was merged and its production deployment reached READY.
+  Full reindex is the next step; no completed bulk repair is claimed here.
