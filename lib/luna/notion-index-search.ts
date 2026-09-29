@@ -803,7 +803,7 @@ export async function searchNotionForLuna(
       );
       const expanded = await expandSourcesViaLinks(admin, persp.sources, {
         query: queryText || keywords,
-        ...(broad ? { topN: 24, maxAdd: 24 } : {})
+        ...(broad ? { topN: 24, maxAdd: 24, topicSearch: true } : {})
       });
       finalSources = mergeExpandedSources(persp.sources, expanded.sources);
       if (queryText) {

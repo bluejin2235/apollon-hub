@@ -247,6 +247,7 @@ export async function expandSourcesViaLinks(
     maxAdd?: number;
     minConfidence?: number;
     query?: string;
+    topicSearch?: boolean;
   }
 ): Promise<{ sources: NotionSource[]; stats: LinkExpandStats }> {
   const started = Date.now();
@@ -254,7 +255,7 @@ export async function expandSourcesViaLinks(
   let maxAdd = opts?.maxAdd ?? LINK_EXPAND_MAX_ADD;
   const minConfidence = opts?.minConfidence ?? LINK_EXPAND_MIN_CONF;
   const query = (opts?.query ?? "").trim();
-  const broad = requestsAllMaterials(query);
+  const broad = opts?.topicSearch === true || requestsAllMaterials(query);
 
   const seedSources = seeds.slice(0, topN);
   const relevantSeeds = seedSources.filter(
