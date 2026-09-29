@@ -32,6 +32,7 @@ export type EvalGrade = {
 
 export type EvalExamResult = {
   skipped: boolean;
+  continued?: boolean;
   reason?: string;
   run_id?: string;
   tier?: string | null;
@@ -310,6 +311,7 @@ export async function reapStuckEvalRuns(
     .from("luna_eval_runs")
     .select("id")
     .eq("status", "running")
+    .is("checkpoint", null)
     .lt("started_at", cutoff);
   if (error) {
     console.error("[luna/eval-exam] reap list", error);
@@ -359,11 +361,9 @@ async function recomputeRunCountsFromAuto(
   let score_sum = 0;
   let must_pass_violations = 0;
   let quality_misses = 0;
-  let scored = 0;
   for (const row of rows ?? []) {
     // 채점/저장 실패(error)는 점수·합격 집계에서 제외
     if (row.verdict === "error") continue;
-    scored += 1;
     const score =
       typeof row.score === "number"
         ? Number(row.score)
@@ -692,12 +692,14 @@ export async function executeEvalCase(
     nas: connectorsRaw.nas === true
   };
 
+  const {data:evalRun}=await admin.from('luna_eval_runs').select('created_by').eq('id',runId).maybeSingle();
   let result: Awaited<ReturnType<typeof runLunaTurn>>;
   try {
     result = await runLunaTurn(
       admin,
       evalCase.question as string,
-      connectors
+      connectors,
+      evalRun?.created_by ?? undefined
     );
   } catch (err) {
     const reason =
@@ -801,7 +803,7 @@ export async function executeEvalCase(
         answer: result.answer,
         sources: result.sources,
         search_quality: searchQuality,
-        execution_trace: {engine:"production", stream:result.streamAudit, evidence:result.metadata.answer_evidence_trace},
+        execution_trace: {engine:"production", deployment:process.env.VERCEL_GIT_COMMIT_SHA ?? null, stream:result.streamAudit, evidence:result.metadata.answer_evidence_trace},
         verdict,
         memo: null,
         auto_pass: grade.score >= 1,
@@ -1010,7 +1012,9 @@ export async function runEvalExam(
       created_by: opts.createdBy ?? null,
       tier: runTier,
       score_sum: 0,
-      score_max: active.length
+      score_max: active.length,
+      checkpoint:{case_ids:active.map(c=>c.id),next:0,trigger:opts.trigger,tier:runTier,
+        notify:opts.notify!==false,assign_reviews:opts.trigger!=="manual"}
     })
     .select("id")
     .single();
@@ -1019,89 +1023,45 @@ export async function runEvalExam(
     throw new Error(runError?.message || "Failed to create run");
   }
 
-  const runId = run.id as string;
-  const budgetMs =
-    opts.budgetMs ??
-    (opts.trigger === "cron_light" || opts.trigger === "cron_heavy"
-      ? 700_000
-      : undefined);
-  const deadline =
-    budgetMs != null ? Date.now() + budgetMs : Number.POSITIVE_INFINITY;
+  return continueEvalExam(admin,run.id as string,opts.budgetMs ?? 700_000);
+}
 
+type EvalCheckpoint={case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean};
+
+/** Persist after each completed case. A timeout leaves the next case retryable,
+ * and a lease keeps the browser and scheduled worker from running it twice. */
+export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetMs=700_000):Promise<EvalExamResult> {
+  const token=crypto.randomUUID();
+  const claim=await admin.rpc('luna_claim_eval_worker',{p_run:runId,p_token:token});
+  if(claim.error) throw new Error(claim.error.message);
+  if(!claim.data) {
+    const {data:state}=await admin.from('luna_eval_runs').select('status,total,passed,failed,score_sum,score_max').eq('id',runId).maybeSingle();
+    return {skipped:true,continued:state?.status==='running',run_id:runId,reason:state?.status==='running'?'worker active':'run finished',...state};
+  }
   try {
-    let aborted = 0;
-    for (const c of active) {
-      if (Date.now() + 180_000 > deadline) {
-        aborted = 1;
-        console.warn(
-          `[luna/eval-exam] time budget — 남은 문항은 건너뜁니다 (${c.id})`
-        );
-        break;
+    const {data:run,error}=await admin.from('luna_eval_runs').select('checkpoint,created_by').eq('id',runId).single();
+    if(error || !run?.checkpoint) throw new Error(error?.message ?? 'Missing evaluation checkpoint');
+    const cp=run.checkpoint as EvalCheckpoint;
+    if(!Array.isArray(cp.case_ids) || !Number.isInteger(cp.next) || cp.next<0 || cp.next>cp.case_ids.length) throw new Error('Invalid evaluation checkpoint');
+    const deadline=Date.now()+budgetMs;
+    let previousCaseMs=180_000;
+    for(;cp.next<cp.case_ids.length;) {
+      if(Date.now()+Math.max(180_000,previousCaseMs*1.25)>deadline) {
+        return {skipped:false,continued:true,run_id:runId,tier:cp.tier,total:cp.case_ids.length};
       }
-      try {
-        await executeEvalCase(admin, runId, c.id);
-      } catch (err) {
-        console.error("[luna/eval-exam] case", c.id, err);
-        await admin.from("luna_eval_results").upsert(
-          {
-            run_id: runId,
-            case_id: c.id,
-            answer: "",
-            sources: [],
-            verdict: "error",
-            auto_pass: false,
-            auto_reason:
-              err instanceof Error ? err.message.slice(0, 300) : "실행 실패",
-            score: null,
-            fail_kind: null,
-            duration_ms: null,
-            model_label: tierC.model_label
-          },
-          { onConflict: "run_id,case_id" }
-        );
-      }
+      const started=Date.now();
+      await executeEvalCase(admin,runId,cp.case_ids[cp.next]);
+      previousCaseMs=Date.now()-started;
+      cp.next++;
+      const saved=await admin.from('luna_eval_runs').update({checkpoint:cp}).eq('id',runId).eq('worker_token',token);
+      if(saved.error) throw new Error(saved.error.message);
     }
-
-    if (aborted) {
-      console.warn("[luna/eval-exam] finished with time budget (partial)");
-    }
-
-    const finishedAt = new Date().toISOString();
-    await admin
-      .from("luna_eval_runs")
-      .update({ status: aborted ? "stopped" : "done", finished_at: finishedAt })
-      .eq("id", runId);
-
-    const fin = await finalizeEvalExam(admin, runId, opts.trigger, {
-      tier: runTier,
-      notify: opts.notify
-    });
-
-    return {
-      skipped: false,
-      run_id: runId,
-      tier: runTier,
-      total: fin.total,
-      passed: fin.passed,
-      failed: fin.failed,
-      score_sum: fin.score_sum,
-      score_max: fin.score_max,
-      previous_passed: fin.previous_passed,
-      previous_total: fin.previous_total,
-      previous_score_sum: fin.previous_score_sum,
-      previous_score_max: fin.previous_score_max,
-      score_dropped: fin.score_dropped,
-      must_pass_violations: fin.must_pass_violations
-    };
-  } catch (err) {
-    await admin
-      .from("luna_eval_runs")
-      .update({
-        status: "stopped",
-        finished_at: new Date().toISOString()
-      })
-      .eq("id", runId);
-    throw err;
+    const fin=await finalizeEvalExam(admin,runId,cp.trigger,{tier:cp.tier,notify:cp.notify,assignReviews:cp.assign_reviews});
+    const done=await admin.from('luna_eval_runs').update({status:'done',finished_at:new Date().toISOString()}).eq('id',runId).eq('worker_token',token);
+    if(done.error) throw new Error(done.error.message);
+    return {skipped:false,continued:false,run_id:runId,tier:cp.tier,...fin};
+  } finally {
+    await admin.rpc('luna_release_eval_worker',{p_run:runId,p_token:token});
   }
 }
 

@@ -1,3 +1,4 @@
+import { canonicalizeNotionAnswerLinks } from '@/lib/luna/source-citations';
 import { prefetchInventory } from "@/lib/luna/inventory-prefetch";
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { broadProjectSubject } from "@/lib/luna/nas-priority";
@@ -3504,7 +3505,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           reviewCoverage = { reviewed: reviewed.reviewedIds, unverified: reviewed.unverifiedIds,
             aliases:reviewed.aliases,navigation_complete:reviewed.navigationComplete,unavailable:reviewed.unavailableIds };
           const verifiedDocuments = [...reviewed.direct, ...reviewed.adjacent];
-          const perDocumentBudget = Math.max(400, Math.min(2400, Math.floor(60000 / Math.max(1, verifiedDocuments.length))));
+          const perDocumentBudget = 2400;
           notionForLlm = verifiedDocuments.map(source=>({
             ...source, excerpt:[reviewed.basis[source.id]?.quote, source.excerpt?.slice(0,perDocumentBudget), reviewed.basis[source.id]?.reason].filter(Boolean).join('\n')
           }));
@@ -3564,6 +3565,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
 
         // 목록형 사례: listing 규칙만 — understand/know/관점/learnings 는 입력만 키운다
         const l3Prompt = broadMaterialSearch ? [BROAD_MATERIAL_ANSWER_RULE,
+          '현재 사업과 선행 사례를 먼저 묶는다. 초기안과 변경안이 함께 있으면 변경 날짜와 현재 유효 범위를 먼저 설명하고 초기안을 현재안처럼 쓰지 않는다. 자료 목록의 이름과 링크는 제공된 원본 그대로 사용한다.',
           reviewedNotionEvidence ? `[본문으로 확인한 자료 구분]\n직접 관련: ${reviewedNotionEvidence.direct.map(s => s.id).join(', ')}\n인접 참고: ${reviewedNotionEvidence.adjacent.map(s => s.id).join(', ')}\n이 구분을 유지하고 인접 자료를 직접 사례로 바꾸지 마라.` : '',
           reviewCoverage?.unverified.length ? '일부 후보의 관련성 검토를 완료하지 못했다. 자료가 없다고 단정하지 말고 확인된 자료만 제시하며 이 제한을 한 문장으로 알린다.' : ''
         ].filter(Boolean).join('\n\n') : slimListingPrompt
@@ -3725,6 +3727,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         });
         streamMetaEmitted = true;
 
+        const bufferMaterialAnswer=Boolean(reviewedNotionEvidence);
         let assistantText = "";
         const maxTokens = answerMaxTokensForDepth(
           questionDepth,
@@ -3746,21 +3749,21 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
             projectPeek.seenFolderLabels
           );
           firstTokenAt = Date.now();
-          controller.enqueue(encoder.encode(assistantText));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
         } else if (inventoryAnswer) {
           answerEvidenceTrace.answer_mode = 'verified_project_inventory';
           assistantText = inventoryAnswer;
           firstTokenAt = Date.now();
-          controller.enqueue(encoder.encode(assistantText));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
         } else if (provenanceAnswer) {
           answerEvidenceTrace.answer_mode = 'verified_relation_quotes';
           assistantText = provenanceAnswer;
           firstTokenAt = Date.now();
-          controller.enqueue(encoder.encode(assistantText));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
         } else if (askedWhat.material === "image" && cards.some(c => c.type === "image")) {
           assistantText = imageResultAnswer(cards);
           firstTokenAt = Date.now();
-          controller.enqueue(encoder.encode(assistantText));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
         } else if (tierAResolved.provider === "anthropic") {
           if (!client) {
             throw new Error("Claude API key is not configured");
@@ -3775,7 +3778,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           anthropicStream.on("text", (textDelta) => {
             if (firstTokenAt == null && textDelta) firstTokenAt = Date.now();
             assistantText += textDelta;
-            controller.enqueue(encoder.encode(textDelta));
+            if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(textDelta));
           });
 
           const finalMsg = await anthropicStream.finalMessage();
@@ -3817,7 +3820,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
             if (chunk.delta) {
               if (firstTokenAt == null) firstTokenAt = Date.now();
               assistantText += chunk.delta;
-              controller.enqueue(encoder.encode(chunk.delta));
+              if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(chunk.delta));
             }
             if (chunk.usage) answerUsage = chunk.usage;
           }
@@ -3842,16 +3845,17 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           tier: ""
         });
 
+        if (reviewedNotionEvidence) assistantText=canonicalizeNotionAnswerLinks(assistantText,[...reviewedNotionEvidence.direct,...reviewedNotionEvidence.adjacent]);
         if (!notFoundFromAsk && isMaterialSearch(searchIntentText)) {
           const supplement = reviewedNotionInventorySupplement(assistantText, reviewedNotionEvidence);
           if (supplement) {
             assistantText += supplement;
-            controller.enqueue(encoder.encode(supplement));
+            if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(supplement));
           }
         }
         if (reviewCoverage?.unverified.length) {
           const note="\n\n일부 후보 문서는 본문 관련성 검증이 끝나지 않아 목록에 포함하지 못했습니다.";
-          assistantText+=note;controller.enqueue(encoder.encode(note));
+          assistantText+=note;if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(note));
         }
         pushStep("answer", "done", "정리 완료");
 
@@ -3894,14 +3898,15 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         if (scopeFollowupQuery && !notFoundFromAsk && !isNotFoundAnswerText(assistantText)) {
           const scopeNote = scopeResultNote(notionSources.length, cards.filter(c => c.type !== "notion").length, publicWikiSources.length);
           assistantText += scopeNote;
-          controller.enqueue(encoder.encode(scopeNote));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(scopeNote));
         }
         const webCardsUsed = webAugmented && cards.some((c) => c.type === "web");
         if (webCardsUsed && !assistantText.includes("웹 검색으로 보강함")) {
           const note = "\r\n\r\n웹 검색으로 보강함";
           assistantText = `${assistantText.trim()}${note}`;
-          controller.enqueue(encoder.encode(note));
+          if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(note));
         }
+        if (bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
         if (!evaluation && knowledgeInject.matched.length > 0) {
           const nowIso = new Date().toISOString();
           void (async () => {

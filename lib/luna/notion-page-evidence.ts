@@ -12,7 +12,8 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
   const terms = [...new Set((query.toLowerCase().match(/[가-힣a-z0-9]+/g) ?? [])
     .filter(isSearchToken).filter(t => !/^(자료|문서|관련|모두|전체|전부|찾아줘|보여줘)$/.test(t)))];
   const ranked = ordered.map((row, index) => ({ index, score: terms.reduce((n, t) =>
-    n + (row.text.toLowerCase().includes(t) ? 1 : 0), 0) }))
+    n + (row.text.toLowerCase().includes(t) ? 1 : 0), 0) +
+    (/변경|제외|취소|철회|재확인|보류|최종\s*확정|수정안/.test(row.text) ? 4 : 0) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
   const chosen = new Map<number, string>();
   let remaining = limit;

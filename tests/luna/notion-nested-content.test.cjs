@@ -27,7 +27,7 @@ test('synced or repeated blocks cannot recurse indefinitely',async()=>{
 });
 test('metadata request preserves rate-limit errors instead of hiding them as missing pages',async()=>{
  const old=global.fetch;let calls=0;
- try {global.fetch=async()=>{calls++;return {ok:false,status:429,text:async()=> 'rate limited'};};
-  await assert.rejects(()=>new NotionIndexClient('test').fetchMeta('page'),/429/);assert.equal(calls,1);
+ try {global.fetch=async()=>{calls++;return new Response('rate limited',{status:429,headers:{'retry-after':'0.01'}});};
+  await assert.rejects(()=>new NotionIndexClient('test').fetchMeta('page'),/429/);assert.equal(calls,4);
  } finally {global.fetch=old;}
 });

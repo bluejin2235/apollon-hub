@@ -263,6 +263,32 @@ export function attachTableFlatText(blocks: NotionBlock[]): NotionBlock[] {
 }
 
 export class NotionIndexClient {
+  private requestQueue: Promise<void> = Promise.resolve();
+  private nextRequestAt=0;
+
+  /** All read requests share a start-rate gate, including nested blocks. */
+  private async request(url:string,init:RequestInit):Promise<Response> {
+    for(let attempt=0;;attempt++) {
+      const slot=this.requestQueue.then(async()=>{
+        while(Date.now()<this.nextRequestAt) await sleep(this.nextRequestAt-Date.now());
+        this.nextRequestAt=Date.now()+NOTION_INDEX_RATE_MS;
+      });
+      this.requestQueue=slot.catch(()=>{});
+      await slot;
+      const response=await fetch(url,{...init,signal:AbortSignal.timeout(20_000)});
+      if(attempt>=3 || ![429,500,502,503,504,529].includes(response.status)) return response;
+      if(response.status===429) {
+        const body=await response.clone().json().catch(()=>null);
+        if(body?.code==='public_api_request_blocked') return response;
+      }
+      const seconds=Number(response.headers.get('retry-after'));
+      const delay=Number.isFinite(seconds) && seconds>0 ? seconds*1000 : 1000*2**attempt;
+      // Long provider cooldowns go to the existing failed-page retry queue.
+      if(delay>60_000) return response;
+      this.nextRequestAt=Math.max(this.nextRequestAt,Date.now()+delay);
+    }
+  }
+
   private readonly headers: Record<string, string>;
 
   constructor(private readonly token: string) {
@@ -273,17 +299,13 @@ export class NotionIndexClient {
     };
   }
 
-  private async wait(): Promise<void> {
-    await sleep(NOTION_INDEX_RATE_MS);
-  }
-
   async searchAll(): Promise<NotionSearchObject[]> {
     const out: NotionSearchObject[] = [];
     let cursor: string | undefined;
     while (true) {
       const body: Record<string, unknown> = { query: "", page_size: 100 };
       if (cursor) body.start_cursor = cursor;
-      const res = await fetch("https://api.notion.com/v1/search", {
+      const res = await this.request("https://api.notion.com/v1/search", {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify(body)
@@ -299,19 +321,17 @@ export class NotionIndexClient {
       out.push(...(data.results ?? []));
       if (!data.has_more) break;
       cursor = data.next_cursor ?? undefined;
-      await this.wait();
     }
     return out;
   }
 
   async fetchMeta(id: string): Promise<NotionSearchObject | null> {
     for (const ep of ["pages", "databases", "blocks"] as const) {
-      const res = await fetch(`https://api.notion.com/v1/${ep}/${id}`, {
+      const res = await this.request(`https://api.notion.com/v1/${ep}/${id}`, {
         headers: this.headers
       });
       if (res.ok) {
-        await this.wait();
-        return (await res.json()) as NotionSearchObject;
+          return (await res.json()) as NotionSearchObject;
       }
       if (res.status !== 404 && res.status !== 400) {
         throw new Error(`notion ${ep} ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -327,7 +347,7 @@ export class NotionIndexClient {
       const url =
         `https://api.notion.com/v1/blocks/${blockId}/children?page_size=100` +
         (cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : "");
-      const res = await fetch(url, { headers: this.headers });
+      const res = await this.request(url, { headers: this.headers });
       if (!res.ok) {
         throw new Error(
           `notion blocks ${blockId} ${res.status}: ${(await res.text()).slice(0, 200)}`
@@ -341,7 +361,6 @@ export class NotionIndexClient {
       out.push(...(data.results ?? []));
       if (!data.has_more) break;
       cursor = data.next_cursor ?? undefined;
-      await this.wait();
     }
     return out;
   }
@@ -378,7 +397,7 @@ export class NotionIndexClient {
     while (true) {
       const body: Record<string, unknown> = { page_size: 100 };
       if (cursor) body.start_cursor = cursor;
-      const res = await fetch(
+      const res = await this.request(
         `https://api.notion.com/v1/databases/${databaseId}/query`,
         {
           method: "POST",
@@ -402,7 +421,6 @@ export class NotionIndexClient {
       out.push(...(data.results ?? []));
       if (!data.has_more) break;
       cursor = data.next_cursor ?? undefined;
-      await this.wait();
     }
     return out;
   }

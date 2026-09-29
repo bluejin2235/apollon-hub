@@ -187,6 +187,7 @@ export function LunaBrainEval() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [examCategory,setExamCategory]=useState("");
   const [busy, setBusy] = useState(false);
   const [showCases, setShowCases] = useState(false);
   const [openResultId, setOpenResultId] = useState<string | null>(null);
@@ -370,13 +371,15 @@ export function LunaBrainEval() {
     }
   }
 
-  async function runExam(tier: "light" | "heavy" | "all") {
+  async function runExam(tier: "light" | "heavy" | "all", category?:string) {
     setBusy(true);
     setNotice("");
     try {
-      const body: { force: boolean; tier?: string } = { force: true };
+      const body: { force: boolean; tier?: string; categories?:string[] } = { force: true };
+      if(category) body.categories=[category];
       if (tier === "light" || tier === "heavy") body.tier = tier;
-      const res = await brainFetch<{
+      let res = await brainFetch<{
+        continued?:boolean;
         skipped: boolean;
         reason?: string;
         run_id?: string;
@@ -389,12 +392,18 @@ export function LunaBrainEval() {
         method: "POST",
         body: JSON.stringify(body)
       });
+      while(res.continued && !res.skipped && res.run_id) {
+        setSelectedRunId(res.run_id);
+        setNotice("완료한 문항을 저장했습니다. 남은 문항을 이어서 검증합니다.");
+        await load();
+        res=await brainFetch<typeof res>("/api/luna/eval/exam",{method:"POST",body:JSON.stringify({run_id:res.run_id})});
+      }
       const score =
         res.score_sum != null && res.score_max != null
           ? `${res.score_sum}/${res.score_max}`
           : `${res.passed ?? 0}/${res.total ?? 0}`;
       setNotice(
-        res.skipped
+        res.continued ? "다른 작업자가 이어서 검증 중입니다. 완료 전입니다." : res.skipped
           ? `건너뜀: ${res.reason ?? "실행 조건 미충족"}`
           : `${tier === "all" ? "전체" : evalTierLabel(tier)} 실행 완료 · ${score}점`
       );
@@ -669,6 +678,17 @@ export function LunaBrainEval() {
             </BrainCard>
           </div>
 
+          <div className="mb-3 flex items-center gap-2">
+            <label className="text-[12px]">시험 범위
+              <select aria-label="시험 범위" value={examCategory} disabled={busy}
+                onChange={event=>setExamCategory(event.target.value)} className="ml-2 rounded border p-2">
+                <option value="">분류 선택</option>
+                {[...new Set(activeCases.map(c=>c.category).filter(Boolean))].map(category=><option key={category!} value={category!}>{category}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={busy || !examCategory} onClick={()=>void runExam("all",examCategory)}
+              className="rounded border px-3 py-2 text-[12px] disabled:opacity-50">선택 범위 실행</button>
+          </div>
           <div className="mb-3 grid grid-cols-1 gap-2 min-[701px]:grid-cols-3">
             <button
               type="button"

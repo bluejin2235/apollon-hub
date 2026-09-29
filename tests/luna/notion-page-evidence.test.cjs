@@ -34,3 +34,9 @@ test('a relevant page beyond the former first-32 cutoff is read',async()=>{
  assert.match(read[47].excerpt,/전기 배관 도면/);
  assert.equal(db.calls.length,48);
 });
+test('changed scope survives when repeated early keywords would fill the summary budget',()=>{
+ const rows=Array.from({length:12},(_,position)=>({position,text:'숲 프로젝션 초기안 '.repeat(110)}));
+ rows[10].text='9/16 변경: 프로젝션 제외. 숲 라이팅으로 변경.';
+ const evidence=composePageEvidence(rows,'숲 프로젝션 자료',2400);
+ assert.match(evidence,/9\/16 변경/);assert.match(evidence,/프로젝션 제외/);
+});

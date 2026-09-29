@@ -47,6 +47,7 @@ function fakeDb(tables, errors = {}) {
         range(from, to) { offset = from; cap = to - from + 1; return this; },
         maybeSingle() { one = true; return this; },
         single() { one = true; return this; },
+        update(row) { mutation = row; return this; },
         upsert(row) { mutation = row; return this; },
         insert(row) { mutation = row; return this; },
         then(resolve, reject) {
