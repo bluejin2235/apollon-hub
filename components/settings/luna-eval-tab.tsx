@@ -139,6 +139,7 @@ export function LunaEvalTab() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [results, setResults] = useState<EvalResult[]>([]);
   const [running, setRunning] = useState(false);
+  const [examCategory, setExamCategory] = useState("");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [liveResults, setLiveResults] = useState<EvalResult[]>([]);
   const [pendingVerify, setPendingVerify] = useState<PendingVerifyItem[]>([]);
@@ -420,7 +421,7 @@ export function LunaEvalTab() {
   }
 
   async function runAll() {
-    const active = cases.filter((c) => c.is_active);
+    const active = cases.filter((c) => c.is_active && (!examCategory || c.category === examCategory));
     if (active.length === 0) {
       setMessage("활성 시험 문제가 없습니다.");
       return;
@@ -444,7 +445,7 @@ export function LunaEvalTab() {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({case_ids: active.map(c=>c.id)})
     });
     if (!createRes.ok) {
       setRunning(false);
@@ -506,7 +507,7 @@ export function LunaEvalTab() {
       },
       body: JSON.stringify({
         id: run.id,
-        status: "done",
+        status: collected.length === active.length ? "done" : "stopped",
         finished_at: new Date().toISOString()
       })
     });
@@ -778,6 +779,14 @@ export function LunaEvalTab() {
             <div className="mt-0.5 text-[15px] font-medium text-slate-900">{activeCount}</div>
           </div>
         </div>
+        <label className="text-[12px] text-slate-600">
+          시험 범위
+          <select aria-label="시험 범위" value={examCategory} disabled={running}
+            onChange={event=>setExamCategory(event.target.value)} className="ml-2 rounded border border-slate-200 p-2">
+            <option value="">전체</option>
+            {[...new Set(cases.filter(c=>c.is_active).map(c=>c.category).filter(Boolean))].map(category=><option key={category!} value={category!}>{category}</option>)}
+          </select>
+        </label>
         <button
           type="button"
           disabled={running || activeCount === 0}

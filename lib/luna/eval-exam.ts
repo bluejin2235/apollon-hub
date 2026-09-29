@@ -376,8 +376,10 @@ async function recomputeRunCountsFromAuto(
     if (row.fail_kind === "must_pass") must_pass_violations += 1;
     if (row.fail_kind === "quality") quality_misses += 1;
   }
-  const total = (rows ?? []).length;
-  const score_max = scored;
+  const {data:run}=await admin.from("luna_eval_runs").select("total").eq("id",runId).maybeSingle();
+  const total = Math.max(run?.total ?? 0,(rows ?? []).length);
+  const score_max = total;
+  failed = total-passed;
   await admin
     .from("luna_eval_runs")
     .update({
@@ -511,7 +513,7 @@ export async function finalizeEvalExam(
   admin: SupabaseClient,
   runId: string,
   trigger: EvalExamTrigger,
-  opts?: { tier?: string | null; notify?: boolean }
+  opts?: { tier?: string | null; notify?: boolean; assignReviews?:boolean }
 ): Promise<{
   passed: number;
   failed: number;
@@ -636,7 +638,7 @@ export async function finalizeEvalExam(
     }
   }
 
-  await assignDailyMicroEvals(admin, runId);
+  if(opts?.assignReviews!==false) await assignDailyMicroEvals(admin, runId);
 
   return {
     passed: counts.passed,
@@ -1067,7 +1069,7 @@ export async function runEvalExam(
     const finishedAt = new Date().toISOString();
     await admin
       .from("luna_eval_runs")
-      .update({ status: "done", finished_at: finishedAt })
+      .update({ status: aborted ? "stopped" : "done", finished_at: finishedAt })
       .eq("id", runId);
 
     const fin = await finalizeEvalExam(admin, runId, opts.trigger, {
