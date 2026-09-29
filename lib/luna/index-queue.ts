@@ -223,6 +223,9 @@ export async function enqueueNotionRefresh(opts: {
   const active = await listActiveNotionTargets(admin);
 
   const nullPages = await listNotionPages(admin, { propertiesNull: true });
+  const failedPages = await admin.from('luna_notion_pages').select('page_id,title')
+    .eq('archived', false).eq('index_health->>state', 'failed').limit(200);
+  if (failedPages.error) throw new Error(`notion failed body lookup: ${failedPages.error.message}`);
 
   const toInsert: Array<{
     source: IndexQueueSource;
@@ -249,11 +252,12 @@ export async function enqueueNotionRefresh(opts: {
   };
 
   for (const p of nullPages) add(p.page_id, p.title, "properties_null");
+  for (const p of failedPages.data ?? []) add(p.page_id, p.title, 'index_failed');
 
   const inserted = await insertQueueRows(admin, toInsert);
   return {
     inserted,
-    skipped: nullPages.length - toInsert.length,
+    skipped: Math.max(0, nullPages.length + (failedPages.data?.length ?? 0) - toInsert.length),
     staleFound: 0,
     nullPropsFound: nullPages.length,
     sample

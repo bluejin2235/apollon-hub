@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from 'node:crypto';
+import { isNotionBodyReady, completeNotionHealth, markNotionBodyFailure, NOTION_BODY_VERSION } from '@/lib/luna/notion-index-health';
 import { resumeNotionCheckpoint, hydrateNotionCheckpointPage } from '@/lib/luna/notion-index-resume';
 import { contentHash, embeddingToSql } from "@/lib/luna/embedding";
 import { openaiApiKey } from "@/lib/luna/env-keys";
@@ -179,6 +181,7 @@ function slimCheckpoint(cp: NotionIndexCheckpoint): NotionIndexCheckpoint {
 type ExistingPage = {
   last_edited_time: string | null;
   indexed_at: string | null;
+  index_health?: unknown;
 };
 
 type PageRow = IndexedPage & {
@@ -219,7 +222,7 @@ async function loadExistingPages(
   while (true) {
     const { data, error } = await admin
       .from("luna_notion_pages")
-      .select("page_id, last_edited_time, indexed_at")
+      .select("page_id, last_edited_time, indexed_at, index_health")
       .order("page_id")
       .range(from, from + pageSize - 1);
     if (error) {
@@ -231,7 +234,8 @@ async function loadExistingPages(
       map.set(row.page_id as string, {
         last_edited_time:
           typeof row.last_edited_time === "string" ? row.last_edited_time : null,
-        indexed_at: typeof row.indexed_at === "string" ? row.indexed_at : null
+        indexed_at: typeof row.indexed_at === "string" ? row.indexed_at : null,
+        index_health: row.index_health
       });
     }
     if (rows.length < pageSize) break;
@@ -403,6 +407,9 @@ async function embedAndSaveChunks(
     const { vectors } = await createEmbeddingsBatch(
       batch.map((b) => b.embedText)
     );
+    if (vectors.length !== batch.length || vectors.some(v => !v || !v.length || v.some(n => !Number.isFinite(n)))) {
+      throw new Error('embedding provider returned incomplete vectors');
+    }
     const now = new Date().toISOString();
     const rows: Array<{
       chunk_id: string;
@@ -453,7 +460,7 @@ async function savePageChunks(
   minChars: number,
   pageTitle?: string,
   pathTitles?: string[]
-): Promise<{ chunks: number; embeddings: number }> {
+): Promise<{ chunks: number; embeddings: number; health: ReturnType<typeof completeNotionHealth> }> {
   const chunks = blocksToChunks(pageId, indexedBlocks, {
     minChars,
     pageTitle: pageTitle ?? ""
@@ -486,7 +493,10 @@ async function savePageChunks(
     minChars,
     pathTitles ?? []
   );
-  return { chunks: chunks.length, embeddings: embedded.created };
+  const health = completeNotionHealth({ blocks: indexedBlocks.length, chunks: chunks.length,
+    eligible: chunks.length - embedded.skippedShort, embedded: embedded.created + embedded.skippedHash,
+    bodyHash: contentHash(indexedBlocks.map(b => b.text).join('\n')) });
+  return { chunks: chunks.length, embeddings: embedded.created, health };
 }
 
 function asCheckpoint(raw: unknown): NotionIndexCheckpoint {
@@ -785,7 +795,7 @@ async function forceReindexPage(
   const doneAt = new Date().toISOString();
   const { error: doneErr } = await admin
     .from("luna_notion_pages")
-    .update({ indexed_at: doneAt, nas_path: page.nas_path })
+    .update({ indexed_at: doneAt, nas_path: page.nas_path, index_health: chunked.health })
     .eq("page_id", pageId);
   if (doneErr) {
     throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
@@ -1045,6 +1055,17 @@ export async function runNotionIndexChunk(
     }
   }
 
+  const workerToken = randomUUID();
+  const lease = await admin.rpc('luna_claim_notion_worker', { p_run: run.id, p_token: workerToken });
+  if (lease.error) throw new Error(`index worker claim: ${lease.error.message}`);
+  if (!lease.data) return { run, continued: false, done: false };
+  // A second invocation may have advanced the checkpoint before this lease.
+  const freshRun = await admin.from('luna_notion_index_runs').select('*').eq('id', run.id).single();
+  if (freshRun.error) {
+    await admin.rpc('luna_release_notion_worker', { p_run: run.id, p_token: workerToken });
+    throw freshRun.error;
+  }
+  run = mapRun(freshRun.data as Record<string, unknown>);
   try {
     let cp = { ...run.checkpoint };
 
@@ -1240,6 +1261,7 @@ export async function runNotionIndexChunk(
       } catch (error) {
         cp.failed_pages ??= [];
         cp.failed_pages.push({ page_id: pageId, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
+        await markNotionBodyFailure(admin, pageId, error instanceof Error ? error.message : String(error));
         cursor += 1;
         pagesProcessed += 1;
         continue;
@@ -1257,6 +1279,7 @@ export async function runNotionIndexChunk(
       const unchanged =
         run.mode !== "full" &&
         Boolean(prev?.indexed_at) &&
+        isNotionBodyReady(prev?.index_health) &&
         sameEditedTime(prev?.last_edited_time, page.last_edited_time);
 
       if (unchanged) {
@@ -1325,6 +1348,7 @@ export async function runNotionIndexChunk(
       }
 
       await upsertBatch(admin, "luna_notion_pages", [page], "page_id");
+      await admin.from('luna_notion_pages').update({ index_health: { version: NOTION_BODY_VERSION, state: 'building' } }).eq('page_id', pageId);
       await replacePageRelations(
         admin,
         pageId,
@@ -1359,7 +1383,7 @@ export async function runNotionIndexChunk(
         const doneAt = new Date().toISOString();
         const { error: doneErr } = await admin
           .from("luna_notion_pages")
-          .update({ indexed_at: doneAt, nas_path: page.nas_path })
+          .update({ indexed_at: doneAt, nas_path: page.nas_path, index_health: chunked.health })
           .eq("page_id", pageId);
         if (doneErr) {
           throw new Error(`luna_notion_pages complete: ${doneErr.message}`);
@@ -1372,6 +1396,7 @@ export async function runNotionIndexChunk(
         );
         cp.failed_pages ??= [];
         cp.failed_pages.push({ page_id: pageId, error: msg.slice(0, 200) });
+        await markNotionBodyFailure(admin, pageId, msg);
         // 페이지 단위 실패는 전체를 멈추지 않음 — 다음 페이지로
       }
 
@@ -1449,6 +1474,9 @@ export async function runNotionIndexChunk(
     const failed = await failRun(admin, run, message);
     pageMetaMemory.delete(run.id);
     return { run: failed, continued: false, done: true };
+  } finally {
+    const released = await admin.rpc('luna_release_notion_worker', { p_run: run.id, p_token: workerToken });
+    if (released.error) console.error('[notion-index] release', released.error.message);
   }
 }
 
