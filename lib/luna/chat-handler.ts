@@ -3124,7 +3124,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
               firstMaxMatch
             });
           } else for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
-            if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
+            if (!isMaterialSearch(searchIntentText) && Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
             if (cards.length === 0 && notionSources.length === 0) {
               sufficient = false;
@@ -3190,7 +3190,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
 
             if (sufficient && !(isMaterialSearch(searchIntentText) && !namedProjectLock && round === 1)) break;
             if (round >= MAX_SEARCH_ROUNDS) break;
-            if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
+            if (!isMaterialSearch(searchIntentText) && Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
             pushStep("requery", "running", "검색어를 바꿔 다시 찾는 중");
 
