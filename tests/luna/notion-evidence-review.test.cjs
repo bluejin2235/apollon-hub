@@ -34,7 +34,7 @@ test('body-grounded review rejects invented, title-only and unsupported positive
   {index:1,quote:'긴 제목에 숲 미디어아트가 있는 문서',reason:'제목에만 주제가 있다'},
   {index:2,quote:'이 문서는 야외 공간 조성의 테스트 결과다.',reason:'본문에 없는 내용을 생성했다'}]},true);
  assert.deepEqual(valid.direct.map(s=>s.id),['a']); assert.deepEqual(valid.adjacent,[]);
- assert.deepEqual(validateNotionEvidenceReview(docs,{direct:[0],adjacent:[1],unrelated:[2]},true),{direct:[],adjacent:[],basis:{},unsupportedIds:['a','b']});
+ assert.deepEqual(validateNotionEvidenceReview(docs,{direct:[0],adjacent:[1],unrelated:[2]},true),{direct:[],adjacent:[],navigation:[],basis:{},unsupportedIds:['a','b']});
 });
 test('omitted, duplicate or fabricated classifications fail validation',()=>{
  for(const review of [null,{direct:[3],adjacent:[],unrelated:[]},

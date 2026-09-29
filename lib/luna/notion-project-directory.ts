@@ -96,7 +96,7 @@ export function selectDirectoryProjects(directory: NotionDirectoryProject[], cho
 }
 
 /** Ground navigation in actual document titles, not just a project-name guess. */
-export async function describeNotionProjectDirectory(admin: SupabaseClient, directory: NotionDirectoryProject[]): Promise<string> {
+export async function describeNotionProjectDirectory(admin: SupabaseClient, directory: NotionDirectoryProject[], allTitles=false): Promise<string> {
   const ids = [...new Set(directory.flatMap(p => p.pageIds))];
   const titles = new Map<string, string>();
   for (let start = 0; start < ids.length; start += 200) {
@@ -110,7 +110,7 @@ export async function describeNotionProjectDirectory(admin: SupabaseClient, dire
     const selected: string[] = [], roles = new Set<string>();
     for (const title of docs) { const role = documentRole(title); if (!roles.has(role)) { roles.add(role); selected.push(title); } }
     for (const title of docs) if (!selected.includes(title)) selected.push(title);
-    return `[${i}] ${p.key} (${p.pageIds.length}개 문서) — ${selected.slice(0, 6).join(' / ')}`;
+    return `[${i}] ${p.key} (${p.pageIds.length}개 문서) — ${(allTitles ? selected : selected.slice(0, 6)).join(' / ')}`;
   }).join('\n');
 }
 

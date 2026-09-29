@@ -76,3 +76,19 @@ test('named project locations are retained as locations while unrelated folder p
  assert.deepEqual(result.locationOnlyIds,['test']);
  assert.match(result.basis.test.reason,/원본 내용과 결과는 아직 확인하지 않음/);
 });
+test('a directory-selected project remains navigable when its first document is unrelated',async()=>{
+ const db=fakeDb({luna_notion_chunks:[{page_id:'entry',position:0,text:'일반 소개'}, {page_id:'late',position:0,text:relevant}]});
+ const result=await buildDocumentInventory(db,{query:'현장 자료',sources:[{...page('entry'),via_link:'project_directory',project_key:'actual'}],directory:[{key:'actual',pageIds:['entry','late']}],review:reviewer});
+ assert.deepEqual(result.direct.map(s=>s.id),['late']);
+ assert.deepEqual(result.reachedProjects,['actual']);
+});
+test('a navigation-only document opens related records but is never displayed as a project deliverable',async()=>{
+ const db=fakeDb({luna_notion_pages:[{page_id:'meeting',title:'회의록',archived:false}],luna_notion_chunks:[{page_id:'index',position:0,text:'프로젝트 목록과 연결 문서'}, {page_id:'meeting',position:0,text:relevant}],luna_notion_relations:[{from_page_id:'index',to_page_id:'meeting',property_name:'자료'}]});
+ const result=await buildDocumentInventory(db,{query:'관련 자료',sources:[page('index')],directory:[],review:async rows=>{
+  if(rows[0].id.startsWith('index#')) return {direct:[],adjacent:[],navigation:[0],unrelated:[]};
+  return reviewer(rows);
+ }});
+ assert.deepEqual(result.direct.map(s=>s.id),['meeting']);
+ assert.ok(result.reviewedIds.includes('index'));
+ assert.deepEqual(result.unverifiedIds,[]);
+});

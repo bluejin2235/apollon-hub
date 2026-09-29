@@ -165,7 +165,7 @@ function lastRunSummary(last: TierLastRun | null): string {
         : "—";
   const ok =
     last.status === "done"
-      ? "성공"
+      ? "검증 완료"
       : last.status === "running"
         ? "실행 중"
         : "실패";

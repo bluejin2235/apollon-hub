@@ -28,3 +28,13 @@ test('grounded topic exploration receives equal space without dropping the origi
  assert.equal(merged.sources.slice(0,24).filter(s=>s.id.startsWith('topic-')).length,12);
  assert.equal(merged.sources.slice(0,24).filter(s=>s.id.startsWith('original-')).length,12);
 });
+test('material candidate union survives display limits and repeated rounds without duplicate or nonfinite scores',()=>{
+ const a=Array.from({length:81},(_,i)=>source('original-'+i,100-i));
+ const b=Array.from({length:65},(_,i)=>source('topic-'+i,1000-i));
+ const merged=mergeNotionSearchOutcomes(outcome(a),outcome([...a.slice(0,2),...b]),{preserveRounds:true,preserveAllCandidates:true,limit:48});
+ assert.equal(merged.sources.length,146);
+ assert.ok(merged.sources.some(s=>s.id==='topic-64'));
+ assert.ok(merged.sources.some(s=>s.id==='original-80'));
+ assert.ok(merged.sources.every(s=>Number.isFinite(s.match_score)));
+ assert.equal(mergeNotionSearchOutcomes(outcome([]),outcome([]),{preserveRounds:true,preserveAllCandidates:true}).sources.length,0);
+});

@@ -1,40 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NotionSource } from '@/lib/luna/notion';
 import { readIndexedNotionEvidence, type ReadNotionEvidence } from '@/lib/luna/notion-page-evidence';
-import { reviewAllNotionEvidence } from '@/lib/luna/notion-evidence-review';
+import { reviewEvidenceDocuments } from '@/lib/luna/evidence-document-review';
 import { loadNotionRelationGraph, readRelationCandidates } from '@/lib/luna/notion-relation-navigation';
 import { readDirectoryMaterials, requestedDirectoryProjects, type NotionDirectoryProject } from '@/lib/luna/notion-project-directory';
 import { readProjectMentions } from '@/lib/luna/notion-project-mentions';
 
 type Reviewer = (sources: NotionSource[]) => Promise<Record<string, unknown> | null>;
-async function reviewDocuments(sources: ReadNotionEvidence[], reviewer: Reviewer, verifier?: Reviewer) {
-  const origins=new Map<string,NotionSource>();
-  const windows=sources.flatMap(({evidence_passages,evidence_state,...source})=>(evidence_state==='empty' || evidence_state==='missing' ? [] : evidence_passages?.length ? evidence_passages : [source.excerpt??'']).map((excerpt,i)=>{
-    const id=`${source.id}#passage:${i}`;
-    origins.set(id,source);
-    return {...source,id,excerpt};
-  }));
-  const first=await reviewAllNotionEvidence(windows,reviewer);
-  const final=verifier ? await reviewAllNotionEvidence([...first.direct,...first.adjacent],verifier) : first;
-  const checked={...final,unverifiedIds:[...new Set([...first.unverifiedIds,...final.unverifiedIds])]};
-  const direct=new Map<string,NotionSource>(), adjacent=new Map<string,NotionSource>();
-  const basis:NonNullable<typeof checked.basis>={};
-  for (const [items,target] of [[checked.direct,direct],[checked.adjacent,adjacent]] as const) {
-    for (const item of items) {
-      const original=origins.get(item.id)!;
-      if (!target.has(original.id)) target.set(original.id,{...original,excerpt:[checked.basis?.[item.id]?.quote,original.excerpt].filter(Boolean).join("\n\n")});
-      const proof=checked.basis?.[item.id];
-      if(proof) basis[original.id]??=proof;
-    }
-  }
-  for (const id of direct.keys()) adjacent.delete(id);
-  const unverifiedIds=[...new Set([...checked.unverifiedIds.map(id=>origins.get(id)!.id),...sources.filter(s=>s.evidence_state==='failed' || s.evidence_state==='missing').map(s=>s.id)])];
-  const failures:Record<string,string>={};
-  for(const [id,reason] of Object.entries({...first.failures,...final.failures})) failures[origins.get(id)!.id]=reason;
-  for(const source of sources) if(source.evidence_state==='failed' || source.evidence_state==='missing') failures[source.id]='body_'+source.evidence_state;
-  return {direct:[...direct.values()],adjacent:[...adjacent.values()],basis,failures,
-    reviewedIds:sources.map(s=>s.id).filter(id=>!unverifiedIds.includes(id)),unverifiedIds};
-}
 
 /** Only complete, identical bodies can share a review. Never merge by title alone. */
 function duplicateKey(source: ReadNotionEvidence): string | null {
@@ -62,6 +34,7 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
   const basis:Record<string,{quote:string;reason:string}>={};
   const reviewed=new Set<string>(), unverified=new Set<string>(), unavailable=new Set<string>();
   const requestedMembers=new Set(requestedDirectoryProjects(input.directory,input.query).flatMap(p=>p.pageIds));
+  const plannedProjects=new Set(input.sources.filter(s=>s.via_link==='project_directory').map(s=>s.project_key));
   const locationOnlyIds:string[]=[];
   const failures:Record<string,string>={};
   let navigationComplete=graph.complete;
@@ -88,12 +61,12 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
       direct.set(source.id,record);reviewed.add(source.id);locationOnlyIds.push(source.id);
       basis[source.id]={quote:evidence_passages!.join('\n').split('\n').find(line=>/^(?:[a-z]:[\\/]|\\\\)/i.test(line.trim()))!.trim().slice(0,160),reason:'지정 프로젝트에 소속된 원본 자료의 위치. 원본 내용과 결과는 아직 확인하지 않음.'};
     }
-    const checked=await reviewDocuments(unique.filter(s=>!locations.includes(s)),input.review,input.verify);
+    const checked=await reviewEvidenceDocuments(unique.filter(s=>!locations.includes(s)),input.review,input.verify);
     checked.direct.forEach(s=>direct.set(s.id,s));checked.adjacent.forEach(s=>adjacent.set(s.id,s));
     Object.assign(basis,checked.basis);
     Object.assign(failures,checked.failures);
     checked.reviewedIds.forEach(id=>reviewed.add(id));checked.unverifiedIds.forEach(id=>unverified.add(id));
-    const navigation=new Set<string>();
+    const navigation=new Set<string>(checked.navigationIds);
     for(const source of read) {
       const canonical=aliases[source.id] ?? source.id;
       if(canonical!==source.id) {
@@ -101,8 +74,8 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
       }
       if(direct.has(canonical) || adjacent.has(canonical) || source.evidence_state==='empty' || source.evidence_state==='missing') navigation.add(source.id);
     }
-    const projects=input.directory.filter(p=>!reached.has(p.key) && p.pageIds.some(id=>navigation.has(id) &&
-      (direct.has(aliases[id] ?? id) || adjacent.has(aliases[id] ?? id))));
+    const projects=input.directory.filter(p=>!reached.has(p.key) && (plannedProjects.has(p.key) || p.pageIds.some(id=>navigation.has(id) &&
+      (direct.has(aliases[id] ?? id) || adjacent.has(aliases[id] ?? id)))));
     projects.forEach(p=>reached.add(p.key));
     const linkedIds=new Set<string>();
     for(const id of navigation) {

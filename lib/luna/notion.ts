@@ -686,9 +686,12 @@ async function searchNotionOnce(
 export function mergeNotionSearchOutcomes(
   a: NotionSearchOutcome,
   b: NotionSearchOutcome,
-  opts?: { preserveRounds?: boolean; roundWeight?: number; limit?: number }
+  opts?: { preserveRounds?: boolean; roundWeight?: number; limit?: number; preserveAllCandidates?: boolean }
 ): NotionSearchOutcome {
-  const limit = opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
+  // Candidate collection and final relevance review have different purposes.
+  // A display limit must never erase material-search candidates before review.
+  const limit = opts?.preserveAllCandidates ? Math.max(1, a.sources.length + b.sources.length)
+    : opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
   let combinedSources = capNotionDisplaySources([...a.sources, ...b.sources], limit);
   if (opts?.preserveRounds) {
     // Scores from different queries are not comparable. Reserve three original
