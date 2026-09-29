@@ -247,3 +247,19 @@ forest query and independent work questions, including citations and latency.
   Selected project keys are recorded in answer evidence traces. Storage-stage
   labels and the generic stage instruction no longer dominate broad-material
   answer prompts; the answer still uses body evidence for actual status.
+
+## Reviewed evidence preservation and precision
+
+- The directory run recovered all four expected project families, but its answer
+  cited only 11 of 24 reviewed documents and remained incomplete. The independent
+  named-project answer retained its main record and proposal versions. Family
+  recovery is not evidence of native-search parity or exhaustive coverage.
+- Broad inventories now append existing reviewed documents omitted from synthesis,
+  retaining direct/adjacent distinctions and exact source links. Unrelated,
+  unreviewed and malformed-review candidates cannot enter this supplement.
+- Inclusion requires a quoted passage that matches the indexed body, plus an
+  explicit relevance reason. Title-only, invented and unsupported passages are
+  rejected. Semantic relevance still requires live review; quote matching alone
+  does not prove relevance. The goal is relevant coverage, not result count.
+- 332 foundation tests passed, including citation-filter integration and grounded
+  review rejection. Deployment and live answer verification remain pending.

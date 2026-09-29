@@ -41,7 +41,7 @@ import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
 import { loadNotionProjectDirectory, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
-import { NOTION_EVIDENCE_REVIEW, applyNotionEvidenceReview } from "@/lib/luna/notion-evidence-review";
+import { NOTION_EVIDENCE_REVIEW, validateNotionEvidenceReview, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -3491,6 +3491,7 @@ export async function POST(request: NextRequest) {
           cards = cards.filter(c => c.type !== 'image' || groundedTargets.some(t => compact([c.title,c.description,c.raw_path,c.image_description].filter(Boolean).join(' ')).includes(compact(t.name))));
         }
         typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
+        let reviewedNotionEvidence: ReviewedNotionEvidence | null = null;
         let notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
           llmInject.notion,
@@ -3507,7 +3508,8 @@ export async function POST(request: NextRequest) {
               maxTokens: 8192, reasoningEffort: "low"
             });
             pushModelStep(modelSteps, admin, { label: '본문 관련성 확인', tier: 'B', model: review.model_label, model_id: review.model_id, usage: review.usage });
-            notionForLlm = applyNotionEvidenceReview(notionForLlm, parseJsonObject(review.text));
+            reviewedNotionEvidence = validateNotionEvidenceReview(notionForLlm, parseJsonObject(review.text), true);
+            if (reviewedNotionEvidence) notionForLlm = [...reviewedNotionEvidence.direct, ...reviewedNotionEvidence.adjacent];
           } catch (err) { console.error('[luna/evidence-review]', err); }
           typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리한다. 사용자가 조성 관련 자료를 요청했다고 조성 완료 사례만 요청한 것으로 바꾸지 마라. 제안·회의·테스트·준공 기록은 각각의 단계로 포함하고, 사용자가 요구하지 않은 완료 여부를 답변의 결론으로 삼지 마라.');
         }
@@ -3515,6 +3517,7 @@ export async function POST(request: NextRequest) {
           version: 1,
           answer_mode: 'model',
           explored_project_keys: [...new Set(exploredProjectKeys)],
+          reviewed_notion: reviewedNotionEvidence ? { direct: reviewedNotionEvidence.direct.map(s => s.id), adjacent: reviewedNotionEvidence.adjacent.map(s => s.id) } : null,
           grounded_targets: groundedTargets,
           selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
           injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))
@@ -3829,6 +3832,13 @@ export async function POST(request: NextRequest) {
           tier: ""
         });
 
+        if (!notFoundFromAsk && requestsAllMaterials(searchIntentText)) {
+          const supplement = reviewedNotionInventorySupplement(assistantText, reviewedNotionEvidence);
+          if (supplement) {
+            assistantText += supplement;
+            controller.enqueue(encoder.encode(supplement));
+          }
+        }
         pushStep("answer", "done", "정리 완료");
 
         const llmMs = Date.now() - llmStartedAt;
