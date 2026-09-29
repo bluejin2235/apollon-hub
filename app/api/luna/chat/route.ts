@@ -40,6 +40,7 @@ import {
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials } from "@/lib/luna/all-materials";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
+import { NOTION_EVIDENCE_REVIEW, applyNotionEvidenceReview } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -555,6 +556,7 @@ function buildAnswerSystem(
     workserverStructure?: string;
     synthesisOpinion?: string;
     notionSources?: NotionSource[];
+    notionSourcesForLlm?: NotionSource[];
     evidenceQuery?: string;
     cards?: LunaCard[];
     nasResults?: NasDirectoryRow[];
@@ -631,6 +633,7 @@ function buildAnswerSystem(
 function buildVolatileSystemText(opts: {
   synthesisOpinion?: string;
   notionSources?: NotionSource[];
+  notionSourcesForLlm?: NotionSource[];
   evidenceQuery?: string;
   cards?: LunaCard[];
   nasResults?: NasDirectoryRow[];
@@ -693,7 +696,7 @@ function buildVolatileSystemText(opts: {
   }
 
   if (opts.notionSources && opts.notionSources.length > 0) {
-    const forLlm = takeTopNotionSourcesForLlm(
+    const forLlm = opts.notionSourcesForLlm ?? takeTopNotionSourcesForLlm(
       opts.notionSources,
       inject.notion,
       opts.evidenceQuery
@@ -3183,15 +3186,20 @@ export async function POST(request: NextRequest) {
             pushStep("requery", "running", "검색어를 바꿔 다시 찾는 중");
 
             let newKeywords = "";
+            let topicQueries: string[] = [];
+            const broadRetry = requestsAllMaterials(searchIntentText);
+            const retrySystem = broadRetry
+              ? `${requeryPrompt}\n[넓은 주제의 보완 탐색]\n원 질문과 뜻이 연결되는 다른 공간·활동·연출 명칭으로 두 개의 독립 검색을 계획한다. 각각 2~4개의 핵심 단어만 사용한다. 같은 원문 단어를 모두 반복하거나 문서 종류·견적·시공 같은 일반 단어를 길게 나열하지 마라. 알려지지 않은 프로젝트명·업체명은 만들지 마라. 출력은 JSON {"queries":["검색어 1","검색어 2"]}만 쓴다.`
+              : requeryPrompt;
             try {
               const reqRes = await lunaLlmComplete(admin, {
                 tier: "B",
                 feature: "search_terms",
-                system: requeryPrompt,
+                system: retrySystem,
                 user: `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
                 )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
-                maxTokens: 64
+                maxTokens: broadRetry ? 160 : 64
               });
               recordPromptUse(usageLog, {
                 key: LUNA_PROMPT_KEYS.requery,
@@ -3203,7 +3211,7 @@ export async function POST(request: NextRequest) {
                 key: LUNA_PROMPT_KEYS.requery,
                 step: "재검색어 생성",
                 source: requeryPick.source,
-                text: requeryPrompt
+                text: retrySystem
               });
               pushModelStep(modelSteps, admin, {
                 label: "재검색어 생성",
@@ -3213,7 +3221,13 @@ export async function POST(request: NextRequest) {
                 usage: reqRes.usage
               });
               const reqText = reqRes.text.trim();
-              newKeywords = reqText.replace(/^["']|["']$/g, "").trim();
+              if (broadRetry) {
+                const queries = parseJsonObject(reqText)?.queries;
+                if (Array.isArray(queries)) topicQueries = [...new Set(queries
+                  .filter((q): q is string => typeof q === 'string')
+                  .map(q => q.trim().slice(0, 80)).filter(Boolean))].slice(0, 2);
+              }
+              newKeywords = topicQueries.length ? topicQueries.join(' / ') : reqText.replace(/^["']|["']$/g, "").trim();
             } catch (err) {
               console.error("[luna/chat] requery", err);
               pushStep("requery", "done", "검색어를 바꿔 다시 찾는 중");
@@ -3237,7 +3251,14 @@ export async function POST(request: NextRequest) {
             keywords = mergedKw;
             searchRounds += 1;
             pushStep("search", "running", searchRunningLabel);
-            batch = await runConnectorSearch(keywords);
+            if (topicQueries.length) {
+              const alternatives = await Promise.all(topicQueries.map(query =>
+                searchNotionForLuna(admin, query, query, { broad: true, skipLive: true })));
+              const alternative = alternatives.reduce((a, b) => mergeNotionSearchOutcomes(a, b, { preserveRounds: true, limit: 48 }));
+              batch = { ...batch, notionOutcome: alternative, notionSources: alternative.sources, nasResults: [], cards: [] };
+            } else {
+              batch = await runConnectorSearch(keywords);
+            }
             notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome, { preserveRounds: true, limit: requestsAllMaterials(searchIntentText) ? 48 : 24 }) : batch.notionOutcome;
             notionSources = annotateNotionSourcesWithWorkStage(
               notionSearchOutcome.sources,
@@ -3462,6 +3483,15 @@ export async function POST(request: NextRequest) {
           notionForLlm = await readIndexedNotionEvidence(admin, notionForLlm, searchIntentText);
           const readById = new Map(notionForLlm.map(source => [source.id, source]));
           notionSources = notionSources.map(source => readById.get(source.id) ?? source);
+          try {
+            const review = await lunaLlmComplete(admin, {
+              tier: 'B', feature: 'eval_grade', system: NOTION_EVIDENCE_REVIEW,
+              user: `질문: ${searchIntentText}\n\n${notionForLlm.map((s, i) => `[${i}] ${s.title}\n${(s.excerpt ?? '').slice(0, 1400)}`).join('\n\n')}`,
+              maxTokens: 512
+            });
+            pushModelStep(modelSteps, admin, { label: '본문 관련성 확인', tier: 'B', model: review.model_label, model_id: review.model_id, usage: review.usage });
+            notionForLlm = applyNotionEvidenceReview(notionForLlm, parseJsonObject(review.text));
+          } catch (err) { console.error('[luna/evidence-review]', err); }
           typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리한다. 사용자가 조성 관련 자료를 요청했다고 조성 완료 사례만 요청한 것으로 바꾸지 마라. 제안·회의·테스트·준공 기록은 각각의 단계로 포함하고, 사용자가 요구하지 않은 완료 여부를 답변의 결론으로 삼지 마라.');
         }
         const answerEvidenceTrace = {
@@ -3530,6 +3560,7 @@ export async function POST(request: NextRequest) {
             workserverStructure,
             notionSources,
             evidenceQuery: searchIntentText,
+            notionSourcesForLlm: notionForLlm,
             cards,
             nasResults,
             nasSearchAttempted: nasEnabled && anySearch,

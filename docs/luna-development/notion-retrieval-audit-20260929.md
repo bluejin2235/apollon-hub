@@ -180,3 +180,21 @@ forest query and independent work questions, including citations and latency.
   rather than interpreting all related material as completed installations only.
 - 322 regression tests and TypeScript passed before the relation-statistics
   display correction. No production application promotion or full reindex yet.
+
+## Browser validation — synthesis failure and bounded topic planning
+
+- The balanced run still failed: 32 page excerpts reached the model, including
+  the current park's 1,265-character body, but the answer omitted that project.
+  The stream-side installation family was still absent. Latency was 54.6 seconds.
+- An existing unconditional instruction incorrectly equated a project folder with
+  actual construction. It now treats folder placement as storage classification
+  and requires body evidence for roles and completion.
+- Broad retries now plan two distinct related topic queries and retrieve them
+  independently rather than appending every new word into one inflated query.
+  Topic planning cannot invent project names. Original evidence remains retained.
+- A bounded review reads every selected page excerpt, classifies direct/adjacent/
+  unrelated candidates, and sends direct evidence first to synthesis. Review
+  output must classify every existing candidate exactly once; malformed or empty
+  positive output falls back to the original evidence. No new sources are created.
+- 322 existing tests plus two focused evidence-review tests passed; TypeScript
+  passed. These changes still require live validation before production promotion.

@@ -561,12 +561,14 @@ export async function searchNotionForLuna(
     /** 표기 변형 질의 확장 (기본 true) */
     queryExpand?: boolean;
     glossary?: QueryExpandGlossaryRow[];
+    /** Preserve broad retrieval budgets for a generated alternative topic query. */
+    broad?: boolean;
   }
 ): Promise<NotionSearchOutcome> {
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
   const listing = Boolean(opts?.listing);
-  const broad = requestsAllMaterials(queryText);
+  const broad = opts?.broad === true || requestsAllMaterials(queryText);
   const queryExpand = opts?.queryExpand !== false;
   const topN = broad ? 60 : listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
   const perPage = broad ? 2 : listing
