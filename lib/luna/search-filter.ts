@@ -216,14 +216,16 @@ export function keepSourcesUsedInAnswer(opts: {
   /** Only sources actually supplied to the answer model may use ID citations. */
   injectedNotionIds?: string[];
 }): { cards: LunaCard[]; notion: NotionSource[]; wiki: WikiSourceRef[] } {
-  if (opts.notFound || isNotFoundAnswer(opts.answer)) {
+  // A mixed answer can say "not found" while citing a real source. Keep only
+  // sources demonstrably used below; explicit scope mismatch still clears all.
+  if (opts.notFound) {
     return { cards: [], notion: [], wiki: [] };
   }
   const answer = opts.answer.trim();
   if (!answer) {
     return { cards: opts.cards, notion: opts.notion, wiki: opts.wiki };
   }
-  const images = opts.cards.filter((c) => c.type === "image");
+  const images = isNotFoundAnswer(answer) ? [] : opts.cards.filter((c) => c.type === "image");
   const otherCards = opts.cards.filter((c) => c.type !== "image");
   const cards = [
     ...images,

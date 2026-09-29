@@ -38,6 +38,7 @@ import {
   type NotionSource
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
+import { requestsAllMaterials } from "@/lib/luna/all-materials";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -2604,7 +2605,7 @@ export async function POST(request: NextRequest) {
                 : searchNotionForLuna(
                     admin,
                     kw || searchIntentText,
-                    searchIntentText,
+                    kw.startsWith(searchIntentText) ? kw : searchIntentText,
                     {
                       queryEmbedding: knowledgeEmb.queryEmbedding,
                       skipLive: skipNotionLive,
@@ -3097,7 +3098,7 @@ export async function POST(request: NextRequest) {
               "done",
               notFoundFromAsk ? "지정 프로젝트 · 해당 없음" : "지정 프로젝트 범위"
             );
-          } else if (firstMaxMatch >= PACK_SCORE_RECOMMENDED) {
+          } else if (!requestsAllMaterials(searchIntentText) && firstMaxMatch >= PACK_SCORE_RECOMMENDED) {
             pushStep(
               "eval",
               "done",
@@ -3110,7 +3111,7 @@ export async function POST(request: NextRequest) {
           } else for (let round = 1; round <= MAX_SEARCH_ROUNDS; round += 1) {
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
-            if (cards.length === 0) {
+            if (cards.length === 0 && notionSources.length === 0) {
               sufficient = false;
               missing = "검색 결과가 없음";
               pushStep("eval", "done", "결과 없음");
@@ -3121,6 +3122,8 @@ export async function POST(request: NextRequest) {
                   .slice(0, 40)
                   .map(formatCardLineForEval)
                   .filter(Boolean);
+                materialLines.push(...notionSources.slice(0, 24).map(s =>
+                  `[Notion] ${s.title}: ${(s.excerpt ?? '').slice(0, 700)}`));
                 const evalRes = await lunaLlmComplete(admin, {
                   tier: "B",
                   feature: "eval_grade",
@@ -3786,7 +3789,7 @@ export async function POST(request: NextRequest) {
             wiki: publicWikiSources,
             answer: assistantText,
             injectedNotionIds: notionForLlm.map(source => source.id),
-            notFound: hideUnused
+            notFound: notFoundFromAsk
           });
           cards = kept.cards;
           notionSources = kept.notion;

@@ -4,6 +4,7 @@
  */
 
 import { normalizeSynonyms } from "@/lib/glossary/synonyms";
+import { isSearchToken } from "@/lib/luna/keyword-token";
 import { fuseKeywordAndEmbedding, type MatchVia } from "@/lib/luna/embedding";
 import type { IdEmbeddingHit } from "@/lib/luna/embedding-search";
 
@@ -174,7 +175,7 @@ function tokenizeKeywords(raw: string, protectedTokens: Set<string>): string[] {
   const parts = text
     .split(/[\s,./|·•]+/)
     .map((p) => stripParticles(p.trim(), protectedTokens))
-    .filter((p) => p.length >= 2 && !isStopToken(p));
+    .filter((p) => isSearchToken(p) && !isStopToken(p));
   const extra = text.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [];
   const merged = [...parts];
   for (const e of extra) {

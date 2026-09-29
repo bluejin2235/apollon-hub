@@ -3,6 +3,7 @@
  * 위키 검색 로직은 건드리지 않는다 — 동일 규칙만 여기서 재구현·재사용.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isSearchToken } from "@/lib/luna/keyword-token";
 import {
   EMBEDDING_SCORE_WEIGHT,
   type MatchVia
@@ -23,7 +24,7 @@ export function compactKeywordText(text: string): string {
 export function includesKeywordCompact(text: string, keyword: string): boolean {
   const hay = compactKeywordText(text);
   const needle = compactKeywordText(keyword);
-  if (needle.length < 2) return false;
+  if (!isSearchToken(needle)) return false;
   return hay.includes(needle);
 }
 
@@ -73,6 +74,10 @@ const NOTION_QUERY_NOISE = new Set([
   "이름",
   "프로그램",
   "자료",
+  "모두",
+  "전체",
+  "전부",
+  "조성관련",
   "이미지",
   "사진",
   "찾아줘",
@@ -121,10 +126,10 @@ function expandKeywordVariants(keywords: string[]): string[] {
   const seen = new Set<string>();
   const push = (raw: string) => {
     const t = raw.trim();
-    if (t.length < 2) return;
+    if (!isSearchToken(t)) return;
     if (NOTION_QUERY_NOISE.has(t.toLowerCase())) return;
     const key = compactKeywordText(t);
-    if (key.length < 2 || seen.has(key)) return;
+    if (!isSearchToken(key) || seen.has(key)) return;
     if (NOTION_QUERY_NOISE.has(key)) return;
     seen.add(key);
     out.push(t);
@@ -187,9 +192,9 @@ export function planNotionSearchKeywords(
   const out = [...base];
   const push = (raw: string) => {
     const t = raw.trim();
-    if (t.length < 2) return;
+    if (!isSearchToken(t)) return;
     const key = compactKeywordText(t);
-    if (key.length < 2 || seen.has(key) || NOTION_QUERY_NOISE.has(key)) return;
+    if (!isSearchToken(key) || seen.has(key) || NOTION_QUERY_NOISE.has(key)) return;
     seen.add(key);
     out.push(t);
   };
@@ -233,11 +238,12 @@ export function pickIlikeKeywords(
   const seen = new Set<string>();
   const push = (k: string) => {
     const key = compactKeywordText(k);
-    if (key.length < 2 || seen.has(key)) return;
+    if (!isSearchToken(key) || seen.has(key)) return;
     seen.add(key);
     picked.push(k);
   };
-  for (const k of original.slice(0, 6)) push(k);
+  for (const k of original.filter(k => k.length === 1)) push(k);
+  for (const k of original.slice(0, 6 - picked.length)) push(k);
   for (const k of extras.slice(0, 4)) push(k);
   return picked.slice(0, 10);
 }
@@ -248,12 +254,13 @@ export function pickLightKeywords(plan: NotionKeywordPlan): string[] {
   const seen = new Set<string>();
   const push = (k: string) => {
     const key = compactKeywordText(k);
-    if (key.length < 2 || seen.has(key)) return;
+    if (!isSearchToken(key) || seen.has(key)) return;
     seen.add(key);
     picked.push(k);
   };
   for (const k of plan.extra.slice(0, 3)) push(k);
   // 한국어만 있는 질문도 정확한 제목·본문 일치를 임베딩 후보와 합친다.
+  for (const k of plan.keywords.filter(word => word.length === 1 && isSearchToken(word))) push(k);
   for (const k of plan.keywords.filter((word) => /^[가-힣]{2,}$/.test(word) && !NOTION_QUERY_NOISE.has(word)).slice(0, 2)) push(k);
   for (const k of plan.keywords) {
     if (/[a-z]{2,}/i.test(k) || /[./-]/.test(k) || /^\d{6,8}$/.test(k)) push(k);
@@ -293,7 +300,7 @@ function scoreChunkAgainstKeywords(opts: {
   let score = 0;
   for (const keyword of opts.keywords) {
     const kw = keyword.trim();
-    if (kw.length < 2) continue;
+    if (!isSearchToken(kw)) continue;
     const w = opts.weights.get(kw) ?? 1;
     // 영문·숫자 토큰은 제목/본문 일치 시 가중 (lucky 등)
     const latinBoost = /[a-z0-9]/i.test(kw) ? 1.5 : 1;
@@ -321,14 +328,23 @@ function escapeIlike(raw: string): string {
 export async function matchNotionChunksByKeyword(
   admin: SupabaseClient,
   keywordsIn: string[],
-  opts?: { limit?: number; light?: boolean; extra?: string[] }
+  opts?: { limit?: number; light?: boolean; extra?: string[]; coverage?: boolean }
 ): Promise<NotionKeywordChunkHit[]> {
   const keywords = keywordsIn
     .map((k) => k.trim())
-    .filter((k) => compactKeywordText(k).length >= 2);
+    .filter((k) => isSearchToken(compactKeywordText(k)));
   if (keywords.length === 0) return [];
 
   const limit = opts?.limit ?? 60;
+  // The database ranks all matches before limiting. The fallback supports
+  // staged rollout, but never changes the query's one-character constraints.
+  if (opts?.coverage && typeof admin.rpc === 'function') {
+    const result = await admin.rpc('luna_notion_keyword_candidates', {
+      query_terms: keywords.slice(0, 10), result_limit: limit
+    });
+    if (!result.error && Array.isArray(result.data)) return result.data as NotionKeywordChunkHit[];
+    console.error('[luna/notion-keyword] coverage RPC unavailable', result.error?.message);
+  }
   const light = Boolean(opts?.light);
   const extra = opts?.extra ?? [];
 

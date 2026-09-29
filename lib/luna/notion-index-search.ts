@@ -1,4 +1,5 @@
 import { asksForProvenance, queryExcerpt } from "@/lib/luna/evidence-selection";
+import { requestsAllMaterials } from "@/lib/luna/all-materials";
 import { resolveGroundedTargets } from "@/lib/luna/grounded-target";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createQueryEmbedding, embeddingToSql } from "@/lib/luna/embedding";
@@ -534,12 +535,13 @@ export async function searchNotionForLuna(
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
   const listing = Boolean(opts?.listing);
+  const broad = requestsAllMaterials(queryText);
   const queryExpand = opts?.queryExpand !== false;
-  const topN = listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
-  const perPage = listing
+  const topN = broad ? 60 : listing ? NOTION_LISTING_TOP_CHUNKS : NOTION_INDEX_TOP_BLOCKS;
+  const perPage = broad ? 2 : listing
     ? NOTION_LISTING_MAX_PER_PAGE
     : NOTION_INDEX_MAX_BLOCKS_PER_PAGE;
-  const overfetch = listing ? LISTING_MATCH_OVERFETCH : MATCH_OVERFETCH;
+  const overfetch = broad ? 120 : listing ? LISTING_MATCH_OVERFETCH : MATCH_OVERFETCH;
   let embedding = opts?.queryEmbedding ?? null;
   let embedMs = 0;
   if (!embedding && queryText) {
@@ -599,6 +601,7 @@ export async function searchNotionForLuna(
   if (needKeyword) {
     keywordHits = await matchNotionChunksByKeyword(admin, searchKws, {
       limit: overfetch,
+      coverage: broad,
       extra: queryExpand ? plan.extra : []
     });
   } else if (queryExpand) {
@@ -606,6 +609,7 @@ export async function searchNotionForLuna(
     if (lightKws.length > 0) {
       keywordHits = await matchNotionChunksByKeyword(admin, lightKws, {
         limit: overfetch,
+        coverage: broad,
         light: true,
         extra: plan.extra
       });

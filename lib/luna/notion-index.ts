@@ -343,20 +343,22 @@ export class NotionIndexClient {
     return out;
   }
 
-  /** 표·단 안에 들어간 table_row 까지. child_page / child_database 는 별도 페이지라 내려가지 않는다. */
+  /** Read every nested content block, including toggles and heading children.
+   * Child pages/databases have their own identity and are indexed separately.
+   */
   async fetchPageBlocks(pageId: string): Promise<NotionBlock[]> {
     const top = await this.fetchBlockChildren(pageId);
     const out: NotionBlock[] = [];
+    const seen = new Set<string>();
     const walk = async (blocks: NotionBlock[]) => {
       for (const block of blocks) {
+        if (seen.has(block.id)) continue;
+        seen.add(block.id);
         out.push(block);
         const type = block.type ?? "";
         if (
           block.has_children &&
-          (type === "table" ||
-            type === "column_list" ||
-            type === "column" ||
-            type === "synced_block")
+          type !== "child_page" && type !== "child_database"
         ) {
           const children = await this.fetchBlockChildren(block.id);
           await walk(children);

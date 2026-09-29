@@ -132,6 +132,7 @@ export type NotionIndexCheckpoint = {
   cursor?: number;
   phase?: "init" | "pages" | "orphan" | "done";
   changed_pages?: number;
+  failed_pages?: Array<{ page_id: string; error: string }>;
   properties_written?: boolean;
   db_rows_added?: number;
   /** 이 실행에서 대기열로 강제 재색인한 건수 (상한 200) */
@@ -1249,6 +1250,7 @@ export async function runNotionIndexChunk(
 
       const prev = existingPages.get(pageId);
       const unchanged =
+        run.mode !== "full" &&
         Boolean(prev?.indexed_at) &&
         sameEditedTime(prev?.last_edited_time, page.last_edited_time);
 
@@ -1363,6 +1365,8 @@ export async function runNotionIndexChunk(
         console.error(
           `[notion-index] skip page ${pageId.slice(0, 8)}: ${msg.slice(0, 200)}`
         );
+        cp.failed_pages ??= [];
+        cp.failed_pages.push({ page_id: pageId, error: msg.slice(0, 200) });
         // 페이지 단위 실패는 전체를 멈추지 않음 — 다음 페이지로
       }
 
@@ -1393,7 +1397,7 @@ export async function runNotionIndexChunk(
     cp.properties_written = true;
 
     // orphan cleanup (full only)
-    if (run.mode === "full") {
+    if (run.mode === "full" && !cp.failed_pages?.length) {
       const previousCount = existingPages.size;
       const newCount = pageIds.length;
       const minRequired =
@@ -1412,7 +1416,7 @@ export async function runNotionIndexChunk(
       new Date(finished).getTime() - new Date(run.started_at).getTime()
     );
     run = await updateRun(admin, run.id, {
-      status: "success",
+      status: cp.failed_pages?.length ? "failed" : "success",
       finished_at: finished,
       duration_ms: durationMs,
       pages_total: pageIds.length,
@@ -1420,12 +1424,15 @@ export async function runNotionIndexChunk(
       pages_skipped: pagesSkipped,
       blocks,
       embeddings_added: embeddingsAdded,
-      error_message: null,
+      error_message: cp.failed_pages?.length
+        ? `${cp.failed_pages.length} pages failed; first: ${cp.failed_pages[0]!.page_id}: ${cp.failed_pages[0]!.error}`.slice(0, 500)
+        : null,
       checkpoint: {
         scan_batch: scanBatch,
         cursor: pageIds.length,
         phase: "done",
         changed_pages: changedPages,
+        failed_pages: cp.failed_pages ?? [],
         page_ids: pageIds
       }
     });
