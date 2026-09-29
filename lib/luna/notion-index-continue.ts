@@ -10,11 +10,12 @@ export function scheduleNotionIndexContinue(
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) return;
   const url = `${origin}/api/cron/notion-index?continue=${encodeURIComponent(runId)}`;
-  after(() => {
-    void fetch(url, {
+  after(async () => {
+    await fetch(url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${cronSecret}` }
-    }).catch((err) => {
+      headers: { Authorization: `Bearer ${cronSecret}` },
+      signal: AbortSignal.timeout(15_000)
+    }).then(res => { if (!res.ok) throw new Error(`continuation ${res.status}`); }).catch((err) => {
       console.error("[notion-index] continue fetch", err);
     });
   });
