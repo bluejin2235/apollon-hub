@@ -2080,6 +2080,7 @@ export async function POST(request: NextRequest) {
 
         // ——— 단계 1: 되묻기 ———
         const skipClarify =
+          (requestsAllMaterials(searchIntentText) && !namedProjectLock) ||
           (evidenceOnlyQuestion && speculativeNotion.sources.length > 0) ||
           (new Set(speculativeNotion.sources.flatMap(s => (s.grounded_targets ?? []).map(t => t.name))).size === 1) ||
           hasAttachments ||
@@ -3218,7 +3219,7 @@ export async function POST(request: NextRequest) {
             }
 
             // 재검색도 질문 원문을 유지하고, missing 힌트만 뒤에 붙인다 (LLM 단독 치환 금지)
-            const hint = (missing || newKeywords).slice(0, 60);
+            const hint = (newKeywords || missing).slice(0, 60);
             const mergedKw = `${searchIntentText.slice(0, 80)} ${hint}`.trim();
             if (
               !mergedKw ||
@@ -3235,7 +3236,7 @@ export async function POST(request: NextRequest) {
             searchRounds += 1;
             pushStep("search", "running", searchRunningLabel);
             batch = await runConnectorSearch(keywords);
-            notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome) : batch.notionOutcome;
+            notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome, { preserveRounds: true, limit: requestsAllMaterials(searchIntentText) ? 48 : 24 }) : batch.notionOutcome;
             notionSources = annotateNotionSourcesWithWorkStage(
               notionSearchOutcome.sources,
               searchIntentText

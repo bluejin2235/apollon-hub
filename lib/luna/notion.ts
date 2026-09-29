@@ -685,9 +685,34 @@ async function searchNotionOnce(
 
 export function mergeNotionSearchOutcomes(
   a: NotionSearchOutcome,
-  b: NotionSearchOutcome
+  b: NotionSearchOutcome,
+  opts?: { preserveRounds?: boolean; limit?: number }
 ): NotionSearchOutcome {
-  const combinedSources = capNotionDisplaySources([...a.sources, ...b.sources]);
+  const limit = opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
+  let combinedSources = capNotionDisplaySources([...a.sources, ...b.sources], limit);
+  if (opts?.preserveRounds) {
+    // Scores from different queries are not comparable. Reserve two original
+    // results for each retry result, rather than replacing evidence with a
+    // longer query's inflated keyword scores. Keep each round's own ordering.
+    const merged = new Map(combinedSources.map(s => [notionSourceKey(s), s]));
+    for (const s of [...a.sources, ...b.sources]) {
+      const key = notionSourceKey(s);
+      if (!merged.has(key)) merged.set(key, s);
+    }
+    const ordered: NotionSource[] = [];
+    const seen = new Set<string>();
+    const append = (s: NotionSource | undefined) => {
+      if (!s) return;
+      const key = notionSourceKey(s);
+      if (seen.has(key)) return;
+      seen.add(key); ordered.push(merged.get(key)!);
+    };
+    for (let i = 0; i < Math.max(a.sources.length, b.sources.length); i++) {
+      append(a.sources[i * 2]); append(a.sources[i * 2 + 1]); append(b.sources[i]);
+    }
+    // match_score is a sorting score, not embedding similarity or confidence.
+    combinedSources = ordered.slice(0, limit).map((s, i) => ({ ...s, match_score: 10 * (limit - i) / limit }));
+  }
   const status: NotionSearchStatus =
     combinedSources.length > 0
       ? "ok"

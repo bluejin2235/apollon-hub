@@ -124,3 +124,21 @@ forest query and independent work questions, including citations and latency.
   are surfaced rather than disguised as absent pages.
 - 313 tests and TypeScript passed; an additional focused metadata-rate-limit test
   also passed. A new preview is required for the answer and bounded-repair checks.
+
+## Browser validation — bounded repair and retry evidence
+
+- The single-page repair completed on two nested-content examples: 53 blocks / 3
+  new embeddings and 73 blocks / 14 new embeddings. Stored block totals increased
+  by 11 and 8 respectively. No bulk reindex was started.
+- The missing Review page is readable through the connected personal Notion tool,
+  but the preview application's integration could not fetch it. This is an access
+  discrepancy requiring verification; it is not proof of a production token's
+  permissions. Personal connector content was not copied into the shared index.
+- The second exact-question preview still failed the answer gate. Its retry merged
+  24 initial candidates into the live-search default limit of five, and compared
+  scores from different queries. Final evidence therefore lost initial sources.
+- Retry merging now preserves both rounds and their order, with a separate ranking
+  score, and the default merge no longer applies the five-page live-search cap.
+  Explicit all-material requests skip unnecessary project clarification. Retry
+  hints prefer generated search keywords over prose descriptions of missing facts.
+- 316 tests passed. Live answer quality must be checked again before promotion.
