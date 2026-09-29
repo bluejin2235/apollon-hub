@@ -593,6 +593,7 @@ export async function searchNotionForLuna(
 
   const chunkPageCount = new Set((chunkHits ?? []).map((h) => h.page_id)).size;
   const needKeyword =
+    broad ||
     !embedding ||
     chunkHits === null ||
     chunkPageCount < LIVE_IF_PAGES_BELOW;

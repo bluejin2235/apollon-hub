@@ -82,3 +82,26 @@ forest query and independent work questions, including citations and latency.
 4. Run the exact live question through the preview, then independent questions.
    Record expected pages, missing/irrelevant sources, citations and latency.
 5. Promote only after the native-Notion quality gate has been demonstrated.
+
+## Follow-up — relevance and coverage
+
+- Explicit all-material requests now always run complete lexical candidate retrieval,
+  even if vector retrieval already found enough pages.
+- Added bounded term frequency, document length normalization and alias-aware title
+  weighting to reduce incidental matches in long proposals.
+- Exact duplicate comparison uses deterministic content ordering rather than random
+  chunk IDs. Distinct pages receive their first snippet before second snippets consume
+  the result budget. Same-title documents with different bodies remain separate.
+- 311 tests passed; TypeScript noEmit passed. Regression cases cover incidental
+  mentions, copied blocks with reordered IDs, page diversity and an independent query.
+- On the live database, the revised forest keyword function places forest references,
+  Hanwha, Miffy and Trendy material near the top; Yeongtong is also in the first 15.
+  Indoor and adjacent material still appears. This remains candidate retrieval only,
+  not an end-to-end answer or native-Notion parity pass.
+- The follow-up additive function revision was applied and read-tested. Existing
+  production app code still does not use this broad retrieval path.
+- Preview build for the preceding commit succeeded. Authenticated preview fetch is
+  blocked at Vercel authentication; the production Notion overview API returns 401
+  through the connector. No app credentials are available in this workspace.
+- Production integration access, bounded reindex and final answers still require
+  an authorized app session. No application promotion or bulk reindex performed.
