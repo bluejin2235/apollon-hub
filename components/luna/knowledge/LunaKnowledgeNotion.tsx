@@ -517,7 +517,14 @@ export function LunaKnowledgeNotion() {
                   disabled={indexing || Boolean(running) || saving}
                   onClick={() => void startIndex("incremental")}
                 >
-                  지금 색인
+                  바뀐 내용 색인
+                </Btn>
+                <Btn
+                  className="!px-2.5 !py-1 !text-[10.5px]"
+                  disabled={indexing || Boolean(running) || saving}
+                  onClick={() => void startIndex("full")}
+                >
+                  전체 본문 다시 읽기
                 </Btn>
               </div>
 
@@ -526,7 +533,7 @@ export function LunaKnowledgeNotion() {
                   {
                     mode: "full" as const,
                     title: "전체 훑기",
-                    desc: "모든 페이지를 확인하고, 노션에서 사라진 것을 정리합니다. Work서버 스캔(03:00)이 끝난 뒤입니다."
+                    desc: "수정 여부와 관계없이 모든 페이지 본문을 다시 읽습니다. 수집 실패가 없을 때만 사라진 페이지를 정리합니다."
                   },
                   {
                     mode: "incremental" as const,
