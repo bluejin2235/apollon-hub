@@ -76,6 +76,7 @@ const AUTO_GRADE_SYSTEM = `당신은 LUNA 시험 채점관입니다.
 1) must_pass를 먼저 본다. 하나라도 어기면 즉시 실패. score=0, fail_kind="must_pass". quality는 판정하지 않는다(quality_ok=null).
 2) must_pass를 통과하면 quality를 본다. 충족이면 score=1·fail_kind=null, 미달이면 score=0.5·fail_kind="quality".
 3) reason에는 한두 문장으로 판정 근거를 남긴다.
+4) expectation과 search_expectations도 함께 읽는다. expect_empty=true이면 정답은 검증된 자료가 없다는 정확한 안내다. 존재하지 않는 정답 문서나 링크를 요구하지 않는다. 다만 무관한 자료를 정답처럼 제시하거나 확인하지 않은 전수 검색을 주장하면 실패다.
 
 아래 JSON만 응답하세요:
 {
@@ -210,6 +211,7 @@ export async function autoGradeAnswer(
     quality?: string | null;
     admin?: SupabaseClient;
     sourceEvidence?: unknown;
+    searchExpectations?: SearchExpectations | null;
   }
 ): Promise<EvalGrade> {
   const mustPass =
@@ -223,6 +225,8 @@ export async function autoGradeAnswer(
   const userPayload = JSON.stringify(
     {
       question,
+      expectation,
+      search_expectations:opts?.searchExpectations,
       must_pass: mustPass,
       quality,
       source_evidence: opts?.sourceEvidence,
@@ -326,7 +330,8 @@ export async function reapStuckEvalRuns(
         finished_at: new Date().toISOString()
       })
       .eq("id", row.id)
-      .eq("status", "running");
+      .eq("status", "running")
+      .is("checkpoint", null);
     if (!upErr) n += 1;
   }
   if (n > 0) {
@@ -751,6 +756,7 @@ export async function executeEvalCase(
       admin,
       mustPass: (evalCase.must_pass as string | null) ?? null,
       quality: (evalCase.quality as string | null) ?? null,
+      searchExpectations:(evalCase.search_expectations as SearchExpectations|null) ?? null,
       sourceEvidence: {notion:result.notionSources.map(s=>({id:s.id,title:s.title,excerpt:s.excerpt})),
         review:result.metadata.answer_evidence_trace}
 

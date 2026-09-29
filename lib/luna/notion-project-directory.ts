@@ -5,6 +5,15 @@ import { isSearchToken } from './keyword-token';
 
 export type NotionDirectoryProject = { key: string; pageIds: string[] };
 
+/** Only a simple named inventory, not a thematic or task-specific request. */
+export function requestedDirectoryProjects(directory:NotionDirectoryProject[], query:string):NotionDirectoryProject[] {
+  const text=query.trim();
+  const match=text.match(/^(.{2,50}?)\s*(?:관련\s*)?(?:자료|문서|파일)\s*(?:(?:모두|전부|전체)\s*)?(?:찾아\s*줘|찾아\s*주세요|보여\s*줘|보여\s*주세요|검색해\s*줘)?[.!?]*$/);
+  const subject=(match?.[1] ?? (/^[가-힣a-zA-Z0-9]{2,30}$/.test(text)?text:'')).replace(/\s*관련$/,'').trim().toLowerCase();
+  if(!subject) return [];
+  return directory.filter(p=>p.key.replace(/^(?:\s*\d{2,6}\s+)+/,'').trim().toLowerCase().startsWith(subject));
+}
+
 /** A bare name that starts an actual project name is an internal lookup.
  * Keep all matching projects; do not guess which one the user meant.
  */

@@ -45,7 +45,7 @@ export function validateNotionEvidenceReview(sources: NotionSource[], review: Re
 export async function reviewAllNotionEvidence(
   sources: NotionSource[],
   reviewBatch: (batch: NotionSource[]) => Promise<Record<string, unknown> | null>
-): Promise<ReviewedNotionEvidence & { reviewedIds: string[]; unverifiedIds: string[] }> {
+): Promise<ReviewedNotionEvidence & { reviewedIds: string[]; unverifiedIds: string[]; failures: Record<string,string> }> {
   const unique = [...new Map(sources.map(source => [source.id, source])).values()];
   const batches: NotionSource[][] = [];
   let pending: NotionSource[] = [], chars = 0;
@@ -56,23 +56,38 @@ export async function reviewAllNotionEvidence(
   }
   if (pending.length) batches.push(pending);
   const results: Array<{ batch: NotionSource[]; review: ReviewedNotionEvidence | null }> = [];
-  for (let start = 0; start < batches.length; start += 3) {
-    const wave = await Promise.all(batches.slice(start, start + 3).map(async batch => {
-      let review: ReviewedNotionEvidence | null = null;
-      for (let attempt = 0; attempt < 2 && (!review || Boolean(review.unsupportedIds?.length)); attempt++) {
-        try { review = validateNotionEvidenceReview(batch, await reviewBatch(batch), true); }
-        catch { /* One retry, then report incomplete validation. */ }
-      }
-      return { batch, review };
-    }));
-    results.push(...wave);
+  const failures: Record<string,string> = {};
+  async function inspect(batch:NotionSource[], retry=true):Promise<typeof results> {
+    let review:ReviewedNotionEvidence|null=null;
+    let failure='invalid_classification';
+    try { review=validateNotionEvidenceReview(batch,await reviewBatch(batch),true); }
+    catch { failure='review_request_failed'; }
+    const unresolved=review ? batch.filter(s=>review!.unsupportedIds?.includes(s.id)) : batch;
+    if(!unresolved.length) return [{batch,review}];
+    unresolved.forEach(s=>{failures[s.id]=review ? 'quote_not_grounded' : failure;});
+    if(!retry) return [{batch,review}];
+    // Retain valid decisions. Re-read only unresolved documents separately so a
+    // malformed or unsupported answer cannot erase the rest of a valid batch.
+    const settled=batch.filter(s=>!unresolved.some(u=>u.id===s.id));
+    const recovered:typeof results=settled.length ? [{batch:settled,review:review && {...review,unsupportedIds:[]}}] : [];
+    for(let i=0;i<unresolved.length;i+=3) {
+      const wave=await Promise.all(unresolved.slice(i,i+3).map(s=>inspect([s],false)));
+      recovered.push(...wave.flat());
+    }
+    return recovered;
   }
+  for (let start = 0; start < batches.length; start += 3) {
+    const wave = await Promise.all(batches.slice(start, start + 3).map(batch=>inspect(batch)));
+    results.push(...wave.flat());
+  }
+  const unverifiedIds=results.flatMap(r => r.review ? r.review.unsupportedIds ?? [] : r.batch.map(s => s.id));
+  for(const id of Object.keys(failures)) if(!unverifiedIds.includes(id)) delete failures[id];
   return {
     direct: results.flatMap(r => r.review?.direct ?? []),
     adjacent: results.flatMap(r => r.review?.adjacent ?? []),
     basis: Object.assign({}, ...results.map(r => r.review?.basis ?? {})),
     reviewedIds: results.flatMap(r => r.review ? r.batch.map(s => s.id).filter(id=>!r.review!.unsupportedIds?.includes(id)) : []),
-    unverifiedIds: results.flatMap(r => r.review ? r.review.unsupportedIds ?? [] : r.batch.map(s => s.id))
+    unverifiedIds, failures
   };
 }
 

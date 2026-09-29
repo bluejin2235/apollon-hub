@@ -19,7 +19,7 @@ export function hasNotionCitation(answer: string, id: string): boolean {
 
 /** Internal attribution stays in stored answers, but not in copied user-facing text. */
 export function stripLunaSourceMarkers(answer: string): string {
-  return answer.replace(/<!--luna-source:notion:[a-f0-9]{32}-->/g, "");
+  return answer.replace(/<!--luna-source:notion:[^>]*-->/g, "");
 }
 
 /** The model can describe a record, but cannot create its identity or URL. */
@@ -39,5 +39,5 @@ export function canonicalizeNotionAnswerLinks(answer:string, sources:Array<{id:s
     const title=source.title.replace(/[\r\n]+/g,' ').replace(/[\\\[\]*_`<>]/g,'\\$&');
     return `[${title}](https://www.notion.so/${compact(source.id)})${notionCitationMarker(source.id)}`;
   });
-  return linked.replace(/<!--luna-source:notion:([a-f0-9]{32})-->/g,(marker,id:string)=>ids.has(id)?marker:'');
+  return linked.replace(/<!--luna-source:notion:([^>]*)-->/g,(marker,id:string)=>ids.has(id)?marker:'');
 }

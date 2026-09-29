@@ -65,3 +65,14 @@ test('persistent review failure is reported as unverified and never published as
  assert.equal(attempts,2);assert.deepEqual(result.direct,[]);assert.deepEqual(result.adjacent,[]);
  assert.deepEqual(result.reviewedIds,[]);assert.deepEqual(result.unverifiedIds,['a']);
 });
+test('repairs only unsupported documents without overwriting already grounded decisions',async()=>{
+ const docs=[{id:'good',excerpt:'수목 사이 조명 설치를 위한 전기 배관 도면입니다.'},{id:'recover',excerpt:'야간 산책 공간의 음향 반사 측정과 설치 시험 결과입니다.'}];
+ const calls=[];
+ const result=await reviewAllNotionEvidence(docs,async batch=>{
+  calls.push(batch.map(s=>s.id));
+  return {direct:batch.map((_,i)=>i),adjacent:[],unrelated:[],evidence:batch.map((s,index)=>({index,quote:batch.length===2&&index===1?'원문에 없는 인용을 임의로 작성했습니다.':s.excerpt,reason:'야간 공간의 전기 음향 설계와 설치에 필요한 근거'}))};
+ });
+ assert.deepEqual(calls,[['good','recover'],['recover']]);
+ assert.deepEqual(result.direct.map(s=>s.id),['good','recover']);
+ assert.deepEqual(result.unverifiedIds,[]);assert.deepEqual(result.failures,{});
+});

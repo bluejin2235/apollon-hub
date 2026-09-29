@@ -46,4 +46,5 @@ test('source URLs and names come only from verified records, never generated UUI
  const missing=canonicalizeNotionAnswerLinks('[없는 자료](https://notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)',[good]);
  assert.equal(missing,'없는 자료');
  assert.equal(canonicalizeNotionAnswerLinks('[웹](https://example.com)',[good]),'[웹](https://example.com)');
+ assert.equal(canonicalizeNotionAnswerLinks('설명<!--luna-source:notion:0123456789abcdef0123456789abcdef0-->',[good]),'설명');
 });

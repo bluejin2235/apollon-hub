@@ -32,6 +32,7 @@ export const UI_PROGRESS_KEYS = new Set([
   "ui_image",
   "ui_nas_text",
   "ui_web",
+  "ui_review",
   "answer"
 ]);
 

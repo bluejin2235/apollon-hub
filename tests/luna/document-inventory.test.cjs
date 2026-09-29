@@ -4,7 +4,7 @@ const page=(id)=>({id,title:id,url:'https://notion.so/'+id});
 const relevant='관람 동선을 따라 설치한 조명과 사운드의 전기 도면 및 현장 테스트 기록입니다.';
 let follows=[];
 const {buildDocumentInventory}=loadTs('lib/luna/document-inventory.ts',{
- '@/lib/luna/notion-project-directory':{readDirectoryMaterials:async(_db,projects)=>{follows=projects.map(p=>p.key);return projects.flatMap(p=>p.pageIds.map(page));}}
+ '@/lib/luna/notion-project-directory':{requestedDirectoryProjects:()=>[],readDirectoryMaterials:async(_db,projects)=>{follows=projects.map(p=>p.key);return projects.flatMap(p=>p.pageIds.map(page));}}
 });
 const reviewer=async rows=>{const direct=rows.flatMap((s,i)=>s.excerpt.includes(relevant)?[i]:[]);return {direct,adjacent:[],unrelated:rows.flatMap((s,i)=>direct.includes(i)?[]:[i]),evidence:direct.map(index=>({index,quote:relevant,reason:'실제 공간 설치에 필요한 도면과 시험 기록이다'}))};};
 test('reads late passages and follows relevant actual memberships, never unrelated seeds',async()=>{
@@ -65,4 +65,14 @@ test('a verifier can reject a loosely related first-pass candidate',async()=>{
  const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('a')],directory:[],review:reviewer,
   verify:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
  assert.deepEqual(result.direct,[]);assert.deepEqual(result.reviewedIds,['a']);
+});
+test('named project locations are retained as locations while unrelated folder paths still require review',async()=>{
+ const {buildDocumentInventory:build}=loadTs('lib/luna/document-inventory.ts',{
+  '@/lib/luna/notion-project-directory':{requestedDirectoryProjects:()=>[{key:'빛마을',pageIds:['test']}],readDirectoryMaterials:async()=>[]}
+ });
+ const db=fakeDb({luna_notion_chunks:[{page_id:'test',position:0,text:'현장 시험\nT:\\Project\\빛마을\\Test\\현장 시험'},{page_id:'other',position:0,text:'T:\\Project\\다른사업\\Test'}]});
+ const result=await build(db,{query:'빛마을 자료 찾아줘',sources:[{...page('test'),title:'현장 시험'},page('other')],directory:[],review:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
+ assert.deepEqual(result.direct.map(s=>s.id),['test']);
+ assert.deepEqual(result.locationOnlyIds,['test']);
+ assert.match(result.basis.test.reason,/원본 내용과 결과는 아직 확인하지 않음/);
 });

@@ -3478,14 +3478,14 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         }
         typeBlocks.push('[검색 범위와 출처]\n검색은 색인된 자료의 제한된 후보에 대한 결과다. 전체·전부 요청이면 이번에 확인한 범위와 표시 제한을 밝히고 전수 확인했다고 주장하지 마라. 언급하는 파일은 정확한 파일명과 제공된 경로 또는 링크를 함께 써라. 자료가 있다는 주장과 자료를 직접 열 수 있는 출처를 연결하라.');
         let reviewedNotionEvidence: ReviewedNotionEvidence | null = null;
-        let reviewCoverage: { reviewed: string[]; unverified: string[]; aliases: Record<string,string>; navigation_complete: boolean; unavailable: string[] } | null = null;
+        let reviewCoverage: { reviewed: string[]; unverified: string[]; aliases: Record<string,string>; navigation_complete: boolean; unavailable: string[]; failures:Record<string,string> } | null = null;
         let notionForLlm = takeTopNotionSourcesForLlm(
           notionSources,
           llmInject.notion,
           searchIntentText
         );
         if (isMaterialSearch(searchIntentText)) {
-          pushStep('review', 'running', '후보 자료의 본문을 확인하는 중…');
+          pushStep('ui_review', 'running', '후보 자료의 본문을 확인하는 중…');
           cachedProjectDirectory ??= await loadNotionProjectDirectory(admin).catch(() => []);
           const reviewBatch = async (batch: NotionSource[], verify=false) => {
             const review=await lunaLlmComplete(admin, {
@@ -3498,16 +3498,17 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           };
           const reviewed=await buildDocumentInventory(admin,{query:searchIntentText,sources:notionSources,
             directory:cachedProjectDirectory,review:batch=>reviewBatch(batch),verify:batch=>reviewBatch(batch,true)});
-          pushStep('review', 'done', '본문 관련성 확인', { right: `${reviewed.reviewedIds.length}개 확인${reviewed.unverifiedIds.length ? ` · ${reviewed.unverifiedIds.length}개 미완료` : ''}` });
+          pushStep('ui_review', 'done', '본문 관련성 확인', { right: `${reviewed.reviewedIds.length}개 확인${reviewed.unverifiedIds.length ? ` · ${reviewed.unverifiedIds.length}개 미완료` : ''}` });
           notionSources = reviewed.inspected;
           exploredProjectKeys.push(...reviewed.reachedProjects);
           reviewedNotionEvidence = reviewed;
           reviewCoverage = { reviewed: reviewed.reviewedIds, unverified: reviewed.unverifiedIds,
-            aliases:reviewed.aliases,navigation_complete:reviewed.navigationComplete,unavailable:reviewed.unavailableIds };
+            aliases:reviewed.aliases,navigation_complete:reviewed.navigationComplete,unavailable:reviewed.unavailableIds,failures:reviewed.failures };
           const verifiedDocuments = [...reviewed.direct, ...reviewed.adjacent];
+          if(verifiedDocuments.length) notFoundFromAsk=false;
           const perDocumentBudget = 2400;
           notionForLlm = verifiedDocuments.map(source=>({
-            ...source, excerpt:[reviewed.basis[source.id]?.quote, source.excerpt?.slice(0,perDocumentBudget), reviewed.basis[source.id]?.reason].filter(Boolean).join('\n')
+            ...source, excerpt:[reviewed.locationOnlyIds.includes(source.id)?'[자료 위치만 확인됨: 원본 내용·시험 결과를 읽지 않았으므로 추정하지 말 것]':'',reviewed.basis[source.id]?.quote, source.excerpt?.slice(0,perDocumentBudget), reviewed.basis[source.id]?.reason].filter(Boolean).join('\n')
           }));
           typeBlocks.push('[자료 정리 순서]\n질문 조건에 직접 맞는 현재 사업과 선행 사례를 먼저 묶는다. 페이지의 초기안과 변경안이 함께 있으면 변경 시점과 현재 범위를 구분한다. 인접 참고자료는 뒤에 짧게 분리한다. 사용자가 조성 관련 자료를 요청했다고 조성 완료 사례만 요청한 것으로 바꾸지 마라. 제안·회의·테스트·준공 기록은 각각의 단계로 포함하고, 사용자가 요구하지 않은 완료 여부를 답변의 결론으로 삼지 마라.');
         }

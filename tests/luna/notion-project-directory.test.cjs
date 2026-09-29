@@ -3,9 +3,14 @@ const {loadTs,fakeDb}=require('./helpers.cjs');
 let loadedIds=[];
 const page=(id,title)=>({page_id:id,title,url:'https://notion.so/'+id,path_titles:[],parent_id:null,nas_path:null,last_edited_time:null,excerpt:'주제와 연결된 원문'});
 let pageRows=[];
-const {loadNotionProjectDirectory,describeNotionProjectDirectory,bareDirectoryLookup,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials}=loadTs('lib/luna/notion-project-directory.ts',{
+const {loadNotionProjectDirectory,describeNotionProjectDirectory,bareDirectoryLookup,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials,requestedDirectoryProjects}=loadTs('lib/luna/notion-project-directory.ts',{
  './search-secondary':{loadPagesByIds:async (_db,ids)=>{loadedIds=ids;return new Map(pageRows.filter(p=>ids.includes(p.page_id)).map(p=>[p.page_id,p]));}},
  './keyword-token':{isSearchToken:t=>t.length>1}
+});
+test('a simple inventory resolves actual project names without converting a thematic task into a named project',()=>{
+ const directory=[{key:'2024 03 빛마을 산책',pageIds:['a']}];
+ for(const q of ['빛마을','빛마을 관련 자료 찾아줘','빛마을 관련 자료 모두 찾아줘']) assert.deepEqual(requestedDirectoryProjects(directory,q),directory);
+ for(const q of ['야외 빛과 소리 관련 자료 모두 찾아줘','빛마을 설계 도면만 찾아줘','빛마을 비슷한 사례 자료 찾아줘']) assert.deepEqual(requestedDirectoryProjects(directory,q),[]);
 });
 test('bare actual project prefixes retrieve all matching projects without a forced choice',()=>{
  const directory=[{key:'230101 샘플 달빛산책',pageIds:['a']},{key:'230201 샘플 문화거리',pageIds:['b']}];

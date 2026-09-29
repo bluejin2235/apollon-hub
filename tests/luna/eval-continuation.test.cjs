@@ -1,13 +1,18 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs,fakeDb}=require('./helpers.cjs');
-let clock=0,calls=[];
-const {continueEvalExam}=loadTs('lib/luna/eval-exam.ts',{
+let clock=0,calls=[],gradePayload;
+const {continueEvalExam,autoGradeAnswer}=loadTs('lib/luna/eval-exam.ts',{
  '@/lib/luna/engine':{getTierModel:async()=>({model_label:'fixture'})},
- '@/lib/luna/llm/client':{lunaLlmComplete:async()=>({text:JSON.stringify({score:1,must_pass_ok:true,quality_ok:true})})},
+ '@/lib/luna/llm/client':{lunaLlmComplete:async(_db,input)=>{gradePayload=JSON.parse(input.user);return {text:JSON.stringify({score:1,must_pass_ok:true,quality_ok:true})};}},
  '@/lib/luna/notify':{LUNA_LINKS:{},lunaNotify:async()=>{throw Error('must not notify');}},
  '@/lib/luna/eval-labels':{evalTierLabel:s=>s},
  '@/lib/luna/run-chat':{runLunaTurn:async(_db,q)=>{calls.push(q);clock+=200000;return {answer:'fixture',notionSources:[],sources:[],metadata:{},streamAudit:{disappearedIds:[]},durationMs:200000};}},
  '@/lib/luna/failures':{recordLunaFailure:async()=>{}}
+});
+test('semantic grading retains the expected empty result even when explicit rubric fields exist',async()=>{
+ await autoGradeAnswer('존재하지 않는 프로젝트 도면','검증된 자료가 없다고 답한다','찾지 못했습니다.',{admin:{},mustPass:'허위 자료는 실패',quality:'간결하게 답한다',searchExpectations:{expect_empty:true}});
+ assert.equal(gradePayload.expectation,'검증된 자료가 없다고 답한다');
+ assert.deepEqual(gradePayload.search_expectations,{expect_empty:true});
 });
 test('time budget saves the next case and resumes instead of skipping or completing it',async()=>{
  const realNow=Date.now;Date.now=()=>clock;clock=0;calls=[];
