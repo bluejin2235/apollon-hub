@@ -307,6 +307,7 @@ export async function reapStuckEvalRuns(
     .from("luna_eval_runs")
     .select("id")
     .eq("status", "running")
+    .is("checkpoint", null)
     .lt("started_at", cutoff);
   if (error) {
     console.error("[luna/eval-exam] reap list", error);
@@ -321,7 +322,8 @@ export async function reapStuckEvalRuns(
         finished_at: new Date().toISOString()
       })
       .eq("id", row.id)
-      .eq("status", "running");
+      .eq("status", "running")
+      .is("checkpoint", null);
     if (!upErr) n += 1;
   }
   if (n > 0) {
