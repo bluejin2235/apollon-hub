@@ -98,7 +98,7 @@ function pageToSource(
   };
 }
 
-async function loadPagesByIds(
+export async function loadPagesByIds(
   admin: SupabaseClient,
   ids: string[]
 ): Promise<Map<string, PageRow>> {

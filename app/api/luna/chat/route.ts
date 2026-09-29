@@ -39,6 +39,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { requestsAllMaterials, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
+import { loadNotionProjectDirectory, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_REVIEW, applyNotionEvidenceReview } from "@/lib/luna/notion-evidence-review";
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
@@ -689,7 +690,7 @@ function buildVolatileSystemText(opts: {
     parts.push(`[이미 정리해둔 자료]\r\n${opts.reportContent.trim()}`);
   }
 
-  parts.push(WORK_STAGE_ANSWER_RULE);
+  if (!requestsAllMaterials(opts.evidenceQuery ?? '')) parts.push(WORK_STAGE_ANSWER_RULE);
 
   if (opts.webAugmented) {
     parts.push(
@@ -715,7 +716,8 @@ function buildVolatileSystemText(opts: {
     parts.push(
       `[노션 검색 결과]\r\n${formatNotionSourcesForPrompt(forLlm, {
         compact: listing || depth === "simple",
-        excerptLimit: requestsAllMaterials(opts.evidenceQuery ?? '') ? 2400 : undefined
+        excerptLimit: requestsAllMaterials(opts.evidenceQuery ?? '') ? 2400 : undefined,
+        showStorageStage: !requestsAllMaterials(opts.evidenceQuery ?? '')
       })}\r\n${notionHint}`
     );
   } else if (opts.notionSearchAttempted) {
@@ -2536,6 +2538,7 @@ export async function POST(request: NextRequest) {
         }
 
         let notionSources: NotionSource[] = [];
+        const exploredProjectKeys: string[] = [];
         let notionSearchOutcome: NotionSearchOutcome | null = null;
         let cards: LunaCard[] = [];
         let pendingImportant: Promise<ImportantProjectMaterials | null> | null = null;
@@ -3183,7 +3186,7 @@ export async function POST(request: NextRequest) {
               pushStep("eval", "done", "결과 평가");
             }
 
-            if (sufficient) break;
+            if (sufficient && !(requestsAllMaterials(searchIntentText) && !namedProjectLock && round === 1)) break;
             if (round >= MAX_SEARCH_ROUNDS) break;
             if (Date.now() - startedAt > SEARCH_BUDGET_MS) break;
 
@@ -3192,13 +3195,15 @@ export async function POST(request: NextRequest) {
             let newKeywords = "";
             let topicQueries: string[] = [];
             const broadRetry = requestsAllMaterials(searchIntentText);
+            const directory = broadRetry && !namedProjectLock ? await loadNotionProjectDirectory(admin).catch(() => []) : [];
+            let plannedProjects: NotionDirectoryProject[] = [];
             const retrySystem = broadRetry ? BROAD_TOPIC_QUERY_RULE : requeryPrompt;
             try {
               const reqRes = await lunaLlmComplete(admin, {
                 tier: "B",
                 feature: "search_terms",
                 system: retrySystem,
-                user: broadRetry ? `원 질문: ${searchIntentText}\n\n이미 찾은 문서(근거 데이터):\n${notionSources.slice(0, 24).map(s => `${s.title}\n${(s.excerpt ?? '').slice(0, 650)}`).join('\n\n')}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
+                user: broadRetry ? `원 질문: ${searchIntentText}\n\n실제 프로젝트 목록(번호로 선택):\n${directory.map((p,i) => `[${i}] ${p.key} (${p.pageIds.length}개 문서)`).join('\n')}\n\n이미 찾은 문서(근거 데이터):\n${notionSources.slice(0, 24).map(s => `${s.title}\n${(s.excerpt ?? '').slice(0, 650)}`).join('\n\n')}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
                 )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
                 maxTokens: broadRetry ? 3072 : 64,
@@ -3225,7 +3230,10 @@ export async function POST(request: NextRequest) {
               });
               const reqText = reqRes.text.trim();
               if (broadRetry) {
-                const queries = parseJsonObject(reqText)?.queries;
+                const parsedPlan = parseJsonObject(reqText);
+                plannedProjects = selectDirectoryProjects(directory, parsedPlan?.projects);
+                exploredProjectKeys.push(...plannedProjects.map(p => p.key));
+                const queries = parsedPlan?.queries;
                 if (Array.isArray(queries)) topicQueries = [...new Set(queries
                   .filter((q): q is string => typeof q === 'string')
                   .map(q => q.trim().slice(0, 80)).filter(Boolean))].slice(0, 2);
@@ -3254,10 +3262,16 @@ export async function POST(request: NextRequest) {
             keywords = mergedKw;
             searchRounds += 1;
             pushStep("search", "running", searchRunningLabel);
-            if (topicQueries.length) {
-              const alternatives = await Promise.all(topicQueries.map(query =>
-                searchNotionForLuna(admin, query, query, { broad: true, skipLive: true })));
-              const alternative = alternatives.reduce((a, b) => mergeNotionSearchOutcomes(a, b, { preserveRounds: true, roundWeight: 1, limit: 48 }));
+            if (topicQueries.length || plannedProjects.length) {
+              const [alternatives, projectSources] = await Promise.all([
+                Promise.all(topicQueries.map(query => searchNotionForLuna(admin, query, query, { broad: true, skipLive: true }))),
+                readDirectoryMaterials(admin, plannedProjects, searchIntentText).catch(() => [])
+              ]);
+              const topicOutcome = alternatives.length ? alternatives.reduce((a, b) => mergeNotionSearchOutcomes(a, b, { preserveRounds: true, roundWeight: 1, limit: 48 })) : { status: "empty" as const, sources: [], queries: [], rounds: 1 };
+              const alternative = projectSources.length ? mergeNotionSearchOutcomes(
+                { status: 'ok', sources: projectSources, queries: plannedProjects.map(p => p.key), rounds: 1 },
+                topicOutcome, { preserveRounds: true, limit: 48 }
+              ) : topicOutcome;
               batch = { ...batch, notionOutcome: alternative, notionSources: alternative.sources, nasResults: [], cards: [] };
             } else {
               batch = await runConnectorSearch(keywords);
@@ -3500,6 +3514,7 @@ export async function POST(request: NextRequest) {
         const answerEvidenceTrace = {
           version: 1,
           answer_mode: 'model',
+          explored_project_keys: [...new Set(exploredProjectKeys)],
           grounded_targets: groundedTargets,
           selected_notion: notionSources.map((source) => ({ id: source.id, keyword_score: source.keyword_score ?? 0, match_score: source.match_score ?? null })),
           injected_notion: notionForLlm.map((source) => ({ id: source.id, excerpt_chars: source.excerpt?.length ?? 0, keyword_score: source.keyword_score ?? 0 }))

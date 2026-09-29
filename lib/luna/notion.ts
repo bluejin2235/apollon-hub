@@ -744,7 +744,7 @@ export function mergeNotionSearchOutcomes(
 
 export function formatNotionSourcesForPrompt(
   sources: NotionSource[],
-  opts?: { compact?: boolean; excerptLimit?: number }
+  opts?: { compact?: boolean; excerptLimit?: number; showStorageStage?: boolean }
 ): string {
   const compact = opts?.compact === true;
   const groups = summarizeGroupsInline(sources);
@@ -755,7 +755,7 @@ export function formatNotionSourcesForPrompt(
     .filter((s) => (s.title ?? "").trim().length > 0)
     .map((s) => {
       const title = s.title.trim();
-      const stage =
+      const stage = opts?.showStorageStage === false ? "" :
         s.work_stage === "executed"
           ? "[수행]"
           : s.work_stage === "proposal"

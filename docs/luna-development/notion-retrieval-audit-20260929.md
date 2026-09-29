@@ -231,3 +231,19 @@ forest query and independent work questions, including citations and latency.
   their previous default. Provider completion/streaming tests verify parameter,
   model, visible-text and usage preservation; live latency/quality remain to verify.
 - API compatibility reference: https://developers.openai.com/api/docs/models/gpt-5.6-luna
+
+## Project-directory navigation
+
+- The low-reasoning run recovered the nature theme park material in 55.2 seconds,
+  but still omitted the stream-side installation family. The independent office
+  query retained its main record and proposal versions in 37.8 seconds. The native
+  comparison remains incomplete; 327 foundation tests and TypeScript passed.
+- The index contains 139 active project relationship keys and 1,026 Notion-page
+  memberships. Broad planning now inspects this real directory and chooses up to
+  six existing project keys, then reads only their existing page memberships.
+  It creates no project names or relationships and changes no primary records.
+- Project navigation preserves meeting, design, test, final-report and ideation
+  stages, interleaves projects, and falls back to existing retrieval on read failure.
+  Selected project keys are recorded in answer evidence traces. Storage-stage
+  labels and the generic stage instruction no longer dominate broad-material
+  answer prompts; the answer still uses body evidence for actual status.
