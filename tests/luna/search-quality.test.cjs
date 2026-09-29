@@ -24,3 +24,16 @@ test('exact duplicate aliases satisfy required coverage and cannot hide forbidde
  assert.equal(assessSearchQuality({expected:{forbidden_notion_ids:['backup']},finalIds:['current'],aliases:{backup:'current'}}).pass,false);
  assert.equal(assessSearchQuality({expected:null,finalIds:[],navigationComplete:false}).pass,false);
 });
+test('legacy Notion cards cannot bypass the approved inventory audit',()=>{
+ const id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+ const quality=assessSearchQuality({expected:{expect_empty:true},finalIds:[],reviewed:{direct:[],adjacent:[]},finalCards:[{type:'notion',url:'https://notion.so/'+id.replace(/-/g,'')}]});
+ assert.equal(quality.pass,false);assert.deepEqual(quality.unapproved,[id]);
+ assert.equal(quality.unexpectedNonempty,true);
+});
+test('answer links are checked mechanically across ID formats and reject unknown page identities',()=>{
+ const id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+ const good=assessSearchQuality({expected:{required_notion_ids:[id]},finalIds:[id],answer:'[원문](https://www.notion.so/aaaaaaaabbbbccccddddeeeeeeeeeeee)'});
+ assert.equal(good.pass,true);assert.deepEqual(good.invalidAnswerLinks,[]);
+ const bad=assessSearchQuality({expected:null,finalIds:[id],answer:'[잘못된 링크](https://notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)'});
+ assert.equal(bad.pass,false);assert.equal(bad.invalidAnswerLinks.length,1);
+});

@@ -12,6 +12,22 @@ const { llmComplete, lunaLlmComplete, llmStreamText } = loadTs('lib/luna/llm/cli
   '@/lib/luna/prompt-cache': {flattenSystem: s => s, shouldApplyPromptCache: () => false},
   '@/lib/luna/env-keys': {openaiApiKey: () => 'test-only-placeholder'}
 });
+test('completion and streaming serialize damaged UTF-16 without altering valid source text',async t=>{
+ const sent=[];
+ t.mock.method(globalThis,'fetch',async (_url,init)=>{
+  const body=JSON.parse(init.body);sent.push(body);
+  assert.ok(body.messages.every(m=>m.content.isWellFormed()));
+  return new Response(body.stream ? 'data: [DONE]\n\n' : JSON.stringify({choices:[{message:{content:'ok'}}]}));
+ });
+ const options={provider:'openai',model_id:'gpt-5.6-luna',system:'검토 🌳',user:'정상 🌲 끝\ud83c 시작\udf33'};
+ await llmComplete(options);
+ for await(const _ of llmStreamText(options)) {}
+ assert.equal(sent.length,2);
+ for(const request of sent) {
+  assert.equal(request.messages[0].content,'검토 🌳');
+  assert.equal(request.messages[1].content,'정상 🌲 끝� 시작�');
+ }
+});
 test('tier completion passes requested reasoning and budget to provider without changing model', async t => {
   let sent;
   t.mock.method(globalThis,'fetch',async (_url,init) => {

@@ -5,6 +5,15 @@ export type SearchExpectations = {
   forbidden_notion_ids?: string[];
   expect_empty?: boolean;
 };
+
+function notionPageId(href: string): string | null {
+  try {
+    const url = new URL(href);
+    if (!/(^|\.)(notion\.so|notion\.com|notion\.site)$/.test(url.hostname)) return null;
+    const hex = url.pathname.match(/(?:^|\/|-)([a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\/?$/i)?.[1]?.replace(/-/g,'').toLowerCase();
+    return hex ? `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}` : null;
+  } catch { return null; }
+}
 export function inspectSearchStream(wire: string, finalIds: string[]) {
   const shown = new Set<string>();
   for (const line of wire.split('\n')) {
@@ -29,8 +38,11 @@ export function assessSearchQuality(input: {
   disappearedIds?:string[];
   aliases?:Record<string,string>;
   navigationComplete?:boolean;
+  finalCards?:Array<{type?:string;url?:string|null}>;
+  answer?:string;
 }) {
-  const final=new Set(input.finalIds), expected=input.expected;
+  const cardIds=(input.finalCards??[]).filter(c=>c.type==='notion').map(c=>notionPageId(c.url??'') ?? `unidentified:${c.url??''}`);
+  const final=new Set([...input.finalIds,...cardIds]), expected=input.expected;
   const approved=new Set([...(input.reviewed?.direct??[]),...(input.reviewed?.adjacent??[])]);
   const present=(id:string)=>final.has(id) || Boolean(input.aliases?.[id] && final.has(input.aliases[id]));
   const missing=(expected?.required_notion_ids??[]).filter(id=>!present(id));
@@ -42,8 +54,14 @@ export function assessSearchQuality(input: {
   const unexpectedNonempty=expected?.expect_empty===true && final.size>0;
   const hasLabels=Boolean(expected && ((expected.required_notion_ids?.length??0)>0 || (expected.forbidden_notion_ids?.length??0)>0 || expected.expect_empty===true));
   const incompleteNavigation=input.navigationComplete===false;
-  return {pass:![missing,forbidden,omittedApproved,unapproved,disappeared,incompleteReview].some(a=>a.length>0)&&!unexpectedNonempty&&!incompleteNavigation,
+  const invalidAnswerLinks=[...(input.answer??'').matchAll(/\[[^\]\n]*\]\((https?:\/\/[^\s)]+)\)/g)]
+    .map(match=>match[1]).filter(href=>{
+      let url:URL;try{url=new URL(href);}catch{return false;}
+      if(!/(^|\.)(notion\.so|notion\.com|notion\.site)$/.test(url.hostname))return false;
+      const id=notionPageId(href);return !id || !present(id);
+    });
+  return {pass:![missing,forbidden,omittedApproved,unapproved,disappeared,incompleteReview,invalidAnswerLinks].some(a=>a.length>0)&&!unexpectedNonempty&&!incompleteNavigation,
     labeled:hasLabels,missing,forbidden,omittedApproved,unapproved,disappeared,incompleteReview,unexpectedNonempty,
-    incompleteNavigation,
+    incompleteNavigation,invalidAnswerLinks,
     recall:expected?.required_notion_ids?.length ? 1-missing.length/expected.required_notion_ids.length : null};
 }

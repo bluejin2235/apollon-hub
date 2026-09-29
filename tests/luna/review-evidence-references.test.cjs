@@ -2,6 +2,19 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {prepareReviewEvidence}=loadTs('lib/luna/review-evidence-references.ts');
 const {validateNotionEvidenceReview}=loadTs('lib/luna/notion-evidence-review.ts');
+test('emoji at either span boundary remains valid Unicode and exact source evidence',()=>{
+ for (const position of [119,159,239,279]) {
+  const excerpt='가'.repeat(position)+'🌳 실제 야외 숲 현장의 설치 검증 내용입니다.'.repeat(8);
+  const prepared=prepareReviewEvidence([{id:'emoji',title:'현장 🌳',excerpt}]);
+  assert.equal(prepared.text.isWellFormed(),true);
+  const spans=[...prepared.text.matchAll(/\[근거 (\d+)\] ([^\n]*)/g)];
+  assert.ok(spans.some(m=>m[2].includes('🌳')));
+  for(const match of spans) {
+   assert.ok(excerpt.includes(match[2]));
+   assert.ok(match[2].length<=160);
+  }
+ }
+});
 test('reference selection preserves late exact evidence without generated quotation changes',()=>{
  const sources=[{id:'a',title:'기획서',excerpt:'일반 소개 '.repeat(100)+'\n실제 수목 사이에 조명과 사운드를 설치하는 현장 시험 기록입니다.'}];
  const prepared=prepareReviewEvidence(sources);

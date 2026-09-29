@@ -5,7 +5,7 @@ import { reviewAllNotionEvidence } from '@/lib/luna/notion-evidence-review';
 type Reviewer = (sources: NotionSource[]) => Promise<Record<string, unknown> | null>;
 export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], reviewer: Reviewer, verifier?: Reviewer) {
   const origins=new Map<string,NotionSource>();
-  const windows=sources.flatMap(({evidence_passages,evidence_state,...source})=>(evidence_state==='empty' || evidence_state==='missing' ? [] : evidence_passages?.length ? evidence_passages : [source.excerpt??'']).map((excerpt,i)=>{
+  const windows=sources.flatMap(({evidence_passages,evidence_state,...source})=>(evidence_state==='empty' || evidence_state==='missing' || evidence_state==='failed' ? [] : evidence_passages?.length ? evidence_passages : [source.excerpt??'']).map((excerpt,i)=>{
     const id=`${source.id}#passage:${i}`;
     origins.set(id,source);
     return {...source,id,excerpt};
@@ -32,4 +32,3 @@ export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], rev
     navigationIds:[...new Set([...first.navigation??[], ...final.navigation??[]].map(s=>origins.get(s.id)!.id))],
     reviewedIds:sources.map(s=>s.id).filter(id=>!unverifiedIds.includes(id)),unverifiedIds};
 }
-

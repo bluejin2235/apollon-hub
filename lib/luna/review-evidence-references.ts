@@ -1,4 +1,5 @@
 import type { NotionSource } from '@/lib/luna/notion';
+import { sliceUnicode } from '@/lib/luna/unicode-text';
 
 /** Model selects immutable source spans instead of retyping a quotation.
  * The server still validates the resulting exact quote against the source. */
@@ -6,7 +7,7 @@ export function prepareReviewEvidence(sources: NotionSource[]) {
   const spans = sources.map(source => {
     const text = (source.excerpt ?? '').replace(/\s+/g, ' ').trim();
     const result: string[] = [];
-    for (let start = 0; start < text.length; start += 120) result.push(text.slice(start, start + 160));
+    for (let start = 0; start < text.length; start += 120) result.push(sliceUnicode(text, start, start + 160));
     return result;
   });
   return {

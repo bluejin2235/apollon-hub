@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NotionSource } from '@/lib/luna/notion';
 import { isSearchToken } from '@/lib/luna/keyword-token';
+import { sliceUnicode } from '@/lib/luna/unicode-text';
 
 type Passage = { text: string; heading?: string; position: number };
 
@@ -20,7 +21,7 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
   const add = (index: number) => {
     if (chosen.has(index) || !ordered[index] || remaining < 80) return;
     const text = ordered[index].text.trim();
-    const snippet = text.slice(0, Math.min(1000, remaining - 2));
+    const snippet = sliceUnicode(text, 0, Math.min(1000, remaining - 2));
     if (!snippet) return;
     chosen.set(index, snippet + (snippet.length < text.length ? '…' : ''));
     remaining -= snippet.length + 2;
@@ -30,7 +31,7 @@ export function composePageEvidence(rows: Passage[], query: string, limit = 2400
     add(row.index); add(row.index + 1); add(row.index - 1);
     if (remaining < 80) break;
   }
-  return [...chosen].sort(([a], [b]) => a - b).map(([, text]) => text).join('\n\n').slice(0, limit);
+  return sliceUnicode([...chosen].sort(([a], [b]) => a - b).map(([, text]) => text).join('\n\n'), 0, limit);
 }
 
 /** Page-scoped reads prevent a large page from exhausting another page's row budget. */
@@ -67,7 +68,7 @@ export async function readIndexedNotionEvidence(admin: SupabaseClient, sources: 
         // that use different words from the question. Windows overlap for context.
         const full=rows.map(r=>r.text.trim()).filter(Boolean).join('\n\n');
         const passages: string[]=[];
-        if (allPassages) for (let pos=0;pos<full.length;pos+=5600) passages.push(full.slice(pos,pos+6000));
+        if (allPassages) for (let pos=0;pos<full.length;pos+=5600) passages.push(sliceUnicode(full,pos,pos+6000));
         if (excerpt) output[start + offset] = { ...source, excerpt, ...(allPassages ? {evidence_passages:passages,evidence_state:'complete' as const} : {}) };
 
       } catch {

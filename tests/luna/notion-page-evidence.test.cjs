@@ -2,6 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadTs, fakeDb } = require('./helpers.cjs');
 const { composePageEvidence, readIndexedNotionEvidence } = loadTs('lib/luna/notion-page-evidence.ts');
+test('full-body windows preserve emoji across both overlapping boundaries',async()=>{
+ const body='가'.repeat(5599)+'🌳'+'나'.repeat(398)+'🌲'+'현장 설치 근거'.repeat(200);
+ const db=fakeDb({luna_notion_chunks:[{page_id:'emoji',position:0,text:body}]});
+ const [read]=await readIndexedNotionEvidence(db,[{id:'emoji',title:'현장'}],'현장',true);
+ assert.ok(read.evidence_passages.every(text=>text.isWellFormed() && body.includes(text)));
+ assert.ok(read.evidence_passages.some(text=>text.includes('🌳')));
+ assert.ok(read.evidence_passages.some(text=>text.includes('🌲')));
+});
 test('page reading includes changed scope and schedule beyond a short matching hit', async () => {
   const source = {id:'a',title:'공원 계획',excerpt:'숲 프로젝션 검토',url:'https://notion.so/a'};
   const db = fakeDb({luna_notion_chunks:[

@@ -29,6 +29,12 @@ test('a failed body review is visible as incomplete, never accepted without proo
  const result=await buildDocumentInventory(db,{query:'자료',sources:[page('a')],directory:[],review:async()=>null});
  assert.deepEqual(result.unverifiedIds,['a']); assert.deepEqual(result.direct,[]);
 });
+test('a body read failure cannot promote an old retrieval excerpt as verified evidence',async()=>{
+ let calls=0;
+ const result=await buildDocumentInventory(fakeDb({}, {luna_notion_chunks:{message:'read failed'}}),{query:'설치 자료',sources:[{...page('a'),excerpt:relevant}],directory:[],review:async rows=>{calls++;return reviewer(rows);}});
+ assert.equal(calls,0);assert.deepEqual(result.direct,[]);
+ assert.deepEqual(result.unverifiedIds,['a']);assert.equal(result.failures.a,'body_failed');
+});
 test('follows an empty calendar to its meeting and stops at unrelated bodies',async()=>{
  const ids=['seed','calendar','meeting','noise','hidden'];
  const db=fakeDb({

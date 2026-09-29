@@ -1,4 +1,5 @@
 import "server-only";
+import { stringifyUnicodeJson } from "@/lib/luna/unicode-text";
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LunaUsageFeature } from "@/lib/luna/brain-models";
@@ -179,7 +180,7 @@ async function completeOpenAI(opts: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(body),
+    body: stringifyUnicodeJson(body),
     signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
@@ -265,7 +266,7 @@ async function completeGoogle(opts: {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: stringifyUnicodeJson(body),
     signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
@@ -515,7 +516,7 @@ async function* streamOpenAI(opts: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(body),
+    body: stringifyUnicodeJson(body),
     signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
@@ -572,7 +573,7 @@ async function* streamGoogle(opts: {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: stringifyUnicodeJson(body),
     signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {

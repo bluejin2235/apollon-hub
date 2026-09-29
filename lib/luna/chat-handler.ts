@@ -3530,6 +3530,9 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           notionSources = reviewed.inspected;
           exploredProjectKeys.push(...reviewed.reachedProjects);
           reviewedNotionEvidence = reviewed;
+          // Notion cards are unreviewed retrieval copies. The reviewed page
+          // inventory is the sole Notion source for prompts and final display.
+          cards = cards.filter(card => card.type !== 'notion');
           reviewCoverage = { reviewed: [...reviewed.reviewedIds, ...reviewedWiki.reviewedIds], unverified: [...reviewed.unverifiedIds, ...reviewedWiki.unverifiedIds],
             aliases:reviewed.aliases,navigation_complete:reviewed.navigationComplete && !exploration.unverified.length,unavailable:reviewed.unavailableIds,failures:{...reviewed.failures,...reviewedWiki.failures},unverified_projects:exploration.unverified };
           const verifiedDocuments = [...reviewed.direct, ...reviewed.adjacent];
@@ -3919,6 +3922,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
             cards = mergeCards(importantMaterials.cards, cards);
             if (inventoryAnswer) notionSources = importantMaterials.sources;
           }
+          if (reviewedNotionEvidence) cards = cards.filter(card => card.type !== 'notion');
           if (hideUnused) {
             nasResults = [];
             wikiSources = [];

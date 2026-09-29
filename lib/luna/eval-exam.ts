@@ -76,7 +76,8 @@ const AUTO_GRADE_SYSTEM = `당신은 LUNA 시험 채점관입니다.
 1) must_pass를 먼저 본다. 하나라도 어기면 즉시 실패. score=0, fail_kind="must_pass". quality는 판정하지 않는다(quality_ok=null).
 2) must_pass를 통과하면 quality를 본다. 충족이면 score=1·fail_kind=null, 미달이면 score=0.5·fail_kind="quality".
 3) reason에는 한두 문장으로 판정 근거를 남긴다.
-4) expectation과 search_expectations도 함께 읽는다. expect_empty=true이면 정답은 검증된 자료가 없다는 정확한 안내다. 존재하지 않는 정답 문서나 링크를 요구하지 않는다. 다만 무관한 자료를 정답처럼 제시하거나 확인하지 않은 전수 검색을 주장하면 실패다.
+4) source_evidence.source_validation은 실제 표시 목록과 링크를 원본 ID에 대조한 기계 검증이다. 문서 ID의 누락·변형 여부는 이 결과를 참고하고 추정으로 판정하지 않는다. 후보 검토 목록에는 무관하여 제외한 자료도 있으므로 실제 최종 표시 목록과 구분한다. 필수 ID 목록 밖의 문서도 본문으로 관련성이 입증되면 허용된다. 단, 설명의 사실성·관련성·최신 범위·정확한 출처 연결은 별도로 엄격히 판정한다.
+5) expectation과 search_expectations도 함께 읽는다. expect_empty=true이면 정답은 검증된 자료가 없다는 정확한 안내다. 존재하지 않는 정답 문서나 링크를 요구하지 않는다. 다만 무관한 자료를 정답처럼 제시하거나 확인하지 않은 전수 검색을 주장하면 실패다.
 
 아래 JSON만 응답하세요:
 {
@@ -748,21 +749,6 @@ export async function executeEvalCase(
     };
   }
 
-  let grade = await autoGradeAnswer(
-    evalCase.question as string,
-    (evalCase.expectation as string | null) ?? null,
-    result.answer,
-    {
-      admin,
-      mustPass: (evalCase.must_pass as string | null) ?? null,
-      quality: (evalCase.quality as string | null) ?? null,
-      searchExpectations:(evalCase.search_expectations as SearchExpectations|null) ?? null,
-      sourceEvidence: {notion:result.notionSources.map(s=>({id:s.id,title:s.title,excerpt:s.excerpt})),
-        review:result.metadata.answer_evidence_trace}
-
-    }
-  );
-
   const trace = result.metadata.answer_evidence_trace as {
     reviewed_notion?: {direct?:string[];adjacent?:string[]};
     review_coverage?: {unverified?:string[];aliases?:Record<string,string>;navigation_complete?:boolean};
@@ -772,11 +758,27 @@ export async function executeEvalCase(
     finalIds: result.notionSources.map(s=>s.id), reviewed:trace?.reviewed_notion,
     unverifiedIds:trace?.review_coverage?.unverified,
     aliases:trace?.review_coverage?.aliases,navigationComplete:trace?.review_coverage?.navigation_complete,
-    disappearedIds:result.streamAudit.disappearedIds
+    disappearedIds:result.streamAudit.disappearedIds, finalCards:result.sources, answer:result.answer
   });
+
+  let grade = await autoGradeAnswer(
+    evalCase.question as string,
+    (evalCase.expectation as string | null) ?? null,
+    result.answer,
+    {
+      admin,
+      mustPass: (evalCase.must_pass as string | null) ?? null,
+      quality: (evalCase.quality as string | null) ?? null,
+      searchExpectations:(evalCase.search_expectations as SearchExpectations|null) ?? null,
+      sourceEvidence: {source_validation:searchQuality,notion:result.notionSources.map(s=>({id:s.id,title:s.title,excerpt:s.excerpt})),
+        review:result.metadata.answer_evidence_trace}
+
+    }
+  );
+
   if (!searchQuality.pass) {
     grade = {...grade, score:0, pass:false, must_pass_ok:false, fail_kind:"must_pass",
-      reason:`자료 검증 실패: 누락 ${searchQuality.missing.length}, 금지 자료 ${searchQuality.forbidden.length}, 검토 후 누락 ${searchQuality.omittedApproved.length}, 근거 없는 표시 ${searchQuality.unapproved.length}, 화면에서 사라짐 ${searchQuality.disappeared.length}, 미검증 ${searchQuality.incompleteReview.length}${searchQuality.unexpectedNonempty ? ", 빈 결과 조건 위반" : ""}`};
+      reason:`자료 검증 실패: 누락 ${searchQuality.missing.length}, 금지 자료 ${searchQuality.forbidden.length}, 검토 후 누락 ${searchQuality.omittedApproved.length}, 근거 없는 표시 ${searchQuality.unapproved.length}, 화면에서 사라짐 ${searchQuality.disappeared.length}, 미검증 ${searchQuality.incompleteReview.length}, 잘못된 링크 ${searchQuality.invalidAnswerLinks.length}${searchQuality.unexpectedNonempty ? ", 빈 결과 조건 위반" : ""}`};
   }
   if (grade.score < 1) {
     void recordLunaFailure(admin, {
