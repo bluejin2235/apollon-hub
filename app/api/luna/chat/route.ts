@@ -3198,10 +3198,11 @@ export async function POST(request: NextRequest) {
                 tier: "B",
                 feature: "search_terms",
                 system: retrySystem,
-                user: broadRetry ? `원 질문: ${searchIntentText}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
+                user: broadRetry ? `원 질문: ${searchIntentText}\n\n이미 찾은 문서(근거 데이터):\n${notionSources.slice(0, 24).map(s => `${s.title}\n${(s.excerpt ?? '').slice(0, 650)}`).join('\n\n')}` : `원 질문:\r\n${searchIntentText}\r\n\r\n이전 검색어:\r\n${previousKeywords.join(
                   ", "
                 )}\r\n\r\n부족한 점:\r\n${missing || "관련 자료가 부족함"}`,
-                maxTokens: broadRetry ? 160 : 64
+                maxTokens: broadRetry ? 3072 : 64,
+                reasoningEffort: broadRetry ? "low" : undefined
               });
               recordPromptUse(usageLog, {
                 key: LUNA_PROMPT_KEYS.requery,
@@ -3256,12 +3257,12 @@ export async function POST(request: NextRequest) {
             if (topicQueries.length) {
               const alternatives = await Promise.all(topicQueries.map(query =>
                 searchNotionForLuna(admin, query, query, { broad: true, skipLive: true })));
-              const alternative = alternatives.reduce((a, b) => mergeNotionSearchOutcomes(a, b, { preserveRounds: true, limit: 48 }));
+              const alternative = alternatives.reduce((a, b) => mergeNotionSearchOutcomes(a, b, { preserveRounds: true, roundWeight: 1, limit: 48 }));
               batch = { ...batch, notionOutcome: alternative, notionSources: alternative.sources, nasResults: [], cards: [] };
             } else {
               batch = await runConnectorSearch(keywords);
             }
-            notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome, { preserveRounds: true, limit: requestsAllMaterials(searchIntentText) ? 48 : 24 }) : batch.notionOutcome;
+            notionSearchOutcome = notionSearchOutcome ? mergeNotionSearchOutcomes(notionSearchOutcome, batch.notionOutcome, { preserveRounds: true, roundWeight: broadRetry ? 1 : 3, limit: broadRetry ? 48 : 24 }) : batch.notionOutcome;
             notionSources = annotateNotionSourcesWithWorkStage(
               notionSearchOutcome.sources,
               searchIntentText
@@ -3489,7 +3490,7 @@ export async function POST(request: NextRequest) {
             const review = await lunaLlmComplete(admin, {
               tier: 'B', feature: 'eval_grade', system: NOTION_EVIDENCE_REVIEW,
               user: `질문: ${searchIntentText}\n\n${notionForLlm.map((s, i) => `[${i}] ${s.title}\n${(s.excerpt ?? '').slice(0, 1400)}`).join('\n\n')}`,
-              maxTokens: 512
+              maxTokens: 8192, reasoningEffort: "low"
             });
             pushModelStep(modelSteps, admin, { label: '본문 관련성 확인', tier: 'B', model: review.model_label, model_id: review.model_id, usage: review.usage });
             notionForLlm = applyNotionEvidenceReview(notionForLlm, parseJsonObject(review.text));
@@ -3781,7 +3782,8 @@ export async function POST(request: NextRequest) {
             model_id: tierA.model_id,
             system: systemPrompt.text,
             user: flatUser || userText,
-            maxTokens,
+            maxTokens: broadMaterialSearch ? Math.max(maxTokens, 10000) : maxTokens,
+            reasoningEffort: broadMaterialSearch ? "low" : undefined,
             useCaching: systemPrompt.applied
           })) {
             if (chunk.delta) {

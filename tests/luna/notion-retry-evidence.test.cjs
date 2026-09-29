@@ -20,3 +20,11 @@ test('merging indexed results never silently applies the five-page live-search d
  const a=Array.from({length:24},(_,i)=>source('page-'+i,30-i));
  assert.equal(mergeNotionSearchOutcomes(outcome(a),outcome([])).sources.length,24);
 });
+test('grounded topic exploration receives equal space without dropping the original round',()=>{
+ const a=Array.from({length:24},(_,i)=>source('original-'+i,30-i));
+ const b=Array.from({length:24},(_,i)=>source('topic-'+i,1000-i));
+ const merged=mergeNotionSearchOutcomes(outcome(a),outcome(b),{preserveRounds:true,roundWeight:1,limit:48});
+ assert.equal(merged.sources.length,48);
+ assert.equal(merged.sources.slice(0,24).filter(s=>s.id.startsWith('topic-')).length,12);
+ assert.equal(merged.sources.slice(0,24).filter(s=>s.id.startsWith('original-')).length,12);
+});

@@ -143,6 +143,7 @@ async function completeOpenAI(opts: {
   system?: string;
   user: string;
   maxTokens: number;
+  reasoningEffort?: "none" | "low";
   tools?: LlmToolDef[];
 }): Promise<LlmCompleteResult> {
   const key = openaiKey();
@@ -159,8 +160,8 @@ async function completeOpenAI(opts: {
   };
   // gpt-5 / o-series 등은 max_tokens 거부 → max_completion_tokens
   applyOpenAiTokenLimit(body, opts.model, opts.maxTokens);
-  // 답변·판정 모두 reasoning 끄기 — 기본 effort 는 짧은 답에도 completion 수백 토큰을 태운다
-  applyGpt5ReasoningNone(body, opts.model);
+  // Fast default; evidence planning/review can explicitly opt into bounded reasoning.
+  applyGpt5Reasoning(body, opts.model, opts.reasoningEffort);
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools.map((t) => ({
       type: "function",
@@ -319,6 +320,7 @@ export async function llmComplete(opts: {
   maxTokens?: number;
   tools?: LlmToolDef[];
   useCaching?: boolean;
+  reasoningEffort?: "none" | "low";
 }): Promise<LlmCompleteResult> {
   const maxTokens = opts.maxTokens ?? 2048;
   const systemText = flattenSystem(opts.system);
@@ -329,7 +331,8 @@ export async function llmComplete(opts: {
       system: systemText,
       user: opts.user,
       maxTokens,
-      tools: opts.tools
+      tools: opts.tools,
+      reasoningEffort: opts.reasoningEffort
     });
   } else if (opts.provider === "google") {
     result = await completeGoogle({
@@ -365,6 +368,7 @@ export async function lunaLlmComplete(
     user: string;
     maxTokens?: number;
     tools?: LlmToolDef[];
+    reasoningEffort?: "none" | "low";
   }
 ): Promise<LlmCompleteResult> {
   const tierModel = await getTierModel(admin, opts.tier);
@@ -385,7 +389,8 @@ export async function lunaLlmComplete(
       user: opts.user,
       maxTokens: opts.maxTokens,
       tools: opts.tools,
-      useCaching
+      useCaching,
+      reasoningEffort: opts.reasoningEffort
     });
     bumpUsageDaily(admin, {
       tier: opts.tier,
@@ -469,13 +474,14 @@ function applyOpenAiTokenLimit(
   }
 }
 
-/** gpt-5/o 계열: 숨은 reasoning 이 TTFT·총 시간을 키운다. 채팅 답은 none. */
-function applyGpt5ReasoningNone(
+/** Preserve the fast default; broad evidence workflows may opt into reasoning. */
+function applyGpt5Reasoning(
   body: Record<string, unknown>,
-  model: string
+  model: string,
+  effort: "none" | "low" = "none"
 ): void {
   if (/^gpt-5|^o[1-4]/i.test(model)) {
-    body.reasoning_effort = "none";
+    body.reasoning_effort = effort;
   }
 }
 
@@ -484,6 +490,7 @@ async function* streamOpenAI(opts: {
   system?: string;
   user: string;
   maxTokens: number;
+  reasoningEffort?: "none" | "low";
 }): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
   const key = openaiKey();
   if (!key) throw new Error("OpenAI API key is not configured");
@@ -500,7 +507,7 @@ async function* streamOpenAI(opts: {
     ]
   };
   applyOpenAiTokenLimit(body, opts.model, opts.maxTokens);
-  applyGpt5ReasoningNone(body, opts.model);
+  applyGpt5Reasoning(body, opts.model, opts.reasoningEffort);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -669,6 +676,7 @@ export async function* llmStreamText(opts: {
   user: string;
   maxTokens?: number;
   useCaching?: boolean;
+  reasoningEffort?: "none" | "low";
 }): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
   const maxTokens = opts.maxTokens ?? 4096;
   const systemText = flattenSystem(opts.system);
@@ -710,7 +718,8 @@ export async function* llmStreamText(opts: {
       model: opts.model_id,
       system: systemText,
       user: opts.user,
-      maxTokens
+      maxTokens,
+      reasoningEffort: opts.reasoningEffort
     });
     return;
   }

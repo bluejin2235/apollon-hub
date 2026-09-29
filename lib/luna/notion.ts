@@ -686,7 +686,7 @@ async function searchNotionOnce(
 export function mergeNotionSearchOutcomes(
   a: NotionSearchOutcome,
   b: NotionSearchOutcome,
-  opts?: { preserveRounds?: boolean; limit?: number }
+  opts?: { preserveRounds?: boolean; roundWeight?: number; limit?: number }
 ): NotionSearchOutcome {
   const limit = opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
   let combinedSources = capNotionDisplaySources([...a.sources, ...b.sources], limit);
@@ -707,8 +707,10 @@ export function mergeNotionSearchOutcomes(
       if (seen.has(key)) return;
       seen.add(key); ordered.push(merged.get(key)!);
     };
+    const weight = Math.max(1, Math.min(3, Math.floor(opts.roundWeight ?? 3)));
     for (let i = 0; i < Math.max(a.sources.length, b.sources.length); i++) {
-      append(a.sources[i * 3]); append(a.sources[i * 3 + 1]); append(a.sources[i * 3 + 2]); append(b.sources[i]);
+      for (let j = 0; j < weight; j++) append(a.sources[i * weight + j]);
+      append(b.sources[i]);
     }
     // match_score is a sorting score, not embedding similarity or confidence.
     combinedSources = ordered.slice(0, limit).map((s, i) => ({ ...s, match_score: 10 * (limit - i) / limit }));

@@ -215,3 +215,19 @@ forest query and independent work questions, including citations and latency.
   results survive review instead of being arbitrarily capped at four.
 - All 324 foundation tests and TypeScript passed. Production application promotion
   and bulk reindex remain pending an acceptable live answer, not just passing tests.
+
+## Grounded follow-up planning and reasoning
+
+- The dedicated-prompt run still failed (56.8 seconds): the current park and
+  nightwalk were detailed, but other known relevant families were omitted. The
+  generated activity query was generic and did not discover the adjacent program.
+- A direct lexical probe using that program's general activity name retrieved
+  the omitted family near the top. Follow-up planning now reads existing document
+  evidence and uses discovered activity/technique names instead of guessing only
+  from the original question. Exploration and initial retrieval share equal space.
+- The client had forced `reasoning_effort: none` even for multi-document review.
+  Broad planning, review and synthesis now opt into `low` on the same configured
+  model, with completion budgets that include reasoning. Existing callers retain
+  their previous default. Provider completion/streaming tests verify parameter,
+  model, visible-text and usage preservation; live latency/quality remain to verify.
+- API compatibility reference: https://developers.openai.com/api/docs/models/gpt-5.6-luna
