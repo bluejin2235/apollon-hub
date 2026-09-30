@@ -15,12 +15,12 @@ test('a serialized checkpoint resumes all documents without rerunning completed 
     const entries={};
     const first=createEvalReviewCheckpoint({entries,deadline:180000,save:async()=>{persisted=JSON.parse(JSON.stringify(entries));}});
     const work=async batch=>{calls++; await Promise.resolve(); clock=100000; return result(batch);};
-    await assert.rejects(reviewAllNotionEvidence(sources,b=>first.review('same question and rules',b,()=>work(b))),EvalReviewPaused);
+    await assert.rejects(reviewAllNotionEvidence(sources,b=>first.review('same question and rules',b,pending=>work(pending))),EvalReviewPaused);
     assert.equal(calls,6);
-    assert.equal(Object.keys(persisted).length,6);
+    assert.equal(Object.keys(persisted).length,96);
     clock=0;
     const second=createEvalReviewCheckpoint({entries:persisted,deadline:300000,save:async()=>{}});
-    const reviewed=await reviewAllNotionEvidence(sources,b=>second.review('same question and rules',b,()=>work(b)));
+    const reviewed=await reviewAllNotionEvidence(sources,b=>second.review('same question and rules',b,pending=>work(pending)));
     assert.equal(calls,7);
     assert.equal(reviewed.direct.length,112);
     assert.deepEqual(reviewed.unverifiedIds,[]);
@@ -65,4 +65,29 @@ test('a paused stream reaches the evaluation caller as suspension, not an incomp
     '@/lib/luna/chat-handler':{executeLunaChat:async()=>new Response(new ReadableStream({start(controller){controller.error(new EvalReviewPaused());}}))}
   });
   await assert.rejects(runLunaTurn({},'question',{},'actor'),EvalReviewPaused);
+});
+
+test('retrieval score changes do not repeat an identical rendered review request',async()=>{
+ const entries={};let calls=0;
+ const session=createEvalReviewCheckpoint({entries,deadline:Date.now()+600000,save:async()=>{}});
+ const identity={request:{system:'same rule',user:'same question and document text'},model:'same model'};
+ for(const score of [1,2]) await session.review(identity,[{...source('a'),keyword_score:score,match_score:score}],async()=>{calls++;return result([source('a')]);});
+ assert.equal(calls,1);
+});
+
+test('reordering and regrouping preserve per-source decisions and only new windows invoke the model',async()=>{
+ const entries={},requests=[];
+ const cp=createEvalReviewCheckpoint({entries,deadline:Date.now()+600000,save:async()=>{}});
+ const work=async pending=>{requests.push(pending.map(s=>s.id));return result(pending);};
+ await cp.review({question:'q',rules:'r'},[source('a'),source('b')],work);
+ const replay=await cp.review({question:'q',rules:'r'},[source('b'),source('c'),source('a')],work);
+ assert.deepEqual(requests,[['a','b'],['c']]);
+ assert.deepEqual(replay.direct,[0,1,2]);
+ assert.deepEqual(replay.evidence.map(e=>e.index),[0,1,2]);
+ assert.equal(Object.keys(entries).length,3);
+});
+test('project membership changes require a new decision even with an unchanged body',async()=>{
+ let calls=0;const cp=createEvalReviewCheckpoint({entries:{},deadline:Date.now()+600000,save:async()=>{}});
+ for(const project_key of ['first','second']) await cp.review('same question',[{...source('a'),project_key}],async pending=>{calls++;return result(pending);});
+ assert.equal(calls,2);
 });

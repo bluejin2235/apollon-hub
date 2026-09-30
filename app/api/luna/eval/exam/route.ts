@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
   let resumeId:string|null=null;
   let categories:string[]|null=null;
   let force = true;
+  let startOnly = false;
   let tier: "light" | "heavy" | null = null;
   try {
     const body = (await request.json()) as {
@@ -29,10 +30,12 @@ export async function POST(request: NextRequest) {
       tier?: unknown;
       run_id?:unknown;
       categories?:unknown;
+      start_only?:unknown;
     };
     if(typeof body.run_id==='string' && /^[0-9a-f-]{36}$/i.test(body.run_id)) resumeId=body.run_id;
     if(Array.isArray(body.categories) && body.categories.every(c=>typeof c==='string')) categories=body.categories as string[];
     if (body.force === false) force = false;
+    startOnly = body.start_only === true;
     if (body.tier === "light" || body.tier === "heavy") tier = body.tier;
     // tier 생략·"all" → 활성 전체(light+heavy)
   } catch {
@@ -47,6 +50,7 @@ export async function POST(request: NextRequest) {
       force,
       tier,
       categories,
+      ...(startOnly ? { budgetMs: 0 } : {}),
       notify: false
     });
     return NextResponse.json(result);

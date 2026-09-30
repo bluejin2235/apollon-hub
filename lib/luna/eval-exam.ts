@@ -1,5 +1,5 @@
 import { EvalReviewPaused } from '@/lib/luna/eval-continuation-control';
-import { createEvalReviewCheckpoint, type EvalReviewCheckpoint, type ReviewCheckpointEntries } from '@/lib/luna/eval-review-checkpoint';
+import { createEvalReviewCheckpoint, type EvalReviewCheckpoint, type ReviewCheckpointEntries, type ReviewCheckpointStats } from '@/lib/luna/eval-review-checkpoint';
 import { assessSearchQuality, semanticSourceEvidence, type SearchExpectations } from "@/lib/luna/search-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel } from "@/lib/luna/engine";
@@ -1045,7 +1045,7 @@ export function evalDeploymentIdentity(): string | null {
   return process.env.VERCEL_DEPLOYMENT_ID ?? process.env.VERCEL_URL ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null;
 }
 
-type EvalCheckpoint={deployment?:string|null;review_case?:{case_id:string;entries:ReviewCheckpointEntries;interruptions:number};case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean;in_flight?:{case_id:string;started_at:string}};
+type EvalCheckpoint={deployment?:string|null;review_case?:{case_id:string;entries:ReviewCheckpointEntries;interruptions:number;stats?:ReviewCheckpointStats};case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean;in_flight?:{case_id:string;started_at:string}};
 
 /** Persist after each completed case. A timeout leaves the next case retryable,
  * and a lease keeps the browser and scheduled worker from running it twice. */
@@ -1108,8 +1108,9 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
       await saveCheckpoint();
       cp.review_case ??= {case_id:cp.case_ids[cp.next],entries:{},interruptions:0};
       if(cp.review_case.case_id!==cp.case_ids[cp.next]) throw new Error('Review checkpoint case mismatch');
+      cp.review_case.stats ??= {reused:0,requested:0,model_calls:0};
       const reviewCheckpoint=createEvalReviewCheckpoint({
-        entries:cp.review_case.entries,deadline:deadline-60_000,save:saveCheckpoint
+        entries:cp.review_case.entries,deadline:deadline-60_000,save:saveCheckpoint,stats:cp.review_case.stats
       });
       try {
         await executeEvalCase(admin,runId,cp.case_ids[cp.next],reviewCheckpoint);

@@ -21,6 +21,7 @@ import {
 } from "@/components/luna/brain/shared";
 import { K } from "@/lib/luna/knowledge-format";
 import { evalTierLabel } from "@/lib/luna/eval-labels";
+import { continueEvalInBrowser, type EvalContinuationResponse } from "@/lib/luna/eval-client-continuation";
 
 type EvalRun = {
   id: string;
@@ -379,29 +380,28 @@ export function LunaBrainEval() {
     setNotice("");
     let activeRunId=resumeId;
     try {
-      const body: { force: boolean; tier?: string; categories?:string[] } = { force: true };
+      const body: { force: boolean; start_only: boolean; tier?: string; categories?:string[] } = { force: true, start_only: true };
       if(category) body.categories=[category];
       if (tier === "light" || tier === "heavy") body.tier = tier;
-      let res = await brainFetch<{
-        continued?:boolean;
-        skipped: boolean;
-        reason?: string;
-        run_id?: string;
-        passed?: number;
-        total?: number;
-        score_sum?: number;
-        score_max?: number;
-        tier?: string;
-      }>("/api/luna/eval/exam", {
+      let res: EvalContinuationResponse = resumeId
+        ? {run_id:resumeId, continued:true, skipped:false}
+        : await brainFetch<EvalContinuationResponse>("/api/luna/eval/exam", {
         method: "POST",
-        body: JSON.stringify(resumeId ? {run_id:resumeId} : body)
+        body: JSON.stringify(body)
       });
       activeRunId=res.run_id;
-      while(res.continued && !res.skipped && res.run_id) {
-        setSelectedRunId(res.run_id);
-        setNotice("완료한 문항을 저장했습니다. 남은 문항을 이어서 검증합니다.");
-        await load(res.run_id);
-        res=await brainFetch<typeof res>("/api/luna/eval/exam",{method:"POST",body:JSON.stringify({run_id:res.run_id})});
+      if(res.continued && res.run_id) {
+        const runId=res.run_id;
+        setSelectedRunId(runId);
+        await load(runId);
+        res=await continueEvalInBrowser({
+          runId,
+          request: id=>brainFetch<EvalContinuationResponse>("/api/luna/eval/exam",{method:"POST",body:JSON.stringify({run_id:id})}),
+          progress: async result=>{
+            setNotice(result ? "검증 진행 상황을 저장했습니다. 같은 실행을 이어서 검증합니다." : "연결이 잠시 끊겼습니다. 저장된 실행을 자동으로 이어서 검증합니다.");
+            await load(runId);
+          }
+        });
       }
       const score =
         res.score_sum != null && res.score_max != null

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { K } from "@/lib/luna/knowledge-format";
 import { supabase } from "@/lib/supabase/client";
+import { EvalRequestError } from "@/lib/luna/eval-client-continuation";
 
 export async function getAccessToken(): Promise<string | null> {
   const {
@@ -29,8 +30,8 @@ export async function brainFetch<T>(
     | (T & { error?: string })
     | null;
   if (!res.ok) {
-    if (res.status === 403) throw new Error("슈퍼관리자만 볼 수 있습니다.");
-    throw new Error(json?.error ?? "요청에 실패했습니다.");
+    if (res.status === 403) throw new EvalRequestError("슈퍼관리자만 볼 수 있습니다.", res.status);
+    throw new EvalRequestError(json?.error ?? "요청에 실패했습니다.", res.status);
   }
   return json as T;
 }

@@ -3514,20 +3514,19 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           for (const source of directorySources) byId.set(source.id, {...byId.get(source.id), ...source});
           notionSources = [...byId.values()];
           const reviewBatch = async (batch: NotionSource[], verify=false) => {
-            const evidence = prepareReviewEvidence(batch, verify);
-            const request = {
+            const options = {
               tier:'B' as const,feature:'eval_grade' as const,system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
-              user:`질문: ${searchIntentText}\n\n${evidence.text}`,
               maxTokens:8192,reasoningEffort:verify ? 'medium' as const : 'low' as const
             };
-            const work = async () => {
-              const review=await lunaLlmComplete(admin, request);
+            const work = async (pending: NotionSource[]) => {
+              const evidence = prepareReviewEvidence(pending, verify);
+              const review=await lunaLlmComplete(admin, {...options,user:`질문: ${searchIntentText}\n\n${evidence.text}`});
               pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
               return evidence.resolve(parseJsonObject(review.text));
             };
             return evaluation && execution.reviewCheckpoint
-              ? execution.reviewCheckpoint.review({request, model:tierBCfg}, batch, work)
-              : work();
+              ? execution.reviewCheckpoint.review({question:searchIntentText,options,model:tierBCfg}, batch, work)
+              : work(batch);
           };
           const reviewed=await buildDocumentInventory(admin,{query:searchIntentText,sources:notionSources,
             directory:cachedProjectDirectory,review:batch=>reviewBatch(batch),verify:batch=>reviewBatch(batch,true)});
