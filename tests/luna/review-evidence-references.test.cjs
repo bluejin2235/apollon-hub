@@ -38,3 +38,14 @@ test('a previous relevance claim is visible for scrutiny but cannot become sourc
  assert.equal(review.evidence[0].quote,sources[0].excerpt);
  assert.ok(!review.evidence[0].quote.includes('현장 테스트'));
 });
+test('verification requires a grounded transferable fact and records its application limits',()=>{
+ const source={id:'a',title:'설치 조건',excerpt:'수위 변동을 고려해 방수 조명 기구를 설치하고 전원 접속부를 수면 위에 배치한다.'};
+ const prepared=prepareReviewEvidence([source],true);
+ const base={direct:[],adjacent:[0],unrelated:[],evidence:[{index:0,span:0,reason:'분위기를 야외 숲길에도 참고할 수 있다.'}]};
+ assert.equal(prepared.resolve(base).evidence[0].quote,'');
+ const valid=prepared.resolve({...base,evidence:[{...base.evidence[0],relation:'transferable_fact',fact_span:0,application:'수위 변동 구간의 전원 접속부 높이를 검토하는 데 적용한다.',limitation:'숲길의 실제 수위와 전기 조건은 별도 현장 확인이 필요하다.'}]});
+ assert.equal(valid.evidence[0].quote,source.excerpt);
+ assert.match(valid.evidence[0].reason,/실제 수위/);
+ const invalid=prepared.resolve({...base,evidence:[{...valid.evidence[0],span:0,fact_span:99}]});
+ assert.equal(invalid.evidence[0].quote,'');
+});
