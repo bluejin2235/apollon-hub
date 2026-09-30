@@ -1,3 +1,4 @@
+import type { EvalReviewCheckpoint } from '@/lib/luna/eval-review-checkpoint';
 import "server-only";
 import { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -30,7 +31,7 @@ export type LunaRunResult = {
  * Access is checked by the same handler; no HTTP auth bypass is introduced.
  */
 export async function runLunaTurn(admin: SupabaseClient, message: string,
-  connectors: LunaConnectors = {}, actorId?: string): Promise<LunaRunResult> {
+  connectors: LunaConnectors = {}, actorId?: string, reviewCheckpoint?: EvalReviewCheckpoint): Promise<LunaRunResult> {
   if (!actorId) {
     const {data,error} = await admin.from("profiles").select("id").eq("role","슈퍼관리자").order("id").limit(1).maybeSingle();
     if (error || !data?.id) throw new Error("평가 실행 권한이 있는 계정을 확인하지 못했습니다.");
@@ -41,7 +42,7 @@ export async function runLunaTurn(admin: SupabaseClient, message: string,
   const response = await executeLunaChat(new NextRequest("https://luna.internal/api/luna/chat", {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({conversation_id:crypto.randomUUID(), message, connectors})
-  }), {admin,userId:actorId,evaluation:true,onResult:row=>{captured.row=row;}});
+  }), {admin,userId:actorId,evaluation:true,reviewCheckpoint,onResult:row=>{captured.row=row;}});
   const wire = await response.text();
   if (!response.ok) throw new Error(`운영 엔진 평가 실패 (${response.status})`);
   if (!captured.row) throw new Error("운영 엔진이 최종 결과를 완료하지 못했습니다.");

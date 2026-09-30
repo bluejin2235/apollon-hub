@@ -1,12 +1,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs,fakeDb}=require('./helpers.cjs');
-let clock=0,calls=[],gradePayload;
+let clock=0,calls=[],gradePayload,pause=false;
+const {EvalReviewPaused}=loadTs('lib/luna/eval-continuation-control.ts');
 const {continueEvalExam,autoGradeAnswer}=loadTs('lib/luna/eval-exam.ts',{
+ '@/lib/luna/eval-continuation-control':{EvalReviewPaused},
  '@/lib/luna/engine':{getTierModel:async()=>({model_label:'fixture'})},
  '@/lib/luna/llm/client':{lunaLlmComplete:async(_db,input)=>{gradePayload=JSON.parse(input.user);return {text:JSON.stringify({score:1,must_pass_ok:true,quality_ok:true})};}},
  '@/lib/luna/notify':{LUNA_LINKS:{},lunaNotify:async()=>{throw Error('must not notify');}},
  '@/lib/luna/eval-labels':{evalTierLabel:s=>s},
- '@/lib/luna/run-chat':{runLunaTurn:async(_db,q)=>{calls.push(q);clock+=200000;return {answer:'fixture',notionSources:[],sources:[],metadata:{},streamAudit:{disappearedIds:[]},durationMs:200000};}},
+ '@/lib/luna/run-chat':{runLunaTurn:async(_db,q)=>{if(pause) throw new EvalReviewPaused();calls.push(q);clock+=200000;return {answer:'fixture',notionSources:[],sources:[],metadata:{},streamAudit:{disappearedIds:[]},durationMs:200000};}},
  '@/lib/luna/failures':{recordLunaFailure:async()=>{}}
 });
 test('semantic grading retains the expected empty result even when explicit rubric fields exist',async()=>{
@@ -49,4 +51,42 @@ test('a saved result survives a worker dying before checkpoint advancement',asyn
  await continueEvalExam(db,'run',0);
  assert.equal(checkpoint.next,1);
  assert.ok(!db.calls.some(c=>c.table==='luna_eval_results' && c.mutation));
+});
+
+test('a cooperative pause keeps the same case pending without recording a quality failure',async()=>{
+ const checkpoint={case_ids:['a'],next:0,trigger:'manual',tier:'heavy',notify:false,assign_reviews:false};
+ const db=fakeDb({luna_eval_runs:[{id:'run',status:'running',checkpoint}],luna_eval_cases:[{id:'a',question:'a',connectors:{}}]});
+ db.rpc=async()=>({data:true,error:null});pause=true;
+ try {
+  const result=await continueEvalExam(db,'run');
+  assert.equal(result.continued,true);assert.equal(checkpoint.next,0);
+  assert.equal(checkpoint.in_flight,undefined);assert.equal(checkpoint.review_case.case_id,'a');
+  assert.ok(!db.calls.some(c=>c.table==='luna_eval_results' && c.mutation));
+  assert.ok(!db.calls.some(c=>c.mutation?.status==='done'));
+ } finally {pause=false;}
+});
+test('a different deployment cannot acquire the worker or mix evaluation results',async()=>{
+ const checkpoint={deployment:'original-deployment',case_ids:['a'],next:0};
+ const db=fakeDb({luna_eval_runs:[{id:'run',status:'running',checkpoint}]});
+ db.rpc=async()=>{throw Error('must not claim');};
+ const result=await continueEvalExam(db,'run');
+ assert.equal(result.skipped,true);assert.equal(result.continued,false);
+ assert.match(result.reason,/different or unpinned deployment/);
+ assert.ok(!db.calls.some(c=>c.mutation));
+});
+test('hard termination preserves checkpointed batches and retries the same case with a bounded retry count',async()=>{
+ const checkpoint={case_ids:['a','b'],next:0,trigger:'manual',tier:'heavy',notify:false,assign_reviews:false,
+  review_case:{case_id:'a',entries:{saved:{direct:[],adjacent:[],unrelated:[0]}},interruptions:0},
+  in_flight:{case_id:'a',started_at:'2026-01-01T00:00:00Z'}};
+ const db=fakeDb({luna_eval_runs:[{id:'run',status:'running',checkpoint}]});
+ db.rpc=async()=>({data:true,error:null});
+ await continueEvalExam(db,'run',0);
+ assert.equal(checkpoint.next,0);assert.equal(checkpoint.review_case.interruptions,1);
+ assert.ok(checkpoint.review_case.entries.saved);
+ assert.ok(!db.calls.some(c=>c.table==='luna_eval_results' && c.mutation));
+ checkpoint.review_case.interruptions=2;
+ checkpoint.in_flight={case_id:'a',started_at:'2026-01-01T00:00:00Z'};
+ await continueEvalExam(db,'run',0);
+ assert.equal(checkpoint.next,1);
+ assert.ok(db.calls.some(c=>c.table==='luna_eval_results' && c.mutation?.verdict==='error'));
 });

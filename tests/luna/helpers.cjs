@@ -15,6 +15,7 @@ function loadTs(relative, overrides = {}, cache = new Map()) {
   const localRequire = (specifier) => {
     if (Object.hasOwn(overrides, specifier)) return overrides[specifier];
     if (specifier === 'server-only') return {};
+    if (specifier === 'node:crypto') return require('node:crypto');
     if (specifier.startsWith('@/')) return loadTs(`${specifier.slice(2)}.ts`, overrides, cache);
     throw new Error(`Unmocked dependency: ${specifier}`);
   };

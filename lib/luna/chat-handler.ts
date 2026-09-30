@@ -1,3 +1,5 @@
+import type { EvalReviewCheckpoint } from '@/lib/luna/eval-review-checkpoint';
+import { EvalReviewPaused } from '@/lib/luna/eval-continuation-control';
 import { canonicalizeNotionAnswerLinks } from '@/lib/luna/source-citations';
 import { prefetchInventory } from "@/lib/luna/inventory-prefetch";
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
@@ -268,6 +270,7 @@ export type LunaChatExecution = {
   userId: string;
   /** Server-internal evaluation only; never taken from request JSON. */
   evaluation?: boolean;
+  reviewCheckpoint?: EvalReviewCheckpoint;
   onResult?: (row: { content: string; metadata: Record<string, unknown> }) => void;
 };
 
@@ -3512,13 +3515,19 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           notionSources = [...byId.values()];
           const reviewBatch = async (batch: NotionSource[], verify=false) => {
             const evidence = prepareReviewEvidence(batch, verify);
-            const review=await lunaLlmComplete(admin, {
-              tier:'B',feature:'eval_grade',system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
+            const request = {
+              tier:'B' as const,feature:'eval_grade' as const,system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
               user:`질문: ${searchIntentText}\n\n${evidence.text}`,
-              maxTokens:8192,reasoningEffort:verify ? "medium" : "low"
-            });
-            pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
-            return evidence.resolve(parseJsonObject(review.text));
+              maxTokens:8192,reasoningEffort:verify ? 'medium' as const : 'low' as const
+            };
+            const work = async () => {
+              const review=await lunaLlmComplete(admin, request);
+              pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
+              return evidence.resolve(parseJsonObject(review.text));
+            };
+            return evaluation && execution.reviewCheckpoint
+              ? execution.reviewCheckpoint.review({request, model:tierBCfg}, batch, work)
+              : work();
           };
           const reviewed=await buildDocumentInventory(admin,{query:searchIntentText,sources:notionSources,
             directory:cachedProjectDirectory,review:batch=>reviewBatch(batch),verify:batch=>reviewBatch(batch,true)});
@@ -4313,6 +4322,10 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         if (!evaluation) scheduleUserMemoRewrite(admin, user.id);
         controller.close();
       } catch (err) {
+        if (evaluation && err instanceof EvalReviewPaused) {
+          controller.error(err);
+          return;
+        }
         console.error("[luna/chat] stream", err);
         const msg = err instanceof Error ? err.message : "Stream failed";
         try {

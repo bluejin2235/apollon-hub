@@ -1,3 +1,5 @@
+import { EvalReviewPaused } from '@/lib/luna/eval-continuation-control';
+import { createEvalReviewCheckpoint, type EvalReviewCheckpoint, type ReviewCheckpointEntries } from '@/lib/luna/eval-review-checkpoint';
 import { assessSearchQuality, semanticSourceEvidence, type SearchExpectations } from "@/lib/luna/search-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel } from "@/lib/luna/engine";
@@ -664,7 +666,8 @@ export async function finalizeEvalExam(
 export async function executeEvalCase(
   admin: SupabaseClient,
   runId: string,
-  caseId: string
+  caseId: string,
+  reviewCheckpoint?: EvalReviewCheckpoint
 ): Promise<{
   id: string;
   case_id: string;
@@ -698,16 +701,20 @@ export async function executeEvalCase(
     nas: connectorsRaw.nas === true
   };
 
-  const {data:evalRun}=await admin.from('luna_eval_runs').select('created_by').eq('id',runId).maybeSingle();
+  const {data:evalRun}=await admin.from('luna_eval_runs').select('created_by,checkpoint').eq('id',runId).maybeSingle();
+  const ownerDeployment=evalRun?.checkpoint?.deployment;
+  if(ownerDeployment && ownerDeployment!==evalDeploymentIdentity()) throw new Error('Evaluation deployment mismatch');
   let result: Awaited<ReturnType<typeof runLunaTurn>>;
   try {
     result = await runLunaTurn(
       admin,
       evalCase.question as string,
       connectors,
-      evalRun?.created_by ?? undefined
+      evalRun?.created_by ?? undefined,
+      reviewCheckpoint
     );
   } catch (err) {
+    if (err instanceof EvalReviewPaused) throw err;
     const reason =
       err instanceof Error ? err.message.slice(0, 300) : "실행 실패";
     const { data: errRow, error: errInsert } = await admin
@@ -1021,7 +1028,7 @@ export async function runEvalExam(
       tier: runTier,
       score_sum: 0,
       score_max: active.length,
-      checkpoint:{case_ids:active.map(c=>c.id),next:0,trigger:opts.trigger,tier:runTier,
+      checkpoint:{deployment:evalDeploymentIdentity(),case_ids:active.map(c=>c.id),next:0,trigger:opts.trigger,tier:runTier,
         notify:opts.notify!==false,assign_reviews:opts.trigger!=="manual"}
     })
     .select("id")
@@ -1034,11 +1041,24 @@ export async function runEvalExam(
   return continueEvalExam(admin,run.id as string,opts.budgetMs ?? 700_000);
 }
 
-type EvalCheckpoint={case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean;in_flight?:{case_id:string;started_at:string}};
+export function evalDeploymentIdentity(): string | null {
+  return process.env.VERCEL_DEPLOYMENT_ID ?? process.env.VERCEL_URL ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null;
+}
+
+type EvalCheckpoint={deployment?:string|null;review_case?:{case_id:string;entries:ReviewCheckpointEntries;interruptions:number};case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean;in_flight?:{case_id:string;started_at:string}};
 
 /** Persist after each completed case. A timeout leaves the next case retryable,
  * and a lease keeps the browser and scheduled worker from running it twice. */
 export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetMs=700_000):Promise<EvalExamResult> {
+  const deployment=evalDeploymentIdentity();
+  const owner=await admin.from('luna_eval_runs').select('checkpoint').eq('id',runId).maybeSingle();
+  if(owner.error) throw new Error(owner.error.message);
+  const pinned=(owner.data?.checkpoint as EvalCheckpoint | undefined)?.deployment;
+  // Never combine preview and production outputs, or silently adopt an older
+  // unpinned run after a release. Start a fresh run to evaluate a new revision.
+  if((pinned || deployment) && pinned!==deployment) {
+    return {skipped:true,continued:false,run_id:runId,reason:'Evaluation belongs to a different or unpinned deployment; resume on its original deployment or start a new run'};
+  }
   const token=crypto.randomUUID();
   const claim=await admin.rpc('luna_claim_eval_worker',{p_run:runId,p_token:token});
   if(claim.error) throw new Error(claim.error.message);
@@ -1052,8 +1072,8 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
     const cp=run.checkpoint as EvalCheckpoint;
     if(!Array.isArray(cp.case_ids) || !Number.isInteger(cp.next) || cp.next<0 || cp.next>cp.case_ids.length) throw new Error('Invalid evaluation checkpoint');
     const saveCheckpoint=async()=>{
-      const saved=await admin.from('luna_eval_runs').update({checkpoint:cp}).eq('id',runId).eq('worker_token',token);
-      if(saved.error) throw new Error(saved.error.message);
+      const saved=await admin.from('luna_eval_runs').update({checkpoint:cp}).eq('id',runId).eq('worker_token',token).select('id').maybeSingle();
+      if(saved.error || !saved.data) throw new Error(saved.error?.message ?? 'Evaluation worker lease lost');
     };
     // The previous worker may have been killed before its catch/finally ran.
     // A newly acquired lease proves it is no longer the active worker. Keep any
@@ -1062,7 +1082,10 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
       if(cp.in_flight.case_id!==cp.case_ids[cp.next]) throw new Error('Invalid in-flight evaluation checkpoint');
       const existing=await admin.from('luna_eval_results').select('id').eq('run_id',runId).eq('case_id',cp.in_flight.case_id).maybeSingle();
       if(existing.error) throw new Error(existing.error.message);
-      if(!existing.data) {
+      const retryable=!existing.data && cp.review_case?.case_id===cp.in_flight.case_id &&
+        Object.keys(cp.review_case.entries).length>0 && cp.review_case.interruptions<2;
+      if(retryable) cp.review_case!.interruptions++;
+      if(!existing.data && !retryable) {
         const interrupted=await admin.from('luna_eval_results').upsert({
           run_id:runId,case_id:cp.in_flight.case_id,answer:'',sources:[],verdict:'error',auto_pass:false,score:0,
           auto_reason:'평가 작업이 최종 결과를 저장하기 전에 중단됐습니다. 실행 제한 또는 작업자 종료 여부를 확인하고 재검증해야 합니다.',
@@ -1070,7 +1093,7 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
         },{onConflict:'run_id,case_id'});
         if(interrupted.error) throw new Error(interrupted.error.message);
       }
-      cp.next++;
+      if(!retryable) { cp.next++; delete cp.review_case; }
       delete cp.in_flight;
       await saveCheckpoint();
     }
@@ -1083,7 +1106,20 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
       const started=Date.now();
       cp.in_flight={case_id:cp.case_ids[cp.next],started_at:new Date().toISOString()};
       await saveCheckpoint();
-      await executeEvalCase(admin,runId,cp.case_ids[cp.next]);
+      cp.review_case ??= {case_id:cp.case_ids[cp.next],entries:{},interruptions:0};
+      if(cp.review_case.case_id!==cp.case_ids[cp.next]) throw new Error('Review checkpoint case mismatch');
+      const reviewCheckpoint=createEvalReviewCheckpoint({
+        entries:cp.review_case.entries,deadline:deadline-60_000,save:saveCheckpoint
+      });
+      try {
+        await executeEvalCase(admin,runId,cp.case_ids[cp.next],reviewCheckpoint);
+      } catch(error) {
+        if(!(error instanceof EvalReviewPaused)) throw error;
+        delete cp.in_flight;
+        await saveCheckpoint();
+        return {skipped:false,continued:true,run_id:runId,tier:cp.tier,total:cp.case_ids.length,reason:error.message};
+      }
+      delete cp.review_case;
       previousCaseMs=Date.now()-started;
       cp.next++;
       delete cp.in_flight;

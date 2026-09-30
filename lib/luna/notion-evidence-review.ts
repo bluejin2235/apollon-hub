@@ -1,3 +1,4 @@
+import { EvalReviewPaused } from '@/lib/luna/eval-continuation-control';
 import type { NotionSource } from '@/lib/luna/notion';
 import { hasNotionCitation, notionCitationMarker } from '@/lib/luna/source-citations';
 
@@ -77,7 +78,7 @@ export async function reviewAllNotionEvidence(
     let review:ReviewedNotionEvidence|null=null;
     let failure='invalid_classification';
     try { review=validateNotionEvidenceReview(batch,await request(batch),true); }
-    catch { failure='review_request_failed'; }
+    catch (error) { if (error instanceof EvalReviewPaused) throw error; failure='review_request_failed'; }
     const unresolved=review ? batch.filter(s=>review!.unsupportedIds?.includes(s.id)) : batch;
     if(!unresolved.length) return [{batch,review}];
     unresolved.forEach(s=>{failures[s.id]=review ? 'quote_not_grounded' : failure;});
@@ -87,14 +88,19 @@ export async function reviewAllNotionEvidence(
     const settled=batch.filter(s=>!unresolved.some(u=>u.id===s.id));
     const recovered:typeof results=settled.length ? [{batch:settled,review:review && {...review,unsupportedIds:[]}}] : [];
     for(let i=0;i<unresolved.length;i+=3) {
-      const wave=await Promise.all(unresolved.slice(i,i+3).map(s=>inspect([s],false)));
-      recovered.push(...wave.flat());
+      const wave=await Promise.allSettled(unresolved.slice(i,i+3).map(s=>inspect([s],false)));
+      const rejected=wave.find(result=>result.status==='rejected');
+      if(rejected?.status==='rejected') throw rejected.reason;
+      recovered.push(...wave.flatMap(result=>result.status==='fulfilled'?result.value:[]));
     }
     return recovered;
   }
   for (let start = 0; start < batches.length; start += concurrency) {
-    const wave = await Promise.all(batches.slice(start, start + concurrency).map(batch=>inspect(batch)));
-    results.push(...wave.flat());
+    const wave = await Promise.allSettled(batches.slice(start, start + concurrency).map(batch=>inspect(batch)));
+    // Drain every batch before the caller releases its worker lease.
+    const rejected = wave.find(result => result.status === 'rejected');
+    if (rejected?.status === 'rejected') throw rejected.reason;
+    results.push(...wave.flatMap(result => result.status === 'fulfilled' ? result.value : []));
     console.log('[luna/evidence-review] progress',{completedBatches:Math.min(start+concurrency,batches.length),batches:batches.length});
   }
   const unverifiedIds=results.flatMap(r => r.review ? r.review.unsupportedIds ?? [] : r.batch.map(s => s.id));
