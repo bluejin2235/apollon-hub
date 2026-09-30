@@ -70,3 +70,19 @@ export function assessSearchQuality(input: {
     incompleteNavigation,invalidAnswerLinks,
     recall:expected?.required_notion_ids?.length ? 1-missing.length/expected.required_notion_ids.length : null};
 }
+
+/** Only final displayed evidence belongs in the semantic grader's source list.
+ * Retrieval/debug traces contain rejected candidates and must stay in the audit
+ * record, not masquerade as citations in the answer being graded. */
+export function semanticSourceEvidence(validation: ReturnType<typeof assessSearchQuality>,
+  sources: Array<{id:string;title:string;excerpt?:string|null}>,
+  review?: {basis?:Record<string,{quote:string;reason:string}>;direct?:string[];adjacent?:string[]}|null,
+  wiki: Array<{slug:string;section_id?:string;excerpt?:string}> = []) {
+  const ids=new Set(sources.map(source=>source.id));
+  return {source_validation:validation,wiki,notion:sources.map(source=>({id:source.id,title:source.title,excerpt:source.excerpt})),
+    review:review ? {
+      direct:(review.direct??[]).filter(id=>ids.has(id)),
+      adjacent:(review.adjacent??[]).filter(id=>ids.has(id)),
+      basis:Object.fromEntries(Object.entries(review.basis??{}).filter(([id])=>ids.has(id)))
+    } : null};
+}

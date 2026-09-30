@@ -45,3 +45,14 @@ test('answer links are checked mechanically across ID formats and reject unknown
  const bad=assessSearchQuality({expected:null,finalIds:[id],answer:'[잘못된 링크](https://notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)'});
  assert.equal(bad.pass,false);assert.equal(bad.invalidAnswerLinks.length,1);
 });
+test('semantic grading sees only displayed sources, never rejected debug candidates',()=>{
+ const {semanticSourceEvidence}=loadTs('lib/luna/search-quality.ts');
+ const validation=assessSearchQuality({expected:{forbidden_notion_ids:['rejected']},finalIds:['accepted']});
+ const evidence=semanticSourceEvidence(validation,[{id:'accepted',title:'현장 설계',excerpt:'검증된 원문'}],{
+   direct:['accepted'],adjacent:['rejected'],basis:{accepted:{quote:'검증된 원문',reason:'실제 현장 조건'},rejected:{quote:'제외된 원문',reason:'무관한 후보'}}
+ });
+ assert.deepEqual(evidence.review.direct,['accepted']);assert.deepEqual(evidence.review.adjacent,[]);
+ assert.deepEqual(Object.keys(evidence.review.basis),['accepted']);
+ assert.equal(evidence.source_validation,validation);
+ assert.ok(!JSON.stringify(evidence).includes('rejected'));
+});

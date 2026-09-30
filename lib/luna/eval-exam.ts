@@ -1,4 +1,4 @@
-import { assessSearchQuality, type SearchExpectations } from "@/lib/luna/search-quality";
+import { assessSearchQuality, semanticSourceEvidence, type SearchExpectations } from "@/lib/luna/search-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTierModel } from "@/lib/luna/engine";
 import { llmComplete, lunaLlmComplete } from "@/lib/luna/llm/client";
@@ -750,8 +750,9 @@ export async function executeEvalCase(
   }
 
   const trace = result.metadata.answer_evidence_trace as {
-    reviewed_notion?: {direct?:string[];adjacent?:string[]};
+    reviewed_notion?: {direct?:string[];adjacent?:string[];basis?:Record<string,{quote:string;reason:string}>};
     review_coverage?: {unverified?:string[];aliases?:Record<string,string>;navigation_complete?:boolean};
+    reviewed_wiki?: Array<{slug:string;section_id?:string;excerpt?:string}>;
   } | undefined;
   const searchQuality = assessSearchQuality({
     expected: (evalCase.search_expectations as SearchExpectations | null) ?? null,
@@ -770,8 +771,7 @@ export async function executeEvalCase(
       mustPass: (evalCase.must_pass as string | null) ?? null,
       quality: (evalCase.quality as string | null) ?? null,
       searchExpectations:(evalCase.search_expectations as SearchExpectations|null) ?? null,
-      sourceEvidence: {source_validation:searchQuality,notion:result.notionSources.map(s=>({id:s.id,title:s.title,excerpt:s.excerpt})),
-        review:result.metadata.answer_evidence_trace}
+      sourceEvidence: semanticSourceEvidence(searchQuality,result.notionSources,trace?.reviewed_notion,trace?.reviewed_wiki)
 
     }
   );

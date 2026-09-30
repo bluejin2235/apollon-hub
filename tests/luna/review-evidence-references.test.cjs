@@ -43,9 +43,34 @@ test('verification requires a grounded transferable fact and records its applica
  const prepared=prepareReviewEvidence([source],true);
  const base={direct:[],adjacent:[0],unrelated:[],evidence:[{index:0,span:0,reason:'분위기를 야외 숲길에도 참고할 수 있다.'}]};
  assert.equal(prepared.resolve(base).evidence[0].quote,'');
- const valid=prepared.resolve({...base,evidence:[{...base.evidence[0],relation:'transferable_fact',fact_span:0,application:'수위 변동 구간의 전원 접속부 높이를 검토하는 데 적용한다.',limitation:'숲길의 실제 수위와 전기 조건은 별도 현장 확인이 필요하다.'}]});
+ const valid=prepared.resolve({...base,evidence:[{...base.evidence[0],relation:'transferable_fact',fact_kind:'design_constraint',fact_span:0,application:'수위 변동 구간의 전원 접속부 높이를 검토하는 데 적용한다.',limitation:'숲길의 실제 수위와 전기 조건은 별도 현장 확인이 필요하다.'}]});
  assert.equal(valid.evidence[0].quote,source.excerpt);
  assert.match(valid.evidence[0].reason,/실제 수위/);
  const invalid=prepared.resolve({...base,evidence:[{...valid.evidence[0],span:0,fact_span:99}]});
  assert.equal(invalid.evidence[0].quote,'');
+});
+test('independent verification excludes visual-only transfer while retaining an actual installation constraint',()=>{
+ const sources=[
+  {id:'visual',title:'화면 구성',excerpt:'수직으로 뻗은 나무 이미지에 빛줄기가 비치고 먼 배경에는 푸른 안개를 묘사한다.',review_proposal:{classification:'adjacent',reason:'실제 현장 설치 방법으로 사용 가능하다는 이전의 잘못된 주장'}},
+  {id:'physical',title:'현장 조건',excerpt:'보행자의 눈부심을 줄이기 위해 기구를 동선 바깥에 설치하고 차광판으로 배광을 제한한다.'}
+ ];
+ const prepared=prepareReviewEvidence(sources,true);
+ assert.ok(!prepared.text.includes('이전의 잘못된 주장'));
+ const resolved=prepared.resolve({direct:[],adjacent:[0,1],unrelated:[],evidence:[
+  {index:0,span:0,fact_span:0,relation:'transferable_fact',fact_kind:'visual_motif',reason:'보행 공간에도 이미지를 활용할 수 있다.',application:'이 화면의 분위기를 보행 공간에 참고할 수 있다.',limitation:'실제 기구 설치 조건은 확인되지 않았다.'},
+  {index:1,span:0,fact_span:0,relation:'transferable_fact',fact_kind:'design_constraint',reason:'현장의 실제 눈부심 제한 방법이다.',application:'보행자의 시야에서 눈부심을 제한하는 기구 배치에 적용한다.',limitation:'현장 동선과 기구 배광은 별도 확인해야 한다.'}
+ ]});
+ const checked=validateNotionEvidenceReview(sources,resolved,true);
+ assert.deepEqual(checked.adjacent.map(s=>s.id),['physical']);
+ assert.deepEqual(resolved.unrelated,[0]);
+ assert.deepEqual(checked.unsupportedIds,[]);
+});
+test('a missing fact type remains unresolved, while an explicitly requested visual reference can remain direct',()=>{
+ const sources=[{id:'visual',title:'화면 참고',excerpt:'무대 화면의 원경에는 산과 구름을 묘사하고 전경에는 붉은 꽃을 배치한다.'}];
+ const prepared=prepareReviewEvidence(sources,true);
+ const evidence={index:0,span:0,fact_span:0,relation:'transferable_fact',reason:'질문에서 요청한 화면의 시각적 구성이다.',application:'화면의 색상과 시각적인 구성에 참고한다.',limitation:'실제 현장 설치 조건과는 관련이 없다.'};
+ const missing=prepared.resolve({direct:[],adjacent:[0],unrelated:[],evidence:[evidence]});
+ assert.deepEqual(validateNotionEvidenceReview(sources,missing,true).unsupportedIds,['visual']);
+ const direct=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,fact_kind:'visual_motif'}]});
+ assert.deepEqual(validateNotionEvidenceReview(sources,direct,true).direct.map(s=>s.id),['visual']);
 });
