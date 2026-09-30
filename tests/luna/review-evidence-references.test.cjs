@@ -74,3 +74,13 @@ test('a missing fact type remains unresolved, while an explicitly requested visu
  const direct=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,fact_kind:'visual_motif'}]});
  assert.deepEqual(validateNotionEvidenceReview(sources,direct,true).direct.map(s=>s.id),['visual']);
 });
+
+test('a grounded design review can remain useful before implementation or measured results',()=>{
+ const source={id:'review',title:'설계 검토',excerpt:'보행 시야의 눈부심을 줄일 기구 위치와 차광판 형상을 비교하고 주변 간판의 광원 간섭 여부를 시험해야 한다.'};
+ const prepared=prepareReviewEvidence([source],true);
+ const result=prepared.resolve({direct:[],adjacent:[0],unrelated:[],evidence:[{
+  index:0,span:0,fact_span:0,relation:'transferable_fact',fact_kind:'design_review',reason:'시야와 광원 간섭을 위한 구체적인 설계 검토 항목이다.',
+  application:'보행 공간의 조명 대안을 고를 때 눈부심과 주변 광원 간섭 시험 항목으로 적용한다.',limitation:'시험 전 검토안이며 실제 광량과 기구 성능은 확인되지 않았다.'
+ }]});
+ assert.deepEqual(validateNotionEvidenceReview([source],result,true).adjacent.map(s=>s.id),['review']);
+});

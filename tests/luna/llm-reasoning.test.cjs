@@ -34,8 +34,8 @@ test('tier completion passes requested reasoning and budget to provider without 
     sent=JSON.parse(init.body);
     return new Response(JSON.stringify({choices:[{message:{content:'{"direct":[0]}'}}],usage:{completion_tokens:60}}));
   });
-  const result=await lunaLlmComplete({}, {tier:'B',feature:'eval_grade',user:'source',system:'review',maxTokens:8192,reasoningEffort:'low'});
-  assert.equal(sent.model,'gpt-5.6-luna'); assert.equal(sent.reasoning_effort,'low');
+  const result=await lunaLlmComplete({}, {tier:'B',feature:'eval_grade',user:'source',system:'review',maxTokens:8192,reasoningEffort:'medium'});
+  assert.equal(sent.model,'gpt-5.6-luna'); assert.equal(sent.reasoning_effort,'medium');
   assert.equal(sent.max_completion_tokens,8192); assert.match(result.text,/direct/);
   await llmComplete({provider:'openai',model_id:'gpt-5.6-luna',user:'short'});
   assert.equal(sent.reasoning_effort,'none');

@@ -144,7 +144,7 @@ async function completeOpenAI(opts: {
   system?: string;
   user: string;
   maxTokens: number;
-  reasoningEffort?: "none" | "low";
+  reasoningEffort?: "none" | "low" | "medium";
   tools?: LlmToolDef[];
 }): Promise<LlmCompleteResult> {
   const key = openaiKey();
@@ -321,7 +321,7 @@ export async function llmComplete(opts: {
   maxTokens?: number;
   tools?: LlmToolDef[];
   useCaching?: boolean;
-  reasoningEffort?: "none" | "low";
+  reasoningEffort?: "none" | "low" | "medium";
 }): Promise<LlmCompleteResult> {
   const maxTokens = opts.maxTokens ?? 2048;
   const systemText = flattenSystem(opts.system);
@@ -369,7 +369,7 @@ export async function lunaLlmComplete(
     user: string;
     maxTokens?: number;
     tools?: LlmToolDef[];
-    reasoningEffort?: "none" | "low";
+    reasoningEffort?: "none" | "low" | "medium";
   }
 ): Promise<LlmCompleteResult> {
   const tierModel = await getTierModel(admin, opts.tier);
@@ -479,7 +479,7 @@ function applyOpenAiTokenLimit(
 function applyGpt5Reasoning(
   body: Record<string, unknown>,
   model: string,
-  effort: "none" | "low" = "none"
+  effort: "none" | "low" | "medium" = "none"
 ): void {
   if (/^gpt-5|^o[1-4]/i.test(model)) {
     body.reasoning_effort = effort;
@@ -491,7 +491,7 @@ async function* streamOpenAI(opts: {
   system?: string;
   user: string;
   maxTokens: number;
-  reasoningEffort?: "none" | "low";
+  reasoningEffort?: "none" | "low" | "medium";
 }): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
   const key = openaiKey();
   if (!key) throw new Error("OpenAI API key is not configured");
@@ -677,7 +677,7 @@ export async function* llmStreamText(opts: {
   user: string;
   maxTokens?: number;
   useCaching?: boolean;
-  reasoningEffort?: "none" | "low";
+  reasoningEffort?: "none" | "low" | "medium";
 }): AsyncGenerator<{ delta: string; usage?: LunaUsageTokens }> {
   const maxTokens = opts.maxTokens ?? 4096;
   const systemText = flattenSystem(opts.system);

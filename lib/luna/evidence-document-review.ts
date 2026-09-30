@@ -10,11 +10,10 @@ export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], rev
     origins.set(id,source);
     return {...source,id,excerpt};
   }));
-  const first=await reviewAllNotionEvidence(windows,reviewer);
-  const proposals=[...first.direct.map(source=>({...source,review_proposal:{classification:'direct',...first.basis?.[source.id]}})),
-    ...first.adjacent.map(source=>({...source,review_proposal:{classification:'adjacent',...first.basis?.[source.id]}}))];
-  const final=verifier ? await reviewAllNotionEvidence(proposals,verifier) : first;
-  const checked={...final,unverifiedIds:[...new Set([...first.unverifiedIds,...final.unverifiedIds])]};
+  // A cheap positive-only shortlist irreversibly loses valid documents. When a
+  // verifier is available, apply that full standard to every source window once.
+  // This also avoids anchoring a second decision on the first model's rationale.
+  const checked=await reviewAllNotionEvidence(windows,verifier ?? reviewer);
   const direct=new Map<string,NotionSource>(), adjacent=new Map<string,NotionSource>();
   const basis:NonNullable<typeof checked.basis>={};
   for (const [items,target] of [[checked.direct,direct],[checked.adjacent,adjacent]] as const) {
@@ -28,9 +27,9 @@ export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], rev
   for (const id of direct.keys()) adjacent.delete(id);
   const unverifiedIds=[...new Set([...checked.unverifiedIds.map(id=>origins.get(id)!.id),...sources.filter(s=>s.evidence_state==='failed' || s.evidence_state==='missing').map(s=>s.id)])];
   const failures:Record<string,string>={};
-  for(const [id,reason] of Object.entries({...first.failures,...final.failures})) failures[origins.get(id)!.id]=reason;
+  for(const [id,reason] of Object.entries(checked.failures)) failures[origins.get(id)!.id]=reason;
   for(const source of sources) if(source.evidence_state==='failed' || source.evidence_state==='missing') failures[source.id]='body_'+source.evidence_state;
   return {direct:[...direct.values()],adjacent:[...adjacent.values()],basis,failures,
-    navigationIds:[...new Set([...first.navigation??[], ...final.navigation??[]].map(s=>origins.get(s.id)!.id))],
+    navigationIds:[...new Set([...checked.navigation??[]].map(s=>origins.get(s.id)!.id))],
     reviewedIds:sources.map(s=>s.id).filter(id=>!unverifiedIds.includes(id)),unverifiedIds};
 }

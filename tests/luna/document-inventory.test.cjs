@@ -66,13 +66,11 @@ test('deduplicates only identical complete bodies, retains changed versions and 
  assert.deepEqual(result.aliases,{backup:'current'});
  assert.ok(result.basis.current);
 });
-test('a verifier can reject a loosely related first-pass candidate',async()=>{
+test('the full verifier can reject a retrieved candidate without an earlier rationale',async()=>{
  const db=fakeDb({luna_notion_chunks:[{page_id:'a',position:0,text:relevant}]});
  const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('a')],directory:[],review:reviewer,
   verify:async rows=>{
-   assert.equal(rows[0].review_proposal.classification,'direct');
-   assert.equal(rows[0].review_proposal.quote,relevant);
-   assert.match(rows[0].review_proposal.reason,/도면과 시험/);
+   assert.equal(rows[0].review_proposal,undefined);
    return {direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]};
   }});
  assert.deepEqual(result.direct,[]);assert.deepEqual(result.reviewedIds,['a']);
@@ -101,5 +99,16 @@ test('a navigation-only document opens related records but is never displayed as
  }});
  assert.deepEqual(result.direct.map(s=>s.id),['meeting']);
  assert.ok(result.reviewedIds.includes('index'));
+ assert.deepEqual(result.unverifiedIds,[]);
+});
+
+test('full verification sees a valid document that a coarse first pass would reject',async()=>{
+ const db=fakeDb({luna_notion_chunks:[{page_id:'valid',position:0,text:relevant},{page_id:'noise',position:0,text:'행사 식사 메뉴 소개'}]});
+ let coarseCalls=0;
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('valid'),page('noise')],directory:[],
+  review:async rows=>{coarseCalls++;return {direct:[],adjacent:[],unrelated:rows.map((_,i)=>i)};},verify:reviewer});
+ assert.equal(coarseCalls,0);
+ assert.deepEqual(result.direct.map(s=>s.id),['valid']);
+ assert.deepEqual(result.reviewedIds,['valid','noise']);
  assert.deepEqual(result.unverifiedIds,[]);
 });

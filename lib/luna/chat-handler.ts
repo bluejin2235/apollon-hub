@@ -3515,7 +3515,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
             const review=await lunaLlmComplete(admin, {
               tier:'B',feature:'eval_grade',system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
               user:`질문: ${searchIntentText}\n\n${evidence.text}`,
-              maxTokens:8192,reasoningEffort:"low"
+              maxTokens:8192,reasoningEffort:verify ? "medium" : "low"
             });
             pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
             return evidence.resolve(parseJsonObject(review.text));
