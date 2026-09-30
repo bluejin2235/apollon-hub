@@ -1,5 +1,37 @@
 # Notion retrieval integrity audit — 2026-09-29
 
+## Continuation checkpoint — 2026-09-30 KST
+
+- The user's order remains quality first, latency second. All four workstreams
+  remain the completion target; no production search-quality sign-off is given.
+- Preview `dea17e6` is READY. Its six-case evaluation
+  `845b1010-f5fa-49ca-b54b-40cf2d9bd92f` is still running. The first completed
+  forest case recovered all ten required documents, with zero labeled forbidden
+  documents, omitted approved documents, or disappearing document sources. It
+  still failed because ten documents had incomplete review. This does not prove
+  precision across every returned document or the remaining five questions.
+- Runtime logs show repeated provider `400 invalid_json` during evidence review.
+  Local reproduction proves that the new fixed-width span slicing splits a valid
+  emoji surrogate pair. Source windows now retain whole Unicode characters, and
+  model request JSON replaces only already-damaged lone surrogates. Tests cover
+  both span edges, overlapping full-body windows, completion and streaming.
+- Large directory excerpt requests previously put every ID in one URL and logged
+  `Bad Request`. Requests now use batches of 80 IDs. A 241-page fixture verifies
+  that the last page still receives its own excerpt.
+- Stream auditing now includes the legacy Notion card path as well as
+  `notion_sources`; a card disappearing from final output fails the audit.
+- Corpus health at the read-only check: 1,863 ready, 1,025 verified empty,
+  six failed and three unverified, totaling 2,897 active pages. The incremental
+  recovery run remains in progress. Failed pages include three inaccessible
+  nested blocks, two timeouts and one embedding service failure. Do not relabel
+  these failures as empty or ready.
+- Commits `ac42f52`, `917f575`, and `8795cd6` contain the prepared follow-up.
+  TypeScript passes. Remote publication of these changes was blocked by automatic
+  approval review: implementation was authorized, but publication authorization
+  was not confirmed. No alternate upload path was attempted. Obtain explicit
+  approval to update the existing preview branch, then deploy and run the same
+  six production-handler scenarios. Do not promote until quality passes.
+
 ## Release gate
 
 Search-answer changes are not approved for production promotion. Unit tests are not a search-quality pass.

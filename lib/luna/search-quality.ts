@@ -14,7 +14,11 @@ function notionPageId(href: string): string | null {
     return hex ? `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}` : null;
   } catch { return null; }
 }
-export function inspectSearchStream(wire: string, finalIds: string[]) {
+type SourceCard = {type?:string;url?:string|null};
+function notionCardIds(cards: SourceCard[]): string[] {
+  return cards.filter(card=>card.type==='notion').map(card=>notionPageId(card.url??'') ?? `unidentified:${card.url??''}`);
+}
+export function inspectSearchStream(wire: string, finalIds: string[], finalCards: SourceCard[] = []) {
   const shown = new Set<string>();
   for (const line of wire.split('\n')) {
     if (!line.trim()) continue;
@@ -24,10 +28,11 @@ export function inspectSearchStream(wire: string, finalIds: string[]) {
       for (const source of Array.isArray(event.notion_sources) ? event.notion_sources : []) {
         if(source && typeof source.id==='string') shown.add(source.id);
       }
+      for(const id of notionCardIds(Array.isArray(event.cards) ? event.cards : [])) shown.add(id);
     }
     if (event.type==='meta') break;
   }
-  const final=new Set(finalIds);
+  const final=new Set([...finalIds,...notionCardIds(finalCards)]);
   return {shownIds:[...shown], disappearedIds:[...shown].filter(id=>!final.has(id))};
 }
 export function assessSearchQuality(input: {
@@ -38,10 +43,10 @@ export function assessSearchQuality(input: {
   disappearedIds?:string[];
   aliases?:Record<string,string>;
   navigationComplete?:boolean;
-  finalCards?:Array<{type?:string;url?:string|null}>;
+  finalCards?:SourceCard[];
   answer?:string;
 }) {
-  const cardIds=(input.finalCards??[]).filter(c=>c.type==='notion').map(c=>notionPageId(c.url??'') ?? `unidentified:${c.url??''}`);
+  const cardIds=notionCardIds(input.finalCards??[]);
   const final=new Set([...input.finalIds,...cardIds]), expected=input.expected;
   const approved=new Set([...(input.reviewed?.direct??[]),...(input.reviewed?.adjacent??[])]);
   const present=(id:string)=>final.has(id) || Boolean(input.aliases?.[id] && final.has(input.aliases[id]));

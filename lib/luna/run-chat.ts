@@ -56,6 +56,6 @@ export async function runLunaTurn(admin: SupabaseClient, message: string,
     injected_terms:metadata.injected_terms as string[]|undefined,
     web_augmented:metadata.web_augmented===true,
     stageMs:metadata.retrieval_timings as Record<string,number>|undefined,
-    metadata, streamAudit:inspectSearchStream(wire, notionSources.map(s=>s.id))
+    metadata, streamAudit:inspectSearchStream(wire, notionSources.map(s=>s.id), (metadata.cards ?? []) as LunaCard[])
   };
 }

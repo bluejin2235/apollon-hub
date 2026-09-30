@@ -1,6 +1,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {assessSearchQuality,inspectSearchStream}=loadTs('lib/luna/search-quality.ts');
+test('stream audit detects disappearing legacy cards as well as document sources',()=>{
+ const id='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+ const card={type:'notion',url:'https://notion.so/'+id};
+ const wire=JSON.stringify({type:'meta',cards:[card],notion_sources:[]})+'\n';
+ assert.deepEqual(inspectSearchStream(wire,[]).disappearedIds,[id]);
+ assert.deepEqual(inspectSearchStream(wire,[id]).disappearedIds,[]);
+ assert.deepEqual(inspectSearchStream(wire,[],[card]).disappearedIds,[]);
+});
 test('detects a good answer hiding required material and displaying unrelated material',()=>{
  const result=assessSearchQuality({expected:{required_notion_ids:['a','b'],forbidden_notion_ids:['wrong']},finalIds:['a','wrong'],reviewed:{direct:['a','b'],adjacent:[]}});
  assert.equal(result.pass,false);assert.deepEqual(result.missing,['b']);assert.deepEqual(result.forbidden,['wrong']);assert.deepEqual(result.omittedApproved,['b']);assert.deepEqual(result.unapproved,['wrong']);assert.equal(result.recall,0.5);

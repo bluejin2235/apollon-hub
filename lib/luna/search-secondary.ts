@@ -122,10 +122,11 @@ export async function loadPagesByIds(
     }
   }
   // Read bounded indexed excerpts for accepted pages; never attach another page's body.
-  if (out.size > 0) {
+  const excerptIds=[...out.keys()];
+  for (let start=0; start<excerptIds.length; start+=80) {
     const { data, error } = await admin.from("luna_notion_chunks")
       .select("page_id, heading, text, position")
-      .in("page_id", [...out.keys()])
+      .in("page_id", excerptIds.slice(start,start+80))
       .order("position", { ascending: true })
       .limit(320);
     if (error) {
