@@ -217,7 +217,7 @@ export function LunaBrainEval() {
     setSelectedRunId(runId);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredRunId?:string|null) => {
     setLoading(true);
     setError("");
     try {
@@ -232,7 +232,7 @@ export function LunaBrainEval() {
       setScheduleInfo(schedRes);
 
       const preferred =
-        runList.find((r) => r.id === selectedRunId) ??
+        runList.find((r) => r.id === (preferredRunId === undefined ? selectedRunId : preferredRunId)) ??
         runList.find((r) => r.status === "running" && r.checkpoint) ??
         runList.find((r) => r.status === "done") ??
         runList[0];
@@ -377,6 +377,7 @@ export function LunaBrainEval() {
   async function runExam(tier: "light" | "heavy" | "all", category?:string, resumeId?:string) {
     setBusy(true);
     setNotice("");
+    let activeRunId=resumeId;
     try {
       const body: { force: boolean; tier?: string; categories?:string[] } = { force: true };
       if(category) body.categories=[category];
@@ -395,10 +396,11 @@ export function LunaBrainEval() {
         method: "POST",
         body: JSON.stringify(resumeId ? {run_id:resumeId} : body)
       });
+      activeRunId=res.run_id;
       while(res.continued && !res.skipped && res.run_id) {
         setSelectedRunId(res.run_id);
         setNotice("완료한 문항을 저장했습니다. 남은 문항을 이어서 검증합니다.");
-        await load();
+        await load(res.run_id);
         res=await brainFetch<typeof res>("/api/luna/eval/exam",{method:"POST",body:JSON.stringify({run_id:res.run_id})});
       }
       const score =
@@ -411,10 +413,10 @@ export function LunaBrainEval() {
           : `${tier === "all" ? "전체" : evalTierLabel(tier)} 실행 완료 · ${score}점`
       );
       if (res.run_id) setSelectedRunId(res.run_id);
-      await load();
+      await load(res.run_id);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "실행하지 못했습니다.");
-      await load();
+      await load(activeRunId ?? null);
     } finally {
       setBusy(false);
     }
