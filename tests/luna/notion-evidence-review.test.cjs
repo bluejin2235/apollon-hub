@@ -2,6 +2,17 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {applyNotionEvidenceReview,validateNotionEvidenceReview,reviewedNotionInventorySupplement,reviewAllNotionEvidence}=loadTs('lib/luna/notion-evidence-review.ts');
 const sources=Array.from({length:8},(_,i)=>({id:String(i),excerpt:'원문 '+i}));
+test('bounded review concurrency includes individual retries without losing any document',async()=>{
+ const docs=Array.from({length:100},(_,i)=>({id:String(i),title:'검증 자료',excerpt:'실제 측정한 설치 높이와 주변 밝기 기록입니다.'}));
+ let active=0,peak=0;
+ const result=await reviewAllNotionEvidence(docs,async batch=>{
+  active++;peak=Math.max(peak,active);
+  await new Promise(resolve=>setTimeout(resolve,2));active--;
+  if(batch.length>1) return null;
+  return {direct:[0],adjacent:[],unrelated:[],evidence:[{index:0,quote:batch[0].excerpt,reason:'구체적인 설치 조건과 측정값을 검토하는 근거'}]};
+ });
+ assert.ok(peak>3 && peak<=6);assert.equal(result.direct.length,100);assert.deepEqual(result.unverifiedIds,[]);
+});
 test('validated review orders direct evidence first without dropping related material requested in full',()=>{
  const result=applyNotionEvidenceReview(sources,{direct:[3,1],adjacent:[0,2,4,5,6],unrelated:[7]});
  assert.deepEqual(result.map(s=>s.id),['3','1','0','2','4','5','6']);

@@ -40,6 +40,7 @@ import {
 } from "@/lib/luna/notion";
 import { searchNotionForLuna } from "@/lib/luna/notion-index-search";
 import { isMaterialSearch, BROAD_MATERIAL_ANSWER_RULE, BROAD_TOPIC_QUERY_RULE } from "@/lib/luna/all-materials";
+import { verifiedMaterialAnswer } from '@/lib/luna/verified-material-answer';
 import { loadNotionProjectDirectory, describeNotionProjectDirectory, bareDirectoryLookup, namedDirectorySubjects, requestedDirectoryProjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { PROJECT_EXPLORATION_RULE, reviewProjectExploration } from '@/lib/luna/project-exploration';
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
@@ -3743,7 +3744,9 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         emit(controller, encoder, {
           type: "meta",
           cards: inventoryAnswer ? cards : [],
-          notion_sources: inventoryAnswer ? notionSources : [],
+          notion_sources: reviewedNotionEvidence
+            ? [...reviewedNotionEvidence.direct,...reviewedNotionEvidence.adjacent]
+            : inventoryAnswer ? notionSources : [],
           search_rounds: searchRounds,
           steps,
           source_reasons: sourceReasons,
@@ -3776,6 +3779,8 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         });
 
         const provenanceAnswer = evidenceOnlyQuestion ? provenanceResultAnswer(notionForLlm, groundedTargets) : null;
+        const materialAnswer=reviewedNotionEvidence && broadMaterialSearch
+          ? verifiedMaterialAnswer(searchIntentText,reviewedNotionEvidence) : null;
         if (notFoundFromAsk) {
           assistantText = formatNotFoundAnswer(
             askedWhat,
@@ -3788,6 +3793,10 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           assistantText = inventoryAnswer;
           firstTokenAt = Date.now();
           if (!bufferMaterialAnswer) controller.enqueue(encoder.encode(assistantText));
+        } else if (materialAnswer) {
+          answerEvidenceTrace.answer_mode='verified_material_inventory';
+          assistantText=materialAnswer;
+          firstTokenAt=Date.now();
         } else if (provenanceAnswer) {
           answerEvidenceTrace.answer_mode = 'verified_relation_quotes';
           assistantText = provenanceAnswer;

@@ -61,10 +61,22 @@ export async function reviewAllNotionEvidence(
   if (pending.length) batches.push(pending);
   const results: Array<{ batch: NotionSource[]; review: ReviewedNotionEvidence | null }> = [];
   const failures: Record<string,string> = {};
+  // Bound all requests, including split retries, rather than multiplying the
+  // outer batch concurrency by each batch's retry wave. Coverage is unchanged.
+  const concurrency=6;
+  let active=0;
+  const waiting:Array<()=>void>=[];
+  async function request(batch:NotionSource[]) {
+    if(active>=concurrency) await new Promise<void>(resolve=>waiting.push(resolve));
+    else active++;
+    try{return await reviewBatch(batch);}
+    finally {const next=waiting.shift();if(next) next();else active--;}
+  }
+  console.log('[luna/evidence-review] start',{documents:unique.length,batches:batches.length,concurrency});
   async function inspect(batch:NotionSource[], retry=true):Promise<typeof results> {
     let review:ReviewedNotionEvidence|null=null;
     let failure='invalid_classification';
-    try { review=validateNotionEvidenceReview(batch,await reviewBatch(batch),true); }
+    try { review=validateNotionEvidenceReview(batch,await request(batch),true); }
     catch { failure='review_request_failed'; }
     const unresolved=review ? batch.filter(s=>review!.unsupportedIds?.includes(s.id)) : batch;
     if(!unresolved.length) return [{batch,review}];
@@ -80,9 +92,10 @@ export async function reviewAllNotionEvidence(
     }
     return recovered;
   }
-  for (let start = 0; start < batches.length; start += 3) {
-    const wave = await Promise.all(batches.slice(start, start + 3).map(batch=>inspect(batch)));
+  for (let start = 0; start < batches.length; start += concurrency) {
+    const wave = await Promise.all(batches.slice(start, start + concurrency).map(batch=>inspect(batch)));
     results.push(...wave.flat());
+    console.log('[luna/evidence-review] progress',{completedBatches:Math.min(start+concurrency,batches.length),batches:batches.length});
   }
   const unverifiedIds=results.flatMap(r => r.review ? r.review.unsupportedIds ?? [] : r.batch.map(s => s.id));
   for(const id of Object.keys(failures)) if(!unverifiedIds.includes(id)) delete failures[id];
