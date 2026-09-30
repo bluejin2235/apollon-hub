@@ -47,7 +47,7 @@ import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_VERIFY, NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { buildDocumentInventory } from '@/lib/luna/document-inventory';
 import { reviewWikiEvidence } from '@/lib/luna/wiki-evidence-review';
-import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE } from '@/lib/luna/review-evidence-references';
+import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE, REVIEW_TRANSFER_RULE } from '@/lib/luna/review-evidence-references';
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -3511,9 +3511,9 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           for (const source of directorySources) byId.set(source.id, {...byId.get(source.id), ...source});
           notionSources = [...byId.values()];
           const reviewBatch = async (batch: NotionSource[], verify=false) => {
-            const evidence = prepareReviewEvidence(batch);
+            const evidence = prepareReviewEvidence(batch, verify);
             const review=await lunaLlmComplete(admin, {
-              tier:'B',feature:'eval_grade',system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE,
+              tier:'B',feature:'eval_grade',system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
               user:`질문: ${searchIntentText}\n\n${evidence.text}`,
               maxTokens:8192,reasoningEffort:"low"
             });
@@ -3906,7 +3906,9 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           firstTokenAt != null ? firstTokenAt - llmStartedAt : null;
         const durationMs = Date.now() - startedAt;
         const safeAssistantText = scrubLunaAnswerText(
-          sanitizeKnowledgeListAnswer(assistantText, learnings)
+          sanitizeKnowledgeListAnswer(assistantText, learnings, {
+            verifiedDocumentInventory: answerEvidenceTrace.answer_mode === "verified_material_inventory" || answerEvidenceTrace.answer_mode === "verified_project_inventory"
+          })
         );
         if (safeAssistantText !== assistantText) {
           assistantText = safeAssistantText;
