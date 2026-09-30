@@ -34,7 +34,8 @@ export function selectLearningsForInject<T>(
  */
 export function sanitizeKnowledgeListAnswer(
   answer: string,
-  learnings: Array<{ content: string }> = []
+  learnings: Array<{ content: string }> = [],
+  options: { verifiedDocumentInventory?: boolean } = {}
 ): string {
   const text = answer.trim();
   if (!text) return text;
@@ -55,6 +56,7 @@ export function sanitizeKnowledgeListAnswer(
     .filter((l) => /^[-*•]\s+\S+/.test(l) || /^\d+[.)]\s+\S+/.test(l));
 
   if (
+    !options.verifiedDocumentInventory &&
     listLines.length > MAX_KNOWLEDGE_LIST_ITEMS &&
     KNOWLEDGE_TARGET_RE.test(text)
   ) {
