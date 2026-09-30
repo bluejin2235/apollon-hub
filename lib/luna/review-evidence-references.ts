@@ -3,7 +3,7 @@ import { sliceUnicode } from '@/lib/luna/unicode-text';
 
 /** Model selects immutable source spans instead of retyping a quotation.
  * The server still validates the resulting exact quote against the source. */
-export function prepareReviewEvidence(sources: NotionSource[]) {
+export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[]) {
   const spans = sources.map(source => {
     const text = (source.excerpt ?? '').replace(/\s+/g, ' ').trim();
     const result: string[] = [];
@@ -11,7 +11,7 @@ export function prepareReviewEvidence(sources: NotionSource[]) {
     return result;
   });
   return {
-    text: sources.map((source, index) => `[${index}] ${source.title}\n확인된 소속: ${source.project_key ?? (source.path_titles ?? []).join(' / ')}\n본문:\n${spans[index].map((text, span) => `[근거 ${span}] ${text}`).join('\n')}`).join('\n\n'),
+    text: sources.map((source, index) => `[${index}] ${source.title}\n확인된 소속: ${source.project_key ?? (source.path_titles ?? []).join(' / ')}${source.review_proposal ? `\n검증할 이전 판단 (원문이 아니며 사실로 간주하지 말 것): ${JSON.stringify(source.review_proposal)}` : ''}\n본문:\n${spans[index].map((text, span) => `[근거 ${span}] ${text}`).join('\n')}`).join('\n\n'),
     resolve(review: Record<string, unknown> | null): Record<string, unknown> | null {
       if (!review || !Array.isArray(review.evidence)) return review;
       return {...review, evidence: review.evidence.map(item => {

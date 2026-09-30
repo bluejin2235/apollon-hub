@@ -11,7 +11,9 @@ export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], rev
     return {...source,id,excerpt};
   }));
   const first=await reviewAllNotionEvidence(windows,reviewer);
-  const final=verifier ? await reviewAllNotionEvidence([...first.direct,...first.adjacent],verifier) : first;
+  const proposals=[...first.direct.map(source=>({...source,review_proposal:{classification:'direct',...first.basis?.[source.id]}})),
+    ...first.adjacent.map(source=>({...source,review_proposal:{classification:'adjacent',...first.basis?.[source.id]}}))];
+  const final=verifier ? await reviewAllNotionEvidence(proposals,verifier) : first;
   const checked={...final,unverifiedIds:[...new Set([...first.unverifiedIds,...final.unverifiedIds])]};
   const direct=new Map<string,NotionSource>(), adjacent=new Map<string,NotionSource>();
   const basis:NonNullable<typeof checked.basis>={};

@@ -69,7 +69,12 @@ test('deduplicates only identical complete bodies, retains changed versions and 
 test('a verifier can reject a loosely related first-pass candidate',async()=>{
  const db=fakeDb({luna_notion_chunks:[{page_id:'a',position:0,text:relevant}]});
  const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('a')],directory:[],review:reviewer,
-  verify:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
+  verify:async rows=>{
+   assert.equal(rows[0].review_proposal.classification,'direct');
+   assert.equal(rows[0].review_proposal.quote,relevant);
+   assert.match(rows[0].review_proposal.reason,/도면과 시험/);
+   return {direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]};
+  }});
  assert.deepEqual(result.direct,[]);assert.deepEqual(result.reviewedIds,['a']);
 });
 test('named project locations are retained as locations while unrelated folder paths still require review',async()=>{

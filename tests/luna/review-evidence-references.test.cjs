@@ -30,3 +30,11 @@ test('invalid or cross-document references never fall back to a generated quotat
  const review=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{index:0,span:99,quote:sources[0].excerpt,reason:'원문의 설치 설계 조건을 참고하는 자료'}]});
  assert.deepEqual(validateNotionEvidenceReview(sources,review,true).unsupportedIds,['a']);
 });
+test('a previous relevance claim is visible for scrutiny but cannot become source evidence',()=>{
+ const sources=[{id:'a',title:'기획안',excerpt:'이 문서는 상징적 형태와 시각적 콘셉트만 설명합니다.',review_proposal:{classification:'adjacent',quote:'근거 없는 설치 기술',reason:'원문에 없는 현장 테스트를 했다는 주장'}}];
+ const prepared=prepareReviewEvidence(sources);
+ assert.match(prepared.text,/원문에 없는 현장 테스트/);
+ const review=prepared.resolve({direct:[],adjacent:[0],unrelated:[],evidence:[{index:0,span:0,reason:'구체적인 적용 제약이 실제 본문에 있는지 검증한다'}]});
+ assert.equal(review.evidence[0].quote,sources[0].excerpt);
+ assert.ok(!review.evidence[0].quote.includes('현장 테스트'));
+});
