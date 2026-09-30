@@ -3,6 +3,21 @@ const {loadTs}=require('./helpers.cjs');
 const {scopeMediaToEvidence}=loadTs('lib/luna/media-evidence-scope.ts');
 const image=(path,description='',drive='T')=>({type:'image',title:'image.jpg',raw_path:path,description,drive,similarity:.9});
 const source={id:'doc',title:'샘플 미디어 센터 운영 매뉴얼',paths:['T:\\02 Project\\2021\\05 샘플역삼\\09 운영\\manual.pdf']};
+test('equivalent material-search wording preserves the same project boundary',()=>{
+ const correct=image('02 Project/2021/05 샘플역삼/06 Design/photo.jpg');
+ const other=image('02 Project/2026/Other/photo.jpg','샘플미디어센터와 비슷한 공간');
+ for(const query of ['샘플미디어센터','샘플미디어센터 관련 자료 찾아줘',
+  '샘플미디어센터 관련 자료 모두 찾아줘','샘플미디어센터 모든 자료 보여주세요',
+  '샘플미디어센터 사진 전부 검색해줘','샘플미디어센터 주요 문서','샘플미디어센터찾아줘']) {
+  assert.deepEqual(scopeMediaToEvidence([correct,other],query,[source]),[correct],query);
+ }
+});
+test('quantity-only and descriptive visual searches do not invent a project subject',()=>{
+ const cards=[image('02 Project/2026/Other/photo.jpg')];
+ for(const query of ['모든 자료','이미지 모두 찾아줘','찾아줘','파란 유리와 LED가 어우러진 시안 보여줘']) {
+  assert.deepEqual(scopeMediaToEvidence(cards,query,[]),cards,query);
+ }
+});
 test('source-backed project root excludes another project, extension phase and drive',()=>{
  const correct=image('02 Project/2021/05 샘플역삼/06 Design/photo.jpg');
  const extension=image('01 사업개발/2025/250805 샘플역삼 증축/photo.jpg','샘플미디어센터');

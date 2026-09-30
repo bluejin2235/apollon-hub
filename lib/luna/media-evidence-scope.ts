@@ -34,9 +34,12 @@ export function scopeMediaToEvidence(cards: LunaCard[], question: string, source
   if (asked?.projectPhrases.length) return cards;
   // The internal clarification suffix adds constraints without erasing the subject.
   const rootQuestion = question.trim().split(/\r?\n조건:/, 1)[0]!;
-  const match = rootQuestion.match(/^([가-힣A-Za-z0-9]{2,30})(?:\s+(?:전체|모든|전부|자료|문서|파일|이미지|사진|관련))*\s*(?:찾아\s*줘|보여\s*줘|찾아\s*주세요|보여\s*주세요)[.!?]*$/i);
+  // Quantity words can precede or follow the material noun. A bare subject is
+  // also a search request; neither form may disable the evidence boundary.
+  const subjectPhrase = rootQuestion.replace(/(?:찾아|보여|검색해)\s*(?:줘|주세요)[.!?]*$/i, '').trim().replace(/[.!?]+$/, '');
+  const match = subjectPhrase.match(/^([가-힣A-Za-z0-9_-]{2,30})(?:\s+(?:전체|모든|전부|모두|주요|핵심|자료|문서|파일|이미지|사진|관련))*$/i);
   const subject = match?.[1];
-  if (!subject || /^(?:전체|전부|모두|자료|문서|파일|이미지|사진)$/.test(subject)) return cards;
+  if (!subject || /^(?:전체|모든|전부|모두|주요|핵심|관련|자료|문서|파일|이미지|사진)$/.test(subject)) return cards;
   const roots = sources.filter(s => compact(s.title).includes(compact(subject)))
     .flatMap(s => [...(s.paths ?? []), ...(s.nas_path ? [s.nas_path] : [])])
     .map(path => ({root: projectRoot(path), drive: path.match(/^([a-z]):/i)?.[1]?.toUpperCase()}))

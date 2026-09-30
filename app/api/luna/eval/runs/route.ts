@@ -6,7 +6,7 @@ import { LUNA_MODEL_LABEL } from "@/lib/luna/run-chat";
 export const runtime = "nodejs";
 
 const RUN_SELECT =
-  "id, label, note, model_label, total, passed, failed, status, started_at, finished_at, created_by, tier, score_sum, score_max";
+  "id, label, note, model_label, total, passed, failed, status, started_at, finished_at, created_by, tier, score_sum, score_max, checkpoint, worker_until";
 
 async function requireSuperAdmin(request: NextRequest) {
   const user = await getApiUser(request);

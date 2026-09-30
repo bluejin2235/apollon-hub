@@ -32,3 +32,21 @@ test('a completed run cannot create an endless continuation loop',async()=>{
  const db=fakeDb({luna_eval_runs:[{id:'run',status:'done',total:3}]});db.rpc=async()=>({data:false,error:null});
  const result=await continueEvalExam(db,'run');assert.equal(result.continued,false);
 });
+test('an expired in-flight case becomes an error, while the remaining case stays resumable',async()=>{
+ const checkpoint={case_ids:['a','b'],next:0,trigger:'manual',tier:'heavy',notify:false,assign_reviews:false,in_flight:{case_id:'a',started_at:'2026-01-01T00:00:00Z'}};
+ const db=fakeDb({luna_eval_runs:[{id:'run',status:'running',checkpoint,total:2}]});
+ db.rpc=async()=>({data:true,error:null});calls=[];
+ const result=await continueEvalExam(db,'run',0);
+ assert.equal(result.continued,true);assert.equal(checkpoint.next,1);assert.equal(checkpoint.in_flight,undefined);
+ assert.deepEqual(calls,[]);
+ const failure=db.calls.find(c=>c.table==='luna_eval_results' && c.mutation)?.mutation;
+ assert.equal(failure.verdict,'error');assert.equal(failure.auto_pass,false);assert.equal(failure.case_id,'a');
+});
+test('a saved result survives a worker dying before checkpoint advancement',async()=>{
+ const checkpoint={case_ids:['a','b'],next:0,trigger:'manual',tier:'heavy',notify:false,assign_reviews:false,in_flight:{case_id:'a',started_at:'2026-01-01T00:00:00Z'}};
+ const db=fakeDb({luna_eval_runs:[{id:'run',status:'running',checkpoint,total:2}],luna_eval_results:[{id:'result',run_id:'run',case_id:'a',verdict:'fail'}]});
+ db.rpc=async()=>({data:true,error:null});
+ await continueEvalExam(db,'run',0);
+ assert.equal(checkpoint.next,1);
+ assert.ok(!db.calls.some(c=>c.table==='luna_eval_results' && c.mutation));
+});

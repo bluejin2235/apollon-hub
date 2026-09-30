@@ -1034,7 +1034,7 @@ export async function runEvalExam(
   return continueEvalExam(admin,run.id as string,opts.budgetMs ?? 700_000);
 }
 
-type EvalCheckpoint={case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean};
+type EvalCheckpoint={case_ids:string[];next:number;trigger:EvalExamTrigger;tier:string;notify:boolean;assign_reviews:boolean;in_flight?:{case_id:string;started_at:string}};
 
 /** Persist after each completed case. A timeout leaves the next case retryable,
  * and a lease keeps the browser and scheduled worker from running it twice. */
@@ -1051,6 +1051,29 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
     if(error || !run?.checkpoint) throw new Error(error?.message ?? 'Missing evaluation checkpoint');
     const cp=run.checkpoint as EvalCheckpoint;
     if(!Array.isArray(cp.case_ids) || !Number.isInteger(cp.next) || cp.next<0 || cp.next>cp.case_ids.length) throw new Error('Invalid evaluation checkpoint');
+    const saveCheckpoint=async()=>{
+      const saved=await admin.from('luna_eval_runs').update({checkpoint:cp}).eq('id',runId).eq('worker_token',token);
+      if(saved.error) throw new Error(saved.error.message);
+    };
+    // The previous worker may have been killed before its catch/finally ran.
+    // A newly acquired lease proves it is no longer the active worker. Keep any
+    // completed result; otherwise record the interruption, never a quality pass.
+    if(cp.in_flight) {
+      if(cp.in_flight.case_id!==cp.case_ids[cp.next]) throw new Error('Invalid in-flight evaluation checkpoint');
+      const existing=await admin.from('luna_eval_results').select('id').eq('run_id',runId).eq('case_id',cp.in_flight.case_id).maybeSingle();
+      if(existing.error) throw new Error(existing.error.message);
+      if(!existing.data) {
+        const interrupted=await admin.from('luna_eval_results').upsert({
+          run_id:runId,case_id:cp.in_flight.case_id,answer:'',sources:[],verdict:'error',auto_pass:false,score:0,
+          auto_reason:'평가 작업이 최종 결과를 저장하기 전에 중단됐습니다. 실행 제한 또는 작업자 종료 여부를 확인하고 재검증해야 합니다.',
+          execution_trace:{engine:'production',interrupted:true,started_at:cp.in_flight.started_at}
+        },{onConflict:'run_id,case_id'});
+        if(interrupted.error) throw new Error(interrupted.error.message);
+      }
+      cp.next++;
+      delete cp.in_flight;
+      await saveCheckpoint();
+    }
     const deadline=Date.now()+budgetMs;
     let previousCaseMs=180_000;
     for(;cp.next<cp.case_ids.length;) {
@@ -1058,11 +1081,13 @@ export async function continueEvalExam(admin:SupabaseClient,runId:string,budgetM
         return {skipped:false,continued:true,run_id:runId,tier:cp.tier,total:cp.case_ids.length};
       }
       const started=Date.now();
+      cp.in_flight={case_id:cp.case_ids[cp.next],started_at:new Date().toISOString()};
+      await saveCheckpoint();
       await executeEvalCase(admin,runId,cp.case_ids[cp.next]);
       previousCaseMs=Date.now()-started;
       cp.next++;
-      const saved=await admin.from('luna_eval_runs').update({checkpoint:cp}).eq('id',runId).eq('worker_token',token);
-      if(saved.error) throw new Error(saved.error.message);
+      delete cp.in_flight;
+      await saveCheckpoint();
     }
     const fin=await finalizeEvalExam(admin,runId,cp.trigger,{tier:cp.tier,notify:cp.notify,assignReviews:cp.assign_reviews});
     const done=await admin.from('luna_eval_runs').update({status:'done',finished_at:new Date().toISOString()}).eq('id',runId).eq('worker_token',token);

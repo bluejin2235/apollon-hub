@@ -30,6 +30,8 @@ type EvalRun = {
   passed: number | null;
   failed: number | null;
   status: string;
+  checkpoint?: { next:number; case_ids:string[] } | null;
+  worker_until?: string | null;
   started_at: string | null;
   finished_at: string | null;
   tier?: string | null;
@@ -231,6 +233,7 @@ export function LunaBrainEval() {
 
       const preferred =
         runList.find((r) => r.id === selectedRunId) ??
+        runList.find((r) => r.status === "running" && r.checkpoint) ??
         runList.find((r) => r.status === "done") ??
         runList[0];
       if (preferred) {
@@ -371,7 +374,7 @@ export function LunaBrainEval() {
     }
   }
 
-  async function runExam(tier: "light" | "heavy" | "all", category?:string) {
+  async function runExam(tier: "light" | "heavy" | "all", category?:string, resumeId?:string) {
     setBusy(true);
     setNotice("");
     try {
@@ -390,7 +393,7 @@ export function LunaBrainEval() {
         tier?: string;
       }>("/api/luna/eval/exam", {
         method: "POST",
-        body: JSON.stringify(body)
+        body: JSON.stringify(resumeId ? {run_id:resumeId} : body)
       });
       while(res.continued && !res.skipped && res.run_id) {
         setSelectedRunId(res.run_id);
@@ -411,6 +414,7 @@ export function LunaBrainEval() {
       await load();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "실행하지 못했습니다.");
+      await load();
     } finally {
       setBusy(false);
     }
@@ -755,7 +759,12 @@ export function LunaBrainEval() {
                   : "—"}
               </span>
             </div>
-            {doneRuns.length > 1 ? (
+            {selectedRun?.status === "running" && selectedRun.checkpoint ? (
+              <Btn disabled={busy} onClick={()=>void runExam("all",undefined,selectedRun.id)}>
+                남은 문항 이어서 검증 ({selectedRun.checkpoint.next}/{selectedRun.total})
+              </Btn>
+            ) : null}
+            {runs.length > 1 ? (
               <select
                 className="max-w-[220px] rounded-md border px-2 py-1 text-[12px]"
                 style={{ borderColor: K.line, color: K.ink }}
@@ -767,9 +776,9 @@ export function LunaBrainEval() {
                   void loadResultsFor(id);
                 }}
               >
-                {doneRuns.slice(0, 12).map((r) => (
+                {runs.slice(0, 20).map((r) => (
                   <option key={r.id} value={r.id}>
-                    {tierBadgeLabel(r.tier)} {runScore(r)}/{runMax(r)} ·{" "}
+                    {r.status === "running" ? "미완료 · " : ""}{tierBadgeLabel(r.tier)} {runScore(r)}/{runMax(r)} ·{" "}
                     {formatDateTime(r.finished_at ?? r.started_at)}
                   </option>
                 ))}
