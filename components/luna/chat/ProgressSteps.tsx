@@ -67,7 +67,9 @@ export function ProgressSteps({
   /** 대기·스트리밍 중 — 접힌 「찾는 과정 ▸」 금지 */
   forceExpanded?: boolean;
 }) {
-  const [open, setOpen] = useState(!isComplete);
+  // Completion (including a remount) must not collapse the search the user
+  // was watching. Only the explicit toggle collapses it.
+  const [open, setOpen] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const isMobile = useSyncExternalStore(
     subscribeMobile,
@@ -77,7 +79,6 @@ export function ProgressSteps({
 
   useEffect(() => {
     if (forceExpanded) setOpen(true);
-    else if (isComplete) setOpen(false);
   }, [forceExpanded, isComplete]);
 
   const rows = buildProgressRows({ steps, classification, counts, isComplete });
@@ -104,7 +105,7 @@ export function ProgressSteps({
         <span>▸</span>
         <span>찾는 과정</span>
         <span className="flex-1" />
-        <span>{progressSummary(counts)}</span>
+        <span>최종 표시 · {progressSummary(counts)}</span>
       </button>
     );
   }
@@ -127,9 +128,10 @@ export function ProgressSteps({
           <span>▾</span>
           <span>찾는 과정</span>
           <span className="flex-1" />
-          <span>{progressSummary(counts)}</span>
+          <span>최종 표시 · {progressSummary(counts)}</span>
         </button>
       ) : null}
+      <p className="px-3.5 pt-2 text-[12px] text-[#6b6f76]">아래는 검색 과정의 후보 수이며, 최종 표시 자료 수와 다를 수 있습니다.</p>
       <div className="border-l-2 border-[#e7e8ec] py-1 pl-1 max-md:border-l-[3px]">
         {needsCollapse && !expanded && rows.length > visibleRows.length ? (
           <button

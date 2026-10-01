@@ -3,6 +3,7 @@ import { isGarbage3dPath } from "@/lib/luna/media-index-rules";
 import {
   applyNamedEntitiesToTerms,
   loadNamedEntities,
+  matchNamedEntities,
   NAMED_ENTITY_SEED,
   pathVariantsForTerm,
   type NamedEntity
@@ -335,12 +336,15 @@ export function prepareSearchTerms(
   entities: NamedEntity[] = NAMED_ENTITY_SEED
 ): string[] {
   const kwTerms = splitKeywords(keywords).filter(isSearchableToken);
-  const ctxTerms = splitKeywords(queryContext ?? "").filter(isSearchableToken);
-  const merged = [...new Set([...kwTerms, ...ctxTerms.filter((term) => {
-    const stem = term.match(/^([가-힣]{2,})쇼$/)?.[1];
-    const registered = entities.some((entity) => [entity.canonical, ...entity.aliases, ...entity.searchPhrases].includes(term));
-    return !stem || registered || !kwTerms.includes(stem);
-  })])];
+  // The caller supplies retrieval terms; the full question supplies scope.
+  // Re-tokenizing prose here makes verbs and particles mandatory path terms.
+  const context = queryContext ?? "";
+  const constraints = [
+    ...matchNamedEntities(context, entities).map((entity) => entity.canonical),
+    ...extractSeasonIds(context).map(({ n }) => `시즌${n}`),
+    ...extractPlainIds(context).map(({ raw }) => raw)
+  ];
+  const merged = [...new Set([...constraints, ...kwTerms])];
   const restricted = applyNamedEntitiesToTerms(merged, queryContext ?? keywords, entities);
   return restricted.filter(isSearchableToken).slice(0, 8);
 }
@@ -537,27 +541,6 @@ function dropOneGeneric(terms: string[]): string[] | null {
   return terms.filter((_, i) => i !== idx);
 }
 
-function isSeasonLikeToken(t: string): boolean {
-  return /^(시즌\s*\d+|season\s*\d+|s\d+|\d+차)$/i.test(t.replace(/\s+/g, " ").trim());
-}
-
-function isProjectNameToken(t: string): boolean {
-  if (!t || GENERIC_DOC_TERMS.has(t) || GENERIC_DOC_TERMS.has(t.toLowerCase())) {
-    return false;
-  }
-  if (isSeasonLikeToken(t)) return false;
-  if (/^\d{4}$/.test(t) || /^\d{6}$/.test(t)) return false;
-  if (/^[A-Z][A-Za-z0-9_-]*$/.test(t)) return true;
-  if (/^[가-힣]{2,}$/.test(t)) return true;
-  return false;
-}
-
-function pickProjectName(terms: string[]): string | null {
-  const candidates = terms.filter(isProjectNameToken);
-  if (candidates.length === 0) return null;
-  return [...candidates].sort((a, b) => b.length - a.length)[0] ?? null;
-}
-
 async function expandFoldersOneLevel(
   admin: SupabaseClient,
   rows: NasRow[],
@@ -628,9 +611,11 @@ async function progressiveAndSearch(
   if (stems.some((term, index) => term !== terms[index])) {
     stages.push({ name: "and-show-stem", terms: [...new Set(stems)] });
   }
-  const project = pickProjectName(terms);
-  if (project && !(terms.length === 1 && terms[0] === project)) {
-    stages.push({ name: "and-project", terms: [project] });
+  const projects = matchNamedEntities(`${queryText} ${keywords}`, entities)
+    .filter((entity) => entity.kind !== "brand_group")
+    .map((entity) => entity.canonical);
+  if (projects.length > 0 && projects.length < terms.length) {
+    stages.push({ name: "and-project", terms: projects });
   }
 
   for (const stage of stages) {
