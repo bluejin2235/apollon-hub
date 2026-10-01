@@ -43,6 +43,20 @@ test('an indexed relative NAS path remains valid original-location evidence with
  const unindexed=prepareReviewEvidence([{...sources[0],nas_path:undefined}],true,true,false,{quote:'계약서',meaning:'계약 문서'}).resolve({direct:[0],adjacent:[],unrelated:[],evidence:[evidence]});
  assert.equal(unindexed.review_issues['0'],'contained_artifact_original_location_required');
 });
+test('artifact verification selects immutable titles, body spans and indexed locations rather than retyping them',()=>{
+ const nas_path='02 Project\\새 공간\\검토\\원본.zip';
+ const sources=[{id:'a',title:'현장 검토보고서 원본.zip',nas_path,excerpt:`현장 검토보고서를 보관한 원본 위치: ${nas_path}`}];
+ const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'검토보고자료',meaning:'검토 보고를 위한 자료'});
+ const base={index:0,span:0,reason:'실제 검토보고서 원본이 저장된 위치를 확인한 자료',request_match:{target:true,artifact:true,phase:true}};
+ for(const artifact_support of [{relation:'is_artifact',source:'title'},{relation:'is_artifact',source:'body',span:0},{relation:'contains_artifact',source:'title',location_source:'indexed_nas'}]) {
+  const review=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...base,artifact_support}]});
+  assert.equal(validateNotionEvidenceReview(sources,review,true).direct.length,1);
+ }
+ const invalid=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...base,artifact_support:{relation:'is_artifact',source:'body',span:999}}]});
+ assert.equal(invalid.review_issues['0'],'artifact_self_or_link_evidence_required');
+ const withoutPath=prepareReviewEvidence([{...sources[0],nas_path:undefined}],true,true,false,{quote:'검토보고자료',meaning:'검토 보고를 위한 자료'}).resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...base,artifact_support:{relation:'contains_artifact',source:'title',location_source:'indexed_nas'}}]});
+ assert.equal(withoutPath.review_issues['0'],'contained_artifact_original_location_required');
+});
 test('display project cannot hide real ancestry or parent path from review',()=>{
  const prepared=prepareReviewEvidence([{id:'a',title:'보고서',project_key:'다른 표시명',project_memberships:['연결 이름'],project_ancestry:['상위사업 시즌3'],path_titles:['원본 경로'],excerpt:'실제 제작 단계와 고객사 보고를 기록한 문서입니다.'}],true,true);
  for(const value of ['다른 표시명','상위사업 시즌3','원본 경로','연결 이름']) assert.ok(prepared.text.includes(value));

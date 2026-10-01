@@ -36,16 +36,24 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
         }
         if(verify && artifact && Array.isArray(review.direct) && review.direct.includes(index)) {
           const proof=value.artifact_support as Record<string,unknown>|undefined;
-          const text=typeof index==='number' ? proof?.source==='title' ? sources[index]?.title : proof?.source==='body' ? sources[index]?.excerpt : undefined : undefined;
+          const source=typeof index==='number' ? sources[index] : undefined;
+          const text=proof?.source==='title' ? source?.title : proof?.source==='body' ? source?.excerpt : undefined;
           const normalized=(text:string)=>text.replace(/\s+/g,' ').trim();
-          if(!proof || !['is_artifact','contains_artifact'].includes(String(proof.relation)) || typeof proof.quote!=='string' ||
-            proof.quote.trim().length<2 || proof.quote.length>240 || !text || !normalized(text).includes(normalized(proof.quote))) {
+          // Select the immutable title or body span. Requiring a second model-
+          // retyped quotation reintroduced the exact-copy failures that source
+          // span selection already prevents for the primary evidence.
+          const artifactQuote=proof?.source==='title' && !Object.hasOwn(proof,'quote') ? source?.title
+            : proof?.source==='body' && Number.isInteger(proof.span) && typeof index==='number' ? spans[index]?.[proof.span as number]
+            : proof?.quote;
+          if(!proof || !['is_artifact','contains_artifact'].includes(String(proof.relation)) || typeof artifactQuote!=='string' ||
+            artifactQuote.trim().length<2 || !text || !normalized(text).includes(normalized(artifactQuote))) {
             return unresolved('artifact_self_or_link_evidence_required');
           }
-          if(proof.relation==='contains_artifact' && (typeof proof.location!=='string' ||
-            (!/^(https:\/\/|[a-z]:[\\/]|\\\\)/i.test(proof.location) &&
-              (!sources[index as number]?.nas_path || normalized(sources[index as number].nas_path!)!==normalized(proof.location))) ||
-            !normalized(sources[index as number]?.excerpt ?? '').includes(normalized(proof.location)))) {
+          const location=proof.location_source==='indexed_nas' ? source?.nas_path : proof.location;
+          if(proof.relation==='contains_artifact' && (typeof location!=='string' || !location.trim() ||
+            (!/^(https:\/\/|[a-z]:[\\/]|\\\\)/i.test(location) &&
+              (!source?.nas_path || normalized(source.nas_path)!==normalized(location))) ||
+            !normalized(source?.excerpt ?? '').includes(normalized(location)))) {
             return unresolved('contained_artifact_original_location_required');
           }
         }

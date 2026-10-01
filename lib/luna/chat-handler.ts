@@ -3592,7 +3592,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           version: 1,
           answer_mode: 'model',
           request_scope: materialRequestScope,
-          reviewed_nas: reviewedNasInventory ? {reviewed:reviewedNasInventory.reviewedIds,unverified:reviewedNasInventory.unverifiedIds,selected:reviewedNasInventory.cards.length} : null,
+          reviewed_nas: reviewedNasInventory ? {reviewed:reviewedNasInventory.reviewedIds,unverified:reviewedNasInventory.unverifiedIds,selected:reviewedNasInventory.cards.length,failures:reviewedNasInventory.failures} : null,
           explored_project_keys: [...new Set(exploredProjectKeys)],
           reviewed_notion: reviewedNotionEvidence ? { direct: reviewedNotionEvidence.direct.map(s => s.id), adjacent: reviewedNotionEvidence.adjacent.map(s => s.id), basis: reviewedNotionEvidence.basis } : null,
           reviewed_wiki: reviewedWikiSources?.map(s => ({slug:s.slug,section_id:s.section_id,excerpt:s.excerpt})) ?? null,
