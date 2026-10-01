@@ -1,8 +1,13 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
-const {scopeMediaToEvidence}=loadTs('lib/luna/media-evidence-scope.ts');
+const {scopeMediaToEvidence,scopeMediaToRequestedTargets}=loadTs('lib/luna/media-evidence-scope.ts');
 const image=(path,description='',drive='T')=>({type:'image',title:'image.jpg',raw_path:path,description,drive,similarity:.9});
 const source={id:'doc',title:'샘플 미디어 센터 운영 매뉴얼',paths:['T:\\02 Project\\2021\\05 샘플역삼\\09 운영\\manual.pdf']};
+test('multiword semantic target searches cannot retain another project from its image description',()=>{
+ const actual=image('02 Project/2026/샘플항구 미디어아트/photo.jpg');
+ const unrelated=image('02 Project/2026/다른지역/photo.jpg','샘플항구에 적용 가능한 미디어아트');
+ assert.deepEqual(scopeMediaToRequestedTargets([actual,unrelated],['샘플항구'],[]),[actual]);
+});
 test('equivalent material-search wording preserves the same project boundary',()=>{
  const correct=image('02 Project/2021/05 샘플역삼/06 Design/photo.jpg');
  const other=image('02 Project/2026/Other/photo.jpg','샘플미디어센터와 비슷한 공간');

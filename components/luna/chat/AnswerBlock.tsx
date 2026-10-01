@@ -34,6 +34,7 @@ import {
   resolveAnswerMode,
   shouldShowImageChrome,
   splitSources,
+  displayedSourceCounts,
   type AnswerMode
 } from "@/components/luna/chat/answer-layout";
 import type {
@@ -331,7 +332,7 @@ function AssistantAnswerBlock({
     (s) => s.key === "search" && s.status === "done"
   );
   const hasSnapshot = cards != null || searchCounts != null;
-  const counts = useMemo(
+  const candidateCounts = useMemo(
     () =>
       resolveSearchCounts({
         snapshot: searchCounts,
@@ -344,6 +345,7 @@ function AssistantAnswerBlock({
   );
 
   const isComplete = isAnswerComplete({ isThinking, content: scrubbed });
+  const counts = isComplete ? displayedSourceCounts(split, answerMode, questionText) : candidateCounts;
   const forceProgressOpen = isThinking || !isComplete;
   const streaming = isThinking || (!isComplete && Boolean(body.trim()));
 

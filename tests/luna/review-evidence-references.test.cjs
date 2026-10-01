@@ -2,6 +2,11 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {prepareReviewEvidence}=loadTs('lib/luna/review-evidence-references.ts');
 const {validateNotionEvidenceReview}=loadTs('lib/luna/notion-evidence-review.ts');
+test('display project cannot hide real ancestry or parent path from review',()=>{
+ const prepared=prepareReviewEvidence([{id:'a',title:'보고서',project_key:'다른 표시명',project_memberships:['연결 이름'],project_ancestry:['상위사업 시즌3'],path_titles:['원본 경로'],excerpt:'실제 제작 단계와 고객사 보고를 기록한 문서입니다.'}],true,true);
+ for(const value of ['다른 표시명','상위사업 시즌3','원본 경로','연결 이름']) assert.ok(prepared.text.includes(value));
+ assert.match(prepared.text,/시즌 확정 근거가 아님/);
+});
 test('direct evidence requires target, artifact and phase agreement when enabled',()=>{
  const sources=[{id:'a',title:'샘플 문서',excerpt:'이 문서는 시운전 결과를 기록한 현장 검증 보고서입니다.'}];
  const prepared=prepareReviewEvidence(sources,true,true);
@@ -94,4 +99,12 @@ test('a grounded design review can remain useful before implementation or measur
   application:'보행 공간의 조명 대안을 고를 때 눈부심과 주변 광원 간섭 시험 항목으로 적용한다.',limitation:'시험 전 검토안이며 실제 광량과 기구 성능은 확인되지 않았다.'
  }]});
  assert.deepEqual(validateNotionEvidenceReview([source],result,true).adjacent.map(s=>s.id),['review']);
+});
+test('a transferable technique from another target cannot satisfy a target-record lookup',()=>{
+ const source={id:'other',title:'다른 항구 설계',excerpt:'전원 접속부는 수면 위에 두고 조명 기구에는 방수 처리를 적용한다.'};
+ const review={direct:[],adjacent:[0],unrelated:[],evidence:[{index:0,span:0,fact_span:0,relation:'transferable_fact',fact_kind:'design_constraint',application:'요청한 항구에서도 전원 접속부의 위치를 정하는 데 참고한다.',limitation:'요청한 항구의 실제 기록은 아니므로 현장 조건을 확인해야 한다.',request_match:{target:false}}]};
+ const scoped=prepareReviewEvidence([source],true,true,true).resolve(review);
+ assert.deepEqual(scoped.adjacent,[]);assert.deepEqual(scoped.unrelated,[0]);
+ const thematic=prepareReviewEvidence([source],true,true,false).resolve(review);
+ assert.deepEqual(thematic.adjacent,[0]);assert.equal(thematic.evidence[0].quote,source.excerpt);
 });

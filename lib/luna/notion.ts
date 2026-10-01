@@ -47,6 +47,10 @@ export type NotionSource = {
   via_link?: string;
   /** luna_links project to_id 등 — UI 묶음 키 */
   project_key?: string | null;
+  /** Existing accepted links; not by themselves proof of a phase or season. */
+  project_memberships?: string[];
+  /** Project names reached through actual Notion parent-page chains. */
+  project_ancestry?: string[];
   /** 관점 매칭으로 가중된 경우 */
   perspective?: string;
 };

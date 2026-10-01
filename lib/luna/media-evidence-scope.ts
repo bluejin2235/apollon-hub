@@ -7,6 +7,22 @@ import type { AskedWhat } from "@/lib/luna/ask-what";
 const compact = (text: string) => text.toLowerCase().replace(/\s+/g, '');
 const pathText = (text: string) => text.replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
 
+/** Semantic similarity in image descriptions is not proof of project identity. */
+export function scopeMediaToRequestedTargets(cards:LunaCard[],targets:string[],sources:NotionSource[]):LunaCard[] {
+  const names=[...targets,...sources.flatMap(source=>(source.grounded_targets ?? []).map(target=>target.name))].map(compact);
+  const matches=(text:string)=>names.some(name=>name && compact(text).includes(name));
+  const roots=sources.filter(source=>matches([source.title,...source.project_ancestry ?? []].join(' ')))
+    .flatMap(source=>[...source.paths ?? [],...source.nas_path ? [source.nas_path] : []])
+    .map(path=>({root:projectRoot(path),drive:path.match(/^([a-z]):/i)?.[1]?.toUpperCase()}));
+  return cards.filter(card=>{
+    if(card.type!=='image') return true;
+    if(matches([card.title,card.project,card.raw_path].filter(Boolean).join(' '))) return true;
+    const root=projectRoot(card.raw_path ?? '');
+    const drive=(card.drive ?? card.raw_path?.match(/^([a-z]):/i)?.[1] ?? '').replace(':','').toUpperCase();
+    return Boolean(root && roots.some(value=>value.root===root && (!value.drive || value.drive===drive)));
+  });
+}
+
 /** Keep the year and complete project folder: an extension is a different scope. */
 function projectRoot(path: string): string | null {
   const match = pathText(path).match(/(?:^|\/)((?:\d+\s+)?(?:project|사업개발)\/\d{4}\/[^/]+)/i);

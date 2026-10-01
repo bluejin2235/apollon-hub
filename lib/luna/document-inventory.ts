@@ -40,7 +40,12 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
   let navigationComplete=graph.complete;
   let candidates=input.sources;
   while(candidates.length) {
-    const pending=[...new Map(candidates.filter(s=>!seen.has(s.id)).map(s=>[s.id,s])).values()];
+    const pending=[...new Map(candidates.filter(s=>!seen.has(s.id)).map(s=>[s.id,s])).values()].map(source=>{
+      const memberships=input.directory.filter(project=>project.pageIds.includes(source.id));
+      const ancestry=memberships.filter(project=>project.ancestorPageIds?.includes(source.id)).map(project=>project.key);
+      return {...source,project_memberships:memberships.map(project=>project.key),project_ancestry:ancestry,
+        project_key:ancestry.length===1 ? ancestry[0] : source.project_key};
+    });
     if(!pending.length) break;
     pending.forEach(s=>seen.add(s.id));
     const read=await readIndexedNotionEvidence(admin,pending,input.query,true);

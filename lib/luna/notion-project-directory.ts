@@ -3,7 +3,7 @@ import type { NotionSource } from './notion';
 import { loadPagesByIds } from './search-secondary';
 import { isSearchToken } from './keyword-token';
 
-export type NotionDirectoryProject = { key: string; pageIds: string[] };
+export type NotionDirectoryProject = { key: string; pageIds: string[]; ancestorPageIds?: string[] };
 
 /** Only a simple named inventory, not a thematic or task-specific request. */
 export function requestedDirectoryProjects(directory:NotionDirectoryProject[], query:string):NotionDirectoryProject[] {
@@ -45,6 +45,7 @@ export function namedDirectorySubjects(directory: NotionDirectoryProject[], quer
 /** Navigate existing accepted relationships; this does not infer or write membership. */
 export async function loadNotionProjectDirectory(admin: SupabaseClient): Promise<NotionDirectoryProject[]> {
   const projects = new Map<string, Set<string>>();
+  const ancestry = new Map<string, Set<string>>();
   for (let start = 0; true; start += 1000) {
     const { data, error } = await admin.from('luna_links').select('from_id,to_id')
       .eq('kind', 'belongs').eq('from_type', 'notion_page').eq('to_type', 'project')
@@ -81,11 +82,15 @@ export async function loadNotionProjectDirectory(admin: SupabaseClient): Promise
     while(current && !visited.has(current.page_id)) {
       visited.add(current.page_id);
       const key=roots.get(current.page_id);
-      if(key) { const ids=projects.get(key) ?? new Set<string>();ids.add(page.page_id);projects.set(key,ids);break; }
+      if(key) {
+        const ids=projects.get(key) ?? new Set<string>();ids.add(page.page_id);projects.set(key,ids);
+        const children=ancestry.get(key) ?? new Set<string>();children.add(page.page_id);ancestry.set(key,children);
+        break;
+      }
       current=current.parent_id ? pages.get(current.parent_id) : undefined;
     }
   }
-  return [...projects].map(([key, ids]) => ({ key, pageIds: [...ids] }));
+  return [...projects].map(([key, ids]) => ({ key, pageIds: [...ids], ancestorPageIds:[...(ancestry.get(key) ?? [])] }));
 }
 
 export function selectDirectoryProjects(directory: NotionDirectoryProject[], choices: unknown): NotionDirectoryProject[] {

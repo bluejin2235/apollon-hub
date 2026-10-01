@@ -24,7 +24,7 @@ export function createEvalReviewCheckpoint(options: {
     async review(identity, batch, work) {
       const keys=batch.map(source=>createHash('sha256').update(JSON.stringify({
         version:2, identity, source:{id:source.id,title:source.title,excerpt:source.excerpt,
-          scope:source.project_key ?? (source.path_titles ?? []).join(' / ')}
+          scope:source.project_key,path_titles:source.path_titles,memberships:source.project_memberships,ancestry:source.project_ancestry}
       })).digest('hex'));
       const decisions:Array<Record<string,unknown>|undefined>=batch.map((source,i)=>{
         const saved=options.entries[keys[i]];

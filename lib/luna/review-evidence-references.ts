@@ -3,7 +3,7 @@ import { sliceUnicode } from '@/lib/luna/unicode-text';
 
 /** Model selects immutable source spans instead of retyping a quotation.
  * The server still validates the resulting exact quote against the source. */
-export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false, requireRequestMatch = false) {
+export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false, requireRequestMatch = false, requireTargetForAdjacent = false) {
   const spans = sources.map(source => {
     const text = (source.excerpt ?? '').replace(/\s+/g, ' ').trim();
     const result: string[] = [];
@@ -13,7 +13,7 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
   return {
     // Verification must make an independent decision from the source. Showing
     // the previous application rationale anchors the verifier on that claim.
-    text: sources.map((source, index) => `[${index}] ${source.title}\n확인된 소속: ${source.project_key ?? (source.path_titles ?? []).join(' / ')}${!verify && source.review_proposal ? `\n검증할 이전 판단 (원문이 아니며 사실로 간주하지 말 것): ${JSON.stringify(source.review_proposal)}` : ''}\n본문:\n${spans[index].map((text, span) => `[근거 ${span}] ${text}`).join('\n')}`).join('\n\n'),
+    text: sources.map((source, index) => `[${index}] ${source.title}\n프로젝트 표시명: ${source.project_key ?? ''}\n실제 상위 페이지 소속: ${(source.project_ancestry ?? []).join(' / ')}\n상위 경로: ${(source.path_titles ?? []).join(' / ')}\n기존 연결 소속 (시즌 확정 근거가 아님): ${(source.project_memberships ?? []).join(' / ')}${!verify && source.review_proposal ? `\n검증할 이전 판단 (원문이 아니며 사실로 간주하지 말 것): ${JSON.stringify(source.review_proposal)}` : ''}\n본문:\n${spans[index].map((text, span) => `[근거 ${span}] ${text}`).join('\n')}`).join('\n\n'),
     resolve(review: Record<string, unknown> | null): Record<string, unknown> | null {
       if (!review || !Array.isArray(review.evidence)) return review;
       const excluded = new Set<number>();
@@ -35,6 +35,14 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
           ? spans[index]?.[span] : undefined;
         // Never fall back to a generated quote when a supplied reference is invalid.
         const adjacent = Array.isArray(review.adjacent) && review.adjacent.includes(index);
+        if (verify && adjacent && requireTargetForAdjacent) {
+          const match=value.request_match as Record<string,unknown>|undefined;
+          if (match?.target === false) {
+            if (typeof index === 'number') excluded.add(index);
+            return {...value,quote:''};
+          }
+          if (match?.target !== true) return {...value,quote:''};
+        }
         // A visual motif can answer a visual-reference request directly, but
         // cannot become a transferable implementation fact by adding a caveat.
         if (verify && adjacent && ['visual_motif', 'general_description'].includes(String(value.fact_kind))) {

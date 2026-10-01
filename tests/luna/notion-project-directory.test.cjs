@@ -2,6 +2,21 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs,fakeDb}=require('./helpers.cjs');
 let loadedIds=[];
 const page=(id,title)=>({page_id:id,title,url:'https://notion.so/'+id,path_titles:[],parent_id:null,nas_path:null,last_edited_time:null,excerpt:'주제와 연결된 원문'});
+test('actual parent ancestry is separate from derived project links',async()=>{
+ const directory=await loadNotionProjectDirectory(fakeDb({
+  luna_links:[{from_id:'linked',to_id:'2024 01 샘플 시즌3',kind:'belongs',from_type:'notion_page',to_type:'project',status:'active',confidence:0.9}],
+  luna_notion_pages:[
+   {...page('year','2024'),archived:false},
+   {...page('root','01 샘플 시즌3'),parent_id:'year',archived:false},
+   {...page('child','완료 보고서'),parent_id:'root',archived:false},
+   {...page('linked','별도 문서'),archived:false}
+  ]
+ }));
+ const project=directory.find(p=>p.key==='2024 01 샘플 시즌3');
+ assert.ok(project.pageIds.includes('linked'));
+ assert.ok(project.ancestorPageIds.includes('child'));
+ assert.ok(!project.ancestorPageIds.includes('linked'));
+});
 let pageRows=[];
 const {loadNotionProjectDirectory,describeNotionProjectDirectory,bareDirectoryLookup,namedDirectorySubjects,selectDirectoryProjects,readDirectoryMaterials,requestedDirectoryProjects}=loadTs('lib/luna/notion-project-directory.ts',{
  './search-secondary':{loadPagesByIds:async (_db,ids)=>{loadedIds=ids;return new Map(pageRows.filter(p=>ids.includes(p.page_id)).map(p=>[p.page_id,p]));}},
