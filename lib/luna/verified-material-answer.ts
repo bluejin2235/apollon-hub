@@ -22,6 +22,7 @@ function documentType(source:NotionSource):string {
 export function verifiedMaterialAnswer(query:string,review:ReviewedNotionEvidence):string|null {
   if(/비교|분석|평가|요약|차이|추천/.test(query)) return null;
   const blocks:string[]=[],seen=new Set<string>();
+  const counts:Record<string,number>={};
   for(const [label,sources] of [['직접 관련 자료',review.direct],['인접 참고 자료',review.adjacent]] as const) {
     const projects=new Map<string,Map<string,string[]>>();
     for(const source of sources) {
@@ -30,6 +31,7 @@ export function verifiedMaterialAnswer(query:string,review:ReviewedNotionEvidenc
       try {url=new URL(source.url??'');}catch{continue;}
       if(url.protocol!=='https:' || !/(^|\.)(notion\.so|notion\.site|notion\.com)$/.test(url.hostname)) continue;
       seen.add(source.id);
+      counts[label]=(counts[label] ?? 0)+1;
       const project=source.project_key || '기타 확인 자료';
       const group=projects.get(project) ?? new Map<string,string[]>();
       projects.set(project,group);
@@ -42,5 +44,8 @@ export function verifiedMaterialAnswer(query:string,review:ReviewedNotionEvidenc
     if(projects.size) blocks.push(`## ${label}\n\n`+[...projects].map(([project,types])=>`### ${plain(project)}\n\n`+[...types].map(([type,lines])=>`**${type}**\n\n${lines.join('\n')}`).join('\n\n')).join('\n\n'));
   }
   if(!seen.size) return null;
-  return `관련성을 확인한 문서 ${seen.size}개를 프로젝트와 자료 유형별로 정리했습니다. 자료 유형은 제목에 명시된 표현을 기준으로 묶었습니다.\n\n${blocks.join('\n\n')}\n\n확인된 자료의 목록이며, 접근할 수 없는 원본이나 색인 밖의 자료까지 모두 확인했다는 뜻은 아닙니다.`;
+  const direct=counts['직접 관련 자료'] ?? 0,adjacent=counts['인접 참고 자료'] ?? 0;
+  const intro=direct ? `직접 관련 문서 ${direct}개${adjacent ? `와 인접 참고 문서 ${adjacent}개` : ''}를 구분했습니다.`
+    : `확인 범위에서 요청 조건에 직접 맞는 문서는 찾지 못했습니다. 관련성이 확인된 인접 참고 문서 ${adjacent}개를 구분해 제공합니다.`;
+  return `${intro} 자료 유형은 제목에 명시된 표현을 기준으로 묶었습니다.\n\n${blocks.join('\n\n')}\n\n확인된 자료의 목록이며, 접근할 수 없는 원본이나 색인 밖의 자료까지 모두 확인했다는 뜻은 아닙니다.`;
 }

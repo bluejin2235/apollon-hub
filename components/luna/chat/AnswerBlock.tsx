@@ -57,6 +57,7 @@ import {
   type UsedPromptRef
 } from "@/lib/luna/chat-response";
 import { resolveSearchCounts } from "@/lib/luna/luna-answer-ui";
+import { splitMaterialInventoryDisplay } from '@/lib/luna/material-inventory-display';
 import type { LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
@@ -186,9 +187,18 @@ function AnswerBodyMarkdown({
   body: string;
   streaming?: boolean;
 }) {
+  const inventory=!streaming ? splitMaterialInventoryDisplay(body) : null;
+  const markdown=(text:string)=><SafeMarkdown content={text} compact variant="luna" highlightTerms className="min-w-0 max-w-full [overflow-wrap:anywhere] text-[14.5px] max-md:text-[13.5px]" />;
   return (
     <div className="text-[14.5px] leading-[1.75] text-[#1c1d21] max-md:text-[13.5px]">
-      {body.trim() ? (
+      {inventory ? <>
+        {markdown(inventory.before)}
+        <details open={inventory.initiallyOpen || undefined} className="my-3 min-w-0 rounded-lg border border-[#E3E0F5] bg-white/60 px-3 py-2">
+          <summary className="cursor-pointer text-[13px] font-medium text-[#534AB7]">인접 참고 문서 {inventory.count}개 — 직접 일치 자료와 구분해서 보기</summary>
+          <div className="mt-3">{markdown(inventory.adjacent)}</div>
+        </details>
+        {inventory.after ? markdown(inventory.after) : null}
+      </> : body.trim() ? (
         <SafeMarkdown
           content={body}
           compact
