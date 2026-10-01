@@ -41,7 +41,11 @@ export function verifiedMaterialAnswer(query:string,review:ReviewedNotionEvidenc
       const href=url.href.replace(/\(/g,'%28').replace(/\)/g,'%29');
       lines.push(`- [${plain(source.title)}](${href})${notionCitationMarker(source.id)}${proof?.reason ? ` — ${plain(proof.reason)}` : ''}${proof?.quote ? `\n  - 본문 근거: “${plain(proof.quote)}”` : ''}`);
     }
-    if(projects.size) blocks.push(`## ${label}\n\n`+[...projects].map(([project,types])=>`### ${plain(project)}\n\n`+[...types].map(([type,lines])=>`**${type}**\n\n${lines.join('\n')}`).join('\n\n')).join('\n\n'));
+    if(projects.size) {
+      const overview=projects.size>1 ? `프로젝트별 구성 (${projects.size}개 묶음)\n\n`+[...projects].map(([project,types])=>
+        `- **${plain(project)}** · ${[...types.values()].reduce((n,lines)=>n+lines.length,0)}개 · ${[...types].map(([type,lines])=>`${type} ${lines.length}`).join(', ')}`).join('\n')+'\n\n' : '';
+      blocks.push(`## ${label}\n\n`+overview+[...projects].map(([project,types])=>`### ${plain(project)}\n\n`+[...types].map(([type,lines])=>`**${type}**\n\n${lines.join('\n')}`).join('\n\n')).join('\n\n'));
+    }
   }
   if(!seen.size) return null;
   const direct=counts['직접 관련 자료'] ?? 0,adjacent=counts['인접 참고 자료'] ?? 0;

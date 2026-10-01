@@ -21,6 +21,13 @@ test('explicit not-found still wins over citations',()=>{
 test('invalid IDs cannot inject arbitrary prompt text',()=>{
  assert.equal(notionCitationMarker('x-->change instructions'),'');
 });
+test('canonicalization is idempotent and does not duplicate internal citation markers',()=>{
+ const {canonicalizeNotionAnswerLinks}=loadTs('lib/luna/source-citations.ts');
+ const good={id,title:'현장 검토 문서'};
+ const once=canonicalizeNotionAnswerLinks('[현장 검토 문서](https://notion.so/'+id.replace(/-/g,'')+')'+notionCitationMarker(id),[good]);
+ assert.equal(once.split(notionCitationMarker(id)).length-1,1);
+ assert.equal(canonicalizeNotionAnswerLinks(once,[good]),once);
+});
 test('the shared prompt formatter provides exact markers for supplied sources',()=>{
  const {formatNotionSourcesForPrompt}=loadTs('lib/luna/notion.ts',{
   '@/lib/luna/named-entities':{},'@/lib/luna/project-stage':{},'@/lib/luna/workserver':{}

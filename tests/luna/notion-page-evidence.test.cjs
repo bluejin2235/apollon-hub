@@ -2,6 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadTs, fakeDb } = require('./helpers.cjs');
 const { composePageEvidence, readIndexedNotionEvidence } = loadTs('lib/luna/notion-page-evidence.ts');
+test('batched full-body reads paginate past a large first page without losing later sources',async()=>{
+ const rows=Array.from({length:1100},(_,position)=>({page_id:'a',position,text:'큰 문서의 원문 구간 '+position}));
+ rows.push({page_id:'b',position:0,text:'작은 문서의 마지막 현장 검증 근거입니다.'});
+ const db=fakeDb({luna_notion_chunks:rows,luna_notion_pages:[{page_id:'empty',index_health:{state:'empty'}}]});
+ const read=await readIndexedNotionEvidence(db,['a','b','empty','missing'].map(id=>({id,title:id})),'검증',true);
+ assert.ok(read[0].evidence_passages.join('').includes('1099'));
+ assert.match(read[1].excerpt,/마지막 현장 검증/);
+ assert.equal(read[2].evidence_state,'empty');assert.equal(read[3].evidence_state,'missing');
+ assert.equal(db.calls.filter(c=>c.table==='luna_notion_chunks').length,2);
+});
 test('full-body windows preserve emoji across both overlapping boundaries',async()=>{
  const body='가'.repeat(5599)+'🌳'+'나'.repeat(398)+'🌲'+'현장 설치 근거'.repeat(200);
  const db=fakeDb({luna_notion_chunks:[{page_id:'emoji',position:0,text:body}]});

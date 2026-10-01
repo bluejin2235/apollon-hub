@@ -15,6 +15,12 @@ test('artifact semantics are grounded in the question and survive broad wording'
  assert.match(materialScopeRule(scope),/artifact_support/);
  assert.equal(parseMaterialRequestScope(q,{mode:'unknown',artifact:{quote:'계약서',meaning:'계약 문서'}}).artifact,undefined);
 });
+test('activity records retain preparation and discussion without inventing completion requirements',()=>{
+ const scope=parseMaterialRequestScope('빛마을 현장 시험 자료 찾아줘',{mode:'target_records',targets:['빛마을'],artifact:{quote:'현장 시험 자료',meaning:'현장 시험과 관련된 업무 기록',kind:'activity_records'}});
+ assert.equal(scope.artifact.kind,'activity_records');
+ assert.match(materialScopeRule(scope),/준비·계획·논의·진행·결과 기록 모두 직접 자료/);
+ assert.doesNotMatch(materialScopeRule(scope),/일정·계획·단순 언급은 mentions_artifact/);
+});
 test('invented target names cannot narrow a question and thematic requests stay broad',()=>{
  assert.equal(parseMaterialRequestScope('야외 조명 자료 찾아줘',{mode:'target_records',targets:['없는회사']}).mode,'unknown');
  assert.deepEqual(parseMaterialRequestScope('숲에 적용할 야간 연출 사례',{mode:'topic_references',targets:[]}),{mode:'topic_references',targets:[]});

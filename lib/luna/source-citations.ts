@@ -39,5 +39,6 @@ export function canonicalizeNotionAnswerLinks(answer:string, sources:Array<{id:s
     const title=source.title.replace(/[\r\n]+/g,' ').replace(/[\\\[\]*_`<>]/g,'\\$&');
     return `[${title}](https://www.notion.so/${compact(source.id)})${notionCitationMarker(source.id)}`;
   });
-  return linked.replace(/<!--luna-source:notion:([^>]*)-->/g,(marker,id:string)=>ids.has(id)?marker:'');
+  return linked.replace(/<!--luna-source:notion:([^>]*)-->/g,(marker,id:string)=>ids.has(id)?marker:'')
+    .replace(/(<!--luna-source:notion:[a-f0-9]{32}-->)(?:\s*\1)+/g,'$1');
 }

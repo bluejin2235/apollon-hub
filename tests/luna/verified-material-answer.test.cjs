@@ -17,6 +17,12 @@ test('every reviewed document survives grouping with adjacent evidence kept sepa
  assert.ok(answer.indexOf('조명 시험')>answer.indexOf('## 인접 참고 자료'));
  assert.ok(!/선택|정리할까요|골라/.test(answer));
 });
+test('multi-project inventories show project and type counts before the complete list',()=>{
+ const answer=verifiedMaterialAnswer('야외 자료 모두 찾아줘',{direct:[source(1,'기획안','가 공간'),source(2,'설계도','가 공간'),source(3,'시험 기록','나 공간')],adjacent:[]});
+ assert.match(answer,/프로젝트별 구성 \(2개 묶음\)/);
+ assert.match(answer,/\*\*가 공간\*\* · 2개 · 기획·제안 1, 설계 1/);
+ assert.equal((answer.match(/\]\(https:\/\/notion.so\//g)||[]).length,3);
+});
 test('source paths and honest unread-original limits remain visible',()=>{
  const s=source(1,'현장 시험');
  const answer=verifiedMaterialAnswer('현장 자료 찾아줘',{direct:[s],adjacent:[],basis:{[s.id]:{quote:'T:\\Project\\샘플 공간\\Test\\시험.pptx',reason:'원본의 위치만 확인했으며 시험 결과는 확인하지 못했습니다.'}}});

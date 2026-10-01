@@ -42,6 +42,11 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
             proof.quote.trim().length<2 || proof.quote.length>240 || !text || !normalized(text).includes(normalized(proof.quote))) {
             return unresolved('artifact_self_or_link_evidence_required');
           }
+          if(proof.relation==='contains_artifact' && (typeof proof.location!=='string' ||
+            !/^(https:\/\/|[a-z]:[\\/]|\\\\)/i.test(proof.location) ||
+            !normalized(sources[index as number]?.excerpt ?? '').includes(normalized(proof.location)))) {
+            return unresolved('contained_artifact_original_location_required');
+          }
         }
         const quote = typeof index === 'number' && Number.isInteger(index) && typeof span === 'number' && Number.isInteger(span)
           ? spans[index]?.[span] : undefined;

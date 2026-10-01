@@ -2,6 +2,17 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {prepareReviewEvidence}=loadTs('lib/luna/review-evidence-references.ts');
 const {validateNotionEvidenceReview}=loadTs('lib/luna/notion-evidence-review.ts');
+test('a document mentioning a deliverable needs an actual source location to contain that artifact',()=>{
+ const sources=[{id:'a',title:'산출물 목록',excerpt:'최종 보고서 작성 예정. 현재 원본은 https://example.com/report.pdf 에 보관한다.'}];
+ const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'보고서',meaning:'보고서 자체'});
+ const evidence={index:0,span:0,reason:'실제 보고서 원본의 위치를 제공하는 자료',request_match:{target:true,artifact:true,phase:true},artifact_support:{relation:'contains_artifact',source:'body',quote:'보고서'}};
+ for(const location of [undefined,'https://example.com/made-up.pdf']) {
+  const review=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,artifact_support:{...evidence.artifact_support,location}}]});
+  assert.equal(review.review_issues['0'],'contained_artifact_original_location_required');
+ }
+ const review=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,artifact_support:{...evidence.artifact_support,location:'https://example.com/report.pdf'}}]});
+ assert.equal(validateNotionEvidenceReview(sources,review,true).direct.length,1);
+});
 test('a requested artifact needs its own grounded role, not only matching project flags',()=>{
  const sources=[{id:'a',title:'현장 검토보고서',excerpt:'이 검토보고서는 현장 조명의 시야 간섭을 측정한 결과를 정리한다.'}];
  const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'검토보고자료',meaning:'검토를 보고하는 문서'});
