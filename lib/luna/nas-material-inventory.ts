@@ -1,9 +1,9 @@
 import type { LunaCard } from '@/lib/luna/tavily';
 import type { NotionSource } from '@/lib/luna/notion';
-import { reviewAllNotionEvidence } from '@/lib/luna/notion-evidence-review';
+import { reviewAllNotionEvidence, type EvidenceReviewer } from '@/lib/luna/notion-evidence-review';
 
 /** A path proves a retrievable location, never the contents of the original. */
-export async function reviewNasMaterialCards(cards: LunaCard[], reviewer: (sources:NotionSource[])=>Promise<Record<string,unknown>|null>) {
+export async function reviewNasMaterialCards(cards: LunaCard[], reviewer: EvidenceReviewer) {
   const candidates=cards.filter(card=>card.type==='nas' && Boolean(card.raw_path));
   const sources=candidates.map((card,index):NotionSource=>({id:`nas-location:${index}`,title:card.title,url:'',
     excerpt:`원본 내용은 읽지 않음. 파일명과 저장 위치만 확인됨.\n${card.title}\n${card.raw_path}`,nas_path:card.raw_path}));

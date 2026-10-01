@@ -2,6 +2,17 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {applyNotionEvidenceReview,validateNotionEvidenceReview,reviewedNotionInventorySupplement,reviewAllNotionEvidence}=loadTs('lib/luna/notion-evidence-review.ts');
 const sources=Array.from({length:8},(_,i)=>({id:String(i),excerpt:'원문 '+i}));
+test('repair receives the actual failed condition without re-reviewing settled documents',async()=>{
+ const docs=[{id:'ok',excerpt:'실제 측정에 사용한 현장 조건과 결과 기록입니다.'},{id:'repair',excerpt:'조명 간섭과 기구 위치를 비교한 설치 기록입니다.'}];
+ const calls=[];
+ const result=await reviewAllNotionEvidence(docs,async(batch,attempt)=>{
+  calls.push({ids:batch.map(s=>s.id),attempt});
+  return {direct:batch.map((_,i)=>i),adjacent:[],unrelated:[],review_issues:attempt?{}:{'1':'artifact_self_or_link_evidence_required'},
+   evidence:batch.map((s,index)=>({index,quote:!attempt&&index===1?'':s.excerpt,reason:'원문에 명시된 실제 현장 조건을 확인하는 자료'}))};
+ });
+ assert.equal(calls.length,2);assert.deepEqual(calls[1],{ids:['repair'],attempt:{repair:true,issue:'artifact_self_or_link_evidence_required'}});
+ assert.deepEqual(result.unverifiedIds,[]);
+});
 test('bounded review concurrency includes individual retries without losing any document',async()=>{
  const docs=Array.from({length:100},(_,i)=>({id:String(i),title:'검증 자료',excerpt:'실제 측정한 설치 높이와 주변 밝기 기록입니다.'}));
  let active=0,peak=0;

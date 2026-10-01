@@ -1,8 +1,8 @@
 import type { NotionSource } from '@/lib/luna/notion';
 import type { ReadNotionEvidence } from '@/lib/luna/notion-page-evidence';
-import { reviewAllNotionEvidence } from '@/lib/luna/notion-evidence-review';
+import { reviewAllNotionEvidence, type EvidenceReviewer } from '@/lib/luna/notion-evidence-review';
 
-type Reviewer = (sources: NotionSource[]) => Promise<Record<string, unknown> | null>;
+type Reviewer = EvidenceReviewer;
 export async function reviewEvidenceDocuments(sources: ReadNotionEvidence[], reviewer: Reviewer, verifier?: Reviewer) {
   const origins=new Map<string,NotionSource>();
   const windows=sources.flatMap(({evidence_passages,evidence_state,...source})=>(evidence_state==='empty' || evidence_state==='missing' || evidence_state==='failed' ? [] : evidence_passages?.length ? evidence_passages : [source.excerpt??'']).map((excerpt,i)=>{

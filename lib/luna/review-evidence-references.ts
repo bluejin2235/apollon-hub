@@ -1,9 +1,10 @@
 import type { NotionSource } from '@/lib/luna/notion';
 import { sliceUnicode } from '@/lib/luna/unicode-text';
+import type { MaterialArtifactConstraint } from '@/lib/luna/material-request-scope';
 
 /** Model selects immutable source spans instead of retyping a quotation.
  * The server still validates the resulting exact quote against the source. */
-export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false, requireRequestMatch = false, requireTargetForAdjacent = false) {
+export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false, requireRequestMatch = false, requireTargetForAdjacent = false, artifact?: MaterialArtifactConstraint) {
   const spans = sources.map(source => {
     const text = (source.excerpt ?? '').replace(/\s+/g, ' ').trim();
     const result: string[] = [];
@@ -17,10 +18,12 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
     resolve(review: Record<string, unknown> | null): Record<string, unknown> | null {
       if (!review || !Array.isArray(review.evidence)) return review;
       const excluded = new Set<number>();
+      const issues:Record<string,string>={};
       const evidence = review.evidence.map(item => {
         if (!item || typeof item !== 'object') return item;
         const value = item as Record<string, unknown>;
-        if (!Object.hasOwn(value, 'span')) return verify ? {...value, quote: ''} : value;
+        const unresolved=(issue:string)=>{issues[String(value.index)]=issue;return {...value,quote:''};};
+        if (!Object.hasOwn(value, 'span')) return verify ? unresolved('missing_source_span') : value;
         const index = value.index, span = value.span;
         if (verify && requireRequestMatch && Array.isArray(review.direct) && review.direct.includes(index)) {
           // A project match alone is not an artifact/phase match. Missing
@@ -28,7 +31,16 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
           const match = value.request_match as Record<string,unknown> | undefined;
           if (!match || typeof match !== 'object' ||
               !['target','artifact','phase'].every(key => match[key] === true)) {
-            return {...value, quote: ''};
+            return unresolved('direct_request_conditions_not_confirmed');
+          }
+        }
+        if(verify && artifact && Array.isArray(review.direct) && review.direct.includes(index)) {
+          const proof=value.artifact_support as Record<string,unknown>|undefined;
+          const text=typeof index==='number' ? proof?.source==='title' ? sources[index]?.title : proof?.source==='body' ? sources[index]?.excerpt : undefined : undefined;
+          const normalized=(text:string)=>text.replace(/\s+/g,' ').trim();
+          if(!proof || !['is_artifact','contains_artifact'].includes(String(proof.relation)) || typeof proof.quote!=='string' ||
+            proof.quote.trim().length<2 || proof.quote.length>240 || !text || !normalized(text).includes(normalized(proof.quote))) {
+            return unresolved('artifact_self_or_link_evidence_required');
           }
         }
         const quote = typeof index === 'number' && Number.isInteger(index) && typeof span === 'number' && Number.isInteger(span)
@@ -41,7 +53,7 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
             if (typeof index === 'number') excluded.add(index);
             return {...value,quote:''};
           }
-          if (match?.target !== true) return {...value,quote:''};
+          if (match?.target !== true) return unresolved('adjacent_target_not_confirmed');
         }
         // A visual motif can answer a visual-reference request directly, but
         // cannot become a transferable implementation fact by adding a caveat.
@@ -59,7 +71,8 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
           && typeof value.limitation === 'string' && value.limitation.trim().length >= 8;
         // Missing transfer evidence is unresolved, so the normal retry path must
         // inspect it again; it must never silently become a supported reference.
-        if (verify && adjacent && !transferable) return {...value, quote: ''};
+        if (verify && adjacent && !transferable) return unresolved('adjacent_fact_type_span_application_and_limit_required');
+        if(!(verify && adjacent ? fact : quote)) return unresolved('source_span_out_of_range');
         return {...value, quote: (verify && adjacent ? fact : quote) ?? '', ...(verify && adjacent ? {
           reason: `${value.application} 적용 한계: ${value.limitation}`
         } : {})};
@@ -67,7 +80,7 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
       return {...review,
         adjacent:Array.isArray(review.adjacent) ? review.adjacent.filter(index=>!excluded.has(index as number)) : review.adjacent,
         unrelated:Array.isArray(review.unrelated) ? [...review.unrelated,...excluded] : review.unrelated,
-        evidence};
+        evidence,review_issues:issues};
     }
   };
 }
@@ -75,6 +88,15 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
 export const REVIEW_EVIDENCE_REFERENCE_RULE = `본문은 [근거 번호]로 나눠 제공한다. 포함하는 문서는 해당 문서의 관련성을 입증하는 근거 번호를 선택하고 이유를 쓴다. 인용문을 새로 쓰지 않는다. evidence 항목은 {"index":문서번호,"span":근거번호,"reason":"질문과 연결되는 구체적 이유"} 형식이다. 근거 번호는 해당 문서 안에서만 유효하다.`;
 
 export const REVIEW_REQUEST_MATCH_RULE = `direct의 evidence에는 request_match:{"target":true,"artifact":true,"phase":true}를 반드시 적는다. target은 요청한 프로젝트·대상, artifact는 요청한 자료 종류, phase는 요청한 단계·시즌·버전이다. 질문에서 지정하지 않은 조건만 true로 간주한다. 지정된 조건은 본문 또는 명시된 소속으로 입증해야 true다. 하나라도 불일치하거나 확인할 수 없으면 direct가 아니다. 실제 관련 사실이 있으면 adjacent 기준으로 판정하고, 단순한 같은 프로젝트 자료는 navigation 또는 unrelated로 분류한다. reason에 실제 문서 종류와 확인된 단계, 질문과 맞는 이유를 적되 원문에 없는 시즌을 만들어 쓰지 않는다.`;
+
+/** A one-document repair uses one enum instead of four potentially conflicting
+ * index lists. The semantic and source-evidence requirements stay unchanged. */
+export const REVIEW_SINGLE_SOURCE_RULE = `이번에는 이전 출력 형식 또는 근거 검증에 실패한 문서 한 개만 다시 확인한다. 이전 판단을 정답으로 가정하지 않는다. 근거가 없으면 무관으로 결정하고, 인접으로 남기려면 모든 필수 근거 필드를 채운다. 출력 형식만 다음으로 변경한다: {"decision":"direct|adjacent|navigation|unrelated","evidence":{"span":번호,"reason":"구체적 이유", 나머지 필수 검증 필드}}. 인덱스 배열을 쓰지 않는다. 직접·인접이 아니면 evidence는 null이다.`;
+export function normalizeSingleSourceReview(value:Record<string,unknown>|null):Record<string,unknown>|null {
+  if(!value || !['direct','adjacent','navigation','unrelated'].includes(String(value.decision))) return null;
+  return {direct:[],adjacent:[],navigation:[],unrelated:[],[String(value.decision)]:[0],
+    evidence:value.evidence && typeof value.evidence==='object' && !Array.isArray(value.evidence) ? [{...value.evidence as Record<string,unknown>,index:0}] : []};
+}
 
 export const REVIEW_TRANSFER_RULE = `이 검증은 이전 판단 없이 원문에서 독립적으로 수행한다. 인접 여부를 정하기 전에 근거 자체의 종류를 분류한다.
 adjacent 항목은 evidence에 fact_kind를 반드시 쓴다: implementation_method(실제로 구현하는 방법), design_constraint(설계 조건·수치·선정기준), design_review(구체적 설계 대안·기술 검토 질문), test_result(실험·검증 결과), operation_condition(운영 조건), visual_motif(화면 묘사·상징·분위기), general_description(일반 소개·가능성).

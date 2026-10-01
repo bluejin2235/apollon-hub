@@ -49,6 +49,8 @@ export function createEvalReviewCheckpoint(options: {
           const proof=valid.basis?.[source.id];
           const decision:Record<string,unknown>={direct:[],adjacent:[],navigation:[],unrelated:[],
             evidence:proof ? [{index:0,quote:proof.quote,reason:proof.reason}] : []};
+          const issue=(result.review_issues as Record<string,string>|undefined)?.[String(j)];
+          if(issue) decision.review_issues={'0':issue};
           decision[kind]=[0];
           decisions[index]=decision;
           if(!valid.unsupportedIds?.includes(source.id)) {
@@ -66,13 +68,16 @@ export function createEvalReviewCheckpoint(options: {
         }
       }
       const combined:Record<string,unknown[]>={direct:[],adjacent:[],navigation:[],unrelated:[],evidence:[]};
+      const issues:Record<string,string>={};
       decisions.forEach((decision,index)=>{
         for(const kind of ['direct','adjacent','navigation','unrelated']) {
           if((decision![kind] as number[]).includes(0)) combined[kind].push(index);
         }
         for(const item of (decision!.evidence ?? []) as Record<string,unknown>[]) combined.evidence.push({...item,index});
+        const issue=(decision!.review_issues as Record<string,string>|undefined)?.['0'];
+        if(issue) issues[String(index)]=issue;
       });
-      return combined;
+      return {...combined,review_issues:issues};
     }
   };
 }

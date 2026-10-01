@@ -9,7 +9,7 @@ export function requestsAllMaterials(text: string): boolean {
 export function isMaterialSearch(text: string): boolean {
   if (requestsAllMaterials(text)) return true;
   if (/(?:작성|만들어|써\s*줘|뜻|정의|무슨\s*의미)/.test(text)) return false;
-  return /자료|문서|파일|보고서|제안서|견적서/.test(text) &&
+  return /자료|문서|파일|보고서|제안서|견적서|계약서|도면|회의록|시험결과/.test(text) &&
     /찾|검색|보여|모아|관련|어디|목록/.test(text);
 }
 

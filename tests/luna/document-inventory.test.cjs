@@ -7,6 +7,22 @@ const {buildDocumentInventory}=loadTs('lib/luna/document-inventory.ts',{
  '@/lib/luna/notion-project-directory':{requestedDirectoryProjects:()=>[],readDirectoryMaterials:async(_db,projects)=>{follows=projects.map(p=>p.key);return projects.flatMap(p=>p.pageIds.map(page));}}
 });
 const reviewer=async rows=>{const direct=rows.flatMap((s,i)=>s.excerpt.includes(relevant)?[i]:[]);return {direct,adjacent:[],unrelated:rows.flatMap((s,i)=>direct.includes(i)?[]:[i]),evidence:direct.map(index=>({index,quote:relevant,reason:'실제 공간 설치에 필요한 도면과 시험 기록이다'}))};};
+test('a useful adjacent reference does not open its entire unrelated project',async()=>{
+ const db=fakeDb({luna_notion_chunks:[{page_id:'ref',position:0,text:relevant},{page_id:'other',position:0,text:relevant}]});
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('ref')],directory:[{key:'reference-project',pageIds:['ref','other']}],review:async rows=>({
+  direct:[],adjacent:rows.map((_,i)=>i),unrelated:[],evidence:rows.map((_,index)=>({index,quote:relevant,reason:'설치 조건에 한해 참고할 수 있는 다른 공간의 기록'}))
+ })});
+ assert.deepEqual(result.adjacent.map(s=>s.id),['ref']);assert.deepEqual(result.reachedProjects,[]);
+ assert.deepEqual(result.inspected.map(s=>s.id),['ref']);
+});
+test('actual ancestry prevents a direct record from expanding unrelated derived memberships',async()=>{
+ const db=fakeDb({luna_notion_chunks:['seed','actual-late','wrong-late'].map(page_id=>({page_id,position:0,text:relevant}))});
+ const result=await buildDocumentInventory(db,{query:'설치 자료',sources:[page('seed')],review:reviewer,directory:[
+  {key:'actual',pageIds:['seed','actual-late'],ancestorPageIds:['seed','actual-late']},
+  {key:'derived',pageIds:['seed','wrong-late'],ancestorPageIds:[]}
+ ]});
+ assert.deepEqual(result.reachedProjects,['actual']);assert.deepEqual(result.direct.map(s=>s.id),['seed','actual-late']);
+});
 test('reads late passages and follows relevant actual memberships, never unrelated seeds',async()=>{
  const docs=[page('seed'),page('wrong')];
  const db=fakeDb({luna_notion_chunks:[

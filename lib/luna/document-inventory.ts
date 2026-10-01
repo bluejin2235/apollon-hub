@@ -5,8 +5,9 @@ import { reviewEvidenceDocuments } from '@/lib/luna/evidence-document-review';
 import { loadNotionRelationGraph, readRelationCandidates } from '@/lib/luna/notion-relation-navigation';
 import { readDirectoryMaterials, requestedDirectoryProjects, type NotionDirectoryProject } from '@/lib/luna/notion-project-directory';
 import { readProjectMentions } from '@/lib/luna/notion-project-mentions';
+import type { EvidenceReviewer } from '@/lib/luna/notion-evidence-review';
 
-type Reviewer = (sources: NotionSource[]) => Promise<Record<string, unknown> | null>;
+type Reviewer = EvidenceReviewer;
 
 /** Only complete, identical bodies can share a review. Never merge by title alone. */
 function duplicateKey(source: ReadNotionEvidence): string | null {
@@ -81,8 +82,18 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
       }
       if(direct.has(canonical) || adjacent.has(canonical) || source.evidence_state==='empty' || source.evidence_state==='missing') navigation.add(source.id);
     }
-    const projects=input.directory.filter(p=>!reached.has(p.key) && (plannedProjects.has(p.key) || p.pageIds.some(id=>navigation.has(id) &&
-      (direct.has(aliases[id] ?? id) || adjacent.has(aliases[id] ?? id)))));
+    // A useful reference justifies reading that record and its explicit links,
+    // not recursively opening every member of every derived project membership.
+    // Whole-project expansion needs direct evidence in its actual ancestry (or
+    // an explicit directory selection). Retain adjacent records in the answer.
+    const projects=input.directory.filter(project=>{
+      if(reached.has(project.key)) return false;
+      if(plannedProjects.has(project.key)) return true;
+      return project.pageIds.some(id=>{
+        const ancestry=inspected.get(id)?.project_ancestry;
+        return navigation.has(id) && direct.has(aliases[id] ?? id) && (!ancestry?.length || ancestry.includes(project.key));
+      });
+    });
     projects.forEach(p=>reached.add(p.key));
     const linkedIds=new Set<string>();
     for(const id of navigation) {

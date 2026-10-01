@@ -4,8 +4,9 @@ import type { NotionSource } from '@/lib/luna/notion';
 import type { ReadNotionEvidence } from '@/lib/luna/notion-page-evidence';
 import { reviewEvidenceDocuments } from '@/lib/luna/evidence-document-review';
 import { sliceUnicode } from '@/lib/luna/unicode-text';
+import type { EvidenceReviewer } from '@/lib/luna/notion-evidence-review';
 
-type Reviewer = (sources: NotionSource[]) => Promise<Record<string, unknown> | null>;
+type Reviewer = EvidenceReviewer;
 
 /** Wiki retrieval scores are candidates, not a relevance approval. Read complete
  * sections before allowing either prompt injection or a visible citation. */

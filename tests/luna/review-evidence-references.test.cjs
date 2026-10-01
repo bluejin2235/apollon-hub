@@ -2,6 +2,26 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {prepareReviewEvidence}=loadTs('lib/luna/review-evidence-references.ts');
 const {validateNotionEvidenceReview}=loadTs('lib/luna/notion-evidence-review.ts');
+test('a requested artifact needs its own grounded role, not only matching project flags',()=>{
+ const sources=[{id:'a',title:'현장 검토보고서',excerpt:'이 검토보고서는 현장 조명의 시야 간섭을 측정한 결과를 정리한다.'}];
+ const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'검토보고자료',meaning:'검토를 보고하는 문서'});
+ const proof={index:0,span:0,reason:'요청한 현장 검토보고서 자체의 측정 기록이다.',request_match:{target:true,artifact:true,phase:true}};
+ for(const artifact_support of [undefined,{relation:'mentions_artifact',source:'title',quote:'검토보고서'},{relation:'is_artifact',source:'body',quote:'본문에 없는 완료보고서'}]) {
+  const r=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...proof,artifact_support}]});
+  assert.deepEqual(validateNotionEvidenceReview(sources,r,true).unsupportedIds,['a']);
+  assert.equal(r.review_issues['0'],'artifact_self_or_link_evidence_required');
+ }
+ const r=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...proof,artifact_support:{relation:'is_artifact',source:'title',quote:'검토보고서'}}]});
+ assert.equal(validateNotionEvidenceReview(sources,r,true).direct.length,1);
+});
+test('single-source repair cannot generate contradictory or unknown classifications',()=>{
+ const {normalizeSingleSourceReview}=loadTs('lib/luna/review-evidence-references.ts');
+ assert.equal(normalizeSingleSourceReview({decision:'probably'}),null);
+ const r=normalizeSingleSourceReview({decision:'unrelated',evidence:null});
+ assert.deepEqual(r,{direct:[],adjacent:[],navigation:[],unrelated:[0],evidence:[]});
+ const direct=normalizeSingleSourceReview({decision:'direct',evidence:{index:99,span:0,reason:'실제 근거를 확인한 관련 문서'}});
+ assert.equal(direct.evidence[0].index,0);
+});
 test('display project cannot hide real ancestry or parent path from review',()=>{
  const prepared=prepareReviewEvidence([{id:'a',title:'보고서',project_key:'다른 표시명',project_memberships:['연결 이름'],project_ancestry:['상위사업 시즌3'],path_titles:['원본 경로'],excerpt:'실제 제작 단계와 고객사 보고를 기록한 문서입니다.'}],true,true);
  for(const value of ['다른 표시명','상위사업 시즌3','원본 경로','연결 이름']) assert.ok(prepared.text.includes(value));

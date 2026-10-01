@@ -48,10 +48,10 @@ import { reviewNasMaterialCards } from '@/lib/luna/nas-material-inventory';
 import { loadNotionProjectDirectory, describeNotionProjectDirectory, bareDirectoryLookup, namedDirectorySubjects, requestedDirectoryProjects, selectDirectoryProjects, readDirectoryMaterials, type NotionDirectoryProject } from "@/lib/luna/notion-project-directory";
 import { PROJECT_EXPLORATION_RULE, reviewProjectExploration } from '@/lib/luna/project-exploration';
 import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
-import { NOTION_EVIDENCE_VERIFY, NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
+import { NOTION_EVIDENCE_VERIFY, NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence, type ReviewAttempt } from "@/lib/luna/notion-evidence-review";
 import { buildDocumentInventory } from '@/lib/luna/document-inventory';
 import { reviewWikiEvidence } from '@/lib/luna/wiki-evidence-review';
-import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE, REVIEW_TRANSFER_RULE, REVIEW_REQUEST_MATCH_RULE } from '@/lib/luna/review-evidence-references';
+import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE, REVIEW_TRANSFER_RULE, REVIEW_REQUEST_MATCH_RULE, REVIEW_SINGLE_SOURCE_RULE, normalizeSingleSourceReview } from '@/lib/luna/review-evidence-references';
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -1884,7 +1884,7 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         let materialRequestScope: MaterialRequestScope = {mode:'unknown',targets:[]};
         if (isMaterialSearch(searchIntentText)) {
           try {
-            const scope = await lunaLlmComplete(admin,{tier:'C',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:384});
+            const scope = await lunaLlmComplete(admin,{tier:'C',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:768});
             materialRequestScope=parseMaterialRequestScope(searchIntentText,parseJsonObject(scope.text));
             pushModelStep(modelSteps,admin,{label:'요청 범위 확인',tier:'C',model:scope.model_label,model_id:scope.model_id,usage:scope.usage});
           } catch { /* Unknown remains explicit; never invent a target on failure. */ }
@@ -3526,26 +3526,30 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           const byId = new Map(notionSources.map(source => [source.id, source]));
           for (const source of directorySources) byId.set(source.id, {...byId.get(source.id), ...source});
           notionSources = [...byId.values()];
-          const reviewBatch = async (batch: NotionSource[], verify=false) => {
+          const reviewBatch = async (batch: NotionSource[], verify=false, attempt?:ReviewAttempt) => {
             const options = {
               tier:'B' as const,feature:'eval_grade' as const,system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE+'\n'+REVIEW_REQUEST_MATCH_RULE : '')+'\n'+requestScopeRule,
               maxTokens:8192,reasoningEffort:verify ? 'medium' as const : 'low' as const
             };
             const work = async (pending: NotionSource[]) => {
-              const evidence = prepareReviewEvidence(pending, verify, true, targetRecordLookup);
-              const review=await lunaLlmComplete(admin, {...options,user:`질문: ${searchIntentText}\n\n${evidence.text}`});
+              const evidence = prepareReviewEvidence(pending, verify, true, targetRecordLookup, materialRequestScope.artifact);
+              const repair=attempt?.repair && pending.length===1;
+              const review=await lunaLlmComplete(admin, {...options,
+                system:options.system+(repair ? '\n'+REVIEW_SINGLE_SOURCE_RULE : ''),
+                user:`질문: ${searchIntentText}\n\n${evidence.text}${repair ? `\n\n이전 검증 실패 유형: ${attempt.issue}. 이 문제를 해결하되 분류 기준을 낮추지 않는다.` : ''}`});
               pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
-              return evidence.resolve(parseJsonObject(review.text));
+              const parsed=parseJsonObject(review.text);
+              return evidence.resolve(repair ? normalizeSingleSourceReview(parsed) : parsed);
             };
             return evaluation && execution.reviewCheckpoint
               ? execution.reviewCheckpoint.review({question:searchIntentText,options,model:tierBCfg}, batch, work)
               : work(batch);
           };
           const reviewed=await buildDocumentInventory(admin,{query:searchIntentText,sources:notionSources,
-            directory:cachedProjectDirectory,review:batch=>reviewBatch(batch),verify:batch=>reviewBatch(batch,true)});
-          reviewedNasInventory=await reviewNasMaterialCards(cards,batch=>reviewBatch(batch,true));
+            directory:cachedProjectDirectory,review:(batch,attempt)=>reviewBatch(batch,false,attempt),verify:(batch,attempt)=>reviewBatch(batch,true,attempt)});
+          reviewedNasInventory=await reviewNasMaterialCards(cards,(batch,attempt)=>reviewBatch(batch,true,attempt));
           const reviewedWiki = await reviewWikiEvidence(wikiSources, wikiDocs,
-            batch => reviewBatch(batch), batch => reviewBatch(batch, true));
+            (batch,attempt) => reviewBatch(batch,false,attempt), (batch,attempt) => reviewBatch(batch,true,attempt));
           wikiSources = reviewedWiki.sources;
           ({public: publicWikiSources, private: privateWikiRefs} = splitWikiSourcesByVisibility(wikiSources));
           reviewedWikiSources = publicWikiSources;
