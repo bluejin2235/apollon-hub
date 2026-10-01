@@ -6,6 +6,23 @@ const {EvalReviewPaused} = loadTs('lib/luna/eval-continuation-control.ts', {}, c
 const {reviewAllNotionEvidence} = loadTs('lib/luna/notion-evidence-review.ts', {}, cache);
 const source = id => ({id, title:id, excerpt:'A concrete installation constraint from the original source.'});
 const result = batch => ({direct:batch.map((_,i)=>i), adjacent:[], unrelated:[], evidence:batch.map((_,i)=>({index:i, quote:'A concrete installation constraint', reason:'This source contains an explicit design constraint.'}))});
+test('resuming the same question preserves its scope and review identity while new rules get a fresh interpretation',async()=>{
+ const entries={};let interpretations=0,reviews=0,persisted;
+ const options={entries,deadline:Date.now()+600000,save:async()=>{persisted=JSON.parse(JSON.stringify(entries));}};
+ const work=async()=>({mode:'topic_references',targets:[],artifact:{quote:'시험 자료',meaning:`같은 요청을 다르게 표현한 범위 ${++interpretations}`,kind:'activity_records'}});
+ const identity={question:'야외 시험 자료',rule:'same scope rule'};
+ const first=createEvalReviewCheckpoint(options),scope=await first.scope(identity,work);
+ await first.review({scope},[source('a')],async b=>{reviews++;return result(b);});
+ const resumed=createEvalReviewCheckpoint({...options,entries:persisted});
+ const resumedScope=await resumed.scope(identity,work);
+ await resumed.review({scope:resumedScope},[source('a')],async b=>{reviews++;return result(b);});
+ assert.deepEqual(resumedScope,scope);assert.equal(interpretations,1);assert.equal(reviews,1);
+ await resumed.scope({...identity,rule:'changed'},work);assert.equal(interpretations,2);
+});
+test('scope checkpoint write failures suspend the run instead of silently changing interpretation',async()=>{
+ const cp=createEvalReviewCheckpoint({entries:{},deadline:Date.now()+600000,save:async()=>{throw Error('offline');}});
+ await assert.rejects(cp.scope('q',async()=>({mode:'unknown',targets:[]})),EvalReviewPaused);
+});
 
 test('a serialized checkpoint resumes all documents without rerunning completed batches', async () => {
   const realNow=Date.now; let clock=0, persisted={}, calls=0;

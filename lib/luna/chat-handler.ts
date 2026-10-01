@@ -1884,10 +1884,18 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         let materialRequestScope: MaterialRequestScope = {mode:'unknown',targets:[]};
         if (isMaterialSearch(searchIntentText)) {
           try {
-            const scope = await lunaLlmComplete(admin,{tier:'C',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:768});
-            materialRequestScope=parseMaterialRequestScope(searchIntentText,parseJsonObject(scope.text));
-            pushModelStep(modelSteps,admin,{label:'요청 범위 확인',tier:'C',model:scope.model_label,model_id:scope.model_id,usage:scope.usage});
-          } catch { /* Unknown remains explicit; never invent a target on failure. */ }
+            const classifyScope=async()=>{
+              const scope = await lunaLlmComplete(admin,{tier:'C',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:768});
+              pushModelStep(modelSteps,admin,{label:'요청 범위 확인',tier:'C',model:scope.model_label,model_id:scope.model_id,usage:scope.usage});
+              return parseMaterialRequestScope(searchIntentText,parseJsonObject(scope.text));
+            };
+            materialRequestScope=evaluation && execution.reviewCheckpoint
+              ? await execution.reviewCheckpoint.scope({question:searchIntentText,rule:MATERIAL_SCOPE_RULE},classifyScope)
+              : await classifyScope();
+          } catch(error) {
+            if(error instanceof EvalReviewPaused) throw error;
+            /* Unknown remains explicit; never invent a target on failure. */
+          }
         }
         const targetRecordLookup=materialRequestScope.mode==='target_records';
         const requestScopeRule=materialScopeRule(materialRequestScope);
