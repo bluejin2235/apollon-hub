@@ -21,6 +21,13 @@ test('activity records retain preparation and discussion without inventing compl
  assert.match(materialScopeRule(scope),/준비·계획·논의·진행·결과 기록 모두 직접 자료/);
  assert.doesNotMatch(materialScopeRule(scope),/일정·계획·단순 언급은 mentions_artifact/);
 });
+test('spacing normalization cannot silently remove a compound artifact restriction',()=>{
+ for(const [question,quote,expected] of [['빛마을 검토보고자료 찾아줘','검토 보고 자료','검토보고자료'],['빛마을 검토 보고 자료 찾아줘','검토보고자료','검토 보고 자료']]) {
+  const scope=parseMaterialRequestScope(question,{mode:'target_records',targets:['빛마을'],artifact:{quote,meaning:'검토 내용을 보고하기 위해 작성된 자료',kind:'document_type'}});
+  assert.equal(scope.artifact.quote,expected);assert.ok(question.includes(scope.artifact.quote));
+ }
+ assert.equal(parseMaterialRequestScope('빛마을 일반 자료 찾아줘',{artifact:{quote:'검토보고자료',meaning:'검토 문서'}}).artifact,undefined);
+});
 test('invented target names cannot narrow a question and thematic requests stay broad',()=>{
  assert.equal(parseMaterialRequestScope('야외 조명 자료 찾아줘',{mode:'target_records',targets:['없는회사']}).mode,'unknown');
  assert.deepEqual(parseMaterialRequestScope('숲에 적용할 야간 연출 사례',{mode:'topic_references',targets:[]}),{mode:'topic_references',targets:[]});

@@ -1885,8 +1885,8 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
         if (isMaterialSearch(searchIntentText)) {
           try {
             const classifyScope=async()=>{
-              const scope = await lunaLlmComplete(admin,{tier:'C',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:768});
-              pushModelStep(modelSteps,admin,{label:'요청 범위 확인',tier:'C',model:scope.model_label,model_id:scope.model_id,usage:scope.usage});
+              const scope = await lunaLlmComplete(admin,{tier:'B',feature:'understand',system:MATERIAL_SCOPE_RULE,user:searchIntentText,maxTokens:1536,reasoningEffort:'low'});
+              pushModelStep(modelSteps,admin,{label:'요청 범위 확인',tier:'B',model:scope.model_label,model_id:scope.model_id,usage:scope.usage});
               return parseMaterialRequestScope(searchIntentText,parseJsonObject(scope.text));
             };
             materialRequestScope=evaluation && execution.reviewCheckpoint

@@ -6,7 +6,7 @@ test('a document mentioning a deliverable needs an actual source location to con
  const sources=[{id:'a',title:'산출물 목록',excerpt:'최종 보고서 작성 예정. 현재 원본은 https://example.com/report.pdf 에 보관한다.'}];
  const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'보고서',meaning:'보고서 자체'});
  const evidence={index:0,span:0,reason:'실제 보고서 원본의 위치를 제공하는 자료',request_match:{target:true,artifact:true,phase:true},artifact_support:{relation:'contains_artifact',source:'body',quote:'보고서'}};
- for(const location of [undefined,'https://example.com/made-up.pdf']) {
+ for(const location of [undefined,'','https://example.com/made-up.pdf']) {
   const review=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,artifact_support:{...evidence.artifact_support,location}}]});
   assert.equal(review.review_issues['0'],'contained_artifact_original_location_required');
  }
@@ -32,6 +32,16 @@ test('single-source repair cannot generate contradictory or unknown classificati
  assert.deepEqual(r,{direct:[],adjacent:[],navigation:[],unrelated:[0],evidence:[]});
  const direct=normalizeSingleSourceReview({decision:'direct',evidence:{index:99,span:0,reason:'실제 근거를 확인한 관련 문서'}});
  assert.equal(direct.evidence[0].index,0);
+});
+test('an indexed relative NAS path remains valid original-location evidence without inventing a drive',()=>{
+ const nas_path='02 Project\\새 공간\\계약\\계약.zip';
+ const sources=[{id:'nas-location:0',title:'계약.zip',nas_path,excerpt:`원본은 읽지 않았고 저장 위치만 확인됨. ${nas_path}`}];
+ const prepared=prepareReviewEvidence(sources,true,true,false,{quote:'계약서',meaning:'계약 문서',kind:'document_type'});
+ const evidence={index:0,span:0,reason:'요청한 계약 문서가 담긴 압축파일의 실제 저장 위치',request_match:{target:true,artifact:true,phase:true},artifact_support:{relation:'contains_artifact',source:'title',quote:'계약.zip',location:nas_path}};
+ const result=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[evidence]});
+ assert.equal(validateNotionEvidenceReview(sources,result,true).direct.length,1);
+ const unindexed=prepareReviewEvidence([{...sources[0],nas_path:undefined}],true,true,false,{quote:'계약서',meaning:'계약 문서'}).resolve({direct:[0],adjacent:[],unrelated:[],evidence:[evidence]});
+ assert.equal(unindexed.review_issues['0'],'contained_artifact_original_location_required');
 });
 test('display project cannot hide real ancestry or parent path from review',()=>{
  const prepared=prepareReviewEvidence([{id:'a',title:'보고서',project_key:'다른 표시명',project_memberships:['연결 이름'],project_ancestry:['상위사업 시즌3'],path_titles:['원본 경로'],excerpt:'실제 제작 단계와 고객사 보고를 기록한 문서입니다.'}],true,true);

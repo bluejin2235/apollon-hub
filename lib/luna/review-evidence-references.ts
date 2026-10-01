@@ -43,7 +43,8 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
             return unresolved('artifact_self_or_link_evidence_required');
           }
           if(proof.relation==='contains_artifact' && (typeof proof.location!=='string' ||
-            !/^(https:\/\/|[a-z]:[\\/]|\\\\)/i.test(proof.location) ||
+            (!/^(https:\/\/|[a-z]:[\\/]|\\\\)/i.test(proof.location) &&
+              (!sources[index as number]?.nas_path || normalized(sources[index as number].nas_path!)!==normalized(proof.location))) ||
             !normalized(sources[index as number]?.excerpt ?? '').includes(normalized(proof.location)))) {
             return unresolved('contained_artifact_original_location_required');
           }
