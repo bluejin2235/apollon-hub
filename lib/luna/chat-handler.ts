@@ -49,7 +49,7 @@ import { readIndexedNotionEvidence } from "@/lib/luna/notion-page-evidence";
 import { NOTION_EVIDENCE_VERIFY, NOTION_EVIDENCE_REVIEW, reviewedNotionInventorySupplement, type ReviewedNotionEvidence } from "@/lib/luna/notion-evidence-review";
 import { buildDocumentInventory } from '@/lib/luna/document-inventory';
 import { reviewWikiEvidence } from '@/lib/luna/wiki-evidence-review';
-import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE, REVIEW_TRANSFER_RULE } from '@/lib/luna/review-evidence-references';
+import { prepareReviewEvidence, REVIEW_EVIDENCE_REFERENCE_RULE, REVIEW_TRANSFER_RULE, REVIEW_REQUEST_MATCH_RULE } from '@/lib/luna/review-evidence-references';
 import { asksForProvenance, provenanceSearchTypes } from "@/lib/luna/evidence-selection";
 import { recordResponseTiming } from "@/lib/luna/response-timings";
 import { estimateUsageKrw } from "@/lib/luna/model-pricing";
@@ -3515,11 +3515,11 @@ export async function executeLunaChat(request: NextRequest, execution: LunaChatE
           notionSources = [...byId.values()];
           const reviewBatch = async (batch: NotionSource[], verify=false) => {
             const options = {
-              tier:'B' as const,feature:'eval_grade' as const,system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE : ''),
+              tier:'B' as const,feature:'eval_grade' as const,system:(verify ? NOTION_EVIDENCE_VERIFY : NOTION_EVIDENCE_REVIEW)+'\n'+REVIEW_EVIDENCE_REFERENCE_RULE+(verify ? '\n'+REVIEW_TRANSFER_RULE+'\n'+REVIEW_REQUEST_MATCH_RULE : ''),
               maxTokens:8192,reasoningEffort:verify ? 'medium' as const : 'low' as const
             };
             const work = async (pending: NotionSource[]) => {
-              const evidence = prepareReviewEvidence(pending, verify);
+              const evidence = prepareReviewEvidence(pending, verify, true);
               const review=await lunaLlmComplete(admin, {...options,user:`질문: ${searchIntentText}\n\n${evidence.text}`});
               pushModelStep(modelSteps,admin,{label:verify?'관련성 재검증':'본문 관련성 확인',tier:'B',model:review.model_label,model_id:review.model_id,usage:review.usage});
               return evidence.resolve(parseJsonObject(review.text));

@@ -3,7 +3,7 @@ import { sliceUnicode } from '@/lib/luna/unicode-text';
 
 /** Model selects immutable source spans instead of retyping a quotation.
  * The server still validates the resulting exact quote against the source. */
-export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false) {
+export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?:{classification:string;quote?:string;reason?:string}})[], verify = false, requireRequestMatch = false) {
   const spans = sources.map(source => {
     const text = (source.excerpt ?? '').replace(/\s+/g, ' ').trim();
     const result: string[] = [];
@@ -22,6 +22,15 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
         const value = item as Record<string, unknown>;
         if (!Object.hasOwn(value, 'span')) return verify ? {...value, quote: ''} : value;
         const index = value.index, span = value.span;
+        if (verify && requireRequestMatch && Array.isArray(review.direct) && review.direct.includes(index)) {
+          // A project match alone is not an artifact/phase match. Missing
+          // checks stay unresolved and enter the existing bounded retry path.
+          const match = value.request_match as Record<string,unknown> | undefined;
+          if (!match || typeof match !== 'object' ||
+              !['target','artifact','phase'].every(key => match[key] === true)) {
+            return {...value, quote: ''};
+          }
+        }
         const quote = typeof index === 'number' && Number.isInteger(index) && typeof span === 'number' && Number.isInteger(span)
           ? spans[index]?.[span] : undefined;
         // Never fall back to a generated quote when a supplied reference is invalid.
@@ -56,6 +65,8 @@ export function prepareReviewEvidence(sources: (NotionSource & {review_proposal?
 }
 
 export const REVIEW_EVIDENCE_REFERENCE_RULE = `본문은 [근거 번호]로 나눠 제공한다. 포함하는 문서는 해당 문서의 관련성을 입증하는 근거 번호를 선택하고 이유를 쓴다. 인용문을 새로 쓰지 않는다. evidence 항목은 {"index":문서번호,"span":근거번호,"reason":"질문과 연결되는 구체적 이유"} 형식이다. 근거 번호는 해당 문서 안에서만 유효하다.`;
+
+export const REVIEW_REQUEST_MATCH_RULE = `direct의 evidence에는 request_match:{"target":true,"artifact":true,"phase":true}를 반드시 적는다. target은 요청한 프로젝트·대상, artifact는 요청한 자료 종류, phase는 요청한 단계·시즌·버전이다. 질문에서 지정하지 않은 조건만 true로 간주한다. 지정된 조건은 본문 또는 명시된 소속으로 입증해야 true다. 하나라도 불일치하거나 확인할 수 없으면 direct가 아니다. 실제 관련 사실이 있으면 adjacent 기준으로 판정하고, 단순한 같은 프로젝트 자료는 navigation 또는 unrelated로 분류한다. reason에 실제 문서 종류와 확인된 단계, 질문과 맞는 이유를 적되 원문에 없는 시즌을 만들어 쓰지 않는다.`;
 
 export const REVIEW_TRANSFER_RULE = `이 검증은 이전 판단 없이 원문에서 독립적으로 수행한다. 인접 여부를 정하기 전에 근거 자체의 종류를 분류한다.
 adjacent 항목은 evidence에 fact_kind를 반드시 쓴다: implementation_method(실제로 구현하는 방법), design_constraint(설계 조건·수치·선정기준), design_review(구체적 설계 대안·기술 검토 질문), test_result(실험·검증 결과), operation_condition(운영 조건), visual_motif(화면 묘사·상징·분위기), general_description(일반 소개·가능성).

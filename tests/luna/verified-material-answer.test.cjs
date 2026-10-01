@@ -2,6 +2,11 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {verifiedMaterialAnswer}=loadTs('lib/luna/verified-material-answer.ts');
 const source=(n,title,project='샘플 공간')=>({id:`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`,title,project_key:project,url:`https://notion.so/${String(n).padStart(32,'0')}`});
+test('a preproduction completion report is not relabeled as construction completion',()=>{
+ const answer=verifiedMaterialAnswer('샘플 보고서 찾아줘',{direct:[source(1,'PP 완료보고 Final Report')],adjacent:[]});
+ assert.match(answer,/\*\*보고서\*\*/);
+ assert.ok(!answer.includes('시공·준공'));
+});
 test('every reviewed document survives grouping with adjacent evidence kept separate',()=>{
  const direct=Array.from({length:30},(_,i)=>source(i+1,`설계 기록 ${i+1}`));
  const adjacent=[source(31,'조명 시험','인접 공간')];

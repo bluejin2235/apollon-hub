@@ -7,8 +7,9 @@ function documentType(source:NotionSource):string {
   const title=source.title;
   if(/시험|테스트|test|검증/i.test(title)) return '시험·검증';
   if(/회의|미팅|meeting/i.test(title)) return '회의·협의';
+  if(/보고|report/i.test(title)) return '보고서';
   if(/운영|유지보수|operation/i.test(title)) return '운영';
-  if(/준공|완료보고|시공/i.test(title)) return '시공·준공';
+  if(/준공|시공/i.test(title)) return '시공·준공';
   if(/설계|도면|design/i.test(title)) return '설계';
   if(/기획|제안|컨셉|콘셉트|ideation|planning|concept/i.test(title)) return '기획·제안';
   return '관련 기록';

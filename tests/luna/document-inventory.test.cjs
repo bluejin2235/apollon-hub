@@ -80,10 +80,17 @@ test('named project locations are retained as locations while unrelated folder p
   '@/lib/luna/notion-project-directory':{requestedDirectoryProjects:()=>[{key:'빛마을',pageIds:['test']}],readDirectoryMaterials:async()=>[]}
  });
  const db=fakeDb({luna_notion_chunks:[{page_id:'test',position:0,text:'현장 시험\nT:\\Project\\빛마을\\Test\\현장 시험'},{page_id:'other',position:0,text:'T:\\Project\\다른사업\\Test'}]});
- const result=await build(db,{query:'빛마을 자료 찾아줘',sources:[{...page('test'),title:'현장 시험'},page('other')],directory:[],review:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
+ const input={query:'빛마을 자료 찾아줘',sources:[{...page('test'),title:'현장 시험'},page('other')],directory:[]};
+ const result=await build(db,{...input,review:async rows=>{
+  const direct=rows.flatMap((s,i)=>s.id.startsWith('test#')?[i]:[]);
+  return {direct,adjacent:[],unrelated:rows.flatMap((_,i)=>direct.includes(i)?[]:[i]),evidence:direct.map(index=>({index,quote:'T:\\Project\\빛마을\\Test\\현장 시험',reason:'요청한 프로젝트의 현장 시험 기록 위치입니다.'}))};
+ }});
  assert.deepEqual(result.direct.map(s=>s.id),['test']);
  assert.deepEqual(result.locationOnlyIds,['test']);
  assert.match(result.basis.test.reason,/원본 내용과 결과는 아직 확인하지 않음/);
+ const rejected=await build(db,{...input,query:'빛마을 계약서 찾아줘',review:async rows=>({direct:[],adjacent:[],unrelated:rows.map((_,i)=>i),evidence:[]})});
+ assert.deepEqual(rejected.direct,[]);
+ assert.deepEqual(rejected.locationOnlyIds,[]);
 });
 test('a directory-selected project remains navigable when its first document is unrelated',async()=>{
  const db=fakeDb({luna_notion_chunks:[{page_id:'entry',position:0,text:'일반 소개'}, {page_id:'late',position:0,text:relevant}]});

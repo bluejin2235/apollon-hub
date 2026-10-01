@@ -56,14 +56,16 @@ export async function buildDocumentInventory(admin: SupabaseClient, input: {
       const lines=(source.evidence_passages??[]).join('\n').split('\n').map(s=>s.trim()).filter(Boolean);
       return lines.some(line=>/^(?:[a-z]:[\\/]|\\\\)/i.test(line)) && lines.every(line=>line===source.title || /^(?:[a-z]:[\\/]|\\\\)/i.test(line));
     });
-    for(const source of locations) {
-      const {evidence_passages,evidence_state,...record}=source;
-      direct.set(source.id,record);reviewed.add(source.id);locationOnlyIds.push(source.id);
-      basis[source.id]={quote:evidence_passages!.join('\n').split('\n').find(line=>/^(?:[a-z]:[\\/]|\\\\)/i.test(line.trim()))!.trim().slice(0,160),reason:'지정 프로젝트에 소속된 원본 자료의 위치. 원본 내용과 결과는 아직 확인하지 않음.'};
-    }
-    const checked=await reviewEvidenceDocuments(unique.filter(s=>!locations.includes(s)),input.review,input.verify);
+    // A known project/path proves location, not the requested artifact or phase.
+    // Apply the same relevance contract instead of promoting every member.
+    const checked=await reviewEvidenceDocuments(unique,input.review,input.verify);
     checked.direct.forEach(s=>direct.set(s.id,s));checked.adjacent.forEach(s=>adjacent.set(s.id,s));
     Object.assign(basis,checked.basis);
+    for(const source of locations) {
+      if(!direct.has(source.id) && !adjacent.has(source.id)) continue;
+      locationOnlyIds.push(source.id);
+      if(basis[source.id]) basis[source.id].reason += ' 원본 자료의 위치만 확인했으며 원본 내용과 결과는 아직 확인하지 않음.';
+    }
     Object.assign(failures,checked.failures);
     checked.reviewedIds.forEach(id=>reviewed.add(id));checked.unverifiedIds.forEach(id=>unverified.add(id));
     const navigation=new Set<string>(checked.navigationIds);

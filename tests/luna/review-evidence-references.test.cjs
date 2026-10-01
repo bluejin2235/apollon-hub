@@ -2,6 +2,17 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {loadTs}=require('./helpers.cjs');
 const {prepareReviewEvidence}=loadTs('lib/luna/review-evidence-references.ts');
 const {validateNotionEvidenceReview}=loadTs('lib/luna/notion-evidence-review.ts');
+test('direct evidence requires target, artifact and phase agreement when enabled',()=>{
+ const sources=[{id:'a',title:'샘플 문서',excerpt:'이 문서는 시운전 결과를 기록한 현장 검증 보고서입니다.'}];
+ const prepared=prepareReviewEvidence(sources,true,true);
+ const evidence={index:0,span:0,reason:'요청한 현장 시운전 결과가 기록된 실제 보고서입니다.'};
+ for(const request_match of [undefined,{target:true,artifact:false,phase:true},{target:true,artifact:true,phase:false}]) {
+  const r=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,request_match}]});
+  assert.deepEqual(validateNotionEvidenceReview(sources,r,true).unsupportedIds,['a']);
+ }
+ const r=prepared.resolve({direct:[0],adjacent:[],unrelated:[],evidence:[{...evidence,request_match:{target:true,artifact:true,phase:true}}]});
+ assert.equal(validateNotionEvidenceReview(sources,r,true).direct.length,1);
+});
 test('emoji at either span boundary remains valid Unicode and exact source evidence',()=>{
  for (const position of [119,159,239,279]) {
   const excerpt='가'.repeat(position)+'🌳 실제 야외 숲 현장의 설치 검증 내용입니다.'.repeat(8);
