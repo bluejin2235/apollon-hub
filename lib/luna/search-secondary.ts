@@ -5,6 +5,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotionSource } from "@/lib/luna/notion";
 import { postgrestTextList } from "@/lib/luna/postgrest-text-list";
+import { requestsAllMaterials } from "@/lib/luna/all-materials";
+import { isSearchToken } from "@/lib/luna/keyword-token";
 
 export const LINK_EXPAND_TOP_N = 8;
 export const LINK_EXPAND_MAX_ADD = 20;
@@ -96,7 +98,7 @@ function pageToSource(
   };
 }
 
-async function loadPagesByIds(
+export async function loadPagesByIds(
   admin: SupabaseClient,
   ids: string[]
 ): Promise<Map<string, PageRow>> {
@@ -120,10 +122,11 @@ async function loadPagesByIds(
     }
   }
   // Read bounded indexed excerpts for accepted pages; never attach another page's body.
-  if (out.size > 0) {
+  const excerptIds=[...out.keys()];
+  for (let start=0; start<excerptIds.length; start+=80) {
     const { data, error } = await admin.from("luna_notion_chunks")
       .select("page_id, heading, text, position")
-      .in("page_id", [...out.keys()])
+      .in("page_id", excerptIds.slice(start,start+80))
       .order("position", { ascending: true })
       .limit(320);
     if (error) {
@@ -245,6 +248,7 @@ export async function expandSourcesViaLinks(
     maxAdd?: number;
     minConfidence?: number;
     query?: string;
+    topicSearch?: boolean;
   }
 ): Promise<{ sources: NotionSource[]; stats: LinkExpandStats }> {
   const started = Date.now();
@@ -252,11 +256,13 @@ export async function expandSourcesViaLinks(
   let maxAdd = opts?.maxAdd ?? LINK_EXPAND_MAX_ADD;
   const minConfidence = opts?.minConfidence ?? LINK_EXPAND_MIN_CONF;
   const query = (opts?.query ?? "").trim();
+  const broad = opts?.topicSearch === true || requestsAllMaterials(query);
 
   const seedSources = seeds.slice(0, topN);
   const relevantSeeds = seedSources.filter(
     (s) =>
       !query ||
+      (broad && bodyOverlapsQuery(s.excerpt ?? '', query)) ||
       titleOverlapsQuery(s.title, query) ||
       titleOverlapsQuery(s.project_key ?? "", query)
   );
@@ -321,6 +327,7 @@ export async function expandSourcesViaLinks(
           seeds.find((s) => s.id === link.from_id)?.title ?? "";
         if (
           !query ||
+          (broad && expandPageIds.has(link.from_id)) ||
           titleOverlapsQuery(link.to_id, query) ||
           titleOverlapsQuery(seedTitle, query)
         ) {
@@ -441,6 +448,7 @@ export async function expandSourcesViaLinks(
 }
 
 const QUERY_STOP = new Set([
+  "모두", "전부", "전체", "모든", "찾아줘", "검색",
   "자료",
   "관련",
   "보여줘",
@@ -457,6 +465,13 @@ const QUERY_STOP = new Set([
   "요약",
   "알려줘"
 ]);
+
+function bodyOverlapsQuery(body: string, query: string): boolean {
+  const text = body.toLowerCase();
+  return (query.toLowerCase().match(/[가-힣a-z0-9]+/g) ?? [])
+    .filter(token => isSearchToken(token) && !QUERY_STOP.has(token))
+    .some(token => text.includes(token));
+}
 
 function titleOverlapsQuery(title: string, query: string): boolean {
   if (!title || !query) return false;
@@ -716,4 +731,3 @@ export async function annotateSeedsWithProjectKeys(
     return { ...s, project_key: project };
   });
 }
-

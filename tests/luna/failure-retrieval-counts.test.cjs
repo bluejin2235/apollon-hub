@@ -17,7 +17,7 @@ test('other failure signals and partial-answer behavior are retained',()=>{
  assert.deepEqual(collectAutoFailureSignals({answer:'기획 자료는 확인했습니다. 수행 자료는 찾지 못했습니다.',searchAttempted:true,searchResultCount:3}),[]);
 });
 test('production records pre-display retrieval and keeps display count separately',()=>{
- const source=fs.readFileSync(path.join(__dirname,'../../app/api/luna/chat/route.ts'),'utf8');
+ const source=fs.readFileSync(path.join(__dirname,'../../lib/luna/chat-handler.ts'),'utf8');
  assert.match(source,/searchResultCount: rawSearchResultCount/);
  assert.match(source,/rawSearchResultCount = Math.max\(rawSearchResultCount \?\? 0, merged.length \+ wikiSources.length\)/);
  assert.match(source,/displayed_source_count: cards.length \+ notionSources.length \+ publicWikiSources.length/);

@@ -21,6 +21,7 @@ import {
 } from "@/components/luna/brain/shared";
 import { K } from "@/lib/luna/knowledge-format";
 import { evalTierLabel } from "@/lib/luna/eval-labels";
+import { continueEvalInBrowser, type EvalContinuationResponse } from "@/lib/luna/eval-client-continuation";
 
 type EvalRun = {
   id: string;
@@ -30,6 +31,8 @@ type EvalRun = {
   passed: number | null;
   failed: number | null;
   status: string;
+  checkpoint?: { next:number; case_ids:string[] } | null;
+  worker_until?: string | null;
   started_at: string | null;
   finished_at: string | null;
   tier?: string | null;
@@ -165,7 +168,7 @@ function lastRunSummary(last: TierLastRun | null): string {
         : "—";
   const ok =
     last.status === "done"
-      ? "성공"
+      ? "검증 완료"
       : last.status === "running"
         ? "실행 중"
         : "실패";
@@ -187,6 +190,7 @@ export function LunaBrainEval() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [examCategory,setExamCategory]=useState("");
   const [busy, setBusy] = useState(false);
   const [showCases, setShowCases] = useState(false);
   const [openResultId, setOpenResultId] = useState<string | null>(null);
@@ -214,7 +218,7 @@ export function LunaBrainEval() {
     setSelectedRunId(runId);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredRunId?:string|null) => {
     setLoading(true);
     setError("");
     try {
@@ -229,7 +233,8 @@ export function LunaBrainEval() {
       setScheduleInfo(schedRes);
 
       const preferred =
-        runList.find((r) => r.id === selectedRunId) ??
+        runList.find((r) => r.id === (preferredRunId === undefined ? selectedRunId : preferredRunId)) ??
+        runList.find((r) => r.status === "running" && r.checkpoint) ??
         runList.find((r) => r.status === "done") ??
         runList[0];
       if (preferred) {
@@ -370,38 +375,48 @@ export function LunaBrainEval() {
     }
   }
 
-  async function runExam(tier: "light" | "heavy" | "all") {
+  async function runExam(tier: "light" | "heavy" | "all", category?:string, resumeId?:string) {
     setBusy(true);
     setNotice("");
+    let activeRunId=resumeId;
     try {
-      const body: { force: boolean; tier?: string } = { force: true };
+      const body: { force: boolean; start_only: boolean; tier?: string; categories?:string[] } = { force: true, start_only: true };
+      if(category) body.categories=[category];
       if (tier === "light" || tier === "heavy") body.tier = tier;
-      const res = await brainFetch<{
-        skipped: boolean;
-        reason?: string;
-        run_id?: string;
-        passed?: number;
-        total?: number;
-        score_sum?: number;
-        score_max?: number;
-        tier?: string;
-      }>("/api/luna/eval/exam", {
+      let res: EvalContinuationResponse = resumeId
+        ? {run_id:resumeId, continued:true, skipped:false}
+        : await brainFetch<EvalContinuationResponse>("/api/luna/eval/exam", {
         method: "POST",
         body: JSON.stringify(body)
       });
+      activeRunId=res.run_id;
+      if(res.continued && res.run_id) {
+        const runId=res.run_id;
+        setSelectedRunId(runId);
+        await load(runId);
+        res=await continueEvalInBrowser({
+          runId,
+          request: id=>brainFetch<EvalContinuationResponse>("/api/luna/eval/exam",{method:"POST",body:JSON.stringify({run_id:id})}),
+          progress: async result=>{
+            setNotice(result ? "검증 진행 상황을 저장했습니다. 같은 실행을 이어서 검증합니다." : "연결이 잠시 끊겼습니다. 저장된 실행을 자동으로 이어서 검증합니다.");
+            await load(runId);
+          }
+        });
+      }
       const score =
         res.score_sum != null && res.score_max != null
           ? `${res.score_sum}/${res.score_max}`
           : `${res.passed ?? 0}/${res.total ?? 0}`;
       setNotice(
-        res.skipped
+        res.continued ? "다른 작업자가 이어서 검증 중입니다. 완료 전입니다." : res.skipped
           ? `건너뜀: ${res.reason ?? "실행 조건 미충족"}`
           : `${tier === "all" ? "전체" : evalTierLabel(tier)} 실행 완료 · ${score}점`
       );
       if (res.run_id) setSelectedRunId(res.run_id);
-      await load();
+      await load(res.run_id);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "실행하지 못했습니다.");
+      await load(activeRunId ?? null);
     } finally {
       setBusy(false);
     }
@@ -669,6 +684,17 @@ export function LunaBrainEval() {
             </BrainCard>
           </div>
 
+          <div className="mb-3 flex items-center gap-2">
+            <label className="text-[12px]">시험 범위
+              <select aria-label="시험 범위" value={examCategory} disabled={busy}
+                onChange={event=>setExamCategory(event.target.value)} className="ml-2 rounded border p-2">
+                <option value="">분류 선택</option>
+                {[...new Set(activeCases.map(c=>c.category).filter(Boolean))].map(category=><option key={category!} value={category!}>{category}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={busy || !examCategory} onClick={()=>void runExam("all",examCategory)}
+              className="rounded border px-3 py-2 text-[12px] disabled:opacity-50">선택 범위 실행</button>
+          </div>
           <div className="mb-3 grid grid-cols-1 gap-2 min-[701px]:grid-cols-3">
             <button
               type="button"
@@ -735,7 +761,12 @@ export function LunaBrainEval() {
                   : "—"}
               </span>
             </div>
-            {doneRuns.length > 1 ? (
+            {selectedRun?.status === "running" && selectedRun.checkpoint ? (
+              <Btn disabled={busy} onClick={()=>void runExam("all",undefined,selectedRun.id)}>
+                남은 문항 이어서 검증 ({selectedRun.checkpoint.next}/{selectedRun.total})
+              </Btn>
+            ) : null}
+            {runs.length > 1 ? (
               <select
                 className="max-w-[220px] rounded-md border px-2 py-1 text-[12px]"
                 style={{ borderColor: K.line, color: K.ink }}
@@ -747,9 +778,9 @@ export function LunaBrainEval() {
                   void loadResultsFor(id);
                 }}
               >
-                {doneRuns.slice(0, 12).map((r) => (
+                {runs.slice(0, 20).map((r) => (
                   <option key={r.id} value={r.id}>
-                    {tierBadgeLabel(r.tier)} {runScore(r)}/{runMax(r)} ·{" "}
+                    {r.status === "running" ? "미완료 · " : ""}{tierBadgeLabel(r.tier)} {runScore(r)}/{runMax(r)} ·{" "}
                     {formatDateTime(r.finished_at ?? r.started_at)}
                   </option>
                 ))}

@@ -34,6 +34,7 @@ import {
   resolveAnswerMode,
   shouldShowImageChrome,
   splitSources,
+  displayedSourceCounts,
   type AnswerMode
 } from "@/components/luna/chat/answer-layout";
 import type {
@@ -56,6 +57,7 @@ import {
   type UsedPromptRef
 } from "@/lib/luna/chat-response";
 import { resolveSearchCounts } from "@/lib/luna/luna-answer-ui";
+import { splitMaterialInventoryDisplay, splitMaterialProjectGroups } from '@/lib/luna/material-inventory-display';
 import type { LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
 import type { NotionSource } from "@/lib/luna/notion";
 import type { LunaCard } from "@/lib/luna/tavily";
@@ -185,9 +187,33 @@ function AnswerBodyMarkdown({
   body: string;
   streaming?: boolean;
 }) {
+  const inventory=!streaming ? splitMaterialInventoryDisplay(body) : null;
+  const markdown=(text:string)=><SafeMarkdown content={text} compact variant="luna" highlightTerms className="min-w-0 max-w-full [overflow-wrap:anywhere] text-[14.5px] max-md:text-[13.5px]" />;
+  const groupedMarkdown=(text:string)=>{
+    const grouped=splitMaterialProjectGroups(text);
+    if(!grouped) return markdown(text);
+    return <>
+      {markdown(grouped.before.split('\n프로젝트별 구성')[0])}
+      {grouped.groups.map((group,index)=><details key={`${index}-${group.title}`} open={index===0 || undefined} className="my-3 min-w-0 max-w-full rounded-lg border border-[#E3E0F5] bg-white/60 px-3 py-2">
+        <summary className="cursor-pointer break-words text-[13.5px] font-medium text-[#534AB7] [overflow-wrap:anywhere]">
+          {group.title.replace(/\\([\\[\]*_`<>])/g,'$1')} · {group.count}개
+          <span className="ml-2 text-[12px] font-normal text-[#6b6f76]">{group.types}</span>
+        </summary>
+        <div className="mt-3 min-w-0">{markdown(group.body)}</div>
+      </details>)}
+      {grouped.after ? markdown(grouped.after) : null}
+    </>;
+  };
   return (
     <div className="text-[14.5px] leading-[1.75] text-[#1c1d21] max-md:text-[13.5px]">
-      {body.trim() ? (
+      {inventory ? <>
+        {groupedMarkdown(inventory.before)}
+        {inventory.count>0 ? <details open={inventory.initiallyOpen || undefined} className="my-3 min-w-0 rounded-lg border border-[#E3E0F5] bg-white/60 px-3 py-2">
+          <summary className="cursor-pointer text-[13px] font-medium text-[#534AB7]">인접 참고 문서 {inventory.count}개 — 직접 일치 자료와 구분해서 보기</summary>
+          <div className="mt-3">{groupedMarkdown(inventory.adjacent)}</div>
+        </details> : null}
+        {inventory.after ? markdown(inventory.after) : null}
+      </> : body.trim() ? (
         <SafeMarkdown
           content={body}
           compact
@@ -331,7 +357,7 @@ function AssistantAnswerBlock({
     (s) => s.key === "search" && s.status === "done"
   );
   const hasSnapshot = cards != null || searchCounts != null;
-  const counts = useMemo(
+  const candidateCounts = useMemo(
     () =>
       resolveSearchCounts({
         snapshot: searchCounts,
@@ -344,6 +370,7 @@ function AssistantAnswerBlock({
   );
 
   const isComplete = isAnswerComplete({ isThinking, content: scrubbed });
+  const counts = isComplete ? displayedSourceCounts(split, answerMode, questionText) : candidateCounts;
   const forceProgressOpen = isThinking || !isComplete;
   const streaming = isThinking || (!isComplete && Boolean(body.trim()));
 
@@ -546,7 +573,7 @@ function AssistantAnswerBlock({
               imageLimit={docsExpanded ? undefined : 8}
               previewLimit={docsExpanded ? undefined : SOURCE_PREVIEW_LIMIT}
               emptyImageHint={
-                split.image.length === 0
+                isComplete && !isThinking && split.image.length === 0
                   ? "이번 검색에서 조건에 맞는 이미지는 확인하지 못했습니다."
                   : null
               }

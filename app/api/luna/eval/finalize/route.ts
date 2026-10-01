@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await finalizeEvalExam(admin, runId, "manual");
+    const result = await finalizeEvalExam(admin, runId, "manual", {notify:false,assignReviews:false});
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[luna/eval/finalize]", err);

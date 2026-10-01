@@ -1,4 +1,5 @@
 import { selectQuestionEvidence } from "@/lib/luna/evidence-selection";
+import { requestsAllMaterials } from "@/lib/luna/all-materials";
 import type { NotionSource } from "@/lib/luna/notion";
 import {
   formatNasFolderPath,
@@ -919,9 +920,14 @@ export function takeTopNotionSourcesForLlm(
     typeof s.match_score === "number"
       ? s.match_score
       : (s.similarity ?? 0) * 10;
-  return selectQuestionEvidence(list, n, query,
+  const selected = selectQuestionEvidence(list, n, query,
     source => [source.title, source.excerpt].filter(Boolean).join('\n'),
     rank, source => source.keyword_score ?? 0);
+  if (!requestsAllMaterials(query)) return selected;
+  const related = list.filter(s => s.link_expanded && s.excerpt)
+    .sort((a, b) => rank(b) - rank(a)).slice(0, Math.floor(n / 4));
+  const ids = new Set(related.map(s => s.id));
+  return [...selected.filter(s => !ids.has(s.id)).slice(0, Math.max(0, n - related.length)), ...related];
 }
 
 export function maxNotionSimilarity(

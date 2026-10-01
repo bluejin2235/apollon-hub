@@ -43,6 +43,7 @@ type RunView = {
   error_message: string | null;
   elapsed_label: string | null;
   progress_pct: number;
+  abort_requested: boolean;
 };
 
 type Overview = {
@@ -53,6 +54,7 @@ type Overview = {
     accessible_pages: number;
     subtitle: string;
   };
+  readiness?: {total:number;ready:number;empty:number;failed:number;building:number;unverified:number} | null;
   stats: {
     pages: number;
     blocks: number;
@@ -115,7 +117,8 @@ function KindBadge({ mode }: { mode: NotionIndexMode }) {
   );
 }
 
-function StatusBadge({ status }: { status: RunView["status"] }) {
+function StatusBadge({ status, aborted }: { status: RunView["status"]; aborted?:boolean }) {
+  if(aborted) return <span className="rounded-full px-2 py-0.5 text-[9.5px] font-bold">중단</span>;
   if (status === "success") {
     return (
       <span
@@ -155,6 +158,9 @@ export function LunaKnowledgeNotion() {
   const [saving, setSaving] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [excludeDraft, setExcludeDraft] = useState("");
+  const [repairPage, setRepairPage] = useState("");
+  const [repairNote, setRepairNote] = useState("");
+  const [repairing, setRepairing] = useState(false);
 
   const load = useCallback(async () => {
     const token = await getAccessToken();
@@ -345,6 +351,24 @@ export function LunaKnowledgeNotion() {
     });
   }
 
+  async function repairOnePage() {
+    setRepairing(true);
+    setRepairNote("");
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("로그인이 필요합니다");
+      const res = await fetch("/api/luna/notion/index", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "repair", page_id: repairPage.trim() })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "재색인 실패");
+      setRepairNote(`완료 · 본문 블록 ${result.blocks}개 · 새 임베딩 ${result.embeddings}개`);
+      await load();
+    } catch (err) { setRepairNote(err instanceof Error ? err.message : "재색인 실패"); }
+    finally { setRepairing(false); }
+  }
+
   const schedule = data?.schedule;
   const running = data?.running;
   const failure = data?.failure;
@@ -459,9 +483,23 @@ export function LunaKnowledgeNotion() {
             </div>
           )}
 
+          <div className="mb-4 rounded-xl border p-4">
+            <label htmlFor="notion-repair-page" className="block text-sm font-semibold">특정 페이지 다시 읽기</label>
+            <p className="my-2 text-xs">본문이 누락된 페이지 한 개를 다시 수집합니다. 다른 페이지는 변경하지 않습니다.</p>
+            <input id="notion-repair-page" value={repairPage} onChange={e => setRepairPage(e.target.value)} placeholder="노션 페이지 ID (하이픈 포함)" className="mr-2 rounded border p-2 text-xs" />
+            <Btn disabled={repairing || Boolean(running) || !repairPage.trim()} onClick={() => void repairOnePage()}>{repairing ? "다시 읽는 중…" : "페이지 다시 읽기"}</Btn>
+            {repairNote ? <p role="status" className="mt-2 text-xs">{repairNote}</p> : null}
+          </div>
+          {data.readiness ? (
+            <div className="mb-4 rounded-xl border p-4" role="status">
+              <p className="text-sm font-semibold">본문 검색 준비 상태</p>
+              <p className="mt-2 text-xs">검색 가능 {data.readiness.ready.toLocaleString()} · 실제 빈 본문 {data.readiness.empty.toLocaleString()} · 수집 중 {data.readiness.building.toLocaleString()} · 실패 {data.readiness.failed.toLocaleString()} · 미검증 {data.readiness.unverified.toLocaleString()}</p>
+              <p className="mt-1 text-xs">페이지 발견 수와 본문 검색 준비 완료 수는 다릅니다. 미검증·실패 자료는 완료로 계산하지 않습니다.</p>
+            </div>
+          ) : null}
           <StatGrid>
             <StatCard
-              label="색인된 페이지"
+              label="발견된 페이지"
               value={data.stats.pages.toLocaleString()}
               sub={
                 data.stats.as_of_label ? (
@@ -685,7 +723,7 @@ export function LunaKnowledgeNotion() {
                           className="px-[15px] py-2.5"
                           style={{ borderBottom: `1px solid ${K.line2}` }}
                         >
-                          <StatusBadge status={row.status} />
+                          <StatusBadge status={row.status} aborted={row.abort_requested} />
                           {row.status === "failed" && row.error_message ? (
                             <div
                               className="mt-1 text-[10.5px]"

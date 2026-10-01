@@ -29,27 +29,6 @@ const SEARCH_ROW_KEYS = new Set([
   "found"
 ]);
 
-function extractWhy(content: string): string {
-  const lines = content
-    .split(/\n+/)
-    .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
-    .filter(Boolean);
-  const hit = lines.find((l) => isNotFoundAnswer(l));
-  if (hit) return hit.length > 160 ? `${hit.slice(0, 159)}…` : hit;
-  const first = lines[0] ?? "";
-  return first.length > 160 ? `${first.slice(0, 159)}…` : first;
-}
-
-function extractDetail(content: string, why: string): string | null {
-  const lines = content
-    .split(/\n+/)
-    .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
-    .filter(Boolean);
-  const rest = lines.find((l) => l !== why && l.length > 12);
-  if (!rest) return null;
-  return rest.length > 200 ? `${rest.slice(0, 199)}…` : rest;
-}
-
 function uniqueFolderPairs(cards: LunaCard[]): NasExplorerPathPair[] {
   const seen = new Set<string>();
   const out: NasExplorerPathPair[] = [];
@@ -85,7 +64,6 @@ export function shouldShowNotFoundGuide(opts: {
 }
 
 export function NotFoundGuide({
-  content,
   questionText,
   steps,
   classification,
@@ -103,8 +81,6 @@ export function NotFoundGuide({
   onCopyToast?: (msg: string) => void;
 }) {
   const hint = progressQueryHint(questionText ?? "");
-  const why = extractWhy(content);
-  const detail = extractDetail(content, why);
   const folders = useMemo(() => uniqueFolderPairs(cards), [cards]);
 
   const searchRows = useMemo(() => {
@@ -153,6 +129,7 @@ export function NotFoundGuide({
     <div className="mt-3.5 rounded-[12px] border border-[#e7e8ec] bg-[#FCFCFD] px-3.5 py-3.5">
       {searchRows.length > 0 ? (
         <ul className="mb-3 space-y-1.5 border-b border-[#eef0f3] pb-3">
+          <li className="text-[12px] text-[#6b6f76]">검색 단계에서 수집한 후보입니다. 요청에 맞는 최종 자료 수와 다를 수 있습니다.</li>
           {searchRows.map((r) => (
             <li
               key={r.key}
@@ -168,11 +145,6 @@ export function NotFoundGuide({
             </li>
           ))}
         </ul>
-      ) : null}
-
-      <p className="text-[14px] font-bold text-[#1c1d21]">{why || "찾던 걸 못 찾았어요."}</p>
-      {detail ? (
-        <p className="mt-1.5 text-[13px] leading-[1.65] text-[#6b6f76]">{detail}</p>
       ) : null}
 
       <div className="mt-3.5">

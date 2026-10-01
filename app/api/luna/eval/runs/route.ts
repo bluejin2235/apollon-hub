@@ -6,7 +6,7 @@ import { LUNA_MODEL_LABEL } from "@/lib/luna/run-chat";
 export const runtime = "nodejs";
 
 const RUN_SELECT =
-  "id, label, note, model_label, total, passed, failed, status, started_at, finished_at, created_by, tier, score_sum, score_max";
+  "id, label, note, model_label, total, passed, failed, status, started_at, finished_at, created_by, tier, score_sum, score_max, checkpoint, worker_until";
 
 async function requireSuperAdmin(request: NextRequest) {
   const user = await getApiUser(request);
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
   if ("error" in gate && gate.error) return gate.error;
   const { user, admin } = gate;
 
-  let body: { note?: string } = {};
+  let body: { note?: string; case_ids?: string[] } = {};
   try {
     const text = await request.text();
     if (text.trim()) body = JSON.parse(text) as typeof body;
@@ -66,16 +66,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { count, error: countError } = await admin
-    .from("luna_eval_cases")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", true);
+  const requested = Array.isArray(body.case_ids) ? [...new Set(body.case_ids)] : null;
+  if (requested && (!requested.length || requested.some(id=>typeof id!=="string" || !/^[0-9a-f-]{36}$/i.test(id)))) {
+    return NextResponse.json({error:"Invalid case IDs"},{status:400});
+  }
+  let countQuery=admin.from("luna_eval_cases").select("id",{count:"exact",head:true}).eq("is_active",true);
+  if(requested) countQuery=countQuery.in("id",requested);
+  const {count,error:countError}=await countQuery;
 
   if (countError) {
     console.error("[luna/eval/runs] count", countError);
     return NextResponse.json({ error: countError.message }, { status: 500 });
   }
 
+  if(requested && count!==requested.length) return NextResponse.json({error:"Inactive or unknown cases"},{status:400});
   const total = count ?? 0;
   const now = new Date().toISOString();
 

@@ -1,3 +1,4 @@
+import { isSearchToken } from '@/lib/luna/keyword-token';
 /** Reserve bounded room for lexical evidence at every truncation boundary. */
 export function selectEvidence<T>(items: T[], limit: number, score: (item: T) => number, lexical: (item: T) => number): T[] {
   const n = Math.max(0, Math.floor(limit));
@@ -67,7 +68,7 @@ export function queryExcerpt(text: string, keywords: string[], limit = 1200, que
     if (useful) return `…${useful.slice(0, limit)}…`;
   }
   const lower = body.toLowerCase();
-  const positions = keywords.filter((k) => k.length >= 2).map((k) => lower.indexOf(k.toLowerCase())).filter((p) => p >= 0);
+  const positions = keywords.filter(isSearchToken).map((k) => lower.indexOf(k.toLowerCase())).filter((p) => p >= 0);
   const hit = positions.length ? Math.min(...positions) : 0;
   const start = Math.max(0, hit - 160);
   return `${start ? "…" : ""}${body.slice(start, start + limit)}${body.length > start + limit ? "…" : ""}`;

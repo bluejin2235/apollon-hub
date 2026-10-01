@@ -1538,6 +1538,7 @@ export async function getNotionIndexStats(admin: SupabaseClient): Promise<{
       .from("luna_notion_index_runs")
       .select("*")
       .eq("status", "success")
+      .eq("abort_requested", false)
       .order("finished_at", { ascending: false })
       .limit(1)
       .maybeSingle();

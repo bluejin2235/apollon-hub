@@ -47,6 +47,10 @@ export type NotionSource = {
   via_link?: string;
   /** luna_links project to_id 등 — UI 묶음 키 */
   project_key?: string | null;
+  /** Existing accepted links; not by themselves proof of a phase or season. */
+  project_memberships?: string[];
+  /** Project names reached through actual Notion parent-page chains. */
+  project_ancestry?: string[];
   /** 관점 매칭으로 가중된 경우 */
   perspective?: string;
 };
@@ -685,9 +689,39 @@ async function searchNotionOnce(
 
 export function mergeNotionSearchOutcomes(
   a: NotionSearchOutcome,
-  b: NotionSearchOutcome
+  b: NotionSearchOutcome,
+  opts?: { preserveRounds?: boolean; roundWeight?: number; limit?: number; preserveAllCandidates?: boolean }
 ): NotionSearchOutcome {
-  const combinedSources = capNotionDisplaySources([...a.sources, ...b.sources]);
+  // Candidate collection and final relevance review have different purposes.
+  // A display limit must never erase material-search candidates before review.
+  const limit = opts?.preserveAllCandidates ? Math.max(1, a.sources.length + b.sources.length)
+    : opts?.limit ?? Math.max(INDEX_DISPLAY_LIMIT, a.sources.length, b.sources.length);
+  let combinedSources = capNotionDisplaySources([...a.sources, ...b.sources], limit);
+  if (opts?.preserveRounds) {
+    // Scores from different queries are not comparable. Reserve three original
+    // results for each retry result, rather than replacing evidence with a
+    // longer query's inflated keyword scores. Keep each round's own ordering.
+    const merged = new Map(combinedSources.map(s => [notionSourceKey(s), s]));
+    for (const s of [...a.sources, ...b.sources]) {
+      const key = notionSourceKey(s);
+      if (!merged.has(key)) merged.set(key, s);
+    }
+    const ordered: NotionSource[] = [];
+    const seen = new Set<string>();
+    const append = (s: NotionSource | undefined) => {
+      if (!s) return;
+      const key = notionSourceKey(s);
+      if (seen.has(key)) return;
+      seen.add(key); ordered.push(merged.get(key)!);
+    };
+    const weight = Math.max(1, Math.min(3, Math.floor(opts.roundWeight ?? 3)));
+    for (let i = 0; i < Math.max(a.sources.length, b.sources.length); i++) {
+      for (let j = 0; j < weight; j++) append(a.sources[i * weight + j]);
+      append(b.sources[i]);
+    }
+    // match_score is a sorting score, not embedding similarity or confidence.
+    combinedSources = ordered.slice(0, limit).map((s, i) => ({ ...s, match_score: 10 * (limit - i) / limit }));
+  }
   const status: NotionSearchStatus =
     combinedSources.length > 0
       ? "ok"
@@ -703,13 +737,21 @@ export function mergeNotionSearchOutcomes(
     queries: [...new Set([...a.queries, ...b.queries])],
     rounds: a.rounds + b.rounds,
     error: b.error ?? a.error,
-    httpStatus: b.httpStatus ?? a.httpStatus
+    httpStatus: b.httpStatus ?? a.httpStatus,
+    secondary: a.secondary || b.secondary ? {
+      link_added: combinedSources.filter(s => s.link_expanded).length,
+      links_followed: (a.secondary?.links_followed ?? 0) + (b.secondary?.links_followed ?? 0),
+      link_ms: (a.secondary?.link_ms ?? 0) + (b.secondary?.link_ms ?? 0),
+      perspective_ms: (a.secondary?.perspective_ms ?? 0) + (b.secondary?.perspective_ms ?? 0),
+      perspectives: [...new Set([...(a.secondary?.perspectives ?? []), ...(b.secondary?.perspectives ?? [])])],
+      project_groups: [...new Map([...(a.secondary?.project_groups ?? []), ...(b.secondary?.project_groups ?? [])].map(g => [g.title, g])).values()]
+    } : undefined
   };
 }
 
 export function formatNotionSourcesForPrompt(
   sources: NotionSource[],
-  opts?: { compact?: boolean }
+  opts?: { compact?: boolean; excerptLimit?: number; showStorageStage?: boolean }
 ): string {
   const compact = opts?.compact === true;
   const groups = summarizeGroupsInline(sources);
@@ -720,7 +762,7 @@ export function formatNotionSourcesForPrompt(
     .filter((s) => (s.title ?? "").trim().length > 0)
     .map((s) => {
       const title = s.title.trim();
-      const stage =
+      const stage = opts?.showStorageStage === false ? "" :
         s.work_stage === "executed"
           ? "[수행]"
           : s.work_stage === "proposal"
@@ -754,7 +796,7 @@ export function formatNotionSourcesForPrompt(
         lines.push(`  날짜: ${s.dates.join(", ")}`);
       }
       if (s.excerpt) {
-        const max = compact ? 1200 : 1600;
+        const max = opts?.excerptLimit ?? (compact ? 1200 : 1600);
         lines.push(`  본문: ${s.excerpt.slice(0, max)}`);
       }
       return lines.join("\n");

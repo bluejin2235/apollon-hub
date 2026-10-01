@@ -968,7 +968,7 @@ async function answerAndSubmit(
       notion: true,
       web: true,
       nas: true
-    });
+    }, q.user_id);
     answer = turn.answer.trim();
   } catch (err) {
     console.error("[luna/selfstudy] runLunaTurn", err);

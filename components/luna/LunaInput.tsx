@@ -409,7 +409,7 @@ export function LunaInput({
           rows={1}
           disabled={disabled || uploading}
           placeholder={voice.listening ? "듣고 있어요…" : placeholder}
-          className="mb-2 w-full min-w-0 resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-[#1c1d21] outline-none placeholder:text-[#9aa0a8] disabled:opacity-50 max-md:text-[14px]"
+          className="mb-2 w-full min-w-0 resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-[#1c1d21] outline-none placeholder:text-[#9aa0a8] disabled:opacity-50 max-md:text-[16px]"
         />
 
         <div className="flex items-center gap-[9px]">

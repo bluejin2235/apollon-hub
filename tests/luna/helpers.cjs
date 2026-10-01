@@ -15,6 +15,7 @@ function loadTs(relative, overrides = {}, cache = new Map()) {
   const localRequire = (specifier) => {
     if (Object.hasOwn(overrides, specifier)) return overrides[specifier];
     if (specifier === 'server-only') return {};
+    if (specifier === 'node:crypto') return require('node:crypto');
     if (specifier.startsWith('@/')) return loadTs(`${specifier.slice(2)}.ts`, overrides, cache);
     throw new Error(`Unmocked dependency: ${specifier}`);
   };
@@ -47,6 +48,7 @@ function fakeDb(tables, errors = {}) {
         range(from, to) { offset = from; cap = to - from + 1; return this; },
         maybeSingle() { one = true; return this; },
         single() { one = true; return this; },
+        update(row) { mutation = row; return this; },
         upsert(row) { mutation = row; return this; },
         insert(row) { mutation = row; return this; },
         then(resolve, reject) {

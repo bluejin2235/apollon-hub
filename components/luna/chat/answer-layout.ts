@@ -26,6 +26,17 @@ export type SplitSources = {
   image: LunaCard[];
 };
 
+/** Completed counters describe available rendered groups, not retrieval snapshots. */
+export function displayedSourceCounts(sources: SplitSources, mode: AnswerMode, question?: string | null) {
+  const docs = mode === 'project' || mode === 'default' || mode === 'reference';
+  return {
+    notion: docs ? sources.notion.length : 0,
+    work: docs ? sources.work.length : 0,
+    wiki: docs ? sources.wiki.length : Math.min(3, sources.wiki.length),
+    image: shouldShowImageChrome(mode, question) ? sources.image.length : 0
+  };
+}
+
 function scopeKindToMode(kind: SearchScopeKind): AnswerMode {
   if (kind === "term") return "term";
   if (kind === "policy") return "policy";

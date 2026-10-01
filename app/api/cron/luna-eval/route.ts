@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/auth/get-api-user";
-import { runEvalExam, reapStuckEvalRuns } from "@/lib/luna/eval-exam";
+import { runEvalExam, reapStuckEvalRuns, continueEvalExam, evalDeploymentIdentity } from "@/lib/luna/eval-exam";
 import { logMissingEnvGroups } from "@/lib/luna/env-keys";
 import {
   alreadyRanTierToday,
@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
 
   try {
     logMissingEnvGroups("luna-eval");
+    const {data:pending}=await admin.from('luna_eval_runs').select('id').eq('status','running').not('checkpoint','is',null).eq('checkpoint->>deployment',evalDeploymentIdentity() ?? '').order('started_at').limit(1).maybeSingle();
+    if(pending) return NextResponse.json({resumed:await continueEvalExam(admin,pending.id)});
     const reaped = await reapStuckEvalRuns(admin);
     const schedule = await getEvalSchedule(admin);
     const out: Record<string, unknown> = {
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
           notify: true,
           budgetMs: 700_000
         });
+        return NextResponse.json(out);
       }
     } else if (!schedule.light.enabled) {
       out.light = { skipped: true, reason: "disabled" };
