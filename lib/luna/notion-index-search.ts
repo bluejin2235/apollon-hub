@@ -1,3 +1,4 @@
+import { rejectLegacyNotionAccess } from "@/lib/luna/notion-live/policy";
 import { asksForProvenance, queryExcerpt } from "@/lib/luna/evidence-selection";
 import { resolveGroundedTargets } from "@/lib/luna/grounded-target";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -531,6 +532,7 @@ export async function searchNotionForLuna(
     glossary?: QueryExpandGlossaryRow[];
   }
 ): Promise<NotionSearchOutcome> {
+  rejectLegacyNotionAccess();
   const started = Date.now();
   const queryText = (queryContext?.trim() || keywords).trim();
   const listing = Boolean(opts?.listing);

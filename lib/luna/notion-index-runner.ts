@@ -1,3 +1,4 @@
+import { rejectLegacyNotionAccess } from "@/lib/luna/notion-live/policy";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from 'node:crypto';
 import { isNotionBodyReady, completeNotionHealth, markNotionBodyFailure, NOTION_BODY_VERSION } from '@/lib/luna/notion-index-health';
@@ -805,6 +806,7 @@ async function forceReindexPage(
 
 /** Admin-only caller: bounded repair, without discovering or deleting other pages. */
 export async function reindexSingleNotionPage(admin: SupabaseClient, pageId: string) {
+  rejectLegacyNotionAccess();
   const token = process.env.NOTION_TOKEN?.trim();
   if (!token) throw new Error("NOTION_TOKEN 이 없습니다");
   const settings = await getNotionIndexExclude(admin);
@@ -1005,6 +1007,7 @@ export async function runNotionIndexChunk(
   admin: SupabaseClient,
   opts: StartNotionIndexOpts
 ): Promise<NotionIndexChunkResult> {
+  rejectLegacyNotionAccess();
   const budgetMs = opts.budgetMs ?? NOTION_INDEX_CHUNK_BUDGET_MS;
   const chunkStarted = Date.now();
 

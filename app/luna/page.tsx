@@ -580,8 +580,8 @@ export default function LunaPage() {
         });
 
         if (!res.ok || !res.body) {
-          const errText = await res.text();
-          console.error("[luna] chat", errText);
+          const failure = await res.json().catch(() => ({}));
+          if (failure.code === "notion_connect") window.dispatchEvent(new Event("luna-notion-connect"));
           setMessages((prev) =>
             prev.map((m) =>
               m.id === liveAssistantId
@@ -589,7 +589,7 @@ export default function LunaPage() {
                     ...m,
                     isThinking: false,
                     metadata: undefined,
-                    content: "응답을 가져오지 못했습니다. 다시 시도해 주세요."
+                    content: typeof failure.error === "string" ? failure.error : "응답을 가져오지 못했습니다. 다시 시도해 주세요."
                   }
                 : m
             )

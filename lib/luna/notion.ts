@@ -1,3 +1,4 @@
+import { rejectLegacyNotionAccess } from "@/lib/luna/notion-live/policy";
 import { selectEvidence } from "@/lib/luna/evidence-selection";
 import { notionCitationMarker } from "@/lib/luna/source-citations";
 import {
@@ -579,6 +580,7 @@ function toPublicSource(source: NotionSource): NotionSource {
 export async function fetchNotionPagesLive(
   pages: Array<Pick<NotionSource, "id" | "title" | "url" | "last_edited_time">>
 ): Promise<NotionSource[]> {
+  rejectLegacyNotionAccess();
   const token = process.env.NOTION_TOKEN;
   if (!token || pages.length === 0) return [];
   const stubs: NotionSource[] = pages
@@ -884,6 +886,7 @@ export async function searchNotionPages(
   keywords: string,
   queryContext?: string
 ): Promise<NotionSearchOutcome> {
+  rejectLegacyNotionAccess();
   const token = process.env.NOTION_TOKEN;
   const queries = buildNotionQueries(keywords, queryContext);
   const terms = prepareSearchTerms(keywords, queryContext);
