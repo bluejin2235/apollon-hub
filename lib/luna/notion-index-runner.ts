@@ -835,6 +835,7 @@ export async function drainIndexQueue(
   admin: SupabaseClient,
   opts: { max: number; budgetMs: number }
 ): Promise<IndexQueueDrainStats> {
+  rejectLegacyNotionAccess();
   const t0 = Date.now();
   const max = Math.max(0, opts.max);
   if (max <= 0) {
