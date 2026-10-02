@@ -318,7 +318,7 @@ export function LunaSidebar({
 
   return (
     <aside
-      className={`flex h-full w-full flex-col rounded-xl border-[0.5px] border-slate-200 bg-white px-2.5 py-3 md:w-[250px] md:shrink-0 ${className}`}
+      className={`flex h-full w-full flex-col bg-white px-2.5 py-3 md:w-[220px] md:shrink-0 ${className}`}
     >
       <div className="flex items-center gap-2 px-1.5 pb-3 pt-0.5">
         <button
@@ -328,7 +328,7 @@ export function LunaSidebar({
         >
           <span
             className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-[13px] font-extrabold"
-            style={{ background: "#534AB7", color: "#EEEDFE" }}
+            style={{ background: "#315e49", color: "#e8f0e9" }}
           >
             L
           </span>
@@ -339,7 +339,7 @@ export function LunaSidebar({
           onClick={startNewChat}
           title="새 대화"
           aria-label="새 대화"
-          className="shrink-0 rounded-md p-1 text-[#534AB7] transition hover:bg-[#EEEDFE]"
+          className="shrink-0 rounded-md p-1 text-[#315e49] transition hover:bg-[#e8f0e9]"
         >
           <SquarePen className="h-[17px] w-[17px]" strokeWidth={1.75} />
         </button>
@@ -366,7 +366,7 @@ export function LunaSidebar({
               onClick={() => selectProject(active ? null : p.id)}
               className={`flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] transition ${
                 active
-                  ? "bg-[#EEEDFE] font-medium text-[#3C3489]"
+                  ? "bg-[#e8f0e9] font-medium text-[#3C3489]"
                   : "text-slate-800 hover:bg-slate-50"
               }`}
             >
@@ -412,7 +412,7 @@ export function LunaSidebar({
                       onChange={(e) => setEditTitle(e.target.value)}
                       onKeyDown={onEditKeyDown}
                       onBlur={() => void commitRename()}
-                      className="w-full rounded-lg border border-[#534AB7] bg-white px-2 py-1.5 text-[12.5px] text-slate-800 outline-none"
+                      className="w-full rounded-lg border border-[#315e49] bg-white px-2 py-1.5 text-[12.5px] text-slate-800 outline-none"
                     />
                   </li>
                 );
@@ -426,7 +426,7 @@ export function LunaSidebar({
                     title={c.title}
                     className={`block w-full truncate rounded-lg px-2 py-1.5 pr-8 text-left text-[12.5px] transition ${
                       selected
-                        ? "bg-[#EEEDFE] text-[#3C3489]"
+                        ? "bg-[#e8f0e9] text-[#3C3489]"
                         : "text-slate-500 hover:bg-slate-50"
                     }`}
                   >
@@ -497,7 +497,7 @@ export function LunaSidebar({
           onClick={() => router.push("/wiki/terms")}
           className={`flex w-full items-center gap-[9px] rounded-[9px] px-2 py-[7px] text-left text-[13px] transition ${
             glossaryActive
-              ? "bg-[#EEEDFE] font-bold text-[#3C3489]"
+              ? "bg-[#e8f0e9] font-bold text-[#3C3489]"
               : "text-slate-800 hover:bg-slate-50"
           }`}
         >
@@ -526,7 +526,7 @@ export function LunaSidebar({
               }}
               placeholder="프로젝트 이름"
               autoFocus
-              className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#534AB7]"
+              className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#315e49]"
             />
             <div className="mt-3 flex justify-end gap-2">
               <button
@@ -543,7 +543,7 @@ export function LunaSidebar({
                 type="button"
                 disabled={creating || !newProjectName.trim()}
                 onClick={() => void createProject()}
-                className="rounded-lg bg-[#534AB7] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3C3489] disabled:opacity-40"
+                className="rounded-lg bg-[#315e49] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3C3489] disabled:opacity-40"
               >
                 만들기
               </button>
