@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   DragEvent,
@@ -8,7 +8,8 @@ import {
   useRef,
   useState
 } from "react";
-import { ArrowUp, Link2, Mic, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Mic, Paperclip, Plus, Square, Files, Image as ImageIcon, FolderSearch } from "lucide-react";
+import type { LunaSearchMode } from "@/lib/luna/search-mode";
 import type { LunaPromptRow } from "@/lib/luna/prompts";
 import { useLunaVoice } from "@/components/luna/use-luna-voice";
 import { supabase } from "@/lib/supabase/client";
@@ -50,9 +51,11 @@ type LunaInputProps = {
     connectors: LunaConnectorsState,
     attachmentIds: string[],
     attachmentMeta: LunaAttachmentRef[],
-    skills: LunaSkillsSelection
+    skills: LunaSkillsSelection,
+    searchMode?: LunaSearchMode
   ) => void;
   disabled?: boolean;
+  onStop?: () => void;
   conversationId: string | null;
   onEnsureConversation: () => Promise<string | null>;
   focusTick?: number;
@@ -94,7 +97,7 @@ function toggleClass(
     return "cursor-pointer border-[#1268B3] bg-[#E6F1FB] font-medium text-[#0C447C]";
   }
   if (kind === "task") {
-    return "cursor-pointer border-[#534AB7] bg-[#EEEDFE] font-medium text-[#26215C]";
+    return "cursor-pointer border-[#315e49] bg-[#e8f0e9] font-medium text-[#26215C]";
   }
   return "cursor-pointer border-[#0F6E56] bg-[#E1F5EE] font-medium text-[#04342C]";
 }
@@ -102,6 +105,7 @@ function toggleClass(
 export function LunaInput({
   onSend,
   disabled,
+  onStop,
   conversationId,
   onEnsureConversation,
   focusTick = 0,
@@ -109,6 +113,7 @@ export function LunaInput({
   listenTick = 0,
   placeholder = "루나에게 물어보기"
 }: LunaInputProps) {
+  const [searchMode, setSearchMode] = useState<LunaSearchMode>("docs");
   const [value, setValue] = useState(initialDraft);
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
   const [perspectiveOn, setPerspectiveOn] = useState<Record<string, boolean>>({});
@@ -183,7 +188,7 @@ export function LunaInput({
       typeof window !== "undefined" &&
       window.matchMedia("(max-width: 767px)").matches;
     const minH = isMobile ? 44 : 36;
-    const max = isMobile ? 13.5 * 1.65 * 5 : 14 * 1.55 * 5;
+    const max = isMobile ? 16 * 1.65 * 5 : 16 * 1.55 * 5;
     el.style.height = "auto";
     el.style.height = `${Math.min(Math.max(minH, el.scrollHeight), max)}px`;
   }
@@ -209,6 +214,7 @@ export function LunaInput({
       if (!convId) return;
     }
 
+    setSearchMode("docs");
     setUploading(true);
     try {
       for (const file of list) {
@@ -269,7 +275,8 @@ export function LunaInput({
       overrides.connectors,
       attachments.map((a) => a.id),
       attachments,
-      overrides.skills
+      overrides.skills,
+      searchMode
     );
     setValue("");
     setAttachments([]);
@@ -282,7 +289,7 @@ export function LunaInput({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       submit();
     }
@@ -317,7 +324,7 @@ export function LunaInput({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className={`bg-transparent px-3 pb-3 pt-2 max-md:px-3 ${dragOver ? "outline outline-1 outline-[#534AB7]" : ""}`}
+      className={`bg-transparent px-3 pb-3 pt-2 max-md:px-3 ${dragOver ? "outline outline-1 outline-[#315e49]" : ""}`}
     >
       <input
         ref={fileInputRef}
@@ -331,6 +338,11 @@ export function LunaInput({
       />
 
       <div className="rounded-[22px] border border-[#e7e8ec] bg-white px-[14px] py-3">
+        <div className="mb-3 flex flex-wrap gap-1 border-b border-[#e4e7e1] pb-2" role="group" aria-label="검색 종류">
+          {([{ key: "docs", label: "자료", Icon: Files }, { key: "images", label: "이미지", Icon: ImageIcon }, { key: "files", label: "파일·폴더", Icon: FolderSearch }] as const).map(({ key, label, Icon }) => (
+            <button key={key} type="button" disabled={disabled || uploading || (attachments.length > 0 && key !== "docs")} aria-pressed={searchMode === key} onClick={() => setSearchMode(key)} className={`flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm disabled:opacity-50 ${searchMode === key ? "bg-[#e8f0e9] font-medium text-[#315e49]" : "text-[#737c75] hover:bg-[#f5f3ee]"}`}><Icon size={16} aria-hidden />{label}</button>
+          ))}
+        </div>
         {panelOpen ? (
           <div className="mb-2.5 space-y-2 border-b border-[#eef0f3] pb-2.5">
             <div className="flex flex-wrap gap-1.5">
@@ -408,8 +420,9 @@ export function LunaInput({
           onKeyDown={onKeyDown}
           rows={1}
           disabled={disabled || uploading}
-          placeholder={voice.listening ? "듣고 있어요…" : placeholder}
-          className="mb-2 w-full min-w-0 resize-none overflow-y-auto border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-[#1c1d21] outline-none placeholder:text-[#9aa0a8] disabled:opacity-50 max-md:text-[14px]"
+          aria-label="루나에게 질문"
+          placeholder={voice.listening ? "듣고 있어요…" : searchMode === "images" ? "어떤 이미지를 찾으세요?" : searchMode === "files" ? "파일명이나 프로젝트명을 입력하세요" : placeholder}
+          className="mb-2 w-full min-w-0 resize-none overflow-y-auto border-0 bg-transparent p-0 text-[16px] leading-[1.55] text-[#1c1d21] outline-none placeholder:text-[#9aa0a8] disabled:opacity-50 max-md:text-[16px]"
         />
 
         <div className="flex items-center gap-[9px]">
@@ -418,26 +431,17 @@ export function LunaInput({
             aria-label="파일 첨부"
             disabled={disabled || uploading}
             onClick={() => fileInputRef.current?.click()}
-            className="flex shrink-0 items-center justify-center text-[#6b6f76] disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#6b6f76] hover:bg-[#f5f3ee] disabled:opacity-40"
           >
-            <Plus className="h-[17px] w-[17px]" strokeWidth={1.75} aria-hidden />
+            <Plus className="h-6 w-6" strokeWidth={1.75} aria-hidden />
           </button>
-          <button
-            type="button"
-            aria-label="링크 첨부"
-            disabled={disabled || uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex shrink-0 items-center justify-center text-[#6b6f76] disabled:opacity-40"
-          >
-            <Link2 className="h-[15px] w-[15px]" strokeWidth={1.75} aria-hidden />
-          </button>
-
           <span className="ml-auto" />
 
           <button
             type="button"
             onClick={() => setPanelOpen((v) => !v)}
-            className="shrink-0 text-[11.5px] text-[#9aa0a8] hover:text-[#6b6f76]"
+            disabled={disabled || uploading}
+            className="min-h-11 shrink-0 text-[12px] text-[#9aa0a8] hover:text-[#6b6f76]"
           >
             직접 지정
           </button>
@@ -447,7 +451,7 @@ export function LunaInput({
             aria-label={voice.listening ? "음성 입력 멈추기" : "음성 입력"}
             disabled={disabled || uploading}
             onClick={() => (voice.listening ? voice.stop() : voice.start())}
-            className={`flex shrink-0 items-center justify-center disabled:opacity-40 ${
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-40 ${
               voice.listening ? "text-[#B3403A]" : "text-[#6b6f76]"
             }`}
           >
@@ -455,12 +459,13 @@ export function LunaInput({
           </button>
 
           <button
-            type="submit"
-            disabled={disabled || uploading || (!value.trim() && attachments.length === 0)}
-            aria-label="전송"
-            className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-white disabled:opacity-40 max-md:h-[34px] max-md:w-[34px]"
+            type={disabled && onStop ? "button" : "submit"}
+            onClick={disabled && onStop ? onStop : undefined}
+            disabled={disabled ? !onStop : uploading || (!value.trim() && attachments.length === 0)}
+            aria-label={disabled && onStop ? "답변 중지" : "전송"}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#315e49] text-white disabled:opacity-40"
           >
-            <ArrowUp className="h-[15px] w-[15px] max-md:h-4 max-md:w-4" strokeWidth={2} aria-hidden />
+            {disabled && onStop ? <Square size={16} fill="currentColor" aria-hidden /> : <ArrowUp size={22} aria-hidden />}
           </button>
         </div>
       </div>
