@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { connectionRow } from "@/lib/luna/notion-live/connection";
 import { cacheHitRate } from "@/lib/luna/model-pricing";
 import { artificialAnalysisApiKey } from "@/lib/luna/model-market";
 import {
@@ -14,13 +15,13 @@ export const runtime = "nodejs";
 const TIER_SELECT =
   "tier, provider, model_id, model_label, use_caching, use_batch, note, updated_at";
 
-function envConnected(): Record<string, boolean> {
+function envConnected(notionConnected: boolean): Record<string, boolean> {
   return {
     anthropic: Boolean(anthropicApiKey()),
     openai: Boolean(openaiApiKey()),
     gemini: Boolean(googleApiKey()),
     tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
-    notion: Boolean(process.env.NOTION_TOKEN?.trim()),
+    notion: notionConnected,
     artificial_analysis: Boolean(artificialAnalysisApiKey())
   };
 }
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
   const cachePct = cacheHitRate(totalInput, totalCacheRead);
 
   return NextResponse.json({
-    connections: envConnected(),
+    connections: envConnected(Boolean(await connectionRow(admin, user.id))),
     tiers: tiers ?? [],
     usage: {
       total_calls: totalCalls,
