@@ -1,5 +1,6 @@
 "use client";
 
+import { NotionConnection } from "@/components/luna/NotionConnection";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Menu, SquarePen } from "lucide-react";
 import {
@@ -53,8 +54,6 @@ async function getAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-const reflectingConversationIds = new Set<string>();
-
 function hintFromUserQuery(q: string): string {
   return q
     .trim()
@@ -66,39 +65,9 @@ function hintFromUserQuery(q: string): string {
     .slice(0, 24);
 }
 
-async function callReflect(
-  conversationId: string
-): Promise<{ correctionIds: string[] }> {
-  if (reflectingConversationIds.has(conversationId)) {
-    return { correctionIds: [] };
-  }
-  reflectingConversationIds.add(conversationId);
-  try {
-    const token = await getAccessToken();
-    if (!token) return { correctionIds: [] };
-    const res = await fetch("/api/luna/reflect", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ conversation_id: conversationId })
-    });
-    if (!res.ok) return { correctionIds: [] };
-    const json = (await res.json()) as {
-      correction_ids?: string[];
-    };
-    return {
-      correctionIds: Array.isArray(json.correction_ids)
-        ? json.correction_ids.filter((id): id is string => typeof id === "string")
-        : []
-    };
-  } catch (err) {
-    console.error("[luna] reflect", err);
-    return { correctionIds: [] };
-  } finally {
-    reflectingConversationIds.delete(conversationId);
-  }
+async function callReflect(_conversationId: string): Promise<{ correctionIds: string[] }> {
+  // Per-user retrieved evidence must not become shared learning without provenance review.
+  return { correctionIds: [] };
 }
 
 export const THINKING_MESSAGE_ID = "thinking";
@@ -1061,6 +1030,7 @@ export function LunaChat({
               </ul>
             </div>
           ) : null}
+          <NotionConnection />
           <LunaInput
             onSend={handleSendWrapped}
             disabled={sending}
