@@ -11,7 +11,7 @@ export class NotionConnectionError extends Error {
 export const object = (v: unknown): Record<string, unknown> => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 export function scopedSearchArgs(query: string) {
   return {query, query_type: "internal", teamspace_id: NOTION_TEAMSPACE_ID,
-    filters: {teamspace_ids: [NOTION_TEAMSPACE_ID]}, page_size: 50, max_highlight_length: 4000};
+    filters: {teamspace_ids: [NOTION_TEAMSPACE_ID]}, page_size: 50, max_highlight_length: 500};
 }
 export function checkedSearchResults(payload: unknown): Record<string, unknown>[] {
   const p = object(payload);
