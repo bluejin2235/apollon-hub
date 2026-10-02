@@ -1,3 +1,5 @@
+import { executeFocusedSearch } from "@/lib/luna/focused-search";
+import { normalizeSearchMode } from "@/lib/luna/search-mode";
 import { prefetchInventory } from "@/lib/luna/inventory-prefetch";
 import { uniqueSourceRecords } from "@/lib/luna/source-records";
 import { broadProjectSubject } from "@/lib/luna/nas-priority";
@@ -272,6 +274,7 @@ function isSearchRequestMessage(message: string): boolean {
 type NasDirectoryRow = WorkserverExploreRow;
 
 type ChatRequestBody = {
+  search_mode?: unknown;
   conversation_id?: string;
   message?: string;
   engine?: string;
@@ -844,6 +847,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const searchMode = normalizeSearchMode(body.search_mode);
   const conversationId =
     typeof body.conversation_id === "string" ? body.conversation_id.trim() : "";
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -881,6 +885,13 @@ export async function POST(request: NextRequest) {
   }
   if (!conversation) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  }
+
+  if (searchMode !== "docs") {
+    if (hasAttachments) return NextResponse.json({error: "첨부 자료는 자료 모드에서 검색해 주세요."}, {status: 400});
+    return executeFocusedSearch({admin, signal: request.signal, conversationId, message, mode: searchMode,
+      persist: async rows => { request.signal.throwIfAborted(); return admin.from("luna_messages").insert(rows); }
+    });
   }
 
   const routingMessage =
@@ -1537,6 +1548,7 @@ export async function POST(request: NextRequest) {
         label: string,
         opts?: { silent?: boolean; right?: string }
       ) => {
+        request.signal.throwIfAborted();
         const now = Date.now();
         if (status === "running") stepStartedAt.set(key, now);
         const started = stepStartedAt.get(key);
@@ -1623,6 +1635,7 @@ export async function POST(request: NextRequest) {
           pushStep("clarify", "done", "의도 확인");
           const dumpNow = Date.now();
           controller.enqueue(encoder.encode(KNOWLEDGE_DUMP_CLARIFY));
+          request.signal.throwIfAborted();
           await admin.from("luna_messages").insert([
             {
               id: userMessageId,
@@ -1871,6 +1884,7 @@ export async function POST(request: NextRequest) {
           const peekNow = Date.now();
           const peekUserMeta: Record<string, unknown> = {};
           if (attachmentMeta.length > 0) peekUserMeta.attachments = attachmentMeta;
+          request.signal.throwIfAborted();
           await admin.from("luna_messages").insert([
             {
               id: userMessageId,
@@ -2112,6 +2126,7 @@ export async function POST(request: NextRequest) {
             options: makeOptions
           });
           const makeNow = Date.now();
+          request.signal.throwIfAborted();
           await admin.from("luna_messages").insert([
             {
               id: userMessageId,
@@ -2251,6 +2266,7 @@ export async function POST(request: NextRequest) {
             }
 
             const clarifyNow = Date.now();
+            request.signal.throwIfAborted();
             await admin.from("luna_messages").insert([
               {
                 id: userMessageId,
@@ -3695,7 +3711,7 @@ export async function POST(request: NextRequest) {
             max_tokens: maxTokens,
             system: systemPrompt.anthropic || undefined,
             messages: historyMessages
-          });
+          }, { signal: request.signal });
 
           anthropicStream.on("text", (textDelta) => {
             if (firstTokenAt == null && textDelta) firstTokenAt = Date.now();
@@ -3736,7 +3752,8 @@ export async function POST(request: NextRequest) {
             system: systemPrompt.text,
             user: flatUser || userText,
             maxTokens,
-            useCaching: systemPrompt.applied
+            useCaching: systemPrompt.applied,
+            signal: request.signal
           })) {
             if (chunk.delta) {
               if (firstTokenAt == null) firstTokenAt = Date.now();
@@ -4069,6 +4086,7 @@ export async function POST(request: NextRequest) {
         }
 
         const insertNow = Date.now();
+        request.signal.throwIfAborted();
         const { error: insertError } = await admin.from("luna_messages").insert([
           {
             id: userMessageId,
@@ -4173,6 +4191,7 @@ export async function POST(request: NextRequest) {
         scheduleUserMemoRewrite(admin, user.id);
         controller.close();
       } catch (err) {
+        if (request.signal.aborted) { try { controller.close(); } catch {} return; }
         console.error("[luna/chat] stream", err);
         const msg = err instanceof Error ? err.message : "Stream failed";
         try {
@@ -4180,7 +4199,7 @@ export async function POST(request: NextRequest) {
         } catch {
           /* already closed */
         }
-        controller.close();
+        try { controller.close(); } catch {}
       }
     }
   });
