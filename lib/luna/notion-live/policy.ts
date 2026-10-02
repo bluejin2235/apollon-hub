@@ -32,3 +32,15 @@ export function checkedSearchResults(payload: unknown): Record<string, unknown>[
 export function rejectLegacyNotionAccess(): void {
   throw new Error("공용 노션 색인 및 대표 토큰 검색은 중단되었습니다. 사용자별 노션 연결을 이용하세요.");
 }
+
+/** Only server-returned source URLs become clickable citations. */
+export function resolveNotionCitations(text: string, sources: Array<{title: string; url: string}>): string {
+  return text.replace(/\[([^\]]*)\]\(https?:\/\/[^)\s]+\)/g, "$1")
+    .replace(/https?:\/\/[^\s<>)]*/g, "")
+    .replace(/\[\[N(\d+)\]\]/g, (_match, number: string) => {
+      const source = sources[Number(number)-1];
+      if (!source) return "";
+      const title = source.title.replace(/[\[\]\\]/g, " ");
+      return `[${title}](${source.url})`;
+    });
+}
