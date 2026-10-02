@@ -39,7 +39,11 @@ import {
 } from "@/lib/luna/chat-response";
 import type { FeedbackReason } from "@/lib/luna/feedback";
 import { ChatShellChrome } from "@/components/chat/ChatShellChrome";
+import Link from "next/link";
+import { useLunaWorkspace } from "@/components/luna/LunaWorkspaceContext";
+import type { LunaSearchMode } from "@/lib/luna/search-mode";
 import { useMeasureBottomUi } from "@/hooks/use-measure-bottom-ui";
+import { NasCopySettingsContext } from "@/components/luna/NasPathDualCopy";
 import { supabase } from "@/lib/supabase/client";
 
 async function getAccessToken(): Promise<string | null> {
@@ -656,12 +660,6 @@ export function buildSearchStatus(_connectors: LunaConnectorsState): string[] {
   return [];
 }
 
-const SUGGESTIONS = [
-  "아폴론의 미디어 설치 사례를 알려줘",
-  "이번 주 트렌드 리서치 어떻게 하면 좋을까?",
-  "디지털 랜드마크란 무엇인지 설명해줘"
-];
-
 type LunaChatProps = {
   conversation: LunaConversation | null;
   messages: LunaChatMessage[];
@@ -670,11 +668,13 @@ type LunaChatProps = {
     connectors: LunaConnectorsState,
     attachmentIds: string[],
     attachmentMeta: LunaAttachmentRef[],
-    skills: LunaSkillsSelection
+    skills: LunaSkillsSelection,
+    searchMode?: LunaSearchMode
   ) => void;
   onSuggestion: (text: string) => void;
   onNewChat?: () => void;
   onOpenMenu?: () => void;
+  onStop?: () => void;
   sending?: boolean;
   showMobileHeader?: boolean;
   onEnsureConversation: () => Promise<string | null>;
@@ -692,6 +692,7 @@ export function LunaChat({
   onSuggestion: _onSuggestion,
   onNewChat,
   onOpenMenu,
+  onStop,
   sending,
   showMobileHeader,
   onEnsureConversation,
@@ -709,6 +710,7 @@ export function LunaChat({
   const skipTitleCommitRef = useRef(false);
   const stickToBottomRef = useRef(true);
   useMeasureBottomUi(bottomUiRef, true);
+  const { name: userName } = useLunaWorkspace();
   const { settings: nasPathSettings } = useNasPathSettings();
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -829,7 +831,8 @@ export function LunaChat({
     nextConnectors: LunaConnectorsState,
     attachmentIds: string[],
     attachmentMeta: LunaAttachmentRef[],
-    skills: LunaSkillsSelection
+    skills: LunaSkillsSelection,
+    searchMode?: LunaSearchMode
   ) {
     if (activeClarify) {
       const resolved = resolveChoiceInput(message, activeClarify.options);
@@ -839,12 +842,12 @@ export function LunaChat({
       }
       if (resolved.kind === "option") {
         forceStickToBottom();
-        onSend(resolved.text, nextConnectors, attachmentIds, attachmentMeta, skills);
+        onSend(resolved.text, nextConnectors, attachmentIds, attachmentMeta, skills, searchMode);
         return;
       }
     }
     forceStickToBottom();
-    onSend(message, nextConnectors, attachmentIds, attachmentMeta, skills);
+    onSend(message, nextConnectors, attachmentIds, attachmentMeta, skills, searchMode);
   }
 
   useEffect(() => {
@@ -958,7 +961,7 @@ export function LunaChat({
           cancelTitleEdit();
         }
       }}
-      className="w-full rounded border border-[#534AB7] px-1.5 py-0.5 text-[14.5px] font-semibold text-slate-900 outline-none"
+      className="w-full rounded border border-[#315e49] px-1.5 py-0.5 text-base font-semibold text-slate-900 outline-none"
     />
   ) : (
     <button
@@ -972,18 +975,20 @@ export function LunaChat({
   );
 
   return (
+    <NasCopySettingsContext.Provider value={nasPathSettings}>
     <ChatShellChrome
-      className="max-md:bg-[#F5F4F1]"
+      containedFooter
+      className="bg-[#faf9f6]"
       headerLeft={
         showMobileHeader ? (
-          <button
+          <div className="flex items-center gap-2"><button
             type="button"
             onClick={onOpenMenu}
-            className="chip-sm flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
-            aria-label="메뉴"
+            className="chip-sm flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
+            aria-label="대화 목록 열기 또는 닫기"
           >
-            <Menu size={16} strokeWidth={1.75} aria-hidden />
-          </button>
+            <Menu size={21} strokeWidth={1.75} aria-hidden />
+          </button><Link href="/hub" aria-label="아폴론 허브 홈"><img src="/logo.png" width={28} height={28} alt="아폴론" /></Link></div>
         ) : undefined
       }
       headerTitle={showMobileHeader ? titleNode : <span className="sr-only">{title}</span>}
@@ -992,7 +997,7 @@ export function LunaChat({
           <button
             type="button"
             onClick={onNewChat}
-            className="chip-sm flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
+            className="chip-sm flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#6b6f76]"
             aria-label="새 대화"
           >
             <SquarePen size={16} strokeWidth={1.75} aria-hidden />
@@ -1000,34 +1005,12 @@ export function LunaChat({
         ) : undefined
       }
       desktopHeader={
-        <div className="flex items-center border-b border-slate-200 px-5 py-3">
-          {editingTitle ? (
-            <input
-              ref={titleInputRef}
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => void commitTitleEdit()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void commitTitleEdit();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelTitleEdit();
-                }
-              }}
-              className="w-full max-w-md rounded border border-[#534AB7] px-2 py-1 text-base font-semibold text-slate-900 outline-none"
-            />
-          ) : (
-            <h1
-              className="truncate text-base font-semibold text-slate-900"
-              onDoubleClick={beginEditTitle}
-              title="더블클릭하여 이름 변경"
-            >
-              {title}
-            </h1>
-          )}
-        </div>
+        <header className="flex h-14 items-center gap-3 border-b border-[#e4e7e1] bg-white px-4">
+          <button type="button" onClick={onOpenMenu} aria-label="대화 목록 열기 또는 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-slate-100"><Menu size={21} /></button>
+          <Link href="/hub" aria-label="아폴론 허브 홈" className="shrink-0"><img src="/logo.png" width={28} height={28} alt="아폴론" /></Link>
+          <div className="min-w-0 flex-1">{titleNode}</div>
+          <button type="button" onClick={onNewChat} aria-label="새 대화" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-slate-100"><SquarePen size={21} /></button>
+        </header>
       }
       messagesRef={listRef}
       onMessagesScroll={handleMessagesScroll}
@@ -1065,9 +1048,9 @@ export function LunaChat({
                           }
                           sendChoice(opt);
                         }}
-                        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[13px] text-slate-800 transition hover:bg-[#EEEDFE] disabled:opacity-50"
+                        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-[13px] text-slate-800 transition hover:bg-[#e8f0e9] disabled:opacity-50"
                       >
-                        <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-[#534AB7] px-1 text-[11px] font-semibold text-white">
+                        <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-[#315e49] px-1 text-[11px] font-semibold text-white">
                           {idx + 1}
                         </span>
                         <span className="min-w-0 flex-1 leading-snug">{opt}</span>
@@ -1081,6 +1064,7 @@ export function LunaChat({
           <LunaInput
             onSend={handleSendWrapped}
             disabled={sending}
+            onStop={onStop}
             conversationId={conversation?.id ?? null}
             onEnsureConversation={onEnsureConversation}
             focusTick={focusTick}
@@ -1107,28 +1091,10 @@ export function LunaChat({
             className="mb-6 text-base font-medium text-slate-800"
             style={{ marginTop: 12 }}
           >
-            안녕하세요, 저는 루나입니다
+            {userName ? `${userName}님, 안녕하세요.` : "안녕하세요."}
           </p>
-          <div className="flex w-full max-w-md flex-col gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                disabled={sending}
-                onClick={() =>
-                  onSend(s, { notion: false, web: false, nas: false }, [], [], {
-                    perspective_ids: [],
-                    role_ids: [],
-                    task_ids: []
-                  })
-                }
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 transition hover:border-[#534AB7]/40 hover:bg-[#EEEDFE]/40 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          <LimitsDisclosure />
+          <p className="text-sm text-[#737c75]">오늘은 무엇을 찾아드릴까요?</p>
+
         </div>
       ) : (
         <div className="pb-2">
@@ -1245,5 +1211,6 @@ export function LunaChat({
         </div>
       )}
     </ChatShellChrome>
+    </NasCopySettingsContext.Provider>
   );
 }
