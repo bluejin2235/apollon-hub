@@ -45,3 +45,10 @@ test('search arguments obey the live Notion highlight and result limits',()=>{
  assert.equal(args.max_highlight_length,500);
  assert.ok(args.page_size>0 && args.page_size<=50);
 });
+
+test('citations use returned URLs and reject model-written links and unknown IDs',()=>{
+ const sources=[{title:'Actual source',url:'https://app.notion.com/p/real'}];
+ const answer=policy.resolveNotionCitations('[[N1]] [[N99]] [invented](https://app.notion.com/p/fake) https://evil.example',sources);
+ assert.ok(answer.includes('[Actual source](https://app.notion.com/p/real)'));
+ assert.ok(!answer.includes('fake') && !answer.includes('evil.example') && !answer.includes('N99'));
+});
