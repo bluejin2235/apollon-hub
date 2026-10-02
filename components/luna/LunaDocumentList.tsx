@@ -1,5 +1,6 @@
 "use client";
 
+import { NotionMark } from "@/components/luna/NotionMark";
 import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import {
   nasExplorerFolderPair,
@@ -57,27 +58,18 @@ export function LunaDocumentRow({
   const href = item.notion?.url;
   const inner = (
     <>
-      <span className="text-[13px] opacity-60">📄</span>
+
       <div className="min-w-0 flex-1">
         <div className="break-all text-[12.5px] font-semibold text-[#1c1d21]">
           {href ? (
             <a href={href} target="_blank" rel="noopener noreferrer" className="hover:underline">
-              {item.title}
+              {item.title}<NotionMark />
             </a>
           ) : item.title}
         </div>
-        {pair ? (
-          <NasPathDualCopy
-            pair={pair}
-            onCopyToast={onCopyToast}
-            className="mt-1"
-          />
-        ) : (
-          <div className="mt-0.5 break-all font-mono text-[10.5px] text-[#9aa0a8]">
-            {item.subtitle}
-          </div>
-        )}
+        {!pair ? <div className="mt-0.5 break-all text-xs text-[#9aa0a8]">{item.subtitle}</div> : null}
       </div>
+      {pair ? <NasPathDualCopy pair={pair} onCopyToast={onCopyToast} /> : null}
       <DocBadges item={item} />
     </>
   );
