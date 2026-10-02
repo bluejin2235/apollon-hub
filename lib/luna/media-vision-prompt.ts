@@ -73,40 +73,11 @@ export async function loadVisualGlossary(
 }
 
 export async function loadNotionProjectContexts(
-  admin: SupabaseClient,
-  projectNeedle: string
+  _admin: SupabaseClient,
+  _projectNeedle: string
 ): Promise<string | null> {
-  const needle = projectNeedle.trim() || "삼성디스플레이";
-  const { data: pages, error } = await admin
-    .from("luna_notion_pages")
-    .select("page_id, title, nas_path")
-    .not("nas_path", "is", null)
-    .ilike("nas_path", `%${needle}%`)
-    .limit(40);
-  if (error) {
-    console.warn("[media-vision notion]", error.message);
-    return null;
-  }
-  const blocks: string[] = [];
-  for (const p of pages ?? []) {
-    const { data: chunks } = await admin
-      .from("luna_notion_chunks")
-      .select("text, heading")
-      .eq("page_id", p.page_id)
-      .order("position", { ascending: true })
-      .limit(4);
-    const body = (chunks ?? [])
-      .map(
-        (c) =>
-          `${c.heading ? `[${c.heading}] ` : ""}${(c.text ?? "").slice(0, 280)}`
-      )
-      .join("\n")
-      .slice(0, 900);
-    if (body.trim()) blocks.push(`「${p.title}」\n${body}`);
-    if (blocks.length >= 2) break;
-  }
-  if (blocks.length === 0) return null;
-  return blocks.join("\n---\n").slice(0, 1200);
+  // Image descriptions are shared. Never enrich them with retired, unscoped Notion content.
+  return null;
 }
 
 export function buildMediaVisionPrompt(opts: {
