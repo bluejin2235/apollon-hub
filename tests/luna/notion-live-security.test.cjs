@@ -39,3 +39,9 @@ test('refresh keeps credentials paired with their saved revision during a simult
  try {const result=await connection.userMcp(db,'a');assert.equal(result.revision,savedRevision);assert.equal(result.notionUserId,'notion-a');assert.equal(usedToken,'new-token');assert.equal(reads,1);}
  finally {global.fetch=oldFetch;}
 });
+
+test('search arguments obey the live Notion highlight and result limits',()=>{
+ const args=policy.scopedSearchArgs('test query');
+ assert.equal(args.max_highlight_length,500);
+ assert.ok(args.page_size>0 && args.page_size<=50);
+});
