@@ -160,7 +160,7 @@ const CARD_SECTION_META: Record<
   LunaCard["type"],
   { label: string; color: string }
 > = {
-  notion: { label: "노션", color: "#534AB7" },
+  notion: { label: "노션", color: "#315e49" },
   nas: { label: "Work서버", color: "#1D9E75" },
   image: { label: "이미지", color: "#7C5CFC" },
   web: { label: "웹", color: "#378ADD" },
@@ -341,7 +341,7 @@ function SourceSections({
 function OpinionBlock({ content }: { content: string }) {
   const { body, assumptions } = parseAssumeMarkers(content);
   return (
-    <div className="mt-3 rounded-lg bg-[#EEEDFE] px-3.5 py-3">
+    <div className="mt-3 rounded-lg bg-[#e8f0e9] px-3.5 py-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[#3C3489]">
         <Sparkles className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
         LUNA 종합 의견
@@ -372,12 +372,12 @@ function OpinionBlock({ content }: { content: string }) {
 }
 
 const LUNA_BUBBLE_CLASS =
-  "luna-term-on-bubble rounded-[6px_18px_18px_18px] border border-[#E8E5F4] bg-[#F7F6FC] px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
+  "luna-term-on-bubble rounded-[6px_18px_18px_18px] border border-[#e4e7e1] bg-[#faf9f6] px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
 
 function LunaAvatar() {
   return (
     <div
-      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-[12px] font-bold text-[#EEEDFE] max-md:h-6 max-md:w-6 max-md:text-[10.5px]"
+      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#315e49] text-[12px] font-bold text-[#e8f0e9] max-md:h-6 max-md:w-6 max-md:text-[10.5px]"
       aria-hidden
     >
       L
@@ -417,7 +417,7 @@ function InlineThinkingProgress({
   ) {
     return (
       <div className="flex items-center gap-2">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#534AB7]" aria-hidden />
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#315e49]" aria-hidden />
         <span className="text-[13px] text-[#6b6f76]">생각 중…</span>
       </div>
     );
@@ -527,7 +527,7 @@ function NotionSourcesPanel({ sources }: { sources: NotionSource[] }) {
               href={src.url}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-[#534AB7] hover:underline"
+              className="font-medium text-[#315e49] hover:underline"
             >
               {src.title}
               {src.section ? ` · ${src.section}` : ""}
@@ -708,8 +708,8 @@ function AnalysisReport({
               onClick={() => setActiveTab(team.id)}
               className="inline-flex items-center gap-1 px-2 py-1 text-[10.5px]"
               style={{
-                color: selected ? "#534AB7" : running ? "#BA7517" : "#6B6A64",
-                borderBottom: selected ? "2px solid #534AB7" : "2px solid transparent",
+                color: selected ? "#315e49" : running ? "#BA7517" : "#6B6A64",
+                borderBottom: selected ? "2px solid #315e49" : "2px solid transparent",
                 fontWeight: selected ? 600 : 400
               }}
             >
@@ -734,9 +734,9 @@ function AnalysisReport({
           onClick={() => setActiveTab("summary")}
           className="px-2 py-1 text-[10.5px]"
           style={{
-            color: activeTab === "summary" ? "#534AB7" : "#6B6A64",
+            color: activeTab === "summary" ? "#315e49" : "#6B6A64",
             borderBottom:
-              activeTab === "summary" ? "2px solid #534AB7" : "2px solid transparent",
+              activeTab === "summary" ? "2px solid #315e49" : "2px solid transparent",
             fontWeight: activeTab === "summary" ? 600 : 400
           }}
         >
@@ -776,14 +776,14 @@ function AnalysisReport({
           <button
             type="button"
             onClick={() => setToast("준비 중")}
-            className="rounded-md border border-[#D3D1C7] bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:border-[#534AB7]"
+            className="rounded-md border border-[#D3D1C7] bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:border-[#315e49]"
           >
             노션에 저장
           </button>
           <button
             type="button"
             onClick={() => setToast("준비 중")}
-            className="rounded-md border border-[#D3D1C7] bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:border-[#534AB7]"
+            className="rounded-md border border-[#D3D1C7] bg-white px-2.5 py-1 text-[11px] text-slate-700 hover:border-[#315e49]"
           >
             프로젝트에 붙이기
           </button>
@@ -795,7 +795,7 @@ function AnalysisReport({
           <button
             type="button"
             onClick={() => setSourcesOpen((v) => !v)}
-            className="text-[11px] text-slate-600 hover:text-[#534AB7]"
+            className="text-[11px] text-slate-600 hover:text-[#315e49]"
           >
             참고한 자료 {cards.length}건
           </button>
@@ -872,7 +872,7 @@ function DetailMetaFooter({
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className="text-[#534AB7] hover:underline"
+              className="text-[#315e49] hover:underline"
             >
               자세히
             </button>
@@ -1138,7 +1138,7 @@ function MessageActionsRow({
               disabled={busy}
               onClick={() => onFeedback("good")}
               className={
-                feedback === "good" ? "text-[#534AB7]" : "hover:text-[#6b6f76]"
+                feedback === "good" ? "text-[#315e49]" : "hover:text-[#6b6f76]"
               }
             >
               <ThumbsUp
@@ -1154,7 +1154,7 @@ function MessageActionsRow({
               disabled={busy}
               onClick={() => onFeedback("bad")}
               className={
-                feedback === "bad" ? "text-[#534AB7]" : "hover:text-[#6b6f76]"
+                feedback === "bad" ? "text-[#315e49]" : "hover:text-[#6b6f76]"
               }
             >
               <ThumbsDown
@@ -1460,7 +1460,7 @@ export function LunaMessage({
             </div>
           ) : null}
           {content ? (
-            <div className="whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-[#534AB7] px-[15px] py-[11px] text-[14px] leading-[1.6] text-white max-md:px-[13px] max-md:py-[9px] max-md:text-[13.5px]">
+            <div className="whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-[#315e49] px-[15px] py-[11px] text-[14px] leading-[1.6] text-white max-md:px-[13px] max-md:py-[9px] max-md:text-[13.5px]">
               {content}
               {engine ? (
                 <div className="mt-1.5 text-[10px] text-white/70">{engine}</div>
@@ -1520,7 +1520,7 @@ export function LunaMessage({
                   type="button"
                   disabled={busy || !onClarifySelect}
                   onClick={() => onClarifySelect?.(opt)}
-                  className="mb-1 block w-full rounded-lg border border-solid border-[#D3D1C7] px-[9px] py-[5px] text-left text-[11px] text-slate-800 transition hover:border-[#534AB7] hover:bg-[#EEEDFE] disabled:opacity-50"
+                  className="mb-1 block w-full rounded-lg border border-solid border-[#D3D1C7] px-[9px] py-[5px] text-left text-[11px] text-slate-800 transition hover:border-[#315e49] hover:bg-[#e8f0e9] disabled:opacity-50"
                 >
                   {opt}
                 </button>
@@ -1631,7 +1631,7 @@ export function LunaMessage({
                 <div className="mt-1.5 rounded-md bg-[#f3f4f6] px-2.5 py-1.5">
                   <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
                     {feedbackReason ? (
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-[#534AB7]">
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-[#315e49]">
                         {FEEDBACK_REASON_LABELS[feedbackReason]}
                       </span>
                     ) : null}
@@ -1663,7 +1663,7 @@ export function LunaMessage({
                         onClick={() => void sendFeedback("bad", { reason: rid })}
                         className={`rounded-full px-2 py-0.5 text-[11px] ${
                           feedbackReason === rid
-                            ? "bg-[#534AB7] text-white"
+                            ? "bg-[#315e49] text-white"
                             : "bg-[#f3f4f6] text-[#6b6f76]"
                         }`}
                       >
@@ -1705,7 +1705,7 @@ export function LunaMessage({
                           collapse: true
                         })
                       }
-                      className="rounded-md bg-[#534AB7] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-60"
+                      className="rounded-md bg-[#315e49] px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-60"
                     >
                       남기기
                     </button>
