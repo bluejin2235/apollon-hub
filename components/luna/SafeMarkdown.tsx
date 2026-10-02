@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NotionMark } from "@/components/luna/NotionMark";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -51,7 +52,7 @@ function makeComponents(
   const MdA = ({ href, children }: { href?: string; children?: ReactNode }) => {
     const safe = safeHref(href);
     if (!safe) return <span>{children}</span>;
-    const className = "font-medium text-[#534AB7] underline underline-offset-2";
+    const className = "font-medium text-[#315e49] underline underline-offset-2";
     if (safe.startsWith("/") || safe.startsWith("#")) {
       return (
         <Link href={safe} className={className}>
@@ -59,9 +60,10 @@ function makeComponents(
         </Link>
       );
     }
+    const isNotion = /^https:\/\/(?:[a-z0-9-]+\.)?notion\.(?:so|com)(?:\/|$)/i.test(safe);
     return (
       <a href={safe} target="_blank" rel="noopener noreferrer" className={className}>
-        {children}
+        {isNotion ? flattenPlain(children).replace(/^[NＮ]\s*(?=[가-힣])/, "").replace(/\s*↗\s*$/, "") : children}{isNotion ? <NotionMark /> : null}
       </a>
     );
   };
