@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
 import { isSuperAdminUser } from "@/lib/luna/auth";
+import { connectionRow } from "@/lib/luna/notion-live/connection";
 import {
   formatDurationSec
 } from "@/lib/luna/knowledge-format";
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
   const { admin } = gate;
 
   try {
-    const connected = Boolean(process.env.NOTION_TOKEN?.trim());
+    const connected = Boolean(await connectionRow(admin, gate.user.id));
     const [schedule, exclude, stats, running, history, health] = await Promise.all([
       getNotionIndexSchedule(admin),
       getNotionIndexExclude(admin),
@@ -141,8 +142,8 @@ export async function GET(request: NextRequest) {
         teamspaces: stats.teamspaces,
         accessible_pages: stats.pages,
         subtitle: connected
-          ? `통합 토큰 정상 · 팀스페이스 ${stats.teamspaces.toLocaleString()}곳 · 접근 가능 페이지 ${stats.pages.toLocaleString()}`
-          : "NOTION_TOKEN을 설정하면 검색·색인을 사용합니다"
+          ? "내 노션 계정 연결됨 · 아폴론 Working만 실시간 검색 · 아래 수치는 사용 중단된 과거 색인"
+          : "루나에서 내 노션 계정을 연결하세요 · 공용 토큰·예약 색인 사용 중단 · 아래는 과거 색인 수치"
       },
       stats: {
         pages: stats.pages,
@@ -167,15 +168,15 @@ export async function GET(request: NextRequest) {
               : "—"
         }
       },
-      schedule,
+      schedule: {...schedule, full: {...schedule.full, enabled:false}, incremental: {...schedule.incremental, enabled:false}},
       exclude,
       running: running ? serializeRun(running) : null,
       failure: showFailureBanner && lastFailed ? serializeRun(lastFailed) : null,
       history: history.map(serializeRun),
       rules: [
-        { left: "먼저 보는 것", right: "색인" },
-        { left: "실시간 조회", right: "최근 수정분만" },
-        { left: "결과 없을 때", right: "웹으로 보완" },
+        { left: "검색 인증", right: "사용자별 노션 OAuth" },
+        { left: "검색 범위", right: "아폴론 Working 팀스페이스" },
+        { left: "범위 확인 실패", right: "노션 결과 차단 · 공용 색인 대체 없음" },
         { left: "출처 표기", right: "노션 / 워크 구분" }
       ]
     });
