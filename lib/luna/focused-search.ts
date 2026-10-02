@@ -4,15 +4,17 @@ import { parseAskedWhat } from "@/lib/luna/ask-what";
 import { searchMediaForLuna } from "@/lib/luna/media-index-search";
 import { exploreWorkserverFallback } from "@/lib/luna/workserver-explore";
 import type { LunaCard } from "@/lib/luna/tavily";
+import { runSearchTask } from "@/lib/luna/search-task";
 
 /** Called only after Luna access and conversation ownership have been checked.
  * No Notion/wiki fallback is permitted for an explicitly selected source type.
  */
-export function executeFocusedSearch({ admin, signal, conversationId, message, mode, persist, evaluation = false }: {
+export function executeFocusedSearch({ admin, signal, conversationId, message, query = message, mode, persist, evaluation = false }: {
   admin: SupabaseClient;
   signal: AbortSignal;
   conversationId: string;
   message: string;
+  query?: string;
   mode: "images" | "files";
   evaluation?: boolean;
   persist: (rows: Array<{role: string; content: string; metadata: Record<string, unknown>; [key: string]: unknown}>) => PromiseLike<{error: unknown}>;
@@ -34,13 +36,13 @@ export function executeFocusedSearch({ admin, signal, conversationId, message, m
         event({ type: "step", key, status: "running", label });
         let cards: LunaCard[];
         if (mode === "images") {
-          const embedding = await createQueryEmbedding(message);
+          const embedding = await runSearchTask(signal, 15000, () => createQueryEmbedding(query));
           check();
           if (!embedding) { publicError = "이미지 검색을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요."; throw new Error(publicError); }
-          const result = await searchMediaForLuna(admin, embedding, message, { asked: parseAskedWhat(message) });
+          const result = await runSearchTask(signal, 30000, () => searchMediaForLuna(admin, embedding, query, { asked: parseAskedWhat(query) }));
           cards = result.cards;
         } else {
-          const rows = await exploreWorkserverFallback(admin, message, message);
+          const rows = await runSearchTask(signal, 30000, () => exploreWorkserverFallback(admin, query, query));
           cards = rows.map(row => {
             const title = row.path.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() || row.path;
             const type = (row.type ?? "").toLowerCase();
