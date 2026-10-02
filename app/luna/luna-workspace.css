@@ -1,0 +1,17 @@
+/* Only the Luna chat replaces the portal's padded page frame. */
+body:has([data-luna-workspace="chat"]) .portal-page-frame {
+  max-width: none;
+  padding-inline: 0;
+}
+body:has([data-luna-workspace="chat"]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+[data-luna-workspace="chat"] {
+  width: 100%;
+  overflow-x: clip;
+}
+[data-luna-workspace="chat"] textarea,
+[data-luna-workspace="chat"] input:not([type="checkbox"]):not([type="file"]) {
+  font-size: 16px;
+}
