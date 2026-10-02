@@ -1,5 +1,6 @@
 "use client";
 
+import { NotionMark } from "@/components/luna/NotionMark";
 import { NasPathDualCopy } from "@/components/luna/NasPathDualCopy";
 import {
   nasExplorerFolderPair,
@@ -105,14 +106,14 @@ function NotionRow({ src }: { src: NotionSource }) {
   const inner = (
     <>
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-semibold text-[#1c1d21]">{src.title}</div>
+        <div className="text-[12.5px] font-semibold text-[#1c1d21]">{src.title}<NotionMark /></div>
         {metaBits.length > 0 ? (
           <div className="mt-0.5 text-[11px] text-[#9aa0a8]">
             {metaBits.join(" · ")}
           </div>
         ) : null}
       </div>
-      <MaterialTag label="노션" bg="#EFEFED" ink="#37352F" />
+
     </>
   );
   const className =
@@ -145,27 +146,10 @@ function WorkRow({
   const href = card.url;
   const inner = (
     <>
-      <div className="min-w-0 flex-1">
-        <div className="break-all text-[12.5px] font-semibold text-[#1c1d21]">
-          {href ? (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="hover:underline">
-              {card.title}
-            </a>
-          ) : card.title}
-        </div>
-        {pair ? (
-          <NasPathDualCopy
-            pair={pair}
-            onCopyToast={onCopyToast}
-            className="mt-1"
-          />
-        ) : (
-          <div className="mt-1 break-all font-mono text-[10.5px] leading-[1.55] text-[#6b6f76]">
-            {card.title}
-          </div>
-        )}
+      <div className="min-w-0 flex-1 break-words text-sm font-medium text-[#1c1d21]">
+        {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="hover:underline">{card.title}</a> : card.title}
       </div>
-      <MaterialTag label="워크" bg="#EDEFF2" ink="#5B6472" />
+      {pair ? <NasPathDualCopy pair={pair} onCopyToast={onCopyToast} /> : null}
     </>
   );
   const className =
@@ -233,9 +217,9 @@ export function SourceGroupSections({
   const wikiRows = lim != null ? sources.wiki.slice(0, lim) : sources.wiki;
 
   return (
-    <div className="mt-4 space-y-4">
+    <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
       {showImage && sources.image.length > 0 ? (
-        <section>
+        <section className="xl:col-span-2">
           <GroupHeader kind="image" count={sources.image.length} />
           <LunaImageGrid
             cards={sources.image}

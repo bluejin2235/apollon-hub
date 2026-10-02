@@ -90,17 +90,14 @@ function WorkLinkRows({
           key={row.key}
           className="flex items-start gap-[9px] border-b border-[#eef0f3] px-[15px] py-[9px] last:border-b-0"
         >
-          <span className="mt-0.5 shrink-0 rounded-md bg-[#EDEFF2] px-[7px] py-0.5 text-[9px] font-bold text-[#5B6472]">
-            워크
-          </span>
           <div className="min-w-0 flex-1">
             {row.name ? (
               <div className="mb-1 break-all text-[11.5px] text-[#1c1d21]">
                 {row.name}
               </div>
             ) : null}
-            <NasPathDualCopy pair={row.pair} onCopyToast={onCopyToast} />
           </div>
+          <NasPathDualCopy pair={row.pair} onCopyToast={onCopyToast} />
         </div>
       ))}
       {item.filesMore > 0 ? (

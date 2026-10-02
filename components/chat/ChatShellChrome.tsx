@@ -8,6 +8,7 @@ import {
 
 export type ChatShellChromeProps = {
   headerLeft?: ReactNode;
+  containedFooter?: boolean;
   headerTitle: ReactNode;
   headerRight?: ReactNode;
   /** Desktop-only header row (md+). When omitted, mobile header is the only chrome. */
@@ -35,6 +36,7 @@ export type ChatShellChromeProps = {
  * Message rendering and send logic stay in the consumer.
  */
 export function ChatShellChrome({
+  containedFooter = false,
   headerLeft,
   headerTitle,
   headerRight,
@@ -83,15 +85,15 @@ export function ChatShellChrome({
         <div
           ref={messagesRef}
           onScroll={onMessagesScroll}
-          className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-4 max-md:pb-[calc(140px+env(safe-area-inset-bottom,0px))] md:overscroll-auto ${messagesClassName}`}
+          className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-4 ${containedFooter ? "" : "max-md:pb-[calc(140px+env(safe-area-inset-bottom,0px))]"} md:overscroll-auto ${messagesClassName}`}
         >
-          <div className="mx-auto w-full max-w-3xl">{children}</div>
+          <div className={`mx-auto w-full ${containedFooter ? "max-w-5xl" : "max-w-3xl"}`}>{children}</div>
         </div>
       </div>
 
       <div
         ref={footerRef}
-        className="mx-auto w-full max-w-3xl max-md:fixed max-md:left-0 max-md:right-0 max-md:z-20 max-md:bg-white"
+        className={`mx-auto w-full max-w-3xl shrink-0 ${containedFooter ? "pb-[env(safe-area-inset-bottom,0px)]" : "max-md:fixed max-md:left-0 max-md:right-0 max-md:z-20 max-md:bg-white"}`}
         style={{
           bottom: "calc(var(--mobile-subnav-h, 0px) + env(safe-area-inset-bottom, 0px))"
         }}

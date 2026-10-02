@@ -628,3 +628,13 @@ export function splitMarkdownByWorkserverPaths(content: string): MarkdownSegment
   if (segments.length === 0) return [{ type: "text", value: normalized }];
   return segments;
 }
+
+/** Use the signed-in user's configured mount, retaining the exact indexed suffix. */
+export function raiPathForOfficePath(officePath: string, settings: NasPathSettings): string {
+  const match = officePath.match(/^([TP]):\\(.*)$/i);
+  if (!match) return "";
+  const prefix = match[1].toUpperCase() === "P"
+    ? settings.prefixP || DEFAULT_RAIDRIVE_PREFIX_P
+    : settings.prefixT || DEFAULT_RAIDRIVE_PREFIX_T;
+  return joinNasPrefix(prefix, match[2]);
+}

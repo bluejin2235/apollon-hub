@@ -64,7 +64,7 @@ import type { FeedbackReason } from "@/lib/luna/feedback";
 import { supabase } from "@/lib/supabase/client";
 
 const LUNA_BUBBLE_CLASS =
-  "luna-term-on-bubble rounded-[6px_18px_18px_18px] border border-[#E8E5F4] bg-[#F7F6FC] px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
+  "luna-term-on-bubble rounded-[6px_18px_18px_18px] border border-[#e4e7e1] bg-white px-5 py-[18px] text-[14.5px] leading-[1.7] text-[#1c1d21] max-md:px-4 max-md:py-4 max-md:text-[13.5px] max-md:leading-[1.7]";
 
 export type AnswerBlockProps = {
   id: string;
@@ -109,14 +109,7 @@ export type AnswerBlockProps = {
 };
 
 function LunaAvatar() {
-  return (
-    <div
-      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#534AB7] text-[12px] font-bold text-[#EEEDFE] max-md:h-6 max-md:w-6 max-md:text-[10.5px]"
-      aria-hidden
-    >
-      L
-    </div>
-  );
+  return <img src="/luna/luna-play.webp" width={28} height={28} alt="루나" className="mt-0.5 h-7 w-7 shrink-0 object-contain max-md:hidden" />;
 }
 
 export function UserBubble({
@@ -150,7 +143,7 @@ export function UserBubble({
           </div>
         ) : null}
         {content ? (
-          <div className="whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-[#534AB7] px-[15px] py-[11px] text-[14px] leading-[1.6] text-white max-md:px-[13px] max-md:py-[9px] max-md:text-[13.5px]">
+          <div className="whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-[#315e49] px-[15px] py-[11px] text-[14px] leading-[1.6] text-white max-md:px-[13px] max-md:py-[9px] max-md:text-[13.5px]">
             {content}
             {engine ? (
               <div className="mt-1.5 text-[10px] text-white/70">{engine}</div>
@@ -196,11 +189,11 @@ function AnswerBodyMarkdown({
           className="text-[14.5px] max-md:text-[13.5px]"
         />
       ) : streaming ? (
-        <span className="inline-block h-[15px] w-0.5 animate-pulse bg-[#534AB7] align-text-bottom" />
+        <span className="inline-block h-[15px] w-0.5 animate-pulse bg-[#315e49] align-text-bottom" />
       ) : null}
       {streaming && body.trim() ? (
         <span
-          className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#534AB7] align-text-bottom"
+          className="ml-0.5 inline-block h-[15px] w-[7px] animate-pulse bg-[#315e49] align-text-bottom"
           aria-hidden
         />
       ) : null}
@@ -459,7 +452,7 @@ function AssistantAnswerBlock({
                 key={opt}
                 type="button"
                 onClick={() => onClarifySelect?.(opt)}
-                className="rounded-full border border-[#E3E0F5] bg-white px-3 py-1 text-[12px] text-[#534AB7] hover:bg-[#F7F6FC]"
+                className="rounded-full border border-[#E3E0F5] bg-white px-3 py-1 text-[12px] text-[#315e49] hover:bg-[#faf9f6]"
               >
                 {opt}
               </button>
@@ -498,6 +491,7 @@ function AssistantAnswerBlock({
             counts={counts}
             isComplete={isComplete}
             forceExpanded={forceProgressOpen}
+            durationMs={durationMs}
           />
         ) : null}
         <AnswerBodyMarkdown body={body} streaming={streaming} />
