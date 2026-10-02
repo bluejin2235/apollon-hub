@@ -480,6 +480,7 @@ function applyGpt5ReasoningNone(
 }
 
 async function* streamOpenAI(opts: {
+  signal?: AbortSignal;
   model: string;
   system?: string;
   user: string;
@@ -509,7 +510,7 @@ async function* streamOpenAI(opts: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
+    signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
     const detail = await response.text();
@@ -545,6 +546,7 @@ async function* streamOpenAI(opts: {
 }
 
 async function* streamGoogle(opts: {
+  signal?: AbortSignal;
   model: string;
   system?: string;
   user: string;
@@ -566,7 +568,7 @@ async function* streamGoogle(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
+    signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(LLM_FETCH_TIMEOUT_MS)
   });
   if (!response.ok) {
     const detail = await response.text();
@@ -663,6 +665,7 @@ function fallbackReasonLabel(err: unknown): string {
 }
 
 export async function* llmStreamText(opts: {
+  signal?: AbortSignal;
   provider: ResolvedProviderModel["provider"];
   model_id: string;
   system?: string | Anthropic.TextBlockParam[];
@@ -691,7 +694,7 @@ export async function* llmStreamText(opts: {
       max_tokens: maxTokens,
       system: wrapped || undefined,
       messages: [{ role: "user", content: opts.user }]
-    });
+    }, {signal: opts.signal});
     for await (const event of stream) {
       if (
         event.type === "content_block_delta" &&
@@ -707,6 +710,7 @@ export async function* llmStreamText(opts: {
 
   if (opts.provider === "openai") {
     yield* streamOpenAI({
+      signal: opts.signal,
       model: opts.model_id,
       system: systemText,
       user: opts.user,
@@ -716,6 +720,7 @@ export async function* llmStreamText(opts: {
   }
 
   yield* streamGoogle({
+    signal: opts.signal,
     model: opts.model_id,
     system: systemText,
     user: opts.user,
