@@ -80,7 +80,7 @@ export async function liveChat(request: NextRequest) {
         const [notion, nas, images, terms] = await Promise.allSettled([
           source<NotionSource[]>("ui_notion","내 노션 계정으로 아폴론 Working을 검색하고 있어요",r=>`노션 자료 ${r.length}개를 찾았어요`,90000,s=>searchLiveNotion(admin,user.id,query,s)),
           source("ui_work","Work 파일과 폴더를 찾고 있어요",r=>`Work 파일·폴더 ${r.length}개를 찾았어요`,30000,()=>exploreWorkserverFallback(admin,query,query)),
-          source<LunaCard[]>("ui_image","관련 이미지를 찾고 있어요",r=>`이미지 ${r.length}개를 찾았어요`,45000,async s=>{const embedding=await createQueryEmbedding(query);s.throwIfAborted();if(!embedding)throw new Error("No embedding");const r=await searchMediaForLuna(admin,embedding,query,{asked:parseAskedWhat(query)});return r.cards;}),
+          source<LunaCard[]>("ui_image","관련 이미지를 찾고 있어요",r=>`이미지 ${r.length}개를 찾았어요`,45000,async s=>{const embedding=await createQueryEmbedding(query,{timeoutMs:15000});s.throwIfAborted();if(!embedding)throw new Error("No embedding");const r=await searchMediaForLuna(admin,embedding,query,{asked:parseAskedWhat(query)});return r.cards;}),
           source("ui_glossary","회사 용어사전을 확인하고 있어요",r=>`관련 용어 ${r.length}개를 확인했어요`,15000,async()=>{const r=await admin.from("glossary_terms").select("term_ko,term_en,synonyms,definition").is("deleted_at",null).limit(800);if(r.error)throw new Error("Glossary unavailable");const text=query.toLowerCase();return (r.data||[]).filter(t=>[t.term_ko,t.term_en,...(Array.isArray(t.synonyms)?t.synonyms:[])].some(v=>typeof v==="string"&&v.length>1&&text.includes(v.toLowerCase()))).slice(0,12).map(t=>({term:String(t.term_ko),definition:String(t.definition||"").slice(0,2000)}));})
         ]);
         check();
