@@ -50,3 +50,5 @@ docs/image_test/
 docs/audit/highlight-screens/
 .vercel
 .env*
+
+supabase/.temp/
