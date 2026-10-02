@@ -341,6 +341,10 @@ export async function POST(request: NextRequest) {
     }
 
     const messages = (messagesData ?? []) as MessageRow[];
+    if (messages.some(m => m.metadata && typeof m.metadata === "object" && "search_policy" in m.metadata)) {
+      await clearReflectLock(admin, conversationId, user.id);
+      return NextResponse.json({ saved: 0, skipped: "user_scoped_evidence" });
+    }
     if (messages.length === 0) {
       await finishReflectWatermark(admin, conversationId, user.id, 0);
       return NextResponse.json({ saved: 0, skipped: "empty" });
@@ -530,4 +534,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -21,6 +21,18 @@ export type ProgressDisplayRow = {
   ms?: number;
 };
 
+export function currentProgressLabel(steps: ProgressStepLite[], rows: ProgressDisplayRow[], complete: boolean, elapsedMs: number): string {
+  if (complete) {
+    if (steps.some(s => s.key === "stopped")) return "답변 중지";
+    if (steps.some(s => s.key === "error")) return "검색 실패";
+    if (steps.some(s => s.key === "partial")) return "일부 자료 제외 · 검색 완료";
+    return "검색 완료";
+  }
+  const active = rows.filter(row => row.state === "now");
+  return (active[Math.floor(elapsedMs / 3000) % Math.max(active.length, 1)]
+    ?? rows.filter(row => row.state === "done").at(-1))?.label || "질문을 확인하고 있어요";
+}
+
 /** 진행 패널에 그릴 단계 키 (내부 classify/search 등은 제외) */
 export const UI_PROGRESS_KEYS = new Set([
   "ui_read",
@@ -287,7 +299,7 @@ export function buildDetailTimingRows(opts: {
     const sec = formatSecRight(searchMs);
     rows.push({
       key: "notion",
-      label: "노션 벡터 검색",
+      label: "노션 검색",
       right: [countPart, sec].filter(Boolean).join(" · ") || "—"
     });
   }

@@ -84,16 +84,18 @@ export async function userMcp(admin: SupabaseClient, userId: string, signal?: Ab
     try {
       if (!credentials.refresh_token) throw new NotionConnectionError("reconnect", "노션을 다시 연결해 주세요.");
       const tokens = await tokenRequest({grant_type: "refresh_token", client_id: credentials.client_id, refresh_token: credentials.refresh_token, ...(credentials.client_secret ? {client_secret: credentials.client_secret} : {})});
+      if ((typeof tokens.user_id === "string" && tokens.user_id !== row.notion_user_id) || (typeof tokens.workspace_id === "string" && tokens.workspace_id !== row.workspace_id)) throw new NotionConnectionError("reconnect", "노션 계정 정보가 변경되었습니다. 다시 연결해 주세요.");
       credentials = {...credentials, access_token: tokens.access_token as string, ...(typeof tokens.refresh_token === "string" ? {refresh_token: tokens.refresh_token} : {})};
-      const saved = await admin.from(TABLE).update({credentials: seal(credentials, userId), expires_at: new Date(Date.now()+(tokens.expires_in as number)*1000).toISOString(), revision: randomUUID(), refresh_id: null, refresh_until: null}).eq("user_id", userId).eq("revision", row.revision).eq("refresh_id", lock).select("user_id").maybeSingle();
+      const saved = await admin.from(TABLE).update({credentials: seal(credentials, userId), expires_at: new Date(Date.now()+(tokens.expires_in as number)*1000).toISOString(), revision: randomUUID(), refresh_id: null, refresh_until: null}).eq("user_id", userId).eq("revision", row.revision).eq("refresh_id", lock).select("*").maybeSingle();
       if (saved.error || !saved.data) throw new Error("Refresh persistence failed");
+      // Keep the revision belonging to these exact credentials. A later reconnect is
+      // detected by search's final revision check, never paired with our old token.
+      row = saved.data as ConnectionRow;
     } catch (error) {
       if (error instanceof NotionConnectionError && error.code === "reconnect") await admin.from(TABLE).delete().eq("user_id", userId).eq("revision", row.revision).eq("refresh_id", lock);
       else await admin.from(TABLE).update({refresh_id: null, refresh_until: null}).eq("user_id", userId).eq("revision", row.revision).eq("refresh_id", lock);
       throw error;
     }
-    row = await connectionRow(admin, userId);
-    if (!row) throw new NotionConnectionError("reconnect", "노션을 다시 연결해 주세요.");
   }
   signal?.throwIfAborted();
   const mcp = new NotionMcp(credentials.access_token, signal); await mcp.initialize();

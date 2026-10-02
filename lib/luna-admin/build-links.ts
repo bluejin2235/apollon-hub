@@ -448,17 +448,9 @@ export async function buildLinks(
   const [nas, notionPages, media, relations, existing, superAdminId] =
     await Promise.all([
       fetchAll<NasRow>(admin, "nas_directory", "drive, path, type"),
-      fetchAll<NotionPage>(
-        admin,
-        "luna_notion_pages",
-        "page_id, title, nas_path, path_titles, root_title"
-      ),
+      Promise.resolve([] as NotionPage[]), // Retired shared Notion index is not company-wide evidence.
       fetchAll<MediaRow>(admin, "luna_media_index", "path, project, description"),
-      fetchAll<RelationRow>(
-        admin,
-        "luna_notion_relations",
-        "from_page_id, to_page_id, property_name"
-      ),
+      Promise.resolve([] as RelationRow[]),
       loadExistingKeys(admin),
       resolveSuperAdminId(admin)
     ]);
@@ -1311,7 +1303,7 @@ export async function buildLinks(
         "luna_library",
         "title, content, summary"
       ),
-      fetchAll<{ text: string | null }>(admin, "luna_notion_chunks", "text"),
+      Promise.resolve([] as { text: string | null }[]),
       loadProductionPerspectiveMessages(admin)
     ]);
 

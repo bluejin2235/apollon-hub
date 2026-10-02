@@ -581,7 +581,10 @@ export default function LunaPage() {
 
         if (!res.ok || !res.body) {
           const failure = await res.json().catch(() => ({}));
-          if (failure.code === "notion_connect") window.dispatchEvent(new Event("luna-notion-connect"));
+          if (failure.code === "notion_connect") {
+            window.dispatchEvent(new CustomEvent("luna-restore-question", {detail: text}));
+            window.dispatchEvent(new Event("luna-notion-connect"));
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === liveAssistantId
@@ -589,7 +592,9 @@ export default function LunaPage() {
                     ...m,
                     isThinking: false,
                     metadata: undefined,
-                    content: typeof failure.error === "string" ? failure.error : "응답을 가져오지 못했습니다. 다시 시도해 주세요."
+                    content: typeof failure.error === "string" ? failure.error : "응답을 가져오지 못했습니다. 다시 시도해 주세요.",
+                    durationMs: Date.now() - requestStartedAt,
+                    steps: [{key: "error", status: "done", label: "검색을 시작하지 못했습니다"}]
                   }
                 : m
             )
@@ -928,9 +933,9 @@ export default function LunaPage() {
                   ...m,
                   isThinking: false,
                   metadata: undefined,
-                  content: abort.signal.aborted ? `${m.content}${m.content ? "\n\n" : ""}답변을 중지했습니다.` : m.content || "오류가 발생했습니다.",
+                  content: `${m.content}${m.content ? "\n\n" : ""}${abort.signal.aborted ? "답변을 중지했습니다." : "답변 수신 또는 저장을 완료하지 못했습니다. 다시 시도해 주세요."}`,
                   durationMs: Date.now() - requestStartedAt,
-                  steps: abort.signal.aborted ? [{key: "stopped", status: "done", label: "답변 중지"}] : m.steps
+                  steps: [{key: abort.signal.aborted ? "stopped" : "error", status: "done", label: abort.signal.aborted ? "답변 중지" : "검색 실패"}]
                 }
               : m
           )

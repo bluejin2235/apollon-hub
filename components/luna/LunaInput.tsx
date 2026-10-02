@@ -115,6 +115,14 @@ export function LunaInput({
 }: LunaInputProps) {
   const [searchMode, setSearchMode] = useState<LunaSearchMode>("docs");
   const [value, setValue] = useState(initialDraft);
+  useEffect(() => {
+    const restore = (event: Event) => {
+      const question: unknown = (event as CustomEvent).detail;
+      if (typeof question === "string") setValue(current => current.trim() ? current : question);
+    };
+    window.addEventListener("luna-restore-question", restore);
+    return () => window.removeEventListener("luna-restore-question", restore);
+  }, []);
   const [prompts, setPrompts] = useState<LunaPromptRow[]>([]);
   const [perspectiveOn, setPerspectiveOn] = useState<Record<string, boolean>>({});
   const [roleOn, setRoleOn] = useState<Record<string, boolean>>({});

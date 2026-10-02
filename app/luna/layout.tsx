@@ -18,6 +18,8 @@ export default function LunaLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isChat = pathname === "/luna";
   const viewportRef = useRef<HTMLDivElement>(null);
+  const { status, profile } = useRequirePortalSession();
+  const access = useRedirectUnlessLunaAccess(profile?.id, profile?.role, status === "ready");
   useEffect(() => {
     if (!isChat || !window.visualViewport) return;
     const viewport = window.visualViewport;
@@ -28,13 +30,7 @@ export default function LunaLayout({ children }: { children: ReactNode }) {
     resize();
     viewport.addEventListener("resize", resize);
     return () => viewport.removeEventListener("resize", resize);
-  }, [isChat]);
-  const { status, profile } = useRequirePortalSession();
-  const access = useRedirectUnlessLunaAccess(
-    profile?.id,
-    profile?.role,
-    status === "ready"
-  );
+  }, [isChat, status, access.ready, access.allowed]);
 
   if (status === "checking" || !access.ready || !access.allowed) {
     return <PortalAuthChecking />;
