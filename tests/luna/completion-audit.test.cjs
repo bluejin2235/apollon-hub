@@ -43,3 +43,8 @@ test('reflection rejects per-user live search evidence before shared learning', 
   const content=fs.readFileSync(path.join(root,'app/api/luna/reflect/route.ts'),'utf8');
   assert.ok(content.indexOf('user_scoped_evidence') < content.indexOf('.from("luna_learnings")', content.indexOf('const messages =')));
 });
+test('manual repair queue is blocked before reading its shared token or claiming work', () => {
+  const content=fs.readFileSync(path.join(root,'lib/luna/notion-index-runner.ts'),'utf8');
+  const queue=content.slice(content.indexOf('export async function drainIndexQueue('));
+  assert.match(queue,/Promise<IndexQueueDrainStats>\s*\{\s*rejectLegacyNotionAccess\(\);/);
+});
