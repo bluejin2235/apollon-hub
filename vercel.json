@@ -65,10 +65,6 @@
       "schedule": "0 23 * * *"
     },
     {
-      "path": "/api/cron/notion-index",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/cron/luna-links",
       "schedule": "30 19 * * *"
     },
