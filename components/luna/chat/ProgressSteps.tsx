@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { LunaProgressStep } from "@/components/luna/LunaMessage";
 import type { LunaClassificationMeta } from "@/lib/luna/chat-response";
 import { buildProgressRows, type LunaSearchCounts } from "@/lib/luna/luna-answer-ui";
+import { currentProgressLabel } from "@/lib/luna/progress-display";
 
 /** One current server-reported stage; never guess completion from elapsed time. */
 export function ProgressSteps({ steps, classification, counts, isComplete, durationMs }: {
@@ -24,11 +25,8 @@ export function ProgressSteps({ steps, classification, counts, isComplete, durat
     return () => window.clearInterval(timer);
   }, [isComplete, startedAt]);
   const rows = buildProgressRows({ steps, classification, counts, isComplete });
-  const active = rows.filter(row => row.state === "now");
-  const current = active.at(-1) ?? rows.filter(row => row.state === "done").at(-1);
-  const failed = steps.some(step => step.key === "error");
-  const stopped = steps.some(step => step.key === "stopped");
-  const label = isComplete ? (stopped ? "답변 중지" : failed ? "검색 실패" : "검색 완료") : current?.label || "질문을 확인하고 있어요";
+  // Rotate only stages that the server says are actually running, not guessed milestones.
+  const label = currentProgressLabel(steps, rows, isComplete, elapsed);
   const time = isComplete ? durationMs ?? (elapsed || null) : elapsed;
   return (
     <div className="mb-3 flex min-h-11 items-center gap-2 text-[13px] text-[#737c75]">
