@@ -3,13 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 3100",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "diagnose:gallery": "node scripts/diagnose-restaurant-gallery.mjs",
-    "prepare": "husky",
-    "test:luna-foundation": "node --test tests/luna/*.test.cjs"
+    "start": "next start -p 3100",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
