@@ -1,12 +1,13 @@
 // Driver for the documented cua_repl Tab API, not a server-callable browser service.
 // Run start and finish inside the authorized browser session. The Notion tab must
-// already be a NEW basic-AI chat with the Working-only source selection inspected.
+// already be a NEW basic-AI chat with all three teamspaces inspected.
 // No credentials, cookies, private application state, or hidden network APIs are read.
 // This source records the procedure exercised in the 2026-10-04 browser trace;
 // it has not independently been run as an imported standalone module.
+import {SCOPE,scopeMatches} from '../lib/scope.mjs';
 export async function startA({luna,notion,scopeProof}) {
  if(new URL(await notion.url()).pathname!=='/ai')throw Error('A new basic Notion AI chat is required');
- if(!scopeProof?.working_selected||!scopeProof?.other_sources_off)throw Error('Inspect source scope before running');
+ if(!scopeMatches(scopeProof))throw Error('Inspect source scope before running');
  await luna.playwright.getByRole('button',{name:'A 질문 보내기',exact:true}).click();
  await luna.playwright.getByText('실행기가 읽는 요청',{exact:true}).click();
  const job=JSON.parse(await luna.playwright.getByTestId('a-job').innerText({timeoutMs:10000}));
@@ -45,7 +46,7 @@ export async function finishA({luna,notion,state}){
  const recheck=await notion.clipboard.readText();
  const citationsRecheck=await copy.evaluate(readLinks);
  if(source!==recheck||JSON.stringify(citations)!==JSON.stringify(citationsRecheck))throw Error('Answer changed');
- const receipt={request_id:state.job.request_id,observed_question:state.question,question_occurrences:state.occurrences,submitted_at:state.submittedAt,completed_observed_at:completedAt,scope:'아폴론 Working',scope_proof:state.scopeProof,notion_url:state.notionUrl,source_text:source,source_text_recheck:recheck,citations,citations_recheck:citationsRecheck,completion_evidence:{copy_response_visible:true,stop_button_absent:stopAbsent}};
+ const receipt={request_id:state.job.request_id,observed_question:state.question,question_occurrences:state.occurrences,submitted_at:state.submittedAt,completed_observed_at:completedAt,scope:SCOPE,scope_proof:state.scopeProof,notion_url:state.notionUrl,source_text:source,source_text_recheck:recheck,citations,citations_recheck:citationsRecheck,completion_evidence:{copy_response_visible:true,stop_button_absent:stopAbsent}};
  await luna.playwright.getByRole('textbox',{name:'브라우저 실행 결과 JSON',exact:true}).fill(JSON.stringify(receipt));
  await luna.playwright.getByRole('button',{name:'자동 수신 결과 처리',exact:true}).click();
  await luna.playwright.getByText('원문 일치·시간·범위 검증 정보',{exact:true}).click({timeoutMs:10000});
