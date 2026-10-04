@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createJob,unseal,receive} from '../lib/c-receipt.mjs';
+process.env.LUNA_LAB_C_RECEIPT_KEY='09'.repeat(32);
+test('C preserves answer bytes in authenticated receipt and rejects tampering',()=>{const j=createJob();const {token}=receive(j,'줄바꿈\n한글 원문 [출처](https://example.com/a)');const r=unseal(token,'receipt');assert.equal(r.answer,'줄바꿈\n한글 원문 [출처](https://example.com/a)');assert.equal(r.request_id,j.request_id);const b=Buffer.from(token,'base64url');b[30]^=1;assert.throws(()=>unseal(b.toString('base64url'),'receipt'));assert.throws(()=>unseal(token,'job'));});
