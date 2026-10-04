@@ -1,4 +1,5 @@
 import {newRun, QUESTION} from '../../../../../lib/lab.mjs';
+import {scopeMatches} from '../../../../../lib/scope.mjs';
 import {runCustomAgent} from '../../../../../lib/notion-api.mjs';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -10,7 +11,7 @@ export async function POST(request){
   const raw=await request.text();
   if(raw.length>4096)return Response.json({error:'invalid_request'},{status:400,headers});
   let body;try{body=JSON.parse(raw);}catch{return Response.json({error:'invalid_json'},{status:400,headers});}
-  if(body.question!==QUESTION||!/^ntn_[A-Za-z0-9_-]+$/.test(body.token??'')||!/^[0-9a-f-]{36}$/.test(body.agentId??'')||body.scopeReviewed!==true)return Response.json({error:'invalid_test_configuration'},{status:400,headers});
+  if(body.question!==QUESTION||!/^ntn_[A-Za-z0-9_-]+$/.test(body.token??'')||!/^[0-9a-f-]{36}$/.test(body.agentId??'')||body.scopeReviewed!==true||!scopeMatches(body.scopeProof))return Response.json({error:'invalid_test_configuration'},{status:400,headers});
   // Credentials remain request-local: no logging, DB persistence or environment mutation.
   const result=await runCustomAgent(newRun('B',QUESTION),request.signal,{LUNA_LAB_NOTION_API_TOKEN:body.token,LUNA_LAB_NOTION_AGENT_ID:body.agentId});
   return Response.json(result,{headers});

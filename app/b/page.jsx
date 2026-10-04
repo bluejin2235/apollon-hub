@@ -1,5 +1,6 @@
 'use client';
 import {useState,useRef} from 'react';
+import {TEAMSPACES} from '../../lib/scope.mjs';
 const QUESTION='원형보존지 관련 자료 모두 찾아줘';
 export default function BTrial(){
  const secret=useRef(null),started=useRef(0);
@@ -7,7 +8,7 @@ export default function BTrial(){
  async function run(e){
   e.preventDefault();if(running)return;setRunning(true);setResult(null);started.current=performance.now();
   const token=secret.current.value;secret.current.value='';
-  try{const response=await fetch('/api/luna/lab/b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:QUESTION,token,agentId,scopeReviewed:scope})});const data=await response.json();setResult(data);}catch{setResult({status:'transport_failed',message:'서버 응답을 받지 못했습니다. 재실행 전 노션 세션을 확인해야 합니다.'});}
+  try{const response=await fetch('/api/luna/lab/b',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:QUESTION,token,agentId,scopeReviewed:scope,scopeProof:scope?{selected_teamspaces:TEAMSPACES,other_sources_off:true}:null})});const data=await response.json();setResult(data);}catch{setResult({status:'transport_failed',message:'서버 응답을 받지 못했습니다. 재실행 전 노션 세션을 확인해야 합니다.'});}
   finally{setElapsed(Math.round(performance.now()-started.current));setRunning(false);}
  }
  return <main style={{maxWidth:1000,margin:'40px auto',padding:24,fontFamily:'sans-serif',color:'#222'}}>
@@ -16,7 +17,7 @@ export default function BTrial(){
   <form onSubmit={run} style={{display:'grid',gap:16}}>
    <label>시험 에이전트 ID<input aria-label="시험 에이전트 ID" value={agentId} onChange={e=>setAgentId(e.target.value)} required style={{display:'block',width:'100%',padding:10}}/></label>
    <label>API 인증키<input aria-label="API 인증키" type="password" ref={secret} autoComplete="off" required style={{display:'block',width:'100%',padding:10}}/></label>
-   <label><input type="checkbox" checked={scope} onChange={e=>setScope(e.target.checked)} required/> Working 자료만 읽는 전용 에이전트임을 확인했습니다.</label>
+   <label><input type="checkbox" checked={scope} onChange={e=>setScope(e.target.checked)} required/> 아폴론 Working·WORKING·APOLLOG 세 팀스페이스 전체에 읽기 권한이 있고, 외부 자료는 제외됨을 실제 설정에서 확인했습니다.</label>
    <p data-testid="b-question">{QUESTION}</p>
    <button disabled={running||!scope} style={{padding:14}}>{running?'노션 API 실행·응답 대기 중…':'동일 질문으로 B 테스트 1회 실행'}</button>
   </form>
