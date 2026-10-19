@@ -16,7 +16,7 @@ import { openPreview, PREVIEW_POPUP_BLOCKED } from "@/lib/website/preview-window
 
 const PUBLISH_REDIRECT_KEY = "website-insight-publish-toast";
 
-type SortKey = "recent" | "title" | "published";
+type SortKey = "recent" | "title" | "published" | "views";
 
 const CAT_CHIP: Record<string, string> = {
   "behind-the-work": "bg-[#eef0fb] text-[#4b5bb5]",
@@ -47,6 +47,26 @@ function formatPublished(value: string | null) {
   const [y, m, day] = d.split("-");
   if (!y || !m || !day) return d;
   return `${y}.${m}.${day}`;
+}
+
+function formatViews(value: number | null | undefined) {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return n.toLocaleString("ko-KR");
+}
+
+function formatEdited(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!month || !day) return "—";
+  return `${month}.${day}`;
 }
 
 function CategoryChip({ id, label }: { id: string; label: string }) {
@@ -376,7 +396,14 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
       if (sortBy === "published") {
         return String(b.published_at ?? "").localeCompare(String(a.published_at ?? ""));
       }
-      return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+      if (sortBy === "views") {
+        const byViews = (b.view_count ?? 0) - (a.view_count ?? 0);
+        if (byViews !== 0) return byViews;
+      } else {
+        const byUpdated = String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+        if (byUpdated !== 0) return byUpdated;
+      }
+      return a.id.localeCompare(b.id);
     });
     return copy;
   }, [items, q, category, status, sortBy]);
@@ -543,6 +570,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
           <option value="recent">최신순</option>
           <option value="title">제목순</option>
           <option value="published">공개일순</option>
+          <option value="views">조회순</option>
         </select>
       </div>
 
@@ -555,11 +583,13 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
             <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="w-[40%] py-2 pr-3 font-medium">제목</th>
-                  <th className="w-[18%] py-2 pr-3 font-medium">카테고리</th>
+                  <th className="w-[32%] py-2 pr-3 font-medium">제목</th>
+                  <th className="w-[14%] py-2 pr-3 font-medium">카테고리</th>
                   <th className="w-[12%] py-2 pr-3 font-medium">공개일</th>
-                  <th className="w-[12%] py-2 pr-3 font-medium">상태</th>
-                  <th className="w-[10%] py-2 pr-3 font-medium">채움</th>
+                  <th className="w-[8%] py-2 pr-3 text-right font-medium">조회</th>
+                  <th className="w-[10%] py-2 pr-3 font-medium">상태</th>
+                  <th className="w-[8%] py-2 pr-3 font-medium">수정</th>
+                  <th className="w-[8%] py-2 pr-3 font-medium">채움</th>
                   <th className="w-[8%] py-2 font-medium" />
                 </tr>
               </thead>
@@ -596,9 +626,13 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
                       <td className="py-3 pr-3 text-slate-600">
                         {formatPublished(item.published_at)}
                       </td>
+                      <td className="py-3 pr-3 text-right tabular-nums text-slate-600">
+                        {formatViews(item.view_count)}
+                      </td>
                       <td className="py-3 pr-3">
                         <StatusBadge item={item} />
                       </td>
+                      <td className="py-3 pr-3 tabular-nums text-slate-400">{formatEdited(item.updated_at)}</td>
                       <td className="py-3 pr-3">
                         <FillDots item={item} />
                       </td>
@@ -631,7 +665,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-2 block font-medium text-slate-900">{insightTitle(item)}</span>
                       <span className="mt-1 block truncate text-xs text-slate-500">
-                        {labelById.get(item.category_id) ?? item.category_id} · {formatPublished(item.published_at)}
+                        {labelById.get(item.category_id) ?? item.category_id} · {formatPublished(item.published_at)} · 조회 {formatViews(item.view_count)}
                       </span>
                       <span className="mt-2 flex items-center gap-2">
                         <StatusBadge item={item} />

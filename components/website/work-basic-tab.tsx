@@ -32,6 +32,15 @@ import {
 } from "@/lib/website/key-image-rules";
 import "./ui/work-admin.css";
 
+const OPEN_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
+function openYearOptions(current: string) {
+  const end = new Date().getFullYear() + 1;
+  const years = Array.from({ length: end - 1999 }, (_, index) => String(end - index));
+  if (current && !years.includes(current)) years.unshift(current);
+  return years;
+}
+
 type Props = {
   draft: WorkBasicDraft;
   onChange: (patch: Partial<WorkBasicDraft>) => void;
@@ -564,6 +573,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       const res = await updateWork(work.id, {
         title: { ko: d.title.en, en: d.title.en },
         year: d.year || null,
+        open_month: d.open_month >= 1 && d.open_month <= 12 ? d.open_month : 1,
         client: { ko: d.client.ko, en: d.client.en },
         location_city: { ko: d.location_city.ko, en: d.location_city.en },
         location_country: {
@@ -829,17 +839,46 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               </div>
               <div>
                 <div className="fl">
-                  <span className="nm">완공 연도</span>
+                  <span className="nm">오픈</span>
                   <span className="rq">*</span>
                 </div>
-                <input
-                  className="i"
-                  value={draft.year}
-                  onChange={(e) => {
-                    screenPartial.markDirty();
-                    onChange({ year: e.target.value });
-                  }}
-                />
+                <div className="open-ym">
+                  <select
+                    className="i"
+                    aria-label="오픈 연도"
+                    value={draft.year}
+                    onChange={(e) => {
+                      screenPartial.markDirty();
+                      onChange({ year: e.target.value });
+                    }}
+                  >
+                    {draft.year ? null : <option value="">연도</option>}
+                    {openYearOptions(draft.year).map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="open-ym__unit">년</span>
+                  <select
+                    className="i"
+                    aria-label="오픈 월"
+                    value={draft.open_month >= 1 && draft.open_month <= 12 ? String(draft.open_month) : ""}
+                    onChange={(e) => {
+                      screenPartial.markDirty();
+                      const next = Number(e.target.value);
+                      onChange({ open_month: Number.isInteger(next) ? next : 0 });
+                    }}
+                  >
+                    <option value=""> </option>
+                    {OPEN_MONTHS.map((month) => (
+                      <option key={month} value={month}>
+                        {String(month).padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="open-ym__unit">월</span>
+                </div>
                 <p className="hint-line">상세 제목 아래</p>
               </div>
             </div>

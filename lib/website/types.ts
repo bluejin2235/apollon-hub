@@ -51,6 +51,8 @@ export type WorkListItem = {
   category_id: string;
   work_categories_map?: Array<{ category_id: string; sort: number }> | null;
   year: string | null;
+  open_month: number;
+  view_count: number;
   published_at: string | null;
   key_image: string | null;
   is_featured: boolean;
@@ -108,6 +110,7 @@ export type InsightListItem = {
   status: "draft" | "published";
   category_id: string;
   year: string | null;
+  view_count: number;
   published_at: string | null;
   key_image: string | null;
   key_image_width: number | null;

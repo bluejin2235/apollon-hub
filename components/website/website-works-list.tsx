@@ -29,13 +29,47 @@ function isWebsiteDown(result: ApiErr) {
   );
 }
 
-type SortKey = "recent" | "title" | "year";
+type SortKey = "recent" | "views" | "updated";
 
 function mediaUrl(siteUrl: string, src: string | null): string | null {
   if (!src) return null;
   if (/^https?:\/\//i.test(src)) return src;
   const base = siteUrl.replace(/\/$/, "");
   return `${base}${src.startsWith("/") ? src : `/${src}`}`;
+}
+
+function formatOpen(year: string | null, month: number | null | undefined) {
+  const y = (year ?? "").trim();
+  if (!y) return "—";
+  const m = month != null && month >= 1 && month <= 12 ? month : 1;
+  return `${y}.${String(m).padStart(2, "0")}`;
+}
+
+function formatViews(value: number | null | undefined) {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return n.toLocaleString("ko-KR");
+}
+
+function formatEdited(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!month || !day) return "—";
+  return `${month}.${day}`;
+}
+
+function openSortKey(item: WorkListItem) {
+  const year = Number.parseInt(item.year ?? "", 10);
+  const month = item.open_month >= 1 && item.open_month <= 12 ? item.open_month : 1;
+  if (!Number.isFinite(year)) return 0;
+  return year * 100 + month;
 }
 
 function editHref(id: string) {
@@ -342,9 +376,17 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
     }
     const copy = [...rows];
     copy.sort((a, b) => {
-      if (sortBy === "title") return workTitle(a).localeCompare(workTitle(b), "ko");
-      if (sortBy === "year") return String(b.year ?? "").localeCompare(String(a.year ?? ""));
-      return String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+      if (sortBy === "views") {
+        const byViews = (b.view_count ?? 0) - (a.view_count ?? 0);
+        if (byViews !== 0) return byViews;
+      } else if (sortBy === "updated") {
+        const byUpdated = String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? ""));
+        if (byUpdated !== 0) return byUpdated;
+      } else {
+        const byOpen = openSortKey(b) - openSortKey(a);
+        if (byOpen !== 0) return byOpen;
+      }
+      return a.id.localeCompare(b.id);
     });
     return copy;
   }, [items, q, category, status, sortBy]);
@@ -529,9 +571,9 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900"
           aria-label="정렬"
         >
-          <option value="recent">최신순</option>
-          <option value="title">제목순</option>
-          <option value="year">연도순</option>
+          <option value="recent">최신순 (오픈)</option>
+          <option value="views">조회순</option>
+          <option value="updated">수정순</option>
         </select>
       </div>
 
@@ -544,12 +586,14 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
             <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="w-[34%] py-2 pr-3 font-medium">프로젝트</th>
-                  <th className="w-[32%] py-2 pr-3 font-medium">사업분야</th>
-                  <th className="w-[8%] py-2 pr-3 font-medium">연도</th>
+                  <th className="w-[26%] py-2 pr-3 font-medium">프로젝트</th>
+                  <th className="w-[22%] py-2 pr-3 font-medium">사업분야</th>
+                  <th className="w-[11%] py-2 pr-3 font-medium">오픈</th>
+                  <th className="w-[9%] py-2 pr-3 text-right font-medium">조회</th>
                   <th className="w-[10%] py-2 pr-3 font-medium">상태</th>
+                  <th className="w-[8%] py-2 pr-3 font-medium">수정</th>
                   <th className="w-[8%] py-2 pr-3 font-medium">채움</th>
-                  <th className="w-[8%] py-2 font-medium" />
+                  <th className="w-[6%] py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -590,10 +634,14 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                           {categoryLabel(item)}
                         </span>
                       </td>
-                      <td className="py-3 pr-3 text-slate-600">{item.year ?? "—"}</td>
+                      <td className="py-3 pr-3 text-slate-600">{formatOpen(item.year, item.open_month)}</td>
+                      <td className="py-3 pr-3 text-right tabular-nums text-slate-600">
+                        {formatViews(item.view_count)}
+                      </td>
                       <td className="py-3 pr-3">
                         <StatusBadge item={item} />
                       </td>
+                      <td className="py-3 pr-3 tabular-nums text-slate-400">{formatEdited(item.updated_at)}</td>
                       <td className="py-3 pr-3">
                         <FillDots item={item} />
                       </td>
@@ -629,7 +677,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                     <span className="min-w-0 flex-1">
                       <span className="block line-clamp-2 font-medium text-slate-900">{workTitle(item)}</span>
                       <span className="mt-1 block whitespace-nowrap text-slate-500" style={{ fontSize: "var(--fs-caption)" }}>
-                        {categoryLabel(item)} · {item.year ?? "—"}
+                        {categoryLabel(item)} · {formatOpen(item.year, item.open_month)} · 조회 {formatViews(item.view_count)}
                       </span>
                       <span className="mt-2 flex items-center gap-2">
                         <StatusBadge item={item} />

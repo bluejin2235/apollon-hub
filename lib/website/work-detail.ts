@@ -134,6 +134,7 @@ export type WorkDetail = {
   scale: Loc | null;
   awards: Loc | null;
   year: string | null;
+  open_month: number;
   published_at: string | null;
   status: "draft" | "published";
   sort: number;
@@ -189,6 +190,8 @@ export type WorkBasicDraft = {
   scale: Loc;
   awards: Loc;
   year: string;
+  /** 1~12. 0 은 비운 상태이고 저장할 때 1월이 된다 */
+  open_month: number;
   published_at: string;
   is_featured: boolean;
   show_faq: boolean;
@@ -423,6 +426,10 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     scale: row.scale ? asLoc(row.scale) : null,
     awards: row.awards ? asLoc(row.awards) : null,
     year: typeof row.year === "string" ? row.year : null,
+    open_month:
+      typeof row.open_month === "number" && row.open_month >= 1 && row.open_month <= 12
+        ? row.open_month
+        : 1,
     published_at: typeof row.published_at === "string" ? row.published_at : null,
     status,
     site_visibility: siteVisibility,
@@ -633,6 +640,7 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     scale: asLoc(work.scale),
     awards: asLoc(work.awards),
     year: work.year ?? "",
+    open_month: work.open_month >= 1 && work.open_month <= 12 ? work.open_month : 1,
     published_at: (work.published_at ?? "").slice(0, 10) || todayYmd(),
     is_featured: work.is_featured,
     show_faq: work.show_faq
@@ -667,6 +675,7 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     scale: draft.scale,
     awards: draft.awards,
     year: draft.year || null,
+    open_month: draft.open_month >= 1 && draft.open_month <= 12 ? draft.open_month : 1,
     published_at: draft.published_at || null,
     is_featured: draft.is_featured,
     show_faq: draft.show_faq

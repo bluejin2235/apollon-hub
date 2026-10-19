@@ -129,6 +129,7 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
         status: parsed.status,
         category_id: parsed.category_id,
         year: parsed.year,
+        view_count: 0,
         published_at: parsed.published_at,
         key_image: parsed.key_image,
         key_image_width: parsed.key_image_width,
