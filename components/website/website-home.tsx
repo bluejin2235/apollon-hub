@@ -1,28 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrangeGrid,
+  ArrangeStatus,
+  mediaUrl,
+  moveByKey,
+  useArrangeSave,
+  type ArrangeCard
+} from "@/components/website/arrange-board";
 import { showToast } from "@/components/website/toast";
 import "@/components/website/ui/work-admin.css";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
-import { listHome, publishHomeFeed, saveHomeFeed } from "@/lib/website/api";
+import { listHome, publishHomeFeed, saveHomeFeed, updateInsight, updateWork } from "@/lib/website/api";
 import {
-  groupHomeRows,
   homeItemKey,
   homeTitle,
   type HomeCardLayout,
   type HomeItem,
+  type HomeList,
   type HomeWrite
 } from "@/lib/website/home";
 
 const PAGE_SIZE = 10;
 const PAGE_STEP = 5;
-
-function mediaUrl(siteUrl: string, src: string | null): string | null {
-  if (!src) return null;
-  if (/^https?:\/\//i.test(src)) return src;
-  const base = siteUrl.replace(/\/$/, "");
-  return `${base}${src.startsWith("/") ? src : `/${src}`}`;
-}
 
 function toWrite(items: HomeItem[]): HomeWrite[] {
   return items.map((item, index) => ({
@@ -34,129 +35,32 @@ function toWrite(items: HomeItem[]): HomeWrite[] {
   }));
 }
 
-function sameWrite(a: HomeWrite[], b: HomeWrite[]) {
-  if (a.length !== b.length) return false;
-  return a.every((item, index) => {
-    const other = b[index];
-    return (
-      item.type === other.type &&
-      item.id === other.id &&
-      item.pinned === other.pinned &&
-      item.pin_sort === other.pin_sort &&
-      item.layout === other.layout
-    );
-  });
+function kindLabel(item: HomeItem) {
+  return item.content.kind || (item.type === "work" ? "워크" : "인사이트");
 }
 
-function Cell({
-  item,
-  siteUrl,
-  canManage,
-  dragId,
-  onDragStart,
-  onDragEnd,
-  onDrop,
-  onPin,
-  onLayout
-}: {
-  item: HomeItem;
-  siteUrl: string;
-  canManage: boolean;
-  dragId: string | null;
-  onDragStart: (key: string) => void;
-  onDragEnd: () => void;
-  onDrop: (key: string) => void;
-  onPin: (item: HomeItem) => void;
-  onLayout: (item: HomeItem, layout: HomeCardLayout) => void;
-}) {
-  const key = homeItemKey(item);
-  const thumb = mediaUrl(siteUrl, item.content.thumbnail);
-  const nextLayout: HomeCardLayout = item.layout === "big" ? "small" : "big";
-  const layoutLabel = item.layout === "big" ? "큰 칸" : "작은 칸";
-  const swapLabel = nextLayout === "small" ? "작은 칸으로" : "큰 칸으로";
-  const dragging = dragId === key;
-
-  function startDrag(event: DragEvent) {
-    event.dataTransfer.setData("text/plain", key);
-    event.dataTransfer.effectAllowed = "move";
-    onDragStart(key);
-  }
-
-  return (
-    <div
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        onDrop(key);
-      }}
-      className={`ha-cell${item.pinned ? " is-pinned" : ""}${dragging ? " is-dragging" : ""}`}
-    >
-      {thumb ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={thumb} alt="" draggable={false} className="ha-cell__bg" />
-      ) : (
-        <div className="ha-cell__bg ha-cell__bg--empty" />
-      )}
-      <div className="ha-cell__cap">
-        <p className={`ha-cell__title${item.layout === "small" ? " is-small" : ""}`}>
-          {homeTitle(item.content)}
-        </p>
-        <p className="ha-cell__meta">{item.content.meta}</p>
-      </div>
-      <div className="ha-cell__tl">
-        <span className={`ha-chip${item.pinned ? " is-pin" : ""}`}>{layoutLabel}</span>
-      </div>
-      {canManage ? (
-        <>
-          <div className="ha-cell__pin">
-            <div
-              role="button"
-              title="끌기"
-              tabIndex={0}
-              draggable
-              onDragStart={startDrag}
-              onDragEnd={onDragEnd}
-              className="ha-chip ha-chip--sq ha-chip--drag"
-            >
-              ⠿
-            </div>
-            <button
-              type="button"
-              title="고정"
-              onClick={() => onPin(item)}
-              className={`ha-chip ha-chip--sq${item.pinned ? " is-pin" : " is-off"}`}
-            >
-              📌
-            </button>
-          </div>
-          <div className="ha-cell__tr">
-            <button type="button" title={swapLabel} onClick={() => onLayout(item, nextLayout)} className="ha-chip">
-              {swapLabel}
-            </button>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
+function setHomeHidden(item: HomeItem, hidden: boolean) {
+  return item.type === "work"
+    ? updateWork(item.id, { home_hidden: hidden })
+    : updateInsight(item.id, { home_hidden: hidden });
 }
 
 export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
   const { canManageWorks } = useWebsitePermissions();
   const [items, setItems] = useState<HomeItem[]>([]);
-  const [saved, setSaved] = useState<HomeWrite[]>([]);
+  const [hidden, setHidden] = useState<HomeItem[]>([]);
   const [unpublished, setUnpublished] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<"save" | "publish" | null>(null);
-  const [shown, setShown] = useState(PAGE_SIZE);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const dragIdRef = useRef<string | null>(null);
-  const busyRef = useRef<"save" | "publish" | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const { state: saveState, submit } = useArrangeSave();
   const itemsRef = useRef<HomeItem[]>([]);
   itemsRef.current = items;
-  busyRef.current = busy;
+
+  const applyFeed = useCallback((data: HomeList) => {
+    setItems(data.items);
+    setHidden((current) => data.hidden ?? current);
+    setUnpublished(data.unpublished);
+  }, []);
 
   const load = useCallback(async () => {
     const result = await listHome();
@@ -165,116 +69,127 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
       setLoading(false);
       return;
     }
-    setItems(result.data.items);
-    setSaved(toWrite(result.data.items));
-    setUnpublished(result.data.unpublished);
+    applyFeed({ ...result.data, hidden: result.data.hidden ?? [] });
     setLoading(false);
-  }, []);
+  }, [applyFeed]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const rows = groupHomeRows(items.slice(0, shown));
-  const pinnedCount = items.filter((item) => item.pinned).length;
-  const autoCount = items.length - pinnedCount;
-  const dirty = !sameWrite(toWrite(items), saved);
-  const saveEmphasized = dirty;
-  const publishEmphasized = !dirty && unpublished;
   const mainUrl = siteUrl || "http://localhost:3100";
+  const busy = saveState === "saving" || publishing;
 
-  function applyFeed(data: { items: HomeItem[]; unpublished: boolean }) {
-    setItems(data.items);
-    setSaved(toWrite(data.items));
-    setUnpublished(data.unpublished);
+  /** 바뀐 순서 · 핀 · 크기를 바로 저장한다. 저장 버튼은 없다 */
+  function persist(next: HomeItem[]) {
+    const body = toWrite(next);
+    void submit(async (isLatest) => {
+      const result = await saveHomeFeed(body);
+      if (!result.ok) {
+        showToast({ message: "저장하지 못했습니다", tone: "error" });
+        if (isLatest()) await load();
+        return false;
+      }
+      if (isLatest()) applyFeed(result.data);
+      return true;
+    });
   }
 
-  function beginDrag(key: string) {
-    dragIdRef.current = key;
-    setDragId(key);
-  }
-
-  function endDrag() {
-    dragIdRef.current = null;
-    setDragId(null);
-  }
-
-  function dropOn(targetKey: string) {
-    const fromKey = dragIdRef.current;
-    if (!fromKey || fromKey === targetKey) {
-      endDrag();
-      return;
-    }
-    if (busyRef.current) {
-      endDrag();
-      return;
-    }
-    const current = itemsRef.current;
-    const from = current.findIndex((row) => homeItemKey(row) === fromKey);
-    const to = current.findIndex((row) => homeItemKey(row) === targetKey);
-    endDrag();
-    if (from < 0 || to < 0) return;
-    const next = [...current];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    const ordered = next.map((item, index) => ({ ...item, pin_sort: index + 1 }));
+  function moveItem(fromKey: string, toKey: string) {
+    const moved = moveByKey(itemsRef.current, homeItemKey, fromKey, toKey);
+    if (!moved) return;
+    const ordered = moved.next.map((item, index) => ({
+      ...item,
+      pin_sort: index + 1
+    }));
     setItems(ordered);
-    void persist(ordered);
+    persist(ordered);
+    showToast({
+      message: `${moved.from + 1}번을 ${moved.to + 1}번 자리로 옮겼습니다`,
+      tone: "ok"
+    });
   }
 
-  function pinItem(target: HomeItem) {
-    setItems((current) =>
-      current.map((item) => {
-        if (homeItemKey(item) !== homeItemKey(target)) return item;
-        return { ...item, pinned: !item.pinned };
-      })
-    );
+  function pinItem(key: string) {
+    const target = itemsRef.current.find((item) => homeItemKey(item) === key);
+    if (!target) return;
+    const pinned = !target.pinned;
+    const next = itemsRef.current.map((item) => (homeItemKey(item) === key ? { ...item, pinned } : item));
+    setItems(next);
+    persist(next);
+    showToast({
+      message: pinned ? "핀을 꽂았습니다. 새 글이 와도 이 자리를 지킵니다" : "핀을 풀었습니다",
+      tone: "ok"
+    });
   }
 
-  function changeLayout(target: HomeItem, layout: HomeCardLayout) {
-    setItems((current) =>
-      current.map((item) => (homeItemKey(item) === homeItemKey(target) ? { ...item, layout } : item))
-    );
+  function changeLayout(key: string, layout: HomeCardLayout) {
+    const next = itemsRef.current.map((item) => (homeItemKey(item) === key ? { ...item, layout } : item));
+    setItems(next);
+    persist(next);
+    showToast({
+      message: layout === "big" ? "크게 바꿨습니다" : "작게 바꿨습니다",
+      tone: "ok"
+    });
   }
 
-  async function persist(next: HomeItem[], toastOk?: string) {
-    if (busyRef.current) return false;
-    setBusy("save");
-    busyRef.current = "save";
-    const result = await saveHomeFeed(toWrite(next));
-    if (!result.ok) {
-      showToast({ message: "저장하지 못했습니다", tone: "error" });
-      setBusy(null);
-      busyRef.current = null;
-      return false;
-    }
-    applyFeed(result.data);
-    if (toastOk) showToast({ message: toastOk, tone: "ok" });
-    setBusy(null);
-    busyRef.current = null;
-    return true;
+  function hideItem(key: string) {
+    const target = itemsRef.current.find((item) => homeItemKey(item) === key);
+    if (!target) return;
+    setItems(itemsRef.current.filter((item) => homeItemKey(item) !== key));
+    setHidden((current) => [...current, { ...target, home_hidden: true }]);
+    void submit(async (isLatest) => {
+      const result = await setHomeHidden(target, true);
+      if (!result.ok) {
+        showToast({ message: "숨기지 못했습니다", tone: "error" });
+        if (isLatest()) await load();
+        return false;
+      }
+      if (isLatest()) await load();
+      return true;
+    });
+    showToast({
+      message: "홈에서 숨겼습니다. 목록에는 그대로 있습니다",
+      tone: "ok"
+    });
   }
 
-  async function save() {
-    await persist(itemsRef.current, "저장했습니다");
+  function showAgain(target: HomeItem) {
+    setHidden((current) => current.filter((item) => homeItemKey(item) !== homeItemKey(target)));
+    void submit(async (isLatest) => {
+      const result = await setHomeHidden(target, false);
+      if (!result.ok) {
+        showToast({ message: "다시 보이게 하지 못했습니다", tone: "error" });
+        if (isLatest()) await load();
+        return false;
+      }
+      if (isLatest()) await load();
+      return true;
+    });
+    showToast({ message: "홈에 다시 보이게 했습니다", tone: "ok" });
   }
 
   async function publish() {
-    if (busyRef.current) return;
-    setBusy("publish");
-    busyRef.current = "publish";
+    if (busy) return;
+    setPublishing(true);
     const result = await publishHomeFeed(toWrite(itemsRef.current));
+    setPublishing(false);
     if (!result.ok) {
       showToast({ message: "게시하지 못했습니다", tone: "error" });
-      setBusy(null);
-      busyRef.current = null;
       return;
     }
     applyFeed(result.data);
     showToast({ message: "게시했습니다", tone: "ok" });
-    setBusy(null);
-    busyRef.current = null;
   }
+
+  const cards: ArrangeCard[] = items.map((item) => ({
+    key: homeItemKey(item),
+    title: homeTitle(item.content),
+    kind: kindLabel(item),
+    thumb: mediaUrl(siteUrl, item.content.thumbnail),
+    pinned: item.pinned,
+    layout: item.layout
+  }));
 
   return (
     <div className="wa ha -mx-1">
@@ -282,110 +197,80 @@ export function WebsiteHome({ siteUrl }: { siteUrl: string }) {
         <div>
           <h1>홈</h1>
           <p className="ha-d2">
-            끌어 옮긴 순서가 그대로 저장됩니다 · 고정 {pinnedCount} · 자동 {autoCount}
+            공개하면 큰 썸네일 다음 첫 자리에 들어옵니다. 끌어서 놓으면 바로 저장됩니다.
           </p>
         </div>
         <span className="ha-sp" />
         <a href={mainUrl} target="_blank" rel="noreferrer" className="ha-btn">
-          미리보기 ↗
+          홈페이지에서 보기 ↗
         </a>
         {canManageWorks ? (
-          <>
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => void save()}
-              className={`ha-btn${saveEmphasized ? " is-primary" : ""}`}
-            >
-              저장
-            </button>
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => void publish()}
-              className={`ha-btn${publishEmphasized ? " is-primary" : ""}`}
-            >
-              게시
-            </button>
-          </>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void publish()}
+            className={`ha-btn${unpublished && !busy ? " is-primary" : ""}`}
+          >
+            게시
+          </button>
         ) : null}
       </div>
 
-      <div className="ha-tool">
-        <span className="ha-sp" />
-        <span className="ha-hint">
-          <span className="ha-hint-pin">📌</span> 핀을 꽂으면 새 글이 올라와도 밀리지 않습니다 · ⠿ 로 끌어 옮기면 그
-          자리에서 저장됩니다
-        </span>
-      </div>
+      <ArrangeStatus state={saveState} />
 
       <div className="ha-canvas">
         {loading ? (
           <p className="text-sm text-slate-400">불러오는 중…</p>
         ) : (
-          <div className="ha-rows">
-            {rows.map((row, rowIndex) => {
-              if (row.kind === "big") {
-                return (
-                  <div key={homeItemKey(row.item)} className="ha-row ha-row--wide">
-                    <Cell
-                      item={row.item}
-                      siteUrl={siteUrl}
-                      canManage={canManageWorks}
-                      dragId={dragId}
-                      onDragStart={beginDrag}
-                      onDragEnd={endDrag}
-                      onDrop={dropOn}
-                      onPin={pinItem}
-                      onLayout={changeLayout}
-                    />
-                  </div>
-                );
-              }
+          <ArrangeGrid
+            cards={cards}
+            canManage={canManageWorks}
+            pageSize={PAGE_SIZE}
+            pageStep={PAGE_STEP}
+            onMove={moveItem}
+            onPin={pinItem}
+            onLayout={changeLayout}
+            onHide={hideItem}
+          />
+        )}
+      </div>
+
+      {unpublished && saveState !== "saving" ? (
+        <div className="ha-foot">저장했지만 아직 게시되지 않았습니다</div>
+      ) : null}
+
+      {loading ? null : (
+        <details className="ha-hidden" open>
+          <summary>
+            홈에서 숨긴 것 <span className="ha-hidden__count">{hidden.length}</span>
+          </summary>
+          {hidden.length === 0 ? (
+            <div className="ha-hidden__empty">숨긴 글이 없습니다. 카드의 ⋯ 메뉴에서 숨길 수 있습니다.</div>
+          ) : (
+            hidden.map((item) => {
+              const thumb = mediaUrl(siteUrl, item.content.thumbnail);
               return (
-                <div
-                  key={`g-${homeItemKey(row.items[0])}-${rowIndex}`}
-                  className="ha-row ha-row--grid"
-                >
-                  {row.items.map((item) => (
-                    <Cell
-                      key={homeItemKey(item)}
-                      item={item}
-                      siteUrl={siteUrl}
-                      canManage={canManageWorks}
-                      dragId={dragId}
-                      onDragStart={beginDrag}
-                      onDragEnd={endDrag}
-                      onDrop={dropOn}
-                      onPin={pinItem}
-                      onLayout={changeLayout}
-                    />
-                  ))}
-                  {row.orphan ? <div className="ha-slot-placeholder" /> : null}
+                <div key={homeItemKey(item)} className="ha-hidden__row">
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb} alt="" className="ha-hidden__th" />
+                  ) : (
+                    <span className="ha-hidden__th ha-hidden__th--empty" />
+                  )}
+                  <span className="ha-hidden__nm">
+                    {kindLabel(item)} · {homeTitle(item.content)}
+                  </span>
+                  {canManageWorks ? (
+                    <button type="button" className="ha-btn" onClick={() => showAgain(item)}>
+                      다시 보이기
+                    </button>
+                  ) : null}
                 </div>
               );
-            })}
-          </div>
-        )}
-
-        {shown < items.length ? (
-          <button type="button" className="ha-more" onClick={() => setShown((n) => n + PAGE_STEP)}>
-            더보기 · 5개
-          </button>
-        ) : null}
-      </div>
-
-      <div className="ha-foot">
-        <span className="ha-pinmark">📌 고정</span> 은 새 글이 올라와도 밀리지 않습니다.
-        <br />
-        끌어 옮긴 순서가 저장됩니다. 칸 크기와 핀은 저장을 누르세요.
-        {unpublished && !dirty ? (
-          <>
-            <br />
-            저장했지만 아직 게시되지 않았습니다
-          </>
-        ) : null}
-      </div>
+            })
+          )}
+        </details>
+      )}
     </div>
   );
 }

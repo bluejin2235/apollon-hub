@@ -138,6 +138,18 @@ export function updateWork(id: string, body: unknown): Promise<ApiResult<WorkLis
   return websiteFetch(`works/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
+export type WorkOrderItem = {
+  id: string;
+  sort: number;
+  layout: "big" | "small";
+  pinned: boolean;
+};
+
+/** 워크 편성 순서 · 크기 · 핀을 한 번에 저장한다 */
+export function reorderWorks(items: WorkOrderItem[]): Promise<ApiResult<unknown>> {
+  return websiteFetch("works/order", { method: "PATCH", body: JSON.stringify({ items }) });
+}
+
 export function deleteWork(id: string): Promise<ApiResult<{ id: string; storage?: unknown }>> {
   return websiteFetch(`works/${id}`, { method: "DELETE" });
 }
@@ -166,6 +178,17 @@ export function createInsight(body: unknown): Promise<ApiResult<{ id: string }>>
 
 export function updateInsight(id: string, body: unknown): Promise<ApiResult<InsightListItem>> {
   return websiteFetch(`insights/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+}
+
+export type InsightOrderItem = {
+  id: string;
+  sort: number;
+  pinned: boolean;
+};
+
+/** 인사이트 편성 순서 · 핀을 한 번에 저장한다 */
+export function reorderInsights(items: InsightOrderItem[]): Promise<ApiResult<unknown>> {
+  return websiteFetch("insights/order", { method: "PATCH", body: JSON.stringify({ items }) });
 }
 
 export function deleteInsight(id: string): Promise<ApiResult<{ id: string; storage?: unknown }>> {

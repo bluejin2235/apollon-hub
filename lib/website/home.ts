@@ -17,11 +17,15 @@ export type HomeItem = {
   pin_sort: number | null;
   layout: HomeCardLayout;
   published_at: string | null;
+  /** 홈에서만 숨김. items 에는 숨긴 것이 들어오지 않고 hidden 에 따로 온다 */
+  home_hidden?: boolean;
   content: HomeContent;
 };
 
 export type HomeList = {
   items: HomeItem[];
+  /** 홈에서 숨긴 것 */
+  hidden: HomeItem[];
   unpublished: boolean;
 };
 
@@ -31,18 +35,19 @@ export type HomeWrite = {
   pinned: boolean;
   pin_sort: number | null;
   layout: HomeCardLayout;
+  home_hidden?: boolean;
 };
 
 export function homeTitle(item: { title?: { ko?: string; en?: string } | null; slug?: string | null }) {
   return item.title?.ko?.trim() || item.title?.en?.trim() || item.slug || "";
 }
 
-export type HomeRow =
-  | { kind: "big"; item: HomeItem }
-  | { kind: "small"; items: HomeItem[]; orphan: boolean };
+export type HomeRow<T extends { layout: HomeCardLayout } = HomeItem> =
+  | { kind: "big"; item: T }
+  | { kind: "small"; items: T[]; orphan: boolean };
 
-export function groupHomeRows(items: HomeItem[]): HomeRow[] {
-  const rows: HomeRow[] = [];
+export function groupHomeRows<T extends { layout: HomeCardLayout }>(items: T[]): HomeRow<T>[] {
+  const rows: HomeRow<T>[] = [];
   let i = 0;
   while (i < items.length) {
     const cur = items[i];

@@ -4,11 +4,30 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { MoreHorizontal } from "lucide-react";
+import {
+  ArrangeGrid,
+  ArrangeStatus,
+  ArrangeTabs,
+  mediaUrl,
+  moveByKey,
+  useArrangeSave,
+  type ArrangeCard,
+  type ArrangeTab
+} from "@/components/website/arrange-board";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { NewInsightModal } from "@/components/website/new-insight-modal";
 import { useWebsitePermissions } from "@/components/website/website-permissions";
 import { showToast } from "@/components/website/toast";
-import { getMeta, hideInsight, unhideInsight, listInsights, cloneInsight, deleteInsight, publishInsightPreview } from "@/lib/website/api";
+import {
+  getMeta,
+  hideInsight,
+  unhideInsight,
+  listInsights,
+  cloneInsight,
+  deleteInsight,
+  publishInsightPreview,
+  reorderInsights
+} from "@/lib/website/api";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { fillInsightBasic, fillInsightBody, fillInsightRelated, insightTitle } from "@/lib/website/checks";
 import type { InsightListItem, WebsiteCategory, WorkSiteVisibility } from "@/lib/website/types";
@@ -25,13 +44,6 @@ const CAT_CHIP: Record<string, string> = {
   culture: "bg-[#fdf3ee] text-[#a35a08]",
   lab: "bg-[#eaf5f0] text-[#0f7a45]"
 };
-
-function mediaUrl(siteUrl: string, src: string | null): string | null {
-  if (!src) return null;
-  if (/^https?:\/\//i.test(src)) return src;
-  const base = siteUrl.replace(/\/$/, "");
-  return `${base}${src.startsWith("/") ? src : `/${src}`}`;
-}
 
 function editHref(id: string) {
   return `/website/insights/${id}?tab=basic`;
@@ -317,6 +329,8 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const [hideItem, setHideItem] = useState<InsightListItem | null>(null);
   const [unhideItem, setUnhideItem] = useState<InsightListItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<InsightListItem | null>(null);
+  const [tab, setTab] = useState<ArrangeTab>("list");
+  const { state: saveState, submit } = useArrangeSave();
 
   async function reloadItems() {
     const insights = await listInsights({ status: "all", limit: 100 });
@@ -411,6 +425,70 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const liveCount = items.filter((row) => itemVisibility(row) === "live").length;
   const hiddenCount = items.filter((row) => itemVisibility(row) === "hidden").length;
   const draft = items.length - liveCount - hiddenCount;
+
+  /** 편성: 공개된 것만, 저장된 순서(sort) 대로 */
+  const arranged = useMemo(() => {
+    const rows = items.filter((row) => itemVisibility(row) === "live");
+    rows.sort((a, b) => {
+      const bySort = (a.sort ?? Number.MAX_SAFE_INTEGER) - (b.sort ?? Number.MAX_SAFE_INTEGER);
+      if (bySort !== 0) return bySort;
+      const byDate = String(b.published_at ?? "").localeCompare(String(a.published_at ?? ""));
+      if (byDate !== 0) return byDate;
+      return a.id.localeCompare(b.id);
+    });
+    return rows;
+  }, [items]);
+
+  const arrangeCards: ArrangeCard[] = arranged.map((row) => ({
+    key: row.id,
+    title: insightTitle(row),
+    thumb: mediaUrl(siteUrl, row.key_image),
+    pinned: Boolean(row.pinned),
+    layout: "small"
+  }));
+
+  /** 바뀐 순서 · 핀을 바로 저장한다 */
+  function persistArrange(next: InsightListItem[]) {
+    const body = next.map((row, index) => ({
+      id: row.id,
+      sort: index + 1,
+      pinned: Boolean(row.pinned)
+    }));
+    const byId = new Map(body.map((row) => [row.id, row]));
+    setItems((current) =>
+      current.map((row) => {
+        const patch = byId.get(row.id);
+        return patch ? { ...row, sort: patch.sort, pinned: patch.pinned } : row;
+      })
+    );
+    void submit(async (isLatest) => {
+      const res = await reorderInsights(body);
+      if (!res.ok) {
+        showToast({ message: "저장하지 못했습니다", tone: "error" });
+        if (isLatest()) await reloadItems();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function moveArranged(fromKey: string, toKey: string) {
+    const moved = moveByKey(arranged, (row) => row.id, fromKey, toKey);
+    if (!moved) return;
+    persistArrange(moved.next);
+    showToast({ message: `${moved.from + 1}번을 ${moved.to + 1}번 자리로 옮겼습니다`, tone: "ok" });
+  }
+
+  function pinArranged(key: string) {
+    const target = arranged.find((row) => row.id === key);
+    if (!target) return;
+    const pinned = !target.pinned;
+    persistArrange(arranged.map((row) => (row.id === key ? { ...row, pinned } : row)));
+    showToast({
+      message: pinned ? "핀을 꽂았습니다. 새 글이 와도 이 자리를 지킵니다" : "핀을 풀었습니다",
+      tone: "ok"
+    });
+  }
 
   function goEdit(item: InsightListItem) {
     router.push(editHref(item.id));
@@ -530,6 +608,9 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
         </div>
       </div>
 
+      <ArrangeTabs tab={tab} onChange={setTab} />
+
+      {tab === "list" ? (
       <div className="flex flex-wrap items-center gap-1.5">
         <input
           value={q}
@@ -573,11 +654,31 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
           <option value="views">조회순</option>
         </select>
       </div>
+      ) : null}
 
       {loading ? <p className="text-sm text-slate-500">불러오는 중...</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-      {!loading && (!error || items.length > 0) ? (
+      {tab === "arrange" && !loading && (!error || items.length > 0) ? (
+        <div className="wa ha">
+          <ArrangeStatus state={saveState} />
+          <div className="ha-canvas">
+            {arrangeCards.length === 0 ? (
+              <p className="text-sm text-slate-500">공개된 글이 없습니다.</p>
+            ) : (
+              <ArrangeGrid
+                cards={arrangeCards}
+                canManage={canManageWorks}
+                sized={false}
+                onMove={moveArranged}
+                onPin={pinArranged}
+              />
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "list" && !loading && (!error || items.length > 0) ? (
         <>
           <div className="hidden md:block">
             <table className="w-full table-fixed border-collapse text-left text-sm">

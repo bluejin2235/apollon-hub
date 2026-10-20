@@ -879,7 +879,9 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   </select>
                   <span className="open-ym__unit">월</span>
                 </div>
-                <p className="hint-line">상세 제목 아래</p>
+                <p className="hint-line">
+                  목록과 홈에서 이 날짜로 최신순이 정해집니다. 월을 모르면 1월로 두세요.
+                </p>
               </div>
             </div>
             <HelpPanel

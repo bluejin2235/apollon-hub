@@ -2869,8 +2869,14 @@
 .ha-cell {
   position: relative;
   border-radius: 10px;
-  overflow: hidden;
   aspect-ratio: 16 / 9;
+}
+.ha-cell.is-draggable {
+  cursor: grab;
+  user-select: none;
+}
+.ha-cell.is-menu-open {
+  z-index: 20;
 }
 .ha-cell.is-pinned {
   box-shadow: inset 0 0 0 2.5px var(--ap);
@@ -2890,6 +2896,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 10px;
 }
 .ha-cell__bg--empty {
   background: #e2e8f0;
@@ -2899,7 +2906,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 13px 15px;
+  padding: 13px 44px 13px 15px;
+  border-radius: 0 0 10px 10px;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
 }
 .ha-cell__title {
@@ -3014,6 +3022,213 @@
   align-items: center;
   gap: 3px;
   color: var(--ap);
+  font-weight: 600;
+}
+
+/* 편성: 저장 상태 · 번호/크기 표시 · 핀 · ⋯ 메뉴 */
+.ha-saved {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 18px;
+  margin: 0 4px 12px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.ha-saved i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+}
+.ha-saved b {
+  font-weight: 500;
+  color: #4b5563;
+}
+.ha-saved.is-saving i {
+  background: #f59e0b;
+}
+.ha-saved.is-error i {
+  background: #dc2626;
+}
+.ha-chip--no,
+.ha-chip--sz {
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.ha-chip--sz {
+  font-size: 10px;
+}
+.ha-cell__kind {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #d1d5db;
+  margin-bottom: 2px;
+}
+.ha-cell__pinbadge {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.ha-cell__more {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ha-cell__more:hover,
+.ha-cell__more[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.3);
+}
+.ha-menu {
+  position: absolute;
+  right: 8px;
+  bottom: 38px;
+  z-index: 10;
+  min-width: 168px;
+  padding: 5px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+.ha-menu button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+.ha-menu button:hover {
+  background: var(--soft);
+}
+.ha-menu button.is-danger {
+  color: #b45309;
+}
+.ha-menu hr {
+  margin: 4px 2px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.ha-menu__ck {
+  color: #2563eb;
+}
+
+/* 편성: 인사이트처럼 한 크기 격자 */
+.ha-flat {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.ha-cell--tall {
+  aspect-ratio: 4 / 5;
+}
+@media (max-width: 900px) {
+  .ha-flat {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 편성: 홈에서 숨긴 것 */
+.ha-hidden {
+  margin-top: 22px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--line);
+}
+.ha-hidden summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #4b5563;
+  cursor: pointer;
+  list-style: none;
+}
+.ha-hidden summary::-webkit-details-marker {
+  display: none;
+}
+.ha-hidden__count {
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--soft);
+  font-size: 11px;
+}
+.ha-hidden__empty {
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.ha-hidden__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--soft);
+}
+.ha-hidden__th {
+  flex: none;
+  width: 56px;
+  height: 32px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.ha-hidden__th--empty {
+  background: #e2e8f0;
+}
+.ha-hidden__nm {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+/* 목록 | 편성 탭 */
+.ha-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.ha-tabs button {
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+}
+.ha-tabs button[aria-selected="true"] {
+  border-bottom-color: #111827;
+  color: #111827;
   font-weight: 600;
 }
 

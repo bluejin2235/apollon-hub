@@ -70,6 +70,11 @@ export type WorkListItem = {
   site_visibility: WorkSiteVisibility;
   published_version: number | null;
   is_hidden: boolean;
+  /** 편성 순서. 작을수록 앞 */
+  sort?: number | null;
+  layout?: "big" | "small";
+  pinned?: boolean;
+  home_hidden?: boolean;
 };
 
 export type WorkListData = {
@@ -128,6 +133,10 @@ export type InsightListItem = {
   site_visibility?: WorkSiteVisibility;
   published_version?: number | null;
   is_hidden?: boolean;
+  /** 편성 순서. 작을수록 앞 */
+  sort?: number | null;
+  pinned?: boolean;
+  home_hidden?: boolean;
 };
 
 export type InsightListData = {
