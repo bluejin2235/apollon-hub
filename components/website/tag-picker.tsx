@@ -8,7 +8,6 @@ import {
   type WebsiteTagItem
 } from "@/lib/website/api";
 import type { ApiResult } from "@/lib/website/types";
-import { SmallBtn, TextInput } from "@/components/website/work-editor-ui";
 
 const TAG_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -20,25 +19,57 @@ type Props = {
 };
 
 function tagName(tag: WebsiteTagItem) {
-  return tag.label?.ko || tag.label?.en || tag.id;
+  return tag.label?.ko?.trim() || tag.label?.en?.trim() || tag.id;
 }
 
-function slugFromInput(value: string) {
-  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
+/**
+ * 엔터로 기존 태그를 붙일 때.
+ * · 국문 칸이 친 글자와 같으면(빈칸만 무시) 그대로 재사용 — 「미디어아트」
+ * · 두 칸이 같은 글자인 태그만 대소문자 무시 중복으로 본다 — 「projection mapping」
+ * · 한영이 다른 태그의 영문 칸·엉킨 국문 칸은 고르지 않는다
+ */
+function findReusableTag(tags: WebsiteTagItem[], typed: string) {
+  const text = typed.trim();
+  if (!text) return undefined;
+
+  const exactKo = tags.find((tag) => (tag.label?.ko?.trim() ?? "") === text);
+  if (exactKo) return exactKo;
+
+  const needle = text.toLowerCase();
+  return tags.find((tag) => {
+    const ko = tag.label?.ko?.trim() ?? "";
+    const en = tag.label?.en?.trim() ?? "";
+    return Boolean(ko) && ko.toLowerCase() === needle && en.toLowerCase() === needle;
+  });
+}
+
+function uniqueTagId(tags: WebsiteTagItem[], typed: string) {
+  const taken = new Set(tags.map((tag) => tag.id));
+  const ascii = typed
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const base = ascii && TAG_ID_RE.test(ascii) ? ascii : `tag-${Date.now().toString(36)}`;
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+function searchHaystack(tag: WebsiteTagItem) {
+  return `${tag.id} ${tag.label?.ko ?? ""} ${tag.label?.en ?? ""}`.toLowerCase();
 }
 
 export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTags }: Props) {
   const [all, setAll] = useState<WebsiteTagItem[]>([]);
   const [q, setQ] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [newId, setNewId] = useState("");
-  const [newKo, setNewKo] = useState("");
-  const [newEn, setNewEn] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openSuggest, setOpenSuggest] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
-  const enRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void getTags().then((res) => {
@@ -68,7 +99,7 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     return all
       .filter((tag) => {
         if (selectedIds.includes(tag.id)) return false;
-        return `${tag.id} ${tagName(tag)}`.toLowerCase().includes(needle);
+        return searchHaystack(tag).includes(needle);
       })
       .slice(0, 8);
   }, [all, needle, selectedIds]);
@@ -90,15 +121,14 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
 
   function resetInput() {
     setQ("");
-    setCreating(false);
-    setNewId("");
-    setNewKo("");
-    setNewEn("");
     setOpenSuggest(false);
   }
 
   async function add(id: string) {
-    if (selectedIds.includes(id)) return;
+    if (selectedIds.includes(id)) {
+      resetInput();
+      return;
+    }
     resetInput();
     await replace([...selectedIds, id]);
   }
@@ -107,37 +137,23 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     await replace(selectedIds.filter((item) => item !== id));
   }
 
-  function beginCreate(source: string) {
-    const slug = slugFromInput(source);
-    if (!TAG_ID_RE.test(slug)) {
-      setError("id는 영문 소문자·하이픈만 쓸 수 있습니다");
-      return;
-    }
-    setCreating(true);
-    setNewId(slug);
-    setNewKo(source.trim());
-    setNewEn("");
-    setOpenSuggest(false);
-    window.setTimeout(() => enRef.current?.focus(), 0);
-  }
-
-  async function makeTag() {
-    const id = newId.trim();
-    if (!TAG_ID_RE.test(id) || !newKo.trim() || !newEn.trim()) {
-      setError("id는 영문 소문자·하이픈, 국문·영문은 모두 필요합니다");
-      return;
-    }
+  async function createLiteral(text: string) {
     setBusy(true);
     setError(null);
     try {
-      const created = await createTag(id, { ko: newKo.trim(), en: newEn.trim() });
+      let id = uniqueTagId(all, text);
+      let created = await createTag(id, { ko: text, en: text });
+      if (!created.ok) {
+        id = uniqueTagId([...all, { id, label: { ko: text, en: text } }], text);
+        created = await createTag(id, { ko: text, en: text });
+      }
       if (!created.ok) {
         setError(created.error);
         return;
       }
       setAll((prev) => [...prev, created.data]);
       resetInput();
-      await add(created.data.id);
+      await replace([...selectedIds, created.data.id]);
     } finally {
       setBusy(false);
     }
@@ -149,40 +165,17 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
 
   function handleEnter() {
     if (busy) return;
-    if (creating) {
-      void makeTag();
-      return;
-    }
 
     const text = q.trim();
     if (!text) return;
 
-    const slug = slugFromInput(text);
-    const byId = all.find((tag) => tag.id === slug);
-    if (byId) {
-      void add(byId.id);
+    const existing = findReusableTag(all, text);
+    if (existing) {
+      void add(existing.id);
       return;
     }
 
-    const byName = all.find(
-      (tag) => tagName(tag).toLowerCase() === text.toLowerCase() && !selectedIds.includes(tag.id),
-    );
-    if (byName) {
-      void add(byName.id);
-      return;
-    }
-
-    if (filtered.length === 1) {
-      void add(filtered[0]!.id);
-      return;
-    }
-
-    if (all.some((tag) => tag.id === slug)) {
-      void add(slug);
-      return;
-    }
-
-    beginCreate(text);
+    void createLiteral(text);
   }
 
   return (
@@ -214,7 +207,6 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
             setQ(event.target.value);
             setError(null);
             setOpenSuggest(true);
-            if (creating) setCreating(false);
           }}
           onFocus={() => setOpenSuggest(true)}
           onKeyDown={(event) => {
@@ -227,7 +219,7 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
             }
           }}
         />
-        {openSuggest && needle && filtered.length > 0 && !creating ? (
+        {openSuggest && needle && filtered.length > 0 ? (
           <ul className="absolute left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
             {filtered.map((tag) => (
               <li key={tag.id}>
@@ -246,33 +238,6 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
           </ul>
         ) : null}
       </div>
-
-      {creating ? (
-        <div className="mt-2 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-          <p className="text-xs text-slate-500">새 태그 — id·국문·영문을 확인하고 Enter 로 만듭니다</p>
-          <TextInput value={newId} onChange={setNewId} placeholder="id (영문 소문자·하이픈)" />
-          <TextInput value={newKo} onChange={setNewKo} placeholder="국문" />
-          <input
-            ref={enRef}
-            className="i"
-            value={newEn}
-            placeholder="영문"
-            onChange={(event) => setNewEn(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void makeTag();
-              }
-            }}
-          />
-          <div className="flex gap-1">
-            <SmallBtn disabled={busy} onClick={() => void makeTag()}>
-              만들기
-            </SmallBtn>
-            <SmallBtn onClick={resetInput}>취소</SmallBtn>
-          </div>
-        </div>
-      ) : null}
 
       {error ? <p className="mt-1 text-xs text-rose-600">{error}</p> : null}
     </div>
