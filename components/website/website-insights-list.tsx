@@ -111,6 +111,8 @@ function itemVisibility(item: InsightListItem): WorkSiteVisibility {
   return item.site_visibility ?? (item.status === "published" ? "live" : "draft");
 }
 
+type StatusFilter = "default" | "published" | "draft" | "hidden" | "all";
+
 function StatusBadge({ item }: { item: InsightListItem }) {
   const visibility = itemVisibility(item);
   const label = visibility === "live" ? "공개" : visibility === "hidden" ? "감춤" : "초안";
@@ -322,7 +324,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<"all" | "draft" | "published" | "hidden">("all");
+  const [status, setStatus] = useState<StatusFilter>("default");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [newOpen, setNewOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -389,7 +391,12 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
     let rows = items;
-    if (status !== "all") {
+    if (status === "default") {
+      rows = rows.filter((row) => {
+        const visibility = itemVisibility(row);
+        return visibility === "live" || visibility === "draft";
+      });
+    } else if (status !== "all") {
       rows = rows.filter((row) => {
         const visibility = itemVisibility(row);
         if (status === "published") return visibility === "live";
@@ -633,14 +640,15 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
         </select>
         <select
           value={status}
-          onChange={(e) => setStatus(e.target.value as "all" | "draft" | "published" | "hidden")}
+          onChange={(e) => setStatus(e.target.value as StatusFilter)}
           className="rounded-[7px] border border-[#dde1e6] bg-white px-2 py-[5px] text-xs text-[#4a515b]"
           aria-label="상태"
         >
-          <option value="all">상태 전체</option>
+          <option value="default">기본 (공개+초안)</option>
           <option value="published">공개</option>
           <option value="draft">초안</option>
           <option value="hidden">감춤</option>
+          <option value="all">전체</option>
         </select>
         <select
           value={sortBy}
