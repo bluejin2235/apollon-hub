@@ -12,6 +12,11 @@ import {
 } from "@/lib/mail/hub-email";
 import { restaurantPrimaryCategory } from "@/lib/restaurants/types";
 import { mapServiceRow } from "@/lib/licenses/service-categories";
+import {
+  DIGEST_TEST_ONLY_EMAIL,
+  isHubManagerRole,
+  loadWebsiteHomepageSection
+} from "@/lib/mail/website-digest";
 
 type ProfileJoin = { name: string | null } | { name: string | null }[] | null;
 
@@ -21,6 +26,7 @@ type ProfileRow = {
   id: string;
   email: string;
   name: string | null;
+  role: string | null;
 };
 
 type ReviewDigestRow = {
@@ -131,7 +137,13 @@ function getKstDigestWindow(): {
   const todayKstMidnightUtcMs = Date.UTC(y, m, d) - KST_OFFSET_MS;
 
   if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return { skip: true, startIso: "", endIso: "", dateLabelKst: "" };
+    const startKstMidnightUtcMs = todayKstMidnightUtcMs - 24 * 60 * 60 * 1000;
+    return {
+      skip: true,
+      startIso: new Date(startKstMidnightUtcMs).toISOString(),
+      endIso: new Date(todayKstMidnightUtcMs).toISOString(),
+      dateLabelKst: formatKstDateLabel(startKstMidnightUtcMs)
+    };
   }
 
   if (dayOfWeek === 1) {
@@ -178,8 +190,9 @@ function buildDigestHtml(params: {
   totalReviewCount: number;
   supplies: { name: string; code: string; managerName: string }[];
   licenses: { name: string; category: string; assigneeName: string }[];
+  homepageHtml: string | null;
 }): string {
-  const { dateLabelKst, posts, restaurants, reviewGroups, totalReviewCount, supplies, licenses } = params;
+  const { dateLabelKst, posts, restaurants, reviewGroups, totalReviewCount, supplies, licenses, homepageHtml } = params;
 
   const sections: string[] = [];
 
@@ -220,13 +233,18 @@ function buildDigestHtml(params: {
     sections.push(buildSection("라이선스", `신규 등록 ${licenses.length}건`, cards));
   }
 
+  if (homepageHtml) {
+    sections.push(homepageHtml);
+  }
+
   const bodySections = sections.join(`\n${SECTION_DIVIDER}\n`);
   const allEmpty =
     posts.length === 0 &&
     restaurants.length === 0 &&
     totalReviewCount === 0 &&
     supplies.length === 0 &&
-    licenses.length === 0;
+    licenses.length === 0 &&
+    !homepageHtml;
   const emptyMessage = allEmpty
     ? `<p style="color: #776274; font-size: 14px; text-align: center; padding: 20px 0;">
     어제의 새로운 소식이 없습니다.
@@ -270,10 +288,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Resend environment variables missing" }, { status: 500 });
   }
 
+  const onlyRaw = request.nextUrl.searchParams.get("only")?.trim().toLowerCase() ?? "";
+  const testOnly = onlyRaw === DIGEST_TEST_ONLY_EMAIL;
+  if (onlyRaw && !testOnly) {
+    return NextResponse.json({ error: "invalid_only" }, { status: 400 });
+  }
+
   const { startIso, endIso, dateLabelKst, skip } = getKstDigestWindow();
-  if (skip) {
+  if (skip && !testOnly) {
     console.log("[daily-digest] skipped — weekend (no send on Sat/Sun KST)");
     return NextResponse.json({ success: true, skipped: true, reason: "weekend" });
+  }
+  if (skip && testOnly) {
+    console.log("[daily-digest] weekend skip bypassed for test-only send");
   }
   console.log("[daily-digest] window", { startIso, endIso, dateLabelKst });
 
@@ -304,7 +331,7 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false }),
     supabase
       .from("profiles")
-      .select("id, email, name")
+      .select("id, email, name, role")
       .eq("status", "근무")
       .neq("email", EXCLUDED_TEAM_EMAIL)
       .not("email", "is", null),
@@ -380,14 +407,26 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  const html = buildDigestHtml({
+  const homepageHtml = await loadWebsiteHomepageSection(startIso, endIso);
+  const staffHtml = buildDigestHtml({
     dateLabelKst,
     posts,
     restaurants,
     reviewGroups,
     totalReviewCount,
     supplies,
-    licenses
+    licenses,
+    homepageHtml: null
+  });
+  const managerHtml = buildDigestHtml({
+    dateLabelKst,
+    posts,
+    restaurants,
+    reviewGroups,
+    totalReviewCount,
+    supplies,
+    licenses,
+    homepageHtml
   });
   const subject = `[아폴론 Hub] 오늘의 소식 — ${dateLabelKst}`;
 
@@ -403,6 +442,13 @@ export async function GET(request: NextRequest) {
         skipped += 1;
         continue;
       }
+      if (testOnly && email !== DIGEST_TEST_ONLY_EMAIL) {
+        skipped += 1;
+        continue;
+      }
+
+      const html =
+        testOnly || isHubManagerRole(profile.role) ? managerHtml : staffHtml;
 
       const { data, error } = await resend.emails.send({
         from: fromEmail,
@@ -426,7 +472,8 @@ export async function GET(request: NextRequest) {
         restaurants: restaurants.length,
         reviews: totalReviewCount,
         supplies: supplies.length,
-        licenses: licenses.length
+        licenses: licenses.length,
+        homepage: Boolean(homepageHtml)
       });
     } finally {
       await new Promise((resolve) => setTimeout(resolve, 500));
