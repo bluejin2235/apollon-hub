@@ -60,7 +60,7 @@ function uniqueTagId(tags: WebsiteTagItem[], typed: string) {
 }
 
 function searchHaystack(tag: WebsiteTagItem) {
-  return `${tag.id} ${tag.label?.ko ?? ""} ${tag.label?.en ?? ""}`.toLowerCase();
+  return `${tag.id} ${tagName(tag)}`.toLowerCase();
 }
 
 export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTags }: Props) {
