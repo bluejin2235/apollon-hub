@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { canAccessWebsiteAdmin, getProfileRole } from "@/lib/auth/website-tester";
+import { canAccessWebsiteAdmin } from "@/lib/auth/website-tester";
 import { websiteAdminFetch } from "@/lib/website/client";
+import { applyHubActorHeaders, getHubActor } from "@/lib/website/hub-actor";
 
 export const runtime = "nodejs";
 
@@ -20,8 +21,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  const role = await getProfileRole(admin, user.id);
-  if (!canAccessWebsiteAdmin(role)) {
+  const actor = await getHubActor(admin, user.id);
+  if (!canAccessWebsiteAdmin(actor.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -37,9 +38,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const headers = new Headers({ "Content-Type": "application/json" });
+  applyHubActorHeaders(headers, user.id, actor.name);
   const { status, body: responseBody } = await websiteAdminFetch("/api/admin/publish", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body
   });
   return NextResponse.json(responseBody, { status });

@@ -69,12 +69,31 @@ function formatEdited(value: string | null | undefined) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul",
     month: "2-digit",
-    day: "2-digit"
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
   }).formatToParts(date);
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-  if (!month || !day) return "—";
-  return `${month}.${day}`;
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  const month = pick("month");
+  const day = pick("day");
+  let hour = pick("hour");
+  const minute = pick("minute");
+  if (!month || !day || hour == null || minute == null) return "—";
+  if (hour === "24") hour = "00";
+  return `${month}.${day} ${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+}
+
+function EditedCell({ at, by }: { at: string | null | undefined; by: string | null | undefined }) {
+  const who = by?.trim() ? by.trim() : "—";
+  return (
+    <td className="py-3 pr-3">
+      <span className="block whitespace-nowrap tabular-nums text-slate-400">{formatEdited(at)}</span>
+      <span className="mt-0.5 block truncate text-[11px] leading-tight text-slate-400" title={who}>
+        {who}
+      </span>
+    </td>
+  );
 }
 
 function openSortKey(item: WorkListItem) {
@@ -701,12 +720,12 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
             <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="w-[26%] py-2 pr-3 font-medium">프로젝트</th>
+                  <th className="w-[22%] py-2 pr-3 font-medium">프로젝트</th>
                   <th className="w-[22%] py-2 pr-3 font-medium">사업분야</th>
                   <th className="w-[11%] py-2 pr-3 font-medium">오픈</th>
                   <th className="w-[9%] py-2 pr-3 text-right font-medium">조회</th>
                   <th className="w-[10%] py-2 pr-3 font-medium">상태</th>
-                  <th className="w-[8%] py-2 pr-3 font-medium">수정</th>
+                  <th className="w-[12%] py-2 pr-3 font-medium">수정</th>
                   <th className="w-[8%] py-2 pr-3 font-medium">채움</th>
                   <th className="w-[6%] py-2 font-medium" />
                 </tr>
@@ -756,7 +775,7 @@ export function WebsiteWorksList({ siteUrl }: { siteUrl: string }) {
                       <td className="py-3 pr-3">
                         <StatusBadge item={item} />
                       </td>
-                      <td className="py-3 pr-3 tabular-nums text-slate-400">{formatEdited(item.updated_at)}</td>
+                      <EditedCell at={item.updated_at} by={item.updated_by_name} />
                       <td className="py-3 pr-3">
                         <FillDots item={item} />
                       </td>

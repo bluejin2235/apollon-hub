@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiUser, getServiceSupabase } from "@/lib/auth/get-api-user";
-import { canAccessWebsiteAdmin, getProfileRole } from "@/lib/auth/website-tester";
+import { canAccessWebsiteAdmin } from "@/lib/auth/website-tester";
 import { websiteAdminFetch } from "@/lib/website/client";
+import { applyHubActorHeaders, getHubActor } from "@/lib/website/hub-actor";
 
 export const runtime = "nodejs";
 
@@ -18,8 +19,8 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  const role = await getProfileRole(admin, user.id);
-  if (!canAccessWebsiteAdmin(role)) {
+  const actor = await getHubActor(admin, user.id);
+  if (!canAccessWebsiteAdmin(actor.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -30,7 +31,9 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   }
 
   const contentType = request.headers.get("content-type") ?? "";
-  const init: RequestInit = { method };
+  const headers = new Headers();
+  applyHubActorHeaders(headers, user.id, actor.name);
+  const init: RequestInit = { method, headers };
 
   try {
     if (method !== "GET" && method !== "HEAD") {
@@ -52,9 +55,9 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
           );
         }
         init.body = raw;
-        const headers = new Headers(init.headers);
-        headers.set("Content-Type", contentType);
-        init.headers = headers;
+        const uploadHeaders = new Headers(init.headers);
+        uploadHeaders.set("Content-Type", contentType);
+        init.headers = uploadHeaders;
       } else {
         const text = await request.text();
         if (text) {

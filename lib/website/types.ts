@@ -58,6 +58,8 @@ export type WorkListItem = {
   is_featured: boolean;
   show_faq: boolean;
   updated_at: string;
+  updated_by_id?: string | null;
+  updated_by_name?: string | null;
   counts: {
     sections: number;
     images: number;
@@ -123,6 +125,8 @@ export type InsightListItem = {
   key_image_ratio?: string | null;
   show_faq: boolean;
   updated_at: string;
+  updated_by_id?: string | null;
+  updated_by_name?: string | null;
   counts: {
     blocks: number;
     images: number;
