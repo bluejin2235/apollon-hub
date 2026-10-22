@@ -22,24 +22,16 @@ function tagName(tag: WebsiteTagItem) {
   return tag.label?.ko?.trim() || tag.label?.en?.trim() || tag.id;
 }
 
-/**
- * 엔터로 기존 태그를 붙일 때.
- * · 국문 칸이 친 글자와 같으면(빈칸만 무시) 그대로 재사용 — 「미디어아트」
- * · 두 칸이 같은 글자인 태그만 대소문자 무시 중복으로 본다 — 「projection mapping」
- * · 한영이 다른 태그의 영문 칸·엉킨 국문 칸은 고르지 않는다
- */
+/** 엔터: 국문·영문 칸 중 하나라도 같으면(대소문자 무시) 그 태그를 붙인다. */
 function findReusableTag(tags: WebsiteTagItem[], typed: string) {
   const text = typed.trim();
   if (!text) return undefined;
-
-  const exactKo = tags.find((tag) => (tag.label?.ko?.trim() ?? "") === text);
-  if (exactKo) return exactKo;
 
   const needle = text.toLowerCase();
   return tags.find((tag) => {
     const ko = tag.label?.ko?.trim() ?? "";
     const en = tag.label?.en?.trim() ?? "";
-    return Boolean(ko) && ko.toLowerCase() === needle && en.toLowerCase() === needle;
+    return ko.toLowerCase() === needle || en.toLowerCase() === needle;
   });
 }
 
@@ -137,14 +129,14 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     await replace(selectedIds.filter((item) => item !== id));
   }
 
-  async function createLiteral(text: string) {
+  async function createLiteral(text: string, tags: WebsiteTagItem[]) {
     setBusy(true);
     setError(null);
     try {
-      let id = uniqueTagId(all, text);
+      let id = uniqueTagId(tags, text);
       let created = await createTag(id, { ko: text, en: text });
       if (!created.ok) {
-        id = uniqueTagId([...all, { id, label: { ko: text, en: text } }], text);
+        id = uniqueTagId([...tags, { id, label: { ko: text, en: text } }], text);
         created = await createTag(id, { ko: text, en: text });
       }
       if (!created.ok) {
@@ -163,19 +155,29 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
     void add(tag.id);
   }
 
-  function handleEnter() {
+  async function handleEnter() {
     if (busy) return;
 
     const text = q.trim();
     if (!text) return;
 
-    const existing = findReusableTag(all, text);
-    if (existing) {
-      void add(existing.id);
-      return;
-    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await getTags();
+      const tags = res.ok ? (res.data.items ?? []) : all;
+      if (res.ok) setAll(tags);
 
-    void createLiteral(text);
+      const existing = findReusableTag(tags, text);
+      if (existing) {
+        await add(existing.id);
+        return;
+      }
+
+      await createLiteral(text, tags);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -212,7 +214,7 @@ export function TagPicker({ workId, selectedIds, onReload, saveTags = setWorkTag
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              handleEnter();
+              void handleEnter();
             }
             if (event.key === "Escape") {
               resetInput();
