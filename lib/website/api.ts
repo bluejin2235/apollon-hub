@@ -789,9 +789,15 @@ export function reorderSections(workId: string, order: OrderItem[]): Promise<Api
   });
 }
 
+export type WebsiteTagGroup = "venue" | "technique" | "etc" | "insight";
+
 export type WebsiteTagItem = {
   id: string;
   label: { ko?: string; en?: string };
+  /** 미분류는 null */
+  tag_group?: WebsiteTagGroup | null;
+  /** 붙은 워크 수 */
+  works?: number;
 };
 
 export type SearchHit = {
@@ -810,13 +816,15 @@ export function getTags(): Promise<ApiResult<{ items: WebsiteTagItem[] }>> {
   return websiteFetch<{ items: WebsiteTagItem[] }>("tags");
 }
 
+/** 같은 이름(대소문자 · 띄어쓰기 무시)이 있으면 409, details.id 에 기존 태그 id */
 export function createTag(
   id: string,
-  label: { ko: string; en: string }
+  label: { ko: string; en: string },
+  tagGroup: WebsiteTagGroup = "insight"
 ): Promise<ApiResult<WebsiteTagItem>> {
   return websiteFetch<WebsiteTagItem>("tags", {
     method: "POST",
-    body: JSON.stringify({ id, label })
+    body: JSON.stringify({ id, label, tag_group: tagGroup })
   });
 }
 

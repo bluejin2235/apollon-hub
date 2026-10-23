@@ -20,7 +20,7 @@ import { describeUploadError } from "@/lib/website/upload-error";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { InsightCropModal } from "@/components/website/insight-crop-modal";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
-import { TagPicker } from "@/components/website/tag-picker";
+import { WorkTagGroups } from "@/components/website/work-tag-groups";
 import { showToast } from "@/components/website/toast";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
@@ -79,7 +79,7 @@ const HELP = {
     title: "태그",
     use: "워크 목록 위 필터. 상세 페이지에는 나오지 않습니다",
     rule: "3~6개. 너무 많으면 필터가 지저분해집니다",
-    note: "없는 태그를 치면 새로 만들 수 있습니다. 이미 있는 것을 쓰는 편이 낫습니다",
+    note: "목록에 없으면 그 칸의 「새 태그 만들기」로 만듭니다. 이미 있는 것을 쓰는 편이 낫습니다",
     empty: "필터에서 이 워크를 찾을 수 없습니다"
   },
   cli: {
@@ -892,18 +892,20 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
 
           <div className="f">
-            <div className="fl">
-              <span className="nm">태그</span>
-              <button type="button" className="q" onClick={() => toggleHelp("tag")}>
-                ?
-              </button>
-            </div>
-            <TagPicker
+            <WorkTagGroups
               workId={work.id}
               selectedIds={tags.map((t) => t.tag_id)}
               onReload={onReload}
+              label={
+                <>
+                  <span className="nm">태그</span>
+                  <button type="button" className="q" onClick={() => toggleHelp("tag")}>
+                    ?
+                  </button>
+                </>
+              }
             />
-            <p className="hint-line">워크 목록 위 필터에 쓰입니다. 3~6개를 권합니다</p>
+            <p className="hint-line">워크 목록 위 필터에 쓰입니다. 3~6개 권장.</p>
             <HelpPanel
               open={openHelp === "tag"}
               body={HELP.tag}
