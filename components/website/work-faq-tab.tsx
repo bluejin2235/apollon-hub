@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { addFaq, deleteFaq, reorderFaqs, updateFaq } from "@/lib/website/api";
 import type { Loc, WorkDetail, WorkFaq } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
+import { type FlushFn, useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import {
   AiBtn,
@@ -35,9 +36,40 @@ function toOrder(items: WorkFaq[], from: number, to: number) {
 }
 
 export function WorkFaqTab({ work, saving, onToggleShowFaq, onReload }: Props) {
+  const { registerFlush } = useFullSave();
   const faqs = [...(work.faqs ?? [])].sort((a, b) => a.sort - b.sort);
   const [error, setError] = useState<string | null>(null);
   const [deleteFaqItem, setDeleteFaqItem] = useState<WorkFaq | null>(null);
+  const cardFlushes = useRef(new Map<string, FlushFn>());
+
+  const registerCardFlush = useCallback((id: string, fn: FlushFn) => {
+    cardFlushes.current.set(id, fn);
+    return () => {
+      if (cardFlushes.current.get(id) === fn) cardFlushes.current.delete(id);
+    };
+  }, []);
+
+  const flushAll = useCallback(async () => {
+    for (const fn of [...cardFlushes.current.values()]) {
+      try {
+        if (!(await fn())) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }, []);
+
+  useEffect(() => registerFlush("work-faq", flushAll), [flushAll, registerFlush]);
+
+  const saveFaqItem = useCallback(async (id: string, question: Loc, answer: Loc) => {
+    const res = await updateFaq(id, { question, answer });
+    if (!res.ok) {
+      setError(res.error);
+      return false;
+    }
+    return true;
+  }, []);
 
   async function add() {
     setError(null);
@@ -121,10 +153,8 @@ export function WorkFaqTab({ work, saving, onToggleShowFaq, onReload }: Props) {
             total={faqs.length}
             onMove={(dir) => void move(i, dir)}
             onDelete={() => setDeleteFaqItem(faq)}
-            onSave={async (question, answer) => {
-              const res = await updateFaq(faq.id, { question, answer });
-              if (!res.ok) setError(res.error);
-            }}
+            onSave={saveFaqItem}
+            registerFlush={registerCardFlush}
           />
         ))}
       </div>
@@ -158,14 +188,16 @@ function FaqCard({
   total,
   onMove,
   onDelete,
-  onSave
+  onSave,
+  registerFlush
 }: {
   faq: WorkFaq;
   index: number;
   total: number;
   onMove: (dir: -1 | 1) => void;
   onDelete: () => void;
-  onSave: (question: Loc, answer: Loc) => Promise<void>;
+  onSave: (id: string, question: Loc, answer: Loc) => Promise<boolean>;
+  registerFlush: (id: string, fn: FlushFn) => () => void;
 }) {
   const [open, setOpen] = useState(index === 1);
   const [question, setQuestion] = useState<Loc>(asLoc(faq.question));
@@ -197,18 +229,32 @@ function FaqCard({
     setSave((cur) => (cur === "saving" ? cur : dirty ? "dirty" : "idle"));
   }
 
-  async function persist() {
+  const persist = useCallback(async (): Promise<boolean> => {
+    const dirtyNow =
+      questionRef.current.ko !== savedQuestion.current.ko ||
+      questionRef.current.en !== savedQuestion.current.en ||
+      answerRef.current.ko !== savedAnswer.current.ko ||
+      answerRef.current.en !== savedAnswer.current.en;
+    if (!dirtyNow) return true;
     setSave("saving");
     try {
-      await onSave(questionRef.current, answerRef.current);
+      const ok = await onSave(faq.id, questionRef.current, answerRef.current);
+      if (!ok) {
+        setSave("dirty");
+        return false;
+      }
       savedQuestion.current = questionRef.current;
       savedAnswer.current = answerRef.current;
       setSave("saved");
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 1200);
+      return true;
     } catch {
       setSave("dirty");
+      return false;
     }
-  }
+  }, [faq.id, onSave]);
+
+  useEffect(() => registerFlush(faq.id, persist), [faq.id, persist, registerFlush]);
 
   const q = question.ko.trim() || question.en.trim() || "질문 없음";
 

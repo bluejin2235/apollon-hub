@@ -18,6 +18,7 @@ import {
   hitTitle,
   type ContentType
 } from "@/components/website/content-picker-modal";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import "./ui/work-admin.css";
 
@@ -157,6 +158,7 @@ function HelpPanel({
 }
 
 export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
+  const { registerFlush } = useFullSave();
   const savedSlots = useMemo(() => slotsFromRelated(work.content_related), [work.content_related]);
   const [slots, setSlots] = useState<Array<Slot | null>>(savedSlots);
   const [hits, setHits] = useState<Map<string, SearchHit>>(new Map());
@@ -308,7 +310,7 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
     setSlots((prev) => prev.map((slot, i) => (i === index ? null : slot)));
   }
 
-  async function save() {
+  const save = useCallback(async (): Promise<boolean> => {
     setSaveState("saving");
     setError(null);
     const saved = [...(work.content_related ?? [])];
@@ -323,7 +325,7 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
         if (!res.ok) {
           setError(res.error);
           setSaveState("dirty");
-          return;
+          return false;
         }
       }
     }
@@ -338,7 +340,7 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
       if (!res.ok) {
         setError(res.error);
         setSaveState("dirty");
-        return;
+        return false;
       }
       const row = res.data as { id?: string } | undefined;
       created.push({ ...slot, id: typeof row?.id === "string" ? row.id : slot.id });
@@ -352,13 +354,23 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
       if (!res.ok) {
         setError(res.error);
         setSaveState("dirty");
-        return;
+        return false;
       }
     }
 
     setSaveState("saved");
     await onReload();
-  }
+    return true;
+  }, [onReload, slots, work.content_related, work.id]);
+
+  useEffect(
+    () =>
+      registerFlush("work-related", async () => {
+        if (saveState !== "dirty") return true;
+        return await save();
+      }),
+    [registerFlush, save, saveState]
+  );
 
   return (
     <div className="wa">

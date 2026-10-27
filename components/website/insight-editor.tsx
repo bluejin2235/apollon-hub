@@ -41,6 +41,7 @@ import {
   type InsightCheckItem
 } from "@/components/website/insight-publish-check-panel";
 import { InsightRelatedTab } from "@/components/website/insight-related-tab";
+import { FullSaveProvider, useFullSave } from "@/components/website/full-save-registry";
 import { WorkHistoryTab } from "@/components/website/work-history-tab";
 import { PublishModal } from "@/components/website/publish-modal";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
@@ -180,7 +181,16 @@ function formatPublishApiError(
 }
 
 export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
+  return (
+    <FullSaveProvider>
+      <InsightEditorInner insightId={insightId} siteUrl={siteUrl} />
+    </FullSaveProvider>
+  );
+}
+
+function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl: string }) {
   const router = useRouter();
+  const { runFlushes, markSaved } = useFullSave();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = parseInsightEditorTab(searchParams.get("tab"));
@@ -326,7 +336,13 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
     setFullSaveState("saving");
     setError(null);
     try {
-      const result = await updateInsight(insightId, insightPatchFromDraft(draft));
+      const patch = insightPatchFromDraft(draft);
+      const flushed = await runFlushes();
+      if (!flushed) {
+        setFullSaveState("dirty");
+        return null;
+      }
+      const result = await updateInsight(insightId, patch);
       if (!result.ok) {
         setError(apiFailMessage(result, failCtx(insight, draft)));
         setFullSaveState("dirty");
@@ -336,6 +352,7 @@ export function InsightEditor({ insightId, siteUrl }: { insightId: string; siteU
       const fresh = await load();
       await refreshPublishPreview();
       setFullSaveState("saved");
+      markSaved();
       window.setTimeout(() => setFullSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       if (!opts?.silent) {
         showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });

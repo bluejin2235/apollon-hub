@@ -20,6 +20,7 @@ import {
   hitTitle,
   type ContentType
 } from "@/components/website/content-picker-modal";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import "./ui/work-admin.css";
 
@@ -159,6 +160,7 @@ function HelpPanel({
 }
 
 export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
+  const { registerFlush } = useFullSave();
   const savedSlots = useMemo(() => slotsFromRelated(insight.content_related), [insight.content_related]);
   const [slots, setSlots] = useState<Array<Slot | null>>(savedSlots);
   const [hits, setHits] = useState<Map<string, SearchHit>>(new Map());
@@ -310,7 +312,7 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
     setSlots((prev) => prev.map((slot, i) => (i === index ? null : slot)));
   }
 
-  async function save() {
+  const save = useCallback(async (): Promise<boolean> => {
     setSaveState("saving");
     setError(null);
     const saved = [...(insight.content_related ?? [])];
@@ -325,7 +327,7 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
         if (!res.ok) {
           setError(res.error);
           setSaveState("dirty");
-          return;
+          return false;
         }
       }
     }
@@ -340,7 +342,7 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
       if (!res.ok) {
         setError(res.error);
         setSaveState("dirty");
-        return;
+        return false;
       }
       const row = res.data as { id?: string } | undefined;
       created.push({ ...slot, id: typeof row?.id === "string" ? row.id : slot.id });
@@ -354,13 +356,23 @@ export function InsightRelatedTab({ insight, siteUrl, onReload }: Props) {
       if (!res.ok) {
         setError(res.error);
         setSaveState("dirty");
-        return;
+        return false;
       }
     }
 
     setSaveState("saved");
     await onReload();
-  }
+    return true;
+  }, [insight.content_related, insight.id, onReload, slots]);
+
+  useEffect(
+    () =>
+      registerFlush("insight-related", async () => {
+        if (saveState !== "dirty") return true;
+        return await save();
+      }),
+    [registerFlush, save, saveState]
+  );
 
   return (
     <div className="wa">

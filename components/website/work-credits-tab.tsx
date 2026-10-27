@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { replaceCredits } from "@/lib/website/api";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { asLoc, emptyLoc, type Loc, type WorkCredit, type WorkDetail } from "@/lib/website/work-detail";
@@ -59,6 +60,7 @@ function describeCreditError(error: string, details?: unknown): string {
 }
 
 export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props) {
+  const { registerFlush } = useFullSave();
   const saved = useMemo(() => fromWork(work.work_credits ?? []), [work.work_credits]);
   const [rows, setRows] = useState<Draft[]>(saved);
   const [saveState, setSaveState] = useState<PartialSaveState>("idle");
@@ -114,7 +116,7 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
     markDirty();
   }
 
-  async function savePartial(): Promise<boolean> {
+  const savePartial = useCallback(async (): Promise<boolean> => {
     setSaveState("saving");
     setError(null);
 
@@ -150,7 +152,16 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
     window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
     await onReload();
     return true;
-  }
+  }, [onReload, rows, work.id]);
+
+  useEffect(
+    () =>
+      registerFlush("work-credits", async () => {
+        if (saveState !== "dirty") return true;
+        return await savePartial();
+      }),
+    [registerFlush, savePartial, saveState]
+  );
 
   useImperativeHandle(
     saveRef,
@@ -158,9 +169,7 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
       isDirty: () => dirty,
       save: () => savePartial()
     }),
-    // savePartial closes over rows; rebind when rows/dirty change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dirty, rows, work.id]
+    [dirty, savePartial]
   );
 
   return (

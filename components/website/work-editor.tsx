@@ -35,6 +35,7 @@ import { WorkFaqTab } from "@/components/website/work-faq-tab";
 import { WorkHistoryTab } from "@/components/website/work-history-tab";
 import { WorkInterviewTab } from "@/components/website/work-interview-tab";
 import { WorkRelatedTab } from "@/components/website/work-related-tab";
+import { FullSaveProvider, useFullSave } from "@/components/website/full-save-registry";
 import { showToast } from "@/components/website/toast";
 import { isPreviewOpen, openPreview, PREVIEW_POPUP_BLOCKED, refreshPreview } from "@/lib/website/preview-window";
 
@@ -150,7 +151,16 @@ function interviewBlocksPublish(work: WorkDetail): boolean {
 }
 
 export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: string }) {
+  return (
+    <FullSaveProvider>
+      <WorkEditorInner workId={workId} siteUrl={siteUrl} />
+    </FullSaveProvider>
+  );
+}
+
+function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string }) {
   const router = useRouter();
+  const { runFlushes, markSaved } = useFullSave();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = parseEditorTab(searchParams.get("tab"));
@@ -400,11 +410,17 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
     setFullSaveState("saving");
     setError(null);
     try {
-      if (!(await saveCategories(draft))) {
+      const next = draft;
+      const flushed = await runFlushes();
+      if (!flushed) {
         setFullSaveState("dirty");
         return false;
       }
-      const result = await updateWork(workId, worksPatchFromDraft(draft));
+      if (!(await saveCategories(next))) {
+        setFullSaveState("dirty");
+        return false;
+      }
+      const result = await updateWork(workId, worksPatchFromDraft(next));
       if (!result.ok) {
         setError(apiFailMessage(result, failCtx(draft)));
         setFullSaveState("dirty");
@@ -414,6 +430,7 @@ export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: strin
       await load();
       await refreshPublishPreview();
       setFullSaveState("saved");
+      markSaved();
       window.setTimeout(() => setFullSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       if (!opts?.silent) {
         showToast({ message: "저장되었습니다", tone: "ok", durationMs: 2000 });
