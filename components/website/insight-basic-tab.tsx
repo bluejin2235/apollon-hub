@@ -8,6 +8,7 @@ import {
   ratioMeta,
   type InsightCropRatio
 } from "@/components/website/insight-crop-modal";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { TagPicker } from "@/components/website/tag-picker";
 import { showToast } from "@/components/website/toast";
@@ -143,7 +144,18 @@ function isDefaultTitle(title: { ko: string; en: string }) {
 }
 
 function useFoldPartialSave(onReload: () => Promise<void>) {
+  const { savedTick } = useFullSave();
   const [state, setState] = useState<PartialSaveState>("idle");
+
+  useEffect(() => {
+    if (savedTick === 0) return;
+    setState((cur) => (cur === "saving" ? cur : "saved"));
+    const t = window.setTimeout(
+      () => setState((cur) => (cur === "saved" ? "idle" : cur)),
+      2000
+    );
+    return () => window.clearTimeout(t);
+  }, [savedTick]);
 
   const markDirty = useCallback(() => {
     setState((cur) => (cur === "saving" ? cur : "dirty"));

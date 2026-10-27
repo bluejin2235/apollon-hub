@@ -19,6 +19,7 @@ import { prepareImageForUpload } from "@/lib/website/prepare-upload-image";
 import { describeUploadError } from "@/lib/website/upload-error";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { InsightCropModal } from "@/components/website/insight-crop-modal";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
 import { WorkTagGroups } from "@/components/website/work-tag-groups";
 import { showToast } from "@/components/website/toast";
@@ -171,7 +172,18 @@ function isPlaceholderKey(src: string) {
 }
 
 function useFoldPartialSave(workId: string, onReload: () => Promise<void>) {
+  const { savedTick } = useFullSave();
   const [state, setState] = useState<PartialSaveState>("idle");
+
+  useEffect(() => {
+    if (savedTick === 0) return;
+    setState((cur) => (cur === "saving" ? cur : "saved"));
+    const t = window.setTimeout(
+      () => setState((cur) => (cur === "saved" ? "idle" : cur)),
+      2000
+    );
+    return () => window.clearTimeout(t);
+  }, [savedTick]);
 
   const markDirty = useCallback(() => {
     setState((cur) => (cur === "saving" ? cur : "dirty"));
