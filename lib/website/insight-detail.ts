@@ -33,6 +33,7 @@ export type InsightBlock = {
   embed_provider: string | null;
   embed_url: string | null;
   embed_note: Loc | null;
+  updated_at: string;
   insight_images?: BlockImage[] | null;
 };
 
@@ -177,6 +178,7 @@ function parseBlock(value: unknown): InsightBlock | null {
     embed_provider: typeof row.embed_provider === "string" ? row.embed_provider : null,
     embed_url: typeof row.embed_url === "string" ? row.embed_url : null,
     embed_note: row.embed_note ? asLoc(row.embed_note) : null,
+    updated_at: asString(row.updated_at),
     insight_images: asArray(row.insight_images)
       .map(parseImage)
       .filter((v): v is BlockImage => v !== null)

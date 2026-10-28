@@ -71,6 +71,21 @@ function orderLabel(index: number, name: string) {
 
 type SaveState = PartialSaveState | "error";
 
+const STALE_REMOTE_MSG = "다른 곳에서 바뀌었습니다. 저장하면 이 입력으로 덮어씁니다.";
+
+function insightBlockServerRev(block: InsightBlock) {
+  if (block.updated_at) return `${block.id}:${block.updated_at}`;
+  return JSON.stringify({
+    id: block.id,
+    preset: block.preset,
+    body: block.body,
+    question: block.question,
+    answer: block.answer,
+    video_url: block.video_url,
+    embed_url: block.embed_url
+  });
+}
+
 type Props = {
   block: InsightBlock;
   index: number;
@@ -116,11 +131,26 @@ export function InsightBlockCard({
   const [person, setPerson] = useState(pressPerson);
   const [role, setRole] = useState(pressRole);
   const [localPortrait, setLocalPortrait] = useState(portrait);
+  const [staleRemote, setStaleRemote] = useState(false);
   const pendingRef = useRef<Record<string, unknown>>({});
   const personPendingRef = useRef<Record<string, unknown>>({});
   const imagePendingRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const serverRev = insightBlockServerRev(block);
 
   useEffect(() => {
+    const holding =
+      saveRef.current === "dirty" ||
+      saveRef.current === "saving" ||
+      saveRef.current === "error" ||
+      Object.keys(pendingRef.current).length > 0 ||
+      Object.keys(personPendingRef.current).length > 0 ||
+      imagePendingRef.current.size > 0;
+    if (holding) {
+      setStaleRemote(true);
+      return;
+    }
     setBody(asLoc(block.body));
     setQuestion(asLoc(block.question));
     setAnswer(asLoc(block.answer));
@@ -132,7 +162,9 @@ export function InsightBlockCard({
     pendingRef.current = {};
     personPendingRef.current = {};
     imagePendingRef.current = new Map();
-  }, [block, pressPerson, pressRole, portrait]);
+    setStaleRemote(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- block.id · serverRev 만
+  }, [block.id, serverRev, pressPerson, pressRole, portrait]);
 
   function markDirty() {
     setSave((cur) => (cur === "saving" ? cur : "dirty"));
@@ -304,6 +336,7 @@ export function InsightBlockCard({
         <span className="gr">⠿</span>
         <span className="kd">{orderLabel(index, name)}</span>
         {isRich ? <span className="c2">에디터</span> : null}
+        {staleRemote ? <span className="c2">다른 곳에서 바뀜</span> : null}
         <div className="ct" onClick={(event) => event.stopPropagation()}>
           <PartialSaveBtn
             state={save === "error" ? "dirty" : save}
@@ -337,6 +370,7 @@ export function InsightBlockCard({
       {collapsed ? null : (
         <div className="bb space-y-3">
           {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+          {staleRemote ? <p className="text-xs text-amber-800">{STALE_REMOTE_MSG}</p> : null}
 
           {isRich ? (
             <Field

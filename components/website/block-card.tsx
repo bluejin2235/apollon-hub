@@ -74,6 +74,30 @@ import {
 
 type SaveState = PartialSaveState | "error";
 
+const STALE_REMOTE_MSG = "다른 곳에서 바뀌었습니다. 저장하면 이 입력으로 덮어씁니다.";
+
+function blockServerRev(block: ContentBlock) {
+  if (block.updated_at) return `${block.id}:${block.updated_at}`;
+  return JSON.stringify({
+    id: block.id,
+    preset: block.preset,
+    body: block.body,
+    video_kind: block.video_kind,
+    video_url: block.video_url,
+    video_poster: block.video_poster,
+    video_alt: block.video_alt,
+    caption: block.caption,
+    caption_visible: block.caption_visible,
+    embed_provider: block.embed_provider,
+    embed_url: block.embed_url,
+    embed_title: block.embed_title,
+    embed_poster: block.embed_poster,
+    gallery_row_height: block.gallery_row_height,
+    text_side: block.text_side,
+    show_meta: block.show_meta
+  });
+}
+
 type Props = {
   block: ContentBlock;
   index: number;
@@ -141,10 +165,23 @@ export function BlockCard({
   const [rowHeight, setRowHeight] = useState(block.gallery_row_height ?? 320);
   const [textSide, setTextSide] = useState<"left" | "right">(block.text_side ?? defaultTextSide(block.preset));
   const [showMeta, setShowMeta] = useState(block.show_meta);
+  const [staleRemote, setStaleRemote] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Record<string, unknown>>({});
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const serverRev = blockServerRev(block);
 
   useEffect(() => {
+    const holding =
+      saveRef.current === "dirty" ||
+      saveRef.current === "saving" ||
+      saveRef.current === "error" ||
+      Object.keys(pendingRef.current).length > 0;
+    if (holding) {
+      setStaleRemote(true);
+      return;
+    }
     const nextCount = textColumnCount(block.preset);
     if (nextCount > 0) {
       setColumns(columnsFromBody(block.body, nextCount));
@@ -170,7 +207,11 @@ export function BlockCard({
     setRowHeight(block.gallery_row_height ?? 320);
     setTextSide(block.text_side ?? defaultTextSide(block.preset));
     setShowMeta(block.show_meta);
-  }, [block]);
+    pendingRef.current = {};
+    setStaleRemote(false);
+    // block 통째 의존이면 이동 뒤 onReload 가 열린 카드 입력을 덮어쓴다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- block.id · serverRev 만
+  }, [block.id, serverRev]);
 
   const images = [...(block.block_images ?? [])].sort((a, b) => a.sort - b.sort);
   const limit = imageLimitForPreset(block.preset);
@@ -369,6 +410,7 @@ export function BlockCard({
         <span className="gr">⠿</span>
         <span className="kd">{presetName}</span>
         {chip ? <span className="c2">{chip}</span> : null}
+        {staleRemote ? <span className="c2">다른 곳에서 바뀜</span> : null}
         <div
           className="ct"
           onClick={(event) => event.stopPropagation()}
@@ -396,6 +438,7 @@ export function BlockCard({
         <div className="bb">
         <div className="space-y-4">
           {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+          {staleRemote ? <p className="text-xs text-amber-800">{STALE_REMOTE_MSG}</p> : null}
 
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{presetName}</span>

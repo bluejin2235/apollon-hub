@@ -68,6 +68,7 @@ export type ContentBlock = {
   show_meta: boolean;
   caption: Loc | null;
   caption_visible: boolean;
+  updated_at: string;
   block_images?: BlockImage[] | null;
 };
 
@@ -368,6 +369,7 @@ function parseBlock(value: unknown): ContentBlock | null {
     show_meta: row.show_meta === true,
     caption: row.caption ? asLoc(row.caption) : null,
     caption_visible: asBool(row.caption_visible),
+    updated_at: asString(row.updated_at),
     block_images: asArray(row.block_images).map(parseImage).filter((v): v is BlockImage => v !== null)
   };
 }
