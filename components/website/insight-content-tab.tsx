@@ -10,6 +10,7 @@ import { apiFailMessage } from "@/lib/website/api-fail-message";
 import type { InsightBlock, InsightDetail, InsightSection } from "@/lib/website/insight-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { InsightBlockCard } from "@/components/website/insight-block-card";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { InsightBlockPicker } from "@/components/website/insight-block-picker";
 import { GuideTermProvider } from "@/components/website/ui/GuideTerm";
 import { showToast } from "@/components/website/toast";
@@ -30,6 +31,7 @@ export function InsightContentTab({
   focusBlockId = null,
   onFocusConsumed
 }: Props) {
+  const { runFlushes } = useFullSave();
   const sections = [...(insight.insight_sections ?? [])].sort((a, b) => a.sort - b.sort);
   const homeSection = sections[0] ?? null;
   const allBlocks = flattenBlocks(sections, insight.insight_blocks ?? []);
@@ -81,7 +83,18 @@ export function InsightContentTab({
     });
   }
 
+  async function flushDirtyBlocks(): Promise<boolean> {
+    setError(null);
+    const ok = await runFlushes();
+    if (!ok) {
+      setError("저장하지 못한 블록이 있어 순서를 바꾸지 않았습니다");
+      return false;
+    }
+    return true;
+  }
+
   async function moveBlock(index: number, dir: -1 | 1) {
+    if (!(await flushDirtyBlocks())) return;
     const item = allBlocks[index];
     const target = allBlocks[index + dir];
     if (!item || !target) return;

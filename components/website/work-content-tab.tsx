@@ -14,6 +14,7 @@ import type { ContentBlock, Loc, WorkDetail, WorkSection } from "@/lib/website/w
 import { asLoc } from "@/lib/website/work-detail";
 import { workFolderPrefix } from "@/lib/website/upload-path";
 import { BlockCard } from "@/components/website/block-card";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { LeadHtmlModal } from "@/components/website/lead-html-modal";
@@ -117,6 +118,7 @@ export function WorkContentTab({
   focusBlockId = null,
   onFocusConsumed
 }: Props) {
+  const { runFlushes } = useFullSave();
   const sections = [...(work.work_sections ?? [])]
     .filter((section) => section.kind !== "interview")
     .sort((a, b) => a.sort - b.sort);
@@ -210,9 +212,20 @@ export function WorkContentTab({
     if (newId) ensureOpen(newId);
   }
 
+  async function flushDirtyBlocks(): Promise<boolean> {
+    setError(null);
+    const ok = await runFlushes();
+    if (!ok) {
+      setError("저장하지 못한 블록이 있어 순서를 바꾸지 않았습니다");
+      return false;
+    }
+    return true;
+  }
+
   async function moveSection(index: number, dir: -1 | 1) {
     const next = index + dir;
     if (next < 0 || next >= sections.length) return;
+    if (!(await flushDirtyBlocks())) return;
     const order = sections.map((section, i) => ({
       id: section.id,
       sort: i === index ? next : i === next ? index : i
@@ -231,6 +244,7 @@ export function WorkContentTab({
   }
 
   async function moveBlockInWork(sectionIndex: number, blockIndex: number, dir: -1 | 1) {
+    if (!(await flushDirtyBlocks())) return;
     const section = sections[sectionIndex];
     if (!section) return;
     const blocks = [...(section.content_blocks ?? [])].sort((a, b) => a.sort - b.sort);

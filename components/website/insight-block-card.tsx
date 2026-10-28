@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
+import { useFullSave } from "@/components/website/full-save-registry";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { LeadHtmlModal } from "@/components/website/lead-html-modal";
@@ -132,11 +133,13 @@ export function InsightBlockCard({
   const [role, setRole] = useState(pressRole);
   const [localPortrait, setLocalPortrait] = useState(portrait);
   const [staleRemote, setStaleRemote] = useState(false);
+  const { registerFlush } = useFullSave();
   const pendingRef = useRef<Record<string, unknown>>({});
   const personPendingRef = useRef<Record<string, unknown>>({});
   const imagePendingRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   const saveRef = useRef(save);
   saveRef.current = save;
+  const flushDirtyRef = useRef<() => Promise<boolean>>(async () => true);
   const serverRev = insightBlockServerRev(block);
 
   useEffect(() => {
@@ -165,6 +168,11 @@ export function InsightBlockCard({
     setStaleRemote(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- block.id · serverRev 만
   }, [block.id, serverRev, pressPerson, pressRole, portrait]);
+
+  useEffect(
+    () => registerFlush(`insight-block:${block.id}`, () => flushDirtyRef.current()),
+    [block.id, registerFlush]
+  );
 
   function markDirty() {
     setSave((cur) => (cur === "saving" ? cur : "dirty"));
@@ -215,7 +223,7 @@ export function InsightBlockCard({
     return patch;
   }
 
-  async function savePartial() {
+  async function persistCurrent(): Promise<boolean> {
     setError(null);
     setSave("saving");
     const blockPatch = { ...buildFullPatch(), ...pendingRef.current };
@@ -231,7 +239,7 @@ export function InsightBlockCard({
         if (!res.ok) {
           setSave("error");
           setError(apiFailMessage(res));
-          return;
+          return false;
         }
       }
 
@@ -240,7 +248,7 @@ export function InsightBlockCard({
         if (!res.ok) {
           setSave("error");
           setError(apiFailMessage(res));
-          return;
+          return false;
         }
       }
 
@@ -249,18 +257,38 @@ export function InsightBlockCard({
         if (!res.ok) {
           setSave("error");
           setError(res.error);
-          return;
+          return false;
         }
       }
 
       setSave("saved");
+      setStaleRemote(false);
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-      await onReload();
+      return true;
     } catch (err) {
       setSave("error");
       setError(err instanceof Error ? err.message : "저장하지 못했습니다");
+      return false;
     }
   }
+
+  async function savePartial() {
+    const ok = await persistCurrent();
+    if (ok) await onReload();
+  }
+
+  async function flushDirty(): Promise<boolean> {
+    if (saveRef.current === "saving") return false;
+    const holding =
+      saveRef.current === "dirty" ||
+      saveRef.current === "error" ||
+      Object.keys(pendingRef.current).length > 0 ||
+      Object.keys(personPendingRef.current).length > 0 ||
+      imagePendingRef.current.size > 0;
+    if (!holding) return true;
+    return persistCurrent();
+  }
+  flushDirtyRef.current = flushDirty;
 
   async function onClone() {
     const res = await createInsightBlock(insightId, {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useFullSave } from "@/components/website/full-save-registry";
 import {
   addImages,
   createBlock,
@@ -166,10 +167,12 @@ export function BlockCard({
   const [textSide, setTextSide] = useState<"left" | "right">(block.text_side ?? defaultTextSide(block.preset));
   const [showMeta, setShowMeta] = useState(block.show_meta);
   const [staleRemote, setStaleRemote] = useState(false);
+  const { registerFlush } = useFullSave();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Record<string, unknown>>({});
   const saveRef = useRef(save);
   saveRef.current = save;
+  const flushDirtyRef = useRef<() => Promise<boolean>>(async () => true);
   const serverRev = blockServerRev(block);
 
   useEffect(() => {
@@ -212,6 +215,11 @@ export function BlockCard({
     // block 통째 의존이면 이동 뒤 onReload 가 열린 카드 입력을 덮어쓴다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- block.id · serverRev 만
   }, [block.id, serverRev]);
+
+  useEffect(
+    () => registerFlush(`work-block:${block.id}`, () => flushDirtyRef.current()),
+    [block.id, registerFlush]
+  );
 
   const images = [...(block.block_images ?? [])].sort((a, b) => a.sort - b.sort);
   const limit = imageLimitForPreset(block.preset);
@@ -276,17 +284,34 @@ export function BlockCard({
     queueChange(patch);
   }
 
-  async function savePartial() {
+  async function persistCurrent(): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
     const patch = { ...buildFullPatch(), ...pendingRef.current };
     pendingRef.current = {};
     const ok = await persist(patch);
     if (ok) {
       setSave("saved");
+      setStaleRemote(false);
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-      await onReload();
     }
+    return ok;
   }
+
+  async function savePartial() {
+    const ok = await persistCurrent();
+    if (ok) await onReload();
+  }
+
+  async function flushDirty(): Promise<boolean> {
+    if (saveRef.current === "saving") return false;
+    const holding =
+      saveRef.current === "dirty" ||
+      saveRef.current === "error" ||
+      Object.keys(pendingRef.current).length > 0;
+    if (!holding) return true;
+    return persistCurrent();
+  }
+  flushDirtyRef.current = flushDirty;
 
   async function persist(patch: Record<string, unknown>): Promise<boolean> {
     setSave("saving");
