@@ -23,15 +23,23 @@ export type RichTextField = {
 /** 공개 화면마다 폭·문단 간격이 다르다. 쓰는 쪽이 자기 값을 고른다. */
 export type RichTextSurface = "work-lead" | "insight-body";
 
-/** 공개 화면 실측(1920) 기준 기본값. prop 으로 덮어쓸 수 있다. */
+/** 공개 화면 실측(1920) 기준. 폭은 고정하지 않고 칸의 cqw 로 맞춘다. */
 export const RICH_TEXT_SURFACE_DEFAULTS: Record<
   RichTextSurface,
   { fontSize: string; lineHeight: string; contentWidth: number }
 > = {
-  /* 팝업만 축소: 공개 20/30·p 831.4 → 15px · 831.4×15/20=624 */
-  "work-lead": { fontSize: "15px", lineHeight: "23px", contentWidth: 624 },
-  /* 팝업만 축소: 15px · 줄바꿈 맞추려 1312×15/20=984 */
-  "insight-body": { fontSize: "15px", lineHeight: "23px", contentWidth: 984 }
+  /* 공개 831.4px · 20px = 2.4056cqw. 11px 하한은 칸 457px 부터 */
+  "work-lead": {
+    fontSize: "clamp(11px, 2.4056cqw, 20px)",
+    lineHeight: "1.5",
+    contentWidth: 831.4
+  },
+  /* 공개 1312px · 20px = 1.5244cqw. 11px 하한은 칸 722px 부터 */
+  "insight-body": {
+    fontSize: "clamp(11px, 1.5244cqw, 20px)",
+    lineHeight: "1.5",
+    contentWidth: 1312
+  }
 };
 
 type Props = {
@@ -321,7 +329,7 @@ export function RichTextEditor({
     })();
   }
 
-  // 크기·폭은 CSS .rte-ed--{surface}. 인라인 style 금지.
+  // 글자 크기는 CSS .rte-ed--{surface} 의 cqw. 인라인 style · 폭 고정 금지.
   void size;
   void leading;
   void width;

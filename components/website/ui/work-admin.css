@@ -2051,57 +2051,41 @@
 }
 .wa .rte-scroll {
   min-width: 0;
-  overflow-x: auto;
+  container-type: inline-size;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
-/* 공통 글꼴. 크기·폭은 --rte-* (RichTextEditor prop → surface 기본값) */
+/* 공통 글꼴. 크기는 칸 폭(cqw). 폭 고정 없음 */
 .wa .rte-ed {
-  box-sizing: content-box;
+  box-sizing: border-box;
   min-height: 280px;
   padding: 0;
   border: 0;
   font-family: "Pretendard Public", "Pretendard Variable", Pretendard, -apple-system,
     BlinkMacSystemFont, system-ui, sans-serif;
-  font-size: var(--rte-font-size, 20px);
   font-weight: 400;
-  line-height: var(--rte-line-height, 30px);
   letter-spacing: 0;
-  width: var(--rte-content-width, 831px);
-  min-width: var(--rte-content-width, 831px);
-  max-width: var(--rte-content-width, 831px);
+  min-width: 0;
   color: var(--ink);
   outline: none;
   overflow: visible;
   -webkit-font-smoothing: antialiased;
 }
 
-/* 워크 기본 설명 팝업 — 공개 content__body 20/30·p폭 831.4 대비
-   편집기만 15px · 폭 624(831.4×15/20)로 줄바꿈 맞춤. 인사이트(984)와 다름 */
+/* 워크 기본 설명 — 공개 831.4px · 20px = 2.4056cqw. 인사이트 1312 를 쓰지 않는다.
+   11px 하한은 칸 폭 457px 부터 */
 .wa .rte-ed--work-lead {
-  --rte-font-size: 15px;
-  --rte-line-height: 23px;
-  --rte-content-width: 624px;
-  font-size: 15px;
-  line-height: 23px;
-  width: 624px;
-  min-width: 624px;
-  max-width: 624px;
+  font-size: clamp(11px, 2.4056cqw, 20px);
+  line-height: 1.5;
   overflow-wrap: normal;
   word-break: normal;
 }
 
-/* 인사이트 팝업 — 공개 20px 대비 편집기만 15px · 폭 984(1312×15/20)로 줄바꿈 맞춤 */
+/* 인사이트 — 공개 1312px 기준. 11px 하한은 칸 폭 722px 부터 */
 .wa .rte-ed--insight-body {
-  --rte-font-size: 15px;
-  --rte-line-height: 23px;
-  --rte-content-width: 984px;
-  font-size: 15px;
-  line-height: 23px;
-  width: 984px;
-  min-width: 984px;
-  max-width: 984px;
+  font-size: clamp(11px, 1.5244cqw, 20px);
+  line-height: 1.5;
 }
 
 .wa .rte-ed p {
@@ -2117,22 +2101,81 @@
   margin-top: var(--gap-p-p, 0px);
 }
 
+.wa .rte-ed--insight-body p + p {
+  margin-top: 1.5244cqw;
+}
+
 .wa .rte-ed h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 3.3683cqw;
   font-weight: 700;
-  line-height: 36px;
+  line-height: 1.2857;
   letter-spacing: 0;
   color: inherit;
 }
 
 .wa .rte-ed h3 {
   margin: 0;
-  font-size: 24px;
+  font-size: 2.8867cqw;
   font-weight: 700;
-  line-height: 32px;
+  line-height: 1.3333;
   letter-spacing: 0;
   color: inherit;
+}
+
+.wa .rte-ed--insight-body h2 {
+  font-size: 2.1341cqw;
+  line-height: 1.2857;
+}
+
+.wa .rte-ed--insight-body h3 {
+  font-size: 1.8293cqw;
+  line-height: 1.3333;
+}
+
+.wa .rte-ed--insight-body h2.is-big {
+  font-size: 2.7439cqw;
+  line-height: 1.1667;
+}
+
+.wa .rte-ed--insight-body p.sz-lg {
+  font-size: 1.8293cqw;
+  line-height: 1.3333;
+}
+
+.wa .rte-ed--insight-body p.sz-sm {
+  font-size: 1.2195cqw;
+  line-height: 1.375;
+}
+
+.wa .rte-ed--insight-body .in-1 {
+  padding-left: 2em;
+}
+
+.wa .rte-ed--insight-body .in-2 {
+  padding-left: 4em;
+}
+
+.wa .rte-ed--insight-body .in-3 {
+  padding-left: 6em;
+}
+
+.wa .rte-ed--insight-body .in-4 {
+  padding-left: 8em;
+}
+
+.wa .rte-ed--insight-body sup,
+.wa .rte-ed--insight-body sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.wa .rte-ed--insight-body sup {
+  vertical-align: super;
+}
+
+.wa .rte-ed--insight-body sub {
+  vertical-align: sub;
 }
 
 .wa .rte-ed p + h2,
@@ -2143,6 +2186,16 @@
 .wa .rte-ed h2 + p,
 .wa .rte-ed h3 + p {
   margin-top: var(--gap-h2-p, 0px);
+}
+
+.wa .rte-ed--insight-body p + h2,
+.wa .rte-ed--insight-body p + h3 {
+  margin-top: 3.6585cqw;
+}
+
+.wa .rte-ed--insight-body h2 + p,
+.wa .rte-ed--insight-body h3 + p {
+  margin-top: 1.2195cqw;
 }
 
 .wa .rte-ed li {
