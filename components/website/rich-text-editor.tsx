@@ -5,10 +5,12 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type CSSProperties,
   type DragEvent,
   type ReactNode
 } from "react";
 import { showToast } from "@/components/website/toast";
+import { normalizeInsightColor } from "@/lib/website/insight-html";
 import { LEAD_COLORS, normalizeLeadColor } from "@/lib/website/lead-html";
 
 export type RichTextField = {
@@ -86,6 +88,42 @@ const COLOR_TITLES: Record<(typeof LEAD_COLORS)[number], string> = {
   "#534ab7": "보라"
 };
 
+/** 목업 docs/mockups/palette.html 글꼴 색 32색. 8열 4줄 */
+const FONT_COLORS = [
+  "#ffffff",
+  "#f1f5f9",
+  "#cbd5e1",
+  "#94a3b8",
+  "#64748b",
+  "#475569",
+  "#1e293b",
+  "#000000",
+  "#fecaca",
+  "#fed7aa",
+  "#fef08a",
+  "#bbf7d0",
+  "#a5f3fc",
+  "#bfdbfe",
+  "#ddd6fe",
+  "#fbcfe8",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#991b1b",
+  "#9a3412",
+  "#854d0e",
+  "#166534",
+  "#155e75",
+  "#1e40af",
+  "#5b21b6",
+  "#9d174d"
+] as const;
+
 type BlockKind = "p" | "h2" | "h2-big" | "h3";
 type TextSize = "lg" | "md" | "sm";
 
@@ -157,15 +195,22 @@ export function RichTextEditor({
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
   const toolsRef = useRef<HTMLDivElement | null>(null);
+  const paletteWrapRef = useRef<HTMLDivElement | null>(null);
+  const palettePopRef = useRef<HTMLDivElement | null>(null);
+  const colorInputRef = useRef<HTMLInputElement | null>(null);
+  const savedRange = useRef<Range | null>(null);
   const activeId = useRef(fields[0]?.id ?? "");
   const [blockKind, setBlockKind] = useState<BlockKind | null>(null);
   const [textSize, setTextSizeState] = useState<TextSize>("md");
   const [sizeEnabled, setSizeEnabled] = useState(true);
   const [activeColor, setActiveColor] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
   const uploadRef = useRef(onUploadFile);
   uploadRef.current = onUploadFile;
+  const blockFormatsRef = useRef(blockFormats);
+  blockFormatsRef.current = blockFormats;
 
   useEffect(() => {
     try {
@@ -183,7 +228,10 @@ export function RichTextEditor({
     setSizeEnabled(kind === "p");
     setTextSizeState(block && kind === "p" ? textSizeOf(block) : "md");
     try {
-      setActiveColor(normalizeLeadColor(document.queryCommandValue("foreColor") ?? ""));
+      const raw = document.queryCommandValue("foreColor") ?? "";
+      setActiveColor(
+        blockFormatsRef.current ? normalizeInsightColor(raw) : normalizeLeadColor(raw)
+      );
     } catch {
       setActiveColor(null);
     }
@@ -193,6 +241,37 @@ export function RichTextEditor({
     document.addEventListener("selectionchange", refreshBlockUi);
     return () => document.removeEventListener("selectionchange", refreshBlockUi);
   }, []);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    function onDoc(event: MouseEvent) {
+      const wrap = paletteWrapRef.current;
+      if (wrap && wrap.contains(event.target as Node)) return;
+      setPaletteOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setPaletteOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const pop = palettePopRef.current;
+    if (!pop) return;
+    pop.style.left = "0";
+    pop.style.right = "auto";
+    const rect = pop.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 18) {
+      pop.style.left = "auto";
+      pop.style.right = "0";
+    }
+  }, [paletteOpen]);
 
   const valueKey = fields.map((field) => `${field.id}:${field.value}`).join("\0");
 
@@ -218,11 +297,54 @@ export function RichTextEditor({
     refs.current[activeId.current]?.focus();
   }
 
+  function saveSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const root = refs.current[activeId.current];
+    const range = sel.getRangeAt(0);
+    if (root && root.contains(range.commonAncestorContainer)) {
+      savedRange.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const range = savedRange.current;
+    const root = refs.current[activeId.current];
+    if (!range || !root) return;
+    root.focus();
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   function tool(command: string, value?: string) {
     focusActive();
     run(command, value);
     emit(activeId.current);
     refreshBlockUi();
+  }
+
+  function applyPaletteColor(color: string) {
+    const hit = normalizeInsightColor(color);
+    if (!hit) return;
+    restoreSelection();
+    tool("foreColor", hit);
+    setPaletteOpen(false);
+  }
+
+  function togglePalette() {
+    if (paletteOpen) {
+      setPaletteOpen(false);
+      return;
+    }
+    saveSelection();
+    setPaletteOpen(true);
+  }
+
+  function pickAnyColor() {
+    saveSelection();
+    colorInputRef.current?.click();
   }
 
   function insertBreak() {
@@ -484,17 +606,92 @@ export function RichTextEditor({
           </>
         ) : null}
         <span className="rte-sep" />
-        <div className="rte-cl">
-          {LEAD_COLORS.map((color) => (
+        {blockFormats ? (
+          <div ref={paletteWrapRef} className="rte-pop-wrap">
             <button
-              key={color}
               type="button"
-              title={COLOR_TITLES[color]}
-              className={`rte-swatch rte-swatch-${color.slice(1)}${activeColor === color ? " on" : ""}`}
-              onClick={() => tool("foreColor", color)}
-            />
-          ))}
-        </div>
+              title="글꼴 색"
+              aria-label="글꼴 색"
+              aria-expanded={paletteOpen}
+              aria-haspopup="dialog"
+              className={`rte-cbtn${paletteOpen ? " on" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={togglePalette}
+            >
+              <span className="rte-cbtn-a">A</span>
+              <span
+                className="rte-cbtn-bar"
+                style={{ "--sw": activeColor ?? "#0f172a" } as CSSProperties}
+              />
+            </button>
+            {paletteOpen ? (
+              <div ref={palettePopRef} className="rte-pop" role="dialog" aria-label="글꼴 색">
+                <div className="rte-pop-h">자주 쓰는 색</div>
+                <div className="rte-pop-row rte-pop-row-5">
+                  {LEAD_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      title={COLOR_TITLES[color]}
+                      className={`rte-pop-sw${activeColor === color ? " on" : ""}`}
+                      style={{ "--sw": color } as CSSProperties}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applyPaletteColor(color)}
+                    />
+                  ))}
+                </div>
+                <div className="rte-pop-div" />
+                <div className="rte-pop-h">글꼴 색</div>
+                {[0, 8, 16, 24].map((start) => (
+                  <div key={start} className="rte-pop-row">
+                    {FONT_COLORS.slice(start, start + 8).map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        title={color}
+                        className={`rte-pop-sw${activeColor === color ? " on" : ""}`}
+                        style={{ "--sw": color } as CSSProperties}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => applyPaletteColor(color)}
+                      />
+                    ))}
+                  </div>
+                ))}
+                <div className="rte-pop-div" />
+                <button
+                  type="button"
+                  className="rte-pop-more"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={pickAnyColor}
+                >
+                  <span className="rte-pop-more-sw" />
+                  더 많은 색…
+                </button>
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  className="rte-pop-native"
+                  defaultValue={
+                    activeColor && /^#[0-9a-f]{6}$/i.test(activeColor) ? activeColor : "#0f172a"
+                  }
+                  onChange={(event) => applyPaletteColor(event.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rte-cl">
+            {LEAD_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                title={COLOR_TITLES[color]}
+                className={`rte-swatch rte-swatch-${color.slice(1)}${activeColor === color ? " on" : ""}`}
+                onClick={() => tool("foreColor", color)}
+              />
+            ))}
+          </div>
+        )}
         {blockFormats ? (
           <>
             <span className="rte-sep" />
