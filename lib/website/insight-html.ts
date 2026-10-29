@@ -66,8 +66,11 @@ export function normalizeInsightColor(value: string): string | null {
   }
   const rgb = raw.match(/^rgba?\((\d+),(\d+),(\d+)(?:,[\d.]+)?\)$/);
   if (rgb) {
-    const full = rgbToHex(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]));
-    return full;
+    const r = Number(rgb[1]);
+    const g = Number(rgb[2]);
+    const b = Number(rgb[3]);
+    if (![r, g, b].every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) return null;
+    return rgbToHex(r, g, b);
   }
   return null;
 }
