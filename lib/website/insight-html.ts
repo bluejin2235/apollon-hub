@@ -1,6 +1,4 @@
-/** 인사이트 글 블록 붙여넣기 살균. 허용: b · i · u · br · p · h2 · h3 · ul · li · a(href) · span(우리 팔레트 색만) · sup · sub · p/h2/h3 class(화이트리스트) */
-
-import { normalizeLeadColor } from "@/lib/website/lead-html";
+/** 인사이트 글 블록 붙여넣기 살균. 허용: b · i · u · br · p · h2 · h3 · ul · li · a(href) · span(글자 색) · sup · sub · p/h2/h3 class(화이트리스트) */
 
 const INSIGHT_INDENT_CLASSES = ["in-1", "in-2", "in-3", "in-4"] as const;
 const INSIGHT_BLOCK_CLASSES: Record<"p" | "h2" | "h3", ReadonlySet<string>> = {
@@ -47,15 +45,42 @@ function isBoldStyle(style: string): boolean {
   );
 }
 
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** 3자리 hex 펼치기 · rgb→hex · 소문자 #rrggbb. 팔레트 제한 없음. named/var/주입은 null */
+export function normalizeInsightColor(value: string): string | null {
+  const raw = value.trim().toLowerCase().replace(/\s+/g, "");
+  const hex = raw.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+  if (hex) {
+    let next = hex[1] ?? "";
+    if (next.length === 3) {
+      next = next
+        .split("")
+        .map((ch) => ch + ch)
+        .join("");
+    }
+    const full = `#${next}`;
+    return full;
+  }
+  const rgb = raw.match(/^rgba?\((\d+),(\d+),(\d+)(?:,[\d.]+)?\)$/);
+  if (rgb) {
+    const full = rgbToHex(Number(rgb[1]), Number(rgb[2]), Number(rgb[3]));
+    return full;
+  }
+  return null;
+}
+
 function colorFromElement(el: Element): string | null {
   const style = el.getAttribute("style") ?? "";
   const color = style.match(/color\s*:\s*([^;]+)/i);
   if (color) {
-    const hit = normalizeLeadColor(color[1] ?? "");
+    const hit = normalizeInsightColor(color[1] ?? "");
     if (hit) return hit;
   }
   const attr = el.getAttribute("color");
-  if (attr) return normalizeLeadColor(attr);
+  if (attr) return normalizeInsightColor(attr);
   return null;
 }
 
