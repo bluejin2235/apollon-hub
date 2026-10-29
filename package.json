@@ -9,7 +9,8 @@
     "lint": "next lint",
     "diagnose:gallery": "node scripts/diagnose-restaurant-gallery.mjs",
     "prepare": "husky",
-    "test:luna-foundation": "node --test tests/luna/*.test.cjs"
+    "test:luna-foundation": "node --test tests/luna/*.test.cjs",
+    "test:html": "node --test tests/html/*.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
