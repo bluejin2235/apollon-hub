@@ -1,6 +1,30 @@
-/** 인사이트 글 블록 붙여넣기 살균. 허용: b · i · u · br · p · ul · li · a(href) · span(우리 팔레트 색만) */
+/** 인사이트 글 블록 붙여넣기 살균. 허용: b · i · u · br · p · h2 · h3 · ul · li · a(href) · span(우리 팔레트 색만) · sup · sub · p/h2/h3 class(화이트리스트) */
 
 import { normalizeLeadColor } from "@/lib/website/lead-html";
+
+const INSIGHT_INDENT_CLASSES = ["in-1", "in-2", "in-3", "in-4"] as const;
+const INSIGHT_BLOCK_CLASSES: Record<"p" | "h2" | "h3", ReadonlySet<string>> = {
+  p: new Set<string>(["sz-lg", "sz-sm", ...INSIGHT_INDENT_CLASSES]),
+  h2: new Set<string>(["is-big", ...INSIGHT_INDENT_CLASSES]),
+  h3: new Set<string>(INSIGHT_INDENT_CLASSES)
+};
+
+function allowedClassAttr(tag: "p" | "h2" | "h3", raw: string | null | undefined): string {
+  if (!raw) return "";
+  const allowed = INSIGHT_BLOCK_CLASSES[tag];
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const name of raw.trim().split(/\s+/)) {
+    if (!name || !allowed.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    kept.push(name);
+  }
+  return kept.length > 0 ? ` class="${kept.join(" ")}"` : "";
+}
+
+function openBlockTag(tag: "p" | "h2" | "h3", classRaw: string | null | undefined): string {
+  return `<${tag}${allowedClassAttr(tag, classRaw)}>`;
+}
 
 function escapeText(value: string): string {
   return value
@@ -77,9 +101,9 @@ function isVisuallyEmptyHtml(inner: string): boolean {
     .trim();
 }
 
-function asParagraph(inner: string): string {
+function asParagraph(inner: string, classRaw?: string | null): string {
   if (isVisuallyEmptyHtml(inner)) return "";
-  return `<p>${inner.trim()}</p>`;
+  return `${openBlockTag("p", classRaw)}${inner.trim()}</p>`;
 }
 
 function serialize(node: Node): string {
@@ -93,6 +117,8 @@ function serialize(node: Node): string {
   const inner = serializeChildren(el);
 
   if (tag === "BR") return "<br>";
+  if (tag === "SUP") return wrap(applyInlineFormat(el, inner), "<sup>", "</sup>");
+  if (tag === "SUB") return wrap(applyInlineFormat(el, inner), "<sub>", "</sub>");
   if (tag === "B" || tag === "STRONG") return wrap(applyInlineFormat(el, inner), "", "");
   if (tag === "I" || tag === "EM") return wrap(applyInlineFormat(el, inner), "", "");
   if (tag === "U") return wrap(applyInlineFormat(el, inner), "", "");
@@ -113,15 +139,19 @@ function serialize(node: Node): string {
     return applyInlineFormat(el, inner);
   }
   if (tag === "P") {
-    return asParagraph(applyInlineFormat(el, inner));
+    return asParagraph(applyInlineFormat(el, inner), el.getAttribute("class"));
   }
   if (tag === "H2") {
     const body = applyInlineFormat(el, inner).trim();
-    return body ? `<h2>${body}</h2>` : "";
+    return body && !isVisuallyEmptyHtml(body)
+      ? `${openBlockTag("h2", el.getAttribute("class"))}${body}</h2>`
+      : "";
   }
   if (tag === "H3") {
     const body = applyInlineFormat(el, inner).trim();
-    return body ? `<h3>${body}</h3>` : "";
+    return body && !isVisuallyEmptyHtml(body)
+      ? `${openBlockTag("h3", el.getAttribute("class"))}${body}</h3>`
+      : "";
   }
   if (
     tag === "DIV" ||
@@ -132,8 +162,8 @@ function serialize(node: Node): string {
     tag === "ARTICLE"
   ) {
     const formatted = applyInlineFormat(el, inner);
-    if (!formatted.trim()) return "";
-    if (/^<(p|ul|li)\b/i.test(formatted.trim())) return formatted;
+    if (isVisuallyEmptyHtml(formatted)) return "";
+    if (/^<(p|ul|h[23]|li)\b/i.test(formatted.trim())) return formatted;
     return asParagraph(formatted);
   }
   return applyInlineFormat(el, inner);
@@ -186,7 +216,7 @@ export function insightPlainToHtml(text: string): string {
 }
 
 export function insightLooksLikeHtml(value: string): boolean {
-  return /<(p|b|i|u|br|ul|ol|li|a|span|strong|em|div|h[1-6]|font)\b/i.test(value);
+  return /<(p|b|i|u|br|ul|ol|li|a|span|strong|em|div|h[1-6]|font|sup|sub)\b/i.test(value);
 }
 
 export function insightToEditorHtml(value: string): string {
