@@ -250,7 +250,9 @@ export function RichTextEditor({
       setPaletteOpen(false);
     }
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setPaletteOpen(false);
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setPaletteOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
