@@ -1927,6 +1927,35 @@
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
   align-items: center;
+  position: relative;
+  z-index: 2;
+}
+.wa .rte-dd {
+  position: relative;
+}
+.wa .rte-dd-btn {
+  padding: 0 8px;
+}
+.wa .rte-dd-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  min-width: 112px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+.wa .rte-dd-menu button {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  justify-content: flex-start;
+  padding: 4px 8px;
+  white-space: nowrap;
 }
 .wa .rte-file {
   position: absolute;
