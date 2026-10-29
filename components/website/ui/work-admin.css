@@ -1988,40 +1988,29 @@
 }
 .wa .rte-tb {
   display: flex;
-  gap: 2px;
-  padding: 8px 18px;
+  gap: 3px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
   align-items: center;
   position: relative;
   z-index: 2;
 }
-.wa .rte-dd {
-  position: relative;
+.wa .rte-lab {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin: 0 4px 0 2px;
+  letter-spacing: 0.2px;
 }
-.wa .rte-dd-btn {
-  padding: 0 8px;
+.wa .rte-lab-size {
+  margin-left: 9px;
 }
-.wa .rte-dd-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 3;
-  min-width: 112px;
-  padding: 4px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-}
-.wa .rte-dd-menu button {
-  display: flex;
-  width: 100%;
-  height: auto;
-  min-height: 26px;
-  justify-content: flex-start;
-  padding: 4px 8px;
-  white-space: nowrap;
+.wa .rte-grp {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: #eef1f5;
+  border-radius: 7px;
 }
 .wa .rte-file {
   position: absolute;
@@ -2032,54 +2021,90 @@
 }
 .wa .rte-tb button {
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   min-width: 28px;
-  height: 26px;
+  height: 27px;
+  padding: 0 9px;
   border: 1px solid transparent;
   background: none;
   border-radius: 5px;
   color: #475569;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.wa .rte-tb .rte-grp button {
+  height: 23px;
 }
 .wa .rte-tb button:hover {
-  background: #f1f5f9;
+  background: #eef2f7;
+}
+.wa .rte-tb button.on {
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+  font-weight: 600;
+}
+.wa .rte-tb button.on:hover {
+  background: #e0e7ff;
+}
+.wa .rte-tb button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.wa .rte-tb button:disabled:hover {
+  background: none;
+}
+.wa .rte-tb svg {
+  display: block;
 }
 .wa .rte-u {
   text-decoration: underline;
 }
 .wa .rte-sep {
   width: 1px;
-  height: 18px;
+  height: 17px;
   background: var(--line);
-  margin: 0 5px;
+  margin: 0 7px;
 }
 .wa .rte-cl {
-  display: flex;
-  gap: 3px;
+  display: inline-flex;
+  gap: 4px;
   align-items: center;
 }
 .wa .rte-swatch {
-  width: 15px;
-  height: 15px;
-  min-width: 15px;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
   padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.14);
 }
-.wa .rte-swatch-0f172a {
+.wa .rte-tb .rte-swatch-0f172a,
+.wa .rte-tb .rte-swatch-0f172a:hover {
   background: #0f172a;
 }
-.wa .rte-swatch-b0231e {
+.wa .rte-tb .rte-swatch-b0231e,
+.wa .rte-tb .rte-swatch-b0231e:hover {
   background: #b0231e;
 }
-.wa .rte-swatch-a35a08 {
+.wa .rte-tb .rte-swatch-a35a08,
+.wa .rte-tb .rte-swatch-a35a08:hover {
   background: #a35a08;
 }
-.wa .rte-swatch-0f7a45 {
+.wa .rte-tb .rte-swatch-0f7a45,
+.wa .rte-tb .rte-swatch-0f7a45:hover {
   background: #0f7a45;
 }
-.wa .rte-swatch-534ab7 {
+.wa .rte-tb .rte-swatch-534ab7,
+.wa .rte-tb .rte-swatch-534ab7:hover {
   background: #534ab7;
+}
+.wa .rte-tb .rte-swatch.on {
+  outline: 2px solid #4f46e5;
+  outline-offset: 1px;
 }
 .wa .rte-panes {
   display: grid;
@@ -2096,6 +2121,18 @@
 }
 .wa .rte-panes .rte-pane + .rte-pane {
   border-left: 1px solid var(--line);
+}
+/* 칸 폭 721.6px 미만이면 11px 하한.
+   팝업 패딩 18+18 · 칸 패딩 18+18 · 스크롤 테두리 2 · 영문 칸 왼쪽 구분선 1
+   → 실측 1556에서 영문 칸 721px. max-width 1557px. 국문 위 · 영문 아래 */
+@media (max-width: 1557px) {
+  .wa .rte-panes {
+    grid-template-columns: 1fr;
+  }
+  .wa .rte-panes .rte-pane + .rte-pane {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
 }
 .wa .rte-ph {
   display: flex;

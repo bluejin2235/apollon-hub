@@ -623,6 +623,7 @@ export function InsightBlockCard({
         ko={body.ko}
         en={body.en}
         surface="insight-body"
+        blockFormats
         limits={null}
         sanitize={sanitizeInsightHtml}
         toEditorHtml={insightToEditorHtml}

@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from "react";
 import { showToast } from "@/components/website/toast";
-import { LEAD_COLORS } from "@/lib/website/lead-html";
+import { LEAD_COLORS, normalizeLeadColor } from "@/lib/website/lead-html";
 
 export type RichTextField = {
   id: string;
@@ -56,6 +56,8 @@ type Props = {
   contentWidth?: number;
   /** 이미지·영상 넣기. 문의 게시판만 켠다 */
   allowMedia?: boolean;
+  /** 문단·크기·첨자·들여쓰기. 인사이트 본문만 켠다. surface 와 무관 */
+  blockFormats?: boolean;
   onUploadFile?: (file: File) => Promise<string | null>;
 };
 
@@ -74,6 +76,42 @@ function indentLevel(el: HTMLElement): number {
 function setIndentClass(el: HTMLElement, level: number) {
   for (const name of INDENT_CLASSES) el.classList.remove(name);
   if (level >= 1 && level <= 4) el.classList.add(`in-${level}`);
+}
+
+const COLOR_TITLES: Record<(typeof LEAD_COLORS)[number], string> = {
+  "#0f172a": "먹색",
+  "#b0231e": "빨강",
+  "#a35a08": "주황",
+  "#0f7a45": "초록",
+  "#534ab7": "보라"
+};
+
+type BlockKind = "p" | "h2" | "h2-big" | "h3";
+type TextSize = "lg" | "md" | "sm";
+
+function blockKindOf(el: HTMLElement): BlockKind | null {
+  const tag = el.tagName;
+  if (tag === "P") return "p";
+  if (tag === "H3") return "h3";
+  if (tag === "H2") return el.classList.contains("is-big") ? "h2-big" : "h2";
+  return null;
+}
+
+function textSizeOf(el: HTMLElement): TextSize {
+  if (el.classList.contains("sz-lg")) return "lg";
+  if (el.classList.contains("sz-sm")) return "sm";
+  return "md";
+}
+
+function caretBlock(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.anchorNode;
+  if (!node || !root.contains(node)) return null;
+  const el = node instanceof Element ? node : node.parentElement;
+  const block = el?.closest("p, h2, h3");
+  if (block instanceof HTMLElement && root.contains(block)) return block;
+  return null;
 }
 
 function blocksInSelection(root: HTMLElement): HTMLElement[] {
@@ -108,6 +146,7 @@ export function RichTextEditor({
   lineHeight,
   contentWidth,
   allowMedia = false,
+  blockFormats = false,
   onUploadFile
 }: Props) {
   const defaults = RICH_TEXT_SURFACE_DEFAULTS[surface];
@@ -119,7 +158,10 @@ export function RichTextEditor({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const toolsRef = useRef<HTMLDivElement | null>(null);
   const activeId = useRef(fields[0]?.id ?? "");
-  const [menu, setMenu] = useState<null | "block" | "size">(null);
+  const [blockKind, setBlockKind] = useState<BlockKind | null>(null);
+  const [textSize, setTextSizeState] = useState<TextSize>("md");
+  const [sizeEnabled, setSizeEnabled] = useState(true);
+  const [activeColor, setActiveColor] = useState<string | null>(null);
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
   const uploadRef = useRef(onUploadFile);
@@ -133,16 +175,24 @@ export function RichTextEditor({
     }
   }, []);
 
+  function refreshBlockUi() {
+    const root = refs.current[activeId.current];
+    const block = root ? caretBlock(root) : null;
+    const kind = block ? blockKindOf(block) : null;
+    setBlockKind(kind);
+    setSizeEnabled(kind === "p");
+    setTextSizeState(block && kind === "p" ? textSizeOf(block) : "md");
+    try {
+      setActiveColor(normalizeLeadColor(document.queryCommandValue("foreColor") ?? ""));
+    } catch {
+      setActiveColor(null);
+    }
+  }
+
   useEffect(() => {
-    if (!menu) return;
-    const onDown = (event: MouseEvent) => {
-      const openMenu = toolsRef.current?.querySelector(".rte-dd.is-open");
-      if (event.target instanceof Node && openMenu?.contains(event.target)) return;
-      setMenu(null);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [menu]);
+    document.addEventListener("selectionchange", refreshBlockUi);
+    return () => document.removeEventListener("selectionchange", refreshBlockUi);
+  }, []);
 
   const valueKey = fields.map((field) => `${field.id}:${field.value}`).join("\0");
 
@@ -172,6 +222,7 @@ export function RichTextEditor({
     focusActive();
     run(command, value);
     emit(activeId.current);
+    refreshBlockUi();
   }
 
   function insertBreak() {
@@ -195,6 +246,7 @@ export function RichTextEditor({
     if (!root) return;
     fn(root, blocksInSelection(root));
     emit(activeId.current);
+    refreshBlockUi();
   }
 
   function setParagraphKind(kind: "p" | "h2" | "h2-big" | "h3") {
@@ -215,7 +267,6 @@ export function RichTextEditor({
         setIndentClass(block, prior?.indent ?? 0);
       });
     });
-    setMenu(null);
   }
 
   function setTextSize(size: "lg" | "md" | "sm") {
@@ -227,7 +278,6 @@ export function RichTextEditor({
         if (size === "sm") block.classList.add("sz-sm");
       }
     });
-    setMenu(null);
   }
 
   function shiftIndent(delta: number) {
@@ -341,72 +391,66 @@ export function RichTextEditor({
         className="rte-tb"
         onMouseDown={(event) => event.preventDefault()}
       >
-        {surface === "insight-body" ? (
+        {blockFormats ? (
           <>
-            <div className={menu === "block" ? "rte-dd is-open" : "rte-dd"}>
+            <span className="rte-lab">문단</span>
+            <span className="rte-grp">
               <button
                 type="button"
-                className="rte-dd-btn"
-                title="문단"
-                aria-expanded={menu === "block"}
-                onClick={() => setMenu((current) => (current === "block" ? null : "block"))}
+                className={blockKind === "p" ? "on" : undefined}
+                onClick={() => setParagraphKind("p")}
               >
-                문단
+                본문
               </button>
-              {menu === "block" ? (
-                <div className="rte-dd-menu" role="menu">
-                  <button type="button" role="menuitem" onClick={() => setParagraphKind("p")}>
-                    본문
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => setParagraphKind("h2-big")}>
-                    큰 제목
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => setParagraphKind("h2")}>
-                    소제목
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => setParagraphKind("h3")}>
-                    작은 제목
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <div className={menu === "size" ? "rte-dd is-open" : "rte-dd"}>
               <button
                 type="button"
-                className="rte-dd-btn"
-                title="본문 글자 크기"
-                aria-expanded={menu === "size"}
-                onClick={() => setMenu((current) => (current === "size" ? null : "size"))}
+                className={blockKind === "h2-big" ? "on" : undefined}
+                onClick={() => setParagraphKind("h2-big")}
               >
-                크기
+                큰 제목
               </button>
-              {menu === "size" ? (
-                <div className="rte-dd-menu" role="menu">
-                  <button type="button" role="menuitem" onClick={() => setTextSize("lg")}>
-                    크게
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => setTextSize("md")}>
-                    보통
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => setTextSize("sm")}>
-                    작게
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <span className="rte-sep" />
-            <button type="button" title="윗첨자" onClick={() => tool("superscript")}>
-              x<sup>2</sup>
-            </button>
-            <button type="button" title="아랫첨자" onClick={() => tool("subscript")}>
-              x<sub>2</sub>
-            </button>
-            <button type="button" title="내어쓰기" onClick={() => shiftIndent(-1)}>
-              ⇤
-            </button>
-            <button type="button" title="들여쓰기" onClick={() => shiftIndent(1)}>
-              ⇥
-            </button>
+              <button
+                type="button"
+                className={blockKind === "h2" ? "on" : undefined}
+                onClick={() => setParagraphKind("h2")}
+              >
+                소제목
+              </button>
+              <button
+                type="button"
+                className={blockKind === "h3" ? "on" : undefined}
+                onClick={() => setParagraphKind("h3")}
+              >
+                작은 제목
+              </button>
+            </span>
+            <span className="rte-lab rte-lab-size">크기</span>
+            <span className="rte-grp">
+              <button
+                type="button"
+                disabled={!sizeEnabled}
+                className={sizeEnabled && textSize === "lg" ? "on" : undefined}
+                onClick={() => setTextSize("lg")}
+              >
+                크게
+              </button>
+              <button
+                type="button"
+                disabled={!sizeEnabled}
+                className={sizeEnabled && textSize === "md" ? "on" : undefined}
+                onClick={() => setTextSize("md")}
+              >
+                보통
+              </button>
+              <button
+                type="button"
+                disabled={!sizeEnabled}
+                className={sizeEnabled && textSize === "sm" ? "on" : undefined}
+                onClick={() => setTextSize("sm")}
+              >
+                작게
+              </button>
+            </span>
             <span className="rte-sep" />
           </>
         ) : (
@@ -429,34 +473,55 @@ export function RichTextEditor({
         <button type="button" title="밑줄" className="rte-u" onClick={() => tool("underline")}>
           U
         </button>
+        {blockFormats ? (
+          <>
+            <button type="button" title="윗첨자" onClick={() => tool("superscript")}>
+              x<sup>2</sup>
+            </button>
+            <button type="button" title="아랫첨자" onClick={() => tool("subscript")}>
+              x<sub>2</sub>
+            </button>
+          </>
+        ) : null}
         <span className="rte-sep" />
         <div className="rte-cl">
           {LEAD_COLORS.map((color) => (
             <button
               key={color}
               type="button"
-              title="글자 색"
-              className={`rte-swatch rte-swatch-${color.slice(1)}`}
+              title={COLOR_TITLES[color]}
+              className={`rte-swatch rte-swatch-${color.slice(1)}${activeColor === color ? " on" : ""}`}
               onClick={() => tool("foreColor", color)}
             />
           ))}
         </div>
+        {blockFormats ? (
+          <>
+            <span className="rte-sep" />
+            <button type="button" title="내어쓰기" onClick={() => shiftIndent(-1)}>
+              <IconOutdent />
+            </button>
+            <button type="button" title="들여쓰기" onClick={() => shiftIndent(1)}>
+              <IconIndent />
+            </button>
+          </>
+        ) : null}
+        <span className="rte-sep" />
+        <button type="button" title="글머리 목록" onClick={() => tool("insertUnorderedList")}>
+          <IconBulletList />
+        </button>
+        <button type="button" title="번호 목록" onClick={() => tool("insertOrderedList")}>
+          <IconNumberList />
+        </button>
         <span className="rte-sep" />
         <button type="button" title="줄바꿈" onClick={insertBreak}>
           ↵
-        </button>
-        <button type="button" title="목록" onClick={() => tool("insertUnorderedList")}>
-          ≡
-        </button>
-        <button type="button" title="번호 목록" onClick={() => tool("insertOrderedList")}>
-          1.
         </button>
         <button type="button" title="링크" onClick={link}>
           링크
         </button>
         {allowMedia ? (
           <>
-            <span className="rte-sep" />
             <button type="button" title="이미지" onClick={() => pickMedia("image")}>
               🖼 이미지
             </button>
@@ -471,7 +536,6 @@ export function RichTextEditor({
         <button type="button" title="되돌리기" onClick={() => tool("undo")}>
           ↩
         </button>
-        <span className="rte-sep" />
         <button type="button" title="글자만 붙여넣기" onClick={() => void pastePlain()}>
           글자만
         </button>
@@ -520,5 +584,51 @@ export function RichTextEditor({
         />
       ) : null}
     </div>
+  );
+}
+
+function IconOutdent() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden>
+      <path d="M14 3H2M14 8H7M14 13H2" />
+      <path d="M5 6 2.5 8 5 10" />
+    </svg>
+  );
+}
+
+function IconIndent() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden>
+      <path d="M2 3h12M9 8h5M2 13h12" />
+      <path d="M3 6 5.5 8 3 10" />
+    </svg>
+  );
+}
+
+function IconBulletList() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="2.5" cy="4" r="1.4" fill="currentColor" />
+      <circle cx="2.5" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="2.5" cy="12" r="1.4" fill="currentColor" />
+      <path d="M6 4h8M6 8h8M6 12h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconNumberList() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <text x="0" y="5.6" fontSize="5.2" fill="currentColor" fontFamily="inherit">
+        1
+      </text>
+      <text x="0" y="10" fontSize="5.2" fill="currentColor" fontFamily="inherit">
+        2
+      </text>
+      <text x="0" y="14.4" fontSize="5.2" fill="currentColor" fontFamily="inherit">
+        3
+      </text>
+      <path d="M6 4h8M6 8h8M6 12h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }

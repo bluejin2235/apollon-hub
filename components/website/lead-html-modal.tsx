@@ -33,6 +33,8 @@ type Props = {
   lineHeight?: string;
   contentWidth?: number;
   hint?: ReactNode;
+  /** 문단·크기·첨자·들여쓰기. 인사이트 본문만 켠다 */
+  blockFormats?: boolean;
   onCancel: () => void;
   onSave: (next: { ko: string; en: string }) => void;
 };
@@ -52,6 +54,7 @@ export function LeadHtmlModal({
   lineHeight,
   contentWidth,
   hint = "이미지는 넣을 수 없습니다. 아래 블록에서 넣으세요",
+  blockFormats = false,
   onCancel,
   onSave
 }: Props) {
@@ -128,6 +131,7 @@ export function LeadHtmlModal({
               fontSize={fontSize ?? defaults.fontSize}
               lineHeight={lineHeight ?? defaults.lineHeight}
               contentWidth={contentWidth ?? defaults.contentWidth}
+              blockFormats={blockFormats}
               fields={[
                 {
                   id: "ko",
