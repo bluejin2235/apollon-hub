@@ -292,6 +292,12 @@ export function RichTextEditor({
     function clipRange(from: HTMLElement) {
       let minL = 8;
       let maxR = window.innerWidth - 8;
+      const rte = from.closest(".rte");
+      if (rte instanceof HTMLElement) {
+        const r = rte.getBoundingClientRect();
+        minL = Math.max(minL, r.left + 8);
+        maxR = Math.min(maxR, r.right - 8);
+      }
       let node: HTMLElement | null = from.parentElement;
       while (node) {
         const st = getComputedStyle(node);

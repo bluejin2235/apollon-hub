@@ -8,7 +8,6 @@ import {
   sanitizeInsightHtml
 } from "@/lib/website/insight-html";
 import { supabase } from "@/lib/supabase/client";
-import "@/components/website/ui/work-admin.css";
 import "@/components/hub/board-body.css";
 
 type Props = {
@@ -127,7 +126,7 @@ export function HubPostWriteModal({ open, authorId, editingPost = null, onClose,
           </div>
           <div>
             <p className="mb-1 text-xs font-semibold text-slate-700">내용</p>
-            <div className="wa board-ed">
+            <div className="board-ed">
               <RichTextEditor
                 surface="insight-body"
                 fields={[{ id: "content", value: content, onChange: setContent }]}

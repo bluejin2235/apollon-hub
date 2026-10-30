@@ -107,19 +107,19 @@
   font-style: italic;
 }
 
-/* 쓰기 칸. 도구줄은 .wa, 본문 크기·여백은 보기 칸과 같게 */
-.wa.board-ed .rte-pane {
+/* 쓰기 칸. 본문 크기·여백은 보기 칸과 같게 */
+.board-ed .rte-pane {
   padding: 0;
 }
 
-.wa.board-ed .rte-scroll {
+.board-ed .rte-scroll {
   flex: 1 1 220px;
   min-height: 220px;
   max-height: min(50vh, 420px);
 }
 
-.wa.board-ed .rte-ed,
-.wa.board-ed .rte-ed--insight-body {
+.board-ed .rte-ed,
+.board-ed .rte-ed--insight-body {
   min-height: 220px;
   padding: 12px 14px;
   font-family: inherit;
@@ -131,126 +131,126 @@
   max-width: 100%;
 }
 
-.wa.board-ed .rte-ed p {
+.board-ed .rte-ed p {
   margin: 0;
 }
 
-.wa.board-ed .rte-ed p + p,
-.wa.board-ed .rte-ed--insight-body p + p {
+.board-ed .rte-ed p + p,
+.board-ed .rte-ed--insight-body p + p {
   margin-top: 1.5rem;
 }
 
-.wa.board-ed .rte-ed h2,
-.wa.board-ed .rte-ed--insight-body h2 {
+.board-ed .rte-ed h2,
+.board-ed .rte-ed--insight-body h2 {
   margin: 0.8em 0 0.35em;
   font-size: 1.4em;
   font-weight: 700;
   line-height: 1.2857;
 }
 
-.wa.board-ed .rte-ed h2.is-big,
-.wa.board-ed .rte-ed--insight-body h2.is-big {
+.board-ed .rte-ed h2.is-big,
+.board-ed .rte-ed--insight-body h2.is-big {
   font-size: 1.8em;
   line-height: 1.1667;
 }
 
-.wa.board-ed .rte-ed h3,
-.wa.board-ed .rte-ed--insight-body h3 {
+.board-ed .rte-ed h3,
+.board-ed .rte-ed--insight-body h3 {
   margin: 0.7em 0 0.3em;
   font-size: 1.2em;
   font-weight: 700;
   line-height: 1.3333;
 }
 
-.wa.board-ed .rte-ed p.sz-lg,
-.wa.board-ed .rte-ed--insight-body p.sz-lg {
+.board-ed .rte-ed p.sz-lg,
+.board-ed .rte-ed--insight-body p.sz-lg {
   font-size: 1.2em;
   line-height: 1.3333;
 }
 
-.wa.board-ed .rte-ed p.sz-sm,
-.wa.board-ed .rte-ed--insight-body p.sz-sm {
+.board-ed .rte-ed p.sz-sm,
+.board-ed .rte-ed--insight-body p.sz-sm {
   font-size: 0.8em;
   line-height: 1.375;
 }
 
-.wa.board-ed .rte-ed .in-1,
-.wa.board-ed .rte-ed--insight-body .in-1 {
+.board-ed .rte-ed .in-1,
+.board-ed .rte-ed--insight-body .in-1 {
   padding-left: 2em;
 }
 
-.wa.board-ed .rte-ed .in-2,
-.wa.board-ed .rte-ed--insight-body .in-2 {
+.board-ed .rte-ed .in-2,
+.board-ed .rte-ed--insight-body .in-2 {
   padding-left: 4em;
 }
 
-.wa.board-ed .rte-ed .in-3,
-.wa.board-ed .rte-ed--insight-body .in-3 {
+.board-ed .rte-ed .in-3,
+.board-ed .rte-ed--insight-body .in-3 {
   padding-left: 6em;
 }
 
-.wa.board-ed .rte-ed .in-4,
-.wa.board-ed .rte-ed--insight-body .in-4 {
+.board-ed .rte-ed .in-4,
+.board-ed .rte-ed--insight-body .in-4 {
   padding-left: 8em;
 }
 
-.wa.board-ed .rte-ed sup,
-.wa.board-ed .rte-ed sub,
-.wa.board-ed .rte-ed--insight-body sup,
-.wa.board-ed .rte-ed--insight-body sub {
+.board-ed .rte-ed sup,
+.board-ed .rte-ed sub,
+.board-ed .rte-ed--insight-body sup,
+.board-ed .rte-ed--insight-body sub {
   font-size: 0.62em;
   line-height: 0;
 }
 
-.wa.board-ed .rte-ed sup,
-.wa.board-ed .rte-ed--insight-body sup {
+.board-ed .rte-ed sup,
+.board-ed .rte-ed--insight-body sup {
   vertical-align: super;
 }
 
-.wa.board-ed .rte-ed sub,
-.wa.board-ed .rte-ed--insight-body sub {
+.board-ed .rte-ed sub,
+.board-ed .rte-ed--insight-body sub {
   vertical-align: sub;
 }
 
-.wa.board-ed .rte-ed p + h2,
-.wa.board-ed .rte-ed p + h3,
-.wa.board-ed .rte-ed--insight-body p + h2,
-.wa.board-ed .rte-ed--insight-body p + h3 {
+.board-ed .rte-ed p + h2,
+.board-ed .rte-ed p + h3,
+.board-ed .rte-ed--insight-body p + h2,
+.board-ed .rte-ed--insight-body p + h3 {
   margin-top: 0.8em;
 }
 
-.wa.board-ed .rte-ed h2 + p,
-.wa.board-ed .rte-ed h3 + p,
-.wa.board-ed .rte-ed--insight-body h2 + p,
-.wa.board-ed .rte-ed--insight-body h3 + p {
+.board-ed .rte-ed h2 + p,
+.board-ed .rte-ed h3 + p,
+.board-ed .rte-ed--insight-body h2 + p,
+.board-ed .rte-ed--insight-body h3 + p {
   margin-top: 0.35em;
 }
 
-.wa.board-ed .rte-ed ul,
-.wa.board-ed .rte-ed ol {
+.board-ed .rte-ed ul,
+.board-ed .rte-ed ol {
   margin: 0.2em 0;
   padding-left: 1.2em;
 }
 
-.wa.board-ed .rte-ed ul {
+.board-ed .rte-ed ul {
   list-style: disc;
 }
 
-.wa.board-ed .rte-ed ol {
+.board-ed .rte-ed ol {
   list-style: decimal;
 }
 
-.wa.board-ed .rte-ed a {
+.board-ed .rte-ed a {
   color: #4f46e5;
   text-decoration: underline;
 }
 
-.wa.board-ed .rte-ed b,
-.wa.board-ed .rte-ed strong {
+.board-ed .rte-ed b,
+.board-ed .rte-ed strong {
   font-weight: 600;
 }
 
-.wa.board-ed .rte-ed i,
-.wa.board-ed .rte-ed em {
+.board-ed .rte-ed i,
+.board-ed .rte-ed em {
   font-style: italic;
 }
