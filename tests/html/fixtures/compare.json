@@ -3,11 +3,11 @@
     "input": "<p>평범한 문단</p>",
     "insight": {
       "dom": "<p>평범한 문단</p>",
-      "regex": "평범한 문단"
+      "regex": "<p>평범한 문단</p>"
     },
     "lead": {
       "dom": "<p>평범한 문단</p>",
-      "regex": "평범한 문단"
+      "regex": "<p>평범한 문단</p>"
     },
     "issue": {
       "dom": "<p>평범한 문단</p>",
@@ -18,11 +18,11 @@
     "input": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>",
     "insight": {
       "dom": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>",
-      "regex": "굵게 기울임 밑줄"
+      "regex": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>"
     },
     "lead": {
       "dom": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>",
-      "regex": "굵게 기울임 밑줄"
+      "regex": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>"
     },
     "issue": {
       "dom": "<p><b>굵게</b> <i>기울임</i> <u>밑줄</u></p>",
@@ -33,11 +33,11 @@
     "input": "<h2>소제목</h2>",
     "insight": {
       "dom": "<h2>소제목</h2>",
-      "regex": "소제목"
+      "regex": "<h2>소제목</h2>"
     },
     "lead": {
       "dom": "<p>소제목</p>",
-      "regex": "소제목"
+      "regex": "<p>소제목</p>"
     },
     "issue": {
       "dom": "<h2>소제목</h2>",
@@ -48,11 +48,11 @@
     "input": "<h3>작은 제목</h3>",
     "insight": {
       "dom": "<h3>작은 제목</h3>",
-      "regex": "작은 제목"
+      "regex": "<h3>작은 제목</h3>"
     },
     "lead": {
       "dom": "<p>작은 제목</p>",
-      "regex": "작은 제목"
+      "regex": "<p>작은 제목</p>"
     },
     "issue": {
       "dom": "<h3>작은 제목</h3>",
@@ -63,71 +63,71 @@
     "input": "<h2 class=\"is-big\">큰 제목</h2>",
     "insight": {
       "dom": "<h2 class=\"is-big\">큰 제목</h2>",
-      "regex": "큰 제목"
+      "regex": "<h2 class=\"is-big\">큰 제목</h2>"
     },
     "lead": {
       "dom": "<p>큰 제목</p>",
-      "regex": "큰 제목"
+      "regex": "<p>큰 제목</p>"
     },
     "issue": {
       "dom": "<h2>큰 제목</h2>",
-      "regex": "<h2 class=\"is-big\">큰 제목</h2>"
+      "regex": "<h2>큰 제목</h2>"
     }
   },
   "p-sz-lg": {
     "input": "<p class=\"sz-lg\">크게</p>",
     "insight": {
       "dom": "<p class=\"sz-lg\">크게</p>",
-      "regex": "크게"
+      "regex": "<p class=\"sz-lg\">크게</p>"
     },
     "lead": {
       "dom": "<p>크게</p>",
-      "regex": "크게"
+      "regex": "<p>크게</p>"
     },
     "issue": {
       "dom": "<p>크게</p>",
-      "regex": "<p class=\"sz-lg\">크게</p>"
+      "regex": "<p>크게</p>"
     }
   },
   "p-in-2": {
     "input": "<p class=\"in-2\">들여쓰기</p>",
     "insight": {
       "dom": "<p class=\"in-2\">들여쓰기</p>",
-      "regex": "들여쓰기"
+      "regex": "<p class=\"in-2\">들여쓰기</p>"
     },
     "lead": {
       "dom": "<p>들여쓰기</p>",
-      "regex": "들여쓰기"
+      "regex": "<p>들여쓰기</p>"
     },
     "issue": {
       "dom": "<p>들여쓰기</p>",
-      "regex": "<p class=\"in-2\">들여쓰기</p>"
+      "regex": "<p>들여쓰기</p>"
     }
   },
   "sup-sub": {
     "input": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>",
     "insight": {
       "dom": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>",
-      "regex": "m2 와 H2O"
+      "regex": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>"
     },
     "lead": {
       "dom": "<p>m2 와 H2O</p>",
-      "regex": "m2 와 H2O"
+      "regex": "<p>m2 와 H2O</p>"
     },
     "issue": {
       "dom": "<p>m2 와 H2O</p>",
-      "regex": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>"
+      "regex": "<p>m2 와 H2O</p>"
     }
   },
   "ul": {
     "input": "<ul><li>점 목록</li></ul>",
     "insight": {
       "dom": "<ul><li>점 목록</li></ul>",
-      "regex": "점 목록"
+      "regex": "<ul><li>점 목록</li></ul>"
     },
     "lead": {
       "dom": "<ul><li>점 목록</li></ul>",
-      "regex": "점 목록"
+      "regex": "<ul><li>점 목록</li></ul>"
     },
     "issue": {
       "dom": "<ul><li>점 목록</li></ul>",
@@ -138,11 +138,11 @@
     "input": "<ol><li>번호 목록</li></ol>",
     "insight": {
       "dom": "<ul><li>번호 목록</li></ul>",
-      "regex": "번호 목록"
+      "regex": "<ul><li>번호 목록</li></ul>"
     },
     "lead": {
       "dom": "<ul><li>번호 목록</li></ul>",
-      "regex": "번호 목록"
+      "regex": "<ul><li>번호 목록</li></ul>"
     },
     "issue": {
       "dom": "<ol><li>번호 목록</li></ol>",
@@ -153,11 +153,11 @@
     "input": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>",
     "insight": {
       "dom": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>",
-      "regex": "팔레트 색"
+      "regex": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>"
     },
     "lead": {
       "dom": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>",
-      "regex": "팔레트 색"
+      "regex": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>"
     },
     "issue": {
       "dom": "<p><span style=\"color:#b0231e\">팔레트 색</span></p>",
@@ -168,26 +168,26 @@
     "input": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>",
     "insight": {
       "dom": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>",
-      "regex": "팔레트 밖 색"
+      "regex": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>"
     },
     "lead": {
-      "dom": "<p>팔레트 밖 색</p>",
-      "regex": "팔레트 밖 색"
+      "dom": "<p><span>팔레트 밖 색</span></p>",
+      "regex": "<p><span>팔레트 밖 색</span></p>"
     },
     "issue": {
-      "dom": "<p>팔레트 밖 색</p>",
-      "regex": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>"
+      "dom": "<p><span>팔레트 밖 색</span></p>",
+      "regex": "<p><span>팔레트 밖 색</span></p>"
     }
   },
   "https-link": {
     "input": "<p><a href=\"https://apollonworks.com\">링크</a></p>",
     "insight": {
       "dom": "<p><a href=\"https://apollonworks.com\">링크</a></p>",
-      "regex": "링크"
+      "regex": "<p><a href=\"https://apollonworks.com\">링크</a></p>"
     },
     "lead": {
       "dom": "<p><a href=\"https://apollonworks.com\">링크</a></p>",
-      "regex": "링크"
+      "regex": "<p><a href=\"https://apollonworks.com\">링크</a></p>"
     },
     "issue": {
       "dom": "<p><a href=\"https://apollonworks.com\">링크</a></p>",
@@ -198,15 +198,15 @@
     "input": "<p><a href=\"javascript:alert(1)\">나쁜 링크</a></p>",
     "insight": {
       "dom": "<p>나쁜 링크</p>",
-      "regex": "나쁜 링크"
+      "regex": "<p>나쁜 링크</p>"
     },
     "lead": {
       "dom": "<p>나쁜 링크</p>",
-      "regex": "나쁜 링크"
+      "regex": "<p>나쁜 링크</p>"
     },
     "issue": {
       "dom": "<p>나쁜 링크</p>",
-      "regex": "<p><a href=\"alert(1)\">나쁜 링크</a></p>"
+      "regex": "<p>나쁜 링크</p>"
     }
   },
   "img": {
@@ -228,29 +228,29 @@
     "input": "<table><tr><td>표</td></tr></table>",
     "insight": {
       "dom": "<p>표</p>",
-      "regex": "표"
+      "regex": "<p>표</p>"
     },
     "lead": {
       "dom": "<p>표</p>",
-      "regex": "표"
+      "regex": "<p>표</p>"
     },
     "issue": {
       "dom": "<p>표</p>",
-      "regex": "<table><tr><td>표</td></tr></table>"
+      "regex": "<p>표</p>"
     }
   },
   "script": {
     "input": "<script>alert(1)</script>",
     "insight": {
-      "dom": "<p>alert(1)</p>",
-      "regex": "alert(1)"
+      "dom": "",
+      "regex": ""
     },
     "lead": {
-      "dom": "<p>alert(1)</p>",
-      "regex": "alert(1)"
+      "dom": "",
+      "regex": ""
     },
     "issue": {
-      "dom": "<p>alert(1)</p>",
+      "dom": "",
       "regex": ""
     }
   },
@@ -258,11 +258,11 @@
     "input": "<p onclick=\"x()\">글</p>",
     "insight": {
       "dom": "<p>글</p>",
-      "regex": "글"
+      "regex": "<p>글</p>"
     },
     "lead": {
       "dom": "<p>글</p>",
-      "regex": "글"
+      "regex": "<p>글</p>"
     },
     "issue": {
       "dom": "<p>글</p>",
@@ -273,26 +273,26 @@
     "input": "<p><span style=\"color:#fff; background:url(x)\">글</span></p>",
     "insight": {
       "dom": "<p><span style=\"color:#ffffff\">글</span></p>",
-      "regex": "글"
+      "regex": "<p><span style=\"color:#ffffff\">글</span></p>"
     },
     "lead": {
-      "dom": "<p>글</p>",
-      "regex": "글"
+      "dom": "<p><span>글</span></p>",
+      "regex": "<p><span>글</span></p>"
     },
     "issue": {
-      "dom": "<p>글</p>",
-      "regex": "<p><span style=\"color:#fff; background:url(x)\">글</span></p>"
+      "dom": "<p><span>글</span></p>",
+      "regex": "<p><span>글</span></p>"
     }
   },
   "existing-anchor-tenant": {
     "input": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>",
     "insight": {
       "dom": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>",
-      "regex": "이렇게 방문의 중심을 맡는 존재가 전통적인 앵커 테넌트다."
+      "regex": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>"
     },
     "lead": {
       "dom": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>",
-      "regex": "이렇게 방문의 중심을 맡는 존재가 전통적인 앵커 테넌트다."
+      "regex": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>"
     },
     "issue": {
       "dom": "<p>이렇게 방문의 중심을 맡는 존재가 <b>전통적인 앵커 테넌트</b>다.</p>",
@@ -302,15 +302,15 @@
   "existing-nbsp": {
     "input": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>",
     "insight": {
-      "dom": "<p>iF 디자인 어워드 2023에서 두 개 부문 본상을 수상했다.</p>",
-      "regex": "iF 디자인 어워드&amp;nbsp;2023에서 두 개 부문 본상을&amp;nbsp;수상했다."
+      "dom": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>",
+      "regex": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>"
     },
     "lead": {
-      "dom": "<p>iF 디자인 어워드 2023에서 두 개 부문 본상을 수상했다.</p>",
-      "regex": "iF 디자인 어워드&amp;nbsp;2023에서 두 개 부문 본상을&amp;nbsp;수상했다."
+      "dom": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>",
+      "regex": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>"
     },
     "issue": {
-      "dom": "<p>iF 디자인 어워드 2023에서 두 개 부문 본상을 수상했다.</p>",
+      "dom": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>",
       "regex": "<p>iF 디자인 어워드&nbsp;2023에서 두 개 부문 본상을&nbsp;수상했다.</p>"
     }
   },
@@ -318,11 +318,11 @@
     "input": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>",
     "insight": {
       "dom": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>",
-      "regex": "앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화"
+      "regex": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>"
     },
     "lead": {
       "dom": "<p>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</p>",
-      "regex": "앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화"
+      "regex": "<p>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</p>"
     },
     "issue": {
       "dom": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>",
@@ -333,11 +333,11 @@
     "input": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>",
     "insight": {
       "dom": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>",
-      "regex": "장소에 맞춰 규모와 형태를 조정할 수 있다."
+      "regex": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>"
     },
     "lead": {
       "dom": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>",
-      "regex": "장소에 맞춰 규모와 형태를 조정할 수 있다."
+      "regex": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>"
     },
     "issue": {
       "dom": "<ul><li><b>장소에 맞춰 규모와 형태를 조정할 수 있다.</b></li></ul>",

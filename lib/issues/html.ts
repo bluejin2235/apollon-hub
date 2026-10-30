@@ -1,6 +1,5 @@
-import { LEAD_COLORS, leadToEditorHtml, normalizeLeadColor } from "@/lib/website/lead-html";
-
-const COLOR_SET = new Set<string>(LEAD_COLORS);
+import { leadToEditorHtml } from "@/lib/website/lead-html";
+import { sanitizeRichHtml } from "@/lib/website/rich-html";
 
 function escapeText(value: string): string {
   return value
@@ -10,166 +9,38 @@ function escapeText(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function sanitizeHref(raw: string | null): string | null {
-  if (!raw) return null;
-  const href = raw.trim();
-  if (!href) return null;
-  if (/^javascript:/i.test(href)) return null;
-  if (/^(https?:|mailto:|tel:|\/|#)/i.test(href)) return href;
-  return null;
-}
-
-function sanitizeMediaSrc(raw: string | null): string | null {
-  if (!raw) return null;
-  const src = raw.trim();
-  if (!src) return null;
-  if (/^javascript:/i.test(src)) return null;
-  if (/^(https?:|\/)/i.test(src)) return src;
-  return null;
-}
-
-function wrap(inner: string, open: string, close: string): string {
-  return inner ? `${open}${inner}${close}` : "";
-}
-
-function isElem(node: Node): node is HTMLElement {
-  return node.nodeType === Node.ELEMENT_NODE;
-}
-
-function colorFromElement(el: Element): string | null {
-  const style = el.getAttribute("style") ?? "";
-  const color = style.match(/color\s*:\s*([^;]+)/i);
-  if (color) {
-    const hit = normalizeLeadColor(color[1] ?? "");
-    if (hit && COLOR_SET.has(hit)) return hit;
-  }
-  const attr = el.getAttribute("color");
-  if (attr) return normalizeLeadColor(attr);
-  return null;
-}
-
-function isBoldStyle(style: string): boolean {
-  return (
-    /font-weight\s*:\s*(bold|[6-9]00)/i.test(style) || /\bfont:[^;]*\bbold\b/i.test(style)
-  );
-}
-
-function applyInlineFormat(el: HTMLElement, inner: string): string {
-  const style = el.getAttribute("style") ?? "";
-  const tag = el.tagName;
-  const color = colorFromElement(el);
-  const mention = el.classList.contains("mention");
-  let next = inner;
-  if (tag === "B" || tag === "STRONG" || isBoldStyle(style)) {
-    next = wrap(next, "<b>", "</b>");
-  }
-  if (tag === "I" || tag === "EM" || /font-style\s*:\s*italic/i.test(style)) {
-    next = wrap(next, "<i>", "</i>");
-  }
-  if (tag === "U" || /text-decoration[^;]*underline/i.test(style)) {
-    next = wrap(next, "<u>", "</u>");
-  }
-  if (mention && next) {
-    return `<span class="mention">${next.startsWith("@") ? next : `@${next}`}</span>`;
-  }
-  if (color && next) return `<span style="color:${color}">${next}</span>`;
-  return next;
-}
-
-function asParagraph(inner: string): string {
-  const trimmed = inner.trim();
-  if (!trimmed) return "<p><br></p>";
-  return `<p>${trimmed}</p>`;
-}
-
-function serializeChildren(el: HTMLElement): string {
-  return Array.from(el.childNodes)
-    .map((node) => serialize(node))
-    .join("");
-}
-
-function serialize(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) {
-    return escapeText((node.textContent ?? "").replace(/\u200B/g, ""));
-  }
-  if (!isElem(node)) return "";
-
-  const el = node;
-  const tag = el.tagName;
-  const inner = serializeChildren(el);
-
-  if (tag === "BR") return "<br>";
-  if (tag === "IMG") {
-    const src = sanitizeMediaSrc(el.getAttribute("src"));
-    if (!src) return "";
-    const alt = escapeText(el.getAttribute("alt") ?? "");
-    return `<img src="${escapeText(src)}" alt="${alt}">`;
-  }
-  if (tag === "VIDEO") {
-    const src = sanitizeMediaSrc(el.getAttribute("src"));
-    if (!src) return inner;
-    return `<video src="${escapeText(src)}" controls></video>`;
-  }
-  if (tag === "LI") return `<li>${applyInlineFormat(el, inner)}</li>`;
-  if (tag === "UL") return wrap(inner, "<ul>", "</ul>");
-  if (tag === "OL") return wrap(inner, "<ol>", "</ol>");
-  if (tag === "A") {
-    const href = sanitizeHref(el.getAttribute("href"));
-    const body = applyInlineFormat(el, inner);
-    return href ? `<a href="${escapeText(href)}">${body}</a>` : body;
-  }
-  if (tag === "SPAN" || tag === "FONT") {
-    return applyInlineFormat(el, inner);
-  }
-  if (tag === "B" || tag === "STRONG" || tag === "I" || tag === "EM" || tag === "U") {
-    return applyInlineFormat(el, inner);
-  }
-  if (tag === "H2") return wrap(applyInlineFormat(el, inner), "<h2>", "</h2>");
-  if (tag === "H3") return wrap(applyInlineFormat(el, inner), "<h3>", "</h3>");
-  if (
-    tag === "P" ||
-    tag === "DIV" ||
-    tag === "H1" ||
-    tag === "H4" ||
-    tag === "BLOCKQUOTE" ||
-    tag === "SECTION" ||
-    tag === "ARTICLE"
-  ) {
-    const formatted = applyInlineFormat(el, inner);
-    if (!formatted.trim()) return "<p><br></p>";
-    if (/^<(p|ul|ol|h2|h3|img|video)\b/i.test(formatted.trim())) return formatted;
-    return asParagraph(formatted);
-  }
-  return applyInlineFormat(el, inner);
-}
-
-function parseRoot(html: string): HTMLElement | null {
-  if (typeof DOMParser === "undefined") return null;
-  const doc = new DOMParser().parseFromString(
-    `<div id="__issue_root__">${html}</div>`,
-    "text/html"
-  );
-  return doc.getElementById("__issue_root__");
-}
-
-function stripDangerous(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, "")
-    .replace(/javascript:/gi, "");
-}
-
 /** 문의 본문·댓글. 이미지·영상·링크·@부름을 남긴다. */
 export function sanitizeIssueHtml(html: string): string {
-  const trimmed = html.trim();
-  if (!trimmed) return "";
-  const root = parseRoot(trimmed);
-  if (!root) return stripDangerous(trimmed);
-  const out = serializeChildren(root).trim();
-  if (!out) return "";
-  if (/^<(p|ul|ol|h2|h3|img|video)\b/i.test(out)) return out;
-  return asParagraph(out);
+  const mentions: string[] = [];
+  const videos: string[] = [];
+  const prepared = html
+    .replace(/<span\s+([^>]*class=["'][^"']*\bmention\b[^"']*["'][^>]*)>([\s\S]*?)<\/span>/gi, (_, _attrs, inner: string) => {
+      const i = mentions.length;
+      const body = String(inner);
+      mentions.push(body.startsWith("@") ? body : `@${body}`);
+      return `⟦ISSUE_MENTION_${i}⟧`;
+    })
+    .replace(/<video\b([^>]*)>([\s\S]*?)<\/video>/gi, (full, attrs: string, inner: string) => {
+      const srcMatch = /src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+      const src = srcMatch?.[1] || srcMatch?.[2] || srcMatch?.[3] || "";
+      if (!src) return inner;
+      const i = videos.length;
+      videos.push(src);
+      return `<img src="${src}" alt="__ISSUE_VIDEO_${i}__">`;
+    });
+
+  let out = sanitizeRichHtml(prepared, "basic", { ol: "keep", allowImg: true, headings: "keep" });
+
+  out = out.replace(/<img src="([^"]*)" alt="__ISSUE_VIDEO_(\d+)__">/g, (_, src: string, idx: string) => {
+    const original = videos[Number(idx)] ?? src;
+    return `<video src="${escapeText(original)}" controls></video>`;
+  });
+  out = out.replace(/⟦ISSUE_MENTION_(\d+)⟧/g, (_, idx: string) => {
+    const body = mentions[Number(idx)];
+    if (!body) return "";
+    return `<span class="mention">${body}</span>`;
+  });
+  return out;
 }
 
 export function issueToEditorHtml(text: string): string {

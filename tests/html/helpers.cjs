@@ -66,7 +66,8 @@ async function startDom() {
       browser = await launchChrome();
       page = await browser.newPage();
       const sources = {};
-      for (const kind of KINDS) sources[FILES[kind]] = transpile(FILES[kind]);
+      const sourceFiles = [...new Set([...Object.values(FILES), "lib/website/rich-html.ts"])];
+      for (const file of sourceFiles) sources[file] = transpile(file);
       await page.evaluate((payload) => {
         const cache = Object.create(null);
         function load(file) {
@@ -74,7 +75,8 @@ async function startDom() {
           const module = { exports: {} };
           cache[file] = module;
           const req = (spec) => {
-            if (spec === "@/lib/website/lead-html") return load("lib/website/lead-html.ts");
+            if (spec === "server-only") return {};
+            if (spec.startsWith("@/")) return load(`${spec.slice(2)}.ts`);
             throw new Error(`Unmocked dependency: ${spec}`);
           };
           const fn = new Function("require", "module", "exports", payload.sources[file]);
