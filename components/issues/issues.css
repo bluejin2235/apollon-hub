@@ -579,6 +579,58 @@
   line-height: 1.8;
 }
 
+.iss-txt ul,
+.iss-txt ol,
+.iss-post .body ul,
+.iss-post .body ol {
+  margin: 0.2em 0;
+  padding-left: 1.2em;
+  list-style-position: outside;
+}
+
+.iss-txt ul,
+.iss-post .body ul {
+  list-style: disc;
+}
+
+.iss-txt ol,
+.iss-post .body ol {
+  list-style: decimal;
+}
+
+.iss-txt li,
+.iss-post .body li {
+  display: list-item;
+}
+
+.iss-txt ul.in-1,
+.iss-txt ol.in-1,
+.iss-post .body ul.in-1,
+.iss-post .body ol.in-1 {
+  padding-left: calc(1.2em + 2em);
+}
+
+.iss-txt ul.in-2,
+.iss-txt ol.in-2,
+.iss-post .body ul.in-2,
+.iss-post .body ol.in-2 {
+  padding-left: calc(1.2em + 4em);
+}
+
+.iss-txt ul.in-3,
+.iss-txt ol.in-3,
+.iss-post .body ul.in-3,
+.iss-post .body ol.in-3 {
+  padding-left: calc(1.2em + 6em);
+}
+
+.iss-txt ul.in-4,
+.iss-txt ol.in-4,
+.iss-post .body ul.in-4,
+.iss-post .body ol.in-4 {
+  padding-left: calc(1.2em + 8em);
+}
+
 /* 표준 본문 서식. 기존 p·b·i·a·ul·img·video 크기·줄간격·여백은 그대로 */
 .iss-post .body h2 {
   margin: 0.8em 0 0.35em;
@@ -609,19 +661,27 @@
   line-height: 1.375;
 }
 
-.iss-post .body .in-1 {
+.iss-post .body p.in-1,
+.iss-post .body h2.in-1,
+.iss-post .body h3.in-1 {
   padding-left: 2em;
 }
 
-.iss-post .body .in-2 {
+.iss-post .body p.in-2,
+.iss-post .body h2.in-2,
+.iss-post .body h3.in-2 {
   padding-left: 4em;
 }
 
-.iss-post .body .in-3 {
+.iss-post .body p.in-3,
+.iss-post .body h2.in-3,
+.iss-post .body h3.in-3 {
   padding-left: 6em;
 }
 
-.iss-post .body .in-4 {
+.iss-post .body p.in-4,
+.iss-post .body h2.in-4,
+.iss-post .body h3.in-4 {
   padding-left: 8em;
 }
 
@@ -803,19 +863,27 @@
   line-height: 1.375;
 }
 
-.iss-ed .rte-ed .in-1 {
+.iss-ed .rte-ed p.in-1,
+.iss-ed .rte-ed h2.in-1,
+.iss-ed .rte-ed h3.in-1 {
   padding-left: 2em;
 }
 
-.iss-ed .rte-ed .in-2 {
+.iss-ed .rte-ed p.in-2,
+.iss-ed .rte-ed h2.in-2,
+.iss-ed .rte-ed h3.in-2 {
   padding-left: 4em;
 }
 
-.iss-ed .rte-ed .in-3 {
+.iss-ed .rte-ed p.in-3,
+.iss-ed .rte-ed h2.in-3,
+.iss-ed .rte-ed h3.in-3 {
   padding-left: 6em;
 }
 
-.iss-ed .rte-ed .in-4 {
+.iss-ed .rte-ed p.in-4,
+.iss-ed .rte-ed h2.in-4,
+.iss-ed .rte-ed h3.in-4 {
   padding-left: 8em;
 }
 

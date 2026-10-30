@@ -569,6 +569,7 @@
 }
 
 .rte-ed li {
+  display: list-item;
   line-height: inherit;
 }
 
@@ -590,6 +591,36 @@
 .rte-ed ol {
   margin: 0.2em 0;
   padding-left: 1.2em;
+  list-style-position: outside;
+}
+
+.rte-ed ul {
+  list-style: disc;
+}
+
+.rte-ed ol {
+  list-style: decimal;
+}
+
+/* .in-1~.in-4 와 겹치면 목록 들여쓰기 1.2em 을 더한다. 홈페이지 .block-wysiwyg 과 같음 */
+.rte-ed ul.in-1,
+.rte-ed ol.in-1 {
+  padding-left: calc(1.2em + 2em);
+}
+
+.rte-ed ul.in-2,
+.rte-ed ol.in-2 {
+  padding-left: calc(1.2em + 4em);
+}
+
+.rte-ed ul.in-3,
+.rte-ed ol.in-3 {
+  padding-left: calc(1.2em + 6em);
+}
+
+.rte-ed ul.in-4,
+.rte-ed ol.in-4 {
+  padding-left: calc(1.2em + 8em);
 }
 
 .rte-ed ul {
