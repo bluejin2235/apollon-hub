@@ -47,9 +47,9 @@ function brSeparatedToParagraphs(html: string): string {
     .join("");
 }
 
-/** 허용: p · b · i · u · br · ul · li · a(href) · span(색만) */
+/** 허용: 표준(full). ol 은 ul 로. 이미지는 없음. */
 export function sanitizeLeadHtml(html: string): string {
-  return sanitizeRichHtml(html, "basic", { ol: "ul", allowImg: false });
+  return sanitizeRichHtml(html, "full");
 }
 
 export function leadPlainText(html: string): string {
@@ -75,7 +75,7 @@ export function leadToEditorHtml(value: string): string {
   if (leadLooksLikeHtml(value)) {
     const clean = sanitizeLeadHtml(value);
     if (!clean) return "<p><br></p>";
-    if (/^<(p|ul)\b/i.test(clean)) return clean;
+    if (/^<(p|ul|h[23])\b/i.test(clean)) return clean;
     if (/<br\s*\/?>/i.test(clean)) return brSeparatedToParagraphs(clean);
     return asParagraph(clean);
   }
@@ -91,5 +91,5 @@ export function leadIsEmpty(html: string): boolean {
 }
 
 export function leadLooksLikeHtml(value: string): boolean {
-  return /<(p|b|i|u|br|ul|ol|li|a|span|strong|em|font|div|h[1-6])\b/i.test(value);
+  return /<(p|b|i|u|br|ul|ol|li|a|span|strong|em|font|div|h[1-6]|sup|sub)\b/i.test(value);
 }

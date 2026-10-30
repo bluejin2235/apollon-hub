@@ -1839,6 +1839,57 @@
 .wa .lead-html--work-lead {
   font-size: clamp(11px, 2.4056cqw, 20px);
 }
+.wa .lead-html--work-lead h2 {
+  margin: 0;
+  font-size: 3.3683cqw;
+  font-weight: 700;
+  line-height: 1.2857;
+  letter-spacing: 0;
+  color: inherit;
+}
+.wa .lead-html--work-lead h3 {
+  margin: 0;
+  font-size: 2.8867cqw;
+  font-weight: 700;
+  line-height: 1.3333;
+  letter-spacing: 0;
+  color: inherit;
+}
+.wa .lead-html--work-lead h2.is-big {
+  font-size: 4.3301cqw;
+  line-height: 1.1667;
+}
+.wa .lead-html--work-lead p.sz-lg {
+  font-size: 2.8867cqw;
+  line-height: 1.3333;
+}
+.wa .lead-html--work-lead p.sz-sm {
+  font-size: 1.9245cqw;
+  line-height: 1.375;
+}
+.wa .lead-html--work-lead .in-1 {
+  padding-left: 2em;
+}
+.wa .lead-html--work-lead .in-2 {
+  padding-left: 4em;
+}
+.wa .lead-html--work-lead .in-3 {
+  padding-left: 6em;
+}
+.wa .lead-html--work-lead .in-4 {
+  padding-left: 8em;
+}
+.wa .lead-html--work-lead sup,
+.wa .lead-html--work-lead sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+.wa .lead-html--work-lead sup {
+  vertical-align: super;
+}
+.wa .lead-html--work-lead sub {
+  vertical-align: sub;
+}
 .wa .lead-html--insight {
   font-size: clamp(11px, 1.5244cqw, 20px);
 }
@@ -2307,6 +2358,51 @@
   line-height: 1.5;
   overflow-wrap: normal;
   word-break: normal;
+}
+
+.wa .rte-ed--work-lead h2.is-big {
+  font-size: 4.3301cqw;
+  line-height: 1.1667;
+}
+
+.wa .rte-ed--work-lead p.sz-lg {
+  font-size: 2.8867cqw;
+  line-height: 1.3333;
+}
+
+.wa .rte-ed--work-lead p.sz-sm {
+  font-size: 1.9245cqw;
+  line-height: 1.375;
+}
+
+.wa .rte-ed--work-lead .in-1 {
+  padding-left: 2em;
+}
+
+.wa .rte-ed--work-lead .in-2 {
+  padding-left: 4em;
+}
+
+.wa .rte-ed--work-lead .in-3 {
+  padding-left: 6em;
+}
+
+.wa .rte-ed--work-lead .in-4 {
+  padding-left: 8em;
+}
+
+.wa .rte-ed--work-lead sup,
+.wa .rte-ed--work-lead sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.wa .rte-ed--work-lead sup {
+  vertical-align: super;
+}
+
+.wa .rte-ed--work-lead sub {
+  vertical-align: sub;
 }
 
 /* 인사이트 — 공개 1312px 기준. 11px 하한은 칸 폭 722px 부터 */

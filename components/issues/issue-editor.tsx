@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { RichTextEditor } from "@/components/website/rich-text-editor";
 import { uploadIssueMedia } from "@/lib/issues/client";
-import { issueToEditorHtml, sanitizeIssueHtml } from "@/lib/issues/html";
 import { nameInitial, type IssueMember } from "@/lib/issues/types";
 import "@/components/issues/issues.css";
 
@@ -48,8 +47,6 @@ export function IssueEditor({ value, onChange, members, compact = false }: Props
     <div className={`iss-ed-wrap iss-ed${compact ? " compact" : ""}`}>
       <RichTextEditor
         surface="insight-body"
-        sanitize={sanitizeIssueHtml}
-        toEditorHtml={issueToEditorHtml}
         allowMedia
         onUploadFile={uploadIssueMedia}
         fields={[

@@ -36,8 +36,8 @@
       "regex": "<h2>소제목</h2>"
     },
     "lead": {
-      "dom": "<p>소제목</p>",
-      "regex": "<p>소제목</p>"
+      "dom": "<h2>소제목</h2>",
+      "regex": "<h2>소제목</h2>"
     },
     "issue": {
       "dom": "<h2>소제목</h2>",
@@ -51,8 +51,8 @@
       "regex": "<h3>작은 제목</h3>"
     },
     "lead": {
-      "dom": "<p>작은 제목</p>",
-      "regex": "<p>작은 제목</p>"
+      "dom": "<h3>작은 제목</h3>",
+      "regex": "<h3>작은 제목</h3>"
     },
     "issue": {
       "dom": "<h3>작은 제목</h3>",
@@ -66,12 +66,12 @@
       "regex": "<h2 class=\"is-big\">큰 제목</h2>"
     },
     "lead": {
-      "dom": "<p>큰 제목</p>",
-      "regex": "<p>큰 제목</p>"
+      "dom": "<h2 class=\"is-big\">큰 제목</h2>",
+      "regex": "<h2 class=\"is-big\">큰 제목</h2>"
     },
     "issue": {
-      "dom": "<h2>큰 제목</h2>",
-      "regex": "<h2>큰 제목</h2>"
+      "dom": "<h2 class=\"is-big\">큰 제목</h2>",
+      "regex": "<h2 class=\"is-big\">큰 제목</h2>"
     }
   },
   "p-sz-lg": {
@@ -81,12 +81,12 @@
       "regex": "<p class=\"sz-lg\">크게</p>"
     },
     "lead": {
-      "dom": "<p>크게</p>",
-      "regex": "<p>크게</p>"
+      "dom": "<p class=\"sz-lg\">크게</p>",
+      "regex": "<p class=\"sz-lg\">크게</p>"
     },
     "issue": {
-      "dom": "<p>크게</p>",
-      "regex": "<p>크게</p>"
+      "dom": "<p class=\"sz-lg\">크게</p>",
+      "regex": "<p class=\"sz-lg\">크게</p>"
     }
   },
   "p-in-2": {
@@ -96,12 +96,12 @@
       "regex": "<p class=\"in-2\">들여쓰기</p>"
     },
     "lead": {
-      "dom": "<p>들여쓰기</p>",
-      "regex": "<p>들여쓰기</p>"
+      "dom": "<p class=\"in-2\">들여쓰기</p>",
+      "regex": "<p class=\"in-2\">들여쓰기</p>"
     },
     "issue": {
-      "dom": "<p>들여쓰기</p>",
-      "regex": "<p>들여쓰기</p>"
+      "dom": "<p class=\"in-2\">들여쓰기</p>",
+      "regex": "<p class=\"in-2\">들여쓰기</p>"
     }
   },
   "sup-sub": {
@@ -111,12 +111,12 @@
       "regex": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>"
     },
     "lead": {
-      "dom": "<p>m2 와 H2O</p>",
-      "regex": "<p>m2 와 H2O</p>"
+      "dom": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>",
+      "regex": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>"
     },
     "issue": {
-      "dom": "<p>m2 와 H2O</p>",
-      "regex": "<p>m2 와 H2O</p>"
+      "dom": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>",
+      "regex": "<p>m<sup>2</sup> 와 H<sub>2</sub>O</p>"
     }
   },
   "ul": {
@@ -171,12 +171,12 @@
       "regex": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>"
     },
     "lead": {
-      "dom": "<p><span>팔레트 밖 색</span></p>",
-      "regex": "<p><span>팔레트 밖 색</span></p>"
+      "dom": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>",
+      "regex": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>"
     },
     "issue": {
-      "dom": "<p><span>팔레트 밖 색</span></p>",
-      "regex": "<p><span>팔레트 밖 색</span></p>"
+      "dom": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>",
+      "regex": "<p><span style=\"color:#1e40af\">팔레트 밖 색</span></p>"
     }
   },
   "https-link": {
@@ -276,12 +276,12 @@
       "regex": "<p><span style=\"color:#ffffff\">글</span></p>"
     },
     "lead": {
-      "dom": "<p><span>글</span></p>",
-      "regex": "<p><span>글</span></p>"
+      "dom": "<p><span style=\"color:#ffffff\">글</span></p>",
+      "regex": "<p><span style=\"color:#ffffff\">글</span></p>"
     },
     "issue": {
-      "dom": "<p><span>글</span></p>",
-      "regex": "<p><span>글</span></p>"
+      "dom": "<p><span style=\"color:#ffffff\">글</span></p>",
+      "regex": "<p><span style=\"color:#ffffff\">글</span></p>"
     }
   },
   "existing-anchor-tenant": {
@@ -321,8 +321,8 @@
       "regex": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>"
     },
     "lead": {
-      "dom": "<p>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</p>",
-      "regex": "<p>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</p>"
+      "dom": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>",
+      "regex": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>"
     },
     "issue": {
       "dom": "<h2>앵커의 변화, 테넌트 유치에서 고유한 경험의 기획으로 변화</h2>",

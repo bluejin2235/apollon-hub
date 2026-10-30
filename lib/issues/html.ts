@@ -9,10 +9,25 @@ function escapeText(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** 문의 본문·댓글. 이미지·영상·링크·@부름을 남긴다. */
+function attrValue(attrs: string, name: string): string {
+  const re = new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+  const match = re.exec(attrs);
+  return match?.[1] || match?.[2] || match?.[3] || "";
+}
+
+function safeMediaSrc(raw: string): string {
+  const src = raw.trim();
+  if (!src || /^javascript:/i.test(src)) return "";
+  if (!/^(https?:|\/)/i.test(src)) return "";
+  return src;
+}
+
+/** 문의 본문·댓글. 표준(full) + 이미지·영상·멘션·번호목록. */
 export function sanitizeIssueHtml(html: string): string {
   const mentions: string[] = [];
   const videos: string[] = [];
+  const images: { src: string; alt: string }[] = [];
+  const lists: string[] = [];
   const prepared = html
     .replace(/<span\s+([^>]*class=["'][^"']*\bmention\b[^"']*["'][^>]*)>([\s\S]*?)<\/span>/gi, (_, _attrs, inner: string) => {
       const i = mentions.length;
@@ -20,17 +35,39 @@ export function sanitizeIssueHtml(html: string): string {
       mentions.push(body.startsWith("@") ? body : `@${body}`);
       return `⟦ISSUE_MENTION_${i}⟧`;
     })
-    .replace(/<video\b([^>]*)>([\s\S]*?)<\/video>/gi, (full, attrs: string, inner: string) => {
-      const srcMatch = /src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
-      const src = srcMatch?.[1] || srcMatch?.[2] || srcMatch?.[3] || "";
+    .replace(/<video\b([^>]*)>([\s\S]*?)<\/video>/gi, (_full, attrs: string, inner: string) => {
+      const src = safeMediaSrc(attrValue(attrs, "src"));
       if (!src) return inner;
       const i = videos.length;
       videos.push(src);
       return `<img src="${src}" alt="__ISSUE_VIDEO_${i}__">`;
+    })
+    .replace(/<ol\b[^>]*>([\s\S]*?)<\/ol>/gi, (_full, inner: string) => {
+      const i = lists.length;
+      lists.push(String(inner));
+      return `⟦ISSUE_OL_${i}⟧`;
+    })
+    .replace(/<img\b([^>]*)\/?>/gi, (_full, attrs: string) => {
+      const src = safeMediaSrc(attrValue(attrs, "src"));
+      if (!src) return "";
+      const i = images.length;
+      images.push({ src, alt: attrValue(attrs, "alt") });
+      return `⟦ISSUE_IMG_${i}⟧`;
     });
 
-  let out = sanitizeRichHtml(prepared, "basic", { ol: "keep", allowImg: true, headings: "keep" });
+  let out = sanitizeRichHtml(prepared, "full");
 
+  out = out.replace(/(?:<p>)?⟦ISSUE_OL_(\d+)⟧(?:<\/p>)?/g, (_, idx: string) => {
+    const inner = lists[Number(idx)] ?? "";
+    const cleaned = sanitizeRichHtml(`<ul>${inner}</ul>`, "full");
+    return cleaned.replace(/^<ul>/i, "<ol>").replace(/<\/ul>$/i, "</ol>");
+  });
+  out = out.replace(/(?:<p>)?⟦ISSUE_IMG_(\d+)⟧(?:<\/p>)?/g, (_, idx: string) => {
+    const item = images[Number(idx)];
+    if (!item) return "";
+    const alt = escapeText(item.alt).replace(/"/g, "&quot;");
+    return `<img src="${escapeText(item.src)}" alt="${alt}">`;
+  });
   out = out.replace(/<img src="([^"]*)" alt="__ISSUE_VIDEO_(\d+)__">/g, (_, src: string, idx: string) => {
     const original = videos[Number(idx)] ?? src;
     return `<video src="${escapeText(original)}" controls></video>`;

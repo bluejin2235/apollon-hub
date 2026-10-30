@@ -9,15 +9,14 @@ function html(id) {
   return CASES.find((item) => item.id === id).html;
 }
 
-test("issue-html 은 h2·h3 를 살리되 class 와 sup·sub 는 버린다", async () => {
+test("issue-html 은 h2·h3·is-big·sz-lg·in-2·sup·sub 를 살린다", async () => {
   assert.match(await sanitizeDom("issue", html("h2")), /<h2>/);
   assert.match(await sanitizeDom("issue", html("h3")), /<h3>/);
-  assert.doesNotMatch(await sanitizeDom("issue", html("h2-is-big")), /is-big/);
-  assert.doesNotMatch(await sanitizeDom("issue", html("p-sz-lg")), /sz-lg/);
-  assert.doesNotMatch(await sanitizeDom("issue", html("p-in-2")), /in-2/);
-  const sub = await sanitizeDom("issue", html("sup-sub"));
-  assert.doesNotMatch(sub, /<sup>/);
-  assert.doesNotMatch(sub, /<sub>/);
+  assert.match(await sanitizeDom("issue", html("h2-is-big")), /is-big/);
+  assert.match(await sanitizeDom("issue", html("p-sz-lg")), /sz-lg/);
+  assert.match(await sanitizeDom("issue", html("p-in-2")), /in-2/);
+  assert.match(await sanitizeDom("issue", html("sup-sub")), /<sup>/);
+  assert.match(await sanitizeDom("issue", html("sup-sub")), /<sub>/);
 });
 
 test("issue-html 은 img 와 ol 을 살린다", async () => {
@@ -27,6 +26,22 @@ test("issue-html 은 img 와 ol 을 살린다", async () => {
   assert.match(img, /https:\/\/x\/y\.jpg/);
   assert.match(list, /<ol>/);
   assert.doesNotMatch(list, /<ul>/);
+});
+
+test("issue-html 은 video 와 mention 을 살린다", async () => {
+  const video = await sanitizeDom(
+    "issue",
+    '<p><video src="https://x/a.mp4" controls></video></p>'
+  );
+  assert.match(video, /<video\b/);
+  assert.match(video, /https:\/\/x\/a\.mp4/);
+  assert.doesNotMatch(video, /<img\b/);
+  const mention = await sanitizeDom(
+    "issue",
+    '<p><span class="mention">@민지</span> 확인</p>'
+  );
+  assert.match(mention, /class="mention"/);
+  assert.match(mention, /@민지/);
 });
 
 test("issue-html 은 javascript 링크 주소를 버리고 onclick 은 버린다", async () => {
