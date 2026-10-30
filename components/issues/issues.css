@@ -579,6 +579,66 @@
   line-height: 1.8;
 }
 
+/* 표준 본문 서식. 기존 p·b·i·a·ul·img·video 크기·줄간격·여백은 그대로 */
+.iss-post .body h2 {
+  margin: 0.8em 0 0.35em;
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.2857;
+}
+
+.iss-post .body h2.is-big {
+  font-size: 1.8em;
+  line-height: 1.1667;
+}
+
+.iss-post .body h3 {
+  margin: 0.7em 0 0.3em;
+  font-size: 1.2em;
+  font-weight: 700;
+  line-height: 1.3333;
+}
+
+.iss-post .body p.sz-lg {
+  font-size: 1.2em;
+  line-height: 1.3333;
+}
+
+.iss-post .body p.sz-sm {
+  font-size: 0.8em;
+  line-height: 1.375;
+}
+
+.iss-post .body .in-1 {
+  padding-left: 2em;
+}
+
+.iss-post .body .in-2 {
+  padding-left: 4em;
+}
+
+.iss-post .body .in-3 {
+  padding-left: 6em;
+}
+
+.iss-post .body .in-4 {
+  padding-left: 8em;
+}
+
+.iss-post .body sup,
+.iss-post .body sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.iss-post .body sup {
+  vertical-align: super;
+}
+
+.iss-post .body sub {
+  vertical-align: sub;
+}
+
 .iss-txt .mention,
 .iss-ed .mention {
   color: var(--acc);
@@ -777,6 +837,65 @@
 
 .iss-ed .rte-ed p + p {
   margin-top: 0.6em;
+}
+
+.iss-ed .rte-ed h2 {
+  margin: 0.8em 0 0.35em;
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.2857;
+}
+
+.iss-ed .rte-ed h2.is-big {
+  font-size: 1.8em;
+  line-height: 1.1667;
+}
+
+.iss-ed .rte-ed h3 {
+  margin: 0.7em 0 0.3em;
+  font-size: 1.2em;
+  font-weight: 700;
+  line-height: 1.3333;
+}
+
+.iss-ed .rte-ed p.sz-lg {
+  font-size: 1.2em;
+  line-height: 1.3333;
+}
+
+.iss-ed .rte-ed p.sz-sm {
+  font-size: 0.8em;
+  line-height: 1.375;
+}
+
+.iss-ed .rte-ed .in-1 {
+  padding-left: 2em;
+}
+
+.iss-ed .rte-ed .in-2 {
+  padding-left: 4em;
+}
+
+.iss-ed .rte-ed .in-3 {
+  padding-left: 6em;
+}
+
+.iss-ed .rte-ed .in-4 {
+  padding-left: 8em;
+}
+
+.iss-ed .rte-ed sup,
+.iss-ed .rte-ed sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.iss-ed .rte-ed sup {
+  vertical-align: super;
+}
+
+.iss-ed .rte-ed sub {
+  vertical-align: sub;
 }
 
 .iss-mentions {
