@@ -17,6 +17,7 @@ import {
 } from "@/lib/website/insight-html";
 import { issueToEditorHtml, sanitizeIssueHtml } from "@/lib/issues/html";
 import { LEAD_COLORS } from "@/lib/website/lead-html";
+import "./rich-text-editor.css";
 
 export type RichTextField = {
   id: string;
@@ -268,15 +269,47 @@ export function RichTextEditor({
 
   useEffect(() => {
     if (!paletteOpen) return;
-    const pop = palettePopRef.current;
-    if (!pop) return;
-    pop.style.left = "0";
-    pop.style.right = "auto";
-    const rect = pop.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 18) {
-      pop.style.left = "auto";
-      pop.style.right = "0";
+
+    function clipRange(from: HTMLElement) {
+      let minL = 8;
+      let maxR = window.innerWidth - 8;
+      let node: HTMLElement | null = from.parentElement;
+      while (node) {
+        const st = getComputedStyle(node);
+        if (
+          /(auto|scroll|hidden|clip)/.test(st.overflowX) ||
+          /(auto|scroll|hidden|clip)/.test(st.overflowY)
+        ) {
+          const r = node.getBoundingClientRect();
+          minL = Math.max(minL, r.left + 8);
+          maxR = Math.min(maxR, r.right - 8);
+        }
+        node = node.parentElement;
+      }
+      return { minL, maxR };
     }
+
+    function place() {
+      const pop = palettePopRef.current;
+      const wrap = paletteWrapRef.current;
+      if (!pop || !wrap) return;
+      pop.style.left = "0";
+      pop.style.right = "auto";
+      pop.style.width = "";
+      const natural = pop.getBoundingClientRect().width || 258;
+      const { minL, maxR } = clipRange(wrap);
+      const width = Math.min(natural, Math.max(160, maxR - minL));
+      pop.style.width = `${width}px`;
+      const wrapLeft = wrap.getBoundingClientRect().left;
+      let abs = wrapLeft;
+      if (abs + width > maxR) abs = maxR - width;
+      if (abs < minL) abs = minL;
+      pop.style.left = `${Math.round(abs - wrapLeft)}px`;
+    }
+
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
   }, [paletteOpen]);
 
   const valueKey = fields.map((field) => `${field.id}:${field.value}`).join("\0");

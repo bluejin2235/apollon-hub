@@ -721,79 +721,13 @@
   color: var(--ink2);
 }
 
-.iss-ed .rte-tb {
-  display: flex;
-  gap: 2px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-  background: #fbfdff;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.iss-ed .rte-tb button {
-  font: inherit;
-  font-size: 12px;
-  min-width: 26px;
-  height: 25px;
-  border: 1px solid transparent;
-  background: none;
-  border-radius: 5px;
-  color: var(--ink2);
-  cursor: pointer;
-  padding: 0 6px;
-}
-
-.iss-ed .rte-tb button:hover {
-  background: #f1f5f9;
-}
-
-.iss-ed .rte-u {
-  text-decoration: underline;
-}
-
-.iss-ed .rte-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--line);
-  margin: 0 5px;
-  display: inline-block;
-}
-
-.iss-ed .rte-cl {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-}
-
-.iss-ed .rte-swatch {
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  padding: 0;
-}
-
-.iss-ed .rte-swatch-0f172a {
-  background: #0f172a;
-}
-.iss-ed .rte-swatch-b0231e {
-  background: #b0231e;
-}
-.iss-ed .rte-swatch-a35a08 {
-  background: #a35a08;
-}
-.iss-ed .rte-swatch-0f7a45 {
-  background: #0f7a45;
-}
-.iss-ed .rte-swatch-534ab7 {
-  background: #534ab7;
-}
-
 .iss-ed .rte-scroll {
   min-height: 150px;
   overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  flex: none;
 }
 
 .iss-ed.compact .rte-scroll {
@@ -807,6 +741,7 @@
 .iss-ed .rte-ed {
   min-height: 150px;
   padding: 12px 14px;
+  font-family: inherit;
   font-size: 14px;
   line-height: 1.9;
   outline: none;
@@ -930,14 +865,6 @@
 .iss-mentions button:hover,
 .iss-mentions button.on {
   background: #f5f6ff;
-}
-
-.iss-ed .rte-file {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
 }
 
 .iss-err {
