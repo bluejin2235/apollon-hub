@@ -156,6 +156,25 @@ function caretBlock(root: HTMLElement): HTMLElement | null {
   return null;
 }
 
+function caretList(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.anchorNode;
+  if (!node || !root.contains(node)) return null;
+  const el = node instanceof Element ? node : node.parentElement;
+  const list = el?.closest("ol, ul");
+  if (list instanceof HTMLElement && root.contains(list)) return list;
+  return null;
+}
+
+function retagList(list: HTMLElement, tag: "ol" | "ul"): HTMLElement {
+  if (list.tagName.toLowerCase() === tag) return list;
+  const next = document.createElement(tag);
+  next.replaceChildren(...Array.from(list.childNodes));
+  list.replaceWith(next);
+  return next;
+}
+
 function blocksInSelection(root: HTMLElement): HTMLElement[] {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return [];
@@ -360,6 +379,28 @@ export function RichTextEditor({
   function tool(command: string, value?: string) {
     focusActive();
     run(command, value);
+    emit(activeId.current);
+    refreshBlockUi();
+  }
+
+  /** 이슈만 ol 유지. Chrome insertOrderedList 가 ul 을 내는 경우가 있다. */
+  function insertList(ordered: boolean) {
+    focusActive();
+    const root = refs.current[activeId.current];
+    if (allowMedia && ordered && root) {
+      const existing = caretList(root);
+      if (existing?.tagName === "OL") {
+        run("insertOrderedList");
+      } else if (existing?.tagName === "UL") {
+        retagList(existing, "ol");
+      } else {
+        run("insertOrderedList");
+        const created = caretList(root);
+        if (created) retagList(created, "ol");
+      }
+    } else {
+      run(ordered ? "insertOrderedList" : "insertUnorderedList");
+    }
     emit(activeId.current);
     refreshBlockUi();
   }
@@ -707,10 +748,10 @@ export function RichTextEditor({
           <IconIndent />
         </button>
         <span className="rte-sep" />
-        <button type="button" title="글머리 목록" onClick={() => tool("insertUnorderedList")}>
+        <button type="button" title="글머리 목록" onClick={() => insertList(false)}>
           <IconBulletList />
         </button>
-        <button type="button" title="번호 목록" onClick={() => tool("insertOrderedList")}>
+        <button type="button" title="번호 목록" onClick={() => insertList(true)}>
           <IconNumberList />
         </button>
         <span className="rte-sep" />
