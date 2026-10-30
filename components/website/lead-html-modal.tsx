@@ -9,6 +9,11 @@ import {
   type RichTextSurface
 } from "@/components/website/rich-text-editor";
 import {
+  insightCharCount,
+  insightToEditorHtml,
+  sanitizeInsightHtml
+} from "@/lib/website/insight-html";
+import {
   LEAD_EN_LIMIT,
   LEAD_KO_LIMIT,
   leadCharCount,
@@ -24,17 +29,12 @@ type Props = {
   ko: string;
   en: string;
   surface?: RichTextSurface;
-  sanitize?: (html: string) => string;
-  toEditorHtml?: (text: string) => string;
-  charCount?: (html: string) => number;
   /** 있으면 확인 시 초과 저장을 막는다. 워크 기본 설명 기본값 500/1000 */
   limits?: { ko: number; en: number } | null;
   fontSize?: string;
   lineHeight?: string;
   contentWidth?: number;
   hint?: ReactNode;
-  /** 문단·크기·첨자·들여쓰기. 인사이트 본문만 켠다 */
-  blockFormats?: boolean;
   onCancel: () => void;
   onSave: (next: { ko: string; en: string }) => void;
 };
@@ -46,18 +46,18 @@ export function LeadHtmlModal({
   ko,
   en,
   surface = "work-lead",
-  sanitize = sanitizeLeadHtml,
-  toEditorHtml = leadToEditorHtml,
-  charCount = leadCharCount,
   limits = surface === "work-lead" ? { ko: LEAD_KO_LIMIT, en: LEAD_EN_LIMIT } : null,
   fontSize,
   lineHeight,
   contentWidth,
   hint = "이미지는 넣을 수 없습니다. 아래 블록에서 넣으세요",
-  blockFormats = false,
   onCancel,
   onSave
 }: Props) {
+  const isInsight = surface === "insight-body";
+  const sanitize = isInsight ? sanitizeInsightHtml : sanitizeLeadHtml;
+  const toEditorHtml = isInsight ? insightToEditorHtml : leadToEditorHtml;
+  const charCount = isInsight ? insightCharCount : leadCharCount;
   const [mounted, setMounted] = useState(false);
   const [draftKo, setDraftKo] = useState(ko);
   const [draftEn, setDraftEn] = useState(en);
@@ -131,7 +131,6 @@ export function LeadHtmlModal({
               fontSize={fontSize ?? defaults.fontSize}
               lineHeight={lineHeight ?? defaults.lineHeight}
               contentWidth={contentWidth ?? defaults.contentWidth}
-              blockFormats={blockFormats}
               fields={[
                 {
                   id: "ko",

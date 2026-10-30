@@ -10,8 +10,13 @@ import {
   type ReactNode
 } from "react";
 import { showToast } from "@/components/website/toast";
-import { normalizeInsightColor } from "@/lib/website/insight-html";
-import { LEAD_COLORS, normalizeLeadColor } from "@/lib/website/lead-html";
+import {
+  insightToEditorHtml,
+  normalizeInsightColor,
+  sanitizeInsightHtml
+} from "@/lib/website/insight-html";
+import { issueToEditorHtml, sanitizeIssueHtml } from "@/lib/issues/html";
+import { LEAD_COLORS } from "@/lib/website/lead-html";
 
 export type RichTextField = {
   id: string;
@@ -46,8 +51,6 @@ export const RICH_TEXT_SURFACE_DEFAULTS: Record<
 
 type Props = {
   fields: RichTextField[];
-  sanitize: (html: string) => string;
-  toEditorHtml: (text: string) => string;
   /** 워크 기본 설명 · 인사이트 본문 — 문단 간격 클래스 */
   surface: RichTextSurface;
   /** 공개 화면 글자 크기. 없으면 surface 기본값 */
@@ -56,11 +59,11 @@ type Props = {
   lineHeight?: string;
   /** 공개 화면 본문 칸 폭(px). 없으면 surface 기본값 */
   contentWidth?: number;
-  /** 이미지·영상 넣기. 문의 게시판만 켠다 */
+  /** 표준 + 이미지·영상. 이슈만 켠다 */
   allowMedia?: boolean;
-  /** 문단·크기·첨자·들여쓰기. 인사이트 본문만 켠다. surface 와 무관 */
-  blockFormats?: boolean;
   onUploadFile?: (file: File) => Promise<string | null>;
+  sanitize?: (html: string) => string;
+  toEditorHtml?: (text: string) => string;
 };
 
 function run(command: string, value?: string) {
@@ -172,21 +175,22 @@ function blocksInSelection(root: HTMLElement): HTMLElement[] {
 }
 
 /**
- * 글 편집기 하나. 워크 기본 설명 · 인사이트 본문이 같이 씁니다.
- * 도구는 공유하고, 크기·폭·문단 간격은 surface / prop 으로 나눕니다.
+ * 표준 글 편집기. 도구 구성은 화면마다 같다.
+ * 화면별 차이는 이미지·영상 등 더하는 것만.
  */
 export function RichTextEditor({
   fields,
-  sanitize,
-  toEditorHtml,
   surface,
   fontSize,
   lineHeight,
   contentWidth,
   allowMedia = false,
-  blockFormats = false,
-  onUploadFile
+  onUploadFile,
+  sanitize,
+  toEditorHtml
 }: Props) {
+  const sanitizeHtml = sanitize ?? (allowMedia ? sanitizeIssueHtml : sanitizeInsightHtml);
+  const toEditor = toEditorHtml ?? (allowMedia ? issueToEditorHtml : insightToEditorHtml);
   const defaults = RICH_TEXT_SURFACE_DEFAULTS[surface];
   const size = fontSize ?? defaults.fontSize;
   const leading = lineHeight ?? defaults.lineHeight;
@@ -209,8 +213,10 @@ export function RichTextEditor({
   fieldsRef.current = fields;
   const uploadRef = useRef(onUploadFile);
   uploadRef.current = onUploadFile;
-  const blockFormatsRef = useRef(blockFormats);
-  blockFormatsRef.current = blockFormats;
+  const sanitizeRef = useRef(sanitizeHtml);
+  sanitizeRef.current = sanitizeHtml;
+  const toEditorRef = useRef(toEditor);
+  toEditorRef.current = toEditor;
 
   useEffect(() => {
     try {
@@ -229,9 +235,7 @@ export function RichTextEditor({
     setTextSizeState(block && kind === "p" ? textSizeOf(block) : "md");
     try {
       const raw = document.queryCommandValue("foreColor") ?? "";
-      setActiveColor(
-        blockFormatsRef.current ? normalizeInsightColor(raw) : normalizeLeadColor(raw)
-      );
+      setActiveColor(normalizeInsightColor(raw));
     } catch {
       setActiveColor(null);
     }
@@ -454,7 +458,7 @@ export function RichTextEditor({
     focusActive();
     try {
       const text = await navigator.clipboard.readText();
-      run("insertHTML", toEditorHtml(text) || "");
+      run("insertHTML", toEditorRef.current(text) || "");
       emit(activeId.current);
       showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
     } catch {
@@ -483,7 +487,7 @@ export function RichTextEditor({
     event.stopPropagation();
     const html = event.clipboardData.getData("text/html");
     const text = event.clipboardData.getData("text/plain");
-    const insert = html ? sanitize(html) : toEditorHtml(text);
+    const insert = html ? sanitizeRef.current(html) : toEditorRef.current(text);
     run("insertHTML", insert || "");
     emit(id);
     showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
@@ -515,79 +519,65 @@ export function RichTextEditor({
         className="rte-tb"
         onMouseDown={(event) => event.preventDefault()}
       >
-        {blockFormats ? (
-          <>
-            <span className="rte-lab">문단</span>
-            <span className="rte-grp">
-              <button
-                type="button"
-                className={blockKind === "p" ? "on" : undefined}
-                onClick={() => setParagraphKind("p")}
-              >
-                본문
-              </button>
-              <button
-                type="button"
-                className={blockKind === "h2-big" ? "on" : undefined}
-                onClick={() => setParagraphKind("h2-big")}
-              >
-                큰 제목
-              </button>
-              <button
-                type="button"
-                className={blockKind === "h2" ? "on" : undefined}
-                onClick={() => setParagraphKind("h2")}
-              >
-                소제목
-              </button>
-              <button
-                type="button"
-                className={blockKind === "h3" ? "on" : undefined}
-                onClick={() => setParagraphKind("h3")}
-              >
-                작은 제목
-              </button>
-            </span>
-            <span className="rte-lab rte-lab-size">크기</span>
-            <span className="rte-grp">
-              <button
-                type="button"
-                disabled={!sizeEnabled}
-                className={sizeEnabled && textSize === "lg" ? "on" : undefined}
-                onClick={() => setTextSize("lg")}
-              >
-                크게
-              </button>
-              <button
-                type="button"
-                disabled={!sizeEnabled}
-                className={sizeEnabled && textSize === "md" ? "on" : undefined}
-                onClick={() => setTextSize("md")}
-              >
-                보통
-              </button>
-              <button
-                type="button"
-                disabled={!sizeEnabled}
-                className={sizeEnabled && textSize === "sm" ? "on" : undefined}
-                onClick={() => setTextSize("sm")}
-              >
-                작게
-              </button>
-            </span>
-            <span className="rte-sep" />
-          </>
-        ) : (
-          <>
-            <button type="button" title="소제목" onClick={() => tool("formatBlock", "h2")}>
-              H2
-            </button>
-            <button type="button" title="작은 제목" onClick={() => tool("formatBlock", "h3")}>
-              H3
-            </button>
-            <span className="rte-sep" />
-          </>
-        )}
+        <span className="rte-lab">문단</span>
+        <span className="rte-grp">
+          <button
+            type="button"
+            className={blockKind === "p" ? "on" : undefined}
+            onClick={() => setParagraphKind("p")}
+          >
+            본문
+          </button>
+          <button
+            type="button"
+            className={blockKind === "h2-big" ? "on" : undefined}
+            onClick={() => setParagraphKind("h2-big")}
+          >
+            큰 제목
+          </button>
+          <button
+            type="button"
+            className={blockKind === "h2" ? "on" : undefined}
+            onClick={() => setParagraphKind("h2")}
+          >
+            소제목
+          </button>
+          <button
+            type="button"
+            className={blockKind === "h3" ? "on" : undefined}
+            onClick={() => setParagraphKind("h3")}
+          >
+            작은 제목
+          </button>
+        </span>
+        <span className="rte-lab rte-lab-size">크기</span>
+        <span className="rte-grp">
+          <button
+            type="button"
+            disabled={!sizeEnabled}
+            className={sizeEnabled && textSize === "lg" ? "on" : undefined}
+            onClick={() => setTextSize("lg")}
+          >
+            크게
+          </button>
+          <button
+            type="button"
+            disabled={!sizeEnabled}
+            className={sizeEnabled && textSize === "md" ? "on" : undefined}
+            onClick={() => setTextSize("md")}
+          >
+            보통
+          </button>
+          <button
+            type="button"
+            disabled={!sizeEnabled}
+            className={sizeEnabled && textSize === "sm" ? "on" : undefined}
+            onClick={() => setTextSize("sm")}
+          >
+            작게
+          </button>
+        </span>
+        <span className="rte-sep" />
         <button type="button" title="굵게" onClick={() => tool("bold")}>
           <b>B</b>
         </button>
@@ -597,19 +587,14 @@ export function RichTextEditor({
         <button type="button" title="밑줄" className="rte-u" onClick={() => tool("underline")}>
           U
         </button>
-        {blockFormats ? (
-          <>
-            <button type="button" title="윗첨자" onClick={() => tool("superscript")}>
-              x<sup>2</sup>
-            </button>
-            <button type="button" title="아랫첨자" onClick={() => tool("subscript")}>
-              x<sub>2</sub>
-            </button>
-          </>
-        ) : null}
+        <button type="button" title="윗첨자" onClick={() => tool("superscript")}>
+          x<sup>2</sup>
+        </button>
+        <button type="button" title="아랫첨자" onClick={() => tool("subscript")}>
+          x<sub>2</sub>
+        </button>
         <span className="rte-sep" />
-        {blockFormats ? (
-          <div ref={paletteWrapRef} className="rte-pop-wrap">
+        <div ref={paletteWrapRef} className="rte-pop-wrap">
             <button
               type="button"
               title="글꼴 색"
@@ -681,30 +666,13 @@ export function RichTextEditor({
               </div>
             ) : null}
           </div>
-        ) : (
-          <div className="rte-cl">
-            {LEAD_COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                title={COLOR_TITLES[color]}
-                className={`rte-swatch rte-swatch-${color.slice(1)}${activeColor === color ? " on" : ""}`}
-                onClick={() => tool("foreColor", color)}
-              />
-            ))}
-          </div>
-        )}
-        {blockFormats ? (
-          <>
-            <span className="rte-sep" />
-            <button type="button" title="내어쓰기" onClick={() => shiftIndent(-1)}>
-              <IconOutdent />
-            </button>
-            <button type="button" title="들여쓰기" onClick={() => shiftIndent(1)}>
-              <IconIndent />
-            </button>
-          </>
-        ) : null}
+        <span className="rte-sep" />
+        <button type="button" title="내어쓰기" onClick={() => shiftIndent(-1)}>
+          <IconOutdent />
+        </button>
+        <button type="button" title="들여쓰기" onClick={() => shiftIndent(1)}>
+          <IconIndent />
+        </button>
         <span className="rte-sep" />
         <button type="button" title="글머리 목록" onClick={() => tool("insertUnorderedList")}>
           <IconBulletList />

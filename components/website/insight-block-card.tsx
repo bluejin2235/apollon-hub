@@ -31,7 +31,6 @@ import {
   insightCharCount,
   insightIsEmpty,
   insightLooksLikeHtml,
-  insightToEditorHtml,
   sanitizeInsightHtml
 } from "@/lib/website/insight-html";
 import type { InsightBlock } from "@/lib/website/insight-detail";
@@ -623,11 +622,7 @@ export function InsightBlockCard({
         ko={body.ko}
         en={body.en}
         surface="insight-body"
-        blockFormats
         limits={null}
-        sanitize={sanitizeInsightHtml}
-        toEditorHtml={insightToEditorHtml}
-        charCount={insightCharCount}
         hint="이미지는 넣을 수 없습니다. 이미지 블록에서 넣으세요"
         onCancel={() => setBodyOpen(false)}
         onSave={(next) => {
