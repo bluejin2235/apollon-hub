@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import "@/components/hub/board-body.css";
 
 type Post = {
   id: string;
@@ -199,7 +200,7 @@ export function AshulengBoardDetailModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{post.content}</p>
+          <div className="board-body whitespace-pre-wrap">{post.content}</div>
 
           <div className="mt-6 border-t border-slate-100 pt-4">
             <h4 className="text-sm font-bold text-slate-900">댓글 {comments.length}개</h4>

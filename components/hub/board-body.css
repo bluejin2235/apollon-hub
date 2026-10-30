@@ -1,0 +1,256 @@
+/* 허브·아슐렝 게시판 본문. 이슈 .iss-post .body (b81c3de) 과 같은 배수.
+   기본 칸은 기존 평문(text-sm · leading-6 · slate-700)을 유지한다. */
+
+.board-body {
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  color: #334155;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.board-body p {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.board-body p + p {
+  margin-top: 1.5rem;
+}
+
+.board-body h2 {
+  margin: 0.8em 0 0.35em;
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.2857;
+}
+
+.board-body h2.is-big {
+  font-size: 1.8em;
+  line-height: 1.1667;
+}
+
+.board-body h3 {
+  margin: 0.7em 0 0.3em;
+  font-size: 1.2em;
+  font-weight: 700;
+  line-height: 1.3333;
+}
+
+.board-body p.sz-lg {
+  font-size: 1.2em;
+  line-height: 1.3333;
+}
+
+.board-body p.sz-sm {
+  font-size: 0.8em;
+  line-height: 1.375;
+}
+
+.board-body .in-1 {
+  padding-left: 2em;
+}
+
+.board-body .in-2 {
+  padding-left: 4em;
+}
+
+.board-body .in-3 {
+  padding-left: 6em;
+}
+
+.board-body .in-4 {
+  padding-left: 8em;
+}
+
+.board-body sup,
+.board-body sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.board-body sup {
+  vertical-align: super;
+}
+
+.board-body sub {
+  vertical-align: sub;
+}
+
+.board-body ul,
+.board-body ol {
+  margin: 0.2em 0;
+  padding-left: 1.2em;
+}
+
+.board-body ul {
+  list-style: disc;
+}
+
+.board-body ol {
+  list-style: decimal;
+}
+
+.board-body a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.board-body b,
+.board-body strong {
+  font-weight: 600;
+}
+
+.board-body i,
+.board-body em {
+  font-style: italic;
+}
+
+/* 쓰기 칸. 도구줄은 .wa, 본문 크기·여백은 보기 칸과 같게 */
+.wa.board-ed .rte-pane {
+  padding: 0;
+}
+
+.wa.board-ed .rte-scroll {
+  flex: 1 1 220px;
+  min-height: 220px;
+  max-height: min(50vh, 420px);
+}
+
+.wa.board-ed .rte-ed,
+.wa.board-ed .rte-ed--insight-body {
+  min-height: 220px;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  color: #334155;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wa.board-ed .rte-ed p {
+  margin: 0;
+}
+
+.wa.board-ed .rte-ed p + p,
+.wa.board-ed .rte-ed--insight-body p + p {
+  margin-top: 1.5rem;
+}
+
+.wa.board-ed .rte-ed h2,
+.wa.board-ed .rte-ed--insight-body h2 {
+  margin: 0.8em 0 0.35em;
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.2857;
+}
+
+.wa.board-ed .rte-ed h2.is-big,
+.wa.board-ed .rte-ed--insight-body h2.is-big {
+  font-size: 1.8em;
+  line-height: 1.1667;
+}
+
+.wa.board-ed .rte-ed h3,
+.wa.board-ed .rte-ed--insight-body h3 {
+  margin: 0.7em 0 0.3em;
+  font-size: 1.2em;
+  font-weight: 700;
+  line-height: 1.3333;
+}
+
+.wa.board-ed .rte-ed p.sz-lg,
+.wa.board-ed .rte-ed--insight-body p.sz-lg {
+  font-size: 1.2em;
+  line-height: 1.3333;
+}
+
+.wa.board-ed .rte-ed p.sz-sm,
+.wa.board-ed .rte-ed--insight-body p.sz-sm {
+  font-size: 0.8em;
+  line-height: 1.375;
+}
+
+.wa.board-ed .rte-ed .in-1,
+.wa.board-ed .rte-ed--insight-body .in-1 {
+  padding-left: 2em;
+}
+
+.wa.board-ed .rte-ed .in-2,
+.wa.board-ed .rte-ed--insight-body .in-2 {
+  padding-left: 4em;
+}
+
+.wa.board-ed .rte-ed .in-3,
+.wa.board-ed .rte-ed--insight-body .in-3 {
+  padding-left: 6em;
+}
+
+.wa.board-ed .rte-ed .in-4,
+.wa.board-ed .rte-ed--insight-body .in-4 {
+  padding-left: 8em;
+}
+
+.wa.board-ed .rte-ed sup,
+.wa.board-ed .rte-ed sub,
+.wa.board-ed .rte-ed--insight-body sup,
+.wa.board-ed .rte-ed--insight-body sub {
+  font-size: 0.62em;
+  line-height: 0;
+}
+
+.wa.board-ed .rte-ed sup,
+.wa.board-ed .rte-ed--insight-body sup {
+  vertical-align: super;
+}
+
+.wa.board-ed .rte-ed sub,
+.wa.board-ed .rte-ed--insight-body sub {
+  vertical-align: sub;
+}
+
+.wa.board-ed .rte-ed p + h2,
+.wa.board-ed .rte-ed p + h3,
+.wa.board-ed .rte-ed--insight-body p + h2,
+.wa.board-ed .rte-ed--insight-body p + h3 {
+  margin-top: 0.8em;
+}
+
+.wa.board-ed .rte-ed h2 + p,
+.wa.board-ed .rte-ed h3 + p,
+.wa.board-ed .rte-ed--insight-body h2 + p,
+.wa.board-ed .rte-ed--insight-body h3 + p {
+  margin-top: 0.35em;
+}
+
+.wa.board-ed .rte-ed ul,
+.wa.board-ed .rte-ed ol {
+  margin: 0.2em 0;
+  padding-left: 1.2em;
+}
+
+.wa.board-ed .rte-ed ul {
+  list-style: disc;
+}
+
+.wa.board-ed .rte-ed ol {
+  list-style: decimal;
+}
+
+.wa.board-ed .rte-ed a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.wa.board-ed .rte-ed b,
+.wa.board-ed .rte-ed strong {
+  font-weight: 600;
+}
+
+.wa.board-ed .rte-ed i,
+.wa.board-ed .rte-ed em {
+  font-style: italic;
+}
