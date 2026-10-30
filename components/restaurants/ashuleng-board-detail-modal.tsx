@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BoardPostBody } from "@/components/hub/board-post-body";
 import { supabase } from "@/lib/supabase/client";
 import "@/components/hub/board-body.css";
 
@@ -200,7 +201,7 @@ export function AshulengBoardDetailModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="board-body whitespace-pre-wrap">{post.content}</div>
+          <BoardPostBody content={post.content} />
 
           <div className="mt-6 border-t border-slate-100 pt-4">
             <h4 className="text-sm font-bold text-slate-900">댓글 {comments.length}개</h4>

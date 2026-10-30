@@ -1,7 +1,15 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { RichTextEditor } from "@/components/website/rich-text-editor";
+import {
+  insightIsEmpty,
+  insightToEditorHtml,
+  sanitizeInsightHtml
+} from "@/lib/website/insight-html";
 import { supabase } from "@/lib/supabase/client";
+import "@/components/website/ui/work-admin.css";
+import "@/components/hub/board-body.css";
 
 type Props = {
   open: boolean;
@@ -14,7 +22,7 @@ type Props = {
 
 export function AshulengPostWriteModal({ open, authorId, editingPost = null, onClose, onSaved }: Props) {
   const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState("<p><br></p>");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -23,7 +31,7 @@ export function AshulengPostWriteModal({ open, authorId, editingPost = null, onC
   useEffect(() => {
     if (!open) return;
     setTitle(editingPost?.title ?? "");
-    setContent(editingPost?.content ?? "");
+    setContent(insightToEditorHtml(editingPost?.content ?? ""));
     setMsg("");
   }, [open, editingPost]);
 
@@ -38,12 +46,12 @@ export function AshulengPostWriteModal({ open, authorId, editingPost = null, onC
 
   const submit = useCallback(async () => {
     const t = title.trim();
-    const c = content.trim();
+    const c = sanitizeInsightHtml(content);
     if (!t) {
       setMsg("제목을 입력해 주세요.");
       return;
     }
-    if (!c) {
+    if (insightIsEmpty(c)) {
       setMsg("내용을 입력해 주세요.");
       return;
     }
@@ -84,7 +92,7 @@ export function AshulengPostWriteModal({ open, authorId, editingPost = null, onC
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
@@ -115,17 +123,13 @@ export function AshulengPostWriteModal({ open, authorId, editingPost = null, onC
             />
           </div>
           <div>
-            <label htmlFor="ashuleng-post-content" className="mb-1 block text-xs font-semibold text-slate-700">
-              내용
-            </label>
-            <textarea
-              id="ashuleng-post-content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={10}
-              className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="내용을 입력하세요"
-            />
+            <p className="mb-1 text-xs font-semibold text-slate-700">내용</p>
+            <div className="wa board-ed">
+              <RichTextEditor
+                surface="insight-body"
+                fields={[{ id: "content", value: content, onChange: setContent }]}
+              />
+            </div>
           </div>
           {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
         </div>
