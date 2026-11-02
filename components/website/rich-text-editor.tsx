@@ -71,6 +71,45 @@ function run(command: string, value?: string) {
   document.execCommand(command, false, value);
 }
 
+const PASTE_DROP_STYLE = new Set([
+  "color",
+  "background",
+  "background-color",
+  "background-image",
+  "font",
+  "font-family",
+  "font-size",
+  "font-variant",
+  "-webkit-text-fill-color"
+]);
+
+/** 붙여넣기 HTML 에서 글자색·배경색·글꼴만 뺀다. 굵게/기울임/밑줄은 남긴다. */
+function stripPastedPaint(html: string): string {
+  return html
+    .replace(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/gi, (_full, quote: string, style: string) => {
+      const kept: string[] = [];
+      for (const raw of style.split(";")) {
+        const decl = raw.trim();
+        if (!decl) continue;
+        const name = (decl.split(":")[0] ?? "").trim().toLowerCase();
+        if (!name) continue;
+        if (name.startsWith("background")) continue;
+        if (PASTE_DROP_STYLE.has(name)) {
+          if (name === "font") {
+            if (/\bbold\b|[6-9]00/i.test(decl)) kept.push("font-weight:bold");
+            if (/\bitalic\b/i.test(decl)) kept.push("font-style:italic");
+          }
+          continue;
+        }
+        kept.push(decl);
+      }
+      if (kept.length === 0) return "";
+      return ` style=${quote}${kept.join(";")}${quote}`;
+    })
+    .replace(/\s(?:bg)?color\s*=\s*(["']?)[^"'>\s]*\1/gi, "")
+    .replace(/\sface\s*=\s*(["']?)[^"'>]*\1/gi, "");
+}
+
 const INDENT_CLASSES = ["in-1", "in-2", "in-3", "in-4"] as const;
 const SIZE_CLASSES = ["sz-lg", "sz-sm"] as const;
 
@@ -538,7 +577,7 @@ export function RichTextEditor({
     focusActive();
     try {
       const text = await navigator.clipboard.readText();
-      run("insertHTML", toEditorRef.current(text) || "");
+      run("insertHTML", toEditorRef.current(stripPastedPaint(text)) || "");
       emit(activeId.current);
       showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
     } catch {
@@ -567,7 +606,9 @@ export function RichTextEditor({
     event.stopPropagation();
     const html = event.clipboardData.getData("text/html");
     const text = event.clipboardData.getData("text/plain");
-    const insert = html ? sanitizeRef.current(html) : toEditorRef.current(text);
+    const insert = html
+      ? sanitizeRef.current(stripPastedPaint(html))
+      : toEditorRef.current(stripPastedPaint(text));
     run("insertHTML", insert || "");
     emit(id);
     showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
