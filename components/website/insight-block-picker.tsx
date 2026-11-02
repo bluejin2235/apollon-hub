@@ -42,6 +42,13 @@ const ITEMS: {
     diagram: "full"
   },
   {
+    preset: "full-center",
+    name: PRESET_LABEL["full-center"],
+    description: PRESET_DESCRIPTION["full-center"],
+    tab: "image",
+    diagram: "full-center"
+  },
+  {
     preset: "split",
     name: PRESET_LABEL.split,
     description: PRESET_DESCRIPTION.split,

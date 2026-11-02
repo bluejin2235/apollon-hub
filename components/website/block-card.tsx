@@ -884,6 +884,12 @@ function ImagesEditor({
             <Sep />
             세로·정사각·가로 모두 올릴 수 있습니다.
           </>
+        ) : preset === "full-center" ? (
+          <>
+            <b className="font-semibold text-slate-600">{formatFullBodyImageHint()}</b>
+            <Sep />
+            본문보다 작은 이미지는 늘리지 않고 원본 크기로 가운데 둡니다.
+          </>
         ) : preset === "stack" ? (
           <>
             <b className="font-semibold text-slate-600">{formatBodyImageHint()}</b>

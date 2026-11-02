@@ -1,5 +1,6 @@
 export const IMAGE_PRESETS = [
   "full",
+  "full-center",
   "split",
   "triple",
   "quint",
@@ -56,6 +57,7 @@ export const EMBED_PROVIDERS = [
 
 export const PRESET_LABEL: Record<string, string> = {
   full: "전폭 이미지",
+  "full-center": "전폭 이미지 · 가운데",
   split: "2단 나란히",
   triple: "3단 나란히",
   quint: "5단 나란히",
@@ -78,6 +80,8 @@ export const PRESET_LABEL: Record<string, string> = {
 
 export const PRESET_DESCRIPTION: Record<string, string> = {
   full: "본문 전폭. 이미지 1장만. 원본 비율 그대로 표시됩니다.",
+  "full-center":
+    "이미지 1장. 본문보다 작으면 늘리지 않고 원본 크기로 가운데 둡니다. 모서리 둥글기 없음.",
   split: "두 장을 나란히. 높이를 맞춥니다.",
   triple: "세 장을 나란히. 높이를 맞춥니다.",
   quint: "다섯 장을 나란히. 높이를 맞춥니다.",
@@ -105,6 +109,7 @@ export const ALL_PRESETS = Object.keys(PRESET_LABEL);
 export function imageLimitForPreset(preset: string): number | null {
   if (
     preset === "full" ||
+    preset === "full-center" ||
     preset === "image-text" ||
     preset === "text-image" ||
     preset === "portrait-text"
@@ -191,6 +196,12 @@ function DiagramInner({ preset }: { preset: string }) {
   switch (preset) {
     case "full":
       return <div className={`h-full w-full ${box}`} />;
+    case "full-center":
+      return (
+        <div className="flex h-full w-full items-center justify-center border border-dashed border-slate-300">
+          <div className="h-3/5 w-2/5 bg-slate-300" />
+        </div>
+      );
     case "split":
       return (
         <div className="flex h-full w-full gap-1">

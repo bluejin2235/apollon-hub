@@ -41,6 +41,7 @@ const PRESET_LABEL: Record<string, string> = {
   text: "글",
   qa: "질문 · 답변",
   full: "전폭 이미지",
+  "full-center": "전폭 이미지 · 가운데",
   split: "2단 나란히",
   triple: "3단 나란히",
   quint: "5단 나란히",
