@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { clearInterview, searchContent, setInterview, type SearchHit } from "@/lib/website/api";
+import {
+  clearInterview,
+  getInsight,
+  listInsights,
+  setInterview,
+  type SearchHit
+} from "@/lib/website/api";
+import { parseInsightDetail } from "@/lib/website/insight-detail";
+import { isLiveContent, visibilityLabel } from "@/lib/website/live-content";
 import type { Loc, WorkInterview } from "@/lib/website/work-detail";
 import { asLoc, mediaUrl } from "@/lib/website/work-detail";
 import {
@@ -50,9 +58,11 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
 
   useEffect(() => {
     let cancelled = false;
-    void searchContent("", "insight", 1).then((res) => {
+    void listInsights({ status: "published", limit: 20 }).then((res) => {
       if (cancelled) return;
-      setHasInsights(res.ok && (res.data?.length ?? 0) > 0);
+      const live =
+        res.ok && res.data.items.some((item) => isLiveContent(item.site_visibility, item.status));
+      setHasInsights(Boolean(live));
     });
     return () => {
       cancelled = true;
@@ -65,10 +75,22 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
       return;
     }
     let cancelled = false;
-    void searchContent("", "insight", 50).then((res) => {
+    void getInsight(interview.insight_id).then((res) => {
       if (cancelled || !res.ok) return;
-      const found = (res.data ?? []).find((item) => item.id === interview.insight_id) ?? null;
-      setHit(found);
+      const detail = parseInsightDetail(res.data);
+      if (!detail) return;
+      setHit({
+        type: "insight",
+        id: detail.id,
+        title: detail.title,
+        slug: detail.slug,
+        key_image: detail.key_image,
+        category: detail.category_id,
+        status: detail.status,
+        year: detail.year,
+        published_at: detail.published_at,
+        site_visibility: detail.site_visibility
+      });
     });
     return () => {
       cancelled = true;
@@ -121,6 +143,9 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
   const emptyCatalog = hasInsights === false;
   const src = mediaUrl(siteUrl, hit?.key_image ?? null);
   const label = hit ? hitTitle(hit) : interview?.insight_id ?? "";
+  const linkBadge =
+    visibilityLabel(hit?.site_visibility, hit?.status) ??
+    (interview?.insight_id && !hit ? "미공개" : null);
 
   return (
     <div className="space-y-3">
@@ -150,7 +175,14 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
               <span className="inline-block rounded bg-apollon-50 px-1.5 py-0.5 text-[10px] font-bold text-apollon-700">
                 인사이트
               </span>
-              <p className="mt-1.5 line-clamp-2 text-sm font-semibold text-slate-800">{label}</p>
+              <p className="mt-1.5 line-clamp-2 text-sm font-semibold text-slate-800">
+                {label}
+                {linkBadge ? (
+                  <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+                    {linkBadge}
+                  </span>
+                ) : null}
+              </p>
               <div className="mt-2 flex gap-1">
                 <SmallBtn disabled={emptyCatalog} onClick={() => setPicker(true)}>
                   바꾸기
@@ -228,10 +260,11 @@ export function InterviewEditor({ workId, sectionId, interview, siteUrl, onReloa
       <ContentPickerModal
         open={picker}
         types={INSIGHT_TYPES}
+        publishedOnly
         excludeKeys={new Set()}
         siteUrl={siteUrl}
         title="인사이트에서 고르기"
-        emptyHint="인사이트를 먼저 등록해야 합니다"
+        emptyHint="공개된 인사이트가 없습니다"
         onSelect={(next) => void pick(next)}
         onClose={() => setPicker(false)}
       />

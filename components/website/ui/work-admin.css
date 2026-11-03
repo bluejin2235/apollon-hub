@@ -1677,6 +1677,16 @@
 .wa .rel-bd {
   padding: 8px 10px 10px;
 }
+.wa .rel-badge {
+  margin-left: 0.35rem;
+  border-radius: 0.25rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  vertical-align: middle;
+}
 .wa .rel-kind {
   font-size: 10px;
   color: var(--faint);

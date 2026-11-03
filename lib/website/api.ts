@@ -810,6 +810,8 @@ export type SearchHit = {
   status: string;
   year?: string | null;
   published_at?: string | null;
+  /** listWorks/listInsights 경유 시에만. content_published 기준 */
+  site_visibility?: import("@/lib/website/types").WorkSiteVisibility;
 };
 
 export function getTags(): Promise<ApiResult<{ items: WebsiteTagItem[] }>> {

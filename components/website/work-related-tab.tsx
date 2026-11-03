@@ -4,12 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRelated,
   deleteRelated,
+  getInsight,
   getWork,
+  listInsights,
+  listWorks,
   recommendRelated,
   reorderRelated,
   searchContent,
   type SearchHit
 } from "@/lib/website/api";
+import {
+  insightListItemToHit,
+  visibilityLabel,
+  workListItemToHit
+} from "@/lib/website/live-content";
+import { parseInsightDetail } from "@/lib/website/insight-detail";
 import type { WorkDetail, WorkRelated } from "@/lib/website/work-detail";
 import { mediaUrl, parseWorkDetail } from "@/lib/website/work-detail";
 import {
@@ -182,24 +191,37 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
+      // 카드 표시용: 전체(감춤·초안 포함) + site_visibility. 고르기 모달은 publishedOnly.
       const [works, insights, pages] = await Promise.all([
-        searchContent("", "work", 500),
-        searchContent("", "insight", 500),
+        listWorks({ status: "all", limit: 100 }),
+        listInsights({ status: "all", limit: 100 }),
         searchContent("", "page", 50)
       ]);
       const map = new Map<string, SearchHit>();
-      for (const res of [works, insights, pages]) {
-        if (!res.ok) continue;
-        for (const hit of res.data ?? []) map.set(hitKey(hit), hit);
+      if (works.ok) {
+        for (const item of works.data.items) map.set(`work:${item.id}`, workListItemToHit(item));
+      }
+      if (insights.ok) {
+        for (const item of insights.data.items) {
+          map.set(`insight:${item.id}`, insightListItemToHit(item));
+        }
+      }
+      if (pages.ok) {
+        for (const hit of pages.data ?? []) map.set(hitKey(hit), hit);
       }
 
-      const missingWorks = (work.content_related ?? [])
+      const related = work.content_related ?? [];
+      const missingWorks = related
         .filter((item) => item.target_type === "work" && item.target_work_id)
         .map((item) => item.target_work_id as string)
         .filter((id) => !map.has(`work:${id}`));
+      const missingInsights = related
+        .filter((item) => item.target_type === "insight" && item.target_insight_id)
+        .map((item) => item.target_insight_id as string)
+        .filter((id) => !map.has(`insight:${id}`));
 
-      await Promise.all(
-        missingWorks.map(async (id) => {
+      await Promise.all([
+        ...missingWorks.map(async (id) => {
           const res = await getWork(id);
           if (!res.ok) return;
           const detail = parseWorkDetail(res.data);
@@ -212,10 +234,29 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
             key_image: detail.key_image,
             category: detail.category_id,
             status: detail.status,
-            year: detail.year
+            year: detail.year,
+            site_visibility: detail.site_visibility
+          });
+        }),
+        ...missingInsights.map(async (id) => {
+          const res = await getInsight(id);
+          if (!res.ok) return;
+          const detail = parseInsightDetail(res.data);
+          if (!detail) return;
+          map.set(`insight:${detail.id}`, {
+            type: "insight",
+            id: detail.id,
+            title: detail.title,
+            slug: detail.slug,
+            key_image: detail.key_image,
+            category: detail.category_id,
+            status: detail.status,
+            year: detail.year,
+            published_at: detail.published_at,
+            site_visibility: detail.site_visibility
           });
         })
-      );
+      ]);
 
       if (!cancelled) setHits(map);
     }
@@ -449,8 +490,9 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
         open={picker}
         types={PICKER_TYPES}
         includeAllTab
+        publishedOnly
         confirmMode
-        searchLimit={500}
+        searchLimit={100}
         excludeKeys={excludeKeys}
         selectedHits={selectedHits}
         siteUrl={siteUrl}
@@ -482,6 +524,10 @@ function RelatedCard({
   const title = hit ? hitTitle(hit) : relatedTargetId(item);
   const src = mediaUrl(siteUrl, hit?.key_image ?? null);
   const category = hit?.category?.trim();
+  const badged =
+    item.target_type === "page"
+      ? null
+      : visibilityLabel(hit?.site_visibility, hit?.status) ?? (hit ? null : "미공개");
   return (
     <div className="rel-card">
       <div className="rel-th">
@@ -496,6 +542,7 @@ function RelatedCard({
         <div className="rel-kind">
           {kind}
           {category ? ` · ${category}` : ""}
+          {badged ? <span className="rel-badge">{badged}</span> : null}
         </div>
         <div className="rel-title">{title}</div>
         <div className="rel-acts">

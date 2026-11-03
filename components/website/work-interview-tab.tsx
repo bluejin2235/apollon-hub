@@ -163,7 +163,9 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
         show_faq: parsed.show_faq,
         updated_at: parsed.updated_at,
         counts: { blocks: 0, images: 0, tags: 0, related: 0 },
-        check: parsed.check ?? null
+        check: parsed.check ?? null,
+        site_visibility: parsed.site_visibility,
+        is_hidden: parsed.is_hidden
       });
     });
     return () => {
@@ -256,9 +258,17 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
       ? selected.title.ko?.trim() || selected.title.en?.trim() || ""
       : "";
   const date = formatDotDate(selected?.published_at ?? null);
-  const metaLine = ["인사이트", categoryLabel, date, selected ? "공개" : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const linkState =
+    selected == null
+      ? ""
+      : selected.site_visibility === "hidden"
+        ? "감춤"
+        : selected.site_visibility === "live"
+          ? "공개"
+          : selected.status === "published"
+            ? "공개"
+            : "미공개";
+  const metaLine = ["인사이트", categoryLabel, date, linkState].filter(Boolean).join(" · ");
 
   return (
     <div className="wa">
@@ -458,7 +468,12 @@ function InsightPickModal({
           setError(res.error);
           return;
         }
-        setItems(res.data.items.filter((item) => item.status === "published"));
+        // 공개 중만: content_published.is_current && !is_hidden (= site_visibility live)
+        setItems(
+          res.data.items.filter((item) =>
+            (item.site_visibility ?? (item.status === "published" ? "live" : "draft")) === "live"
+          )
+        );
       });
     }, 200);
     return () => {

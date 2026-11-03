@@ -69,7 +69,8 @@ export function ContentPickerModal({
   open,
   types,
   includeAllTab = false,
-  publishedOnly = false,
+  /** 기본 true — 공개 중(site_visibility live)만. 연결 카드 hydrate 등은 호출부에서 false */
+  publishedOnly = true,
   excludeKeys,
   selectedHits,
   maxSelected = 4,
@@ -137,27 +138,35 @@ export function ContentPickerModal({
         try {
           const fetchTypes: ContentType[] =
             tab === "all" ? types.filter((type) => type !== "page") : [tab];
-          const results = await Promise.all(
-            fetchTypes.map((type) =>
-              searchContent(q, type, searchLimit, publishedOnly ? { published: true } : undefined)
-            )
-          );
-          if (cancelled) return;
           const next: SearchHit[] = [];
           const seen = new Set<string>();
           let firstError: string | null = null;
-          for (const res of results) {
-            if (!res.ok) {
-              firstError = firstError ?? res.error;
-              continue;
-            }
-            for (const hit of res.data ?? []) {
+
+          async function pushHits(hits: SearchHit[]) {
+            for (const hit of hits) {
               const key = hitKey(hit);
               if (seen.has(key) || excludeKeys.has(key)) continue;
               seen.add(key);
               next.push(hit);
             }
           }
+
+          for (const type of fetchTypes) {
+            // publishedOnly → search?published=1 (content_published 현재 공개본)
+            const res = await searchContent(
+              q,
+              type,
+              searchLimit,
+              publishedOnly ? { published: true } : undefined
+            );
+            if (!res.ok) {
+              firstError = firstError ?? res.error;
+              continue;
+            }
+            await pushHits(res.data ?? []);
+          }
+
+          if (cancelled) return;
           if (next.length === 0 && firstError) {
             setError(firstError);
             setHits([]);
