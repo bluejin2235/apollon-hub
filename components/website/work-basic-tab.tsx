@@ -21,6 +21,7 @@ import { ImageUploader, type UploadedMedia } from "@/components/website/image-up
 import { InsightCropModal } from "@/components/website/insight-crop-modal";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import { WorkTagGroups } from "@/components/website/work-tag-groups";
 import { showToast } from "@/components/website/toast";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
@@ -171,7 +172,12 @@ function isPlaceholderKey(src: string) {
   return !src.trim() || /placeholder-wide/i.test(src);
 }
 
-function useFoldPartialSave(workId: string, onReload: () => Promise<void>) {
+/**
+ * 미디어 접이만 수동 부분저장.
+ * 자동저장 제외 이유: 대표 이미지 16:9 미충족 시 저장이 거절되어
+ * 입력할 때마다 실패 토스트·dirty 가 반복될 수 있음. 크롭 확인 후 「부분 저장」.
+ */
+function useMediaManualPartialSave(onReload: () => Promise<void>) {
   const { savedTick } = useFullSave();
   const [state, setState] = useState<PartialSaveState>("idle");
 
@@ -271,6 +277,7 @@ async function uploadLoopFirstFrame(file: File, folder: string): Promise<string[
   }
 }
 
+/** 폴더 경로: blur 시 즉시 원본 저장(이미 자동 부분저장). */
 function FolderKindRow({
   label,
   placeholder,
@@ -409,12 +416,71 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   const slugTimerRef = useRef<number | null>(null);
   const slugSeqRef = useRef(0);
 
-  const screenPartial = useFoldPartialSave(work.id, onReload);
-  const mediaPartial = useFoldPartialSave(work.id, onReload);
-  const searchPartial = useFoldPartialSave(work.id, onReload);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const canAutoSlug = work.status !== "published";
+  const mediaPartial = useMediaManualPartialSave(onReload);
+
+  const persistScreen = useCallback(async () => {
+    const d = draftRef.current;
+    const cat = await setWorkCategories(work.id, d.category_ids);
+    if (!cat.ok) {
+      showToast({ tone: "error", message: apiFailMessage(cat) });
+      return false;
+    }
+    const res = await updateWork(work.id, {
+      title: { ko: d.title.en, en: d.title.en },
+      year: d.year || null,
+      open_month: d.open_month >= 1 && d.open_month <= 12 ? d.open_month : 1,
+      client: { ko: d.client.ko, en: d.client.en },
+      location_city: { ko: d.location_city.ko, en: d.location_city.en },
+      location_country: {
+        ko: d.location_country.ko,
+        en: d.location_country.en
+      }
+    });
+    if (!res.ok) {
+      showToast({ tone: "error", message: apiFailMessage(res) });
+      return false;
+    }
+    await onReload();
+    return true;
+  }, [onReload, work.id]);
+
+  const screenAuto = useAutoPartialSave({
+    persist: persistScreen,
+    flushId: `work-basic-screen:${work.id}`
+  });
+
+  /**
+   * 슬러그 칸 자체는 schedule 하지 않음(공개 URL).
+   * 요약·alt 자동저장·부분 저장 시에는 현재 슬러그 값을 함께 보냄.
+   */
+  const persistSearch = useCallback(async () => {
+    const d = draftRef.current;
+    const res = await updateWork(work.id, {
+      slug: d.slug,
+      summary: d.summary,
+      key_image_alt: d.key_image_alt
+    });
+    if (!res.ok) {
+      showToast({
+        tone: "error",
+        message: apiFailMessage(res, {
+          summaryKo: d.summary.ko,
+          keyAltKo: d.key_image_alt.ko
+        })
+      });
+      return false;
+    }
+    await onReload();
+    return true;
+  }, [onReload, work.id]);
+
+  const searchAuto = useAutoPartialSave({
+    persist: persistSearch,
+    flushId: `work-basic-search:${work.id}`
+  });
 
   const selectedCategories = draft.category_ids.map((id) => ({
     id,
@@ -456,8 +522,17 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   }
 
   function patchSearch(next: Partial<WorkBasicDraft>) {
-    searchPartial.markDirty();
     onChange(next);
+    // 슬러그 변경은 자동저장하지 않음 (공개 URL). 요약·alt 는 schedule.
+    if ("slug" in next && !("summary" in next) && !("key_image_alt" in next)) {
+      searchAuto.markDirty();
+      return;
+    }
+    if ("summary" in next || "key_image_alt" in next) {
+      searchAuto.schedule();
+    } else {
+      searchAuto.markDirty();
+    }
   }
 
   async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
@@ -504,22 +579,22 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   }, []);
 
   function setTitleEn(value: string) {
-    screenPartial.markDirty();
     const title = { ko: value, en: value };
     onChange({ title });
+    screenAuto.schedule();
     scheduleSlugFromTitle(title);
   }
 
   function addCategory(id: string) {
     if (!id || draft.category_ids.includes(id)) return;
-    screenPartial.markDirty();
     onChange({ category_ids: [...draft.category_ids, id] });
+    screenAuto.schedule();
   }
 
   function removeCategory(id: string) {
     if (draft.category_ids.length <= 1) return;
-    screenPartial.markDirty();
     onChange({ category_ids: draft.category_ids.filter((item) => item !== id) });
+    screenAuto.schedule();
   }
 
   function moveCategory(index: number, dir: -1 | 1) {
@@ -528,8 +603,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     if (to < 0 || to >= next.length) return;
     const [moved] = next.splice(index, 1);
     next.splice(to, 0, moved);
-    screenPartial.markDirty();
     onChange({ category_ids: next });
+    screenAuto.schedule();
   }
 
   function pickCard(src: string, source: string, width: number | null, height: number | null) {
@@ -574,33 +649,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     });
   }
 
-  async function saveScreen() {
-    return screenPartial.save(async () => {
-      const d = draftRef.current;
-      const cat = await setWorkCategories(work.id, d.category_ids);
-      if (!cat.ok) {
-        showToast({ tone: "error", message: apiFailMessage(cat) });
-        return false;
-      }
-      const res = await updateWork(work.id, {
-        title: { ko: d.title.en, en: d.title.en },
-        year: d.year || null,
-        open_month: d.open_month >= 1 && d.open_month <= 12 ? d.open_month : 1,
-        client: { ko: d.client.ko, en: d.client.en },
-        location_city: { ko: d.location_city.ko, en: d.location_city.en },
-        location_country: {
-          ko: d.location_country.ko,
-          en: d.location_country.en
-        }
-      });
-      if (!res.ok) {
-        showToast({ tone: "error", message: apiFailMessage(res) });
-        return false;
-      }
-      return true;
-    });
-  }
-
   async function saveMedia() {
     return mediaPartial.save(async () => {
       const d = draftRef.current;
@@ -634,27 +682,6 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     });
   }
 
-  async function saveSearch() {
-    return searchPartial.save(async () => {
-      const d = draftRef.current;
-      const res = await updateWork(work.id, {
-        slug: d.slug,
-        summary: d.summary,
-        key_image_alt: d.key_image_alt
-      });
-      if (!res.ok) {
-        showToast({
-          tone: "error",
-          message: apiFailMessage(res, {
-            summaryKo: d.summary.ko,
-            keyAltKo: d.key_image_alt.ko
-          })
-        });
-        return false;
-      }
-      return true;
-    });
-  }
 
   async function commitExtraName(id: string, nextName: string) {
     const trimmed = nextName.trim();
@@ -737,7 +764,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             <span className={screenDone >= 5 ? "cnt" : "cnt warn"}>
               {screenDone} / 5
             </span>
-            <PartialSaveBtn state={screenPartial.state} onClick={() => void saveScreen()} />
+            <PartialSaveBtn state={screenAuto.buttonState} onClick={() => void screenAuto.flush()} />
           </div>
         </div>
         <p className="grpd">방문자가 사이트에서 실제로 보는 값입니다.</p>
@@ -752,7 +779,12 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               </button>
               <span className="cc">영문 {titleCount}</span>
             </div>
-            <input className="i" value={titleEn} onChange={(e) => setTitleEn(e.target.value)} />
+            <input
+              className="i"
+              value={titleEn}
+              onChange={(e) => setTitleEn(e.target.value)}
+              onBlur={() => void screenAuto.flush()}
+            />
             <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <p className="hint-line">영문으로만 입력합니다. 목록 카드와 상세 맨 위에 나옵니다</p>
             <HelpPanel
@@ -860,8 +892,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                     aria-label="오픈 연도"
                     value={draft.year}
                     onChange={(e) => {
-                      screenPartial.markDirty();
                       onChange({ year: e.target.value });
+                      screenAuto.schedule();
                     }}
                   >
                     {draft.year ? null : <option value="">연도</option>}
@@ -877,9 +909,9 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                     aria-label="오픈 월"
                     value={draft.open_month >= 1 && draft.open_month <= 12 ? String(draft.open_month) : ""}
                     onChange={(e) => {
-                      screenPartial.markDirty();
                       const next = Number(e.target.value);
                       onChange({ open_month: Number.isInteger(next) ? next : 0 });
+                      screenAuto.schedule();
                     }}
                   >
                     <option value=""> </option>
@@ -938,9 +970,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.client.en}
                   onChange={(e) => {
-                    screenPartial.markDirty();
                     onChange({ client: { ...draft.client, en: e.target.value } });
+                    screenAuto.schedule();
                   }}
+                  onBlur={() => void screenAuto.flush()}
                 />
                 <p className="hint-line">클라이언트</p>
               </div>
@@ -949,11 +982,12 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.location_city.en}
                   onChange={(e) => {
-                    screenPartial.markDirty();
                     onChange({
                       location_city: { ...draft.location_city, en: e.target.value }
                     });
+                    screenAuto.schedule();
                   }}
+                  onBlur={() => void screenAuto.flush()}
                 />
                 <p className="hint-line">시</p>
               </div>
@@ -962,11 +996,12 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.location_country.en}
                   onChange={(e) => {
-                    screenPartial.markDirty();
                     onChange({
                       location_country: { ...draft.location_country, en: e.target.value }
                     });
+                    screenAuto.schedule();
                   }}
+                  onBlur={() => void screenAuto.flush()}
                 />
                 <p className="hint-line">국가</p>
               </div>
@@ -986,6 +1021,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <h3>이미지와 영상</h3>
           <div className="grpr">
             <span className={mediaDone >= 3 ? "cnt" : "cnt warn"}>{mediaDone} / 3</span>
+            {/* 미디어: 16:9 검사 때문에 자동저장 제외 — 부분 저장만 */}
             <PartialSaveBtn state={mediaPartial.state} onClick={() => void saveMedia()} />
           </div>
         </div>
@@ -1291,7 +1327,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           <h3>검색과 AI 가 읽는 것</h3>
           <div className="grpr">
             <span className={searchDone >= 3 ? "cnt" : "cnt warn"}>{searchDone} / 3</span>
-            <PartialSaveBtn state={searchPartial.state} onClick={() => void saveSearch()} />
+            <PartialSaveBtn state={searchAuto.buttonState} onClick={() => void searchAuto.flush()} />
           </div>
         </div>
         <p className="grpd">화면에는 안 보이지만 구글과 AI 가 읽어갑니다. 비면 검색에서 잡히지 않습니다.</p>
@@ -1307,6 +1343,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
             </div>
             <div className="slugrow">
               <span className="pre">apollonworks.com/works/</span>
+              {/* 슬러그: 디바운스 자동저장 없음 — 부분 저장으로만 확정 */}
               <input
                 className="i"
                 value={draft.slug}
@@ -1356,18 +1393,20 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 rows={2}
                 value={draft.summary.ko}
                 onChange={(e) => {
-                  searchPartial.markDirty();
                   onChange({ summary: { ...draft.summary, ko: e.target.value } });
+                  searchAuto.schedule();
                 }}
+                onBlur={() => void searchAuto.flush()}
               />
               <textarea
                 className="i"
                 rows={2}
                 value={draft.summary.en}
                 onChange={(e) => {
-                  searchPartial.markDirty();
                   onChange({ summary: { ...draft.summary, en: e.target.value } });
+                  searchAuto.schedule();
                 }}
+                onBlur={() => void searchAuto.flush()}
               />
             </div>
             <div className="sum-foot">
@@ -1399,21 +1438,23 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 className="i"
                 value={draft.key_image_alt.ko}
                 onChange={(e) => {
-                  searchPartial.markDirty();
                   onChange({
                     key_image_alt: { ...draft.key_image_alt, ko: e.target.value }
                   });
+                  searchAuto.schedule();
                 }}
+                onBlur={() => void searchAuto.flush()}
               />
               <input
                 className="i"
                 value={draft.key_image_alt.en}
                 onChange={(e) => {
-                  searchPartial.markDirty();
                   onChange({
                     key_image_alt: { ...draft.key_image_alt, en: e.target.value }
                   });
+                  searchAuto.schedule();
                 }}
+                onBlur={() => void searchAuto.flush()}
               />
             </div>
             <p className="hint-line">이미지를 못 보는 사람과 AI 가 읽습니다</p>
@@ -1553,6 +1594,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
           <p className="big-note">편집 도구는 자리만 잡아 두었습니다. 이번 단계에서는 동작하지 않습니다.</p>
           <div className="big-mwf">
+            {/* 모달 안 입력은 자동저장 없음 — 취소=로컬 draft 버리고 닫기 */}
             <button type="button" className="btn sm" onClick={() => setSummaryOpen(false)}>
               취소
             </button>
@@ -1560,9 +1602,10 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               type="button"
               className="btn sm"
               onClick={() => {
-                searchPartial.markDirty();
+                draftRef.current = { ...draftRef.current, summary: summaryDraft };
                 onChange({ summary: summaryDraft });
                 setSummaryOpen(false);
+                searchAuto.schedule();
               }}
             >
               확인

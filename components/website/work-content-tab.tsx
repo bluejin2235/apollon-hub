@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   createSection,
   deleteSection,
@@ -18,7 +18,8 @@ import { useFullSave } from "@/components/website/full-save-registry";
 import { BlockPicker } from "@/components/website/block-picker";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { LeadHtmlModal } from "@/components/website/lead-html-modal";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import { TextDupProvider } from "@/components/website/text-dup-context";
 import { showToast } from "@/components/website/toast";
 import { Alert, Field } from "@/components/website/ui";
@@ -558,34 +559,40 @@ function SectionBody({
   const [headline, setHeadline] = useState<Loc>(asLoc(section.headline));
   const [lead, setLead] = useState<Loc>(asLoc(section.lead));
   const [error, setError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<PartialSaveState>("idle");
   const [leadOpen, setLeadOpen] = useState(false);
+  const headlineRef = useRef(headline);
+  const leadRef = useRef(lead);
+  headlineRef.current = headline;
+  leadRef.current = lead;
+
+  // 기본 설명 LeadHtmlModal 안 입력은 자동저장하지 않음 — 취소=미반영(onCancel).
+  // 확인(onSave) 후에만 원본 저장 큐에 넣는다.
+  const auto = useAutoPartialSave({
+    flushId: `work-section:${section.id}`,
+    persist: async () => {
+      setError(null);
+      const syncedHeadline = headlineBoth(headlineInputValue(headlineRef.current));
+      setHeadline(syncedHeadline);
+      headlineRef.current = syncedHeadline;
+      const res = await updateSection(workId, section.id, {
+        headline: syncedHeadline,
+        lead: leadRef.current
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+      await onReload();
+      return true;
+    }
+  });
 
   useEffect(() => {
     setHeadline(asLoc(section.headline));
     setLead(asLoc(section.lead));
-    setSaveState("idle");
+    auto.resetFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 서버 section 동기화
   }, [section]);
-
-  function markDirty() {
-    setSaveState((cur) => (cur === "saving" ? cur : "dirty"));
-  }
-
-  async function savePartial() {
-    setSaveState("saving");
-    setError(null);
-    const syncedHeadline = headlineBoth(headlineInputValue(headline));
-    setHeadline(syncedHeadline);
-    const res = await updateSection(workId, section.id, { headline: syncedHeadline, lead });
-    if (!res.ok) {
-      setError(res.error);
-      setSaveState("dirty");
-      return;
-    }
-    setSaveState("saved");
-    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-    await onReload();
-  }
 
   const headlineValue = headlineInputValue(headline);
 
@@ -593,8 +600,8 @@ function SectionBody({
     <>
       <div className="mb-3 flex justify-end">
         <PartialSaveBtn
-          state={saveState}
-          onClick={() => void savePartial()}
+          state={auto.buttonState}
+          onClick={() => void auto.flush()}
         />
       </div>
       {error ? <p className="mb-2 text-[11px] text-rose-600">{error}</p> : null}
@@ -621,8 +628,9 @@ function SectionBody({
             placeholder="Overview"
             onChange={(e) => {
               setHeadline(headlineBoth(e.target.value));
-              markDirty();
+              auto.schedule();
             }}
+            onBlur={() => void auto.flush()}
           />
           <div className="hint-line">왼쪽 메뉴에 나옵니다. 영문으로 씁니다. 16자 이내</div>
         </Field>
@@ -664,9 +672,11 @@ function SectionBody({
         contentWidth={831}
         onCancel={() => setLeadOpen(false)}
         onSave={(next) => {
-          setLead({ ko: next.ko, en: next.en });
-          markDirty();
+          const loc = { ko: next.ko, en: next.en };
+          setLead(loc);
+          leadRef.current = loc;
           setLeadOpen(false);
+          auto.schedule();
         }}
       />
 

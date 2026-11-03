@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   clearInterview,
   createSection,
@@ -22,7 +22,8 @@ import {
   type Loc,
   type WorkDetail
 } from "@/lib/website/work-detail";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import "./ui/work-admin.css";
 
 type Props = {
@@ -88,13 +89,37 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
   const [on, setOn] = useState(shown);
   const [quote, setQuote] = useState<Loc>(asLoc(row?.quote_override));
   const [attribution, setAttribution] = useState<Loc>(asLoc(row?.attribution_override));
-  const [saveState, setSaveState] = useState<PartialSaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const quoteRef = useRef(quote);
+  const attributionRef = useRef(attribution);
+  quoteRef.current = quote;
+  attributionRef.current = attribution;
   const [openHelp, setOpenHelp] = useState<HelpId | null>(null);
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<InsightListItem | null>(null);
   const [categories, setCategories] = useState<WebsiteCategory[]>([]);
+
+  const auto = useAutoPartialSave({
+    flushId: `work-interview:${work.id}`,
+    enabled: Boolean(on && row?.insight_id && section),
+    persist: async () => {
+      if (!row?.insight_id || !section) return true;
+      setError(null);
+      const res = await setInterview(work.id, {
+        section_id: section.id,
+        insight_id: row.insight_id,
+        quote_override: locOrNull(quoteRef.current),
+        attribution_override: locOrNull(attributionRef.current)
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+      await onReload();
+      return true;
+    }
+  });
 
   useEffect(() => {
     setOn(shown);
@@ -103,7 +128,8 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
   useEffect(() => {
     setQuote(asLoc(row?.quote_override));
     setAttribution(asLoc(row?.attribution_override));
-    setSaveState("idle");
+    auto.resetFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.insight_id, row?.quote_override, row?.attribution_override]);
 
   useEffect(() => {
@@ -150,10 +176,6 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
     const found = categories.find((item) => item.id === selected.category_id);
     return found?.label?.ko || selected.category_id;
   }, [categories, selected]);
-
-  function markDirty() {
-    setSaveState((cur) => (cur === "saving" ? cur : "dirty"));
-  }
 
   async function ensureSection(): Promise<string | null> {
     if (section) return section.id;
@@ -228,26 +250,6 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
     }
   }
 
-  async function savePartial() {
-    if (!row?.insight_id || !section) return;
-    setSaveState("saving");
-    setError(null);
-    const res = await setInterview(work.id, {
-      section_id: section.id,
-      insight_id: row.insight_id,
-      quote_override: locOrNull(quote),
-      attribution_override: locOrNull(attribution)
-    });
-    if (!res.ok) {
-      setError(res.error);
-      setSaveState("dirty");
-      return;
-    }
-    setSaveState("saved");
-    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-    await onReload();
-  }
-
   const thumb = mediaUrl(siteUrl, selected?.key_image ?? null);
   const title =
     selected?.title && typeof selected.title === "object"
@@ -273,8 +275,8 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
             이 워크에 인터뷰 표시
           </label>
           <PartialSaveBtn
-            state={saveState}
-            onClick={() => void savePartial()}
+            state={auto.buttonState}
+            onClick={() => void auto.flush()}
           />
         </div>
       </div>
@@ -333,8 +335,9 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
               disabled={!on}
               onChange={(event) => {
                 setQuote(locField(quote, "ko", event.target.value));
-                markDirty();
+                auto.schedule();
               }}
+              onBlur={() => void auto.flush()}
             />
             <textarea
               className="i"
@@ -343,8 +346,9 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
               disabled={!on}
               onChange={(event) => {
                 setQuote(locField(quote, "en", event.target.value));
-                markDirty();
+                auto.schedule();
               }}
+              onBlur={() => void auto.flush()}
             />
           </div>
           <p className="hint-line">비우면 인사이트의 원래 인용문이 나옵니다</p>
@@ -366,8 +370,9 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
               disabled={!on}
               onChange={(event) => {
                 setAttribution(locField(attribution, "ko", event.target.value));
-                markDirty();
+                auto.schedule();
               }}
+              onBlur={() => void auto.flush()}
             />
             <input
               className="i"
@@ -376,8 +381,9 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
               disabled={!on}
               onChange={(event) => {
                 setAttribution(locField(attribution, "en", event.target.value));
-                markDirty();
+                auto.schedule();
               }}
+              onBlur={() => void auto.flush()}
             />
           </div>
           <p className="hint-line">비우면 인사이트에 적힌 이름이 나옵니다</p>

@@ -31,6 +31,7 @@ import {
 } from "@/components/website/block-presets";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { PartialSaveBtn, AutoSaveLabel, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { AUTO_PARTIAL_SAVE_DEBOUNCE_MS } from "@/components/website/use-auto-partial-save";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
 import { PosterPicker } from "@/components/website/poster-picker";
 import { uploadFile } from "@/lib/website/api";
@@ -73,7 +74,7 @@ import {
   VIDEO_LABELS
 } from "@/lib/website/spec";
 
-type SaveState = PartialSaveState | "error";
+type SaveState = PartialSaveState;
 
 const STALE_REMOTE_MSG = "다른 곳에서 바뀌었습니다. 저장하면 이 입력으로 덮어씁니다.";
 
@@ -167,7 +168,7 @@ export function BlockCard({
   const [textSide, setTextSide] = useState<"left" | "right">(block.text_side ?? defaultTextSide(block.preset));
   const [showMeta, setShowMeta] = useState(block.show_meta);
   const [staleRemote, setStaleRemote] = useState(false);
-  const { registerFlush } = useFullSave();
+  const { registerFlush, registerDirty } = useFullSave();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Record<string, unknown>>({});
   const saveRef = useRef(save);
@@ -219,6 +220,15 @@ export function BlockCard({
   useEffect(
     () => registerFlush(`work-block:${block.id}`, () => flushDirtyRef.current()),
     [block.id, registerFlush]
+  );
+
+  useEffect(
+    () =>
+      registerDirty(`work-block:${block.id}`, () => {
+        const cur = saveRef.current;
+        return cur === "dirty" || cur === "error" || cur === "saving";
+      }),
+    [block.id, registerDirty]
   );
 
   const images = [...(block.block_images ?? [])].sort((a, b) => a.sort - b.sort);
@@ -282,6 +292,10 @@ export function BlockCard({
 
   function schedule(patch: Record<string, unknown>) {
     queueChange(patch);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      void persistCurrent();
+    }, AUTO_PARTIAL_SAVE_DEBOUNCE_MS);
   }
 
   async function persistCurrent(): Promise<boolean> {
@@ -1005,7 +1019,7 @@ function ImageRow({
   function schedule(patch: Record<string, unknown>) {
     onDirty();
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void persist(patch), 1500);
+    timer.current = setTimeout(() => void persist(patch), AUTO_PARTIAL_SAVE_DEBOUNCE_MS);
   }
 
   async function persist(patch: Record<string, unknown>) {

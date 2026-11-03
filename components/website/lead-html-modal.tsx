@@ -39,6 +39,10 @@ type Props = {
   onSave: (next: { ko: string; en: string }) => void;
 };
 
+/**
+ * 리드 HTML 모달 — 자동 부분저장 제외.
+ * 취소 시 초안을 버리고 닫아야 하므로, 모달 안 입력은 부모 onConfirm 전까지 저장하지 않음.
+ */
 export function LeadHtmlModal({
   open,
   title = "기본 설명",

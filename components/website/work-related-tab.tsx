@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRelated,
   deleteRelated,
@@ -18,8 +18,8 @@ import {
   hitTitle,
   type ContentType
 } from "@/components/website/content-picker-modal";
-import { useFullSave } from "@/components/website/full-save-registry";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import "./ui/work-admin.css";
 
 type Props = {
@@ -158,13 +158,15 @@ function HelpPanel({
 }
 
 export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
-  const { registerFlush } = useFullSave();
   const savedSlots = useMemo(() => slotsFromRelated(work.content_related), [work.content_related]);
   const [slots, setSlots] = useState<Array<Slot | null>>(savedSlots);
+  const slotsRef = useRef(slots);
+  slotsRef.current = slots;
+  const relatedRef = useRef(work.content_related);
+  relatedRef.current = work.content_related;
   const [hits, setHits] = useState<Map<string, SearchHit>>(new Map());
   const [picker, setPicker] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [saveState, setSaveState] = useState<PartialSaveState>("idle");
   const [luna, setLuna] = useState<LunaState>("idle");
   const [reason, setReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,16 +176,8 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
   useEffect(() => {
     if (dirty) return;
     setSlots(savedSlots);
+    slotsRef.current = savedSlots;
   }, [savedSlots, dirty]);
-
-  useEffect(() => {
-    setSaveState((state) => {
-      if (state === "saving") return state;
-      if (dirty) return "dirty";
-      if (state === "dirty") return "idle";
-      return state;
-    });
-  }, [dirty]);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,6 +246,65 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
     });
   }, []);
 
+  const persist = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    const saved = [...(relatedRef.current ?? [])];
+    const filled = slotsRef.current
+      .map((slot, i) => (slot ? { ...slot, sort: i } : null))
+      .filter((slot): slot is Slot => Boolean(slot));
+
+    for (const row of saved) {
+      const still = filled.some((slot) => slot.id === row.id);
+      if (!still) {
+        const res = await deleteRelated(work.id, row.id);
+        if (!res.ok) {
+          setError(res.error);
+          return false;
+        }
+      }
+    }
+
+    const created: Slot[] = [];
+    for (const slot of filled) {
+      if (slot.id && !slot.id.startsWith("draft:")) {
+        created.push(slot);
+        continue;
+      }
+      const res = await addRelated(work.id, relatedBody(slot, slot.sort));
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+      const row = res.data as { id?: string } | undefined;
+      created.push({ ...slot, id: typeof row?.id === "string" ? row.id : slot.id });
+    }
+
+    if (created.length > 0) {
+      const res = await reorderRelated(
+        work.id,
+        created.map((slot) => ({ id: slot.id, sort: slot.sort }))
+      );
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+    }
+
+    await onReload();
+    return true;
+  }, [onReload, work.id]);
+
+  const auto = useAutoPartialSave({
+    persist,
+    flushId: `work-related:${work.id}`
+  });
+
+  function commitSlots(next: Array<Slot | null>) {
+    slotsRef.current = next;
+    setSlots(next);
+    auto.schedule();
+  }
+
   async function recommend() {
     setLuna("loading");
     setError(null);
@@ -267,11 +320,12 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
       const existing = slots.find((slot) => slot && relatedTargetKey(slot) === key);
       next[i] = slotFromHit(hit, "luna", i, existing?.id.startsWith("draft:") ? undefined : existing?.id);
     });
-    setSlots(next);
+    commitSlots(next);
     setReason(res.data.reason);
     setLuna("done");
   }
 
+  /** 피커 모달 안에서는 저장하지 않음 — 확인(apply) 때만 commit */
   function applyPicked(nextHits: SearchHit[]) {
     setPicker(false);
     rememberHits(nextHits);
@@ -291,86 +345,23 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
       if (!hit) break;
       next[i] = slotFromHit(hit, "human", i);
     }
-    setSlots(next);
+    commitSlots(next);
   }
 
   function move(from: number, dir: -1 | 1) {
     const to = from + dir;
     if (to < 0 || to > 3) return;
-    setSlots((prev) => {
-      const next = [...prev];
-      const tmp = next[from] ?? null;
-      next[from] = next[to] ?? null;
-      next[to] = tmp;
-      return next.map((slot, i) => (slot ? { ...slot, sort: i } : null));
-    });
+    const prev = slotsRef.current;
+    const next = [...prev];
+    const tmp = next[from] ?? null;
+    next[from] = next[to] ?? null;
+    next[to] = tmp;
+    commitSlots(next.map((slot, i) => (slot ? { ...slot, sort: i } : null)));
   }
 
   function removeAt(index: number) {
-    setSlots((prev) => prev.map((slot, i) => (i === index ? null : slot)));
+    commitSlots(slotsRef.current.map((slot, i) => (i === index ? null : slot)));
   }
-
-  const save = useCallback(async (): Promise<boolean> => {
-    setSaveState("saving");
-    setError(null);
-    const saved = [...(work.content_related ?? [])];
-    const filled = slots
-      .map((slot, i) => (slot ? { ...slot, sort: i } : null))
-      .filter((slot): slot is Slot => Boolean(slot));
-
-    for (const row of saved) {
-      const still = filled.some((slot) => slot.id === row.id);
-      if (!still) {
-        const res = await deleteRelated(work.id, row.id);
-        if (!res.ok) {
-          setError(res.error);
-          setSaveState("dirty");
-          return false;
-        }
-      }
-    }
-
-    const created: Slot[] = [];
-    for (const slot of filled) {
-      if (slot.id && !slot.id.startsWith("draft:")) {
-        created.push(slot);
-        continue;
-      }
-      const res = await addRelated(work.id, relatedBody(slot, slot.sort));
-      if (!res.ok) {
-        setError(res.error);
-        setSaveState("dirty");
-        return false;
-      }
-      const row = res.data as { id?: string } | undefined;
-      created.push({ ...slot, id: typeof row?.id === "string" ? row.id : slot.id });
-    }
-
-    if (created.length > 0) {
-      const res = await reorderRelated(
-        work.id,
-        created.map((slot) => ({ id: slot.id, sort: slot.sort }))
-      );
-      if (!res.ok) {
-        setError(res.error);
-        setSaveState("dirty");
-        return false;
-      }
-    }
-
-    setSaveState("saved");
-    await onReload();
-    return true;
-  }, [onReload, slots, work.content_related, work.id]);
-
-  useEffect(
-    () =>
-      registerFlush("work-related", async () => {
-        if (saveState !== "dirty") return true;
-        return await save();
-      }),
-    [registerFlush, save, saveState]
-  );
 
   return (
     <div className="wa">
@@ -384,7 +375,7 @@ export function WorkRelatedTab({ work, siteUrl, onReload }: Props) {
           >
             ?
           </button>
-          <PartialSaveBtn state={saveState} onClick={() => void save()} />
+          <PartialSaveBtn state={auto.buttonState} onClick={() => void auto.flush()} />
         </div>
       </div>
       <p className="grpd">워크 상세 맨 아래에 이 순서대로 4개가 나옵니다.</p>

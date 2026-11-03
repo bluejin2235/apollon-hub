@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useMemo, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { replaceCredits } from "@/lib/website/api";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import { asLoc, emptyLoc, type Loc, type WorkCredit, type WorkDetail } from "@/lib/website/work-detail";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import "./ui/work-admin.css";
 
 export type CreditsTabHandle = {
@@ -63,42 +64,84 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
   const { registerFlush } = useFullSave();
   const saved = useMemo(() => fromWork(work.work_credits ?? []), [work.work_credits]);
   const [rows, setRows] = useState<Draft[]>(saved);
-  const [saveState, setSaveState] = useState<PartialSaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   const dirty = !sameRows(rows, saved);
+
+  const auto = useAutoPartialSave({
+    flushId: "work-credits-auto",
+    persist: async () => {
+      setError(null);
+      const current = rowsRef.current;
+      for (let i = 0; i < current.length; i++) {
+        const row = current[i]!;
+        if (!row.role.trim()) {
+          setError(`${i + 1}번째 줄: 역할을 적어 주세요`);
+          return false;
+        }
+        if (!row.name.ko.trim()) {
+          setError(`${i + 1}번째 줄: 이름 국문은 필수입니다`);
+          return false;
+        }
+      }
+      const items = current.map((row, i) => ({
+        ...(row.id ? { id: row.id } : {}),
+        role: row.role.trim(),
+        name: { ko: row.name.ko.trim(), en: row.name.en.trim() },
+        sort: i
+      }));
+      const res = await replaceCredits(work.id, items);
+      if (!res.ok) {
+        setError(describeCreditError(res.error, res.details));
+        return false;
+      }
+      await onReload();
+      return true;
+    }
+  });
 
   useEffect(() => {
     if (dirty) return;
     setRows(saved);
-    setSaveState("idle");
+    auto.resetFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved, dirty]);
 
   useEffect(() => {
-    setSaveState((state) => {
-      if (state === "saving") return state;
-      if (dirty) return "dirty";
-      if (state === "dirty") return "idle";
-      return state;
-    });
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange?.(dirty || auto.state === "dirty" || auto.state === "error");
+  }, [dirty, auto.state, onDirtyChange]);
 
-  function markDirty() {
-    setSaveState((cur) => (cur === "saving" ? cur : "dirty"));
-  }
+  useEffect(
+    () =>
+      registerFlush("work-credits", async () => {
+        if (!dirty && auto.state !== "dirty" && auto.state !== "error") return true;
+        return auto.flush();
+      }),
+    [registerFlush, dirty, auto]
+  );
 
-  function add() {
+  useImperativeHandle(
+    saveRef,
+    () => ({
+      isDirty: () => dirty || auto.state === "dirty" || auto.state === "error",
+      save: () => auto.flush()
+    }),
+    [dirty, auto]
+  );
+
+  const add = useCallback(() => {
     setRows((prev) => [
       ...prev,
       { key: `new-${Date.now()}`, id: null, role: "", name: emptyLoc() }
     ]);
-    markDirty();
-  }
+    auto.schedule();
+  }, [auto]);
 
   function patch(key: string, next: Partial<Draft>) {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...next } : row)));
-    markDirty();
+    auto.schedule();
   }
 
   function move(index: number, dir: -1 | 1) {
@@ -108,69 +151,13 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
     const [moved] = next.splice(index, 1);
     next.splice(to, 0, moved);
     setRows(next);
-    markDirty();
+    auto.schedule();
   }
 
   function remove(key: string) {
     setRows((prev) => prev.filter((row) => row.key !== key));
-    markDirty();
+    auto.schedule();
   }
-
-  const savePartial = useCallback(async (): Promise<boolean> => {
-    setSaveState("saving");
-    setError(null);
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]!;
-      if (!row.role.trim()) {
-        setError(`${i + 1}번째 줄: 역할을 적어 주세요`);
-        setSaveState("dirty");
-        return false;
-      }
-      if (!row.name.ko.trim()) {
-        setError(`${i + 1}번째 줄: 이름 국문은 필수입니다`);
-        setSaveState("dirty");
-        return false;
-      }
-    }
-
-    const items = rows.map((row, i) => ({
-      ...(row.id ? { id: row.id } : {}),
-      role: row.role.trim(),
-      name: { ko: row.name.ko.trim(), en: row.name.en.trim() },
-      sort: i
-    }));
-
-    const res = await replaceCredits(work.id, items);
-    if (!res.ok) {
-      setError(describeCreditError(res.error, res.details));
-      setSaveState("dirty");
-      return false;
-    }
-
-    setSaveState("saved");
-    window.setTimeout(() => setSaveState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-    await onReload();
-    return true;
-  }, [onReload, rows, work.id]);
-
-  useEffect(
-    () =>
-      registerFlush("work-credits", async () => {
-        if (saveState !== "dirty") return true;
-        return await savePartial();
-      }),
-    [registerFlush, savePartial, saveState]
-  );
-
-  useImperativeHandle(
-    saveRef,
-    () => ({
-      isDirty: () => dirty,
-      save: () => savePartial()
-    }),
-    [dirty, savePartial]
-  );
 
   return (
     <div className="wa">
@@ -180,7 +167,7 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
           <button type="button" className="btn sm" onClick={add}>
             ＋ 크레딧 추가
           </button>
-          <PartialSaveBtn state={saveState} onClick={() => void savePartial()} />
+          <PartialSaveBtn state={auto.buttonState} onClick={() => void auto.flush()} />
         </div>
       </div>
       <p className="grpd">워크 상세 맨 아래에 적힌 순서대로 나옵니다. 역할은 영문 그대로 표시됩니다.</p>
@@ -201,18 +188,21 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
               type="text"
               value={row.role}
               onChange={(event) => patch(row.key, { role: event.target.value })}
+              onBlur={() => void auto.flush()}
             />
             <input
               className="i"
               type="text"
               value={row.name.ko}
               onChange={(event) => patch(row.key, { name: { ...row.name, ko: event.target.value } })}
+              onBlur={() => void auto.flush()}
             />
             <input
               className="i"
               type="text"
               value={row.name.en}
               onChange={(event) => patch(row.key, { name: { ...row.name, en: event.target.value } })}
+              onBlur={() => void auto.flush()}
             />
             <div className="crb">
               <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>

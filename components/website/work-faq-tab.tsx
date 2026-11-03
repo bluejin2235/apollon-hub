@@ -7,7 +7,8 @@ import type { Loc, WorkDetail, WorkFaq } from "@/lib/website/work-detail";
 import { asLoc } from "@/lib/website/work-detail";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
 import { type FlushFn, useFullSave } from "@/components/website/full-save-registry";
-import { AutoSaveLabel, PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { AutoSaveLabel, PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import {
   AiBtn,
   BilingualField,
@@ -121,7 +122,8 @@ export function WorkFaqTab({ work, saving, onToggleShowFaq, onReload }: Props) {
         </div>
       </div>
       <p className="grpd">
-        문항을 고치면 포커스를 벗어날 때 바로 저장됩니다. 워크 상세 맨 아래에 아코디언으로 나옵니다.
+        문항을 고치면 잠시 후 자동 저장되고, 포커스를 벗어나면 바로 저장됩니다. 워크 상세 맨 아래에 아코디언으로
+        나옵니다.
       </p>
 
       <div className="mb-5">
@@ -202,13 +204,29 @@ function FaqCard({
   const [open, setOpen] = useState(index === 1);
   const [question, setQuestion] = useState<Loc>(asLoc(faq.question));
   const [answer, setAnswer] = useState<Loc>(asLoc(faq.answer));
-  const [save, setSave] = useState<PartialSaveState>("idle");
   const questionRef = useRef(question);
   const answerRef = useRef(answer);
   questionRef.current = question;
   answerRef.current = answer;
   const savedQuestion = useRef(asLoc(faq.question));
   const savedAnswer = useRef(asLoc(faq.answer));
+
+  const auto = useAutoPartialSave({
+    flushId: `faq:${faq.id}`,
+    persist: async () => {
+      const dirtyNow =
+        questionRef.current.ko !== savedQuestion.current.ko ||
+        questionRef.current.en !== savedQuestion.current.en ||
+        answerRef.current.ko !== savedAnswer.current.ko ||
+        answerRef.current.en !== savedAnswer.current.en;
+      if (!dirtyNow) return true;
+      const ok = await onSave(faq.id, questionRef.current, answerRef.current);
+      if (!ok) return false;
+      savedQuestion.current = questionRef.current;
+      savedAnswer.current = answerRef.current;
+      return true;
+    }
+  });
 
   useEffect(() => {
     const qNext = asLoc(faq.question);
@@ -217,44 +235,11 @@ function FaqCard({
     setAnswer(aNext);
     savedQuestion.current = qNext;
     savedAnswer.current = aNext;
-    setSave("idle");
+    auto.resetFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 서버 faq 행이 바뀔 때만
   }, [faq]);
 
-  function markDirty(nextQ: Loc, nextA: Loc) {
-    const dirty =
-      nextQ.ko !== savedQuestion.current.ko ||
-      nextQ.en !== savedQuestion.current.en ||
-      nextA.ko !== savedAnswer.current.ko ||
-      nextA.en !== savedAnswer.current.en;
-    setSave((cur) => (cur === "saving" ? cur : dirty ? "dirty" : "idle"));
-  }
-
-  const persist = useCallback(async (): Promise<boolean> => {
-    const dirtyNow =
-      questionRef.current.ko !== savedQuestion.current.ko ||
-      questionRef.current.en !== savedQuestion.current.en ||
-      answerRef.current.ko !== savedAnswer.current.ko ||
-      answerRef.current.en !== savedAnswer.current.en;
-    if (!dirtyNow) return true;
-    setSave("saving");
-    try {
-      const ok = await onSave(faq.id, questionRef.current, answerRef.current);
-      if (!ok) {
-        setSave("dirty");
-        return false;
-      }
-      savedQuestion.current = questionRef.current;
-      savedAnswer.current = answerRef.current;
-      setSave("saved");
-      window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 1200);
-      return true;
-    } catch {
-      setSave("dirty");
-      return false;
-    }
-  }, [faq.id, onSave]);
-
-  useEffect(() => registerFlush(faq.id, persist), [faq.id, persist, registerFlush]);
+  useEffect(() => registerFlush(faq.id, () => auto.flush()), [faq.id, auto, registerFlush]);
 
   const q = question.ko.trim() || question.en.trim() || "질문 없음";
 
@@ -266,7 +251,7 @@ function FaqCard({
           <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{q}</span>
         </button>
         <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
-          <PartialSaveBtn state={save} onClick={() => void persist()} />
+          <PartialSaveBtn state={auto.buttonState} onClick={() => void auto.flush()} />
         </div>
         <button
           type="button"
@@ -305,14 +290,14 @@ function FaqCard({
               onKo={(v) => {
                 const next = locField(question, "ko", v);
                 setQuestion(next);
-                markDirty(next, answer);
+                auto.schedule();
               }}
               onEn={(v) => {
                 const next = locField(question, "en", v);
                 setQuestion(next);
-                markDirty(next, answer);
+                auto.schedule();
               }}
-              onBlur={() => void persist()}
+              onBlur={() => void auto.flush()}
             />
             <Guide>
               반드시 <b className="font-semibold text-slate-600">물음표로 끝나는 완전한 문장</b>
@@ -338,14 +323,14 @@ function FaqCard({
               onKo={(v) => {
                 const next = locField(answer, "ko", v);
                 setAnswer(next);
-                markDirty(question, next);
+                auto.schedule();
               }}
               onEn={(v) => {
                 const next = locField(answer, "en", v);
                 setAnswer(next);
-                markDirty(question, next);
+                auto.schedule();
               }}
-              onBlur={() => void persist()}
+              onBlur={() => void auto.flush()}
             />
             <Guide>
               <b className="font-semibold text-slate-600">2~3문장</b>이 AI 인용에 잘 맞습니다.
