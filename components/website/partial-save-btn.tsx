@@ -1,6 +1,6 @@
 "use client";
 
-export type PartialSaveState = "idle" | "dirty" | "saving" | "saved";
+export type PartialSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 type Props = {
   state: PartialSaveState;
@@ -10,7 +10,7 @@ type Props = {
   label?: string;
 };
 
-/** 접이식 블록 — 즉시 저장 (태그·폴더 등) */
+/** 접이식·자동저장 구역 표식 (태그·폴더·FAQ 등) */
 export function AutoSaveLabel() {
   return (
     <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-400">
@@ -21,7 +21,9 @@ export function AutoSaveLabel() {
 
 function statusText(state: PartialSaveState): string | null {
   if (state === "dirty") return "저장할 것이 있습니다";
+  if (state === "saving") return "저장 중…";
   if (state === "saved") return "저장되었습니다";
+  if (state === "error") return "저장 실패 · 다시 시도";
   return null;
 }
 
@@ -33,7 +35,7 @@ export function PartialSaveBtn({
   label = "부분 저장"
 }: Props) {
   const status = statusText(state);
-  const emphasize = state === "dirty";
+  const emphasize = state === "dirty" || state === "error";
   const className = emphasize
     ? "inline-flex items-center rounded-md border border-apollon-500 bg-apollon-50 px-2 py-1 text-[11px] font-semibold text-apollon-700 hover:bg-apollon-100 disabled:opacity-40"
     : "inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40";
@@ -54,9 +56,11 @@ export function PartialSaveBtn({
       {status ? (
         <span
           className={
-            state === "dirty"
-              ? "text-[11px] font-medium text-amber-700"
-              : "text-[11px] font-medium text-emerald-700"
+            state === "error"
+              ? "text-[11px] font-medium text-rose-700"
+              : state === "dirty" || state === "saving"
+                ? "text-[11px] font-medium text-amber-700"
+                : "text-[11px] font-medium text-emerald-700"
           }
         >
           {status}
