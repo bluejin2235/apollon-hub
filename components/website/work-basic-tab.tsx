@@ -1594,7 +1594,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
           </div>
           <p className="big-note">편집 도구는 자리만 잡아 두었습니다. 이번 단계에서는 동작하지 않습니다.</p>
           <div className="big-mwf">
-            {/* 모달 안 입력은 자동저장 없음 — 취소=로컬 draft 버리고 닫기 */}
+            {/* 모달: 취소=로컬 draft 버리고 닫기 · 확인=반영 + 즉시 flush */}
             <button type="button" className="btn sm" onClick={() => setSummaryOpen(false)}>
               취소
             </button>
@@ -1605,7 +1605,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 draftRef.current = { ...draftRef.current, summary: summaryDraft };
                 onChange({ summary: summaryDraft });
                 setSummaryOpen(false);
-                searchAuto.schedule();
+                searchAuto.markDirty();
+                void searchAuto.flush();
               }}
             >
               확인

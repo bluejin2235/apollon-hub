@@ -566,7 +566,7 @@ function SectionBody({
   leadRef.current = lead;
 
   // 기본 설명 LeadHtmlModal 안 입력은 자동저장하지 않음 — 취소=미반영(onCancel).
-  // 확인(onSave) 후에만 원본 저장 큐에 넣는다.
+  // 확인(onSave) = 닫기 + 즉시 flush(원본 저장).
   const auto = useAutoPartialSave({
     flushId: `work-section:${section.id}`,
     persist: async () => {
@@ -676,7 +676,8 @@ function SectionBody({
           setLead(loc);
           leadRef.current = loc;
           setLeadOpen(false);
-          auto.schedule();
+          auto.markDirty();
+          void auto.flush();
         }}
       />
 

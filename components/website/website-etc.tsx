@@ -694,7 +694,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
         </div>
       </div>
 
-      {/* 모달: 로컬 초안만 편집. 취소=버리고 닫기, 확인=본문에 반영 후 자동저장 */}
+      {/* 모달: 로컬 초안만. 취소=버리고 닫기, 확인=반영 + 즉시 flush */}
       <div className={descOpen ? "big-ov on" : "big-ov"}>
         <div className="big-mw">
           <div className="big-mwh">
@@ -727,8 +727,14 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
               type="button"
               className="b sm"
               onClick={() => {
-                patchDraft({ search_description: descDraft }, "search");
+                setDraft((cur) => {
+                  const merged = cur ? { ...cur, search_description: descDraft } : cur;
+                  draftRef.current = merged;
+                  return merged;
+                });
                 setDescOpen(false);
+                searchAuto.markDirty();
+                void searchAuto.flush();
               }}
             >
               확인

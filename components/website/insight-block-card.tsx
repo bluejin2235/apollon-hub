@@ -655,9 +655,12 @@ export function InsightBlockCard({
         hint="이미지는 넣을 수 없습니다. 이미지 블록에서 넣으세요"
         onCancel={() => setBodyOpen(false)}
         onSave={(next) => {
+          // 모달 안은 자동저장 없음. 확인=반영 + 즉시 flush, 취소=미반영
           setBody(next);
-          queueChange({ body: next });
+          pendingRef.current = { ...pendingRef.current, body: next };
+          markDirty();
           setBodyOpen(false);
+          void persistCurrent();
         }}
       />
 
