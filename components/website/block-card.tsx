@@ -510,11 +510,12 @@ export function BlockCard({
 
           {block.preset === "gallery-auto" ? (
             <div>
-              <FieldLabel>줄 높이</FieldLabel>
+              <FieldLabel>목표 줄 높이 (px)</FieldLabel>
               <input
                 type="number"
-                min={80}
-                max={800}
+                min={120}
+                max={1600}
+                step={10}
                 value={rowHeight}
                 onChange={(e) => {
                   const n = Number(e.target.value);
@@ -525,8 +526,9 @@ export function BlockCard({
                 className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <Guide>
-                <GuideTerm anchorId="image-blocks">자동 배치 갤러리</GuideTerm>
-                는 여러 장을 한 번에 올리면 가로 길이를 보고 줄을 나눕니다.
+                이미지를 자르지 않고 원본 비율 그대로, 한 줄을 본문 폭에 꽉 채웁니다.
+                줄 높이는 이 값에 최대한 맞추고, 본문 폭(1312px)이 모자라면 자동으로 낮아집니다.
+                값을 낮추면 한 줄에 더 많이 들어갑니다.
               </Guide>
             </div>
           ) : null}
