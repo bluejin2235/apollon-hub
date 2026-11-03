@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageUploader, type UploadedMedia } from "@/components/website/image-uploader";
-import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { PartialSaveBtn } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import { showToast } from "@/components/website/toast";
 import {
   generatePageMetaDraft,
@@ -94,29 +95,6 @@ function filledLoc(value: Loc | null | undefined): boolean {
   return Boolean(value && (value.ko.trim() || value.en.trim()));
 }
 
-function useFoldPartialSave(onReload: () => Promise<void>) {
-  const [state, setState] = useState<PartialSaveState>("idle");
-  const markDirty = useCallback(() => {
-    setState((cur) => (cur === "saving" ? cur : "dirty"));
-  }, []);
-  const save = useCallback(
-    async (build: () => Promise<boolean>) => {
-      setState("saving");
-      const ok = await build();
-      if (!ok) {
-        setState("dirty");
-        return false;
-      }
-      setState("saved");
-      window.setTimeout(() => setState((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-      await onReload();
-      return true;
-    },
-    [onReload]
-  );
-  return { state, markDirty, save };
-}
-
 function tabDot(row: PageMetaRow | undefined, site: PageMetaRow | undefined): "ok" | "warn" | "" {
   if (!row) return "";
   const ownTitle = filledLoc(row.title);
@@ -169,6 +147,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
   const [descOpen, setDescOpen] = useState(false);
+  const [descDraft, setDescDraft] = useState<Loc>({ ko: "", en: "" });
   const [lunaBusy, setLunaBusy] = useState(false);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -205,16 +184,71 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
 
   useEffect(() => {
     const row = rows.find((r) => r.key === tab);
-    if (row) setDraft(rowToDraft(row));
+    if (!row) return;
+    const next = rowToDraft(row);
+    setDraft(next);
+    draftRef.current = next;
   }, [rows, tab]);
 
-  const searchPartial = useFoldPartialSave(reload);
-  const aiPartial = useFoldPartialSave(reload);
+  const persistSearch = useCallback(async () => {
+    const d = draftRef.current;
+    if (!d) return false;
+    const res = await updatePageMeta(tab, {
+      title: d.title,
+      search_description: {
+        ko: d.search_description.ko,
+        en: d.search_description.en
+      },
+      og_image: d.og_image,
+      og_image_width: d.og_image_width,
+      og_image_height: d.og_image_height
+    });
+    if (!res.ok) {
+      showToast({ message: res.error, tone: "error" });
+      return false;
+    }
+    await reload();
+    return true;
+  }, [reload, tab]);
+
+  const persistAi = useCallback(async () => {
+    const d = draftRef.current;
+    if (!d) return false;
+    const res = await updatePageMeta(tab, {
+      ai_summary: d.ai_summary,
+      schema_type: d.schema_type
+    });
+    if (!res.ok) {
+      showToast({ message: res.error, tone: "error" });
+      return false;
+    }
+    await reload();
+    return true;
+  }, [reload, tab]);
+
+  const searchAuto = useAutoPartialSave({
+    persist: persistSearch,
+    flushId: `page-meta-search:${tab}`
+  });
+  const aiAuto = useAutoPartialSave({
+    persist: persistAi,
+    flushId: `page-meta-ai:${tab}`
+  });
+
+  useEffect(() => {
+    searchAuto.resetFromServer();
+    aiAuto.resetFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 탭 전환 시에만 idle 로
+  }, [tab]);
 
   function patchDraft(next: Partial<Draft>, fold: "search" | "ai") {
-    setDraft((cur) => (cur ? { ...cur, ...next } : cur));
-    if (fold === "search") searchPartial.markDirty();
-    else aiPartial.markDirty();
+    setDraft((cur) => {
+      const merged = cur ? { ...cur, ...next } : cur;
+      draftRef.current = merged;
+      return merged;
+    });
+    if (fold === "search") searchAuto.schedule();
+    else aiAuto.schedule();
   }
 
   const searchDone = useMemo(() => {
@@ -234,49 +268,9 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
     return n;
   }, [draft]);
 
-  async function saveSearch() {
-    return searchPartial.save(async () => {
-      const d = draftRef.current;
-      if (!d) return false;
-      const res = await updatePageMeta(tab, {
-        title: d.title,
-        search_description: {
-          ko: d.search_description.ko,
-          en: d.search_description.en
-        },
-        og_image: d.og_image,
-        og_image_width: d.og_image_width,
-        og_image_height: d.og_image_height
-      });
-      if (!res.ok) {
-        showToast({ message: res.error, tone: "error" });
-        return false;
-      }
-      showToast({ message: "저장되었습니다", tone: "ok" });
-      return true;
-    });
-  }
-
-  async function saveAi() {
-    return aiPartial.save(async () => {
-      const d = draftRef.current;
-      if (!d) return false;
-      const res = await updatePageMeta(tab, {
-        ai_summary: d.ai_summary,
-        schema_type: d.schema_type
-      });
-      if (!res.ok) {
-        showToast({ message: res.error, tone: "error" });
-        return false;
-      }
-      showToast({ message: "저장되었습니다", tone: "ok" });
-      return true;
-    });
-  }
-
   async function saveAll() {
-    const a = await saveSearch();
-    const b = await saveAi();
+    const a = await searchAuto.flush();
+    const b = await aiAuto.flush();
     if (a && b) showToast({ message: "전체 저장되었습니다", tone: "ok" });
   }
 
@@ -371,7 +365,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
             <h4>검색이 읽는 것</h4>
             <div className="grpr">
               <span className={searchDone >= 3 ? "cnt" : "cnt warn"}>{searchDone} / 3</span>
-              <PartialSaveBtn state={searchPartial.state} onClick={() => void saveSearch()} />
+              <PartialSaveBtn state={searchAuto.buttonState} onClick={() => void searchAuto.flush()} />
             </div>
           </div>
           <p className="grpd">구글 검색 결과와 링크 공유에 그대로 나옵니다.</p>
@@ -398,6 +392,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                   onChange={(e) =>
                     patchDraft({ title: { ...draft.title, ko: e.target.value } }, "search")
                   }
+                  onBlur={() => void searchAuto.flush()}
                 />
               </div>
               <div className="lang">
@@ -409,6 +404,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                   onChange={(e) =>
                     patchDraft({ title: { ...draft.title, en: e.target.value } }, "search")
                   }
+                  onBlur={() => void searchAuto.flush()}
                 />
               </div>
               <p className="hint">{isSite ? HELP.siteTitle : HELP.title}</p>
@@ -422,7 +418,14 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                   ?
                 </button>
                 {inheritDesc ? <span className="inherit">사이트 공통을 씁니다</span> : null}
-                <button type="button" className="b sm" onClick={() => setDescOpen(true)}>
+                <button
+                  type="button"
+                  className="b sm"
+                  onClick={() => {
+                    setDescDraft(draft.search_description);
+                    setDescOpen(true);
+                  }}
+                >
                   ⤢ 크게 열기
                 </button>
               </div>
@@ -445,6 +448,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                       "search"
                     )
                   }
+                  onBlur={() => void searchAuto.flush()}
                 />
               </div>
               <div className="lang">
@@ -466,6 +470,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                       "search"
                     )
                   }
+                  onBlur={() => void searchAuto.flush()}
                 />
               </div>
               <div className="hint-row">
@@ -548,7 +553,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
             <h4>AI 가 읽는 것</h4>
             <div className="grpr">
               <span className={aiDone >= 2 ? "cnt" : "cnt warn"}>{aiDone} / 2</span>
-              <PartialSaveBtn state={aiPartial.state} onClick={() => void saveAi()} />
+              <PartialSaveBtn state={aiAuto.buttonState} onClick={() => void aiAuto.flush()} />
             </div>
           </div>
           <p className="grpd">ChatGPT · Perplexity 가 이 페이지를 읽고 답할 때 씁니다.</p>
@@ -580,6 +585,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                       "ai"
                     )
                   }
+                  onBlur={() => void aiAuto.flush()}
                 />
               </div>
               <div className="lang">
@@ -594,6 +600,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
                       "ai"
                     )
                   }
+                  onBlur={() => void aiAuto.flush()}
                 />
               </div>
               <p className="hint">{HELP.ai}</p>
@@ -648,7 +655,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
           <div className="ftr">
             <button
               type="button"
-              className={`b${searchPartial.state === "dirty" || aiPartial.state === "dirty" ? "" : " off"}`}
+              className={`b${searchAuto.state === "dirty" || searchAuto.state === "error" || aiAuto.state === "dirty" || aiAuto.state === "error" ? "" : " off"}`}
               onClick={() => void saveAll()}
             >
               전체 저장
@@ -687,6 +694,7 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
         </div>
       </div>
 
+      {/* 모달: 로컬 초안만 편집. 취소=버리고 닫기, 확인=본문에 반영 후 자동저장 */}
       <div className={descOpen ? "big-ov on" : "big-ov"}>
         <div className="big-mw">
           <div className="big-mwh">
@@ -699,31 +707,32 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
             <span className="tag">국문</span>
             <textarea
               rows={6}
-              value={draft.search_description.ko}
-              onChange={(e) =>
-                patchDraft(
-                  {
-                    search_description: { ...draft.search_description, ko: e.target.value }
-                  },
-                  "search"
-                )
-              }
+              value={descDraft.ko}
+              onChange={(e) => setDescDraft({ ...descDraft, ko: e.target.value })}
             />
           </div>
           <div className="lang">
             <span className="tag">영문</span>
             <textarea
               rows={6}
-              value={draft.search_description.en}
-              onChange={(e) =>
-                patchDraft(
-                  {
-                    search_description: { ...draft.search_description, en: e.target.value }
-                  },
-                  "search"
-                )
-              }
+              value={descDraft.en}
+              onChange={(e) => setDescDraft({ ...descDraft, en: e.target.value })}
             />
+          </div>
+          <div className="big-mwf">
+            <button type="button" className="b sm" onClick={() => setDescOpen(false)}>
+              취소
+            </button>
+            <button
+              type="button"
+              className="b sm"
+              onClick={() => {
+                patchDraft({ search_description: descDraft }, "search");
+                setDescOpen(false);
+              }}
+            >
+              확인
+            </button>
           </div>
         </div>
       </div>

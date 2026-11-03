@@ -40,6 +40,11 @@ function httpsOk(value: string | null | undefined) {
   return Boolean(value && /^https:\/\//i.test(value.trim()));
 }
 
+/**
+ * 채용 공고 폼 — 자동 부분저장 제외.
+ * onClose(취소)가 로컬 입력을 버리고 닫혀야 하므로, 입력 중 원본 저장하면 되돌리기가 깨짐.
+ * 저장·게시 버튼으로만 확정.
+ */
 function JobForm({
   job,
   canManage,
