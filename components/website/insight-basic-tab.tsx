@@ -10,6 +10,7 @@ import {
 } from "@/components/website/insight-crop-modal";
 import { useFullSave } from "@/components/website/full-save-registry";
 import { PartialSaveBtn, type PartialSaveState } from "@/components/website/partial-save-btn";
+import { useAutoPartialSave } from "@/components/website/use-auto-partial-save";
 import { TagPicker } from "@/components/website/tag-picker";
 import { showToast } from "@/components/website/toast";
 import { locField } from "@/components/website/work-editor-ui";
@@ -143,7 +144,11 @@ function isDefaultTitle(title: { ko: string; en: string }) {
   return (ko === "새 글" || !ko) && (en === "New" || !en);
 }
 
-function useFoldPartialSave(onReload: () => Promise<void>) {
+/**
+ * 대표 이미지 접이만 수동.
+ * 자동저장 제외: 비율·자르기 모달 「확인」 전에 원본이 확정되면 안 됨.
+ */
+function useMediaManualPartialSave(onReload: () => Promise<void>) {
   const { savedTick } = useFullSave();
   const [state, setState] = useState<PartialSaveState>("idle");
 
@@ -220,15 +225,65 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const [cropOpen, setCropOpen] = useState(false);
   const [slugBusy, setSlugBusy] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
-  const screenPartial = useFoldPartialSave(onReload);
-  const mediaPartial = useFoldPartialSave(onReload);
-  const searchPartial = useFoldPartialSave(onReload);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const lastLunaSlugRef = useRef<string | null>(null);
   const slugTimerRef = useRef<number | null>(null);
   const slugSeqRef = useRef(0);
   const canAutoSlug = insight.status !== "published";
+  const mediaPartial = useMediaManualPartialSave(onReload);
+
+  const persistScreen = useCallback(async () => {
+    const d = draftRef.current;
+    const isNews = isNewsCategory(d.category_id);
+    const res = await updateInsight(insight.id, {
+      category_id: d.category_id,
+      title: d.title,
+      subtitle: d.subtitle,
+      published_at: d.published_at || null,
+      press_outlet: isNews ? d.press_outlet.trim() || null : null,
+      press_href: isNews ? d.press_href.trim() || null : null,
+      press_date: isNews ? d.press_date.trim() || null : null
+    });
+    if (!res.ok) {
+      showToast({ tone: "error", message: apiFailMessage(res) });
+      return false;
+    }
+    await onReload();
+    return true;
+  }, [insight.id, onReload]);
+
+  const screenAuto = useAutoPartialSave({
+    persist: persistScreen,
+    flushId: `insight-basic-screen:${insight.id}`
+  });
+
+  /** 슬러그 칸은 schedule 안 함. 요약·alt 자동/부분 저장 시 현재 슬러그 동봉. */
+  const persistSearch = useCallback(async () => {
+    const d = draftRef.current;
+    const res = await updateInsight(insight.id, {
+      slug: d.slug,
+      summary: d.summary,
+      key_image_alt: d.key_image_alt
+    });
+    if (!res.ok) {
+      showToast({
+        tone: "error",
+        message: apiFailMessage(res, {
+          summaryKo: d.summary.ko,
+          keyAltKo: d.key_image_alt.ko
+        })
+      });
+      return false;
+    }
+    await onReload();
+    return true;
+  }, [insight.id, onReload]);
+
+  const searchAuto = useAutoPartialSave({
+    persist: persistSearch,
+    flushId: `insight-basic-search:${insight.id}`
+  });
 
   const chosenRatio: InsightCropRatio =
     draft.key_image_ratio ||
@@ -256,8 +311,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   }
 
   function patchScreen(next: Partial<InsightBasicDraft>) {
-    screenPartial.markDirty();
     onChange(next);
+    screenAuto.schedule();
   }
 
   function patchMedia(next: Partial<InsightBasicDraft>) {
@@ -266,8 +321,16 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   }
 
   function patchSearch(next: Partial<InsightBasicDraft>) {
-    searchPartial.markDirty();
     onChange(next);
+    if ("slug" in next && !("summary" in next) && !("key_image_alt" in next)) {
+      searchAuto.markDirty();
+      return;
+    }
+    if ("summary" in next || "key_image_alt" in next) {
+      searchAuto.schedule();
+    } else {
+      searchAuto.markDirty();
+    }
   }
 
   async function fillSlugFromTitle(title: { ko: string; en: string }, opts?: { force?: boolean }) {
@@ -313,27 +376,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
     };
   }, []);
 
-  async function saveScreen() {
-    return screenPartial.save(async () => {
-      const d = draftRef.current;
-      const isNews = isNewsCategory(d.category_id);
-      const res = await updateInsight(insight.id, {
-        category_id: d.category_id,
-        title: d.title,
-        subtitle: d.subtitle,
-        published_at: d.published_at || null,
-        press_outlet: isNews ? d.press_outlet.trim() || null : null,
-        press_href: isNews ? d.press_href.trim() || null : null,
-        press_date: isNews ? d.press_date.trim() || null : null
-      });
-      if (!res.ok) {
-        showToast({ tone: "error", message: apiFailMessage(res) });
-        return false;
-      }
-      return true;
-    });
-  }
-
   async function saveMedia() {
     return mediaPartial.save(async () => {
       const d = draftRef.current;
@@ -357,28 +399,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
     });
   }
 
-  async function saveSearch() {
-    return searchPartial.save(async () => {
-      const d = draftRef.current;
-      const res = await updateInsight(insight.id, {
-        slug: d.slug,
-        summary: d.summary,
-        key_image_alt: d.key_image_alt
-      });
-      if (!res.ok) {
-        showToast({
-          tone: "error",
-          message: apiFailMessage(res, {
-            summaryKo: d.summary.ko,
-            keyAltKo: d.key_image_alt.ko
-          })
-        });
-        return false;
-      }
-      return true;
-    });
-  }
-
   return (
     <div className="wa">
       <section className="grp">
@@ -386,7 +406,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
           <h3>화면에 나오는 것</h3>
           <div className="grpr">
             <span className={screenDone >= 5 ? "cnt" : "cnt warn"}>{screenDone} / 5</span>
-            <PartialSaveBtn state={screenPartial.state} onClick={() => void saveScreen()} />
+            <PartialSaveBtn state={screenAuto.buttonState} onClick={() => void screenAuto.flush()} />
           </div>
         </div>
 
@@ -446,6 +466,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   patchScreen({ title });
                   scheduleSlugFromTitle(title);
                 }}
+                onBlur={() => void screenAuto.flush()}
               />
             </div>
             <div className="seclang">
@@ -459,6 +480,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   patchScreen({ title });
                   scheduleSlugFromTitle(title);
                 }}
+                onBlur={() => void screenAuto.flush()}
               />
             </div>
             <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
@@ -488,6 +510,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onChange={(e) =>
                   patchScreen({ subtitle: locField(draft.subtitle, "ko", e.target.value) })
                 }
+                onBlur={() => void screenAuto.flush()}
               />
             </div>
             <div className="seclang">
@@ -500,6 +523,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onChange={(e) =>
                   patchScreen({ subtitle: locField(draft.subtitle, "en", e.target.value) })
                 }
+                onBlur={() => void screenAuto.flush()}
               />
             </div>
             <p className="hint-line">제목 아래. 줄바꿈이 그대로 나옵니다</p>
@@ -521,6 +545,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   type="date"
                   value={draft.published_at}
                   onChange={(e) => patchScreen({ published_at: e.target.value })}
+                  onBlur={() => void screenAuto.flush()}
                 />
                 <p className="hint-line">목록 정렬 기준</p>
               </div>
@@ -556,6 +581,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     className="i"
                     value={draft.press_outlet}
                     onChange={(e) => patchScreen({ press_outlet: e.target.value })}
+                    onBlur={() => void screenAuto.flush()}
                   />
                   <p className="hint-line">매체 이름</p>
                 </div>
@@ -564,6 +590,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     className="i"
                     value={draft.press_href}
                     onChange={(e) => patchScreen({ press_href: e.target.value })}
+                    onBlur={() => void screenAuto.flush()}
                   />
                   <p className="hint-line">원문 주소</p>
                 </div>
@@ -572,6 +599,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     className="i"
                     value={draft.press_date}
                     onChange={(e) => patchScreen({ press_date: e.target.value })}
+                    onBlur={() => void screenAuto.flush()}
                   />
                   <p className="hint-line">보도일</p>
                 </div>
@@ -595,6 +623,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
           <h3>대표 이미지</h3>
           <div className="grpr">
             <span className={mediaDone >= 1 ? "cnt" : "cnt warn"}>{mediaDone} / 1</span>
+            {/* 대표 이미지: 크롭 모달 취소 가능해야 해서 자동저장 제외 */}
             <PartialSaveBtn state={mediaPartial.state} onClick={() => void saveMedia()} />
           </div>
         </div>
@@ -692,7 +721,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
           <h3>검색과 AI 가 읽는 것</h3>
           <div className="grpr">
             <span className={searchDone >= 3 ? "cnt" : "cnt warn"}>{searchDone} / 3</span>
-            <PartialSaveBtn state={searchPartial.state} onClick={() => void saveSearch()} />
+            <PartialSaveBtn state={searchAuto.buttonState} onClick={() => void searchAuto.flush()} />
           </div>
         </div>
         <p className="grpd">
@@ -710,6 +739,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             </div>
             <div className="slugrow">
               <span className="pre">apollonworks.com/insight/</span>
+              {/* 슬러그: 디바운스 자동저장 없음 — 부분 저장으로만 확정 */}
               <input
                 className="i"
                 value={draft.slug}
@@ -754,6 +784,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onChange={(e) =>
                   patchSearch({ summary: { ...draft.summary, ko: e.target.value } })
                 }
+                onBlur={() => void searchAuto.flush()}
               />
               <textarea
                 className="i"
@@ -762,6 +793,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onChange={(e) =>
                   patchSearch({ summary: { ...draft.summary, en: e.target.value } })
                 }
+                onBlur={() => void searchAuto.flush()}
               />
             </div>
             <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
@@ -788,6 +820,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     key_image_alt: { ...draft.key_image_alt, ko: e.target.value }
                   })
                 }
+                onBlur={() => void searchAuto.flush()}
               />
               <input
                 className="i"
@@ -797,6 +830,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     key_image_alt: { ...draft.key_image_alt, en: e.target.value }
                   })
                 }
+                onBlur={() => void searchAuto.flush()}
               />
             </div>
             <p className="hint-line">이미지를 못 보는 사람과 AI 가 읽습니다</p>

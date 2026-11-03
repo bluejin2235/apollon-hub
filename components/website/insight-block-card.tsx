@@ -14,6 +14,7 @@ import {
   PartialSaveBtn,
   type PartialSaveState
 } from "@/components/website/partial-save-btn";
+import { AUTO_PARTIAL_SAVE_DEBOUNCE_MS } from "@/components/website/use-auto-partial-save";
 import { Field } from "@/components/website/ui";
 import { locField, TextInput, ToggleRow } from "@/components/website/work-editor-ui";
 import { imageLimitForPreset } from "@/components/website/block-presets";
@@ -70,7 +71,7 @@ function orderLabel(index: number, name: string) {
   return `${String(index).padStart(2, "0")} · ${name}`;
 }
 
-type SaveState = PartialSaveState | "error";
+type SaveState = PartialSaveState;
 
 const STALE_REMOTE_MSG = "다른 곳에서 바뀌었습니다. 저장하면 이 입력으로 덮어씁니다.";
 
@@ -133,10 +134,11 @@ export function InsightBlockCard({
   const [role, setRole] = useState(pressRole);
   const [localPortrait, setLocalPortrait] = useState(portrait);
   const [staleRemote, setStaleRemote] = useState(false);
-  const { registerFlush } = useFullSave();
+  const { registerFlush, registerDirty } = useFullSave();
   const pendingRef = useRef<Record<string, unknown>>({});
   const personPendingRef = useRef<Record<string, unknown>>({});
   const imagePendingRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveRef = useRef(save);
   saveRef.current = save;
   const flushDirtyRef = useRef<() => Promise<boolean>>(async () => true);
@@ -174,24 +176,43 @@ export function InsightBlockCard({
     [block.id, registerFlush]
   );
 
+  useEffect(
+    () =>
+      registerDirty(`insight-block:${block.id}`, () => {
+        const cur = saveRef.current;
+        return cur === "dirty" || cur === "error" || cur === "saving";
+      }),
+    [block.id, registerDirty]
+  );
+
   function markDirty() {
     setSave((cur) => (cur === "saving" ? cur : "dirty"));
+  }
+
+  function armDebounce() {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      void flushDirtyRef.current();
+    }, AUTO_PARTIAL_SAVE_DEBOUNCE_MS);
   }
 
   function queueChange(patch: Record<string, unknown>) {
     pendingRef.current = { ...pendingRef.current, ...patch };
     markDirty();
+    armDebounce();
   }
 
   function queuePerson(patch: Record<string, unknown>) {
     personPendingRef.current = { ...personPendingRef.current, ...patch };
     markDirty();
+    armDebounce();
   }
 
   function queueImage(imageId: string, patch: Record<string, unknown>) {
     const prev = imagePendingRef.current.get(imageId) ?? {};
     imagePendingRef.current.set(imageId, { ...prev, ...patch });
     markDirty();
+    armDebounce();
   }
 
   function buildFullPatch(): Record<string, unknown> {
@@ -224,6 +245,7 @@ export function InsightBlockCard({
   }
 
   async function persistCurrent(): Promise<boolean> {
+    if (timer.current) clearTimeout(timer.current);
     setError(null);
     setSave("saving");
     const blockPatch = { ...buildFullPatch(), ...pendingRef.current };
@@ -456,6 +478,7 @@ export function InsightBlockCard({
                       setPerson(v);
                       queuePerson({ press_person: v.trim() || null });
                     }}
+                    onBlur={() => void flushDirtyRef.current()}
                   />
                 </Field>
                 <Field label="직함">
@@ -465,6 +488,7 @@ export function InsightBlockCard({
                       setRole(v);
                       queuePerson({ press_role: v.trim() || null });
                     }}
+                    onBlur={() => void flushDirtyRef.current()}
                   />
                 </Field>
               </div>
@@ -486,6 +510,7 @@ export function InsightBlockCard({
                         setQuestion(next);
                         queueChange({ question: next, answer });
                       }}
+                      onBlur={() => void flushDirtyRef.current()}
                     />
                   </div>
                   <div>
@@ -497,6 +522,7 @@ export function InsightBlockCard({
                         setQuestion(next);
                         queueChange({ question: next, answer });
                       }}
+                      onBlur={() => void flushDirtyRef.current()}
                     />
                   </div>
                 </div>
@@ -520,6 +546,7 @@ export function InsightBlockCard({
                         setAnswer(next);
                         queueChange({ question, answer: next });
                       }}
+                      onBlur={() => void flushDirtyRef.current()}
                     />
                   </div>
                   <div>
@@ -532,6 +559,7 @@ export function InsightBlockCard({
                         setAnswer(next);
                         queueChange({ question, answer: next });
                       }}
+                      onBlur={() => void flushDirtyRef.current()}
                     />
                   </div>
                 </div>
