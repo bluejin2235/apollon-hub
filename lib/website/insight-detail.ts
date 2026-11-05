@@ -108,10 +108,6 @@ export function parseInsightEditorTab(value: string | null): InsightEditorTab {
   return "basic";
 }
 
-export function isNewsCategory(categoryId: string) {
-  return categoryId === "news";
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -317,7 +313,6 @@ export function draftFromInsight(insight: InsightDetail): InsightBasicDraft {
 }
 
 export function insightPatchFromDraft(draft: InsightBasicDraft): Record<string, unknown> {
-  const news = isNewsCategory(draft.category_id);
   return {
     slug: draft.slug,
     category_id: draft.category_id,
@@ -330,9 +325,9 @@ export function insightPatchFromDraft(draft: InsightBasicDraft): Record<string, 
     key_image_height: draft.key_image ? draft.key_image_height : null,
     key_image_alt: draft.key_image_alt,
     key_image_ratio: draft.key_image ? draft.key_image_ratio || null : null,
-    press_outlet: news ? draft.press_outlet.trim() || null : null,
-    press_href: news ? draft.press_href.trim() || null : null,
-    press_date: news ? draft.press_date.trim() || null : null,
+    press_outlet: draft.press_outlet.trim() || null,
+    press_href: draft.press_href.trim() || null,
+    press_date: draft.press_date.trim() || null,
     year: draft.year || null,
     published_at: draft.published_at || null
   };

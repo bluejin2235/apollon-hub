@@ -12,7 +12,6 @@ type Props = {
 };
 
 const CAT_CHIP: Record<string, string> = {
-  "behind-the-work": "bg-[#eef0fb] text-[#4b5bb5]",
   interview: "bg-[#eef4fb] text-[#2563a8]",
   news: "bg-[#f3eefb] text-[#7c3aed]",
   culture: "bg-[#fdf3ee] text-[#a35a08]",
@@ -127,7 +126,7 @@ export function NewInsightModal({ open, onClose }: Props) {
                 className="flex w-full items-center gap-3 rounded-[7px] border border-[#dde1e6] px-[11px] py-2 text-left text-xs text-[#3a4049] hover:bg-slate-50 disabled:opacity-60"
               >
                 <span className={`rounded-[3px] px-[7px] py-0.5 text-[10px] font-bold ${chip}`}>
-                  {c.id === "behind-the-work" ? "비하인드 워크" : c.label?.ko || c.id}
+                  {c.label?.ko || c.label?.en || c.id}
                 </span>
                 <span className="text-[12.5px] font-medium text-slate-800">{c.label?.en || c.id}</span>
                 {busy ? <span className="ml-auto text-[11px] text-slate-400">만드는 중…</span> : null}

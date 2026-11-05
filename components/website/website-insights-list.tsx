@@ -38,7 +38,6 @@ const PUBLISH_REDIRECT_KEY = "website-insight-publish-toast";
 type SortKey = "recent" | "title" | "published" | "views";
 
 const CAT_CHIP: Record<string, string> = {
-  "behind-the-work": "bg-[#eef0fb] text-[#4b5bb5]",
   interview: "bg-[#eef4fb] text-[#2563a8]",
   news: "bg-[#f3eefb] text-[#7c3aed]",
   culture: "bg-[#fdf3ee] text-[#a35a08]",
@@ -402,7 +401,7 @@ export function WebsiteInsightsList({ siteUrl }: { siteUrl: string }) {
   const labelById = useMemo(() => {
     const map = new Map<string, string>();
     for (const c of categories) {
-      map.set(c.id, c.id === "behind-the-work" ? "비하인드 워크" : c.label?.ko || c.id);
+      map.set(c.id, c.label?.ko || c.label?.en || c.id);
     }
     return map;
   }, [categories]);

@@ -17,7 +17,6 @@ import { locField } from "@/components/website/work-editor-ui";
 import { setInsightTags, updateInsight, generateInsightSlug } from "@/lib/website/api";
 import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
-  isNewsCategory,
   type InsightBasicDraft,
   type InsightDetail,
   type KeyImageRatio
@@ -81,11 +80,11 @@ const HELP = {
     empty: "필터에서 이 워크를 찾을 수 없습니다"
   },
   news: {
-    title: "뉴스일 때만 나오는 칸",
-    use: "상세 상단에 「Press 서울경제 · 원문보기」로 나옵니다",
-    rule: "뉴스일 때만 나오는 칸",
-    note: "매체 이름 · 원문 주소 · 보도일",
-    empty: "상세 상단에 「Press 서울경제 · 원문보기」로 나옵니다"
+    title: "출처",
+    use: "상세 상단에 「서울경제 · 원문보기」로 나옵니다",
+    rule: "선택. 비워도 공개됩니다",
+    note: "매체 이름 · 원문 주소 · 보도일. 모든 분류에서 같습니다",
+    empty: "상세 상단에 출처 줄이 나오지 않습니다"
   },
   key: {
     title: "대표 이미지",
@@ -220,7 +219,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const uploadRoot = workFolderPrefix(draft.slug || insight.slug, insight.id);
   const keyFilled = !isPlaceholderKey(draft.key_image);
   const tags = [...(insight.insight_tags ?? [])].sort((a, b) => a.sort - b.sort);
-  const news = isNewsCategory(draft.category_id);
   const [openHelp, setOpenHelp] = useState<keyof typeof HELP | null>(null);
   const [cropOpen, setCropOpen] = useState(false);
   const [slugBusy, setSlugBusy] = useState(false);
@@ -235,15 +233,14 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
 
   const persistScreen = useCallback(async () => {
     const d = draftRef.current;
-    const isNews = isNewsCategory(d.category_id);
     const res = await updateInsight(insight.id, {
       category_id: d.category_id,
       title: d.title,
       subtitle: d.subtitle,
       published_at: d.published_at || null,
-      press_outlet: isNews ? d.press_outlet.trim() || null : null,
-      press_href: isNews ? d.press_href.trim() || null : null,
-      press_date: isNews ? d.press_date.trim() || null : null
+      press_outlet: d.press_outlet.trim() || null,
+      press_href: d.press_href.trim() || null,
+      press_date: d.press_date.trim() || null
     });
     if (!res.ok) {
       showToast({ tone: "error", message: apiFailMessage(res) });
@@ -427,16 +424,9 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                     key={item.id}
                     type="button"
                     className={on ? "btn sm acc" : "btn sm"}
-                    onClick={() =>
-                      patchScreen({
-                        category_id: item.id,
-                        ...(item.id === "news"
-                          ? {}
-                          : { press_outlet: "", press_href: "", press_date: "" })
-                      })
-                    }
+                    onClick={() => patchScreen({ category_id: item.id })}
                   >
-                    {item.id === "behind-the-work" ? "비하인드 워크" : item.label?.ko || item.id}
+                    {item.label?.ko || item.label?.en || item.id}
                   </button>
                 );
               })}
@@ -572,9 +562,8 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
             <HelpPanel open={openHelp === "pub"} body={HELP.pub} onClose={() => setOpenHelp(null)} />
           </div>
 
-          {news ? (
-            <div className="catbox" data-insight-news-fields>
-              <div className="h">뉴스일 때만 나오는 칸</div>
+          <div className="catbox" data-insight-news-fields>
+              <div className="h">출처</div>
               <div className="row-news">
                 <div>
                   <input
@@ -604,7 +593,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   <p className="hint-line">보도일</p>
                 </div>
               </div>
-              <p className="hint-line">상세 상단에 「Press 서울경제 · 원문보기」로 나옵니다</p>
+              <p className="hint-line">선택입니다. 비우면 상세 상단에 출처 줄이 나오지 않습니다</p>
               <button type="button" className="q" onClick={() => toggleHelp("news")}>
                 ?
               </button>
@@ -614,7 +603,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onClose={() => setOpenHelp(null)}
               />
             </div>
-          ) : null}
         </div>
       </section>
 
