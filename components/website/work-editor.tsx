@@ -13,7 +13,9 @@ import type { CheckWorks, WebsiteCategory } from "@/lib/website/types";
 import {
   draftFromWork,
   formatSavedAt,
-  interviewRowOf,
+  creatorWordsBlockPublish,
+  creatorWordsOf,
+  creatorWordsWarnEn,
   interviewSectionOf,
   parseEditorTab,
   parseWorkDetail,
@@ -22,7 +24,11 @@ import {
   type WorkBasicDraft,
   type WorkDetail
 } from "@/lib/website/work-detail";
-import { WorkPublishCheckList, buildWorkCheckItems } from "@/components/website/publish-check-panel";
+import {
+  WorkPublishCheckList,
+  buildWorkCheckItems,
+  type WorkCheckItem
+} from "@/components/website/publish-check-panel";
 import { buildVideoBlockCheckItems, findVideoBlockGaps } from "@/lib/website/video-block-check";
 import { PublishModal } from "@/components/website/publish-modal";
 import { ConfirmDialog } from "@/components/website/confirm-dialog";
@@ -69,7 +75,7 @@ function visibilityClass(v: WorkSiteVisibility) {
 const TABS: { id: EditorTab; label: string }[] = [
   { id: "basic", label: "기본정보" },
   { id: "content", label: "본문" },
-  { id: "interview", label: "인터뷰" },
+  { id: "interview", label: "Creator’s Word" },
   { id: "credits", label: "크레딧" },
   { id: "faq", label: "FAQ" },
   { id: "related", label: "연결" },
@@ -89,11 +95,10 @@ function tabDot(tab: EditorTab, check: CheckWorks | null, work: WorkDetail | nul
   }
   if (tab === "content") return fillBody(check);
   if (tab === "interview") {
-    const on = Boolean(work && interviewSectionOf(work));
-    const has = Boolean(work && interviewRowOf(work)?.insight_id);
-    if (on && !has) return "warn";
-    if (has) return "ok";
-    return "empty";
+    if (!work || !interviewSectionOf(work)) return "empty";
+    if (creatorWordsBlockPublish(work)) return "warn";
+    if (creatorWordsWarnEn(work)) return "warn";
+    return creatorWordsOf(work).length > 0 ? "ok" : "empty";
   }
   if (tab === "credits") {
     return (work?.work_credits?.length ?? 0) > 0 ? "ok" : "empty";
@@ -146,8 +151,38 @@ function mergeCheck(check: CheckWorks | null, details: unknown): CheckWorks | nu
   return next;
 }
 
-function interviewBlocksPublish(work: WorkDetail): boolean {
-  return Boolean(interviewSectionOf(work) && !interviewRowOf(work)?.insight_id);
+function creatorWordCheckItems(work: WorkDetail): WorkCheckItem[] {
+  if (!interviewSectionOf(work)) return [];
+  const words = creatorWordsOf(work);
+  const items: WorkCheckItem[] = [];
+  if (words.length === 0) {
+    items.push({
+      flag: "creator_words_empty",
+      kind: "problem",
+      tab: "interview",
+      title: "표시가 켜져 있는데 한 줄 평이 없습니다",
+      where: "Creator’s Word · 한 줄 평을 추가하거나 표시를 끄세요"
+    });
+  }
+  if (words.some((word) => !word.quote.ko.trim() || !word.name.ko.trim())) {
+    items.push({
+      flag: "creator_words_missing_ko",
+      kind: "problem",
+      tab: "interview",
+      title: "이름 또는 국문 한 줄 평이 비어 있습니다",
+      where: "Creator’s Word · 이름과 국문 한 줄 평은 필수입니다"
+    });
+  }
+  if (creatorWordsWarnEn(work)) {
+    items.push({
+      flag: "creator_words_missing_en",
+      kind: "warn",
+      tab: "interview",
+      title: "영문이 비어 있는 칸이 있습니다",
+      where: "Creator’s Word · 영문은 비어 있어도 공개할 수 있습니다"
+    });
+  }
+  return items;
 }
 
 export function WorkEditor({ workId, siteUrl }: { workId: string; siteUrl: string }) {
@@ -263,7 +298,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
   const rawCheck = checkOverride ?? work?.check ?? null;
   const check = work && rawCheck ? applyTextDupChecks(work, rawCheck) : rawCheck;
   const canPublish =
-    problemCount(check, work, draft) === 0 && !(work && interviewBlocksPublish(work));
+    problemCount(check, work, draft) === 0 && !(work && creatorWordsBlockPublish(work));
   const skipCheck = skipPublishCheck();
   const allowPublish = canPublish || skipCheck;
   const visibility = work?.site_visibility ?? "draft";
@@ -276,7 +311,8 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             summaryKo: draft?.summary.ko,
             keyAltKo: draft?.key_image_alt.ko
           }),
-          ...buildVideoBlockCheckItems(work)
+          ...buildVideoBlockCheckItems(work),
+          ...creatorWordCheckItems(work)
         ]
       : [];
   const problemItems = checkItems.filter((item) => item.kind === "problem");
@@ -526,6 +562,11 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
   async function handlePreview() {
     setPreviewBlocked(false);
     try {
+      const flushed = await runFlushes();
+      if (!flushed) {
+        setError("저장하지 못한 칸이 있어 미리보기를 열지 못했습니다");
+        return;
+      }
       const ok = await openPreview({ workId });
       if (!ok) {
         setPreviewBlocked(true);

@@ -12,7 +12,14 @@ import { aiUnconfirmedBySection, countAiUnconfirmed } from "@/lib/website/work-d
 export type CheckItemKind = "problem" | "warn";
 
 export type WorkCheckItem = {
-  flag: (typeof PROBLEM_FLAGS)[number] | (typeof WARN_FLAGS)[number] | `video:${string}` | "missing_summary";
+  flag:
+    | (typeof PROBLEM_FLAGS)[number]
+    | (typeof WARN_FLAGS)[number]
+    | `video:${string}`
+    | "missing_summary"
+    | "creator_words_empty"
+    | "creator_words_missing_ko"
+    | "creator_words_missing_en";
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
@@ -25,7 +32,7 @@ export type WorkCheckItem = {
 const TAB_NAME: Record<EditorTab, string> = {
   basic: "기본정보",
   content: "본문",
-  interview: "인터뷰",
+  interview: "Creator’s Word",
   credits: "크레딧",
   faq: "FAQ",
   related: "연결",

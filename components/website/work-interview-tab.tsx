@@ -2,23 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  clearInterview,
+  createCreatorWord,
   createSection,
+  deleteCreatorWord,
   deleteSection,
-  getInsight,
-  getMeta,
-  listInsights,
-  setInterview
+  reorderCreatorWords,
+  searchContent,
+  updateCreatorWord,
+  type SearchHit
 } from "@/lib/website/api";
-import type { InsightListItem, WebsiteCategory } from "@/lib/website/types";
-import { parseInsightDetail } from "@/lib/website/insight-detail";
+import { apiFailMessage } from "@/lib/website/api-fail-message";
 import {
-  asLoc,
+  creatorWordsOf,
   emptyLoc,
-  interviewRowOf,
   interviewSectionOf,
-  locOrNull,
   mediaUrl,
+  type CreatorWord,
   type Loc,
   type WorkDetail
 } from "@/lib/website/work-detail";
@@ -32,218 +31,191 @@ type Props = {
   onReload: () => Promise<void>;
 };
 
-type HelpId = "ins" | "quote" | "who";
+const MAX_CARDS = 6;
+const QUOTE_KO_MAX = 200;
+const QUOTE_EN_MAX = 300;
+const PERSON_MAX = 60;
+const UNDO_MS = 5000;
 
-const HELP: Record<
-  HelpId,
-  { title: string; use: string; rule: string; note: string; empty: string }
-> = {
-  ins: {
-    title: "연결한 인사이트",
-    use: "워크 상세 하단 인터뷰 자리. 인용문과 사진이 나오고 누르면 그 인사이트로 갑니다",
-    rule: "공개된 인사이트만 고를 수 있습니다",
-    note: "연결한 인사이트를 감추면 이 워크의 인터뷰도 안 나옵니다",
-    empty: "인터뷰 표시를 켜둔 채 비우면 공개할 수 없습니다"
-  },
-  quote: {
-    title: "화면에 보일 인용문",
-    use: "인터뷰 자리에 큰 글씨로 나오는 한 문장",
-    rule: "한 문장으로",
-    note: "인사이트 본문이 길면 그중 이 워크와 맞는 한 문장만 골라 적으세요",
-    empty: "인사이트에 적힌 원래 인용문이 나옵니다"
-  },
-  who: {
-    title: "이름 · 직함",
-    use: "인용문 아래 작은 글씨",
-    rule: "이름과 직함을 가운뎃점으로 잇습니다",
-    note: "외부 인물이면 소속을 적으세요",
-    empty: "인사이트에 적힌 이름이 나옵니다"
-  }
-};
+type FieldKey = "quote" | "name" | "rank" | "org";
 
-function formatDotDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric"
-  }).formatToParts(date);
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-  if (!year || !month || !day) return null;
-  return `${year}. ${month}. ${day}`;
+function sameLoc(a: Loc, b: Loc) {
+  return a.ko === b.ko && a.en === b.en;
 }
 
-function locField(current: Loc, side: "ko" | "en", value: string): Loc {
-  return { ...current, [side]: value };
+function sameWord(a: CreatorWord, b: CreatorWord) {
+  return (
+    a.id === b.id &&
+    a.sort === b.sort &&
+    a.insight_id === b.insight_id &&
+    sameLoc(a.quote, b.quote) &&
+    sameLoc(a.name, b.name) &&
+    sameLoc(a.rank, b.rank) &&
+    sameLoc(a.org, b.org)
+  );
+}
+
+function sameList(a: CreatorWord[], b: CreatorWord[]) {
+  if (a.length !== b.length) return false;
+  return a.every((word, index) => sameWord(word, b[index]!));
+}
+
+function clip(value: string, max: number) {
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function personLine(word: CreatorWord) {
+  return [word.name.ko, word.rank.ko, word.org.ko]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function hitTitle(hit: SearchHit) {
+  if (!hit.title) return hit.slug;
+  if (typeof hit.title === "string") return hit.title;
+  return hit.title.ko?.trim() || hit.title.en?.trim() || hit.slug;
+}
+
+function hitDate(iso: string | null | undefined) {
+  if (!iso) return "";
+  const day = iso.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
 }
 
 export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
   const section = interviewSectionOf(work);
-  const row = interviewRowOf(work);
-  const shown = Boolean(section);
-  const [on, setOn] = useState(shown);
-  const [quote, setQuote] = useState<Loc>(asLoc(row?.quote_override));
-  const [attribution, setAttribution] = useState<Loc>(asLoc(row?.attribution_override));
+  const saved = useMemo(() => creatorWordsOf(work), [work]);
+  const [rows, setRows] = useState<CreatorWord[]>(saved);
+  const [shown, setShown] = useState(Boolean(section));
   const [error, setError] = useState<string | null>(null);
-  const quoteRef = useRef(quote);
-  const attributionRef = useRef(attribution);
-  quoteRef.current = quote;
-  attributionRef.current = attribution;
-  const [openHelp, setOpenHelp] = useState<HelpId | null>(null);
-  const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<InsightListItem | null>(null);
-  const [categories, setCategories] = useState<WebsiteCategory[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [catalog, setCatalog] = useState<SearchHit[] | null>(null);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const pendingRef = useRef<string | null>(null);
+  const chainRef = useRef(Promise.resolve());
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const run = chainRef.current.then(job, job);
+    chainRef.current = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  const dirty = Boolean(pendingDelete) || !sameList(rows, saved);
 
   const auto = useAutoPartialSave({
-    flushId: `work-interview:${work.id}`,
-    enabled: Boolean(on && row?.insight_id && section),
-    persist: async () => {
-      if (!row?.insight_id || !section) return true;
-      setError(null);
-      const res = await setInterview(work.id, {
-        section_id: section.id,
-        insight_id: row.insight_id,
-        quote_override: locOrNull(quoteRef.current),
-        attribution_override: locOrNull(attributionRef.current)
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return false;
-      }
-      await onReload();
-      return true;
-    }
+    flushId: `work-creator-words:${work.id}`,
+    persist: () =>
+      enqueue(async () => {
+        setError(null);
+        const skip = pendingRef.current;
+        const savedById = new Map(creatorWordsOf(work).map((word) => [word.id, word]));
+        for (const word of rowsRef.current) {
+          if (word.id === skip) continue;
+          const previous = savedById.get(word.id);
+          if (
+            previous &&
+            previous.insight_id === word.insight_id &&
+            sameLoc(previous.quote, word.quote) &&
+            sameLoc(previous.name, word.name) &&
+            sameLoc(previous.rank, word.rank) &&
+            sameLoc(previous.org, word.org)
+          ) {
+            continue;
+          }
+          const res = await updateCreatorWord(work.id, word.id, {
+            quote: word.quote,
+            name: word.name,
+            rank: word.rank,
+            org: word.org,
+            insight_id: word.insight_id
+          });
+          if (!res.ok) {
+            setError(apiFailMessage(res));
+            return false;
+          }
+        }
+        await onReload();
+        return true;
+      })
   });
 
   useEffect(() => {
-    setOn(shown);
-  }, [shown]);
-
-  useEffect(() => {
-    setQuote(asLoc(row?.quote_override));
-    setAttribution(asLoc(row?.attribution_override));
+    if (dirty) return;
+    setRows(saved);
+    setShown(Boolean(section));
     auto.resetFromServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row?.insight_id, row?.quote_override, row?.attribution_override]);
+  }, [saved, section, dirty]);
 
   useEffect(() => {
-    void getMeta().then((res) => {
-      if (res.ok) setCategories(res.data.insightCategories ?? []);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!row?.insight_id) {
-      setSelected(null);
-      return;
-    }
     let cancelled = false;
-    void getInsight(row.insight_id).then((res) => {
-      if (cancelled || !res.ok) return;
-      const parsed = parseInsightDetail(res.data);
-      if (!parsed) return;
-      setSelected({
-        id: parsed.id,
-        slug: parsed.slug,
-        title: parsed.title,
-        status: parsed.status,
-        category_id: parsed.category_id,
-        year: parsed.year,
-        view_count: 0,
-        published_at: parsed.published_at,
-        key_image: parsed.key_image,
-        key_image_width: parsed.key_image_width,
-        key_image_height: parsed.key_image_height,
-        show_faq: parsed.show_faq,
-        updated_at: parsed.updated_at,
-        counts: { blocks: 0, images: 0, tags: 0, related: 0 },
-        check: parsed.check ?? null,
-        site_visibility: parsed.site_visibility,
-        is_hidden: parsed.is_hidden
-      });
+    void searchContent("", "insight", 500, { published: true }).then((res) => {
+      if (cancelled || !res.ok || !Array.isArray(res.data)) return;
+      setCatalog(res.data);
     });
     return () => {
       cancelled = true;
     };
-  }, [row?.insight_id]);
+  }, [work.id]);
 
-  const categoryLabel = useMemo(() => {
-    if (!selected) return "";
-    const found = categories.find((item) => item.id === selected.category_id);
-    return found?.label?.ko || selected.category_id;
-  }, [categories, selected]);
+  useEffect(
+    () => () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    },
+    []
+  );
 
-  async function ensureSection(): Promise<string | null> {
-    if (section) return section.id;
-    const sort =
-      Math.max(0, ...(work.work_sections ?? []).map((item) => item.sort)) + 1;
-    const created = await createSection(work.id, {
-      headline: { ko: "인터뷰", en: "Interview" },
-      kind: "interview",
-      sort
-    });
-    if (!created.ok) {
-      setError(created.error);
-      return null;
-    }
-    const id = typeof created.data.id === "string" ? created.data.id : null;
-    await onReload();
-    return id;
+  const liveIds = useMemo(() => new Set((catalog ?? []).map((hit) => hit.id)), [catalog]);
+
+  function patchWord(id: string, next: Partial<CreatorWord>) {
+    setRows((prev) => prev.map((word) => (word.id === id ? { ...word, ...next } : word)));
+    auto.schedule();
+  }
+
+  function patchLoc(id: string, key: FieldKey, side: "ko" | "en", value: string, max: number) {
+    setRows((prev) =>
+      prev.map((word) =>
+        word.id === id ? { ...word, [key]: { ...word[key], [side]: clip(value, max) } } : word
+      )
+    );
+    auto.schedule();
   }
 
   async function toggleShow(next: boolean) {
     setBusy(true);
     setError(null);
-    setOn(next);
+    setShown(next);
     try {
       if (next) {
-        if (!(await ensureSection())) {
-          setOn(false);
+        if (section) return;
+        const sort = Math.max(0, ...(work.work_sections ?? []).map((item) => item.sort)) + 1;
+        const created = await createSection(work.id, {
+          headline: { ko: "인터뷰", en: "Interview" },
+          kind: "interview",
+          sort
+        });
+        if (!created.ok) {
+          setError(apiFailMessage(created));
+          setShown(false);
           return;
-        }
-      } else {
-        const cleared = await clearInterview(work.id);
-        if (!cleared.ok) {
-          setError(cleared.error);
-          setOn(true);
-          return;
-        }
-        if (section) {
-          const removed = await deleteSection(work.id, section.id);
-          if (!removed.ok) {
-            setError(removed.error);
-            setOn(true);
-            return;
-          }
         }
         await onReload();
+        return;
       }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pickInsight(item: InsightListItem) {
-    setPicker(false);
-    setBusy(true);
-    setError(null);
-    try {
-      const sectionId = await ensureSection();
-      if (!sectionId) return;
-      const res = await setInterview(work.id, {
-        section_id: sectionId,
-        insight_id: item.id,
-        quote_override: locOrNull(quote),
-        attribution_override: locOrNull(attribution)
-      });
-      if (!res.ok) {
-        setError(res.error);
+      if (!section) return;
+      const removed = await deleteSection(work.id, section.id);
+      if (!removed.ok) {
+        setError(apiFailMessage(removed));
+        setShown(true);
         return;
       }
       await onReload();
@@ -252,295 +224,372 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
     }
   }
 
-  const thumb = mediaUrl(siteUrl, selected?.key_image ?? null);
-  const title =
-    selected?.title && typeof selected.title === "object"
-      ? selected.title.ko?.trim() || selected.title.en?.trim() || ""
-      : "";
-  const date = formatDotDate(selected?.published_at ?? null);
-  const linkState =
-    selected == null
-      ? ""
-      : selected.site_visibility === "hidden"
-        ? "감춤"
-        : selected.site_visibility === "live"
-          ? "공개"
-          : selected.status === "published"
-            ? "공개"
-            : "미공개";
-  const metaLine = ["인사이트", categoryLabel, date, linkState].filter(Boolean).join(" · ");
+  async function addCard() {
+    if (rows.length >= MAX_CARDS || busy || pendingDelete) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await createCreatorWord(work.id);
+      if (!res.ok) {
+        setError(apiFailMessage(res));
+        return;
+      }
+      setRows((prev) => [...prev, res.data]);
+      await onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function duplicate(word: CreatorWord) {
+    if (rows.length >= MAX_CARDS || busy || pendingDelete) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createCreatorWord(work.id);
+      if (!created.ok) {
+        setError(apiFailMessage(created));
+        return;
+      }
+      const insightId =
+        word.insight_id && liveIds.has(word.insight_id) ? word.insight_id : null;
+      const savedCard = await updateCreatorWord(work.id, created.data.id, {
+        quote: word.quote,
+        name: word.name,
+        rank: word.rank,
+        org: word.org,
+        insight_id: insightId
+      });
+      if (!savedCard.ok) {
+        setError(apiFailMessage(savedCard));
+        setRows((prev) => [...prev, created.data]);
+        await onReload();
+        return;
+      }
+      setRows((prev) => [...prev, savedCard.data]);
+      await onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function move(index: number, dir: -1 | 1) {
+    const to = index + dir;
+    if (to < 0 || to >= rows.length || busy || pendingDelete) return;
+    const previous = rows;
+    const next = [...rows];
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved!);
+    const ordered = next.map((word, sort) => ({ ...word, sort }));
+    setRows(ordered);
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await enqueue(() =>
+        reorderCreatorWords(
+          work.id,
+          ordered.map((word) => ({ id: word.id, sort: word.sort }))
+        )
+      );
+      if (!res.ok) {
+        setError(apiFailMessage(res));
+        setRows(previous);
+        return;
+      }
+      await onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function requestDelete(id: string) {
+    if (pendingRef.current || busy) return;
+    pendingRef.current = id;
+    setPendingDelete(id);
+    setOpenPicker(null);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => {
+      undoTimer.current = null;
+      void confirmDelete(id);
+    }, UNDO_MS);
+  }
+
+  function undoDelete() {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    pendingRef.current = null;
+    setPendingDelete(null);
+    if (!sameList(rowsRef.current, creatorWordsOf(work))) auto.schedule();
+  }
+
+  async function confirmDelete(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await enqueue(() => deleteCreatorWord(work.id, id));
+      pendingRef.current = null;
+      setPendingDelete(null);
+      if (!res.ok) {
+        setError(apiFailMessage(res));
+        return;
+      }
+      setRows((prev) => prev.filter((word) => word.id !== id));
+      await onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const filtered = (catalog ?? []).filter((hit) => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return hitTitle(hit).toLowerCase().includes(needle) || hit.slug.toLowerCase().includes(needle);
+  });
 
   return (
     <div className="wa">
       <div className="grph">
-        <h3>인터뷰</h3>
+        <h3>Creator’s Word</h3>
         <div className="grpr">
           <label className="sw">
             <input
               type="checkbox"
-              checked={on}
+              checked={shown}
               disabled={busy}
               onChange={(event) => void toggleShow(event.target.checked)}
             />{" "}
-            이 워크에 인터뷰 표시
+            이 워크에 표시
           </label>
-          <PartialSaveBtn
-            state={auto.buttonState}
-            onClick={() => void auto.flush()}
-          />
+          <PartialSaveBtn state={auto.buttonState} onClick={() => void auto.flush()} />
         </div>
       </div>
       <p className="grpd">
-        워크 상세 하단에 인용문과 사진이 나옵니다. 누르면 연결한 인사이트로 갑니다. 인터뷰가 없는
-        워크는 꺼두면 됩니다.
+        워크 상세 하단에 카드로 나옵니다. 한 줄 평을 여러 개 올리고 순서를 바꿀 수 있습니다.
+        심화 인터뷰가 있으면 공개된 인사이트 글을 골라 연결합니다.
       </p>
-
+      {shown ? (
+        <p className="hint-line">입력하면 자동 저장됩니다. 사이트에는 「공개」를 눌러야 반영됩니다. · 한 줄 평 최대 6개</p>
+      ) : (
+        <p className="hint-line">사이트에서만 숨겨집니다. 한 줄 평은 지워지지 않습니다.</p>
+      )}
       {error ? <p className="mb-3 text-xs text-rose-600">{error}</p> : null}
 
-      <div className="box">
-        <div className="f">
-          <div className="fl">
-            <span className="nm">연결한 인사이트</span>
-            <span className="rq">*</span>
-            <button type="button" className="q" onClick={() => setOpenHelp(openHelp === "ins" ? null : "ins")}>
-              ?
-            </button>
-          </div>
-          <div className="pickd">
-            <div className="th">
-              {thumb ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={thumb} alt="" />
-              ) : null}
-            </div>
-            <div className="meta">
-              <div className="t1">{title}</div>
-              <div className="t2">{selected ? metaLine : ""}</div>
-            </div>
-            <button type="button" className="btn sm" disabled={!on} onClick={() => setPicker(true)}>
-              바꾸기
-            </button>
-          </div>
-          <p className="hint-line">인사이트 아티클 중에서만 고를 수 있습니다. 직접 입력은 없습니다</p>
-          <HelpPanel open={openHelp === "ins"} body={HELP.ins} onClose={() => setOpenHelp(null)} />
-        </div>
-
-        <div className="f">
-          <div className="fl">
-            <span className="nm">화면에 보일 인용문</span>
-            <button
-              type="button"
-              className="q"
-              onClick={() => setOpenHelp(openHelp === "quote" ? null : "quote")}
-            >
-              ?
-            </button>
-            <span className="cc">국문 {quote.ko.length}</span>
-          </div>
-          <div className="two">
-            <textarea
-              className="i"
-              rows={2}
-              value={quote.ko}
-              disabled={!on}
-              onChange={(event) => {
-                setQuote(locField(quote, "ko", event.target.value));
-                auto.schedule();
-              }}
-              onBlur={() => void auto.flush()}
-            />
-            <textarea
-              className="i"
-              rows={2}
-              value={quote.en}
-              disabled={!on}
-              onChange={(event) => {
-                setQuote(locField(quote, "en", event.target.value));
-                auto.schedule();
-              }}
-              onBlur={() => void auto.flush()}
-            />
-          </div>
-          <p className="hint-line">비우면 인사이트의 원래 인용문이 나옵니다</p>
-          <HelpPanel open={openHelp === "quote"} body={HELP.quote} onClose={() => setOpenHelp(null)} />
-        </div>
-
-        <div className="f">
-          <div className="fl">
-            <span className="nm">이름 · 직함</span>
-            <button type="button" className="q" onClick={() => setOpenHelp(openHelp === "who" ? null : "who")}>
-              ?
-            </button>
-          </div>
-          <div className="two">
-            <input
-              className="i"
-              type="text"
-              value={attribution.ko}
-              disabled={!on}
-              onChange={(event) => {
-                setAttribution(locField(attribution, "ko", event.target.value));
-                auto.schedule();
-              }}
-              onBlur={() => void auto.flush()}
-            />
-            <input
-              className="i"
-              type="text"
-              value={attribution.en}
-              disabled={!on}
-              onChange={(event) => {
-                setAttribution(locField(attribution, "en", event.target.value));
-                auto.schedule();
-              }}
-              onBlur={() => void auto.flush()}
-            />
-          </div>
-          <p className="hint-line">비우면 인사이트에 적힌 이름이 나옵니다</p>
-          <HelpPanel open={openHelp === "who"} body={HELP.who} onClose={() => setOpenHelp(null)} />
-        </div>
-      </div>
-
-      {picker ? (
-        <InsightPickModal
-          siteUrl={siteUrl}
-          categories={categories}
-          onSelect={(item) => void pickInsight(item)}
-          onClose={() => setPicker(false)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function HelpPanel({
-  open,
-  body,
-  onClose
-}: {
-  open: boolean;
-  body: { title: string; use: string; rule: string; note: string; empty: string };
-  onClose: () => void;
-}) {
-  return (
-    <div className={open ? "qp on" : "qp"}>
-      <div className="qph">
-        <b>{body.title}</b>
-        <button type="button" className="xb" onClick={onClose}>
-          ×
-        </button>
-      </div>
-      <dl>
-        <dt>쓰임</dt>
-        <dd>{body.use}</dd>
-        <dt>기준</dt>
-        <dd>{body.rule}</dd>
-        <dt>주의</dt>
-        <dd>{body.note}</dd>
-        <dt>비면</dt>
-        <dd>{body.empty}</dd>
-      </dl>
-    </div>
-  );
-}
-
-function InsightPickModal({
-  siteUrl,
-  categories,
-  onSelect,
-  onClose
-}: {
-  siteUrl: string;
-  categories: WebsiteCategory[];
-  onSelect: (item: InsightListItem) => void;
-  onClose: () => void;
-}) {
-  const [q, setQ] = useState("");
-  const [items, setItems] = useState<InsightListItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void listInsights({ status: "published", q, limit: 50 }).then((res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setError(res.error);
-          return;
-        }
-        // 공개 중만: content_published.is_current && !is_hidden (= site_visibility live)
-        setItems(
-          res.data.items.filter((item) =>
-            (item.site_visibility ?? (item.status === "published" ? "live" : "draft")) === "live"
-          )
-        );
-      });
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [q]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  function labelOf(id: string) {
-    return categories.find((item) => item.id === id)?.label?.ko || id;
-  }
-
-  return (
-    <div className="ov on" role="dialog" aria-label="인사이트 고르기">
-      <div className="mw">
-        <div className="mwh">
-          <b>인사이트 고르기</b>
-          <button type="button" className="xb" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <input
-          className="i mw-q"
-          type="text"
-          placeholder="제목으로 찾기"
-          value={q}
-          onChange={(event) => setQ(event.target.value)}
-        />
-        {error ? <p className="mb-2 text-xs text-rose-600">{error}</p> : null}
-        <div className="lst">
-          {items.map((item) => {
-            const title =
-              item.title && typeof item.title === "object"
-                ? item.title.ko?.trim() || item.title.en?.trim() || item.slug
-                : item.slug;
-            const thumb = mediaUrl(siteUrl, item.key_image);
-            const date = formatDotDate(item.published_at);
-            const line = [labelOf(item.category_id), date].filter(Boolean).join(" · ");
-            return (
-              <button type="button" className="lrow" key={item.id} onClick={() => onSelect(item)}>
-                <div className="th">
-                  {thumb ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb} alt="" />
-                  ) : null}
-                </div>
-                <div>
-                  <div className="t1">{title}</div>
-                  <div className="t2">{line}</div>
-                </div>
+      {rows.map((word, index) => {
+        const broken = Boolean(word.insight_id && catalog && !liveIds.has(word.insight_id));
+        const selected = catalog?.find((hit) => hit.id === word.insight_id) ?? null;
+        const who = personLine(word);
+        return (
+          <div className="blk on" key={word.id} style={{ marginTop: 16 }}>
+            <div className="bh">
+              <span className="kd">{String(index + 1).padStart(2, "0")}</span>
+              <span className="ct">{who || "이름 없음"}</span>
+              {broken ? <span className="c2 w">심화 인터뷰 연결 끊김</span> : null}
+              <span className="ml-auto" />
+              <button type="button" className="ico" disabled={index === 0 || busy || Boolean(pendingDelete)} onClick={() => void move(index, -1)}>
+                ↑
               </button>
-            );
-          })}
-        </div>
-        <div className="mwf">
-          <button type="button" className="btn" onClick={onClose}>
-            취소
-          </button>
-        </div>
+              <button
+                type="button"
+                className="ico"
+                disabled={index === rows.length - 1 || busy || Boolean(pendingDelete)}
+                onClick={() => void move(index, 1)}
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                className="ico"
+                disabled={rows.length >= MAX_CARDS || busy || Boolean(pendingDelete)}
+                onClick={() => void duplicate(word)}
+              >
+                복제
+              </button>
+              <button type="button" className="ico" disabled={busy || Boolean(pendingDelete)} onClick={() => requestDelete(word.id)}>
+                삭제
+              </button>
+            </div>
+            {pendingDelete === word.id ? (
+              <div className="bb">
+                <p className="hint-line">
+                  이 한 줄 평을 삭제합니다.{" "}
+                  <button type="button" className="btn sm" onClick={undoDelete}>
+                    실행 취소
+                  </button>
+                </p>
+              </div>
+            ) : (
+              <div className="bb">
+                <div className="fl">
+                  <span className="nm">한 줄 평</span>
+                  <span className="cc">
+                    국문 {word.quote.ko.length} / {QUOTE_KO_MAX} · 영문 {word.quote.en.length} / {QUOTE_EN_MAX}
+                    {word.quote.ko.trim() && !word.quote.en.trim() ? " · 영문 비어 있음" : ""}
+                  </span>
+                </div>
+                <div className="two">
+                  <label>
+                    <span className="hint-line">국문</span>
+                    <textarea
+                      className="i"
+                      rows={3}
+                      maxLength={QUOTE_KO_MAX}
+                      value={word.quote.ko}
+                      placeholder="국문 한 줄 평"
+                      onChange={(event) => patchLoc(word.id, "quote", "ko", event.target.value, QUOTE_KO_MAX)}
+                    />
+                  </label>
+                  <label>
+                    <span className="hint-line">영문</span>
+                    <textarea
+                      className="i"
+                      rows={3}
+                      maxLength={QUOTE_EN_MAX}
+                      value={word.quote.en}
+                      placeholder="영문 한 줄 평"
+                      onChange={(event) => patchLoc(word.id, "quote", "en", event.target.value, QUOTE_EN_MAX)}
+                    />
+                  </label>
+                </div>
+
+                <p className="hint-line" style={{ marginTop: 12, fontWeight: 700 }}>
+                  사람
+                </p>
+                <div className="r3">
+                  <PersonFields
+                    label="이름"
+                    value={word.name}
+                    onChange={(side, value) => patchLoc(word.id, "name", side, value, PERSON_MAX)}
+                  />
+                  <PersonFields
+                    label="직급"
+                    value={word.rank}
+                    onChange={(side, value) => patchLoc(word.id, "rank", side, value, PERSON_MAX)}
+                  />
+                  <PersonFields
+                    label="조직"
+                    value={word.org}
+                    onChange={(side, value) => patchLoc(word.id, "org", side, value, PERSON_MAX)}
+                  />
+                </div>
+                <p className="hint-line">
+                  이름은 필수. 사이트 표시: 이름 · 직급 · 조직 — 빈 칸은 점 없이 빠집니다.
+                </p>
+
+                <div className="f">
+                  <div className="fl">
+                    <span className="nm">심화 인터뷰 연결</span>
+                    <span className="cc">선택</span>
+                  </div>
+                  <button type="button" className="btn sm" onClick={() => setOpenPicker(openPicker === word.id ? null : word.id)}>
+                    {selected ? hitTitle(selected) : word.insight_id ? "연결된 글을 찾을 수 없습니다" : "연결 안 함"}
+                  </button>
+                  {openPicker === word.id ? (
+                    <div className="box" style={{ marginTop: 8 }}>
+                      <input
+                        className="i"
+                        value={query}
+                        placeholder="인사이트 제목으로 찾기"
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="lrow"
+                        onClick={() => {
+                          patchWord(word.id, { insight_id: null });
+                          setOpenPicker(null);
+                          setQuery("");
+                        }}
+                      >
+                        연결 안 함
+                      </button>
+                      {catalog && catalog.length === 0 ? (
+                        <p className="hint-line">공개된 인사이트가 없습니다. 글을 쓰고 공개한 뒤 연결하세요.</p>
+                      ) : null}
+                      {catalog && catalog.length > 0 && filtered.length === 0 ? (
+                        <p className="hint-line">검색 결과가 없습니다.</p>
+                      ) : null}
+                      {filtered.map((hit) => (
+                        <button
+                          type="button"
+                          className="lrow"
+                          key={hit.id}
+                          onClick={() => {
+                            patchWord(word.id, { insight_id: hit.id });
+                            setOpenPicker(null);
+                            setQuery("");
+                          }}
+                        >
+                          {mediaUrl(siteUrl, hit.key_image) ? (
+                            <span className="th">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={mediaUrl(siteUrl, hit.key_image) ?? ""} alt="" />
+                            </span>
+                          ) : null}
+                          <span>
+                            <span className="t1">{hitTitle(hit)}</span>
+                            <span className="t2">
+                              {["인사이트", hit.category, hitDate(hit.published_at), "공개 중"]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </span>
+                          {word.insight_id === hit.id ? <span className="t2">선택됨</span> : null}
+                        </button>
+                      ))}
+                      <p className="hint-line">공개 중인 인사이트만 나옵니다. 감추거나 공개 전인 글은 보이지 않습니다.</p>
+                    </div>
+                  ) : null}
+                  <p className="hint-line">
+                    연결하면 카드 아래에 심화 인터뷰 링크가 나옵니다. 연결한 글을 나중에 감추면 링크가 자동으로 사라집니다.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <button type="button" className="addb" disabled={rows.length >= MAX_CARDS || busy || Boolean(pendingDelete)} onClick={() => void addCard()}>
+        ＋ 한 줄 평 추가 ({rows.length} / {MAX_CARDS})
+      </button>
+    </div>
+  );
+}
+
+function PersonFields({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: Loc;
+  onChange: (side: "ko" | "en", value: string) => void;
+}) {
+  return (
+    <div>
+      <div className="fl">
+        <span className="nm">
+          {label} · 국문 / 영문
+        </span>
+        <span className="cc">
+          {value.ko.length} / {PERSON_MAX} · {value.en.length} / {PERSON_MAX}
+        </span>
+      </div>
+      <div className="two">
+        <input
+          className="i"
+          maxLength={PERSON_MAX}
+          value={value.ko}
+          placeholder={`${label} 국문`}
+          onChange={(event) => onChange("ko", event.target.value)}
+        />
+        <input
+          className="i"
+          maxLength={PERSON_MAX}
+          value={value.en}
+          placeholder={`${label} 영문`}
+          onChange={(event) => onChange("en", event.target.value)}
+        />
       </div>
     </div>
   );
