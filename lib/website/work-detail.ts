@@ -152,6 +152,7 @@ export type WorkDetail = {
   faqs?: WorkFaq[] | null;
   content_related?: WorkRelated[] | null;
   work_interview?: WorkInterview[] | null;
+  creatorWords?: CreatorWord[] | null;
   check?: import("@/lib/website/types").CheckWorks | null;
   site_visibility: import("@/lib/website/types").WorkSiteVisibility;
   published_version: number | null;
@@ -282,6 +283,39 @@ export function interviewRowOf(work: WorkDetail): WorkInterview | null {
   return rows[0] ?? null;
 }
 
+export type CreatorWord = {
+  id: string;
+  sort: number;
+  quote: Loc;
+  name: Loc;
+  rank: Loc;
+  org: Loc;
+  insight_id: string | null;
+};
+
+export function creatorWordsOf(work: WorkDetail): CreatorWord[] {
+  return [...(work.creatorWords ?? [])].sort((a, b) => a.sort - b.sort);
+}
+
+/** 표시(interview 섹션)가 켜져 있고, 카드가 없거나 국문 한 줄 평·이름이 비면 공개를 막는다. */
+export function creatorWordsBlockPublish(work: WorkDetail): boolean {
+  if (!interviewSectionOf(work)) return false;
+  const words = creatorWordsOf(work);
+  if (words.length === 0) return true;
+  return words.some((word) => !word.quote.ko.trim() || !word.name.ko.trim());
+}
+
+/** 영문 빈 칸은 경고만. 직급·조직은 국문을 적은 경우에만 영문을 본다. */
+export function creatorWordsWarnEn(work: WorkDetail): boolean {
+  if (!interviewSectionOf(work)) return false;
+  return creatorWordsOf(work).some((word) => {
+    if (!word.quote.en.trim() || !word.name.en.trim()) return true;
+    if (word.rank.ko.trim() && !word.rank.en.trim()) return true;
+    if (word.org.ko.trim() && !word.org.en.trim()) return true;
+    return false;
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -304,6 +338,20 @@ function asArray(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (value && typeof value === "object") return [value];
   return [];
+}
+
+function parseCreatorWord(item: unknown): CreatorWord | null {
+  const row = asRecord(item);
+  if (!row || typeof row.id !== "string") return null;
+  return {
+    id: row.id,
+    sort: asNum(row.sort),
+    quote: asLoc(row.quote),
+    name: asLoc(row.name),
+    rank: asLoc(row.rank),
+    org: asLoc(row.org),
+    insight_id: typeof row.insight_id === "string" && row.insight_id.trim() ? row.insight_id : null
+  };
 }
 
 function unwrapTag(value: unknown): { id: string; label: Loc } | null {
@@ -541,6 +589,10 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
         };
       })
       .filter((v): v is WorkInterview => v !== null),
+    creatorWords: asArray(row.creatorWords ?? row.work_creator_words)
+      .map(parseCreatorWord)
+      .filter((v): v is CreatorWord => v !== null)
+      .sort((a, b) => a.sort - b.sort),
     check: check
       ? ({
           id: asString(check.id) || row.id,

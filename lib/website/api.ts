@@ -1056,6 +1056,51 @@ export async function recommendRelated(
   }
 }
 
+export type CreatorWordPayload = {
+  id: string;
+  sort: number;
+  quote: { ko: string; en: string };
+  name: { ko: string; en: string };
+  rank: { ko: string; en: string };
+  org: { ko: string; en: string };
+  insight_id: string | null;
+};
+
+export function createCreatorWord(workId: string): Promise<ApiResult<CreatorWordPayload>> {
+  return websiteFetch<CreatorWordPayload>(`works/${workId}/creator-words`, {
+    method: "POST",
+    body: "{}"
+  });
+}
+
+export function updateCreatorWord(
+  workId: string,
+  wordId: string,
+  body: Partial<Omit<CreatorWordPayload, "id" | "sort">>
+): Promise<ApiResult<CreatorWordPayload>> {
+  return websiteFetch<CreatorWordPayload>(`works/${workId}/creator-words/${wordId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteCreatorWord(
+  workId: string,
+  wordId: string
+): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch(`works/${workId}/creator-words/${wordId}`, { method: "DELETE" });
+}
+
+export function reorderCreatorWords(
+  workId: string,
+  order: { id: string; sort: number }[]
+): Promise<ApiResult<{ items: CreatorWordPayload[] }>> {
+  return websiteFetch(`works/${workId}/creator-words/order`, {
+    method: "PUT",
+    body: JSON.stringify({ order })
+  });
+}
+
 export function setInterview(workId: string, body: unknown): Promise<ApiResult<Record<string, unknown>>> {
   return websiteFetch(`works/${workId}/interview`, { method: "PUT", body: JSON.stringify(body) });
 }
