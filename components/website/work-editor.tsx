@@ -450,6 +450,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
       const flushed = await runFlushes();
       if (!flushed) {
         setFullSaveState("dirty");
+        setError("저장하지 못한 칸이 있습니다. 저장 실패를 확인한 뒤 다시 시도해 주세요.");
         return false;
       }
       if (!(await saveCategories(next))) {
@@ -653,7 +654,7 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
       </div>
 
       <div className="pt-5">
-        {tab === "basic" ? (
+        <div className={tab === "basic" ? undefined : "hidden"}>
           <WorkBasicTab
             draft={draft}
             onChange={onChangeDraft}
@@ -662,8 +663,8 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             siteUrl={siteUrl}
             onReload={load}
           />
-        ) : null}
-        {tab === "content" ? (
+        </div>
+        <div className={tab === "content" ? undefined : "hidden"}>
           <WorkContentTab
             work={work}
             siteUrl={siteUrl}
@@ -671,10 +672,10 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             focusBlockId={focusBlockId}
             onFocusConsumed={() => setFocusBlockId(null)}
           />
-        ) : null}
-        {tab === "interview" ? (
+        </div>
+        <div className={tab === "interview" ? undefined : "hidden"}>
           <WorkInterviewTab work={work} siteUrl={siteUrl} onReload={load} />
-        ) : null}
+        </div>
         <div className={tab === "credits" ? undefined : "hidden"}>
           <WorkCreditsTab
             work={work}
@@ -683,17 +684,17 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
             saveRef={creditsSaveRef}
           />
         </div>
-        {tab === "faq" ? (
+        <div className={tab === "faq" ? undefined : "hidden"}>
           <WorkFaqTab
             work={work}
             saving={saving}
             onToggleShowFaq={(next) => void toggleFaq(next)}
             onReload={load}
           />
-        ) : null}
-        {tab === "related" ? (
+        </div>
+        <div className={tab === "related" ? undefined : "hidden"}>
           <WorkRelatedTab work={work} siteUrl={siteUrl} onReload={load} />
-        ) : null}
+        </div>
         {tab === "history" ? <WorkHistoryTab workId={work.id} /> : null}
       </div>
 

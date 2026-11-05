@@ -229,8 +229,11 @@ function FaqCard({
   });
 
   useEffect(() => {
+    if (auto.hasPending()) return;
     const qNext = asLoc(faq.question);
     const aNext = asLoc(faq.answer);
+    questionRef.current = qNext;
+    answerRef.current = aNext;
     setQuestion(qNext);
     setAnswer(aNext);
     savedQuestion.current = qNext;
@@ -288,12 +291,14 @@ function FaqCard({
               ko={question.ko}
               en={question.en}
               onKo={(v) => {
-                const next = locField(question, "ko", v);
+                const next = locField(questionRef.current, "ko", v);
+                questionRef.current = next;
                 setQuestion(next);
                 auto.schedule();
               }}
               onEn={(v) => {
-                const next = locField(question, "en", v);
+                const next = locField(questionRef.current, "en", v);
+                questionRef.current = next;
                 setQuestion(next);
                 auto.schedule();
               }}
@@ -321,12 +326,14 @@ function FaqCard({
               en={answer.en}
               multiline
               onKo={(v) => {
-                const next = locField(answer, "ko", v);
+                const next = locField(answerRef.current, "ko", v);
+                answerRef.current = next;
                 setAnswer(next);
                 auto.schedule();
               }}
               onEn={(v) => {
-                const next = locField(answer, "en", v);
+                const next = locField(answerRef.current, "en", v);
+                answerRef.current = next;
                 setAnswer(next);
                 auto.schedule();
               }}

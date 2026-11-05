@@ -131,32 +131,40 @@ export function WorkCreditsTab({ work, onReload, onDirtyChange, saveRef }: Props
     [dirty, auto]
   );
 
+  const commitRows = useCallback(
+    (next: Draft[]) => {
+      rowsRef.current = next;
+      setRows(next);
+      auto.schedule();
+    },
+    [auto]
+  );
+
   const add = useCallback(() => {
-    setRows((prev) => [
-      ...prev,
+    commitRows([
+      ...rowsRef.current,
       { key: `new-${Date.now()}`, id: null, role: "", name: emptyLoc() }
     ]);
-    auto.schedule();
-  }, [auto]);
+  }, [commitRows]);
 
   function patch(key: string, next: Partial<Draft>) {
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...next } : row)));
-    auto.schedule();
+    commitRows(
+      rowsRef.current.map((row) => (row.key === key ? { ...row, ...next } : row))
+    );
   }
 
   function move(index: number, dir: -1 | 1) {
+    const current = rowsRef.current;
     const to = index + dir;
-    if (to < 0 || to >= rows.length) return;
-    const next = [...rows];
+    if (to < 0 || to >= current.length) return;
+    const next = [...current];
     const [moved] = next.splice(index, 1);
     next.splice(to, 0, moved);
-    setRows(next);
-    auto.schedule();
+    commitRows(next);
   }
 
   function remove(key: string) {
-    setRows((prev) => prev.filter((row) => row.key !== key));
-    auto.schedule();
+    commitRows(rowsRef.current.filter((row) => row.key !== key));
   }
 
   return (

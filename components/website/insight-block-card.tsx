@@ -142,6 +142,7 @@ export function InsightBlockCard({
   const saveRef = useRef(save);
   saveRef.current = save;
   const flushDirtyRef = useRef<() => Promise<boolean>>(async () => true);
+  const inflightRef = useRef<Promise<boolean> | null>(null);
   const serverRev = insightBlockServerRev(block);
 
   useEffect(() => {
@@ -244,7 +245,25 @@ export function InsightBlockCard({
     return patch;
   }
 
+  function holdingLocal(): boolean {
+    return (
+      saveRef.current === "dirty" ||
+      saveRef.current === "error" ||
+      saveRef.current === "saving" ||
+      Object.keys(pendingRef.current).length > 0 ||
+      Object.keys(personPendingRef.current).length > 0 ||
+      imagePendingRef.current.size > 0 ||
+      inflightRef.current !== null
+    );
+  }
+
   async function persistCurrent(): Promise<boolean> {
+    const running = inflightRef.current;
+    if (running) {
+      const ok = await running;
+      if (!ok) return false;
+      if (!holdingLocal()) return true;
+    }
     if (timer.current) clearTimeout(timer.current);
     setError(null);
     setSave("saving");
@@ -254,11 +273,20 @@ export function InsightBlockCard({
     personPendingRef.current = {};
     const imageEntries = [...imagePendingRef.current.entries()];
     imagePendingRef.current = new Map();
+    const restore = () => {
+      pendingRef.current = { ...blockPatch, ...pendingRef.current };
+      personPendingRef.current = { ...personPatch, ...personPendingRef.current };
+      for (const [imageId, patch] of imageEntries) {
+        const prev = imagePendingRef.current.get(imageId) ?? {};
+        imagePendingRef.current.set(imageId, { ...patch, ...prev });
+      }
+    };
 
     try {
       if (Object.keys(blockPatch).length > 0) {
         const res = await updateInsightBlock(insightId, block.id, blockPatch);
         if (!res.ok) {
+          restore();
           setSave("error");
           setError(apiFailMessage(res));
           return false;
@@ -268,6 +296,7 @@ export function InsightBlockCard({
       if (Object.keys(personPatch).length > 0) {
         const res = await updateInsight(insightId, personPatch);
         if (!res.ok) {
+          restore();
           setSave("error");
           setError(apiFailMessage(res));
           return false;
@@ -277,6 +306,7 @@ export function InsightBlockCard({
       for (const [imageId, patch] of imageEntries) {
         const res = await updateInsightImage(block.id, imageId, patch);
         if (!res.ok) {
+          restore();
           setSave("error");
           setError(res.error);
           return false;
@@ -288,27 +318,37 @@ export function InsightBlockCard({
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 2000);
       return true;
     } catch (err) {
+      restore();
       setSave("error");
       setError(err instanceof Error ? err.message : "저장하지 못했습니다");
       return false;
     }
   }
 
+  async function persistQueued(): Promise<boolean> {
+    const job = persistCurrent();
+    inflightRef.current = job;
+    const ok = await job;
+    if (inflightRef.current === job) inflightRef.current = null;
+    if (!ok) return false;
+    if (
+      Object.keys(pendingRef.current).length > 0 ||
+      Object.keys(personPendingRef.current).length > 0 ||
+      imagePendingRef.current.size > 0
+    ) {
+      return persistQueued();
+    }
+    return true;
+  }
+
   async function savePartial() {
-    const ok = await persistCurrent();
+    const ok = await persistQueued();
     if (ok) await onReload();
   }
 
   async function flushDirty(): Promise<boolean> {
-    if (saveRef.current === "saving") return false;
-    const holding =
-      saveRef.current === "dirty" ||
-      saveRef.current === "error" ||
-      Object.keys(pendingRef.current).length > 0 ||
-      Object.keys(personPendingRef.current).length > 0 ||
-      imagePendingRef.current.size > 0;
-    if (!holding) return true;
-    return persistCurrent();
+    if (!holdingLocal()) return true;
+    return persistQueued();
   }
   flushDirtyRef.current = flushDirty;
 

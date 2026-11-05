@@ -177,16 +177,18 @@ export function WorkInterviewTab({ work, siteUrl, onReload }: Props) {
   const liveIds = useMemo(() => new Set((catalog ?? []).map((hit) => hit.id)), [catalog]);
 
   function patchWord(id: string, next: Partial<CreatorWord>) {
-    setRows((prev) => prev.map((word) => (word.id === id ? { ...word, ...next } : word)));
+    const updated = rowsRef.current.map((word) => (word.id === id ? { ...word, ...next } : word));
+    rowsRef.current = updated;
+    setRows(updated);
     auto.schedule();
   }
 
   function patchLoc(id: string, key: FieldKey, side: "ko" | "en", value: string, max: number) {
-    setRows((prev) =>
-      prev.map((word) =>
-        word.id === id ? { ...word, [key]: { ...word[key], [side]: clip(value, max) } } : word
-      )
+    const updated = rowsRef.current.map((word) =>
+      word.id === id ? { ...word, [key]: { ...word[key], [side]: clip(value, max) } } : word
     );
+    rowsRef.current = updated;
+    setRows(updated);
     auto.schedule();
   }
 

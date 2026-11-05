@@ -242,11 +242,9 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
   }, [tab]);
 
   function patchDraft(next: Partial<Draft>, fold: "search" | "ai") {
-    setDraft((cur) => {
-      const merged = cur ? { ...cur, ...next } : cur;
-      draftRef.current = merged;
-      return merged;
-    });
+    const merged = draftRef.current ? { ...draftRef.current, ...next } : draftRef.current;
+    draftRef.current = merged;
+    setDraft(merged);
     if (fold === "search") searchAuto.schedule();
     else aiAuto.schedule();
   }
@@ -727,11 +725,11 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
               type="button"
               className="b sm"
               onClick={() => {
-                setDraft((cur) => {
-                  const merged = cur ? { ...cur, search_description: descDraft } : cur;
-                  draftRef.current = merged;
-                  return merged;
-                });
+                const merged = draftRef.current
+                  ? { ...draftRef.current, search_description: descDraft }
+                  : draftRef.current;
+                draftRef.current = merged;
+                setDraft(merged);
                 setDescOpen(false);
                 searchAuto.markDirty();
                 void searchAuto.flush();

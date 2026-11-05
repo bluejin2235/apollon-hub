@@ -588,8 +588,13 @@ function SectionBody({
   });
 
   useEffect(() => {
-    setHeadline(asLoc(section.headline));
-    setLead(asLoc(section.lead));
+    if (auto.hasPending()) return;
+    const nextHeadline = asLoc(section.headline);
+    const nextLead = asLoc(section.lead);
+    headlineRef.current = nextHeadline;
+    leadRef.current = nextLead;
+    setHeadline(nextHeadline);
+    setLead(nextLead);
     auto.resetFromServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 서버 section 동기화
   }, [section]);
@@ -627,7 +632,9 @@ function SectionBody({
             value={headlineValue}
             placeholder="Overview"
             onChange={(e) => {
-              setHeadline(headlineBoth(e.target.value));
+              const next = headlineBoth(e.target.value);
+              headlineRef.current = next;
+              setHeadline(next);
               auto.schedule();
             }}
             onBlur={() => void auto.flush()}

@@ -340,6 +340,7 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
       const flushed = await runFlushes();
       if (!flushed) {
         setFullSaveState("dirty");
+        setError("저장하지 못한 칸이 있습니다. 저장 실패를 확인한 뒤 다시 시도해 주세요.");
         return null;
       }
       const result = await updateInsight(insightId, patch);
@@ -588,7 +589,7 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
       </div>
 
       <div className="pt-5">
-        {tab === "basic" ? (
+        <div className={tab === "basic" ? undefined : "hidden"}>
           <InsightBasicTab
             draft={draft}
             onChange={onChangeDraft}
@@ -599,8 +600,8 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
               await load();
             }}
           />
-        ) : null}
-        {tab === "content" ? (
+        </div>
+        <div className={tab === "content" ? undefined : "hidden"}>
           <InsightContentTab
             insight={insight}
             siteUrl={siteUrl}
@@ -610,8 +611,8 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
             focusBlockId={focusBlockId}
             onFocusConsumed={() => setFocusBlockId(null)}
           />
-        ) : null}
-        {tab === "related" ? (
+        </div>
+        <div className={tab === "related" ? undefined : "hidden"}>
           <InsightRelatedTab
             insight={insight}
             siteUrl={siteUrl}
@@ -619,7 +620,7 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
               await load();
             }}
           />
-        ) : null}
+        </div>
         {tab === "history" ? (
           <WorkHistoryTab workId={insight.id} contentType="insight" />
         ) : null}

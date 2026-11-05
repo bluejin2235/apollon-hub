@@ -173,6 +173,7 @@ export function BlockCard({
   const pendingRef = useRef<Record<string, unknown>>({});
   const saveRef = useRef(save);
   saveRef.current = save;
+  const inflightRef = useRef<Promise<boolean> | null>(null);
   const flushDirtyRef = useRef<() => Promise<boolean>>(async () => true);
   const serverRev = blockServerRev(block);
 
@@ -299,16 +300,34 @@ export function BlockCard({
   }
 
   async function persistCurrent(): Promise<boolean> {
+    const running = inflightRef.current;
+    if (running) {
+      const ok = await running;
+      if (!ok) return false;
+      if (Object.keys(pendingRef.current).length === 0 && saveRef.current !== "dirty" && saveRef.current !== "error") {
+        return true;
+      }
+    }
     if (timer.current) clearTimeout(timer.current);
     const patch = { ...buildFullPatch(), ...pendingRef.current };
-    pendingRef.current = {};
-    const ok = await persist(patch);
-    if (ok) {
+    const job = (async () => {
+      pendingRef.current = {};
+      const ok = await persist(patch);
+      if (!ok) {
+        pendingRef.current = { ...patch, ...pendingRef.current };
+        return false;
+      }
       setSave("saved");
       setStaleRemote(false);
       window.setTimeout(() => setSave((cur) => (cur === "saved" ? "idle" : cur)), 2000);
-    }
-    return ok;
+      return true;
+    })();
+    inflightRef.current = job;
+    const ok = await job;
+    if (inflightRef.current === job) inflightRef.current = null;
+    if (!ok) return false;
+    if (Object.keys(pendingRef.current).length > 0) return persistCurrent();
+    return true;
   }
 
   async function savePartial() {
@@ -317,11 +336,12 @@ export function BlockCard({
   }
 
   async function flushDirty(): Promise<boolean> {
-    if (saveRef.current === "saving") return false;
     const holding =
       saveRef.current === "dirty" ||
       saveRef.current === "error" ||
-      Object.keys(pendingRef.current).length > 0;
+      saveRef.current === "saving" ||
+      Object.keys(pendingRef.current).length > 0 ||
+      inflightRef.current !== null;
     if (!holding) return true;
     return persistCurrent();
   }

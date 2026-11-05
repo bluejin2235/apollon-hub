@@ -307,18 +307,23 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
     setOpenHelp((cur) => (cur === id ? null : id));
   }
 
-  function patchScreen(next: Partial<InsightBasicDraft>) {
+  function writeDraft(next: Partial<InsightBasicDraft>) {
+    draftRef.current = { ...draftRef.current, ...next };
     onChange(next);
+  }
+
+  function patchScreen(next: Partial<InsightBasicDraft>) {
+    writeDraft(next);
     screenAuto.schedule();
   }
 
   function patchMedia(next: Partial<InsightBasicDraft>) {
     mediaPartial.markDirty();
-    onChange(next);
+    writeDraft(next);
   }
 
   function patchSearch(next: Partial<InsightBasicDraft>) {
-    onChange(next);
+    writeDraft(next);
     if ("slug" in next && !("summary" in next) && !("key_image_alt" in next)) {
       searchAuto.markDirty();
       return;

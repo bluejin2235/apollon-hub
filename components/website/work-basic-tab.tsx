@@ -418,6 +418,13 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const writeDraft = useCallback(
+    (patch: Partial<WorkBasicDraft>) => {
+      draftRef.current = { ...draftRef.current, ...patch };
+      onChange(patch);
+    },
+    [onChange]
+  );
   const canAutoSlug = work.status !== "published";
   const mediaPartial = useMediaManualPartialSave(onReload);
 
@@ -580,20 +587,20 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
 
   function setTitleEn(value: string) {
     const title = { ko: value, en: value };
-    onChange({ title });
+    writeDraft({ title });
     screenAuto.schedule();
     scheduleSlugFromTitle(title);
   }
 
   function addCategory(id: string) {
     if (!id || draft.category_ids.includes(id)) return;
-    onChange({ category_ids: [...draft.category_ids, id] });
+    writeDraft({ category_ids: [...draft.category_ids, id] });
     screenAuto.schedule();
   }
 
   function removeCategory(id: string) {
     if (draft.category_ids.length <= 1) return;
-    onChange({ category_ids: draft.category_ids.filter((item) => item !== id) });
+    writeDraft({ category_ids: draft.category_ids.filter((item) => item !== id) });
     screenAuto.schedule();
   }
 
@@ -603,7 +610,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     if (to < 0 || to >= next.length) return;
     const [moved] = next.splice(index, 1);
     next.splice(to, 0, moved);
-    onChange({ category_ids: next });
+    writeDraft({ category_ids: next });
     screenAuto.schedule();
   }
 
@@ -629,11 +636,11 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
     mediaPartial.markDirty();
 
     if (kind === "sm") {
-      onChange({ loop_video_sm: first.src, loop_sm_posters: [] });
+      writeDraft({ loop_video_sm: first.src, loop_sm_posters: [] });
       return;
     }
 
-    onChange({ loop_video_lg: first.src });
+    writeDraft({ loop_video_lg: first.src });
     let posters: string[] = [];
     if (local) {
       try {
@@ -642,7 +649,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
         posters = [];
       }
     }
-    onChange({
+    writeDraft({
       loop_video_lg: first.src,
       loop_lg_posters: posters,
       loop_sm_posters: []
@@ -892,7 +899,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                     aria-label="오픈 연도"
                     value={draft.year}
                     onChange={(e) => {
-                      onChange({ year: e.target.value });
+                      writeDraft({ year: e.target.value });
                       screenAuto.schedule();
                     }}
                   >
@@ -910,7 +917,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                     value={draft.open_month >= 1 && draft.open_month <= 12 ? String(draft.open_month) : ""}
                     onChange={(e) => {
                       const next = Number(e.target.value);
-                      onChange({ open_month: Number.isInteger(next) ? next : 0 });
+                      writeDraft({ open_month: Number.isInteger(next) ? next : 0 });
                       screenAuto.schedule();
                     }}
                   >
@@ -970,7 +977,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.client.en}
                   onChange={(e) => {
-                    onChange({ client: { ...draft.client, en: e.target.value } });
+                    writeDraft({ client: { ...draft.client, en: e.target.value } });
                     screenAuto.schedule();
                   }}
                   onBlur={() => void screenAuto.flush()}
@@ -982,7 +989,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.location_city.en}
                   onChange={(e) => {
-                    onChange({
+                    writeDraft({
                       location_city: { ...draft.location_city, en: e.target.value }
                     });
                     screenAuto.schedule();
@@ -996,7 +1003,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                   className="i"
                   value={draft.location_country.en}
                   onChange={(e) => {
-                    onChange({
+                    writeDraft({
                       location_country: { ...draft.location_country, en: e.target.value }
                     });
                     screenAuto.schedule();
@@ -1154,7 +1161,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 }}
                 onClear={() => {
                   mediaPartial.markDirty();
-                  onChange({ loop_video_lg: "", loop_lg_posters: [] });
+                  writeDraft({ loop_video_lg: "", loop_lg_posters: [] });
                 }}
               />
               <p className="spec">
@@ -1189,7 +1196,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 }}
                 onClear={() => {
                   mediaPartial.markDirty();
-                  onChange({ loop_video_sm: "", loop_sm_posters: [] });
+                  writeDraft({ loop_video_sm: "", loop_sm_posters: [] });
                 }}
               />
               <p className="spec">
@@ -1393,7 +1400,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 rows={2}
                 value={draft.summary.ko}
                 onChange={(e) => {
-                  onChange({ summary: { ...draft.summary, ko: e.target.value } });
+                  writeDraft({ summary: { ...draft.summary, ko: e.target.value } });
                   searchAuto.schedule();
                 }}
                 onBlur={() => void searchAuto.flush()}
@@ -1403,7 +1410,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 rows={2}
                 value={draft.summary.en}
                 onChange={(e) => {
-                  onChange({ summary: { ...draft.summary, en: e.target.value } });
+                  writeDraft({ summary: { ...draft.summary, en: e.target.value } });
                   searchAuto.schedule();
                 }}
                 onBlur={() => void searchAuto.flush()}
@@ -1438,7 +1445,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 className="i"
                 value={draft.key_image_alt.ko}
                 onChange={(e) => {
-                  onChange({
+                  writeDraft({
                     key_image_alt: { ...draft.key_image_alt, ko: e.target.value }
                   });
                   searchAuto.schedule();
@@ -1449,7 +1456,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 className="i"
                 value={draft.key_image_alt.en}
                 onChange={(e) => {
-                  onChange({
+                  writeDraft({
                     key_image_alt: { ...draft.key_image_alt, en: e.target.value }
                   });
                   searchAuto.schedule();
@@ -1603,7 +1610,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
               className="btn sm"
               onClick={() => {
                 draftRef.current = { ...draftRef.current, summary: summaryDraft };
-                onChange({ summary: summaryDraft });
+                writeDraft({ summary: summaryDraft });
                 setSummaryOpen(false);
                 searchAuto.markDirty();
                 void searchAuto.flush();
