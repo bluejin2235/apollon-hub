@@ -10,12 +10,7 @@ import {
   type ReactNode
 } from "react";
 import { showToast } from "@/components/website/toast";
-import {
-  insightToEditorHtml,
-  normalizeInsightColor,
-  sanitizeInsightHtml
-} from "@/lib/website/insight-html";
-import { issueToEditorHtml, sanitizeIssueHtml } from "@/lib/issues/html";
+import { normalizeInsightColor } from "@/lib/website/insight-html";
 import { LEAD_COLORS } from "@/lib/website/lead-html";
 import "./rich-text-editor.css";
 
@@ -71,43 +66,92 @@ function run(command: string, value?: string) {
   document.execCommand(command, false, value);
 }
 
-const PASTE_DROP_STYLE = new Set([
-  "color",
-  "background",
-  "background-color",
-  "background-image",
-  "font",
-  "font-family",
-  "font-size",
-  "font-variant",
-  "-webkit-text-fill-color"
-]);
+const ZERO_WIDTH = /[\u200B-\u200D\uFEFF\u2060]/g;
 
-/** 붙여넣기 HTML 에서 글자색·배경색·글꼴만 뺀다. 굵게/기울임/밑줄은 남긴다. */
-function stripPastedPaint(html: string): string {
-  return html
-    .replace(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/gi, (_full, quote: string, style: string) => {
-      const kept: string[] = [];
-      for (const raw of style.split(";")) {
-        const decl = raw.trim();
-        if (!decl) continue;
-        const name = (decl.split(":")[0] ?? "").trim().toLowerCase();
-        if (!name) continue;
-        if (name.startsWith("background")) continue;
-        if (PASTE_DROP_STYLE.has(name)) {
-          if (name === "font") {
-            if (/\bbold\b|[6-9]00/i.test(decl)) kept.push("font-weight:bold");
-            if (/\bitalic\b/i.test(decl)) kept.push("font-style:italic");
-          }
-          continue;
-        }
-        kept.push(decl);
-      }
-      if (kept.length === 0) return "";
-      return ` style=${quote}${kept.join(";")}${quote}`;
+function escapePastedText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 붙여넣은 글자만. 빈 줄은 문단, 한 줄 바꿈은 br. 서식은 넣지 않는다. */
+function plainTextToParagraphHtml(raw: string): string {
+  const cleaned = raw
+    .replace(ZERO_WIDTH, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+  if (!cleaned) return "";
+  return cleaned
+    .split(/\n{2,}/)
+    .map((chunk) => {
+      const lines = chunk
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      if (lines.length === 0) return "";
+      return `<p>${lines.map(escapePastedText).join("<br>")}</p>`;
     })
-    .replace(/\s(?:bg)?color\s*=\s*(["']?)[^"'>\s]*\1/gi, "")
-    .replace(/\sface\s*=\s*(["']?)[^"'>]*\1/gi, "");
+    .filter((html) => html.length > 0)
+    .join("");
+}
+
+/** 드롭된 HTML 에서 글자만 꺼낸다. 태그와 서식은 버린다. */
+function htmlDropToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_full, code: string) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_full, code: string) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function mediaFiles(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const fromFiles = Array.from(data.files ?? []).filter(
+    (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
+  );
+  if (fromFiles.length > 0) return fromFiles;
+  const fromItems: File[] = [];
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file") continue;
+    if (!item.type.startsWith("image/") && !item.type.startsWith("video/")) continue;
+    const file = item.getAsFile();
+    if (file) fromItems.push(file);
+  }
+  return fromItems;
+}
+
+function placeCaretAtPoint(root: HTMLElement, x: number, y: number) {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (clientX: number, clientY: number) => Range | null;
+    caretPositionFromPoint?: (
+      clientX: number,
+      clientY: number
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  let range: Range | null = null;
+  if (typeof doc.caretRangeFromPoint === "function") {
+    range = doc.caretRangeFromPoint(x, y);
+  } else if (typeof doc.caretPositionFromPoint === "function") {
+    const pos = doc.caretPositionFromPoint(x, y);
+    if (pos) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  }
+  const sel = window.getSelection();
+  if (!sel) return;
+  if (!range || !root.contains(range.startContainer)) {
+    range = document.createRange();
+    range.selectNodeContents(root);
+    range.collapse(false);
+  }
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 const INDENT_CLASSES = ["in-1", "in-2", "in-3", "in-4"] as const;
@@ -244,12 +288,8 @@ export function RichTextEditor({
   lineHeight,
   contentWidth,
   allowMedia = false,
-  onUploadFile,
-  sanitize,
-  toEditorHtml
+  onUploadFile
 }: Props) {
-  const sanitizeHtml = sanitize ?? (allowMedia ? sanitizeIssueHtml : sanitizeInsightHtml);
-  const toEditor = toEditorHtml ?? (allowMedia ? issueToEditorHtml : insightToEditorHtml);
   const defaults = RICH_TEXT_SURFACE_DEFAULTS[surface];
   const size = fontSize ?? defaults.fontSize;
   const leading = lineHeight ?? defaults.lineHeight;
@@ -272,10 +312,6 @@ export function RichTextEditor({
   fieldsRef.current = fields;
   const uploadRef = useRef(onUploadFile);
   uploadRef.current = onUploadFile;
-  const sanitizeRef = useRef(sanitizeHtml);
-  sanitizeRef.current = sanitizeHtml;
-  const toEditorRef = useRef(toEditor);
-  toEditorRef.current = toEditor;
 
   useEffect(() => {
     try {
@@ -573,25 +609,14 @@ export function RichTextEditor({
     fileRef.current?.click();
   }
 
-  async function pastePlain() {
-    focusActive();
-    try {
-      const text = await navigator.clipboard.readText();
-      run("insertHTML", toEditorRef.current(stripPastedPaint(text)) || "");
-      emit(activeId.current);
-      showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
-    } catch {
-      showToast({
-        message: "클립보드를 읽을 수 없습니다. Ctrl+V 로 붙여 넣으세요.",
-        tone: "warn"
-      });
-    }
+  function insertPlainText(raw: string) {
+    const html = plainTextToParagraphHtml(raw);
+    if (!html) return;
+    run("insertHTML", html);
   }
 
   function onPaste(event: ClipboardEvent<HTMLDivElement>, id: string) {
-    const files = Array.from(event.clipboardData.files ?? []).filter(
-      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
-    );
+    const files = mediaFiles(event.clipboardData);
     if (allowMedia && files.length > 0 && uploadRef.current) {
       event.preventDefault();
       event.stopPropagation();
@@ -604,28 +629,30 @@ export function RichTextEditor({
     }
     event.preventDefault();
     event.stopPropagation();
-    const html = event.clipboardData.getData("text/html");
-    const text = event.clipboardData.getData("text/plain");
-    const insert = html
-      ? sanitizeRef.current(stripPastedPaint(html))
-      : toEditorRef.current(stripPastedPaint(text));
-    run("insertHTML", insert || "");
+    insertPlainText(event.clipboardData.getData("text/plain"));
     emit(id);
-    showToast({ message: "서식을 걸러 넣었습니다", tone: "ok" });
   }
 
-  function onDrop(event: DragEvent<HTMLDivElement>) {
+  function onDrop(event: DragEvent<HTMLDivElement>, id: string) {
     event.preventDefault();
-    if (!allowMedia || !uploadRef.current) return;
-    const files = Array.from(event.dataTransfer.files ?? []).filter(
-      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
-    );
-    if (files.length === 0) return;
-    void (async () => {
-      for (const file of files) {
-        await uploadAndInsert(file);
-      }
-    })();
+    event.stopPropagation();
+    const files = mediaFiles(event.dataTransfer);
+    if (allowMedia && files.length > 0 && uploadRef.current) {
+      void (async () => {
+        for (const file of files) {
+          await uploadAndInsert(file);
+        }
+      })();
+      return;
+    }
+    const plain = event.dataTransfer.getData("text/plain");
+    const html = event.dataTransfer.getData("text/html");
+    const text = plain.trim() ? plain : html ? htmlDropToPlainText(html) : "";
+    const root = event.currentTarget;
+    root.focus();
+    placeCaretAtPoint(root, event.clientX, event.clientY);
+    insertPlainText(text);
+    emit(id);
   }
 
   // 글자 크기는 CSS .rte-ed--{surface} 의 cqw. 인라인 style · 폭 고정 금지.
@@ -824,9 +851,6 @@ export function RichTextEditor({
         <button type="button" title="되돌리기" onClick={() => tool("undo")}>
           ↩
         </button>
-        <button type="button" title="글자만 붙여넣기" onClick={() => void pastePlain()}>
-          글자만
-        </button>
       </div>
       <div className={fields.length > 1 ? "rte-panes" : undefined}>
         {fields.map((field) => (
@@ -851,7 +875,7 @@ export function RichTextEditor({
                 onInput={() => emit(field.id)}
                 onBlur={field.onBlur}
                 onPaste={(event) => onPaste(event, field.id)}
-                onDrop={onDrop}
+                onDrop={(event) => onDrop(event, field.id)}
                 onDragOver={(event) => event.preventDefault()}
               />
             </div>
