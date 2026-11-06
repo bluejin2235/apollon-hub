@@ -279,15 +279,6 @@ function alreadyBlockRe(cfg: EngineConfig): RegExp {
   return new RegExp(`^<(${tags.join("|")})\\b`, "i");
 }
 
-function finishStartRe(cfg: EngineConfig): RegExp {
-  if (cfg.profile === "full") return /^<(p|ul|h[23])\b/i;
-  const tags = ["p", "ul"];
-  if (cfg.ol === "keep") tags.push("ol");
-  if (cfg.allowImg) tags.push("img");
-  if (cfg.headings === "keep") tags.push("h2", "h3");
-  return new RegExp(`^<(${tags.join("|")})\\b`, "i");
-}
-
 function isBlockTag(tag: string, cfg: EngineConfig): boolean {
   if (tag === "p" || tag === "div" || tag === "h1" || tag === "h4") return true;
   if (tag === "blockquote" || tag === "section" || tag === "article") return true;
@@ -399,6 +390,103 @@ function brSeparatedToParagraphs(html: string, cfg: EngineConfig): string {
     .join("");
 }
 
+function topLevelBlockTags(cfg: EngineConfig): Set<string> {
+  const tags = new Set(["p", "ul", "h2", "h3"]);
+  if (cfg.ol === "keep") tags.add("ol");
+  if (cfg.allowImg) tags.add("img");
+  return tags;
+}
+
+function containsTopLevelBlock(html: string, cfg: EngineConfig): boolean {
+  const tags = topLevelBlockTags(cfg);
+  const re = /<([a-zA-Z][a-zA-Z0-9]*)\b/g;
+  let match: RegExpExecArray | null = re.exec(html);
+  while (match) {
+    if (tags.has((match[1] ?? "").toLowerCase())) return true;
+    match = re.exec(html);
+  }
+  return false;
+}
+
+function indexAfterElement(html: string, start: number, tag: string): number {
+  const open = /^<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>/.exec(html.slice(start));
+  if (!open) return Math.min(start + 1, html.length);
+  let i = start + open[0].length;
+  if (open[2] || VOID_TAGS.has(tag)) return i;
+  let depth = 1;
+  while (i < html.length && depth > 0) {
+    const next = html.indexOf("<", i);
+    if (next < 0) return html.length;
+    const token = /^<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>/.exec(html.slice(next));
+    if (!token) {
+      i = next + 1;
+      continue;
+    }
+    const name = (token[1] ?? "").toLowerCase();
+    const closing = html[next + 1] === "/";
+    const selfClosing = Boolean(token[2]) || VOID_TAGS.has(name);
+    if (name === tag && !selfClosing) {
+      depth += closing ? -1 : 1;
+    }
+    i = next + token[0].length;
+  }
+  return i;
+}
+
+/** 블록 태그 밖에 남은 글·인라인 묶음을 문단으로 감싼다. 공백만인 묶음은 버린다. */
+function wrapLooseRuns(html: string, cfg: EngineConfig): string {
+  const blocks = topLevelBlockTags(cfg);
+  let i = 0;
+  let loose = "";
+  let out = "";
+
+  const flush = () => {
+    const chunk = loose;
+    loose = "";
+    if (!chunk || isVisuallyEmptyHtml(chunk)) return;
+    out += asParagraph(chunk, undefined, cfg);
+  };
+
+  while (i < html.length) {
+    if (html[i] !== "<") {
+      const next = html.indexOf("<", i);
+      const end = next < 0 ? html.length : next;
+      loose += html.slice(i, end);
+      i = end;
+      continue;
+    }
+
+    const open = /^<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>/.exec(html.slice(i));
+    if (!open) {
+      loose += html[i];
+      i += 1;
+      continue;
+    }
+
+    const tag = (open[1] ?? "").toLowerCase();
+    const selfClosing = Boolean(open[2]) || VOID_TAGS.has(tag);
+    if (blocks.has(tag)) {
+      flush();
+      if (selfClosing) {
+        out += open[0];
+        i += open[0].length;
+        continue;
+      }
+      const end = indexAfterElement(html, i, tag);
+      out += html.slice(i, end);
+      i = end;
+      continue;
+    }
+
+    const end = selfClosing ? i + open[0].length : indexAfterElement(html, i, tag);
+    loose += html.slice(i, end);
+    i = end;
+  }
+
+  flush();
+  return out;
+}
+
 function finish(out: string, cfg: EngineConfig): string {
   if (cfg.emptyBlock === "drop") {
     let cleaned = out
@@ -407,12 +495,16 @@ function finish(out: string, cfg: EngineConfig): string {
       .replace(/(<br\s*\/?>)+$/gi, "")
       .trim();
     if (!cleaned) return "";
-    if (!/<p\b/i.test(cleaned) && /<br\s*\/?>/i.test(cleaned)) {
+    if (
+      !containsTopLevelBlock(cleaned, cfg) &&
+      !/<p\b/i.test(cleaned) &&
+      /<br\s*\/?>/i.test(cleaned)
+    ) {
       cleaned = brSeparatedToParagraphs(cleaned, cfg);
     }
     cleaned = cleaned.replace(/<p>(?:\s|<br\s*\/?>|&nbsp;|\u00a0)*<\/p>/gi, "").trim();
     if (!cleaned) return "";
-    if (finishStartRe(cfg).test(cleaned)) return cleaned;
+    if (containsTopLevelBlock(cleaned, cfg)) return wrapLooseRuns(cleaned, cfg);
     return asParagraph(cleaned, undefined, cfg);
   }
 
@@ -421,7 +513,7 @@ function finish(out: string, cfg: EngineConfig): string {
     .replace(/(<br\s*\/?>)+$/gi, "")
     .trim();
   if (!cleaned) return "";
-  if (finishStartRe(cfg).test(cleaned)) return cleaned;
+  if (containsTopLevelBlock(cleaned, cfg)) return wrapLooseRuns(cleaned, cfg);
   if (/<br\s*\/?>/i.test(cleaned) && !/<p\b/i.test(cleaned)) {
     return brSeparatedToParagraphs(cleaned, cfg);
   }
