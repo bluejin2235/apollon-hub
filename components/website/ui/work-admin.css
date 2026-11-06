@@ -1120,6 +1120,9 @@
   gap: 10px;
   align-items: start;
 }
+.wa .row-cy .span-row {
+  grid-column: 1 / -1;
+}
 .wa .open-ym {
   display: flex;
   align-items: center;

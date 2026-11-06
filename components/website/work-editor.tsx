@@ -91,6 +91,7 @@ function dotClass(state: "ok" | "warn" | "empty") {
 function tabDot(tab: EditorTab, check: CheckWorks | null, work: WorkDetail | null): "ok" | "warn" | "empty" {
   if (tab === "basic") {
     if (!work?.summary?.ko?.trim() || !work?.key_image_alt?.ko?.trim()) return "warn";
+    if (!work.location_en?.trim()) return "warn";
     return fillBasic(check);
   }
   if (tab === "content") return fillBody(check);
@@ -309,7 +310,8 @@ function WorkEditorInner({ workId, siteUrl }: { workId: string; siteUrl: string 
           ...buildWorkCheckItems(work, check, {
             hasCardImage,
             summaryKo: draft?.summary.ko,
-            keyAltKo: draft?.key_image_alt.ko
+            keyAltKo: draft?.key_image_alt.ko,
+            locationEn: draft?.location_en ?? work.location_en
           }),
           ...buildVideoBlockCheckItems(work),
           ...creatorWordCheckItems(work)

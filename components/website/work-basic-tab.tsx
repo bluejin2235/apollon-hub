@@ -444,7 +444,8 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
       location_country: {
         ko: d.location_country.ko,
         en: d.location_country.en
-      }
+      },
+      location_en: d.location_en.trim() || null
     });
     if (!res.ok) {
       showToast({ tone: "error", message: apiFailMessage(res) });
@@ -932,6 +933,25 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
                 </div>
                 <p className="hint-line">
                   목록과 홈에서 이 날짜로 최신순이 정해집니다. 월을 모르면 1월로 두세요.
+                </p>
+              </div>
+              <div className="span-row" id="work-field-location">
+                <div className="fl">
+                  <span className="nm">위치 (영문)</span>
+                </div>
+                <input
+                  className="i"
+                  maxLength={60}
+                  placeholder="Incheon, Korea"
+                  value={draft.location_en}
+                  onChange={(e) => {
+                    writeDraft({ location_en: e.target.value.slice(0, 60) });
+                    screenAuto.schedule();
+                  }}
+                  onBlur={() => void screenAuto.flush()}
+                />
+                <p className="hint-line">
+                  도시, 국가 순으로 영문으로 적습니다. 국문·영문 사이트에 같은 값이 나옵니다.
                 </p>
               </div>
             </div>

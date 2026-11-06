@@ -132,6 +132,8 @@ export type WorkDetail = {
   location_country: Loc | null;
   location_city: Loc | null;
   location_address: Loc | null;
+  /** 도시, 국가 순 영문. 국문·영문 사이트에 같은 값이 나온다 */
+  location_en: string | null;
   scale: Loc | null;
   awards: Loc | null;
   year: string | null;
@@ -189,6 +191,7 @@ export type WorkBasicDraft = {
   location_country: Loc;
   location_city: Loc;
   location_address: Loc;
+  location_en: string;
   scale: Loc;
   awards: Loc;
   year: string;
@@ -473,6 +476,7 @@ export function parseWorkDetail(value: unknown): WorkDetail | null {
     location_country: row.location_country ? asLoc(row.location_country) : null,
     location_city: row.location_city ? asLoc(row.location_city) : null,
     location_address: row.location_address ? asLoc(row.location_address) : null,
+    location_en: typeof row.location_en === "string" ? row.location_en : null,
     scale: row.scale ? asLoc(row.scale) : null,
     awards: row.awards ? asLoc(row.awards) : null,
     year: typeof row.year === "string" ? row.year : null,
@@ -691,6 +695,7 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     location_country: asLoc(work.location_country),
     location_city: asLoc(work.location_city),
     location_address: asLoc(work.location_address),
+    location_en: work.location_en ?? "",
     scale: asLoc(work.scale),
     awards: asLoc(work.awards),
     year: work.year ?? "",
@@ -726,6 +731,7 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     location_country: draft.location_country,
     location_city: draft.location_city,
     location_address: draft.location_address,
+    location_en: draft.location_en.trim() || null,
     scale: draft.scale,
     awards: draft.awards,
     year: draft.year || null,

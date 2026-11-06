@@ -19,7 +19,8 @@ export type WorkCheckItem = {
     | "missing_summary"
     | "creator_words_empty"
     | "creator_words_missing_ko"
-    | "creator_words_missing_en";
+    | "creator_words_missing_en"
+    | "missing_location_en";
   kind: CheckItemKind;
   tab: EditorTab;
   title: string;
@@ -47,7 +48,12 @@ function whereLine(tab: EditorTab, detail: string) {
 export function buildWorkCheckItems(
   work: WorkDetail,
   check: CheckWorks,
-  opts?: { hasCardImage?: boolean; summaryKo?: string | null; keyAltKo?: string | null }
+  opts?: {
+    hasCardImage?: boolean;
+    summaryKo?: string | null;
+    keyAltKo?: string | null;
+    locationEn?: string | null;
+  }
 ): WorkCheckItem[] {
   const aiCount = countAiUnconfirmed(work);
   const aiSub = aiUnconfirmedBySection(work);
@@ -59,6 +65,7 @@ export function buildWorkCheckItems(
   const firstSmall = smallBody[0];
   const summaryKo = opts?.summaryKo ?? work.summary?.ko ?? "";
   const keyAltKo = opts?.keyAltKo ?? work.key_image_alt?.ko ?? "";
+  const locationEn = opts?.locationEn ?? work.location_en ?? "";
 
   const all: WorkCheckItem[] = [
     {
@@ -180,6 +187,14 @@ export function buildWorkCheckItems(
       where: whereLine("content", "블록은 8개까지. 9개째부터는 앵커 메뉴가 화면에서 넘칩니다")
     },
     {
+      flag: "missing_location_en",
+      kind: "warn",
+      tab: "basic",
+      title: "위치가 비어 있습니다",
+      where: whereLine("basic", "도시, 국가 순으로 영문으로 적습니다. 비어 있어도 공개할 수 있습니다"),
+      focusId: "work-field-location"
+    },
+    {
       flag: "no_tags",
       kind: "warn",
       tab: "basic",
@@ -227,6 +242,7 @@ export function buildWorkCheckItems(
     if (item.flag === "key_image_too_small") return keyTooSmall;
     if (item.flag === "body_image_too_small") return bodySmallCount > 0;
     if (item.flag === "missing_summary_en") return false;
+    if (item.flag === "missing_location_en") return !locationEn.trim();
     return Boolean(check[item.flag as keyof CheckWorks]);
   });
 }
