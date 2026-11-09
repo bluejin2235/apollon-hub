@@ -13,14 +13,14 @@
  *   event    [date, eventName]     eventCount · totalUsers
  *
  * ── 만들 수 있는 것
- *   깔때기 1·4·5 칸 · 평균 머문 시간 · 세션당 본 페이지 · 신규와 재방문
+ *   깔때기 1·4·5 칸 · 평균 세션 시간 · 세션당 본 페이지 · 신규와 재방문
  *   · 문의·뉴스레터·인재풀
  *
  * ── 만들 수 없는 것과 이유 (화면 그 자리에도 적었다)
  *   · 깔때기 2·3 칸 — 「사람 단위로 어느 종류를 봤나」와 「한 세션에 몇 장 봤나」를
  *     셀 차원이 runReport 에 없다. page 의 totalUsers 를 여러 경로에 걸쳐 더하면
  *     같은 사람이 여러 번 세어져 들어옴보다 커질 수 있다. 그래서 비운다.
- *   · 머문 시간 분포 · 본 페이지 수 분포 — 세션 하나하나가 아니라 이미 평균된
+ *   · 평균 세션 시간 분포 · 본 페이지 수 분포 — 세션 하나하나가 아니라 이미 평균된
  *     값만 온다. 구간별로 가를 원자료가 없다.
  *   · 요일 × 시간 — hour 차원을 걷지 않는다. hourly 리포트를 더하면 된다.
  *   · 나가는 페이지 — GA4 Data API 에 exits 지표가 아예 없다. Explorations 와
@@ -192,7 +192,7 @@ export function buildFunnel(bundle: StatsBundle | null): FunnelStep[] {
   ];
 }
 
-/* ─────────────────────── 2. 머문 시간 · 본 페이지 수 ─────────────────────── */
+/* ─────────────────────── 2. 평균 세션 시간 · 본 페이지 수 ─────────────────────── */
 
 /**
  * 목업은 구간별 분포였다. GA4 는 세션 하나하나를 주지 않고 하루 평균만 주므로
@@ -228,7 +228,7 @@ export function buildDwellSummary(bundle: StatsBundle | null): {
   const sessions = sumField(rows, "sessions");
   const views = sumField(rows, "views");
 
-  // 평균 체류는 세션 수로 무게를 실어야 한다. 하루 평균을 그냥 또 평균하면 틀린다
+  // 평균 세션 시간은 세션 수로 무게를 실어야 한다. 하루 평균을 그냥 또 평균하면 틀린다
   let acc = 0;
   let mass = 0;
   for (const row of rows) {

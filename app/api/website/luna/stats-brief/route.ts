@@ -154,7 +154,11 @@ function buildPrompt(facts: Facts): string {
     "todos: 많아야 3개. 심각도 순. 근거 숫자가 없으면 빈 배열.",
     "",
     `기간: ${from} ~ ${to}`,
-    pair("방문 (명)", num(facts.visits?.current), num(facts.visits?.previous)),
+    pair(
+      "일별 사용자 합계(중복 포함)",
+      num(facts.visits?.current),
+      num(facts.visits?.previous)
+    ),
     pair("검색 노출 (회)", num(facts.impressions?.current), num(facts.impressions?.previous)),
     pair("검색 클릭 (회)", num(facts.clicks?.current), num(facts.clicks?.previous)),
     pair("검색 클릭률 (%)", num(facts.clickRate?.current), num(facts.clickRate?.previous)),
@@ -162,7 +166,7 @@ function buildPrompt(facts: Facts): string {
     pair("이탈률 (%)", num(facts.bounceRate?.current), num(facts.bounceRate?.previous)),
     pair("참여율 (%)", num(facts.engagementRate?.current), num(facts.engagementRate?.previous)),
     strPair(
-      "평균 참여시간",
+      "평균 세션 시간",
       facts.avgEngagementTime?.current,
       facts.avgEngagementTime?.previous
     ),

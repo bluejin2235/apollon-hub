@@ -93,10 +93,10 @@ function Funnel({ data }: { data: StatsData }) {
   );
 }
 
-/* ─────────────────────── 2. 머문 시간 · 본 페이지 수 ─────────────────────── */
+/* ─────────────────────── 2. 평균 세션 시간 · 본 페이지 수 ─────────────────────── */
 
 const DIST_NOTE =
-  "구간별 분포는 만들 수 없습니다. GA4 는 세션 하나하나를 주지 않고 하루 평균만 주어 구간으로 가를 원자료가 없습니다. 대신 평균이 어떻게 움직이는지 보입니다.";
+  "구간별 분포는 만들 수 없습니다. GA4 는 세션 하나하나를 주지 않고 하루 평균 세션 시간만 주어 구간으로 가를 원자료가 없습니다. 대신 평균이 어떻게 움직이는지 보입니다.";
 
 function DwellAndDepth({ data }: { data: StatsData }) {
   const dwell = useMemo(() => buildDwellTrend(data.bundle), [data.bundle]);
@@ -110,7 +110,7 @@ function DwellAndDepth({ data }: { data: StatsData }) {
   return (
     <div className="ws-sec ws-g2">
       <div className="ws-card">
-        <div className="ws-ct">평균 머문 시간 추이</div>
+        <div className="ws-ct">평균 세션 시간 추이</div>
         <p className="ws-cs">이번 기간 평균 {summary.avgSeconds ?? "—"}</p>
         <ChartSlot status={data.status} empty={dwell.length === 0}>
           <StatsChart
@@ -119,7 +119,7 @@ function DwellAndDepth({ data }: { data: StatsData }) {
             xKey="date"
             mark={mark ?? undefined}
             format={(value) => `${Math.round(value)}초`}
-            series={[{ key: "seconds", name: "머문 시간", color: STATS_COLORS[0] }]}
+            series={[{ key: "seconds", name: "평균 세션 시간", color: STATS_COLORS[0] }]}
           />
         </ChartSlot>
         <p className="ws-blocked ws-blocked-gap">{DIST_NOTE}</p>

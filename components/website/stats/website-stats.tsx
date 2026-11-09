@@ -71,12 +71,14 @@ const KINDS_BY_SCREEN: Partial<Record<StatsScreenId, string[]>> = {
 const SUMMARY_HINTS: MetricHint[] = [
   {
     id: "visit",
-    title: "방문",
-    summary: "들어온 사람 수",
-    definition: "사이트에 들어온 사람의 수입니다. 같은 사람이 여러 번 와도 하루 한 번으로 셉니다.",
-    criterion: "늘어나는 추세인지가 중요합니다.",
+    title: "일별 사용자 합계(중복 포함)",
+    summary: "날짜별 사용자 수를 더한 값",
+    definition:
+      "하루마다 센 사용자(totalUsers)를 기간 동안 더한 값입니다. 같은 사람이 여러 날에 오면 날마다 다시 셉니다. 기간 고유 사용자와 같지 않습니다.",
+    criterion: "늘어나는 추세인지가 중요합니다. 고유 방문자로 읽지 마세요.",
     action: "줄었다면 검색 순위와 색인 상태를 먼저 보세요.",
-    limit: "광고 차단 프로그램을 쓰면 빠집니다."
+    limit:
+      "GA4 기간 고유 사용자를 따로 받지 않아 일별 합계만 보입니다. 세션·조회수처럼 날짜끼리 더해도 되는 지표와 다릅니다. 광고 차단 프로그램을 쓰면 빠집니다."
   },
   {
     id: "imp",
@@ -304,7 +306,7 @@ function TrendAndSources({ data }: { data: StatsData }) {
   return (
     <div className="ws-sec ws-g2">
       <div className="ws-card">
-        <div className="ws-ct">방문 추이 — 실선 이번 기간, 점선 지난 기간</div>
+        <div className="ws-ct">일별 사용자 추이 — 실선 이번 기간, 점선 지난 기간</div>
         <ChartSlot status={data.status} empty={trend.length === 0}>
           <StatsChart
             type="line"
@@ -340,7 +342,7 @@ function HowTheyArrived({ data }: { data: StatsData }) {
     <div className="ws-sec">
       <SectionHead title="어디로 들어왔나" />
       <p className="ws-note">
-        경로마다 사람의 성격이 다릅니다. 수보다 머문 시간과 참여율을 같이 보세요.
+        경로마다 사람의 성격이 다릅니다. 수보다 평균 세션 시간과 참여율을 같이 보세요.
       </p>
       <div className="ws-g2">
         <div className="ws-card">
@@ -359,7 +361,7 @@ function HowTheyArrived({ data }: { data: StatsData }) {
         <div className="ws-card">
           <div className="ws-ct">경로별 질 — 오른쪽 위일수록 좋음</div>
           {/* 목업은 세로가 「본 페이지 수」였지만 GA4 channel 리포트에 없다 */}
-          <p className="ws-cs">가로 머문 시간(초) · 세로 참여율(%) · 원 크기 방문 수</p>
+          <p className="ws-cs">가로 평균 세션 시간(초) · 세로 참여율(%) · 원 크기 세션 수</p>
           <ChartSlot status={data.status} empty={quality.length === 0}>
             <StatsChart
               type="scatter"
@@ -391,7 +393,7 @@ function WhoCame({ data }: { data: StatsData }) {
             xKey="name"
             height={150}
             labelWidth={52}
-            series={[{ key: "value", name: "방문", color: STATS_COLORS[0] }]}
+            series={[{ key: "value", name: "일별 사용자 합계", color: STATS_COLORS[0] }]}
           />
         </ChartSlot>
       </div>

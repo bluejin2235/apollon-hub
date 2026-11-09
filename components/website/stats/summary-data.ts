@@ -212,7 +212,7 @@ export function buildSourceDaily(bundle: StatsBundle | null): {
 
 /**
  * 경로별 질.
- * 가로 머문 시간(초) · 세로 참여율(%) · 원 크기 방문 수.
+ * 가로 평균 세션 시간(초) · 세로 참여율(%) · 원 크기 세션 수.
  * 목업은 세로를 「본 페이지 수」로 뒀지만 GA4 channel 리포트에 페이지 수가
  * 없다. 있는 값으로 바꾸고 이름도 함께 바꿨다.
  */
@@ -357,7 +357,7 @@ export type SummaryBriefFacts = {
   bounceRate: { current: number | null; previous: number | null };
   /** 참여율 (%) */
   engagementRate: { current: number | null; previous: number | null };
-  /** 평균 참여시간 — 「1분 12초」 문자열 */
+  /** 평균 세션 시간(averageSessionDuration) — 「1분 12초」 문자열 */
   avgEngagementTime: { current: string | null; previous: string | null };
   leads: { current: number | null; previous: number | null };
   channels: { name: string; sessions: number }[];
