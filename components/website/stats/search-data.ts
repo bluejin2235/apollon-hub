@@ -6,10 +6,10 @@
  * 그래프의 세로선 하나로 알린다.
  *
  * ── 두 갈래로 들어온다
- *   current·previous  kind=daily. 날짜가 있어 기간으로 잘린다
- *   overall           kind=query·country·device·page. 날짜가 없다.
- *                     옛 CSV 가 기간 합계로만 줘서 기간으로 자를 수 없다.
- *                     어느 기간을 담았는지는 overall_period 로 함께 온다.
+ *   current·previous  날짜가 있는 행. daily 뿐 아니라 query·page·country·device
+ *                     도 홈페이지가 date 차원으로 걷으면 여기로 온다.
+ *   overall           date 가 NULL 인 합계 행(옛 CSV). 기간으로 자를 수 없다.
+ *                     날짜 행이 없을 때만 쓴다.
  */
 
 import {
@@ -57,12 +57,85 @@ function overallRows(bundle: StatsBundle | null, kind: string): StatsPoint[] {
   return pickRows(bundle, kind, SEARCH_SOURCES, "overall");
 }
 
-/** 합계 행이 담은 기간. 표 옆에 적는다 */
+/**
+ * 검색어·페이지·국가·기기 행.
+ * 고른 기간의 날짜 행이 있으면 key 로 합치고, 없으면 overall 합계를 쓴다.
+ */
+function dimRows(
+  bundle: StatsBundle | null,
+  kind: string
+): { rows: StatsPoint[]; scoped: boolean } {
+  const dated = pickRows(bundle, kind, SEARCH_SOURCES, "current");
+  if (dated.length > 0) {
+    return { rows: aggregateByKey(dated), scoped: true };
+  }
+  return { rows: overallRows(bundle, kind), scoped: false };
+}
+
+/** 같은 key 의 날짜 행을 노출·클릭 합, 순위는 노출 무게 평균으로 묶는다 */
+function aggregateByKey(rows: StatsPoint[]): StatsPoint[] {
+  const map = new Map<string, StatsPoint>();
+  for (const row of rows) {
+    const key = row.key ?? "";
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, {
+        ...row,
+        date: "",
+        impressions: typeof row.impressions === "number" ? row.impressions : null,
+        clicks: typeof row.clicks === "number" ? row.clicks : null,
+        position: typeof row.position === "number" ? row.position : null,
+        ctr: null
+      });
+      continue;
+    }
+    const impA = typeof prev.impressions === "number" ? prev.impressions : 0;
+    const impB = typeof row.impressions === "number" ? row.impressions : 0;
+    const clickA = typeof prev.clicks === "number" ? prev.clicks : 0;
+    const clickB = typeof row.clicks === "number" ? row.clicks : 0;
+    const posA = typeof prev.position === "number" ? prev.position : null;
+    const posB = typeof row.position === "number" ? row.position : null;
+    let position: number | null = null;
+    if (posA != null && posB != null && impA + impB > 0) {
+      position = (posA * impA + posB * impB) / (impA + impB);
+    } else if (posA != null) position = posA;
+    else if (posB != null) position = posB;
+    map.set(key, {
+      ...prev,
+      impressions: impA + impB,
+      clicks: clickA + clickB,
+      position
+    });
+  }
+  return [...map.values()].map((row) => {
+    const impressions = row.impressions;
+    const clicks = row.clicks;
+    const ctr =
+      typeof impressions === "number" &&
+      impressions > 0 &&
+      typeof clicks === "number"
+        ? clicks / impressions
+        : null;
+    return { ...row, ctr };
+  });
+}
+
+/** 표·스탬프용 기간. 날짜 행이면 고른 기간, 아니면 overall_period */
 export function searchOverallPeriod(
   bundle: StatsBundle | null,
   kind = "query"
 ): { from: string; to: string } | null {
+  const dated = pickRows(bundle, kind, SEARCH_SOURCES, "current");
+  if (dated.length > 0) {
+    const result = bundle?.[kind];
+    if (result?.from && result?.to) return { from: result.from, to: result.to };
+  }
   return overallPeriod(bundle, kind);
+}
+
+/** 날짜 행으로 그렸으면 true — 각주 문구를 나눌 때 쓴다 */
+export function searchDimScoped(bundle: StatsBundle | null, kind = "query"): boolean {
+  return pickRows(bundle, kind, SEARCH_SOURCES, "current").length > 0;
 }
 
 /* ─────────────────────── 1. 전체 KPI ─────────────────────── */
@@ -155,7 +228,7 @@ export const RANK_COLORS = RANK_BUCKETS.map((bucket) => bucket.color);
 
 /** 검색어를 평균 순위로 나눠 몇 개씩인지 센다 */
 export function buildRankSpread(bundle: StatsBundle | null): StatsRow[] {
-  const rows = overallRows(bundle, "query").filter(
+  const rows = dimRows(bundle, "query").rows.filter(
     (row) => typeof row.position === "number"
   );
   if (rows.length === 0) return [];
@@ -216,7 +289,7 @@ export type BrandSplit = {
  * 「일반이 늘어야 한다」는 흐름은 날짜 있는 검색어가 쌓여야 보인다.
  */
 export function buildBrandSplit(bundle: StatsBundle | null): BrandSplit {
-  const rows = overallRows(bundle, "query");
+  const rows = dimRows(bundle, "query").rows;
   if (rows.length === 0) return { rows: [], counts: [] };
 
   const acc = {
@@ -272,8 +345,10 @@ export function buildKeywordMap(
   bundle: StatsBundle | null,
   limit = 40
 ): StatsScatterGroup[] {
-  const rows = overallRows(bundle, "query")
-    .filter((row) => typeof row.position === "number" && typeof row.impressions === "number")
+  const rows = dimRows(bundle, "query")
+    .rows.filter(
+      (row) => typeof row.position === "number" && typeof row.impressions === "number"
+    )
     .sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))
     .slice(0, limit);
 
@@ -327,8 +402,8 @@ function tagsFor(row: StatsPoint): KeywordTag[] {
 }
 
 export function buildKeywordTable(bundle: StatsBundle | null, limit = 20): KeywordRow[] {
-  return overallRows(bundle, "query")
-    .filter((row) => (row.key ?? "").trim() !== "")
+  return dimRows(bundle, "query")
+    .rows.filter((row) => (row.key ?? "").trim() !== "")
     .sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))
     .slice(0, limit)
     .map((row) => {
@@ -383,7 +458,7 @@ export type LangSplit = {
 };
 
 export function buildLangSplit(bundle: StatsBundle | null): LangSplit {
-  const rows = overallRows(bundle, "page");
+  const rows = dimRows(bundle, "page").rows;
   const acc: Record<LangId, { impressions: number; clicks: number }> = {
     ko: { impressions: 0, clicks: 0 },
     en: { impressions: 0, clicks: 0 },
@@ -407,13 +482,13 @@ export function buildLangSplit(bundle: StatsBundle | null): LangSplit {
 /* ─────────────────────── 8. 국가 · 기기 ─────────────────────── */
 
 export function buildSearchCountry(bundle: StatsBundle | null, limit = 6): StatsRow[] {
-  return ranked(sumByKey(overallRows(bundle, "country"), "impressions"))
+  return ranked(sumByKey(dimRows(bundle, "country").rows, "impressions"))
     .slice(0, limit)
     .map((item) => ({ name: clip(item.name, 14), value: item.value }));
 }
 
 export function buildSearchDevice(bundle: StatsBundle | null): StatsSlice[] {
-  return ranked(sumByKey(overallRows(bundle, "device"), "impressions")).map((item, index) => ({
+  return ranked(sumByKey(dimRows(bundle, "device").rows, "impressions")).map((item, index) => ({
     name: item.name,
     value: item.value,
     color: [STATS_COLORS[0], STATS_COLORS[2], STATS_TEXT][index] ?? STATS_MUTED

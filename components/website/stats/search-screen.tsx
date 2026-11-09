@@ -7,8 +7,8 @@
  * 않는다. 같은 도메인이고 어느 시점에 내용이 바뀌었을 뿐이다.
  * 그 시점은 추이 그래프의 세로선 하나로 알린다.
  *
- * 다만 검색어·국가·기기·페이지는 날짜가 없다. 옛 CSV 가 기간 합계로만 줘서
- * 기간으로 자를 수 없다. 그 자리에는 담은 기간을 적어 둔다.
+ * 검색어·국가·기기·페이지는 날짜 행이 있으면 고른 기간으로 합치고,
+ * 옛 CSV 합계(date NULL)만 있으면 그 합계 기간을 스탬프로 밝힌다.
  */
 
 import { useMemo } from "react";
@@ -27,6 +27,7 @@ import {
   QUERY_GROUP_LABEL,
   RANK_COLORS,
   searchDaily,
+  searchDimScoped,
   searchOverallPeriod
 } from "@/components/website/stats/search-data";
 import {
@@ -43,8 +44,17 @@ const RANGE_HINT = "고른 기간에 값이 없습니다. 기간을 넓혀 보�
 /** 날짜 없는 합계를 쓰는 자리 */
 const OVERALL_HINT = "아직 걷힌 검색어가 없습니다.";
 
-function OverallStamp({ period }: { period: { from: string; to: string } | null }) {
+function OverallStamp({
+  period,
+  scoped
+}: {
+  period: { from: string; to: string } | null;
+  scoped?: boolean;
+}) {
   const text = periodText(period);
+  if (scoped && text) {
+    return <span className="ws-stamp">{text.replace(/ 합계$/, "")}</span>;
+  }
   return <span className="ws-stamp">{text ?? "기간과 무관한 합계"}</span>;
 }
 
@@ -107,12 +117,13 @@ function Overview({ data }: { data: StatsData }) {
 function RankAndIndex({ data }: { data: StatsData }) {
   const spread = useMemo(() => buildRankSpread(data.bundle), [data.bundle]);
   const period = useMemo(() => searchOverallPeriod(data.bundle), [data.bundle]);
+  const scoped = useMemo(() => searchDimScoped(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
       <div className="ws-sech">
         <h3>순위 분포 · 색인 상태</h3>
-        <OverallStamp period={period} />
+        <OverallStamp period={period} scoped={scoped} />
       </div>
       <div className="ws-g2">
         <div className="ws-card">
@@ -144,12 +155,13 @@ function Keywords({ data }: { data: StatsData }) {
   const map = useMemo(() => buildKeywordMap(data.bundle), [data.bundle]);
   const table = useMemo(() => buildKeywordTable(data.bundle), [data.bundle]);
   const period = useMemo(() => searchOverallPeriod(data.bundle), [data.bundle]);
+  const scoped = useMemo(() => searchDimScoped(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
       <div className="ws-sech">
         <h3>검색어</h3>
-        <OverallStamp period={period} />
+        <OverallStamp period={period} scoped={scoped} />
       </div>
       <p className="ws-note">
         가로축이 평균 순위, 세로축이 노출입니다. 왼쪽 위가 좋고, 오른쪽 위가 기회입니다.
@@ -211,7 +223,9 @@ function Keywords({ data }: { data: StatsData }) {
         </ChartSlot>
         <p className="ws-foot">
           {periodText(period)
-            ? `이 표는 ${periodText(period)}입니다. 검색어에는 날짜가 없어 기간을 바꿔도 달라지지 않습니다. `
+            ? scoped
+              ? `이 표는 고른 기간(${periodText(period)?.replace(/ 합계$/, "")})의 검색어입니다. `
+              : `이 표는 ${periodText(period)}입니다. 날짜 없는 합계라 기간을 바꿔도 달라지지 않습니다. `
             : ""}
           「들어온 페이지」는 비워 두었습니다. 서치 콘솔 검색어 리포트는 검색어만 주고 그
           검색어로 열린 페이지를 함께 주지 않습니다.
@@ -226,12 +240,13 @@ function BrandVsGeneric({ data }: { data: StatsData }) {
   const split = useMemo(() => buildBrandSplit(data.bundle), [data.bundle]);
   const lang = useMemo(() => buildLangSplit(data.bundle), [data.bundle]);
   const period = useMemo(() => searchOverallPeriod(data.bundle), [data.bundle]);
+  const scoped = useMemo(() => searchDimScoped(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
       <div className="ws-sech">
         <h3>누가 무엇으로 찾아왔나</h3>
-        <OverallStamp period={period} />
+        <OverallStamp period={period} scoped={scoped} />
       </div>
       <div className="ws-g2">
         <div className="ws-card">
@@ -291,7 +306,9 @@ function BrandVsGeneric({ data }: { data: StatsData }) {
             회사 이름으로 들어오는 것은 이미 아는 사람입니다. 파란색이 늘어야 새 사람이
             옵니다. 검색어에 apollon · apollo · appolon · 아폴론 · 아폴로 · immersive
             works 가 든 것을 회사 이름으로 셌습니다. 오타와 띄어쓰기도 함께 잡습니다.
-            검색어에는 날짜가 없어 달별로 쌓지 못하고 합계만 보입니다.
+            {scoped
+              ? " 고른 기간의 날짜 행을 합친 값입니다."
+              : " 날짜 없는 합계만 있어 달별로 쌓지 못하고 합계만 보입니다."}
           </p>
         </div>
         <div className="ws-card">
@@ -320,12 +337,13 @@ function WhoSearched({ data }: { data: StatsData }) {
   const country = useMemo(() => buildSearchCountry(data.bundle), [data.bundle]);
   const device = useMemo(() => buildSearchDevice(data.bundle), [data.bundle]);
   const period = useMemo(() => searchOverallPeriod(data.bundle, "country"), [data.bundle]);
+  const scoped = useMemo(() => searchDimScoped(data.bundle, "country"), [data.bundle]);
 
   return (
     <div className="ws-sec">
       <div className="ws-sech">
         <h3>어디서 · 무엇으로 봤나</h3>
-        <OverallStamp period={period} />
+        <OverallStamp period={period} scoped={scoped} />
       </div>
       <div className="ws-g2">
         <div className="ws-card">
