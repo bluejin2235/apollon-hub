@@ -680,7 +680,13 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
             </ScreenShell>
           ) : null}
           {screen === "ai-visibility" ? <ScreenShell id="ai-visibility" /> : null}
-          {screen === "ai-crawler" ? <ScreenShell id="ai-crawler" /> : null}
+          {screen === "ai-crawler" ? (
+            <ScreenShell id="ai-crawler">
+              <div className="ws-card">
+                <p className="ws-blocked">준비 중 — 오픈 후 도입 예정</p>
+              </div>
+            </ScreenShell>
+          ) : null}
           {screen === "behavior" ? (
             <ScreenShell id="behavior">
               <BehaviorScreen data={data} />
