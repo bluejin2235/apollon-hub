@@ -182,14 +182,6 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
     };
   }, []);
 
-  useEffect(() => {
-    const row = rows.find((r) => r.key === tab);
-    if (!row) return;
-    const next = rowToDraft(row);
-    setDraft(next);
-    draftRef.current = next;
-  }, [rows, tab]);
-
   const persistSearch = useCallback(async () => {
     const d = draftRef.current;
     if (!d) return false;
@@ -240,6 +232,17 @@ export function WebsiteEtc({ siteUrl }: { siteUrl: string }) {
     aiAuto.resetFromServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 탭 전환 시에만 idle 로
   }, [tab]);
+
+  const searchPending = searchAuto.hasPending;
+  const aiPending = aiAuto.hasPending;
+  useEffect(() => {
+    if (searchPending() || aiPending()) return;
+    const row = rows.find((r) => r.key === tab);
+    if (!row) return;
+    const next = rowToDraft(row);
+    setDraft(next);
+    draftRef.current = next;
+  }, [rows, tab, searchPending, aiPending]);
 
   function patchDraft(next: Partial<Draft>, fold: "search" | "ai") {
     const merged = draftRef.current ? { ...draftRef.current, ...next } : draftRef.current;

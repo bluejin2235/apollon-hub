@@ -143,6 +143,8 @@ export function BlockCard({
   const [body, setBody] = useState<Loc>(() =>
     columnCount > 0 ? emptyLoc() : asLoc(block.body)
   );
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   const [columns, setColumns] = useState<Loc[]>(() =>
     columnsFromBody(block.body, columnCount || 2)
   );
@@ -368,8 +370,8 @@ export function BlockCard({
   }
 
   async function flush(patch: Record<string, unknown>): Promise<boolean> {
-    if (timer.current) clearTimeout(timer.current);
-    return persist(patch);
+    queueChange(patch);
+    return persistCurrent();
   }
 
   async function onDelete() {
@@ -556,7 +558,7 @@ export function BlockCard({
                   setRowHeight(n);
                   schedule({ gallery_row_height: n });
                 }}
-                onBlur={() => void flush({ gallery_row_height: rowHeight })}
+                onBlur={() => void persistCurrent()}
                 className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
               <Guide>
@@ -625,20 +627,22 @@ export function BlockCard({
                     label={columnLabel(columnCount, index)}
                     value={col}
                     onKo={(v) => {
-                      const next = columns.map((item, i) =>
+                      const next = columnsRef.current.map((item, i) =>
                         i === index ? locField(item, "ko", v) : item
                       );
+                      columnsRef.current = next;
                       setColumns(next);
                       schedule({ body: { columns: next } });
                     }}
                     onEn={(v) => {
-                      const next = columns.map((item, i) =>
+                      const next = columnsRef.current.map((item, i) =>
                         i === index ? locField(item, "en", v) : item
                       );
+                      columnsRef.current = next;
                       setColumns(next);
                       schedule({ body: { columns: next } });
                     }}
-                    onBlur={() => void flush({ body: { columns: columnsRef.current } })}
+                    onBlur={() => void persistCurrent()}
                   />
                 ))}
               </div>
@@ -654,16 +658,18 @@ export function BlockCard({
                 en={body.en}
                 multiline
                 onKo={(v) => {
-                  const next = locField(body, "ko", v);
+                  const next = locField(bodyRef.current, "ko", v);
+                  bodyRef.current = next;
                   setBody(next);
                   schedule({ body: next });
                 }}
                 onEn={(v) => {
-                  const next = locField(body, "en", v);
+                  const next = locField(bodyRef.current, "en", v);
+                  bodyRef.current = next;
                   setBody(next);
                   schedule({ body: next });
                 }}
-                onBlur={() => void flush({ body })}
+                onBlur={() => void persistCurrent()}
               />
               <Guide docLink>
                 <b className="font-semibold text-slate-600">글꼴 · 자간 · 글자색은 없습니다.</b> 화면 스타일은 사이트가
@@ -698,7 +704,7 @@ export function BlockCard({
               }}
               onUrlBlur={() => {
                 if (videoKind === "hosted" && !videoUrl.trim()) return;
-                void flush({ video_url: videoUrl, video_kind: videoKind });
+                void persistCurrent();
               }}
               onUrlCommit={(v) => {
                 setVideoUrl(v);
@@ -713,14 +719,14 @@ export function BlockCard({
                 setVideoAlt(next);
                 schedule({ video_alt: next });
               }}
-              onAltBlur={() => void flush({ video_alt: videoAlt })}
+              onAltBlur={() => void persistCurrent()}
               caption={caption}
               captionVisible={captionVisible}
               onCaption={(next) => {
                 setCaption(next);
                 schedule({ caption: next });
               }}
-              onCaptionBlur={() => void flush({ caption })}
+              onCaptionBlur={() => void persistCurrent()}
               onCaptionVisible={(next) => {
                 setCaptionVisible(next);
                 void flush({ caption_visible: next });
@@ -766,7 +772,7 @@ export function BlockCard({
                 setEmbedTitle(next);
                 schedule({ embed_title: next });
               }}
-              onTitleBlur={() => void flush({ embed_title: embedTitle })}
+              onTitleBlur={() => void persistCurrent()}
               onPoster={(src) => {
                 setEmbedPoster(src);
                 void flush({ embed_poster: src });
@@ -777,7 +783,7 @@ export function BlockCard({
                 setCaption(next);
                 schedule({ caption: next });
               }}
-              onCaptionBlur={() => void flush({ caption })}
+              onCaptionBlur={() => void persistCurrent()}
               onCaptionVisible={(next) => {
                 setCaptionVisible(next);
                 void flush({ caption_visible: next });
@@ -1017,14 +1023,25 @@ function ImageRow({
   const [alt, setAlt] = useState<Loc>(asLoc(image.alt));
   const [caption, setCaption] = useState<Loc>(asLoc(image.caption));
   const [visible, setVisible] = useState(image.caption_visible);
+  const altRef = useRef(alt);
+  const captionRef = useRef(caption);
+  altRef.current = alt;
+  captionRef.current = caption;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<Record<string, unknown>>({});
+  const inflightRef = useRef<Promise<boolean> | null>(null);
   const textDup = useTextDup();
   const debouncedAlt = useDebouncedValue(alt, 300);
   const debouncedCaption = useDebouncedValue(caption, 300);
 
   useEffect(() => {
-    setAlt(asLoc(image.alt));
-    setCaption(asLoc(image.caption));
+    if (Object.keys(pendingRef.current).length > 0 || inflightRef.current) return;
+    const nextAlt = asLoc(image.alt);
+    const nextCaption = asLoc(image.caption);
+    altRef.current = nextAlt;
+    captionRef.current = nextCaption;
+    setAlt(nextAlt);
+    setCaption(nextCaption);
     setVisible(image.caption_visible);
   }, [image]);
 
@@ -1036,15 +1053,49 @@ function ImageRow({
     textDup?.reportCaption(image.id, debouncedCaption);
   }, [image.id, debouncedCaption, textDup]);
 
-  function schedule(patch: Record<string, unknown>) {
+  function queue(patch: Record<string, unknown>) {
+    pendingRef.current = { ...pendingRef.current, ...patch };
     onDirty();
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void persist(patch), AUTO_PARTIAL_SAVE_DEBOUNCE_MS);
   }
 
-  async function persist(patch: Record<string, unknown>) {
-    const res = await updateImage(blockId, image.id, patch);
-    if (!res.ok) onError(res.error);
+  async function flushPending(): Promise<boolean> {
+    const running = inflightRef.current;
+    if (running) {
+      const ok = await running;
+      if (!ok) return false;
+      if (Object.keys(pendingRef.current).length === 0) return true;
+    }
+    const patch = pendingRef.current;
+    if (Object.keys(patch).length === 0) return true;
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    pendingRef.current = {};
+    const job = (async () => {
+      const res = await updateImage(blockId, image.id, patch);
+      if (!res.ok) {
+        pendingRef.current = { ...patch, ...pendingRef.current };
+        onError(res.error);
+        return false;
+      }
+      return true;
+    })();
+    inflightRef.current = job;
+    const ok = await job;
+    if (inflightRef.current === job) inflightRef.current = null;
+    if (!ok) return false;
+    if (Object.keys(pendingRef.current).length > 0) return flushPending();
+    return true;
+  }
+
+  function schedule(patch: Record<string, unknown>) {
+    queue(patch);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void flushPending();
+    }, AUTO_PARTIAL_SAVE_DEBOUNCE_MS);
   }
 
   async function remove() {
@@ -1088,19 +1139,18 @@ function ImageRow({
             ko={alt.ko}
             en={alt.en}
             onKo={(v) => {
-              const next = locField(alt, "ko", v);
+              const next = locField(altRef.current, "ko", v);
+              altRef.current = next;
               setAlt(next);
               schedule({ alt: next });
             }}
             onEn={(v) => {
-              const next = locField(alt, "en", v);
+              const next = locField(altRef.current, "en", v);
+              altRef.current = next;
               setAlt(next);
               schedule({ alt: next });
             }}
-            onBlur={() => {
-              if (timer.current) clearTimeout(timer.current);
-              void persist({ alt });
-            }}
+            onBlur={() => void flushPending()}
             koFooter={
               <TextDupHint
                 kind="alt"
@@ -1128,19 +1178,18 @@ function ImageRow({
             en={caption.en}
             multiline
             onKo={(v) => {
-              const next = locField(caption, "ko", v);
+              const next = locField(captionRef.current, "ko", v);
+              captionRef.current = next;
               setCaption(next);
               schedule({ caption: next });
             }}
             onEn={(v) => {
-              const next = locField(caption, "en", v);
+              const next = locField(captionRef.current, "en", v);
+              captionRef.current = next;
               setCaption(next);
               schedule({ caption: next });
             }}
-            onBlur={() => {
-              if (timer.current) clearTimeout(timer.current);
-              void persist({ caption });
-            }}
+            onBlur={() => void flushPending()}
             koFooter={
               <TextDupHint
                 kind="caption"
@@ -1165,7 +1214,8 @@ function ImageRow({
           onToggle={() => {
             const next = !visible;
             setVisible(next);
-            void persist({ caption_visible: next });
+            queue({ caption_visible: next });
+            void flushPending();
           }}
         />
         {image.ai_generated ? (
@@ -1175,8 +1225,9 @@ function ImageRow({
               <SmallBtn
                 onClick={() => {
                   void (async () => {
-                    await persist({ ai_confirmed: true });
-                    await onReload();
+                    queue({ ai_confirmed: true });
+                    const ok = await flushPending();
+                    if (ok) await onReload();
                   })();
                 }}
               >
@@ -1233,6 +1284,10 @@ function VideoFields({
   onCaptionBlur: () => void;
   onCaptionVisible: (v: boolean) => void;
 }) {
+  const altRef = useRef(alt);
+  const captionRef = useRef(caption);
+  altRef.current = alt;
+  captionRef.current = caption;
   const textDup = useTextDup();
   const debouncedAlt = useDebouncedValue(alt, 300);
   const debouncedCaption = useDebouncedValue(caption, 300);
@@ -1513,8 +1568,16 @@ function VideoFields({
         <BilingualField
           ko={alt.ko}
           en={alt.en}
-          onKo={(v) => onAlt(locField(alt, "ko", v))}
-          onEn={(v) => onAlt(locField(alt, "en", v))}
+          onKo={(v) => {
+            const next = locField(altRef.current, "ko", v);
+            altRef.current = next;
+            onAlt(next);
+          }}
+          onEn={(v) => {
+            const next = locField(altRef.current, "en", v);
+            altRef.current = next;
+            onAlt(next);
+          }}
           onBlur={onAltBlur}
           koFooter={
             <TextDupHint
@@ -1542,8 +1605,16 @@ function VideoFields({
           ko={caption.ko}
           en={caption.en}
           multiline
-          onKo={(v) => onCaption(locField(caption, "ko", v))}
-          onEn={(v) => onCaption(locField(caption, "en", v))}
+          onKo={(v) => {
+            const next = locField(captionRef.current, "ko", v);
+            captionRef.current = next;
+            onCaption(next);
+          }}
+          onEn={(v) => {
+            const next = locField(captionRef.current, "en", v);
+            captionRef.current = next;
+            onCaption(next);
+          }}
           onBlur={onCaptionBlur}
           koFooter={
             <TextDupHint
@@ -1632,6 +1703,10 @@ function EmbedFields({
   onCaptionBlur: () => void;
   onCaptionVisible: (v: boolean) => void;
 }) {
+  const titleRef = useRef(title);
+  const captionRef = useRef(caption);
+  titleRef.current = title;
+  captionRef.current = caption;
   const textDup = useTextDup();
   const debouncedCaption = useDebouncedValue(caption, 300);
   useEffect(() => {
@@ -1675,8 +1750,16 @@ function EmbedFields({
       <BilingualField
         ko={title.ko}
         en={title.en}
-        onKo={(v) => onTitle(locField(title, "ko", v))}
-        onEn={(v) => onTitle(locField(title, "en", v))}
+        onKo={(v) => {
+          const next = locField(titleRef.current, "ko", v);
+          titleRef.current = next;
+          onTitle(next);
+        }}
+        onEn={(v) => {
+          const next = locField(titleRef.current, "en", v);
+          titleRef.current = next;
+          onTitle(next);
+        }}
         onBlur={onTitleBlur}
       />
       <div>
@@ -1689,8 +1772,16 @@ function EmbedFields({
           ko={caption.ko}
           en={caption.en}
           multiline
-          onKo={(v) => onCaption(locField(caption, "ko", v))}
-          onEn={(v) => onCaption(locField(caption, "en", v))}
+          onKo={(v) => {
+            const next = locField(captionRef.current, "ko", v);
+            captionRef.current = next;
+            onCaption(next);
+          }}
+          onEn={(v) => {
+            const next = locField(captionRef.current, "en", v);
+            captionRef.current = next;
+            onCaption(next);
+          }}
           onBlur={onCaptionBlur}
           koFooter={
             <TextDupHint

@@ -530,7 +530,7 @@ export function WorkBasicTab({ draft, onChange, work, categories, siteUrl, onRel
   }
 
   function patchSearch(next: Partial<WorkBasicDraft>) {
-    onChange(next);
+    writeDraft(next);
     // 슬러그 변경은 자동저장하지 않음 (공개 URL). 요약·alt 는 schedule.
     if ("slug" in next && !("summary" in next) && !("key_image_alt" in next)) {
       searchAuto.markDirty();
