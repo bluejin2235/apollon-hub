@@ -700,7 +700,8 @@ export function draftFromWork(work: WorkDetail): WorkBasicDraft {
     awards: asLoc(work.awards),
     year: work.year ?? "",
     open_month: work.open_month >= 1 && work.open_month <= 12 ? work.open_month : 1,
-    published_at: (work.published_at ?? "").slice(0, 10) || todayYmd(),
+    // 기존 게시일이 있으면 유지. 비어 있어도 today 로 채우지 않는다(저장 시 덮어쓰기 방지).
+    published_at: (work.published_at ?? "").slice(0, 10),
     is_featured: work.is_featured,
     show_faq: work.show_faq
   };
@@ -736,7 +737,7 @@ export function worksPatchFromDraft(draft: WorkBasicDraft): Record<string, unkno
     awards: draft.awards,
     year: draft.year || null,
     open_month: draft.open_month >= 1 && draft.open_month <= 12 ? draft.open_month : 1,
-    published_at: draft.published_at || null,
+    // published_at 은 전체 저장에 넣지 않는다. 최초 공개는 사이트 API 가 채운다.
     is_featured: draft.is_featured,
     show_faq: draft.show_faq
   };
