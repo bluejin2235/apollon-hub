@@ -1058,6 +1058,9 @@
   font-weight: 600;
   color: var(--dim);
 }
+.wa .fl .cc b.over {
+  color: var(--warn);
+}
 .wa .hint-line {
   font-size: 11px;
   color: var(--faint);

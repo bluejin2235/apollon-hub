@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ImageUploader } from "@/components/website/image-uploader";
+import { CardLengthCount, CardLengthWarn } from "@/components/website/insight-card-length";
 import {
   InsightCropModal,
   ratioFromSize,
@@ -110,7 +111,7 @@ const HELP = {
   },
   sum: {
     title: "한 줄 요약",
-    use: "구글 검색 결과에서 제목 아래 나오는 설명문. 링크를 공유할 때도 이 글이 보입니다. 화면에는 나오지 않습니다",
+    use: "구글 검색 결과에서 제목 아래 나오는 설명문. 링크를 공유할 때도 이 글이 보입니다. 목록 카드에 마우스를 올리면 이 글이 나옵니다",
     rule: "무엇을 어떻게 바꿨는지 한 문장으로. 검색하는 사람이 이 글을 보고 누를지 정합니다",
     note: "검색 결과에는 앞부분만 표시됩니다",
     empty: "공개할 수 없습니다. 검색 결과에 설명이 없으면 클릭률이 떨어집니다"
@@ -447,9 +448,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <button type="button" className="q" onClick={() => toggleHelp("title")}>
                 ?
               </button>
-              <span className="cc">
-                국문 {draft.title.ko.length} · 영문 {draft.title.en.length}
-              </span>
+              <CardLengthCount field="title" value={draft.title} />
             </div>
             <div className="seclang">
               <span className="tag">국문</span>
@@ -478,6 +477,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onBlur={() => void screenAuto.flush()}
               />
             </div>
+            <CardLengthWarn field="title" value={draft.title} />
             <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <HelpPanel
               open={openHelp === "title"}
@@ -765,9 +765,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
               <button type="button" className="q" onClick={() => toggleHelp("sum")}>
                 ?
               </button>
-              <span className="cc">
-                국문 {draft.summary.ko.length} · 영문 {draft.summary.en.length}
-              </span>
+              <CardLengthCount field="summary" value={draft.summary} />
             </div>
             <div className="two">
               <textarea
@@ -789,6 +787,7 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                 onBlur={() => void searchAuto.flush()}
               />
             </div>
+            <CardLengthWarn field="summary" value={draft.summary} />
             <p className="hint-line">검색 결과에는 앞부분만 표시됩니다</p>
             <HelpPanel open={openHelp === "sum"} body={HELP.sum} onClose={() => setOpenHelp(null)} />
           </div>
