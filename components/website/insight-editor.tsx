@@ -337,6 +337,12 @@ function InsightEditorInner({ insightId, siteUrl }: { insightId: string; siteUrl
     setError(null);
     try {
       const patch = insightPatchFromDraft(draft);
+      const baselinePub = (insight?.published_at ?? "").slice(0, 10);
+      const draftPub = (draft.published_at || "").slice(0, 10);
+      if (draftPub !== baselinePub) {
+        patch.published_at = draftPub || null;
+        patch.publishedAtManual = true;
+      }
       const flushed = await runFlushes();
       if (!flushed) {
         setFullSaveState("dirty");

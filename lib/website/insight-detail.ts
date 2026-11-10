@@ -328,8 +328,8 @@ export function insightPatchFromDraft(draft: InsightBasicDraft): Record<string, 
     press_outlet: draft.press_outlet.trim() || null,
     press_href: draft.press_href.trim() || null,
     press_date: draft.press_date.trim() || null,
-    year: draft.year || null,
-    published_at: draft.published_at || null
+    year: draft.year || null
+    // published_at 은 공개일 칸을 사람이 바꿨을 때만 별도로 보낸다
   };
 }
 

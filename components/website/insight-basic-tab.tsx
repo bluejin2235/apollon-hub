@@ -238,7 +238,6 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
       category_id: d.category_id,
       title: d.title,
       subtitle: d.subtitle,
-      published_at: d.published_at || null,
       press_outlet: d.press_outlet.trim() || null,
       press_href: d.press_href.trim() || null,
       press_date: d.press_date.trim() || null
@@ -254,6 +253,29 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
   const screenAuto = useAutoPartialSave({
     persist: persistScreen,
     flushId: `insight-basic-screen:${insight.id}`
+  });
+
+  /** 공개일 칸을 사람이 바꿨을 때만 보낸다 */
+  const persistPublishedAt = useCallback(async () => {
+    const d = draftRef.current;
+    const baseline = (insight.published_at ?? "").slice(0, 10);
+    const next = (d.published_at || "").slice(0, 10);
+    if (next === baseline) return true;
+    const res = await updateInsight(insight.id, {
+      published_at: next || null,
+      publishedAtManual: true
+    });
+    if (!res.ok) {
+      showToast({ tone: "error", message: apiFailMessage(res) });
+      return false;
+    }
+    await onReload();
+    return true;
+  }, [insight.id, insight.published_at, onReload]);
+
+  const publishedAtAuto = useAutoPartialSave({
+    persist: persistPublishedAt,
+    flushId: `insight-basic-published-at:${insight.id}`
   });
 
   /** 슬러그 칸은 schedule 안 함. 요약·alt 자동/부분 저장 시 현재 슬러그 동봉. */
@@ -539,8 +561,11 @@ export function InsightBasicTab({ draft, onChange, insight, categories, siteUrl,
                   className="i"
                   type="date"
                   value={draft.published_at}
-                  onChange={(e) => patchScreen({ published_at: e.target.value })}
-                  onBlur={() => void screenAuto.flush()}
+                  onChange={(e) => {
+                    writeDraft({ published_at: e.target.value });
+                    publishedAtAuto.schedule();
+                  }}
+                  onBlur={() => void publishedAtAuto.flush()}
                 />
                 <p className="hint-line">목록 정렬 기준</p>
               </div>
