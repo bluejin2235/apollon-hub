@@ -56,7 +56,9 @@ import {
   STATS_SCREENS,
   type PeriodPresetId,
   type StatsBundle,
-  type StatsScreenId
+  type StatsScreenId,
+  type StatsSyncKindStatus,
+  type StatsSyncStatus
 } from "@/lib/website/stats";
 
 /** 화면마다 필요한 kind 가 다르다. 안 쓰는 것까지 받지 않는다 */
@@ -562,6 +564,85 @@ function liveVisitorText(live: LiveVisitors): string {
   return `${head} · ${live.pages.join(" · ")}`;
 }
 
+const SYNC_TIME_FORMAT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+/** 서울 시간 「M월 D일 HH:mm」 */
+function syncTimeText(iso: string): string {
+  const parts = SYNC_TIME_FORMAT.formatToParts(new Date(iso));
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${pick("month")}월 ${pick("day")}일 ${pick("hour")}:${pick("minute")}`;
+}
+
+function syncKindName(item: StatsSyncKindStatus): string {
+  const source = item.source === "ga4" ? "GA" : item.source === "gsc" ? "검색" : item.source;
+  return `${source}·${item.kind}`;
+}
+
+function okTimes(kinds: StatsSyncKindStatus[]): string[] {
+  return kinds
+    .map((item) => item.last_ok_at)
+    .filter((value): value is string => value !== null)
+    .sort();
+}
+
+type SyncLine = { tone: "fail" | "warn" | null; text: string };
+
+/** 수집 상태 한 줄. 실패 → 늦음 → 마지막 수집 순서로 하나만 */
+function syncMainLine(kinds: StatsSyncKindStatus[]): SyncLine | null {
+  if (kinds.length === 0) return null;
+
+  const failed = kinds.filter((item) => item.failed);
+  if (failed.length > 0) {
+    const names = failed.map(syncKindName).join(", ");
+    const error = failed.find((item) => item.last_error)?.last_error;
+    const errorHead = error ? `${error.slice(0, 60)}${error.length > 60 ? "…" : ""}` : null;
+    return {
+      tone: "fail",
+      text: errorHead ? `수집 실패 · ${names} · ${errorHead}` : `수집 실패 · ${names}`
+    };
+  }
+
+  const times = okTimes(kinds);
+  if (kinds.some((item) => item.overdue)) {
+    const oldest = kinds.some((item) => item.last_ok_at === null) ? null : times[0];
+    return {
+      tone: "warn",
+      text: oldest ? `수집 늦음 · 마지막 수집 ${syncTimeText(oldest)}` : "수집 늦음 · 수집 기록 없음"
+    };
+  }
+
+  const latest = times[times.length - 1];
+  return latest ? { tone: null, text: `마지막 수집 ${syncTimeText(latest)}` } : null;
+}
+
+function SyncStatusLine({ status }: { status: StatsSyncStatus | null }) {
+  if (!status) return null;
+  const main = syncMainLine(status.kinds);
+  const gaMissing = status.ga_daily_data_missing;
+  if (!main && !gaMissing) return null;
+
+  return (
+    <div className="ws-sync" role="status">
+      {main ? <span className={main.tone ?? undefined}>{main.text}</span> : null}
+      {gaMissing ? (
+        <span className="warn">
+          {status.ga_daily_latest_date
+            ? `GA 최근 데이터 없음 (마지막 ${status.ga_daily_latest_date})`
+            : "GA 최근 데이터 없음"}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   const today = useMemo(() => seoulToday(), []);
   const [preset, setPreset] = useState<PeriodPresetId>("30d");
@@ -569,6 +650,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [bundle, setBundle] = useState<StatsBundle | null>(null);
+  const [syncStatus, setSyncStatus] = useState<StatsSyncStatus | null>(null);
   const [status, setStatus] = useState<LoadStatus>("loading");
   const kinds = KINDS_BY_SCREEN[screen];
   const live = useLiveVisitors();
@@ -588,10 +670,12 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
         if (controller.signal.aborted) return;
         if (!result.ok) {
           setBundle(null);
+          setSyncStatus(null);
           setStatus("error");
           return;
         }
-        setBundle(result.data);
+        setBundle(result.data.bundle);
+        setSyncStatus(result.data.sync_status);
         setStatus("ready");
       }
     );
@@ -653,6 +737,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
                 </div>
               ) : null}
             </div>
+            <SyncStatusLine status={syncStatus} />
             <div className="ws-live" aria-label="지금 접속">
               <span className="ws-dot" aria-hidden />
               <span>{liveVisitorText(live)}</span>

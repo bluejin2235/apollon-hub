@@ -7,7 +7,13 @@ import type {
   NewsletterList
 } from "@/lib/website/contact";
 import type { HomeCandidateList, HomeList, HomeSlot, HomeWrite } from "@/lib/website/home";
-import type { StatsBundle, StatsQueryResult, StatsRealtime } from "@/lib/website/stats";
+import {
+  readStatsSyncStatus,
+  type StatsBundle,
+  type StatsBundleResult,
+  type StatsQueryResult,
+  type StatsRealtime
+} from "@/lib/website/stats";
 import type {
   ApiResult,
   InsightListData,
@@ -36,7 +42,12 @@ function queryString(params?: Record<string, string | number | undefined | null>
   return s ? `?${s}` : "";
 }
 
-async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function websiteFetch<T>(
+  path: string,
+  init?: RequestInit,
+  /** whole: data 만 꺼내지 않고 응답 본문 전체를 data 로 돌려준다 */
+  options?: { whole?: boolean }
+): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const incoming = init?.signal;
   const onIncomingAbort = () => controller.abort();
@@ -94,7 +105,8 @@ async function websiteFetch<T>(path: string, init?: RequestInit): Promise<ApiRes
       };
     }
 
-    const data = record && "data" in record ? (record.data as T) : (body as T);
+    const data =
+      !options?.whole && record && "data" in record ? (record.data as T) : (body as T);
     const notice =
       record && "notice" in record && record.notice && typeof record.notice === "object"
         ? (record.notice as UploadNotice)
@@ -1234,17 +1246,31 @@ export function getStats(params: {
   return websiteFetch<StatsQueryResult>(`stats${queryString(params)}`);
 }
 
-/** kind 여러 개를 한 번에 읽는다. 응답은 kind 를 열쇠로 한 묶음이다 */
-export function getStatsBundle(params: {
+/**
+ * kind 여러 개를 한 번에 읽는다. 묶음은 kind 를 열쇠로 한다.
+ * 응답에 붙는 sync_status(수집 상태)도 함께 넘긴다. 없으면 null.
+ */
+export async function getStatsBundle(params: {
   from: string;
   to: string;
   kinds: string[];
   signal?: AbortSignal;
-}): Promise<ApiResult<StatsBundle>> {
+}): Promise<ApiResult<StatsBundleResult>> {
   const { from, to, kinds, signal } = params;
-  return websiteFetch<StatsBundle>(`stats${queryString({ from, to, kinds: kinds.join(",") })}`, {
-    signal
-  });
+  const result = await websiteFetch<Record<string, unknown> | null>(
+    `stats${queryString({ from, to, kinds: kinds.join(",") })}`,
+    { signal },
+    { whole: true }
+  );
+  if (!result.ok) return result;
+
+  const body = result.data && typeof result.data === "object" ? result.data : {};
+  const bundle = (body.data && typeof body.data === "object" ? body.data : {}) as StatsBundle;
+  return {
+    ok: true,
+    status: result.status,
+    data: { bundle, sync_status: readStatsSyncStatus(body.sync_status) }
+  };
 }
 
 /** GA4 Realtime — 지금 접속자. DB 를 거치지 않는다 */

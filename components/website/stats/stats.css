@@ -9,6 +9,7 @@
   --card: #fff;
   --up: #0f7a56;
   --dn: #b93b3b;
+  --warn: #a35a08;
   --r: 10px;
   --ws-bar-height: 72px;
   --ws-bar-gap: 20px;
@@ -122,6 +123,25 @@
   padding: 5px 8px;
   background: #fff;
   color: var(--ink);
+}
+
+/* 수집 상태 — 기간 선택 옆 한 줄. 지금 접속은 오른쪽 끝에 남긴다 */
+.ws-sync {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--ink2);
+}
+
+.ws-sync .fail {
+  color: var(--dn);
+  font-weight: 600;
+}
+
+.ws-sync .warn {
+  color: var(--warn);
 }
 
 .ws-live {

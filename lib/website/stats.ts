@@ -84,6 +84,64 @@ export type StatsQueryResult = {
 /** kind 여러 개를 한 번에 받은 것 */
 export type StatsBundle = Record<string, StatsQueryResult>;
 
+/** 수집 종류 하나의 마지막 상태 — 홈페이지 website_stats_sync_state */
+export type StatsSyncKindStatus = {
+  source: string;
+  kind: string;
+  last_status: string | null;
+  /** API 호출이 성공한 마지막 시각 (데이터 없음 포함) */
+  last_ok_at: string | null;
+  last_error: string | null;
+  fail_streak: number;
+  /** last_status 가 failed */
+  failed: boolean;
+  /** last_ok_at 이 없거나 36시간을 넘었다 */
+  overdue: boolean;
+};
+
+export type StatsSyncStatus = {
+  kinds: StatsSyncKindStatus[];
+  /** GA daily 최근 데이터가 3일 넘게 비었다. 실패가 아니라 경고 */
+  ga_daily_data_missing: boolean;
+  ga_daily_latest_date: string | null;
+};
+
+/** 통계 묶음 + 수집 상태. 홈페이지가 수집 상태를 주지 않으면 sync_status 는 null */
+export type StatsBundleResult = {
+  bundle: StatsBundle;
+  sync_status: StatsSyncStatus | null;
+};
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+/** 응답의 sync_status 를 읽는다. 모양이 다르면 null */
+export function readStatsSyncStatus(value: unknown): StatsSyncStatus | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.kinds)) return null;
+
+  const kinds: StatsSyncKindStatus[] = record.kinds
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    .map((row) => ({
+      source: typeof row.source === "string" ? row.source : "",
+      kind: typeof row.kind === "string" ? row.kind : "",
+      last_status: textOrNull(row.last_status),
+      last_ok_at: textOrNull(row.last_ok_at),
+      last_error: textOrNull(row.last_error),
+      fail_streak: typeof row.fail_streak === "number" ? row.fail_streak : 0,
+      failed: row.failed === true,
+      overdue: row.overdue === true
+    }));
+
+  return {
+    kinds,
+    ga_daily_data_missing: record.ga_daily_data_missing === true,
+    ga_daily_latest_date: textOrNull(record.ga_daily_latest_date)
+  };
+}
+
 /** GA4 Realtime — 부를 때마다 새로 받는다. DB 에 쌓지 않는다 */
 export type StatsRealtimePage = {
   /** Realtime 의 unifiedScreenName — 경로가 아니라 페이지 제목이다 */
