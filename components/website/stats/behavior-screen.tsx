@@ -112,7 +112,11 @@ function DwellAndDepth({ data }: { data: StatsData }) {
       <div className="ws-card">
         <div className="ws-ct">평균 세션 시간 추이</div>
         <p className="ws-cs">이번 기간 평균 {summary.avgSeconds ?? "—"}</p>
-        <ChartSlot status={data.status} empty={dwell.length === 0}>
+        <ChartSlot
+          status={data.status}
+          empty={dwell.length === 0}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="line"
             data={dwell}
@@ -127,7 +131,11 @@ function DwellAndDepth({ data }: { data: StatsData }) {
       <div className="ws-card">
         <div className="ws-ct">세션당 본 페이지 추이</div>
         <p className="ws-cs">이번 기간 평균 {summary.avgPages ?? "—"}</p>
-        <ChartSlot status={data.status} empty={depth.length === 0}>
+        <ChartSlot
+          status={data.status}
+          empty={depth.length === 0}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="line"
             data={depth}
@@ -237,7 +245,11 @@ function ExitAndReturn({ data }: { data: StatsData }) {
       </div>
       <div className="ws-card">
         <div className="ws-ct">신규와 재방문</div>
-        <ChartSlot status={data.status} empty={returning.length === 0}>
+        <ChartSlot
+          status={data.status}
+          empty={returning.length === 0}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="bar"
             data={returning}
@@ -286,7 +298,12 @@ function Submissions({ data }: { data: StatsData }) {
       </div>
       <div className="ws-card ws-card-gap">
         <div className="ws-ct">제출 추이</div>
-        <ChartSlot status={data.status} empty={trend.length === 0} height={170}>
+        <ChartSlot
+          status={data.status}
+          empty={trend.length === 0}
+          height={170}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="bar"
             data={trend}

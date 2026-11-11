@@ -93,7 +93,7 @@ export function launchMark(
   // 공개일이 기간보다 앞이면 전부 새 사이트다. 첫 칸에 선을 긋지 않는다
   if (sorted[0].date >= SITE_LAUNCH_DATE) return null;
 
-  return { x: xOf(hit), label: "새 사이트 공개" };
+  return { x: xOf(hit), label: `${shortDate(SITE_LAUNCH_DATE)} 새 홈페이지 오픈` };
 }
 
 /** 값이 하나도 없으면 null. 있으면 합계 */

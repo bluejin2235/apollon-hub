@@ -84,7 +84,12 @@ function Overview({ data }: { data: StatsData }) {
       </div>
       <div className="ws-card ws-card-gap">
         <div className="ws-ct">노출과 클릭 — 노출만 늘고 클릭이 안 늘면 제목 문제</div>
-        <ChartSlot status={data.status} empty={trend.length === 0} hint={RANGE_HINT}>
+        <ChartSlot
+          status={data.status}
+          empty={trend.length === 0}
+          hint={RANGE_HINT}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="combo"
             data={trend}

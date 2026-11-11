@@ -93,7 +93,11 @@ function ByPageType({ data, pie, trend }: {
         </div>
         <div className="ws-card">
           <div className="ws-ct">종류별 추이</div>
-          <ChartSlot status={data.status} empty={trend.rows.length === 0}>
+          <ChartSlot
+            status={data.status}
+            empty={trend.rows.length === 0}
+            showLaunchNote={Boolean(mark)}
+          >
             <StatsChart
               type="line"
               data={trend.rows}

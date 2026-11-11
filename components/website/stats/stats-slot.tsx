@@ -27,12 +27,15 @@ export function ChartSlot({
   empty,
   height,
   hint = STATS_EMPTY_HINT,
+  /** 오픈 세로선이 기간 안에 있을 때만 — 그래프 위 안내 */
+  showLaunchNote,
   children
 }: {
   status: LoadStatus;
   empty: boolean;
   height?: number;
   hint?: string;
+  showLaunchNote?: boolean;
   children: ReactNode;
 }) {
   if (status === "loading") {
@@ -46,7 +49,14 @@ export function ChartSlot({
   if (empty) {
     return <StatsEmpty height={height} hint={hint} />;
   }
-  return <>{children}</>;
+  return (
+    <>
+      {showLaunchNote ? (
+        <p className="ws-cs">선 왼쪽 = 이전 홈페이지 · 오른쪽 = 새 홈페이지</p>
+      ) : null}
+      {children}
+    </>
+  );
 }
 
 export function SectionHead({ title, stamp }: { title: string; stamp?: string }) {

@@ -310,7 +310,11 @@ function TrendAndSources({ data }: { data: StatsData }) {
     <div className="ws-sec ws-g2">
       <div className="ws-card">
         <div className="ws-ct">일별 사용자 추이 — 실선 이번 기간, 점선 지난 기간</div>
-        <ChartSlot status={data.status} empty={trend.length === 0}>
+        <ChartSlot
+          status={data.status}
+          empty={trend.length === 0}
+          showLaunchNote={Boolean(mark)}
+        >
           <StatsChart
             type="line"
             data={trend}
@@ -350,7 +354,11 @@ function HowTheyArrived({ data }: { data: StatsData }) {
       <div className="ws-g2">
         <div className="ws-card">
           <div className="ws-ct">경로별 일별 추이</div>
-          <ChartSlot status={data.status} empty={daily.rows.length === 0}>
+          <ChartSlot
+            status={data.status}
+            empty={daily.rows.length === 0}
+            showLaunchNote={Boolean(mark)}
+          >
             <StatsChart
               type="line"
               data={daily.rows}
