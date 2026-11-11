@@ -299,14 +299,47 @@ export function buildLanguage(bundle: StatsBundle | null): StatsSlice[] {
   ];
 }
 
+export type SummaryKeywords = {
+  /** 노출 많은 순 다섯 개 */
+  rows: StatsRow[];
+  /** period: 고른 기간의 날짜 행 · overall: 날짜 없는 옛 합계(기간 선택과 무관) */
+  basis: "period" | "overall";
+  /** overall 일 때 그 행들의 period_from 최소 ~ period_to 최대. 없으면 null */
+  overallPeriod: { from: string; to: string } | null;
+};
+
+/** 합계 행들이 담은 기간 */
+function rowsPeriod(rows: Rows): { from: string; to: string } | null {
+  let from: string | null = null;
+  let to: string | null = null;
+  for (const row of rows) {
+    if (row.period_from && (from === null || row.period_from < from)) from = row.period_from;
+    if (row.period_to && (to === null || row.period_to > to)) to = row.period_to;
+  }
+  return from && to ? { from, to } : null;
+}
+
+/** 차트 제목 옆 표시. 고른 기간 값이거나 값이 없으면 null */
+export function keywordsBasisText(keywords: SummaryKeywords): string | null {
+  if (keywords.basis !== "overall" || keywords.rows.length === 0) return null;
+  const period = keywords.overallPeriod;
+  return period
+    ? `전체 기간 합계 (${period.from} ~ ${period.to} 기준, 기간 선택과 무관)`
+    : "전체 기간 합계 (기간 선택과 무관)";
+}
+
 /**
  * 검색어 — 노출 많은 순 다섯 개.
  *
- * 검색어에는 날짜가 없다. 옛 CSV 가 기간 합계로만 줘서 기간으로 자를 수 없다.
- * 그래서 current 가 아니라 overall 을 읽는다. 담은 기간은 검색 화면에 적혀 있다.
+ * 고른 기간 안에 날짜가 붙은 검색어 행이 있으면 그것을 쓴다.
+ * 없으면 날짜 없는 옛 합계(옛 CSV)를 쓴다. 이 값은 기간으로 자를 수 없어
+ * 화면과 루나에게 「기간 값이 아님」을 함께 알린다.
  */
-export function buildKeywords(bundle: StatsBundle | null): StatsRow[] {
-  const rows = pickRows(bundle, "query", ["gsc", "gsc_http"], "overall");
+export function buildKeywords(bundle: StatsBundle | null): SummaryKeywords {
+  const dated = pickRows(bundle, "query", ["gsc", "gsc_http"], "current");
+  const basis = dated.length > 0 ? "period" : "overall";
+  const rows =
+    basis === "period" ? dated : pickRows(bundle, "query", ["gsc", "gsc_http"], "overall");
   const map = new Map<string, { impressions: number; clicks: number }>();
 
   for (const row of rows) {
@@ -318,10 +351,14 @@ export function buildKeywords(bundle: StatsBundle | null): StatsRow[] {
     map.set(key, bucket);
   }
 
-  return [...map.entries()]
-    .sort((a, b) => b[1].impressions - a[1].impressions)
-    .slice(0, 5)
-    .map(([name, value]) => ({ name, impressions: value.impressions, clicks: value.clicks }));
+  return {
+    rows: [...map.entries()]
+      .sort((a, b) => b[1].impressions - a[1].impressions)
+      .slice(0, 5)
+      .map(([name, value]) => ({ name, impressions: value.impressions, clicks: value.clicks })),
+    basis,
+    overallPeriod: basis === "overall" ? rowsPeriod(rows) : null
+  };
 }
 
 /* ─────────────────────── 루나 총평 · 할 일에 넘길 숫자 ─────────────────────── */
@@ -362,6 +399,13 @@ export type SummaryBriefFacts = {
   leads: { current: number | null; previous: number | null };
   channels: { name: string; sessions: number }[];
   queries: { name: string; impressions: number; clicks: number; clickRate: number | null }[];
+  /**
+   * queries 가 무엇의 값인지.
+   * overall 이면 날짜 없는 옛 합계라 고른 기간(from~to)의 값이 아니다.
+   */
+  queriesBasis: "period" | "overall";
+  /** queriesBasis 가 overall 일 때 그 합계가 담은 기간 */
+  queriesOverallPeriod: { from: string; to: string } | null;
   pages: { path: string; views: number }[];
 };
 
@@ -404,7 +448,8 @@ export function buildSummaryBriefFacts(
     .slice(0, 5)
     .map((item) => ({ name: item.name, sessions: item.value }));
 
-  const queries = buildKeywords(bundle)
+  const keywords = buildKeywords(bundle);
+  const queries = keywords.rows
     .slice(0, 5)
     .map((row) => {
       const imp = Number(row.impressions) || 0;
@@ -453,6 +498,8 @@ export function buildSummaryBriefFacts(
     leads: { current: total(leadNow, "events"), previous: total(leadPrev, "events") },
     channels,
     queries,
+    queriesBasis: keywords.basis,
+    queriesOverallPeriod: keywords.overallPeriod,
     pages
   };
 }

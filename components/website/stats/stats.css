@@ -796,6 +796,11 @@
   margin-bottom: 10px;
 }
 
+.ws-ct .ws-stamp {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
 /* 목업의 .grid.g2 · .g3 — 좁으면 쌓이고 넓으면 나란히 */
 .ws-g2,
 .ws-g3 {

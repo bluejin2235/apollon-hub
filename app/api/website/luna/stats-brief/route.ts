@@ -31,6 +31,8 @@ type Facts = {
   leads?: { current?: unknown; previous?: unknown };
   channels?: unknown;
   queries?: unknown;
+  queriesBasis?: unknown;
+  queriesOverallPeriod?: { from?: unknown; to?: unknown } | null;
   pages?: unknown;
 };
 
@@ -107,10 +109,19 @@ function listChannels(raw: unknown): string {
   );
 }
 
-function listQueries(raw: unknown): string {
+/** 검색어 목록 머리말. 옛 합계면 고른 기간 값이 아니라고 못박는다 */
+function queriesHead(facts: Facts): string {
+  if (facts.queriesBasis !== "overall") return "검색어(노출·클릭·클릭률 %):";
+  const from = facts.queriesOverallPeriod?.from;
+  const to = facts.queriesOverallPeriod?.to;
+  const span = typeof from === "string" && typeof to === "string" ? `${from} ~ ${to} ` : "";
+  return `검색어(노출·클릭·클릭률 %) — 고른 기간 값이 아님. ${span}전체 기간 합계라 이번·지난 기간 변화의 근거로 쓰지 말 것:`;
+}
+
+function listQueries(raw: unknown, head: string): string {
   if (!Array.isArray(raw) || raw.length === 0) return "검색어(노출·클릭·클릭률 %):\n없음";
   return (
-    "검색어(노출·클릭·클릭률 %):\n" +
+    `${head}\n` +
     raw
       .slice(0, 5)
       .map((item) => {
@@ -172,7 +183,7 @@ function buildPrompt(facts: Facts): string {
     ),
     pair("문의 건수 (건)", num(facts.leads?.current), num(facts.leads?.previous)),
     listChannels(facts.channels),
-    listQueries(facts.queries),
+    listQueries(facts.queries, queriesHead(facts)),
     listPages(facts.pages)
   ].join("\n");
 }
