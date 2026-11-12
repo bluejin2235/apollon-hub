@@ -29,14 +29,15 @@ import {
   RANK_COLORS,
   searchDaily,
   searchDimScoped,
-  searchOverallPeriod
+  searchOverallPeriod,
+  unpublishedQueryGap
 } from "@/components/website/stats/search-data";
 import {
   StatsChart,
   STATS_COLORS,
   STATS_MUTED
 } from "@/components/website/stats/stats-chart";
-import { launchMark, periodText, readLaunchDate } from "@/components/website/stats/stats-data";
+import { intText, launchMark, periodText, readLaunchDate } from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /** 기간 안에 값이 없을 때 — 기간을 넓히면 나온다 */
@@ -164,6 +165,7 @@ function Keywords({ data }: { data: StatsData }) {
   const table = useMemo(() => buildKeywordTable(data.bundle), [data.bundle]);
   const period = useMemo(() => searchOverallPeriod(data.bundle), [data.bundle]);
   const scoped = useMemo(() => searchDimScoped(data.bundle), [data.bundle]);
+  const gap = useMemo(() => unpublishedQueryGap(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
@@ -229,6 +231,11 @@ function Keywords({ data }: { data: StatsData }) {
             </table>
           </div>
         </ChartSlot>
+        {gap ? (
+          <p className="ws-foot">
+            구글이 검색어를 공개하지 않은 노출 {intText(gap.impressions)}회 · 클릭 {intText(gap.clicks)}회가 더 있습니다
+          </p>
+        ) : null}
         <p className="ws-foot">
           {scoped && periodText(period)
             ? `이 표는 고른 기간(${periodText(period)?.replace(/ 합계$/, "")})의 검색어입니다. `

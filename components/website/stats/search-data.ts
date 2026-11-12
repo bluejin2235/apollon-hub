@@ -393,6 +393,32 @@ function tagsFor(row: StatsPoint): KeywordTag[] {
   return tags;
 }
 
+/**
+ * 카드의 일별 노출·클릭 합에서 검색어 전체 합을 뺀 것.
+ * 구글이 검색어를 공개하지 않은 분량이다. 표에 보이는 20개가 아니다.
+ * 둘 다 0 이하면 null.
+ */
+export function unpublishedQueryGap(
+  bundle: StatsBundle | null
+): { impressions: number; clicks: number } | null {
+  const daily = searchDaily(bundle);
+  const cardImp = sumField(daily, "impressions");
+  const cardClicks = sumField(daily, "clicks");
+  if (cardImp == null && cardClicks == null) return null;
+
+  let queryImp = 0;
+  let queryClicks = 0;
+  for (const row of dimRows(bundle, "query").rows) {
+    if (typeof row.impressions === "number") queryImp += row.impressions;
+    if (typeof row.clicks === "number") queryClicks += row.clicks;
+  }
+
+  const impressions = Math.max(0, Math.round((cardImp ?? 0) - queryImp));
+  const clicks = Math.max(0, Math.round((cardClicks ?? 0) - queryClicks));
+  if (impressions <= 0 && clicks <= 0) return null;
+  return { impressions, clicks };
+}
+
 export function buildKeywordTable(bundle: StatsBundle | null, limit = 20): KeywordRow[] {
   return dimRows(bundle, "query")
     .rows.filter((row) => (row.key ?? "").trim() !== "")
