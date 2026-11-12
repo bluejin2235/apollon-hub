@@ -19,7 +19,7 @@ import {
   STATS_MUTED,
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { clip, launchMark, pickRows, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
+import { launchMark, pickRows, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
 import {
   ChartSlot,
   SectionHead,
@@ -616,6 +616,34 @@ type LiveVisitors = {
   pages: string[];
 };
 
+const LIVE_TITLE_TAILS = [" | 아폴론이머시브웍스", " | Apollon Immersive Works"];
+const LIVE_ROLL_MS = 4_000;
+
+/** 제목 끝의 사이트 이름을 떼고, 빈 값과 (other) 는 뺀다 */
+function cleanLiveTitle(name: string): string | null {
+  let text = name.trim();
+  if (!text || text === "(other)") return null;
+  let tail = LIVE_TITLE_TAILS.find((item) => text.endsWith(item));
+  while (tail) {
+    text = text.slice(0, -tail.length).trim();
+    tail = LIVE_TITLE_TAILS.find((item) => text.endsWith(item));
+  }
+  if (!text || text === "(other)") return null;
+  return text;
+}
+
+function liveTitles(pages: { name: string }[]): string[] {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const page of pages) {
+    const title = cleanLiveTitle(page.name);
+    if (!title || seen.has(title)) continue;
+    seen.add(title);
+    titles.push(title);
+  }
+  return titles;
+}
+
 /**
  * GA4 Realtime — 30초마다. 오류여도 통계 화면은 멈추지 않는다.
  *
@@ -636,10 +664,14 @@ function useLiveVisitors(): LiveVisitors {
         setLive({ count: null, pages: [] });
         return;
       }
-      const names = result.data.pages
-        .slice(0, 3)
-        .map((row) => clip(row.name, 28));
-      setLive({ count: result.data.activeUsers, pages: names });
+      const count = result.data.activeUsers;
+      const names = liveTitles(result.data.pages);
+      setLive((prev) => {
+        const samePages =
+          prev.pages.length === names.length && prev.pages.every((page, i) => page === names[i]);
+        if (prev.count === count && samePages) return prev;
+        return { count, pages: samePages ? prev.pages : names };
+      });
     }
 
     void pull();
@@ -657,11 +689,27 @@ function useLiveVisitors(): LiveVisitors {
   return live;
 }
 
-function liveVisitorText(live: LiveVisitors): string {
-  if (live.count === null) return "지금 보고 있는 사람 —";
-  const head = `지금 보고 있는 사람 ${live.count}`;
-  if (live.count === 0 || live.pages.length === 0) return head;
-  return `${head} · ${live.pages.join(" · ")}`;
+/** 제목이 둘 이상일 때만 넘긴다. 하나면 그 제목을 그대로 둔다. */
+function LiveTitleRoll({ titles }: { titles: string[] }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+    if (titles.length < 2) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setInterval(() => {
+      setIndex((current) => (current + 1) % titles.length);
+    }, LIVE_ROLL_MS);
+    return () => clearInterval(timer);
+  }, [titles]);
+
+  const title = titles[index] ?? titles[0];
+  if (!title) return null;
+  return (
+    <span className="ws-live-title" key={`${index}-${title}`}>
+      {title}
+    </span>
+  );
 }
 
 const SYNC_TIME_FORMAT = new Intl.DateTimeFormat("ko-KR", {
@@ -817,9 +865,19 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               </div>
             </div>
             <SyncStatusLine status={syncStatus} />
-            <div className="ws-live" aria-label="지금 접속">
+            <div className="ws-live">
               <span className="ws-dot" aria-hidden />
-              <span>{liveVisitorText(live)}</span>
+              <span>
+                지금 방문객 {live.count === null ? "—" : <b>{live.count}</b>}
+                {live.count === null ? null : "명"}
+              </span>
+              <small>최근 30분</small>
+              {live.pages.length > 0 ? (
+                <span className="ws-live-watch">
+                  <span>보고 있는 콘텐츠</span>
+                  <LiveTitleRoll titles={live.pages} />
+                </span>
+              ) : null}
             </div>
           </div>
           {compareText ? (

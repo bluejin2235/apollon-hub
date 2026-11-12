@@ -190,6 +190,48 @@
   color: var(--ink);
 }
 
+.ws-live small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink3);
+}
+
+.ws-live-watch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.ws-live-title {
+  min-width: 0;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  animation: ws-live-in 0.35s ease;
+}
+
+@keyframes ws-live-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-live-title {
+    animation: none;
+  }
+}
+
 .ws-pt {
   font-size: 21px;
   font-weight: 600;
