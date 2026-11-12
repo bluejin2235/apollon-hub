@@ -201,7 +201,7 @@ export function isStatsScreenId(value: string): value is StatsScreenId {
 }
 
 export const PERIOD_PRESETS = [
-  { id: "today", label: "오늘" },
+  { id: "yesterday", label: "어제" },
   { id: "7d", label: "7일" },
   { id: "30d", label: "30일" },
   { id: "3m", label: "3개월" },

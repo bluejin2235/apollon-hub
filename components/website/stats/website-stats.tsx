@@ -143,7 +143,10 @@ function addMonths(iso: string, months: number): string {
 }
 
 function rangeForPreset(preset: PeriodPresetId, today: string): { from: string; to: string } {
-  if (preset === "today") return { from: today, to: today };
+  if (preset === "yesterday") {
+    const day = addIsoDays(today, -1);
+    return { from: day, to: day };
+  }
   if (preset === "7d") return { from: addIsoDays(today, -6), to: today };
   if (preset === "30d") return { from: addIsoDays(today, -29), to: today };
   if (preset === "3m") return { from: addMonths(today, -3), to: today };
@@ -677,8 +680,8 @@ function SyncStatusLine({ status }: { status: StatsSyncStatus | null }) {
 
 export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   const today = useMemo(() => seoulToday(), []);
-  const [preset, setPreset] = useState<PeriodPresetId>("30d");
-  const initial = rangeForPreset("30d", today);
+  const [preset, setPreset] = useState<PeriodPresetId>("yesterday");
+  const initial = rangeForPreset("yesterday", today);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [bundle, setBundle] = useState<StatsBundle | null>(null);
