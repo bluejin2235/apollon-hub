@@ -19,7 +19,7 @@ import {
   STATS_MUTED,
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { clip, launchMark, pickRows } from "@/components/website/stats/stats-data";
+import { clip, launchMark, pickRows, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
 import {
   ChartSlot,
   SectionHead,
@@ -153,6 +153,71 @@ function rangeForPreset(preset: PeriodPresetId, today: string): { from: string; 
   if (preset === "6m") return { from: addMonths(today, -6), to: today };
   if (preset === "1y") return { from: addMonths(today, -12), to: today };
   return { from: addIsoDays(today, -29), to: today };
+}
+
+function isoParts(iso: string): { y: number; m: number; d: number } {
+  const [y, m, d] = iso.split("-").map(Number);
+  return { y, m, d };
+}
+
+/** 시작·끝 포함 일수 */
+function inclusiveDays(from: string, to: string): number {
+  const a = isoParts(from);
+  const b = isoParts(to);
+  const start = Date.UTC(a.y, a.m - 1, a.d);
+  const end = Date.UTC(b.y, b.m - 1, b.d);
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
+/** 고른 기간 바로 앞의 같은 길이 */
+function previousRange(from: string, to: string): { from: string; to: string } {
+  const length = inclusiveDays(from, to);
+  const prevTo = addIsoDays(from, -1);
+  const prevFrom = addIsoDays(prevTo, -(length - 1));
+  return { from: prevFrom, to: prevTo };
+}
+
+/** 올해가 아니면 해를 붙인다. 11월 11일 · 2025년 11월 11일 */
+function dayText(iso: string, todayYear: number): string {
+  const { y, m, d } = isoParts(iso);
+  const year = y !== todayYear ? `${y}년 ` : "";
+  return `${year}${m}월 ${d}일`;
+}
+
+/** 같은 달이면 끝 날짜의 달을 빼 11월 5일~11일 로 적는다 */
+function rangeText(from: string, to: string, todayYear: number): string {
+  if (from === to) return dayText(from, todayYear);
+  const a = isoParts(from);
+  const b = isoParts(to);
+  const start = dayText(from, todayYear);
+  if (a.y === b.y && a.m === b.m) return `${start}~${b.d}일`;
+  const endYear = a.y !== b.y ? `${b.y}년 ` : "";
+  return `${start}~${endYear}${b.m}월 ${b.d}일`;
+}
+
+/** 앞 기간 끝 글자의 받침으로 「와/과」를 고른다. 괄호는 건너뛴다. */
+function compareParticle(text: string): "와" | "과" {
+  for (let i = text.length - 1; i >= 0; i--) {
+    const code = text.charCodeAt(i);
+    if (code < 0xac00 || code > 0xd7a3) continue;
+    return (code - 0xac00) % 28 === 0 ? "와" : "과";
+  }
+  return "와";
+}
+
+function compareLine(preset: PeriodPresetId, from: string, to: string, today: string): string {
+  if (!from || !to || from > to) return "";
+  const todayYear = Number(today.slice(0, 4));
+  const prev = previousRange(from, to);
+  const currentMark = preset === "yesterday" ? " (어제)" : "";
+  const before = `${rangeText(prev.from, prev.to, todayYear)}${preset === "yesterday" ? " (그저께)" : ""}`;
+  return `${rangeText(from, to, todayYear)}${currentMark} ↔ ${before}${compareParticle(before)} 비교`;
+}
+
+/** 앞 기간 시작이 오픈일보다 앞이면 옛 사이트 구간이다. 오픈일이 없으면 표시하지 않는다. */
+function previousStartsBeforeLaunch(from: string, to: string): boolean {
+  if (!SITE_LAUNCH_DATE || !from || !to || from > to) return false;
+  return previousRange(from, to).from < SITE_LAUNCH_DATE;
 }
 
 function ScreenShell({
@@ -721,6 +786,8 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   }, [from, to, kinds]);
 
   const data: StatsData = { bundle, status };
+  const compareText = compareLine(preset, from, to, today);
+  const showOldSite = previousStartsBeforeLaunch(from, to);
 
   function applyPreset(next: PeriodPresetId) {
     setPreset(next);
@@ -748,29 +815,6 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
                   </button>
                 ))}
               </div>
-              {preset === "custom" ? (
-                <div className="ws-custom">
-                  <label>
-                    시작
-                    <input
-                      type="date"
-                      value={from}
-                      max={to}
-                      onChange={(event) => setFrom(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    끝
-                    <input
-                      type="date"
-                      value={to}
-                      min={from}
-                      max={today}
-                      onChange={(event) => setTo(event.target.value)}
-                    />
-                  </label>
-                </div>
-              ) : null}
             </div>
             <SyncStatusLine status={syncStatus} />
             <div className="ws-live" aria-label="지금 접속">
@@ -778,6 +822,35 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               <span>{liveVisitorText(live)}</span>
             </div>
           </div>
+          {compareText ? (
+            <p className="ws-compare">
+              <span>{compareText}</span>
+              {showOldSite ? <span className="ws-stamp">앞 기간은 옛 사이트</span> : null}
+            </p>
+          ) : null}
+          {preset === "custom" ? (
+            <div className="ws-custom">
+              <label>
+                시작
+                <input
+                  type="date"
+                  value={from}
+                  max={to}
+                  onChange={(event) => setFrom(event.target.value)}
+                />
+              </label>
+              <label>
+                끝
+                <input
+                  type="date"
+                  value={to}
+                  min={from}
+                  max={today}
+                  onChange={(event) => setTo(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
 
         <div className="ws-bar-spacer" aria-hidden="true" />
