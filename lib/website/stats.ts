@@ -53,6 +53,15 @@ export type StatsQueryResult = {
   to: string;
   prev_from: string;
   prev_to: string;
+  /**
+   * 아래 칸은 홈페이지가 오픈일 기준으로 기간을 자른 뒤에 붙인다.
+   * 아직 없는 응답이면 undefined 이고, 화면은 고른 기간으로 직접 계산한다.
+   */
+  actual_from?: string;
+  actual_to?: string;
+  clipped_to_launch?: boolean;
+  prev_includes_pre_launch?: boolean;
+  launch_date?: string;
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];

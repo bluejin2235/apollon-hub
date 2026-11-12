@@ -78,22 +78,75 @@ export const SITE_LAUNCH_DATE: string | null =
  * 그래서 공개일 이후 첫 행을 찾아 그 행의 축 이름을 그대로 쓴다.
  * 공개일이 고른 기간 밖이면 null 이고 선은 그려지지 않는다.
  */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 응답의 launch_date. 없으면 null 이고 화면은 SITE_LAUNCH_DATE 를 쓴다 */
+export function readLaunchDate(bundle: StatsBundle | null): string | null {
+  if (!bundle) return null;
+  for (const result of Object.values(bundle)) {
+    const value = result?.launch_date;
+    if (typeof value === "string" && ISO_DATE.test(value)) return value;
+  }
+  return null;
+}
+
+export type ActualCompareRange = {
+  actualFrom: string;
+  actualTo: string;
+  prevFrom: string;
+  prevTo: string;
+  clipped: boolean;
+  /** 칸 자체가 없으면 null. 화면은 오픈일 설정으로 직접 판단한다 */
+  prevIncludesPreLaunch: boolean | null;
+};
+
+/** actual_from 이 있는 응답의 비교 기간. 없으면 null */
+export function readActualRange(bundle: StatsBundle | null): ActualCompareRange | null {
+  if (!bundle) return null;
+  for (const result of Object.values(bundle)) {
+    const actualFrom = result?.actual_from;
+    const actualTo = result?.actual_to;
+    if (
+      typeof actualFrom !== "string" ||
+      typeof actualTo !== "string" ||
+      !ISO_DATE.test(actualFrom) ||
+      !ISO_DATE.test(actualTo) ||
+      !result.prev_from ||
+      !result.prev_to
+    ) {
+      continue;
+    }
+    return {
+      actualFrom,
+      actualTo,
+      prevFrom: result.prev_from,
+      prevTo: result.prev_to,
+      clipped: result.clipped_to_launch === true,
+      prevIncludesPreLaunch:
+        typeof result.prev_includes_pre_launch === "boolean" ? result.prev_includes_pre_launch : null
+    };
+  }
+  return null;
+}
+
 export function launchMark(
   rows: StatsPoint[],
-  xOf: (row: StatsPoint) => string = (row) => shortDate(row.date)
+  xOf: (row: StatsPoint) => string = (row) => shortDate(row.date),
+  launchDate?: string | null
 ): { x: string; label: string } | null {
-  if (!SITE_LAUNCH_DATE) return null;
+  const date = launchDate || SITE_LAUNCH_DATE;
+  if (!date) return null;
 
   const sorted = [...rows].filter((row) => row.date).sort(byDate);
   if (sorted.length === 0) return null;
 
-  const hit = sorted.find((row) => row.date >= SITE_LAUNCH_DATE);
+  const hit = sorted.find((row) => row.date >= date);
   // 공개일이 기간보다 뒤면 그을 자리가 없다
   if (!hit) return null;
   // 공개일이 기간보다 앞이면 전부 새 사이트다. 첫 칸에 선을 긋지 않는다
-  if (sorted[0].date >= SITE_LAUNCH_DATE) return null;
+  if (sorted[0].date >= date) return null;
 
-  return { x: xOf(hit), label: `${shortDate(SITE_LAUNCH_DATE)} 새 홈페이지 오픈` };
+  return { x: xOf(hit), label: `${shortDate(date)} 새 홈페이지 오픈` };
 }
 
 /** 값이 하나도 없으면 null. 있으면 합계 */

@@ -19,7 +19,14 @@ import {
   STATS_MUTED,
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { launchMark, pickRows, SITE_LAUNCH_DATE } from "@/components/website/stats/stats-data";
+import {
+  launchMark,
+  pickRows,
+  readActualRange,
+  readLaunchDate,
+  SITE_LAUNCH_DATE,
+  type ActualCompareRange
+} from "@/components/website/stats/stats-data";
 import {
   ChartSlot,
   SectionHead,
@@ -205,13 +212,30 @@ function compareParticle(text: string): "와" | "과" {
   return "와";
 }
 
-function compareLine(preset: PeriodPresetId, from: string, to: string, today: string): string {
-  if (!from || !to || from > to) return "";
+function compareLine(
+  preset: PeriodPresetId,
+  from: string,
+  to: string,
+  today: string,
+  api: ActualCompareRange | null
+): string {
   const todayYear = Number(today.slice(0, 4));
-  const prev = previousRange(from, to);
-  const currentMark = preset === "yesterday" ? " (어제)" : "";
-  const before = `${rangeText(prev.from, prev.to, todayYear)}${preset === "yesterday" ? " (그저께)" : ""}`;
-  return `${rangeText(from, to, todayYear)}${currentMark} ↔ ${before}${compareParticle(before)} 비교`;
+  if (!api) {
+    if (!from || !to || from > to) return "";
+    const prev = previousRange(from, to);
+    const currentMark = preset === "yesterday" ? " (어제)" : "";
+    const before = `${rangeText(prev.from, prev.to, todayYear)}${preset === "yesterday" ? " (그저께)" : ""}`;
+    return `${rangeText(from, to, todayYear)}${currentMark} ↔ ${before}${compareParticle(before)} 비교`;
+  }
+  if (api.actualFrom > api.actualTo) return "";
+
+  const yesterday =
+    preset === "yesterday" && !api.clipped && api.actualFrom === api.actualTo && api.prevFrom === api.prevTo;
+  const current = api.clipped
+    ? `오픈 후 ${inclusiveDays(api.actualFrom, api.actualTo)}일 (${rangeText(api.actualFrom, api.actualTo, todayYear)})`
+    : `${rangeText(api.actualFrom, api.actualTo, todayYear)}${yesterday ? " (어제)" : ""}`;
+  const before = `${rangeText(api.prevFrom, api.prevTo, todayYear)}${yesterday ? " (그저께)" : ""}`;
+  return `${current} ↔ ${before}${compareParticle(before)} 비교`;
 }
 
 /** 앞 기간 시작이 오픈일보다 앞이면 옛 사이트 구간이다. 오픈일이 없으면 표시하지 않는다. */
@@ -391,7 +415,7 @@ function TrendAndSources({ data }: { data: StatsData }) {
   const trend = useMemo(() => buildTrend(data.bundle), [data.bundle]);
   const pie = useMemo(() => buildSourcePie(data.bundle), [data.bundle]);
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 
@@ -430,7 +454,8 @@ function HowTheyArrived({ data }: { data: StatsData }) {
   const daily = useMemo(() => buildSourceDaily(data.bundle), [data.bundle]);
   const quality = useMemo(() => buildSourceQuality(data.bundle), [data.bundle]);
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "channel", "ga4", "current")),
+    () =>
+      launchMark(pickRows(data.bundle, "channel", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 
@@ -834,8 +859,9 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
   }, [from, to, kinds]);
 
   const data: StatsData = { bundle, status };
-  const compareText = compareLine(preset, from, to, today);
-  const showOldSite = previousStartsBeforeLaunch(from, to);
+  const apiRange = readActualRange(bundle);
+  const compareText = compareLine(preset, from, to, today, apiRange);
+  const showOldSite = apiRange?.prevIncludesPreLaunch ?? previousStartsBeforeLaunch(from, to);
 
   function applyPreset(next: PeriodPresetId) {
     setPreset(next);

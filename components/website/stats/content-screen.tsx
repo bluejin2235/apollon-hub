@@ -30,7 +30,7 @@ import {
   type PageFilterId
 } from "@/components/website/stats/content-data";
 import { StatsChart } from "@/components/website/stats/stats-chart";
-import { dash, intText, launchMark, pctText, pickRows } from "@/components/website/stats/stats-data";
+import { dash, intText, launchMark, pctText, pickRows, readLaunchDate } from "@/components/website/stats/stats-data";
 import { StatsSankey } from "@/components/website/stats/stats-sankey";
 import { ChartSlot, SectionHead, type LoadStatus, type StatsData } from "@/components/website/stats/stats-slot";
 import { listInsights, listWorks } from "@/lib/website/api";
@@ -77,7 +77,7 @@ function ByPageType({ data, pie, trend }: {
   trend: ReturnType<typeof buildTypeTrend>;
 }) {
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "page", "ga4", "current")),
+    () => launchMark(pickRows(data.bundle, "page", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 

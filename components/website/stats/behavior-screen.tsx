@@ -33,7 +33,7 @@ import {
   STATS_COLORS,
   STATS_MUTED
 } from "@/components/website/stats/stats-chart";
-import { dash, intText, launchMark, pickRows } from "@/components/website/stats/stats-data";
+import { dash, intText, launchMark, pickRows, readLaunchDate } from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /* ─────────────────────── 1. 문의까지 가는 길 ─────────────────────── */
@@ -103,7 +103,7 @@ function DwellAndDepth({ data }: { data: StatsData }) {
   const depth = useMemo(() => buildDepthTrend(data.bundle), [data.bundle]);
   const summary = useMemo(() => buildDwellSummary(data.bundle), [data.bundle]);
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 
@@ -219,7 +219,7 @@ function ExitAndReturn({ data }: { data: StatsData }) {
   const bounced = useMemo(() => buildBouncedEntries(data.bundle), [data.bundle]);
   const returning = useMemo(() => buildNewVsReturning(data.bundle), [data.bundle]);
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current")),
+    () => launchMark(pickRows(data.bundle, "daily", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 
@@ -277,7 +277,7 @@ function Submissions({ data }: { data: StatsData }) {
   const kpis = useMemo(() => buildLeadKpis(data.bundle), [data.bundle]);
   const trend = useMemo(() => buildLeadTrend(data.bundle), [data.bundle]);
   const mark = useMemo(
-    () => launchMark(pickRows(data.bundle, "event", "ga4", "current")),
+    () => launchMark(pickRows(data.bundle, "event", "ga4", "current"), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
 

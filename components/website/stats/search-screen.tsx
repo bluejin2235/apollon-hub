@@ -35,7 +35,7 @@ import {
   STATS_COLORS,
   STATS_MUTED
 } from "@/components/website/stats/stats-chart";
-import { launchMark, periodText } from "@/components/website/stats/stats-data";
+import { launchMark, periodText, readLaunchDate } from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /** 기간 안에 값이 없을 때 — 기간을 넓히면 나온다 */
@@ -62,7 +62,10 @@ function OverallStamp({
 function Overview({ data }: { data: StatsData }) {
   const kpis = useMemo(() => buildSearchKpis(data.bundle), [data.bundle]);
   const trend = useMemo(() => buildSearchTrend(data.bundle), [data.bundle]);
-  const mark = useMemo(() => launchMark(searchDaily(data.bundle)), [data.bundle]);
+  const mark = useMemo(
+    () => launchMark(searchDaily(data.bundle), undefined, readLaunchDate(data.bundle)),
+    [data.bundle]
+  );
 
   return (
     <div className="ws-sec">
