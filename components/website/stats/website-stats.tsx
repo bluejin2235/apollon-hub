@@ -154,12 +154,14 @@ function rangeForPreset(preset: PeriodPresetId, today: string): { from: string; 
     const day = addIsoDays(today, -1);
     return { from: day, to: day };
   }
-  if (preset === "7d") return { from: addIsoDays(today, -6), to: today };
-  if (preset === "30d") return { from: addIsoDays(today, -29), to: today };
-  if (preset === "3m") return { from: addMonths(today, -3), to: today };
-  if (preset === "6m") return { from: addMonths(today, -6), to: today };
-  if (preset === "1y") return { from: addMonths(today, -12), to: today };
-  return { from: addIsoDays(today, -29), to: today };
+  // 방문 데이터는 어제까지다. 끝만 어제로 두고, 일수는 오늘을 포함하던 때와 같게 하루씩 당긴다.
+  const end = addIsoDays(today, -1);
+  if (preset === "7d") return { from: addIsoDays(end, -6), to: end };
+  if (preset === "30d") return { from: addIsoDays(end, -29), to: end };
+  if (preset === "3m") return { from: addIsoDays(addMonths(today, -3), -1), to: end };
+  if (preset === "6m") return { from: addIsoDays(addMonths(today, -6), -1), to: end };
+  if (preset === "1y") return { from: addIsoDays(addMonths(today, -12), -1), to: end };
+  return { from: addIsoDays(end, -29), to: end };
 }
 
 function isoParts(iso: string): { y: number; m: number; d: number } {
