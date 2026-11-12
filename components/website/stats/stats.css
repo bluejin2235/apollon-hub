@@ -186,6 +186,11 @@
   scroll-margin-top: calc(var(--ws-bar-height) + 8px);
 }
 
+/* 제목 바로 아래 칸. 다른 화면은 .ws-lede 가 간격을 만든다 */
+.ws-pt + .ws-kpis {
+  margin-top: 18px;
+}
+
 .ws-lede {
   font-size: 13px;
   color: var(--ink2);

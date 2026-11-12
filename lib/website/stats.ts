@@ -155,13 +155,7 @@ export type StatsRealtime = {
   pages: StatsRealtimePage[];
 };
 
-export type StatsScreenId =
-  | "summary"
-  | "content"
-  | "search"
-  | "ai-visibility"
-  | "ai-crawler"
-  | "behavior";
+export type StatsScreenId = "summary" | "content" | "search" | "ai" | "behavior";
 
 export const STATS_SCREENS: {
   id: StatsScreenId;
@@ -188,21 +182,16 @@ export const STATS_SCREENS: {
     lede: "구글 검색에서 우리가 얼마나 보이는지 봅니다. 회사 이름 외의 검색어가 늘어야 새 사람이 옵니다."
   },
   {
-    id: "ai-visibility",
-    href: "/website/stats/ai-visibility",
-    label: "AI 노출",
-    lede: "AI에 질문을 던져 아폴론이 답변에 나오는지 셉니다. AI 회사가 이 데이터를 주지 않아 직접 물어보는 방법뿐입니다."
-  },
-  {
-    id: "ai-crawler",
-    href: "/website/stats/ai-crawler",
-    label: "AI 크롤러",
-    lede: "AI 회사의 수집 로봇이 다녀갔는지 봅니다. 로봇이 오지 않으면 아무리 잘 써도 인용될 수 없습니다. 인용의 앞 단계입니다."
+    id: "ai",
+    href: "/website/stats/ai",
+    label: "AI",
+    /** 메뉴 이름은 label. 이 문장은 화면 제목으로만 쓴다. */
+    lede: "AI가 우리 글을 읽고, 쓰고, 사람을 보내 주나요?"
   },
   {
     id: "behavior",
     href: "/website/stats/behavior",
-    label: "행동",
+    label: "방문 패턴",
     lede: "들어온 사람이 무엇을 하는지 봅니다. 홈페이지의 목표는 오래 머물다 문의로 이어지는 것입니다."
   }
 ];

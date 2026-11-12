@@ -170,6 +170,27 @@ function ScreenShell({
   );
 }
 
+const AI_SLOTS = ["읽어 감", "답에 씀", "사람이 옴"] as const;
+
+/** 수집 전 AI 화면. 숫자는 넣지 않는다. */
+function AiScreen() {
+  const screen = STATS_SCREENS.find((item) => item.id === "ai");
+  if (!screen) return null;
+  return (
+    <section className="ws-screen">
+      <h2 className="ws-pt">{screen.lede}</h2>
+      <div className="ws-kpis ws-kpis-3">
+        {AI_SLOTS.map((name) => (
+          <div key={name} className="ws-kpi">
+            <div className="ws-lab">{name}</div>
+            <p className="ws-kpi-sub">아직 수집하지 않습니다</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 type BriefState =
   | { status: "idle" }
   | { status: "loading" }
@@ -775,14 +796,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               <SearchScreen data={data} />
             </ScreenShell>
           ) : null}
-          {screen === "ai-visibility" ? <ScreenShell id="ai-visibility" /> : null}
-          {screen === "ai-crawler" ? (
-            <ScreenShell id="ai-crawler">
-              <div className="ws-card">
-                <p className="ws-blocked">준비 중 — 오픈 후 도입 예정</p>
-              </div>
-            </ScreenShell>
-          ) : null}
+          {screen === "ai" ? <AiScreen /> : null}
           {screen === "behavior" ? (
             <ScreenShell id="behavior">
               <BehaviorScreen data={data} />

@@ -8,7 +8,17 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: "/glossary", destination: "/wiki/terms", permanent: false }
+      { source: "/glossary", destination: "/wiki/terms", permanent: false },
+      {
+        source: "/website/stats/ai-visibility",
+        destination: "/website/stats/ai",
+        permanent: false
+      },
+      {
+        source: "/website/stats/ai-crawler",
+        destination: "/website/stats/ai",
+        permanent: false
+      }
     ];
   },
   async headers() {
