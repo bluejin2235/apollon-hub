@@ -27,6 +27,7 @@ import {
   type StatsSlice
 } from "@/components/website/stats/stats-chart";
 import { clip, pickRows, shortDate } from "@/components/website/stats/stats-data";
+import { channelLabel } from "@/components/website/stats/stats-labels";
 import type { SankeyModel } from "@/components/website/stats/stats-sankey";
 import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
 import type { InsightListItem, WorkListItem } from "@/lib/website/types";
@@ -339,21 +340,6 @@ export function buildPageBars(pages: ContentPage[]): {
 }
 
 /* ────────────────── 3 어디로 들어와 어디로 가나 ────────────────── */
-
-/** GA4 기본 채널 그룹 — 영문 고정값이다 */
-const CHANNEL_LABEL: Record<string, string> = {
-  "Organic Search": "검색",
-  Direct: "직접",
-  Referral: "추천",
-  "Organic Social": "SNS",
-  "Paid Search": "유료 검색",
-  Email: "이메일",
-  Unassigned: "미분류"
-};
-
-function channelLabel(name: string): string {
-  return CHANNEL_LABEL[name] ?? name;
-}
 
 function pageLabel(path: string, titles: TitleMap): string {
   const { route } = splitLocale(path);

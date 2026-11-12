@@ -28,6 +28,7 @@ import {
   type DeltaTone,
   type StatsMetric
 } from "@/components/website/stats/stats-data";
+import { channelLabel, countryLabel } from "@/components/website/stats/stats-labels";
 import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
@@ -194,7 +195,10 @@ export function buildTrend(bundle: StatsBundle | null): StatsRow[] {
 
 /** 경로별 비중 */
 export function buildSourcePie(bundle: StatsBundle | null): StatsSlice[] {
-  return ranked(sumByKey(pick(bundle, "channel", "ga4", "current"), "sessions"));
+  return ranked(sumByKey(pick(bundle, "channel", "ga4", "current"), "sessions")).map((item) => ({
+    ...item,
+    name: channelLabel(item.name)
+  }));
 }
 
 export type SeriesSpec = { key: string; name: string; color: string };
@@ -227,7 +231,7 @@ export function buildSourceDaily(bundle: StatsBundle | null): {
     rows: [...byDay.values()],
     series: names.map((name, index) => ({
       key: name,
-      name,
+      name: channelLabel(name),
       color: STATS_COLORS[index % STATS_COLORS.length]
     }))
   };
@@ -251,7 +255,7 @@ export function buildSourceQuality(bundle: StatsBundle | null): StatsScatterGrou
     const sessions = total(rows, "sessions");
     if (seconds == null || rate == null || sessions == null) return;
     groups.push({
-      name,
+      name: channelLabel(name),
       color: STATS_COLORS[index % STATS_COLORS.length],
       points: [{ x: Math.round(seconds), y: Math.round(rate * 100), z: sessions }]
     });
@@ -267,7 +271,7 @@ export function buildCountry(bundle: StatsBundle | null): StatsRow[] {
 
   const head = all.slice(0, 5);
   const rest = all.slice(5);
-  const rows: StatsRow[] = head.map((item) => ({ name: item.name, value: item.value }));
+  const rows: StatsRow[] = head.map((item) => ({ name: countryLabel(item.name), value: item.value }));
   if (rest.length > 0) {
     rows.push({ name: "기타", value: rest.reduce((acc, item) => acc + item.value, 0) });
   }
