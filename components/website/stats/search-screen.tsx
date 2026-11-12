@@ -13,6 +13,7 @@
 
 import { useMemo } from "react";
 
+import { DeltaMark } from "@/components/website/stats/delta-mark";
 import {
   buildBrandSplit,
   buildKeywordMap,
@@ -80,7 +81,7 @@ function Overview({ data }: { data: StatsData }) {
               <span className="ws-lab-text">{kpi.label}</span>
             </div>
             <div className="ws-val">{kpi.value}</div>
-            <div className={`ws-delta ws-${kpi.tone}`}>{kpi.delta ?? "—"}</div>
+            <DeltaMark delta={kpi.delta} tone={kpi.tone} previous={kpi.previous} />
             <p className="ws-kpi-sub">{kpi.sub}</p>
           </div>
         ))}

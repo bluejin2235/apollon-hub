@@ -224,48 +224,65 @@ export const DELTA_MIN_PREVIOUS = 10;
 /** ratio 증감이 이 % 를 넘으면 분모가 너무 작아 뜻이 없다 */
 export const DELTA_MAX_RATIO_PERCENT = 500;
 
+export type DeltaView = {
+  /** 비교할 수 없으면 null. 화면은 「비교 불가」로 그린다 */
+  delta: string | null;
+  tone: DeltaTone;
+  /** 앞 기간 값. 값이 없으면 null 이고 「앞 기간 N」을 그리지 않는다 */
+  previous: string | null;
+};
+
 /**
- * 변화 한 줄.
- *   ratio  배수 변화 — 방문이 26% 늘었다
- *   point  비율 자체의 차이 — 이탈률 19%p
- *   abs    값 자체의 차이 — 평균 순위 1.3
+ * 변화.
+ *   ratio  배수 변화 — ▲ 26%
+ *   point  비율 자체의 차이 — ▼ 19%p
+ *   abs    값 자체의 차이 — ▲ 1.3
  *
- * ratio 에서 지난 값이 0 이거나 DELTA_MIN_PREVIOUS 미만이거나,
- * 증감이 DELTA_MAX_RATIO_PERCENT 를 넘으면 「비교할 기간 없음」.
+ * 화살표는 늘고 줄은 사실이고, 색(tone)은 좋을수록 up 이다.
+ * 앞 기간 값이 없거나, ratio 에서 분모가 너무 작거나 증감이 너무 크면 delta 는 null.
  */
 export function makeDelta(
   current: number | null,
   previous: number | null,
   mode: "ratio" | "point" | "abs",
-  higherIsBetter: boolean
-): { delta: string | null; tone: DeltaTone } {
-  if (current == null || previous == null) return { delta: null, tone: "flat" };
-
-  if (mode === "ratio") {
-    if (previous < DELTA_MIN_PREVIOUS) {
-      return { delta: "비교할 기간 없음", tone: "flat" };
-    }
+  higherIsBetter: boolean,
+  previousLabel: string | null
+): DeltaView {
+  if (current == null || previous == null) {
+    return { delta: null, tone: "flat", previous: null };
   }
 
   const diff = current - previous;
   const rising = diff > 0;
   const good = rising === higherIsBetter;
 
+  if (mode === "ratio" && previous < DELTA_MIN_PREVIOUS) {
+    return { delta: null, tone: "flat", previous: previousLabel };
+  }
+
   if (mode === "abs") {
     const size = Math.abs(diff);
-    if (size < 0.05) return { delta: "0", tone: "flat" };
-    return { delta: `${rising ? "▲" : "▼"} ${size.toFixed(1)}`, tone: good ? "up" : "down" };
+    if (size < 0.05) return { delta: "0", tone: "flat", previous: previousLabel };
+    return {
+      delta: `${rising ? "▲" : "▼"} ${size.toFixed(1)}`,
+      tone: good ? "up" : "down",
+      previous: previousLabel
+    };
   }
 
   const size = mode === "ratio" ? Math.abs(diff / previous) * 100 : Math.abs(diff) * 100;
   const rounded = Math.round(size);
   const unit = mode === "ratio" ? "%" : "%p";
   if (mode === "ratio" && rounded > DELTA_MAX_RATIO_PERCENT) {
-    return { delta: "비교할 기간 없음", tone: "flat" };
+    return { delta: null, tone: "flat", previous: previousLabel };
   }
-  if (rounded === 0) return { delta: `0${unit}`, tone: "flat" };
+  if (rounded === 0) return { delta: `0${unit}`, tone: "flat", previous: previousLabel };
 
-  return { delta: `${rising ? "▲" : "▼"} ${rounded}${unit}`, tone: good ? "up" : "down" };
+  return {
+    delta: `${rising ? "▲" : "▼"} ${rounded}${unit}`,
+    tone: good ? "up" : "down",
+    previous: previousLabel
+  };
 }
 
 /** KPI 카드 안 작은 추이선. 두 점 미만이면 빈 배열 — 선이 그려지지 않는다 */

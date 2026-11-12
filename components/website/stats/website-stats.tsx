@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
+import { DeltaMark } from "@/components/website/stats/delta-mark";
 import {
   MetricHintButton,
   MetricHintPanel,
@@ -389,7 +390,11 @@ function SummaryKpis({ data }: { data: StatsData }) {
                 />
               </div>
               <div className="ws-val">{kpi?.value ?? "—"}</div>
-              <div className={`ws-delta ws-${kpi?.tone ?? "flat"}`}>{kpi?.delta ?? "—"}</div>
+              <DeltaMark
+                delta={kpi?.delta ?? null}
+                tone={kpi?.tone ?? "flat"}
+                previous={kpi?.previous ?? null}
+              />
               <p className="ws-kpi-sub">{hint.summary}</p>
               {kpi && kpi.spark.length > 0 ? (
                 <StatsChart

@@ -76,6 +76,7 @@ export type SummaryKpi = {
   value: string | null;
   delta: string | null;
   tone: DeltaTone;
+  previous: string | null;
   sparkColor: string;
   /** 두 점 미만이면 빈 배열 — 선이 그려지지 않는다 */
   spark: StatsRow[];
@@ -116,35 +117,35 @@ export function buildKpis(bundle: StatsBundle | null): SummaryKpi[] {
     {
       id: "visit",
       value: intText(visits),
-      ...makeDelta(visits, visitsPrev, "ratio", true),
+      ...makeDelta(visits, visitsPrev, "ratio", true, intText(visitsPrev)),
       sparkColor: STATS_COLORS[0],
       spark: sparkOf(ga4, "users")
     },
     {
       id: "imp",
       value: intText(impressions),
-      ...makeDelta(impressions, impressionsPrev, "ratio", true),
+      ...makeDelta(impressions, impressionsPrev, "ratio", true, intText(impressionsPrev)),
       sparkColor: STATS_COLORS[0],
       spark: sparkOf(gsc, "impressions")
     },
     {
       id: "ai",
       value: intText(ai),
-      ...makeDelta(ai, aiBefore, "ratio", true),
+      ...makeDelta(ai, aiBefore, "ratio", true, intText(aiBefore)),
       sparkColor: STATS_COLORS[2],
       spark: sparkOf(aiNow, "sessions")
     },
     {
       id: "bounce",
       value: pctText(bounce),
-      ...makeDelta(bounce, bouncePrev, "point", false),
+      ...makeDelta(bounce, bouncePrev, "point", false, pctText(bouncePrev)),
       sparkColor: "#b93b3b",
       spark: sparkOf(ga4, "engagement_rate")
     },
     {
       id: "lead",
       value: intText(lead),
-      ...makeDelta(lead, leadBefore, "ratio", true),
+      ...makeDelta(lead, leadBefore, "ratio", true, intText(leadBefore)),
       sparkColor: STATS_TEXT,
       spark: sparkOf(leadNow, "events")
     }

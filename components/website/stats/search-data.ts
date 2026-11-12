@@ -147,6 +147,7 @@ export type SearchKpi = {
   sub: string;
   delta: string | null;
   tone: DeltaTone;
+  previous: string | null;
 };
 
 function ctrOf(rows: StatsPoint[]): number | null {
@@ -177,21 +178,21 @@ export function buildSearchKpis(bundle: StatsBundle | null): SearchKpi[] {
       label: "노출",
       value: intText(curImp) ?? "—",
       sub: "구글 결과에 보인 횟수",
-      ...makeDelta(curImp, prevImp, "ratio", true)
+      ...makeDelta(curImp, prevImp, "ratio", true, intText(prevImp))
     },
     {
       id: "clicks",
       label: "클릭",
       value: intText(curClick) ?? "—",
       sub: "그중 눌린 횟수",
-      ...makeDelta(curClick, prevClick, "ratio", true)
+      ...makeDelta(curClick, prevClick, "ratio", true, intText(prevClick))
     },
     {
       id: "ctr",
       label: "클릭률",
       value: pctText(curCtr, 1) ?? "—",
       sub: "보통 2~5%",
-      ...makeDelta(curCtr, prevCtr, "point", true)
+      ...makeDelta(curCtr, prevCtr, "point", true, pctText(prevCtr, 1))
     },
     {
       id: "position",
@@ -199,7 +200,7 @@ export function buildSearchKpis(bundle: StatsBundle | null): SearchKpi[] {
       value: numText(curPos, 1) ?? "—",
       sub: "1쪽은 10위까지",
       // 순위는 작을수록 좋다. 내려가면 파란색이 되어야 한다
-      ...makeDelta(curPos, prevPos, "abs", false)
+      ...makeDelta(curPos, prevPos, "abs", false, numText(prevPos, 1))
     }
   ];
 }

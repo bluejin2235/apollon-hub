@@ -371,6 +371,7 @@ export type LeadKpi = {
   sub: string;
   delta: string | null;
   tone: DeltaTone;
+  previous: string | null;
 };
 
 /** 제출 수는 사람이 아니라 건수다. 한 사람이 두 번 보내면 두 건 */
@@ -389,7 +390,7 @@ export function buildLeadKpis(bundle: StatsBundle | null): LeadKpi[] {
       label: event.label,
       value: intText(cur) ?? "—",
       sub: "이번 기간 제출 수",
-      ...makeDelta(cur, prev, "ratio", true)
+      ...makeDelta(cur, prev, "ratio", true, intText(prev))
     };
   });
 }

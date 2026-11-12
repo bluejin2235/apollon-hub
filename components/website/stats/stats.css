@@ -518,6 +518,11 @@
   color: var(--ink3);
 }
 
+.ws-delta-prev {
+  margin-top: 2px;
+  color: var(--ink3);
+}
+
 .ws-up {
   color: var(--up);
 }
