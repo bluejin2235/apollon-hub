@@ -7,8 +7,8 @@
  * 않는다. 같은 도메인이고 어느 시점에 내용이 바뀌었을 뿐이다.
  * 그 시점은 추이 그래프의 세로선 하나로 알린다.
  *
- * 검색어·국가·기기·페이지는 날짜 행이 있으면 고른 기간으로 합치고,
- * 옛 CSV 합계(date NULL)만 있으면 그 합계 기간을 스탬프로 밝힌다.
+ * 검색어·국가·기기·페이지는 고른 기간의 날짜 행만 합친다.
+ * 날짜 없는 옛 합계로는 빈 기간을 채우지 않는다.
  */
 
 import { useMemo } from "react";
@@ -42,8 +42,8 @@ import { ChartSlot, SectionHead, type StatsData } from "@/components/website/sta
 /** 기간 안에 값이 없을 때 — 기간을 넓히면 나온다 */
 const RANGE_HINT = "고른 기간에 값이 없습니다. 기간을 넓혀 보세요.";
 
-/** 날짜 없는 합계를 쓰는 자리 */
-const OVERALL_HINT = "아직 걷힌 검색어가 없습니다.";
+/** 날짜 행이 없는 검색 자리 */
+const OVERALL_HINT = "이 기간에는 검색 데이터가 아직 없습니다 · 구글은 3일 늦게 줍니다";
 
 function OverallStamp({
   period,
@@ -52,11 +52,10 @@ function OverallStamp({
   period: { from: string; to: string } | null;
   scoped?: boolean;
 }) {
+  if (!scoped) return null;
   const text = periodText(period);
-  if (scoped && text) {
-    return <span className="ws-stamp">{text.replace(/ 합계$/, "")}</span>;
-  }
-  return <span className="ws-stamp">{text ?? "기간과 무관한 합계"}</span>;
+  if (!text) return null;
+  return <span className="ws-stamp">{text.replace(/ 합계$/, "")}</span>;
 }
 
 /** 노출·클릭·클릭률·평균 순위 + 추이 */
@@ -231,10 +230,8 @@ function Keywords({ data }: { data: StatsData }) {
           </div>
         </ChartSlot>
         <p className="ws-foot">
-          {periodText(period)
-            ? scoped
-              ? `이 표는 고른 기간(${periodText(period)?.replace(/ 합계$/, "")})의 검색어입니다. `
-              : `이 표는 ${periodText(period)}입니다. 날짜 없는 합계라 기간을 바꿔도 달라지지 않습니다. `
+          {scoped && periodText(period)
+            ? `이 표는 고른 기간(${periodText(period)?.replace(/ 합계$/, "")})의 검색어입니다. `
             : ""}
           「들어온 페이지」는 비워 두었습니다. 서치 콘솔 검색어 리포트는 검색어만 주고 그
           검색어로 열린 페이지를 함께 주지 않습니다.
@@ -315,9 +312,7 @@ function BrandVsGeneric({ data }: { data: StatsData }) {
             회사 이름으로 들어오는 것은 이미 아는 사람입니다. 파란색이 늘어야 새 사람이
             옵니다. 검색어에 apollon · apollo · appolon · 아폴론 · 아폴로 · immersive
             works 가 든 것을 회사 이름으로 셌습니다. 오타와 띄어쓰기도 함께 잡습니다.
-            {scoped
-              ? " 고른 기간의 날짜 행을 합친 값입니다."
-              : " 날짜 없는 합계만 있어 달별로 쌓지 못하고 합계만 보입니다."}
+            {scoped ? " 고른 기간의 날짜 행을 합친 값입니다." : ""}
           </p>
         </div>
         <div className="ws-card">

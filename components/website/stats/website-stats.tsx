@@ -49,7 +49,6 @@ import {
   buildSourceQuality,
   buildSummaryBriefFacts,
   buildTrend,
-  keywordsBasisText,
   summaryBriefFingerprint,
   SUMMARY_KINDS
 } from "@/components/website/stats/summary-data";
@@ -565,7 +564,6 @@ function WhoCame({ data }: { data: StatsData }) {
 
 function WhatWordsBrought({ data }: { data: StatsData }) {
   const keywords = useMemo(() => buildKeywords(data.bundle), [data.bundle]);
-  const basisText = data.status === "ready" ? keywordsBasisText(keywords) : null;
 
   return (
     <div className="ws-sec">
@@ -575,9 +573,12 @@ function WhatWordsBrought({ data }: { data: StatsData }) {
           <div className="ws-ct">
             <span className="ws-sw" style={{ background: STATS_COLORS[0] }} />
             검색엔진 — 노출 대비 클릭
-            {basisText ? <span className="ws-stamp">{basisText}</span> : null}
           </div>
-          <ChartSlot status={data.status} empty={keywords.rows.length === 0}>
+          <ChartSlot
+            status={data.status}
+            empty={keywords.rows.length === 0}
+            hint="이 기간에는 검색 데이터가 아직 없습니다 · 구글은 3일 늦게 줍니다"
+          >
             <StatsChart
               type="hbar"
               data={keywords.rows}

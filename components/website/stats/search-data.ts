@@ -9,7 +9,7 @@
  *   current·previous  날짜가 있는 행. daily 뿐 아니라 query·page·country·device
  *                     도 홈페이지가 date 차원으로 걷으면 여기로 온다.
  *   overall           date 가 NULL 인 합계 행(옛 CSV). 기간으로 자를 수 없다.
- *                     날짜 행이 없을 때만 쓴다.
+ *                     화면은 이 행으로 빈 기간을 채우지 않는다.
  */
 
 import {
@@ -26,7 +26,6 @@ import {
   intText,
   makeDelta,
   numText,
-  overallPeriod,
   pctText,
   pickRows,
   ranked,
@@ -52,24 +51,17 @@ export function searchDaily(bundle: StatsBundle | null): StatsPoint[] {
   return pickRows(bundle, "daily", SEARCH_SOURCES, "current");
 }
 
-/** 날짜 없는 합계 행 — 기간과 무관하다 */
-function overallRows(bundle: StatsBundle | null, kind: string): StatsPoint[] {
-  return pickRows(bundle, kind, SEARCH_SOURCES, "overall");
-}
-
 /**
  * 검색어·페이지·국가·기기 행.
- * 고른 기간의 날짜 행이 있으면 key 로 합치고, 없으면 overall 합계를 쓴다.
+ * 고른 기간의 날짜 행만 key 로 합친다. 없으면 빈 배열이다.
  */
 function dimRows(
   bundle: StatsBundle | null,
   kind: string
 ): { rows: StatsPoint[]; scoped: boolean } {
   const dated = pickRows(bundle, kind, SEARCH_SOURCES, "current");
-  if (dated.length > 0) {
-    return { rows: aggregateByKey(dated), scoped: true };
-  }
-  return { rows: overallRows(bundle, kind), scoped: false };
+  if (dated.length === 0) return { rows: [], scoped: false };
+  return { rows: aggregateByKey(dated), scoped: true };
 }
 
 /** 같은 key 의 날짜 행을 노출·클릭 합, 순위는 노출 무게 평균으로 묶는다 */
@@ -120,17 +112,16 @@ function aggregateByKey(rows: StatsPoint[]): StatsPoint[] {
   });
 }
 
-/** 표·스탬프용 기간. 날짜 행이면 고른 기간, 아니면 overall_period */
+/** 표·스탬프용 기간. 날짜 행이 있을 때만 고른 기간을 돌려준다 */
 export function searchOverallPeriod(
   bundle: StatsBundle | null,
   kind = "query"
 ): { from: string; to: string } | null {
   const dated = pickRows(bundle, kind, SEARCH_SOURCES, "current");
-  if (dated.length > 0) {
-    const result = bundle?.[kind];
-    if (result?.from && result?.to) return { from: result.from, to: result.to };
-  }
-  return overallPeriod(bundle, kind);
+  if (dated.length === 0) return null;
+  const result = bundle?.[kind];
+  if (result?.from && result?.to) return { from: result.from, to: result.to };
+  return null;
 }
 
 /** 날짜 행으로 그렸으면 true — 각주 문구를 나눌 때 쓴다 */

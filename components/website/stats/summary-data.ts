@@ -325,47 +325,21 @@ export function buildLanguage(bundle: StatsBundle | null): StatsSlice[] {
 export type SummaryKeywords = {
   /** 노출 많은 순 다섯 개 */
   rows: StatsRow[];
-  /** period: 고른 기간의 날짜 행 · overall: 날짜 없는 옛 합계(기간 선택과 무관) */
+  /** 고른 기간의 날짜 행. 옛 합계로 채우지 않으므로 overall 은 더 이상 쓰지 않는다 */
   basis: "period" | "overall";
-  /** overall 일 때 그 행들의 period_from 최소 ~ period_to 최대. 없으면 null */
+  /** 옛 합계 기간. 이제 항상 null */
   overallPeriod: { from: string; to: string } | null;
 };
 
-/** 합계 행들이 담은 기간 */
-function rowsPeriod(rows: Rows): { from: string; to: string } | null {
-  let from: string | null = null;
-  let to: string | null = null;
-  for (const row of rows) {
-    if (row.period_from && (from === null || row.period_from < from)) from = row.period_from;
-    if (row.period_to && (to === null || row.period_to > to)) to = row.period_to;
-  }
-  return from && to ? { from, to } : null;
-}
-
-/** 차트 제목 옆 표시. 고른 기간 값이거나 값이 없으면 null */
-export function keywordsBasisText(keywords: SummaryKeywords): string | null {
-  if (keywords.basis !== "overall" || keywords.rows.length === 0) return null;
-  const period = keywords.overallPeriod;
-  return period
-    ? `전체 기간 합계 (${period.from} ~ ${period.to} 기준, 기간 선택과 무관)`
-    : "전체 기간 합계 (기간 선택과 무관)";
-}
-
 /**
  * 검색어 — 노출 많은 순 다섯 개.
- *
- * 고른 기간 안에 날짜가 붙은 검색어 행이 있으면 그것을 쓴다.
- * 없으면 날짜 없는 옛 합계(옛 CSV)를 쓴다. 이 값은 기간으로 자를 수 없어
- * 화면과 루나에게 「기간 값이 아님」을 함께 알린다.
+ * 고른 기간의 날짜 행만 쓴다. 없으면 빈 목록이다.
  */
 export function buildKeywords(bundle: StatsBundle | null): SummaryKeywords {
   const dated = pickRows(bundle, "query", ["gsc", "gsc_http"], "current");
-  const basis = dated.length > 0 ? "period" : "overall";
-  const rows =
-    basis === "period" ? dated : pickRows(bundle, "query", ["gsc", "gsc_http"], "overall");
   const map = new Map<string, { impressions: number; clicks: number }>();
 
-  for (const row of rows) {
+  for (const row of dated) {
     const key = row.key?.trim();
     if (!key) continue;
     const bucket = map.get(key) ?? { impressions: 0, clicks: 0 };
@@ -379,8 +353,8 @@ export function buildKeywords(bundle: StatsBundle | null): SummaryKeywords {
       .sort((a, b) => b[1].impressions - a[1].impressions)
       .slice(0, 5)
       .map(([name, value]) => ({ name, impressions: value.impressions, clicks: value.clicks })),
-    basis,
-    overallPeriod: basis === "overall" ? rowsPeriod(rows) : null
+    basis: "period",
+    overallPeriod: null
   };
 }
 
