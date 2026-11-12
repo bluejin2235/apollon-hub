@@ -212,7 +212,7 @@ function AllPages({ data, pages }: { data: StatsData; pages: ReturnType<typeof b
         <b>진입</b> 이 페이지로 사이트를 시작한 사람 · <b>이탈</b> 진입한 사람 중 아무것도
         누르지 않고 나간 비율이라 진입이 없는 페이지는 「—」입니다.
         <br />
-        <b>읽은 깊이</b>는 scroll kind 로 걷습니다. <b>다음</b>은 GA4 가 주지 않아 「—」입니다.
+        <b>읽은 깊이</b>는 페이지를 얼마나 내려 읽었는지 따로 걷은 값입니다. <b>다음</b>은 GA4 가 주지 않아 「—」입니다.
       </p>
     </div>
   );
@@ -237,8 +237,8 @@ function EntryFlow({
         </ChartSlot>
       </div>
       <p className="ws-foot">
-        landing_channel 로 「검색으로 들어와 어느 페이지를 처음 봤나」를 셉니다. 그다음
-        페이지로 넘어간 수는 GA4 runReport 가 주지 않아 세 번째 칸은 그리지 않습니다.
+        유입 경로별로 처음 본 페이지를 세어 「검색으로 들어와 어느 페이지를 처음 봤나」를 봅니다.
+        그다음 페이지로 넘어간 수는 GA4 가 바깥으로 내주는 자료에 없어 세 번째 칸은 그리지 않습니다.
       </p>
     </div>
   );

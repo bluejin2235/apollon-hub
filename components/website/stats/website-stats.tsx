@@ -84,7 +84,7 @@ const SUMMARY_HINTS: MetricHint[] = [
     title: "일별 사용자 합계(중복 포함)",
     summary: "날짜별 사용자 수를 더한 값",
     definition:
-      "하루마다 센 사용자(totalUsers)를 기간 동안 더한 값입니다. 같은 사람이 여러 날에 오면 날마다 다시 셉니다. 기간 고유 사용자와 같지 않습니다.",
+      "하루마다 센 사용자 수를 기간 동안 더한 값입니다. 같은 사람이 여러 날에 오면 날마다 다시 셉니다. 기간 고유 사용자와 같지 않습니다.",
     criterion: "늘어나는 추세인지가 중요합니다. 고유 방문자로 읽지 마세요.",
     action: "줄었다면 검색 순위와 색인 상태를 먼저 보세요.",
     limit:
@@ -782,9 +782,24 @@ function syncTimeText(iso: string): string {
   return `${pick("month")}월 ${pick("day")}일 ${pick("hour")}:${pick("minute")}`;
 }
 
+/** 수집 상태 줄에 보이는 이름. 표에 없는 kind 는 그대로 */
+const SYNC_KIND_LABEL: Record<string, string> = {
+  daily: "일별",
+  channel: "유입 경로",
+  country: "국가",
+  device: "기기",
+  page: "페이지",
+  query: "검색어",
+  event: "이벤트",
+  landing: "첫 페이지",
+  landing_channel: "경로별 첫 페이지",
+  scroll: "읽은 깊이",
+  hourly: "시간대"
+};
+
 function syncKindName(item: StatsSyncKindStatus): string {
   const source = item.source === "ga4" ? "GA" : item.source === "gsc" ? "검색" : item.source;
-  return `${source}·${item.kind}`;
+  return `${source}·${SYNC_KIND_LABEL[item.kind] ?? item.kind}`;
 }
 
 function okTimes(kinds: StatsSyncKindStatus[]): string[] {

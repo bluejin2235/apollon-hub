@@ -203,11 +203,9 @@ function WhenTheyCome({ data }: { data: StatsData }) {
           <HeatGrid model={heat} />
         ) : (
           <p className="ws-blocked">
-            아직 걷지 않아 그릴 수 없습니다. 지금 GA4 리포트에 시간 차원이 없습니다.
-            <code>hourly</code> 리포트 하나를 더하면 켜집니다 —
-            <code> dimensions [date, hour] · metrics [totalUsers, sessions]</code>. 요일은
-            날짜에서 계산하므로 따로 걷지 않아도 됩니다. 화면은 이미 그 값을 받도록 되어
-            있어 리포트만 더하면 됩니다.
+            아직 걷지 않아 그릴 수 없습니다. 지금은 GA4 에서 방문을 날짜별로만 받고 시간대별로는
+            받지 않습니다. 날짜·시간대별 사용자 수와 세션 수를 받기 시작하면 바로 그려집니다. 요일은
+            날짜에서 계산하므로 따로 걷지 않아도 됩니다.
           </p>
         )}
       </div>
@@ -239,10 +237,10 @@ function ExitAndReturn({ data }: { data: StatsData }) {
           />
         </ChartSlot>
         <p className="ws-blocked ws-blocked-gap">
-          목업의 「많이 나가는 페이지」와 다릅니다. GA4 Data API 에 나감(exits) 지표가
-          아예 없습니다. Explorations 화면과 BigQuery 내보내기에만 있어 리포트를 더해도
-          받을 수 없습니다. 그래서 진입 페이지 기준으로 「들어와서 아무것도 안 하고 나간
-          세션」을 세었습니다.
+          처음 설계한 「많이 나가는 페이지」와 다릅니다. GA4 가 바깥으로 내주는 자료에는
+          「어느 페이지에서 나갔는지」 숫자가 아예 없습니다. GA4 화면 안의 탐색 분석과 따로
+          내보낸 원본 자료에만 있어 받아 올 수 없습니다. 그래서 진입 페이지 기준으로
+          「들어와서 아무것도 안 하고 나간 세션」을 세었습니다.
         </p>
       </div>
       <div className="ws-card">

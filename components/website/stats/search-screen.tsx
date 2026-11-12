@@ -150,8 +150,8 @@ function RankAndIndex({ data }: { data: StatsData }) {
         <div className="ws-card">
           <div className="ws-ct">색인 상태</div>
           <p className="ws-blocked">
-            아직 걷지 않아 그릴 수 없습니다. 서치 콘솔 URL 검사 API 로 페이지마다
-            색인 여부를 받을 수 있지만, 이번 작업에서는 넣지 않았습니다.
+            아직 걷지 않아 그릴 수 없습니다. 구글 서치 콘솔에서 페이지마다 색인(구글 검색에
+            등록됐는지) 여부를 받아 올 수 있지만, 아직 연결하지 않았습니다.
           </p>
         </div>
       </div>
