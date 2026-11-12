@@ -378,12 +378,15 @@ function SummaryKpis({ data }: { data: StatsData }) {
       <div className="ws-kpis">
         {SUMMARY_HINTS.map((hint) => {
           const kpi = kpis.find((item) => item.id === hint.id);
+          const periodVisit = hint.id === "visit" && kpi?.periodUsers === true;
+          const visitNote = periodVisit && kpi?.summed ? "옛·새 사이트 구간을 더한 값" : null;
+          const cardHint = periodVisit ? { ...hint, title: "방문자" } : hint;
           return (
             <div className="ws-kpi" key={hint.id}>
               <div className="ws-lab">
-                <span className="ws-lab-text">{hint.title}</span>
+                <span className="ws-lab-text">{cardHint.title}</span>
                 <MetricHintButton
-                  hint={hint}
+                  hint={cardHint}
                   open={openId === hint.id}
                   panelId={panelId}
                   onToggle={() => setOpenId((current) => (current === hint.id ? null : hint.id))}
@@ -395,7 +398,11 @@ function SummaryKpis({ data }: { data: StatsData }) {
                 tone={kpi?.tone ?? "flat"}
                 previous={kpi?.previous ?? null}
               />
-              <p className="ws-kpi-sub">{hint.summary}</p>
+              {periodVisit ? (
+                visitNote ? <p className="ws-kpi-sub">{visitNote}</p> : null
+              ) : (
+                <p className="ws-kpi-sub">{hint.summary}</p>
+              )}
               {kpi && kpi.spark.length > 0 ? (
                 <StatsChart
                   type="spark"
@@ -410,7 +417,20 @@ function SummaryKpis({ data }: { data: StatsData }) {
         })}
       </div>
       {open ? (
-        <MetricHintPanel id={panelId} hint={open} onClose={() => setOpenId(null)} />
+        <MetricHintPanel
+          id={panelId}
+          hint={
+            open.id === "visit" && kpis.find((item) => item.id === "visit")?.periodUsers
+              ? {
+                  ...open,
+                  title: "방문자",
+                  definition:
+                    "고른 기간 전체를 한 번 센 방문자입니다. 같은 사람이 여러 날에 와도 한 명입니다."
+                }
+              : open
+          }
+          onClose={() => setOpenId(null)}
+        />
       ) : null}
     </div>
   );

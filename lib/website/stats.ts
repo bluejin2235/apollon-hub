@@ -62,6 +62,8 @@ export type StatsQueryResult = {
   clipped_to_launch?: boolean;
   prev_includes_pre_launch?: boolean;
   launch_date?: string;
+  /** 기간 전체 방문자. 옛 응답에는 없다 */
+  period_users?: PeriodUsersCompare;
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];
@@ -88,6 +90,17 @@ export type StatsQueryResult = {
     avg_seconds: MetricCompare;
   };
   by_key: KeyCompare[];
+};
+
+/** 기간 전체를 한 번 센 방문자. kind 마다 같은 값이 붙는다 */
+export type PeriodUsersCompare = {
+  current: number | null;
+  previous: number | null;
+  current_new: number | null;
+  previous_new: number | null;
+  /** 오픈 전 옛 속성과 오픈 이후 새 속성을 더한 값인지 */
+  current_summed: boolean;
+  previous_summed: boolean;
 };
 
 /** kind 여러 개를 한 번에 받은 것 */

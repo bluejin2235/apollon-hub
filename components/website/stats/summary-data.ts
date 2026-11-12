@@ -28,7 +28,7 @@ import {
   type DeltaTone,
   type StatsMetric
 } from "@/components/website/stats/stats-data";
-import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
+import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
 export const SUMMARY_KINDS = [
@@ -70,6 +70,17 @@ function pick(
 const total = sumField;
 const weighted = weightedField;
 
+/** period_users.current 가 숫자일 때만 기간 전체 방문자로 본다 */
+function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null {
+  if (!bundle) return null;
+  for (const result of Object.values(bundle)) {
+    const value = result?.period_users;
+    if (!value || typeof value !== "object") continue;
+    if (typeof value.current === "number") return value;
+  }
+  return null;
+}
+
 export type SummaryKpi = {
   id: string;
   /** 없으면 null — 화면은 「—」로 그린다 */
@@ -77,6 +88,10 @@ export type SummaryKpi = {
   delta: string | null;
   tone: DeltaTone;
   previous: string | null;
+  /** 기간 전체 방문자를 썼는지. 방문자 카드만 */
+  periodUsers?: boolean;
+  /** 옛 사이트와 새 사이트를 더한 값인지 */
+  summed?: boolean;
   sparkColor: string;
   /** 두 점 미만이면 빈 배열 — 선이 그려지지 않는다 */
   spark: StatsRow[];
@@ -98,8 +113,13 @@ export function buildKpis(bundle: StatsBundle | null): SummaryKpi[] {
   const leadNow = pick(bundle, "event", "ga4", "current").filter((row) => row.key === LEAD_EVENT);
   const leadPrev = pick(bundle, "event", "ga4", "previous").filter((row) => row.key === LEAD_EVENT);
 
-  const visits = total(ga4, "users");
-  const visitsPrev = total(ga4Prev, "users");
+  const periodUsers = readPeriodUsers(bundle);
+  const visits = periodUsers ? periodUsers.current : total(ga4, "users");
+  const visitsPrev = periodUsers
+    ? typeof periodUsers.previous === "number"
+      ? periodUsers.previous
+      : null
+    : total(ga4Prev, "users");
   const impressions = total(gsc, "impressions");
   const impressionsPrev = total(gscPrev, "impressions");
   const ai = total(aiNow, "sessions");
@@ -118,6 +138,8 @@ export function buildKpis(bundle: StatsBundle | null): SummaryKpi[] {
       id: "visit",
       value: intText(visits),
       ...makeDelta(visits, visitsPrev, "ratio", true, intText(visitsPrev)),
+      periodUsers: periodUsers != null,
+      summed: periodUsers != null && (periodUsers.current_summed === true || periodUsers.previous_summed === true),
       sparkColor: STATS_COLORS[0],
       spark: sparkOf(ga4, "users")
     },
@@ -426,7 +448,13 @@ export function buildSummaryBriefFacts(
   const gsc = pickRows(bundle, "daily", ["gsc", "gsc_http"], "current");
   const gscPrev = pickRows(bundle, "daily", ["gsc", "gsc_http"], "previous");
 
-  const visits = total(ga4, "users");
+  const periodUsers = readPeriodUsers(bundle);
+  const visits = periodUsers ? periodUsers.current : total(ga4, "users");
+  const visitsPrev = periodUsers
+    ? typeof periodUsers.previous === "number"
+      ? periodUsers.previous
+      : null
+    : total(ga4Prev, "users");
   const impressions = total(gsc, "impressions");
   if (visits == null && impressions == null) return null;
 
@@ -470,7 +498,7 @@ export function buildSummaryBriefFacts(
   return {
     from,
     to,
-    visits: { current: visits, previous: total(ga4Prev, "users") },
+    visits: { current: visits, previous: visitsPrev },
     impressions: { current: impressions, previous: impressionsPrev },
     clicks: { current: clicksNow, previous: clicksPrev },
     clickRate: {
