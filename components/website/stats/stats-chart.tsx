@@ -223,8 +223,16 @@ function legendNode(show: boolean | undefined, items: { value: string; color: st
  * 오픈 시점 세로선. 왼쪽이 원페이지 시절, 오른쪽이 새 사이트다.
  * mark 가 없으면(공개일이 안 정해졌거나 기간 밖이면) 아무것도 그리지 않는다.
  */
-function markLine(mark: StatsMark | undefined, yAxisId?: string) {
+function markLine(
+  mark: StatsMark | undefined,
+  data: StatsRow[],
+  xKey: string,
+  yAxisId?: string
+) {
   if (!mark) return null;
+  // 선이 오른쪽 끝 가까이 있으면 글이 그래프 밖으로 잘린다. 그때는 선 왼쪽에 붙인다
+  const index = data.findIndex((row) => row[xKey] === mark.x);
+  const nearEnd = index >= 0 && index > (data.length - 1) * 0.65;
   return (
     <ReferenceLine
       x={mark.x}
@@ -236,7 +244,7 @@ function markLine(mark: StatsMark | undefined, yAxisId?: string) {
     >
       <Label
         value={mark.label}
-        position="insideTopLeft"
+        position={nearEnd ? "insideTopRight" : "insideTopLeft"}
         offset={6}
         style={{ fontSize: 10, fill: STATS_TEXT }}
       />
@@ -334,7 +342,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, undefined, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
-        {markLine(props.mark)}
+        {markLine(props.mark, props.data, props.xKey)}
         {props.series.map((series, index) => (
           <Line
             key={series.key}
@@ -359,7 +367,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, props.max, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
-        {markLine(props.mark)}
+        {markLine(props.mark, props.data, props.xKey)}
         {props.series.map((series, index) => (
           <Bar
             key={series.key}
@@ -413,7 +421,7 @@ function chartBody(props: StatsChartProps) {
         </YAxis>
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend([...props.bars, ...props.lines]))}
-        {markLine(props.mark, "left")}
+        {markLine(props.mark, props.data, props.xKey, "left")}
         {props.bars.map((series, index) => (
           <Bar
             key={series.key}

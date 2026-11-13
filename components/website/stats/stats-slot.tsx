@@ -20,7 +20,7 @@ export type StatsData = {
 };
 
 /** 아직 안 걷힌 자리에 붙이는 한 줄 */
-export const STATS_EMPTY_HINT = "사이트 공개 후 수집이 시작됩니다.";
+export const STATS_EMPTY_HINT = "이 기간에는 모인 값이 없습니다.";
 
 export function ChartSlot({
   status,
