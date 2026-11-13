@@ -28,7 +28,7 @@ import {
   type DeltaTone,
   type StatsMetric
 } from "@/components/website/stats/stats-data";
-import { channelLabel, countryLabel } from "@/components/website/stats/stats-labels";
+import { channelLabel, countryLabel, deviceLabel } from "@/components/website/stats/stats-labels";
 import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
@@ -278,18 +278,10 @@ export function buildCountry(bundle: StatsBundle | null): StatsRow[] {
   return rows;
 }
 
-/** GA4 deviceCategory 는 영문 고정값이다 */
-const DEVICE_LABEL: Record<string, string> = {
-  desktop: "데스크톱",
-  mobile: "모바일",
-  tablet: "태블릿",
-  "smart tv": "TV"
-};
-
 export function buildDevice(bundle: StatsBundle | null): StatsSlice[] {
   return ranked(sumByKey(pick(bundle, "device", "ga4", "current"), "users")).map(
     (item, index) => ({
-      name: DEVICE_LABEL[item.name.toLowerCase()] ?? item.name,
+      name: deviceLabel(item.name),
       value: item.value,
       color: STATS_COLORS[index % STATS_COLORS.length]
     })

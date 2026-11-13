@@ -38,6 +38,7 @@ const COUNTRY_LABEL: Record<string, string> = {
   China: "중국",
   Cyprus: "키프로스",
   Denmark: "덴마크",
+  "Dominican Republic": "도미니카 공화국",
   Egypt: "이집트",
   Ethiopia: "에티오피아",
   Finland: "핀란드",
@@ -54,6 +55,7 @@ const COUNTRY_LABEL: Record<string, string> = {
   Iraq: "이라크",
   Ireland: "아일랜드",
   "Isle of Man": "맨섬",
+  Israel: "이스라엘",
   Italy: "이탈리아",
   Jamaica: "자메이카",
   Japan: "일본",
@@ -62,6 +64,7 @@ const COUNTRY_LABEL: Record<string, string> = {
   Kosovo: "코소보",
   Latvia: "라트비아",
   Lebanon: "레바논",
+  Libya: "리비아",
   Lithuania: "리투아니아",
   Luxembourg: "룩셈부르크",
   Macao: "마카오",
@@ -76,8 +79,11 @@ const COUNTRY_LABEL: Record<string, string> = {
   Netherlands: "네덜란드",
   "New Zealand": "뉴질랜드",
   Nigeria: "나이지리아",
+  "North Macedonia": "북마케도니아",
   "Northern Mariana Islands": "북마리아나 제도",
+  Norway: "노르웨이",
   Pakistan: "파키스탄",
+  Peru: "페루",
   Philippines: "필리핀",
   Poland: "폴란드",
   Portugal: "포르투갈",
@@ -124,8 +130,66 @@ function regionName(code: string): string | null {
   }
 }
 
-/** 두 글자 국가 코드(KR)면 Intl 로, 영어 이름이면 표로, 둘 다 아니면 그대로 */
+/**
+ * 서치 콘솔 country 는 소문자 세 글자 코드(kor)로 온다.
+ * 영어 이름으로 바꿔 COUNTRY_LABEL 을 함께 쓴다. 지금 데이터에 나오는 코드만 둔다.
+ */
+const ALPHA3_COUNTRY: Record<string, string> = {
+  are: "United Arab Emirates",
+  aus: "Australia",
+  bel: "Belgium",
+  bgd: "Bangladesh",
+  bra: "Brazil",
+  che: "Switzerland",
+  chn: "China",
+  cyp: "Cyprus",
+  deu: "Germany",
+  dnk: "Denmark",
+  dom: "Dominican Republic",
+  egy: "Egypt",
+  esp: "Spain",
+  fra: "France",
+  gbr: "United Kingdom",
+  grc: "Greece",
+  hkg: "Hong Kong",
+  idn: "Indonesia",
+  ind: "India",
+  isr: "Israel",
+  ita: "Italy",
+  kor: "South Korea",
+  lby: "Libya",
+  mkd: "North Macedonia",
+  nor: "Norway",
+  per: "Peru",
+  prt: "Portugal",
+  sau: "Saudi Arabia",
+  tha: "Thailand",
+  tur: "Türkiye",
+  usa: "United States",
+  vnm: "Vietnam"
+};
+
+/**
+ * 두 글자 국가 코드(KR)면 Intl 로, 세 글자 코드(kor)·영어 이름이면 표로,
+ * 어느 쪽에도 없으면 그대로
+ */
 export function countryLabel(name: string): string {
   if (/^[A-Za-z]{2}$/.test(name)) return regionName(name.toUpperCase()) ?? name;
+  if (/^[A-Za-z]{3}$/.test(name)) {
+    const english = ALPHA3_COUNTRY[name.toLowerCase()];
+    return (english && COUNTRY_LABEL[english]) || name;
+  }
   return COUNTRY_LABEL[name] ?? name;
+}
+
+/** GA4 deviceCategory(desktop) · 서치 콘솔 device(DESKTOP) 모두 대소문자만 다르다 */
+const DEVICE_LABEL: Record<string, string> = {
+  desktop: "데스크톱",
+  mobile: "모바일",
+  tablet: "태블릿",
+  "smart tv": "TV"
+};
+
+export function deviceLabel(name: string): string {
+  return DEVICE_LABEL[name.toLowerCase()] ?? name;
 }

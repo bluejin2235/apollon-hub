@@ -35,6 +35,7 @@ import {
   weightedField,
   type DeltaTone
 } from "@/components/website/stats/stats-data";
+import { countryLabel, deviceLabel } from "@/components/website/stats/stats-labels";
 import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 검색 화면이 쓰는 kind. 한 번에 받아 온다 */
@@ -502,12 +503,12 @@ export function buildLangSplit(bundle: StatsBundle | null): LangSplit {
 export function buildSearchCountry(bundle: StatsBundle | null, limit = 6): StatsRow[] {
   return ranked(sumByKey(dimRows(bundle, "country").rows, "impressions"))
     .slice(0, limit)
-    .map((item) => ({ name: clip(item.name, 14), value: item.value }));
+    .map((item) => ({ name: clip(countryLabel(item.name), 14), value: item.value }));
 }
 
 export function buildSearchDevice(bundle: StatsBundle | null): StatsSlice[] {
   return ranked(sumByKey(dimRows(bundle, "device").rows, "impressions")).map((item, index) => ({
-    name: item.name,
+    name: deviceLabel(item.name),
     value: item.value,
     color: [STATS_COLORS[0], STATS_COLORS[2], STATS_TEXT][index] ?? STATS_MUTED
   }));

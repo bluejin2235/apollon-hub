@@ -320,10 +320,9 @@ function Submissions({ data }: { data: StatsData }) {
           />
         </ChartSlot>
         <p className="ws-foot">
-          세 값은 폼이 실제로 보내졌을 때 사이트가 쏘는 이벤트를 센 것입니다 —
-          <code> generate_lead</code> · <code>newsletter_signup</code> ·
-          <code> talent_signup</code>. 사람 수가 아니라 건수입니다. 메일이나 전화로 오는
-          문의는 잡히지 않습니다.
+          세 값은 프로젝트 문의 · 뉴스레터 구독 · 인재풀 등록 폼이 실제로 보내졌을 때
+          사이트가 남기는 기록을 센 것입니다. 사람 수가 아니라 건수입니다. 메일이나 전화로
+          오는 문의는 잡히지 않습니다.
         </p>
       </div>
     </div>
