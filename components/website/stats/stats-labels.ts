@@ -102,6 +102,7 @@ const COUNTRY_LABEL: Record<string, string> = {
   Taiwan: "대만",
   Thailand: "태국",
   "Türkiye": "튀르키예",
+  Turkey: "튀르키예",
   Ukraine: "우크라이나",
   "United Arab Emirates": "아랍에미리트",
   "United Kingdom": "영국",
