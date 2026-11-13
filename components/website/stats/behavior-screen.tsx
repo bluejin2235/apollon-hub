@@ -33,9 +33,17 @@ import {
 import {
   StatsChart,
   STATS_COLORS,
-  STATS_MUTED
+  STATS_MUTED,
+  STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { dash, intText, launchMark, pickRows, readLaunchDate } from "@/components/website/stats/stats-data";
+import {
+  dash,
+  hasValue,
+  intText,
+  launchMark,
+  pickRows,
+  readLaunchDate
+} from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /* ─────────────────────── 1. 문의까지 가는 길 ─────────────────────── */
@@ -97,6 +105,9 @@ function Funnel({ data }: { data: StatsData }) {
 
 /* ─────────────────────── 2. 평균 세션 시간 · 본 페이지 수 ─────────────────────── */
 
+/** 요약의 일별 사용자 추이와 같은 말 */
+const PREVIOUS_LINE_NOTE = " — 실선 이번 기간, 점선 지난 기간";
+
 const DIST_NOTE =
   "구간별 분포는 만들 수 없습니다. GA4 는 세션 하나하나를 주지 않고 하루 평균 세션 시간만 주어 구간으로 가를 원자료가 없습니다. 대신 평균이 어떻게 움직이는지 보입니다.";
 
@@ -112,7 +123,9 @@ function DwellAndDepth({ data }: { data: StatsData }) {
   return (
     <div className="ws-sec ws-g2">
       <div className="ws-card">
-        <div className="ws-ct">평균 세션 시간 추이</div>
+        <div className="ws-ct">
+          평균 세션 시간 추이{hasValue(dwell, "previous") ? PREVIOUS_LINE_NOTE : ""}
+        </div>
         <p className="ws-cs">이번 기간 평균 {summary.avgSeconds ?? "—"}</p>
         <ChartSlot
           status={data.status}
@@ -125,13 +138,20 @@ function DwellAndDepth({ data }: { data: StatsData }) {
             xKey="date"
             mark={mark ?? undefined}
             format={(value) => `${Math.round(value)}초`}
-            series={[{ key: "seconds", name: "평균 세션 시간", color: STATS_COLORS[0] }]}
+            series={[
+              { key: "seconds", name: "평균 세션 시간", color: STATS_COLORS[0] },
+              ...(hasValue(dwell, "previous")
+                ? [{ key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }]
+                : [])
+            ]}
           />
         </ChartSlot>
         <p className="ws-blocked ws-blocked-gap">{DIST_NOTE}</p>
       </div>
       <div className="ws-card">
-        <div className="ws-ct">세션당 본 페이지 추이</div>
+        <div className="ws-ct">
+          세션당 본 페이지 추이{hasValue(depth, "previous") ? PREVIOUS_LINE_NOTE : ""}
+        </div>
         <p className="ws-cs">이번 기간 평균 {summary.avgPages ?? "—"}</p>
         <ChartSlot
           status={data.status}
@@ -144,7 +164,12 @@ function DwellAndDepth({ data }: { data: StatsData }) {
             xKey="date"
             mark={mark ?? undefined}
             format={(value) => `${value.toFixed(1)}장`}
-            series={[{ key: "pages", name: "본 페이지", color: STATS_COLORS[2] }]}
+            series={[
+              { key: "pages", name: "본 페이지", color: STATS_COLORS[2] },
+              ...(hasValue(depth, "previous")
+                ? [{ key: "previous", name: "지난 기간", color: STATS_TEXT, dashed: true }]
+                : [])
+            ]}
           />
         </ChartSlot>
         <p className="ws-blocked ws-blocked-gap">{DIST_NOTE}</p>

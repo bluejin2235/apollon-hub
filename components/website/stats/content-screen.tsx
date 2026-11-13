@@ -10,12 +10,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { DeltaMark } from "@/components/website/stats/delta-mark";
 import {
   buildEntryBubble,
   buildFill,
   buildLandingFlow,
   buildPageBars,
   buildPages,
+  buildPreviousPages,
   buildScrollDepth,
   buildTitles,
   buildTypePie,
@@ -26,6 +28,7 @@ import {
   FILL_TOTAL,
   filterPages,
   PAGE_FILTERS,
+  pageDelta,
   type LocaleFilter,
   type PageFilterId
 } from "@/components/website/stats/content-data";
@@ -119,6 +122,7 @@ function AllPages({ data, pages }: { data: StatsData; pages: ReturnType<typeof b
 
   const shown = useMemo(() => filterPages(pages, type, locale), [pages, type, locale]);
   const bars = useMemo(() => buildPageBars(shown), [shown]);
+  const previous = useMemo(() => buildPreviousPages(data.bundle), [data.bundle]);
 
   function toggleLocale(next: "ko" | "en") {
     setLocale((current) => (current === next ? "all" : next));
@@ -187,21 +191,33 @@ function AllPages({ data, pages }: { data: StatsData; pages: ReturnType<typeof b
                 </tr>
               </thead>
               <tbody>
-                {shown.map((page) => (
-                  <tr key={page.path}>
-                    <td>
-                      {page.title}
-                      <div className="ws-t2">{page.path}</div>
-                    </td>
-                    <td className="ws-t2">{page.typeLabel}</td>
-                    <td className="ws-num">{dash(intText(page.views))}</td>
-                    <td className="ws-num">{dash(intText(page.entries))}</td>
-                    {/* 읽은 깊이·다음은 걷지 않는다 — 아래 각주에 적었다 */}
-                    <td className="ws-num">—</td>
-                    <td className="ws-num">{dash(pctText(page.bounce))}</td>
-                    <td className="ws-num">—</td>
-                  </tr>
-                ))}
+                {shown.map((page) => {
+                  const delta = pageDelta(page, previous);
+                  return (
+                    <tr key={page.path}>
+                      <td>
+                        {page.title}
+                        <div className="ws-t2">{page.path}</div>
+                      </td>
+                      <td className="ws-t2">{page.typeLabel}</td>
+                      <td className="ws-num">
+                        {dash(intText(page.views))}
+                        <DeltaMark {...delta.views} />
+                      </td>
+                      <td className="ws-num">
+                        {dash(intText(page.entries))}
+                        <DeltaMark {...delta.entries} />
+                      </td>
+                      {/* 읽은 깊이·다음은 걷지 않는다 — 아래 각주에 적었다 */}
+                      <td className="ws-num">—</td>
+                      <td className="ws-num">
+                        {dash(pctText(page.bounce))}
+                        <DeltaMark {...delta.bounce} />
+                      </td>
+                      <td className="ws-num">—</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

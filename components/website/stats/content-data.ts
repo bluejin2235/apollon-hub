@@ -22,11 +22,20 @@ import {
   STATS_BAD,
   STATS_COLORS,
   STATS_MUTED,
+  STATS_TEXT,
   type StatsRow,
   type StatsScatterGroup,
   type StatsSlice
 } from "@/components/website/stats/stats-chart";
-import { clip, pickRows, shortDate } from "@/components/website/stats/stats-data";
+import {
+  clip,
+  intText,
+  makeDelta,
+  pctText,
+  pickRows,
+  shortDate,
+  type DeltaView
+} from "@/components/website/stats/stats-data";
 import { channelLabel } from "@/components/website/stats/stats-labels";
 import type { SankeyModel } from "@/components/website/stats/stats-sankey";
 import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
@@ -37,9 +46,13 @@ export const CONTENT_KINDS = ["page", "landing", "scroll", "landing_channel"];
 
 type Rows = StatsPoint[];
 
-/** 콘텐츠 화면은 GA4 의 이번 기간 값만 본다 */
-function pick(bundle: StatsBundle | null, kind: string): Rows {
-  return pickRows(bundle, kind, "ga4");
+/** 콘텐츠 화면은 GA4 값만 본다. 앞 기간은 증감과 점선에만 쓴다 */
+function pick(
+  bundle: StatsBundle | null,
+  kind: string,
+  when: "current" | "previous" = "current"
+): Rows {
+  return pickRows(bundle, kind, "ga4", when);
 }
 
 /* ─────────────────────────── 경로 읽기 ─────────────────────────── */
@@ -188,17 +201,21 @@ function bucket(map: Map<string, Accum>, path: string): Accum {
  * 페이지 한 장씩. page 로 조회를, landing 으로 진입과 이탈을 채운다.
  * 두 리포트 모두에 없는 값은 null 로 남는다.
  */
-export function buildPages(bundle: StatsBundle | null, titles: TitleMap): ContentPage[] {
+export function buildPages(
+  bundle: StatsBundle | null,
+  titles: TitleMap,
+  when: "current" | "previous" = "current"
+): ContentPage[] {
   const map = new Map<string, Accum>();
 
-  for (const row of pick(bundle, "page")) {
+  for (const row of pick(bundle, "page", when)) {
     const path = normalizePath(row.key);
     if (path === null || typeof row.views !== "number") continue;
     const item = bucket(map, path);
     item.views = (item.views ?? 0) + row.views;
   }
 
-  for (const row of pick(bundle, "landing")) {
+  for (const row of pick(bundle, "landing", when)) {
     const path = normalizePath(row.key);
     if (path === null || typeof row.sessions !== "number") continue;
     const item = bucket(map, path);
@@ -238,6 +255,36 @@ export function buildPages(bundle: StatsBundle | null, titles: TitleMap): Conten
   return pages.sort((a, b) => (b.views ?? 0) - (a.views ?? 0));
 }
 
+export type PageDelta = { views: DeltaView; entries: DeltaView; bounce: DeltaView };
+
+/**
+ * 표의 증감. 앞 기간 같은 경로와 견준다. 앞 기간 리포트가 비어 있으면 null 을
+ * 돌려주고, 표는 칸마다 「비교 불가」를 그린다.
+ */
+export function buildPreviousPages(bundle: StatsBundle | null): Map<string, ContentPage> | null {
+  if (pick(bundle, "page", "previous").length === 0 && pick(bundle, "landing", "previous").length === 0) {
+    return null;
+  }
+  return new Map(buildPages(bundle, EMPTY_TITLES, "previous").map((page) => [page.path, page]));
+}
+
+/** 앞 기간에 없던 페이지는 0 과 견준다. 앞 기간 리포트 자체가 없으면 비교 불가 */
+export function pageDelta(page: ContentPage, previous: Map<string, ContentPage> | null): PageDelta {
+  if (previous === null) {
+    const none: DeltaView = { delta: null, tone: "flat", previous: null };
+    return { views: none, entries: none, bounce: none };
+  }
+  const before = previous.get(page.path);
+  const views = before ? before.views : 0;
+  const entries = before ? before.entries : 0;
+  const bounce = before ? before.bounce : null;
+  return {
+    views: makeDelta(page.views, views, "ratio", true, intText(views)),
+    entries: makeDelta(page.entries, entries, "ratio", true, intText(entries)),
+    bounce: makeDelta(page.bounce, bounce, "point", false, pctText(bounce))
+  };
+}
+
 /* ─────────────────────── 1 페이지 종류별 ─────────────────────── */
 
 /** 조회 비중 — 조회가 0 인 종류는 조각을 만들지 않는다 */
@@ -255,7 +302,10 @@ export function buildTypePie(pages: ContentPage[]): StatsSlice[] {
   }));
 }
 
-export type SeriesSpec = { key: string; name: string; color: string };
+export type SeriesSpec = { key: string; name: string; color: string; dashed?: boolean };
+
+/** 종류 id 와 겹치지 않는 키 */
+const TYPE_TREND_PREVIOUS = "previous";
 
 /** 종류별 추이 — 날짜를 가로로, 페이지 종류를 계열로 편다 */
 export function buildTypeTrend(bundle: StatsBundle | null): {
@@ -281,20 +331,33 @@ export function buildTypeTrend(bundle: StatsBundle | null): {
     day.set(typeId, (day.get(typeId) ?? 0) + (row.views as number));
   }
 
-  const series = PAGE_TYPES.filter((type) => seen.has(type.id)).map((type) => ({
+  const series: SeriesSpec[] = PAGE_TYPES.filter((type) => seen.has(type.id)).map((type) => ({
     key: type.id,
     name: type.label,
     color: type.color
   }));
 
+  // 앞 기간은 종류마다 선을 겹치면 읽을 수 없어 전체 조회 한 줄만 긋는다.
+  // 같은 순번 날짜끼리 맞춘다 — 요약 방문 추이와 같은 맞춤이다
+  const previousByDay = new Map<string, number>();
+  for (const row of pick(bundle, "page", "previous")) {
+    if (typeof row.views !== "number" || normalizePath(row.key) === null) continue;
+    previousByDay.set(row.date, (previousByDay.get(row.date) ?? 0) + row.views);
+  }
+  const previous = [...previousByDay.keys()].sort().map((date) => previousByDay.get(date) as number);
+  if (previous.length > 0) {
+    series.push({ key: TYPE_TREND_PREVIOUS, name: "지난 기간 전체", color: STATS_TEXT, dashed: true });
+  }
+
   const dates = [...byDay.keys()].sort();
   return {
     series,
     // 그날 다른 종류는 걷혔는데 이 종류만 없으면 진짜 0 이다
-    rows: dates.map((date) => {
+    rows: dates.map((date, index) => {
       const day = byDay.get(date) as Map<PageTypeId, number>;
       const out: StatsRow = { date: shortDate(date) };
       for (const spec of series) out[spec.key] = day.get(spec.key as PageTypeId) ?? 0;
+      if (previous.length > 0) out[TYPE_TREND_PREVIOUS] = previous[index] ?? null;
       return out;
     })
   };

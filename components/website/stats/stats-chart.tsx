@@ -60,6 +60,8 @@ export type StatsSeries = {
   color?: string;
   /** line 전용 — 점선 */
   dashed?: boolean;
+  /** combo 의 선 전용 — 어느 축에 붙일지. 없으면 오른쪽 */
+  axis?: "left" | "right";
   /** bar·hbar 전용 — 같은 값이면 쌓인다 */
   stackId?: string;
   /** bar·hbar 전용 — 막대마다 색을 다르게 (data 순서) */
@@ -428,7 +430,7 @@ function chartBody(props: StatsChartProps) {
         {props.lines.map((series, index) => (
           <Line
             key={series.key}
-            yAxisId="right"
+            yAxisId={series.axis ?? "right"}
             type="monotone"
             dataKey={series.key}
             name={series.name ?? series.key}

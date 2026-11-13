@@ -35,9 +35,16 @@ import {
 import {
   StatsChart,
   STATS_COLORS,
-  STATS_MUTED
+  STATS_MUTED,
+  STATS_TEXT
 } from "@/components/website/stats/stats-chart";
-import { intText, launchMark, periodText, readLaunchDate } from "@/components/website/stats/stats-data";
+import {
+  hasValue,
+  intText,
+  launchMark,
+  periodText,
+  readLaunchDate
+} from "@/components/website/stats/stats-data";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /** 기간 안에 값이 없을 때 — 기간을 넓히면 나온다 */
@@ -103,7 +110,30 @@ function Overview({ data }: { data: StatsData }) {
             rightLabel="클릭"
             mark={mark ?? undefined}
             bars={[{ key: "impressions", name: "노출", color: STATS_MUTED }]}
-            lines={[{ key: "clicks", name: "클릭", color: STATS_COLORS[1] }]}
+            lines={[
+              { key: "clicks", name: "클릭", color: STATS_COLORS[1] },
+              ...(hasValue(trend, "prevImpressions")
+                ? [
+                    {
+                      key: "prevImpressions",
+                      name: "지난 기간 노출",
+                      color: STATS_TEXT,
+                      dashed: true,
+                      axis: "left" as const
+                    }
+                  ]
+                : []),
+              ...(hasValue(trend, "prevClicks")
+                ? [
+                    {
+                      key: "prevClicks",
+                      name: "지난 기간 클릭",
+                      color: STATS_COLORS[1],
+                      dashed: true
+                    }
+                  ]
+                : [])
+            ]}
           />
         </ChartSlot>
         {mark ? (
@@ -212,10 +242,22 @@ function Keywords({ data }: { data: StatsData }) {
                     </td>
                     {/* 서치 콘솔 검색어 리포트에 페이지가 함께 오지 않는다 — 아래 각주 */}
                     <td className="ws-t2">—</td>
-                    <td className="ws-num">{row.impressions}</td>
-                    <td className="ws-num">{row.clicks}</td>
-                    <td className="ws-num">{row.ctr}</td>
-                    <td className="ws-num">{row.position}</td>
+                    <td className="ws-num">
+                      {row.impressions}
+                      <DeltaMark {...row.delta.impressions} />
+                    </td>
+                    <td className="ws-num">
+                      {row.clicks}
+                      <DeltaMark {...row.delta.clicks} />
+                    </td>
+                    <td className="ws-num">
+                      {row.ctr}
+                      <DeltaMark {...row.delta.ctr} />
+                    </td>
+                    <td className="ws-num">
+                      {row.position}
+                      <DeltaMark {...row.delta.position} />
+                    </td>
                     <td>
                       <div className="ws-tags">
                         {row.tags.map((tag) => (
@@ -307,8 +349,14 @@ function BrandVsGeneric({ data }: { data: StatsData }) {
                   {split.counts.map((row) => (
                     <tr key={row.label}>
                       <td>{row.label}</td>
-                      <td className="ws-num">{row.brand}</td>
-                      <td className="ws-num">{row.generic}</td>
+                      <td className="ws-num">
+                        {row.brand}
+                        <DeltaMark {...row.brandDelta} />
+                      </td>
+                      <td className="ws-num">
+                        {row.generic}
+                        <DeltaMark {...row.genericDelta} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

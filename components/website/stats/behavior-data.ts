@@ -198,25 +198,44 @@ export function buildFunnel(bundle: StatsBundle | null): FunnelStep[] {
  * 목업은 구간별 분포였다. GA4 는 세션 하나하나를 주지 않고 하루 평균만 주므로
  * 분포를 그릴 수 없다. 대신 평균이 어떻게 움직이는지 보인다.
  */
-export function buildDwellTrend(bundle: StatsBundle | null): StatsRow[] {
-  return [...pick(bundle, "daily")]
+function dwellRows(bundle: StatsBundle | null, when: "current" | "previous"): Rows {
+  return [...pick(bundle, "daily", when)]
     .filter((row) => typeof row.avg_seconds === "number")
-    .sort(byDate)
-    .map((row) => ({ date: shortDate(row.date), seconds: row.avg_seconds }));
+    .sort(byDate);
 }
 
-/** 세션 하나가 평균 몇 장을 봤나 — 조회 ÷ 세션 */
-export function buildDepthTrend(bundle: StatsBundle | null): StatsRow[] {
-  return [...pick(bundle, "daily")]
+/**
+ * previous 는 앞 기간의 같은 순번 날짜 값이다. 요약 방문 추이와 같은 맞춤이다.
+ */
+export function buildDwellTrend(bundle: StatsBundle | null): StatsRow[] {
+  const previous = dwellRows(bundle, "previous");
+  return dwellRows(bundle, "current").map((row, index) => ({
+    date: shortDate(row.date),
+    seconds: row.avg_seconds,
+    previous: previous[index]?.avg_seconds ?? null
+  }));
+}
+
+function depthRows(bundle: StatsBundle | null, when: "current" | "previous"): Rows {
+  return [...pick(bundle, "daily", when)]
     .filter(
       (row) =>
         typeof row.views === "number" && typeof row.sessions === "number" && row.sessions > 0
     )
-    .sort(byDate)
-    .map((row) => ({
-      date: shortDate(row.date),
-      pages: (row.views as number) / (row.sessions as number)
-    }));
+    .sort(byDate);
+}
+
+const pagesPerSession = (row: StatsPoint | undefined): number | null =>
+  row ? (row.views as number) / (row.sessions as number) : null;
+
+/** 세션 하나가 평균 몇 장을 봤나 — 조회 ÷ 세션. previous 는 위와 같은 맞춤 */
+export function buildDepthTrend(bundle: StatsBundle | null): StatsRow[] {
+  const previous = depthRows(bundle, "previous");
+  return depthRows(bundle, "current").map((row, index) => ({
+    date: shortDate(row.date),
+    pages: pagesPerSession(row),
+    previous: pagesPerSession(previous[index])
+  }));
 }
 
 /** 카드 위에 한 줄로 보일 요약값 */

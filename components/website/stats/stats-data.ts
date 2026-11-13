@@ -191,6 +191,11 @@ export function shortDate(iso: string): string {
   return `${Number(month)}/${Number(day)}`;
 }
 
+/** 앞 기간 선을 그릴 값이 하나라도 있나. 없으면 그 선은 범례에도 넣지 않는다 */
+export function hasValue(rows: Record<string, unknown>[], key: string): boolean {
+  return rows.some((row) => typeof row[key] === "number");
+}
+
 /** 막대 옆 이름 칸은 좁다. 넘치면 잘라 준다 */
 export function clip(text: string, max = 22): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;

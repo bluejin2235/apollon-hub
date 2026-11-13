@@ -33,7 +33,8 @@ import {
   sumByKey,
   sumField,
   weightedField,
-  type DeltaTone
+  type DeltaTone,
+  type DeltaView
 } from "@/components/website/stats/stats-data";
 import { countryLabel, deviceLabel } from "@/components/website/stats/stats-labels";
 import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
@@ -58,9 +59,10 @@ export function searchDaily(bundle: StatsBundle | null): StatsPoint[] {
  */
 function dimRows(
   bundle: StatsBundle | null,
-  kind: string
+  kind: string,
+  when: "current" | "previous" = "current"
 ): { rows: StatsPoint[]; scoped: boolean } {
-  const dated = pickRows(bundle, kind, SEARCH_SOURCES, "current");
+  const dated = pickRows(bundle, kind, SEARCH_SOURCES, when);
   if (dated.length === 0) return { rows: [], scoped: false };
   return { rows: aggregateByKey(dated), scoped: true };
 }
@@ -199,12 +201,18 @@ export function buildSearchKpis(bundle: StatsBundle | null): SearchKpi[] {
 
 /* ─────────────────────── 2. 노출과 클릭 추이 ─────────────────────── */
 
-/** 막대는 노출, 선은 클릭. 두 값의 크기가 스무 배쯤 차이 나 축을 나눈다 */
+/**
+ * 막대는 노출, 선은 클릭. 두 값의 크기가 스무 배쯤 차이 나 축을 나눈다.
+ * prev* 는 앞 기간의 같은 순번 날짜 값이다. 요약 방문 추이와 같은 맞춤이다.
+ */
 export function buildSearchTrend(bundle: StatsBundle | null): StatsRow[] {
-  return [...searchDaily(bundle)].sort(byDate).map((row) => ({
+  const previous = [...pickRows(bundle, "daily", SEARCH_SOURCES, "previous")].sort(byDate);
+  return [...searchDaily(bundle)].sort(byDate).map((row, index) => ({
     date: shortDate(row.date),
     impressions: row.impressions,
-    clicks: row.clicks
+    clicks: row.clicks,
+    prevImpressions: previous[index]?.impressions ?? null,
+    prevClicks: previous[index]?.clicks ?? null
   }));
 }
 
@@ -274,8 +282,37 @@ export type BrandSplit = {
   /** 100% 로 채운 가로 막대. 노출 한 줄, 클릭 한 줄 */
   rows: StatsRow[];
   /** 막대 아래에 실제 숫자를 적는다. 비율만 보면 규모를 놓친다 */
-  counts: { label: string; brand: string; generic: string }[];
+  counts: {
+    label: string;
+    brand: string;
+    generic: string;
+    brandDelta: DeltaView;
+    genericDelta: DeltaView;
+  }[];
 };
+
+type GroupSums = {
+  impressions: Record<QueryGroup, number>;
+  clicks: Record<QueryGroup, number>;
+};
+
+function sumByGroup(rows: StatsPoint[]): GroupSums {
+  const acc: GroupSums = {
+    impressions: { brand: 0, generic: 0 },
+    clicks: { brand: 0, generic: 0 }
+  };
+  for (const row of rows) {
+    const group = groupOf(row.key ?? "");
+    if (typeof row.impressions === "number") acc.impressions[group] += row.impressions;
+    if (typeof row.clicks === "number") acc.clicks[group] += row.clicks;
+  }
+  return acc;
+}
+
+/** 앞 기간 검색어 행이 하나도 없으면 null — 0 과 견주지 않고 비교 불가로 둔다 */
+function countDelta(current: number, previous: number | null): DeltaView {
+  return makeDelta(current, previous, "ratio", true, intText(previous));
+}
 
 /**
  * 검색어에는 날짜가 없다. 목업처럼 달별로 쌓을 수 없어 합계를 비율로 보인다.
@@ -285,16 +322,9 @@ export function buildBrandSplit(bundle: StatsBundle | null): BrandSplit {
   const rows = dimRows(bundle, "query").rows;
   if (rows.length === 0) return { rows: [], counts: [] };
 
-  const acc = {
-    impressions: { brand: 0, generic: 0 },
-    clicks: { brand: 0, generic: 0 }
-  };
-
-  for (const row of rows) {
-    const group = groupOf(row.key ?? "");
-    if (typeof row.impressions === "number") acc.impressions[group] += row.impressions;
-    if (typeof row.clicks === "number") acc.clicks[group] += row.clicks;
-  }
+  const acc = sumByGroup(rows);
+  const previousRows = dimRows(bundle, "query", "previous").rows;
+  const before = previousRows.length > 0 ? sumByGroup(previousRows) : null;
 
   const share = (label: string, part: { brand: number; generic: number }): StatsRow | null => {
     const total = part.brand + part.generic;
@@ -316,12 +346,16 @@ export function buildBrandSplit(bundle: StatsBundle | null): BrandSplit {
       {
         label: "노출",
         brand: intText(acc.impressions.brand) ?? "—",
-        generic: intText(acc.impressions.generic) ?? "—"
+        generic: intText(acc.impressions.generic) ?? "—",
+        brandDelta: countDelta(acc.impressions.brand, before?.impressions.brand ?? null),
+        genericDelta: countDelta(acc.impressions.generic, before?.impressions.generic ?? null)
       },
       {
         label: "클릭",
         brand: intText(acc.clicks.brand) ?? "—",
-        generic: intText(acc.clicks.generic) ?? "—"
+        generic: intText(acc.clicks.generic) ?? "—",
+        brandDelta: countDelta(acc.clicks.brand, before?.clicks.brand ?? null),
+        genericDelta: countDelta(acc.clicks.generic, before?.clicks.generic ?? null)
       }
     ]
   };
@@ -375,8 +409,37 @@ export type KeywordRow = {
   clicks: string;
   ctr: string;
   position: string;
+  delta: {
+    impressions: DeltaView;
+    clicks: DeltaView;
+    ctr: DeltaView;
+    position: DeltaView;
+  };
   tags: KeywordTag[];
 };
+
+const NO_DELTA: DeltaView = { delta: null, tone: "flat", previous: null };
+
+/**
+ * 앞 기간 같은 검색어와 견준다. 앞 기간에 없던 검색어는 노출·클릭 0 과 견주고,
+ * 클릭률·순위는 견줄 값이 없어 비교 불가다. 앞 기간 행이 아예 없으면 모두 비교 불가.
+ */
+function keywordDelta(row: StatsPoint, previous: Map<string, StatsPoint> | null): KeywordRow["delta"] {
+  if (previous === null) {
+    return { impressions: NO_DELTA, clicks: NO_DELTA, ctr: NO_DELTA, position: NO_DELTA };
+  }
+  const before = previous.get((row.key ?? "").trim());
+  const impressions = before ? before.impressions : 0;
+  const clicks = before ? before.clicks : 0;
+  const ctr = before ? before.ctr : null;
+  const position = before ? before.position : null;
+  return {
+    impressions: makeDelta(row.impressions, impressions, "ratio", true, intText(impressions)),
+    clicks: makeDelta(row.clicks, clicks, "ratio", true, intText(clicks)),
+    ctr: makeDelta(row.ctr, ctr, "point", true, pctText(ctr, 1)),
+    position: makeDelta(row.position, position, "abs", false, numText(position, 1))
+  };
+}
 
 /** 노출이 쌓였는데 안 눌리면 제목이 안 걸리는 것이다 */
 function tagsFor(row: StatsPoint): KeywordTag[] {
@@ -421,6 +484,12 @@ export function unpublishedQueryGap(
 }
 
 export function buildKeywordTable(bundle: StatsBundle | null, limit = 20): KeywordRow[] {
+  const previousRows = dimRows(bundle, "query", "previous").rows;
+  const previous =
+    previousRows.length > 0
+      ? new Map(previousRows.map((row) => [(row.key ?? "").trim(), row]))
+      : null;
+
   return dimRows(bundle, "query")
     .rows.filter((row) => (row.key ?? "").trim() !== "")
     .sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))
@@ -436,6 +505,7 @@ export function buildKeywordTable(bundle: StatsBundle | null, limit = 20): Keywo
         clicks: intText(row.clicks) ?? "—",
         ctr: pctText(row.ctr, 1) ?? "—",
         position: numText(row.position, 1) ?? "—",
+        delta: keywordDelta(row, previous),
         tags: tagsFor(row)
       };
     });
