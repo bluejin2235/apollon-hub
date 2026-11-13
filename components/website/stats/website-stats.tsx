@@ -664,13 +664,27 @@ function SummaryScreen({ data, from, to }: { data: StatsData; from: string; to: 
   );
 }
 
+type LiveLang = "국" | "영";
+
+type LivePage = { title: string; lang: LiveLang | null };
+
 type LiveVisitors = {
   count: number | null;
-  pages: string[];
+  pages: LivePage[];
 };
 
 const LIVE_TITLE_TAILS = [" | 아폴론이머시브웍스", " | Apollon Immersive Works"];
 const LIVE_ROLL_MS = 4_000;
+
+/**
+ * Realtime 은 경로가 없어 제목의 회사명으로 국문·영문을 가른다.
+ * 홈은 회사명이 앞에 오므로 끝이 아니라 들어 있는지로 본다. 둘 다 없으면 표시하지 않는다.
+ */
+function liveLang(name: string): LiveLang | null {
+  if (name.includes("Apollon Immersive Works")) return "영";
+  if (name.includes("아폴론이머시브웍스")) return "국";
+  return null;
+}
 
 /** 제목 끝의 사이트 이름을 떼고, 빈 값과 (other) 는 뺀다 */
 function cleanLiveTitle(name: string): string | null {
@@ -685,14 +699,17 @@ function cleanLiveTitle(name: string): string | null {
   return text;
 }
 
-function liveTitles(pages: { name: string }[]): string[] {
+function liveTitles(pages: { name: string }[]): LivePage[] {
   const seen = new Set<string>();
-  const titles: string[] = [];
+  const titles: LivePage[] = [];
   for (const page of pages) {
     const title = cleanLiveTitle(page.name);
-    if (!title || seen.has(title)) continue;
-    seen.add(title);
-    titles.push(title);
+    if (!title) continue;
+    const lang = liveLang(page.name);
+    const key = `${lang ?? ""}:${title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    titles.push({ title, lang });
   }
   return titles;
 }
@@ -721,7 +738,10 @@ function useLiveVisitors(): LiveVisitors {
       const names = liveTitles(result.data.pages);
       setLive((prev) => {
         const samePages =
-          prev.pages.length === names.length && prev.pages.every((page, i) => page === names[i]);
+          prev.pages.length === names.length &&
+          prev.pages.every(
+            (page, i) => page.title === names[i].title && page.lang === names[i].lang
+          );
         if (prev.count === count && samePages) return prev;
         return { count, pages: samePages ? prev.pages : names };
       });
@@ -743,7 +763,7 @@ function useLiveVisitors(): LiveVisitors {
 }
 
 /** 제목이 둘 이상일 때만 넘긴다. 하나면 그 제목을 그대로 둔다. */
-function LiveTitleRoll({ titles }: { titles: string[] }) {
+function LiveTitleRoll({ titles }: { titles: LivePage[] }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -756,12 +776,15 @@ function LiveTitleRoll({ titles }: { titles: string[] }) {
     return () => clearInterval(timer);
   }, [titles]);
 
-  const title = titles[index] ?? titles[0];
-  if (!title) return null;
+  const page = titles[index] ?? titles[0];
+  if (!page) return null;
   return (
-    <span className="ws-live-title" key={`${index}-${title}`}>
-      {title}
-    </span>
+    <>
+      {page.lang ? <span className="ws-tag">{page.lang}</span> : null}
+      <span className="ws-live-title" key={`${index}-${page.title}`}>
+        {page.title}
+      </span>
+    </>
   );
 }
 
