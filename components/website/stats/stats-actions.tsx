@@ -122,15 +122,61 @@ export type ChartMarkGroup = {
 
 type MarkEntry = { index: number; launch: boolean; short: string; line: string };
 
-/** 조치 한 줄 — 11/13 · 검색 최적화 · 워크 JSON-LD 개선 */
+/** 조치 한 줄 — 11/13 · 검색 최적화 · 워크 JSON-LD 개선. 실제 날짜를 쓴다. */
 export function actionLine(item: StatsAction): string {
   const category = actionCategoryLabel(item.category);
   return [shortDate(item.action_date), category, item.title].filter(Boolean).join(" · ");
 }
 
+/** 가로축 「M/D」를 기간 안 ISO 날짜로 되돌린다. 연말이 걸치면 from·to 해를 모두 본다. */
+function axisIso(label: string, range: { from: string; to: string }): string | null {
+  const [month, day] = label.split("/").map(Number);
+  if (!month || !day) return null;
+  const years = new Set([Number(range.from.slice(0, 4)), Number(range.to.slice(0, 4))]);
+  let best: string | null = null;
+  for (const year of years) {
+    if (!Number.isFinite(year)) continue;
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (iso >= range.from && iso <= range.to) return iso;
+    if (!best) best = iso;
+  }
+  return best;
+}
+
+/**
+ * 조치 날짜가 가로축에 없으면 가장 가까운 칸 번호.
+ * 호버 문구(actionLine)는 실제 날짜를 그대로 쓴다.
+ */
+function nearestAxisIndex(
+  xs: string[],
+  actionDate: string,
+  range: { from: string; to: string }
+): number {
+  const exact = xs.indexOf(shortDate(actionDate));
+  if (exact >= 0) return exact;
+  if (xs.length === 0) return -1;
+
+  const actionTime = Date.parse(`${actionDate}T00:00:00Z`);
+  if (!Number.isFinite(actionTime)) return 0;
+
+  let best = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < xs.length; i++) {
+    const iso = axisIso(xs[i], range);
+    if (!iso) continue;
+    const dist = Math.abs(Date.parse(`${iso}T00:00:00Z`) - actionTime);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+
 /**
  * 오픈 선과 기간 안 조치를 가로축 자리로 바꾸고 가까운 것끼리 묶는다.
  * 점이 8개 넘게 있으면 점 수의 1/8 안쪽은 글자가 겹치므로 한 선으로 둔다.
+ * 축에 없는 날짜의 조치는 가장 가까운 칸에 붙인다.
  */
 export function chartMarkGroups(params: {
   launch: { x: string; label: string } | undefined;
@@ -148,7 +194,7 @@ export function chartMarkGroups(params: {
   if (range) {
     for (const item of actions) {
       if (item.action_date < range.from || item.action_date > range.to) continue;
-      const index = xs.indexOf(shortDate(item.action_date));
+      const index = nearestAxisIndex(xs, item.action_date, range);
       if (index < 0) continue;
       entries.push({ index, launch: false, short: item.title, line: actionLine(item) });
     }
