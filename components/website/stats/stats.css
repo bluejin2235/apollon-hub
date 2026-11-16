@@ -492,6 +492,18 @@
   color: var(--ink3);
 }
 
+/* 숫자 뒤 단위 — 명 · 회 · % */
+.ws-val-unit {
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+/* 요약의 루나 칸이 할 일 칸과 나란히 설 때 */
+.ws-g2 > .ws-luna {
+  margin-bottom: 0;
+}
+
 .ws-q {
   border: 0;
   background: #eaecf0;

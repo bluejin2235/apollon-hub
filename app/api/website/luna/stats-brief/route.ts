@@ -20,19 +20,19 @@ export type StatsBriefResult = {
 type Facts = {
   from?: unknown;
   to?: unknown;
+  visitsBasis?: unknown;
   visits?: { current?: unknown; previous?: unknown };
+  genericClicks?: { current?: unknown; previous?: unknown };
+  searchToArticleRate?: { current?: unknown; previous?: unknown };
   impressions?: { current?: unknown; previous?: unknown };
   clicks?: { current?: unknown; previous?: unknown };
   clickRate?: { current?: unknown; previous?: unknown };
-  aiSessions?: { current?: unknown; previous?: unknown };
   bounceRate?: { current?: unknown; previous?: unknown };
   engagementRate?: { current?: unknown; previous?: unknown };
   avgEngagementTime?: { current?: unknown; previous?: unknown };
-  leads?: { current?: unknown; previous?: unknown };
+  previousIsOldSite?: unknown;
   channels?: unknown;
   queries?: unknown;
-  queriesBasis?: unknown;
-  queriesOverallPeriod?: { from?: unknown; to?: unknown } | null;
   pages?: unknown;
 };
 
@@ -109,19 +109,10 @@ function listChannels(raw: unknown): string {
   );
 }
 
-/** 검색어 목록 머리말. 옛 합계면 고른 기간 값이 아니라고 못박는다 */
-function queriesHead(facts: Facts): string {
-  if (facts.queriesBasis !== "overall") return "검색어(노출·클릭·클릭률 %):";
-  const from = facts.queriesOverallPeriod?.from;
-  const to = facts.queriesOverallPeriod?.to;
-  const span = typeof from === "string" && typeof to === "string" ? `${from} ~ ${to} ` : "";
-  return `검색어(노출·클릭·클릭률 %) — 고른 기간 값이 아님. ${span}전체 기간 합계라 이번·지난 기간 변화의 근거로 쓰지 말 것:`;
-}
-
-function listQueries(raw: unknown, head: string): string {
+function listQueries(raw: unknown): string {
   if (!Array.isArray(raw) || raw.length === 0) return "검색어(노출·클릭·클릭률 %):\n없음";
   return (
-    `${head}\n` +
+    "검색어(노출·클릭·클릭률 %):\n" +
     raw
       .slice(0, 5)
       .map((item) => {
@@ -163,17 +154,33 @@ function buildPrompt(facts: Facts): string {
     "stats_brief 도구로만 답하세요.",
     "summary: 3~4문장. 무엇이 달라졌고 무엇이 문제인지. 숫자를 직접 넣으세요.",
     "todos: 많아야 3개. 심각도 순. 근거 숫자가 없으면 빈 배열.",
+    "숫자는 모두 새 홈페이지(오픈일 이후) 값입니다. 옛 홈페이지 숫자는 들어 있지 않습니다.",
+    facts.previousIsOldSite === true
+      ? "지난 기간은 옛 홈페이지 시절이라 값을 비워 두었습니다. 지난 기간과 비교하지 말고 이번 기간 숫자만 읽으세요."
+      : null,
+    "AI에서 온 방문과 문의하기 누름은 아직 모으지 않습니다. 이 둘에 대해 말하지 마세요.",
     "",
     `기간: ${from} ~ ${to}`,
     pair(
-      "일별 사용자 합계(중복 포함)",
+      facts.visitsBasis === "period"
+        ? "방문자 (명, 기간 전체를 한 번 센 수)"
+        : "방문자 (명, 날짜별 합 · 여러 날 온 사람은 여러 번 셈)",
       num(facts.visits?.current),
       num(facts.visits?.previous)
+    ),
+    pair(
+      "일반 명사 검색 클릭 (회, 회사 이름이 아닌 검색어)",
+      num(facts.genericClicks?.current),
+      num(facts.genericClicks?.previous)
+    ),
+    pair(
+      "검색으로 온 방문 중 워크·인사이트 글로 바로 들어온 비율 (%)",
+      num(facts.searchToArticleRate?.current),
+      num(facts.searchToArticleRate?.previous)
     ),
     pair("검색 노출 (회)", num(facts.impressions?.current), num(facts.impressions?.previous)),
     pair("검색 클릭 (회)", num(facts.clicks?.current), num(facts.clicks?.previous)),
     pair("검색 클릭률 (%)", num(facts.clickRate?.current), num(facts.clickRate?.previous)),
-    pair("AI 유입 세션 (건)", num(facts.aiSessions?.current), num(facts.aiSessions?.previous)),
     pair("이탈률 (%)", num(facts.bounceRate?.current), num(facts.bounceRate?.previous)),
     pair("참여율 (%)", num(facts.engagementRate?.current), num(facts.engagementRate?.previous)),
     strPair(
@@ -181,11 +188,12 @@ function buildPrompt(facts: Facts): string {
       facts.avgEngagementTime?.current,
       facts.avgEngagementTime?.previous
     ),
-    pair("문의 건수 (건)", num(facts.leads?.current), num(facts.leads?.previous)),
     listChannels(facts.channels),
-    listQueries(facts.queries, queriesHead(facts)),
+    listQueries(facts.queries),
     listPages(facts.pages)
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
 
 function parseToolResult(response: Anthropic.Messages.Message): StatsBriefResult | null {

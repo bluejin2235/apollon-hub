@@ -194,3 +194,19 @@ const DEVICE_LABEL: Record<string, string> = {
 export function deviceLabel(name: string): string {
   return DEVICE_LABEL[name.toLowerCase()] ?? name;
 }
+
+/** 요약 화면 카드 다섯 칸의 이름과 숫자 단위 */
+export type SummaryCardId = "visit" | "genericClick" | "searchToArticle" | "ai" | "inquiryClick";
+
+export const SUMMARY_CARD_LABEL: Record<SummaryCardId, { label: string; unit: string }> = {
+  visit: { label: "방문자", unit: "명" },
+  genericClick: { label: "일반 명사 검색 클릭", unit: "회" },
+  searchToArticle: { label: "검색으로 온 방문 중 글로 바로 들어온 비율", unit: "%" },
+  ai: { label: "AI에서 온 방문", unit: "회" },
+  inquiryClick: { label: "문의하기 누름", unit: "회" }
+};
+
+/** 숫자 뒤에 단위를 붙인다. 값이 없으면 null */
+export function withUnit(value: string | null, id: SummaryCardId): string | null {
+  return value == null ? null : `${value}${SUMMARY_CARD_LABEL[id].unit}`;
+}

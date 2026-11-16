@@ -2,17 +2,14 @@
  * 요약 화면 데이터 — website_stats 행을 화면 모델로 옮긴다.
  *
  * 규칙 하나: 값이 없으면 null·빈 배열로 둔다. 0 으로 바꾸지 않는다.
- * GA4 는 사이트 공개 전이라 아직 한 줄도 없어서 대부분 「없음」으로 나온다.
  * null 을 0 으로 바꾸면 진짜 0 인지 아직 안 걷힌 것인지 구분할 수 없다.
+ *
+ * 홈페이지 API 는 고른 기간이 오픈일에 걸치면 시작을 오픈일로 당긴다.
+ * 그래서 current 는 새 사이트 값이고, previous 는 옛 사이트일 수 있다.
  */
 
-import {
-  STATS_COLORS,
-  STATS_TEXT,
-  type StatsRow,
-  type StatsScatterGroup,
-  type StatsSlice
-} from "@/components/website/stats/stats-chart";
+import { type StatsRow } from "@/components/website/stats/stats-chart";
+import { isBrandQuery } from "@/components/website/stats/search-data";
 import {
   byDate,
   intText,
@@ -20,52 +17,31 @@ import {
   pctText,
   pickRows,
   ranked,
+  readActualRange,
+  readLaunchDate,
   shortDate,
-  sparkOf,
+  SITE_LAUNCH_DATE,
   sumByKey,
   sumField,
   weightedField,
-  type DeltaTone,
-  type StatsMetric
+  type DeltaTone
 } from "@/components/website/stats/stats-data";
-import { channelLabel, countryLabel, deviceLabel } from "@/components/website/stats/stats-labels";
+import { withUnit, type SummaryCardId } from "@/components/website/stats/stats-labels";
 import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
-export const SUMMARY_KINDS = [
-  "daily",
-  "channel",
-  "country",
-  "device",
-  "page",
-  "query",
-  "event"
-];
+export const SUMMARY_KINDS = ["daily", "channel", "page", "query", "landing_channel"];
 
-/** 아직 안 걷힌 자리에 붙이는 한 줄 */
-export const SUMMARY_EMPTY_HINT = "사이트 공개 후 수집이 시작됩니다.";
+const SEARCH_SOURCES = ["gsc", "gsc_http"] as const;
 
-/** 문의 수를 세는 GA4 이벤트 — apollon-website 의 submitInquiry 가 보낸다 */
-const LEAD_EVENT = "generate_lead";
-
-/**
- * GA4 기본 채널 그룹에는 AI 항목이 없다. AI 답변으로 들어온 방문은 대개
- * Referral 에 섞여 따로 셀 수 없다. 채널 이름에 AI 가 생기면 그때 잡히도록
- * 열어만 두고, 지금은 걸리는 것이 없어 「—」로 나온다.
- */
-const AI_CHANNEL = /(^|[^a-z])ai([^a-z]|$)/i;
+/** GA4 기본 채널 그룹에서 검색엔진으로 온 방문 */
+const SEARCH_CHANNEL = "Organic Search";
 
 type Rows = StatsPoint[];
-type Metric = StatsMetric;
+type When = "current" | "previous";
 
-/** 요약 화면은 지금 사이트 값만 본다 */
-function pick(
-  bundle: StatsBundle | null,
-  kind: string,
-  source: string,
-  when: "current" | "previous"
-): Rows {
-  return pickRows(bundle, kind, source, when);
+function ga4(bundle: StatsBundle | null, kind: string, when: When): Rows {
+  return pickRows(bundle, kind, "ga4", when);
 }
 
 const total = sumField;
@@ -82,107 +58,123 @@ function readPeriodUsers(bundle: StatsBundle | null): PeriodUsersCompare | null 
   return null;
 }
 
-export type SummaryKpi = {
-  id: string;
+/* ─────────────────────── 카드 셋 ─────────────────────── */
+
+/** 방문자 — 기간 전체를 한 번 센 값. 없으면 날짜별 합으로 대신한다 */
+function visitsOf(bundle: StatsBundle | null): {
+  current: number | null;
+  previous: number | null;
+  periodUsers: boolean;
+} {
+  const periodUsers = readPeriodUsers(bundle);
+  if (periodUsers) {
+    return {
+      current: periodUsers.current,
+      previous: typeof periodUsers.previous === "number" ? periodUsers.previous : null,
+      periodUsers: true
+    };
+  }
+  return {
+    current: total(ga4(bundle, "daily", "current"), "users"),
+    previous: total(ga4(bundle, "daily", "previous"), "users"),
+    periodUsers: false
+  };
+}
+
+/** 회사 이름이 아닌 검색어의 클릭 합. 검색어 행이 하나도 없으면 null */
+function genericClicksOf(bundle: StatsBundle | null, when: When): number | null {
+  const rows = pickRows(bundle, "query", SEARCH_SOURCES, when);
+  if (rows.length === 0) return null;
+  let sum = 0;
+  for (const row of rows) {
+    const query = row.key?.trim();
+    if (!query || isBrandQuery(query) || typeof row.clicks !== "number") continue;
+    sum += row.clicks;
+  }
+  return sum;
+}
+
+/** 워크·인사이트 상세 글인가. 국문은 접두어가 없고 영문만 /en 으로 시작한다 */
+function isArticlePath(raw: string): boolean {
+  let path = raw.split("?")[0].split("#")[0].trim();
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  if (path === "/en") return false;
+  if (path.startsWith("/en/")) path = path.slice(3);
+  return /^\/(works|insight)\/[^/]+$/.test(path);
+}
+
+/**
+ * 검색으로 온 방문 중 워크·인사이트 글에서 시작한 비율 (0~1).
+ * 들어온 페이지를 모르는 방문((not set)·빈 값)은 분모에서도 뺀다.
+ */
+function searchToArticleOf(bundle: StatsBundle | null, when: When): number | null {
+  let search = 0;
+  let article = 0;
+  for (const row of ga4(bundle, "landing_channel", when)) {
+    if (row.key2?.trim() !== SEARCH_CHANNEL || typeof row.sessions !== "number") continue;
+    const path = row.key?.trim() ?? "";
+    if (!path.startsWith("/")) continue;
+    search += row.sessions;
+    if (isArticlePath(path)) article += row.sessions;
+  }
+  return search > 0 ? article / search : null;
+}
+
+export type SummaryCard = {
+  id: SummaryCardId;
   /** 없으면 null — 화면은 「—」로 그린다 */
   value: string | null;
   delta: string | null;
   tone: DeltaTone;
   previous: string | null;
-  /** 기간 전체 방문자를 썼는지. 방문자 카드만 */
+  /** 방문자 카드만 — 기간 전체를 한 번 센 값인지 */
   periodUsers?: boolean;
-  /** 옛 사이트와 새 사이트를 더한 값인지 */
-  summed?: boolean;
-  sparkColor: string;
-  /** 두 점 미만이면 빈 배열 — 선이 그려지지 않는다 */
-  spark: StatsRow[];
 };
 
-export function buildKpis(bundle: StatsBundle | null): SummaryKpi[] {
-  const ga4 = pick(bundle, "daily", "ga4", "current");
-  const ga4Prev = pick(bundle, "daily", "ga4", "previous");
-  const gsc = pickRows(bundle, "daily", ["gsc", "gsc_http"], "current");
-  const gscPrev = pickRows(bundle, "daily", ["gsc", "gsc_http"], "previous");
-
-  const aiNow = pick(bundle, "channel", "ga4", "current").filter((row) =>
-    AI_CHANNEL.test(row.key ?? "")
-  );
-  const aiPrev = pick(bundle, "channel", "ga4", "previous").filter((row) =>
-    AI_CHANNEL.test(row.key ?? "")
-  );
-
-  const leadNow = pick(bundle, "event", "ga4", "current").filter((row) => row.key === LEAD_EVENT);
-  const leadPrev = pick(bundle, "event", "ga4", "previous").filter((row) => row.key === LEAD_EVENT);
-
-  const periodUsers = readPeriodUsers(bundle);
-  const visits = periodUsers ? periodUsers.current : total(ga4, "users");
-  const visitsPrev = periodUsers
-    ? typeof periodUsers.previous === "number"
-      ? periodUsers.previous
-      : null
-    : total(ga4Prev, "users");
-  const impressions = total(gsc, "impressions");
-  const impressionsPrev = total(gscPrev, "impressions");
-  const ai = total(aiNow, "sessions");
-  const aiBefore = total(aiPrev, "sessions");
-  const lead = total(leadNow, "events");
-  const leadBefore = total(leadPrev, "events");
-
-  // 참여율의 반대가 이탈률이다
-  const engaged = weighted(ga4, "engagement_rate", "sessions");
-  const engagedPrev = weighted(ga4Prev, "engagement_rate", "sessions");
-  const bounce = engaged == null ? null : 1 - engaged;
-  const bouncePrev = engagedPrev == null ? null : 1 - engagedPrev;
+export function buildSummaryCards(bundle: StatsBundle | null): SummaryCard[] {
+  const visits = visitsOf(bundle);
+  const generic = genericClicksOf(bundle, "current");
+  const genericPrev = genericClicksOf(bundle, "previous");
+  const rate = searchToArticleOf(bundle, "current");
+  const ratePrev = searchToArticleOf(bundle, "previous");
+  const pct = (value: number | null) => pctText(value)?.replace(/%$/, "") ?? null;
 
   return [
     {
       id: "visit",
-      value: intText(visits),
-      ...makeDelta(visits, visitsPrev, "ratio", true, intText(visitsPrev)),
-      periodUsers: periodUsers != null,
-      summed: periodUsers != null && (periodUsers.current_summed === true || periodUsers.previous_summed === true),
-      sparkColor: STATS_COLORS[0],
-      spark: sparkOf(ga4, "users")
+      value: intText(visits.current),
+      ...makeDelta(
+        visits.current,
+        visits.previous,
+        "ratio",
+        true,
+        withUnit(intText(visits.previous), "visit")
+      ),
+      periodUsers: visits.periodUsers
     },
     {
-      id: "imp",
-      value: intText(impressions),
-      ...makeDelta(impressions, impressionsPrev, "ratio", true, intText(impressionsPrev)),
-      sparkColor: STATS_COLORS[0],
-      spark: sparkOf(gsc, "impressions")
+      id: "genericClick",
+      value: intText(generic),
+      ...makeDelta(generic, genericPrev, "ratio", true, withUnit(intText(genericPrev), "genericClick"))
     },
     {
-      id: "ai",
-      value: intText(ai),
-      ...makeDelta(ai, aiBefore, "ratio", true, intText(aiBefore)),
-      sparkColor: STATS_COLORS[2],
-      spark: sparkOf(aiNow, "sessions")
-    },
-    {
-      id: "bounce",
-      value: pctText(bounce),
-      ...makeDelta(bounce, bouncePrev, "point", false, pctText(bouncePrev)),
-      sparkColor: "#b93b3b",
-      spark: sparkOf(ga4, "engagement_rate")
-    },
-    {
-      id: "lead",
-      value: intText(lead),
-      ...makeDelta(lead, leadBefore, "ratio", true, intText(leadBefore)),
-      sparkColor: STATS_TEXT,
-      spark: sparkOf(leadNow, "events")
+      id: "searchToArticle",
+      value: pct(rate),
+      ...makeDelta(rate, ratePrev, "point", true, withUnit(pct(ratePrev), "searchToArticle"))
     }
   ];
 }
 
-/** 방문 추이 — 실선 이번 기간, 점선 지난 기간. 같은 자리끼리 맞춘다 */
+/* ─────────────────────── 방문자 추이 ─────────────────────── */
+
+/** 실선 이번 기간, 점선 앞 기간. 같은 순번 날짜끼리 맞춘다 */
 export function buildTrend(bundle: StatsBundle | null): StatsRow[] {
-  const current = [...pick(bundle, "daily", "ga4", "current")]
+  const current = [...ga4(bundle, "daily", "current")]
     .filter((row) => typeof row.users === "number")
     .sort(byDate);
   if (current.length === 0) return [];
 
-  const previous = [...pick(bundle, "daily", "ga4", "previous")]
+  const previous = [...ga4(bundle, "daily", "previous")]
     .filter((row) => typeof row.users === "number")
     .sort(byDate);
 
@@ -191,167 +183,6 @@ export function buildTrend(bundle: StatsBundle | null): StatsRow[] {
     current: row.users as number,
     previous: previous[index]?.users ?? null
   }));
-}
-
-/** 경로별 비중 */
-export function buildSourcePie(bundle: StatsBundle | null): StatsSlice[] {
-  return ranked(sumByKey(pick(bundle, "channel", "ga4", "current"), "sessions")).map((item) => ({
-    ...item,
-    name: channelLabel(item.name)
-  }));
-}
-
-export type SeriesSpec = { key: string; name: string; color: string };
-
-/** 경로별 일별 추이 — 날짜를 가로로, 경로를 계열로 편다 */
-export function buildSourceDaily(bundle: StatsBundle | null): {
-  rows: StatsRow[];
-  series: SeriesSpec[];
-} {
-  const source = pick(bundle, "channel", "ga4", "current");
-  const names = ranked(sumByKey(source, "sessions"))
-    .slice(0, STATS_COLORS.length)
-    .map((item) => item.name);
-  if (names.length === 0) return { rows: [], series: [] };
-
-  const wanted = new Set(names);
-  const byDay = new Map<string, StatsRow>();
-  for (const row of [...source].sort(byDate)) {
-    const name = row.key?.trim() || "(없음)";
-    if (!wanted.has(name) || typeof row.sessions !== "number") continue;
-    let bucket = byDay.get(row.date);
-    if (!bucket) {
-      bucket = { date: shortDate(row.date) };
-      byDay.set(row.date, bucket);
-    }
-    bucket[name] = ((bucket[name] as number | undefined) ?? 0) + row.sessions;
-  }
-
-  return {
-    rows: [...byDay.values()],
-    series: names.map((name, index) => ({
-      key: name,
-      name: channelLabel(name),
-      color: STATS_COLORS[index % STATS_COLORS.length]
-    }))
-  };
-}
-
-/**
- * 경로별 질.
- * 가로 평균 세션 시간(초) · 세로 참여율(%) · 원 크기 세션 수.
- * 목업은 세로를 「본 페이지 수」로 뒀지만 GA4 channel 리포트에 페이지 수가
- * 없다. 있는 값으로 바꾸고 이름도 함께 바꿨다.
- */
-export function buildSourceQuality(bundle: StatsBundle | null): StatsScatterGroup[] {
-  const source = pick(bundle, "channel", "ga4", "current");
-  const names = ranked(sumByKey(source, "sessions")).map((item) => item.name);
-
-  const groups: StatsScatterGroup[] = [];
-  names.forEach((name, index) => {
-    const rows = source.filter((row) => (row.key?.trim() || "(없음)") === name);
-    const seconds = weighted(rows, "avg_seconds", "sessions");
-    const rate = weighted(rows, "engagement_rate", "sessions");
-    const sessions = total(rows, "sessions");
-    if (seconds == null || rate == null || sessions == null) return;
-    groups.push({
-      name: channelLabel(name),
-      color: STATS_COLORS[index % STATS_COLORS.length],
-      points: [{ x: Math.round(seconds), y: Math.round(rate * 100), z: sessions }]
-    });
-  });
-
-  return groups;
-}
-
-/** 국가 — 많은 순 다섯 개와 나머지 */
-export function buildCountry(bundle: StatsBundle | null): StatsRow[] {
-  const all = ranked(sumByKey(pick(bundle, "country", "ga4", "current"), "users"));
-  if (all.length === 0) return [];
-
-  const head = all.slice(0, 5);
-  const rest = all.slice(5);
-  const rows: StatsRow[] = head.map((item) => ({ name: countryLabel(item.name), value: item.value }));
-  if (rest.length > 0) {
-    rows.push({ name: "기타", value: rest.reduce((acc, item) => acc + item.value, 0) });
-  }
-  return rows;
-}
-
-export function buildDevice(bundle: StatsBundle | null): StatsSlice[] {
-  return ranked(sumByKey(pick(bundle, "device", "ga4", "current"), "users")).map(
-    (item, index) => ({
-      name: deviceLabel(item.name),
-      value: item.value,
-      color: STATS_COLORS[index % STATS_COLORS.length]
-    })
-  );
-}
-
-/**
- * 언어별 페이지.
- * apollon-website 는 localePrefix 가 as-needed 라 국문에는 접두어가 없고
- * 영문만 /en 으로 시작한다. 따로 언어 표가 없어 경로로 가른다.
- */
-export function buildLanguage(bundle: StatsBundle | null): StatsSlice[] {
-  const rows = pick(bundle, "page", "ga4", "current");
-  let ko = 0;
-  let en = 0;
-  let seen = false;
-
-  for (const row of rows) {
-    if (typeof row.views !== "number") continue;
-    seen = true;
-    const path = row.key ?? "";
-    if (path === "/en" || path.startsWith("/en/")) en += row.views;
-    else ko += row.views;
-  }
-  if (!seen) return [];
-
-  const sum = ko + en;
-  const label = (name: string, value: number) =>
-    sum > 0 ? `${name} ${Math.round((value / sum) * 100)}%` : name;
-
-  return [
-    { name: label("국문", ko), value: ko, color: STATS_COLORS[0] },
-    { name: label("영문", en), value: en, color: STATS_COLORS[2] }
-  ];
-}
-
-export type SummaryKeywords = {
-  /** 노출 많은 순 다섯 개 */
-  rows: StatsRow[];
-  /** 고른 기간의 날짜 행. 옛 합계로 채우지 않으므로 overall 은 더 이상 쓰지 않는다 */
-  basis: "period" | "overall";
-  /** 옛 합계 기간. 이제 항상 null */
-  overallPeriod: { from: string; to: string } | null;
-};
-
-/**
- * 검색어 — 노출 많은 순 다섯 개.
- * 고른 기간의 날짜 행만 쓴다. 없으면 빈 목록이다.
- */
-export function buildKeywords(bundle: StatsBundle | null): SummaryKeywords {
-  const dated = pickRows(bundle, "query", ["gsc", "gsc_http"], "current");
-  const map = new Map<string, { impressions: number; clicks: number }>();
-
-  for (const row of dated) {
-    const key = row.key?.trim();
-    if (!key) continue;
-    const bucket = map.get(key) ?? { impressions: 0, clicks: 0 };
-    if (typeof row.impressions === "number") bucket.impressions += row.impressions;
-    if (typeof row.clicks === "number") bucket.clicks += row.clicks;
-    map.set(key, bucket);
-  }
-
-  return {
-    rows: [...map.entries()]
-      .sort((a, b) => b[1].impressions - a[1].impressions)
-      .slice(0, 5)
-      .map(([name, value]) => ({ name, impressions: value.impressions, clicks: value.clicks })),
-    basis: "period",
-    overallPeriod: null
-  };
 }
 
 /* ─────────────────────── 루나 총평 · 할 일에 넘길 숫자 ─────────────────────── */
@@ -366,45 +197,70 @@ function ratePct(rate: number | null, digits = 1): number | null {
 /** 초 → 「1분 12초」. 루나에게 넘길 때만 쓴다 */
 function durationKo(seconds: number | null): string | null {
   if (seconds == null || !Number.isFinite(seconds)) return null;
-  const total = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
+  const all = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(all / 60);
+  const rest = all % 60;
   if (minutes <= 0) return `${rest}초`;
   if (rest === 0) return `${minutes}분`;
   return `${minutes}분 ${rest}초`;
 }
 
+type Pair<T = number> = { current: T | null; previous: T | null };
+
 export type SummaryBriefFacts = {
   from: string;
   to: string;
-  visits: { current: number | null; previous: number | null };
-  impressions: { current: number | null; previous: number | null };
-  clicks: { current: number | null; previous: number | null };
+  /** 방문자가 기간 전체를 한 번 센 값이면 period, 날짜별 합이면 daily_sum */
+  visitsBasis: "period" | "daily_sum";
+  visits: Pair;
+  genericClicks: Pair;
+  /** 검색으로 온 방문 중 글로 바로 들어온 비율 (%) */
+  searchToArticleRate: Pair;
+  impressions: Pair;
+  clicks: Pair;
   /** 검색 클릭률 (%). 노출이 있을 때만 */
-  clickRate: { current: number | null; previous: number | null };
-  aiSessions: { current: number | null; previous: number | null };
+  clickRate: Pair;
   /** 이탈률 (%). 소수 0.56 이 아니라 56 */
-  bounceRate: { current: number | null; previous: number | null };
+  bounceRate: Pair;
   /** 참여율 (%) */
-  engagementRate: { current: number | null; previous: number | null };
-  /** 평균 세션 시간(averageSessionDuration) — 「1분 12초」 문자열 */
-  avgEngagementTime: { current: string | null; previous: string | null };
-  leads: { current: number | null; previous: number | null };
+  engagementRate: Pair;
+  /** 평균 세션 시간 — 「1분 12초」 문자열 */
+  avgEngagementTime: Pair<string>;
+  /** 앞 기간이 오픈 전(옛 사이트)이라 앞 기간 값을 모두 비웠는지 */
+  previousIsOldSite: boolean;
   channels: { name: string; sessions: number }[];
   queries: { name: string; impressions: number; clicks: number; clickRate: number | null }[];
-  /**
-   * queries 가 무엇의 값인지.
-   * overall 이면 날짜 없는 옛 합계라 고른 기간(from~to)의 값이 아니다.
-   */
-  queriesBasis: "period" | "overall";
-  /** queriesBasis 가 overall 일 때 그 합계가 담은 기간 */
-  queriesOverallPeriod: { from: string; to: string } | null;
   pages: { path: string; views: number }[];
 };
 
+/** 검색어 — 노출 많은 순 다섯 개. 고른 기간의 날짜 행만 쓴다 */
+function topQueries(bundle: StatsBundle | null): SummaryBriefFacts["queries"] {
+  const map = new Map<string, { impressions: number; clicks: number }>();
+  for (const row of pickRows(bundle, "query", SEARCH_SOURCES, "current")) {
+    const key = row.key?.trim();
+    if (!key) continue;
+    const bucket = map.get(key) ?? { impressions: 0, clicks: 0 };
+    if (typeof row.impressions === "number") bucket.impressions += row.impressions;
+    if (typeof row.clicks === "number") bucket.clicks += row.clicks;
+    map.set(key, bucket);
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[1].impressions - a[1].impressions)
+    .slice(0, 5)
+    .map(([name, value]) => ({
+      name,
+      impressions: value.impressions,
+      clicks: value.clicks,
+      clickRate: value.impressions > 0 ? ratePct(value.clicks / value.impressions) : null
+    }));
+}
+
 /**
  * 루나에게 넘길 숫자·이름만 뽑는다. 본문·긴 설명은 넣지 않는다.
- * 비율은 백분율, 시간은 「분·초」 문자열. 기간에 값이 없으면 null.
+ *
+ * 새 사이트 숫자만 넘긴다.
+ *   · 고른 기간이 통째로 오픈 전이면 null — 루나를 부르지 않는다.
+ *   · 앞 기간에 오픈 전 날짜가 들어 있으면 앞 기간 값은 모두 비운다.
  */
 export function buildSummaryBriefFacts(
   bundle: StatsBundle | null,
@@ -413,93 +269,70 @@ export function buildSummaryBriefFacts(
 ): SummaryBriefFacts | null {
   if (!bundle) return null;
 
-  const ga4 = pick(bundle, "daily", "ga4", "current");
-  const ga4Prev = pick(bundle, "daily", "ga4", "previous");
-  const gsc = pickRows(bundle, "daily", ["gsc", "gsc_http"], "current");
-  const gscPrev = pickRows(bundle, "daily", ["gsc", "gsc_http"], "previous");
+  const launch = readLaunchDate(bundle) ?? SITE_LAUNCH_DATE;
+  const range = readActualRange(bundle);
+  const actualFrom = range?.actualFrom ?? from;
+  const actualTo = range?.actualTo ?? to;
+  const prevFrom = range?.prevFrom ?? null;
+  if (launch && actualTo < launch) return null;
+  const previousIsOldSite = launch
+    ? (range?.prevIncludesPreLaunch ?? (prevFrom != null && prevFrom < launch))
+    : false;
+  const prev = <T>(value: T | null): T | null => (previousIsOldSite ? null : value);
 
-  const periodUsers = readPeriodUsers(bundle);
-  const visits = periodUsers ? periodUsers.current : total(ga4, "users");
-  const visitsPrev = periodUsers
-    ? typeof periodUsers.previous === "number"
-      ? periodUsers.previous
-      : null
-    : total(ga4Prev, "users");
+  const daily = ga4(bundle, "daily", "current");
+  const dailyPrev = ga4(bundle, "daily", "previous");
+  const gsc = pickRows(bundle, "daily", SEARCH_SOURCES, "current");
+  const gscPrev = pickRows(bundle, "daily", SEARCH_SOURCES, "previous");
+
+  const visits = visitsOf(bundle);
   const impressions = total(gsc, "impressions");
-  if (visits == null && impressions == null) return null;
+  if (visits.current == null && impressions == null) return null;
 
-  const aiNow = pick(bundle, "channel", "ga4", "current").filter((row) =>
-    AI_CHANNEL.test(row.key ?? "")
-  );
-  const aiPrev = pick(bundle, "channel", "ga4", "previous").filter((row) =>
-    AI_CHANNEL.test(row.key ?? "")
-  );
-  const leadNow = pick(bundle, "event", "ga4", "current").filter((row) => row.key === LEAD_EVENT);
-  const leadPrev = pick(bundle, "event", "ga4", "previous").filter((row) => row.key === LEAD_EVENT);
-
-  const engaged = weighted(ga4, "engagement_rate", "sessions");
-  const engagedPrev = weighted(ga4Prev, "engagement_rate", "sessions");
-  const clicksNow = total(gsc, "clicks");
-  const clicksPrev = total(gscPrev, "clicks");
   const impressionsPrev = total(gscPrev, "impressions");
-
-  const channels = ranked(sumByKey(pick(bundle, "channel", "ga4", "current"), "sessions"))
-    .slice(0, 5)
-    .map((item) => ({ name: item.name, sessions: item.value }));
-
-  const keywords = buildKeywords(bundle);
-  const queries = keywords.rows
-    .slice(0, 5)
-    .map((row) => {
-      const imp = Number(row.impressions) || 0;
-      const clk = Number(row.clicks) || 0;
-      return {
-        name: String(row.name),
-        impressions: imp,
-        clicks: clk,
-        clickRate: imp > 0 ? ratePct(clk / imp) : null
-      };
-    });
-
-  const pages = ranked(sumByKey(pick(bundle, "page", "ga4", "current"), "views"))
-    .slice(0, 5)
-    .map((item) => ({ path: item.name, views: item.value }));
+  const clicks = total(gsc, "clicks");
+  const clicksPrev = total(gscPrev, "clicks");
+  const engaged = weighted(daily, "engagement_rate", "sessions");
+  const engagedPrev = weighted(dailyPrev, "engagement_rate", "sessions");
+  const clickRate = (imp: number | null, clk: number | null) =>
+    imp != null && imp > 0 && clk != null ? ratePct(clk / imp) : null;
 
   return {
-    from,
-    to,
-    visits: { current: visits, previous: visitsPrev },
-    impressions: { current: impressions, previous: impressionsPrev },
-    clicks: { current: clicksNow, previous: clicksPrev },
-    clickRate: {
-      current:
-        impressions != null && impressions > 0 && clicksNow != null
-          ? ratePct(clicksNow / impressions)
-          : null,
-      previous:
-        impressionsPrev != null && impressionsPrev > 0 && clicksPrev != null
-          ? ratePct(clicksPrev / impressionsPrev)
-          : null
+    from: actualFrom,
+    to: actualTo,
+    visitsBasis: visits.periodUsers ? "period" : "daily_sum",
+    visits: { current: visits.current, previous: prev(visits.previous) },
+    genericClicks: {
+      current: genericClicksOf(bundle, "current"),
+      previous: prev(genericClicksOf(bundle, "previous"))
     },
-    aiSessions: { current: total(aiNow, "sessions"), previous: total(aiPrev, "sessions") },
+    searchToArticleRate: {
+      current: ratePct(searchToArticleOf(bundle, "current")),
+      previous: prev(ratePct(searchToArticleOf(bundle, "previous")))
+    },
+    impressions: { current: impressions, previous: prev(impressionsPrev) },
+    clicks: { current: clicks, previous: prev(clicksPrev) },
+    clickRate: {
+      current: clickRate(impressions, clicks),
+      previous: prev(clickRate(impressionsPrev, clicksPrev))
+    },
     bounceRate: {
       current: engaged == null ? null : ratePct(1 - engaged),
-      previous: engagedPrev == null ? null : ratePct(1 - engagedPrev)
+      previous: prev(engagedPrev == null ? null : ratePct(1 - engagedPrev))
     },
-    engagementRate: {
-      current: ratePct(engaged),
-      previous: ratePct(engagedPrev)
-    },
+    engagementRate: { current: ratePct(engaged), previous: prev(ratePct(engagedPrev)) },
     avgEngagementTime: {
-      current: durationKo(weighted(ga4, "avg_seconds", "sessions")),
-      previous: durationKo(weighted(ga4Prev, "avg_seconds", "sessions"))
+      current: durationKo(weighted(daily, "avg_seconds", "sessions")),
+      previous: prev(durationKo(weighted(dailyPrev, "avg_seconds", "sessions")))
     },
-    leads: { current: total(leadNow, "events"), previous: total(leadPrev, "events") },
-    channels,
-    queries,
-    queriesBasis: keywords.basis,
-    queriesOverallPeriod: keywords.overallPeriod,
-    pages
+    previousIsOldSite,
+    channels: ranked(sumByKey(ga4(bundle, "channel", "current"), "sessions"))
+      .slice(0, 5)
+      .map((item) => ({ name: item.name, sessions: item.value })),
+    queries: topQueries(bundle),
+    pages: ranked(sumByKey(ga4(bundle, "page", "current"), "views"))
+      .slice(0, 5)
+      .map((item) => ({ path: item.name, views: item.value }))
   };
 }
 
