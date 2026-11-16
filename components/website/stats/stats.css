@@ -289,6 +289,11 @@
   max-width: 78ch;
 }
 
+/* 자료가 아직 덜 들어왔다는 안내 */
+.ws-note-warn {
+  color: var(--warn);
+}
+
 /* 목업의 .foot — 아래 붙는 각주 */
 .ws-foot {
   font-size: 11.5px;

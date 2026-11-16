@@ -6,7 +6,7 @@
  * 「—」로 바꾸는 일은 화면 그리는 자리에서 dash() 로 한다.
  */
 
-import type { StatsBundle, StatsPoint } from "@/lib/website/stats";
+import type { MetricCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 export type StatsMetric = Extract<
   keyof StatsPoint,
@@ -127,6 +127,52 @@ export function readActualRange(bundle: StatsBundle | null): ActualCompareRange 
     };
   }
   return null;
+}
+
+/**
+ * 앞 기간이 옛 사이트(오픈 전 날짜 포함)인가. 요약 카드와 루나 요약이 같은 기준을 쓴다.
+ * 응답의 prev_includes_pre_launch 가 먼저고, 옛 응답이면 앞 기간 시작과 오픈일을 견준다.
+ */
+export function previousIsOldSite(bundle: StatsBundle | null): boolean {
+  const launch = readLaunchDate(bundle) ?? SITE_LAUNCH_DATE;
+  if (!launch) return false;
+  const range = readActualRange(bundle);
+  if (!range) return false;
+  return range.prevIncludesPreLaunch ?? range.prevFrom < launch;
+}
+
+/** 응답의 합계 비교값 하나. 옛 응답이라 칸이 없으면 null */
+export function readMetricCompare(
+  bundle: StatsBundle | null,
+  field: "lets_talk_click" | "generate_lead"
+): MetricCompare | null {
+  if (!bundle) return null;
+  for (const result of Object.values(bundle)) {
+    const value = result?.[field];
+    if (value && typeof value === "object" && "current" in value) return value;
+  }
+  return null;
+}
+
+/** 구글 검색 자료가 들어온 마지막 날. 옛 응답이거나 자료가 없으면 null */
+export function readGscLastDate(bundle: StatsBundle | null): string | null {
+  if (!bundle) return null;
+  for (const result of Object.values(bundle)) {
+    const value = result?.gsc_last_date;
+    if (typeof value === "string" && ISO_DATE.test(value)) return value;
+  }
+  return null;
+}
+
+/**
+ * 고른 기간 끝이 구글 자료 마지막 날보다 뒤면 그 날을 돌려준다.
+ * 화면은 이 값이 있을 때만 「○월 ○일까지 들어왔습니다」를 쓴다.
+ */
+export function gscLagDate(bundle: StatsBundle | null): string | null {
+  const last = readGscLastDate(bundle);
+  const range = readActualRange(bundle);
+  if (!last || !range) return null;
+  return range.actualTo > last ? last : null;
 }
 
 export function launchMark(

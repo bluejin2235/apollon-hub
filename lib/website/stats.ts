@@ -66,6 +66,11 @@ export type StatsQueryResult = {
   period_users?: PeriodUsersCompare;
   /** 고른 기간 + 앞 기간 안의 조치 기록. 옛 응답에는 없다 */
   actions?: StatsAction[];
+  /** Let's Talk 문의하기 누름 · 문의 실제 보냄. 옛 응답에는 없다 */
+  lets_talk_click?: MetricCompare;
+  generate_lead?: MetricCompare;
+  /** 구글 검색 자료가 들어온 마지막 날. 옛 응답에는 없고, 자료가 없으면 null */
+  gsc_last_date?: string | null;
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];

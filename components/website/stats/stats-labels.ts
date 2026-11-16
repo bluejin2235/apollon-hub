@@ -221,6 +221,17 @@ export function actionCategoryLabel(category: StatsActionCategory | null): strin
   return category ? ACTION_CATEGORY_LABEL[category] : null;
 }
 
+/** 문의하기 카드 아래 줄 — 누른 것 중 실제로 보낸 문의 */
+export function inquiryLeadText(count: number): string {
+  return `실제 문의 ${count.toLocaleString("ko-KR")}건`;
+}
+
+/** 구글 검색 자료가 늦게 들어올 때의 안내. 2026-11-13 → 11월 13일 */
+export function gscUntilText(iso: string): string {
+  const [, month, day] = iso.split("-").map(Number);
+  return `구글 검색 숫자는 ${month}월 ${day}일까지 들어왔습니다`;
+}
+
 /** 숫자 뒤에 단위를 붙인다. 값이 없으면 null */
 export function withUnit(value: string | null, id: SummaryCardId): string | null {
   return value == null ? null : `${value}${SUMMARY_CARD_LABEL[id].unit}`;

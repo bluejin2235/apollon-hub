@@ -16,9 +16,11 @@ import {
   makeDelta,
   pctText,
   pickRows,
+  previousIsOldSite,
   ranked,
   readActualRange,
   readLaunchDate,
+  readMetricCompare,
   shortDate,
   SITE_LAUNCH_DATE,
   sumByKey,
@@ -26,7 +28,11 @@ import {
   weightedField,
   type DeltaTone
 } from "@/components/website/stats/stats-data";
-import { withUnit, type SummaryCardId } from "@/components/website/stats/stats-labels";
+import {
+  inquiryLeadText,
+  withUnit,
+  type SummaryCardId
+} from "@/components/website/stats/stats-labels";
 import type { PeriodUsersCompare, StatsBundle, StatsPoint } from "@/lib/website/stats";
 
 /** 요약 화면이 쓰는 kind 전부. 한 번에 받아 온다 */
@@ -129,27 +135,32 @@ export type SummaryCard = {
   previous: string | null;
   /** 방문자 카드만 — 기간 전체를 한 번 센 값인지 */
   periodUsers?: boolean;
+  /** 카드 아래 작은 줄. 없으면 카드 설명을 쓴다 */
+  sub?: string | null;
 };
 
+/**
+ * 숫자가 있는 카드들. 문의하기 누름은 응답에 값이 있을 때만 들어간다 — 옛 응답이면
+ * 화면이 「준비 중」으로 둔다.
+ * 앞 기간이 옛 사이트면 앞 기간 값과 증감을 비운다. 루나 요약과 같은 기준이다.
+ */
 export function buildSummaryCards(bundle: StatsBundle | null): SummaryCard[] {
+  const oldSite = previousIsOldSite(bundle);
+  const prev = (value: number | null) => (oldSite ? null : value);
+
   const visits = visitsOf(bundle);
+  const visitsPrev = prev(visits.previous);
   const generic = genericClicksOf(bundle, "current");
-  const genericPrev = genericClicksOf(bundle, "previous");
+  const genericPrev = prev(genericClicksOf(bundle, "previous"));
   const rate = searchToArticleOf(bundle, "current");
-  const ratePrev = searchToArticleOf(bundle, "previous");
+  const ratePrev = prev(searchToArticleOf(bundle, "previous"));
   const pct = (value: number | null) => pctText(value)?.replace(/%$/, "") ?? null;
 
-  return [
+  const cards: SummaryCard[] = [
     {
       id: "visit",
       value: intText(visits.current),
-      ...makeDelta(
-        visits.current,
-        visits.previous,
-        "ratio",
-        true,
-        withUnit(intText(visits.previous), "visit")
-      ),
+      ...makeDelta(visits.current, visitsPrev, "ratio", true, withUnit(intText(visitsPrev), "visit")),
       periodUsers: visits.periodUsers
     },
     {
@@ -163,6 +174,19 @@ export function buildSummaryCards(bundle: StatsBundle | null): SummaryCard[] {
       ...makeDelta(rate, ratePrev, "point", true, withUnit(pct(ratePrev), "searchToArticle"))
     }
   ];
+
+  const click = readMetricCompare(bundle, "lets_talk_click");
+  if (click && typeof click.current === "number") {
+    const clickPrev = prev(click.previous);
+    const lead = readMetricCompare(bundle, "generate_lead")?.current;
+    cards.push({
+      id: "inquiryClick",
+      value: intText(click.current),
+      ...makeDelta(click.current, clickPrev, "ratio", true, withUnit(intText(clickPrev), "inquiryClick")),
+      sub: typeof lead === "number" ? inquiryLeadText(lead) : null
+    });
+  }
+  return cards;
 }
 
 /* ─────────────────────── 방문자 추이 ─────────────────────── */
@@ -273,12 +297,9 @@ export function buildSummaryBriefFacts(
   const range = readActualRange(bundle);
   const actualFrom = range?.actualFrom ?? from;
   const actualTo = range?.actualTo ?? to;
-  const prevFrom = range?.prevFrom ?? null;
   if (launch && actualTo < launch) return null;
-  const previousIsOldSite = launch
-    ? (range?.prevIncludesPreLaunch ?? (prevFrom != null && prevFrom < launch))
-    : false;
-  const prev = <T>(value: T | null): T | null => (previousIsOldSite ? null : value);
+  const oldSite = previousIsOldSite(bundle);
+  const prev = <T>(value: T | null): T | null => (oldSite ? null : value);
 
   const daily = ga4(bundle, "daily", "current");
   const dailyPrev = ga4(bundle, "daily", "previous");
@@ -325,7 +346,7 @@ export function buildSummaryBriefFacts(
       current: durationKo(weighted(daily, "avg_seconds", "sessions")),
       previous: prev(durationKo(weighted(dailyPrev, "avg_seconds", "sessions")))
     },
-    previousIsOldSite,
+    previousIsOldSite: oldSite,
     channels: ranked(sumByKey(ga4(bundle, "channel", "current"), "sessions"))
       .slice(0, 5)
       .map((item) => ({ name: item.name, sessions: item.value })),

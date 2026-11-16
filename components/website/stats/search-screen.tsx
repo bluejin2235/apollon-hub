@@ -39,12 +39,14 @@ import {
   STATS_TEXT
 } from "@/components/website/stats/stats-chart";
 import {
+  gscLagDate,
   hasValue,
   intText,
   launchMark,
   periodText,
   readLaunchDate
 } from "@/components/website/stats/stats-data";
+import { gscUntilText } from "@/components/website/stats/stats-labels";
 import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
 
 /** 기간 안에 값이 없을 때 — 기간을 넓히면 나온다 */
@@ -74,6 +76,7 @@ function Overview({ data }: { data: StatsData }) {
     () => launchMark(searchDaily(data.bundle), undefined, readLaunchDate(data.bundle)),
     [data.bundle]
   );
+  const gscUntil = useMemo(() => gscLagDate(data.bundle), [data.bundle]);
 
   return (
     <div className="ws-sec">
@@ -81,6 +84,7 @@ function Overview({ data }: { data: StatsData }) {
       <p className="ws-note">
         고른 기간의 검색 성과입니다. 변화는 그 앞 같은 길이의 기간과 견준 것입니다.
       </p>
+      {gscUntil ? <p className="ws-note ws-note-warn">{gscUntilText(gscUntil)}</p> : null}
       <div className="ws-kpis ws-kpis-4">
         {kpis.map((kpi) => (
           <div className="ws-kpi" key={kpi.id}>

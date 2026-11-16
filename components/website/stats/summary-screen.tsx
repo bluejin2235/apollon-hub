@@ -19,9 +19,10 @@ import {
 } from "@/components/website/stats/metric-hint";
 import { StatsChart, STATS_COLORS, STATS_TEXT } from "@/components/website/stats/stats-chart";
 import { useStatsActions } from "@/components/website/stats/stats-actions";
-import { isoText } from "@/components/website/stats/stats-data";
+import { gscLagDate, isoText } from "@/components/website/stats/stats-data";
 import {
   actionCategoryLabel,
+  gscUntilText,
   SUMMARY_CARD_LABEL,
   type SummaryCardId
 } from "@/components/website/stats/stats-labels";
@@ -39,7 +40,10 @@ import {
 import type { StatsBriefResult } from "@/lib/website/api";
 
 /** 카드 물음표를 누르면 뜨는 설명. summary 는 카드 안 한 줄이다 */
-const CARD_HINTS: Record<"visit" | "genericClick" | "searchToArticle", MetricHint> = {
+const CARD_HINTS: Record<
+  "visit" | "genericClick" | "searchToArticle" | "inquiryClick",
+  MetricHint
+> = {
   visit: {
     id: "visit",
     title: SUMMARY_CARD_LABEL.visit.label,
@@ -70,14 +74,29 @@ const CARD_HINTS: Record<"visit" | "genericClick" | "searchToArticle", MetricHin
     criterion: "오를수록 좋습니다. 검색 방문이 몇 번 안 될 때는 한 번에도 크게 움직입니다.",
     action: "낮다면 많이 찾는 주제의 글 제목과 첫 문단을 손보세요.",
     limit: "구글·네이버 같은 검색엔진을 함께 셉니다. 첫 페이지를 알 수 없는 방문은 빼고 셉니다."
+  },
+  inquiryClick: {
+    id: "inquiryClick",
+    title: SUMMARY_CARD_LABEL.inquiryClick.label,
+    summary: "Let's Talk 의 문의하기 버튼을 누른 횟수",
+    definition:
+      "Let's Talk 화면에서 문의하기 버튼을 누른 횟수입니다. 아래 작은 줄은 그중 문의를 끝까지 보낸 건수입니다.",
+    criterion: "누름은 많은데 실제 문의가 적으면 문의 양식에서 멈춘다는 뜻입니다.",
+    action: "실제 문의가 적다면 양식의 칸 수와 안내 문장을 줄여 보세요.",
+    limit: "광고 차단 프로그램을 쓰는 방문은 빠집니다. 같은 사람이 여러 번 누르면 여러 번 셉니다."
   }
 };
 
-/** 모으는 기록이 아직 없는 두 칸 */
-const PREP_CARDS: { id: SummaryCardId; line: string }[] = [
-  { id: "ai", line: "AI 답변을 따라 온 방문을 정확히 가려 세는 기록을 준비하고 있습니다." },
-  { id: "inquiryClick", line: "Let's Talk 의 문의하기 버튼을 누른 횟수를 세는 기록을 준비하고 있습니다." }
-];
+type HintId = keyof typeof CARD_HINTS;
+
+/** 카드 다섯 칸의 자리 순서 */
+const CARD_ORDER: SummaryCardId[] = ["visit", "genericClick", "searchToArticle", "ai", "inquiryClick"];
+
+/** 숫자가 없을 때 「준비 중」으로 두는 칸의 한 줄 */
+const PREP_LINES: Partial<Record<SummaryCardId, string>> = {
+  ai: "AI 답변을 따라 온 방문을 정확히 가려 세는 기록을 준비하고 있습니다.",
+  inquiryClick: "Let's Talk 의 문의하기 버튼을 누른 횟수를 세는 기록을 준비하고 있습니다."
+};
 
 const PREP_STAMP = "준비 중";
 
@@ -87,13 +106,26 @@ function SummaryCards({ data }: { data: StatsData }) {
   const panelId = useId();
   const [openId, setOpenId] = useState<string | null>(null);
   const cards = useMemo(() => buildSummaryCards(data.bundle), [data.bundle]);
-  const open = openId ? CARD_HINTS[openId as keyof typeof CARD_HINTS] : null;
+  const gscUntil = useMemo(() => gscLagDate(data.bundle), [data.bundle]);
+  const open = openId ? CARD_HINTS[openId as HintId] : null;
 
   return (
     <div className="ws-sec">
       <div className="ws-kpis">
-        {cards.map((card) => {
-          const hint = CARD_HINTS[card.id as keyof typeof CARD_HINTS];
+        {CARD_ORDER.map((id) => {
+          const card = cards.find((item) => item.id === id);
+          const hint = id in CARD_HINTS ? CARD_HINTS[id as HintId] : null;
+          if (!card || !hint) {
+            return (
+              <div className="ws-kpi" key={id}>
+                <div className="ws-lab">
+                  <span className="ws-lab-text">{SUMMARY_CARD_LABEL[id].label}</span>
+                  <span className="ws-stamp">{PREP_STAMP}</span>
+                </div>
+                <p className="ws-kpi-sub">{PREP_LINES[id]}</p>
+              </div>
+            );
+          }
           const label = SUMMARY_CARD_LABEL[card.id];
           const summedNote =
             card.id === "visit" && card.periodUsers === false
@@ -115,20 +147,16 @@ function SummaryCards({ data }: { data: StatsData }) {
                 {card.value != null ? <span className="ws-val-unit">{label.unit}</span> : null}
               </div>
               <DeltaMark delta={card.delta} tone={card.tone} previous={card.previous} />
-              <p className="ws-kpi-sub">{summedNote ?? hint.summary}</p>
+              <p className="ws-kpi-sub">{summedNote ?? card.sub ?? hint.summary}</p>
             </div>
           );
         })}
-        {PREP_CARDS.map((card) => (
-          <div className="ws-kpi" key={card.id}>
-            <div className="ws-lab">
-              <span className="ws-lab-text">{SUMMARY_CARD_LABEL[card.id].label}</span>
-              <span className="ws-stamp">{PREP_STAMP}</span>
-            </div>
-            <p className="ws-kpi-sub">{card.line}</p>
-          </div>
-        ))}
       </div>
+      {gscUntil ? (
+        <p className="ws-foot ws-note-warn">
+          {gscUntilText(gscUntil)} · 일반 명사 검색 클릭에 해당합니다.
+        </p>
+      ) : null}
       {open ? <MetricHintPanel id={panelId} hint={open} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
