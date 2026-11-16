@@ -1047,6 +1047,37 @@ a.ws-chip {
   text-decoration: none;
 }
 
+/* AI 화면 — ① 읽어 감 칸이 내용이 길다 */
+.ws-ai-kpis {
+  align-items: start;
+}
+
+.ws-ai-read {
+  grid-column: 1 / -1;
+}
+
+@container ws-main (min-width: 720px) {
+  .ws-ai-kpis {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ws-ai-read {
+    grid-column: auto;
+  }
+}
+
+.ws-ai-block {
+  margin-top: 12px;
+}
+
+.ws-val-sm {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 2px 0 1px;
+  letter-spacing: -0.01em;
+  color: var(--ink3);
+}
+
 @media (max-width: 800px) {
   .ws {
     margin-top: 0;

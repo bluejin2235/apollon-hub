@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ActionsScreen } from "@/components/website/stats/actions-screen";
+import { AI_KINDS } from "@/components/website/stats/ai-data";
+import { AiScreen } from "@/components/website/stats/ai-screen";
 import { BEHAVIOR_KINDS } from "@/components/website/stats/behavior-data";
 import { BehaviorScreen } from "@/components/website/stats/behavior-screen";
 import { CONTENT_KINDS } from "@/components/website/stats/content-data";
@@ -38,6 +40,7 @@ const KINDS_BY_SCREEN: Partial<Record<StatsScreenId, string[]>> = {
   summary: SUMMARY_KINDS,
   content: CONTENT_KINDS,
   search: SEARCH_KINDS,
+  ai: [...AI_KINDS],
   behavior: BEHAVIOR_KINDS
 };
 
@@ -173,27 +176,6 @@ function ScreenShell({
       <h2 className="ws-pt">{screen.label}</h2>
       <p className="ws-lede">{screen.lede}</p>
       {children}
-    </section>
-  );
-}
-
-const AI_SLOTS = ["읽어 감", "답에 씀", "사람이 옴"] as const;
-
-/** 수집 전 AI 화면. 숫자는 넣지 않는다. */
-function AiScreen() {
-  const screen = STATS_SCREENS.find((item) => item.id === "ai");
-  if (!screen) return null;
-  return (
-    <section className="ws-screen">
-      <h2 className="ws-pt">{screen.lede}</h2>
-      <div className="ws-kpis ws-kpis-3">
-        {AI_SLOTS.map((name) => (
-          <div key={name} className="ws-kpi">
-            <div className="ws-lab">{name}</div>
-            <p className="ws-kpi-sub">아직 수집하지 않습니다</p>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -566,7 +548,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               <SearchScreen data={data} />
             </ScreenShell>
           ) : null}
-          {screen === "ai" ? <AiScreen /> : null}
+          {screen === "ai" ? <AiScreen data={data} /> : null}
           {screen === "behavior" ? (
             <ScreenShell id="behavior">
               <BehaviorScreen data={data} />

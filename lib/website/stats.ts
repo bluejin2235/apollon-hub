@@ -71,6 +71,30 @@ export type StatsQueryResult = {
   generate_lead?: MetricCompare;
   /** 구글 검색 자료가 들어온 마지막 날. 옛 응답에는 없고, 자료가 없으면 null */
   gsc_last_date?: string | null;
+  /**
+   * kind=bots 일 때만. 홈페이지 website_bot_hits_raw 를 기간으로 센 값.
+   * 타입은 ai-data 의 BotsStatsPayload 와 같다. 순환 import 를 피하려고 여기서는 구조만 둔다.
+   */
+  bots?: {
+    since: string;
+    ai: {
+      total: { current: number; previous: number | null };
+      byCompany: Record<string, { current: number; previous: number | null }>;
+      byPurpose: Record<string, { current: number; previous: number | null }>;
+      askedTotal: { current: number; previous: number | null };
+      topPaths: {
+        path: string;
+        lang: "ko" | "en";
+        count: { current: number; previous: number | null };
+      }[];
+      failed: { current: number; previous: number | null };
+    };
+    searchEngines: {
+      total: { current: number; previous: number | null };
+      byName: Record<string, { current: number; previous: number | null }>;
+    };
+    verified: boolean;
+  };
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];
@@ -231,7 +255,7 @@ export const STATS_SCREENS: {
     href: "/website/stats/ai",
     label: "AI",
     /** 메뉴 이름은 label. 이 문장은 화면 제목으로만 쓴다. */
-    lede: "AI가 우리 글을 읽고, 쓰고, 사람을 보내 주나요?"
+    lede: "AI 가 우리 글을 읽고, 쓰고, 사람을 보내 주나요?"
   },
   {
     id: "behavior",
