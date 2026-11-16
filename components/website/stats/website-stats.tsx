@@ -2,12 +2,17 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { ActionsScreen } from "@/components/website/stats/actions-screen";
 import { BEHAVIOR_KINDS } from "@/components/website/stats/behavior-data";
 import { BehaviorScreen } from "@/components/website/stats/behavior-screen";
 import { CONTENT_KINDS } from "@/components/website/stats/content-data";
 import { ContentScreen } from "@/components/website/stats/content-screen";
 import { SEARCH_KINDS } from "@/components/website/stats/search-data";
 import { SearchScreen } from "@/components/website/stats/search-screen";
+import {
+  StatsActionsContext,
+  useStatsActionsLoader
+} from "@/components/website/stats/stats-actions";
 import {
   readActualRange,
   SITE_LAUNCH_DATE,
@@ -455,6 +460,13 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
 
   const data: StatsData = { bundle, status };
   const apiRange = readActualRange(bundle);
+  const markRange = apiRange
+    ? { from: apiRange.actualFrom, to: apiRange.actualTo }
+    : from && to && from <= to
+      ? { from, to }
+      : null;
+  const actions = useStatsActionsLoader(today, bundle, markRange);
+  const usesPeriod = screen !== "actions";
   const compareText = compareLine(preset, from, to, today, apiRange);
   const showOldSite = apiRange?.prevIncludesPreLaunch ?? previousStartsBeforeLaunch(from, to);
 
@@ -471,20 +483,22 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
       <div className="ws-main">
         <div className="ws-bar">
           <div className="ws-bar-row">
-            <div>
-              <div className="ws-seg" role="group" aria-label="기간">
-                {PERIOD_PRESETS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={preset === item.id ? "on" : undefined}
-                    onClick={() => applyPreset(item.id)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+            {usesPeriod ? (
+              <div>
+                <div className="ws-seg" role="group" aria-label="기간">
+                  {PERIOD_PRESETS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={preset === item.id ? "on" : undefined}
+                      onClick={() => applyPreset(item.id)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
             <SyncStatusLine status={syncStatus} />
             <div className="ws-live">
               <span className="ws-dot" aria-hidden />
@@ -501,13 +515,13 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               ) : null}
             </div>
           </div>
-          {compareText ? (
+          {usesPeriod && compareText ? (
             <p className="ws-compare">
               <span>{compareText}</span>
               {showOldSite ? <span className="ws-stamp">앞 기간은 옛 사이트</span> : null}
             </p>
           ) : null}
-          {preset === "custom" ? (
+          {usesPeriod && preset === "custom" ? (
             <div className="ws-custom">
               <label>
                 시작
@@ -534,6 +548,7 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
 
         <div className="ws-bar-spacer" aria-hidden="true" />
 
+        <StatsActionsContext.Provider value={actions}>
         <div className="ws-body">
           {screen === "summary" ? (
           <ScreenShell id="summary">
@@ -557,7 +572,13 @@ export function WebsiteStats({ screen }: { screen: StatsScreenId }) {
               <BehaviorScreen data={data} />
             </ScreenShell>
           ) : null}
+          {screen === "actions" ? (
+            <ScreenShell id="actions">
+              <ActionsScreen today={today} />
+            </ScreenShell>
+          ) : null}
         </div>
+        </StatsActionsContext.Provider>
       </div>
     </div>
   );

@@ -3,6 +3,8 @@
  * 표에 없는 값은 원래 이름을 그대로 보여 준다.
  */
 
+import type { StatsActionCategory } from "@/lib/website/stats";
+
 /** GA4 기본 채널 그룹 — 영문 고정값이다 */
 const CHANNEL_LABEL: Record<string, string> = {
   "Organic Search": "검색",
@@ -205,6 +207,19 @@ export const SUMMARY_CARD_LABEL: Record<SummaryCardId, { label: string; unit: st
   ai: { label: "AI에서 온 방문", unit: "회" },
   inquiryClick: { label: "문의하기 누름", unit: "회" }
 };
+
+/** 조치 기록 분류 — 홈페이지 값(seo·aeo…)은 그대로 저장하고 화면에만 한글로 */
+export const ACTION_CATEGORY_LABEL: Record<StatsActionCategory, string> = {
+  seo: "검색 최적화",
+  aeo: "AI 노출",
+  content: "콘텐츠",
+  design: "디자인",
+  other: "기타"
+};
+
+export function actionCategoryLabel(category: StatsActionCategory | null): string | null {
+  return category ? ACTION_CATEGORY_LABEL[category] : null;
+}
 
 /** 숫자 뒤에 단위를 붙인다. 값이 없으면 null */
 export function withUnit(value: string | null, id: SummaryCardId): string | null {

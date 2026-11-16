@@ -9,6 +9,8 @@ import type {
 import type { HomeCandidateList, HomeList, HomeSlot, HomeWrite } from "@/lib/website/home";
 import {
   readStatsSyncStatus,
+  type StatsAction,
+  type StatsActionCategory,
   type StatsBundle,
   type StatsBundleResult,
   type StatsQueryResult,
@@ -1276,6 +1278,44 @@ export async function getStatsBundle(params: {
 /** GA4 Realtime — 지금 접속자. DB 를 거치지 않는다 */
 export function getStatsRealtime(signal?: AbortSignal): Promise<ApiResult<StatsRealtime>> {
   return websiteFetch<StatsRealtime>("stats/realtime", { signal });
+}
+
+/** 조치 기록 — from~to(포함), 날짜 늦은 순 */
+export function listStatsActions(params: {
+  from: string;
+  to: string;
+  signal?: AbortSignal;
+}): Promise<ApiResult<{ items: StatsAction[] }>> {
+  const { from, to, signal } = params;
+  return websiteFetch<{ items: StatsAction[] }>(`stats/actions${queryString({ from, to })}`, {
+    signal
+  });
+}
+
+export type StatsActionWrite = {
+  action_date: string;
+  title: string;
+  category: StatsActionCategory | null;
+  note: string | null;
+};
+
+/** 적은 사람은 Hub 프록시가 로그인 사용자 이름으로 채운다 */
+export function createStatsAction(body: StatsActionWrite): Promise<ApiResult<StatsAction>> {
+  return websiteFetch<StatsAction>("stats/actions", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateStatsAction(
+  id: string,
+  body: StatsActionWrite
+): Promise<ApiResult<StatsAction>> {
+  return websiteFetch<StatsAction>(`stats/actions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteStatsAction(id: string): Promise<ApiResult<{ id: string }>> {
+  return websiteFetch<{ id: string }>(`stats/actions/${id}`, { method: "DELETE" });
 }
 
 export type StatsBriefTodo = {

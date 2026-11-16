@@ -30,6 +30,13 @@ import {
   ZAxis
 } from "recharts";
 
+import {
+  chartMarkGroups,
+  useStatsActions,
+  type ChartMarkGroup,
+  type StatsActionsState
+} from "@/components/website/stats/stats-actions";
+
 /** 계열 색 — 목업의 C */
 export const STATS_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#9085e9"];
 /** 격자 */
@@ -219,37 +226,65 @@ function legendNode(show: boolean | undefined, items: { value: string; color: st
   );
 }
 
+/** 조치 기록 세로선 */
+const STATS_ACTION = STATS_COLORS[3];
+
 /**
- * 오픈 시점 세로선. 왼쪽이 원페이지 시절, 오른쪽이 새 사이트다.
- * mark 가 없으면(공개일이 안 정해졌거나 기간 밖이면) 아무것도 그리지 않는다.
+ * 날짜 축 그래프의 세로선 — 오픈 시점(왼쪽 원페이지 · 오른쪽 새 사이트)과 조치 기록.
+ * 가까운 날은 한 선으로 묶고, 선이나 글에 마우스를 올리면 묶인 목록이 뜬다.
  */
-function markLine(
+function markGroupsFor(
   mark: StatsMark | undefined,
+  actions: StatsActionsState,
   data: StatsRow[],
-  xKey: string,
-  yAxisId?: string
-) {
-  if (!mark) return null;
-  // 선이 오른쪽 끝 가까이 있으면 글이 그래프 밖으로 잘린다. 그때는 선 왼쪽에 붙인다
-  const index = data.findIndex((row) => row[xKey] === mark.x);
-  const nearEnd = index >= 0 && index > (data.length - 1) * 0.65;
-  return (
-    <ReferenceLine
-      x={mark.x}
-      yAxisId={yAxisId}
-      stroke={STATS_TEXT}
-      strokeDasharray="4 4"
-      strokeWidth={1}
-      ifOverflow="extendDomain"
-    >
-      <Label
-        value={mark.label}
-        position={nearEnd ? "insideTopRight" : "insideTopLeft"}
-        offset={6}
-        style={{ fontSize: 10, fill: STATS_TEXT }}
-      />
-    </ReferenceLine>
-  );
+  xKey: string
+): ChartMarkGroup[] {
+  if (xKey !== "date") return [];
+  const xs = data.map((row) => String(row[xKey] ?? ""));
+  return chartMarkGroups({ launch: mark, actions: actions.items, range: actions.range, xs });
+}
+
+function markLabel(group: ChartMarkGroup, nearEnd: boolean, row: number) {
+  function MarkLabel(props: { viewBox?: unknown }) {
+    const box = props.viewBox as { x?: number; y?: number; height?: number } | undefined;
+    if (!box || typeof box.x !== "number" || typeof box.y !== "number") return null;
+    const { x, y } = box;
+    return (
+      <g className="ws-mark">
+        <title>{group.lines.join("\n")}</title>
+        <rect x={x - 6} y={y} width={12} height={box.height ?? 0} className="ws-mark-hit" />
+        <text
+          x={nearEnd ? x - 5 : x + 5}
+          y={y + 11 + row * 13}
+          textAnchor={nearEnd ? "end" : "start"}
+          className={group.hasAction ? "ws-mark-text ws-mark-act" : "ws-mark-text"}
+        >
+          {group.label}
+        </text>
+      </g>
+    );
+  }
+  return MarkLabel;
+}
+
+function markLines(groups: ChartMarkGroup[], data: StatsRow[], yAxisId?: string) {
+  return groups.map((group, order) => {
+    // 선이 오른쪽 끝 가까이 있으면 글이 그래프 밖으로 잘린다. 그때는 선 왼쪽에 붙인다
+    const nearEnd = group.index > (data.length - 1) * 0.65;
+    return (
+      <ReferenceLine
+        key={`${group.x}-${order}`}
+        x={group.x}
+        yAxisId={yAxisId}
+        stroke={group.hasAction ? STATS_ACTION : STATS_TEXT}
+        strokeDasharray={group.hasAction ? "3 3" : "4 4"}
+        strokeWidth={1}
+        ifOverflow="extendDomain"
+      >
+        <Label content={markLabel(group, nearEnd, order % 2)} />
+      </ReferenceLine>
+    );
+  });
 }
 
 function seriesLegend(series: StatsSeries[]) {
@@ -315,7 +350,7 @@ function barCells(rowCount: number, series: StatsSeries) {
   ));
 }
 
-function chartBody(props: StatsChartProps) {
+function chartBody(props: StatsChartProps, actions: StatsActionsState) {
   if (props.type === "spark") {
     const color = props.color ?? STATS_COLORS[0];
     return (
@@ -342,7 +377,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, undefined, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
-        {markLine(props.mark, props.data, props.xKey)}
+        {markLines(markGroupsFor(props.mark, actions, props.data, props.xKey), props.data)}
         {props.series.map((series, index) => (
           <Line
             key={series.key}
@@ -367,7 +402,7 @@ function chartBody(props: StatsChartProps) {
         {verticalAxes(props.xKey, props.max, props.format)}
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend(props.series))}
-        {markLine(props.mark, props.data, props.xKey)}
+        {markLines(markGroupsFor(props.mark, actions, props.data, props.xKey), props.data)}
         {props.series.map((series, index) => (
           <Bar
             key={series.key}
@@ -421,7 +456,7 @@ function chartBody(props: StatsChartProps) {
         </YAxis>
         {tooltip(props.format)}
         {legendNode(props.legend, seriesLegend([...props.bars, ...props.lines]))}
-        {markLine(props.mark, props.data, props.xKey, "left")}
+        {markLines(markGroupsFor(props.mark, actions, props.data, props.xKey), props.data, "left")}
         {props.bars.map((series, index) => (
           <Bar
             key={series.key}
@@ -593,6 +628,7 @@ export function StatsEmpty({
 
 export function StatsChart(props: StatsChartProps) {
   const { height = DEFAULT_HEIGHT, className } = props;
+  const actions = useStatsActions();
 
   return (
     <div className={className ? `ws-chart ${className}` : "ws-chart"} style={{ height }}>
@@ -607,7 +643,7 @@ export function StatsChart(props: StatsChartProps) {
         height="100%"
         initialDimension={{ width: 320, height }}
       >
-        {chartBody(props)}
+        {chartBody(props, actions)}
       </ResponsiveContainer>
     </div>
   );

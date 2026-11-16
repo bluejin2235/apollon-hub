@@ -8,6 +8,22 @@ export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
+/**
+ * 조치 기록의 적은 사람은 브라우저가 보낸 값을 믿지 않는다.
+ * 새로 적을 때 로그인 사용자 이름을 넣고, 고칠 때는 바꾸지 못하게 뺀다.
+ */
+function statsActionBody(text: string, method: string, actorName: string | null): string | undefined {
+  if (!text) return undefined;
+  try {
+    const json = JSON.parse(text) as Record<string, unknown>;
+    delete json.created_by;
+    if (method === "POST") json.created_by = actorName?.trim() || null;
+    return JSON.stringify(json);
+  } catch {
+    return text;
+  }
+}
+
 async function proxy(request: NextRequest, ctx: Ctx, method: string) {
   const user = await getApiUser(request);
   if (!user) {
@@ -60,7 +76,9 @@ async function proxy(request: NextRequest, ctx: Ctx, method: string) {
         init.headers = uploadHeaders;
       } else {
         const text = await request.text();
-        if (text) {
+        if (joined === "stats/actions" || joined.startsWith("stats/actions/")) {
+          init.body = statsActionBody(text, method, actor.name);
+        } else if (text) {
           if (method === "POST" && joined === "publish") {
             try {
               const json = JSON.parse(text) as Record<string, unknown>;

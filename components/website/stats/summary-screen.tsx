@@ -4,10 +4,11 @@
  * 요약 화면 — docs/website-mockups/hub-stats-v3 의 「요약」.
  *
  * 카드 다섯 칸 중 셋(방문자 · 일반 명사 검색 클릭 · 검색→글 진입 비율)은
- * website_stats 로 채운다. AI 방문·문의하기 누름·조치 기록은 모으는 기록이
+ * website_stats 로 채운다. AI 방문·문의하기 누름은 모으는 기록이
  * 아직 없어 「준비 중」 한 줄만 둔다. 지어낸 숫자는 넣지 않는다.
  */
 
+import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { DeltaMark } from "@/components/website/stats/delta-mark";
@@ -17,8 +18,14 @@ import {
   type MetricHint
 } from "@/components/website/stats/metric-hint";
 import { StatsChart, STATS_COLORS, STATS_TEXT } from "@/components/website/stats/stats-chart";
-import { SUMMARY_CARD_LABEL, type SummaryCardId } from "@/components/website/stats/stats-labels";
-import { ChartSlot, SectionHead, type StatsData } from "@/components/website/stats/stats-slot";
+import { useStatsActions } from "@/components/website/stats/stats-actions";
+import { isoText } from "@/components/website/stats/stats-data";
+import {
+  actionCategoryLabel,
+  SUMMARY_CARD_LABEL,
+  type SummaryCardId
+} from "@/components/website/stats/stats-labels";
+import { ChartSlot, type StatsData } from "@/components/website/stats/stats-slot";
 import {
   TODO_LEVEL_LABEL,
   loadSummaryBrief
@@ -273,15 +280,46 @@ function TodoList({ state }: { state: BriefState }) {
 
 /* ─────────────────────── 조치 기록 ─────────────────────── */
 
+const RECENT_ACTIONS = 5;
+
 function ActionLog() {
+  const actions = useStatsActions();
+  const recent = actions.items.slice(0, RECENT_ACTIONS);
+
   return (
     <div className="ws-sec">
-      <SectionHead title="조치 기록" stamp={PREP_STAMP} />
+      <div className="ws-sech">
+        <h3>조치 기록</h3>
+        <Link href="/website/stats/actions" className="ws-chip">
+          + 기록 추가 · 전체 보기
+        </Link>
+      </div>
       <div className="ws-card">
-        <p className="ws-kpi-sub">
-          한 일을 날짜와 함께 적어 두면 그래프에 세로선으로 표시합니다. 적어 두는 기능을 준비하고
-          있습니다.
-        </p>
+        {recent.length > 0 ? (
+          <ul className="ws-todo">
+            {recent.map((item) => (
+              <li key={item.id}>
+                <span className="ws-act-date">{isoText(item.action_date)}</span>
+                <div>
+                  {item.title}
+                  {item.note ? <div className="ws-t2">{item.note}</div> : null}
+                </div>
+                {item.category ? (
+                  <span className="ws-tag ws-act-tag">{actionCategoryLabel(item.category)}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ws-kpi-sub">
+            {actions.status === "loading"
+              ? "불러오는 중입니다"
+              : actions.status === "error"
+                ? "조치 기록을 불러오지 못했습니다."
+                : "아직 적은 조치가 없습니다. 한 일을 적어 두면 그래프에 세로선으로 표시합니다."}
+          </p>
+        )}
+        <p className="ws-foot">같은 날이나 가까운 날의 기록은 그래프에서 세로선 하나로 묶어 표시합니다.</p>
       </div>
     </div>
   );

@@ -64,6 +64,8 @@ export type StatsQueryResult = {
   launch_date?: string;
   /** 기간 전체 방문자. 옛 응답에는 없다 */
   period_users?: PeriodUsersCompare;
+  /** 고른 기간 + 앞 기간 안의 조치 기록. 옛 응답에는 없다 */
+  actions?: StatsAction[];
   kind: string;
   /** 고른 기간 안의 일별 행 */
   current: StatsPoint[];
@@ -90,6 +92,22 @@ export type StatsQueryResult = {
     avg_seconds: MetricCompare;
   };
   by_key: KeyCompare[];
+};
+
+export const STATS_ACTION_CATEGORIES = ["seo", "aeo", "content", "design", "other"] as const;
+
+export type StatsActionCategory = (typeof STATS_ACTION_CATEGORIES)[number];
+
+/** 홈페이지 website_stats_actions 한 줄 — 그날 한 일 */
+export type StatsAction = {
+  id: string;
+  action_date: string;
+  title: string;
+  category: StatsActionCategory | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 /** 기간 전체를 한 번 센 방문자. kind 마다 같은 값이 붙는다 */
@@ -177,7 +195,7 @@ export type StatsRealtime = {
   pages: StatsRealtimePage[];
 };
 
-export type StatsScreenId = "summary" | "content" | "search" | "ai" | "behavior";
+export type StatsScreenId = "summary" | "content" | "search" | "ai" | "behavior" | "actions";
 
 export const STATS_SCREENS: {
   id: StatsScreenId;
@@ -215,6 +233,12 @@ export const STATS_SCREENS: {
     href: "/website/stats/behavior",
     label: "방문 패턴",
     lede: "들어온 사람이 무엇을 하는지 봅니다. 홈페이지의 목표는 오래 머물다 문의로 이어지는 것입니다."
+  },
+  {
+    id: "actions",
+    href: "/website/stats/actions",
+    label: "조치 기록",
+    lede: "홈페이지에 한 일을 날짜와 함께 적어 둡니다. 적은 날은 모든 그래프에 세로선으로 표시해 전후를 비교합니다."
   }
 ];
 

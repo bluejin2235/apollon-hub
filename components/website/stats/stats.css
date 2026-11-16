@@ -901,6 +901,147 @@
   min-width: 0;
 }
 
+/* 그래프 세로선 글 — 오픈 시점 · 조치 기록 (stats-chart.tsx) */
+.ws-mark-text {
+  font-size: 10px;
+  fill: var(--ink3);
+}
+
+.ws-mark-act {
+  fill: #8a5a06;
+}
+
+/* 선 둘레 마우스 자리. 칠은 안 보이게 두되 마우스는 받는다 */
+.ws-mark-hit {
+  fill: transparent;
+}
+
+.ws-mark {
+  cursor: help;
+}
+
+/* 조치 기록 — 적는 칸 */
+.ws-act-form {
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container ws-main (min-width: 640px) {
+  .ws-act-form {
+    grid-template-columns: 160px minmax(0, 1fr) 160px;
+  }
+}
+
+.ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink2);
+}
+
+.ws-field-full,
+.ws-act-foot {
+  grid-column: 1 / -1;
+}
+
+.ws-field input,
+.ws-field select,
+.ws-field textarea {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: #fff;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.ws-field textarea {
+  resize: vertical;
+}
+
+.ws-field input:focus,
+.ws-field select:focus,
+.ws-field textarea:focus {
+  outline: none;
+  border-color: var(--ink3);
+}
+
+.ws-act-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+}
+
+.ws-act-foot .ws-t2 {
+  margin: 0 auto 0 0;
+}
+
+.ws-act-save {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 16px;
+  border: 1px solid var(--ink);
+  border-radius: var(--r);
+  background: var(--ink);
+  color: #fff;
+  cursor: pointer;
+}
+
+.ws-act-save:disabled,
+.ws-act-btns button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ws-act-fail {
+  font-size: 12px;
+  color: var(--dn);
+  margin: 0 0 8px;
+}
+
+.ws-act-foot .ws-act-fail {
+  margin: 0;
+}
+
+/* 조치 기록 — 표 */
+.ws-act-btns {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ws-act-btns .ws-chip + .ws-chip {
+  margin-left: 6px;
+}
+
+.ws-table tr.on td {
+  background: #f7f8fa;
+}
+
+/* 요약의 조치 기록 줄 */
+.ws-act-date {
+  font-size: 12px;
+  color: var(--ink3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 78px;
+}
+
+.ws-act-tag {
+  margin-left: auto;
+}
+
+a.ws-chip {
+  text-decoration: none;
+}
+
 @media (max-width: 800px) {
   .ws {
     margin-top: 0;
