@@ -27,13 +27,15 @@ import {
   type V3ScreenId,
   type V3ScreenProps
 } from "@/components/website/stats-v3/v3-screens";
+import { V3Search } from "@/components/website/stats-v3/v3-search";
 import "./v3.css";
 import { getStatsBundle } from "@/lib/website/api";
 import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncStatus } from "@/lib/website/stats";
 
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
   overview: V3Overview,
-  content: V3Content
+  content: V3Content,
+  search: V3Search
 };
 
 function SyncLine({ status }: { status: StatsSyncStatus | null }) {
