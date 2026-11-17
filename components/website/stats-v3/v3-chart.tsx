@@ -18,6 +18,41 @@ export type LineChartProps = {
   ariaLabel: string;
 };
 
+/** 11px 글자 폭 어림 — 한글은 글자 높이만큼, 그 밖은 절반 남짓 */
+function labelWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) width += /[ㄱ-힣]/.test(ch) ? 11 : 6.2;
+  return width;
+}
+
+/** 세로선 글씨가 그래프 밖으로 나가지 않게 넘치면 줄이고 「…」. 전체 글은 마우스를 올리면 보인다 */
+export function fitLabel(text: string, room: number): string {
+  if (labelWidth(text) <= room) return text;
+  const chars = [...text];
+  while (chars.length > 1 && labelWidth(`${chars.join("")}…`) > room) chars.pop();
+  return `${chars.join("")}…`;
+}
+
+/**
+ * 세로선 글씨가 쓸 수 있는 폭. 가운데 왼쪽 선은 오른쪽으로, 오른쪽 선은 왼쪽으로 쓴다.
+ * 옆 선이 같은 쪽으로 쓰면 그 선까지, 마주 보고 쓰면 사이의 절반까지만.
+ */
+export function markRoom(xs: number[], k: number, width: number, middle: number): number {
+  const x = xs[k];
+  const toRight = x < middle;
+  const pad = 7;
+  if (toRight) {
+    const next = xs[k + 1];
+    if (next == null) return width - x - pad;
+    const gap = next - x;
+    return (next < middle ? gap : gap / 2) - pad * 2;
+  }
+  const prev = xs[k - 1];
+  if (prev == null) return x - pad;
+  const gap = x - prev;
+  return (prev >= middle ? gap : gap / 2) - pad * 2;
+}
+
 /** 1 · 2 · 5 × 10ⁿ 으로 올린다 */
 function niceMax(value: number): number {
   if (!(value > 0)) return 1;
@@ -78,21 +113,25 @@ export function LineChart({ labels, current, previous, mini, two, marks = [], fo
         })}
         {area ? <path d={area} fill="#edf3f5" /> : null}
         {!mini
-          ? marks.map((mark) => {
+          ? marks.map((mark, k) => {
               const x = xOf(mark.index);
-              const nearLeft = x < left + (right - left) * 0.35;
+              // 왼쪽 절반은 선 오른쪽에, 오른쪽 절반은 선 왼쪽에 붙여 두 줄 모두 그래프 안에 둔다
+              const toRight = x < (left + right) / 2;
+              const room = markRoom(marks.map((m) => xOf(m.index)), k, w, (left + right) / 2);
               const [first, ...rest] = mark.labels;
               const second = rest.length === 0 ? null : rest.length === 1 ? rest[0] : `${rest[0]} 외 ${rest.length - 1}건`;
+              const tx = toRight ? x + 7 : x - 7;
+              const anchor = toRight ? "start" : "end";
               return (
                 <g key={mark.index}>
                   <title>{mark.labels.join("\n")}</title>
                   <line x1={x} y1={top - 10} x2={x} y2={base} stroke="#a2abb4" strokeDasharray="4 4" />
-                  <text x={nearLeft ? x + 7 : x - 7} y={16} textAnchor={nearLeft ? "start" : "end"}>
-                    {first}
+                  <text x={tx} y={16} textAnchor={anchor}>
+                    {fitLabel(first, room)}
                   </text>
                   {second ? (
-                    <text x={x + 7} y={33}>
-                      {second}
+                    <text x={tx} y={33} textAnchor={anchor}>
+                      {fitLabel(second, room)}
                     </text>
                   ) : null}
                 </g>

@@ -14,7 +14,6 @@ import {
   buildAiTopContents,
   countDelta,
   readAiVisits,
-  readBotsPayload,
   type AiVisits,
   type BotsCountPair,
   type BotsStatsPayload
@@ -66,9 +65,39 @@ export function readBars(payload: BotsStatsPayload | null): HBarRow[] {
   });
 }
 
-/** 많이 읽어 간 콘텐츠 — 목업처럼 다섯 줄. llms.txt 는 목록에서 빠진다(buildAiTopContents) */
+/** 사이트 안쪽 주소(이미지 변환 · API) — 콘텐츠가 아니라 목록에서 뺀다. robots.txt · llms.txt · sitemap.xml 은 남긴다 */
+export function isInternalPath(path: string): boolean {
+  return /^\/(_next|api)(\/|$)/.test(path);
+}
+
+/**
+ * 많이 읽어 간 콘텐츠 — 목업처럼 다섯 줄. buildAiTopContents 의 숫자 그대로이고,
+ * 이 화면은 llms.txt 고정 줄이 없어 llms.txt 도 같은 목록에 횟수 순으로 넣는다.
+ */
 export function readTop(payload: BotsStatsPayload | null, titles: TitleMap, limit = 5) {
-  return buildAiTopContents(payload, titles).rows.slice(0, limit);
+  const { rows, llms } = buildAiTopContents(payload, titles);
+  const all = llms.count != null && llms.count > 0 ? [...rows, { ...llms, fixed: undefined }] : rows;
+  return all
+    .filter((row) => !isInternalPath(row.path))
+    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+    .slice(0, limit);
+}
+
+/* ─────────────────────── ② 답에 씀 ─────────────────────── */
+
+/**
+ * 표의 AI 열 네 개. 운영이 실제로 기록하는 서비스(ChatGPT · 구글 AI 개요)를 앞에 두고 「구글 AI 개요」는 꼭 넣는다.
+ * 홈페이지 API(21번)가 서비스 목록을 주면 기록이 있는 서비스를 앞에 두고 나머지를 채운다. 아직 API 가 없다.
+ */
+export const ANSWER_COLUMNS_DEFAULT = ["ChatGPT", "구글 AI 개요", "Claude", "Perplexity"] as const;
+
+export function answerColumns(recorded: string[] = []): string[] {
+  const cols: string[] = [];
+  for (const name of [...recorded, ...ANSWER_COLUMNS_DEFAULT]) {
+    if (!cols.includes(name)) cols.push(name);
+  }
+  if (!cols.slice(0, 4).includes("구글 AI 개요")) cols.splice(3, 0, "구글 AI 개요");
+  return cols.slice(0, 4);
 }
 
 /* ─────────────────────── ③ 사람이 옴 ─────────────────────── */

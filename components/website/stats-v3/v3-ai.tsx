@@ -9,6 +9,7 @@ import { useMemo } from "react";
 
 import {
   aiAnswer,
+  answerColumns,
   botsDelta,
   botsPeriodBeforeSince,
   buildAiVisitPages,
@@ -96,6 +97,8 @@ function ReadCard({ bundle, status, catalog }: Pick<V3ScreenProps, "bundle" | "s
 
 /** ② 답에 씀 — 매주 직접 물어본 결과를 적는 표가 아직 없다. 목업 칸 배치만 두고 숫자는 「—」 */
 function AnswerCard() {
+  // 홈페이지 21번 API 가 생기면 기록이 있는 서비스 목록을 넘긴다
+  const columns = answerColumns();
   return (
     <div className="v3-card">
       <div className="v3-fact-num">서로 다른 사실 ②</div>
@@ -112,20 +115,18 @@ function AnswerCard() {
         <thead>
           <tr>
             <th>질문</th>
-            <th>ChatGPT</th>
-            <th>Claude</th>
-            <th>Gemini</th>
-            <th>Perplexity</th>
+            {columns.map((name) => (
+              <th key={name}>{name}</th>
+            ))}
             <th className="v3-num">증감</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
+            {columns.map((name) => (
+              <td key={name}>—</td>
+            ))}
             <td className="v3-num">—</td>
           </tr>
         </tbody>
