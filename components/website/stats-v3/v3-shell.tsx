@@ -11,6 +11,7 @@ import { useStatsActionsLoader } from "@/components/website/stats/stats-actions"
 import { readActualRange } from "@/components/website/stats/stats-data";
 import type { LoadStatus } from "@/components/website/stats/stats-slot";
 import { useV3Catalog } from "@/components/website/stats-v3/v3-catalog";
+import { V3Content } from "@/components/website/stats-v3/v3-content";
 import { V3Live } from "@/components/website/stats-v3/v3-live";
 import { V3Overview } from "@/components/website/stats-v3/v3-overview";
 import {
@@ -31,7 +32,8 @@ import { getStatsBundle } from "@/lib/website/api";
 import { PERIOD_PRESETS, type PeriodPresetId, type StatsBundle, type StatsSyncStatus } from "@/lib/website/stats";
 
 export const V3_SCREEN_PARTS: Partial<Record<V3ScreenId, ComponentType<V3ScreenProps>>> = {
-  overview: V3Overview
+  overview: V3Overview,
+  content: V3Content
 };
 
 function SyncLine({ status }: { status: StatsSyncStatus | null }) {
