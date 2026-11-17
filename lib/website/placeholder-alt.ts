@@ -2,27 +2,50 @@
 
 const BANNED_EXACT = new Set([
   "임시",
-  "test",
-  "테스트",
+  "이미지",
+  "사진",
+  "그림",
+  "대체텍스트",
+  "대체 텍스트",
+  "없음",
+  "미정",
+  "image",
+  "img",
+  "photo",
+  "picture",
+  "alt",
   "tbd",
   "todo",
-  "alt",
-  "image",
-  "이미지",
-  "사진"
+  "placeholder",
+  "untitled",
+  "test",
+  "테스트"
 ]);
 
 /** 숫자·문장 부호·기호·공백만 */
 const ONLY_NUM_OR_SYMBOL = /^[\p{N}\p{P}\p{S}\s]+$/u;
 
+/** 카메라·메신저·화면 캡처 파일 이름 */
+const CAMERA_OR_CHAT_NAME =
+  /^(IMG_\d+|DSC\d+|KakaoTalk_|스크린샷)/iu;
+
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
+
 const HANGUL = /[\uAC00-\uD7A3]/;
+
+function looksLikeFilename(value: string): boolean {
+  if (IMAGE_EXT.test(value)) return true;
+  if (CAMERA_OR_CHAT_NAME.test(value)) return true;
+  return false;
+}
 
 export function isPlaceholderAlt(text: string | null | undefined): boolean {
   const value = (text ?? "").trim();
   if (!value) return true;
   if (ONLY_NUM_OR_SYMBOL.test(value)) return true;
-  if ([...value].length <= 3) return true;
+  if ([...value].length === 1) return true;
   if (BANNED_EXACT.has(value.toLowerCase())) return true;
+  if (looksLikeFilename(value)) return true;
   return false;
 }
 

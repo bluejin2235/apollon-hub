@@ -23,13 +23,20 @@ describe("isPlaceholderAlt", () => {
     assert.equal(isPlaceholderAlt("1-2"), true);
   });
 
-  it("3글자 이하면 참", () => {
-    assert.equal(isPlaceholderAlt("ab"), true);
-    assert.equal(isPlaceholderAlt("abc"), true);
-    assert.equal(isPlaceholderAlt("임시"), true);
+  it("한 글자면 참", () => {
+    assert.equal(isPlaceholderAlt("a"), true);
+    assert.equal(isPlaceholderAlt("가"), true);
   });
 
-  it("금지 단어와 같으면 참 (대소문자 무시)", () => {
+  it("금지 낱말과 같으면 참 (대소문자·공백 무시)", () => {
+    assert.equal(isPlaceholderAlt("임시"), true);
+    assert.equal(isPlaceholderAlt("이미지"), true);
+    assert.equal(isPlaceholderAlt("사진"), true);
+    assert.equal(isPlaceholderAlt("그림"), true);
+    assert.equal(isPlaceholderAlt("대체텍스트"), true);
+    assert.equal(isPlaceholderAlt("대체 텍스트"), true);
+    assert.equal(isPlaceholderAlt("없음"), true);
+    assert.equal(isPlaceholderAlt("미정"), true);
     assert.equal(isPlaceholderAlt("test"), true);
     assert.equal(isPlaceholderAlt("TEST"), true);
     assert.equal(isPlaceholderAlt("테스트"), true);
@@ -37,8 +44,30 @@ describe("isPlaceholderAlt", () => {
     assert.equal(isPlaceholderAlt("todo"), true);
     assert.equal(isPlaceholderAlt("alt"), true);
     assert.equal(isPlaceholderAlt("image"), true);
-    assert.equal(isPlaceholderAlt("이미지"), true);
-    assert.equal(isPlaceholderAlt("사진"), true);
+    assert.equal(isPlaceholderAlt("img"), true);
+    assert.equal(isPlaceholderAlt("photo"), true);
+    assert.equal(isPlaceholderAlt("picture"), true);
+    assert.equal(isPlaceholderAlt("placeholder"), true);
+    assert.equal(isPlaceholderAlt("untitled"), true);
+  });
+
+  it("파일 이름 꼴이면 참", () => {
+    assert.equal(isPlaceholderAlt("IMG_1234.jpg"), true);
+    assert.equal(isPlaceholderAlt("IMG_1234"), true);
+    assert.equal(isPlaceholderAlt("DSC01234"), true);
+    assert.equal(isPlaceholderAlt("KakaoTalk_20241117"), true);
+    assert.equal(isPlaceholderAlt("스크린샷 2024-11-17"), true);
+    assert.equal(isPlaceholderAlt("lobby.webp"), true);
+  });
+
+  it("짧은 정상 이름은 거짓", () => {
+    assert.equal(isPlaceholderAlt("삼성"), false);
+    assert.equal(isPlaceholderAlt("현대"), false);
+    assert.equal(isPlaceholderAlt("롯데"), false);
+    assert.equal(isPlaceholderAlt("로비"), false);
+    assert.equal(isPlaceholderAlt("IBM"), false);
+    assert.equal(isPlaceholderAlt("SK"), false);
+    assert.equal(isPlaceholderAlt("LG전자"), false);
   });
 
   it("단어가 들어 있기만 한 설명문은 거짓", () => {
@@ -82,8 +111,12 @@ describe("isWeakEnglishAlt", () => {
 });
 
 describe("임시 대체 텍스트면 공개 막힘", () => {
-  it("00 · 111 은 막힌다", () => {
+  it("00 · 임시 · 이미지 · IMG_1234.jpg · a · 공백만은 막힌다", () => {
     assert.equal(isPlaceholderAlt("00"), true);
-    assert.equal(isPlaceholderAlt("111"), true);
+    assert.equal(isPlaceholderAlt("임시"), true);
+    assert.equal(isPlaceholderAlt("이미지"), true);
+    assert.equal(isPlaceholderAlt("IMG_1234.jpg"), true);
+    assert.equal(isPlaceholderAlt("a"), true);
+    assert.equal(isPlaceholderAlt("   "), true);
   });
 });
